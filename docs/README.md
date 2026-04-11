@@ -7,7 +7,7 @@ Welcome to the Nano AI system documentation. This project provides a sophisticat
 2. [Biomarker Analysis & Estimation](api/biomarkers.md)
 3. [Precision Nutrition Engine](api/nutrition.md)
 4. [Database Schema](schemas/database.md)
-5. [Local GUI Simulator](api/gui-client.md)
+5. [Local Testing & Simulators](api/testing.md)
 
 ## Core Technologies
 - **Runtime**: Node.js (nodejs20)
