@@ -10,18 +10,16 @@ function App() {
     setStatus('Analyzing...');
 
     try {
-      // Simulate a Kino chip test with some failed biomarkers
+      // Simulate a Kino chip test with ONLY hsCRP
       const testData = {
         openid: 'test_user_macos',
         test_type: 'kino_chip',
         test_data: {
-          GDF15: 850,
-          hsCRP: 1.2,
-          IL6: 2.1
-          // CD38, GA, and CystatinC are missing/failed, 
+          hsCRP: 1.2
+          // All other 5 biomarkers are missing, 
           // backend will estimate them!
         },
-        message: 'biomarkers' // Trigger the chat simulator message
+        message: 'biomarkers' // Trigger the chat simulator update
       };
 
       await axios.post('/api/chat', testData);
