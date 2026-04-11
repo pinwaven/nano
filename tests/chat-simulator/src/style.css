@@ -10,8 +10,14 @@ body {
   background-color: var(--wechat-bg);
   height: 100vh;
   margin: 0;
+  overflow: hidden;
+}
+
+#root {
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  width: 100vw;
 }
 
 .chat-container {
@@ -21,6 +27,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 15px;
+  scroll-behavior: smooth;
 }
 
 .message-bubble {

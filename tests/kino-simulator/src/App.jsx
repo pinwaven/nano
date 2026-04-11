@@ -10,7 +10,7 @@ function App() {
 
   return (
     <>
-      <div className="header">KINO DEVICE SIMULATOR</div>
+      <div className="header">Kino Simulator</div>
       <div className="device-body">
         <div className="device-screen">
           <div className="status-text">{status}</div>
