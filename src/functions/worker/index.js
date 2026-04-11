@@ -2,9 +2,10 @@ const { pool } = require('../../lib/db');
 const { getNowShanghai, calculateAge } = require('../../lib/time-utils');
 const { BiomarkerEstimator } = require('../../lib/estimator/BiomarkerEstimator');
 const { BioAgeCalculator } = require('../../lib/bioage/BioAgeCalculator');
+const { runWorkflow: runFirstReportWorkflow } = require('../../lib/reports/workflow');
 
 /**
- * Nano User Ingestion, Biomarker Estimation & Bio-Age Calculation Handler
+ * Nano User Ingestion, Biomarker Estimation, Bio-Age Calculation & First Report Generation
  */
 exports.handler = async (request, response, context) => {
     try {
@@ -76,10 +77,11 @@ exports.handler = async (request, response, context) => {
 
             const biomarkerQuery = `
                 INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at)
-                VALUES ($1, $2, $3, $4, $5);
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id;
             `;
             
-            await pool.query(biomarkerQuery, [
+            const bioResult = await pool.query(biomarkerQuery, [
                 userId,
                 test_type || 'kino_chip',
                 JSON.stringify(finalData),
@@ -87,7 +89,31 @@ exports.handler = async (request, response, context) => {
                 tested_at || new Date().toISOString()
             ]);
             
+            const scanId = bioResult.rows[0].id;
             console.log(`[${getNowShanghai().toISO()}] BioAge: ${bioAgeReport.BioAge} calculated for user ${userId}`);
+
+            // 3. Trigger "First Report" Generation if this is the user's first completed biomarker test
+            const checkFirstQuery = `SELECT COUNT(*) FROM biomarkers WHERE user_id = $1`;
+            const checkFirstResult = await pool.query(checkFirstQuery, [userId]);
+            
+            if (parseInt(checkFirstResult.rows[0].count) === 1) {
+                console.log(`[${getNowShanghai().toISO()}] Generating First Report for user ${userId}...`);
+                
+                const reportMarkdown = await runFirstReportWorkflow({
+                    user_profile: user,
+                    biomarker_results: finalData,
+                    bioage_profile: bioAgeReport
+                });
+
+                // Store the report in the notifications table for now (or a dedicated reports table)
+                const reportInsertQuery = `
+                    INSERT INTO notifications (user_id, scan_id, notification_type, content, status)
+                    VALUES ($1, $2, 'biological_report', $3, 'pending');
+                `;
+                
+                await pool.query(reportInsertQuery, [userId, scanId, reportMarkdown]);
+                console.log(`[${getNowShanghai().toISO()}] First Report generated and stored for user ${userId}`);
+            }
         }
 
         console.log(`[${getNowShanghai().toISO()}] User ${openid} profile updated, ID: ${userId}`);
