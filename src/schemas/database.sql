@@ -19,6 +19,20 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Biomarkers Table (Time-series data for trend analysis)
+CREATE TABLE IF NOT EXISTS biomarkers (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    test_type TEXT NOT NULL, -- e.g., 'body_composition', 'blood_glucose', 'heart_rate'
+    data JSONB NOT NULL, -- e.g., {"weight": 70, "body_fat": 15, "muscle_mass": 35}
+    tested_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for trend analysis
+CREATE INDEX idx_biomarkers_user_id_tested_at ON biomarkers(user_id, tested_at DESC);
+CREATE INDEX idx_biomarkers_test_type ON biomarkers(test_type);
+
 -- Scan Logs (Track scanner activity)
 CREATE TABLE IF NOT EXISTS scans (
     id SERIAL PRIMARY KEY,
