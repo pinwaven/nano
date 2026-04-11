@@ -17,6 +17,28 @@ function App() {
 
   useEffect(scrollToBottom, [messages]);
 
+  // Notification Polling
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const response = await axios.get(`${API_URL}/notifications?openid=test_user_macos`);
+        if (response.data.notifications?.length > 0) {
+          const newMsgs = response.data.notifications.map(n => ({
+            id: Date.now() + n.id,
+            role: 'ai',
+            content: n.content
+          }));
+          setMessages(prev => [...prev, ...newMsgs]);
+        }
+      } catch (err) {
+        console.error('Polling error:', err);
+      }
+    };
+
+    const interval = setInterval(poll, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleSend = async () => {
     if (!input.trim()) return;
 

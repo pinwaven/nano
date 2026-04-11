@@ -153,6 +153,13 @@ ${Object.entries(bioData.estimated).map(([k, v]) => `- **${k}**: ${v}`).join('\n
 ---
 *First Report generation is currently paused for debugging.*
                 `;
+
+                // Save to notifications for polling
+                await pool.query(
+                    'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
+                    [userId, latestBioEntry.id, 'chat_reply', reply, 'pending']
+                );
+
                 response.setStatusCode(200);
                 return response.send(JSON.stringify({ success: true, reply }));
             }
@@ -179,6 +186,12 @@ ${Object.entries(bioData.estimated).map(([k, v]) => `- **${k}**: ${v}`).join('\n
                 reply = `[Simulated] BioAge: ${latestBioEntry?.bio_age || 'N/A'}. Message: "${message}" received.`;
                 console.log(`[${getNowShanghai().toISO()}] Simulated Reply sent.`);
             }
+
+            // Save to notifications for polling
+            await pool.query(
+                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                [userId, 'chat_reply', reply, 'pending']
+            );
 
             response.setStatusCode(200);
             return response.send(JSON.stringify({ success: true, reply }));

@@ -47,6 +47,34 @@ app.post('/chat', async (req, res) => {
     }
 });
 
+// Polling endpoint for Chat Simulator
+app.get('/notifications', async (req, res) => {
+    const { openid } = req.query;
+    const { pool } = require('../src/lib/db');
+
+    try {
+        const query = `
+            SELECT n.id, n.content, n.notification_type 
+            FROM notifications n
+            JOIN users u ON n.user_id = u.id
+            WHERE u.wechat_openid = $1 AND n.status = 'pending'
+            ORDER BY n.sent_at ASC;
+        `;
+        const result = await pool.query(query, [openid]);
+        
+        // Mark as sent so we don't fetch them again
+        if (result.rows.length > 0) {
+            const ids = result.rows.map(r => r.id);
+            await pool.query('UPDATE notifications SET status = $1 WHERE id = ANY($2)', ['sent', ids]);
+        }
+
+        res.json({ success: true, notifications: result.rows });
+    } catch (err) {
+        console.error('Notification Fetch Error:', err);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
 // Questionnaire endpoint
 app.post('/ingest', async (req, res) => {
     console.log(`[Local Dev] Received user data on /ingest`);
