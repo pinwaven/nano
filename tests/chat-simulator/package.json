@@ -1,6 +1,7 @@
 {
-  "name": "nano-wechat-simulator",
+  "name": "nano-chat-simulator",
   "version": "1.0.0",
+  "description": "Simulates WeChat and other chat interfaces for Nano AI testing",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

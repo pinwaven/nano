@@ -47,7 +47,7 @@ function App() {
 
   return (
     <>
-      <div className="header">Nano AI</div>
+      <div className="header">Nano Chat Simulator</div>
       <div className="chat-container">
         {messages.map(msg => (
           <div key={msg.id} className={`message-bubble message-${msg.role}`}>
