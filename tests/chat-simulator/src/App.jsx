@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 
-const API_URL = 'http://localhost:3000'; // Default local FC worker port
+const API_URL = '/api'; // Use Vite proxy to localhost:3000
 
 function App() {
   const [messages, setMessages] = useState([
