@@ -33,6 +33,34 @@ CREATE TABLE IF NOT EXISTS biomarkers (
 CREATE INDEX idx_biomarkers_user_id_tested_at ON biomarkers(user_id, tested_at DESC);
 CREATE INDEX idx_biomarkers_test_type ON biomarkers(test_type);
 
+-- Nutrition Plans (14-day blocks)
+CREATE TABLE IF NOT EXISTS nutrition_plans (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    biomarker_scan_id INTEGER, -- Link to the analysis that generated this plan
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    goal TEXT, -- e.g., 'Energy Boost', 'Recovery', 'Sleep Quality'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Nutrition Schedules (Specific "Waven Dots" receipts for each day/time)
+CREATE TABLE IF NOT EXISTS nutrition_schedules (
+    id SERIAL PRIMARY KEY,
+    plan_id INTEGER REFERENCES nutrition_plans(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    scheduled_date DATE NOT NULL,
+    slot_name TEXT NOT NULL, -- e.g., 'morning_cup', 'evening_cup'
+    recipe JSONB NOT NULL, -- e.g., {"dots": {"vitamin_c": 5, "magnesium": 2}, "benefit": "focus"}
+    is_taken BOOLEAN DEFAULT FALSE,
+    taken_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for plan lookups
+CREATE INDEX idx_nutrition_plans_user_id ON nutrition_plans(user_id);
+CREATE INDEX idx_nutrition_schedules_user_date ON nutrition_schedules(user_id, scheduled_date);
+
 -- Scan Logs (Track scanner activity)
 CREATE TABLE IF NOT EXISTS scans (
     id SERIAL PRIMARY KEY,
