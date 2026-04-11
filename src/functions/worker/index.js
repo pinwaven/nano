@@ -1,9 +1,10 @@
 const { pool } = require('../../lib/db');
 const { getNowShanghai, calculateAge } = require('../../lib/time-utils');
 const { BiomarkerEstimator } = require('../../lib/estimator/BiomarkerEstimator');
+const { BioAgeCalculator } = require('../../lib/bioage/BioAgeCalculator');
 
 /**
- * Nano User Ingestion & Biomarker Estimation Handler
+ * Nano User Ingestion, Biomarker Estimation & Bio-Age Calculation Handler
  */
 exports.handler = async (request, response, context) => {
     try {
@@ -40,7 +41,7 @@ exports.handler = async (request, response, context) => {
         const user = userResult.rows[0];
         const userId = user.id;
 
-        // 2. Handle Biomarkers with Estimation (for Kino chip or other tests)
+        // 2. Handle Biomarkers with Estimation and BioAge Calculation
         if (test_data) {
             const age = calculateAge(user.birth_date);
             
@@ -50,30 +51,43 @@ exports.handler = async (request, response, context) => {
                 Height: user.bio_data.height
             };
 
-            // Use the Estimator to fill in any missing values
+            // a. Estimation Phase (actual + estimated)
             const estimator = new BiomarkerEstimator(age, test_data, biometrics);
-            const fullReport = estimator.generateReport();
+            const estimationReport = estimator.generateReport();
             
-            // Merge actual results with estimated ones
+            // b. BioAge Calculation Phase
+            const bioAgeCalc = new BioAgeCalculator();
+            const bioAgeReport = bioAgeCalc.calculateBioAge(age, {
+                hsCRP: estimationReport.BiomarkerValues.hsCRP,
+                IL6: estimationReport.BiomarkerValues.IL6,
+                GA: estimationReport.BiomarkerValues.GA,
+                CD38: estimationReport.BiomarkerValues.CD38,
+                GDF15: estimationReport.BiomarkerValues.GDF15,
+                CystatinC: estimationReport.BiomarkerValues.CystatinC
+            });
+
+            // c. Storage Phase
             const finalData = {
                 actual: test_data,
-                estimated: fullReport.BiomarkerValues,
-                context: fullReport.ClinicalContext
+                estimated: estimationReport.BiomarkerValues,
+                context: estimationReport.ClinicalContext,
+                bioage_profile: bioAgeReport
             };
 
             const biomarkerQuery = `
-                INSERT INTO biomarkers (user_id, test_type, data, tested_at)
-                VALUES ($1, $2, $3, $4);
+                INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at)
+                VALUES ($1, $2, $3, $4, $5);
             `;
             
             await pool.query(biomarkerQuery, [
                 userId,
                 test_type || 'kino_chip',
                 JSON.stringify(finalData),
+                bioAgeReport.BioAge,
                 tested_at || new Date().toISOString()
             ]);
             
-            console.log(`[${getNowShanghai().toISO()}] Biomarker report (actual + estimated) added for user ${userId}`);
+            console.log(`[${getNowShanghai().toISO()}] BioAge: ${bioAgeReport.BioAge} calculated for user ${userId}`);
         }
 
         console.log(`[${getNowShanghai().toISO()}] User ${openid} profile updated, ID: ${userId}`);
