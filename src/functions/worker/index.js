@@ -97,11 +97,11 @@ exports.handler = async (request, response, context) => {
             const scanId = latestBioEntry.id;
             console.log(`[${getNowShanghai().toISO()}] BioAge: ${bioAgeReport.BioAge} calculated for user ${userId}`);
 
-            // 3. Trigger "First Report" Generation if this is the user's first completed biomarker test
-            const checkFirstQuery = `SELECT COUNT(*) FROM biomarkers WHERE user_id = $1`;
-            const checkFirstResult = await pool.query(checkFirstQuery, [userId]);
+            // 3. Trigger "First Report" Generation if not already generated
+            const checkReportQuery = `SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND notification_type = 'biological_report'`;
+            const checkReportResult = await pool.query(checkReportQuery, [userId]);
             
-            if (parseInt(checkFirstResult.rows[0].count) === 1) {
+            if (parseInt(checkReportResult.rows[0].count) === 0) {
                 console.log(`[${getNowShanghai().toISO()}] Generating First Report for user ${userId}...`);
                 const reportMarkdown = await runFirstReportWorkflow({
                     user_profile: user,
@@ -114,13 +114,15 @@ exports.handler = async (request, response, context) => {
                     VALUES ($1, $2, 'biological_report', $3, 'pending');
                 `;
                 await pool.query(reportInsertQuery, [userId, scanId, reportMarkdown]);
-                console.log(`[${getNowShanghai().toISO()}] First Report generated and stored for user ${userId}`);
+                console.log(`[${getNowShanghai().toISO()}] First Report generated and stored.`);
+            } else {
+                console.log(`[${getNowShanghai().toISO()}] User ${userId} already has a report. Skipping generation.`);
             }
         }
 
         // 4. Handle Interactive Chat Replies
         if (message) {
-            console.log(`[${getNowShanghai().toISO()}] Chat message from ${openid}: ${message}`);
+            console.log(`[${getNowShanghai().toISO()}] Chat message from ${openid}: "${message}"`);
             
             // Get latest biomarkers if not just added
             if (!latestBioEntry) {
@@ -148,12 +150,14 @@ exports.handler = async (request, response, context) => {
                         ],
                     });
                     reply = completion.choices[0].message.content;
+                    console.log(`[${getNowShanghai().toISO()}] AI Reply: ${reply.substring(0, 50)}...`);
                 } catch (llmErr) {
                     console.error('LLM Error:', llmErr.message);
                     reply = `I can see your BioAge is ${latestBioEntry?.bio_age || 'N/A'}. Let me know what specific questions you have!`;
                 }
             } else {
                 reply = `[Simulated] BioAge: ${latestBioEntry?.bio_age || 'N/A'}. Message: "${message}" received.`;
+                console.log(`[${getNowShanghai().toISO()}] Simulated Reply sent.`);
             }
 
             response.setStatusCode(200);
