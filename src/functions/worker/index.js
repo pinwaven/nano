@@ -116,6 +116,21 @@ exports.handler = async (request, response, context) => {
             }
         }
 
+        // 4. Handle Interactive Chat Simulation
+        if (body.message) {
+            console.log(`[${getNowShanghai().toISO()}] Interactive message from ${openid}: ${body.message}`);
+            
+            // For now, return a placeholder analysis based on the latest data
+            const latestBio = await pool.query('SELECT bio_age FROM biomarkers WHERE user_id = $1 ORDER BY tested_at DESC LIMIT 1', [userId]);
+            const bioAge = latestBio.rows[0]?.bio_age || 'N/A';
+
+            response.setStatusCode(200);
+            return response.send(JSON.stringify({ 
+                success: true, 
+                reply: `Based on your latest analysis, your BioAge is **${bioAge}**. I am currently monitoring your inflammation levels (ILI).` 
+            }));
+        }
+
         console.log(`[${getNowShanghai().toISO()}] User ${openid} profile updated, ID: ${userId}`);
 
         response.setStatusCode(200);
