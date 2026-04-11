@@ -1,0 +1,36 @@
+edition: 3.0.0
+name: nano-ai
+access: default
+
+vars:
+  region: cn-shanghai
+
+resources:
+  dispatcher:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-dispatcher
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 128
+      timeout: 60
+      code: ./src/functions/dispatcher
+      triggers:
+        - triggerName: cron-scanner
+          triggerType: timer
+          triggerConfig:
+            payload: ""
+            cronExpression: "CRON_TZ=Asia/Shanghai 0 0 9 * * *" # Example: 9 AM daily
+            enable: true
+
+  worker:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-worker
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 512
+      timeout: 300
+      code: ./src/functions/worker
