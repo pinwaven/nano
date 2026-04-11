@@ -10,12 +10,15 @@ function App() {
     setStatus('Analyzing...');
 
     try {
+      // Generate a random hsCRP between 0.2 and 3.5
+      const randomCRP = parseFloat((Math.random() * (3.5 - 0.2) + 0.2).toFixed(2));
+
       // Simulate a Kino chip test with ONLY hsCRP
       const testData = {
         openid: 'test_user_macos',
         test_type: 'kino_chip',
         test_data: {
-          hsCRP: 1.2
+          hsCRP: randomCRP
           // All other 5 biomarkers are missing, 
           // backend will estimate them!
         },
