@@ -10,6 +10,10 @@ CREATE TABLE IF NOT EXISTS users (
     wechat_openid TEXT UNIQUE NOT NULL,
     nickname TEXT,
     avatar_url TEXT,
+    height FLOAT, -- Height in cm
+    weight FLOAT, -- Weight in kg
+    gender TEXT,
+    birth_date DATE,
     preferences JSONB DEFAULT '{}'::jsonb, -- AI persona, interest tags, etc.
     last_scanned_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

@@ -34,3 +34,9 @@ resources:
       memorySize: 512
       timeout: 300
       code: ./src/functions/worker
+      triggers:
+        - triggerName: http-webhook
+          triggerType: http
+          triggerConfig:
+            authType: anonymous # Secure this later
+            methods: ["POST"]
