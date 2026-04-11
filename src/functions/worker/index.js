@@ -110,7 +110,7 @@ exports.handler = async (request, response, context) => {
                 });
 
                 const reportInsertQuery = `
-                    INSERT INTO notifications (user_id, scan_id, notification_type, content, status)
+                    INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status)
                     VALUES ($1, $2, 'biological_report', $3, 'pending');
                 `;
                 await pool.query(reportInsertQuery, [userId, scanId, reportMarkdown]);

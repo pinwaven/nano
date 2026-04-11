@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     scan_id INTEGER REFERENCES scans(id) ON DELETE SET NULL,
+    biomarker_id INTEGER REFERENCES biomarkers(id) ON DELETE SET NULL,
     notification_type TEXT NOT NULL DEFAULT 'wechat',
     content TEXT NOT NULL,
     status TEXT NOT NULL, -- 'sent', 'failed'
@@ -87,6 +88,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX idx_users_wechat_openid ON users(wechat_openid);
 CREATE INDEX idx_scans_user_id ON scans(user_id);
 CREATE INDEX idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX idx_notifications_biomarker_id ON notifications(biomarker_id);
 
 -- Trigger to update 'updated_at' on users
 CREATE OR REPLACE FUNCTION update_updated_at_column()
