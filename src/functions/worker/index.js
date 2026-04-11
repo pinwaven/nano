@@ -97,7 +97,8 @@ exports.handler = async (request, response, context) => {
             const scanId = latestBioEntry.id;
             console.log(`[${getNowShanghai().toISO()}] BioAge: ${bioAgeReport.BioAge} calculated for user ${userId}`);
 
-            // 3. Trigger "First Report" Generation if not already generated
+            // 3. Trigger "First Report" Generation (DISABLED for debugging)
+            /*
             const checkReportQuery = `SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND notification_type = 'biological_report'`;
             const checkReportResult = await pool.query(checkReportQuery, [userId]);
             
@@ -115,9 +116,8 @@ exports.handler = async (request, response, context) => {
                 `;
                 await pool.query(reportInsertQuery, [userId, scanId, reportMarkdown]);
                 console.log(`[${getNowShanghai().toISO()}] First Report generated and stored.`);
-            } else {
-                console.log(`[${getNowShanghai().toISO()}] User ${userId} already has a report. Skipping generation.`);
             }
+            */
         }
 
         // 4. Handle Interactive Chat Replies
@@ -136,6 +136,26 @@ exports.handler = async (request, response, context) => {
                 bioage_profile: latestBioEntry?.data?.bioage_profile || {},
                 message: message
             };
+
+            // If message is 'biomarkers', return the calculated data directly for debugging
+            if (message === 'biomarkers' && latestBioEntry) {
+                const bioData = latestBioEntry.data;
+                const reply = `
+### 🧬 Biomarker Analysis Complete
+**BioAge**: ${latestBioEntry.bio_age}
+
+#### Actual (from Kino):
+${Object.entries(bioData.actual).map(([k, v]) => `- **${k}**: ${v}`).join('\n')}
+
+#### Estimated (AI):
+${Object.entries(bioData.estimated).map(([k, v]) => `- **${k}**: ${v}`).join('\n')}
+
+---
+*First Report generation is currently paused for debugging.*
+                `;
+                response.setStatusCode(200);
+                return response.send(JSON.stringify({ success: true, reply }));
+            }
 
             // Call Aliyun DashScope for an intelligent reply
             let reply = "I am processing your data. How can I assist you further?";
