@@ -8,7 +8,7 @@ const { getNowShanghai } = require('../../lib/time-utils');
 exports.handler = async (request, response, context) => {
     try {
         const body = JSON.parse(request.body.toString());
-        const { openid, nickname, height, weight, gender, birth_date, ...rest } = body;
+        const { openid, nickname, gender, birth_date, ...rest } = body;
 
         if (!openid) {
             response.setStatusCode(400);
@@ -16,16 +16,14 @@ exports.handler = async (request, response, context) => {
         }
 
         const query = `
-            INSERT INTO users (wechat_openid, nickname, height, weight, gender, birth_date, preferences)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO users (wechat_openid, nickname, gender, birth_date, bio_data)
+            VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (wechat_openid) 
             DO UPDATE SET 
                 nickname = EXCLUDED.nickname,
-                height = EXCLUDED.height,
-                weight = EXCLUDED.weight,
                 gender = EXCLUDED.gender,
                 birth_date = EXCLUDED.birth_date,
-                preferences = users.preferences || EXCLUDED.preferences,
+                bio_data = users.bio_data || EXCLUDED.bio_data, -- Deep merge
                 updated_at = CURRENT_TIMESTAMP
             RETURNING id;
         `;
@@ -33,11 +31,9 @@ exports.handler = async (request, response, context) => {
         const result = await pool.query(query, [
             openid, 
             nickname, 
-            height, 
-            weight, 
             gender, 
             birth_date, 
-            JSON.stringify(rest)
+            JSON.stringify(rest) // All other fields (height, weight, body_fat, etc.) go into bio_data
         ]);
 
         console.log(`[${getNowShanghai().toISO()}] User ${openid} upserted, ID: ${result.rows[0].id}`);
