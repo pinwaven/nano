@@ -16,10 +16,14 @@ function createWindow() {
 
   const devUrl = 'http://localhost:5175';
 
+  win.loadFile(path.join(__dirname, 'index.html'));
+
   const pollServer = () => {
     http.get(devUrl, (res) => {
+      console.log('PHM Dev server ready, loading URL...');
       win.loadURL(devUrl);
     }).on('error', (e) => {
+      console.log('PHM: Waiting for dev server...');
       setTimeout(pollServer, 1000);
     });
   };
