@@ -15,6 +15,8 @@ function createWindow() {
 
   const devUrl = 'http://localhost:5173';
 
+  win.loadFile(path.join(__dirname, 'index.html'));
+
   // Function to poll the dev server until it's ready
   const pollServer = () => {
     http.get(devUrl, (res) => {

@@ -1,13 +1,18 @@
 :root {
-  --wechat-bg: #f5f5f5;
-  --wechat-green: #95ec69;
-  --wechat-white: #ffffff;
-  --wechat-border: #e7e7e7;
+  --bg: #f5f5f5;
+  --green: #95ec69;
+  --green-dark: #07c160;
+  --white: #ffffff;
+  --border: #e7e7e7;
+  --text: #111;
+  --text-muted: #888;
 }
 
+* { box-sizing: border-box; }
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background-color: var(--wechat-bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
   height: 100vh;
   margin: 0;
   overflow: hidden;
@@ -17,69 +22,201 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  width: 100vw;
 }
 
+/* ── Login screen ── */
+.login-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 8px;
+  background: var(--bg);
+  padding: 40px 24px;
+}
+
+.login-logo {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--green-dark);
+  margin-bottom: 4px;
+}
+
+.login-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+.login-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 260px;
+}
+
+.login-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  font-size: 15px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.login-btn:hover { background: #eee; }
+
+.login-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--green-dark);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.login-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ── Header ── */
+.header {
+  height: 52px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  -webkit-app-region: drag;
+}
+
+.back-btn {
+  -webkit-app-region: no-drag;
+  background: none;
+  border: none;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--green-dark);
+  cursor: pointer;
+  padding: 0 8px;
+  margin-top: -2px;
+}
+
+.header-title {
+  flex: 1;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.header-spacer { width: 44px; }
+
+/* push title past the macOS traffic lights (~70px) */
+.header { padding-left: 76px; }
+
+/* ── Chat ── */
 .chat-container {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 16px 14px;
   display: flex;
   flex-direction: column;
-  gap: 15px;
-  scroll-behavior: smooth;
+  gap: 10px;
 }
 
 .message-bubble {
   max-width: 75%;
-  padding: 10px 14px;
-  border-radius: 6px;
+  padding: 9px 13px;
+  border-radius: 8px;
   font-size: 15px;
   line-height: 1.5;
   position: relative;
-  word-wrap: break-word;
+  word-break: break-word;
 }
+
+.message-bubble p { margin: 0; }
+.message-bubble p + p { margin-top: 6px; }
 
 .message-user {
   align-self: flex-end;
-  background-color: var(--wechat-green);
+  background: var(--green);
   color: #000;
 }
 
 .message-user::after {
   content: "";
   position: absolute;
-  right: -8px;
+  right: -7px;
   top: 10px;
-  border-left: 8px solid var(--wechat-green);
-  border-top: 6px solid transparent;
-  border-bottom: 6px solid transparent;
+  border-left: 7px solid var(--green);
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
 }
 
 .message-ai {
   align-self: flex-start;
-  background-color: var(--wechat-white);
+  background: var(--white);
   color: #000;
-  border: 1px solid var(--wechat-border);
+  border: 1px solid var(--border);
 }
 
 .message-ai::after {
   content: "";
   position: absolute;
-  left: -9px;
+  left: -8px;
   top: 10px;
-  border-right: 8px solid var(--wechat-white);
-  border-top: 6px solid transparent;
-  border-bottom: 6px solid transparent;
+  border-right: 7px solid var(--white);
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
 }
 
+/* ── Typing indicator ── */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 16px;
+}
+
+.typing-indicator span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #bbb;
+  animation: bounce 1.2s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-5px); }
+}
+
+/* ── Input area ── */
 .input-area {
-  height: 100px;
-  background-color: #f7f7f7;
-  border-top: 1px solid var(--wechat-border);
-  padding: 10px;
+  background: #f7f7f7;
+  border-top: 1px solid var(--border);
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
+  min-height: 90px;
 }
 
 .input-area textarea {
@@ -87,38 +224,31 @@ body {
   background: none;
   border: none;
   resize: none;
-  font-size: 16px;
-  padding: 5px;
+  font-size: 15px;
+  font-family: inherit;
+  padding: 4px 6px;
   outline: none;
+  color: var(--text);
 }
+
+.input-area textarea:disabled { opacity: 0.5; }
 
 .input-area .toolbar {
   display: flex;
   justify-content: flex-end;
-  padding-top: 5px;
+  padding-top: 4px;
 }
 
 .send-btn {
-  background-color: #07c160;
+  background: var(--green-dark);
   color: white;
   border: none;
-  padding: 6px 18px;
-  border-radius: 4px;
+  padding: 6px 20px;
+  border-radius: 5px;
   font-size: 14px;
   cursor: pointer;
+  transition: opacity 0.15s;
 }
 
-.send-btn:active {
-  background-color: #06ad56;
-}
-
-.header {
-  height: 60px;
-  background-color: var(--wechat-bg);
-  border-bottom: 1px solid var(--wechat-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 500;
-  -webkit-app-region: drag;
-}
+.send-btn:disabled { opacity: 0.4; cursor: default; }
+.send-btn:not(:disabled):active { background: #06ad56; }
