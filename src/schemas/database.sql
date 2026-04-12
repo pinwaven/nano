@@ -72,6 +72,16 @@ CREATE TABLE IF NOT EXISTS nutrition_schedules (
 CREATE INDEX idx_nutrition_plans_user_id ON nutrition_plans(user_id);
 CREATE INDEX idx_nutrition_schedules_user_date ON nutrition_schedules(user_id, scheduled_date);
 
+-- Cartridges Table (Waven Dots individual cartridges)
+CREATE TABLE IF NOT EXISTS cartridges (
+    id INTEGER PRIMARY KEY, -- 1 to 18
+    name TEXT NOT NULL,
+    is_isolate BOOLEAN DEFAULT FALSE,
+    ingredients JSONB, -- List of compounds in this cartridge
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Scan Logs (Track scanner activity)
 CREATE TABLE IF NOT EXISTS scans (
     id SERIAL PRIMARY KEY,
