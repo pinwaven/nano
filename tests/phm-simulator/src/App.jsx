@@ -15,7 +15,7 @@ function App() {
     try {
       const response = await axios.get('/api/customers');
       setCustomers(response.data.customers);
-      if (response.data.customers.length > 0) {
+      if (response.data.customers.length > 0 && !selectedUser) {
         setSelectedUser(response.data.customers[0]);
       }
     } catch (err) {
@@ -33,79 +33,78 @@ function App() {
         openid: selectedUser.wechat_openid,
         instruction: instruction
       });
-      alert('Instruction sent to user chat!');
       setInstruction('');
+      console.log('Instruction sent successfully');
     } catch (err) {
-      alert('Failed to send instruction.');
+      console.error('Failed to send instruction');
     }
   };
 
-  if (loading) return <div style={{padding: 20}}>Loading PHM App...</div>;
+  if (loading) return <div style={{padding: 40, textAlign: 'center'}}>Loading PHM Mobile...</div>;
 
   return (
     <>
-      <div className="sidebar">
-        <div className="sidebar-header">PHM Dashboard</div>
-        <div className="customer-list">
+      <div className="mobile-header">
+        <div className="header-title">PHM Mobile</div>
+        <div className="customer-selector">
           {customers.map(c => (
             <div 
               key={c.id} 
-              className={`customer-item ${selectedUser?.id === c.id ? 'active' : ''}`}
+              className={`customer-pill ${selectedUser?.id === c.id ? 'active' : ''}`}
               onClick={() => setSelectedUser(c)}
             >
-              {c.nickname || 'Anonymous'}
+              {c.nickname || 'User ' + c.id}
             </div>
           ))}
         </div>
       </div>
 
-      <div className="main-content">
-        <div className="header">
-          <span>Customer: {selectedUser?.nickname}</span>
-          <button onClick={fetchCustomers} style={{fontSize: 12}}>Refresh Data</button>
-        </div>
-
-        <div className="dashboard">
-          <div className="left-panel">
-            <div className="card">
-              <div className="card-title">Latest Bio-Analysis</div>
-              <div className="metric-grid">
-                <div className="metric-box">
-                  <div className="metric-label">Biological Age</div>
-                  <div className="metric-value">{selectedUser?.bio_age || 'N/A'}</div>
-                </div>
-                <div className="metric-box">
-                  <div className="metric-label">Chronological Age</div>
-                  <div className="metric-value">{selectedUser?.chrono_age || 'N/A'}</div>
-                </div>
-              </div>
-              
-              <div style={{marginTop: 20}}>
-                <div className="card-title">Biomarker Values</div>
-                <pre style={{background: '#f1f1f1', padding: 10, borderRadius: 4, fontSize: 12}}>
-                  {JSON.stringify(selectedUser?.bio_data?.actual || {}, null, 2)}
-                </pre>
-              </div>
-            </div>
+      <div className="scroll-content">
+        <div className="mobile-card">
+          <div className="section-title">Latest Metrics</div>
+          <div className="metric-row">
+            <span className="metric-label">Biological Age</span>
+            <span className="metric-value">{selectedUser?.bio_age || '--'}</span>
           </div>
-
-          <div className="right-panel">
-            <div className="card">
-              <div className="card-title">Send Coach Instruction</div>
-              <div className="instruction-box">
-                <textarea 
-                  placeholder="Type advice or instructions for the user (e.g., 'Please increase water intake based on your GDF15 levels')..."
-                  value={instruction}
-                  onChange={(e) => setInstruction(e.target.value)}
-                />
-                <button className="send-btn" onClick={handleSendInstruction}>Send to Nano Chat</button>
-              </div>
-            </div>
+          <div className="metric-row">
+            <span className="metric-label">Chronological Age</span>
+            <span className="metric-value">{selectedUser?.chrono_age || '--'}</span>
           </div>
         </div>
+
+        <div className="mobile-card">
+          <div className="section-title">Biomarkers Detail</div>
+          {selectedUser?.bio_data?.actual ? (
+            Object.entries(selectedUser.bio_data.actual).map(([key, val]) => (
+              <div key={key} className="metric-row">
+                <span className="metric-label">{key}</span>
+                <span className="metric-value" style={{color: '#333', fontSize: '15px'}}>{val}</span>
+              </div>
+            ))
+          ) : (
+            <div style={{fontSize: 14, color: '#999'}}>No test data yet.</div>
+          )}
+        </div>
+
+        <div className="mobile-card">
+          <div className="section-title">Coach Advice</div>
+          <textarea 
+            className="instruction-input"
+            placeholder="Type your advice for the customer here..."
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="action-bar">
+        <button className="send-btn-mobile" onClick={handleSendInstruction}>
+          Send Instruction
+        </button>
       </div>
     </>
   );
 }
 
 export default App;
+EOF

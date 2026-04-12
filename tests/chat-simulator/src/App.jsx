@@ -23,8 +23,9 @@ function App() {
       try {
         const response = await axios.get(`${API_URL}/notifications?openid=test_user_macos`);
         if (response.data.notifications?.length > 0) {
+          console.log('Received new notifications:', response.data.notifications.length);
           const newMsgs = response.data.notifications.map(n => ({
-            id: Date.now() + n.id,
+            id: Date.now() + Math.random(), // Unique ID
             role: 'ai',
             content: n.content
           }));

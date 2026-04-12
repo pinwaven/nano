@@ -4,9 +4,10 @@ const http = require('http');
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1000,
-    height: 700,
+    width: 375,
+    height: 812,
     titleBarStyle: 'hiddenInset',
+    resizable: true, // Keep resizable for testing but start at mobile size
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -24,6 +25,9 @@ function createWindow() {
   };
 
   pollServer();
+
+  // Open DevTools for debugging
+  win.webContents.openDevTools({ mode: 'detach' });
 }
 
 app.whenReady().then(createWindow);
