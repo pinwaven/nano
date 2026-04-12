@@ -5,9 +5,19 @@
 -- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Users Table
+CREATE TABLE IF NOT EXISTS phms (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE,
+    phone TEXT,
+    avatar_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     wechat_openid TEXT UNIQUE NOT NULL,
+    phm_id INTEGER REFERENCES phms(id) ON DELETE SET NULL, -- Link to health coach
     nickname TEXT,
     avatar_url TEXT,
     gender TEXT,
