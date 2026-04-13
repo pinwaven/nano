@@ -27,16 +27,17 @@ exports.handler = async (request, response, context) => {
 
         // 1. Upsert User Profile
         const userQuery = `
-            INSERT INTO users (wechat_openid, nickname, gender, birth_date, bio_data)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO users (wechat_openid, nickname, gender, birth_date, language, bio_data)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (wechat_openid) 
             DO UPDATE SET 
                 nickname = COALESCE(EXCLUDED.nickname, users.nickname),
                 gender = COALESCE(EXCLUDED.gender, users.gender),
                 birth_date = COALESCE(EXCLUDED.birth_date, users.birth_date),
+                language = COALESCE(EXCLUDED.language, users.language),
                 bio_data = users.bio_data || EXCLUDED.bio_data,
                 updated_at = CURRENT_TIMESTAMP
-            RETURNING id, birth_date, bio_data, nickname;
+            RETURNING id, birth_date, bio_data, nickname, language;
         `;
 
         const userResult = await pool.query(userQuery, [
@@ -44,6 +45,7 @@ exports.handler = async (request, response, context) => {
             nickname, 
             gender, 
             birth_date, 
+            body.language || 'zh', // Ingest language from body if provided
             JSON.stringify(rest)
         ]);
 

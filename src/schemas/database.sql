@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_url TEXT,
     gender TEXT,
     birth_date DATE,
+    language TEXT DEFAULT 'zh', -- Preferred language: 'zh' or 'en'
     bio_data JSONB DEFAULT '{}'::jsonb, -- Flexible storage for height, weight, body_fat, etc.
     preferences JSONB DEFAULT '{}'::jsonb, -- AI persona, interest tags, etc.
     last_scanned_at TIMESTAMP WITH TIME ZONE,
