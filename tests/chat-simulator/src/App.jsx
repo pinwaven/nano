@@ -50,11 +50,13 @@ function App() {
     setInput('');
     setTyping(true);
     try {
-      const r = await axios.post(`${API_URL}/chat`, { openid: user.wechat_openid, message: text });
-      setMessages(prev => [...prev, { id: Date.now(), role: 'ai', content: r.data.reply || 'Analysis complete.' }]);
+      await axios.post(`${API_URL}/chat`, { openid: user.wechat_openid, message: text });
+      // Removed: setMessages(prev => [...prev, { id: Date.now(), role: 'ai', content: r.data.reply || 'Analysis complete.' }]);
     } catch {
       setMessages(prev => [...prev, { id: Date.now(), role: 'ai', content: 'Could not reach the backend. Is it running?' }]);
     } finally {
+      // Keep typing indicator until polling picks up the message if you want, 
+      // but for simplicity we'll just stop it here.
       setTyping(false);
     }
   };

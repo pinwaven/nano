@@ -6,6 +6,7 @@ const { runWorkflow: runFirstReportWorkflow } = require('../../lib/reports/workf
 const OpenAI = require('openai');
 const systemChatTemplate = require('../../../prompts/systemChat');
 const systemNutritionTemplate = require('../../../prompts/systemNutrition');
+const strings = require('../../../prompts/strings');
 
 // Initialize OpenAI client for DashScope
 const getLlmClient = () => new OpenAI({
@@ -161,14 +162,12 @@ exports.handler = async (request, response, context) => {
 
             // If message is 'biomarkers', we already sent the plan/report above, so we can just confirm
             if (message === 'biomarkers' && latestBioEntry) {
-                const isZh = user.language === 'zh';
-                const reply = isZh 
-                    ? `分析完成！您的生物年龄 (BioAge) 为 **${latestBioEntry.bio_age}**。我已在下方为您生成了 7 天精准营养方案。`
-                    : `Analysis complete! Your BioAge is **${latestBioEntry.bio_age}**. I have generated your 7-day precision nutrition plan below.`;
+                const lang = user.language === 'zh' ? 'zh' : 'en';
+                const reply = strings.analysis_complete[lang](latestBioEntry.bio_age);
                 
                 await pool.query('INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)', [userId, 'chat_reply', reply, 'pending']);
                 response.setStatusCode(200);
-                return response.send(JSON.stringify({ success: true, reply }));
+                return response.send(JSON.stringify({ success: true }));
             }
 
             if (process.env.DASHSCOPE_API_KEY) {
@@ -184,10 +183,17 @@ exports.handler = async (request, response, context) => {
                     const reply = completion.choices[0].message.content;
                     await pool.query('INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)', [userId, 'chat_reply', reply, 'pending']);
                     response.setStatusCode(200);
-                    return response.send(JSON.stringify({ success: true, reply }));
+                    return response.send(JSON.stringify({ success: true }));
                 } catch (llmErr) {
                     console.error('LLM Error:', llmErr.message);
+                    const lang = user.language === 'zh' ? 'zh' : 'en';
+                    const reply = strings.llm_error_fallback[lang](latestBioEntry?.bio_age || 'N/A');
+                    await pool.query('INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)', [userId, 'chat_reply', reply, 'pending']);
                 }
+            } else {
+                const lang = user.language === 'zh' ? 'zh' : 'en';
+                const reply = strings.processing_data[lang];
+                await pool.query('INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)', [userId, 'chat_reply', reply, 'pending']);
             }
         }
 
