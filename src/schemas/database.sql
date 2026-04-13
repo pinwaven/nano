@@ -75,6 +75,7 @@ CREATE INDEX idx_nutrition_schedules_user_date ON nutrition_schedules(user_id, s
 -- Dots Table (Waven Dots individual cartridges)
 CREATE TABLE IF NOT EXISTS dots (
     id INTEGER PRIMARY KEY, -- 1 to 18
+    key_name TEXT UNIQUE NOT NULL, -- DOT01 to DOT18
     name TEXT NOT NULL,
     name_zh TEXT, -- Chinese Name
     is_isolate BOOLEAN DEFAULT FALSE,
