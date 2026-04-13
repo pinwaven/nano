@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS dots (
     id INTEGER PRIMARY KEY, -- 1 to 18
     name TEXT NOT NULL,
     is_isolate BOOLEAN DEFAULT FALSE,
-    ingredients JSONB, -- List of compounds in this cartridge
+    color TEXT, -- Assigned Unique Color
+    ingredients JSONB, -- Breakdown of 16 mg Active Payload: [{"name": "...", "mg": 16}]
     description TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
