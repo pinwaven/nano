@@ -67,10 +67,10 @@ resources:
           triggerType: http
           triggerConfig:
             authType: anonymous
-            methods: ["POST"]
+            methods: ["POST", "GET"]
         - triggerName: eb-trigger
           triggerType: eventbridge
           triggerConfig:
             eventSourceConfig:
               eventSourceType: Default
-            eventRuleFilterPattern: '{"source":["nano.dispatcher"]}'
+            eventRuleFilterPattern: '{"source":["acs.dispatcher"]}'

@@ -6,8 +6,8 @@ export default defineConfig(({ mode }) => {
   // Load env file from the project root (../../.env)
   const env = loadEnv(mode, path.resolve(__dirname, '../../'), '');
   
-  // Default to local dev, but allow override via VITE_KINO_API_TARGET
-  const target = env.VITE_KINO_API_TARGET || 'http://localhost:3000';
+  // Default to local dev, but allow override via NANO_API_TARGET
+  const target = env.NANO_API_TARGET || 'http://localhost:3000';
 
   console.log(`[Kino Simulator] Proxying /api to: ${target}`);
 

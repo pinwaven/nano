@@ -9,7 +9,7 @@ const { v4: uuidv4 } = require('uuid');
  * Nano Dispatcher (Aliyun FC 3.0 Cron Trigger)
  */
 exports.handler = async (event, context) => {
-    console.log(`[${getNowShanghai().toISO()}] Dispatcher started scanning for active users...`);
+    console.log(`[${getNowShanghai().toISO()}] Dispatcher started scanning for active users in region: ${context.region}...`);
 
     // Initialize EventBridge Client
     const ebConfig = new OpenApi.Config({
@@ -52,18 +52,20 @@ exports.handler = async (event, context) => {
             // 1. Try EventBridge (Preferred)
             const cloudEvent = new EventBridge.CloudEvent({
                 id: uuidv4(),
-                source: 'nano.dispatcher',
+                source: 'acs.dispatcher',
                 specversion: '1.0',
                 type: 'nutrition.topup',
                 subject: 'user_nutrition_needed',
                 datacontenttype: 'application/json',
                 data: Buffer.from(JSON.stringify(payload)),
                 time: new Date().toISOString(),
-                extensions: {}
+                extensions: {
+                    aliyuneventbusname: 'default'
+                }
             });
 
             try {
-                await ebClient.putEvents([cloudEvent], 'default');
+                await ebClient.putEvents([cloudEvent]);
                 console.log(`[EventBridge] Published event for ${user.wechat_openid}`);
             } catch (ebErr) {
                 console.warn(`[EventBridge] Failed, falling back to HTTP: ${ebErr.message}`);

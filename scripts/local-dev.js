@@ -31,7 +31,8 @@ app.post('/chat', async (req, res) => {
         body: Buffer.from(JSON.stringify(req.body)),
         headers: req.headers,
         method: req.method,
-        query: req.query
+        query: req.query,
+        path: req.path
     };
     const fcResponse = {
         setStatusCode: (code) => res.status(code),
