@@ -51,16 +51,21 @@ async function callLLM(systemPrompt, userMessage) {
 /**
  * Run the full NanoFirstReport workflow.
  *
- * @param {object} input  The user profile + biomarker data (passed as-is to both LLMs)
+ * @param {object} input  The user profile + biomarker data
  * @returns {Promise<string>}  The final merged Markdown report
  */
 async function runWorkflow(input) {
   const userMessage = typeof input === 'string' ? input : JSON.stringify(input, null, 2);
+  const userProfile = input.user_profile || {};
+
+  // Generate language-specific system prompts
+  const reportPrompt = typeof systemReport === 'function' ? systemReport(userProfile) : systemReport;
+  const nutritionPrompt = typeof systemNutrition === 'function' ? systemNutrition({ ...userProfile, ...input }) : systemNutrition;
 
   // Nodes 141434 + 1474426: run both LLMs in parallel
   const [report, nutrition] = await Promise.all([
-    callLLM(systemReport, userMessage),
-    callLLM(systemNutrition, userMessage),
+    callLLM(reportPrompt, userMessage),
+    callLLM(nutritionPrompt, userMessage),
   ]);
 
   // Node 192660: stitch nutrition table into the placeholder

@@ -32,11 +32,12 @@ ${JSON.stringify(context.biomarkers, null, 2)}
 
 OUTPUT FORMAT:
 For EACH day, output exactly ONE LINE in this format:
-Month月Day日星期Weekday: 早上 DxxNx DxxNx 晚上 DxxNx DxxNx
+${context.language === 'zh' ? 'Month月Day日星期Weekday: 早上 DxxNx 晚上 DxxNx' : 'Month Day, Weekday: Morning DxxNx Evening DxxNx'}
 
 RULES:
-1. Use Chinese for Month, Day, and Weekday (e.g., 7月2日星期三).
-2. "早上" contains Morning dots, "晚上" contains Evening dots.
+1. LANGUAGE: You MUST output all text (labels, benefits, summary) in ${context.language === 'zh' ? 'Chinese (Simplified)' : 'English'}.
+2. Use ${context.language === 'zh' ? 'Chinese' : 'English'} for Month, Day, and Weekday names.
+3. "早上" or "Morning" contains Morning dots, "晚上" or "Evening" contains Evening dots.
 3. Use the D01-D18 short keys followed by 'x' and the number of dots (e.g., D01x5).
 4. Only include dots with a count > 0.
 5. If hsCRP is high, ensure D04 and D18 are included.

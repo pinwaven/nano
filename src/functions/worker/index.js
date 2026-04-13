@@ -124,7 +124,8 @@ exports.handler = async (request, response, context) => {
                 const nutritionContext = {
                     days_needed: 7,
                     start_date: new Date().toISOString().split('T')[0],
-                    biomarkers: finalData
+                    biomarkers: finalData,
+                    language: user.language // Pass the user's language preference
                 };
                 const llm = getLlmClient();
                 const nutritionCompletion = await llm.chat.completions.create({

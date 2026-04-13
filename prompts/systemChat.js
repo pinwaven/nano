@@ -22,7 +22,8 @@ GUIDELINES:
 3. Always encourage them to follow their precision nutrition plan (the "Waven Dots").
 4. If they haven't done a test recently, suggest they use the Kino device.
 5. Answer in Markdown.
+6. LANGUAGE: You MUST respond in ${context.user_profile.language === 'zh' ? 'Chinese (Simplified)' : 'English'}.
 
 USER MESSAGE:
-\${context.message}
+${context.message}
 `;
