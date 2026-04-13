@@ -5,6 +5,7 @@ const { BioAgeCalculator } = require('../../lib/bioage/BioAgeCalculator');
 const { runWorkflow: runFirstReportWorkflow } = require('../../lib/reports/workflow');
 const OpenAI = require('openai');
 const systemChatTemplate = require('../../../prompts/systemChat');
+const systemNutritionTemplate = require('../../../prompts/systemNutrition');
 
 // Initialize OpenAI client for DashScope
 const getLlmClient = () => new OpenAI({
@@ -13,12 +14,12 @@ const getLlmClient = () => new OpenAI({
 });
 
 /**
- * Nano User Ingestion, Biomarker Estimation, Bio-Age Calculation, First Report & Chat Handler
+ * Nano Worker Handler
  */
 exports.handler = async (request, response, context) => {
     try {
         const body = JSON.parse(request.body.toString());
-        const { openid, nickname, gender, birth_date, test_type, test_data, tested_at, message, ...rest } = body;
+        const { openid, nickname, gender, birth_date, language, test_type, test_data, tested_at, message, ...rest } = body;
 
         if (!openid) {
             response.setStatusCode(400);
@@ -45,7 +46,7 @@ exports.handler = async (request, response, context) => {
             nickname, 
             gender, 
             birth_date, 
-            body.language || 'zh', // Ingest language from body if provided
+            language || 'zh', 
             JSON.stringify(rest)
         ]);
 
@@ -99,38 +100,52 @@ exports.handler = async (request, response, context) => {
             const scanId = latestBioEntry.id;
             console.log(`[${getNowShanghai().toISO()}] BioAge: ${bioAgeReport.BioAge} calculated for user ${userId}`);
 
-            // 3. Trigger "First Report" Generation if not already generated
-            const checkReportQuery = `SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND notification_type = 'biological_report'`;
-            const checkReportResult = await pool.query(checkReportQuery, [userId]);
-            
-            if (parseInt(checkReportResult.rows[0].count) === 0) {
-                console.log(`[${getNowShanghai().toISO()}] Generating First Report for user ${userId}...`);
-                const reportMarkdown = await runFirstReportWorkflow({
-                    user_profile: {
-                        nickname: user.nickname,
-                        gender: user.gender,
-                        age: age
-                    },
-                    biomarker_results: finalData,
-                    bioage_profile: bioAgeReport
-                });
+            // 3. Generate Reports & Plans
+            if (process.env.DASHSCOPE_API_KEY) {
+                // a. Check if First Report is needed
+                const checkReportQuery = `SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND notification_type = 'biological_report'`;
+                const checkReportResult = await pool.query(checkReportQuery, [userId]);
+                
+                if (parseInt(checkReportResult.rows[0].count) === 0) {
+                    console.log(`[${getNowShanghai().toISO()}] Generating First Report for user ${userId}...`);
+                    const reportMarkdown = await runFirstReportWorkflow({
+                        user_profile: { nickname: user.nickname, gender: user.gender, age: age, language: user.language },
+                        biomarker_results: finalData,
+                        bioage_profile: bioAgeReport
+                    });
+                    await pool.query(
+                        'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
+                        [userId, scanId, 'biological_report', reportMarkdown, 'pending']
+                    );
+                }
 
-                const reportInsertQuery = `
-                    INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status)
-                    VALUES ($1, $2, 'biological_report', $3, 'pending');
-                `;
-                await pool.query(reportInsertQuery, [userId, scanId, reportMarkdown]);
-                console.log(`[${getNowShanghai().toISO()}] First Report generated and stored.`);
-            } else {
-                console.log(`[${getNowShanghai().toISO()}] User ${userId} already has a report. Skipping generation.`);
+                // b. Generate immediate 7-day Nutrition Plan update
+                console.log(`[${getNowShanghai().toISO()}] Generating 7-day nutrition plan for user ${userId}...`);
+                const nutritionContext = {
+                    days_needed: 7,
+                    start_date: new Date().toISOString().split('T')[0],
+                    biomarkers: finalData
+                };
+                const llm = getLlmClient();
+                const nutritionCompletion = await llm.chat.completions.create({
+                    model: process.env.MODEL || 'qwen-turbo',
+                    messages: [
+                        { role: 'system', content: systemNutritionTemplate(nutritionContext) },
+                        { role: 'user', content: 'Generate my precision dots recipe.' }
+                    ],
+                });
+                const recipeMarkdown = nutritionCompletion.choices[0].message.content;
+                await pool.query(
+                    'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                    [userId, 'nutrition_plan', recipeMarkdown, 'pending']
+                );
+                console.log(`[${getNowShanghai().toISO()}] Nutrition plan delivered.`);
             }
         }
 
         // 4. Handle Interactive Chat Replies
         if (message) {
             console.log(`[${getNowShanghai().toISO()}] Chat message from ${openid}: "${message}"`);
-            
-            // Get latest biomarkers if not just added
             if (!latestBioEntry) {
                 const latestBio = await pool.query('SELECT data, bio_age FROM biomarkers WHERE user_id = $1 ORDER BY tested_at DESC LIMIT 1', [userId]);
                 latestBioEntry = latestBio.rows[0];
@@ -143,35 +158,14 @@ exports.handler = async (request, response, context) => {
                 message: message
             };
 
-            // If message is 'biomarkers', return the calculated data directly for debugging
+            // If message is 'biomarkers', we already sent the plan/report above, so we can just confirm
             if (message === 'biomarkers' && latestBioEntry) {
-                const bioData = latestBioEntry.data;
-                const reply = `
-### 🧬 Biomarker Analysis Complete
-**BioAge**: ${latestBioEntry.bio_age}
-
-#### Actual (from Kino):
-${Object.entries(bioData.actual).map(([k, v]) => `- **${k}**: ${v}`).join('\n')}
-
-#### Estimated (AI):
-${Object.entries(bioData.estimated).map(([k, v]) => `- **${k}**: ${v}`).join('\n')}
-
----
-*First Report generation is currently paused for debugging.*
-                `;
-
-                // Save to notifications for polling
-                await pool.query(
-                    'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
-                    [userId, latestBioEntry.id, 'chat_reply', reply, 'pending']
-                );
-
+                const reply = `Analysis complete! Your BioAge is **${latestBioEntry.bio_age}**. I have generated your 7-day precision nutrition plan below.`;
+                await pool.query('INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)', [userId, 'chat_reply', reply, 'pending']);
                 response.setStatusCode(200);
                 return response.send(JSON.stringify({ success: true, reply }));
             }
 
-            // Call Aliyun DashScope for an intelligent reply
-            let reply = "I am processing your data. How can I assist you further?";
             if (process.env.DASHSCOPE_API_KEY) {
                 try {
                     const llm = getLlmClient();
@@ -182,74 +176,17 @@ ${Object.entries(bioData.estimated).map(([k, v]) => `- **${k}**: ${v}`).join('\n
                             { role: 'user', content: message }
                         ],
                     });
-                    reply = completion.choices[0].message.content;
-                    console.log(`[${getNowShanghai().toISO()}] AI Reply: ${reply.substring(0, 50)}...`);
+                    const reply = completion.choices[0].message.content;
+                    await pool.query('INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)', [userId, 'chat_reply', reply, 'pending']);
+                    response.setStatusCode(200);
+                    return response.send(JSON.stringify({ success: true, reply }));
                 } catch (llmErr) {
                     console.error('LLM Error:', llmErr.message);
-                    reply = `I can see your BioAge is ${latestBioEntry?.bio_age || 'N/A'}. Let me know what specific questions you have!`;
-                }
-            } else {
-                reply = `[Simulated] BioAge: ${latestBioEntry?.bio_age || 'N/A'}. Message: "${message}" received.`;
-                console.log(`[${getNowShanghai().toISO()}] Simulated Reply sent.`);
-            }
-
-            // Save to notifications for polling
-            await pool.query(
-                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                [userId, 'chat_reply', reply, 'pending']
-            );
-
-            response.setStatusCode(200);
-            return response.send(JSON.stringify({ success: true, reply }));
-        }
-
-        // 5. Handle Nutrition Plan Top-up (7-day rolling window)
-        if (body.trigger_type === 'nutrition_topup') {
-            const { days_needed, start_from } = body;
-            console.log(`[${getNowShanghai().toISO()}] Top-up: Generating ${days_needed} days from ${start_from} for user ${userId}`);
-
-            // Fetch latest biomarkers for context
-            const latestBio = await pool.query('SELECT data, bio_age FROM biomarkers WHERE user_id = $1 ORDER BY tested_at DESC LIMIT 1', [userId]);
-            const biomarkers = latestBio.rows[0]?.data || {};
-
-            const nutritionContext = {
-                days_needed,
-                start_date: start_from,
-                biomarkers: biomarkers
-            };
-
-            if (process.env.DASHSCOPE_API_KEY) {
-                try {
-                    const systemNutritionTemplate = require('../../../prompts/systemNutrition');
-                    const llm = getLlmClient();
-                    const completion = await llm.chat.completions.create({
-                        model: process.env.MODEL || 'qwen-turbo',
-                        messages: [
-                            { role: 'system', content: systemNutritionTemplate(nutritionContext) },
-                            { role: 'user', content: 'Generate the daily dots recipe.' }
-                        ],
-                    });
-
-                    const recipeMarkdown = completion.choices[0].message.content;
-
-                    // For now, we store the full Markdown block as a notification 
-                    // In production, you'd parse this table and insert rows into nutrition_schedules
-                    await pool.query(
-                        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                        [userId, 'nutrition_plan', recipeMarkdown, 'pending']
-                    );
-
-                    console.log(`[${getNowShanghai().toISO()}] Nutrition top-up complete for user ${userId}`);
-                } catch (llmErr) {
-                    console.error('LLM Nutrition Error:', llmErr.message);
                 }
             }
-
-            response.setStatusCode(200);
-            return response.send(JSON.stringify({ success: true }));
         }
 
-        console.log(`[${getNowShanghai().toISO()}] User ${openid} profile updated, ID: ${userId}`);
+        console.log(`[${getNowShanghai().toISO()}] Request handled for user ${openid}`);
         response.setStatusCode(200);
         response.send(JSON.stringify({ success: true, user_id: userId }));
     } catch (error) {
