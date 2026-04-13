@@ -82,6 +82,7 @@ app.get('/customers', async (req, res) => {
     try {
         const query = `
             SELECT u.id, u.wechat_openid, u.nickname, u.birth_date, u.language, u.gender,
+                   u.phm_id, u.created_at,
                    b.bio_age, b.data as bio_data,
                    p.name as coach_name,
                    (SELECT content FROM notifications WHERE user_id = u.id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan
@@ -163,7 +164,7 @@ app.get('/phm-list', async (req, res) => {
     const { pool } = require('../src/lib/db');
     try {
         const query = `
-            SELECT p.id, p.name, p.email, p.phone, COUNT(u.id) as customer_count
+            SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.id) as customer_count
             FROM phms p
             LEFT JOIN users u ON p.id = u.phm_id
             GROUP BY p.id;
@@ -172,5 +173,64 @@ app.get('/phm-list', async (req, res) => {
         res.json({ success: true, phms: result.rows });
     } catch (err) {
         res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+// Admin: Assign a PHM coach to a user
+app.post('/assign-phm', async (req, res) => {
+    const { user_id, phm_id } = req.body;
+    const { pool } = require('../src/lib/db');
+    try {
+        await pool.query('UPDATE users SET phm_id = $1 WHERE id = $2', [phm_id || null, user_id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Assign PHM Error:', err);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+// Admin: Create user
+app.post('/users', async (req, res) => {
+    const { wechat_openid, nickname, gender, birth_date, language, phm_id } = req.body;
+    const { pool } = require('../src/lib/db');
+    if (!wechat_openid) return res.status(400).json({ error: 'wechat_openid is required' });
+    try {
+        const result = await pool.query(
+            `INSERT INTO users (wechat_openid, nickname, gender, birth_date, language, phm_id)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+            [wechat_openid, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
+        );
+        res.json({ success: true, id: result.rows[0].id });
+    } catch (err) {
+        console.error('Create User Error:', err);
+        res.status(500).json({ error: err.detail || 'Internal Server Error' });
+    }
+});
+
+// Admin: Update user
+app.put('/users/:id', async (req, res) => {
+    const { nickname, gender, birth_date, language, phm_id } = req.body;
+    const { pool } = require('../src/lib/db');
+    try {
+        await pool.query(
+            `UPDATE users SET nickname=$1, gender=$2, birth_date=$3, language=$4, phm_id=$5 WHERE id=$6`,
+            [nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Update User Error:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// Admin: Delete user
+app.delete('/users/:id', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Delete User Error:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 });
