@@ -1,10 +1,12 @@
 const { Pool } = require('pg');
 
-const isLocal = (process.env.POLARDB_URL || '').includes('localhost');
+// Use DATABASE_URL if defined, otherwise fall back to POLARDB_URL
+const connectionString = process.env.DATABASE_URL || process.env.POLARDB_URL;
+const isLocal = (connectionString || '').includes('localhost');
 
 const pool = new Pool({
-  connectionString: process.env.POLARDB_URL,
-  ssl: isLocal ? false : { rejectUnauthorized: false }
+  connectionString,
+  ssl: isLocal || process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
 });
 
 module.exports = {

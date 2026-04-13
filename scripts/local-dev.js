@@ -80,6 +80,7 @@ app.get('/customers', async (req, res) => {
     const { pool } = require('../src/lib/db');
     const { calculateAge } = require('../src/lib/time-utils');
     try {
+        console.log(`[Local Dev] Fetching customers from ${process.env.DATABASE_URL.includes('localhost') ? 'Local' : 'PolarDB'}`);
         const query = `
             SELECT u.id, u.wechat_openid, u.nickname, u.birth_date, u.language, u.gender,
                    u.phm_id, u.created_at,
@@ -101,8 +102,11 @@ app.get('/customers', async (req, res) => {
         }));
         res.json({ success: true, customers });
     } catch (err) {
-        console.error('Fetch Customers Error:', err);
-        res.status(500).send({ error: 'Internal Server Error' });
+        console.error('Fetch Customers Error:', err.message);
+        if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT') {
+            console.error('Database connection failed. Check your network or PolarDB whitelist.');
+        }
+        res.status(500).send({ error: 'Internal Server Error', details: err.message });
     }
 });
 
