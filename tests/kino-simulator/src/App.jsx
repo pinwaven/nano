@@ -1,37 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 function App() {
+  const [users, setUsers] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
   const [status, setStatus] = useState('Ready for Test');
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    axios.get('/api/customers')
+      .then(r => {
+        const list = r.data.customers || [];
+        setUsers(list);
+        if (list.length > 0) setSelectedUser(list[0]);
+      })
+      .catch(() => {});
+  }, []);
+
   const handleStartTest = async () => {
+    if (!selectedUser) return;
     setLoading(true);
     setStatus('Analyzing...');
-
     try {
-      // Generate a random hsCRP between 0.2 and 3.5
       const randomCRP = parseFloat((Math.random() * (3.5 - 0.2) + 0.2).toFixed(2));
-
-      // Simulate a Kino chip test with ONLY hsCRP
-      const testData = {
-        openid: 'test_user_macos',
+      await axios.post('/api/chat', {
+        openid: selectedUser.wechat_openid,
         test_type: 'kino_chip',
-        test_data: {
-          hsCRP: randomCRP
-          // All other 5 biomarkers are missing, 
-          // backend will estimate them!
-        },
-        message: 'biomarkers' // Trigger the chat simulator update
-      };
-
-      await axios.post('/api/chat', testData);
-      
+        test_data: { hsCRP: randomCRP },
+        message: 'biomarkers'
+      });
       setStatus('Test Complete!');
       setTimeout(() => setStatus('Ready for Test'), 3000);
-    } catch (error) {
-      console.error('Kino Test Error:', error);
+    } catch (err) {
+      console.error('Kino Test Error:', err);
       setStatus('Test Failed');
+      setTimeout(() => setStatus('Ready for Test'), 3000);
     } finally {
       setLoading(false);
     }
@@ -43,12 +46,29 @@ function App() {
       <div className="device-body">
         <div className="device-screen">
           <div className="status-text">{status}</div>
+          {selectedUser && (
+            <div className="screen-user">{selectedUser.nickname || 'User ' + selectedUser.id}</div>
+          )}
         </div>
-        <button 
-          className="test-btn" 
+
+        <div className="user-selector">
+          {users.map(u => (
+            <button
+              key={u.id}
+              className={`user-pill${selectedUser?.id === u.id ? ' active' : ''}`}
+              onClick={() => setSelectedUser(u)}
+            >
+              {u.nickname || 'User ' + u.id}
+            </button>
+          ))}
+          {users.length === 0 && <span className="no-users">No users — start backend first</span>}
+        </div>
+
+        <button
+          className="test-btn"
           onClick={handleStartTest}
-          disabled={loading}
-          style={{ opacity: loading ? 0.6 : 1 }}
+          disabled={loading || !selectedUser}
+          style={{ opacity: (loading || !selectedUser) ? 0.6 : 1 }}
         >
           {loading ? 'Processing...' : 'Start Biomarker Test'}
         </button>
