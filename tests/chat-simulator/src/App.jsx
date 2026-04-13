@@ -10,6 +10,7 @@ function App() {
   const [messages, setMessages] = useState([
     { id: 1, role: 'ai', content: 'Hello, I am Nano AI. How can I help you today?' }
   ]);
+  const [seenIds, setSeenIds] = useState(new Set());
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
   const chatEndRef = useRef(null);
@@ -25,20 +26,36 @@ function App() {
   }, [messages, typing]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setMessages([{ id: 1, role: 'ai', content: 'Hello, I am Nano AI. How can I help you today?' }]);
+      setSeenIds(new Set());
+      return;
+    }
+
     const poll = async () => {
       try {
         const r = await axios.get(`${API_URL}/notifications?openid=${user.wechat_openid}`);
-        if (r.data.notifications?.length > 0) {
-          const newMsgs = r.data.notifications.map(n => ({
-            id: Date.now() + Math.random(),
-            role: 'ai',
-            content: n.content
-          }));
-          setMessages(prev => [...prev, ...newMsgs]);
-        }
+        const notifications = r.data.notifications || [];
+        
+        setSeenIds(prev => {
+          const next = new Set(prev);
+          const newNotifications = notifications.filter(n => !next.has(n.id));
+          
+          if (newNotifications.length > 0) {
+            const newMsgs = newNotifications.map(n => ({
+              id: `notification-${n.id}`,
+              role: 'ai',
+              content: n.content
+            }));
+            setMessages(prevMsgs => [...prevMsgs, ...newMsgs]);
+            newNotifications.forEach(n => next.add(n.id));
+          }
+          return next;
+        });
       } catch {}
     };
+
+    poll(); // Initial poll
     const interval = setInterval(poll, 3000);
     return () => clearInterval(interval);
   }, [user]);

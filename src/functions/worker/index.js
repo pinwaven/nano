@@ -21,7 +21,8 @@ async function handleGetCustomers() {
                     u.phm_id, u.created_at,
                     b.bio_age, b.data as bio_data,
                     p.name as coach_name,
-                    (SELECT content FROM notifications WHERE user_id = u.id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report
+                    (SELECT content FROM notifications WHERE user_id = u.id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report,
+                    (SELECT content FROM notifications WHERE user_id = u.id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan
             FROM users u
             LEFT JOIN phms p ON u.phm_id = p.id
             LEFT JOIN (
@@ -33,6 +34,25 @@ async function handleGetCustomers() {
         const result = await pool.query(query);
         const customers = result.rows.map(u => ({ ...u, chrono_age: calculateAge(u.birth_date) }));
         return { success: true, customers };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetNotifications(openid) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (!openid) return { success: true, notifications: [] };
+        const query = `
+            SELECT n.id, n.content, n.sent_at, n.notification_type
+            FROM notifications n
+            JOIN users u ON n.user_id = u.id
+            WHERE u.wechat_openid = $1
+            ORDER BY n.sent_at DESC
+            LIMIT 20;
+        `;
+        const result = await pool.query(query, [openid]);
+        return { success: true, notifications: result.rows };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -68,10 +88,104 @@ async function handlePostChat(body) {
         const bioAgeReport = bioAgeCalc.calculateBioAge(age, estimationReport.BiomarkerValues);
 
         const finalData = { actual: test_data, estimated: estimationReport.BiomarkerValues, context: estimationReport.ClinicalContext, bioage_profile: bioAgeReport };
-        await pool.query(
-            'INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at) VALUES ($1, $2, $3, $4, $5)',
+        const biomarkerResult = await pool.query(
+            'INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
             [userId, test_type || 'kino_chip', JSON.stringify(finalData), bioAgeReport.BioAge, tested_at || new Date().toISOString()]
         );
+        const biomarkerId = biomarkerResult.rows[0].id;
+
+        // Create notification for the user to see in Chat
+        const content = `I've analyzed your biomarker test. Your biological age is **${bioAgeReport.BioAge.toFixed(1)} years**. Check your report for details!`;
+        await pool.query(
+            'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
+            [userId, biomarkerId, 'biological_report', content, 'pending']
+        );
+
+        // Generate and save Nutrition Plan / Full Report
+        try {
+            const llmClient = getLlmClient();
+            const model = process.env.MODEL || 'qwen-turbo';
+            
+            const nutritionContext = {
+                start_date: new Date().toISOString().split('T')[0],
+                days_needed: 7,
+                language: user.language,
+                biomarkers: test_data,
+                bioage_profile: bioAgeReport
+            };
+
+            const nutritionPrompt = systemNutritionTemplate(nutritionContext);
+            const nutritionCompletion = await llmClient.chat.completions.create({
+                model: model,
+                messages: [
+                    { role: 'system', content: nutritionPrompt },
+                    { role: 'user', content: 'Generate my 7-day nutrition plan based on these results.' }
+                ],
+            });
+
+            const reportContent = nutritionCompletion.choices[0].message.content;
+
+            await pool.query(
+                'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
+                [userId, biomarkerId, 'nutrition_plan', reportContent, 'pending']
+            );
+        } catch (reportErr) {
+            console.error('Report Generation Error:', reportErr);
+        }
+    } else if (message) {
+        // Regular chat message handling
+        try {
+            // Fetch latest biomarkers for context
+            const biomarkerQuery = `
+                SELECT bio_age, data
+                FROM biomarkers
+                WHERE user_id = $1
+                ORDER BY tested_at DESC
+                LIMIT 1;
+            `;
+            const biomarkerResult = await pool.query(biomarkerQuery, [userId]);
+            const latestBiomarker = biomarkerResult.rows[0] || {};
+            const bioageProfile = latestBiomarker.data?.bioage_profile || {};
+
+            const llmContext = {
+                user_profile: {
+                    nickname: user.nickname,
+                    gender: user.gender,
+                    age: calculateAge(user.birth_date),
+                    language: user.language
+                },
+                latest_biomarkers: latestBiomarker.data?.actual || {},
+                bioage_profile: bioageProfile,
+                message: message
+            };
+
+            const systemPrompt = systemChatTemplate(llmContext);
+            const client = getLlmClient();
+            const model = process.env.MODEL || 'qwen-turbo';
+
+            const completion = await client.chat.completions.create({
+                model: model,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: message }
+                ],
+            });
+
+            const reply = completion.choices[0].message.content;
+
+            // Save reply as a notification
+            await pool.query(
+                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                [userId, 'chat_reply', reply, 'pending']
+            );
+        } catch (err) {
+            console.error('LLM Chat Error:', err);
+            // Fallback for demo if LLM fails
+            await pool.query(
+                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                [userId, 'chat_reply', "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.", 'pending']
+            );
+        }
     }
     return { success: true, user_id: userId };
 }
@@ -88,15 +202,26 @@ exports.handler = async (req, resp, context) => {
     const path = event.path || (event.requestContext && event.requestContext.path) || req.path || '';
     const method = event.httpMethod || event.method || (event.requestContext && event.requestContext.http && event.requestContext.http.method) || req.method || 'POST';
     const body = event.body || (isStandardHttp ? req.body : event);
+    const query = event.queryStringParameters || (isStandardHttp ? req.query : {}) || {};
 
     try {
         let result;
-        // If path is missing but it's a GET, we assume /customers for the simulator
-        if (method === 'GET' || path.includes('/customers')) {
-            result = await handleGetCustomers();
+        if (method === 'GET') {
+            if (path.includes('/notifications')) {
+                result = await handleGetNotifications(query.openid);
+            } else {
+                // Default to customers for simulator
+                result = await handleGetCustomers();
+            }
         } else {
             let parsedBody = body;
-            if (typeof body === 'string') try { parsedBody = JSON.parse(body); } catch (e) {}
+            if (Buffer.isBuffer(body)) {
+                try { parsedBody = JSON.parse(body.toString()); } catch (e) { console.error('Failed to parse Buffer body', e); }
+            } else if (typeof body === 'string') {
+                try { parsedBody = JSON.parse(body); } catch (e) { console.error('Failed to parse string body', e); }
+            }
+            // If it's already an object (e.g. from express req.body), parsedBody is already correct
+            
             result = await handlePostChat(parsedBody);
         }
 

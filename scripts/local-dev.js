@@ -87,7 +87,8 @@ app.get('/customers', async (req, res) => {
                    u.phm_id, u.created_at,
                    b.bio_age, b.data as bio_data,
                    p.name as coach_name,
-                   (SELECT content FROM notifications WHERE user_id = u.id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan
+                   (SELECT content FROM notifications WHERE user_id = u.id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan,
+                   (SELECT content FROM notifications WHERE user_id = u.id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report
             FROM users u
             LEFT JOIN phms p ON u.phm_id = p.id
             LEFT JOIN (
