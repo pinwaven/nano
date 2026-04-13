@@ -9,6 +9,7 @@ const translations = {
     bioAge: 'Biological Age',
     chronoAge: 'Chronological Age',
     biomarkers: 'Biomarkers Detail',
+    plan: 'Nutrition Plan (7-Day)',
     noData: 'No test data yet.',
     advice: 'Coach Advice',
     placeholder: 'Type your advice for the customer here...',
@@ -24,6 +25,7 @@ const translations = {
     bioAge: '生物年龄',
     chronoAge: '实际年龄',
     biomarkers: '生物标志物详情',
+    plan: '营养方案 (7天)',
     noData: '暂无测试数据',
     advice: '教练建议',
     placeholder: '在此输入给客户的建议...',
@@ -51,8 +53,9 @@ function App() {
     try {
       const response = await axios.get('/api/customers');
       setCustomers(response.data.customers);
-      if (response.data.customers.length > 0 && !selectedUser) {
-        setSelectedUser(response.data.customers[0]);
+      if (response.data.customers.length > 0) {
+        const current = selectedUser ? response.data.customers.find(c => c.id === selectedUser.id) : response.data.customers[0];
+        setSelectedUser(current || response.data.customers[0]);
       }
     } catch (err) {
       console.error('Failed to fetch customers:', err);
@@ -127,6 +130,17 @@ function App() {
             <span className="metric-label">{t.chronoAge}</span>
             <span className="metric-value">{selectedUser?.chrono_age || '--'}</span>
           </div>
+        </div>
+
+        <div className="mobile-card">
+          <div className="section-title">{t.plan}</div>
+          {selectedUser?.latest_plan ? (
+            <div style={{ fontSize: '12px', lineHeight: '1.4', background: '#f9f9f9', padding: '10px', borderRadius: '8px', border: '1px solid #eee', overflowX: 'auto' }}>
+              <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{selectedUser.latest_plan}</div>
+            </div>
+          ) : (
+            <div style={{fontSize: 14, color: '#999'}}>{t.noData}</div>
+          )}
         </div>
 
         <div className="mobile-card">

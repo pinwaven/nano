@@ -82,7 +82,8 @@ app.get('/customers', async (req, res) => {
     try {
         const query = `
             SELECT u.id, u.wechat_openid, u.nickname, u.birth_date, 
-                   b.bio_age, b.data as bio_data
+                   b.bio_age, b.data as bio_data,
+                   (SELECT content FROM notifications WHERE user_id = u.id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan
             FROM users u
             LEFT JOIN (
                 SELECT DISTINCT ON (user_id) user_id, bio_age, data
