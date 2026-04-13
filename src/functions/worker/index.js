@@ -161,7 +161,11 @@ exports.handler = async (request, response, context) => {
 
             // If message is 'biomarkers', we already sent the plan/report above, so we can just confirm
             if (message === 'biomarkers' && latestBioEntry) {
-                const reply = `Analysis complete! Your BioAge is **${latestBioEntry.bio_age}**. I have generated your 7-day precision nutrition plan below.`;
+                const isZh = user.language === 'zh';
+                const reply = isZh 
+                    ? `分析完成！您的生物年龄 (BioAge) 为 **${latestBioEntry.bio_age}**。我已在下方为您生成了 7 天精准营养方案。`
+                    : `Analysis complete! Your BioAge is **${latestBioEntry.bio_age}**. I have generated your 7-day precision nutrition plan below.`;
+                
                 await pool.query('INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)', [userId, 'chat_reply', reply, 'pending']);
                 response.setStatusCode(200);
                 return response.send(JSON.stringify({ success: true, reply }));
