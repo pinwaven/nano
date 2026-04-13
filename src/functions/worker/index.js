@@ -203,6 +203,52 @@ ${Object.entries(bioData.estimated).map(([k, v]) => `- **${k}**: ${v}`).join('\n
             return response.send(JSON.stringify({ success: true, reply }));
         }
 
+        // 5. Handle Nutrition Plan Top-up (7-day rolling window)
+        if (body.trigger_type === 'nutrition_topup') {
+            const { days_needed, start_from } = body;
+            console.log(`[${getNowShanghai().toISO()}] Top-up: Generating ${days_needed} days from ${start_from} for user ${userId}`);
+
+            // Fetch latest biomarkers for context
+            const latestBio = await pool.query('SELECT data, bio_age FROM biomarkers WHERE user_id = $1 ORDER BY tested_at DESC LIMIT 1', [userId]);
+            const biomarkers = latestBio.rows[0]?.data || {};
+
+            const nutritionContext = {
+                days_needed,
+                start_date: start_from,
+                biomarkers: biomarkers
+            };
+
+            if (process.env.DASHSCOPE_API_KEY) {
+                try {
+                    const systemNutritionTemplate = require('../../../prompts/systemNutrition');
+                    const llm = getLlmClient();
+                    const completion = await llm.chat.completions.create({
+                        model: process.env.MODEL || 'qwen-turbo',
+                        messages: [
+                            { role: 'system', content: systemNutritionTemplate(nutritionContext) },
+                            { role: 'user', content: 'Generate the daily dots recipe.' }
+                        ],
+                    });
+
+                    const recipeMarkdown = completion.choices[0].message.content;
+
+                    // For now, we store the full Markdown block as a notification 
+                    // In production, you'd parse this table and insert rows into nutrition_schedules
+                    await pool.query(
+                        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                        [userId, 'nutrition_plan', recipeMarkdown, 'pending']
+                    );
+
+                    console.log(`[${getNowShanghai().toISO()}] Nutrition top-up complete for user ${userId}`);
+                } catch (llmErr) {
+                    console.error('LLM Nutrition Error:', llmErr.message);
+                }
+            }
+
+            response.setStatusCode(200);
+            return response.send(JSON.stringify({ success: true }));
+        }
+
         console.log(`[${getNowShanghai().toISO()}] User ${openid} profile updated, ID: ${userId}`);
         response.setStatusCode(200);
         response.send(JSON.stringify({ success: true, user_id: userId }));

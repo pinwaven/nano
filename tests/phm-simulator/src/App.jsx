@@ -87,16 +87,17 @@ function App() {
       <div className="mobile-header">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <div className="header-title" style={{ margin: 0, flex: 1 }}>{t.title}</div>
-          <button 
+          <button
             onClick={toggleLang}
-            style={{ 
-              background: '#e5e5ea', 
-              border: 'none', 
-              borderRadius: '12px', 
-              padding: '4px 10px', 
+            style={{
+              background: '#e5e5ea',
+              border: 'none',
+              borderRadius: '12px',
+              padding: '4px 10px',
               fontSize: '12px',
               fontWeight: '600',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              WebkitAppRegion: 'no-drag'
             }}
           >
             {t.langToggle}

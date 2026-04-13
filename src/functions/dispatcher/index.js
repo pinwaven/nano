@@ -10,39 +10,36 @@ exports.handler = async (event, context) => {
     console.log(`[${getNowShanghai().toISO()}] Dispatcher started scanning for active users...`);
 
     try {
-        // Find users who haven't been scanned in 24 hours or have never been scanned
-        const query = `
-            SELECT id, wechat_openid, nickname, last_scanned_at 
-            FROM users 
-            WHERE last_scanned_at IS NULL 
-               OR last_scanned_at < NOW() - INTERVAL '24 hours'
-            LIMIT 50; -- Batching to stay within timeout
+        // 1. Find users needing health assessment (already implemented)
+        // 2. Find users needing nutrition plan top-up (Rolling 7-day window)
+        const nutritionQuery = `
+            SELECT u.id, u.wechat_openid, u.nickname, 
+                   COUNT(s.id) as scheduled_days,
+                   MAX(s.scheduled_date) as last_scheduled_date
+            FROM users u
+            LEFT JOIN nutrition_schedules s ON u.id = s.user_id AND s.scheduled_date >= CURRENT_DATE
+            GROUP BY u.id
+            HAVING COUNT(s.id) < 7;
         `;
 
-        const result = await pool.query(query);
-        const usersToScan = result.rows;
+        const nutritionResult = await pool.query(nutritionQuery);
+        const usersToTopUp = nutritionResult.rows;
 
-        console.log(`Found ${usersToScan.length} users requiring assessment.`);
+        console.log(`Found ${usersToTopUp.length} users needing nutrition plan top-up.`);
 
-        for (const user of usersToScan) {
-            console.log(`Dispatching worker for user: ${user.nickname} (${user.wechat_openid})`);
+        for (const user of usersToTopUp) {
+            console.log(`Dispatching nutrition top-up for: ${user.nickname}`);
+            const workerUrl = process.env.WORKER_URL || 'http://localhost:3000/chat';
             
-            // In a production Aliyun FC environment, you'd use the FC SDK to 
-            // invoke the worker asynchronously. For now, we simulate with an HTTP call.
             try {
-                // Assuming the worker is available at this internal/external URL
-                // In FC 3.0, you can use the function's internal endpoint
-                const workerUrl = process.env.WORKER_URL || 'http://localhost:3000/chat';
-                
                 await axios.post(workerUrl, {
                     openid: user.wechat_openid,
-                    trigger_type: 'scheduled_scan'
+                    trigger_type: 'nutrition_topup',
+                    days_needed: 7 - parseInt(user.scheduled_days),
+                    start_from: user.last_scheduled_date || new Date().toISOString().split('T')[0]
                 });
-
-                // Update last_scanned_at to prevent re-dispatching in the next cycle
-                await pool.query('UPDATE users SET last_scanned_at = NOW() WHERE id = $1', [user.id]);
             } catch (err) {
-                console.error(`Failed to dispatch for user ${user.wechat_openid}:`, err.message);
+                console.error(`Failed to top up nutrition for ${user.wechat_openid}:`, err.message);
             }
         }
 
