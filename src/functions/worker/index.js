@@ -97,15 +97,18 @@ exports.handler = async (request, response, context) => {
             const scanId = latestBioEntry.id;
             console.log(`[${getNowShanghai().toISO()}] BioAge: ${bioAgeReport.BioAge} calculated for user ${userId}`);
 
-            // 3. Trigger "First Report" Generation (DISABLED for debugging)
-            /*
+            // 3. Trigger "First Report" Generation if not already generated
             const checkReportQuery = `SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND notification_type = 'biological_report'`;
             const checkReportResult = await pool.query(checkReportQuery, [userId]);
             
             if (parseInt(checkReportResult.rows[0].count) === 0) {
                 console.log(`[${getNowShanghai().toISO()}] Generating First Report for user ${userId}...`);
                 const reportMarkdown = await runFirstReportWorkflow({
-                    user_profile: user,
+                    user_profile: {
+                        nickname: user.nickname,
+                        gender: user.gender,
+                        age: age
+                    },
                     biomarker_results: finalData,
                     bioage_profile: bioAgeReport
                 });
@@ -116,8 +119,9 @@ exports.handler = async (request, response, context) => {
                 `;
                 await pool.query(reportInsertQuery, [userId, scanId, reportMarkdown]);
                 console.log(`[${getNowShanghai().toISO()}] First Report generated and stored.`);
+            } else {
+                console.log(`[${getNowShanghai().toISO()}] User ${userId} already has a report. Skipping generation.`);
             }
-            */
         }
 
         // 4. Handle Interactive Chat Replies
