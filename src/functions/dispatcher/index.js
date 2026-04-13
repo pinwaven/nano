@@ -1,17 +1,14 @@
-const { pool } = require('../../lib/db');
-const { getNowShanghai } = require('../../lib/time-utils');
+const { pool } = require('./lib/db');
+const { getNowShanghai } = require('./lib/time-utils');
 const axios = require('axios');
 
 /**
  * Nano Dispatcher (Aliyun FC 3.0 Cron Trigger)
- * Periodically scans for users who need a health assessment.
  */
 exports.handler = async (event, context) => {
     console.log(`[${getNowShanghai().toISO()}] Dispatcher started scanning for active users...`);
 
     try {
-        // 1. Find users needing health assessment (already implemented)
-        // 2. Find users needing nutrition plan top-up (Rolling 7-day window)
         const nutritionQuery = `
             SELECT u.id, u.wechat_openid, u.nickname, 
                    COUNT(s.id) as scheduled_days,
@@ -27,25 +24,37 @@ exports.handler = async (event, context) => {
 
         console.log(`Found ${usersToTopUp.length} users needing nutrition plan top-up.`);
 
+        // The internal VPC URL for nano-worker - calling the HTTP trigger
+        const workerUrl = process.env.WORKER_URL || 'https://nano-worker-napllanrqp.cn-shanghai-vpc.fcapp.run';
+
         for (const user of usersToTopUp) {
             console.log(`Dispatching nutrition top-up for: ${user.nickname}`);
-            const workerUrl = process.env.WORKER_URL || 'http://localhost:3000/chat';
             
+            const payload = {
+                openid: user.wechat_openid,
+                trigger_type: 'nutrition_topup',
+                days_needed: 7 - parseInt(user.scheduled_days),
+                start_from: user.last_scheduled_date || new Date().toISOString().split('T')[0]
+            };
+
+            // Dispatched via HTTP (Calling the worker's HTTP trigger via VPC)
             try {
-                await axios.post(workerUrl, {
-                    openid: user.wechat_openid,
-                    trigger_type: 'nutrition_topup',
-                    days_needed: 7 - parseInt(user.scheduled_days),
-                    start_from: user.last_scheduled_date || new Date().toISOString().split('T')[0]
+                await axios.post(workerUrl, payload, { 
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'x-fc-invocation-type': 'Async'
+                    },
+                    timeout: 10000 
                 });
-            } catch (err) {
-                console.error(`Failed to top up nutrition for ${user.wechat_openid}:`, err.message);
+                console.log(`[HTTP] Dispatched to worker for ${user.wechat_openid}`);
+            } catch (httpErr) {
+                console.error(`[HTTP] Failed for ${user.wechat_openid}:`, httpErr.message);
             }
         }
 
         return {
             statusCode: 200,
-            body: JSON.stringify({ message: `Dispatched ${usersToScan.length} assessments.` })
+            body: JSON.stringify({ message: `Dispatched ${usersToTopUp.length} top-ups.` })
         };
     } catch (error) {
         console.error('Dispatcher error:', error);

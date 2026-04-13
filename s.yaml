@@ -16,12 +16,26 @@ resources:
       memorySize: 128
       timeout: 60
       code: ./src/functions/dispatcher
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        DB_HOST: "pc-uf6ttj5kse63r270k.pg.polardb.rds.aliyuncs.com"
+        DB_NAME: "nano_db"
+        DB_USER: "nano_admin"
+        DB_PASS: "Waven53Bike!"
+        DB_SSL: "false"
+        TZ: "Asia/Shanghai"
+        WORKER_URL: "https://nano-worker-napllanrqp.cn-shanghai-vpc.fcapp.run"
+        WORKER_FUNCTION_NAME: "nano-worker"
       triggers:
         - triggerName: cron-scanner
           triggerType: timer
           triggerConfig:
             payload: ""
-            cronExpression: "CRON_TZ=Asia/Shanghai 0 0 9 * * *" # Example: 9 AM daily
+            cronExpression: "0 * * * * *" # Every minute for testing/utilization
             enable: true
 
   worker:
@@ -34,9 +48,23 @@ resources:
       memorySize: 512
       timeout: 300
       code: ./src/functions/worker
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        DB_HOST: "pc-uf6ttj5kse63r270k.pg.polardb.rds.aliyuncs.com"
+        DB_NAME: "nano_db"
+        DB_USER: "nano_admin"
+        DB_PASS: "Waven53Bike!"
+        DB_SSL: "false"
+        TZ: "Asia/Shanghai"
+        DASHSCOPE_API_KEY: "sk-c42a1129d83644ad8b0323845f51d5f5"
+        MODEL: "qwen-turbo"
       triggers:
         - triggerName: http-webhook
           triggerType: http
           triggerConfig:
-            authType: anonymous # Secure this later
+            authType: anonymous
             methods: ["POST"]
