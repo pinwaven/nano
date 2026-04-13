@@ -76,9 +76,12 @@ CREATE INDEX idx_nutrition_schedules_user_date ON nutrition_schedules(user_id, s
 CREATE TABLE IF NOT EXISTS dots (
     id INTEGER PRIMARY KEY, -- 1 to 18
     name TEXT NOT NULL,
+    name_zh TEXT, -- Chinese Name
     is_isolate BOOLEAN DEFAULT FALSE,
-    color TEXT, -- Assigned Unique Color
-    ingredients JSONB, -- Breakdown of 16 mg Active Payload: [{"name": "...", "mg": 16}]
+    color TEXT, -- Assigned Unique Color (English)
+    color_zh TEXT, -- Assigned Unique Color (Chinese)
+    ingredients JSONB, -- English Payload Breakdown
+    ingredients_zh JSONB, -- Chinese Payload Breakdown
     description TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
