@@ -1,12 +1,24 @@
 const { pool } = require('./lib/db');
 const { getNowShanghai } = require('./lib/time-utils');
+const EventBridge = require('@alicloud/eventbridge');
+const OpenApi = require('@alicloud/openapi-client');
 const axios = require('axios');
+const { v4: uuidv4 } = require('uuid');
 
 /**
  * Nano Dispatcher (Aliyun FC 3.0 Cron Trigger)
  */
 exports.handler = async (event, context) => {
     console.log(`[${getNowShanghai().toISO()}] Dispatcher started scanning for active users...`);
+
+    // Initialize EventBridge Client
+    const ebConfig = new OpenApi.Config({
+        accessKeyId: context.credentials.accessKeyId,
+        accessKeySecret: context.credentials.accessKeySecret,
+        securityToken: context.credentials.securityToken,
+        endpoint: `eventbridge.${context.region}.aliyuncs.com`,
+    });
+    const ebClient = new EventBridge.default(ebConfig);
 
     try {
         const nutritionQuery = `
@@ -24,7 +36,7 @@ exports.handler = async (event, context) => {
 
         console.log(`Found ${usersToTopUp.length} users needing nutrition plan top-up.`);
 
-        // The internal VPC URL for nano-worker - calling the HTTP trigger
+        // The internal VPC URL for nano-worker - fallback
         const workerUrl = process.env.WORKER_URL || 'https://nano-worker-napllanrqp.cn-shanghai-vpc.fcapp.run';
 
         for (const user of usersToTopUp) {
@@ -37,18 +49,38 @@ exports.handler = async (event, context) => {
                 start_from: user.last_scheduled_date || new Date().toISOString().split('T')[0]
             };
 
-            // Dispatched via HTTP (Calling the worker's HTTP trigger via VPC)
+            // 1. Try EventBridge (Preferred)
+            const cloudEvent = new EventBridge.CloudEvent({
+                id: uuidv4(),
+                source: 'nano.dispatcher',
+                specversion: '1.0',
+                type: 'nutrition.topup',
+                subject: 'user_nutrition_needed',
+                datacontenttype: 'application/json',
+                data: Buffer.from(JSON.stringify(payload)),
+                time: new Date().toISOString(),
+                extensions: {}
+            });
+
             try {
-                await axios.post(workerUrl, payload, { 
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'x-fc-invocation-type': 'Async'
-                    },
-                    timeout: 10000 
-                });
-                console.log(`[HTTP] Dispatched to worker for ${user.wechat_openid}`);
-            } catch (httpErr) {
-                console.error(`[HTTP] Failed for ${user.wechat_openid}:`, httpErr.message);
+                await ebClient.putEvents([cloudEvent], 'default');
+                console.log(`[EventBridge] Published event for ${user.wechat_openid}`);
+            } catch (ebErr) {
+                console.warn(`[EventBridge] Failed, falling back to HTTP: ${ebErr.message}`);
+                
+                // 2. Fallback to HTTP (Direct Worker Call)
+                try {
+                    await axios.post(workerUrl, payload, { 
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'x-fc-invocation-type': 'Async'
+                        },
+                        timeout: 10000 
+                    });
+                    console.log(`[HTTP Fallback] Dispatched to worker for ${user.wechat_openid}`);
+                } catch (httpErr) {
+                    console.error(`[HTTP Fallback] Failed for ${user.wechat_openid}:`, httpErr.message);
+                }
             }
         }
 
