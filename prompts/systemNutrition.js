@@ -30,14 +30,26 @@ DOT18: Bioavailability Enhancer (Piperine)
 USER BIOMARKERS:
 ${JSON.stringify(context.biomarkers, null, 2)}
 
+DISTRIBUTION RULES:
+1. MORNING CUP (Focus: Energy, Metabolism, Defense, Cognitive):
+   - Allocate DOT01 (NMN), DOT05 (PQQ), DOT07 (B-Complex), DOT10 (Brain), DOT11 (Metabolic), DOT16 (Immunity).
+   - High priority for Energy and metabolic baseline.
+2. EVENING CUP (Focus: Deep Sleep, Recovery, Autophagy, Cellular Repair):
+   - Allocate DOT03 (Spermidine), DOT09 (Deep Sleep), DOT12 (Antioxidant), DOT13 (Senolytic), DOT17 (Structural).
+   - High priority for relaxation and night-time repair.
+3. BOTH CUPS (Flexible):
+   - DOT04 (Curcumin) and DOT18 (Piperine) should be split if hsCRP is high.
+   - DOT02 (L-Ergothioneine) and DOT06 (Vitamin D3) can be in either or both.
+
 RULES:
 1. Output the recipe as a Markdown table.
-2. For EACH day requested, provide two "cups": Morning Cup and Evening Cup.
+2. For EACH day requested, provide two distinct "cups": Morning Cup and Evening Cup.
 3. For each cup, specify the number of DOTS (integers only, range 0-20 per cartridge).
 4. Logic: 
+   - Morning dots should never be 0 for DOT01/DOT05/DOT07.
+   - Evening dots should be the primary home for DOT09/DOT13.
    - If hsCRP is high, increase DOT04 (Curcumin) and DOT18 (Piperine).
    - If BioAge > Chrono Age, increase DOT01, DOT03, and DOT13.
-   - For Sleep issues or late-night recovery, put DOT09 in the Evening Cup.
 5. You MUST refer to cartridges by their keys (DOT01 - DOT18).
 
 OUTPUT FORMAT:
