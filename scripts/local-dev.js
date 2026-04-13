@@ -81,10 +81,12 @@ app.get('/customers', async (req, res) => {
     const { calculateAge } = require('../src/lib/time-utils');
     try {
         const query = `
-            SELECT u.id, u.wechat_openid, u.nickname, u.birth_date, 
+            SELECT u.id, u.wechat_openid, u.nickname, u.birth_date, u.language, u.gender,
                    b.bio_age, b.data as bio_data,
+                   p.name as coach_name,
                    (SELECT content FROM notifications WHERE user_id = u.id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan
             FROM users u
+            LEFT JOIN phms p ON u.phm_id = p.id
             LEFT JOIN (
                 SELECT DISTINCT ON (user_id) user_id, bio_age, data
                 FROM biomarkers
@@ -143,4 +145,32 @@ app.post('/ingest', async (req, res) => {
 app.listen(port, () => {
     console.log(`\x1b[32m[Nano Backend] Running locally at http://localhost:${port}\x1b[0m`);
     console.log(`[Nano Backend] Database: ${process.env.POLARDB_URL ? 'Connected' : 'Disconnected'}`);
+});
+
+// Admin: Fetch all Dots Cartridges
+app.get('/dots-inventory', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        const result = await pool.query('SELECT * FROM dots ORDER BY id ASC');
+        res.json({ success: true, dots: result.rows });
+    } catch (err) {
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+// Admin: Fetch all PHM Coaches with customer counts
+app.get('/phm-list', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        const query = `
+            SELECT p.id, p.name, p.email, p.phone, COUNT(u.id) as customer_count
+            FROM phms p
+            LEFT JOIN users u ON p.id = u.phm_id
+            GROUP BY p.id;
+        `;
+        const result = await pool.query(query);
+        res.json({ success: true, phms: result.rows });
+    } catch (err) {
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
 });
