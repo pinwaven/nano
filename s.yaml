@@ -4,6 +4,8 @@ access: default
 
 vars:
   region: cn-shanghai
+  logProject: nano-ai-logs
+  logStore: nano-ai-logstore
 
 resources:
   dispatcher:
@@ -17,6 +19,11 @@ resources:
       timeout: 60
       code: ./src/functions/dispatcher
       role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
       vpcConfig:
         securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
         vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
@@ -49,6 +56,11 @@ resources:
       timeout: 300
       code: ./src/functions/worker
       role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
       vpcConfig:
         securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
         vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
