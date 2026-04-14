@@ -4,6 +4,8 @@
   "description": "Nano AI backend on Aliyun FC 3.0",
   "main": "index.js",
   "scripts": {
+    "start:backend": "node scripts/local-dev.js",
+    "start:admin": "node scripts/local-admin.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {

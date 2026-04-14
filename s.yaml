@@ -86,3 +86,50 @@ resources:
             eventSourceConfig:
               eventSourceType: Default
             eventRuleFilterPattern: '{"source":["acs.dispatcher"]}'
+
+  admin-panel:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-admin-panel
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 128
+      timeout: 30
+      code: ./src/functions/admin-panel
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        WORKER_URL: "https://nano-worker-napllanrqp.cn-shanghai-vpc.fcapp.run"
+        TZ: "Asia/Shanghai"
+      triggers:
+        - triggerName: http-admin
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+
+  nano-domain:
+    component: fc3-domain
+    props:
+      region: ${vars.region}
+      domainName: nano.fros.cc
+      protocol: HTTP
+      routeConfig:
+        routes:
+          - path: /admin/*
+            functionName: nano-admin-panel
+          - path: /admin
+            functionName: nano-admin-panel
+          - path: /api/*
+            functionName: nano-admin-panel
+          - path: /worker
+            functionName: nano-worker

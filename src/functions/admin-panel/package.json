@@ -1,0 +1,7 @@
+{
+  "name": "nano-admin-panel-fc",
+  "version": "1.0.0",
+  "description": "FC 3.0 handler to serve admin panel",
+  "main": "index.js",
+  "dependencies": {}
+}
