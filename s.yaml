@@ -22,8 +22,8 @@ resources:
         vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
         vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
       environmentVariables:
-        DB_HOST: "pc-uf6ttj5kse63r270k.pg.polardb.rds.aliyuncs.com"
-        DB_NAME: "nano_db"
+        DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
+        DB_NAME: "nano_db_dev"
         DB_USER: "nano_admin"
         DB_PASS: "Waven53Bike!"
         DB_SSL: "false"
@@ -54,8 +54,8 @@ resources:
         vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
         vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
       environmentVariables:
-        DB_HOST: "pc-uf6ttj5kse63r270k.pg.polardb.rds.aliyuncs.com"
-        DB_NAME: "nano_db"
+        DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
+        DB_NAME: "nano_db_dev"
         DB_USER: "nano_admin"
         DB_PASS: "Waven53Bike!"
         DB_SSL: "false"

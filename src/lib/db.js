@@ -2,8 +2,8 @@ const { Pool } = require('pg');
 
 let pool;
 
-if (process.env.DATABASE_URL || process.env.POLARDB_URL) {
-  const connectionString = process.env.DATABASE_URL || process.env.POLARDB_URL;
+if (process.env.DATABASE_URL) {
+  const connectionString = process.env.DATABASE_URL;
   const isLocal = (connectionString || '').includes('localhost');
   pool = new Pool({
     connectionString,

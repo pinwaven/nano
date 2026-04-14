@@ -44,4 +44,4 @@ The Nano AI project includes a suite of local simulators to test the full lifecy
 ## Troubleshooting
 - **Blank Window**: Usually means the Vite server hasn't started yet. Electron includes polling logic to wait for the server.
 - **404 Errors**: Check the Vite proxy settings in `vite.config.js`.
-- **Database Error**: Ensure the `POLARDB_URL` in your `.env` file points to `postgresql://localhost:5432/nano_ai_db`.
+- **Database Error**: Ensure the `DATABASE_URL` in your `.env` file points to `postgresql://localhost:5432/nano_ai_db`.

@@ -61,6 +61,100 @@ async function handleGetNotifications(openid) {
     }
 }
 
+async function handleGetDotsInventory() {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query('SELECT * FROM dots ORDER BY id ASC');
+        return { success: true, dots: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetPhmList() {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const query = `
+            SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.id) as customer_count
+            FROM phms p
+            LEFT JOIN users u ON p.id = u.phm_id
+            GROUP BY p.id;
+        `;
+        const result = await pool.query(query);
+        return { success: true, phms: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostCoachInstruction(body) {
+    const { openid, instruction } = body;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const user = await pool.query('SELECT id FROM users WHERE wechat_openid = $1', [openid]);
+        if (user.rows.length === 0) return { success: false, error: 'User not found', statusCode: 404 };
+        const coachMessage = `### 👨‍⚕️ Coach Instruction\n\n${instruction}`;
+        await pool.query(
+            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+            [user.rows[0].id, 'coach_instruction', coachMessage, 'pending']
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAssignPhm(body) {
+    const { user_id, phm_id } = body;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('UPDATE users SET phm_id = $1 WHERE id = $2', [phm_id || null, user_id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostUsers(body) {
+    const { wechat_openid, nickname, gender, birth_date, language, phm_id } = body;
+    if (!wechat_openid) return { success: false, error: 'wechat_openid is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `INSERT INTO users (wechat_openid, nickname, gender, birth_date, language, phm_id)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+            [wechat_openid, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
+        );
+        return { success: true, id: result.rows[0].id };
+    } catch (err) {
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handlePutUser(userId, body) {
+    const { nickname, gender, birth_date, language, phm_id } = body;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query(
+            `UPDATE users SET nickname=$1, gender=$2, birth_date=$3, language=$4, phm_id=$5 WHERE id=$6`,
+            [nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null, userId]
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteUser(userId) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handlePostChat(body) {
     const { openid, nickname, gender, birth_date, language, test_type, test_data, tested_at, message, ...rest } = body;
     if (!openid) throw new Error('openid is required');
@@ -216,34 +310,56 @@ exports.handler = async (req, resp, context) => {
 
     try {
         let result;
-        if (method === 'GET') {
-            if (path.includes('notifications')) {
-                result = await handleGetNotifications(query.openid);
-            } else {
-                // Default to customers for simulator
-                result = await handleGetCustomers();
-            }
-        } else {
-            let parsedBody = body;
+        let parsedBody = body;
+        if (method !== 'GET') {
             if (Buffer.isBuffer(body)) {
                 try { parsedBody = JSON.parse(body.toString()); } catch (e) { console.error('Failed to parse Buffer body', e); }
             } else if (typeof body === 'string') {
                 try { parsedBody = JSON.parse(body); } catch (e) { console.error('Failed to parse string body', e); }
             }
-            // If it's already an object (e.g. from express req.body), parsedBody is already correct
-            
-            result = await handlePostChat(parsedBody);
         }
 
+        if (method === 'GET') {
+            if (path.includes('/notifications')) {
+                result = await handleGetNotifications(query.openid);
+            } else if (path.includes('/dots-inventory')) {
+                result = await handleGetDotsInventory();
+            } else if (path.includes('/phm-list')) {
+                result = await handleGetPhmList();
+            } else {
+                result = await handleGetCustomers();
+            }
+        } else if (method === 'POST') {
+            if (path.includes('/coach-instruction')) {
+                result = await handlePostCoachInstruction(parsedBody);
+            } else if (path.includes('/assign-phm')) {
+                result = await handlePostAssignPhm(parsedBody);
+            } else if (path === '/users') {
+                result = await handlePostUsers(parsedBody);
+            } else {
+                result = await handlePostChat(parsedBody);
+            }
+        } else if (method === 'PUT' && path.includes('/users/')) {
+            const userId = path.split('/users/')[1];
+            result = await handlePutUser(userId, parsedBody);
+        } else if (method === 'DELETE' && path.includes('/users/')) {
+            const userId = path.split('/users/')[1];
+            result = await handleDeleteUser(userId);
+        } else {
+            result = { success: false, error: `Unknown route: ${method} ${path}` };
+        }
+
+        const statusCode = result.statusCode || 200;
+        const { statusCode: _sc, ...resultBody } = result;
         const responsePayload = {
             isBase64Encoded: false,
-            statusCode: 200,
+            statusCode,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(result)
+            body: JSON.stringify(resultBody)
         };
 
         if (isStandardHttp) {
-            resp.setStatusCode(200);
+            resp.setStatusCode(statusCode);
             resp.setHeader('Content-Type', 'application/json');
             resp.send(responsePayload.body);
             return;

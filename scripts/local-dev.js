@@ -152,7 +152,7 @@ app.post('/ingest', async (req, res) => {
 
 app.listen(port, () => {
     console.log(`\x1b[32m[Nano Backend] Running locally at http://localhost:${port}\x1b[0m`);
-    console.log(`[Nano Backend] Database: ${process.env.POLARDB_URL ? 'Connected' : 'Disconnected'}`);
+    console.log(`[Nano Backend] Database: ${process.env.DATABASE_URL ? 'Connected' : 'Disconnected'}`);
 });
 
 // Admin: Fetch all Dots Cartridges
