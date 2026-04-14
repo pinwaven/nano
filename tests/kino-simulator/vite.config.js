@@ -13,6 +13,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    base: '/admin/sim/kino/',
+    build: {
+      outDir: '../../src/functions/admin-panel/sim/kino',
+      emptyOutDir: true,
+    },
     server: {
       port: 5174,
       proxy: {

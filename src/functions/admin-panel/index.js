@@ -140,6 +140,36 @@ exports.handler = async (req, resp, context) => {
         return await proxyApi(event, rawPath);
     }
 
+    // Simulator static files live under __dirname/sim/{name}/
+    const simMatch = rawPath.match(/^\/admin\/sim\/(chat|kino|phm)(\/.*)?$/);
+    if (simMatch) {
+        const simName = simMatch[1];
+        let simPath = simMatch[2] || '/';
+        if (simPath === '/' || !simPath.includes('.')) simPath = '/index.html';
+        const safeSim = path.normalize(simPath).replace(/^(\.\.[\/\\])+/, '');
+        let simFile = path.join(__dirname, 'sim', simName, safeSim);
+        try {
+            if (!fs.existsSync(simFile) || fs.statSync(simFile).isDirectory()) {
+                simFile = path.join(__dirname, 'sim', simName, 'index.html');
+            }
+            const ext = path.extname(simFile).toLowerCase();
+            const content = fs.readFileSync(simFile);
+            return {
+                statusCode: 200,
+                headers: {
+                    'content-type': MIME_TYPES[ext] || 'application/octet-stream',
+                    'cache-control': 'public, max-age=3600',
+                    'content-disposition': 'inline'
+                },
+                body: content.toString('base64'),
+                isBase64Encoded: true
+            };
+        } catch (err) {
+            console.error('Sim file error:', err);
+            return { statusCode: 404, headers: { 'content-type': 'text/plain' }, body: Buffer.from('Not Found').toString('base64'), isBase64Encoded: true };
+        }
+    }
+
     let targetPath = rawPath;
     if (targetPath.startsWith('/admin/')) {
         targetPath = targetPath.substring(7); // remove '/admin/'
@@ -151,7 +181,7 @@ exports.handler = async (req, resp, context) => {
         targetPath = '/' + targetPath;
     }
 
-    if (targetPath === '' || targetPath === '/' || !targetPath.includes('.')) {
+    if (targetPath === '' || targetPath === '/') {
         targetPath = '/index.html';
     }
 
@@ -159,8 +189,14 @@ exports.handler = async (req, resp, context) => {
     let filePath = path.join(__dirname, 'dist', safePath);
 
     try {
+        // If no extension, try appending .html before SPA fallback
         if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
-            filePath = path.join(__dirname, 'dist', 'index.html');
+            const withHtml = filePath + '.html';
+            if (fs.existsSync(withHtml)) {
+                filePath = withHtml;
+            } else {
+                filePath = path.join(__dirname, 'dist', 'index.html');
+            }
         }
 
         const ext = path.extname(filePath).toLowerCase();

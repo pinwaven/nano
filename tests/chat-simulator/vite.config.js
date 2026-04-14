@@ -8,6 +8,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    base: '/admin/sim/chat/',
+    build: {
+      outDir: '../../src/functions/admin-panel/sim/chat',
+      emptyOutDir: true,
+    },
     server: {
       port: 5173,
       proxy: {

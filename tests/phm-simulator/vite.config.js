@@ -8,6 +8,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    base: '/admin/sim/phm/',
+    build: {
+      outDir: '../../src/functions/admin-panel/sim/phm',
+      emptyOutDir: true,
+    },
     server: {
       port: 5175,
       proxy: {
