@@ -58,5 +58,5 @@ app.all('*', async (req, res) => {
 
 app.listen(port, () => {
     console.log(`\x1b[36m[Nano Admin] Serving admin-panel at http://localhost:${port}/admin/\x1b[0m`);
-    console.log(`[Nano Admin] Proxying /api to: ${process.env.WORKER_URL || 'http://localhost:3000'}`);
+    console.log(`[Nano Admin] Proxying /admin/api to: ${process.env.WORKER_URL || 'http://localhost:3000'}`);
 });

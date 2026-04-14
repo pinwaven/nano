@@ -136,7 +136,7 @@ exports.handler = async (req, resp, context) => {
         };
     }
 
-    if (rawPath.startsWith('/admin/api') || rawPath.startsWith('/api')) {
+    if (rawPath.startsWith('/admin/api')) {
         return await proxyApi(event, rawPath);
     }
 
