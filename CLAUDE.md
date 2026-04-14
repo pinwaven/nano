@@ -132,7 +132,7 @@ return {
  
 ### Deployment
  
-- `s deploy worker` — deploys only the worker function  
+- `s worker deploy` — deploys only the worker function, the syntax is 's worker deploy', not 's deploy worker' 
 - `s deploy` — deploys all functions (dispatcher + worker)  
 - Confirm trigger changes with `Y` when prompted, or use `-y` flag  
 - FC 3.0 does not hot-reload; each deploy takes ~15 s before changes are live

@@ -18,12 +18,12 @@ All deployments use [Serverless Devs](https://www.serverless-devs.com/) (`s` CLI
 s deploy -y
 
 # Deploy a single function
-s deploy dispatcher -y
-s deploy worker -y
-s deploy admin-panel -y
+s dispatcher deploy  -y
+s worker deploy -y
+s admin-pane deployl -y
 
 # Deploy only the domain routing
-s deploy nano-domain -y
+s nano-domain deploy -y
 ```
 
 ## Environment variables
