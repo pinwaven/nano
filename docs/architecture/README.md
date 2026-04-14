@@ -1,12 +1,78 @@
 # Architecture Overview
 
-The Nano AI system is built with a serverless architecture using Aliyun Function Compute (FC 3.0).
+Nano AI is built on a serverless event-driven architecture using Aliyun Function Compute (FC 3.0).
+
+## Functions
+
+| Function | Trigger | Role |
+|---|---|---|
+| `nano-dispatcher` | Cron (every minute) | Scans users who need periodic reassessment and invokes the worker |
+| `nano-worker` | HTTP + EventBridge | Handles all AI processing, biomarker ingestion, chat, and admin API |
+| `nano-admin-panel` | HTTP | Serves the admin SPA and proxies API calls to the worker |
+
+## Public Domain (`nano.fros.cc`)
+
+All traffic enters through a single custom domain managed by `fc3-domain`. Routes:
+
+| Path | Function |
+|---|---|
+| `/admin` | `nano-admin-panel` |
+| `/admin/*` | `nano-admin-panel` |
+| `/admin/api/*` | `nano-admin-panel` (proxied to worker) |
+| `/worker` | `nano-worker` |
 
 ## System Flow
-1. **User Ingestion**: Questionnaire data is sent via HTTP POST to the `worker` function.
-2. **Biomarker Capture**: Portable device test results (e.g., Kino chip) are uploaded.
-3. **AI Processing**: 
-   - **Estimation**: Missing biomarkers are estimated based on age and biometrics.
-   - **BioAge**: Biological age is calculated across four functional dimensions (ILI, MRI, MFI, MVII).
-4. **Report Generation**: On the first test, a detailed Markdown report and 14-day nutrition plan are generated.
-5. **Periodic Assessment**: The `dispatcher` (cron-triggered) periodically checks for users who need new assessments.
+
+```
+User (WeChat / App)
+        │
+        ▼
+  nano-worker  (HTTP trigger)
+  ┌─────────────────────────────┐
+  │ 1. Upsert user profile       │
+  │ 2. Run BiomarkerEstimator    │
+  │ 3. Run BioAgeCalculator      │
+  │ 4. Generate nutrition plan   │
+  │    via DashScope LLM         │
+  │ 5. Write notifications       │
+  └─────────────────────────────┘
+        │
+        ▼
+  PostgreSQL (PolarDB)
+        ▲
+        │
+  nano-dispatcher  (Cron trigger)
+  ┌─────────────────────────────┐
+  │ Periodically checks users   │
+  │ due for reassessment and    │
+  │ triggers worker via HTTP    │
+  └─────────────────────────────┘
+
+Admin (Browser)
+        │
+        ▼
+  nano-admin-panel  (HTTP trigger)
+  ┌─────────────────────────────┐
+  │ Serves React SPA (dist/)    │
+  │ Serves simulator iframes    │
+  │   /admin/sim/chat/          │
+  │   /admin/sim/kino/          │
+  │   /admin/sim/phm/           │
+  │ Proxies /admin/api/* to     │
+  │   nano-worker               │
+  └─────────────────────────────┘
+```
+
+## Database
+
+Single PostgreSQL database on Aliyun PolarDB Serverless. Connection configured via `DATABASE_URL` environment variable. All functions share the same DB.
+
+## Logging
+
+All three functions write structured JSON logs (`console.log(JSON.stringify({level, msg, data}))`) to Aliyun SLS:
+
+- **Project**: `nano-ai-logs`
+- **Logstore**: `nano-ai-logstore`
+- **Tail logs**: `s logs -f worker --tail`
+
+See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
