@@ -144,6 +144,7 @@ app.post('/ingest', async (req, res) => {
     const fcRequest = { body: Buffer.from(JSON.stringify(req.body)) };
     const fcResponse = {
         setStatusCode: (code) => res.status(code),
+        setHeader: (name, value) => res.setHeader(name, value),
         send: (data) => res.send(data)
     };
     await workerHandler(fcRequest, fcResponse, {});

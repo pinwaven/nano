@@ -44,14 +44,17 @@ async function handleGetNotifications(openid) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (!openid) return { success: true, notifications: [] };
         const query = `
-            SELECT n.id, n.content, n.sent_at, n.notification_type
+            SELECT n.id, n.content, n.notification_type
             FROM notifications n
             JOIN users u ON n.user_id = u.id
-            WHERE u.wechat_openid = $1
-            ORDER BY n.sent_at DESC
-            LIMIT 20;
+            WHERE u.wechat_openid = $1 AND n.status = 'pending'
+            ORDER BY n.sent_at ASC;
         `;
         const result = await pool.query(query, [openid]);
+        if (result.rows.length > 0) {
+            const ids = result.rows.map(r => r.id);
+            await pool.query('UPDATE notifications SET status = $1 WHERE id = ANY($2)', ['sent', ids]);
+        }
         return { success: true, notifications: result.rows };
     } catch (err) {
         return { success: false, error: err.message };
@@ -191,23 +194,30 @@ async function handlePostChat(body) {
 }
 
 exports.handler = async (req, resp, context) => {
-    let isStandardHttp = resp && typeof resp.send === 'function';
+    const isStandardHttp = resp && typeof resp.send === 'function';
     let event = req;
-    
+
     if (Buffer.isBuffer(req)) {
         try { event = JSON.parse(req.toString()); } catch (e) {}
     }
 
-    // Comprehensive detection for path and method in all possible locations
-    const path = event.path || (event.requestContext && event.requestContext.path) || req.path || '';
+    // FC 3.0 HTTP trigger exposes req.url (e.g. "/notifications?openid=xxx"), not req.path
+    const rawUrl = req.url || '';
+    const urlPath = rawUrl.split('?')[0];
+    const urlParams = rawUrl.includes('?')
+        ? Object.fromEntries(new URLSearchParams(rawUrl.split('?')[1]))
+        : {};
+
+    // FC 3.0 uses rawPath and queryParameters (not path / queryStringParameters)
+    const path = event.rawPath || event.path || (event.requestContext && event.requestContext.path) || req.path || urlPath || '';
     const method = event.httpMethod || event.method || (event.requestContext && event.requestContext.http && event.requestContext.http.method) || req.method || 'POST';
     const body = event.body || (isStandardHttp ? req.body : event);
-    const query = event.queryStringParameters || (isStandardHttp ? req.query : {}) || {};
+    const query = event.queryParameters || event.queryStringParameters || req.queries || req.query || urlParams || {};
 
     try {
         let result;
         if (method === 'GET') {
-            if (path.includes('/notifications')) {
+            if (path.includes('notifications')) {
                 result = await handleGetNotifications(query.openid);
             } else {
                 // Default to customers for simulator
