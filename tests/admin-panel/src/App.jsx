@@ -577,8 +577,11 @@ function UsersTab({ users, phms, onRefresh }) {
 
 // ── PHM tab ───────────────────────────────────────────────────────────────────
 
-function PHMTab({ phms, users }) {
+function PHMTab({ phms, users, onRefresh }) {
   const { t } = useLang();
+  const [modal, setModal] = useState(null);
+  const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
   return (
     <>
       <div className="stat-row">
@@ -587,12 +590,18 @@ function PHMTab({ phms, users }) {
         <StatCard icon={Users}   label={t.stats.unassignedUsers} value={users.filter(u => !u.phm_id).length} color="#f59e0b" />
       </div>
       <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count">{t.countPhm(phms.length)}</span>
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{t.addPhm}
+          </button>
+        </div>
         <table className="data-table">
           <thead>
-            <tr><th>{t.table.id}</th><th>{t.table.name}</th><th>{t.table.email}</th><th>{t.table.phone}</th><th>{t.table.customers}</th><th>{t.table.joined}</th></tr>
+            <tr><th>{t.table.id}</th><th>{t.table.name}</th><th>{t.table.email}</th><th>{t.table.phone}</th><th>{t.table.customers}</th><th>{t.table.joined}</th><th></th></tr>
           </thead>
           <tbody>
-            {phms.length === 0 && <tr><td colSpan={6} className="empty-row">{t.empty.phms}</td></tr>}
+            {phms.length === 0 && <tr><td colSpan={7} className="empty-row">{t.empty.phms}</td></tr>}
             {phms.map(p => (
               <tr key={p.id}>
                 <td className="muted">{p.id}</td>
@@ -606,19 +615,31 @@ function PHMTab({ phms, users }) {
                 <td className="muted">{fmt(p.phone)}</td>
                 <td><Badge color="#3b82f6">{p.customer_count || 0}</Badge></td>
                 <td className="muted">{fmtDate(p.created_at)}</td>
+                <td>
+                  <div className="row-actions">
+                    <button className="icon-btn" title={t.modal.editPhm} onClick={() => setModal({ type: 'edit', phm: p })}><Pencil size={14} /></button>
+                    <button className="icon-btn danger" title={t.modal.deletePhm} onClick={() => setModal({ type: 'delete', phm: p })}><Trash2 size={14} /></button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {modal?.type === 'add'    && <PHMModal phm={null}       onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <PHMModal phm={modal.phm} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete' && <DeletePHMConfirm phm={modal.phm} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
     </>
   );
 }
 
 // ── Dots tab ──────────────────────────────────────────────────────────────────
 
-function DotsTab({ dots }) {
+function DotsTab({ dots, onRefresh }) {
   const { t } = useLang();
+  const [modal, setModal] = useState(null);
+  const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
   return (
     <>
       <div className="stat-row">
@@ -627,12 +648,18 @@ function DotsTab({ dots }) {
         <StatCard icon={Droplets} label={t.stats.blends}    value={dots.filter(d => !d.is_isolate).length} color="#f59e0b" />
       </div>
       <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count">{t.countDot(dots.length)}</span>
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{t.addDot}
+          </button>
+        </div>
         <table className="data-table">
           <thead>
-            <tr><th>{t.table.key}</th><th>{t.table.nameEn}</th><th>{t.table.nameZh}</th><th>{t.table.color}</th><th>{t.table.type}</th><th>{t.table.description}</th></tr>
+            <tr><th>{t.table.key}</th><th>{t.table.nameEn}</th><th>{t.table.nameZh}</th><th>{t.table.color}</th><th>{t.table.type}</th><th>{t.table.description}</th><th></th></tr>
           </thead>
           <tbody>
-            {dots.length === 0 && <tr><td colSpan={6} className="empty-row">{t.empty.dots}</td></tr>}
+            {dots.length === 0 && <tr><td colSpan={7} className="empty-row">{t.empty.dots}</td></tr>}
             {dots.map(d => (
               <tr key={d.id}>
                 <td><code className="code-tag">{d.key_name}</code></td>
@@ -646,11 +673,20 @@ function DotsTab({ dots }) {
                 </td>
                 <td><Badge color={d.is_isolate ? '#ec4899' : '#f59e0b'}>{d.is_isolate ? t.dotType.isolate : t.dotType.blend}</Badge></td>
                 <td className="muted desc-cell">{fmt(d.description)}</td>
+                <td>
+                  <div className="row-actions">
+                    <button className="icon-btn" title={t.modal.editDot} onClick={() => setModal({ type: 'edit', dot: d })}><Pencil size={14} /></button>
+                    <button className="icon-btn danger" title={t.modal.deleteDot} onClick={() => setModal({ type: 'delete', dot: d })}><Trash2 size={14} /></button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {modal?.type === 'add'    && <DotModal dot={null}       onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <DotModal dot={modal.dot} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete' && <DeleteDotConfirm dot={modal.dot} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
     </>
   );
 }
@@ -721,8 +757,8 @@ export default function App() {
         </header>
         <div className="content">
           {tab === 'users' && <UsersTab users={data.users} phms={data.phms} onRefresh={fetchData} />}
-          {tab === 'phms'  && <PHMTab  phms={data.phms}   users={data.users} />}
-          {tab === 'dots'  && <DotsTab dots={data.dots} />}
+          {tab === 'phms'  && <PHMTab  phms={data.phms}   users={data.users} onRefresh={fetchData} />}
+          {tab === 'dots'  && <DotsTab dots={data.dots} onRefresh={fetchData} />}
         </div>
       </div>
     </LangCtx.Provider>

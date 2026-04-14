@@ -228,8 +228,6 @@ app.put('/users/:id', async (req, res) => {
         console.error('Update User Error:', err);
         res.status(500).json({ error: 'Internal Server Error' });
     }
-});
-
 // Admin: Delete user
 app.delete('/users/:id', async (req, res) => {
     const { pool } = require('../src/lib/db');
@@ -241,3 +239,90 @@ app.delete('/users/:id', async (req, res) => {
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+
+// Admin: Create PHM Coach
+app.post('/phms', async (req, res) => {
+    const { name, email, phone } = req.body;
+    const { pool } = require('../src/lib/db');
+    try {
+        const result = await pool.query(
+            'INSERT INTO phms (name, email, phone) VALUES ($1, $2, $3) RETURNING id',
+            [name, email || null, phone || null]
+        );
+        res.json({ success: true, id: result.rows[0].id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin: Update PHM Coach
+app.put('/phms/:id', async (req, res) => {
+    const { name, email, phone } = req.body;
+    const { pool } = require('../src/lib/db');
+    try {
+        await pool.query(
+            'UPDATE phms SET name=$1, email=$2, phone=$3 WHERE id=$4',
+            [name, email || null, phone || null, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin: Delete PHM Coach
+app.delete('/phms/:id', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        await pool.query('DELETE FROM phms WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin: Create Dot
+app.post('/dots', async (req, res) => {
+    const { key_name, name, name_zh, color, color_zh, description, is_isolate } = req.body;
+    const { pool } = require('../src/lib/db');
+    try {
+        const maxIdResult = await pool.query('SELECT MAX(id) as max_id FROM dots');
+        const nextId = (maxIdResult.rows[0].max_id || 0) + 1;
+        const result = await pool.query(
+            `INSERT INTO dots (id, key_name, name, name_zh, color, color_zh, description, is_isolate)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+            [nextId, key_name, name, name_zh || null, color || null, color_zh || null, description || null, !!is_isolate]
+        );
+        res.json({ success: true, id: result.rows[0].id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin: Update Dot
+app.put('/dots/:id', async (req, res) => {
+    const { name, name_zh, color, color_zh, description, is_isolate } = req.body;
+    const { pool } = require('../src/lib/db');
+    try {
+        await pool.query(
+            `UPDATE dots SET name=$1, name_zh=$2, color=$3, color_zh=$4, description=$5, is_isolate=$6 WHERE id=$7`,
+            [name, name_zh || null, color || null, color_zh || null, description || null, !!is_isolate, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin: Delete Dot
+app.delete('/dots/:id', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        await pool.query('DELETE FROM dots WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.listen(port, () => {

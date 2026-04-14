@@ -115,6 +115,90 @@ async function handlePostAssignPhm(body) {
     }
 }
 
+async function handlePostPhms(body) {
+    const { name, email, phone } = body;
+    if (!name) return { success: false, error: 'name is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            'INSERT INTO phms (name, email, phone) VALUES ($1, $2, $3) RETURNING id',
+            [name, email || null, phone || null]
+        );
+        return { success: true, id: result.rows[0].id };
+    } catch (err) {
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handlePutPhm(phmId, body) {
+    const { name, email, phone } = body;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query(
+            'UPDATE phms SET name=$1, email=$2, phone=$3 WHERE id=$4',
+            [name, email || null, phone || null, phmId]
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeletePhm(phmId) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('DELETE FROM phms WHERE id = $1', [phmId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostDots(body) {
+    const { key_name, name, name_zh, color, color_zh, description, is_isolate } = body;
+    if (!key_name || !name) return { success: false, error: 'key_name and name are required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        // If id is not provided, we let it be assigned or we find the next one.
+        // Given the schema id is INTEGER PRIMARY KEY (not serial), we should probably find the next ID.
+        const maxIdResult = await pool.query('SELECT MAX(id) as max_id FROM dots');
+        const nextId = (maxIdResult.rows[0].max_id || 0) + 1;
+        
+        const result = await pool.query(
+            `INSERT INTO dots (id, key_name, name, name_zh, color, color_zh, description, is_isolate)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+            [nextId, key_name, name, name_zh || null, color || null, color_zh || null, description || null, !!is_isolate]
+        );
+        return { success: true, id: result.rows[0].id };
+    } catch (err) {
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handlePutDot(dotId, body) {
+    const { name, name_zh, color, color_zh, description, is_isolate } = body;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query(
+            `UPDATE dots SET name=$1, name_zh=$2, color=$3, color_zh=$4, description=$5, is_isolate=$6 WHERE id=$7`,
+            [name, name_zh || null, color || null, color_zh || null, description || null, !!is_isolate, dotId]
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteDot(dotId) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('DELETE FROM dots WHERE id = $1', [dotId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handlePostUsers(body) {
     const { wechat_openid, nickname, gender, birth_date, language, phm_id } = body;
     if (!wechat_openid) return { success: false, error: 'wechat_openid is required', statusCode: 400 };
@@ -308,6 +392,29 @@ exports.handler = async (req, resp, context) => {
     const body = event.body || (isStandardHttp ? req.body : event);
     const query = event.queryParameters || event.queryStringParameters || req.queries || req.query || urlParams || {};
 
+    const corsHeaders = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Content-Type': 'application/json'
+    };
+
+    if (method === 'OPTIONS') {
+        const optionsPayload = {
+            isBase64Encoded: false,
+            statusCode: 204,
+            headers: corsHeaders,
+            body: ''
+        };
+        if (isStandardHttp) {
+            resp.setStatusCode(204);
+            Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v));
+            resp.send('');
+            return;
+        }
+        return optionsPayload;
+    }
+
     try {
         let result;
         let parsedBody = body;
@@ -334,17 +441,41 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostCoachInstruction(parsedBody);
             } else if (path.includes('/assign-phm')) {
                 result = await handlePostAssignPhm(parsedBody);
+            } else if (path.includes('/phms')) {
+                result = await handlePostPhms(parsedBody);
+            } else if (path.includes('/dots')) {
+                result = await handlePostDots(parsedBody);
             } else if (path === '/users') {
                 result = await handlePostUsers(parsedBody);
             } else {
                 result = await handlePostChat(parsedBody);
             }
-        } else if (method === 'PUT' && path.includes('/users/')) {
-            const userId = path.split('/users/')[1];
-            result = await handlePutUser(userId, parsedBody);
-        } else if (method === 'DELETE' && path.includes('/users/')) {
-            const userId = path.split('/users/')[1];
-            result = await handleDeleteUser(userId);
+        } else if (method === 'PUT') {
+            if (path.includes('/users/')) {
+                const userId = path.split('/users/')[1];
+                result = await handlePutUser(userId, parsedBody);
+            } else if (path.includes('/phms/')) {
+                const phmId = path.split('/phms/')[1];
+                result = await handlePutPhm(phmId, parsedBody);
+            } else if (path.includes('/dots/')) {
+                const dotId = path.split('/dots/')[1];
+                result = await handlePutDot(dotId, parsedBody);
+            } else {
+                result = { success: false, error: `Unknown PUT route: ${path}` };
+            }
+        } else if (method === 'DELETE') {
+            if (path.includes('/users/')) {
+                const userId = path.split('/users/')[1];
+                result = await handleDeleteUser(userId);
+            } else if (path.includes('/phms/')) {
+                const phmId = path.split('/phms/')[1];
+                result = await handleDeletePhm(phmId);
+            } else if (path.includes('/dots/')) {
+                const dotId = path.split('/dots/')[1];
+                result = await handleDeleteDot(dotId);
+            } else {
+                result = { success: false, error: `Unknown DELETE route: ${path}` };
+            }
         } else {
             result = { success: false, error: `Unknown route: ${method} ${path}` };
         }
@@ -354,13 +485,13 @@ exports.handler = async (req, resp, context) => {
         const responsePayload = {
             isBase64Encoded: false,
             statusCode,
-            headers: { 'Content-Type': 'application/json' },
+            headers: corsHeaders,
             body: JSON.stringify(resultBody)
         };
 
         if (isStandardHttp) {
             resp.setStatusCode(statusCode);
-            resp.setHeader('Content-Type', 'application/json');
+            Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v));
             resp.send(responsePayload.body);
             return;
         }
