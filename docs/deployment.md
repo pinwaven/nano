@@ -2,6 +2,17 @@
 
 All deployments use [Serverless Devs](https://www.serverless-devs.com/) (`s` CLI) and the configuration in `s.yaml`.
 
+> [!CAUTION]
+> **Domain Configuration Warning:** Running `s deploy` or `s nano-domain deploy` will reconcile the domain state on Alibaba Cloud to match `s.yaml`. 
+> 
+> If you are using HTTPS with a custom certificate, you **MUST** ensure your certificate files are present in the `./certs` folder before deploying. If they are missing, the Aliyun configuration will be reset to HTTP only, disabling HTTPS.
+
+## Local Certificate Setup
+
+To maintain HTTPS support during deployment:
+1. Ensure the `./certs` directory exists (it is git-ignored).
+2. Place your certificate files in `./certs/fullchain.pem` and `./certs/privkey.key`.
+
 ## Functions
 
 | Name | s.yaml key | Description |

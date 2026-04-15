@@ -122,14 +122,22 @@ resources:
     props:
       region: ${vars.region}
       domainName: nano.fros.cc
-      protocol: HTTP
+      protocol: HTTP,HTTPS
+      certConfig:
+        certName: nano-custom-cert
+        certificate: ./certs/cert.pem
+        privateKey: ./certs/key.pem
       routeConfig:
         routes:
+          - path: /api/*
+            functionName: nano-worker
+          - path: /api
+            functionName: nano-worker
+          - path: /admin/api/*
+            functionName: nano-admin-panel
           - path: /admin/*
             functionName: nano-admin-panel
           - path: /admin
-            functionName: nano-admin-panel
-          - path: /admin/api/*
             functionName: nano-admin-panel
           - path: /worker
             functionName: nano-worker

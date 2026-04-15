@@ -384,7 +384,8 @@ exports.handler = async (req, resp, context) => {
         ? Object.fromEntries(new URLSearchParams(rawUrl.split('?')[1]))
         : {};
 
-    const path = event.rawPath || event.path || (event.requestContext && event.requestContext.path) || req.path || urlPath || '';
+    const rawPath = event.rawPath || event.path || (event.requestContext && event.requestContext.path) || req.path || urlPath || '';
+    const path = rawPath.replace(/^\/api/, '');
     const method = event.httpMethod || event.method || (event.requestContext && event.requestContext.http && event.requestContext.http.method) || req.method || 'POST';
     const body = event.body || (isStandardHttp ? req.body : event);
     const query = event.queryParameters || event.queryStringParameters || req.queries || req.query || urlParams || {};
