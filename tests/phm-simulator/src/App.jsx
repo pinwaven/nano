@@ -11,8 +11,8 @@ const translations = {
     biomarkers: 'Biomarkers Detail',
     plan: 'Nutrition Plan (7-Day)',
     noData: 'No test data yet.',
-    advice: 'Coach Advice',
-    placeholder: 'Type your advice for the customer here...',
+    advice: 'PHM Advice',
+    placeholder: 'Type your advice for the user here...',
     send: 'Send Instruction',
     success: 'Instruction sent successfully',
     error: 'Failed to send instruction',
@@ -27,8 +27,8 @@ const translations = {
     biomarkers: '生物标志物详情',
     plan: '营养方案 (7天)',
     noData: '暂无测试数据',
-    advice: '教练建议',
-    placeholder: '在此输入给客户的建议...',
+    advice: 'PHM 建议',
+    placeholder: '在此输入给用户的建议...',
     send: '发送指令',
     success: '指令发送成功',
     error: '发送指令失败',
@@ -37,7 +37,7 @@ const translations = {
 };
 
 function App() {
-  const [customers, setCustomers] = useState([]);
+  const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [instruction, setInstruction] = useState('');
   const [loading, setLoading] = useState(true);
@@ -46,19 +46,19 @@ function App() {
   const t = translations[lang];
 
   useEffect(() => {
-    fetchCustomers();
+    fetchUsers();
   }, []);
 
-  const fetchCustomers = async () => {
+  const fetchUsers = async () => {
     try {
-      const response = await axios.get('/api/customers');
-      setCustomers(response.data.customers);
-      if (response.data.customers.length > 0) {
-        const current = selectedUser ? response.data.customers.find(c => c.user_id === selectedUser.user_id) : response.data.customers[0];
-        setSelectedUser(current || response.data.customers[0]);
+      const response = await axios.get('/api/users');
+      setUsers(response.data.users);
+      if (response.data.users.length > 0) {
+        const current = selectedUser ? response.data.users.find(c => c.user_id === selectedUser.user_id) : response.data.users[0];
+        setSelectedUser(current || response.data.users[0]);
       }
     } catch (err) {
-      console.error('Failed to fetch customers:', err);
+      console.error('Failed to fetch users:', err);
     } finally {
       setLoading(false);
     }
@@ -68,7 +68,7 @@ function App() {
     if (!instruction.trim() || !selectedUser) return;
 
     try {
-      await axios.post('/api/coach-instruction', {
+      await axios.post('/api/phm-instruction', {
         openid: selectedUser.external_id,
         instruction: instruction
       });
@@ -106,11 +106,11 @@ function App() {
             {t.langToggle}
           </button>
         </div>
-        <div className="customer-selector">
-          {customers.map(c => (
+        <div className="user-selector">
+          {users.map(c => (
             <div
               key={c.user_id}
-              className={`customer-pill ${selectedUser?.user_id === c.user_id ? 'active' : ''}`}
+              className={`user-pill ${selectedUser?.user_id === c.user_id ? 'active' : ''}`}
               onClick={() => setSelectedUser(c)}
             >
               {c.nickname || 'User ' + c.user_id}

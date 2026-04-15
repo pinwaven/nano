@@ -1,17 +1,29 @@
 # Worker API Endpoints
 
-The `nano-worker` function handles all HTTP requests routed to it. On the public domain these are accessible via the admin panel proxy at `/admin/api/*`.
+The `nano-worker` function handles all functional logic for the ecosystem.
 
-## Routing summary
+## Accessing the API
+
+### 1. Public API (Preferred)
+Accessible directly via the main domain. This is the fastest route for external clients like simulators, mobile apps, or WeChat mini-programs.
+*   **Base URL:** `https://nano.fros.cc/api`
+
+### 2. Internal Legacy Proxy
+Available for the Admin Dashboard to avoid CORS issues and leverage internal VPC performance.
+*   **Base URL:** `https://nano.fros.cc/admin/api`
+
+## Routing Summary
+
+All paths below are relative to the Base URL (e.g., `GET /api/users`).
 
 | Method | Path | Handler |
 |---|---|---|
-| `GET` | `/customers` | List all users with latest biomarkers and coach |
+| `GET` | `/users` | List all users with latest biomarkers and coach |
 | `GET` | `/notifications` | Fetch pending notifications for a user |
 | `GET` | `/dots-inventory` | List all Dots cartridges |
-| `GET` | `/phm-list` | List PHM coaches with customer counts |
+| `GET` | `/phm-list` | List PHMs with customer counts |
 | `POST` | `/chat` | Ingest biomarker data or send a chat message |
-| `POST` | `/coach-instruction` | Send a coach instruction to a user |
+| `POST` | `/phm-instruction` | Send a PHM instruction to a user |
 | `POST` | `/assign-phm` | Assign a PHM coach to a user |
 | `POST` | `/users` | Create a new user |
 | `PUT` | `/users/:id` | Update a user |
@@ -19,7 +31,7 @@ The `nano-worker` function handles all HTTP requests routed to it. On the public
 
 ---
 
-## GET /customers
+## GET /users
 
 Returns all users with their latest biomarker snapshot, biological age, assigned coach, and most recent nutrition plan and biological report.
 
@@ -27,10 +39,10 @@ Returns all users with their latest biomarker snapshot, biological age, assigned
 ```json
 {
   "success": true,
-  "customers": [
+  "users": [
     {
       "id": 1,
-      "wechat_openid": "...",
+      "user_id": "...",
       "nickname": "Nancy",
       "birth_date": "1992-05-14T...",
       "language": "zh",
@@ -77,9 +89,9 @@ Returns all Dots cartridges.
 
 ## GET /phm-list
 
-Returns all PHM coaches with customer counts.
+Returns all PHMs with user counts.
 
-**Response**: `{ "success": true, "phms": [ { "id", "name", "email", "phone", "customer_count" } ] }`
+**Response**: `{ "success": true, "phms": [ { "id", "name", "email", "phone", "user_count" } ] }`
 
 ---
 
@@ -119,9 +131,9 @@ The main ingestion endpoint. Handles two flows depending on the body:
 
 ---
 
-## POST /coach-instruction
+## POST /phm-instruction
 
-Inserts a formatted coach instruction as a `pending` notification visible in the user's chat.
+Inserts a formatted PHM instruction as a `pending` notification visible in the user's chat.
 
 **Request body**: `{ "openid": "...", "instruction": "Drink more water." }`
 

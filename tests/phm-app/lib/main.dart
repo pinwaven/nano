@@ -31,7 +31,7 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   final String apiUrl = 'http://localhost:3000/api'; // Change to your IP for physical devices
-  List<dynamic> customers = [];
+  List<dynamic> users = [];
   Map<String, dynamic>? selectedUser;
   final TextEditingController _instructionController = TextEditingController();
   bool loading = true;
@@ -47,8 +47,8 @@ class _DashboardPageState extends State<DashboardPage> {
       'biomarkers': 'Biomarkers Detail',
       'plan': 'Nutrition Plan (7-Day)',
       'noData': 'No test data yet.',
-      'advice': 'Coach Advice',
-      'placeholder': 'Type your advice for the customer here...',
+      'advice': 'PHM Advice',
+      'placeholder': 'Type your advice for the user here...',
       'send': 'Send Instruction',
       'success': 'Instruction sent!',
       'error': 'Failed to send instruction',
@@ -62,8 +62,8 @@ class _DashboardPageState extends State<DashboardPage> {
       'biomarkers': '生物标志物详情',
       'plan': '营养方案 (7天)',
       'noData': '暂无测试数据',
-      'advice': '教练建议',
-      'placeholder': '在此输入给客户的建议...',
+      'advice': 'PHM 建议',
+      'placeholder': '在此输入给用户的建议...',
       'send': '发送指令',
       'success': '指令已发送',
       'error': '发送指令失败',
@@ -75,24 +75,24 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
-    fetchCustomers();
+    fetchUsers();
   }
 
-  Future<void> fetchCustomers() async {
+  Future<void> fetchUsers() async {
     setState(() => loading = true);
     try {
-      final response = await http.get(Uri.parse('$apiUrl/customers'));
+      final response = await http.get(Uri.parse('$apiUrl/users'));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         setState(() {
-          customers = data['customers'];
-          if (customers.isNotEmpty) {
-            selectedUser = customers[0];
+          users = data['users'];
+          if (users.isNotEmpty) {
+            selectedUser = users[0];
           }
         });
       }
     } catch (e) {
-      print('Error fetching customers: $e');
+      print('Error fetching users: $e');
     } finally {
       setState(() => loading = false);
     }
@@ -103,7 +103,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
     try {
       final response = await http.post(
-        Uri.parse('$apiUrl/coach-instruction'),
+        Uri.parse('$apiUrl/phm-instruction'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'openid': selectedUser!['wechat_openid'],
@@ -149,10 +149,10 @@ class _DashboardPageState extends State<DashboardPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: customers.length,
+              itemCount: users.length,
               separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (context, index) {
-                final user = customers[index];
+                final user = users[index];
                 final active = selectedUser?['id'] == user['id'];
                 return ChoiceChip(
                   label: Text(user['nickname'] ?? 'User ${user['id']}'),

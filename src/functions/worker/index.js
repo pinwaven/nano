@@ -13,7 +13,7 @@ const getLlmClient = () => new OpenAI({
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
 });
 
-async function handleGetCustomers() {
+async function handleGetUsers() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
@@ -32,8 +32,8 @@ async function handleGetCustomers() {
             ) b ON u.user_id = b.user_id;
         `;
         const result = await pool.query(query);
-        const customers = result.rows.map(u => ({ ...u, chrono_age: calculateAge(u.birth_date) }));
-        return { success: true, customers };
+        const users = result.rows.map(u => ({ ...u, chrono_age: calculateAge(u.birth_date) }));
+        return { success: true, users };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -75,7 +75,7 @@ async function handleGetPhmList() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
-            SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.user_id) as customer_count
+            SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.user_id) as user_count
             FROM phms p
             LEFT JOIN users u ON p.id = u.phm_id
             GROUP BY p.id;
@@ -87,7 +87,7 @@ async function handleGetPhmList() {
     }
 }
 
-async function handlePostCoachInstruction(body) {
+async function handlePostPhmInstruction(body) {
     const { openid, instruction } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -431,12 +431,14 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetDotsInventory();
             } else if (path.includes('/phm-list')) {
                 result = await handleGetPhmList();
+            } else if (path.includes('/users') || path === '/' || path === '') {
+                result = await handleGetUsers();
             } else {
-                result = await handleGetCustomers();
+                result = { success: false, error: `Unknown GET route: ${path}` };
             }
         } else if (method === 'POST') {
-            if (path.includes('/coach-instruction')) {
-                result = await handlePostCoachInstruction(parsedBody);
+            if (path.includes('/phm-instruction') || path.includes('/coach-instruction')) {
+                result = await handlePostPhmInstruction(parsedBody);
             } else if (path.includes('/assign-phm')) {
                 result = await handlePostAssignPhm(parsedBody);
             } else if (path.includes('/phms')) {

@@ -12,7 +12,7 @@ describe(`Worker Endpoints Integration Tests [${BASE_URL}]`, () => {
     before(async () => {
         try {
             console.log(`\x1b[36m[Test] Testing against target: ${BASE_URL}\x1b[0m`);
-            await axios.get(`${BASE_URL}/customers`);
+            await axios.get(`${BASE_URL}/users`);
         } catch (err) {
             console.error('\x1b[31mError: Target is not reachable on ' + BASE_URL + '\x1b[0m');
             if (BASE_URL.includes('localhost')) {
@@ -24,11 +24,11 @@ describe(`Worker Endpoints Integration Tests [${BASE_URL}]`, () => {
         }
     });
 
-    test('GET /customers should return a list of customers', async () => {
-        const response = await axios.get(`${BASE_URL}/customers`);
+    test('GET /users should return a list of users', async () => {
+        const response = await axios.get(`${BASE_URL}/users`);
         assert.strictEqual(response.status, 200);
         assert.strictEqual(response.data.success, true);
-        assert.ok(Array.isArray(response.data.customers));
+        assert.ok(Array.isArray(response.data.users));
     });
 
     test('POST /chat should create a new user or update existing', async () => {
@@ -98,7 +98,7 @@ describe(`Worker Endpoints Integration Tests [${BASE_URL}]`, () => {
         assert.strictEqual(response.data.success, true);
     });
 
-    test('GET /phm-list should return coaches', async () => {
+    test('GET /phm-list should return PHMs', async () => {
         const response = await axios.get(`${BASE_URL}/phm-list`);
         assert.strictEqual(response.status, 200);
         assert.strictEqual(response.data.success, true);
@@ -112,25 +112,25 @@ describe(`Worker Endpoints Integration Tests [${BASE_URL}]`, () => {
         assert.ok(Array.isArray(response.data.dots));
     });
 
-    test('POST /coach-instruction should send instruction to user', async () => {
+    test('POST /phm-instruction should send instruction to user', async () => {
         // First ensure user exists (already created in previous tests)
         const payload = {
             openid: TEST_OPENID,
             instruction: 'Drink more water and exercise daily.'
         };
 
-        const response = await axios.post(`${BASE_URL}/coach-instruction`, payload);
+        const response = await axios.post(`${BASE_URL}/phm-instruction`, payload);
         assert.strictEqual(response.status, 200);
         assert.strictEqual(response.data.success, true);
     });
 
-    test('POST /assign-phm should assign coach to user', async () => {
-        // Get a user and a coach first
-        const customersRes = await axios.get(`${BASE_URL}/customers`);
+    test('POST /assign-phm should assign PHM to user', async () => {
+        // Get a user and a PHM first
+        const usersRes = await axios.get(`${BASE_URL}/users`);
         const phmsRes = await axios.get(`${BASE_URL}/phm-list`);
         
-        if (customersRes.data.customers.length > 0 && phmsRes.data.phms.length > 0) {
-            const user_id = customersRes.data.customers[0].user_id;
+        if (usersRes.data.users.length > 0 && phmsRes.data.phms.length > 0) {
+            const user_id = usersRes.data.users[0].user_id;
             const phm_id = phmsRes.data.phms[0].id;
 
             const response = await axios.post(`${BASE_URL}/assign-phm`, { user_id, phm_id });

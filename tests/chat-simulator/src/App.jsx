@@ -16,8 +16,8 @@ function App() {
   const chatEndRef = useRef(null);
 
   useEffect(() => {
-    axios.get('/api/customers')
-      .then(r => setAllUsers(r.data.customers))
+    axios.get('/api/users')
+      .then(r => setAllUsers(r.data.users))
       .catch(() => {});
   }, []);
 

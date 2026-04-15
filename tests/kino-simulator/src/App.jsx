@@ -8,9 +8,9 @@ function App() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    axios.get('/api/customers')
+    axios.get('/api/users')
       .then(r => {
-        const list = r.data.customers || [];
+        const list = r.data.users || [];
         setUsers(list);
         if (list.length > 0) setSelectedUser(list[0]);
       })

@@ -76,12 +76,12 @@ app.get('/notifications', async (req, res) => {
     }
 });
 
-// PHM Dashboard: Fetch all customers with latest data
-app.get('/customers', async (req, res) => {
+// PHM Dashboard: Fetch all users with latest data
+app.get('/users', async (req, res) => {
     const { pool } = require('../src/lib/db');
     const { calculateAge } = require('../src/lib/time-utils');
     try {
-        console.log(`[Local Dev] Fetching customers from ${process.env.DATABASE_URL.includes('localhost') ? 'Local' : 'PolarDB'}`);
+        console.log(`[Local Dev] Fetching users from ${process.env.DATABASE_URL.includes('localhost') ? 'Local' : 'PolarDB'}`);
         const query = `
             SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
                    u.phm_id, u.created_at,
@@ -98,13 +98,13 @@ app.get('/customers', async (req, res) => {
             ) b ON u.user_id = b.user_id;
         `;
         const result = await pool.query(query);
-        const customers = result.rows.map(u => ({
+        const users = result.rows.map(u => ({
             ...u,
             chrono_age: calculateAge(u.birth_date)
         }));
-        res.json({ success: true, customers });
+        res.json({ success: true, users });
     } catch (err) {
-        console.error('Fetch Customers Error:', err.message);
+        console.error('Fetch Users Error:', err.message);
         if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT') {
             console.error('Database connection failed. Check your network or PolarDB whitelist.');
         }
@@ -113,11 +113,11 @@ app.get('/customers', async (req, res) => {
 });
 
 // PHM Dashboard: Send instruction to user
-app.post('/coach-instruction', async (req, res) => {
+app.post('/phm-instruction', async (req, res) => {
     const { openid, instruction } = req.body;
     const { pool } = require('../src/lib/db');
     try {
-        const user = await pool.query('SELECT user_id FROM users WHERE external_id = $1', [openid]);
+        const user = await pool.query('SELECT user_id FROM users WHERE user_id = $1', [openid]);
         if (user.rows.length === 0) return res.status(404).send({ error: 'User not found' });
 
         const coachMessage = `### 👨‍⚕️ Coach Instruction\n\n${instruction}`;
@@ -127,10 +127,10 @@ app.post('/coach-instruction', async (req, res) => {
             [user.rows[0].user_id, 'coach_instruction', coachMessage, 'pending']
         );
 
-        console.log(`[Local Dev] Coach instruction sent to ${openid}`);
+        console.log(`[Local Dev] PHM instruction sent to ${openid}`);
         res.json({ success: true });
     } catch (err) {
-        console.error('Coach Instruction Error:', err);
+        console.error('PHM Instruction Error:', err);
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
@@ -166,12 +166,12 @@ app.get('/dots-inventory', async (req, res) => {
     }
 });
 
-// Admin: Fetch all PHM Coaches with customer counts
+// Admin: Fetch all PHMs with user counts
 app.get('/phm-list', async (req, res) => {
     const { pool } = require('../src/lib/db');
     try {
         const query = `
-            SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.user_id) as customer_count
+            SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.user_id) as user_count
             FROM phms p
             LEFT JOIN users u ON p.id = u.phm_id
             GROUP BY p.id;
@@ -228,6 +228,8 @@ app.put('/users/:id', async (req, res) => {
         console.error('Update User Error:', err);
         res.status(500).json({ error: 'Internal Server Error' });
     }
+});
+
 // Admin: Delete user
 app.delete('/users/:id', async (req, res) => {
     const { pool } = require('../src/lib/db');
@@ -240,7 +242,7 @@ app.delete('/users/:id', async (req, res) => {
     }
 });
 
-// Admin: Create PHM Coach
+// Admin: Create PHM
 app.post('/phms', async (req, res) => {
     const { name, email, phone } = req.body;
     const { pool } = require('../src/lib/db');
@@ -255,7 +257,7 @@ app.post('/phms', async (req, res) => {
     }
 });
 
-// Admin: Update PHM Coach
+// Admin: Update PHM
 app.put('/phms/:id', async (req, res) => {
     const { name, email, phone } = req.body;
     const { pool } = require('../src/lib/db');
@@ -270,7 +272,7 @@ app.put('/phms/:id', async (req, res) => {
     }
 });
 
-// Admin: Delete PHM Coach
+// Admin: Delete PHM
 app.delete('/phms/:id', async (req, res) => {
     const { pool } = require('../src/lib/db');
     try {

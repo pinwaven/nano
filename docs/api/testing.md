@@ -38,7 +38,12 @@ All three simulators are Electron apps with Vite dev servers. They proxy `/api/*
 
 ## Simulators in the admin panel
 
-The simulators are also available in production inside the admin panel at `/admin/simulators` — all three rendered side by side as iframes. See [Simulator Build & Deploy](../simulator-build-deploy.md) for how to rebuild and redeploy them.
+The simulators are also available in production via the main domain:
+- **Chat**: `https://nano.fros.cc/admin/sim/chat/`
+- **Kino**: `https://nano.fros.cc/admin/sim/kino/`
+- **PHM**: `https://nano.fros.cc/admin/sim/phm/`
+
+In production, these simulators use the public `/api` path to talk directly to the worker, ensuring better performance and lower overhead. See [Simulator Build & Deploy](../simulator-build-deploy.md) for how to rebuild and redeploy them.
 
 ## End-to-end testing workflow
 
