@@ -54,7 +54,7 @@ function App() {
       const response = await axios.get('/api/customers');
       setCustomers(response.data.customers);
       if (response.data.customers.length > 0) {
-        const current = selectedUser ? response.data.customers.find(c => c.id === selectedUser.id) : response.data.customers[0];
+        const current = selectedUser ? response.data.customers.find(c => c.user_id === selectedUser.user_id) : response.data.customers[0];
         setSelectedUser(current || response.data.customers[0]);
       }
     } catch (err) {
@@ -69,7 +69,7 @@ function App() {
 
     try {
       await axios.post('/api/coach-instruction', {
-        openid: selectedUser.wechat_openid,
+        openid: selectedUser.external_id,
         instruction: instruction
       });
       setInstruction('');
@@ -108,12 +108,12 @@ function App() {
         </div>
         <div className="customer-selector">
           {customers.map(c => (
-            <div 
-              key={c.id} 
-              className={`customer-pill ${selectedUser?.id === c.id ? 'active' : ''}`}
+            <div
+              key={c.user_id}
+              className={`customer-pill ${selectedUser?.user_id === c.user_id ? 'active' : ''}`}
               onClick={() => setSelectedUser(c)}
             >
-              {c.nickname || 'User ' + c.id}
+              {c.nickname || 'User ' + c.user_id}
             </div>
           ))}
         </div>

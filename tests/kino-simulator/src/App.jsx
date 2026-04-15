@@ -24,7 +24,7 @@ function App() {
     try {
       const randomCRP = parseFloat((Math.random() * (3.5 - 0.2) + 0.2).toFixed(2));
       await axios.post('/api/chat', {
-        openid: selectedUser.wechat_openid,
+        openid: selectedUser.external_id,
         test_type: 'kino_chip',
         test_data: { hsCRP: randomCRP },
         message: 'biomarkers'
@@ -54,11 +54,11 @@ function App() {
         <div className="user-selector">
           {users.map(u => (
             <button
-              key={u.id}
-              className={`user-pill${selectedUser?.id === u.id ? ' active' : ''}`}
+              key={u.user_id}
+              className={`user-pill${selectedUser?.user_id === u.user_id ? ' active' : ''}`}
               onClick={() => setSelectedUser(u)}
             >
-              {u.nickname || 'User ' + u.id}
+              {u.nickname || 'User ' + u.user_id}
             </button>
           ))}
           {users.length === 0 && <span className="no-users">No users — start backend first</span>}

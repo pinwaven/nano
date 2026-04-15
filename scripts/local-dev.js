@@ -55,10 +55,10 @@ app.get('/notifications', async (req, res) => {
 
     try {
         const query = `
-            SELECT n.id, n.content, n.notification_type 
+            SELECT n.id, n.content, n.notification_type
             FROM notifications n
-            JOIN users u ON n.user_id = u.id
-            WHERE u.wechat_openid = $1 AND n.status = 'pending'
+            JOIN users u ON n.user_id = u.user_id
+            WHERE u.external_id = $1 AND n.status = 'pending'
             ORDER BY n.sent_at ASC;
         `;
         const result = await pool.query(query, [openid]);
@@ -83,19 +83,19 @@ app.get('/customers', async (req, res) => {
     try {
         console.log(`[Local Dev] Fetching customers from ${process.env.DATABASE_URL.includes('localhost') ? 'Local' : 'PolarDB'}`);
         const query = `
-            SELECT u.id, u.wechat_openid, u.nickname, u.birth_date, u.language, u.gender,
+            SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
                    u.phm_id, u.created_at,
                    b.bio_age, b.data as bio_data,
                    p.name as coach_name,
-                   (SELECT content FROM notifications WHERE user_id = u.id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan,
-                   (SELECT content FROM notifications WHERE user_id = u.id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report
+                   (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan,
+                   (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report
             FROM users u
             LEFT JOIN phms p ON u.phm_id = p.id
             LEFT JOIN (
                 SELECT DISTINCT ON (user_id) user_id, bio_age, data
                 FROM biomarkers
                 ORDER BY user_id, tested_at DESC
-            ) b ON u.id = b.user_id;
+            ) b ON u.user_id = b.user_id;
         `;
         const result = await pool.query(query);
         const customers = result.rows.map(u => ({
@@ -117,14 +117,14 @@ app.post('/coach-instruction', async (req, res) => {
     const { openid, instruction } = req.body;
     const { pool } = require('../src/lib/db');
     try {
-        const user = await pool.query('SELECT id FROM users WHERE wechat_openid = $1', [openid]);
+        const user = await pool.query('SELECT user_id FROM users WHERE external_id = $1', [openid]);
         if (user.rows.length === 0) return res.status(404).send({ error: 'User not found' });
 
         const coachMessage = `### 👨‍⚕️ Coach Instruction\n\n${instruction}`;
-        
+
         await pool.query(
             'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-            [user.rows[0].id, 'coach_instruction', coachMessage, 'pending']
+            [user.rows[0].user_id, 'coach_instruction', coachMessage, 'pending']
         );
 
         console.log(`[Local Dev] Coach instruction sent to ${openid}`);
@@ -188,7 +188,7 @@ app.post('/assign-phm', async (req, res) => {
     const { user_id, phm_id } = req.body;
     const { pool } = require('../src/lib/db');
     try {
-        await pool.query('UPDATE users SET phm_id = $1 WHERE id = $2', [phm_id || null, user_id]);
+        await pool.query('UPDATE users SET phm_id = $1 WHERE user_id = $2', [phm_id || null, user_id]);
         res.json({ success: true });
     } catch (err) {
         console.error('Assign PHM Error:', err);
@@ -198,16 +198,16 @@ app.post('/assign-phm', async (req, res) => {
 
 // Admin: Create user
 app.post('/users', async (req, res) => {
-    const { wechat_openid, nickname, gender, birth_date, language, phm_id } = req.body;
+    const { external_id, nickname, gender, birth_date, language, phm_id } = req.body;
     const { pool } = require('../src/lib/db');
-    if (!wechat_openid) return res.status(400).json({ error: 'wechat_openid is required' });
+    if (!external_id) return res.status(400).json({ error: 'external_id is required' });
     try {
         const result = await pool.query(
-            `INSERT INTO users (wechat_openid, nickname, gender, birth_date, language, phm_id)
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-            [wechat_openid, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
+            `INSERT INTO users (external_id, nickname, gender, birth_date, language, phm_id)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING user_id`,
+            [external_id, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
         );
-        res.json({ success: true, id: result.rows[0].id });
+        res.json({ success: true, user_id: result.rows[0].user_id });
     } catch (err) {
         console.error('Create User Error:', err);
         res.status(500).json({ error: err.detail || 'Internal Server Error' });
@@ -220,7 +220,7 @@ app.put('/users/:id', async (req, res) => {
     const { pool } = require('../src/lib/db');
     try {
         await pool.query(
-            `UPDATE users SET nickname=$1, gender=$2, birth_date=$3, language=$4, phm_id=$5 WHERE id=$6`,
+            `UPDATE users SET nickname=$1, gender=$2, birth_date=$3, language=$4, phm_id=$5 WHERE user_id=$6`,
             [nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null, req.params.id]
         );
         res.json({ success: true });
@@ -232,7 +232,7 @@ app.put('/users/:id', async (req, res) => {
 app.delete('/users/:id', async (req, res) => {
     const { pool } = require('../src/lib/db');
     try {
-        await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+        await pool.query('DELETE FROM users WHERE user_id = $1', [req.params.id]);
         res.json({ success: true });
     } catch (err) {
         console.error('Delete User Error:', err);

@@ -17,19 +17,19 @@ async function handleGetCustomers() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
-            SELECT u.id, u.wechat_openid, u.nickname, u.birth_date, u.language, u.gender,
+            SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
                     u.phm_id, u.created_at,
                     b.bio_age, b.data as bio_data,
                     p.name as coach_name,
-                    (SELECT content FROM notifications WHERE user_id = u.id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report,
-                    (SELECT content FROM notifications WHERE user_id = u.id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan
+                    (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report,
+                    (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan
             FROM users u
             LEFT JOIN phms p ON u.phm_id = p.id
             LEFT JOIN (
                 SELECT DISTINCT ON (user_id) user_id, bio_age, data
                 FROM biomarkers
                 ORDER BY user_id, tested_at DESC
-            ) b ON u.id = b.user_id;
+            ) b ON u.user_id = b.user_id;
         `;
         const result = await pool.query(query);
         const customers = result.rows.map(u => ({ ...u, chrono_age: calculateAge(u.birth_date) }));
@@ -47,7 +47,7 @@ async function handleGetNotifications(openid) {
             SELECT n.id, n.content, n.notification_type
             FROM notifications n
             JOIN users u ON n.user_id = u.id
-            WHERE u.wechat_openid = $1 AND n.status = 'pending'
+            WHERE u.external_id = $1 AND n.status = 'pending'
             ORDER BY n.sent_at ASC;
         `;
         const result = await pool.query(query, [openid]);
@@ -91,12 +91,12 @@ async function handlePostCoachInstruction(body) {
     const { openid, instruction } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const user = await pool.query('SELECT id FROM users WHERE wechat_openid = $1', [openid]);
+        const user = await pool.query('SELECT user_id FROM users WHERE external_id = $1', [openid]);
         if (user.rows.length === 0) return { success: false, error: 'User not found', statusCode: 404 };
         const coachMessage = `### 👨‍⚕️ Coach Instruction\n\n${instruction}`;
         await pool.query(
             'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-            [user.rows[0].id, 'coach_instruction', coachMessage, 'pending']
+            [user.rows[0].user_id, 'coach_instruction', coachMessage, 'pending']
         );
         return { success: true };
     } catch (err) {
@@ -108,7 +108,7 @@ async function handlePostAssignPhm(body) {
     const { user_id, phm_id } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        await pool.query('UPDATE users SET phm_id = $1 WHERE id = $2', [phm_id || null, user_id]);
+        await pool.query('UPDATE users SET phm_id = $1 WHERE user_id = $2', [phm_id || null, user_id]);
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -200,28 +200,28 @@ async function handleDeleteDot(dotId) {
 }
 
 async function handlePostUsers(body) {
-    const { wechat_openid, nickname, gender, birth_date, language, phm_id } = body;
-    if (!wechat_openid) return { success: false, error: 'wechat_openid is required', statusCode: 400 };
+    const { external_id, nickname, gender, birth_date, language, phm_id } = body;
+    if (!external_id) return { success: false, error: 'external_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `INSERT INTO users (wechat_openid, nickname, gender, birth_date, language, phm_id)
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-            [wechat_openid, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
+            `INSERT INTO users (external_id, nickname, gender, birth_date, language, phm_id)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING user_id`,
+            [external_id, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
         );
-        return { success: true, id: result.rows[0].id };
+        return { success: true, user_id: result.rows[0].user_id };
     } catch (err) {
         return { success: false, error: err.detail || err.message };
     }
 }
 
-async function handlePutUser(userId, body) {
+async function handlePutUser(user_id, body) {
     const { nickname, gender, birth_date, language, phm_id } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query(
-            `UPDATE users SET nickname=$1, gender=$2, birth_date=$3, language=$4, phm_id=$5 WHERE id=$6`,
-            [nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null, userId]
+            `UPDATE users SET nickname=$1, gender=$2, birth_date=$3, language=$4, phm_id=$5 WHERE user_id=$6`,
+            [nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null, user_id]
         );
         return { success: true };
     } catch (err) {
@@ -229,10 +229,10 @@ async function handlePutUser(userId, body) {
     }
 }
 
-async function handleDeleteUser(userId) {
+async function handleDeleteUser(user_id) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+        await pool.query('DELETE FROM users WHERE user_id = $1', [user_id]);
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -244,22 +244,22 @@ async function handlePostChat(body) {
     if (!openid) throw new Error('openid is required');
 
     const userQuery = `
-        INSERT INTO users (wechat_openid, nickname, gender, birth_date, language, bio_data)
+        INSERT INTO users (external_id, nickname, gender, birth_date, language, bio_data)
         VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (wechat_openid) 
-        DO UPDATE SET 
+        ON CONFLICT (external_id)
+        DO UPDATE SET
             nickname = COALESCE(EXCLUDED.nickname, users.nickname),
             gender = COALESCE(EXCLUDED.gender, users.gender),
             birth_date = COALESCE(EXCLUDED.birth_date, users.birth_date),
             language = COALESCE(EXCLUDED.language, users.language),
             bio_data = users.bio_data || EXCLUDED.bio_data,
             updated_at = CURRENT_TIMESTAMP
-        RETURNING id, birth_date, bio_data, nickname, language;
+        RETURNING user_id, birth_date, bio_data, nickname, language;
     `;
 
     const userResult = await pool.query(userQuery, [openid, nickname, gender, birth_date, language || 'zh', JSON.stringify(rest)]);
     const user = userResult.rows[0];
-    const userId = user.id;
+    const user_id = user.user_id;
 
     if (test_data) {
         const age = calculateAge(user.birth_date);
@@ -271,7 +271,7 @@ async function handlePostChat(body) {
         const finalData = { actual: test_data, estimated: estimationReport.BiomarkerValues, context: estimationReport.ClinicalContext, bioage_profile: bioAgeReport };
         const biomarkerResult = await pool.query(
             'INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-            [userId, test_type || 'kino_chip', JSON.stringify(finalData), bioAgeReport.BioAge, tested_at || new Date().toISOString()]
+            [user_id, test_type || 'kino_chip', JSON.stringify(finalData), bioAgeReport.BioAge, tested_at || new Date().toISOString()]
         );
         const biomarkerId = biomarkerResult.rows[0].id;
 
@@ -279,7 +279,7 @@ async function handlePostChat(body) {
         const content = `I've analyzed your biomarker test. Your biological age is **${bioAgeReport.BioAge.toFixed(1)} years**. Check your report for details!`;
         await pool.query(
             'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
-            [userId, biomarkerId, 'biological_report', content, 'pending']
+            [user_id, biomarkerId, 'biological_report', content, 'pending']
         );
 
         // Generate and save Nutrition Plan / Full Report
@@ -308,7 +308,7 @@ async function handlePostChat(body) {
 
             await pool.query(
                 'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
-                [userId, biomarkerId, 'nutrition_plan', reportContent, 'pending']
+                [user_id, biomarkerId, 'nutrition_plan', reportContent, 'pending']
             );
         } catch (reportErr) {
             console.error('Report Generation Error:', reportErr);
@@ -324,7 +324,7 @@ async function handlePostChat(body) {
                 ORDER BY tested_at DESC
                 LIMIT 1;
             `;
-            const biomarkerResult = await pool.query(biomarkerQuery, [userId]);
+            const biomarkerResult = await pool.query(biomarkerQuery, [user_id]);
             const latestBiomarker = biomarkerResult.rows[0] || {};
             const bioageProfile = latestBiomarker.data?.bioage_profile || {};
 
@@ -357,18 +357,18 @@ async function handlePostChat(body) {
             // Save reply as a notification
             await pool.query(
                 'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                [userId, 'chat_reply', reply, 'pending']
+                [user_id, 'chat_reply', reply, 'pending']
             );
         } catch (err) {
             console.error('LLM Chat Error:', err);
             // Fallback for demo if LLM fails
             await pool.query(
                 'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                [userId, 'chat_reply', "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.", 'pending']
+                [user_id, 'chat_reply', "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.", 'pending']
             );
         }
     }
-    return { success: true, user_id: userId };
+    return { success: true, user_id };
 }
 
 exports.handler = async (req, resp, context) => {
@@ -452,8 +452,8 @@ exports.handler = async (req, resp, context) => {
             }
         } else if (method === 'PUT') {
             if (path.includes('/users/')) {
-                const userId = path.split('/users/')[1];
-                result = await handlePutUser(userId, parsedBody);
+                const user_id = path.split('/users/')[1];
+                result = await handlePutUser(user_id, parsedBody);
             } else if (path.includes('/phms/')) {
                 const phmId = path.split('/phms/')[1];
                 result = await handlePutPhm(phmId, parsedBody);
@@ -465,8 +465,8 @@ exports.handler = async (req, resp, context) => {
             }
         } else if (method === 'DELETE') {
             if (path.includes('/users/')) {
-                const userId = path.split('/users/')[1];
-                result = await handleDeleteUser(userId);
+                const user_id = path.split('/users/')[1];
+                result = await handleDeleteUser(user_id);
             } else if (path.includes('/phms/')) {
                 const phmId = path.split('/phms/')[1];
                 result = await handleDeletePhm(phmId);

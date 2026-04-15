@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS phms (
 );
 
 CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    wechat_openid TEXT UNIQUE NOT NULL,
+    user_id SERIAL PRIMARY KEY,
+    external_id TEXT UNIQUE NOT NULL,
     phm_id INTEGER REFERENCES phms(id) ON DELETE SET NULL, -- Link to health coach
     nickname TEXT,
     avatar_url TEXT,
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 -- Indexes for performance
-CREATE INDEX idx_users_wechat_openid ON users(wechat_openid);
+CREATE INDEX idx_users_external_id ON users(external_id);
 CREATE INDEX idx_scans_user_id ON scans(user_id);
 CREATE INDEX idx_notifications_user_id ON notifications(user_id);
 CREATE INDEX idx_notifications_biomarker_id ON notifications(biomarker_id);

@@ -34,7 +34,7 @@ function App() {
 
     const poll = async () => {
       try {
-        const r = await axios.get(`${API_URL}/notifications?openid=${user.wechat_openid}`);
+        const r = await axios.get(`${API_URL}/notifications?openid=${user.external_id}`);
         const notifications = r.data.notifications || [];
         
         setSeenIds(prev => {
@@ -67,7 +67,7 @@ function App() {
     setInput('');
     setTyping(true);
     try {
-      await axios.post(`${API_URL}/chat`, { openid: user.wechat_openid, message: text });
+      await axios.post(`${API_URL}/chat`, { openid: user.external_id, message: text });
       // Removed: setMessages(prev => [...prev, { id: Date.now(), role: 'ai', content: r.data.reply || 'Analysis complete.' }]);
     } catch {
       setMessages(prev => [...prev, { id: Date.now(), role: 'ai', content: 'Could not reach the backend. Is it running?' }]);
@@ -85,7 +85,7 @@ function App() {
         <div className="login-subtitle">Select a user to continue</div>
         <div className="login-list">
           {allUsers.map(u => (
-            <button key={u.id} className="login-btn" onClick={() => setUser(u)}>
+            <button key={u.user_id} className="login-btn" onClick={() => setUser(u)}>
               <span className="login-avatar">{(u.nickname || 'U')[0].toUpperCase()}</span>
               {u.nickname || 'User ' + u.id}
             </button>

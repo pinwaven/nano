@@ -130,7 +130,7 @@ describe(`Worker Endpoints Integration Tests [${BASE_URL}]`, () => {
         const phmsRes = await axios.get(`${BASE_URL}/phm-list`);
         
         if (customersRes.data.customers.length > 0 && phmsRes.data.phms.length > 0) {
-            const user_id = customersRes.data.customers[0].id;
+            const user_id = customersRes.data.customers[0].user_id;
             const phm_id = phmsRes.data.phms[0].id;
 
             const response = await axios.post(`${BASE_URL}/assign-phm`, { user_id, phm_id });
