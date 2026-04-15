@@ -4,7 +4,7 @@
 -- Enable extension for UUIDs if needed (optional)
 -- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Users Table
+-- PHMs Table
 CREATE TABLE IF NOT EXISTS phms (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
@@ -14,9 +14,11 @@ CREATE TABLE IF NOT EXISTS phms (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Users Table
+-- Note: In the actual PolarDB instance, user_id is TEXT and stores the external platform ID (openid).
+-- The external_id column has been merged into user_id.
 CREATE TABLE IF NOT EXISTS users (
-    user_id SERIAL PRIMARY KEY,
-    external_id TEXT UNIQUE NOT NULL,
+    user_id TEXT PRIMARY KEY, -- Stores openid/external_id
     phm_id INTEGER REFERENCES phms(id) ON DELETE SET NULL, -- Link to health coach
     nickname TEXT,
     avatar_url TEXT,
@@ -33,7 +35,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- Biomarkers Table (Time-series data for trend analysis)
 CREATE TABLE IF NOT EXISTS biomarkers (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE,
     test_type TEXT NOT NULL, -- e.g., 'body_composition', 'blood_glucose', 'heart_rate', 'kino_chip'
     data JSONB NOT NULL, -- e.g., {"actual": {...}, "estimated": {...}, "context": "..."}
     bio_age FLOAT, -- Calculated biological age
@@ -48,7 +50,7 @@ CREATE INDEX idx_biomarkers_test_type ON biomarkers(test_type);
 -- Nutrition Plans (14-day blocks)
 CREATE TABLE IF NOT EXISTS nutrition_plans (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE,
     biomarker_scan_id INTEGER, -- Link to the analysis that generated this plan
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
@@ -60,7 +62,7 @@ CREATE TABLE IF NOT EXISTS nutrition_plans (
 CREATE TABLE IF NOT EXISTS nutrition_schedules (
     id SERIAL PRIMARY KEY,
     plan_id INTEGER REFERENCES nutrition_plans(id) ON DELETE CASCADE,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE,
     scheduled_date DATE NOT NULL,
     slot_name TEXT NOT NULL, -- e.g., 'morning_cup', 'evening_cup'
     recipe JSONB NOT NULL, -- e.g., {"dots": {"vitamin_c": 5, "magnesium": 2}, "benefit": "focus"}
@@ -91,7 +93,7 @@ CREATE TABLE IF NOT EXISTS dots (
 -- Scan Logs (Track scanner activity)
 CREATE TABLE IF NOT EXISTS scans (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE,
     scan_status TEXT NOT NULL, -- 'pending', 'processing', 'completed', 'failed'
     scan_results JSONB, -- Raw data extracted or AI input context
     error_message TEXT,
@@ -101,7 +103,7 @@ CREATE TABLE IF NOT EXISTS scans (
 -- Notification History
 CREATE TABLE IF NOT EXISTS notifications (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE,
     scan_id INTEGER REFERENCES scans(id) ON DELETE SET NULL,
     biomarker_id INTEGER REFERENCES biomarkers(id) ON DELETE SET NULL,
     notification_type TEXT NOT NULL DEFAULT 'wechat',
@@ -111,7 +113,6 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 -- Indexes for performance
-CREATE INDEX idx_users_external_id ON users(external_id);
 CREATE INDEX idx_scans_user_id ON scans(user_id);
 CREATE INDEX idx_notifications_user_id ON notifications(user_id);
 CREATE INDEX idx_notifications_biomarker_id ON notifications(biomarker_id);

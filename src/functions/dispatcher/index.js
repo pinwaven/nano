@@ -22,12 +22,12 @@ exports.handler = async (event, context) => {
 
     try {
         const nutritionQuery = `
-            SELECT u.user_id, u.external_id, u.nickname,
+            SELECT u.user_id, u.nickname,
                    COUNT(s.id) as scheduled_days,
                    MAX(s.scheduled_date) as last_scheduled_date
             FROM users u
-            LEFT JOIN nutrition_schedules s ON u.id = s.user_id AND s.scheduled_date >= CURRENT_DATE
-            GROUP BY u.id
+            LEFT JOIN nutrition_schedules s ON u.user_id = s.user_id AND s.scheduled_date >= CURRENT_DATE
+            GROUP BY u.user_id
             HAVING COUNT(s.id) < 7;
         `;
 
@@ -43,7 +43,7 @@ exports.handler = async (event, context) => {
             console.log(`Dispatching nutrition top-up for: ${user.nickname}`);
             
             const payload = {
-                openid: user.external_id,
+                openid: user.user_id,
                 trigger_type: 'nutrition_topup',
                 days_needed: 7 - parseInt(user.scheduled_days),
                 start_from: user.last_scheduled_date || new Date().toISOString().split('T')[0]
@@ -66,7 +66,7 @@ exports.handler = async (event, context) => {
 
             try {
                 await ebClient.putEvents([cloudEvent]);
-                console.log(`[EventBridge] Published event for ${user.external_id}`);
+                console.log(`[EventBridge] Published event for ${user.user_id}`);
             } catch (ebErr) {
                 console.warn(`[EventBridge] Failed, falling back to HTTP: ${ebErr.message}`);
                 
@@ -79,9 +79,9 @@ exports.handler = async (event, context) => {
                         },
                         timeout: 10000 
                     });
-                    console.log(`[HTTP Fallback] Dispatched to worker for ${user.external_id}`);
+                    console.log(`[HTTP Fallback] Dispatched to worker for ${user.user_id}`);
                 } catch (httpErr) {
-                    console.error(`[HTTP Fallback] Failed for ${user.external_id}:`, httpErr.message);
+                    console.error(`[HTTP Fallback] Failed for ${user.user_id}:`, httpErr.message);
                 }
             }
         }

@@ -171,7 +171,7 @@ app.get('/phm-list', async (req, res) => {
     const { pool } = require('../src/lib/db');
     try {
         const query = `
-            SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.id) as customer_count
+            SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.user_id) as customer_count
             FROM phms p
             LEFT JOIN users u ON p.id = u.phm_id
             GROUP BY p.id;

@@ -17,7 +17,7 @@ async function handleGetCustomers() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
-            SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
+            SELECT u.user_id, u.nickname, u.birth_date, u.language, u.gender,
                     u.phm_id, u.created_at,
                     b.bio_age, b.data as bio_data,
                     p.name as coach_name,
@@ -46,8 +46,8 @@ async function handleGetNotifications(openid) {
         const query = `
             SELECT n.id, n.content, n.notification_type
             FROM notifications n
-            JOIN users u ON n.user_id = u.id
-            WHERE u.external_id = $1 AND n.status = 'pending'
+            JOIN users u ON n.user_id = u.user_id
+            WHERE u.user_id = $1 AND n.status = 'pending'
             ORDER BY n.sent_at ASC;
         `;
         const result = await pool.query(query, [openid]);
@@ -75,7 +75,7 @@ async function handleGetPhmList() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
-            SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.id) as customer_count
+            SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.user_id) as customer_count
             FROM phms p
             LEFT JOIN users u ON p.id = u.phm_id
             GROUP BY p.id;
@@ -91,7 +91,7 @@ async function handlePostCoachInstruction(body) {
     const { openid, instruction } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const user = await pool.query('SELECT user_id FROM users WHERE external_id = $1', [openid]);
+        const user = await pool.query('SELECT user_id FROM users WHERE user_id = $1', [openid]);
         if (user.rows.length === 0) return { success: false, error: 'User not found', statusCode: 404 };
         const coachMessage = `### 👨‍⚕️ Coach Instruction\n\n${instruction}`;
         await pool.query(
@@ -159,8 +159,6 @@ async function handlePostDots(body) {
     if (!key_name || !name) return { success: false, error: 'key_name and name are required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        // If id is not provided, we let it be assigned or we find the next one.
-        // Given the schema id is INTEGER PRIMARY KEY (not serial), we should probably find the next ID.
         const maxIdResult = await pool.query('SELECT MAX(id) as max_id FROM dots');
         const nextId = (maxIdResult.rows[0].max_id || 0) + 1;
         
@@ -200,12 +198,13 @@ async function handleDeleteDot(dotId) {
 }
 
 async function handlePostUsers(body) {
-    const { external_id, nickname, gender, birth_date, language, phm_id } = body;
-    if (!external_id) return { success: false, error: 'external_id is required', statusCode: 400 };
+    const { openid, nickname, gender, birth_date, language, phm_id } = body;
+    const external_id = openid; // in current DB, user_id is the external_id
+    if (!external_id) return { success: false, error: 'openid is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `INSERT INTO users (external_id, nickname, gender, birth_date, language, phm_id)
+            `INSERT INTO users (user_id, nickname, gender, birth_date, language, phm_id)
              VALUES ($1, $2, $3, $4, $5, $6) RETURNING user_id`,
             [external_id, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
         );
@@ -244,9 +243,9 @@ async function handlePostChat(body) {
     if (!openid) throw new Error('openid is required');
 
     const userQuery = `
-        INSERT INTO users (external_id, nickname, gender, birth_date, language, bio_data)
+        INSERT INTO users (user_id, nickname, gender, birth_date, language, bio_data)
         VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (external_id)
+        ON CONFLICT (user_id)
         DO UPDATE SET
             nickname = COALESCE(EXCLUDED.nickname, users.nickname),
             gender = COALESCE(EXCLUDED.gender, users.gender),
@@ -379,14 +378,12 @@ exports.handler = async (req, resp, context) => {
         try { event = JSON.parse(req.toString()); } catch (e) {}
     }
 
-    // FC 3.0 HTTP trigger exposes req.url (e.g. "/notifications?openid=xxx"), not req.path
     const rawUrl = req.url || '';
     const urlPath = rawUrl.split('?')[0];
     const urlParams = rawUrl.includes('?')
         ? Object.fromEntries(new URLSearchParams(rawUrl.split('?')[1]))
         : {};
 
-    // FC 3.0 uses rawPath and queryParameters (not path / queryStringParameters)
     const path = event.rawPath || event.path || (event.requestContext && event.requestContext.path) || req.path || urlPath || '';
     const method = event.httpMethod || event.method || (event.requestContext && event.requestContext.http && event.requestContext.http.method) || req.method || 'POST';
     const body = event.body || (isStandardHttp ? req.body : event);

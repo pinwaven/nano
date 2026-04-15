@@ -87,7 +87,7 @@ function App() {
           {allUsers.map(u => (
             <button key={u.user_id} className="login-btn" onClick={() => setUser(u)}>
               <span className="login-avatar">{(u.nickname || 'U')[0].toUpperCase()}</span>
-              {u.nickname || 'User ' + u.id}
+              {u.nickname || 'User ' + u.user_id}
             </button>
           ))}
           {allUsers.length === 0 && (
