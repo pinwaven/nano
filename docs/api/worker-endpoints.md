@@ -18,13 +18,13 @@ All paths below are relative to the Base URL (e.g., `GET /api/users`).
 
 | Method | Path | Handler |
 |---|---|---|
-| `GET` | `/users` | List all users with latest biomarkers and coach |
+| `GET` | `/users` | List all users with latest biomarkers and PHM |
 | `GET` | `/notifications` | Fetch pending notifications for a user |
 | `GET` | `/dots-inventory` | List all Dots cartridges |
-| `GET` | `/phm-list` | List PHMs with customer counts |
+| `GET` | `/phm-list` | List PHMs with user counts |
 | `POST` | `/chat` | Ingest biomarker data or send a chat message |
 | `POST` | `/phm-instruction` | Send a PHM instruction to a user |
-| `POST` | `/assign-phm` | Assign a PHM coach to a user |
+| `POST` | `/assign-phm` | Assign a PHM to a user |
 | `POST` | `/users` | Create a new user |
 | `PUT` | `/users/:id` | Update a user |
 | `DELETE` | `/users/:id` | Delete a user |
@@ -33,7 +33,7 @@ All paths below are relative to the Base URL (e.g., `GET /api/users`).
 
 ## GET /users
 
-Returns all users with their latest biomarker snapshot, biological age, assigned coach, and most recent nutrition plan and biological report.
+Returns all users with their latest biomarker snapshot, biological age, assigned PHM, and most recent nutrition plan and biological report.
 
 **Response**
 ```json
@@ -143,7 +143,7 @@ Inserts a formatted PHM instruction as a `pending` notification visible in the u
 
 ## POST /assign-phm
 
-Assigns or unassigns a PHM coach to a user.
+Assigns or unassigns a PHM to a user.
 
 **Request body**: `{ "user_id": 1, "phm_id": 2 }` — set `phm_id` to `null` to unassign.
 
