@@ -6,6 +6,9 @@
   "scripts": {
     "start:backend": "node scripts/local-dev.js",
     "start:admin": "node scripts/local-admin.js",
+    "deploy:kino": "./scripts/deploy-kino.sh",
+    "deploy:chat": "./scripts/deploy-chat.sh",
+    "deploy:phm": "./scripts/deploy-phm.sh",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
