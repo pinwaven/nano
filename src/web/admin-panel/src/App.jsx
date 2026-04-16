@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, createContext, useContext } fr
 import axios from 'axios';
 import {
   Users, Droplets, UserCog, RefreshCcw,
-  ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe
+  ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout
 } from 'lucide-react';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
@@ -10,7 +10,7 @@ import {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', phms: 'PHMs', dots: 'Precision Dots' },
+    nav: { users: 'Users', phms: 'PHMs', dots: 'Precision Dots', sims: 'Simulators' },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
     stats: {
@@ -64,7 +64,7 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', phms: 'PHM', dots: '精准营养点' },
+    nav: { users: '用户管理', phms: 'PHM', dots: '精准营养点', sims: '模拟器' },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
     stats: {
@@ -691,6 +691,27 @@ function DotsTab({ dots, onRefresh }) {
   );
 }
 
+// ── Simulators tab ────────────────────────────────────────────────────────────
+
+function SimulatorsTab() {
+  return (
+    <div className="sims-grid">
+      <div className="card sim-card">
+        <div className="card-header">Kino Simulator</div>
+        <iframe src="/admin/sim/kino/" title="Kino" className="sim-iframe" />
+      </div>
+      <div className="card sim-card">
+        <div className="card-header">Chat Simulator</div>
+        <iframe src="/admin/sim/chat/" title="Chat" className="sim-iframe" />
+      </div>
+      <div className="card sim-card">
+        <div className="card-header">PHM Simulator</div>
+        <iframe src="/admin/sim/phm/" title="PHM" className="sim-iframe" />
+      </div>
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -723,6 +744,7 @@ export default function App() {
     { id: 'users', label: t.nav.users, icon: Users    },
     { id: 'phms',  label: t.nav.phms,  icon: UserCog  },
     { id: 'dots',  label: t.nav.dots,  icon: Droplets },
+    { id: 'sims',  label: t.nav.sims,  icon: Layout   },
   ];
 
   return (
@@ -759,6 +781,7 @@ export default function App() {
           {tab === 'users' && <UsersTab users={data.users} phms={data.phms} onRefresh={fetchData} />}
           {tab === 'phms'  && <PHMTab  phms={data.phms}   users={data.users} onRefresh={fetchData} />}
           {tab === 'dots'  && <DotsTab dots={data.dots} onRefresh={fetchData} />}
+          {tab === 'sims'  && <SimulatorsTab />}
         </div>
       </div>
     </LangCtx.Provider>

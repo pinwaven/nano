@@ -4,7 +4,6 @@ set -e
 # 1. Build the Admin Panel
 echo "Building Admin Panel..."
 cd src/web/admin-panel
-npm install
 npx vite build
 
 # 2. Deploy the Admin Panel function
