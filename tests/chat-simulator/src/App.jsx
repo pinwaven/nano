@@ -5,6 +5,13 @@ import wavenLogo from '../../../src/web/shared/assets/waven-logo-icon.png';
 
 const API_URL = '/api';
 
+function mockWechatOpenid() {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let id = 'wx_sim_';
+  for (let i = 0; i < 20; i++) id += chars[Math.floor(Math.random() * chars.length)];
+  return id;
+}
+
 function App() {
   const [users, setUsers] = useState([]);
   const [user, setUser] = useState(null);
@@ -14,16 +21,24 @@ function App() {
   const [seenIds, setSeenIds] = useState(new Set());
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
+  const [showNewUser, setShowNewUser] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const chatEndRef = useRef(null);
+  const newNameRef = useRef(null);
 
-  useEffect(() => {
+  const fetchUsers = () =>
     axios.get('/api/users')
       .then(r => {
         const list = r.data.users || [];
         setUsers(list);
-        if (list.length > 0) setUser(list[0]);
+        return list;
       })
-      .catch(() => {});
+      .catch(() => []);
+
+  useEffect(() => {
+    fetchUsers().then(list => { if (list.length > 0) setUser(list[0]); });
   }, []);
 
   useEffect(() => {
@@ -61,6 +76,13 @@ function App() {
     return () => clearInterval(interval);
   }, [user]);
 
+  useEffect(() => {
+    if (showNewUser) {
+      setNewName('');
+      setTimeout(() => newNameRef.current?.focus(), 50);
+    }
+  }, [showNewUser]);
+
   const handleSend = async () => {
     if (!input.trim() || !user || typing) return;
     const text = input.trim();
@@ -73,6 +95,24 @@ function App() {
       setMessages(prev => [...prev, { id: Date.now(), role: 'ai', content: 'Could not reach the backend. Is it running?' }]);
     } finally {
       setTyping(false);
+    }
+  };
+
+  const handleCreateUser = async () => {
+    const name = newName.trim();
+    if (!name || creating) return;
+    setCreating(true);
+    try {
+      const openid = mockWechatOpenid();
+      await axios.post(`${API_URL}/chat`, { openid, nickname: name });
+      const list = await fetchUsers();
+      const created = list.find(u => u.user_id === openid) || list[list.length - 1];
+      if (created) setUser(created);
+      setShowNewUser(false);
+    } catch {
+      // silently ignore
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -99,6 +139,17 @@ function App() {
           ) : (
             <span className="no-users">No users — start backend first</span>
           )}
+          <button
+            className={`refresh-btn${refreshing ? ' spinning' : ''}`}
+            onClick={async () => { setRefreshing(true); await fetchUsers(); setRefreshing(false); }}
+            title="Refresh users"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13.5 8A5.5 5.5 0 1 1 8 2.5a5.5 5.5 0 0 1 3.54 1.29L13.5 5.5"/>
+              <path d="M13.5 2v3.5H10"/>
+            </svg>
+          </button>
+          <button className="new-user-btn" onClick={() => setShowNewUser(true)}>+ New User</button>
         </div>
       </div>
 
@@ -132,6 +183,33 @@ function App() {
           </button>
         </div>
       </div>
+
+      {showNewUser && (
+        <div className="modal-overlay" onClick={() => setShowNewUser(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">New WeChat User</div>
+            <div className="modal-field">
+              <label className="modal-label">Nickname</label>
+              <input
+                ref={newNameRef}
+                className="modal-input"
+                type="text"
+                placeholder="e.g. Zhang Wei"
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateUser(); if (e.key === 'Escape') setShowNewUser(false); }}
+              />
+            </div>
+            <div className="modal-hint">A mock WeChat openid will be generated automatically.</div>
+            <div className="modal-actions">
+              <button className="modal-btn-cancel" onClick={() => setShowNewUser(false)}>Cancel</button>
+              <button className="modal-btn-create" onClick={handleCreateUser} disabled={!newName.trim() || creating}>
+                {creating ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

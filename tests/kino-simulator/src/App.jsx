@@ -19,16 +19,20 @@ function App() {
   const [biomarkers, setBiomarkers] = useState(null);
   const [slideIndex, setSlideIndex] = useState(0);
   const [slideVisible, setSlideVisible] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const slideTimer = useRef(null);
 
-  useEffect(() => {
+  const fetchUsers = () =>
     axios.get('/api/users')
       .then(r => {
         const list = r.data.users || [];
         setUsers(list);
-        if (list.length > 0) setSelectedUser(list[0]);
+        return list;
       })
-      .catch(() => {});
+      .catch(() => []);
+
+  useEffect(() => {
+    fetchUsers().then(list => { if (list.length > 0) setSelectedUser(list[0]); });
   }, []);
 
   useEffect(() => {
@@ -108,6 +112,16 @@ function App() {
           ) : (
             <span className="no-users">No users — start backend first</span>
           )}
+          <button
+            className={`refresh-btn${refreshing ? ' spinning' : ''}`}
+            onClick={async () => { setRefreshing(true); await fetchUsers(); setRefreshing(false); }}
+            title="Refresh users"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13.5 8A5.5 5.5 0 1 1 8 2.5a5.5 5.5 0 0 1 3.54 1.29L13.5 5.5"/>
+              <path d="M13.5 2v3.5H10"/>
+            </svg>
+          </button>
         </div>
       </div>
 

@@ -36,6 +36,7 @@ function App() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [instruction, setInstruction] = useState('');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [lang, setLang] = useState('zh');
 
   const t = translations[lang];
@@ -48,10 +49,10 @@ function App() {
       const list = response.data.users || [];
       setUsers(list);
       if (list.length > 0) {
-        const current = selectedUser
-          ? list.find(u => u.user_id === selectedUser.user_id)
-          : list[0];
-        setSelectedUser(current || list[0]);
+        setSelectedUser(prev => {
+          const refreshed = prev ? list.find(u => u.user_id === prev.user_id) : null;
+          return refreshed || list[0];
+        });
       }
     } catch (err) {
       console.error('Failed to fetch users:', err);
@@ -109,6 +110,16 @@ function App() {
           ) : (
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>No users — start backend first</span>
           )}
+          <button
+            className={`refresh-btn${refreshing ? ' spinning' : ''}`}
+            onClick={async () => { setRefreshing(true); await fetchUsers(); setRefreshing(false); }}
+            title="Refresh users"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13.5 8A5.5 5.5 0 1 1 8 2.5a5.5 5.5 0 0 1 3.54 1.29L13.5 5.5"/>
+              <path d="M13.5 2v3.5H10"/>
+            </svg>
+          </button>
         </div>
       </div>
 

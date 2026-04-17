@@ -96,6 +96,9 @@ body {
 /* User selector dropdown */
 .user-selector {
   -webkit-app-region: no-drag;
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .user-select {
@@ -114,6 +117,39 @@ body {
   background-repeat: no-repeat;
   background-position: right 11px center;
   transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.refresh-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  border: 1px solid rgba(99, 117, 236, 0.35);
+  background: var(--blue-dim);
+  color: var(--text-sub);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.18s;
+  padding: 0;
+  -webkit-app-region: no-drag;
+}
+
+.refresh-btn svg { width: 15px; height: 15px; }
+
+.refresh-btn:hover {
+  border-color: var(--blue);
+  color: var(--text);
+  background: rgba(99, 117, 236, 0.2);
+}
+
+.refresh-btn.spinning svg {
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .user-select:focus {
