@@ -16,11 +16,13 @@ CREATE TABLE IF NOT EXISTS phms (
 
 -- Users Table
 CREATE TABLE IF NOT EXISTS users (
-    user_id TEXT PRIMARY KEY,   -- Short 7-char hex ID (e.g. 'a3f2c1d'), generated on insert
+    user_id TEXT PRIMARY KEY,   -- Short 8-char hex ID (e.g. 'a3f2c1d'), generated on insert
     external_id TEXT UNIQUE,    -- ID used by the external app (e.g. WeChat openid, WhatsApp number)
     external_app TEXT,          -- Which external app: 'wechat', 'whatsapp', 'wavenapp'
     phm_id INTEGER REFERENCES phms(id) ON DELETE SET NULL,
     nickname TEXT,
+    phone TEXT,
+    email TEXT,
     avatar_url TEXT,
     gender TEXT,
     birth_date DATE,
@@ -33,6 +35,8 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_external_id ON users(external_id);
+CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 -- Biomarkers Table (Time-series data for trend analysis)
 CREATE TABLE IF NOT EXISTS biomarkers (

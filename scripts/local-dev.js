@@ -217,14 +217,14 @@ app.post('/assign-phm', async (req, res) => {
 
 // Admin: Create user
 app.post('/users', async (req, res) => {
-    const { external_id, external_app, nickname, gender, birth_date, language, phm_id } = req.body;
+    const { external_id, external_app, nickname, phone, email, gender, birth_date, language, phm_id } = req.body;
     const { pool } = require('../src/lib/db');
     if (!external_id) return res.status(400).json({ error: 'external_id is required' });
     try {
         const result = await pool.query(
-            `INSERT INTO users (user_id, external_id, external_app, nickname, gender, birth_date, language, phm_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING user_id`,
-            [generateUserId(), external_id, external_app || null, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
+            `INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, phm_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING user_id`,
+            [generateUserId(), external_id, external_app || null, nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
         );
         res.json({ success: true, user_id: result.rows[0].user_id });
     } catch (err) {
@@ -235,12 +235,12 @@ app.post('/users', async (req, res) => {
 
 // Admin: Update user
 app.put('/users/:id', async (req, res) => {
-    const { nickname, gender, birth_date, language, phm_id } = req.body;
+    const { nickname, phone, email, gender, birth_date, language, phm_id } = req.body;
     const { pool } = require('../src/lib/db');
     try {
         await pool.query(
-            `UPDATE users SET nickname=$1, gender=$2, birth_date=$3, language=$4, phm_id=$5 WHERE user_id=$6`,
-            [nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null, req.params.id]
+            `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, phm_id=$7 WHERE user_id=$8`,
+            [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', phm_id || null, req.params.id]
         );
         res.json({ success: true });
     } catch (err) {

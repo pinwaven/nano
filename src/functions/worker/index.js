@@ -218,15 +218,15 @@ async function handleDeleteDot(dotId) {
 }
 
 async function handlePostUsers(body) {
-    const { openid, external_id: extId, external_app, nickname, gender, birth_date, language, phm_id } = body;
+    const { openid, external_id: extId, external_app, nickname, phone, email, gender, birth_date, language, phm_id } = body;
     const external_id = extId || openid;
     if (!external_id) return { success: false, error: 'external_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `INSERT INTO users (user_id, external_id, external_app, nickname, gender, birth_date, language, phm_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING user_id`,
-            [generateUserId(), external_id, external_app || null, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
+            `INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, phm_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING user_id`,
+            [generateUserId(), external_id, external_app || null, nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
         );
         return { success: true, user_id: result.rows[0].user_id };
     } catch (err) {
@@ -235,12 +235,12 @@ async function handlePostUsers(body) {
 }
 
 async function handlePutUser(user_id, body) {
-    const { nickname, gender, birth_date, language, phm_id } = body;
+    const { nickname, phone, email, gender, birth_date, language, phm_id } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query(
-            `UPDATE users SET nickname=$1, gender=$2, birth_date=$3, language=$4, phm_id=$5 WHERE user_id=$6`,
-            [nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null, user_id]
+            `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, phm_id=$7 WHERE user_id=$8`,
+            [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', phm_id || null, user_id]
         );
         return { success: true };
     } catch (err) {
@@ -286,27 +286,30 @@ async function handlePostChat(body) {
     // Otherwise fall back to the external_id upsert (production WeChat flow).
     let user, user_id;
     const byUserId = await pool.query(
-        'SELECT user_id, birth_date, bio_data, nickname, language FROM users WHERE user_id = $1',
+        'SELECT user_id, birth_date, bio_data, nickname, language, phone, email FROM users WHERE user_id = $1',
         [openid]
     );
     if (byUserId.rows.length > 0) {
         user = byUserId.rows[0];
         user_id = user.user_id;
     } else {
+        const { phone, email } = body;
         const userQuery = `
-            INSERT INTO users (user_id, external_id, external_app, nickname, gender, birth_date, language, bio_data)
-            VALUES ($1, $2, 'wechat', $3, $4, $5, $6, $7)
+            INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, bio_data)
+            VALUES ($1, $2, 'wechat', $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (external_id)
             DO UPDATE SET
                 nickname = COALESCE(EXCLUDED.nickname, users.nickname),
+                phone = COALESCE(EXCLUDED.phone, users.phone),
+                email = COALESCE(EXCLUDED.email, users.email),
                 gender = COALESCE(EXCLUDED.gender, users.gender),
                 birth_date = COALESCE(EXCLUDED.birth_date, users.birth_date),
                 language = COALESCE(EXCLUDED.language, users.language),
                 bio_data = users.bio_data || EXCLUDED.bio_data,
                 updated_at = CURRENT_TIMESTAMP
-            RETURNING user_id, birth_date, bio_data, nickname, language;
+            RETURNING user_id, birth_date, bio_data, nickname, language, phone, email;
         `;
-        const userResult = await pool.query(userQuery, [generateUserId(), openid, nickname, gender, birth_date, language || 'zh', JSON.stringify(rest)]);
+        const userResult = await pool.query(userQuery, [generateUserId(), openid, nickname, phone || null, email || null, gender, birth_date, language || 'zh', JSON.stringify(rest)]);
         user = userResult.rows[0];
         user_id = user.user_id;
     }
