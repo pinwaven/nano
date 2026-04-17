@@ -6,6 +6,7 @@
   "scripts": {
     "start:backend": "node scripts/local-dev.js",
     "start:admin": "node scripts/local-admin.js",
+    "deploy:all": "./scripts/deploy-all.sh",
     "deploy:admin": "./scripts/deploy-admin.sh",
     "deploy:kino": "./scripts/deploy-kino.sh",
     "deploy:chat": "./scripts/deploy-chat.sh",

@@ -1,26 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import wavenLogo from '../../../src/web/shared/assets/waven-logo-icon.png';
 
 const translations = {
   en: {
-    title: 'PHM Mobile',
-    loading: 'Loading PHM Mobile...',
+    title: 'PHM',
     metrics: 'Latest Metrics',
     bioAge: 'Biological Age',
     chronoAge: 'Chronological Age',
-    biomarkers: 'Biomarkers Detail',
+    biomarkers: 'Biomarker Detail',
     plan: 'Nutrition Plan (7-Day)',
     noData: 'No test data yet.',
     advice: 'PHM Advice',
-    placeholder: 'Type your advice for the user here...',
+    placeholder: 'Type your advice for the patient here...',
     send: 'Send Instruction',
-    success: 'Instruction sent successfully',
-    error: 'Failed to send instruction',
     langToggle: '中文'
   },
   zh: {
-    title: 'PHM 移动端',
-    loading: '正在加载 PHM 移动端...',
+    title: 'PHM',
     metrics: '最新指标',
     bioAge: '生物年龄',
     chronoAge: '实际年龄',
@@ -30,8 +27,6 @@ const translations = {
     advice: 'PHM 建议',
     placeholder: '在此输入给用户的建议...',
     send: '发送指令',
-    success: '指令发送成功',
-    error: '发送指令失败',
     langToggle: 'EN'
   }
 };
@@ -45,17 +40,18 @@ function App() {
 
   const t = translations[lang];
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
+  useEffect(() => { fetchUsers(); }, []);
 
   const fetchUsers = async () => {
     try {
       const response = await axios.get('/api/users');
-      setUsers(response.data.users);
-      if (response.data.users.length > 0) {
-        const current = selectedUser ? response.data.users.find(c => c.user_id === selectedUser.user_id) : response.data.users[0];
-        setSelectedUser(current || response.data.users[0]);
+      const list = response.data.users || [];
+      setUsers(list);
+      if (list.length > 0) {
+        const current = selectedUser
+          ? list.find(u => u.user_id === selectedUser.user_id)
+          : list[0];
+        setSelectedUser(current || list[0]);
       }
     } catch (err) {
       console.error('Failed to fetch users:', err);
@@ -66,110 +62,109 @@ function App() {
 
   const handleSendInstruction = async () => {
     if (!instruction.trim() || !selectedUser) return;
-
     try {
       await axios.post('/api/phm-instruction', {
         openid: selectedUser.user_id,
-        instruction: instruction
+        instruction
       });
       setInstruction('');
-      console.log(t.success);
     } catch (err) {
-      console.error(t.error);
+      console.error('Failed to send instruction:', err);
     }
   };
 
-  const toggleLang = () => {
-    setLang(prev => prev === 'zh' ? 'en' : 'zh');
-  };
-
-  if (loading) return <div style={{padding: 40, textAlign: 'center'}}>{t.loading}</div>;
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+      <span style={{ fontSize: 12, letterSpacing: 3, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+        Loading...
+      </span>
+    </div>
+  );
 
   return (
     <>
       <div className="mobile-header">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <div className="header-title" style={{ margin: 0, flex: 1 }}>{t.title}</div>
-          <button
-            onClick={toggleLang}
-            style={{
-              background: '#e5e5ea',
-              border: 'none',
-              borderRadius: '12px',
-              padding: '4px 10px',
-              fontSize: '12px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              WebkitAppRegion: 'no-drag'
-            }}
-          >
+        <div className="mobile-header-top">
+          <div className="header-brand">
+            <img src={wavenLogo} alt="Waven" className="header-logo" />
+            <span className="header-title">{t.title}</span>
+          </div>
+          <button className="lang-toggle" onClick={() => setLang(l => l === 'zh' ? 'en' : 'zh')}>
             {t.langToggle}
           </button>
         </div>
         <div className="user-selector">
-          {users.map(c => (
-            <div
-              key={c.user_id}
-              className={`user-pill ${selectedUser?.user_id === c.user_id ? 'active' : ''}`}
-              onClick={() => setSelectedUser(c)}
+          {users.length > 0 ? (
+            <select
+              className="user-select"
+              value={selectedUser?.user_id || ''}
+              onChange={e => setSelectedUser(users.find(u => u.user_id === e.target.value))}
             >
-              {c.nickname || 'User ' + c.user_id}
-            </div>
-          ))}
+              {users.map(u => (
+                <option key={u.user_id} value={u.user_id}>
+                  {u.nickname || 'User ' + u.user_id}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>No users — start backend first</span>
+          )}
         </div>
       </div>
 
       <div className="scroll-content">
+
         <div className="mobile-card">
           <div className="section-title">{t.metrics}</div>
           <div className="metric-row">
             <span className="metric-label">{t.bioAge}</span>
-            <span className="metric-value">{selectedUser?.bio_age || '--'}</span>
+            <span className="metric-value bio-age">{selectedUser?.bio_age ?? '--'}</span>
           </div>
           <div className="metric-row">
             <span className="metric-label">{t.chronoAge}</span>
-            <span className="metric-value">{selectedUser?.chrono_age || '--'}</span>
+            <span className="metric-value">{selectedUser?.chrono_age ?? '--'}</span>
           </div>
-        </div>
-
-        <div className="mobile-card">
-          <div className="section-title">{t.plan}</div>
-          {selectedUser?.latest_plan ? (
-            <div style={{ fontSize: '12px', lineHeight: '1.4', background: '#f9f9f9', padding: '10px', borderRadius: '8px', border: '1px solid #eee', overflowX: 'auto' }}>
-              <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{selectedUser.latest_plan}</div>
-            </div>
-          ) : (
-            <div style={{fontSize: 14, color: '#999'}}>{t.noData}</div>
-          )}
         </div>
 
         <div className="mobile-card">
           <div className="section-title">{t.biomarkers}</div>
-          {selectedUser?.bio_data?.actual ? (
-            Object.entries(selectedUser.bio_data.actual).map(([key, val]) => (
-              <div key={key} className="metric-row">
-                <span className="metric-label">{key}</span>
-                <span className="metric-value" style={{color: '#333', fontSize: '15px'}}>{val}</span>
-              </div>
-            ))
-          ) : (
-            <div style={{fontSize: 14, color: '#999'}}>{t.noData}</div>
-          )}
+          {selectedUser?.bio_data?.actual
+            ? Object.entries(selectedUser.bio_data.actual).map(([key, val]) => (
+                <div key={key} className="biomarker-row">
+                  <span className="biomarker-key">{key}</span>
+                  <span className="biomarker-val">{val}</span>
+                </div>
+              ))
+            : <div className="no-data">{t.noData}</div>
+          }
+        </div>
+
+        <div className="mobile-card">
+          <div className="section-title">{t.plan}</div>
+          {selectedUser?.latest_plan
+            ? <div className="plan-content">{selectedUser.latest_plan}</div>
+            : <div className="no-data">{t.noData}</div>
+          }
         </div>
 
         <div className="mobile-card">
           <div className="section-title">{t.advice}</div>
-          <textarea 
+          <textarea
             className="instruction-input"
             placeholder={t.placeholder}
             value={instruction}
-            onChange={(e) => setInstruction(e.target.value)}
+            onChange={e => setInstruction(e.target.value)}
           />
         </div>
+
       </div>
 
       <div className="action-bar">
-        <button className="send-btn-mobile" onClick={handleSendInstruction}>
+        <button
+          className="send-btn-mobile"
+          onClick={handleSendInstruction}
+          disabled={!instruction.trim() || !selectedUser}
+        >
           {t.send}
         </button>
       </div>

@@ -1,143 +1,301 @@
+/* ── Waven Design System — PHM Simulator ── */
+
 :root {
-  --phm-primary: #007aff;
-  --phm-bg: #f2f2f7;
-  --phm-card: #ffffff;
-  --phm-text: #000000;
-  --phm-secondary: #8e8e93;
-  --phm-border: #c6c6c8;
+  --blue:        #6375EC;
+  --blue-glow:   rgba(99, 117, 236, 0.45);
+  --blue-dim:    rgba(99, 117, 236, 0.12);
+  --wave:        #A6C4E5;
+  --navy:        #0B1C2E;
+  --navy-card:   #0F2540;
+  --navy-lift:   #162E4A;
+  --navy-border: rgba(99, 117, 236, 0.18);
+  --teal:        #1A8A6A;
+  --teal-glow:   rgba(26, 138, 106, 0.35);
+  --coral:       #E86060;
+  --text:        #EEF2FF;
+  --text-sub:    #A6C4E5;
+  --text-muted:  rgba(166, 196, 229, 0.4);
 }
 
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
 body {
-  font-family: -apple-system, system-ui, sans-serif;
-  background-color: var(--phm-bg);
-  color: var(--phm-text);
-  margin: 0;
-  overflow-x: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: radial-gradient(ellipse at 50% 0%, #1a3155 0%, var(--navy) 65%);
+  height: 100vh;
+  overflow: hidden;
+  color: var(--text);
 }
 
 #root {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  width: 100vw;
 }
 
+/* ── Header ── */
 .mobile-header {
-  height: 88px;
-  background: rgba(255,255,255,0.8);
-  backdrop-filter: blur(20px);
-  border-bottom: 0.5px solid var(--phm-border);
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding: 10px 16px;
+  background: rgba(11, 28, 46, 0.7);
+  backdrop-filter: blur(24px);
+  border-bottom: 1px solid var(--navy-border);
+  padding: 10px 16px 10px 80px;
+  flex-shrink: 0;
   -webkit-app-region: drag;
 }
 
-.header-title {
-  font-size: 17px;
-  font-weight: 600;
-  text-align: center;
-  margin-bottom: 8px;
+.mobile-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
 }
 
-.user-selector {
+.header-brand {
   display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding-bottom: 5px;
+  align-items: center;
+  gap: 9px;
   -webkit-app-region: no-drag;
 }
 
-.user-pill {
-  padding: 6px 12px;
-  background: #e5e5ea;
-  border-radius: 15px;
+.header-logo {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+  opacity: 0.9;
+}
+
+.header-title {
   font-size: 13px;
-  white-space: nowrap;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: var(--text);
+}
+
+.lang-toggle {
+  background: var(--blue-dim);
+  border: 1px solid rgba(99, 117, 236, 0.3);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-sub);
   cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.18s;
+  -webkit-app-region: no-drag;
 }
 
-.user-pill.active {
-  background: var(--phm-primary);
-  color: white;
+.lang-toggle:hover {
+  border-color: var(--blue);
+  color: var(--text);
+  background: rgba(99, 117, 236, 0.2);
 }
 
+/* User selector dropdown */
+.user-selector {
+  -webkit-app-region: no-drag;
+}
+
+.user-select {
+  width: 100%;
+  padding: 8px 32px 8px 12px;
+  border-radius: 9px;
+  border: 1px solid rgba(99, 117, 236, 0.3);
+  background: var(--navy-lift);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23A6C4E5' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.user-select:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--blue-dim);
+}
+
+.user-select option {
+  background: var(--navy-card);
+  color: var(--text);
+}
+
+/* ── Scroll content ── */
 .scroll-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 117, 236, 0.2) transparent;
 }
 
+.scroll-content::-webkit-scrollbar { width: 4px; }
+.scroll-content::-webkit-scrollbar-track { background: transparent; }
+.scroll-content::-webkit-scrollbar-thumb {
+  background: rgba(99, 117, 236, 0.25);
+  border-radius: 2px;
+}
+
+/* ── Cards ── */
 .mobile-card {
-  background: var(--phm-card);
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  background: var(--navy-card);
+  border: 1px solid var(--navy-border);
+  border-radius: 13px;
+  padding: 14px 16px;
 }
 
 .section-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--phm-secondary);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 2.5px;
+  color: var(--text-muted);
   text-transform: uppercase;
-  margin-bottom: 10px;
-  letter-spacing: 0.5px;
+  margin-bottom: 12px;
 }
 
+/* ── Metric rows ── */
 .metric-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 8px 0;
-  border-bottom: 0.5px solid #eee;
+  border-bottom: 1px solid rgba(99, 117, 236, 0.08);
 }
 
-.metric-row:last-child {
-  border-bottom: none;
-}
+.metric-row:last-child { border-bottom: none; }
 
 .metric-label {
-  font-size: 15px;
+  font-size: 13px;
+  color: var(--text-sub);
 }
 
 .metric-value {
   font-size: 17px;
-  font-weight: 600;
-  color: var(--phm-primary);
+  font-weight: 700;
+  color: var(--blue);
 }
 
+/* Bio age gets a teal accent */
+.metric-value.bio-age { color: #5FFFC5; }
+
+/* ── Biomarker detail rows ── */
+.biomarker-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(99, 117, 236, 0.08);
+}
+
+.biomarker-row:last-child { border-bottom: none; }
+
+.biomarker-key {
+  font-size: 12px;
+  color: var(--text-sub);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.biomarker-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wave);
+}
+
+/* ── Nutrition plan ── */
+.plan-content {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-sub);
+  background: var(--navy-lift);
+  border: 1px solid rgba(99, 117, 236, 0.12);
+  border-radius: 9px;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 117, 236, 0.2) transparent;
+}
+
+.no-data {
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+
+/* ── Advice textarea ── */
 .instruction-input {
   width: 100%;
-  border: none;
-  font-size: 16px;
-  min-height: 100px;
+  border: 1px solid rgba(99, 117, 236, 0.25);
+  border-radius: 9px;
+  background: var(--navy-lift);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  padding: 10px 12px;
+  min-height: 90px;
+  resize: none;
   outline: none;
-  margin-top: 10px;
-  background: transparent;
+  line-height: 1.5;
+  margin-top: 4px;
+  transition: border-color 0.18s, box-shadow 0.18s;
 }
 
+.instruction-input::placeholder { color: var(--text-muted); }
+
+.instruction-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--blue-dim);
+}
+
+/* ── Action bar ── */
 .action-bar {
-  padding: 16px;
-  background: white;
-  border-top: 0.5px solid var(--phm-border);
+  padding: 12px 16px;
+  background: rgba(11, 28, 46, 0.8);
+  backdrop-filter: blur(24px);
+  border-top: 1px solid var(--navy-border);
+  flex-shrink: 0;
 }
 
 .send-btn-mobile {
   width: 100%;
-  background: var(--phm-primary);
-  color: white;
+  background: linear-gradient(135deg, var(--blue) 0%, #7B8FFF 100%);
+  color: #fff;
   border: none;
-  padding: 14px;
-  border-radius: 10px;
-  font-size: 17px;
+  padding: 13px;
+  border-radius: 11px;
+  font-size: 14px;
   font-weight: 600;
+  font-family: inherit;
+  letter-spacing: 0.3px;
   cursor: pointer;
+  box-shadow: 0 4px 18px var(--blue-glow);
+  transition: all 0.18s;
 }
 
-.send-btn-mobile:active {
-  opacity: 0.7;
+.send-btn-mobile:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 6px 24px var(--blue-glow);
+  transform: translateY(-1px);
+}
+
+.send-btn-mobile:active:not(:disabled) {
+  transform: translateY(0);
+  filter: brightness(0.95);
+}
+
+.send-btn-mobile:disabled {
+  opacity: 0.35;
+  cursor: default;
+  box-shadow: none;
 }
