@@ -100,7 +100,7 @@ app.get('/users', async (req, res) => {
     try {
         console.log(`[Local Dev] Fetching users from ${process.env.DATABASE_URL.includes('localhost') ? 'Local' : 'PolarDB'}`);
         const query = `
-            SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
+            SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
                    u.phm_id, u.created_at,
                    b.bio_age, b.data as bio_data,
                    p.name as coach_name,
@@ -215,14 +215,14 @@ app.post('/assign-phm', async (req, res) => {
 
 // Admin: Create user
 app.post('/users', async (req, res) => {
-    const { external_id, nickname, gender, birth_date, language, phm_id } = req.body;
+    const { external_id, external_app, nickname, gender, birth_date, language, phm_id } = req.body;
     const { pool } = require('../src/lib/db');
     if (!external_id) return res.status(400).json({ error: 'external_id is required' });
     try {
         const result = await pool.query(
-            `INSERT INTO users (external_id, nickname, gender, birth_date, language, phm_id)
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING user_id`,
-            [external_id, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
+            `INSERT INTO users (user_id, external_id, external_app, nickname, gender, birth_date, language, phm_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING user_id`,
+            [external_id, external_id, external_app || null, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
         );
         res.json({ success: true, user_id: result.rows[0].user_id });
     } catch (err) {

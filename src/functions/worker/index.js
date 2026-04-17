@@ -17,7 +17,7 @@ async function handleGetUsers() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
-            SELECT u.user_id, u.nickname, u.birth_date, u.language, u.gender,
+            SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
                     u.phm_id, u.created_at,
                     b.bio_age, b.data as bio_data,
                     p.name as coach_name,
@@ -215,15 +215,15 @@ async function handleDeleteDot(dotId) {
 }
 
 async function handlePostUsers(body) {
-    const { openid, nickname, gender, birth_date, language, phm_id } = body;
-    const external_id = openid; // in current DB, user_id is the external_id
-    if (!external_id) return { success: false, error: 'openid is required', statusCode: 400 };
+    const { openid, external_id: extId, external_app, nickname, gender, birth_date, language, phm_id } = body;
+    const external_id = extId || openid;
+    if (!external_id) return { success: false, error: 'external_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `INSERT INTO users (user_id, nickname, gender, birth_date, language, phm_id)
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING user_id`,
-            [external_id, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
+            `INSERT INTO users (user_id, external_id, external_app, nickname, gender, birth_date, language, phm_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING user_id`,
+            [external_id, external_id, external_app || null, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
         );
         return { success: true, user_id: result.rows[0].user_id };
     } catch (err) {

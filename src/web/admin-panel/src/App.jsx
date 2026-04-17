@@ -39,7 +39,8 @@ const T = {
       addUser: 'Add User', editUser: 'Edit User', deleteUser: 'Delete User',
       addPhm: 'Add PHM', editPhm: 'Edit PHM', deletePhm: 'Delete PHM',
       addDot: 'Add Dot',   editDot: 'Edit Dot',   deleteDot: 'Delete Dot',
-      openId: 'WeChat OpenID *', openIdPlaceholder: 'e.g. wx_abc123',
+      externalId: 'External ID', externalIdPlaceholder: 'e.g. wx_abc123',
+      externalApp: 'External App',
       nickname: 'Nickname', nicknamePlaceholder: 'Display name',
       gender: 'Gender', male: 'Male', female: 'Female',
       birthDate: 'Birth Date', language: 'Language',
@@ -56,7 +57,7 @@ const T = {
       deleteWarning: (name) => `Delete ${name}? This will also remove all their biomarkers, scans, and notifications.`,
       deletePhmWarning: (name) => `Delete PHM ${name}? Their assigned users will become unassigned.`,
       deleteDotWarning: (name) => `Delete dot "${name}"? This cannot be undone.`,
-      openIdRequired: 'WeChat OpenID is required',
+      externalIdRequired: 'External ID is required',
       nameRequired: 'Name is required',
       keyRequired: 'Key name is required',
       saveFailed: 'Save failed',
@@ -93,7 +94,8 @@ const T = {
       addUser: '添加用户', editUser: '编辑用户', deleteUser: '删除用户',
       addPhm: '添加 PHM', editPhm: '编辑 PHM', deletePhm: '删除 PHM',
       addDot: '添加营养点', editDot: '编辑营养点', deleteDot: '删除营养点',
-      openId: '微信 OpenID *', openIdPlaceholder: '例如 wx_abc123',
+      externalId: '外部 ID', externalIdPlaceholder: '例如 wx_abc123',
+      externalApp: '外部应用',
       nickname: '昵称', nicknamePlaceholder: '显示名称',
       gender: '性别', male: '男', female: '女',
       birthDate: '出生日期', language: '语言',
@@ -110,7 +112,7 @@ const T = {
       deleteWarning: (name) => `确认删除 ${name}？此操作将同时删除该用户的所有生物标志物、扫描记录和通知。`,
       deletePhmWarning: (name) => `确认删除 PHM ${name}？其名下用户将变为未分配状态。`,
       deleteDotWarning: (name) => `确认删除营养点"${name}"？此操作不可撤销。`,
-      openIdRequired: '微信 OpenID 为必填项',
+      externalIdRequired: '外部 ID 为必填项',
       nameRequired: '姓名为必填项',
       keyRequired: '标识为必填项',
       saveFailed: '保存失败',
@@ -130,7 +132,7 @@ const bioAgeColor = (bio, chrono) => {
   if (!bio || !chrono) return '#64748b';
   return Number(bio) <= Number(chrono) ? '#16a34a' : '#dc2626';
 };
-const EMPTY_USER = { nickname: '', gender: '', birth_date: '', language: 'zh', wechat_openid: '', phm_id: '' };
+const EMPTY_USER = { nickname: '', gender: '', birth_date: '', language: 'zh', external_id: '', external_app: 'wechat', phm_id: '' };
 
 // ── shared components ─────────────────────────────────────────────────────────
 
@@ -176,9 +178,10 @@ function PHMSelect({ userId, currentPhmId, phms, onAssign }) {
 
 function UserModal({ user, phms, onClose, onSave }) {
   const { t } = useLang();
-  const isEdit = !!user?.id;
+  const isEdit = !!(user?.user_id || user?.id);
+  const userId = user?.user_id || user?.id;
   const [form, setForm] = useState(isEdit
-    ? { nickname: user.nickname || '', gender: user.gender || '', birth_date: user.birth_date ? user.birth_date.slice(0, 10) : '', language: user.language || 'zh', wechat_openid: user.wechat_openid || '', phm_id: user.phm_id ?? '' }
+    ? { nickname: user.nickname || '', gender: user.gender || '', birth_date: user.birth_date ? user.birth_date.slice(0, 10) : '', language: user.language || 'zh', external_id: user.external_id || '', external_app: user.external_app || 'wechat', phm_id: user.phm_id ?? '' }
     : { ...EMPTY_USER });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -186,11 +189,11 @@ function UserModal({ user, phms, onClose, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.wechat_openid.trim()) { setError(t.modal.openIdRequired); return; }
+    if (!isEdit && !form.external_id.trim()) { setError(t.modal.externalIdRequired); return; }
     setBusy(true); setError('');
     try {
       const payload = { ...form, phm_id: form.phm_id === '' ? null : parseInt(form.phm_id) };
-      if (isEdit) await axios.put(`/api/users/${user.id}`, payload);
+      if (isEdit) await axios.put(`/api/users/${userId}`, payload);
       else await axios.post('/api/users', payload);
       onSave();
     } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
@@ -207,8 +210,19 @@ function UserModal({ user, phms, onClose, onSave }) {
         <form onSubmit={handleSubmit} className="modal-body">
           <div className="form-grid">
             <label className="form-field">
-              <span>{t.modal.openId}</span>
-              <input value={form.wechat_openid} onChange={e => set('wechat_openid', e.target.value)} disabled={isEdit} placeholder={t.modal.openIdPlaceholder} />
+              <span>{t.modal.externalApp}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.external_app} onChange={e => set('external_app', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="wechat">WeChat</option>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="wavenapp">Waven App</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{t.modal.externalId}</span>
+              <input value={form.external_id} onChange={e => set('external_id', e.target.value)} disabled={isEdit} placeholder={t.modal.externalIdPlaceholder} />
             </label>
             <label className="form-field">
               <span>{t.modal.nickname}</span>
@@ -270,7 +284,7 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
   const [busy, setBusy] = useState(false);
   const handleDelete = async () => {
     setBusy(true);
-    try { await axios.delete(`/api/users/${user.id}`); onConfirm(); }
+    try { await axios.delete(`/api/users/${user.user_id || user.id}`); onConfirm(); }
     catch { /* silent */ } finally { setBusy(false); }
   };
   return (
@@ -282,7 +296,7 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
         </div>
         <div className="modal-body">
           <p style={{ marginBottom: 20, color: '#475569' }}>
-            {t.modal.deleteWarning(<strong>{user.nickname || user.wechat_openid}</strong>)}
+            {t.modal.deleteWarning(<strong>{user.nickname || user.external_id || user.user_id}</strong>)}
           </p>
           <div className="modal-footer">
             <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
@@ -592,8 +606,10 @@ function UserDetailDrawer({ user, onClose }) {
           <div className="drawer-section">
             <div className="drawer-section-title">Profile</div>
             <div className="drawer-info-grid">
-              <span className="drawer-info-key">OpenID</span>
-              <span className="drawer-info-val mono">{user.user_id || '—'}</span>
+              <span className="drawer-info-key">External App</span>
+              <span className="drawer-info-val">{fmt(user.external_app)}</span>
+              <span className="drawer-info-key">External ID</span>
+              <span className="drawer-info-val mono">{fmt(user.external_id)}</span>
               <span className="drawer-info-key">{t.table.gender}</span>
               <span className="drawer-info-val">{fmt(user.gender)}</span>
               <span className="drawer-info-key">{t.table.birthDate}</span>
@@ -708,8 +724,8 @@ function UsersTab({ users, phms, onRefresh }) {
           <tbody>
             {users.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.users}</td></tr>}
             {users.map(u => (
-              <tr key={u.id} className="clickable-row" onClick={() => setDetailUser(u)}>
-                <td className="muted">{u.id}</td>
+              <tr key={u.user_id} className="clickable-row" onClick={() => setDetailUser(u)}>
+                <td className="muted">{u.user_id}</td>
                 <td>
                   <div className="avatar-cell">
                     <div className="avatar" style={{ background: '#3b82f620', color: '#3b82f6' }}>
@@ -724,7 +740,7 @@ function UsersTab({ users, phms, onRefresh }) {
                 <td style={{ fontWeight: 700, color: bioAgeColor(u.bio_age, u.chrono_age) }}>{fmt(u.bio_age)}</td>
                 <td className="muted">{fmt(u.chrono_age)}</td>
                 <td onClick={e => e.stopPropagation()}>
-                  <PHMSelect userId={u.id} currentPhmId={u.phm_id} phms={phms} onAssign={onRefresh} />
+                  <PHMSelect userId={u.user_id} currentPhmId={u.phm_id} phms={phms} onAssign={onRefresh} />
                 </td>
                 <td className="muted">{fmtDate(u.created_at)}</td>
                 <td onClick={e => e.stopPropagation()}>
