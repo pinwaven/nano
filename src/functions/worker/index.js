@@ -258,6 +258,26 @@ async function handleDeleteUser(user_id) {
     }
 }
 
+async function handleGetChatHistory(openid) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (!openid) return { success: true, messages: [] };
+        const limit = parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10);
+        const result = await pool.query(
+            `SELECT role, content, created_at FROM (
+                SELECT role, content, created_at FROM chat_messages
+                WHERE user_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2
+            ) sub ORDER BY created_at ASC`,
+            [openid, limit]
+        );
+        return { success: true, messages: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handlePostChat(body) {
     const { openid, nickname, gender, birth_date, language, test_type, test_data, tested_at, message, ...rest } = body;
     if (!openid) throw new Error('openid is required');
@@ -374,6 +394,25 @@ async function handlePostChat(body) {
             };
 
             const systemPrompt = systemChatTemplate(llmContext);
+
+            // Save the incoming user message to the conversation log
+            await pool.query(
+                'INSERT INTO chat_messages (user_id, role, content) VALUES ($1, $2, $3)',
+                [user_id, 'user', message]
+            );
+
+            // Fetch recent conversation history (oldest-first for the LLM)
+            const historyLimit = parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10);
+            const historyResult = await pool.query(
+                `SELECT role, content FROM (
+                    SELECT role, content, created_at FROM chat_messages
+                    WHERE user_id = $1
+                    ORDER BY created_at DESC
+                    LIMIT $2
+                ) sub ORDER BY created_at ASC`,
+                [user_id, historyLimit]
+            );
+
             const client = getLlmClient();
             const model = process.env.MODEL || 'qwen-turbo';
 
@@ -381,13 +420,19 @@ async function handlePostChat(body) {
                 model: model,
                 messages: [
                     { role: 'system', content: systemPrompt },
-                    { role: 'user', content: message }
+                    ...historyResult.rows  // already shaped as { role, content }
                 ],
             });
 
             const reply = completion.choices[0].message.content;
 
-            // Save reply as a notification
+            // Save assistant reply to the conversation log
+            await pool.query(
+                'INSERT INTO chat_messages (user_id, role, content) VALUES ($1, $2, $3)',
+                [user_id, 'assistant', reply]
+            );
+
+            // Save reply as a notification (existing delivery mechanism for frontend poll)
             await pool.query(
                 'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
                 [user_id, 'chat_reply', reply, 'pending']
@@ -459,7 +504,9 @@ exports.handler = async (req, resp, context) => {
         }
 
         if (method === 'GET') {
-            if (path.includes('/biomarkers')) {
+            if (path.includes('/chat-history')) {
+                result = await handleGetChatHistory(query.openid);
+            } else if (path.includes('/biomarkers')) {
                 result = await handleGetBiomarkers(query.openid);
             } else if (path.includes('/notifications')) {
                 result = await handleGetNotifications(query.openid);
