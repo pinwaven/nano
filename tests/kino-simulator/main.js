@@ -4,10 +4,9 @@ const http = require('http');
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 360,
-    height: 500,
+    width: 420,
+    height: 720,
     titleBarStyle: 'hiddenInset',
-    resizable: false,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false

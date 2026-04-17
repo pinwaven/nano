@@ -151,6 +151,7 @@ body {
   justify-content: flex-start;
   padding: 20px 24px 24px;
   gap: 20px;
+  overflow-y: auto;
 }
 
 /* ── Device Display ── */
