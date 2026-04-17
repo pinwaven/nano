@@ -1,4 +1,7 @@
 const { pool } = require('./lib/db');
+const crypto = require('crypto');
+
+const generateUserId = () => crypto.randomBytes(4).toString('hex');
 const { getNowShanghai, calculateAge } = require('./lib/time-utils');
 const { BiomarkerEstimator } = require('./lib/estimator/BiomarkerEstimator');
 const { BioAgeCalculator } = require('./lib/bioage/BioAgeCalculator');
@@ -223,7 +226,7 @@ async function handlePostUsers(body) {
         const result = await pool.query(
             `INSERT INTO users (user_id, external_id, external_app, nickname, gender, birth_date, language, phm_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING user_id`,
-            [external_id, external_id, external_app || null, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
+            [generateUserId(), external_id, external_app || null, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
         );
         return { success: true, user_id: result.rows[0].user_id };
     } catch (err) {
@@ -260,9 +263,9 @@ async function handlePostChat(body) {
     if (!openid) throw new Error('openid is required');
 
     const userQuery = `
-        INSERT INTO users (user_id, nickname, gender, birth_date, language, bio_data)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (user_id)
+        INSERT INTO users (user_id, external_id, external_app, nickname, gender, birth_date, language, bio_data)
+        VALUES ($1, $2, 'wechat', $3, $4, $5, $6, $7)
+        ON CONFLICT (external_id)
         DO UPDATE SET
             nickname = COALESCE(EXCLUDED.nickname, users.nickname),
             gender = COALESCE(EXCLUDED.gender, users.gender),
@@ -273,7 +276,7 @@ async function handlePostChat(body) {
         RETURNING user_id, birth_date, bio_data, nickname, language;
     `;
 
-    const userResult = await pool.query(userQuery, [openid, nickname, gender, birth_date, language || 'zh', JSON.stringify(rest)]);
+    const userResult = await pool.query(userQuery, [generateUserId(), openid, nickname, gender, birth_date, language || 'zh', JSON.stringify(rest)]);
     const user = userResult.rows[0];
     const user_id = user.user_id;
 

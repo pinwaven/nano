@@ -1,4 +1,6 @@
 require('dotenv').config();
+const crypto = require('crypto');
+const generateUserId = () => crypto.randomBytes(4).toString('hex');
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -222,7 +224,7 @@ app.post('/users', async (req, res) => {
         const result = await pool.query(
             `INSERT INTO users (user_id, external_id, external_app, nickname, gender, birth_date, language, phm_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING user_id`,
-            [external_id, external_id, external_app || null, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
+            [generateUserId(), external_id, external_app || null, nickname || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
         );
         res.json({ success: true, user_id: result.rows[0].user_id });
     } catch (err) {
