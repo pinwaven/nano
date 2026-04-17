@@ -39,6 +39,23 @@ async function handleGetUsers() {
     }
 }
 
+async function handleGetBiomarkers(openid) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (!openid) return { success: true, records: [] };
+        const result = await pool.query(
+            `SELECT id, test_type, data, bio_age, tested_at
+             FROM biomarkers
+             WHERE user_id = $1
+             ORDER BY tested_at ASC`,
+            [openid]
+        );
+        return { success: true, records: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleGetNotifications(openid) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -428,7 +445,9 @@ exports.handler = async (req, resp, context) => {
         }
 
         if (method === 'GET') {
-            if (path.includes('/notifications')) {
+            if (path.includes('/biomarkers')) {
+                result = await handleGetBiomarkers(query.openid);
+            } else if (path.includes('/notifications')) {
                 result = await handleGetNotifications(query.openid);
             } else if (path.includes('/dots-inventory')) {
                 result = await handleGetDotsInventory();

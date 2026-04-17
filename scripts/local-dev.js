@@ -48,6 +48,23 @@ app.post('/chat', async (req, res) => {
     }
 });
 
+// Biomarker history for a user
+app.get('/biomarkers', async (req, res) => {
+    const { openid } = req.query;
+    const { pool } = require('../src/lib/db');
+    try {
+        const result = await pool.query(
+            `SELECT id, test_type, data, bio_age, tested_at
+             FROM biomarkers WHERE user_id = $1 ORDER BY tested_at ASC`,
+            [openid]
+        );
+        res.json({ success: true, records: result.rows });
+    } catch (err) {
+        console.error('Biomarker Fetch Error:', err);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
 // Polling endpoint for Chat Simulator
 app.get('/notifications', async (req, res) => {
     const { openid } = req.query;

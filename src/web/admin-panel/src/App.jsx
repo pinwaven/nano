@@ -503,11 +503,178 @@ function DeleteDotConfirm({ dot, onClose, onConfirm }) {
   );
 }
 
+// ── Sparkline chart ───────────────────────────────────────────────────────────
+
+function Sparkline({ values, color = '#3b82f6', width = 120, height = 36 }) {
+  if (!values || values.length < 2) {
+    return <span style={{ fontSize: 11, color: '#94a3b8' }}>—</span>;
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const pad = 4;
+  const w = width - pad * 2;
+  const h = height - pad * 2;
+  const pts = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * w;
+    const y = pad + h - ((v - min) / range) * h;
+    return `${x},${y}`;
+  }).join(' ');
+  const last = values[values.length - 1];
+  const lx = pad + w;
+  const ly = pad + h - ((last - min) / range) * h;
+  return (
+    <svg width={width} height={height} style={{ display: 'block' }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={lx} cy={ly} r="2.5" fill={color} />
+    </svg>
+  );
+}
+
+// ── User detail drawer ────────────────────────────────────────────────────────
+
+const BM_META = [
+  { key: 'hsCRP',     label: 'hsCRP',           unit: 'mg/L',      color: '#ef4444' },
+  { key: 'GDF15',     label: 'GDF-15',          unit: 'pg/mL',     color: '#f97316' },
+  { key: 'IL6',       label: 'IL-6',            unit: 'pg/mL',     color: '#a855f7' },
+  { key: 'GA',        label: 'Glycated Albumin', unit: '%',         color: '#3b82f6' },
+  { key: 'CystatinC', label: 'Cystatin C',      unit: 'mg/L',      color: '#0ea5e9' },
+  { key: 'CD38',      label: 'CD38',            unit: 'xBaseline', color: '#10b981' },
+];
+
+function UserDetailDrawer({ user, onClose }) {
+  const { t } = useLang();
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
+
+  const openid = user?.user_id || user?.id;
+
+  useEffect(() => {
+    if (!openid) return;
+    setLoading(true);
+    setFetchError(null);
+    axios.get(`/api/biomarkers?openid=${encodeURIComponent(openid)}`)
+      .then(r => {
+        if (r.data.success === false) throw new Error(r.data.error || 'API error');
+        setRecords(r.data.records || []);
+      })
+      .catch(err => {
+        console.error('Biomarker fetch error:', err.message);
+        setFetchError(err.message);
+        setRecords([]);
+      })
+      .finally(() => setLoading(false));
+  }, [openid]);
+
+  if (!user) return null;
+
+  const latestBm = records.length > 0 ? (records[records.length - 1].data?.estimated || {}) : null;
+  const trendFor = (key) => records
+    .map(r => r.data?.estimated?.[key])
+    .filter(v => v != null);
+
+  return (
+    <div className="drawer-overlay" onClick={onClose}>
+      <div className="drawer" onClick={e => e.stopPropagation()}>
+        <div className="drawer-header">
+          <div className="drawer-title">
+            <div className="avatar" style={{ width: 32, height: 32, fontSize: 14, background: '#3b82f620', color: '#3b82f6' }}>
+              {(user.nickname || 'U')[0].toUpperCase()}
+            </div>
+            <span>{user.nickname || user.user_id}</span>
+          </div>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="drawer-body">
+          {/* Profile */}
+          <div className="drawer-section">
+            <div className="drawer-section-title">Profile</div>
+            <div className="drawer-info-grid">
+              <span className="drawer-info-key">OpenID</span>
+              <span className="drawer-info-val mono">{user.user_id || '—'}</span>
+              <span className="drawer-info-key">{t.table.gender}</span>
+              <span className="drawer-info-val">{fmt(user.gender)}</span>
+              <span className="drawer-info-key">{t.table.birthDate}</span>
+              <span className="drawer-info-val">{fmtDate(user.birth_date)}</span>
+              <span className="drawer-info-key">{t.table.chronoAge}</span>
+              <span className="drawer-info-val">{fmt(user.chrono_age)}</span>
+              <span className="drawer-info-key">{t.table.bioAge}</span>
+              <span className="drawer-info-val" style={{ fontWeight: 700, color: bioAgeColor(user.bio_age, user.chrono_age) }}>
+                {fmt(user.bio_age)}
+              </span>
+              <span className="drawer-info-key">{t.table.language}</span>
+              <span className="drawer-info-val">{(user.language || '—').toUpperCase()}</span>
+              <span className="drawer-info-key">{t.table.assignedPhm}</span>
+              <span className="drawer-info-val">{fmt(user.coach_name)}</span>
+              <span className="drawer-info-key">{t.table.joined}</span>
+              <span className="drawer-info-val">{fmtDate(user.created_at)}</span>
+            </div>
+          </div>
+
+          {/* Latest Biomarkers */}
+          <div className="drawer-section">
+            <div className="drawer-section-title">Latest Biomarkers</div>
+            {loading ? (
+              <div className="drawer-empty">Loading…</div>
+            ) : fetchError ? (
+              <div className="drawer-error">API error: {fetchError}</div>
+            ) : latestBm ? (
+              <div className="bm-table">
+                {BM_META.map(({ key, label, unit, color }) => (
+                  <div key={key} className="bm-table-row">
+                    <span className="bm-table-label">{label}</span>
+                    <span className="bm-table-val" style={{ color }}>{latestBm[key] ?? '—'}</span>
+                    <span className="bm-table-unit">{unit}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="drawer-empty">No biomarker data yet.</div>
+            )}
+          </div>
+
+          {/* Trend charts */}
+          <div className="drawer-section">
+            <div className="drawer-section-title">Biomarker Trends ({records.length} test{records.length !== 1 ? 's' : ''})</div>
+            {loading ? (
+              <div className="drawer-empty">Loading…</div>
+            ) : fetchError ? (
+              <div className="drawer-error">API error: {fetchError}</div>
+            ) : records.length > 0 ? (
+              <div className="trend-grid">
+                {BM_META.map(({ key, label, unit, color }) => {
+                  const vals = trendFor(key);
+                  const last = vals[vals.length - 1];
+                  return (
+                    <div key={key} className="trend-card">
+                      <div className="trend-label">{label}</div>
+                      <div className="trend-val" style={{ color }}>
+                        {last != null ? last : '—'}
+                        <span className="trend-unit">{unit}</span>
+                      </div>
+                      <Sparkline values={vals} color={color} width={130} height={38} />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="drawer-empty">No test history yet.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Users tab ─────────────────────────────────────────────────────────────────
 
 function UsersTab({ users, phms, onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
+  const [detailUser, setDetailUser] = useState(null);
   const tested = users.filter(u => u.bio_age).length;
   const avgBioAge = tested
     ? (users.filter(u => u.bio_age).reduce((s, u) => s + Number(u.bio_age), 0) / tested).toFixed(1)
@@ -541,7 +708,7 @@ function UsersTab({ users, phms, onRefresh }) {
           <tbody>
             {users.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.users}</td></tr>}
             {users.map(u => (
-              <tr key={u.id}>
+              <tr key={u.id} className="clickable-row" onClick={() => setDetailUser(u)}>
                 <td className="muted">{u.id}</td>
                 <td>
                   <div className="avatar-cell">
@@ -556,9 +723,11 @@ function UsersTab({ users, phms, onRefresh }) {
                 <td><Badge color={u.language === 'zh' ? '#16a34a' : '#2563eb'}>{(u.language || 'zh').toUpperCase()}</Badge></td>
                 <td style={{ fontWeight: 700, color: bioAgeColor(u.bio_age, u.chrono_age) }}>{fmt(u.bio_age)}</td>
                 <td className="muted">{fmt(u.chrono_age)}</td>
-                <td><PHMSelect userId={u.id} currentPhmId={u.phm_id} phms={phms} onAssign={onRefresh} /></td>
+                <td onClick={e => e.stopPropagation()}>
+                  <PHMSelect userId={u.id} currentPhmId={u.phm_id} phms={phms} onAssign={onRefresh} />
+                </td>
                 <td className="muted">{fmtDate(u.created_at)}</td>
-                <td>
+                <td onClick={e => e.stopPropagation()}>
                   <div className="row-actions">
                     <button className="icon-btn" title={t.modal.editUser} onClick={() => setModal({ type: 'edit', user: u })}><Pencil size={14} /></button>
                     <button className="icon-btn danger" title={t.modal.deleteUser} onClick={() => setModal({ type: 'delete', user: u })}><Trash2 size={14} /></button>
@@ -572,6 +741,7 @@ function UsersTab({ users, phms, onRefresh }) {
       {modal?.type === 'add'    && <UserModal user={null}       phms={phms} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit'   && <UserModal user={modal.user} phms={phms} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteConfirm user={modal.user} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {detailUser && <UserDetailDrawer user={detailUser} onClose={() => setDetailUser(null)} />}
     </>
   );
 }
