@@ -441,12 +441,14 @@ tr:hover .row-actions { opacity: 1; }
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 20px;
   flex: 1;
+  min-height: 0;
+  align-content: stretch;
 }
 
 .sim-card {
   display: flex;
   flex-direction: column;
-  height: 600px;
+  min-height: 0;
 }
 
 .card-header {
