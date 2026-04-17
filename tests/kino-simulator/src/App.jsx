@@ -24,7 +24,7 @@ function App() {
     try {
       const randomCRP = parseFloat((Math.random() * (3.5 - 0.2) + 0.2).toFixed(2));
       await axios.post('/api/chat', {
-        openid: selectedUser.external_id,
+        openid: selectedUser.user_id,
         test_type: 'kino_chip',
         test_data: { hsCRP: randomCRP },
         message: 'biomarkers'

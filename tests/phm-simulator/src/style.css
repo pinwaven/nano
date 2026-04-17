@@ -41,7 +41,7 @@ body {
   margin-bottom: 8px;
 }
 
-.customer-selector {
+.user-selector {
   display: flex;
   gap: 10px;
   overflow-x: auto;
@@ -49,7 +49,7 @@ body {
   -webkit-app-region: no-drag;
 }
 
-.customer-pill {
+.user-pill {
   padding: 6px 12px;
   background: #e5e5ea;
   border-radius: 15px;
@@ -58,7 +58,7 @@ body {
   cursor: pointer;
 }
 
-.customer-pill.active {
+.user-pill.active {
   background: var(--phm-primary);
   color: white;
 }

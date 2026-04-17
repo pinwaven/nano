@@ -69,7 +69,7 @@ function App() {
 
     try {
       await axios.post('/api/phm-instruction', {
-        openid: selectedUser.external_id,
+        openid: selectedUser.user_id,
         instruction: instruction
       });
       setInstruction('');

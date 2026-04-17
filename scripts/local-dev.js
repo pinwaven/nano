@@ -58,7 +58,7 @@ app.get('/notifications', async (req, res) => {
             SELECT n.id, n.content, n.notification_type
             FROM notifications n
             JOIN users u ON n.user_id = u.user_id
-            WHERE u.external_id = $1 AND n.status = 'pending'
+            WHERE u.user_id = $1 AND n.status = 'pending'
             ORDER BY n.sent_at ASC;
         `;
         const result = await pool.query(query, [openid]);

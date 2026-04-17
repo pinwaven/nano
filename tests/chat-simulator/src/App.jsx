@@ -34,7 +34,7 @@ function App() {
 
     const poll = async () => {
       try {
-        const r = await axios.get(`${API_URL}/notifications?openid=${user.external_id}`);
+        const r = await axios.get(`${API_URL}/notifications?openid=${user.user_id}`);
         const notifications = r.data.notifications || [];
         
         setSeenIds(prev => {
@@ -67,7 +67,7 @@ function App() {
     setInput('');
     setTyping(true);
     try {
-      await axios.post(`${API_URL}/chat`, { openid: user.external_id, message: text });
+      await axios.post(`${API_URL}/chat`, { openid: user.user_id, message: text });
       // Removed: setMessages(prev => [...prev, { id: Date.now(), role: 'ai', content: r.data.reply || 'Analysis complete.' }]);
     } catch {
       setMessages(prev => [...prev, { id: Date.now(), role: 'ai', content: 'Could not reach the backend. Is it running?' }]);

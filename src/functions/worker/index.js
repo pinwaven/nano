@@ -262,7 +262,8 @@ async function handlePostChat(body) {
 
     if (test_data) {
         const age = calculateAge(user.birth_date);
-        const estimator = new BiomarkerEstimator(age, test_data, { Weight: user.bio_data.weight, Height: user.bio_data.height });
+        const bioData = user.bio_data || {};
+        const estimator = new BiomarkerEstimator(age, test_data, { Weight: bioData.weight, Height: bioData.height });
         const estimationReport = estimator.generateReport();
         const bioAgeCalc = new BioAgeCalculator();
         const bioAgeReport = bioAgeCalc.calculateBioAge(age, estimationReport.BiomarkerValues);
