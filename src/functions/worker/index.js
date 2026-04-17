@@ -262,23 +262,34 @@ async function handlePostChat(body) {
     const { openid, nickname, gender, birth_date, language, test_type, test_data, tested_at, message, ...rest } = body;
     if (!openid) throw new Error('openid is required');
 
-    const userQuery = `
-        INSERT INTO users (user_id, external_id, external_app, nickname, gender, birth_date, language, bio_data)
-        VALUES ($1, $2, 'wechat', $3, $4, $5, $6, $7)
-        ON CONFLICT (external_id)
-        DO UPDATE SET
-            nickname = COALESCE(EXCLUDED.nickname, users.nickname),
-            gender = COALESCE(EXCLUDED.gender, users.gender),
-            birth_date = COALESCE(EXCLUDED.birth_date, users.birth_date),
-            language = COALESCE(EXCLUDED.language, users.language),
-            bio_data = users.bio_data || EXCLUDED.bio_data,
-            updated_at = CURRENT_TIMESTAMP
-        RETURNING user_id, birth_date, bio_data, nickname, language;
-    `;
-
-    const userResult = await pool.query(userQuery, [generateUserId(), openid, nickname, gender, birth_date, language || 'zh', JSON.stringify(rest)]);
-    const user = userResult.rows[0];
-    const user_id = user.user_id;
+    // If openid matches an existing user_id (admin-created or simulator users), use it directly.
+    // Otherwise fall back to the external_id upsert (production WeChat flow).
+    let user, user_id;
+    const byUserId = await pool.query(
+        'SELECT user_id, birth_date, bio_data, nickname, language FROM users WHERE user_id = $1',
+        [openid]
+    );
+    if (byUserId.rows.length > 0) {
+        user = byUserId.rows[0];
+        user_id = user.user_id;
+    } else {
+        const userQuery = `
+            INSERT INTO users (user_id, external_id, external_app, nickname, gender, birth_date, language, bio_data)
+            VALUES ($1, $2, 'wechat', $3, $4, $5, $6, $7)
+            ON CONFLICT (external_id)
+            DO UPDATE SET
+                nickname = COALESCE(EXCLUDED.nickname, users.nickname),
+                gender = COALESCE(EXCLUDED.gender, users.gender),
+                birth_date = COALESCE(EXCLUDED.birth_date, users.birth_date),
+                language = COALESCE(EXCLUDED.language, users.language),
+                bio_data = users.bio_data || EXCLUDED.bio_data,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING user_id, birth_date, bio_data, nickname, language;
+        `;
+        const userResult = await pool.query(userQuery, [generateUserId(), openid, nickname, gender, birth_date, language || 'zh', JSON.stringify(rest)]);
+        user = userResult.rows[0];
+        user_id = user.user_id;
+    }
 
     let biomarkerData = null;
     if (test_data) {
