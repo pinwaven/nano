@@ -1,13 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import wavenLogo from '../../../src/web/shared/assets/waven-logo-icon.png';
+
+const BIOMARKER_META = [
+  { key: 'hsCRP',     label: 'hsCRP',      unit: 'mg/L' },
+  { key: 'GDF15',     label: 'GDF-15',     unit: 'pg/mL' },
+  { key: 'IL6',       label: 'IL-6',       unit: 'pg/mL' },
+  { key: 'GA',        label: 'Glycated Albumin', unit: '%' },
+  { key: 'CystatinC', label: 'Cystatin C', unit: 'mg/L' },
+  { key: 'CD38',      label: 'CD38',       unit: 'xBaseline' },
+];
 
 function App() {
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [status, setStatus] = useState('Ready');
   const [loading, setLoading] = useState(false);
-  const [lastCRP, setLastCRP] = useState(null);
+  const [biomarkers, setBiomarkers] = useState(null);
+  const [slideIndex, setSlideIndex] = useState(0);
+  const [slideVisible, setSlideVisible] = useState(true);
+  const slideTimer = useRef(null);
 
   useEffect(() => {
     axios.get('/api/users')
@@ -19,24 +31,40 @@ function App() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (status !== 'Complete' || !biomarkers) {
+      clearInterval(slideTimer.current);
+      setSlideIndex(0);
+      setSlideVisible(true);
+      return;
+    }
+    slideTimer.current = setInterval(() => {
+      setSlideVisible(false);
+      setTimeout(() => {
+        setSlideIndex(i => (i + 1) % BIOMARKER_META.length);
+        setSlideVisible(true);
+      }, 300);
+    }, 2300);
+    return () => clearInterval(slideTimer.current);
+  }, [status, biomarkers]);
+
   const handleStartTest = async () => {
     if (!selectedUser) return;
     if (status === 'Complete') {
       setStatus('Ready');
-      setLastCRP(null);
+      setBiomarkers(null);
       return;
     }
     setLoading(true);
     setStatus('Analyzing...');
     try {
       const randomCRP = parseFloat((Math.random() * (3.5 - 0.2) + 0.2).toFixed(2));
-      await axios.post('/api/chat', {
+      const res = await axios.post('/api/chat', {
         openid: selectedUser.user_id,
         test_type: 'kino_chip',
         test_data: { hsCRP: randomCRP },
-        message: 'biomarkers'
       });
-      setLastCRP(randomCRP);
+      setBiomarkers(res.data.biomarkers || null);
       setStatus('Complete');
     } catch (err) {
       console.error('Kino Test Error:', err);
@@ -52,8 +80,9 @@ function App() {
     : status === 'Failed' ? 'failed'
     : 'ready';
 
-  const crpRisk = lastCRP
-    ? lastCRP < 1 ? 'Low Risk' : lastCRP < 3 ? 'Moderate' : 'Elevated'
+  const hsCRP = biomarkers?.hsCRP ?? null;
+  const crpRisk = hsCRP !== null
+    ? hsCRP < 1 ? 'Low Risk' : hsCRP < 3 ? 'Moderate' : 'Elevated'
     : null;
 
   return (
@@ -87,25 +116,43 @@ function App() {
         <div className={`device-wrap ${stateClass}`}>
           <div className="ring-track" />
           <div className="ring-face">
-            <div className="face-label">STATUS</div>
-            <div className="face-status">{status}</div>
-            {selectedUser && (
-              <div className="face-user">{selectedUser.nickname || 'User'}</div>
-            )}
-            {stateClass === 'complete' && lastCRP !== null && (
-              <div className="face-reading">
-                <span className="reading-val">{lastCRP}</span>
-                <span className="reading-unit">mg/L</span>
-              </div>
+            {stateClass === 'complete' && biomarkers ? (() => {
+              const { key, label, unit } = BIOMARKER_META[slideIndex];
+              return (
+                <div className={`face-slide ${slideVisible ? 'visible' : ''}`}>
+                  <div className="face-slide-index">{slideIndex + 1} / {BIOMARKER_META.length}</div>
+                  <div className="face-slide-label">{label}</div>
+                  <div className="face-slide-val">{biomarkers[key] ?? '—'}</div>
+                  <div className="face-slide-unit">{unit}</div>
+                </div>
+              );
+            })() : (
+              <>
+                <div className="face-label">STATUS</div>
+                <div className="face-status">{status}</div>
+                {selectedUser && (
+                  <div className="face-user">{selectedUser.nickname || 'User'}</div>
+                )}
+              </>
             )}
           </div>
         </div>
 
-        {stateClass === 'complete' && crpRisk && (
-          <div className="crp-banner">
-            <span className="crp-label">hsCRP</span>
-            <span className="crp-value">{lastCRP} mg/L</span>
-            <span className={`crp-risk risk-${crpRisk.toLowerCase().replace(' ', '-')}`}>{crpRisk}</span>
+        {stateClass === 'complete' && biomarkers && (
+          <div className="biomarker-results">
+            <div className="biomarker-results-title">BIOMARKER PANEL</div>
+            {BIOMARKER_META.map(({ key, label, unit }) => (
+              <div key={key} className="bm-row">
+                <span className="bm-label">{label}</span>
+                <span className="bm-value">
+                  {biomarkers[key] ?? '—'}
+                  <span className="bm-unit">{unit}</span>
+                </span>
+                {key === 'hsCRP' && crpRisk && (
+                  <span className={`crp-risk risk-${crpRisk.toLowerCase().replace(' ', '-')}`}>{crpRisk}</span>
+                )}
+              </div>
+            ))}
           </div>
         )}
 

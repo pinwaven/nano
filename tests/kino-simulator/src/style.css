@@ -212,6 +212,47 @@ body {
     0 4px 32px var(--coral-glow);
 }
 
+/* Biomarker slideshow inside ring face */
+.face-slide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.face-slide.visible {
+  opacity: 1;
+}
+
+.face-slide-index {
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: rgba(26, 62, 95, 0.35);
+  margin-bottom: 2px;
+}
+
+.face-slide-label {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: rgba(26, 62, 95, 0.5);
+  text-transform: uppercase;
+}
+
+.face-slide-val {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--teal);
+  line-height: 1;
+}
+
+.face-slide-unit {
+  font-size: 9px;
+  color: rgba(26, 62, 95, 0.4);
+  letter-spacing: 0.5px;
+}
+
 /* Face text — dark, reads on white face */
 .face-label {
   font-size: 8px;
@@ -245,52 +286,57 @@ body {
   letter-spacing: 0.3px;
 }
 
-.face-reading {
-  display: flex;
-  align-items: baseline;
-  gap: 3px;
-  margin-top: 4px;
-}
 
-.reading-val {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--teal);
-  line-height: 1;
-}
-
-.reading-unit {
-  font-size: 10px;
-  color: rgba(26, 62, 95, 0.4);
-  letter-spacing: 0.5px;
-}
-
-/* ── CRP Result Banner ── */
-.crp-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(26, 138, 106, 0.12);
-  border: 1px solid rgba(26, 138, 106, 0.3);
-  border-radius: 10px;
-  padding: 8px 16px;
+/* ── Biomarker Results Panel ── */
+.biomarker-results {
   width: 100%;
+  background: var(--navy-card);
+  border: 1px solid var(--navy-border);
+  border-radius: 13px;
+  padding: 12px 16px;
 }
 
-.crp-label {
+.biomarker-results-title {
   font-size: 9px;
-  letter-spacing: 2px;
+  font-weight: 600;
+  letter-spacing: 2.5px;
   color: var(--text-muted);
   text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.bm-row {
+  display: flex;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(99, 117, 236, 0.08);
+  gap: 8px;
+}
+
+.bm-row:last-child { border-bottom: none; }
+
+.bm-label {
+  font-size: 12px;
+  color: var(--text-sub);
   flex: 1;
 }
 
-.crp-value {
+.bm-value {
   font-size: 13px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--wave);
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
 }
 
+.bm-unit {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* ── CRP Risk Badge ── */
 .crp-risk {
   font-size: 10px;
   font-weight: 700;
