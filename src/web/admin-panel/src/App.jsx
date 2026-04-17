@@ -694,20 +694,22 @@ function DotsTab({ dots, onRefresh }) {
 
 // ── Simulators tab ────────────────────────────────────────────────────────────
 
+const SIM_V = `?v=${__SIM_VERSION__}`;
+
 function SimulatorsTab() {
   return (
     <div className="sims-grid">
       <div className="card sim-card">
         <div className="card-header">Kino Simulator</div>
-        <iframe src="/admin/sim/kino/" title="Kino" className="sim-iframe" />
+        <iframe src={`/admin/sim/kino/${SIM_V}`} title="Kino" className="sim-iframe" />
       </div>
       <div className="card sim-card">
         <div className="card-header">Chat Simulator</div>
-        <iframe src="/admin/sim/chat/" title="Chat" className="sim-iframe" />
+        <iframe src={`/admin/sim/chat/${SIM_V}`} title="Chat" className="sim-iframe" />
       </div>
       <div className="card sim-card">
         <div className="card-header">PHM Simulator</div>
-        <iframe src="/admin/sim/phm/" title="PHM" className="sim-iframe" />
+        <iframe src={`/admin/sim/phm/${SIM_V}`} title="PHM" className="sim-iframe" />
       </div>
     </div>
   );

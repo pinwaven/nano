@@ -59,7 +59,23 @@ function App() {
           <img src={wavenLogo} alt="" className="header-logo" />
           <span className="header-name">KINO</span>
         </div>
-        <span className="header-sub">BIOMARKER DEVICE</span>
+        <div className="user-selector">
+          {users.length > 0 ? (
+            <select
+              className="user-select"
+              value={selectedUser?.user_id || ''}
+              onChange={e => setSelectedUser(users.find(u => u.user_id === e.target.value))}
+            >
+              {users.map(u => (
+                <option key={u.user_id} value={u.user_id}>
+                  {u.nickname || 'User ' + u.user_id}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="no-users">No users — start backend first</span>
+          )}
+        </div>
       </div>
 
       <div className="kino-body">
@@ -88,25 +104,6 @@ function App() {
             <span className={`crp-risk risk-${crpRisk.toLowerCase().replace(' ', '-')}`}>{crpRisk}</span>
           </div>
         )}
-
-        <div className="patient-section">
-          <div className="section-eyebrow">PATIENT</div>
-          {users.length === 0 ? (
-            <span className="no-users">No users — start backend first</span>
-          ) : (
-            <select
-              className="user-select"
-              value={selectedUser?.user_id || ''}
-              onChange={e => setSelectedUser(users.find(u => u.user_id === e.target.value))}
-            >
-              {users.map(u => (
-                <option key={u.user_id} value={u.user_id}>
-                  {u.nickname || 'User ' + u.user_id}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
 
         <button
           className={`test-btn ${stateClass}`}

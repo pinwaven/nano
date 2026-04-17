@@ -8,6 +8,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    define: {
+      __SIM_VERSION__: JSON.stringify(Date.now().toString()),
+    },
     base: '/admin/',
     build: {
       outDir: '../../../src/functions/admin-panel/dist',

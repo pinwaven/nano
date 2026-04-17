@@ -31,28 +31,25 @@ body {
 
 /* ── Header ── */
 .kino-header {
-  height: 50px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 18px;
-  -webkit-app-region: drag;
   background: rgba(11, 28, 46, 0.7);
   backdrop-filter: blur(24px);
   border-bottom: 1px solid rgba(99, 117, 236, 0.18);
+  padding: 10px 18px 10px 18px;
   flex-shrink: 0;
+  -webkit-app-region: drag;
 }
 
 .header-brand {
   display: flex;
   align-items: center;
   gap: 9px;
+  margin-bottom: 10px;
   -webkit-app-region: no-drag;
 }
 
 .header-logo {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   object-fit: contain;
   filter: brightness(0) invert(1);
   opacity: 0.9;
@@ -63,13 +60,6 @@ body {
   font-weight: 700;
   letter-spacing: 4px;
   color: var(--text);
-}
-
-.header-sub {
-  font-size: 9px;
-  letter-spacing: 2.5px;
-  color: var(--text-muted);
-  text-transform: uppercase;
 }
 
 /* ── Body ── */
@@ -269,20 +259,9 @@ body {
 .risk-moderate  { background: rgba(99, 117, 236, 0.25); color: var(--wave); }
 .risk-elevated  { background: rgba(232, 96, 96, 0.25);  color: var(--coral); }
 
-/* ── Patient section ── */
-.patient-section {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-eyebrow {
-  font-size: 9px;
-  letter-spacing: 3px;
-  color: var(--text-muted);
-  text-transform: uppercase;
+/* ── Patient selector (in header) ── */
+.user-selector {
+  -webkit-app-region: no-drag;
 }
 
 .user-select {
