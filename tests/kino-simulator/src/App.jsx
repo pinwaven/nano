@@ -21,6 +21,11 @@ function App() {
 
   const handleStartTest = async () => {
     if (!selectedUser) return;
+    if (status === 'Complete') {
+      setStatus('Ready');
+      setLastCRP(null);
+      return;
+    }
     setLoading(true);
     setStatus('Analyzing...');
     try {
@@ -33,7 +38,6 @@ function App() {
       });
       setLastCRP(randomCRP);
       setStatus('Complete');
-      setTimeout(() => setStatus('Ready'), 3000);
     } catch (err) {
       console.error('Kino Test Error:', err);
       setStatus('Failed');
@@ -56,7 +60,7 @@ function App() {
     <>
       <div className="kino-header">
         <div className="header-brand">
-          <img src={wavenLogo} alt="" className="header-logo" />
+          <img src={wavenLogo} alt="Waven" className="header-logo" />
           <span className="header-name">KINO</span>
         </div>
         <div className="user-selector">

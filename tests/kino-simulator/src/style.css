@@ -2,16 +2,17 @@
 
 :root {
   --blue:        #6375EC;
-  --blue-glow:   rgba(99, 117, 236, 0.45);
+  --blue-glow:   rgba(99, 117, 236, 0.35);
   --blue-dim:    rgba(99, 117, 236, 0.12);
   --wave:        #A6C4E5;
   --navy:        #0B1C2E;
   --navy-card:   #0F2540;
   --navy-lift:   #162E4A;
+  --navy-border: rgba(99, 117, 236, 0.18);
   --teal:        #1A8A6A;
-  --teal-glow:   rgba(26, 138, 106, 0.45);
+  --teal-glow:   rgba(26, 138, 106, 0.35);
   --coral:       #E86060;
-  --coral-glow:  rgba(232, 96, 96, 0.45);
+  --coral-glow:  rgba(232, 96, 96, 0.35);
   --text:        #EEF2FF;
   --text-sub:    #A6C4E5;
   --text-muted:  rgba(166, 196, 229, 0.4);
@@ -23,17 +24,21 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   background: radial-gradient(ellipse at 50% 0%, #1a3155 0%, var(--navy) 65%);
   height: 100vh;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
   color: var(--text);
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
 }
 
 /* ── Header ── */
 .kino-header {
   background: rgba(11, 28, 46, 0.7);
   backdrop-filter: blur(24px);
-  border-bottom: 1px solid rgba(99, 117, 236, 0.18);
+  border-bottom: 1px solid var(--navy-border);
   padding: 10px 18px 10px 18px;
   flex-shrink: 0;
   -webkit-app-region: drag;
@@ -60,6 +65,45 @@ body {
   font-weight: 700;
   letter-spacing: 4px;
   color: var(--text);
+}
+
+/* ── Patient selector (in header) ── */
+.user-selector {
+  -webkit-app-region: no-drag;
+}
+
+.user-select {
+  width: 100%;
+  padding: 8px 32px 8px 12px;
+  border-radius: 9px;
+  border: 1px solid rgba(99, 117, 236, 0.3);
+  background: var(--navy-lift);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23A6C4E5' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  -webkit-app-region: no-drag;
+}
+
+.user-select:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--blue-dim);
+}
+
+.user-select option {
+  background: var(--navy-card);
+  color: var(--text);
+}
+
+.no-users {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 /* ── Body ── */
@@ -99,7 +143,7 @@ body {
   animation-duration: 1.8s;
   background: conic-gradient(
     var(--blue) 0deg,
-    #fff 60deg,
+    #c0caff 60deg,
     var(--blue) 120deg,
     rgba(15, 37, 64, 0.3) 200deg,
     var(--blue) 360deg
@@ -110,7 +154,7 @@ body {
   animation-duration: 5s;
   background: conic-gradient(
     var(--teal) 0deg,
-    #5FFFC5 80deg,
+    #6FDFB8 80deg,
     rgba(15, 37, 64, 0.5) 180deg,
     var(--teal) 360deg
   );
@@ -126,53 +170,53 @@ body {
   );
 }
 
-/* Inner face */
+/* Inner face — white/light */
 .ring-face {
   position: absolute;
   inset: 9px;
   border-radius: 50%;
-  background: var(--navy-card);
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 3px;
   box-shadow:
-    inset 0 0 32px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(255, 255, 255, 0.03);
+    inset 0 2px 12px rgba(99, 117, 236, 0.06),
+    0 4px 24px rgba(99, 117, 236, 0.18);
   transition: box-shadow 0.5s ease;
 }
 
 .device-wrap.ready .ring-face {
   box-shadow:
-    inset 0 0 32px rgba(0, 0, 0, 0.6),
-    0 0 28px var(--blue-glow);
+    inset 0 2px 12px rgba(99, 117, 236, 0.06),
+    0 4px 28px var(--blue-glow);
 }
 
 .device-wrap.analyzing .ring-face {
   box-shadow:
-    inset 0 0 32px rgba(0, 0, 0, 0.5),
-    0 0 44px var(--blue-glow);
+    inset 0 2px 12px rgba(99, 117, 236, 0.08),
+    0 4px 40px var(--blue-glow);
   animation: face-pulse 1.8s ease-in-out infinite;
 }
 
 .device-wrap.complete .ring-face {
   box-shadow:
-    inset 0 0 32px rgba(0, 0, 0, 0.5),
-    0 0 36px var(--teal-glow);
+    inset 0 2px 12px rgba(26, 138, 106, 0.06),
+    0 4px 32px var(--teal-glow);
 }
 
 .device-wrap.failed .ring-face {
   box-shadow:
-    inset 0 0 32px rgba(0, 0, 0, 0.5),
-    0 0 36px var(--coral-glow);
+    inset 0 2px 12px rgba(232, 96, 96, 0.06),
+    0 4px 32px var(--coral-glow);
 }
 
-/* Face content */
+/* Face text — dark, reads on white face */
 .face-label {
   font-size: 8px;
   letter-spacing: 3px;
-  color: var(--text-muted);
+  color: rgba(26, 62, 95, 0.4);
   text-transform: uppercase;
   margin-bottom: 2px;
 }
@@ -181,17 +225,17 @@ body {
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.3px;
-  color: var(--text);
+  color: #1A3E5F;
   transition: color 0.4s;
 }
 
 .device-wrap.analyzing .face-status {
-  color: var(--wave);
+  color: var(--blue);
   animation: text-pulse 1.8s ease-in-out infinite;
 }
 
-.device-wrap.complete .face-status { color: #5FFFC5; }
-.device-wrap.failed .face-status { color: var(--coral); }
+.device-wrap.complete .face-status { color: var(--teal); }
+.device-wrap.failed .face-status   { color: var(--coral); }
 
 .face-user {
   font-size: 11px;
@@ -211,13 +255,13 @@ body {
 .reading-val {
   font-size: 20px;
   font-weight: 700;
-  color: #5FFFC5;
+  color: var(--teal);
   line-height: 1;
 }
 
 .reading-unit {
   font-size: 10px;
-  color: var(--text-muted);
+  color: rgba(26, 62, 95, 0.4);
   letter-spacing: 0.5px;
 }
 
@@ -258,46 +302,6 @@ body {
 .risk-low-risk  { background: rgba(26, 138, 106, 0.25); color: #5FFFC5; }
 .risk-moderate  { background: rgba(99, 117, 236, 0.25); color: var(--wave); }
 .risk-elevated  { background: rgba(232, 96, 96, 0.25);  color: var(--coral); }
-
-/* ── Patient selector (in header) ── */
-.user-selector {
-  -webkit-app-region: no-drag;
-}
-
-.user-select {
-  width: 100%;
-  padding: 9px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(99, 117, 236, 0.3);
-  background: var(--navy-lift);
-  color: var(--text);
-  font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
-  outline: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23A6C4E5' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  padding-right: 32px;
-  transition: border-color 0.18s, box-shadow 0.18s;
-  -webkit-app-region: no-drag;
-}
-
-.user-select:focus {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px var(--blue-dim);
-}
-
-.user-select option {
-  background: var(--navy-card);
-  color: var(--text);
-}
-
-.no-users {
-  font-size: 11px;
-  color: var(--text-muted);
-}
 
 /* ── Test Button ── */
 .test-btn {
@@ -364,8 +368,8 @@ body {
 }
 
 @keyframes face-pulse {
-  0%, 100% { box-shadow: inset 0 0 32px rgba(0,0,0,0.5), 0 0 44px var(--blue-glow); }
-  50%       { box-shadow: inset 0 0 32px rgba(0,0,0,0.5), 0 0 70px var(--blue-glow); }
+  0%, 100% { box-shadow: inset 0 2px 12px rgba(99,117,236,0.08), 0 4px 40px var(--blue-glow); }
+  50%       { box-shadow: inset 0 2px 12px rgba(99,117,236,0.08), 0 4px 64px var(--blue-glow); }
 }
 
 @keyframes text-pulse {
