@@ -15,22 +15,24 @@ CREATE TABLE IF NOT EXISTS phms (
 );
 
 -- Users Table
--- Note: In the actual PolarDB instance, user_id is TEXT and stores the external platform ID (openid).
--- The external_id column has been merged into user_id.
 CREATE TABLE IF NOT EXISTS users (
-    user_id TEXT PRIMARY KEY, -- Stores openid/external_id
-    phm_id INTEGER REFERENCES phms(id) ON DELETE SET NULL, -- Link to health coach
+    user_id TEXT PRIMARY KEY,
+    external_id TEXT,           -- ID used by the external app to identify this user (e.g. WeChat openid)
+    external_app TEXT,          -- Which external app: 'wechat', 'whatsapp', etc.
+    phm_id INTEGER REFERENCES phms(id) ON DELETE SET NULL,
     nickname TEXT,
     avatar_url TEXT,
     gender TEXT,
     birth_date DATE,
-    language TEXT DEFAULT 'zh', -- Preferred language: 'zh' or 'en'
-    bio_data JSONB DEFAULT '{}'::jsonb, -- Flexible storage for height, weight, body_fat, etc.
-    preferences JSONB DEFAULT '{}'::jsonb, -- AI persona, interest tags, etc.
+    language TEXT DEFAULT 'zh',
+    bio_data JSONB DEFAULT '{}'::jsonb,
+    preferences JSONB DEFAULT '{}'::jsonb,
     last_scanned_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_users_external_id ON users(external_id);
 
 -- Biomarkers Table (Time-series data for trend analysis)
 CREATE TABLE IF NOT EXISTS biomarkers (
