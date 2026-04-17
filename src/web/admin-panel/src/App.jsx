@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import axios from 'axios';
+import wavenLogo from '../../shared/assets/waven-logo-icon.png';
 import {
   Users, Droplets, UserCog, RefreshCcw,
   ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout
@@ -751,7 +752,7 @@ export default function App() {
     <LangCtx.Provider value={{ lang, t, toggleLang }}>
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <div className="brand-dot" />
+          <img src={wavenLogo} alt="Waven" className="brand-logo" />
           {t.brand}
         </div>
         <nav className="sidebar-nav">
