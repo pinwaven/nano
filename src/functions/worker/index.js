@@ -21,7 +21,7 @@ async function handleGetUsers() {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
-                    u.phm_id, u.created_at,
+                    u.phm_id, u.created_at, u.phone, u.email,
                     b.bio_age, b.data as bio_data,
                     p.name as coach_name,
                     (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report,

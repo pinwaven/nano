@@ -132,7 +132,7 @@ const bioAgeColor = (bio, chrono) => {
   if (!bio || !chrono) return '#64748b';
   return Number(bio) <= Number(chrono) ? '#16a34a' : '#dc2626';
 };
-const EMPTY_USER = { nickname: '', gender: '', birth_date: '', language: 'zh', external_id: '', external_app: 'wechat', phm_id: '' };
+const EMPTY_USER = { nickname: '', gender: '', birth_date: '', language: 'zh', external_id: '', external_app: 'wechat', phm_id: '', phone: '', email: '' };
 
 // ── shared components ─────────────────────────────────────────────────────────
 
@@ -181,7 +181,7 @@ function UserModal({ user, phms, onClose, onSave }) {
   const isEdit = !!(user?.user_id || user?.id);
   const userId = user?.user_id || user?.id;
   const [form, setForm] = useState(isEdit
-    ? { nickname: user.nickname || '', gender: user.gender || '', birth_date: user.birth_date ? user.birth_date.slice(0, 10) : '', language: user.language || 'zh', external_id: user.external_id || '', external_app: user.external_app || 'wechat', phm_id: user.phm_id ?? '' }
+    ? { nickname: user.nickname || '', gender: user.gender || '', birth_date: user.birth_date ? user.birth_date.slice(0, 10) : '', language: user.language || 'zh', external_id: user.external_id || '', external_app: user.external_app || 'wechat', phm_id: user.phm_id ?? '', phone: user.phone || '', email: user.email || '' }
     : { ...EMPTY_USER });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -262,6 +262,14 @@ function UserModal({ user, phms, onClose, onSave }) {
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
+            </label>
+            <label className="form-field">
+              <span>{t.modal.phone}</span>
+              <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+86 138 0000 0000" />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.email}</span>
+              <input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="user@example.com" />
             </label>
           </div>
           {error && <div className="form-error">{error}</div>}
@@ -626,6 +634,10 @@ function UserDetailDrawer({ user, onClose }) {
               <span className="drawer-info-val">{fmt(user.coach_name)}</span>
               <span className="drawer-info-key">{t.table.joined}</span>
               <span className="drawer-info-val">{fmtDate(user.created_at)}</span>
+              <span className="drawer-info-key">{t.modal.phone}</span>
+              <span className="drawer-info-val">{fmt(user.phone)}</span>
+              <span className="drawer-info-key">{t.modal.email}</span>
+              <span className="drawer-info-val">{fmt(user.email)}</span>
             </div>
           </div>
 
@@ -718,11 +730,12 @@ function UsersTab({ users, phms, onRefresh }) {
               <th>{t.table.id}</th><th>{t.table.nickname}</th><th>{t.table.gender}</th>
               <th>{t.table.birthDate}</th><th>{t.table.language}</th>
               <th>{t.table.bioAge}</th><th>{t.table.chronoAge}</th>
-              <th>{t.table.assignedPhm}</th><th>{t.table.joined}</th><th></th>
+              <th>{t.table.assignedPhm}</th><th>{t.table.joined}</th>
+              <th>{t.modal.phone}</th><th>{t.modal.email}</th><th></th>
             </tr>
           </thead>
           <tbody>
-            {users.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.users}</td></tr>}
+            {users.length === 0 && <tr><td colSpan={12} className="empty-row">{t.empty.users}</td></tr>}
             {users.map(u => (
               <tr key={u.user_id} className="clickable-row" onClick={() => setDetailUser(u)}>
                 <td className="muted">{u.user_id}</td>
@@ -743,6 +756,8 @@ function UsersTab({ users, phms, onRefresh }) {
                   <PHMSelect userId={u.user_id} currentPhmId={u.phm_id} phms={phms} onAssign={onRefresh} />
                 </td>
                 <td className="muted">{fmtDate(u.created_at)}</td>
+                <td className="muted">{fmt(u.phone)}</td>
+                <td className="muted">{fmt(u.email)}</td>
                 <td onClick={e => e.stopPropagation()}>
                   <div className="row-actions">
                     <button className="icon-btn" title={t.modal.editUser} onClick={() => setModal({ type: 'edit', user: u })}><Pencil size={14} /></button>
