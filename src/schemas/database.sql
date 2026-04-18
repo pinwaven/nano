@@ -4,8 +4,8 @@
 -- Enable extension for UUIDs if needed (optional)
 -- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- PHMs Table
-CREATE TABLE IF NOT EXISTS phms (
+-- Coaches Table
+CREATE TABLE IF NOT EXISTS coaches (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     email TEXT UNIQUE,
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
     user_id TEXT PRIMARY KEY,   -- Short 8-char hex ID (e.g. 'a3f2c1d'), generated on insert
     external_id TEXT UNIQUE,    -- ID used by the external app (e.g. WeChat openid, WhatsApp number)
     external_app TEXT,          -- Which external app: 'wechat', 'whatsapp', 'wavenapp'
-    phm_id INTEGER REFERENCES phms(id) ON DELETE SET NULL,
+    coach_id INTEGER REFERENCES coaches(id) ON DELETE SET NULL,
     nickname TEXT,
     phone TEXT,
     email TEXT,

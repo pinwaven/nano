@@ -11,8 +11,8 @@ echo "==> [2/5] Building Chat Simulator..."
 cd "$ROOT/tests/chat-simulator"
 npx vite build
 
-echo "==> [3/5] Building PHM Simulator..."
-cd "$ROOT/tests/phm-simulator"
+echo "==> [3/5] Building Coach Simulator..."
+cd "$ROOT/tests/coach-simulator"
 npx vite build
 
 echo "==> [4/5] Building Admin Panel..."

@@ -18,13 +18,13 @@ All paths below are relative to the Base URL (e.g., `GET /api/users`).
 
 | Method | Path | Handler |
 |---|---|---|
-| `GET` | `/users` | List all users with latest biomarkers and PHM |
+| `GET` | `/users` | List all users with latest biomarkers and Coach |
 | `GET` | `/notifications` | Fetch pending notifications for a user |
 | `GET` | `/dots-inventory` | List all Dots cartridges |
-| `GET` | `/phm-list` | List PHMs with user counts |
+| `GET` | `/coach-list` | List Coachs with user counts |
 | `POST` | `/chat` | Ingest biomarker data or send a chat message |
-| `POST` | `/phm-instruction` | Send a PHM instruction to a user |
-| `POST` | `/assign-phm` | Assign a PHM to a user |
+| `POST` | `/coach-instruction` | Send a Coach instruction to a user |
+| `POST` | `/assign-coach` | Assign a Coach to a user |
 | `POST` | `/users` | Create a new user |
 | `PUT` | `/users/:id` | Update a user |
 | `DELETE` | `/users/:id` | Delete a user |
@@ -33,7 +33,7 @@ All paths below are relative to the Base URL (e.g., `GET /api/users`).
 
 ## GET /users
 
-Returns all users with their latest biomarker snapshot, biological age, assigned PHM, and most recent nutrition plan and biological report.
+Returns all users with their latest biomarker snapshot, biological age, assigned Coach, and most recent nutrition plan and biological report.
 
 **Response**
 ```json
@@ -47,7 +47,7 @@ Returns all users with their latest biomarker snapshot, biological age, assigned
       "birth_date": "1992-05-14T...",
       "language": "zh",
       "gender": "female",
-      "phm_id": 1,
+      "coach_id": 1,
       "bio_age": 34.4,
       "bio_data": { ... },
       "coach_name": "Pin",
@@ -87,11 +87,11 @@ Returns all Dots cartridges.
 
 ---
 
-## GET /phm-list
+## GET /coach-list
 
-Returns all PHMs with user counts.
+Returns all Coachs with user counts.
 
-**Response**: `{ "success": true, "phms": [ { "id", "name", "email", "phone", "user_count" } ] }`
+**Response**: `{ "success": true, "coachs": [ { "id", "name", "email", "phone", "user_count" } ] }`
 
 ---
 
@@ -131,9 +131,9 @@ The main ingestion endpoint. Handles two flows depending on the body:
 
 ---
 
-## POST /phm-instruction
+## POST /coach-instruction
 
-Inserts a formatted PHM instruction as a `pending` notification visible in the user's chat.
+Inserts a formatted Coach instruction as a `pending` notification visible in the user's chat.
 
 **Request body**: `{ "openid": "...", "instruction": "Drink more water." }`
 
@@ -141,11 +141,11 @@ Inserts a formatted PHM instruction as a `pending` notification visible in the u
 
 ---
 
-## POST /assign-phm
+## POST /assign-coach
 
-Assigns or unassigns a PHM to a user.
+Assigns or unassigns a Coach to a user.
 
-**Request body**: `{ "user_id": 1, "phm_id": 2 }` — set `phm_id` to `null` to unassign.
+**Request body**: `{ "user_id": 1, "coach_id": 2 }` — set `coach_id` to `null` to unassign.
 
 **Response**: `{ "success": true }`
 
@@ -155,7 +155,7 @@ Assigns or unassigns a PHM to a user.
 
 Creates a new user.
 
-**Request body**: `{ "wechat_openid": "required", "nickname", "gender", "birth_date", "language", "phm_id" }`
+**Request body**: `{ "wechat_openid": "required", "nickname", "gender", "birth_date", "language", "coach_id" }`
 
 **Response**: `{ "success": true, "id": 18 }` — returns 400 if `wechat_openid` is missing.
 
@@ -165,7 +165,7 @@ Creates a new user.
 
 Updates an existing user's profile fields.
 
-**Request body**: `{ "nickname", "gender", "birth_date", "language", "phm_id" }`
+**Request body**: `{ "nickname", "gender", "birth_date", "language", "coach_id" }`
 
 **Response**: `{ "success": true }`
 

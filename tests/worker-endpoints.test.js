@@ -98,11 +98,11 @@ describe(`Worker Endpoints Integration Tests [${BASE_URL}]`, () => {
         assert.strictEqual(response.data.success, true);
     });
 
-    test('GET /phm-list should return PHMs', async () => {
-        const response = await axios.get(`${BASE_URL}/phm-list`);
+    test('GET /coach-list should return Coachs', async () => {
+        const response = await axios.get(`${BASE_URL}/coach-list`);
         assert.strictEqual(response.status, 200);
         assert.strictEqual(response.data.success, true);
-        assert.ok(Array.isArray(response.data.phms));
+        assert.ok(Array.isArray(response.data.coachs));
     });
 
     test('GET /dots-inventory should return inventory', async () => {
@@ -112,28 +112,28 @@ describe(`Worker Endpoints Integration Tests [${BASE_URL}]`, () => {
         assert.ok(Array.isArray(response.data.dots));
     });
 
-    test('POST /phm-instruction should send instruction to user', async () => {
+    test('POST /coach-instruction should send instruction to user', async () => {
         // First ensure user exists (already created in previous tests)
         const payload = {
             openid: TEST_OPENID,
             instruction: 'Drink more water and exercise daily.'
         };
 
-        const response = await axios.post(`${BASE_URL}/phm-instruction`, payload);
+        const response = await axios.post(`${BASE_URL}/coach-instruction`, payload);
         assert.strictEqual(response.status, 200);
         assert.strictEqual(response.data.success, true);
     });
 
-    test('POST /assign-phm should assign PHM to user', async () => {
-        // Get a user and a PHM first
+    test('POST /assign-coach should assign Coach to user', async () => {
+        // Get a user and a Coach first
         const usersRes = await axios.get(`${BASE_URL}/users`);
-        const phmsRes = await axios.get(`${BASE_URL}/phm-list`);
+        const coachsRes = await axios.get(`${BASE_URL}/coach-list`);
         
-        if (usersRes.data.users.length > 0 && phmsRes.data.phms.length > 0) {
+        if (usersRes.data.users.length > 0 && coachsRes.data.coachs.length > 0) {
             const user_id = usersRes.data.users[0].user_id;
-            const phm_id = phmsRes.data.phms[0].id;
+            const coach_id = coachsRes.data.coachs[0].id;
 
-            const response = await axios.post(`${BASE_URL}/assign-phm`, { user_id, phm_id });
+            const response = await axios.post(`${BASE_URL}/assign-coach`, { user_id, coach_id });
             assert.strictEqual(response.status, 200);
             assert.strictEqual(response.data.success, true);
         }

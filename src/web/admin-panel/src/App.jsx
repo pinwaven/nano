@@ -11,33 +11,33 @@ import {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', phms: 'PHMs', dots: 'Precision Dots', sims: 'Simulators' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Precision Dots', sims: 'Simulators' },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
     stats: {
       totalUsers: 'Total Users', tested: 'Tested', avgBioAge: 'Avg Bio Age',
-      phmCoaches: 'PHMs', totalCoaches: 'Total PHMs',
+      coaches: 'Coaches', totalCoaches: 'Total Coaches',
       assignedUsers: 'Assigned Users', unassignedUsers: 'Unassigned Users',
       totalDots: 'Total Dots', isolates: 'Isolates', blends: 'Blends',
     },
     table: {
       id: 'ID', nickname: 'Nickname', gender: 'Gender', birthDate: 'Birth Date',
       language: 'Language', bioAge: 'Bio Age', chronoAge: 'Chrono Age',
-      assignedPhm: 'Assigned PHM', joined: 'Joined',
+      assignedCoach: 'Assigned Coach', joined: 'Joined',
       name: 'Name', email: 'Email', phone: 'Phone', customers: 'Users',
       key: 'Key', nameEn: 'Name (EN)', nameZh: 'Name (ZH)', color: 'Color',
       type: 'Type', description: 'Description',
       unassigned: 'Unassigned',
     },
-    empty: { users: 'No users found', phms: 'No PHMs found', dots: 'No dots found' },
+    empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found' },
     count: (n) => `${n} users`,
     addUser: 'Add User',
-    addPhm: 'Add PHM', addDot: 'Add Dot',
-    countPhm: (n) => `${n} PHMs`,
+    addCoach: 'Add Coach', addDot: 'Add Dot',
+    countCoach: (n) => `${n} Coaches`,
     countDot: (n) => `${n} dots`,
     modal: {
       addUser: 'Add User', editUser: 'Edit User', deleteUser: 'Delete User',
-      addPhm: 'Add PHM', editPhm: 'Edit PHM', deletePhm: 'Delete PHM',
+      addCoach: 'Add Coach', editCoach: 'Edit Coach', deleteCoach: 'Delete Coach',
       addDot: 'Add Dot',   editDot: 'Edit Dot',   deleteDot: 'Delete Dot',
       externalId: 'External ID', externalIdPlaceholder: 'e.g. wx_abc123',
       externalApp: 'External App',
@@ -45,7 +45,7 @@ const T = {
       gender: 'Gender', male: 'Male', female: 'Female',
       birthDate: 'Birth Date', language: 'Language',
       langZh: 'Chinese (ZH)', langEn: 'English (EN)',
-      assignedPhm: 'Assigned PHM', unassigned: 'Unassigned',
+      assignedCoach: 'Assigned Coach', unassigned: 'Unassigned',
       name: 'Name *', email: 'Email', phone: 'Phone',
       keyName: 'Key Name *', keyNamePlaceholder: 'e.g. omega3',
       nameEn: 'Name (EN) *', nameZh: 'Name (ZH)',
@@ -55,7 +55,7 @@ const T = {
       cancel: 'Cancel', save: 'Save', saving: 'Saving…',
       delete: 'Delete', deleting: 'Deleting…',
       deleteWarning: (name) => `Delete ${name}? This will also remove all their biomarkers, scans, and notifications.`,
-      deletePhmWarning: (name) => `Delete PHM ${name}? Their assigned users will become unassigned.`,
+      deleteCoachWarning: (name) => `Delete Coach ${name}? Their assigned users will become unassigned.`,
       deleteDotWarning: (name) => `Delete dot "${name}"? This cannot be undone.`,
       externalIdRequired: 'External ID is required',
       nameRequired: 'Name is required',
@@ -66,33 +66,33 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', phms: 'PHM', dots: '精准营养点', sims: '模拟器' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '精准营养点', sims: '模拟器' },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
     stats: {
       totalUsers: '总用户数', tested: '已检测', avgBioAge: '平均生物年龄',
-      phmCoaches: 'PHM 数', totalCoaches: 'PHM 总数',
+      coaches: 'Coach 数', totalCoaches: 'Coach 总数',
       assignedUsers: '已分配用户', unassignedUsers: '未分配用户',
       totalDots: '营养点总数', isolates: '单体', blends: '复合',
     },
     table: {
       id: 'ID', nickname: '昵称', gender: '性别', birthDate: '出生日期',
       language: '语言', bioAge: '生物年龄', chronoAge: '实际年龄',
-      assignedPhm: '负责 PHM', joined: '注册时间',
+      assignedCoach: '负责 Coach', joined: '注册时间',
       name: '姓名', email: '邮箱', phone: '电话', customers: '用户数',
       key: '标识', nameEn: '名称 (英)', nameZh: '名称 (中)', color: '颜色',
       type: '类型', description: '描述',
       unassigned: '未分配',
     },
-    empty: { users: '暂无用户', phms: '暂无 PHM', dots: '暂无营养点' },
+    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无营养点' },
     count: (n) => `共 ${n} 位用户`,
     addUser: '添加用户',
-    addPhm: '添加 PHM', addDot: '添加营养点',
-    countPhm: (n) => `共 ${n} 位 PHM`,
+    addCoach: '添加 Coach', addDot: '添加营养点',
+    countCoach: (n) => `共 ${n} 位 Coach`,
     countDot: (n) => `共 ${n} 个营养点`,
     modal: {
       addUser: '添加用户', editUser: '编辑用户', deleteUser: '删除用户',
-      addPhm: '添加 PHM', editPhm: '编辑 PHM', deletePhm: '删除 PHM',
+      addCoach: '添加 Coach', editCoach: '编辑 Coach', deleteCoach: '删除 Coach',
       addDot: '添加营养点', editDot: '编辑营养点', deleteDot: '删除营养点',
       externalId: '外部 ID', externalIdPlaceholder: '例如 wx_abc123',
       externalApp: '外部应用',
@@ -100,7 +100,7 @@ const T = {
       gender: '性别', male: '男', female: '女',
       birthDate: '出生日期', language: '语言',
       langZh: '中文 (ZH)', langEn: '英文 (EN)',
-      assignedPhm: '负责 PHM', unassigned: '未分配',
+      assignedCoach: '负责 Coach', unassigned: '未分配',
       name: '姓名 *', email: '邮箱', phone: '电话',
       keyName: '标识 *', keyNamePlaceholder: '例如 omega3',
       nameEn: '名称 (英) *', nameZh: '名称 (中)',
@@ -110,7 +110,7 @@ const T = {
       cancel: '取消', save: '保存', saving: '保存中…',
       delete: '删除', deleting: '删除中…',
       deleteWarning: (name) => `确认删除 ${name}？此操作将同时删除该用户的所有生物标志物、扫描记录和通知。`,
-      deletePhmWarning: (name) => `确认删除 PHM ${name}？其名下用户将变为未分配状态。`,
+      deleteCoachWarning: (name) => `确认删除 Coach ${name}？其名下用户将变为未分配状态。`,
       deleteDotWarning: (name) => `确认删除营养点"${name}"？此操作不可撤销。`,
       externalIdRequired: '外部 ID 为必填项',
       nameRequired: '姓名为必填项',
@@ -132,7 +132,7 @@ const bioAgeColor = (bio, chrono) => {
   if (!bio || !chrono) return '#64748b';
   return Number(bio) <= Number(chrono) ? '#16a34a' : '#dc2626';
 };
-const EMPTY_USER = { nickname: '', gender: '', birth_date: '', language: 'zh', external_id: '', external_app: 'wechat', phm_id: '', phone: '', email: '' };
+const EMPTY_USER = { nickname: '', gender: '', birth_date: '', language: 'zh', external_id: '', external_app: 'wechat', coach_id: '', phone: '', email: '' };
 
 // ── shared components ─────────────────────────────────────────────────────────
 
@@ -154,20 +154,20 @@ function Badge({ children, color = '#3b82f6' }) {
   return <span className="badge" style={{ background: color + '1a', color }}>{children}</span>;
 }
 
-function PHMSelect({ userId, currentPhmId, phms, onAssign }) {
+function CoachSelect({ userId, currentCoachId, coaches, onAssign }) {
   const { t } = useLang();
   const [busy, setBusy] = useState(false);
   const handleChange = async (e) => {
-    const phmId = e.target.value === '' ? null : parseInt(e.target.value);
+    const coachId = e.target.value === '' ? null : parseInt(e.target.value);
     setBusy(true);
-    try { await axios.post('/api/assign-phm', { user_id: userId, phm_id: phmId }); onAssign(); }
+    try { await axios.post('/api/assign-coach', { user_id: userId, coach_id: coachId }); onAssign(); }
     catch { /* silent */ } finally { setBusy(false); }
   };
   return (
     <div className="select-wrap">
-      <select value={currentPhmId ?? ''} onChange={handleChange} disabled={busy} className="inline-select">
+      <select value={currentCoachId ?? ''} onChange={handleChange} disabled={busy} className="inline-select">
         <option value="">{t.table.unassigned}</option>
-        {phms.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        {coaches.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>
       <ChevronDown size={11} className="select-chevron" />
     </div>
@@ -176,12 +176,12 @@ function PHMSelect({ userId, currentPhmId, phms, onAssign }) {
 
 // ── User modal ────────────────────────────────────────────────────────────────
 
-function UserModal({ user, phms, onClose, onSave }) {
+function UserModal({ user, coaches, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!(user?.user_id || user?.id);
   const userId = user?.user_id || user?.id;
   const [form, setForm] = useState(isEdit
-    ? { nickname: user.nickname || '', gender: user.gender || '', birth_date: user.birth_date ? user.birth_date.slice(0, 10) : '', language: user.language || 'zh', external_id: user.external_id || '', external_app: user.external_app || 'wechat', phm_id: user.phm_id ?? '', phone: user.phone || '', email: user.email || '' }
+    ? { nickname: user.nickname || '', gender: user.gender || '', birth_date: user.birth_date ? user.birth_date.slice(0, 10) : '', language: user.language || 'zh', external_id: user.external_id || '', external_app: user.external_app || 'wechat', coach_id: user.coach_id ?? '', phone: user.phone || '', email: user.email || '' }
     : { ...EMPTY_USER });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -192,7 +192,7 @@ function UserModal({ user, phms, onClose, onSave }) {
     if (!isEdit && !form.external_id.trim()) { setError(t.modal.externalIdRequired); return; }
     setBusy(true); setError('');
     try {
-      const payload = { ...form, phm_id: form.phm_id === '' ? null : parseInt(form.phm_id) };
+      const payload = { ...form, coach_id: form.coach_id === '' ? null : parseInt(form.coach_id) };
       if (isEdit) await axios.put(`/api/users/${userId}`, payload);
       else await axios.post('/api/users', payload);
       onSave();
@@ -254,11 +254,11 @@ function UserModal({ user, phms, onClose, onSave }) {
               </div>
             </label>
             <label className="form-field">
-              <span>{t.modal.assignedPhm}</span>
+              <span>{t.modal.assignedCoach}</span>
               <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.phm_id} onChange={e => set('phm_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                <select value={form.coach_id} onChange={e => set('coach_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
                   <option value="">{t.modal.unassigned}</option>
-                  {phms.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {coaches.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -318,16 +318,16 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
   );
 }
 
-// ── PHM modal ─────────────────────────────────────────────────────────────────
+// ── Coach modal ───────────────────────────────────────────────────────────────
 
-const EMPTY_PHM = { name: '', email: '', phone: '' };
+const EMPTY_COACH = { name: '', email: '', phone: '' };
 
-function PHMModal({ phm, onClose, onSave }) {
+function CoachModal({ coach, onClose, onSave }) {
   const { t } = useLang();
-  const isEdit = !!phm?.id;
+  const isEdit = !!coach?.id;
   const [form, setForm] = useState(isEdit
-    ? { name: phm.name || '', email: phm.email || '', phone: phm.phone || '' }
-    : { ...EMPTY_PHM });
+    ? { name: coach.name || '', email: coach.email || '', phone: coach.phone || '' }
+    : { ...EMPTY_COACH });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -337,8 +337,8 @@ function PHMModal({ phm, onClose, onSave }) {
     if (!form.name.trim()) { setError(t.modal.nameRequired); return; }
     setBusy(true); setError('');
     try {
-      if (isEdit) await axios.put(`/api/phms/${phm.id}`, form);
-      else await axios.post('/api/phms', form);
+      if (isEdit) await axios.put(`/api/coaches/${coach.id}`, form);
+      else await axios.post('/api/coaches', form);
       onSave();
     } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
     finally { setBusy(false); }
@@ -348,7 +348,7 @@ function PHMModal({ phm, onClose, onSave }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span>{isEdit ? t.modal.editPhm : t.modal.addPhm}</span>
+          <span>{isEdit ? t.modal.editCoach : t.modal.addCoach}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
@@ -359,7 +359,7 @@ function PHMModal({ phm, onClose, onSave }) {
             </label>
             <label className="form-field">
               <span>{t.modal.email}</span>
-              <input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="phm@example.com" />
+              <input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="coach@example.com" />
             </label>
             <label className="form-field">
               <span>{t.modal.phone}</span>
@@ -379,24 +379,24 @@ function PHMModal({ phm, onClose, onSave }) {
   );
 }
 
-function DeletePHMConfirm({ phm, onClose, onConfirm }) {
+function DeleteCoachConfirm({ coach, onClose, onConfirm }) {
   const { t } = useLang();
   const [busy, setBusy] = useState(false);
   const handleDelete = async () => {
     setBusy(true);
-    try { await axios.delete(`/api/phms/${phm.id}`); onConfirm(); }
+    try { await axios.delete(`/api/coaches/${coach.id}`); onConfirm(); }
     catch { /* silent */ } finally { setBusy(false); }
   };
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span>{t.modal.deletePhm}</span>
+          <span>{t.modal.deleteCoach}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="modal-body">
           <p style={{ marginBottom: 20, color: '#475569' }}>
-            {t.modal.deletePhmWarning(<strong>{phm.name}</strong>)}
+            {t.modal.deleteCoachWarning(<strong>{coach.name}</strong>)}
           </p>
           <div className="modal-footer">
             <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
@@ -630,7 +630,7 @@ function UserDetailDrawer({ user, onClose }) {
               </span>
               <span className="drawer-info-key">{t.table.language}</span>
               <span className="drawer-info-val">{(user.language || '—').toUpperCase()}</span>
-              <span className="drawer-info-key">{t.table.assignedPhm}</span>
+              <span className="drawer-info-key">{t.table.assignedCoach}</span>
               <span className="drawer-info-val">{fmt(user.coach_name)}</span>
               <span className="drawer-info-key">{t.table.joined}</span>
               <span className="drawer-info-val">{fmtDate(user.created_at)}</span>
@@ -699,7 +699,7 @@ function UserDetailDrawer({ user, onClose }) {
 
 // ── Users tab ─────────────────────────────────────────────────────────────────
 
-function UsersTab({ users, phms, onRefresh }) {
+function UsersTab({ users, coaches, onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
   const [detailUser, setDetailUser] = useState(null);
@@ -715,7 +715,7 @@ function UsersTab({ users, phms, onRefresh }) {
         <StatCard icon={Users}    label={t.stats.totalUsers} value={users.length} color="#3b82f6" />
         <StatCard icon={Activity} label={t.stats.tested}     value={tested}       color="#8b5cf6" />
         <StatCard icon={Calendar} label={t.stats.avgBioAge}  value={avgBioAge}    color="#f59e0b" />
-        <StatCard icon={UserCog}  label={t.stats.phmCoaches} value={phms.length}  color="#10b981" />
+        <StatCard icon={UserCog}  label={t.stats.coaches}    value={coaches.length} color="#10b981" />
       </div>
       <div className="card">
         <div className="table-toolbar">
@@ -730,7 +730,7 @@ function UsersTab({ users, phms, onRefresh }) {
               <th>{t.table.id}</th><th>{t.table.nickname}</th><th>{t.table.gender}</th>
               <th>{t.table.birthDate}</th><th>{t.table.language}</th>
               <th>{t.table.bioAge}</th><th>{t.table.chronoAge}</th>
-              <th>{t.table.assignedPhm}</th><th>{t.table.joined}</th>
+              <th>{t.table.assignedCoach}</th><th>{t.table.joined}</th>
               <th>{t.modal.phone}</th><th>{t.modal.email}</th><th></th>
             </tr>
           </thead>
@@ -753,7 +753,7 @@ function UsersTab({ users, phms, onRefresh }) {
                 <td style={{ fontWeight: 700, color: bioAgeColor(u.bio_age, u.chrono_age) }}>{fmt(u.bio_age)}</td>
                 <td className="muted">{fmt(u.chrono_age)}</td>
                 <td onClick={e => e.stopPropagation()}>
-                  <PHMSelect userId={u.user_id} currentPhmId={u.phm_id} phms={phms} onAssign={onRefresh} />
+                  <CoachSelect userId={u.user_id} currentCoachId={u.coach_id} coaches={coaches} onAssign={onRefresh} />
                 </td>
                 <td className="muted">{fmtDate(u.created_at)}</td>
                 <td className="muted">{fmt(u.phone)}</td>
@@ -769,17 +769,17 @@ function UsersTab({ users, phms, onRefresh }) {
           </tbody>
         </table>
       </div>
-      {modal?.type === 'add'    && <UserModal user={null}       phms={phms} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <UserModal user={modal.user} phms={phms} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add'    && <UserModal user={null}       coaches={coaches} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <UserModal user={modal.user} coaches={coaches} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteConfirm user={modal.user} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
       {detailUser && <UserDetailDrawer user={detailUser} onClose={() => setDetailUser(null)} />}
     </>
   );
 }
 
-// ── PHM tab ───────────────────────────────────────────────────────────────────
+// ── Coach tab ─────────────────────────────────────────────────────────────────
 
-function PHMTab({ phms, users, onRefresh }) {
+function CoachTab({ coaches, users, onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
@@ -787,15 +787,15 @@ function PHMTab({ phms, users, onRefresh }) {
   return (
     <>
       <div className="stat-row">
-        <StatCard icon={UserCog} label={t.stats.totalCoaches}    value={phms.length}                         color="#10b981" />
-        <StatCard icon={Users}   label={t.stats.assignedUsers}   value={users.filter(u => u.phm_id).length}  color="#3b82f6" />
-        <StatCard icon={Users}   label={t.stats.unassignedUsers} value={users.filter(u => !u.phm_id).length} color="#f59e0b" />
+        <StatCard icon={UserCog} label={t.stats.totalCoaches}    value={coaches.length}                         color="#10b981" />
+        <StatCard icon={Users}   label={t.stats.assignedUsers}   value={users.filter(u => u.coach_id).length}  color="#3b82f6" />
+        <StatCard icon={Users}   label={t.stats.unassignedUsers} value={users.filter(u => !u.coach_id).length} color="#f59e0b" />
       </div>
       <div className="card">
         <div className="table-toolbar">
-          <span className="table-count">{t.countPhm(phms.length)}</span>
+          <span className="table-count">{t.countCoach(coaches.length)}</span>
           <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-            <Plus size={14} />{t.addPhm}
+            <Plus size={14} />{t.addCoach}
           </button>
         </div>
         <table className="data-table">
@@ -803,13 +803,13 @@ function PHMTab({ phms, users, onRefresh }) {
             <tr><th>{t.table.id}</th><th>{t.table.name}</th><th>{t.table.email}</th><th>{t.table.phone}</th><th>{t.table.customers}</th><th>{t.table.joined}</th><th></th></tr>
           </thead>
           <tbody>
-            {phms.length === 0 && <tr><td colSpan={7} className="empty-row">{t.empty.phms}</td></tr>}
-            {phms.map(p => (
+            {coaches.length === 0 && <tr><td colSpan={7} className="empty-row">{t.empty.coaches}</td></tr>}
+            {coaches.map(p => (
               <tr key={p.id}>
                 <td className="muted">{p.id}</td>
                 <td>
                   <div className="avatar-cell">
-                    <div className="avatar" style={{ background: '#10b98120', color: '#10b981' }}>{(p.name || 'P')[0].toUpperCase()}</div>
+                    <div className="avatar" style={{ background: '#10b98120', color: '#10b981' }}>{(p.name || 'C')[0].toUpperCase()}</div>
                     <span className="bold">{fmt(p.name)}</span>
                   </div>
                 </td>
@@ -819,8 +819,8 @@ function PHMTab({ phms, users, onRefresh }) {
                 <td className="muted">{fmtDate(p.created_at)}</td>
                 <td>
                   <div className="row-actions">
-                    <button className="icon-btn" title={t.modal.editPhm} onClick={() => setModal({ type: 'edit', phm: p })}><Pencil size={14} /></button>
-                    <button className="icon-btn danger" title={t.modal.deletePhm} onClick={() => setModal({ type: 'delete', phm: p })}><Trash2 size={14} /></button>
+                    <button className="icon-btn" title={t.modal.editCoach} onClick={() => setModal({ type: 'edit', coach: p })}><Pencil size={14} /></button>
+                    <button className="icon-btn danger" title={t.modal.deleteCoach} onClick={() => setModal({ type: 'delete', coach: p })}><Trash2 size={14} /></button>
                   </div>
                 </td>
               </tr>
@@ -828,9 +828,9 @@ function PHMTab({ phms, users, onRefresh }) {
           </tbody>
         </table>
       </div>
-      {modal?.type === 'add'    && <PHMModal phm={null}       onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <PHMModal phm={modal.phm} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'delete' && <DeletePHMConfirm phm={modal.phm} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {modal?.type === 'add'    && <CoachModal coach={null}       onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <CoachModal coach={modal.coach} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete' && <DeleteCoachConfirm coach={modal.coach} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
     </>
   );
 }
@@ -909,8 +909,8 @@ function SimulatorsTab() {
         <iframe src={`/admin/sim/chat/${SIM_V}`} title="Chat" className="sim-iframe" />
       </div>
       <div className="card sim-card">
-        <div className="card-header">PHM Simulator</div>
-        <iframe src={`/admin/sim/phm/${SIM_V}`} title="PHM" className="sim-iframe" />
+        <div className="card-header">Coach Simulator</div>
+        <iframe src={`/admin/sim/coach/${SIM_V}`} title="Coach" className="sim-iframe" />
       </div>
     </div>
   );
@@ -924,7 +924,7 @@ export default function App() {
   const toggleLang = () => setLang(l => l === 'en' ? 'zh' : 'en');
 
   const [tab, setTab] = useState('users');
-  const [data, setData] = useState({ users: [], dots: [], phms: [] });
+  const [data, setData] = useState({ users: [], dots: [], coaches: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -934,9 +934,9 @@ export default function App() {
       const [uRes, dRes, pRes] = await Promise.all([
         axios.get('/api/users'),
         axios.get('/api/dots-inventory'),
-        axios.get('/api/phm-list'),
+        axios.get('/api/coach-list'),
       ]);
-      setData({ users: uRes.data.users || [], dots: dRes.data.dots || [], phms: pRes.data.phms || [] });
+      setData({ users: uRes.data.users || [], dots: dRes.data.dots || [], coaches: pRes.data.coaches || [] });
       setLastRefresh(new Date());
     } catch (err) { console.error('Admin fetch error:', err); }
     finally { setLoading(false); }
@@ -945,10 +945,10 @@ export default function App() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const NAV = [
-    { id: 'users', label: t.nav.users, icon: Users    },
-    { id: 'phms',  label: t.nav.phms,  icon: UserCog  },
-    { id: 'dots',  label: t.nav.dots,  icon: Droplets },
-    { id: 'sims',  label: t.nav.sims,  icon: Layout   },
+    { id: 'users',   label: t.nav.users,   icon: Users    },
+    { id: 'coaches', label: t.nav.coaches, icon: UserCog  },
+    { id: 'dots',    label: t.nav.dots,    icon: Droplets },
+    { id: 'sims',    label: t.nav.sims,    icon: Layout   },
   ];
 
   return (
@@ -982,10 +982,10 @@ export default function App() {
           </button>
         </header>
         <div className="content">
-          {tab === 'users' && <UsersTab users={data.users} phms={data.phms} onRefresh={fetchData} />}
-          {tab === 'phms'  && <PHMTab  phms={data.phms}   users={data.users} onRefresh={fetchData} />}
-          {tab === 'dots'  && <DotsTab dots={data.dots} onRefresh={fetchData} />}
-          {tab === 'sims'  && <SimulatorsTab />}
+          {tab === 'users'   && <UsersTab   users={data.users} coaches={data.coaches} onRefresh={fetchData} />}
+          {tab === 'coaches' && <CoachTab   coaches={data.coaches} users={data.users} onRefresh={fetchData} />}
+          {tab === 'dots'    && <DotsTab    dots={data.dots} onRefresh={fetchData} />}
+          {tab === 'sims'    && <SimulatorsTab />}
         </div>
       </div>
     </LangCtx.Provider>

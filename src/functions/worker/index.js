@@ -21,13 +21,13 @@ async function handleGetUsers() {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
-                    u.phm_id, u.created_at, u.phone, u.email,
+                    u.coach_id, u.created_at, u.phone, u.email,
                     b.bio_age, b.data as bio_data,
                     p.name as coach_name,
                     (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report,
                     (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan
             FROM users u
-            LEFT JOIN phms p ON u.phm_id = p.id
+            LEFT JOIN coaches p ON u.coach_id = p.id
             LEFT JOIN (
                 SELECT DISTINCT ON (user_id) user_id, bio_age, data
                 FROM biomarkers
@@ -91,23 +91,23 @@ async function handleGetDotsInventory() {
     }
 }
 
-async function handleGetPhmList() {
+async function handleGetCoachList() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
             SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.user_id) as user_count
-            FROM phms p
-            LEFT JOIN users u ON p.id = u.phm_id
+            FROM coaches p
+            LEFT JOIN users u ON p.id = u.coach_id
             GROUP BY p.id;
         `;
         const result = await pool.query(query);
-        return { success: true, phms: result.rows };
+        return { success: true, coaches: result.rows };
     } catch (err) {
         return { success: false, error: err.message };
     }
 }
 
-async function handlePostPhmInstruction(body) {
+async function handlePostCoachInstruction(body) {
     const { openid, instruction } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -124,24 +124,24 @@ async function handlePostPhmInstruction(body) {
     }
 }
 
-async function handlePostAssignPhm(body) {
-    const { user_id, phm_id } = body;
+async function handlePostAssignCoach(body) {
+    const { user_id, coach_id } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        await pool.query('UPDATE users SET phm_id = $1 WHERE user_id = $2', [phm_id || null, user_id]);
+        await pool.query('UPDATE users SET coach_id = $1 WHERE user_id = $2', [coach_id || null, user_id]);
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
     }
 }
 
-async function handlePostPhms(body) {
+async function handlePostCoaches(body) {
     const { name, email, phone } = body;
     if (!name) return { success: false, error: 'name is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            'INSERT INTO phms (name, email, phone) VALUES ($1, $2, $3) RETURNING id',
+            'INSERT INTO coaches (name, email, phone) VALUES ($1, $2, $3) RETURNING id',
             [name, email || null, phone || null]
         );
         return { success: true, id: result.rows[0].id };
@@ -150,13 +150,13 @@ async function handlePostPhms(body) {
     }
 }
 
-async function handlePutPhm(phmId, body) {
+async function handlePutCoach(coachId, body) {
     const { name, email, phone } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query(
-            'UPDATE phms SET name=$1, email=$2, phone=$3 WHERE id=$4',
-            [name, email || null, phone || null, phmId]
+            'UPDATE coaches SET name=$1, email=$2, phone=$3 WHERE id=$4',
+            [name, email || null, phone || null, coachId]
         );
         return { success: true };
     } catch (err) {
@@ -164,10 +164,10 @@ async function handlePutPhm(phmId, body) {
     }
 }
 
-async function handleDeletePhm(phmId) {
+async function handleDeleteCoach(coachId) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        await pool.query('DELETE FROM phms WHERE id = $1', [phmId]);
+        await pool.query('DELETE FROM coaches WHERE id = $1', [coachId]);
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -218,15 +218,15 @@ async function handleDeleteDot(dotId) {
 }
 
 async function handlePostUsers(body) {
-    const { openid, external_id: extId, external_app, nickname, phone, email, gender, birth_date, language, phm_id } = body;
+    const { openid, external_id: extId, external_app, nickname, phone, email, gender, birth_date, language, coach_id } = body;
     const external_id = extId || openid;
     if (!external_id) return { success: false, error: 'external_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, phm_id)
+            `INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, coach_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING user_id`,
-            [generateUserId(), external_id, external_app || null, nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
+            [generateUserId(), external_id, external_app || null, nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null]
         );
         return { success: true, user_id: result.rows[0].user_id };
     } catch (err) {
@@ -235,12 +235,12 @@ async function handlePostUsers(body) {
 }
 
 async function handlePutUser(user_id, body) {
-    const { nickname, phone, email, gender, birth_date, language, phm_id } = body;
+    const { nickname, phone, email, gender, birth_date, language, coach_id } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query(
-            `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, phm_id=$7 WHERE user_id=$8`,
-            [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', phm_id || null, user_id]
+            `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7 WHERE user_id=$8`,
+            [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, user_id]
         );
         return { success: true };
     } catch (err) {
@@ -515,20 +515,20 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetNotifications(query.openid);
             } else if (path.includes('/dots-inventory')) {
                 result = await handleGetDotsInventory();
-            } else if (path.includes('/phm-list')) {
-                result = await handleGetPhmList();
+            } else if (path.includes('/coach-list')) {
+                result = await handleGetCoachList();
             } else if (path.includes('/users') || path === '/' || path === '') {
                 result = await handleGetUsers();
             } else {
                 result = { success: false, error: `Unknown GET route: ${path}` };
             }
         } else if (method === 'POST') {
-            if (path.includes('/phm-instruction') || path.includes('/coach-instruction')) {
-                result = await handlePostPhmInstruction(parsedBody);
-            } else if (path.includes('/assign-phm')) {
-                result = await handlePostAssignPhm(parsedBody);
-            } else if (path.includes('/phms')) {
-                result = await handlePostPhms(parsedBody);
+            if (path.includes('/coach-instruction')) {
+                result = await handlePostCoachInstruction(parsedBody);
+            } else if (path.includes('/assign-coach')) {
+                result = await handlePostAssignCoach(parsedBody);
+            } else if (path.includes('/coaches')) {
+                result = await handlePostCoaches(parsedBody);
             } else if (path.includes('/dots')) {
                 result = await handlePostDots(parsedBody);
             } else if (path === '/users') {
@@ -540,9 +540,9 @@ exports.handler = async (req, resp, context) => {
             if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
                 result = await handlePutUser(user_id, parsedBody);
-            } else if (path.includes('/phms/')) {
-                const phmId = path.split('/phms/')[1];
-                result = await handlePutPhm(phmId, parsedBody);
+            } else if (path.includes('/coaches/')) {
+                const coachId = path.split('/coaches/')[1];
+                result = await handlePutCoach(coachId, parsedBody);
             } else if (path.includes('/dots/')) {
                 const dotId = path.split('/dots/')[1];
                 result = await handlePutDot(dotId, parsedBody);
@@ -553,9 +553,9 @@ exports.handler = async (req, resp, context) => {
             if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
                 result = await handleDeleteUser(user_id);
-            } else if (path.includes('/phms/')) {
-                const phmId = path.split('/phms/')[1];
-                result = await handleDeletePhm(phmId);
+            } else if (path.includes('/coaches/')) {
+                const coachId = path.split('/coaches/')[1];
+                result = await handleDeleteCoach(coachId);
             } else if (path.includes('/dots/')) {
                 const dotId = path.split('/dots/')[1];
                 result = await handleDeleteDot(dotId);

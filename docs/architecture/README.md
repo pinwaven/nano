@@ -57,7 +57,7 @@ Admin (Browser)
   │ Serves simulator iframes    │
   │   /admin/sim/chat/          │
   │   /admin/sim/kino/          │
-  │   /admin/sim/phm/           │
+  │   /admin/sim/coach/           │
   │ Proxies /admin/api/* to     │
   │   nano-worker               │
   └─────────────────────────────┘

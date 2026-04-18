@@ -1,6 +1,6 @@
 # Simulator Build & Deploy
 
-The three simulators (Chat, Kino, PHM) are built from source in `tests/` and served as static files inside the `admin-panel` FC function at `/admin/sim/{name}/`.
+The three simulators (Chat, Kino, Coach) are built from source in `tests/` and served as static files inside the `admin-panel` FC function at `/admin/sim/{name}/`.
 
 ## Directory layout
 
@@ -8,13 +8,13 @@ The three simulators (Chat, Kino, PHM) are built from source in `tests/` and ser
 tests/
   chat-simulator/   ← source (React + Vite)
   kino-simulator/   ← source (React + Vite)
-  phm-simulator/    ← source (React + Vite)
+  coach-simulator/    ← source (React + Vite)
 
 src/functions/admin-panel/
   sim/
     chat/           ← build output (served at /admin/sim/chat/)
     kino/           ← build output (served at /admin/sim/kino/)
-    phm/            ← build output (served at /admin/sim/phm/)
+    coach/            ← build output (served at /admin/sim/coach/)
 ```
 
 The `outDir` in each simulator's `vite.config.js` points directly to the corresponding `sim/` folder, so no manual copy is needed.
@@ -29,7 +29,7 @@ cd tests/chat-simulator && npx vite build
 # or
 cd tests/kino-simulator && npx vite build
 # or
-cd tests/phm-simulator && npx vite build
+cd tests/coach-simulator && npx vite build
 ```
 
 3. Deploy the admin-panel function:
@@ -43,7 +43,7 @@ s deploy admin-panel -y
 ```bash
 cd tests/chat-simulator && npx vite build && \
 cd ../kino-simulator   && npx vite build && \
-cd ../phm-simulator    && npx vite build && \
+cd ../coach-simulator    && npx vite build && \
 cd ../.. && s deploy admin-panel -y
 ```
 
@@ -56,4 +56,4 @@ cd ../.. && s deploy admin-panel -y
   - `/admin/simulators` — all three side by side
   - `/admin/sim/chat/` — Chat simulator standalone
   - `/admin/sim/kino/` — Kino simulator standalone
-  - `/admin/sim/phm/` — PHM simulator standalone
+  - `/admin/sim/coach/` — Coach simulator standalone

@@ -144,7 +144,7 @@ exports.handler = async (req, resp, context) => {
     }
 
     // Simulator static files live under __dirname/sim/{name}/
-    const simMatch = rawPath.match(/^\/admin\/sim\/(chat|kino|phm)(\/.*)?$/);
+    const simMatch = rawPath.match(/^\/admin\/sim\/(chat|kino|coach)(\/.*)?$/);
     if (simMatch) {
         const simName = simMatch[1];
         let simPath = simMatch[2] || '/';

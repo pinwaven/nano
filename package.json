@@ -10,7 +10,7 @@
     "deploy:admin": "./scripts/deploy-admin.sh",
     "deploy:kino": "./scripts/deploy-kino.sh",
     "deploy:chat": "./scripts/deploy-chat.sh",
-    "deploy:phm": "./scripts/deploy-phm.sh",
+    "deploy:coach": "./scripts/deploy-coach.sh",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {

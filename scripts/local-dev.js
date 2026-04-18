@@ -95,7 +95,7 @@ app.get('/notifications', async (req, res) => {
     }
 });
 
-// PHM Dashboard: Fetch all users with latest data
+// Coach Dashboard: Fetch all users with latest data
 app.get('/users', async (req, res) => {
     const { pool } = require('../src/lib/db');
     const { calculateAge } = require('../src/lib/time-utils');
@@ -103,13 +103,13 @@ app.get('/users', async (req, res) => {
         console.log(`[Local Dev] Fetching users from ${process.env.DATABASE_URL.includes('localhost') ? 'Local' : 'PolarDB'}`);
         const query = `
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
-                   u.phm_id, u.created_at,
+                   u.coach_id, u.created_at,
                    b.bio_age, b.data as bio_data,
                    p.name as coach_name,
                    (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan,
                    (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report
             FROM users u
-            LEFT JOIN phms p ON u.phm_id = p.id
+            LEFT JOIN coaches p ON u.coach_id = p.id
             LEFT JOIN (
                 SELECT DISTINCT ON (user_id) user_id, bio_age, data
                 FROM biomarkers
@@ -131,8 +131,8 @@ app.get('/users', async (req, res) => {
     }
 });
 
-// PHM Dashboard: Send instruction to user
-app.post('/phm-instruction', async (req, res) => {
+// Coach Dashboard: Send instruction to user
+app.post('/coach-instruction', async (req, res) => {
     const { openid, instruction } = req.body;
     const { pool } = require('../src/lib/db');
     try {
@@ -146,10 +146,10 @@ app.post('/phm-instruction', async (req, res) => {
             [user.rows[0].user_id, 'coach_instruction', coachMessage, 'pending']
         );
 
-        console.log(`[Local Dev] PHM instruction sent to ${openid}`);
+        console.log(`[Local Dev] Coach instruction sent to ${openid}`);
         res.json({ success: true });
     } catch (err) {
-        console.error('PHM Instruction Error:', err);
+        console.error('Coach Instruction Error:', err);
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
@@ -185,46 +185,46 @@ app.get('/dots-inventory', async (req, res) => {
     }
 });
 
-// Admin: Fetch all PHMs with user counts
-app.get('/phm-list', async (req, res) => {
+// Admin: Fetch all Coaches with user counts
+app.get('/coach-list', async (req, res) => {
     const { pool } = require('../src/lib/db');
     try {
         const query = `
             SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.user_id) as user_count
-            FROM phms p
-            LEFT JOIN users u ON p.id = u.phm_id
+            FROM coaches p
+            LEFT JOIN users u ON p.id = u.coach_id
             GROUP BY p.id;
         `;
         const result = await pool.query(query);
-        res.json({ success: true, phms: result.rows });
+        res.json({ success: true, coaches: result.rows });
     } catch (err) {
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
 
-// Admin: Assign a PHM coach to a user
-app.post('/assign-phm', async (req, res) => {
-    const { user_id, phm_id } = req.body;
+// Admin: Assign a Coach to a user
+app.post('/assign-coach', async (req, res) => {
+    const { user_id, coach_id } = req.body;
     const { pool } = require('../src/lib/db');
     try {
-        await pool.query('UPDATE users SET phm_id = $1 WHERE user_id = $2', [phm_id || null, user_id]);
+        await pool.query('UPDATE users SET coach_id = $1 WHERE user_id = $2', [coach_id || null, user_id]);
         res.json({ success: true });
     } catch (err) {
-        console.error('Assign PHM Error:', err);
+        console.error('Assign Coach Error:', err);
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
 
 // Admin: Create user
 app.post('/users', async (req, res) => {
-    const { external_id, external_app, nickname, phone, email, gender, birth_date, language, phm_id } = req.body;
+    const { external_id, external_app, nickname, phone, email, gender, birth_date, language, coach_id } = req.body;
     const { pool } = require('../src/lib/db');
     if (!external_id) return res.status(400).json({ error: 'external_id is required' });
     try {
         const result = await pool.query(
-            `INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, phm_id)
+            `INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, coach_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING user_id`,
-            [generateUserId(), external_id, external_app || null, nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', phm_id || null]
+            [generateUserId(), external_id, external_app || null, nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null]
         );
         res.json({ success: true, user_id: result.rows[0].user_id });
     } catch (err) {
@@ -235,12 +235,12 @@ app.post('/users', async (req, res) => {
 
 // Admin: Update user
 app.put('/users/:id', async (req, res) => {
-    const { nickname, phone, email, gender, birth_date, language, phm_id } = req.body;
+    const { nickname, phone, email, gender, birth_date, language, coach_id } = req.body;
     const { pool } = require('../src/lib/db');
     try {
         await pool.query(
-            `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, phm_id=$7 WHERE user_id=$8`,
-            [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', phm_id || null, req.params.id]
+            `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7 WHERE user_id=$8`,
+            [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, req.params.id]
         );
         res.json({ success: true });
     } catch (err) {
@@ -261,13 +261,13 @@ app.delete('/users/:id', async (req, res) => {
     }
 });
 
-// Admin: Create PHM
-app.post('/phms', async (req, res) => {
+// Admin: Create Coach
+app.post('/coaches', async (req, res) => {
     const { name, email, phone } = req.body;
     const { pool } = require('../src/lib/db');
     try {
         const result = await pool.query(
-            'INSERT INTO phms (name, email, phone) VALUES ($1, $2, $3) RETURNING id',
+            'INSERT INTO coaches (name, email, phone) VALUES ($1, $2, $3) RETURNING id',
             [name, email || null, phone || null]
         );
         res.json({ success: true, id: result.rows[0].id });
@@ -276,13 +276,13 @@ app.post('/phms', async (req, res) => {
     }
 });
 
-// Admin: Update PHM
-app.put('/phms/:id', async (req, res) => {
+// Admin: Update Coach
+app.put('/coaches/:id', async (req, res) => {
     const { name, email, phone } = req.body;
     const { pool } = require('../src/lib/db');
     try {
         await pool.query(
-            'UPDATE phms SET name=$1, email=$2, phone=$3 WHERE id=$4',
+            'UPDATE coaches SET name=$1, email=$2, phone=$3 WHERE id=$4',
             [name, email || null, phone || null, req.params.id]
         );
         res.json({ success: true });
@@ -291,11 +291,11 @@ app.put('/phms/:id', async (req, res) => {
     }
 });
 
-// Admin: Delete PHM
-app.delete('/phms/:id', async (req, res) => {
+// Admin: Delete Coach
+app.delete('/coaches/:id', async (req, res) => {
     const { pool } = require('../src/lib/db');
     try {
-        await pool.query('DELETE FROM phms WHERE id = $1', [req.params.id]);
+        await pool.query('DELETE FROM coaches WHERE id = $1', [req.params.id]);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });

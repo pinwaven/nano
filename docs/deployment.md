@@ -76,7 +76,7 @@ The admin panel serves both the compiled React SPA (`dist/`) and the simulator b
 ```bash
 cd tests/chat-simulator && npx vite build
 cd ../kino-simulator    && npx vite build
-cd ../phm-simulator     && npx vite build
+cd ../coach-simulator     && npx vite build
 cd ../..
 s deploy admin-panel -y
 ```
