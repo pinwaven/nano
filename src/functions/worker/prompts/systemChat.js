@@ -6,7 +6,7 @@
  * like a trusted advisor — never cold or robotic.
  */
 module.exports = (context) => {
-  const { user_profile, latest_biomarkers, bioage_profile, message } = context;
+  const { user_profile, latest_biomarkers, bioage_profile, dots_formulary, nutrition_plan, message } = context;
   const lang = user_profile.language === 'zh' ? 'zh' : 'en';
   const isZh = lang === 'zh';
 
@@ -18,8 +18,18 @@ module.exports = (context) => {
     : `BIOMARKER RESULTS: No test data yet. Encourage the user to use the Kino device for their first scan.`;
 
   const bioAgeSection = hasBioAge
-    ? `BIOLOGICAL AGE PROFILE:\n${JSON.stringify(bioage_profile, null, 2)}`
+    ? `BIOLOGICAL AGE PROFILE:\n• BioAge: ${bioage_profile.BioAge}  ChronoAge: ${bioage_profile.ChronoAge}  Δ: ${bioage_profile.AgeDifference}\n• Resilience Age: ${bioage_profile.SubAges?.ResilienceAge ?? '—'}  (hsCRP + IL-6)\n• Cellular Age:   ${bioage_profile.SubAges?.CellularAge ?? '—'}  (GDF-15 + CD38)\n• Metabolic Age:  ${bioage_profile.SubAges?.MetabolicAge ?? '—'}  (Glycated Albumin)\n• Micro-Vascular Age: ${bioage_profile.SubAges?.MicroVascularAge ?? '—'}  (Cystatin C)`
     : `BIOLOGICAL AGE: Not yet assessed.`;
+
+  const dotsSection = dots_formulary && dots_formulary.length > 0
+    ? `WAVEN DOTS FORMULARY (16 mg payload per dot):\n${dots_formulary.map(d =>
+        `• ${d.key_name} (D${String(d.id).padStart(2,'0')}): ${d.name}${d.name_zh ? ' / ' + d.name_zh : ''} — ${d.description || ''} [${d.is_isolate ? 'Isolate' : 'Blend'}]`
+      ).join('\n')}`
+    : `WAVEN DOTS FORMULARY: Not available.`;
+
+  const planSection = nutrition_plan
+    ? `USER'S CURRENT NUTRITION PLAN:\n${nutrition_plan}`
+    : `NUTRITION PLAN: No plan generated yet. A Kino biomarker test will generate one.`;
 
   return `You are Nano — a warm, brilliant longevity AI built by Waven. You are part scientist, part health coach, and part trusted friend. You have deep expertise in preventive medicine, functional nutrition, inflammation biology, metabolic health, and longevity science.
 
@@ -37,6 +47,13 @@ HEALTH DATA
 ${biomarkerSection}
 
 ${bioAgeSection}
+
+━━━━━━━━━━━━━━━━━━━━━━━
+WAVEN DOTS & NUTRITION PLAN
+━━━━━━━━━━━━━━━━━━━━━━━
+${dotsSection}
+
+${planSection}
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 YOUR ROLE & PERSONALITY

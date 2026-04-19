@@ -395,18 +395,28 @@ async function handlePostChat(body) {
         } catch (reportErr) {
             console.error('Report Generation Error:', reportErr);
         }
+    } else if (test_data) {
+        // Non-kino test data (e.g. body_composition) — save raw record only, no estimation
+        await pool.query(
+            'INSERT INTO biomarkers (user_id, test_type, data, tested_at) VALUES ($1, $2, $3, $4)',
+            [user_id, test_type, JSON.stringify({ actual: test_data }), tested_at || new Date().toISOString()]
+        );
     } else if (message) {
         // Regular chat message handling
         try {
-            // Fetch latest biomarkers for context
-            const biomarkerQuery = `
-                SELECT bio_age, data
-                FROM biomarkers
-                WHERE user_id = $1
-                ORDER BY tested_at DESC
-                LIMIT 1;
-            `;
-            const biomarkerResult = await pool.query(biomarkerQuery, [user_id]);
+            // Fetch latest biomarkers, dots inventory, and nutrition plan in parallel
+            const [biomarkerResult, dotsResult, planResult] = await Promise.all([
+                pool.query(
+                    `SELECT bio_age, data FROM biomarkers WHERE user_id = $1 ORDER BY tested_at DESC LIMIT 1`,
+                    [user_id]
+                ),
+                pool.query(`SELECT id, key_name, name, name_zh, description, is_isolate FROM dots ORDER BY id ASC`),
+                pool.query(
+                    `SELECT content FROM notifications WHERE user_id = $1 AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1`,
+                    [user_id]
+                ),
+            ]);
+
             const latestBiomarker = biomarkerResult.rows[0] || {};
             const bioageProfile = latestBiomarker.data?.bioage_profile || {};
 
@@ -419,6 +429,8 @@ async function handlePostChat(body) {
                 },
                 latest_biomarkers: latestBiomarker.data?.actual || {},
                 bioage_profile: bioageProfile,
+                dots_formulary: dotsResult.rows,
+                nutrition_plan: planResult.rows[0]?.content || null,
                 message: message
             };
 
