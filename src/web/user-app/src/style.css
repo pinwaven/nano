@@ -650,6 +650,41 @@ body {
   transform: none;
 }
 
+/* ── Quick reply chips (onboarding) ── */
+
+.quick-replies {
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(11, 28, 46, 0.6);
+  border-top: 1px solid var(--navy-border);
+  flex-shrink: 0;
+}
+
+.quick-reply-btn {
+  flex: 1;
+  padding: 11px 0;
+  border-radius: 12px;
+  border: 1px solid rgba(99, 117, 236, 0.35);
+  background: var(--blue-dim);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+
+.quick-reply-btn:hover {
+  background: rgba(99, 117, 236, 0.22);
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--blue-dim);
+}
+
+.quick-reply-btn:active {
+  transform: scale(0.97);
+}
+
 /* ── Health Tab ── */
 
 .health-tab {

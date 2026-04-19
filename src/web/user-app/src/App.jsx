@@ -9,36 +9,47 @@ const API = '/api';
 
 const T = {
   en: {
-    subtitle:       'Your Precision Health Companion',
-    signIn:         'Sign in to your account',
-    phoneLabel:     'Phone Number',
-    phonePlaceholder: '138 0000 0000',
-    continue:       'Continue',
-    verifying:      'Verifying…',
-    errNotFound:    'No account found with this phone number. Please contact your coach.',
-    errNetwork:     'Connection failed. Please check your network and try again.',
-    footerBrand:    'Harvard Innovation Labs',
-    footerTag:      'Member Company',
-    tabChat:        'Chat',
-    tabHealth:      'Health',
-    initMsg:        'Hello! I am Nano, your personal health companion. How can I help you today?',
-    inputPlaceholder: 'Type a message…',
-    errServer:      'Could not reach the server. Please try again.',
-    profile:        'Profile',
-    gender:         'Gender',
-    born:           'Born',
-    language:       'Language',
-    coach:          'Coach',
-    joined:         'Joined',
-    phone:          'Phone',
-    email:          'Email',
-    bioAge:         'Bio Age',
-    chronoAge:      'Chrono Age',
-    latestBm:       'Latest Biomarkers',
-    trends:         'Trends',
-    noBmData:       'No biomarker data available yet.',
-    noHistory:      'No test history yet.',
-    tests:          n => `${n} test${n !== 1 ? 's' : ''}`,
+    subtitle:          'Your Precision Health Companion',
+    signIn:            'Sign in to your account',
+    phoneLabel:        'Phone Number',
+    phonePlaceholder:  '138 0000 0000',
+    continue:          'Continue',
+    verifying:         'Verifying…',
+    errNotFound:       'No account found with this phone number. Please contact your coach.',
+    errNetwork:        'Connection failed. Please check your network and try again.',
+    footerBrand:       'Harvard Innovation Labs',
+    footerTag:         'Member Company',
+    tabChat:           'Chat',
+    tabHealth:         'Health',
+    initMsg:           'Hello! I am Nano, your personal health companion. How can I help you today?',
+    inputPlaceholder:  'Type a message…',
+    errServer:         'Could not reach the server. Please try again.',
+    profile:           'Profile',
+    gender:            'Gender',
+    born:              'Born',
+    language:          'Language',
+    coach:             'Coach',
+    joined:            'Joined',
+    phone:             'Phone',
+    email:             'Email',
+    bioAge:            'Bio Age',
+    chronoAge:         'Chrono Age',
+    latestBm:          'Latest Biomarkers',
+    trends:            'Trends',
+    noBmData:          'No biomarker data available yet.',
+    noHistory:         'No test history yet.',
+    tests:             n => `${n} test${n !== 1 ? 's' : ''}`,
+    genderMap:         { male: 'Male', female: 'Female' },
+    langMap:           { zh: 'Chinese', en: 'English' },
+    // Onboarding
+    obGenderPrompt:    'Before we start, I need a couple of quick details to personalize your health insights. What is your gender?',
+    obGenderOnly:      'To personalize your experience, could you share your gender?',
+    male:              'Male',
+    female:            'Female',
+    obBirthdayPrompt:  'What is your date of birth? Please enter in YYYY-MM-DD format (e.g. 1990-01-15).',
+    obBirthdayOnly:    'One quick thing — could you share your date of birth? (YYYY-MM-DD, e.g. 1990-01-15)',
+    obBirthdayInvalid: "I couldn't recognize that date. Please use YYYY-MM-DD format, e.g. 1990-01-15.",
+    obComplete:        'Your profile is all set! How can I help you today?',
     bmLabels: {
       hsCRP:     'hsCRP',
       GDF15:     'GDF-15',
@@ -49,36 +60,47 @@ const T = {
     },
   },
   zh: {
-    subtitle:       '您的精准健康伴侣',
-    signIn:         '登录您的账户',
-    phoneLabel:     '手机号码',
-    phonePlaceholder: '138 0000 0000',
-    continue:       '继续',
-    verifying:      '验证中…',
-    errNotFound:    '未找到该手机号对应的账户，请联系您的 Coach。',
-    errNetwork:     '连接失败，请检查网络后重试。',
-    footerBrand:    '哈佛大学创新实验室',
-    footerTag:      '成员企业',
-    tabChat:        '对话',
-    tabHealth:      '健康',
-    initMsg:        '您好！我是 Nano，您的个人健康伴侣。今天有什么可以帮您的？',
-    inputPlaceholder: '输入消息…',
-    errServer:      '无法连接服务器，请重试。',
-    profile:        '个人信息',
-    gender:         '性别',
-    born:           '出生日期',
-    language:       '语言',
-    coach:          'Coach',
-    joined:         '注册时间',
-    phone:          '手机',
-    email:          '邮箱',
-    bioAge:         '生物年龄',
-    chronoAge:      '实际年龄',
-    latestBm:       '最新生物标志物',
-    trends:         '趋势',
-    noBmData:       '暂无生物标志物数据。',
-    noHistory:      '暂无检测记录。',
-    tests:          n => `${n} 次检测`,
+    subtitle:          '您的精准健康伴侣',
+    signIn:            '登录您的账户',
+    phoneLabel:        '手机号码',
+    phonePlaceholder:  '138 0000 0000',
+    continue:          '继续',
+    verifying:         '验证中…',
+    errNotFound:       '未找到该手机号对应的账户，请联系您的 Coach。',
+    errNetwork:        '连接失败，请检查网络后重试。',
+    footerBrand:       '哈佛大学创新实验室',
+    footerTag:         '成员企业',
+    tabChat:           '对话',
+    tabHealth:         '健康',
+    initMsg:           '您好！我是 Nano，您的个人健康伴侣。今天有什么可以帮您的？',
+    inputPlaceholder:  '输入消息…',
+    errServer:         '无法连接服务器，请重试。',
+    profile:           '个人信息',
+    gender:            '性别',
+    born:              '出生日期',
+    language:          '语言',
+    coach:             'Coach',
+    joined:            '注册时间',
+    phone:             '手机',
+    email:             '邮箱',
+    bioAge:            '生物年龄',
+    chronoAge:         '实际年龄',
+    latestBm:          '最新生物标志物',
+    trends:            '趋势',
+    noBmData:          '暂无生物标志物数据。',
+    noHistory:         '暂无检测记录。',
+    tests:             n => `${n} 次检测`,
+    genderMap:         { male: '男', female: '女' },
+    langMap:           { zh: '中文', en: 'English' },
+    // Onboarding
+    obGenderPrompt:    '开始之前，需要了解一些基本信息来个性化您的健康洞察。请问您的性别是？',
+    obGenderOnly:      '为了个性化您的体验，请问您的性别是？',
+    male:              '男',
+    female:            '女',
+    obBirthdayPrompt:  '请问您的出生日期是？请使用 YYYY-MM-DD 格式（如 1990-01-15）。',
+    obBirthdayOnly:    '还有一件事——请告诉我您的出生日期？（YYYY-MM-DD，如 1990-01-15）',
+    obBirthdayInvalid: '日期格式无法识别，请使用 YYYY-MM-DD 格式，如 1990-01-15。',
+    obComplete:        '您的个人信息已完善！今天有什么可以帮您的？',
     bmLabels: {
       hsCRP:     'hsCRP',
       GDF15:     'GDF-15',
@@ -124,6 +146,18 @@ function bioAgeColor(bio, chrono) {
   return '#f59e0b';
 }
 
+function parseDate(str) {
+  // Accept YYYY-MM-DD or common variants
+  const cleaned = str.trim().replace(/\//g, '-').replace(/\./g, '-');
+  const match = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!match) return null;
+  const [, y, m, d] = match;
+  const date = new Date(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
+  if (isNaN(date.getTime())) return null;
+  if (date > new Date()) return null;
+  return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+}
+
 // ── Sparkline ─────────────────────────────────────────────────────────────────
 
 function Sparkline({ values, color, width = 130, height = 38 }) {
@@ -152,7 +186,7 @@ function Sparkline({ values, color, width = 130, height = 38 }) {
   );
 }
 
-// ── Lang toggle button ────────────────────────────────────────────────────────
+// ── Lang toggle ───────────────────────────────────────────────────────────────
 
 function LangToggle({ lang, onChange }) {
   return (
@@ -198,19 +232,16 @@ function LoginScreen({ onLogin, lang, onLangChange }) {
   return (
     <div className="login-screen">
       <div className="login-glow" />
-
       <div className="login-top-bar">
         <LangToggle lang={lang} onChange={onLangChange} />
       </div>
-
       <div className="login-brand">
         <div className="login-logo-ring">
           <img src={wavenLogo} className="login-logo" alt="Waven" />
         </div>
-        <div className="login-title">NANO AI</div>
+        <div className="login-title">NANO</div>
         <div className="login-subtitle">{t.subtitle}</div>
       </div>
-
       <div className="login-card">
         <div className="login-card-label">{t.signIn}</div>
         <div className="login-field">
@@ -236,7 +267,6 @@ function LoginScreen({ onLogin, lang, onLangChange }) {
           {loading ? t.verifying : t.continue}
         </button>
       </div>
-
       <div className="login-footer">
         <span>{t.footerBrand}</span>
         <span className="login-footer-dot">·</span>
@@ -270,9 +300,7 @@ function HealthTab({ user }) {
     <div className="health-tab">
       <div className="health-hero">
         <div className="health-hero-bg" />
-        <div className="health-avatar">
-          {(user.nickname || 'U')[0].toUpperCase()}
-        </div>
+        <div className="health-avatar">{(user.nickname || 'U')[0].toUpperCase()}</div>
         <div className="health-name">{user.nickname || 'User'}</div>
         {user.bio_age && (
           <div className="health-bio-row">
@@ -296,9 +324,9 @@ function HealthTab({ user }) {
         <div className="health-section-title">{t.profile}</div>
         <div className="health-info-grid">
           {[
-            [t.gender,   user.gender],
+            [t.gender,   t.genderMap[user.gender] || user.gender],
             [t.born,     fmtDate(user.birth_date, lang)],
-            [t.language, user.language ? user.language.toUpperCase() : null],
+            [t.language, t.langMap[user.language] || user.language],
             [t.coach,    user.coach_name],
             [t.joined,   fmtDate(user.created_at, lang)],
             [t.phone,    user.phone],
@@ -368,27 +396,63 @@ function HealthTab({ user }) {
 
 // ── Chat Tab ──────────────────────────────────────────────────────────────────
 
-function ChatTab({ user }) {
+function ChatTab({ user, onUserUpdate }) {
   const { t } = useLang();
   const [messages, setMessages] = useState([]);
   const [seenIds, setSeenIds] = useState(new Set());
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
+  // 'gender' | 'birthday' | 'done' | null (null = not yet determined)
+  const [obStep, setObStep] = useState(null);
   const chatEndRef = useRef(null);
 
-  // Reset messages when user or language changes
+  const addMsg = (role, content) =>
+    setMessages(prev => [...prev, { id: `${role}-${Date.now()}`, role, content }]);
+
+  // Save user fields to API, preserving all existing values
+  const saveUser = async (updates) => {
+    await axios.put(`${API}/users/${user.user_id}`, {
+      nickname:   user.nickname,
+      phone:      user.phone,
+      email:      user.email,
+      gender:     user.gender,
+      birth_date: user.birth_date,
+      language:   user.language,
+      coach_id:   user.coach_id,
+      ...updates,
+    });
+  };
+
+  // Initialise chat + determine onboarding step when user changes
   useEffect(() => {
-    setMessages([{ id: 'init', role: 'ai', content: t.initMsg }]);
-  }, [user?.user_id, t]);
+    if (!user?.user_id) return;
+
+    const needsGender   = !user.gender;
+    const needsBirthday = !user.birth_date;
+    const msgs = [{ id: 'init', role: 'ai', content: t.initMsg }];
+
+    if (needsGender) {
+      msgs.push({ id: 'ob-gender', role: 'ai', content: t.obGenderPrompt });
+      setObStep('gender');
+    } else if (needsBirthday) {
+      msgs.push({ id: 'ob-bday', role: 'ai', content: t.obBirthdayOnly });
+      setObStep('birthday');
+    } else {
+      setObStep('done');
+    }
+
+    setMessages(msgs);
+    setSeenIds(new Set());
+    setInput('');
+  }, [user?.user_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typing]);
 
+  // Notification polling (only in normal chat mode)
   useEffect(() => {
-    if (!user?.user_id) return;
-    setSeenIds(new Set());
-
+    if (!user?.user_id || obStep !== 'done') return;
     const poll = async () => {
       try {
         const r = await axios.get(`${API}/notifications?openid=${user.user_id}`);
@@ -407,29 +471,77 @@ function ChatTab({ user }) {
         });
       } catch { /* silent */ }
     };
-
     poll();
     const iv = setInterval(poll, 3000);
     return () => clearInterval(iv);
-  }, [user?.user_id]);
+  }, [user?.user_id, obStep]);
+
+  // ── Onboarding handlers ──
+
+  const handleSelectGender = async (value) => {
+    addMsg('user', t[value]);          // 'Male' or 'Female' in UI lang
+    setTyping(true);
+    try {
+      await saveUser({ gender: value });
+      onUserUpdate({ gender: value });
+      if (!user.birth_date) {
+        addMsg('ai', t.obBirthdayPrompt);
+        setObStep('birthday');
+      } else {
+        addMsg('ai', t.obComplete);
+        setObStep('done');
+      }
+    } catch {
+      addMsg('ai', t.errServer);
+    } finally {
+      setTyping(false);
+    }
+  };
+
+  const handleSubmitBirthday = async () => {
+    const raw = input.trim();
+    if (!raw) return;
+    const date = parseDate(raw);
+    if (!date) {
+      addMsg('user', raw);
+      setInput('');
+      addMsg('ai', t.obBirthdayInvalid);
+      return;
+    }
+    addMsg('user', raw);
+    setInput('');
+    setTyping(true);
+    try {
+      await saveUser({ birth_date: date });
+      onUserUpdate({ birth_date: date });
+      addMsg('ai', t.obComplete);
+      setObStep('done');
+    } catch {
+      addMsg('ai', t.errServer);
+    } finally {
+      setTyping(false);
+    }
+  };
+
+  // ── Normal chat handler ──
 
   const handleSend = async () => {
-    if (!input.trim() || typing) return;
+    if (obStep === 'birthday') { handleSubmitBirthday(); return; }
+    if (!input.trim() || typing || obStep !== 'done') return;
     const text = input.trim();
-    setMessages(prev => [...prev, { id: Date.now(), role: 'user', content: text }]);
+    addMsg('user', text);
     setInput('');
     setTyping(true);
     try {
       await axios.post(`${API}/chat`, { openid: user.user_id, message: text });
     } catch {
-      setMessages(prev => [
-        ...prev,
-        { id: Date.now() + 1, role: 'ai', content: t.errServer },
-      ]);
+      addMsg('ai', t.errServer);
     } finally {
       setTyping(false);
     }
   };
+
+  const inputDisabled = typing || (obStep !== 'done' && obStep !== 'birthday');
 
   return (
     <div className="chat-tab">
@@ -447,6 +559,18 @@ function ChatTab({ user }) {
         <div ref={chatEndRef} />
       </div>
 
+      {/* Gender quick-reply chips */}
+      {obStep === 'gender' && !typing && (
+        <div className="quick-replies">
+          <button className="quick-reply-btn" onClick={() => handleSelectGender('male')}>
+            {t.male}
+          </button>
+          <button className="quick-reply-btn" onClick={() => handleSelectGender('female')}>
+            {t.female}
+          </button>
+        </div>
+      )}
+
       <div className="input-area">
         <textarea
           value={input}
@@ -454,14 +578,14 @@ function ChatTab({ user }) {
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
           }}
-          placeholder={t.inputPlaceholder}
-          disabled={typing}
+          placeholder={obStep === 'birthday' ? 'YYYY-MM-DD' : t.inputPlaceholder}
+          disabled={inputDisabled}
           rows={1}
         />
         <button
           className="send-btn"
           onClick={handleSend}
-          disabled={typing || !input.trim()}
+          disabled={inputDisabled || !input.trim()}
           aria-label="Send"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -491,6 +615,14 @@ function App() {
     setLang(u.language === 'en' ? 'en' : 'zh');
   };
 
+  const handleUserUpdate = updates => {
+    setUser(prev => {
+      const next = { ...prev, ...updates };
+      sessionStorage.setItem('nano_user', JSON.stringify(next));
+      return next;
+    });
+  };
+
   const handleLogout = () => {
     sessionStorage.removeItem('nano_user');
     setUser(null);
@@ -515,7 +647,7 @@ function App() {
           <div className="app-header">
             <div className="header-brand">
               <img src={wavenLogo} className="header-logo" alt="Waven" />
-              <span className="header-title">NANO AI</span>
+              <span className="header-title">NANO</span>
             </div>
             <div className="header-right">
               <div className="header-user">{user.nickname || 'User'}</div>
@@ -530,7 +662,10 @@ function App() {
           </div>
 
           <div className="tab-content">
-            {tab === 'chat' ? <ChatTab user={user} /> : <HealthTab user={user} />}
+            {tab === 'chat'
+              ? <ChatTab user={user} onUserUpdate={handleUserUpdate} />
+              : <HealthTab user={user} />
+            }
           </div>
 
           <nav className="tab-bar">
