@@ -2,6 +2,66 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import wavenLogo from '../../../src/web/shared/assets/waven-logo-icon.png';
 
+const I18N = {
+  zh: {
+    statusLabel: '状态',
+    ready: '就绪',
+    analyzing: '分析中…',
+    complete: '完成',
+    failed: '失败',
+    noUsers: '无用户 — 请先启动后端',
+    refreshTitle: '刷新用户',
+    tabBioAge: '生物年龄',
+    tabBiomarkers: '生物标志物',
+    bioAgeLabel: '生物年龄',
+    chronoAgeLabel: '实际年龄',
+    btnRunAnother: '再次检测',
+    btnStart: '开始生物标志物检测',
+    crpLow: '低风险',
+    crpModerate: '中等',
+    crpElevated: '偏高',
+    subAges: {
+      ResilienceAge:    { label: '抗压',     desc: '应激缓冲能力' },
+      CellularAge:      { label: '细胞',     desc: '细胞活力' },
+      MetabolicAge:     { label: '代谢',     desc: '燃料燃烧效率' },
+      MicroVascularAge: { label: '微血管',   desc: '营养与氧气输送' },
+    },
+    biomarkers: {
+      hsCRP:     'hsCRP',
+      'GDF-15':  'GDF-15',
+      'IL-6':    'IL-6',
+      'Glycated Albumin': '糖化白蛋白',
+      'Cystatin C':       '胱抑素 C',
+      CD38:      'CD38',
+    },
+  },
+  en: {
+    statusLabel: 'STATUS',
+    ready: 'Ready',
+    analyzing: 'Analyzing...',
+    complete: 'Complete',
+    failed: 'Failed',
+    noUsers: 'No users — start backend first',
+    refreshTitle: 'Refresh users',
+    tabBioAge: 'Bio Age',
+    tabBiomarkers: 'Biomarkers',
+    bioAgeLabel: 'BIO AGE',
+    chronoAgeLabel: 'CHRONO AGE',
+    btnRunAnother: 'Run Another Test',
+    btnStart: 'Start Biomarker Test',
+    crpLow: 'Low Risk',
+    crpModerate: 'Moderate',
+    crpElevated: 'Elevated',
+    subAges: {
+      ResilienceAge:    { label: 'Resilience',    desc: 'Stress buffering' },
+      CellularAge:      { label: 'Cellular',      desc: 'Raw cellular vitality' },
+      MetabolicAge:     { label: 'Metabolic',     desc: 'Fuel-burning efficiency' },
+      MicroVascularAge: { label: 'Micro-Vascular',desc: 'Nutrient & O₂ delivery' },
+    },
+    biomarkers: {},
+  },
+};
+
 const BIOMARKER_META = [
   { key: 'hsCRP',     label: 'hsCRP',           unit: 'mg/L' },
   { key: 'GDF15',     label: 'GDF-15',           unit: 'pg/mL' },
@@ -29,6 +89,9 @@ function bioAgeColor(bio, chrono) {
 }
 
 function App() {
+  const [lang, setLang] = useState('zh');
+  const t = I18N[lang];
+
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [status, setStatus] = useState('Ready');
@@ -40,6 +103,14 @@ function App() {
   const [slideVisible, setSlideVisible] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const slideTimer = useRef(null);
+
+  const statusDisplay = status === 'Ready' ? t.ready
+    : status === 'Analyzing...' ? t.analyzing
+    : status === 'Complete' ? t.complete
+    : status === 'Failed' ? t.failed
+    : status;
+
+  const bmLabel = (label) => t.biomarkers[label] || label;
 
   const fetchUsers = () =>
     axios.get('/api/users')
@@ -117,9 +188,10 @@ function App() {
     : 'ready';
 
   const hsCRP = biomarkers?.hsCRP ?? null;
-  const crpRisk = hsCRP !== null
-    ? hsCRP < 1 ? 'Low Risk' : hsCRP < 3 ? 'Moderate' : 'Elevated'
+  const crpRiskKey = hsCRP !== null
+    ? hsCRP < 1 ? 'low-risk' : hsCRP < 3 ? 'moderate' : 'elevated'
     : null;
+  const crpRiskLabel = crpRiskKey === 'low-risk' ? t.crpLow : crpRiskKey === 'moderate' ? t.crpModerate : crpRiskKey === 'elevated' ? t.crpElevated : null;
 
   const chrono = bioageProfile?.ChronoAge ?? null;
   const bioAge = bioageProfile?.BioAge ?? null;
@@ -146,17 +218,24 @@ function App() {
               ))}
             </select>
           ) : (
-            <span className="no-users">No users — start backend first</span>
+            <span className="no-users">{t.noUsers}</span>
           )}
           <button
             className={`refresh-btn${refreshing ? ' spinning' : ''}`}
             onClick={async () => { setRefreshing(true); await fetchUsers(); setRefreshing(false); }}
-            title="Refresh users"
+            title={t.refreshTitle}
           >
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
               <path d="M13.5 8A5.5 5.5 0 1 1 8 2.5a5.5 5.5 0 0 1 3.54 1.29L13.5 5.5"/>
               <path d="M13.5 2v3.5H10"/>
             </svg>
+          </button>
+          <button
+            className="lang-btn"
+            onClick={() => setLang(l => l === 'zh' ? 'en' : 'zh')}
+            title="Toggle language"
+          >
+            {lang === 'zh' ? 'EN' : '中'}
           </button>
         </div>
       </div>
@@ -178,8 +257,8 @@ function App() {
               );
             })() : (
               <>
-                <div className="face-label">STATUS</div>
-                <div className="face-status">{status}</div>
+                <div className="face-label">{t.statusLabel}</div>
+                <div className="face-status">{statusDisplay}</div>
                 {selectedUser && (
                   <div className="face-user">{selectedUser.nickname || 'User'}</div>
                 )}
@@ -196,13 +275,13 @@ function App() {
                 className={`results-tab${activeTab === 'bioage' ? ' active' : ''}`}
                 onClick={() => setActiveTab('bioage')}
               >
-                Bio Age
+                {t.tabBioAge}
               </button>
               <button
                 className={`results-tab${activeTab === 'biomarkers' ? ' active' : ''}`}
                 onClick={() => setActiveTab('biomarkers')}
               >
-                Biomarkers
+                {t.tabBiomarkers}
               </button>
             </div>
 
@@ -213,23 +292,23 @@ function App() {
                     <span className="bioage-num" style={{ color: bioAgeColor(bioAge, chrono) }}>
                       {bioAge != null ? bioAge.toFixed(1) : '—'}
                     </span>
-                    <span className="bioage-chip-label">BIO AGE</span>
+                    <span className="bioage-chip-label">{t.bioAgeLabel}</span>
                   </div>
                   <div className="bioage-chip bioage-chip--dim">
                     <span className="bioage-num" style={{ color: '#a6c4e5' }}>
                       {chrono ?? '—'}
                     </span>
-                    <span className="bioage-chip-label">CHRONO AGE</span>
+                    <span className="bioage-chip-label">{t.chronoAgeLabel}</span>
                   </div>
                 </div>
 
                 {subAges && (
                   <div className="sub-age-list">
-                    {SUB_AGE_META.map(({ key, label, desc, color }) => (
+                    {SUB_AGE_META.map(({ key, color }) => (
                       <div key={key} className="sub-age-row">
                         <span className="sub-age-dot" style={{ background: color }} />
-                        <span className="sub-age-label">{label}</span>
-                        <span className="sub-age-desc">{desc}</span>
+                        <span className="sub-age-label">{t.subAges[key].label}</span>
+                        <span className="sub-age-desc">{t.subAges[key].desc}</span>
                         <span className="sub-age-val" style={{ color }}>
                           {subAges[key] != null ? subAges[key].toFixed(1) : '—'}
                         </span>
@@ -244,13 +323,13 @@ function App() {
               <div className="tab-content">
                 {BIOMARKER_META.map(({ key, label, unit }) => (
                   <div key={key} className="bm-row">
-                    <span className="bm-label">{label}</span>
+                    <span className="bm-label">{bmLabel(label)}</span>
                     <span className="bm-value">
                       {biomarkers[key] ?? '—'}
                       <span className="bm-unit">{unit}</span>
                     </span>
-                    {key === 'hsCRP' && crpRisk && (
-                      <span className={`crp-risk risk-${crpRisk.toLowerCase().replace(' ', '-')}`}>{crpRisk}</span>
+                    {key === 'hsCRP' && crpRiskKey && (
+                      <span className={`crp-risk risk-${crpRiskKey}`}>{crpRiskLabel}</span>
                     )}
                   </div>
                 ))}
@@ -267,8 +346,8 @@ function App() {
         >
           {loading
             ? <><span className="btn-dot" /><span className="btn-dot" /><span className="btn-dot" /></>
-            : status === 'Complete' ? 'Run Another Test'
-            : 'Start Biomarker Test'
+            : status === 'Complete' ? t.btnRunAnother
+            : t.btnStart
           }
         </button>
 

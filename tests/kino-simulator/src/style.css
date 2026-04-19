@@ -142,6 +142,28 @@ body {
   to { transform: rotate(360deg); }
 }
 
+.lang-btn {
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(99, 117, 236, 0.35);
+  background: rgba(99, 117, 236, 0.08);
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.18s;
+  -webkit-app-region: no-drag;
+}
+
+.lang-btn:hover {
+  border-color: var(--blue);
+  color: var(--text);
+  background: rgba(99, 117, 236, 0.2);
+}
+
 /* ── Body ── */
 .kino-body {
   flex: 1;
