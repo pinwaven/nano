@@ -1100,9 +1100,9 @@ function App() {
           </div>
 
           <div className="tab-content">
-            {tab === 'chat'   && <ChatTab user={user} onUserUpdate={handleUserUpdate} />}
-            {tab === 'health' && <HealthTab user={user} />}
-            {tab === 'dots'   && <DotsTab user={user} />}
+            <div style={{ display: tab === 'chat'   ? 'contents' : 'none' }}><ChatTab user={user} onUserUpdate={handleUserUpdate} /></div>
+            <div style={{ display: tab === 'health' ? 'contents' : 'none' }}><HealthTab user={user} /></div>
+            <div style={{ display: tab === 'dots'   ? 'contents' : 'none' }}><DotsTab user={user} /></div>
           </div>
 
           <nav className="tab-bar">
