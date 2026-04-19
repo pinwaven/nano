@@ -190,7 +190,7 @@ app.get('/coach-list', async (req, res) => {
     const { pool } = require('../src/lib/db');
     try {
         const query = `
-            SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.user_id) as user_count
+            SELECT p.id, p.name, p.email, p.phone, p.language, p.created_at, COUNT(u.user_id) as user_count
             FROM coaches p
             LEFT JOIN users u ON p.id = u.coach_id
             GROUP BY p.id;
@@ -263,12 +263,12 @@ app.delete('/users/:id', async (req, res) => {
 
 // Admin: Create Coach
 app.post('/coaches', async (req, res) => {
-    const { name, email, phone } = req.body;
+    const { name, email, phone, language } = req.body;
     const { pool } = require('../src/lib/db');
     try {
         const result = await pool.query(
-            'INSERT INTO coaches (name, email, phone) VALUES ($1, $2, $3) RETURNING id',
-            [name, email || null, phone || null]
+            'INSERT INTO coaches (name, email, phone, language) VALUES ($1, $2, $3, $4) RETURNING id',
+            [name, email || null, phone || null, language || 'zh']
         );
         res.json({ success: true, id: result.rows[0].id });
     } catch (err) {
@@ -278,12 +278,12 @@ app.post('/coaches', async (req, res) => {
 
 // Admin: Update Coach
 app.put('/coaches/:id', async (req, res) => {
-    const { name, email, phone } = req.body;
+    const { name, email, phone, language } = req.body;
     const { pool } = require('../src/lib/db');
     try {
         await pool.query(
-            'UPDATE coaches SET name=$1, email=$2, phone=$3 WHERE id=$4',
-            [name, email || null, phone || null, req.params.id]
+            'UPDATE coaches SET name=$1, email=$2, phone=$3, language=$4 WHERE id=$5',
+            [name, email || null, phone || null, language || 'zh', req.params.id]
         );
         res.json({ success: true });
     } catch (err) {

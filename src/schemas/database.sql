@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS coaches (
     email TEXT UNIQUE,
     phone TEXT,
     avatar_url TEXT,
+    language TEXT DEFAULT 'zh',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

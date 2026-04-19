@@ -320,13 +320,13 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
 
 // ── Coach modal ───────────────────────────────────────────────────────────────
 
-const EMPTY_COACH = { name: '', email: '', phone: '' };
+const EMPTY_COACH = { name: '', email: '', phone: '', language: 'zh' };
 
 function CoachModal({ coach, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!coach?.id;
   const [form, setForm] = useState(isEdit
-    ? { name: coach.name || '', email: coach.email || '', phone: coach.phone || '' }
+    ? { name: coach.name || '', email: coach.email || '', phone: coach.phone || '', language: coach.language || 'zh' }
     : { ...EMPTY_COACH });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -364,6 +364,16 @@ function CoachModal({ coach, onClose, onSave }) {
             <label className="form-field">
               <span>{t.modal.phone}</span>
               <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+86 138 0000 0000" />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.language}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.language} onChange={e => set('language', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="zh">{t.modal.langZh}</option>
+                  <option value="en">{t.modal.langEn}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
             </label>
           </div>
           {error && <div className="form-error">{error}</div>}
@@ -800,10 +810,10 @@ function CoachTab({ coaches, users, onRefresh }) {
         </div>
         <table className="data-table">
           <thead>
-            <tr><th>{t.table.id}</th><th>{t.table.name}</th><th>{t.table.email}</th><th>{t.table.phone}</th><th>{t.table.customers}</th><th>{t.table.joined}</th><th></th></tr>
+            <tr><th>{t.table.id}</th><th>{t.table.name}</th><th>{t.table.email}</th><th>{t.table.phone}</th><th>{t.table.language}</th><th>{t.table.customers}</th><th>{t.table.joined}</th><th></th></tr>
           </thead>
           <tbody>
-            {coaches.length === 0 && <tr><td colSpan={7} className="empty-row">{t.empty.coaches}</td></tr>}
+            {coaches.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.coaches}</td></tr>}
             {coaches.map(p => (
               <tr key={p.id}>
                 <td className="muted">{p.id}</td>
@@ -815,6 +825,7 @@ function CoachTab({ coaches, users, onRefresh }) {
                 </td>
                 <td className="muted">{fmt(p.email)}</td>
                 <td className="muted">{fmt(p.phone)}</td>
+                <td><Badge color={p.language === 'zh' ? '#16a34a' : '#2563eb'}>{(p.language || 'zh').toUpperCase()}</Badge></td>
                 <td><Badge color="#3b82f6">{p.user_count || 0}</Badge></td>
                 <td className="muted">{fmtDate(p.created_at)}</td>
                 <td>

@@ -95,7 +95,7 @@ async function handleGetCoachList() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
-            SELECT p.id, p.name, p.email, p.phone, p.created_at, COUNT(u.user_id) as user_count
+            SELECT p.id, p.name, p.email, p.phone, p.language, p.created_at, COUNT(u.user_id) as user_count
             FROM coaches p
             LEFT JOIN users u ON p.id = u.coach_id
             GROUP BY p.id;
@@ -136,13 +136,13 @@ async function handlePostAssignCoach(body) {
 }
 
 async function handlePostCoaches(body) {
-    const { name, email, phone } = body;
+    const { name, email, phone, language } = body;
     if (!name) return { success: false, error: 'name is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            'INSERT INTO coaches (name, email, phone) VALUES ($1, $2, $3) RETURNING id',
-            [name, email || null, phone || null]
+            'INSERT INTO coaches (name, email, phone, language) VALUES ($1, $2, $3, $4) RETURNING id',
+            [name, email || null, phone || null, language || 'zh']
         );
         return { success: true, id: result.rows[0].id };
     } catch (err) {
@@ -151,12 +151,12 @@ async function handlePostCoaches(body) {
 }
 
 async function handlePutCoach(coachId, body) {
-    const { name, email, phone } = body;
+    const { name, email, phone, language } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query(
-            'UPDATE coaches SET name=$1, email=$2, phone=$3 WHERE id=$4',
-            [name, email || null, phone || null, coachId]
+            'UPDATE coaches SET name=$1, email=$2, phone=$3, language=$4 WHERE id=$5',
+            [name, email || null, phone || null, language || 'zh', coachId]
         );
         return { success: true };
     } catch (err) {
