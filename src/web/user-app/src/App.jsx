@@ -356,20 +356,20 @@ function HealthTab({ user }) {
         <div className="health-hero-bg" />
         <div className="health-avatar">{(user.nickname || 'U')[0].toUpperCase()}</div>
         <div className="health-name">{user.nickname || 'User'}</div>
-        {user.bio_age && (
+        {(user.bio_age || age) && (
           <div className="health-bio-row">
             <div className="health-bio-chip">
-              <span className="health-bio-num" style={{ color: bioAgeColor(user.bio_age, age) }}>
-                {Number(user.bio_age).toFixed(1)}
+              <span className="health-bio-num" style={{ color: user.bio_age ? bioAgeColor(user.bio_age, age) : 'var(--text-muted)' }}>
+                {user.bio_age ? Number(user.bio_age).toFixed(1) : '—'}
               </span>
               <span className="health-bio-unit">{t.bioAge}</span>
             </div>
-            {age && (
-              <div className="health-bio-chip health-bio-chip--dim">
-                <span className="health-bio-num" style={{ color: 'var(--text-sub)' }}>{age}</span>
-                <span className="health-bio-unit">{t.chronoAge}</span>
-              </div>
-            )}
+            <div className="health-bio-chip health-bio-chip--dim">
+              <span className="health-bio-num" style={{ color: 'var(--text-sub)' }}>
+                {age ?? '—'}
+              </span>
+              <span className="health-bio-unit">{t.chronoAge}</span>
+            </div>
           </div>
         )}
         {subAges && (
