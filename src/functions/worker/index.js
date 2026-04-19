@@ -315,6 +315,7 @@ async function handlePostChat(body) {
     }
 
     let biomarkerData = null;
+    let bioAgeData = null;
     if (test_data) {
         const age = calculateAge(user.birth_date);
         const bioData = user.bio_data || {};
@@ -330,6 +331,7 @@ async function handlePostChat(body) {
         );
         const biomarkerId = biomarkerResult.rows[0].id;
         biomarkerData = estimationReport.BiomarkerValues;
+        bioAgeData = bioAgeReport;
 
         // Create notification for the user to see in Chat
         const content = `I've analyzed your biomarker test. Your biological age is **${bioAgeReport.BioAge.toFixed(1)} years**. Check your report for details!`;
@@ -449,7 +451,7 @@ async function handlePostChat(body) {
             );
         }
     }
-    return { success: true, user_id, biomarkers: biomarkerData || null };
+    return { success: true, user_id, biomarkers: biomarkerData || null, bioage_profile: bioAgeData || null };
 }
 
 exports.handler = async (req, resp, context) => {

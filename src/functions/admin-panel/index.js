@@ -157,11 +157,15 @@ if (rawPath.startsWith('/admin/api')) {
             }
             const ext = path.extname(simFile).toLowerCase();
             const content = fs.readFileSync(simFile);
+            const isHashed = simFile.includes('/assets/');
+            const cacheControl = isHashed
+                ? 'public, max-age=31536000, immutable'
+                : 'no-cache, no-store, must-revalidate';
             return {
                 statusCode: 200,
                 headers: {
                     'content-type': MIME_TYPES[ext] || 'application/octet-stream',
-                    'cache-control': 'public, max-age=3600',
+                    'cache-control': cacheControl,
                     'content-disposition': 'inline'
                 },
                 body: content.toString('base64'),
@@ -205,12 +209,16 @@ if (rawPath.startsWith('/admin/api')) {
         const ext = path.extname(filePath).toLowerCase();
         const contentType = MIME_TYPES[ext] || 'application/octet-stream';
         const content = fs.readFileSync(filePath);
+        const isHashed = filePath.includes('/assets/');
+        const cacheControl = isHashed
+            ? 'public, max-age=31536000, immutable'
+            : 'no-cache, no-store, must-revalidate';
 
         return {
             statusCode: 200,
-            headers: { 
+            headers: {
                 'content-type': contentType,
-                'cache-control': 'public, max-age=3600',
+                'cache-control': cacheControl,
                 'content-disposition': 'inline'
             },
             body: content.toString('base64'),

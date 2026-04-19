@@ -60,6 +60,18 @@ const T = {
     bsConfirm:         'Confirm',
     bsCm:              'cm',
     bsKg:              'kg',
+    subAgeLabels: {
+      ResilienceAge:    'Resilience Age',
+      CellularAge:      'Cellular Age',
+      MetabolicAge:     'Metabolic Age',
+      MicroVascularAge: 'Micro-Vascular Age',
+    },
+    subAgeDesc: {
+      ResilienceAge:    'How well you buffer stress.',
+      CellularAge:      'How much raw life-force your cells have.',
+      MetabolicAge:     'How cleanly you burn fuel.',
+      MicroVascularAge: 'How well you deliver nutrients and oxygen.',
+    },
     bmLabels: {
       hsCRP:     'hsCRP',
       GDF15:     'GDF-15',
@@ -121,6 +133,18 @@ const T = {
     bsConfirm:         '确认',
     bsCm:              'cm',
     bsKg:              'kg',
+    subAgeLabels: {
+      ResilienceAge:    '抗压年龄',
+      CellularAge:      '细胞年龄',
+      MetabolicAge:     '代谢年龄',
+      MicroVascularAge: '微血管年龄',
+    },
+    subAgeDesc: {
+      ResilienceAge:    '衡量你的身体抵御和缓冲压力的能力。',
+      CellularAge:      '衡量你细胞底层的原生生命力。',
+      MetabolicAge:     '衡量你的身体燃烧能量的洁净度与效率。',
+      MicroVascularAge: '衡量你输送营养与氧气的微循环能力。',
+    },
     bmLabels: {
       hsCRP:     'hsCRP',
       GDF15:     'GDF-15',
@@ -312,9 +336,19 @@ function HealthTab({ user }) {
       .finally(() => setLoading(false));
   }, [user?.user_id]);
 
-  const latestBm = records.length > 0 ? (records[records.length - 1].data?.estimated || {}) : null;
+  const latestRecord   = records.length > 0 ? records[records.length - 1] : null;
+  const latestBm       = latestRecord?.data?.estimated || null;
+  const subAges        = latestRecord?.data?.bioage_profile?.SubAges || null;
   const trendFor = key => records.map(r => r.data?.estimated?.[key]).filter(v => v != null);
   const age = chronoAge(user.birth_date);
+
+  const SUB_AGE_KEYS = ['ResilienceAge', 'CellularAge', 'MetabolicAge', 'MicroVascularAge'];
+  const SUB_AGE_COLORS = {
+    ResilienceAge:    '#ef4444',
+    CellularAge:      '#10b981',
+    MetabolicAge:     '#6375EC',
+    MicroVascularAge: '#0ea5e9',
+  };
 
   return (
     <div className="health-tab">
@@ -336,6 +370,19 @@ function HealthTab({ user }) {
                 <span className="health-bio-unit">{t.chronoAge}</span>
               </div>
             )}
+          </div>
+        )}
+        {subAges && (
+          <div className="sub-age-grid">
+            {SUB_AGE_KEYS.map(key => (
+              <div key={key} className="sub-age-card">
+                <span className="sub-age-val" style={{ color: SUB_AGE_COLORS[key] }}>
+                  {subAges[key] != null ? subAges[key].toFixed(1) : '—'}
+                </span>
+                <span className="sub-age-label">{t.subAgeLabels[key]}</span>
+                <span className="sub-age-desc">{t.subAgeDesc[key]}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>

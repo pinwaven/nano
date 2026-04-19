@@ -324,13 +324,148 @@ body {
 }
 
 
-/* ── Biomarker Results Panel ── */
-.biomarker-results {
+/* ── Results Panel with tabs ── */
+.results-panel {
   width: 100%;
   background: var(--navy-card);
   border: 1px solid var(--navy-border);
   border-radius: 13px;
+  overflow: hidden;
+}
+
+.results-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--navy-border);
+}
+
+.results-tab {
+  flex: 1;
+  padding: 10px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: color 0.18s, background 0.18s;
+  position: relative;
+}
+
+.results-tab:hover { color: var(--text-sub); }
+
+.results-tab.active {
+  color: var(--blue);
+  background: rgba(99, 117, 236, 0.06);
+}
+
+.results-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 32px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--blue), #8B9FFF);
+  border-radius: 2px 2px 0 0;
+}
+
+.tab-content {
   padding: 12px 16px;
+}
+
+/* ── Biomarker Results Panel ── */
+.biomarker-results-title {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 2.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+/* ── BioAge tab content ── */
+.bioage-summary {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.bioage-chip {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--navy-lift);
+  border: 1px solid var(--navy-border);
+  border-radius: 10px;
+  padding: 10px 6px 8px;
+}
+
+.bioage-chip--dim {
+  background: rgba(11, 28, 46, 0.5);
+}
+
+.bioage-num {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.bioage-chip-label {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 5px;
+}
+
+.sub-age-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.sub-age-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(99, 117, 236, 0.08);
+}
+
+.sub-age-row:last-child { border-bottom: none; }
+
+.sub-age-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sub-age-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+  flex: 1;
+  white-space: nowrap;
+}
+
+.sub-age-desc {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex: 1.4;
+  line-height: 1.3;
+}
+
+.sub-age-val {
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+  min-width: 36px;
+  text-align: right;
 }
 
 .biomarker-results-title {
@@ -444,6 +579,19 @@ body {
 
 .btn-dot:nth-child(2) { animation-delay: 0.2s; }
 .btn-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── Version stamp ── */
+.kino-version {
+  position: fixed;
+  bottom: 6px;
+  right: 10px;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  opacity: 0.5;
+}
 
 /* ── Animations ── */
 @keyframes ring-spin {

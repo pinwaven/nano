@@ -3,13 +3,30 @@ import axios from 'axios';
 import wavenLogo from '../../../src/web/shared/assets/waven-logo-icon.png';
 
 const BIOMARKER_META = [
-  { key: 'hsCRP',     label: 'hsCRP',      unit: 'mg/L' },
-  { key: 'GDF15',     label: 'GDF-15',     unit: 'pg/mL' },
-  { key: 'IL6',       label: 'IL-6',       unit: 'pg/mL' },
+  { key: 'hsCRP',     label: 'hsCRP',           unit: 'mg/L' },
+  { key: 'GDF15',     label: 'GDF-15',           unit: 'pg/mL' },
+  { key: 'IL6',       label: 'IL-6',             unit: 'pg/mL' },
   { key: 'GA',        label: 'Glycated Albumin', unit: '%' },
-  { key: 'CystatinC', label: 'Cystatin C', unit: 'mg/L' },
-  { key: 'CD38',      label: 'CD38',       unit: 'xBaseline' },
+  { key: 'CystatinC', label: 'Cystatin C',       unit: 'mg/L' },
+  { key: 'CD38',      label: 'CD38',             unit: 'xBaseline' },
 ];
+
+const VERSION = '2026-04-19.1';
+
+const SUB_AGE_META = [
+  { key: 'ResilienceAge',    label: 'Resilience',    desc: 'Stress buffering',        color: '#ef4444' },
+  { key: 'CellularAge',      label: 'Cellular',      desc: 'Raw cellular vitality',   color: '#10b981' },
+  { key: 'MetabolicAge',     label: 'Metabolic',     desc: 'Fuel-burning efficiency', color: '#6375EC' },
+  { key: 'MicroVascularAge', label: 'Micro-Vascular',desc: 'Nutrient & O₂ delivery',  color: '#0ea5e9' },
+];
+
+function bioAgeColor(bio, chrono) {
+  if (!bio || !chrono) return '#a6c4e5';
+  const diff = bio - chrono;
+  if (diff > 2)  return '#ef4444';
+  if (diff < -2) return '#10b981';
+  return '#f59e0b';
+}
 
 function App() {
   const [users, setUsers] = useState([]);
@@ -17,6 +34,8 @@ function App() {
   const [status, setStatus] = useState('Ready');
   const [loading, setLoading] = useState(false);
   const [biomarkers, setBiomarkers] = useState(null);
+  const [bioageProfile, setBioageProfile] = useState(null);
+  const [activeTab, setActiveTab] = useState('bioage');
   const [slideIndex, setSlideIndex] = useState(0);
   const [slideVisible, setSlideVisible] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -57,6 +76,8 @@ function App() {
     if (status === 'Complete') {
       setStatus('Ready');
       setBiomarkers(null);
+      setBioageProfile(null);
+      setActiveTab('bioage');
       return;
     }
     setLoading(true);
@@ -69,6 +90,17 @@ function App() {
         test_data: { hsCRP: randomCRP },
       });
       setBiomarkers(res.data.biomarkers || null);
+
+      if (res.data.bioage_profile) {
+        setBioageProfile(res.data.bioage_profile);
+      } else {
+        const bmRes = await axios.get(`/api/biomarkers?openid=${encodeURIComponent(selectedUser.user_id)}`);
+        const records = bmRes.data.records || [];
+        const latest = records[records.length - 1];
+        setBioageProfile(latest?.data?.bioage_profile || null);
+      }
+
+      setActiveTab('bioage');
       setStatus('Complete');
     } catch (err) {
       console.error('Kino Test Error:', err);
@@ -88,6 +120,10 @@ function App() {
   const crpRisk = hsCRP !== null
     ? hsCRP < 1 ? 'Low Risk' : hsCRP < 3 ? 'Moderate' : 'Elevated'
     : null;
+
+  const chrono = bioageProfile?.ChronoAge ?? null;
+  const bioAge = bioageProfile?.BioAge ?? null;
+  const subAges = bioageProfile?.SubAges ?? null;
 
   return (
     <>
@@ -153,20 +189,74 @@ function App() {
         </div>
 
         {stateClass === 'complete' && biomarkers && (
-          <div className="biomarker-results">
-            <div className="biomarker-results-title">BIOMARKER PANEL</div>
-            {BIOMARKER_META.map(({ key, label, unit }) => (
-              <div key={key} className="bm-row">
-                <span className="bm-label">{label}</span>
-                <span className="bm-value">
-                  {biomarkers[key] ?? '—'}
-                  <span className="bm-unit">{unit}</span>
-                </span>
-                {key === 'hsCRP' && crpRisk && (
-                  <span className={`crp-risk risk-${crpRisk.toLowerCase().replace(' ', '-')}`}>{crpRisk}</span>
+          <div className="results-panel">
+
+            <div className="results-tabs">
+              <button
+                className={`results-tab${activeTab === 'bioage' ? ' active' : ''}`}
+                onClick={() => setActiveTab('bioage')}
+              >
+                Bio Age
+              </button>
+              <button
+                className={`results-tab${activeTab === 'biomarkers' ? ' active' : ''}`}
+                onClick={() => setActiveTab('biomarkers')}
+              >
+                Biomarkers
+              </button>
+            </div>
+
+            {activeTab === 'bioage' && bioageProfile && (
+              <div className="tab-content">
+                <div className="bioage-summary">
+                  <div className="bioage-chip">
+                    <span className="bioage-num" style={{ color: bioAgeColor(bioAge, chrono) }}>
+                      {bioAge != null ? bioAge.toFixed(1) : '—'}
+                    </span>
+                    <span className="bioage-chip-label">BIO AGE</span>
+                  </div>
+                  <div className="bioage-chip bioage-chip--dim">
+                    <span className="bioage-num" style={{ color: '#a6c4e5' }}>
+                      {chrono ?? '—'}
+                    </span>
+                    <span className="bioage-chip-label">CHRONO AGE</span>
+                  </div>
+                </div>
+
+                {subAges && (
+                  <div className="sub-age-list">
+                    {SUB_AGE_META.map(({ key, label, desc, color }) => (
+                      <div key={key} className="sub-age-row">
+                        <span className="sub-age-dot" style={{ background: color }} />
+                        <span className="sub-age-label">{label}</span>
+                        <span className="sub-age-desc">{desc}</span>
+                        <span className="sub-age-val" style={{ color }}>
+                          {subAges[key] != null ? subAges[key].toFixed(1) : '—'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-            ))}
+            )}
+
+            {activeTab === 'biomarkers' && (
+              <div className="tab-content">
+                {BIOMARKER_META.map(({ key, label, unit }) => (
+                  <div key={key} className="bm-row">
+                    <span className="bm-label">{label}</span>
+                    <span className="bm-value">
+                      {biomarkers[key] ?? '—'}
+                      <span className="bm-unit">{unit}</span>
+                    </span>
+                    {key === 'hsCRP' && crpRisk && (
+                      <span className={`crp-risk risk-${crpRisk.toLowerCase().replace(' ', '-')}`}>{crpRisk}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
           </div>
         )}
 
@@ -183,6 +273,8 @@ function App() {
         </button>
 
       </div>
+
+      <div className="kino-version">v{VERSION}</div>
     </>
   );
 }
