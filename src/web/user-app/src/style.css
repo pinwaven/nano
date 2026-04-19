@@ -685,6 +685,176 @@ body {
   transform: scale(0.97);
 }
 
+/* ── Date picker widget (onboarding) ── */
+
+.date-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: rgba(11, 28, 46, 0.85);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid var(--navy-border);
+  flex-shrink: 0;
+}
+
+.date-picker-selects {
+  display: flex;
+  gap: 8px;
+}
+
+.date-picker-select {
+  flex: 1;
+  padding: 11px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(99, 117, 236, 0.28);
+  background: var(--navy-lift);
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  appearance: none;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.date-picker-select:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--blue-dim);
+}
+
+.date-picker-select:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.date-picker-select option {
+  background: var(--navy-card);
+  color: var(--text);
+}
+
+.date-picker-confirm {
+  width: 100%;
+  padding: 13px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, var(--blue) 0%, #8B9FFF 100%);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 2px 10px var(--blue-glow);
+  transition: all 0.18s;
+  letter-spacing: 0.3px;
+}
+
+.date-picker-confirm:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px var(--blue-glow);
+}
+
+.date-picker-confirm:active:not(:disabled) {
+  transform: scale(0.98);
+  filter: brightness(0.95);
+}
+
+.date-picker-confirm:disabled {
+  opacity: 0.3;
+  cursor: default;
+  box-shadow: none;
+  transform: none;
+}
+
+/* ── Body slider widget (onboarding) ── */
+
+.body-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  background: rgba(11, 28, 46, 0.85);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid var(--navy-border);
+  flex-shrink: 0;
+}
+
+.body-slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.body-slider-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.body-slider-val {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.body-slider-unit {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.body-slider-input {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: linear-gradient(to right, var(--blue), var(--blue)) no-repeat left center / var(--pct, 50%) 100%, var(--navy-lift);
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+.body-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--blue);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 8px var(--blue-glow);
+  cursor: pointer;
+  transition: box-shadow 0.18s;
+}
+
+.body-slider-input::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 14px var(--blue-glow);
+}
+
+.body-slider-input::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--blue);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 8px var(--blue-glow);
+  cursor: pointer;
+}
+
+.body-slider-input:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* ── Health Tab ── */
 
 .health-tab {

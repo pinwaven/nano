@@ -46,10 +46,20 @@ const T = {
     obGenderOnly:      'To personalize your experience, could you share your gender?',
     male:              'Male',
     female:            'Female',
-    obBirthdayPrompt:  'What is your date of birth? Please enter in YYYY-MM-DD format (e.g. 1990-01-15).',
-    obBirthdayOnly:    'One quick thing — could you share your date of birth? (YYYY-MM-DD, e.g. 1990-01-15)',
-    obBirthdayInvalid: "I couldn't recognize that date. Please use YYYY-MM-DD format, e.g. 1990-01-15.",
+    obBirthdayPrompt:  'What is your date of birth?',
+    obBirthdayOnly:    'One quick thing — could you share your date of birth?',
+    obBodyPrompt:      'Last step — could you share your height and weight? This helps calculate your health metrics.',
+    obBodyOnly:        'One more thing — could you share your height and weight?',
     obComplete:        'Your profile is all set! How can I help you today?',
+    dpYear:            'Year',
+    dpMonth:           'Month',
+    dpDay:             'Day',
+    dpConfirm:         'Confirm',
+    bsHeight:          'Height',
+    bsWeight:          'Weight',
+    bsConfirm:         'Confirm',
+    bsCm:              'cm',
+    bsKg:              'kg',
     bmLabels: {
       hsCRP:     'hsCRP',
       GDF15:     'GDF-15',
@@ -97,10 +107,20 @@ const T = {
     obGenderOnly:      '为了个性化您的体验，请问您的性别是？',
     male:              '男',
     female:            '女',
-    obBirthdayPrompt:  '请问您的出生日期是？请使用 YYYY-MM-DD 格式（如 1990-01-15）。',
-    obBirthdayOnly:    '还有一件事——请告诉我您的出生日期？（YYYY-MM-DD，如 1990-01-15）',
-    obBirthdayInvalid: '日期格式无法识别，请使用 YYYY-MM-DD 格式，如 1990-01-15。',
+    obBirthdayPrompt:  '请问您的出生日期是？',
+    obBirthdayOnly:    '还有一件事——请告诉我您的出生日期？',
+    obBodyPrompt:      '最后一步——请告诉我您的身高和体重，帮助计算您的健康指标。',
+    obBodyOnly:        '还有一件事——请告诉我您的身高和体重？',
     obComplete:        '您的个人信息已完善！今天有什么可以帮您的？',
+    dpYear:            '年',
+    dpMonth:           '月',
+    dpDay:             '日',
+    dpConfirm:         '确认',
+    bsHeight:          '身高',
+    bsWeight:          '体重',
+    bsConfirm:         '确认',
+    bsCm:              'cm',
+    bsKg:              'kg',
     bmLabels: {
       hsCRP:     'hsCRP',
       GDF15:     'GDF-15',
@@ -394,6 +414,133 @@ function HealthTab({ user }) {
   );
 }
 
+// ── Date Picker Widget ────────────────────────────────────────────────────────
+
+function DatePickerWidget({ onConfirm, disabled }) {
+  const { t, lang } = useLang();
+  const currentYear = new Date().getFullYear();
+  const [year,  setYear]  = useState('');
+  const [month, setMonth] = useState('');
+  const [day,   setDay]   = useState('');
+
+  const years  = Array.from({ length: currentYear - 1919 }, (_, i) => currentYear - i);
+  const months = Array.from({ length: 12 }, (_, i) => i + 1);
+  const daysInMonth = year && month ? new Date(Number(year), Number(month), 0).getDate() : 31;
+  const days   = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+  // Reset day if it exceeds the new month's length
+  useEffect(() => {
+    if (day && Number(day) > daysInMonth) setDay('');
+  }, [year, month]);
+
+  const monthLabel = (m) =>
+    new Date(2000, m - 1, 1).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { month: 'short' });
+
+  const isComplete = year && month && day;
+
+  const handleConfirm = () => {
+    if (!isComplete || disabled) return;
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onConfirm(dateStr);
+  };
+
+  return (
+    <div className="date-picker">
+      <div className="date-picker-selects">
+        <select
+          className="date-picker-select"
+          value={year}
+          onChange={e => { setYear(e.target.value); setDay(''); }}
+          disabled={disabled}
+        >
+          <option value="">{t.dpYear}</option>
+          {years.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <select
+          className="date-picker-select"
+          value={month}
+          onChange={e => { setMonth(e.target.value); setDay(''); }}
+          disabled={disabled}
+        >
+          <option value="">{t.dpMonth}</option>
+          {months.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+        </select>
+        <select
+          className="date-picker-select"
+          value={day}
+          onChange={e => setDay(e.target.value)}
+          disabled={disabled || !year || !month}
+        >
+          <option value="">{t.dpDay}</option>
+          {days.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+      </div>
+      <button
+        className="date-picker-confirm"
+        onClick={handleConfirm}
+        disabled={!isComplete || disabled}
+      >
+        {t.dpConfirm}
+      </button>
+    </div>
+  );
+}
+
+// ── Body Slider Widget ────────────────────────────────────────────────────────
+
+function BodySliderWidget({ onConfirm, disabled }) {
+  const { t } = useLang();
+  const [height, setHeight] = useState(165);
+  const [weight, setWeight] = useState(65);
+
+  const handleConfirm = () => {
+    if (disabled) return;
+    onConfirm({ height, weight });
+  };
+
+  return (
+    <div className="body-slider">
+      <div className="body-slider-row">
+        <div className="body-slider-label">
+          <span>{t.bsHeight}</span>
+          <span className="body-slider-val">{height} <span className="body-slider-unit">{t.bsCm}</span></span>
+        </div>
+        <input
+          type="range"
+          className="body-slider-input"
+          min={100} max={220} step={1}
+          value={height}
+          style={{ '--pct': `${((height - 100) / 120) * 100}%` }}
+          onChange={e => setHeight(Number(e.target.value))}
+          disabled={disabled}
+        />
+      </div>
+      <div className="body-slider-row">
+        <div className="body-slider-label">
+          <span>{t.bsWeight}</span>
+          <span className="body-slider-val">{weight} <span className="body-slider-unit">{t.bsKg}</span></span>
+        </div>
+        <input
+          type="range"
+          className="body-slider-input"
+          min={30} max={150} step={0.5}
+          value={weight}
+          style={{ '--pct': `${((weight - 30) / 120) * 100}%` }}
+          onChange={e => setWeight(Number(e.target.value))}
+          disabled={disabled}
+        />
+      </div>
+      <button
+        className="date-picker-confirm"
+        onClick={handleConfirm}
+        disabled={disabled}
+      >
+        {t.bsConfirm}
+      </button>
+    </div>
+  );
+}
+
 // ── Chat Tab ──────────────────────────────────────────────────────────────────
 
 function ChatTab({ user, onUserUpdate }) {
@@ -427,23 +574,39 @@ function ChatTab({ user, onUserUpdate }) {
   useEffect(() => {
     if (!user?.user_id) return;
 
-    const needsGender   = !user.gender;
-    const needsBirthday = !user.birth_date;
     const msgs = [{ id: 'init', role: 'ai', content: t.initMsg }];
 
-    if (needsGender) {
-      msgs.push({ id: 'ob-gender', role: 'ai', content: t.obGenderPrompt });
-      setObStep('gender');
-    } else if (needsBirthday) {
-      msgs.push({ id: 'ob-bday', role: 'ai', content: t.obBirthdayOnly });
-      setObStep('birthday');
-    } else {
+    const init = async () => {
+      if (!user.gender) {
+        msgs.push({ id: 'ob-gender', role: 'ai', content: t.obGenderPrompt });
+        setObStep('gender');
+        setMessages(msgs);
+        return;
+      }
+      if (!user.birth_date) {
+        msgs.push({ id: 'ob-bday', role: 'ai', content: t.obBirthdayOnly });
+        setObStep('birthday');
+        setMessages(msgs);
+        return;
+      }
+      try {
+        const r = await axios.get(`${API}/biomarkers?openid=${encodeURIComponent(user.user_id)}`);
+        const records = r.data.records || [];
+        const hasBody = records.some(rec => rec.test_type === 'body_composition' && rec.data?.actual?.weight);
+        if (!hasBody) {
+          msgs.push({ id: 'ob-body', role: 'ai', content: t.obBodyOnly });
+          setObStep('body');
+          setMessages(msgs);
+          return;
+        }
+      } catch { /* skip body check on error */ }
       setObStep('done');
-    }
+      setMessages(msgs);
+    };
 
-    setMessages(msgs);
     setSeenIds(new Set());
     setInput('');
+    init();
   }, [user?.user_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -478,8 +641,23 @@ function ChatTab({ user, onUserUpdate }) {
 
   // ── Onboarding handlers ──
 
+  const checkBodyStep = async () => {
+    try {
+      const r = await axios.get(`${API}/biomarkers?openid=${encodeURIComponent(user.user_id)}`);
+      const records = r.data.records || [];
+      const hasBody = records.some(rec => rec.test_type === 'body_composition' && rec.data?.actual?.weight);
+      if (!hasBody) {
+        addMsg('ai', t.obBodyPrompt);
+        setObStep('body');
+        return;
+      }
+    } catch { /* fall through */ }
+    addMsg('ai', t.obComplete);
+    setObStep('done');
+  };
+
   const handleSelectGender = async (value) => {
-    addMsg('user', t[value]);          // 'Male' or 'Female' in UI lang
+    addMsg('user', t[value]);
     setTyping(true);
     try {
       await saveUser({ gender: value });
@@ -488,8 +666,7 @@ function ChatTab({ user, onUserUpdate }) {
         addMsg('ai', t.obBirthdayPrompt);
         setObStep('birthday');
       } else {
-        addMsg('ai', t.obComplete);
-        setObStep('done');
+        await checkBodyStep();
       }
     } catch {
       addMsg('ai', t.errServer);
@@ -498,22 +675,30 @@ function ChatTab({ user, onUserUpdate }) {
     }
   };
 
-  const handleSubmitBirthday = async () => {
-    const raw = input.trim();
-    if (!raw) return;
-    const date = parseDate(raw);
-    if (!date) {
-      addMsg('user', raw);
-      setInput('');
-      addMsg('ai', t.obBirthdayInvalid);
-      return;
-    }
-    addMsg('user', raw);
-    setInput('');
+  const handleSubmitBirthday = async (dateStr) => {
+    addMsg('user', dateStr);
     setTyping(true);
     try {
-      await saveUser({ birth_date: date });
-      onUserUpdate({ birth_date: date });
+      await saveUser({ birth_date: dateStr });
+      onUserUpdate({ birth_date: dateStr });
+      await checkBodyStep();
+    } catch {
+      addMsg('ai', t.errServer);
+    } finally {
+      setTyping(false);
+    }
+  };
+
+  const handleSubmitBody = async ({ height, weight }) => {
+    addMsg('user', `${t.bsHeight}: ${height}${t.bsCm}  ${t.bsWeight}: ${weight}${t.bsKg}`);
+    setTyping(true);
+    try {
+      await axios.post(`${API}/chat`, {
+        openid: user.user_id,
+        test_type: 'body_composition',
+        test_data: { height, weight },
+        tested_at: new Date().toISOString(),
+      });
       addMsg('ai', t.obComplete);
       setObStep('done');
     } catch {
@@ -526,7 +711,6 @@ function ChatTab({ user, onUserUpdate }) {
   // ── Normal chat handler ──
 
   const handleSend = async () => {
-    if (obStep === 'birthday') { handleSubmitBirthday(); return; }
     if (!input.trim() || typing || obStep !== 'done') return;
     const text = input.trim();
     addMsg('user', text);
@@ -541,7 +725,7 @@ function ChatTab({ user, onUserUpdate }) {
     }
   };
 
-  const inputDisabled = typing || (obStep !== 'done' && obStep !== 'birthday');
+  const inputDisabled = typing || obStep !== 'done';
 
   return (
     <div className="chat-tab">
@@ -571,29 +755,42 @@ function ChatTab({ user, onUserUpdate }) {
         </div>
       )}
 
-      <div className="input-area">
-        <textarea
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
-          }}
-          placeholder={obStep === 'birthday' ? 'YYYY-MM-DD' : t.inputPlaceholder}
-          disabled={inputDisabled}
-          rows={1}
-        />
-        <button
-          className="send-btn"
-          onClick={handleSend}
-          disabled={inputDisabled || !input.trim()}
-          aria-label="Send"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-          </svg>
-        </button>
-      </div>
+      {/* Birthday date picker */}
+      {obStep === 'birthday' && (
+        <DatePickerWidget onConfirm={handleSubmitBirthday} disabled={typing} />
+      )}
+
+      {/* Body composition sliders */}
+      {obStep === 'body' && (
+        <BodySliderWidget onConfirm={handleSubmitBody} disabled={typing} />
+      )}
+
+      {/* Normal chat input — hidden during onboarding */}
+      {obStep === 'done' && (
+        <div className="input-area">
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+            }}
+            placeholder={t.inputPlaceholder}
+            disabled={inputDisabled}
+            rows={1}
+          />
+          <button
+            className="send-btn"
+            onClick={handleSend}
+            disabled={inputDisabled || !input.trim()}
+            aria-label="Send"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
