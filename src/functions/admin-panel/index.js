@@ -136,7 +136,7 @@ exports.handler = async (req, resp, context) => {
         };
     }
 
-    if (rawPath.startsWith('/admin/api')) {
+if (rawPath.startsWith('/admin/api')) {
         // This proxy exists to support the legacy admin dashboard and 
         // to provide a zero-CORS internal path to the worker via VPC.
         // New external clients should use the public /api/* route directly.

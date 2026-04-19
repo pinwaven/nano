@@ -79,7 +79,7 @@ resources:
           triggerType: http
           triggerConfig:
             authType: anonymous
-            methods: ["POST", "GET"]
+            methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
         - triggerName: eb-trigger
           triggerType: eventbridge
           triggerConfig:
@@ -117,6 +117,35 @@ resources:
             authType: anonymous
             methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 
+  user-app:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-user-app
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 128
+      timeout: 30
+      code: ./src/functions/user-app
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        TZ: "Asia/Shanghai"
+      triggers:
+        - triggerName: http-user-app
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["GET", "OPTIONS"]
+
   nano-domain:
     component: fc3-domain
     props:
@@ -133,6 +162,10 @@ resources:
             functionName: nano-worker
           - path: /api
             functionName: nano-worker
+          - path: /app/*
+            functionName: nano-user-app
+          - path: /app
+            functionName: nano-user-app
           - path: /admin/api/*
             functionName: nano-admin-panel
           - path: /admin/*
