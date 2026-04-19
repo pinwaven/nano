@@ -113,6 +113,47 @@ body {
   overflow: hidden;
 }
 
+/* Lang toggle */
+.login-top-bar {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+}
+
+@media (min-width: 640px) {
+  .login-top-bar { top: 52px; }
+}
+
+.lang-toggle {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(99, 117, 236, 0.1);
+  border: 1px solid rgba(99, 117, 236, 0.25);
+  border-radius: 20px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-muted);
+  transition: all 0.18s;
+}
+
+.lang-toggle:hover {
+  border-color: rgba(99, 117, 236, 0.45);
+  background: rgba(99, 117, 236, 0.16);
+}
+
+.lang-active {
+  color: var(--blue);
+}
+
+.lang-sep {
+  opacity: 0.3;
+  font-weight: 400;
+}
+
 .login-glow {
   position: absolute;
   top: -60px;

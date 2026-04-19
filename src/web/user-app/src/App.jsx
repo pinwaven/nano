@@ -1,28 +1,119 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, createContext, useContext } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import wavenLogo from '../../shared/assets/waven-logo-icon.png';
 
 const API = '/api';
 
+// ── i18n ──────────────────────────────────────────────────────────────────────
+
+const T = {
+  en: {
+    subtitle:       'Your Precision Health Companion',
+    signIn:         'Sign in to your account',
+    phoneLabel:     'Phone Number',
+    phonePlaceholder: '138 0000 0000',
+    continue:       'Continue',
+    verifying:      'Verifying…',
+    errNotFound:    'No account found with this phone number. Please contact your coach.',
+    errNetwork:     'Connection failed. Please check your network and try again.',
+    footerBrand:    'Harvard Innovation Labs',
+    footerTag:      'Member Company',
+    tabChat:        'Chat',
+    tabHealth:      'Health',
+    initMsg:        'Hello! I am Nano, your personal health companion. How can I help you today?',
+    inputPlaceholder: 'Type a message…',
+    errServer:      'Could not reach the server. Please try again.',
+    profile:        'Profile',
+    gender:         'Gender',
+    born:           'Born',
+    language:       'Language',
+    coach:          'Coach',
+    joined:         'Joined',
+    phone:          'Phone',
+    email:          'Email',
+    bioAge:         'Bio Age',
+    chronoAge:      'Chrono Age',
+    latestBm:       'Latest Biomarkers',
+    trends:         'Trends',
+    noBmData:       'No biomarker data available yet.',
+    noHistory:      'No test history yet.',
+    tests:          n => `${n} test${n !== 1 ? 's' : ''}`,
+    bmLabels: {
+      hsCRP:     'hsCRP',
+      GDF15:     'GDF-15',
+      IL6:       'IL-6',
+      GA:        'Glycated Albumin',
+      CystatinC: 'Cystatin C',
+      CD38:      'CD38',
+    },
+  },
+  zh: {
+    subtitle:       '您的精准健康伴侣',
+    signIn:         '登录您的账户',
+    phoneLabel:     '手机号码',
+    phonePlaceholder: '138 0000 0000',
+    continue:       '继续',
+    verifying:      '验证中…',
+    errNotFound:    '未找到该手机号对应的账户，请联系您的 Coach。',
+    errNetwork:     '连接失败，请检查网络后重试。',
+    footerBrand:    '哈佛大学创新实验室',
+    footerTag:      '成员企业',
+    tabChat:        '对话',
+    tabHealth:      '健康',
+    initMsg:        '您好！我是 Nano，您的个人健康伴侣。今天有什么可以帮您的？',
+    inputPlaceholder: '输入消息…',
+    errServer:      '无法连接服务器，请重试。',
+    profile:        '个人信息',
+    gender:         '性别',
+    born:           '出生日期',
+    language:       '语言',
+    coach:          'Coach',
+    joined:         '注册时间',
+    phone:          '手机',
+    email:          '邮箱',
+    bioAge:         '生物年龄',
+    chronoAge:      '实际年龄',
+    latestBm:       '最新生物标志物',
+    trends:         '趋势',
+    noBmData:       '暂无生物标志物数据。',
+    noHistory:      '暂无检测记录。',
+    tests:          n => `${n} 次检测`,
+    bmLabels: {
+      hsCRP:     'hsCRP',
+      GDF15:     'GDF-15',
+      IL6:       'IL-6',
+      GA:        '糖化白蛋白',
+      CystatinC: '胱抑素 C',
+      CD38:      'CD38',
+    },
+  },
+};
+
+const LangContext = createContext({ lang: 'zh', t: T.zh });
+const useLang = () => useContext(LangContext);
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 const BM_META = [
-  { key: 'hsCRP',     label: 'hsCRP',            unit: 'mg/L',      color: '#ef4444' },
-  { key: 'GDF15',     label: 'GDF-15',           unit: 'pg/mL',     color: '#f97316' },
-  { key: 'IL6',       label: 'IL-6',             unit: 'pg/mL',     color: '#a855f7' },
-  { key: 'GA',        label: 'Glycated Albumin',  unit: '%',         color: '#6375EC' },
-  { key: 'CystatinC', label: 'Cystatin C',        unit: 'mg/L',      color: '#0ea5e9' },
-  { key: 'CD38',      label: 'CD38',              unit: 'xBaseline', color: '#10b981' },
+  { key: 'hsCRP',     unit: 'mg/L',      color: '#ef4444' },
+  { key: 'GDF15',     unit: 'pg/mL',     color: '#f97316' },
+  { key: 'IL6',       unit: 'pg/mL',     color: '#a855f7' },
+  { key: 'GA',        unit: '%',         color: '#6375EC' },
+  { key: 'CystatinC', unit: 'mg/L',      color: '#0ea5e9' },
+  { key: 'CD38',      unit: 'xBaseline', color: '#10b981' },
 ];
 
 function chronoAge(birthDate) {
   if (!birthDate) return null;
-  const ms = Date.now() - new Date(birthDate).getTime();
-  return Math.floor(ms / (1000 * 60 * 60 * 24 * 365.25));
+  return Math.floor((Date.now() - new Date(birthDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
 }
 
-function fmtDate(d) {
+function fmtDate(d, lang) {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  return new Date(d).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US', {
+    year: 'numeric', month: 'short', day: 'numeric',
+  });
 }
 
 function bioAgeColor(bio, chrono) {
@@ -61,9 +152,22 @@ function Sparkline({ values, color, width = 130, height = 38 }) {
   );
 }
 
+// ── Lang toggle button ────────────────────────────────────────────────────────
+
+function LangToggle({ lang, onChange }) {
+  return (
+    <button className="lang-toggle" onClick={() => onChange(lang === 'zh' ? 'en' : 'zh')}>
+      <span className={lang === 'zh' ? 'lang-active' : ''}>中</span>
+      <span className="lang-sep">/</span>
+      <span className={lang === 'en' ? 'lang-active' : ''}>EN</span>
+    </button>
+  );
+}
+
 // ── Login Screen ──────────────────────────────────────────────────────────────
 
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, lang, onLangChange }) {
+  const { t } = useLang();
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -82,10 +186,10 @@ function LoginScreen({ onLogin }) {
       if (found) {
         onLogin(found);
       } else {
-        setError('No account found with this phone number. Please contact your coach.');
+        setError(t.errNotFound);
       }
     } catch {
-      setError('Connection failed. Please check your network and try again.');
+      setError(t.errNetwork);
     } finally {
       setLoading(false);
     }
@@ -94,23 +198,28 @@ function LoginScreen({ onLogin }) {
   return (
     <div className="login-screen">
       <div className="login-glow" />
+
+      <div className="login-top-bar">
+        <LangToggle lang={lang} onChange={onLangChange} />
+      </div>
+
       <div className="login-brand">
         <div className="login-logo-ring">
           <img src={wavenLogo} className="login-logo" alt="Waven" />
         </div>
         <div className="login-title">NANO AI</div>
-        <div className="login-subtitle">Your Precision Health Companion</div>
+        <div className="login-subtitle">{t.subtitle}</div>
       </div>
 
       <div className="login-card">
-        <div className="login-card-label">Sign in to your account</div>
+        <div className="login-card-label">{t.signIn}</div>
         <div className="login-field">
-          <label className="login-label">Phone Number</label>
+          <label className="login-label">{t.phoneLabel}</label>
           <input
             className="login-input"
             type="tel"
             inputMode="tel"
-            placeholder="+86 138 0000 0000"
+            placeholder={t.phonePlaceholder}
             value={phone}
             onChange={e => { setPhone(e.target.value); setError(''); }}
             onKeyDown={e => { if (e.key === 'Enter') handleLogin(); }}
@@ -123,18 +232,15 @@ function LoginScreen({ onLogin }) {
           onClick={handleLogin}
           disabled={!phone.trim() || loading}
         >
-          {loading
-            ? <span className="login-btn-spinner" />
-            : null
-          }
-          {loading ? 'Verifying…' : 'Continue'}
+          {loading && <span className="login-btn-spinner" />}
+          {loading ? t.verifying : t.continue}
         </button>
       </div>
 
       <div className="login-footer">
-        <span>Waven Health</span>
+        <span>{t.footerBrand}</span>
         <span className="login-footer-dot">·</span>
-        <span>Precision Longevity</span>
+        <span>{t.footerTag}</span>
       </div>
     </div>
   );
@@ -143,6 +249,7 @@ function LoginScreen({ onLogin }) {
 // ── Health Tab ────────────────────────────────────────────────────────────────
 
 function HealthTab({ user }) {
+  const { t, lang } = useLang();
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -161,7 +268,6 @@ function HealthTab({ user }) {
 
   return (
     <div className="health-tab">
-      {/* Hero profile card */}
       <div className="health-hero">
         <div className="health-hero-bg" />
         <div className="health-avatar">
@@ -171,36 +277,32 @@ function HealthTab({ user }) {
         {user.bio_age && (
           <div className="health-bio-row">
             <div className="health-bio-chip">
-              <span
-                className="health-bio-num"
-                style={{ color: bioAgeColor(user.bio_age, age) }}
-              >
+              <span className="health-bio-num" style={{ color: bioAgeColor(user.bio_age, age) }}>
                 {Number(user.bio_age).toFixed(1)}
               </span>
-              <span className="health-bio-unit">Bio Age</span>
+              <span className="health-bio-unit">{t.bioAge}</span>
             </div>
             {age && (
               <div className="health-bio-chip health-bio-chip--dim">
                 <span className="health-bio-num" style={{ color: 'var(--text-sub)' }}>{age}</span>
-                <span className="health-bio-unit">Chrono Age</span>
+                <span className="health-bio-unit">{t.chronoAge}</span>
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* Profile details */}
       <div className="health-section">
-        <div className="health-section-title">Profile</div>
+        <div className="health-section-title">{t.profile}</div>
         <div className="health-info-grid">
           {[
-            ['Gender',    user.gender],
-            ['Born',      fmtDate(user.birth_date)],
-            ['Language',  user.language ? user.language.toUpperCase() : null],
-            ['Coach',     user.coach_name],
-            ['Joined',    fmtDate(user.created_at)],
-            ['Phone',     user.phone],
-            ['Email',     user.email],
+            [t.gender,   user.gender],
+            [t.born,     fmtDate(user.birth_date, lang)],
+            [t.language, user.language ? user.language.toUpperCase() : null],
+            [t.coach,    user.coach_name],
+            [t.joined,   fmtDate(user.created_at, lang)],
+            [t.phone,    user.phone],
+            [t.email,    user.email],
           ].map(([k, v]) => (
             <React.Fragment key={k}>
               <span className="health-info-key">{k}</span>
@@ -210,45 +312,43 @@ function HealthTab({ user }) {
         </div>
       </div>
 
-      {/* Latest biomarkers */}
       <div className="health-section">
-        <div className="health-section-title">Latest Biomarkers</div>
+        <div className="health-section-title">{t.latestBm}</div>
         {loading ? (
           <div className="health-loading"><span /><span /><span /></div>
         ) : latestBm ? (
           <div className="bm-list">
-            {BM_META.map(({ key, label, unit, color }) => (
+            {BM_META.map(({ key, unit, color }) => (
               <div key={key} className="bm-row">
                 <span className="bm-dot" style={{ background: color }} />
-                <span className="bm-label">{label}</span>
+                <span className="bm-label">{t.bmLabels[key]}</span>
                 <span className="bm-val" style={{ color }}>{latestBm[key] ?? '—'}</span>
                 <span className="bm-unit">{unit}</span>
               </div>
             ))}
           </div>
         ) : (
-          <div className="health-empty">No biomarker data available yet.</div>
+          <div className="health-empty">{t.noBmData}</div>
         )}
       </div>
 
-      {/* Trends */}
       <div className="health-section">
         <div className="health-section-title">
-          Trends
+          {t.trends}
           {records.length > 0 && (
-            <span className="health-section-badge">{records.length} test{records.length !== 1 ? 's' : ''}</span>
+            <span className="health-section-badge">{t.tests(records.length)}</span>
           )}
         </div>
         {loading ? (
           <div className="health-loading"><span /><span /><span /></div>
         ) : records.length > 0 ? (
           <div className="trend-grid">
-            {BM_META.map(({ key, label, unit, color }) => {
+            {BM_META.map(({ key, unit, color }) => {
               const vals = trendFor(key);
               const last = vals[vals.length - 1];
               return (
                 <div key={key} className="trend-card">
-                  <div className="trend-label">{label}</div>
+                  <div className="trend-label">{t.bmLabels[key]}</div>
                   <div className="trend-val" style={{ color }}>
                     {last != null ? last : '—'}
                     <span className="trend-unit">{unit}</span>
@@ -259,7 +359,7 @@ function HealthTab({ user }) {
             })}
           </div>
         ) : (
-          <div className="health-empty">No test history yet.</div>
+          <div className="health-empty">{t.noHistory}</div>
         )}
       </div>
     </div>
@@ -269,14 +369,17 @@ function HealthTab({ user }) {
 // ── Chat Tab ──────────────────────────────────────────────────────────────────
 
 function ChatTab({ user }) {
-  const [messages, setMessages] = useState([
-    { id: 'init', role: 'ai', content: 'Hello! I am Nano AI, your personal health companion. How can I help you today?' },
-  ]);
+  const { t } = useLang();
+  const [messages, setMessages] = useState([]);
   const [seenIds, setSeenIds] = useState(new Set());
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
   const chatEndRef = useRef(null);
-  const textareaRef = useRef(null);
+
+  // Reset messages when user or language changes
+  useEffect(() => {
+    setMessages([{ id: 'init', role: 'ai', content: t.initMsg }]);
+  }, [user?.user_id, t]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -284,7 +387,6 @@ function ChatTab({ user }) {
 
   useEffect(() => {
     if (!user?.user_id) return;
-    setMessages([{ id: 'init', role: 'ai', content: 'Hello! I am Nano AI, your personal health companion. How can I help you today?' }]);
     setSeenIds(new Set());
 
     const poll = async () => {
@@ -322,7 +424,7 @@ function ChatTab({ user }) {
     } catch {
       setMessages(prev => [
         ...prev,
-        { id: Date.now() + 1, role: 'ai', content: 'Could not reach the server. Please try again.' },
+        { id: Date.now() + 1, role: 'ai', content: t.errServer },
       ]);
     } finally {
       setTyping(false);
@@ -347,13 +449,12 @@ function ChatTab({ user }) {
 
       <div className="input-area">
         <textarea
-          ref={textareaRef}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
           }}
-          placeholder="Type a message…"
+          placeholder={t.inputPlaceholder}
           disabled={typing}
           rows={1}
         />
@@ -380,72 +481,81 @@ function App() {
     try { return JSON.parse(sessionStorage.getItem('nano_user') || 'null'); } catch { return null; }
   });
   const [tab, setTab] = useState('chat');
+  const [lang, setLang] = useState(() => user?.language || 'zh');
+
+  const t = T[lang] || T.zh;
 
   const handleLogin = u => {
     sessionStorage.setItem('nano_user', JSON.stringify(u));
     setUser(u);
+    setLang(u.language === 'en' ? 'en' : 'zh');
   };
 
   const handleLogout = () => {
     sessionStorage.removeItem('nano_user');
     setUser(null);
     setTab('chat');
+    setLang('zh');
   };
 
   if (!user) {
     return (
-      <div className="shell">
-        <LoginScreen onLogin={handleLogin} />
-      </div>
+      <LangContext.Provider value={{ lang, t }}>
+        <div className="shell">
+          <LoginScreen onLogin={handleLogin} lang={lang} onLangChange={setLang} />
+        </div>
+      </LangContext.Provider>
     );
   }
 
   return (
-    <div className="shell">
-      <div className="phone-frame">
-        <div className="app-header">
-          <div className="header-brand">
-            <img src={wavenLogo} className="header-logo" alt="Waven" />
-            <span className="header-title">NANO AI</span>
+    <LangContext.Provider value={{ lang, t }}>
+      <div className="shell">
+        <div className="phone-frame">
+          <div className="app-header">
+            <div className="header-brand">
+              <img src={wavenLogo} className="header-logo" alt="Waven" />
+              <span className="header-title">NANO AI</span>
+            </div>
+            <div className="header-right">
+              <div className="header-user">{user.nickname || 'User'}</div>
+              <button className="logout-btn" onClick={handleLogout} title="Sign out">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+              </button>
+            </div>
           </div>
-          <div className="header-right">
-            <div className="header-user">{user.nickname || 'User'}</div>
-            <button className="logout-btn" onClick={handleLogout} title="Sign out">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
+
+          <div className="tab-content">
+            {tab === 'chat' ? <ChatTab user={user} /> : <HealthTab user={user} />}
+          </div>
+
+          <nav className="tab-bar">
+            <button
+              className={`tab-btn${tab === 'chat' ? ' active' : ''}`}
+              onClick={() => setTab('chat')}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
+              <span>{t.tabChat}</span>
             </button>
-          </div>
+            <button
+              className={`tab-btn${tab === 'health' ? ' active' : ''}`}
+              onClick={() => setTab('health')}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+              <span>{t.tabHealth}</span>
+            </button>
+          </nav>
         </div>
-
-        <div className="tab-content">
-          {tab === 'chat' ? <ChatTab user={user} /> : <HealthTab user={user} />}
-        </div>
-
-        <nav className="tab-bar">
-          <button
-            className={`tab-btn${tab === 'chat' ? ' active' : ''}`}
-            onClick={() => setTab('chat')}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            <span>Chat</span>
-          </button>
-          <button
-            className={`tab-btn${tab === 'health' ? ' active' : ''}`}
-            onClick={() => setTab('health')}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-            </svg>
-            <span>Health</span>
-          </button>
-        </nav>
       </div>
-    </div>
+    </LangContext.Provider>
   );
 }
 
