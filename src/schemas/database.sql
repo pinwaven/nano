@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS coaches (
 -- Users Table
 CREATE TABLE IF NOT EXISTS users (
     user_id TEXT PRIMARY KEY,   -- Short 8-char hex ID (e.g. 'a3f2c1d'), generated on insert
-    external_id TEXT UNIQUE,    -- ID used by the external app (e.g. WeChat openid, WhatsApp number)
+    external_id TEXT,           -- ID used by the external app (e.g. WeChat openid, WhatsApp number); nullable for admin-created users
     external_app TEXT,          -- Which external app: 'wechat', 'whatsapp', 'wavenapp'
     coach_id INTEGER REFERENCES coaches(id) ON DELETE SET NULL,
     nickname TEXT,
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_external_id ON users(external_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_external_id ON users(external_id) WHERE external_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 

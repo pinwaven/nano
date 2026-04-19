@@ -21,6 +21,13 @@ const T = {
     footerTag:         'Member Company',
     tabChat:           'Chat',
     tabHealth:         'Health',
+    tabDots:           'Dots',
+    dotsTitle:         'Nutrition Plan',
+    noPlan:            'No nutrition plan yet. Complete a Kino biomarker test to generate your personalized plan.',
+    morning:           'Morning',
+    evening:           'Evening',
+    today:             'Today',
+    tomorrow:          'Tomorrow',
     initMsg:           'Hello! I am Nano, your personal health companion. How can I help you today?',
     inputPlaceholder:  'Type a message…',
     errServer:         'Could not reach the server. Please try again.',
@@ -42,7 +49,10 @@ const T = {
     genderMap:         { male: 'Male', female: 'Female' },
     langMap:           { zh: 'Chinese', en: 'English' },
     // Onboarding
-    obGenderPrompt:    'Before we start, I need a couple of quick details to personalize your health insights. What is your gender?',
+    obNamePrompt:      'Before we start, I need a couple of quick details to personalize your health insights. What should I call you?',
+    obNameOnly:        'One quick thing — what is your name?',
+    obNamePlaceholder: 'Your name',
+    obGenderPrompt:    'Great! And what is your gender?',
     obGenderOnly:      'To personalize your experience, could you share your gender?',
     male:              'Male',
     female:            'Female',
@@ -94,6 +104,13 @@ const T = {
     footerTag:         '成员企业',
     tabChat:           '对话',
     tabHealth:         '健康',
+    tabDots:           '营养',
+    dotsTitle:         '营养方案',
+    noPlan:            '暂无营养方案。完成 Kino 生物标志物检测后，系统将为您生成个性化方案。',
+    morning:           '早上',
+    evening:           '晚上',
+    today:             '今天',
+    tomorrow:          '明天',
     initMsg:           '您好！我是 Nano，您的个人健康伴侣。今天有什么可以帮您的？',
     inputPlaceholder:  '输入消息…',
     errServer:         '无法连接服务器，请重试。',
@@ -115,7 +132,10 @@ const T = {
     genderMap:         { male: '男', female: '女' },
     langMap:           { zh: '中文', en: 'English' },
     // Onboarding
-    obGenderPrompt:    '开始之前，需要了解一些基本信息来个性化您的健康洞察。请问您的性别是？',
+    obNamePrompt:      '在开始之前，需要了解一些基本信息来个性化您的健康洞察。请问您的姓名是？',
+    obNameOnly:        '有一件小事——请问您叫什么名字？',
+    obNamePlaceholder: '您的姓名',
+    obGenderPrompt:    '好的！请问您的性别是？',
     obGenderOnly:      '为了个性化您的体验，请问您的性别是？',
     male:              '男',
     female:            '女',
@@ -535,6 +555,32 @@ function DatePickerWidget({ onConfirm, disabled }) {
 
 // ── Body Slider Widget ────────────────────────────────────────────────────────
 
+function NameInputWidget({ onConfirm, disabled }) {
+  const { t } = useLang();
+  const [name, setName] = useState('');
+  return (
+    <div className="name-input-widget">
+      <input
+        className="name-input-field"
+        type="text"
+        placeholder={t.obNamePlaceholder}
+        value={name}
+        onChange={e => setName(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter' && name.trim() && !disabled) onConfirm(name.trim()); }}
+        disabled={disabled}
+        autoFocus
+      />
+      <button
+        className="name-input-confirm"
+        onClick={() => name.trim() && onConfirm(name.trim())}
+        disabled={disabled || !name.trim()}
+      >
+        {t.dpConfirm}
+      </button>
+    </div>
+  );
+}
+
 function BodySliderWidget({ onConfirm, disabled }) {
   const { t } = useLang();
   const [height, setHeight] = useState(165);
@@ -624,6 +670,12 @@ function ChatTab({ user, onUserUpdate }) {
     const msgs = [{ id: 'init', role: 'ai', content: t.initMsg }];
 
     const init = async () => {
+      if (!user.nickname) {
+        msgs.push({ id: 'ob-name', role: 'ai', content: t.obNamePrompt });
+        setObStep('name');
+        setMessages(msgs);
+        return;
+      }
       if (!user.gender) {
         msgs.push({ id: 'ob-gender', role: 'ai', content: t.obGenderPrompt });
         setObStep('gender');
@@ -701,6 +753,28 @@ function ChatTab({ user, onUserUpdate }) {
     } catch { /* fall through */ }
     addMsg('ai', t.obComplete);
     setObStep('done');
+  };
+
+  const handleSubmitName = async (name) => {
+    addMsg('user', name);
+    setTyping(true);
+    try {
+      await saveUser({ nickname: name });
+      onUserUpdate({ nickname: name });
+      if (!user.gender) {
+        addMsg('ai', t.obGenderOnly);
+        setObStep('gender');
+      } else if (!user.birth_date) {
+        addMsg('ai', t.obBirthdayOnly);
+        setObStep('birthday');
+      } else {
+        await checkBodyStep();
+      }
+    } catch {
+      addMsg('ai', t.errServer);
+    } finally {
+      setTyping(false);
+    }
   };
 
   const handleSelectGender = async (value) => {
@@ -790,6 +864,11 @@ function ChatTab({ user, onUserUpdate }) {
         <div ref={chatEndRef} />
       </div>
 
+      {/* Name input */}
+      {obStep === 'name' && (
+        <NameInputWidget onConfirm={handleSubmitName} disabled={typing} />
+      )}
+
       {/* Gender quick-reply chips */}
       {obStep === 'gender' && !typing && (
         <div className="quick-replies">
@@ -836,6 +915,121 @@ function ChatTab({ user, onUserUpdate }) {
               <polygon points="22 2 15 22 11 13 2 9 22 2" />
             </svg>
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Dots Tab ─────────────────────────────────────────────────────────────────
+
+const MONTH_ZH = ['一','二','三','四','五','六','七','八','九','十','十一','十二'];
+const MONTH_EN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function parsePlan(text) {
+  if (!text) return [];
+  return text.trim().split('\n').filter(Boolean).map(line => {
+    const colonIdx = line.indexOf(':');
+    if (colonIdx === -1) return null;
+    const dateText = line.slice(0, colonIdx).trim();
+    const rest = line.slice(colonIdx + 1).trim();
+    const morningMatch = rest.match(/(?:早上|Morning)\s+((?:D\d{2}x\d+\s*)+)/i);
+    const eveningMatch = rest.match(/(?:晚上|Evening)\s+((?:D\d{2}x\d+\s*)+)/i);
+    const parseDots = str => str
+      ? [...str.matchAll(/D(\d{2})x(\d+)/g)].map(m => ({ key: `D${m[1]}`, dotKey: `DOT${m[1]}`, count: parseInt(m[2]) }))
+      : [];
+    // Try to extract month/day for "today" comparison
+    const zhDate = dateText.match(/(\d+)月(\d+)日/);
+    const enDate = dateText.match(/(\w+)\s+(\d+)/);
+    let month = null, day = null;
+    if (zhDate) { month = parseInt(zhDate[1]); day = parseInt(zhDate[2]); }
+    else if (enDate) {
+      const mi = MONTH_EN.findIndex(m => enDate[1].toLowerCase().startsWith(m.toLowerCase().slice(0, 3)));
+      if (mi !== -1) { month = mi + 1; day = parseInt(enDate[2]); }
+    }
+    return { dateText, month, day, morning: parseDots(morningMatch?.[1]), evening: parseDots(eveningMatch?.[1]) };
+  }).filter(Boolean);
+}
+
+function DotChip({ dotKey, count, dotsMap }) {
+  const dot = dotsMap[dotKey];
+  const color = dot?.color || '#6375EC';
+  const label = dot?.name_zh || dot?.name || dotKey;
+  return (
+    <div className="dot-chip" title={label}>
+      <span className="dot-chip-swatch" style={{ background: color }} />
+      <span className="dot-chip-key">{dotKey.replace('DOT', 'D')}</span>
+      <span className="dot-chip-count">×{count}</span>
+    </div>
+  );
+}
+
+function DotsTab({ user }) {
+  const { t } = useLang();
+  const [plan, setPlan] = useState(null);
+  const [days, setDays] = useState([]);
+  const [dotsMap, setDotsMap] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user?.user_id) return;
+    (async () => {
+      try {
+        const r = await axios.get(`${API}/nutrition-plan?openid=${encodeURIComponent(user.user_id)}`);
+        const dotMap = {};
+        (r.data.dots || []).forEach(d => { dotMap[d.key_name] = d; });
+        setDotsMap(dotMap);
+        setPlan(r.data.plan);
+        setDays(parsePlan(r.data.plan));
+      } catch { /* silent */ } finally {
+        setLoading(false);
+      }
+    })();
+  }, [user?.user_id]);
+
+  const now = new Date();
+  const todayM = now.getMonth() + 1;
+  const todayD = now.getDate();
+  const tomorrowD = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getDate();
+  const tomorrowM = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getMonth() + 1;
+
+  const dayLabel = (d) => {
+    if (d.month === todayM && d.day === todayD) return t.today;
+    if (d.month === tomorrowM && d.day === tomorrowD) return t.tomorrow;
+    return d.dateText;
+  };
+
+  return (
+    <div className="dots-tab">
+      <div className="dots-header">
+        <span className="dots-title">{t.dotsTitle}</span>
+      </div>
+      {loading ? (
+        <div className="dots-empty"><span className="dots-loading-dot" /><span className="dots-loading-dot" /><span className="dots-loading-dot" /></div>
+      ) : !plan ? (
+        <div className="dots-empty">{t.noPlan}</div>
+      ) : (
+        <div className="dots-days">
+          {days.map((d, i) => {
+            const isToday = d.month === todayM && d.day === todayD;
+            return (
+              <div key={i} className={`dots-day-card${isToday ? ' is-today' : ''}`}>
+                <div className="dots-day-label">{dayLabel(d)}</div>
+                {d.morning.length > 0 && (
+                  <div className="dots-slot">
+                    <span className="dots-slot-name">{t.morning}</span>
+                    <div className="dots-chips">{d.morning.map(dc => <DotChip key={dc.key} dotKey={dc.dotKey} count={dc.count} dotsMap={dotsMap} />)}</div>
+                  </div>
+                )}
+                {d.evening.length > 0 && (
+                  <div className="dots-slot">
+                    <span className="dots-slot-name">{t.evening}</span>
+                    <div className="dots-chips">{d.evening.map(dc => <DotChip key={dc.key} dotKey={dc.dotKey} count={dc.count} dotsMap={dotsMap} />)}</div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -906,10 +1100,9 @@ function App() {
           </div>
 
           <div className="tab-content">
-            {tab === 'chat'
-              ? <ChatTab user={user} onUserUpdate={handleUserUpdate} />
-              : <HealthTab user={user} />
-            }
+            {tab === 'chat'   && <ChatTab user={user} onUserUpdate={handleUserUpdate} />}
+            {tab === 'health' && <HealthTab user={user} />}
+            {tab === 'dots'   && <DotsTab user={user} />}
           </div>
 
           <nav className="tab-bar">
@@ -930,6 +1123,15 @@ function App() {
                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
               </svg>
               <span>{t.tabHealth}</span>
+            </button>
+            <button
+              className={`tab-btn${tab === 'dots' ? ' active' : ''}`}
+              onClick={() => setTab('dots')}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="8" cy="8" r="2.5" /><circle cx="16" cy="8" r="2.5" /><circle cx="8" cy="16" r="2.5" /><circle cx="16" cy="16" r="2.5" />
+              </svg>
+              <span>{t.tabDots}</span>
             </button>
           </nav>
         </div>

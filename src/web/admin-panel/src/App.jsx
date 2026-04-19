@@ -189,7 +189,6 @@ function UserModal({ user, coaches, onClose, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!isEdit && !form.external_id.trim()) { setError(t.modal.externalIdRequired); return; }
     setBusy(true); setError('');
     try {
       const payload = { ...form, coach_id: form.coach_id === '' ? null : parseInt(form.coach_id) };

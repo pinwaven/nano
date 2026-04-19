@@ -91,6 +91,30 @@ async function handleGetDotsInventory() {
     }
 }
 
+async function handleGetNutritionPlan(openid) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (!openid) return { success: true, plan: null, dots: [] };
+        const planResult = await pool.query(
+            `SELECT n.content, n.sent_at
+             FROM notifications n
+             JOIN users u ON n.user_id = u.user_id
+             WHERE u.user_id = $1 AND n.notification_type = 'nutrition_plan'
+             ORDER BY n.sent_at DESC LIMIT 1`,
+            [openid]
+        );
+        const dotsResult = await pool.query('SELECT * FROM dots ORDER BY id ASC');
+        return {
+            success: true,
+            plan: planResult.rows[0]?.content || null,
+            plan_date: planResult.rows[0]?.sent_at || null,
+            dots: dotsResult.rows,
+        };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleGetCoachList() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -219,14 +243,14 @@ async function handleDeleteDot(dotId) {
 
 async function handlePostUsers(body) {
     const { openid, external_id: extId, external_app, nickname, phone, email, gender, birth_date, language, coach_id } = body;
-    const external_id = extId || openid;
-    if (!external_id) return { success: false, error: 'external_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const newUserId = generateUserId();
+        const external_id = extId || openid || null;
         const result = await pool.query(
             `INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, coach_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING user_id`,
-            [generateUserId(), external_id, external_app || null, nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null]
+            [newUserId, external_id, external_app || null, nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null]
         );
         return { success: true, user_id: result.rows[0].user_id };
     } catch (err) {
@@ -316,7 +340,7 @@ async function handlePostChat(body) {
 
     let biomarkerData = null;
     let bioAgeData = null;
-    if (test_data) {
+    if (test_data && test_type === 'kino_chip') {
         const age = calculateAge(user.birth_date);
         const bioData = user.bio_data || {};
         const estimator = new BiomarkerEstimator(age, test_data, { Weight: bioData.weight, Height: bioData.height });
@@ -515,6 +539,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetBiomarkers(query.openid);
             } else if (path.includes('/notifications')) {
                 result = await handleGetNotifications(query.openid);
+            } else if (path.includes('/nutrition-plan')) {
+                result = await handleGetNutritionPlan(query.openid);
             } else if (path.includes('/dots-inventory')) {
                 result = await handleGetDotsInventory();
             } else if (path.includes('/coach-list')) {
