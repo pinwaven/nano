@@ -700,7 +700,21 @@ function ChatTab({ user, onUserUpdate }) {
         }
       } catch { /* skip body check on error */ }
       setObStep('done');
-      setMessages(msgs);
+      await loadHistory();
+    };
+
+    const loadHistory = async () => {
+      try {
+        const r = await axios.get(`${API}/chat-history?openid=${encodeURIComponent(user.user_id)}`);
+        const history = r.data.messages || [];
+        if (history.length > 0) {
+          setMessages(history.map((m, i) => ({ id: `h-${i}`, role: m.role === 'assistant' ? 'ai' : m.role, content: m.content })));
+        } else {
+          setMessages(msgs);
+        }
+      } catch {
+        setMessages(msgs);
+      }
     };
 
     setSeenIds(new Set());
@@ -753,6 +767,13 @@ function ChatTab({ user, onUserUpdate }) {
     } catch { /* fall through */ }
     addMsg('ai', t.obComplete);
     setObStep('done');
+    try {
+      const r = await axios.get(`${API}/chat-history?openid=${encodeURIComponent(user.user_id)}`);
+      const history = r.data.messages || [];
+      if (history.length > 0) {
+        setMessages(history.map((m, i) => ({ id: `h-${i}`, role: m.role === 'assistant' ? 'ai' : m.role, content: m.content })));
+      }
+    } catch { /* keep current messages */ }
   };
 
   const handleSubmitName = async (name) => {

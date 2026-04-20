@@ -1,0 +1,36 @@
+page {
+  --blue:        #6375EC;
+  --blue-glow:   rgba(99, 117, 236, 0.45);
+  --blue-dim:    rgba(99, 117, 236, 0.12);
+  --wave:        #A6C4E5;
+  --navy:        #0B1C2E;
+  --navy-card:   #0F2540;
+  --navy-lift:   #162E4A;
+  --navy-border: rgba(99, 117, 236, 0.18);
+  --text:        #EEF2FF;
+  --text-sub:    #A6C4E5;
+  --text-muted:  rgba(166, 196, 229, 0.4);
+
+  height: 100%;
+  background-color: #0B1C2E;
+  color: #EEF2FF;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
+  box-sizing: border-box;
+}
+
+view, text, input, textarea, button {
+  box-sizing: border-box;
+}
+
+button {
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  line-height: 1;
+}
+
+button::after {
+  border: none;
+}

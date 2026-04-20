@@ -1,0 +1,329 @@
+<view class="main">
+
+  <!-- ── Header ── -->
+  <view class="app-header">
+    <view class="header-brand">
+      <view class="header-logo-ring">
+        <text class="header-logo-letter">N</text>
+      </view>
+      <text class="header-title">NANO</text>
+    </view>
+    <view class="header-right">
+      <text class="header-user">{{user.nickname || 'User'}}</text>
+      <view class="logout-btn" bindtap="handleLogout">
+        <text class="logout-arrow">↪</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ── Tab Content ── -->
+  <view class="tab-content">
+
+    <!-- ════ CHAT ════ -->
+    <view class="chat-tab{{tab !== 'chat' ? ' tab-hidden' : ''}}">
+
+      <scroll-view
+        class="chat-messages"
+        scroll-y="true"
+        scroll-into-view="{{scrollToId}}"
+        scroll-with-animation="true"
+        enhanced="true"
+        bounces="false"
+      >
+        <view class="chat-inner">
+
+          <view
+            wx:for="{{messages}}"
+            wx:key="id"
+            id="msg{{index}}"
+            class="msg-row {{item.role === 'user' ? 'msg-row-user' : 'msg-row-ai'}}"
+          >
+            <view class="message-bubble {{item.role === 'user' ? 'message-user' : 'message-ai'}}">
+              <text class="msg-text" selectable="true">{{item.content}}</text>
+            </view>
+          </view>
+
+          <view wx:if="{{typing}}" class="msg-row msg-row-ai">
+            <view class="message-bubble message-ai typing-indicator">
+              <view class="typing-dot"></view>
+              <view class="typing-dot"></view>
+              <view class="typing-dot"></view>
+            </view>
+          </view>
+
+          <view style="height: 16px;"></view>
+        </view>
+      </scroll-view>
+
+      <!-- Onboarding: Name -->
+      <view wx:if="{{obStep === 'name'}}" class="ob-bar name-bar">
+        <input
+          class="ob-input"
+          placeholder="{{t.obNamePh}}"
+          placeholder-class="ob-ph"
+          value="{{obName}}"
+          bindinput="onObNameInput"
+          bindconfirm="handleSubmitName"
+          focus="{{tab === 'chat' && obStep === 'name'}}"
+          adjust-position="true"
+        />
+        <view class="ob-confirm" bindtap="handleSubmitName">
+          <text>{{t.confirm}}</text>
+        </view>
+      </view>
+
+      <!-- Onboarding: Gender -->
+      <view wx:if="{{obStep === 'gender' && !typing}}" class="ob-bar gender-bar">
+        <view class="quick-btn" bindtap="handleSelectGender" data-gender="male">
+          <text>{{t.male}}</text>
+        </view>
+        <view class="quick-btn" bindtap="handleSelectGender" data-gender="female">
+          <text>{{t.female}}</text>
+        </view>
+      </view>
+
+      <!-- Onboarding: Birthday -->
+      <view wx:if="{{obStep === 'birthday'}}" class="ob-bar birthday-bar">
+        <picker mode="date" value="{{obBirthday}}" start="1920-01-01" end="2010-12-31" bindchange="onBirthdayChange">
+          <view class="picker-row">
+            <text class="picker-val">{{obBirthday || t.selectBirthday}}</text>
+            <text class="picker-arrow">›</text>
+          </view>
+        </picker>
+        <view class="ob-confirm {{obBirthday ? '' : 'ob-confirm-off'}}" bindtap="handleSubmitBirthday">
+          <text>{{t.confirm}}</text>
+        </view>
+      </view>
+
+      <!-- Onboarding: Body Sliders -->
+      <view wx:if="{{obStep === 'body'}}" class="ob-bar body-bar">
+        <view class="slider-row">
+          <view class="slider-labels">
+            <text class="slider-key">{{t.bsHeight}}</text>
+            <text class="slider-val">{{obHeight}} <text class="slider-unit">{{t.bsCm}}</text></text>
+          </view>
+          <slider
+            min="100" max="220" value="{{obHeight}}" step="1"
+            activeColor="#6375EC" backgroundColor="#162E4A" block-color="#6375EC"
+            bindchange="onHeightChange" block-size="20"
+          />
+        </view>
+        <view class="slider-row">
+          <view class="slider-labels">
+            <text class="slider-key">{{t.bsWeight}}</text>
+            <text class="slider-val">{{obWeight}} <text class="slider-unit">{{t.bsKg}}</text></text>
+          </view>
+          <slider
+            min="30" max="150" value="{{obWeight}}" step="0.5"
+            activeColor="#6375EC" backgroundColor="#162E4A" block-color="#6375EC"
+            bindchange="onWeightChange" block-size="20"
+          />
+        </view>
+        <view class="ob-confirm" bindtap="handleSubmitBody">
+          <text>{{t.confirm}}</text>
+        </view>
+      </view>
+
+      <!-- Normal chat input -->
+      <view wx:if="{{obStep === 'done'}}" class="input-area">
+        <textarea
+          class="chat-textarea"
+          placeholder="{{t.inputPh}}"
+          placeholder-class="textarea-ph"
+          value="{{chatInput}}"
+          bindinput="onChatInput"
+          auto-height="true"
+          maxlength="500"
+          adjust-position="true"
+          fixed="true"
+          cursor-spacing="12"
+          show-confirm-bar="false"
+        />
+        <view class="send-btn {{chatInput ? 'send-active' : ''}}" bindtap="handleSend">
+          <text class="send-icon">↑</text>
+        </view>
+      </view>
+
+    </view>
+    <!-- end CHAT -->
+
+    <!-- ════ HEALTH ════ -->
+    <view class="health-tab{{tab !== 'health' ? ' tab-hidden' : ''}}">
+      <scroll-view class="health-scroll" scroll-y="true">
+
+        <view wx:if="{{bioLoading}}" class="center-wrap">
+          <view class="pulse-dot"></view>
+          <view class="pulse-dot"></view>
+          <view class="pulse-dot"></view>
+        </view>
+
+        <block wx:else>
+
+          <!-- Hero -->
+          <view class="health-hero">
+            <view class="health-hero-bg"></view>
+            <view class="health-avatar">
+              <text class="avatar-letter">{{user.nickname ? user.nickname[0] : 'U'}}</text>
+            </view>
+            <text class="health-name">{{user.nickname || 'User'}}</text>
+
+            <view wx:if="{{bAge || cAge}}" class="bio-row">
+              <view class="bio-chip">
+                <text class="bio-num" style="color: {{bAgeColor}}">{{bAge || '—'}}</text>
+                <text class="bio-unit">{{t.bioAge}}</text>
+              </view>
+              <view class="bio-chip bio-chip-dim">
+                <text class="bio-num bio-num-sub">{{cAge || '—'}}</text>
+                <text class="bio-unit">{{t.chronoAge}}</text>
+              </view>
+            </view>
+
+            <view wx:if="{{subAgeList.length > 0}}" class="sub-age-grid">
+              <view wx:for="{{subAgeList}}" wx:key="key" class="sub-age-card">
+                <text class="sub-age-val" style="color: {{item.color}}">{{item.value}}</text>
+                <text class="sub-age-label">{{item.label}}</text>
+                <text class="sub-age-desc">{{item.desc}}</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- Profile -->
+          <view class="health-section">
+            <text class="section-title">{{t.profile}}</text>
+            <view class="info-grid">
+              <block wx:for="{{profileInfo}}" wx:key="label">
+                <text class="info-key">{{item.label}}</text>
+                <text class="info-val">{{item.val}}</text>
+              </block>
+            </view>
+          </view>
+
+          <!-- Latest Biomarkers -->
+          <view class="health-section">
+            <text class="section-title">{{t.latestBm}}</text>
+            <view wx:if="{{hasBm}}" class="bm-list">
+              <view wx:for="{{bmList}}" wx:key="key" class="bm-row">
+                <view class="bm-dot" style="background: {{item.color}}"></view>
+                <text class="bm-label">{{item.label}}</text>
+                <text class="bm-val" style="color: {{item.color}}">{{item.value !== null ? item.value : '—'}}</text>
+                <text class="bm-unit">{{item.unit}}</text>
+              </view>
+            </view>
+            <text wx:else class="health-empty">{{t.noBmData}}</text>
+          </view>
+
+          <!-- Trends -->
+          <view class="health-section">
+            <view class="section-title-row">
+              <text class="section-title">{{t.trends}}</text>
+              <view wx:if="{{recordCount > 0}}" class="section-badge">
+                <text>{{recordCount}} {{t.tests}}</text>
+              </view>
+            </view>
+            <view wx:if="{{recordCount > 0}}" class="trend-grid">
+              <view wx:for="{{trendList}}" wx:key="key" class="trend-card">
+                <text class="trend-label">{{item.label}}</text>
+                <view class="trend-val-row">
+                  <text class="trend-val" style="color: {{item.color}}">{{item.lastVal !== null ? item.lastVal : '—'}}</text>
+                  <text class="trend-unit">{{item.unit}}</text>
+                </view>
+              </view>
+            </view>
+            <text wx:else class="health-empty">{{t.noHistory}}</text>
+          </view>
+
+          <view style="height: 32px;"></view>
+        </block>
+
+      </scroll-view>
+    </view>
+    <!-- end HEALTH -->
+
+    <!-- ════ DOTS ════ -->
+    <view class="dots-tab{{tab !== 'dots' ? ' tab-hidden' : ''}}">
+
+      <view class="dots-header">
+        <text class="dots-title">{{t.dotsTitle}}</text>
+      </view>
+
+      <view wx:if="{{dotsLoading}}" class="center-wrap">
+        <view class="pulse-dot"></view>
+        <view class="pulse-dot"></view>
+        <view class="pulse-dot"></view>
+      </view>
+
+      <scroll-view wx:elif="{{dotsDays.length > 0}}" class="dots-scroll" scroll-y="true">
+        <view class="dots-days">
+          <view
+            wx:for="{{dotsDays}}"
+            wx:key="label"
+            class="day-card {{item.isToday ? 'day-today' : ''}}"
+          >
+            <text class="day-label">{{item.label}}</text>
+
+            <view wx:if="{{item.morning.length > 0}}" class="meal-slot">
+              <text class="meal-name">{{t.morning}}</text>
+              <view class="dot-chips">
+                <view
+                  wx:for="{{item.morning}}"
+                  wx:key="displayKey"
+                  wx:for-item="dot"
+                  class="dot-chip"
+                >
+                  <view class="dot-swatch" style="background: {{dot.color}}"></view>
+                  <text class="dot-key">{{dot.displayKey}}</text>
+                  <text class="dot-count">×{{dot.count}}</text>
+                </view>
+              </view>
+            </view>
+
+            <view wx:if="{{item.evening.length > 0}}" class="meal-slot">
+              <text class="meal-name">{{t.evening}}</text>
+              <view class="dot-chips">
+                <view
+                  wx:for="{{item.evening}}"
+                  wx:key="displayKey"
+                  wx:for-item="dot"
+                  class="dot-chip"
+                >
+                  <view class="dot-swatch" style="background: {{dot.color}}"></view>
+                  <text class="dot-key">{{dot.displayKey}}</text>
+                  <text class="dot-count">×{{dot.count}}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+          <view style="height: 32px;"></view>
+        </view>
+      </scroll-view>
+
+      <view wx:else class="dots-empty">
+        <text>{{t.noPlan}}</text>
+      </view>
+
+    </view>
+    <!-- end DOTS -->
+
+  </view>
+  <!-- end tab-content -->
+
+  <!-- ── Bottom Tab Bar ── -->
+  <view class="tab-bar">
+    <view class="tab-btn {{tab === 'chat' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="chat">
+      <view wx:if="{{tab === 'chat'}}" class="tab-line"></view>
+      <text class="tab-icon">💬</text>
+      <text class="tab-label">{{t.tabChat}}</text>
+    </view>
+    <view class="tab-btn {{tab === 'health' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="health">
+      <view wx:if="{{tab === 'health'}}" class="tab-line"></view>
+      <text class="tab-icon">📊</text>
+      <text class="tab-label">{{t.tabHealth}}</text>
+    </view>
+    <view class="tab-btn {{tab === 'dots' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="dots">
+      <view wx:if="{{tab === 'dots'}}" class="tab-line"></view>
+      <text class="tab-icon">⚪</text>
+      <text class="tab-label">{{t.tabDots}}</text>
+    </view>
+  </view>
+
+</view>
