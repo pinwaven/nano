@@ -26,7 +26,9 @@ const T = {
     selectBirthday: '选择出生日期',
     profile: '个人信息',
     gender: '性别', born: '出生日期', language: '语言',
+    height: '身高', weight: '体重',
     coach: 'Coach', joined: '注册时间', phone: '手机', email: '邮箱',
+    healthConditions: '健康状况', noConditions: '无特殊健康状况',
     bioAge: '生物年龄', chronoAge: '实际年龄',
     latestBm: '最新生物标志物',
     trends: '趋势',
@@ -52,6 +54,19 @@ const T = {
     dotsTitle: '营养方案',
     noPlan: '暂无营养方案。完成 Kino 生物标志物检测后，系统将为您生成个性化方案。',
     morning: '早上', evening: '晚上', today: '今天', tomorrow: '明天',
+    obConditionsPrompt: '您是否曾被诊断/体检出以下方面的问题？（可多选）',
+    obConditionsNone: '以上均无',
+    conditionLabels: {
+      blood_sugar_high:    '血糖高',
+      blood_pressure_high: '血压高',
+      blood_lipids_high:   '血脂高',
+      cholesterol_high:    '胆固醇高',
+      heart_issues:        '心脏问题',
+      gout_uric_acid:      '痛风或尿酸高',
+      kidney_disease:      '肾病',
+      sleep_deficiency:    '睡眠不足',
+      other:               '其他',
+    },
   },
   en: {
     tabChat: 'Chat', tabHealth: 'Health', tabDots: 'Dots',
@@ -75,7 +90,9 @@ const T = {
     selectBirthday: 'Select Birthday',
     profile: 'Profile',
     gender: 'Gender', born: 'Born', language: 'Language',
+    height: 'Height', weight: 'Weight',
     coach: 'Coach', joined: 'Joined', phone: 'Phone', email: 'Email',
+    healthConditions: 'Health Conditions', noConditions: 'No known health conditions',
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
     latestBm: 'Latest Biomarkers',
     trends: 'Trends',
@@ -101,6 +118,19 @@ const T = {
     dotsTitle: 'Nutrition Plan',
     noPlan: 'No nutrition plan yet. Complete a Kino biomarker test to generate your personalized plan.',
     morning: 'Morning', evening: 'Evening', today: 'Today', tomorrow: 'Tomorrow',
+    obConditionsPrompt: 'Have you ever been diagnosed with or identified any of the following? (Select all that apply)',
+    obConditionsNone: 'None of the above',
+    conditionLabels: {
+      blood_sugar_high:    'High Blood Sugar',
+      blood_pressure_high: 'High Blood Pressure',
+      blood_lipids_high:   'High Blood Lipids',
+      cholesterol_high:    'High Cholesterol',
+      heart_issues:        'Heart Problems',
+      gout_uric_acid:      'Gout / High Uric Acid',
+      kidney_disease:      'Kidney Disease',
+      sleep_deficiency:    'Sleep Deficiency',
+      other:               'Other',
+    },
   }
 }
 
@@ -123,6 +153,12 @@ const SUB_AGE_COLORS = {
 
 const MONTH_EN = ['January','February','March','April','May','June',
   'July','August','September','October','November','December']
+
+const CONDITION_KEYS = [
+  'blood_sugar_high', 'blood_pressure_high', 'blood_lipids_high',
+  'cholesterol_high', 'heart_issues', 'gout_uric_acid',
+  'kidney_disease', 'sleep_deficiency', 'other',
+]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -220,12 +256,14 @@ Page({
     messages: [],
     chatInput: '',
     typing: false,
-    obStep: null,   // 'name'|'gender'|'birthday'|'body'|'done'|null
+    obStep: null,   // 'name'|'gender'|'birthday'|'body'|'conditions'|'done'|null
     obName: '',
     obBirthday: '',
     obHeight: 165,
     obWeight: 65,
     obWeightDisplay: '65.0',
+    obConditions: [],
+    obConditionList: [],
     scrollToId: '',
 
     // Health
@@ -239,6 +277,8 @@ Page({
     profileInfo: [],
     recordCount: 0,
     hasBm: false,
+    healthConditionsList: [],
+    hasConditionsData: false,
 
     // Dots
     dotsLoading: true,
@@ -349,6 +389,13 @@ Page({
       }
     } catch (e) {}
 
+    if (user.bio_data?.health_conditions === undefined) {
+      msgs.push({ id: 'ob-cond', role: 'ai', content: t.obConditionsPrompt })
+      const list = CONDITION_KEYS.map(key => ({ key, label: t.conditionLabels[key], selected: false }))
+      this.setData({ messages: msgs, obStep: 'conditions', obConditionList: list })
+      return
+    }
+
     this.setData({ messages: msgs })
     await this._loadHistory(user)
     this.setData({ obStep: 'done' })
@@ -367,6 +414,11 @@ Page({
         return
       }
     } catch (e) {}
+
+    if (user.bio_data?.health_conditions === undefined) {
+      this._startConditionsStep(user, lang)
+      return
+    }
 
     this._addMsg('ai', t.obComplete)
 
@@ -559,7 +611,61 @@ Page({
         test_data: { height: obHeight, weight: obWeight },
         tested_at: new Date().toISOString()
       })
+      this._startConditionsStep(user, this.data.lang)
+    } catch (e) {
+      this._addMsg('ai', t.errServer)
+      this.setData({ typing: false })
+    }
+  },
+
+  _startConditionsStep(user, lang) {
+    const t = T[lang]
+    const list = CONDITION_KEYS.map(key => ({ key, label: t.conditionLabels[key], selected: false }))
+    this._addMsg('ai', t.obConditionsPrompt)
+    this.setData({ obStep: 'conditions', obConditions: [], obConditionList: list, typing: false })
+  },
+
+  handleToggleCondition(e) {
+    const key = e.currentTarget.dataset.key
+    const list = this.data.obConditionList.map(item =>
+      item.key === key ? { ...item, selected: !item.selected } : item
+    )
+    this.setData({
+      obConditionList: list,
+      obConditions: list.filter(i => i.selected).map(i => i.key),
+    })
+  },
+
+  async handleSubmitConditions() {
+    const { obConditions, obConditionList, user, lang, t } = this.data
+    const sep = lang === 'zh' ? '、' : ', '
+    const label = obConditions.length > 0
+      ? obConditionList.filter(i => i.selected).map(i => i.label).join(sep)
+      : t.obConditionsNone
+
+    this._addMsg('user', label)
+    this.setData({ typing: true })
+
+    try {
+      await this._saveUser(user, { bio_data: { health_conditions: obConditions } })
+      const updated = { ...user, bio_data: { ...(user.bio_data || {}), health_conditions: obConditions } }
+      this._updateUser(updated)
       this._addMsg('ai', t.obComplete)
+
+      try {
+        const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}`)
+        const history = res.data?.messages || []
+        if (history.length > 0) {
+          const msgs = history.map((m, i) => ({
+            id: `h-${i}`,
+            role: m.role === 'assistant' ? 'ai' : m.role,
+            content: m.content
+          }))
+          this.setData({ messages: msgs })
+          this._scrollBottom()
+        }
+      } catch (e) {}
+
       this.setData({ obStep: 'done', typing: false })
       this._startPolling(user)
     } catch (e) {
@@ -592,7 +698,8 @@ Page({
     try {
       const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(user.user_id)}`)
       const records = res.data?.records || []
-      const latest = records.length > 0 ? records[records.length - 1] : null
+      const kinoRecords = records.filter(r => r.test_type === 'kino_chip')
+      const latest = kinoRecords.length > 0 ? kinoRecords[kinoRecords.length - 1] : null
       const latestBm = latest?.data?.estimated || null
       const subAgesRaw = latest?.data?.bioage_profile?.SubAges || null
 
@@ -602,7 +709,7 @@ Page({
       }))
 
       const trendList = BM_META.map(({ key, unit, color }) => {
-        const allVals = records.slice(-10).map(r => r.data?.estimated?.[key] ?? null)
+        const allVals = kinoRecords.slice(-10).map(r => r.data?.estimated?.[key] ?? null)
         const defined = allVals.filter(v => v != null)
         const min = defined.length ? Math.min(...defined) : 0
         const max = defined.length ? Math.max(...defined) : 1
@@ -628,9 +735,15 @@ Page({
       const cAge = chronoAge(user.birth_date)
       const bAge = user.bio_age ? Number(user.bio_age).toFixed(1) : null
 
+      const bodyRecord = records.slice().reverse().find(r => r.test_type === 'body_composition')
+      const heightVal = bodyRecord?.data?.actual?.height ?? null
+      const weightVal = bodyRecord?.data?.actual?.weight ?? null
+
       const profileInfo = [
         { label: t.gender,   val: t.genderMap[user.gender] || user.gender || '—' },
         { label: t.born,     val: fmtDate(user.birth_date, lang) },
+        { label: t.height,   val: heightVal != null ? `${heightVal} ${t.bsCm}` : '—' },
+        { label: t.weight,   val: weightVal != null ? `${weightVal} ${t.bsKg}` : '—' },
         { label: t.language, val: t.langMap[user.language] || user.language || '—' },
         { label: t.coach,    val: user.coach_name || '—' },
         { label: t.joined,   val: fmtDate(user.created_at, lang) },
@@ -638,14 +751,21 @@ Page({
         { label: t.email,    val: user.email || '—' },
       ]
 
+      const condKeys = user.bio_data?.health_conditions ?? null
+      const healthConditionsList = condKeys !== null
+        ? condKeys.map(key => ({ key, label: t.conditionLabels[key] || key }))
+        : []
+
       this.setData({
         bioLoading: false,
         subAgeList, bmList, trendList,
         cAge, bAge,
         bAgeColor: bioAgeColor(user.bio_age, cAge),
         profileInfo,
-        recordCount: records.length,
+        recordCount: kinoRecords.length,
         hasBm: latestBm !== null,
+        healthConditionsList,
+        hasConditionsData: condKeys !== null,
       })
     } catch (e) {
       this.setData({ bioLoading: false })

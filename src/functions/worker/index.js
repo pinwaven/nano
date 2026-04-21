@@ -259,13 +259,20 @@ async function handlePostUsers(body) {
 }
 
 async function handlePutUser(user_id, body) {
-    const { nickname, phone, email, gender, birth_date, language, coach_id } = body;
+    const { nickname, phone, email, gender, birth_date, language, coach_id, bio_data } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        await pool.query(
-            `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7 WHERE user_id=$8`,
-            [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, user_id]
-        );
+        if (bio_data) {
+            await pool.query(
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, bio_data = bio_data || $8 WHERE user_id=$9`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, JSON.stringify(bio_data), user_id]
+            );
+        } else {
+            await pool.query(
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7 WHERE user_id=$8`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, user_id]
+            );
+        }
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -302,7 +309,7 @@ async function handleWxLogin(body) {
     // Look up existing user by external_id or user_id
     const existing = await pool.query(
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                u.coach_id, u.created_at, b.bio_age,
+                u.coach_id, u.created_at, u.bio_data, b.bio_age,
                 p.name as coach_name
          FROM users u
          LEFT JOIN coaches p ON u.coach_id = p.id
@@ -324,7 +331,7 @@ async function handleWxLogin(body) {
     const created = await pool.query(
         `INSERT INTO users (user_id, external_id, external_app, language)
          VALUES ($1, $2, 'wechat', 'zh')
-         RETURNING user_id, nickname, birth_date, gender, language, phone, email, coach_id, created_at`,
+         RETURNING user_id, nickname, birth_date, gender, language, phone, email, coach_id, created_at, bio_data`,
         [newUserId, openid]
     );
     return { success: true, user: { ...created.rows[0], bio_age: null, coach_name: null } };

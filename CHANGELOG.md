@@ -8,6 +8,17 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 - WeChat miniapp (`src/mini/user-miniapp`) — full clone of user-app with login, chat, health, and dots tabs
+- Health conditions onboarding step (miniapp): multi-select question 「您是否曾被诊断/体检出以下方面的问题？」with 9 options (血糖高, 血压高, 血脂高, 胆固醇高, 心脏问题, 痛风或尿酸高, 肾病, 睡眠不足, 其他). Runs after body composition; shown once and skipped on subsequent logins. Answers saved to `users.bio_data.health_conditions` (string array).
+- `src/schemas/bio-data.schema.json` — JSON Schema documenting all known keys for `users.bio_data` (body, sleep, stress, exercise, diet, lifestyle, health profile fields).
+
+### Changed
+- `handleWxLogin` (worker) — returns `bio_data` in the user object so the miniapp can detect whether conditions have already been collected.
+- `handlePutUser` (worker) — now accepts a `bio_data` field and merges it into the column using JSONB `||`, leaving unrelated keys untouched.
+
+### Fixed
+- Miniapp name input height: added `line-height`, `min-height`, `box-sizing` to `.ob-input` so text is fully visible.
+- Miniapp height/weight sliders: added `bindchanging` so the displayed value updates in real time while dragging.
+- Miniapp weight display: weight always shows one decimal place (e.g. `65.0`) to prevent digit-count jumping while sliding.
 
 ---
 

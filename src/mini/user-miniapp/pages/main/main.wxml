@@ -4,8 +4,8 @@
   <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
 
   <!-- ── Header ── -->
-  <view class="app-header" style="padding-right: {{capsuleRightPad}}px;">
-    <view class="header-logo-btn" bindtap="toggleMenu">
+  <view class="app-header" style="padding-right: {{capsuleRightPad}}px;" bindtap="toggleMenu">
+    <view class="header-logo-btn">
       <image class="header-logo-img" src="/assets/waven-logo-icon.png" mode="aspectFit" />
       <text class="header-title">NANO</text>
     </view>
@@ -136,6 +136,24 @@
         </view>
       </view>
 
+      <!-- Onboarding: Conditions -->
+      <view wx:if="{{obStep === 'conditions'}}" class="ob-bar conditions-bar">
+        <view class="cond-chips">
+          <view
+            wx:for="{{obConditionList}}"
+            wx:key="key"
+            class="cond-chip {{item.selected ? 'cond-chip-on' : ''}}"
+            bindtap="handleToggleCondition"
+            data-key="{{item.key}}"
+          >
+            <text>{{item.label}}</text>
+          </view>
+        </view>
+        <view class="ob-confirm" bindtap="handleSubmitConditions">
+          <text>{{t.confirm}}</text>
+        </view>
+      </view>
+
       <!-- Normal chat input -->
       <view wx:if="{{obStep === 'done'}}" class="input-area">
         <textarea
@@ -208,6 +226,17 @@
                 <text class="info-val">{{item.val}}</text>
               </block>
             </view>
+          </view>
+
+          <!-- Health Conditions -->
+          <view wx:if="{{hasConditionsData}}" class="health-section">
+            <text class="section-title">{{t.healthConditions}}</text>
+            <view wx:if="{{healthConditionsList.length > 0}}" class="cond-chips">
+              <view wx:for="{{healthConditionsList}}" wx:key="key" class="health-cond-chip">
+                <text>{{item.label}}</text>
+              </view>
+            </view>
+            <text wx:else class="health-empty">{{t.noConditions}}</text>
           </view>
 
           <!-- Latest Biomarkers -->
