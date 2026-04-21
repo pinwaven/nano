@@ -268,7 +268,14 @@ Page({
 
   onShow() {
     const { user, lang } = this.data
-    if (user) this._loadHealth(user, lang)
+    if (user) {
+      this._loadHealth(user, lang)
+      this._startPolling(user)
+    }
+  },
+
+  onHide() {
+    this._stopPolling()
   },
 
   onUnload() {
