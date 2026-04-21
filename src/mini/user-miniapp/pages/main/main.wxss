@@ -12,38 +12,25 @@
 
 /* ── App Header ── */
 
+.status-bar-spacer {
+  flex-shrink: 0;
+  background: rgba(11, 28, 46, 0.85);
+}
+
 .app-header {
   background: rgba(11, 28, 46, 0.85);
   border-bottom: 1rpx solid rgba(99, 117, 236, 0.18);
-  padding: 28rpx 36rpx;
+  padding: 2rpx 36rpx 16rpx;
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: calc(28rpx + env(safe-area-inset-top));
-}
-
-.header-brand {
   display: flex;
   align-items: center;
   gap: 16rpx;
 }
 
-.header-logo-ring {
-  width: 52rpx;
-  height: 52rpx;
-  border-radius: 50%;
-  background: linear-gradient(135deg, rgba(99, 117, 236, 0.3), rgba(99, 117, 236, 0.06));
-  border: 1rpx solid rgba(99, 117, 236, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.header-logo-letter {
-  font-size: 24rpx;
-  font-weight: 800;
-  color: #EEF2FF;
+.header-logo-img {
+  width: 44rpx;
+  height: 32rpx;
+  flex-shrink: 0;
 }
 
 .header-title {
@@ -51,38 +38,69 @@
   font-weight: 700;
   letter-spacing: 8rpx;
   color: #EEF2FF;
+  flex-shrink: 0;
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
+.header-divider {
+  width: 1rpx;
+  height: 28rpx;
+  background: rgba(99, 117, 236, 0.25);
+  flex-shrink: 0;
 }
 
 .header-user {
   font-size: 24rpx;
   color: #A6C4E5;
   font-weight: 500;
-  max-width: 180rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
-.logout-btn {
-  width: 60rpx;
-  height: 60rpx;
-  border-radius: 18rpx;
-  border: 1rpx solid rgba(99, 117, 236, 0.25);
-  background: rgba(99, 117, 236, 0.12);
+.header-logo-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 16rpx;
+  flex-shrink: 0;
 }
 
-.logout-arrow {
+/* ── Logo menu ── */
+
+.menu-mask {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 100;
+}
+
+.menu-dropdown {
+  position: absolute;
+  left: 24rpx;
+  background: #0F2540;
+  border: 1rpx solid rgba(99, 117, 236, 0.25);
+  border-radius: 20rpx;
+  overflow: hidden;
+  box-shadow: 0 8rpx 40rpx rgba(0, 0, 0, 0.5);
+  min-width: 240rpx;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 28rpx 32rpx;
+}
+
+.menu-item-icon {
   font-size: 28rpx;
   color: #A6C4E5;
+}
+
+.menu-item-label {
+  font-size: 28rpx;
+  color: #EEF2FF;
+  font-weight: 500;
 }
 
 /* ── Tab content container ── */
@@ -134,7 +152,12 @@
   border-radius: 0 0 6rpx 6rpx;
 }
 
-.tab-icon { font-size: 36rpx; }
+.tab-icon-img {
+  width: 40rpx;
+  height: 40rpx;
+  opacity: 0.35;
+}
+.tab-active .tab-icon-img { opacity: 1; }
 
 .tab-label {
   font-size: 20rpx;

@@ -1,17 +1,24 @@
 <view class="main">
 
+  <!-- ── Status bar spacer ── -->
+  <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
+
   <!-- ── Header ── -->
-  <view class="app-header">
-    <view class="header-brand">
-      <view class="header-logo-ring">
-        <text class="header-logo-letter">N</text>
-      </view>
+  <view class="app-header" style="padding-right: {{capsuleRightPad}}px;">
+    <view class="header-logo-btn" bindtap="toggleMenu">
+      <image class="header-logo-img" src="/assets/waven-logo-icon.png" mode="aspectFit" />
       <text class="header-title">NANO</text>
     </view>
-    <view class="header-right">
-      <text class="header-user">{{user.nickname || 'User'}}</text>
-      <view class="logout-btn" bindtap="handleLogout">
-        <text class="logout-arrow">↪</text>
+    <view class="header-divider"></view>
+    <text class="header-user">{{user.nickname || 'User'}}</text>
+  </view>
+
+  <!-- ── Logo menu ── -->
+  <view wx:if="{{menuOpen}}" class="menu-mask" bindtap="closeMenu">
+    <view class="menu-dropdown" catchtap="noop" style="top: {{menuTop}}px;">
+      <view class="menu-item" bindtap="handleLogout">
+        <text class="menu-item-icon">↪</text>
+        <text class="menu-item-label">{{t.logout}}</text>
       </view>
     </view>
   </view>
@@ -311,17 +318,17 @@
   <view class="tab-bar">
     <view class="tab-btn {{tab === 'chat' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="chat">
       <view wx:if="{{tab === 'chat'}}" class="tab-line"></view>
-      <text class="tab-icon">💬</text>
+      <image class="tab-icon-img" src="/assets/icons/chat.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabChat}}</text>
     </view>
     <view class="tab-btn {{tab === 'health' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="health">
       <view wx:if="{{tab === 'health'}}" class="tab-line"></view>
-      <text class="tab-icon">📊</text>
+      <image class="tab-icon-img" src="/assets/icons/health.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabHealth}}</text>
     </view>
     <view class="tab-btn {{tab === 'dots' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="dots">
       <view wx:if="{{tab === 'dots'}}" class="tab-line"></view>
-      <text class="tab-icon">⚪</text>
+      <image class="tab-icon-img" src="/assets/icons/dots.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabDots}}</text>
     </view>
   </view>

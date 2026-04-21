@@ -255,8 +255,12 @@ Page({
       wx.reLaunch({ url: '/pages/login/login' })
       return
     }
+    const { statusBarHeight = 0, windowWidth = 375 } = wx.getSystemInfoSync()
+    const capsule = wx.getMenuButtonBoundingClientRect()
+    const capsuleRightPad = windowWidth - (capsule.left || windowWidth - 96) + 8
+    const menuTop = statusBarHeight + 44
     const lang = app.globalData.lang || (user.language === 'en' ? 'en' : 'zh')
-    this.setData({ user: { ...user }, lang, t: T[lang] })
+    this.setData({ user: { ...user }, lang, t: T[lang], statusBarHeight, capsuleRightPad, menuTop, menuOpen: false })
     this._initChat(user, lang)
     this._loadHealth(user, lang)
     this._loadDots(user, lang)
@@ -272,9 +276,16 @@ Page({
     this.setData({ tab: e.currentTarget.dataset.tab })
   },
 
+  // ── Logo menu ───────────────────────────────────────────────────────────────
+
+  toggleMenu() { this.setData({ menuOpen: !this.data.menuOpen }) },
+  closeMenu()  { this.setData({ menuOpen: false }) },
+  noop()       {},
+
   // ── Logout ──────────────────────────────────────────────────────────────────
 
   handleLogout() {
+    this.setData({ menuOpen: false })
     this._stopPolling()
     wx.removeStorageSync('nano_user')
     app.globalData.user = null
