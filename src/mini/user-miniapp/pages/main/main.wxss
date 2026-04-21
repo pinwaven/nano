@@ -270,7 +270,10 @@
   border-radius: 24rpx;
   color: #EEF2FF;
   font-size: 28rpx;
+  line-height: 1.5;
+  min-height: 80rpx;
   padding: 20rpx 28rpx;
+  box-sizing: border-box;
 }
 
 .ob-ph { color: rgba(166, 196, 229, 0.4); }

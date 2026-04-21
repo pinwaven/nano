@@ -7,7 +7,7 @@ const T = {
   zh: {
     tabChat: '对话', tabHealth: '健康', tabDots: '营养',
     logout: '退出',
-    initMsg: '您好！我是 Nano，您的个人健康伴侣。今天有什么可以帮您的？',
+    initMsg: '您好！我是 Nano，您的AI健康伴侣。今天有什么可以帮您的？',
     inputPh: '输入消息…',
     errServer: '无法连接服务器，请重试。',
     obNamePrompt: '在开始之前，需要了解一些基本信息来个性化您的健康洞察。请问您的姓名是？',
@@ -56,7 +56,7 @@ const T = {
   en: {
     tabChat: 'Chat', tabHealth: 'Health', tabDots: 'Dots',
     logout: 'Logout',
-    initMsg: 'Hello! I am Nano, your personal health companion. How can I help you today?',
+    initMsg: 'Hello! I am Nano, your AI health companion. How can I help you today?',
     inputPh: 'Type a message…',
     errServer: 'Could not reach the server. Please try again.',
     obNamePrompt: 'Before we start, I need a couple of quick details to personalize your health insights. What should I call you?',
@@ -225,6 +225,7 @@ Page({
     obBirthday: '',
     obHeight: 165,
     obWeight: 65,
+    obWeightDisplay: '65.0',
     scrollToId: '',
 
     // Health
@@ -543,7 +544,7 @@ Page({
   },
 
   onHeightChange(e) { this.setData({ obHeight: e.detail.value }) },
-  onWeightChange(e) { this.setData({ obWeight: e.detail.value }) },
+  onWeightChange(e) { this.setData({ obWeight: e.detail.value, obWeightDisplay: Number(e.detail.value).toFixed(1) }) },
 
   async handleSubmitBody() {
     const { obHeight, obWeight, user, t } = this.data

@@ -117,18 +117,18 @@
           <slider
             min="100" max="220" value="{{obHeight}}" step="1"
             activeColor="#6375EC" backgroundColor="#162E4A" block-color="#6375EC"
-            bindchange="onHeightChange" block-size="20"
+            bindchange="onHeightChange" bindchanging="onHeightChange" block-size="20"
           />
         </view>
         <view class="slider-row">
           <view class="slider-labels">
             <text class="slider-key">{{t.bsWeight}}</text>
-            <text class="slider-val">{{obWeight}} <text class="slider-unit">{{t.bsKg}}</text></text>
+            <text class="slider-val">{{obWeightDisplay}} <text class="slider-unit">{{t.bsKg}}</text></text>
           </view>
           <slider
             min="30" max="150" value="{{obWeight}}" step="0.5"
             activeColor="#6375EC" backgroundColor="#162E4A" block-color="#6375EC"
-            bindchange="onWeightChange" block-size="20"
+            bindchange="onWeightChange" bindchanging="onWeightChange" block-size="20"
           />
         </view>
         <view class="ob-confirm" bindtap="handleSubmitBody">

@@ -18,6 +18,7 @@
 - `/src/functions/worker/`: FC 3.0 code for AI processing and WeChat notifications.
 - `/src/lib/`: Shared logic (Database clients, WeChat API helpers).
 - `/src/schemas/`: JSON Schema files for event validation.
+- `/src/mini/user-miniapp/`: WeChat Mini Program frontend (WXML/WXSS/JS, no build pipeline).
 - `/tests/mocks/`: Local EventBridge and MNS simulation scripts.
 - **File Naming:** kebab-case (e.g., `user-repository.js`).
 
@@ -39,6 +40,26 @@
 
 
  
+## 7. WeChat Mini Program (Frontend)
+
+- **Location:** `src/mini/user-miniapp/`
+- **Platform:** Native WeChat Mini Program — no npm, no build pipeline. Developed and previewed via WeChat DevTools only.
+- **Languages:** WXML (markup), WXSS (styles), vanilla JS — no frameworks.
+- **Pages:**
+  - `pages/login/` — WeChat OAuth flow via `wx.login()`, calls `/api/wx-login`
+  - `pages/main/` — Single SPA-style page with 3 tabs: Chat, Health, Dots
+- **API base URL:** `https://nano.fros.cc` — all calls go through the FC worker.
+- **Naming conventions:**
+  - Functions: camelCase; private helpers prefixed with `_` (e.g., `_req`, `_loadHealth`)
+  - CSS classes: kebab-case with feature prefix (e.g., `msg-row`, `bm-list`, `sub-age-card`)
+  - API field keys: snake_case (e.g., `user_id`, `birth_date`)
+  - Constants: UPPER_CASE (e.g., `BM_META`, `SUB_AGE_KEYS`)
+- **Styling:** Dark navy theme (`#0B1C2E`), accent blue `#6375EC`, `rpx` units throughout. CSS variables defined in `app.wxss`.
+- **State:** All tab state lives in `main.js` via `setData()`. No reusable components — all UI is in `main.wxml`.
+- **Polling:** 3-second interval against `/api/notifications` while a chat response is pending.
+- **i18n:** Bilingual (zh/en) via a `T` translation object in `main.js`; language stored in `app.globalData.lang`.
+
+
 ## Aliyun Function Compute 3.0 (FC 3.0) Runtime Behavior
  
 When writing or modifying FC handler code, use these facts. They were confirmed by live debugging against the deployed function.
