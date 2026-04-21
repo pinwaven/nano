@@ -20,7 +20,7 @@
 .app-header {
   background: rgba(11, 28, 46, 0.85);
   border-bottom: 1rpx solid rgba(99, 117, 236, 0.18);
-  padding: 2rpx 36rpx 16rpx;
+  padding: 0rpx 36rpx 16rpx;
   flex-shrink: 0;
   display: flex;
   align-items: center;
