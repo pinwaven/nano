@@ -5,7 +5,7 @@ const BASE = 'https://nano.fros.cc'
 
 const T = {
   zh: {
-    tabChat: '对话', tabHealth: '健康', tabDots: '营养',
+    tabChat: '对话', tabHealth: '健康', tabDots: '营养', tabStore: '商城',
     logout: '退出',
     initMsg: '您好！我是 Nano，您的AI健康伴侣。今天有什么可以帮您的？',
     inputPh: '输入消息…',
@@ -57,6 +57,12 @@ const T = {
     obConditionsPrompt: '您是否曾被诊断/体检出以下方面的问题？（可多选）',
     obConditionsNone: '以上均无',
     obConditionsOtherPh: '请描述您的其他健康状况',
+    storeTitle: '健康商城',
+    storeBuy: '立即订购',
+    storeOrderSent: '已收到您的订单意向！我们的健康顾问将尽快与您联系。',
+    storeConfirmTitle: '确认订单',
+    storeBestseller: '热销', storeValue: '超值',
+    storeEmpty: '暂无商品。',
     conditionLabels: {
       blood_sugar_high:    '血糖高',
       blood_pressure_high: '血压高',
@@ -70,7 +76,7 @@ const T = {
     },
   },
   en: {
-    tabChat: 'Chat', tabHealth: 'Health', tabDots: 'Dots',
+    tabChat: 'Chat', tabHealth: 'Health', tabDots: 'Dots', tabStore: 'Store',
     logout: 'Logout',
     initMsg: 'Hello! I am Nano, your AI health companion. How can I help you today?',
     inputPh: 'Type a message…',
@@ -122,6 +128,12 @@ const T = {
     obConditionsPrompt: 'Have you ever been diagnosed with or identified any of the following? (Select all that apply)',
     obConditionsNone: 'None of the above',
     obConditionsOtherPh: 'Please describe your other health condition',
+    storeTitle: 'Health Store',
+    storeBuy: 'Order Now',
+    storeOrderSent: 'Order received! Our health advisor will reach out shortly.',
+    storeConfirmTitle: 'Confirm Order',
+    storeBestseller: 'Best Seller', storeValue: 'Value Pack',
+    storeEmpty: 'No products available.',
     conditionLabels: {
       blood_sugar_high:    'High Blood Sugar',
       blood_pressure_high: 'High Blood Pressure',
@@ -245,6 +257,25 @@ function parsePlan(text, dotsMap, lang) {
   }).filter(Boolean)
 }
 
+function mapStoreItems(rawItems, lang) {
+  const t = T[lang]
+  const tagLabel = (tag) => {
+    if (!tag) return null
+    if (tag === 'bestseller') return t.storeBestseller
+    if (tag === 'value') return t.storeValue
+    return null
+  }
+  return rawItems.map(item => ({
+    id: item.id,
+    key: item.key_name,
+    name: lang === 'zh' ? item.name_zh : item.name_en,
+    desc: lang === 'zh' ? item.desc_zh : item.desc_en,
+    unit: lang === 'zh' ? item.unit_zh : item.unit_en,
+    price: lang === 'zh' ? `¥${item.price_cny}` : `$${item.price_usd}`,
+    tagLabel: tagLabel(item.tag),
+  }))
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 Page({
@@ -288,10 +319,15 @@ Page({
     dotsLoading: true,
     dotsDays: [],
     hasPlan: false,
+
+    // Store
+    storeLoading: true,
+    storeItems: [],
   },
 
   _pollingTimer: null,
   _seenIds: null,
+  _rawStoreItems: null,
 
   onLoad() {
     this._seenIds = new Set()
@@ -309,6 +345,7 @@ Page({
     this._initChat(user, lang)
     this._loadHealth(user, lang)
     this._loadDots(user, lang)
+    this._loadStore(lang)
   },
 
   onShow() {
@@ -345,7 +382,8 @@ Page({
   toggleLang() {
     const lang = this.data.lang === 'zh' ? 'en' : 'zh'
     app.globalData.lang = lang
-    this.setData({ lang, t: T[lang], menuOpen: false })
+    const storeItems = this._rawStoreItems ? mapStoreItems(this._rawStoreItems, lang) : []
+    this.setData({ lang, t: T[lang], menuOpen: false, storeItems })
     this._loadHealth(this.data.user, lang)
     this._loadDots(this.data.user, lang)
   },
@@ -806,6 +844,43 @@ Page({
     } catch (e) {
       this.setData({ dotsLoading: false, hasPlan: false })
     }
+  },
+
+  // ── Store tab ───────────────────────────────────────────────────────────────
+
+  async _loadStore(lang) {
+    try {
+      const res = await this._req(`${BASE}/api/store-items`)
+      const raw = res.data?.items || []
+      this._rawStoreItems = raw
+      this.setData({ storeLoading: false, storeItems: mapStoreItems(raw, lang) })
+    } catch (e) {
+      this.setData({ storeLoading: false })
+    }
+  },
+
+  handleBuyItem(e) {
+    const item = e.currentTarget.dataset.item
+    const { t, user } = this.data
+    wx.showModal({
+      title: t.storeConfirmTitle,
+      content: `${item.name}\n${item.price}  ·  ${item.unit}`,
+      confirmText: t.storeBuy,
+      confirmColor: '#6375EC',
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/orders`, 'POST', {
+            openid: user.user_id,
+            item_id: item.id,
+            quantity: 1,
+          })
+          wx.showToast({ title: t.storeOrderSent, icon: 'none', duration: 3500 })
+        } catch (e) {
+          wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
+        }
+      }
+    })
   },
 
   // ── HTTP helper ─────────────────────────────────────────────────────────────

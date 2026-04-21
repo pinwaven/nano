@@ -7,9 +7,21 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 ## [Unreleased]
 
 ### Added
-- WeChat miniapp (`src/mini/user-miniapp`) — full clone of user-app with login, chat, health, and dots tabs
+- **Store — Mini App:** New Store tab (fourth tab) in the WeChat Mini Program. Products are fetched from `GET /api/store-items`. Tapping a product shows a confirmation modal; confirming posts an order to `POST /api/orders`. Bilingual display (zh/en); language-toggle re-maps labels from cached API data without a second request. Loading spinner and empty state included.
+- **Store — Admin Panel:** New "Store" section in the admin panel sidebar (between Dots and Simulators), with two subtabs:
+  - *Items:* full CRUD for store products — bilingual name/description/unit, CNY/USD pricing, tag (Best Seller / Value Pack), sort order, active toggle.
+  - *Orders:* table of all orders with user, item, quantity, price, and an inline status selector (Pending → Confirmed → Shipped → Delivered → Cancelled).
+  - Four stat cards: total items, active items, total orders, pending orders.
+- **Backend — Store APIs** (worker):
+  - `GET /api/store-items` — active items for the Mini App; pass `?all=true` to include inactive items (used by admin).
+  - `POST /api/store-items`, `PUT /api/store-items/{id}`, `DELETE /api/store-items/{id}` — item CRUD.
+  - `GET /api/orders` — all orders joined with user nickname and item names.
+  - `POST /api/orders` — place an order; snapshots item price at time of purchase.
+  - `PUT /api/orders/{id}` — update order status.
+- **Database** (`src/schemas/migration_store.sql`): `store_items` and `orders` tables; seeded with three initial products (Kino chip ×1, Kino chip ×3, Waven Dots monthly).
+- WeChat miniapp (`src/mini/user-miniapp`) — full clone of user-app with login, chat, health, and dots tabs.
 - Health conditions onboarding step (miniapp): multi-select question 「您是否曾被诊断/体检出以下方面的问题？」with 9 options (血糖高, 血压高, 血脂高, 胆固醇高, 心脏问题, 痛风或尿酸高, 肾病, 睡眠不足, 其他). Runs after body composition; shown once and skipped on subsequent logins. Answers saved to `users.bio_data.health_conditions` (string array).
-- `src/schemas/bio-data.schema.json` — JSON Schema documenting all known keys for `users.bio_data` (body, sleep, stress, exercise, diet, lifestyle, health profile fields).
+- `src/schemas/bio-data.schema.json` — JSON Schema documenting all known keys for `users.bio_data`.
 
 ### Changed
 - `handleWxLogin` (worker) — returns `bio_data` in the user object so the miniapp can detect whether conditions have already been collected.

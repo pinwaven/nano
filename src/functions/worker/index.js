@@ -91,6 +91,124 @@ async function handleGetDotsInventory() {
     }
 }
 
+async function handleGetStoreItems(query = {}) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const showAll = query.all === 'true';
+        const result = await pool.query(
+            `SELECT id, key_name, name_zh, name_en, desc_zh, desc_en,
+                    unit_zh, unit_en, price_cny, price_usd, tag, sort_order, active
+             FROM store_items
+             ${showAll ? '' : 'WHERE active = TRUE'}
+             ORDER BY sort_order ASC, created_at ASC`
+        );
+        return { success: true, items: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetOrders() {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `SELECT o.id, o.user_id, o.item_id, o.item_key, o.quantity,
+                    o.price_cny, o.price_usd, o.status, o.created_at,
+                    u.nickname, u.external_id,
+                    s.name_en, s.name_zh
+             FROM orders o
+             LEFT JOIN users u ON o.user_id = u.user_id
+             LEFT JOIN store_items s ON o.item_id = s.id
+             ORDER BY o.created_at DESC
+             LIMIT 200`
+        );
+        return { success: true, orders: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostStoreItem(body) {
+    const { key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active } = body;
+    if (!key_name) return { success: false, error: 'key_name is required', statusCode: 400 };
+    if (!name_en)  return { success: false, error: 'name_en is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `INSERT INTO store_items (key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+            [key_name, name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
+             parseFloat(price_cny) || 0, parseFloat(price_usd) || 0,
+             tag || null, parseInt(sort_order) || 0, active !== false]
+        );
+        return { success: true, id: result.rows[0].id };
+    } catch (err) {
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handlePutStoreItem(itemId, body) {
+    const { name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active } = body;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query(
+            `UPDATE store_items SET name_en=$1, name_zh=$2, desc_en=$3, desc_zh=$4,
+             unit_en=$5, unit_zh=$6, price_cny=$7, price_usd=$8, tag=$9, sort_order=$10, active=$11
+             WHERE id=$12`,
+            [name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
+             parseFloat(price_cny), parseFloat(price_usd),
+             tag || null, parseInt(sort_order) || 0, active !== false, itemId]
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteStoreItem(itemId) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('DELETE FROM store_items WHERE id = $1', [itemId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutOrder(orderId, body) {
+    const { status } = body;
+    if (!status) return { success: false, error: 'status is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostOrder(body) {
+    const { openid, item_id, quantity = 1 } = body;
+    if (!openid || !item_id) return { success: false, error: 'openid and item_id are required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const itemResult = await pool.query(
+            'SELECT id, key_name, price_cny, price_usd FROM store_items WHERE id = $1 AND active = TRUE',
+            [item_id]
+        );
+        if (itemResult.rows.length === 0) return { success: false, error: 'Item not found', statusCode: 404 };
+        const item = itemResult.rows[0];
+        const result = await pool.query(
+            `INSERT INTO orders (user_id, item_id, item_key, quantity, price_cny, price_usd, status)
+             VALUES ($1, $2, $3, $4, $5, $6, 'pending') RETURNING id`,
+            [openid, item.id, item.key_name, quantity, item.price_cny, item.price_usd]
+        );
+        return { success: true, order_id: result.rows[0].id };
+    } catch (err) {
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
 async function handleGetNutritionPlan(openid) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -610,6 +728,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetNutritionPlan(query.openid);
             } else if (path.includes('/dots-inventory')) {
                 result = await handleGetDotsInventory();
+            } else if (path.includes('/store-items')) {
+                result = await handleGetStoreItems(query);
+            } else if (path.includes('/orders')) {
+                result = await handleGetOrders();
             } else if (path.includes('/coach-list')) {
                 result = await handleGetCoachList();
             } else if (path.includes('/users') || path === '/' || path === '') {
@@ -626,6 +748,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostAssignCoach(parsedBody);
             } else if (path.includes('/coaches')) {
                 result = await handlePostCoaches(parsedBody);
+            } else if (path.includes('/store-items')) {
+                result = await handlePostStoreItem(parsedBody);
+            } else if (path.includes('/orders')) {
+                result = await handlePostOrder(parsedBody);
             } else if (path.includes('/dots')) {
                 result = await handlePostDots(parsedBody);
             } else if (path === '/users') {
@@ -643,6 +769,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/dots/')) {
                 const dotId = path.split('/dots/')[1];
                 result = await handlePutDot(dotId, parsedBody);
+            } else if (path.includes('/store-items/')) {
+                const itemId = path.split('/store-items/')[1];
+                result = await handlePutStoreItem(itemId, parsedBody);
+            } else if (path.includes('/orders/')) {
+                const orderId = path.split('/orders/')[1];
+                result = await handlePutOrder(orderId, parsedBody);
             } else {
                 result = { success: false, error: `Unknown PUT route: ${path}` };
             }
@@ -656,6 +788,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/dots/')) {
                 const dotId = path.split('/dots/')[1];
                 result = await handleDeleteDot(dotId);
+            } else if (path.includes('/store-items/')) {
+                const itemId = path.split('/store-items/')[1];
+                result = await handleDeleteStoreItem(itemId);
             } else {
                 result = { success: false, error: `Unknown DELETE route: ${path}` };
             }

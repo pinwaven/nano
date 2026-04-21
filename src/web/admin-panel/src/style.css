@@ -378,6 +378,7 @@ tr:hover .row-actions { opacity: 1; }
 }
 
 .modal-sm { width: 380px; }
+.modal-lg { width: 620px; }
 
 .modal-header {
   display: flex;
@@ -617,3 +618,31 @@ tr:hover .row-actions { opacity: 1; }
   color: var(--muted);
   margin-left: 3px;
 }
+
+/* ── Store subtabs ── */
+.subtab-row {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.subtab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.subtab-btn:hover { background: var(--bg); color: var(--text); }
+.subtab-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+/* ── Mono util ── */
+.mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }

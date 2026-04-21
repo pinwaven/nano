@@ -3,7 +3,8 @@ import axios from 'axios';
 import wavenLogo from '../../shared/assets/waven-logo-icon.png';
 import {
   Users, Droplets, UserCog, RefreshCcw,
-  ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout
+  ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout,
+  ShoppingBag, Package,
 } from 'lucide-react';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
@@ -11,7 +12,7 @@ import {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Precision Dots', sims: 'Simulators' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Precision Dots', store: 'Store', sims: 'Simulators' },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
     stats: {
@@ -19,6 +20,7 @@ const T = {
       coaches: 'Coaches', totalCoaches: 'Total Coaches',
       assignedUsers: 'Assigned Users', unassignedUsers: 'Unassigned Users',
       totalDots: 'Total Dots', isolates: 'Isolates', blends: 'Blends',
+      totalItems: 'Items', activeItems: 'Active', totalOrders: 'Orders', pendingOrders: 'Pending',
     },
     table: {
       id: 'ID', nickname: 'Nickname', gender: 'Gender', birthDate: 'Birth Date',
@@ -29,12 +31,14 @@ const T = {
       type: 'Type', description: 'Description',
       unassigned: 'Unassigned',
     },
-    empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found' },
+    empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders' },
     count: (n) => `${n} users`,
     addUser: 'Add User',
-    addCoach: 'Add Coach', addDot: 'Add Dot',
+    addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item',
     countCoach: (n) => `${n} Coaches`,
     countDot: (n) => `${n} dots`,
+    countItem: (n) => `${n} items`,
+    countOrder: (n) => `${n} orders`,
     modal: {
       addUser: 'Add User', editUser: 'Edit User', deleteUser: 'Delete User',
       addCoach: 'Add Coach', editCoach: 'Edit Coach', deleteCoach: 'Delete Coach',
@@ -57,16 +61,30 @@ const T = {
       deleteWarning: (name) => `Delete ${name}? This will also remove all their biomarkers, scans, and notifications.`,
       deleteCoachWarning: (name) => `Delete Coach ${name}? Their assigned users will become unassigned.`,
       deleteDotWarning: (name) => `Delete dot "${name}"? This cannot be undone.`,
+      addItem: 'Add Item', editItem: 'Edit Item', deleteItem: 'Delete Item',
+      deleteItemWarning: (name) => `Delete "${name}"? This cannot be undone.`,
+      descEn: 'Description (EN)', descZh: 'Description (ZH)',
+      unitEn: 'Unit (EN)', unitZh: 'Unit (ZH)',
+      priceCny: 'Price CNY *', priceUsd: 'Price USD *',
+      tag: 'Tag', noTag: 'No tag', tagBestseller: 'Best Seller', tagValue: 'Value Pack',
+      sortOrder: 'Sort Order', active: 'Active',
       externalIdRequired: 'External ID is required',
       nameRequired: 'Name is required',
       keyRequired: 'Key name is required',
       saveFailed: 'Save failed',
     },
     dotType: { isolate: 'Isolate', blend: 'Blend' },
+    store: {
+      itemsTab: 'Items', ordersTab: 'Orders',
+      priceCny: 'CNY (¥)', priceUsd: 'USD ($)', tag: 'Tag', active: 'Active',
+      qty: 'Qty', status: 'Status', orderedAt: 'Ordered', yes: 'Yes', no: 'No',
+      pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
+      delivered: 'Delivered', cancelled: 'Cancelled',
+    },
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '精准营养点', sims: '模拟器' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '精准营养点', store: '商城管理', sims: '模拟器' },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
     stats: {
@@ -74,6 +92,7 @@ const T = {
       coaches: 'Coach 数', totalCoaches: 'Coach 总数',
       assignedUsers: '已分配用户', unassignedUsers: '未分配用户',
       totalDots: '营养点总数', isolates: '单体', blends: '复合',
+      totalItems: '商品总数', activeItems: '上架中', totalOrders: '订单总数', pendingOrders: '待处理',
     },
     table: {
       id: 'ID', nickname: '昵称', gender: '性别', birthDate: '出生日期',
@@ -84,12 +103,14 @@ const T = {
       type: '类型', description: '描述',
       unassigned: '未分配',
     },
-    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无营养点' },
+    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无营养点', store: '暂无商品', orders: '暂无订单' },
     count: (n) => `共 ${n} 位用户`,
     addUser: '添加用户',
-    addCoach: '添加 Coach', addDot: '添加营养点',
+    addCoach: '添加 Coach', addDot: '添加营养点', addItem: '添加商品',
     countCoach: (n) => `共 ${n} 位 Coach`,
     countDot: (n) => `共 ${n} 个营养点`,
+    countItem: (n) => `共 ${n} 件商品`,
+    countOrder: (n) => `共 ${n} 笔订单`,
     modal: {
       addUser: '添加用户', editUser: '编辑用户', deleteUser: '删除用户',
       addCoach: '添加 Coach', editCoach: '编辑 Coach', deleteCoach: '删除 Coach',
@@ -112,12 +133,26 @@ const T = {
       deleteWarning: (name) => `确认删除 ${name}？此操作将同时删除该用户的所有生物标志物、扫描记录和通知。`,
       deleteCoachWarning: (name) => `确认删除 Coach ${name}？其名下用户将变为未分配状态。`,
       deleteDotWarning: (name) => `确认删除营养点"${name}"？此操作不可撤销。`,
+      addItem: '添加商品', editItem: '编辑商品', deleteItem: '删除商品',
+      deleteItemWarning: (name) => `确认删除"${name}"？此操作不可撤销。`,
+      descEn: '描述 (英)', descZh: '描述 (中)',
+      unitEn: '单位 (英)', unitZh: '单位 (中)',
+      priceCny: '售价 CNY *', priceUsd: '售价 USD *',
+      tag: '标签', noTag: '无标签', tagBestseller: '热销', tagValue: '超值',
+      sortOrder: '排序', active: '上架',
       externalIdRequired: '外部 ID 为必填项',
       nameRequired: '姓名为必填项',
       keyRequired: '标识为必填项',
       saveFailed: '保存失败',
     },
     dotType: { isolate: '单体', blend: '复合' },
+    store: {
+      itemsTab: '商品', ordersTab: '订单',
+      priceCny: '售价 (CNY)', priceUsd: '售价 (USD)', tag: '标签', active: '上架',
+      qty: '数量', status: '状态', orderedAt: '下单时间', yes: '是', no: '否',
+      pending: '待处理', confirmed: '已确认', shipped: '已发货',
+      delivered: '已送达', cancelled: '已取消',
+    },
   },
 };
 
@@ -903,6 +938,295 @@ function DotsTab({ dots, onRefresh }) {
   );
 }
 
+// ── Store tab ─────────────────────────────────────────────────────────────────
+
+const EMPTY_ITEM = {
+  key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '',
+  unit_en: '', unit_zh: '', price_cny: '', price_usd: '',
+  tag: '', sort_order: 0, active: true,
+};
+
+function StoreItemModal({ item, onClose, onSave }) {
+  const { t } = useLang();
+  const isEdit = !!item?.id;
+  const [form, setForm] = useState(isEdit
+    ? { key_name: item.key_name, name_en: item.name_en || '', name_zh: item.name_zh || '',
+        desc_en: item.desc_en || '', desc_zh: item.desc_zh || '',
+        unit_en: item.unit_en || '', unit_zh: item.unit_zh || '',
+        price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '',
+        tag: item.tag || '', sort_order: item.sort_order ?? 0, active: item.active !== false }
+    : { ...EMPTY_ITEM });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.key_name.trim()) { setError(t.modal.keyRequired); return; }
+    if (!form.name_en.trim())  { setError(t.modal.nameRequired); return; }
+    setBusy(true); setError('');
+    try {
+      if (isEdit) await axios.put(`/api/store-items/${item.id}`, form);
+      else        await axios.post('/api/store-items', form);
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{isEdit ? t.modal.editItem : t.modal.addItem}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field">
+              <span>{t.modal.keyName}</span>
+              <input value={form.key_name} onChange={e => set('key_name', e.target.value)} disabled={isEdit} placeholder="e.g. kino-chip-1" />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.tag}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.tag} onChange={e => set('tag', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">{t.modal.noTag}</option>
+                  <option value="bestseller">{t.modal.tagBestseller}</option>
+                  <option value="value">{t.modal.tagValue}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{t.modal.nameEn}</span>
+              <input value={form.name_en} onChange={e => set('name_en', e.target.value)} placeholder="e.g. Kino Biomarker Test Chip" />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.nameZh}</span>
+              <input value={form.name_zh} onChange={e => set('name_zh', e.target.value)} placeholder="例如 Kino 生物标志物检测芯片" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.descEn}</span>
+              <input value={form.desc_en} onChange={e => set('desc_en', e.target.value)} placeholder="Short description in English" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.descZh}</span>
+              <input value={form.desc_zh} onChange={e => set('desc_zh', e.target.value)} placeholder="中文简短描述" />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.unitEn}</span>
+              <input value={form.unit_en} onChange={e => set('unit_en', e.target.value)} placeholder="e.g. 1 chip" />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.unitZh}</span>
+              <input value={form.unit_zh} onChange={e => set('unit_zh', e.target.value)} placeholder="例如 1 片" />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.priceCny}</span>
+              <input type="number" step="0.01" min="0" value={form.price_cny} onChange={e => set('price_cny', e.target.value)} placeholder="298.00" />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.priceUsd}</span>
+              <input type="number" step="0.01" min="0" value={form.price_usd} onChange={e => set('price_usd', e.target.value)} placeholder="39.99" />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.sortOrder}</span>
+              <input type="number" min="0" value={form.sort_order} onChange={e => set('sort_order', e.target.value)} />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.active}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.active ? 'true' : 'false'} onChange={e => set('active', e.target.value === 'true')} className="inline-select" style={{ width: '100%' }}>
+                  <option value="true">{t.store.yes}</option>
+                  <option value="false">{t.store.no}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? t.modal.saving : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteStoreItemConfirm({ item, onClose, onConfirm }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState(false);
+  const handleDelete = async () => {
+    setBusy(true);
+    try { await axios.delete(`/api/store-items/${item.id}`); onConfirm(); }
+    catch { /* silent */ } finally { setBusy(false); }
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.modal.deleteItem}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginBottom: 20, color: '#475569' }}>
+            {t.modal.deleteItemWarning(<strong>{item.name_en || item.key_name}</strong>)}
+          </p>
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-danger" onClick={handleDelete} disabled={busy}>
+              <Trash2 size={14} />{busy ? t.modal.deleting : t.modal.delete}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const ORDER_STATUSES = ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'];
+
+function OrderStatusSelect({ orderId, status, onSave }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState(false);
+  const handleChange = async (e) => {
+    setBusy(true);
+    try { await axios.put(`/api/orders/${orderId}`, { status: e.target.value }); onSave(); }
+    catch { /* silent */ } finally { setBusy(false); }
+  };
+  const color = { pending: '#f59e0b', confirmed: '#3b82f6', shipped: '#8b5cf6', delivered: '#10b981', cancelled: '#94a3b8' }[status] || '#94a3b8';
+  return (
+    <div className="select-wrap">
+      <select value={status} onChange={handleChange} disabled={busy} className="inline-select" style={{ color }}>
+        {ORDER_STATUSES.map(s => <option key={s} value={s}>{t.store[s]}</option>)}
+      </select>
+      <ChevronDown size={11} className="select-chevron" />
+    </div>
+  );
+}
+
+function StoreTab({ storeItems, orders, onRefresh }) {
+  const { t } = useLang();
+  const [subTab, setSubTab] = useState('items');
+  const [modal, setModal] = useState(null);
+  const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  const activeCount  = storeItems.filter(i => i.active).length;
+  const pendingCount = orders.filter(o => o.status === 'pending').length;
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={ShoppingBag} label={t.stats.totalItems}    value={storeItems.length} color="#6366f1" />
+        <StatCard icon={ShoppingBag} label={t.stats.activeItems}   value={activeCount}       color="#10b981" />
+        <StatCard icon={Package}     label={t.stats.totalOrders}   value={orders.length}     color="#3b82f6" />
+        <StatCard icon={Package}     label={t.stats.pendingOrders} value={pendingCount}      color="#f59e0b" />
+      </div>
+
+      <div className="subtab-row">
+        <button className={`subtab-btn${subTab === 'items' ? ' active' : ''}`} onClick={() => setSubTab('items')}>
+          <ShoppingBag size={13} />{t.store.itemsTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'orders' ? ' active' : ''}`} onClick={() => setSubTab('orders')}>
+          <Package size={13} />{t.store.ordersTab}
+        </button>
+      </div>
+
+      {subTab === 'items' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{t.countItem(storeItems.length)}</span>
+            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+              <Plus size={14} />{t.addItem}
+            </button>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{t.table.key}</th>
+                <th>{t.table.nameEn}</th>
+                <th>{t.table.nameZh}</th>
+                <th>{t.store.priceCny}</th>
+                <th>{t.store.priceUsd}</th>
+                <th>{t.store.tag}</th>
+                <th>{t.store.active}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {storeItems.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.store}</td></tr>}
+              {storeItems.map(item => (
+                <tr key={item.id}>
+                  <td><code className="code-tag">{item.key_name}</code></td>
+                  <td className="bold">{fmt(item.name_en)}</td>
+                  <td className="muted">{fmt(item.name_zh)}</td>
+                  <td>¥{item.price_cny}</td>
+                  <td className="muted">${item.price_usd}</td>
+                  <td>{item.tag ? <Badge color="#6366f1">{item.tag}</Badge> : '—'}</td>
+                  <td>
+                    <Badge color={item.active ? '#10b981' : '#94a3b8'}>
+                      {item.active ? t.store.yes : t.store.no}
+                    </Badge>
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" title={t.modal.editItem} onClick={() => setModal({ type: 'edit', item })}><Pencil size={14} /></button>
+                      <button className="icon-btn danger" title={t.modal.deleteItem} onClick={() => setModal({ type: 'delete', item })}><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {subTab === 'orders' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{t.countOrder(orders.length)}</span>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>{t.table.nickname}</th>
+                <th>{t.table.nameEn}</th>
+                <th>{t.store.qty}</th>
+                <th>{t.store.priceCny}</th>
+                <th>{t.store.status}</th>
+                <th>{t.store.orderedAt}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.length === 0 && <tr><td colSpan={7} className="empty-row">{t.empty.orders}</td></tr>}
+              {orders.map(o => (
+                <tr key={o.id}>
+                  <td><span className="mono muted">{o.id.slice(0, 8)}…</span></td>
+                  <td>{fmt(o.nickname || o.user_id)}</td>
+                  <td className="bold">{fmt(o.name_en)}</td>
+                  <td>{o.quantity}</td>
+                  <td>¥{o.price_cny}</td>
+                  <td><OrderStatusSelect orderId={o.id} status={o.status} onSave={onRefresh} /></td>
+                  <td className="muted">{fmtDate(o.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {modal?.type === 'add'    && <StoreItemModal item={null}       onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <StoreItemModal item={modal.item} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete' && <DeleteStoreItemConfirm item={modal.item} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+    </>
+  );
+}
+
 // ── Simulators tab ────────────────────────────────────────────────────────────
 
 const SIM_V = `?v=${__SIM_VERSION__}`;
@@ -934,19 +1258,27 @@ export default function App() {
   const toggleLang = () => setLang(l => l === 'en' ? 'zh' : 'en');
 
   const [tab, setTab] = useState('users');
-  const [data, setData] = useState({ users: [], dots: [], coaches: [] });
+  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [uRes, dRes, pRes] = await Promise.all([
+      const [uRes, dRes, pRes, sRes, oRes] = await Promise.all([
         axios.get('/api/users'),
         axios.get('/api/dots-inventory'),
         axios.get('/api/coach-list'),
+        axios.get('/api/store-items?all=true'),
+        axios.get('/api/orders'),
       ]);
-      setData({ users: uRes.data.users || [], dots: dRes.data.dots || [], coaches: pRes.data.coaches || [] });
+      setData({
+        users: uRes.data.users || [],
+        dots: dRes.data.dots || [],
+        coaches: pRes.data.coaches || [],
+        storeItems: sRes.data.items || [],
+        orders: oRes.data.orders || [],
+      });
       setLastRefresh(new Date());
     } catch (err) { console.error('Admin fetch error:', err); }
     finally { setLoading(false); }
@@ -957,8 +1289,9 @@ export default function App() {
   const NAV = [
     { id: 'users',   label: t.nav.users,   icon: Users    },
     { id: 'coaches', label: t.nav.coaches, icon: UserCog  },
-    { id: 'dots',    label: t.nav.dots,    icon: Droplets },
-    { id: 'sims',    label: t.nav.sims,    icon: Layout   },
+    { id: 'dots',    label: t.nav.dots,    icon: Droplets    },
+    { id: 'store',   label: t.nav.store,   icon: ShoppingBag },
+    { id: 'sims',    label: t.nav.sims,    icon: Layout      },
   ];
 
   return (
@@ -995,6 +1328,7 @@ export default function App() {
           {tab === 'users'   && <UsersTab   users={data.users} coaches={data.coaches} onRefresh={fetchData} />}
           {tab === 'coaches' && <CoachTab   coaches={data.coaches} users={data.users} onRefresh={fetchData} />}
           {tab === 'dots'    && <DotsTab    dots={data.dots} onRefresh={fetchData} />}
+          {tab === 'store'   && <StoreTab   storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
           {tab === 'sims'    && <SimulatorsTab />}
         </div>
       </div>

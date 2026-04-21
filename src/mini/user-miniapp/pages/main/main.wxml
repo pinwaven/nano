@@ -364,6 +364,52 @@
     </view>
     <!-- end DOTS -->
 
+    <!-- ════ STORE ════ -->
+    <view class="store-tab{{tab !== 'store' ? ' tab-hidden' : ''}}">
+
+      <view class="store-header">
+        <text class="store-title">{{t.storeTitle}}</text>
+      </view>
+
+      <view wx:if="{{storeLoading}}" class="center-wrap">
+        <view class="pulse-dot"></view>
+        <view class="pulse-dot"></view>
+        <view class="pulse-dot"></view>
+      </view>
+
+      <view wx:elif="{{storeItems.length === 0}}" class="dots-empty">
+        <text>{{t.storeEmpty}}</text>
+      </view>
+
+      <scroll-view wx:else class="store-scroll" scroll-y="true">
+        <view class="store-list">
+          <view
+            wx:for="{{storeItems}}"
+            wx:key="id"
+            class="store-card"
+          >
+            <view wx:if="{{item.tagLabel}}" class="store-tag">
+              <text class="store-tag-text">{{item.tagLabel}}</text>
+            </view>
+            <text class="store-card-name">{{item.name}}</text>
+            <text class="store-card-desc">{{item.desc}}</text>
+            <view class="store-card-footer">
+              <view class="store-price-wrap">
+                <text class="store-price">{{item.price}}</text>
+                <text class="store-unit">/ {{item.unit}}</text>
+              </view>
+              <view class="store-buy-btn" bindtap="handleBuyItem" data-item="{{item}}">
+                <text class="store-buy-label">{{t.storeBuy}}</text>
+              </view>
+            </view>
+          </view>
+          <view style="height: 32px;"></view>
+        </view>
+      </scroll-view>
+
+    </view>
+    <!-- end STORE -->
+
   </view>
   <!-- end tab-content -->
 
@@ -383,6 +429,11 @@
       <view wx:if="{{tab === 'dots'}}" class="tab-line"></view>
       <image class="tab-icon-img" src="/assets/icons/dots.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabDots}}</text>
+    </view>
+    <view class="tab-btn {{tab === 'store' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="store">
+      <view wx:if="{{tab === 'store'}}" class="tab-line"></view>
+      <image class="tab-icon-img" src="/assets/icons/store.svg" mode="aspectFit" />
+      <text class="tab-label">{{t.tabStore}}</text>
     </view>
   </view>
 

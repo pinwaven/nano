@@ -120,7 +120,8 @@
 
 .chat-tab,
 .health-tab,
-.dots-tab {
+.dots-tab,
+.store-tab {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   display: flex;
@@ -813,4 +814,112 @@
   color: rgba(166, 196, 229, 0.4);
   line-height: 1.6;
   text-align: center;
+}
+
+/* ── Store tab ── */
+
+.store-header {
+  flex-shrink: 0;
+  padding: 36rpx 36rpx 20rpx;
+}
+
+.store-title {
+  font-size: 26rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+  text-transform: uppercase;
+  color: rgba(166, 196, 229, 0.4);
+}
+
+.store-scroll {
+  flex: 1;
+  height: 0;
+}
+
+.store-list {
+  padding: 8rpx 28rpx 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.store-card {
+  background: #0F2540;
+  border: 1rpx solid rgba(99, 117, 236, 0.18);
+  border-radius: 28rpx;
+  padding: 32rpx 28rpx 28rpx;
+  position: relative;
+  overflow: hidden;
+}
+
+.store-tag {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: linear-gradient(135deg, #6375EC, #8B9FFF);
+  border-bottom-left-radius: 16rpx;
+  padding: 8rpx 20rpx;
+}
+
+.store-tag-text {
+  font-size: 18rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: #fff;
+}
+
+.store-card-name {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+  display: block;
+  margin-bottom: 12rpx;
+  padding-right: 100rpx;
+}
+
+.store-card-desc {
+  font-size: 24rpx;
+  color: rgba(166, 196, 229, 0.55);
+  line-height: 1.5;
+  display: block;
+  margin-bottom: 32rpx;
+}
+
+.store-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.store-price-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 6rpx;
+}
+
+.store-price {
+  font-size: 44rpx;
+  font-weight: 800;
+  color: #EEF2FF;
+  line-height: 1;
+}
+
+.store-unit {
+  font-size: 22rpx;
+  color: rgba(166, 196, 229, 0.4);
+}
+
+.store-buy-btn {
+  background: linear-gradient(135deg, #6375EC 0%, #8B9FFF 100%);
+  border-radius: 24rpx;
+  padding: 22rpx 40rpx;
+  box-shadow: 0 4rpx 20rpx rgba(99, 117, 236, 0.45);
+}
+
+.store-buy-label {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.5rpx;
 }

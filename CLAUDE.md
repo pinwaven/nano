@@ -60,6 +60,10 @@
 - **i18n:** Bilingual (zh/en) via a `T` translation object in `main.js`; language stored in `app.globalData.lang`.
 
 
+## 8. Changelog for code changes
+- CHANGELOG.md
+
+
 ## Aliyun Function Compute 3.0 (FC 3.0) Runtime Behavior
  
 When writing or modifying FC handler code, use these facts. They were confirmed by live debugging against the deployed function.
