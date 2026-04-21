@@ -117,7 +117,7 @@ const BM_META = [
 
 const SUB_AGE_KEYS = ['ResilienceAge', 'CellularAge', 'MetabolicAge', 'MicroVascularAge']
 const SUB_AGE_COLORS = {
-  ResilienceAge: '#ef4444', CellularAge: '#10b981',
+  ResilienceAge: '#c084d4', CellularAge: '#10b981',
   MetabolicAge: '#6375EC', MicroVascularAge: '#0ea5e9',
 }
 
