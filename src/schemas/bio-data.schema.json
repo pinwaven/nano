@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "bio-data",
+  "title": "User Bio Data",
+  "description": "Dynamic health profile stored in users.bio_data. Fields are collected progressively via AI conversation. All fields are optional — write only what is known.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+
+    "height_cm": {
+      "type": "number",
+      "minimum": 50,
+      "maximum": 280,
+      "description": "Height in centimetres"
+    },
+    "weight_kg": {
+      "type": "number",
+      "minimum": 10,
+      "maximum": 500,
+      "description": "Weight in kilograms"
+    },
+    "bmi": {
+      "type": "number",
+      "description": "Calculated BMI — derived, do not collect directly"
+    },
+
+    "avg_sleep_hours": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 24,
+      "description": "Average nightly sleep duration in hours"
+    },
+    "sleep_quality": {
+      "type": "string",
+      "enum": ["poor", "fair", "good", "excellent"],
+      "description": "Self-reported sleep quality"
+    },
+
+    "stress_level": {
+      "type": "string",
+      "enum": ["low", "moderate", "high", "very_high"],
+      "description": "Self-reported general stress level"
+    },
+
+    "exercise_freq": {
+      "type": "string",
+      "enum": ["none", "1x/week", "2x/week", "3x/week", "4x/week", "5x/week", "daily"],
+      "description": "Frequency of intentional exercise per week"
+    },
+    "exercise_type": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["strength", "cardio", "yoga", "sports", "walking", "cycling", "swimming", "other"]
+      },
+      "description": "Types of exercise the user regularly does"
+    },
+
+    "diet_type": {
+      "type": "string",
+      "enum": ["omnivore", "vegetarian", "vegan", "pescatarian", "keto", "paleo", "other"],
+      "description": "Primary dietary pattern"
+    },
+    "meal_freq": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 10,
+      "description": "Number of meals per day"
+    },
+
+    "smoking": {
+      "type": "string",
+      "enum": ["never", "former", "occasional", "daily"],
+      "description": "Smoking status"
+    },
+    "alcohol": {
+      "type": "string",
+      "enum": ["never", "rarely", "occasional", "weekly", "daily"],
+      "description": "Alcohol consumption frequency"
+    },
+
+    "health_goals": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["longevity", "energy", "weight_loss", "muscle_gain", "sleep", "stress", "immunity", "cognitive", "other"]
+      },
+      "description": "User's self-stated health priorities"
+    },
+    "health_conditions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Self-reported chronic conditions or diagnoses (free-text array)"
+    },
+    "medications": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Current medications or supplements (free-text array)"
+    },
+    "allergies": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Known allergies or intolerances (free-text array)"
+    },
+
+    "occupation": {
+      "type": "string",
+      "description": "User's occupation — used to infer sedentary vs. active lifestyle"
+    },
+    "work_hours_per_day": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 24
+    },
+    "sitting_hours_per_day": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 24,
+      "description": "Estimated hours seated per day"
+    }
+
+  }
+}
