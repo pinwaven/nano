@@ -149,6 +149,16 @@
             <text>{{item.label}}</text>
           </view>
         </view>
+        <input
+          wx:if="{{obOtherSelected}}"
+          class="ob-input cond-other-input"
+          placeholder="{{t.obConditionsOtherPh}}"
+          placeholder-class="ob-ph"
+          value="{{obConditionsOther}}"
+          bindinput="onObConditionsOtherInput"
+          focus="{{obOtherSelected}}"
+          adjust-position="true"
+        />
         <view class="ob-confirm" bindtap="handleSubmitConditions">
           <text>{{t.confirm}}</text>
         </view>

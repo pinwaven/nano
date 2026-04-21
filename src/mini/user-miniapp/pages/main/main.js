@@ -56,6 +56,7 @@ const T = {
     morning: '早上', evening: '晚上', today: '今天', tomorrow: '明天',
     obConditionsPrompt: '您是否曾被诊断/体检出以下方面的问题？（可多选）',
     obConditionsNone: '以上均无',
+    obConditionsOtherPh: '请描述您的其他健康状况',
     conditionLabels: {
       blood_sugar_high:    '血糖高',
       blood_pressure_high: '血压高',
@@ -120,6 +121,7 @@ const T = {
     morning: 'Morning', evening: 'Evening', today: 'Today', tomorrow: 'Tomorrow',
     obConditionsPrompt: 'Have you ever been diagnosed with or identified any of the following? (Select all that apply)',
     obConditionsNone: 'None of the above',
+    obConditionsOtherPh: 'Please describe your other health condition',
     conditionLabels: {
       blood_sugar_high:    'High Blood Sugar',
       blood_pressure_high: 'High Blood Pressure',
@@ -264,6 +266,8 @@ Page({
     obWeightDisplay: '65.0',
     obConditions: [],
     obConditionList: [],
+    obOtherSelected: false,
+    obConditionsOther: '',
     scrollToId: '',
 
     // Health
@@ -622,7 +626,7 @@ Page({
     const t = T[lang]
     const list = CONDITION_KEYS.map(key => ({ key, label: t.conditionLabels[key], selected: false }))
     this._addMsg('ai', t.obConditionsPrompt)
-    this.setData({ obStep: 'conditions', obConditions: [], obConditionList: list, typing: false })
+    this.setData({ obStep: 'conditions', obConditions: [], obConditionList: list, obOtherSelected: false, obConditionsOther: '', typing: false })
   },
 
   handleToggleCondition(e) {
@@ -630,25 +634,35 @@ Page({
     const list = this.data.obConditionList.map(item =>
       item.key === key ? { ...item, selected: !item.selected } : item
     )
+    const otherSelected = list.some(i => i.key === 'other' && i.selected)
     this.setData({
       obConditionList: list,
       obConditions: list.filter(i => i.selected).map(i => i.key),
+      obOtherSelected: otherSelected,
+      obConditionsOther: otherSelected ? this.data.obConditionsOther : '',
     })
   },
 
+  onObConditionsOtherInput(e) { this.setData({ obConditionsOther: e.detail.value }) },
+
   async handleSubmitConditions() {
-    const { obConditions, obConditionList, user, lang, t } = this.data
+    const { obConditions, obConditionList, obOtherSelected, obConditionsOther, user, lang, t } = this.data
+    const otherText = obOtherSelected ? obConditionsOther.trim() : ''
     const sep = lang === 'zh' ? '、' : ', '
-    const label = obConditions.length > 0
-      ? obConditionList.filter(i => i.selected).map(i => i.label).join(sep)
-      : t.obConditionsNone
+    const selectedLabels = obConditionList
+      .filter(i => i.selected)
+      .map(i => i.key === 'other' && otherText ? `${i.label}（${otherText}）` : i.label)
+    const label = selectedLabels.length > 0 ? selectedLabels.join(sep) : t.obConditionsNone
 
     this._addMsg('user', label)
     this.setData({ typing: true })
 
+    const bioDataUpdate = { health_conditions: obConditions }
+    if (otherText) bioDataUpdate.health_conditions_other = otherText
+
     try {
-      await this._saveUser(user, { bio_data: { health_conditions: obConditions } })
-      const updated = { ...user, bio_data: { ...(user.bio_data || {}), health_conditions: obConditions } }
+      await this._saveUser(user, { bio_data: bioDataUpdate })
+      const updated = { ...user, bio_data: { ...(user.bio_data || {}), ...bioDataUpdate } }
       this._updateUser(updated)
       this._addMsg('ai', t.obComplete)
 
@@ -752,8 +766,14 @@ Page({
       ]
 
       const condKeys = user.bio_data?.health_conditions ?? null
+      const otherText = user.bio_data?.health_conditions_other || ''
       const healthConditionsList = condKeys !== null
-        ? condKeys.map(key => ({ key, label: t.conditionLabels[key] || key }))
+        ? condKeys.map(key => ({
+            key,
+            label: key === 'other' && otherText
+              ? `${t.conditionLabels[key]}（${otherText}）`
+              : (t.conditionLabels[key] || key),
+          }))
         : []
 
       this.setData({

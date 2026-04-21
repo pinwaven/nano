@@ -296,6 +296,8 @@
 
 .conditions-bar { gap: 20rpx; }
 
+.cond-other-input { width: 100%; box-sizing: border-box; }
+
 .cond-chips {
   display: flex;
   flex-wrap: wrap;

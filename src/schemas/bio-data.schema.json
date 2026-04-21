@@ -90,7 +90,11 @@
     "health_conditions": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Self-reported chronic conditions or diagnoses (free-text array)"
+      "description": "Selected condition keys from onboarding checklist (see CONDITION_KEYS in main.js)"
+    },
+    "health_conditions_other": {
+      "type": "string",
+      "description": "Free-text description when user selects 'other' in the health conditions onboarding step"
     },
     "medications": {
       "type": "array",
