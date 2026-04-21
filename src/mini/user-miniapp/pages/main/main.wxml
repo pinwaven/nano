@@ -371,23 +371,27 @@
         <text class="store-title">{{t.storeTitle}}</text>
       </view>
 
+      <!-- Subtab toggle -->
+      <view wx:if="{{!storeLoading}}" class="store-subtab-row">
+        <view class="store-subtab-btn{{storeSubTab === 'products' ? ' store-subtab-active' : ''}}" bindtap="switchStoreTab" data-tab="products">
+          <text>{{t.storeSubProducts}}</text>
+        </view>
+        <view class="store-subtab-btn{{storeSubTab === 'orders' ? ' store-subtab-active' : ''}}" bindtap="switchStoreTab" data-tab="orders">
+          <text>{{t.storeSubOrders}}</text>
+        </view>
+      </view>
+
+      <!-- Loading -->
       <view wx:if="{{storeLoading}}" class="center-wrap">
         <view class="pulse-dot"></view>
         <view class="pulse-dot"></view>
         <view class="pulse-dot"></view>
       </view>
 
-      <view wx:elif="{{storeItems.length === 0}}" class="dots-empty">
-        <text>{{t.storeEmpty}}</text>
-      </view>
-
-      <scroll-view wx:else class="store-scroll" scroll-y="true">
+      <!-- Products subtab -->
+      <scroll-view wx:elif="{{storeSubTab === 'products' && storeItems.length > 0}}" class="store-scroll" scroll-y="true">
         <view class="store-list">
-          <view
-            wx:for="{{storeItems}}"
-            wx:key="id"
-            class="store-card"
-          >
+          <view wx:for="{{storeItems}}" wx:key="id" class="store-card">
             <view wx:if="{{item.tagLabel}}" class="store-tag">
               <text class="store-tag-text">{{item.tagLabel}}</text>
             </view>
@@ -406,6 +410,34 @@
           <view style="height: 32px;"></view>
         </view>
       </scroll-view>
+
+      <view wx:elif="{{storeSubTab === 'products'}}" class="dots-empty">
+        <text>{{t.storeEmpty}}</text>
+      </view>
+
+      <!-- Orders subtab -->
+      <scroll-view wx:elif="{{storeSubTab === 'orders' && storeOrders.length > 0}}" class="store-scroll" scroll-y="true">
+        <view class="store-list">
+          <view wx:for="{{storeOrders}}" wx:key="id" class="order-card">
+            <view class="order-card-top">
+              <text class="order-name">{{item.name}}</text>
+              <view class="order-status order-status-{{item.status}}">
+                <text>{{t.orderStatus[item.status] || item.status}}</text>
+              </view>
+            </view>
+            <view class="order-card-mid">
+              <text class="order-price">{{item.price}}</text>
+              <text class="order-meta"> · {{item.unit}} · ×{{item.quantity}}</text>
+            </view>
+            <text class="order-date">{{item.createdAt}}</text>
+          </view>
+          <view style="height: 32px;"></view>
+        </view>
+      </scroll-view>
+
+      <view wx:elif="{{storeSubTab === 'orders'}}" class="dots-empty">
+        <text>{{t.noOrders}}</text>
+      </view>
 
     </view>
     <!-- end STORE -->

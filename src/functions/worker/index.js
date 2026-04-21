@@ -128,6 +128,25 @@ async function handleGetOrders() {
     }
 }
 
+async function handleGetMyOrders(openid) {
+    if (!openid) return { success: false, error: 'openid is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `SELECT o.id, o.item_key, o.quantity, o.price_cny, o.price_usd, o.status, o.created_at,
+                    s.name_en, s.name_zh, s.unit_en, s.unit_zh
+             FROM orders o
+             LEFT JOIN store_items s ON o.item_id = s.id
+             WHERE o.user_id = $1
+             ORDER BY o.created_at DESC`,
+            [openid]
+        );
+        return { success: true, orders: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handlePostStoreItem(body) {
     const { key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active } = body;
     if (!key_name) return { success: false, error: 'key_name is required', statusCode: 400 };
@@ -730,6 +749,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetDotsInventory();
             } else if (path.includes('/store-items')) {
                 result = await handleGetStoreItems(query);
+            } else if (path.includes('/my-orders')) {
+                result = await handleGetMyOrders(query.openid);
             } else if (path.includes('/orders')) {
                 result = await handleGetOrders();
             } else if (path.includes('/coach-list')) {

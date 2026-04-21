@@ -59,10 +59,16 @@ const T = {
     obConditionsOtherPh: '请描述您的其他健康状况',
     storeTitle: '健康商城',
     storeBuy: '立即订购',
-    storeOrderSent: '已收到您的订单意向！我们的健康顾问将尽快与您联系。',
+    storeOrderSent: '订单已提交！我们的健康顾问将尽快与您联系。',
     storeConfirmTitle: '确认订单',
     storeBestseller: '热销', storeValue: '超值',
     storeEmpty: '暂无商品。',
+    storeSubProducts: '商品', storeSubOrders: '我的订单',
+    noOrders: '暂无订单记录。',
+    orderStatus: {
+      pending: '待处理', confirmed: '已确认', shipped: '已发货',
+      delivered: '已送达', cancelled: '已取消',
+    },
     conditionLabels: {
       blood_sugar_high:    '血糖高',
       blood_pressure_high: '血压高',
@@ -130,10 +136,16 @@ const T = {
     obConditionsOtherPh: 'Please describe your other health condition',
     storeTitle: 'Health Store',
     storeBuy: 'Order Now',
-    storeOrderSent: 'Order received! Our health advisor will reach out shortly.',
+    storeOrderSent: 'Order placed! Our health advisor will reach out shortly.',
     storeConfirmTitle: 'Confirm Order',
     storeBestseller: 'Best Seller', storeValue: 'Value Pack',
     storeEmpty: 'No products available.',
+    storeSubProducts: 'Products', storeSubOrders: 'My Orders',
+    noOrders: 'No orders yet.',
+    orderStatus: {
+      pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
+      delivered: 'Delivered', cancelled: 'Cancelled',
+    },
     conditionLabels: {
       blood_sugar_high:    'High Blood Sugar',
       blood_pressure_high: 'High Blood Pressure',
@@ -276,6 +288,19 @@ function mapStoreItems(rawItems, lang) {
   }))
 }
 
+function mapStoreOrders(rawOrders, lang) {
+  return rawOrders.map(o => ({
+    id: o.id,
+    shortId: o.id.slice(0, 8),
+    name: lang === 'zh' ? (o.name_zh || o.item_key) : (o.name_en || o.item_key),
+    unit: lang === 'zh' ? o.unit_zh : o.unit_en,
+    quantity: o.quantity,
+    price: lang === 'zh' ? `¥${o.price_cny}` : `$${o.price_usd}`,
+    status: o.status,
+    createdAt: new Date(o.created_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US'),
+  }))
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 Page({
@@ -323,11 +348,14 @@ Page({
     // Store
     storeLoading: true,
     storeItems: [],
+    storeOrders: [],
+    storeSubTab: 'products',
   },
 
   _pollingTimer: null,
   _seenIds: null,
   _rawStoreItems: null,
+  _rawStoreOrders: null,
 
   onLoad() {
     this._seenIds = new Set()
@@ -345,7 +373,7 @@ Page({
     this._initChat(user, lang)
     this._loadHealth(user, lang)
     this._loadDots(user, lang)
-    this._loadStore(lang)
+    this._loadStore(user, lang)
   },
 
   onShow() {
@@ -382,8 +410,9 @@ Page({
   toggleLang() {
     const lang = this.data.lang === 'zh' ? 'en' : 'zh'
     app.globalData.lang = lang
-    const storeItems = this._rawStoreItems ? mapStoreItems(this._rawStoreItems, lang) : []
-    this.setData({ lang, t: T[lang], menuOpen: false, storeItems })
+    const storeItems  = this._rawStoreItems  ? mapStoreItems(this._rawStoreItems, lang)   : []
+    const storeOrders = this._rawStoreOrders ? mapStoreOrders(this._rawStoreOrders, lang) : []
+    this.setData({ lang, t: T[lang], menuOpen: false, storeItems, storeOrders })
     this._loadHealth(this.data.user, lang)
     this._loadDots(this.data.user, lang)
   },
@@ -785,7 +814,8 @@ Page({
         : []
 
       const cAge = chronoAge(user.birth_date)
-      const bAge = user.bio_age ? Number(user.bio_age).toFixed(1) : null
+      const rawBioAge = latest?.bio_age ?? user.bio_age
+      const bAge = rawBioAge ? Number(rawBioAge).toFixed(1) : null
 
       const bodyRecord = records.slice().reverse().find(r => r.test_type === 'body_composition')
       const heightVal = bodyRecord?.data?.actual?.height ?? null
@@ -818,7 +848,7 @@ Page({
         bioLoading: false,
         subAgeList, bmList, trendList,
         cAge, bAge,
-        bAgeColor: bioAgeColor(user.bio_age, cAge),
+        bAgeColor: bioAgeColor(rawBioAge, cAge),
         profileInfo,
         recordCount: kinoRecords.length,
         hasBm: latestBm !== null,
@@ -848,7 +878,7 @@ Page({
 
   // ── Store tab ───────────────────────────────────────────────────────────────
 
-  async _loadStore(lang) {
+  async _loadStore(user, lang) {
     try {
       const res = await this._req(`${BASE}/api/store-items`)
       const raw = res.data?.items || []
@@ -857,11 +887,25 @@ Page({
     } catch (e) {
       this.setData({ storeLoading: false })
     }
+    await this._loadStoreOrders(user, lang)
+  },
+
+  async _loadStoreOrders(user, lang) {
+    try {
+      const res = await this._req(`${BASE}/api/my-orders?openid=${encodeURIComponent(user.user_id)}`)
+      const raw = res.data?.orders || []
+      this._rawStoreOrders = raw
+      this.setData({ storeOrders: mapStoreOrders(raw, lang) })
+    } catch (e) {}
+  },
+
+  switchStoreTab(e) {
+    this.setData({ storeSubTab: e.currentTarget.dataset.tab })
   },
 
   handleBuyItem(e) {
     const item = e.currentTarget.dataset.item
-    const { t, user } = this.data
+    const { t, user, lang } = this.data
     wx.showModal({
       title: t.storeConfirmTitle,
       content: `${item.name}\n${item.price}  ·  ${item.unit}`,
@@ -875,7 +919,9 @@ Page({
             item_id: item.id,
             quantity: 1,
           })
-          wx.showToast({ title: t.storeOrderSent, icon: 'none', duration: 3500 })
+          wx.showToast({ title: t.storeOrderSent, icon: 'none', duration: 3000 })
+          await this._loadStoreOrders(user, lang)
+          this.setData({ storeSubTab: 'orders' })
         } catch (e) {
           wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
         }
