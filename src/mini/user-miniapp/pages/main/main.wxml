@@ -16,6 +16,11 @@
   <!-- ── Logo menu ── -->
   <view wx:if="{{menuOpen}}" class="menu-mask" bindtap="closeMenu">
     <view class="menu-dropdown" catchtap="noop" style="top: {{menuTop}}px;">
+      <view class="menu-item" bindtap="toggleLang">
+        <text class="menu-item-icon">{{lang === 'zh' ? '🇺🇸' : '🇨🇳'}}</text>
+        <text class="menu-item-label">{{lang === 'zh' ? 'English' : '中文'}}</text>
+      </view>
+      <view class="menu-divider"></view>
       <view class="menu-item" bindtap="handleLogout">
         <text class="menu-item-icon">↪</text>
         <text class="menu-item-label">{{t.logout}}</text>

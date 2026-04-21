@@ -266,6 +266,11 @@ Page({
     this._loadDots(user, lang)
   },
 
+  onShow() {
+    const { user, lang } = this.data
+    if (user) this._loadHealth(user, lang)
+  },
+
   onUnload() {
     this._stopPolling()
   },
@@ -273,7 +278,10 @@ Page({
   // ── Tab navigation ──────────────────────────────────────────────────────────
 
   switchTab(e) {
-    this.setData({ tab: e.currentTarget.dataset.tab })
+    const tab = e.currentTarget.dataset.tab
+    this.setData({ tab })
+    if (tab === 'health') this._loadHealth(this.data.user, this.data.lang)
+    if (tab === 'dots')   this._loadDots(this.data.user, this.data.lang)
   },
 
   // ── Logo menu ───────────────────────────────────────────────────────────────
@@ -281,6 +289,14 @@ Page({
   toggleMenu() { this.setData({ menuOpen: !this.data.menuOpen }) },
   closeMenu()  { this.setData({ menuOpen: false }) },
   noop()       {},
+
+  toggleLang() {
+    const lang = this.data.lang === 'zh' ? 'en' : 'zh'
+    app.globalData.lang = lang
+    this.setData({ lang, t: T[lang], menuOpen: false })
+    this._loadHealth(this.data.user, lang)
+    this._loadDots(this.data.user, lang)
+  },
 
   // ── Logout ──────────────────────────────────────────────────────────────────
 

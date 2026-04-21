@@ -85,6 +85,12 @@
   min-width: 240rpx;
 }
 
+.menu-divider {
+  height: 1rpx;
+  background: rgba(99, 117, 236, 0.15);
+  margin: 0 24rpx;
+}
+
 .menu-item {
   display: flex;
   align-items: center;
