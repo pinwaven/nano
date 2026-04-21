@@ -657,6 +657,25 @@
 .trend-val     { font-size: 32rpx; font-weight: 800; }
 .trend-unit    { font-size: 18rpx; color: rgba(166, 196, 229, 0.4); }
 
+.spark-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 5rpx;
+  height: 36rpx;
+  margin-top: 14rpx;
+}
+
+.spark-bar {
+  flex: 1;
+  border-radius: 4rpx;
+  opacity: 0.55;
+  min-height: 6rpx;
+}
+
+.spark-bar-empty {
+  opacity: 0.15;
+}
+
 /* ── Dots tab ── */
 
 .dots-header {

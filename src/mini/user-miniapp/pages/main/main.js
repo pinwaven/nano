@@ -594,8 +594,17 @@ Page({
       }))
 
       const trendList = BM_META.map(({ key, unit, color }) => {
-        const vals = records.map(r => r.data?.estimated?.[key]).filter(v => v != null)
-        return { key, label: t.bmLabels[key], unit, color, lastVal: vals[vals.length - 1] ?? null }
+        const allVals = records.slice(-10).map(r => r.data?.estimated?.[key] ?? null)
+        const defined = allVals.filter(v => v != null)
+        const min = defined.length ? Math.min(...defined) : 0
+        const max = defined.length ? Math.max(...defined) : 1
+        const range = max - min || 1
+        const sparkBars = allVals.map(v => v != null
+          ? { h: Math.round(6 + ((v - min) / range) * 26), color, empty: false }
+          : { h: 6, color, empty: true }
+        )
+        const lastVal = defined[defined.length - 1] ?? null
+        return { key, label: t.bmLabels[key], unit, color, lastVal, sparkBars }
       })
 
       const subAgeList = subAgesRaw

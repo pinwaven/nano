@@ -180,13 +180,13 @@
             <text class="health-name">{{user.nickname || 'User'}}</text>
 
             <view wx:if="{{bAge || cAge}}" class="bio-row">
-              <view class="bio-chip">
-                <text class="bio-num" style="color: {{bAgeColor}}">{{bAge || '—'}}</text>
-                <text class="bio-unit">{{t.bioAge}}</text>
-              </view>
               <view class="bio-chip bio-chip-dim">
                 <text class="bio-num bio-num-sub">{{cAge || '—'}}</text>
                 <text class="bio-unit">{{t.chronoAge}}</text>
+              </view>
+              <view class="bio-chip">
+                <text class="bio-num" style="color: {{bAgeColor}}">{{bAge || '—'}}</text>
+                <text class="bio-unit">{{t.bioAge}}</text>
               </view>
             </view>
 
@@ -238,6 +238,15 @@
                 <view class="trend-val-row">
                   <text class="trend-val" style="color: {{item.color}}">{{item.lastVal !== null ? item.lastVal : '—'}}</text>
                   <text class="trend-unit">{{item.unit}}</text>
+                </view>
+                <view wx:if="{{item.sparkBars.length > 1}}" class="spark-row">
+                  <view
+                    wx:for="{{item.sparkBars}}"
+                    wx:for-item="bar"
+                    wx:key="index"
+                    class="spark-bar {{bar.empty ? 'spark-bar-empty' : ''}}"
+                    style="height: {{bar.h}}rpx; background: {{bar.color}};"
+                  ></view>
                 </view>
               </view>
             </view>
