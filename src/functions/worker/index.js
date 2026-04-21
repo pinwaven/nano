@@ -282,6 +282,54 @@ async function handleDeleteUser(user_id) {
     }
 }
 
+async function handleWxLogin(body) {
+    const { code } = body;
+    if (!code) return { success: false, error: 'code is required' };
+
+    const appid  = process.env.WX_APPID;
+    const secret = process.env.WX_SECRET;
+    if (!appid || !secret) return { success: false, error: 'WX_APPID / WX_SECRET not configured' };
+
+    // Exchange code for openid via WeChat API
+    const wxRes = await fetch(
+        `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${code}&grant_type=authorization_code`
+    );
+    const wxData = await wxRes.json();
+    if (wxData.errcode) return { success: false, error: `WeChat: ${wxData.errmsg} (${wxData.errcode})` };
+
+    const openid = wxData.openid;
+
+    // Look up existing user by external_id or user_id
+    const existing = await pool.query(
+        `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
+                u.coach_id, u.created_at, b.bio_age,
+                p.name as coach_name
+         FROM users u
+         LEFT JOIN coaches p ON u.coach_id = p.id
+         LEFT JOIN (
+             SELECT DISTINCT ON (user_id) user_id, bio_age
+             FROM biomarkers ORDER BY user_id, tested_at DESC
+         ) b ON u.user_id = b.user_id
+         WHERE u.external_id = $1 OR u.user_id = $1
+         LIMIT 1`,
+        [openid]
+    );
+
+    if (existing.rows.length > 0) {
+        return { success: true, user: existing.rows[0] };
+    }
+
+    // New user — create with openid as external_id
+    const newUserId = generateUserId();
+    const created = await pool.query(
+        `INSERT INTO users (user_id, external_id, external_app, language)
+         VALUES ($1, $2, 'wechat', 'zh')
+         RETURNING user_id, nickname, birth_date, gender, language, phone, email, coach_id, created_at`,
+        [newUserId, openid]
+    );
+    return { success: true, user: { ...created.rows[0], bio_age: null, coach_name: null } };
+}
+
 async function handleGetChatHistory(openid) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -563,7 +611,9 @@ exports.handler = async (req, resp, context) => {
                 result = { success: false, error: `Unknown GET route: ${path}` };
             }
         } else if (method === 'POST') {
-            if (path.includes('/coach-instruction')) {
+            if (path === '/wx-login') {
+                result = await handleWxLogin(parsedBody);
+            } else if (path.includes('/coach-instruction')) {
                 result = await handlePostCoachInstruction(parsedBody);
             } else if (path.includes('/assign-coach')) {
                 result = await handlePostAssignCoach(parsedBody);

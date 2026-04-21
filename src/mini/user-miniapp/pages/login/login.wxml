@@ -1,49 +1,29 @@
 <view class="login-screen">
   <view class="login-glow" />
 
-  <view class="login-top-bar">
-    <view class="lang-toggle" bindtap="toggleLang">
-      <text class="{{lang === 'zh' ? 'lang-active' : 'lang-dim'}}">中</text>
-      <text class="lang-sep">/</text>
-      <text class="{{lang === 'en' ? 'lang-active' : 'lang-dim'}}">EN</text>
-    </view>
-  </view>
-
   <view class="login-brand">
     <view class="login-logo-ring">
       <text class="login-logo-letter">W</text>
     </view>
     <text class="login-title">NANO</text>
-    <text class="login-subtitle">{{t.subtitle}}</text>
+    <text class="login-subtitle">您的精准健康伴侣</text>
   </view>
 
-  <view class="login-card">
-    <text class="login-card-label">{{t.signIn}}</text>
-    <view class="login-field">
-      <text class="login-label">{{t.phoneLabel}}</text>
-      <input
-        class="login-input"
-        type="number"
-        placeholder="{{t.phonePh}}"
-        placeholder-class="login-input-ph"
-        value="{{phone}}"
-        bindinput="onPhoneInput"
-        bindconfirm="handleLogin"
-        adjust-position="true"
-      />
-    </view>
-    <view wx:if="{{error}}" class="login-error">
-      <text>{{error}}</text>
-    </view>
-    <view class="login-btn {{(!phone || loading) ? 'login-btn-disabled' : ''}}" bindtap="handleLogin">
-      <view wx:if="{{loading}}" class="login-spinner" />
-      <text>{{loading ? t.verifying : t.continue}}</text>
+  <view wx:if="{{loading}}" class="status-wrap">
+    <view class="spinner" />
+    <text class="status-text">正在登录…</text>
+  </view>
+
+  <view wx:elif="{{error}}" class="status-wrap">
+    <text class="error-text">{{error}}</text>
+    <view class="retry-btn" bindtap="retry">
+      <text>重试</text>
     </view>
   </view>
 
   <view class="login-footer">
-    <text>{{t.footerBrand}}</text>
+    <text>哈佛大学创新实验室</text>
     <text class="login-footer-dot">·</text>
-    <text>{{t.footerTag}}</text>
+    <text>成员企业</text>
   </view>
 </view>

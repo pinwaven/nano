@@ -74,6 +74,8 @@ resources:
         TZ: "Asia/Shanghai"
         DASHSCOPE_API_KEY: "sk-c42a1129d83644ad8b0323845f51d5f5"
         MODEL: "qwen-turbo"
+        WX_APPID: "wxecbcf00ce480fcf2"
+        WX_SECRET: "dd527ce18b4ac5c319e2ec57163aa21b"
       triggers:
         - triggerName: http-webhook
           triggerType: http
