@@ -26,6 +26,11 @@
         <text class="menu-item-label">{{t.kinoSimMenu}}</text>
       </view>
       <view class="menu-divider"></view>
+      <view class="menu-item" bindtap="openAdmin">
+        <text class="menu-item-icon">⚙</text>
+        <text class="menu-item-label">{{t.adminMenu}}</text>
+      </view>
+      <view class="menu-divider"></view>
       <view class="menu-item" bindtap="handleLogout">
         <text class="menu-item-icon">↪</text>
         <text class="menu-item-label">{{t.logout}}</text>

@@ -69,6 +69,7 @@ const T = {
     toolTestChip: '使用芯片',
     toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
     toolTestChipMsg: '我想使用 Kino 芯片',
+    adminMenu: '管理员',
     kinoSimMenu: 'Kino 模拟器',
     kinoSimPassTitle: '输入密码',
     kinoSimPassError: '密码错误',
@@ -169,6 +170,7 @@ const T = {
     toolTestChip: 'Use Kino Chip',
     toolFormulaDotMsg: 'Please formula my dots plan',
     toolTestChipMsg: 'I want to use a Kino chip',
+    adminMenu: 'Admin',
     kinoSimMenu: 'Kino Simulator',
     kinoSimPassTitle: 'Enter Passcode',
     kinoSimPassError: 'Incorrect passcode',
@@ -483,6 +485,11 @@ Page({
     this.setData({ lang, t: T[lang], menuOpen: false, storeItems, storeOrders })
     this._loadHealth(this.data.user, lang)
     this._loadDots(this.data.user, lang)
+  },
+
+  openAdmin() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/admin/admin' })
   },
 
   // ── Kino Simulator ──────────────────────────────────────────────────────────

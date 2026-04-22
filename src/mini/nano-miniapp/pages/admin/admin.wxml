@@ -1,0 +1,521 @@
+<view class="adm-page">
+
+  <!-- ── Status bar spacer ── -->
+  <view style="height: {{statusBarHeight}}px; background: #0B1C2E;"></view>
+
+  <!-- ── Header ── -->
+  <view class="adm-header">
+    <view class="adm-back" bindtap="handleBack">
+      <text class="adm-back-icon">‹</text>
+    </view>
+    <text class="adm-header-title">{{t.title}}</text>
+    <view class="adm-refresh {{loading ? 'adm-refresh-spin' : ''}}" bindtap="handleRefresh">
+      <text>↺</text>
+    </view>
+  </view>
+
+  <!-- ── Tab bar ── -->
+  <view class="adm-tabs">
+    <view class="adm-tab {{tab === 'users' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="users">
+      <text>{{t.tabs.users}}</text>
+    </view>
+    <view class="adm-tab {{tab === 'coaches' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="coaches">
+      <text>{{t.tabs.coaches}}</text>
+    </view>
+    <view class="adm-tab {{tab === 'dots' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="dots">
+      <text>{{t.tabs.dots}}</text>
+    </view>
+    <view class="adm-tab {{tab === 'store' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="store">
+      <text>{{t.tabs.store}}</text>
+    </view>
+  </view>
+
+  <!-- ── Loading ── -->
+  <view wx:if="{{loading}}" class="adm-loading">
+    <view class="adm-pulse"></view>
+    <view class="adm-pulse"></view>
+    <view class="adm-pulse"></view>
+  </view>
+
+  <!-- ════ USERS TAB ════ -->
+  <scroll-view wx:elif="{{tab === 'users'}}" class="adm-scroll" scroll-y="true">
+    <view class="adm-inner">
+
+      <!-- Stats row -->
+      <view class="adm-stats-row">
+        <view class="adm-stat">
+          <text class="adm-stat-val">{{users.length}}</text>
+          <text class="adm-stat-key">{{t.stats.totalUsers}}</text>
+        </view>
+        <view class="adm-stat">
+          <text class="adm-stat-val">{{coaches.length}}</text>
+          <text class="adm-stat-key">{{t.stats.coaches}}</text>
+        </view>
+      </view>
+
+      <!-- Add button -->
+      <view class="adm-add-btn" bindtap="openAddUser">
+        <text>+ {{t.add}} {{t.tabs.users}}</text>
+      </view>
+
+      <!-- User cards -->
+      <view wx:if="{{users.length === 0}}" class="adm-empty">
+        <text>{{t.empty.users}}</text>
+      </view>
+      <view wx:for="{{users}}" wx:key="user_id" class="adm-card" bindtap="openUserDetail" data-user="{{item}}">
+        <view class="adm-card-top">
+          <view class="adm-avatar">
+            <text class="adm-avatar-letter">{{item._avatar}}</text>
+          </view>
+          <view class="adm-card-info">
+            <text class="adm-card-title">{{item.nickname || item.external_id || '—'}}</text>
+            <text class="adm-card-sub">{{item.email || item.phone || '—'}}</text>
+          </view>
+          <view class="adm-badge" style="background: {{item._bioAgeColor}}">
+            <text>{{item.bio_age || '—'}}</text>
+          </view>
+        </view>
+        <view class="adm-card-meta">
+          <text class="adm-meta-item">{{t.user.joined}}: {{item._joinedFmt}}</text>
+          <text wx:if="{{item._cAge}}" class="adm-meta-item">{{t.user.chronoAge}}: {{item._cAge}}</text>
+        </view>
+        <view class="adm-card-actions" catchtap="noop">
+          <view class="adm-action-btn adm-action-edit" catchtap="openEditUser" data-user="{{item}}">
+            <text>{{t.edit}}</text>
+          </view>
+          <view class="adm-action-btn adm-action-del" catchtap="handleDeleteUser" data-user="{{item}}">
+            <text>{{t.delete}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view style="height: 48rpx;"></view>
+    </view>
+  </scroll-view>
+
+  <!-- ════ COACHES TAB ════ -->
+  <scroll-view wx:elif="{{tab === 'coaches'}}" class="adm-scroll" scroll-y="true">
+    <view class="adm-inner">
+
+      <view class="adm-stats-row">
+        <view class="adm-stat">
+          <text class="adm-stat-val">{{coaches.length}}</text>
+          <text class="adm-stat-key">{{t.stats.totalCoaches}}</text>
+        </view>
+      </view>
+
+      <view class="adm-add-btn" bindtap="openAddCoach">
+        <text>+ {{t.add}} {{t.tabs.coaches}}</text>
+      </view>
+
+      <view wx:if="{{coaches.length === 0}}" class="adm-empty">
+        <text>{{t.empty.coaches}}</text>
+      </view>
+      <view wx:for="{{coaches}}" wx:key="id" class="adm-card">
+        <view class="adm-card-top">
+          <view class="adm-avatar adm-avatar-coach">
+            <text class="adm-avatar-letter">{{item.name ? item.name[0] : 'C'}}</text>
+          </view>
+          <view class="adm-card-info">
+            <text class="adm-card-title">{{item.name}}</text>
+            <text class="adm-card-sub">{{item.email || '—'}}</text>
+          </view>
+          <view class="adm-badge adm-badge-dim">
+            <text>{{item.user_count || 0}}</text>
+          </view>
+        </view>
+        <view class="adm-card-meta">
+          <text wx:if="{{item.phone}}" class="adm-meta-item">{{t.coach.phone}}: {{item.phone}}</text>
+          <text class="adm-meta-item">{{t.coach.language}}: {{item.language || '—'}}</text>
+        </view>
+        <view class="adm-card-actions" catchtap="noop">
+          <view class="adm-action-btn adm-action-edit" catchtap="openEditCoach" data-coach="{{item}}">
+            <text>{{t.edit}}</text>
+          </view>
+          <view class="adm-action-btn adm-action-del" catchtap="handleDeleteCoach" data-coach="{{item}}">
+            <text>{{t.delete}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view style="height: 48rpx;"></view>
+    </view>
+  </scroll-view>
+
+  <!-- ════ DOTS TAB ════ -->
+  <scroll-view wx:elif="{{tab === 'dots'}}" class="adm-scroll" scroll-y="true">
+    <view class="adm-inner">
+
+      <view class="adm-stats-row">
+        <view class="adm-stat">
+          <text class="adm-stat-val">{{dots.length}}</text>
+          <text class="adm-stat-key">{{t.stats.totalDots}}</text>
+        </view>
+      </view>
+
+      <view class="adm-add-btn" bindtap="openAddDot">
+        <text>+ {{t.add}} {{t.tabs.dots}}</text>
+      </view>
+
+      <view wx:if="{{dots.length === 0}}" class="adm-empty">
+        <text>{{t.empty.dots}}</text>
+      </view>
+      <view wx:for="{{dots}}" wx:key="id" class="adm-card adm-card-dot">
+        <view class="adm-card-top">
+          <view class="adm-dot-swatch" style="background: {{item.color || '#6375EC'}};"></view>
+          <view class="adm-card-info">
+            <text class="adm-card-title">{{item.name || item.name_en}}</text>
+            <text class="adm-card-sub">{{item.key_name}}</text>
+          </view>
+          <view class="adm-type-tag {{item.is_isolate ? 'adm-type-isolate' : 'adm-type-blend'}}">
+            <text>{{item.is_isolate ? t.dot.isolate : t.dot.blend}}</text>
+          </view>
+        </view>
+        <view wx:if="{{item.description}}" class="adm-card-desc">
+          <text>{{item.description}}</text>
+        </view>
+        <view class="adm-card-actions" catchtap="noop">
+          <view class="adm-action-btn adm-action-edit" catchtap="openEditDot" data-dot="{{item}}">
+            <text>{{t.edit}}</text>
+          </view>
+          <view class="adm-action-btn adm-action-del" catchtap="handleDeleteDot" data-dot="{{item}}">
+            <text>{{t.delete}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view style="height: 48rpx;"></view>
+    </view>
+  </scroll-view>
+
+  <!-- ════ STORE TAB ════ -->
+  <scroll-view wx:elif="{{tab === 'store'}}" class="adm-scroll" scroll-y="true">
+    <view class="adm-inner">
+
+      <!-- Sub-tabs -->
+      <view class="adm-subtab-row">
+        <view class="adm-subtab {{storeSubTab === 'items' ? 'adm-subtab-active' : ''}}" bindtap="switchStoreTab" data-tab="items">
+          <text>{{t.store.itemsTab}}</text>
+        </view>
+        <view class="adm-subtab {{storeSubTab === 'orders' ? 'adm-subtab-active' : ''}}" bindtap="switchStoreTab" data-tab="orders">
+          <text>{{t.store.ordersTab}}</text>
+        </view>
+      </view>
+
+      <!-- Items -->
+      <block wx:if="{{storeSubTab === 'items'}}">
+        <view class="adm-add-btn" bindtap="openAddItem">
+          <text>+ {{t.add}} {{t.store.itemsTab}}</text>
+        </view>
+
+        <view wx:if="{{storeItems.length === 0}}" class="adm-empty">
+          <text>{{t.empty.items}}</text>
+        </view>
+        <view wx:for="{{storeItems}}" wx:key="id" class="adm-card">
+          <view class="adm-card-top">
+            <view class="adm-card-info">
+              <view class="adm-item-title-row">
+                <text class="adm-card-title">{{item.name_en || item.name}}</text>
+                <view wx:if="{{item.tag}}" class="adm-item-tag adm-item-tag-{{item.tag}}">
+                  <text>{{item.tag === 'bestseller' ? t.store.bestseller : t.store.value}}</text>
+                </view>
+              </view>
+              <text class="adm-card-sub">{{item.key_name}}</text>
+            </view>
+            <view class="adm-active-badge {{item.active !== false ? 'adm-active-on' : 'adm-active-off'}}">
+              <text>{{item.active !== false ? t.store.yes : t.store.no}}</text>
+            </view>
+          </view>
+          <view class="adm-price-row">
+            <text class="adm-price">¥{{item.price_cny}}</text>
+            <text class="adm-price-usd"> / ${{item.price_usd}}</text>
+            <text wx:if="{{item.unit_en}}" class="adm-price-unit"> · {{item.unit_en}}</text>
+          </view>
+          <view class="adm-card-actions" catchtap="noop">
+            <view class="adm-action-btn adm-action-edit" catchtap="openEditItem" data-item="{{item}}">
+              <text>{{t.edit}}</text>
+            </view>
+            <view class="adm-action-btn adm-action-del" catchtap="handleDeleteItem" data-item="{{item}}">
+              <text>{{t.delete}}</text>
+            </view>
+          </view>
+        </view>
+      </block>
+
+      <!-- Orders -->
+      <block wx:elif="{{storeSubTab === 'orders'}}">
+        <view wx:if="{{orders.length === 0}}" class="adm-empty">
+          <text>{{t.empty.orders}}</text>
+        </view>
+        <view wx:for="{{orders}}" wx:key="id" class="adm-card adm-order-card" bindtap="handleUpdateOrderStatus" data-order="{{item}}">
+          <view class="adm-card-top">
+            <view class="adm-card-info">
+              <text class="adm-card-title">{{item.item_name || item._shortId}}</text>
+              <text class="adm-card-sub">{{t.store.orderId}}: {{item._shortId}}…</text>
+            </view>
+            <view class="adm-order-status adm-order-{{item.status}}">
+              <text>{{item.status}}</text>
+            </view>
+          </view>
+          <view class="adm-card-meta">
+            <text class="adm-meta-item">{{t.store.qty}}: {{item.quantity}}</text>
+            <text wx:if="{{item.total_price}}" class="adm-meta-item">{{t.store.price}}: ¥{{item.total_price}}</text>
+            <text class="adm-meta-item">{{item._dateFmt}}</text>
+          </view>
+        </view>
+      </block>
+
+      <view style="height: 48rpx;"></view>
+    </view>
+  </scroll-view>
+
+  <!-- ════ USER DETAIL OVERLAY ════ -->
+  <view wx:if="{{detailOpen}}" class="adm-overlay">
+    <view class="adm-detail-panel">
+
+      <view class="adm-detail-header">
+        <text class="adm-detail-title">{{detailUser.nickname || detailUser.external_id || '—'}}</text>
+        <view class="adm-close-btn" bindtap="closeUserDetail">✕</view>
+      </view>
+
+      <scroll-view class="adm-detail-scroll" scroll-y="true">
+        <view class="adm-detail-inner">
+
+          <!-- Profile section -->
+          <text class="adm-section-title">{{t.detail.profile}}</text>
+          <view class="adm-info-grid">
+            <text class="adm-info-key">{{t.user.email}}</text>
+            <text class="adm-info-val">{{detailUser.email || '—'}}</text>
+            <text class="adm-info-key">{{t.user.phone}}</text>
+            <text class="adm-info-val">{{detailUser.phone || '—'}}</text>
+            <text class="adm-info-key">{{t.user.gender}}</text>
+            <text class="adm-info-val">{{detailUser.gender || '—'}}</text>
+            <text class="adm-info-key">{{t.user.birthDate}}</text>
+            <text class="adm-info-val">{{detailUser.birth_date ? detailUser.birth_date.slice(0,10) : '—'}}</text>
+            <text class="adm-info-key">{{t.user.language}}</text>
+            <text class="adm-info-val">{{detailUser.language || '—'}}</text>
+            <text class="adm-info-key">{{t.user.externalApp}}</text>
+            <text class="adm-info-val">{{detailUser.external_app || '—'}}</text>
+            <text class="adm-info-key">{{t.user.bioAge}}</text>
+            <text class="adm-info-val" style="color: {{detailUser._bioAgeColor}}">{{detailUser.bio_age || '—'}}</text>
+            <text class="adm-info-key">{{t.user.chronoAge}}</text>
+            <text class="adm-info-val">{{detailUser._cAge || '—'}}</text>
+            <text class="adm-info-key">{{t.user.joined}}</text>
+            <text class="adm-info-val">{{detailUser._joinedFmt}}</text>
+          </view>
+
+          <!-- Biomarkers section -->
+          <text class="adm-section-title" style="margin-top: 32rpx;">{{t.detail.biomarkers}}</text>
+
+          <view wx:if="{{detailBmLoading}}" class="adm-bm-loading">
+            <view class="adm-pulse"></view>
+            <view class="adm-pulse"></view>
+            <view class="adm-pulse"></view>
+          </view>
+          <view wx:elif="{{detailBmList.length === 0}}" class="adm-empty">
+            <text>{{t.detail.noData}}</text>
+          </view>
+          <view wx:else class="adm-bm-list">
+            <view wx:for="{{detailBmList}}" wx:key="key" class="adm-bm-row">
+              <view class="adm-bm-dot" style="background: {{item.color}};"></view>
+              <text class="adm-bm-label">{{item.label}}</text>
+              <text class="adm-bm-val" style="color: {{item.value !== null ? item.color : '#4A6A8A'}}">
+                {{item.value !== null ? item.value : '—'}}
+              </text>
+              <text class="adm-bm-unit">{{item.unit}}</text>
+            </view>
+          </view>
+
+          <view style="height: 48rpx;"></view>
+        </view>
+      </scroll-view>
+
+    </view>
+  </view>
+
+  <!-- ════ ADD / EDIT MODAL ════ -->
+  <view wx:if="{{modalOpen}}" class="adm-overlay">
+    <view class="adm-modal">
+
+      <view class="adm-modal-header">
+        <text class="adm-modal-title">{{modalTitle}}</text>
+        <view wx:if="{{!modalBusy}}" class="adm-close-btn" bindtap="closeModal">✕</view>
+      </view>
+
+      <scroll-view class="adm-modal-scroll" scroll-y="true">
+        <view class="adm-modal-inner">
+
+          <!-- ── USER FORM ── -->
+          <block wx:if="{{modalType === 'user'}}">
+            <text class="adm-field-label">{{t.user.externalId}}</text>
+            <input class="adm-field-input" value="{{form.external_id}}" bindinput="onFormInput" data-key="external_id" placeholder="openid / id" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.user.externalApp}}</text>
+            <picker range="{{t.appOptions}}" value="{{formAppIdx}}" bindchange="onPickerApp">
+              <view class="adm-field-picker">
+                <text>{{t.appOptions[formAppIdx]}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
+            <text class="adm-field-label">{{t.user.nickname}}</text>
+            <input class="adm-field-input" value="{{form.nickname}}" bindinput="onFormInput" data-key="nickname" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.user.gender}}</text>
+            <picker range="{{t.genderOptions}}" value="{{formGenderIdx}}" bindchange="onPickerGender">
+              <view class="adm-field-picker">
+                <text>{{t.genderOptions[formGenderIdx]}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
+            <text class="adm-field-label">{{t.user.birthDate}}</text>
+            <picker mode="date" value="{{form.birth_date}}" start="1920-01-01" end="2015-12-31" bindchange="onDateChange">
+              <view class="adm-field-picker">
+                <text>{{form.birth_date || '—'}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
+            <text class="adm-field-label">{{t.user.language}}</text>
+            <picker range="{{t.langOptions}}" value="{{formLangIdx}}" bindchange="onPickerLang">
+              <view class="adm-field-picker">
+                <text>{{t.langOptions[formLangIdx]}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
+            <text class="adm-field-label">{{t.user.coach}}</text>
+            <picker range="{{coachPickerOptions}}" value="{{formCoachIdx}}" bindchange="onPickerCoach">
+              <view class="adm-field-picker">
+                <text>{{coachPickerOptions[formCoachIdx]}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
+            <text class="adm-field-label">{{t.user.phone}}</text>
+            <input class="adm-field-input" value="{{form.phone}}" bindinput="onFormInput" data-key="phone" type="number" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.user.email}}</text>
+            <input class="adm-field-input" value="{{form.email}}" bindinput="onFormInput" data-key="email" placeholder-class="adm-ph" />
+          </block>
+
+          <!-- ── COACH FORM ── -->
+          <block wx:elif="{{modalType === 'coach'}}">
+            <text class="adm-field-label">{{t.coach.name}} *</text>
+            <input class="adm-field-input" value="{{form.name}}" bindinput="onFormInput" data-key="name" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.coach.email}}</text>
+            <input class="adm-field-input" value="{{form.email}}" bindinput="onFormInput" data-key="email" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.coach.phone}}</text>
+            <input class="adm-field-input" value="{{form.phone}}" bindinput="onFormInput" data-key="phone" type="number" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.coach.language}}</text>
+            <picker range="{{t.langOptions}}" value="{{formLangIdx}}" bindchange="onPickerLang">
+              <view class="adm-field-picker">
+                <text>{{t.langOptions[formLangIdx]}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+          </block>
+
+          <!-- ── DOT FORM ── -->
+          <block wx:elif="{{modalType === 'dot'}}">
+            <text class="adm-field-label">{{t.dot.key}} *</text>
+            <input class="adm-field-input" value="{{form.key_name}}" bindinput="onFormInput" data-key="key_name" placeholder="e.g. omega3" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.dot.nameEn}} *</text>
+            <input class="adm-field-input" value="{{form.name_en}}" bindinput="onFormInput" data-key="name_en" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.dot.nameZh}}</text>
+            <input class="adm-field-input" value="{{form.name_zh}}" bindinput="onFormInput" data-key="name_zh" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.dot.color}} (EN)</text>
+            <input class="adm-field-input" value="{{form.color}}" bindinput="onFormInput" data-key="color" placeholder="e.g. Ocean Blue" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.dot.color}} (ZH)</text>
+            <input class="adm-field-input" value="{{form.color_zh}}" bindinput="onFormInput" data-key="color_zh" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.dot.type}}</text>
+            <picker range="{{t.typeOptions}}" value="{{formTypeIdx}}" bindchange="onPickerType">
+              <view class="adm-field-picker">
+                <text>{{t.typeOptions[formTypeIdx]}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
+            <text class="adm-field-label">{{t.dot.desc}}</text>
+            <input class="adm-field-input" value="{{form.description}}" bindinput="onFormInput" data-key="description" placeholder-class="adm-ph" />
+          </block>
+
+          <!-- ── STORE ITEM FORM ── -->
+          <block wx:elif="{{modalType === 'item'}}">
+            <text class="adm-field-label">{{t.store.key}} *</text>
+            <input class="adm-field-input" value="{{form.key_name}}" bindinput="onFormInput" data-key="key_name" placeholder="e.g. kino_chip_starter" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.store.nameEn}} *</text>
+            <input class="adm-field-input" value="{{form.name_en}}" bindinput="onFormInput" data-key="name_en" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.store.nameZh}}</text>
+            <input class="adm-field-input" value="{{form.name_zh}}" bindinput="onFormInput" data-key="name_zh" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.store.descEn}}</text>
+            <input class="adm-field-input" value="{{form.desc_en}}" bindinput="onFormInput" data-key="desc_en" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.store.descZh}}</text>
+            <input class="adm-field-input" value="{{form.desc_zh}}" bindinput="onFormInput" data-key="desc_zh" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.store.unit}}</text>
+            <input class="adm-field-input" value="{{form.unit_en}}" bindinput="onFormInput" data-key="unit_en" placeholder="e.g. pack" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.store.unitZh}}</text>
+            <input class="adm-field-input" value="{{form.unit_zh}}" bindinput="onFormInput" data-key="unit_zh" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.store.priceCny}}</text>
+            <input class="adm-field-input" value="{{form.price_cny}}" bindinput="onFormInput" data-key="price_cny" type="digit" placeholder="0.00" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.store.priceUsd}}</text>
+            <input class="adm-field-input" value="{{form.price_usd}}" bindinput="onFormInput" data-key="price_usd" type="digit" placeholder="0.00" placeholder-class="adm-ph" />
+
+            <text class="adm-field-label">{{t.store.tag}}</text>
+            <picker range="{{t.tagOptions}}" value="{{formTagIdx}}" bindchange="onPickerTag">
+              <view class="adm-field-picker">
+                <text>{{t.tagOptions[formTagIdx]}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
+            <text class="adm-field-label">{{t.store.isActive}}</text>
+            <picker range="{{t.activeOptions}}" value="{{formActiveIdx}}" bindchange="onPickerActive">
+              <view class="adm-field-picker">
+                <text>{{t.activeOptions[formActiveIdx]}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
+            <text class="adm-field-label">{{t.store.sortOrder}}</text>
+            <input class="adm-field-input" value="{{form.sort_order}}" bindinput="onFormInput" data-key="sort_order" type="number" placeholder="0" placeholder-class="adm-ph" />
+          </block>
+
+          <!-- Error -->
+          <text wx:if="{{modalError}}" class="adm-modal-error">{{modalError}}</text>
+
+          <view style="height: 24rpx;"></view>
+        </view>
+      </scroll-view>
+
+      <!-- Footer actions -->
+      <view class="adm-modal-footer">
+        <view wx:if="{{!modalBusy}}" class="adm-modal-cancel" bindtap="closeModal">
+          <text>{{t.cancel}}</text>
+        </view>
+        <view class="adm-modal-save {{modalBusy ? 'adm-modal-save-busy' : ''}}" bindtap="handleSave">
+          <text>{{modalBusy ? t.saving : t.save}}</text>
+        </view>
+      </view>
+
+    </view>
+  </view>
+
+</view>
