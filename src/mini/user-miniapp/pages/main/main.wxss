@@ -1080,3 +1080,33 @@
   font-size: 20rpx;
   color: rgba(166, 196, 229, 0.3);
 }
+
+/* ── Kino chip scan ── */
+
+.kino-scan-bar {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+}
+
+.kino-scan-btn {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  background: #6375EC;
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 600;
+  padding: 24rpx 56rpx;
+  border-radius: 48rpx;
+  box-shadow: 0 4rpx 24rpx rgba(99, 117, 236, 0.5);
+}
+
+.kino-scan-icon {
+  font-size: 36rpx;
+}
+
+.kino-scan-label {
+  font-size: 30rpx;
+  font-weight: 600;
+}

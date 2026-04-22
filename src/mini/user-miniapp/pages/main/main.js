@@ -68,7 +68,11 @@ const T = {
     toolFormulaDots: '配制 DOTS',
     toolTestChip: '使用芯片',
     toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
-    toolTestChipMsg: '我想使用 Kino 测试芯片',
+    toolTestChipMsg: '我想使用 Kino 芯片',
+    kinoScanPrompt: '请扫描您 Kino 芯片上的二维码，以登记您的样本。',
+    kinoScanBtn: '扫描二维码',
+    kinoScanSuccess: '您的 Kino 芯片已成功登记！我们将处理您的样本，完成后会通知您结果。',
+    kinoScanError: '登记失败，请重试。',
     orderStatus: {
       pending: '待处理', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', cancelled: '已取消',
@@ -147,9 +151,13 @@ const T = {
     storeSubProducts: 'Products', storeSubOrders: 'My Orders',
     noOrders: 'No orders yet.',
     toolFormulaDots: 'Formula my dots',
-    toolTestChip: 'Use Test Chip',
+    toolTestChip: 'Use Kino Chip',
     toolFormulaDotMsg: 'Please formula my dots plan',
-    toolTestChipMsg: 'I want to use a Kino test chip',
+    toolTestChipMsg: 'I want to use a Kino chip',
+    kinoScanPrompt: 'Please scan the QR code on your Kino chip to register your sample.',
+    kinoScanBtn: 'Scan QR Code',
+    kinoScanSuccess: 'Your Kino chip has been registered! We\'ll process your sample and notify you with the results.',
+    kinoScanError: 'Registration failed. Please try again.',
     orderStatus: {
       pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', cancelled: 'Cancelled',
@@ -323,6 +331,7 @@ Page({
     chatInput: '',
     typing: false,
     toolboxOpen: false,
+    kinoScanPending: false,
     obStep: null,   // 'name'|'gender'|'birthday'|'body'|'conditions'|'done'|null
     obName: '',
     obBirthday: '',
@@ -563,10 +572,34 @@ Page({
     const { t, typing, obStep } = this.data
     if (typing || obStep !== 'done') return
     this.setData({ toolboxOpen: false })
-    let text = ''
-    if (action === 'formula_dots') text = t.toolFormulaDotMsg
-    else if (action === 'test_chip') text = t.toolTestChipMsg
-    if (text) this._sendMessage(text)
+    if (action === 'formula_dots') {
+      this._sendMessage(t.toolFormulaDotMsg)
+    } else if (action === 'test_chip') {
+      this._addMsg('ai', t.kinoScanPrompt)
+      this.setData({ kinoScanPending: true })
+    }
+  },
+
+  handleKinoScan() {
+    const { user, t } = this.data
+    wx.scanCode({
+      onlyFromCamera: false,
+      success: async (res) => {
+        const chip_id = res.result
+        this.setData({ kinoScanPending: false })
+        this._addMsg('user', chip_id)
+        this.setData({ typing: true })
+        try {
+          await this._req(`${BASE}/api/kino-scan`, 'POST', { openid: user.user_id, chip_id })
+          this._addMsg('ai', t.kinoScanSuccess)
+        } catch (e) {
+          this._addMsg('ai', t.kinoScanError)
+        } finally {
+          this.setData({ typing: false })
+        }
+      },
+      fail: () => {},
+    })
   },
 
   async handleSend() {

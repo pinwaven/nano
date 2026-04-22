@@ -687,6 +687,25 @@ async function handlePostChat(body) {
     return { success: true, user_id, biomarkers: biomarkerData || null, bioage_profile: bioAgeData || null };
 }
 
+async function handlePostKinoScan(body) {
+    const { openid, chip_id } = body;
+    if (!openid) throw new Error('openid is required');
+    if (!chip_id) throw new Error('chip_id is required');
+
+    const userResult = await pool.query(
+        'SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1',
+        [openid]
+    );
+    if (userResult.rows.length === 0) throw new Error('User not found');
+    const user_id = userResult.rows[0].user_id;
+
+    const result = await pool.query(
+        'INSERT INTO scans (user_id, scan_status, scan_results) VALUES ($1, $2, $3) RETURNING id',
+        [user_id, 'pending', JSON.stringify({ chip_id })]
+    );
+    return { success: true, scan_id: result.rows[0].id };
+}
+
 exports.handler = async (req, resp, context) => {
     const isStandardHttp = resp && typeof resp.send === 'function';
     let event = req;
@@ -782,6 +801,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostDots(parsedBody);
             } else if (path === '/users') {
                 result = await handlePostUsers(parsedBody);
+            } else if (path.includes('/kino-scan')) {
+                result = await handlePostKinoScan(parsedBody);
             } else {
                 result = await handlePostChat(parsedBody);
             }

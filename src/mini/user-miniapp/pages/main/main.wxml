@@ -164,6 +164,14 @@
         </view>
       </view>
 
+      <!-- Kino chip scan button -->
+      <view wx:if="{{kinoScanPending}}" class="ob-bar kino-scan-bar">
+        <view class="kino-scan-btn" bindtap="handleKinoScan">
+          <text class="kino-scan-icon">⬡</text>
+          <text class="kino-scan-label">{{t.kinoScanBtn}}</text>
+        </view>
+      </view>
+
       <!-- Normal chat input -->
       <view wx:if="{{obStep === 'done'}}" class="input-container">
         <view wx:if="{{toolboxOpen}}" class="toolbox-panel">
