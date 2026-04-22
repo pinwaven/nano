@@ -7,6 +7,37 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 ## [Unreleased]
 
 ### Added
+- **Nano Mini App — Admin panel** (`src/mini/nano-miniapp/pages/admin/`): full four-tab control panel (Users, Coaches, Dots, Store) accessible via ⚙ icon in the nano miniapp menu. Features per-tab card lists, bottom-sheet add/edit forms, bilingual dot names, and ingredient editing (name + mg rows with add/remove).
+- **Nano Mini App — Formula generation flow**: "Formula my dots" chat tool now calls `POST /api/formula-dots`, shows a generating message, then a completion message with a tappable action card that navigates directly to the Dots tab.
+- **Nano Mini App — Action message type**: chat messages now support `role: 'action'` cards rendered as tappable banners; wired to `handleMsgAction` which routes to the appropriate tab.
+- **Backend — `POST /api/formula-dots`** (worker): generates a 7-day personalised Waven Dots dispensing plan and saves it as a `nutrition_plan` notification.
+  - LLM (qwen-plus via DashScope) receives the formulary (all dots with ingredient mg data), the user's latest kino-chip biomarker values, and bio-age profile.
+  - Prompt instructs the model to output one `DXX:N` count line per dot; explicit reference ranges (hsCRP, IL-6, GDF-15, GA, Cystatin-C) and a scoring guide (3–4 normal · 5–7 elevated · 8–10 critical) are included so counts vary by clinical need.
+  - Worker parses the `DXX:N` lines; any dot not covered by the LLM falls back to a deterministic biomarker-severity score.
+  - The resulting per-dot counts are passed to `_generatePlanText` which produces the 7-day calendar text in the `Dxx Month D, Weekday: Morning DXXxN … Evening DXXxN …` format consumed by `parsePlan` in the miniapp.
+- **Backend — deterministic fallback scorer** (`_scoreMarker`, `_calcDotCounts`, `_generatePlanText` in worker): scores each biomarker on a 0–3 severity scale and maps it to per-dot counts (base 3, +score per relevant marker, clamped 1–10); used when the LLM output is missing a dot key.
+- **Login screen**: replaced placeholder "W" ring with `waven-logo-icon.png`.
+
+### Changed
+- **"营养点" renamed to "原粒"** throughout nano-miniapp admin panel and web admin panel.
+- **Admin panel coach label**: Chinese label updated to "教练".
+- **Admin panel tab text**: inactive tabs use `#7A9ABF` at weight 500; active tab uses `#A0B4FF` at weight 700 for clearer visibility.
+- **`prompts/systemNutrition.js`** rewritten: LLM now outputs only `DXX:N` count lines (not a full 7-day text block), with explicit biomarker reference ranges and a clear scoring guide; 7-day calendar is assembled in code from those counts.
+- **`POST /api/formula-dots`** model bumped from `qwen-turbo` to `qwen-plus` for better instruction-following on the structured count output.
+- Dot `ingredients` / `ingredients_zh` columns now included in `PUT /api/dots` and `POST /api/dots` upsert queries; stored as JSONB `[{name, mg}]` arrays.
+
+### Fixed
+- Chat scroll: switched from `scroll-into-view` to alternating `scroll-top` (999998/999999) via `wx.nextTick` so the view always lands at the last message.
+- Admin dots edit modal: changed `max-height` → `height: 88vh` on the bottom sheet so flex children (including ingredient rows) can scroll correctly.
+- Modal background scroll bleed: `catchtouchmove="noop"` added to both overlay and panel in admin.wxml.
+- Ingredient display showing `[object Object]`: fixed `_ingrToArr` and save path in admin.js to correctly handle the `[{name, mg}]` array format.
+- `handlePostFormulaDots`: `getNowShanghai()` returns a Luxon DateTime; changed `.toISOString()` → `.toISO()` (Luxon API) so the start date is correctly derived instead of throwing and silently returning the old plan.
+
+---
+
+## [Unreleased — pre-refactor]
+
+### Added
 - **Store — Mini App:** New Store tab (fourth tab) in the WeChat Mini Program. Products are fetched from `GET /api/store-items`. Tapping a product shows a confirmation modal; confirming posts an order to `POST /api/orders`. Bilingual display (zh/en); language-toggle re-maps labels from cached API data without a second request. Loading spinner and empty state included.
 - **Store — Admin Panel:** New "Store" section in the admin panel sidebar (between Dots and Simulators), with two subtabs:
   - *Items:* full CRUD for store products — bilingual name/description/unit, CNY/USD pricing, tag (Best Seller / Value Pack), sort order, active toggle.
