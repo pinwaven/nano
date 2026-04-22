@@ -21,6 +21,11 @@
         <text class="menu-item-label">{{lang === 'zh' ? 'English' : '中文'}}</text>
       </view>
       <view class="menu-divider"></view>
+      <view class="menu-item" bindtap="openKinoSim">
+        <text class="menu-item-icon">⬡</text>
+        <text class="menu-item-label">{{t.kinoSimMenu}}</text>
+      </view>
+      <view class="menu-divider"></view>
       <view class="menu-item" bindtap="handleLogout">
         <text class="menu-item-icon">↪</text>
         <text class="menu-item-label">{{t.logout}}</text>
@@ -469,6 +474,102 @@
 
   </view>
   <!-- end tab-content -->
+
+  <!-- ── Kino Simulator Overlay ── -->
+  <view wx:if="{{kinoSimOpen}}" class="ksm-overlay">
+    <view class="ksm-container">
+
+      <view class="ksm-header" style="padding-top: {{statusBarHeight}}px;">
+        <text class="ksm-title">{{t.kinoSimTitle}}</text>
+        <view class="ksm-close" bindtap="closeKinoSim">✕</view>
+      </view>
+
+      <scroll-view class="ksm-body" scroll-y="true">
+      <view class="ksm-body-inner">
+
+        <!-- Device ring -->
+        <view class="ksm-ring-row">
+        <view class="ksm-device-wrap ksm-state-{{kinoSimStatus}}">
+          <view class="ksm-ring-track"></view>
+          <view class="ksm-ring-face">
+            <view wx:if="{{kinoSimStatus === 'complete' && kinoSimBmList.length > 0}}"
+              class="ksm-face-slide {{kinoSimSlideVisible ? 'ksm-slide-visible' : ''}}">
+              <text class="ksm-slide-index">{{kinoSimSlideIndex + 1}} / {{kinoSimBmList.length}}</text>
+              <text class="ksm-slide-label">{{kinoSimBmList[kinoSimSlideIndex].label}}</text>
+              <text class="ksm-slide-val">{{kinoSimBmList[kinoSimSlideIndex].value !== null ? kinoSimBmList[kinoSimSlideIndex].value : '—'}}</text>
+              <text class="ksm-slide-unit">{{kinoSimBmList[kinoSimSlideIndex].unit}}</text>
+            </view>
+            <view wx:else class="ksm-face-static">
+              <text class="ksm-face-label">STATUS</text>
+              <text class="ksm-face-status ksm-face-status-{{kinoSimStatus}}">
+                {{kinoSimStatus === 'ready' ? t.kinoSimStatusReady : kinoSimStatus === 'analyzing' ? t.kinoSimStatusAnalyzing : kinoSimStatus === 'complete' ? t.kinoSimStatusComplete : t.kinoSimStatusFailed}}
+              </text>
+              <text class="ksm-face-user">{{user.nickname || 'User'}}</text>
+            </view>
+          </view>
+        </view>
+        </view>
+
+        <!-- Results panel -->
+        <view wx:if="{{kinoSimStatus === 'complete' && kinoSimBmList.length > 0}}" class="ksm-results">
+          <view class="ksm-tabs">
+            <view class="ksm-tab {{kinoSimActiveTab === 'bioage' ? 'ksm-tab-active' : ''}}"
+              bindtap="onKinoSimTabChange" data-tab="bioage">
+              <text>{{t.kinoSimTabBioAge}}</text>
+            </view>
+            <view class="ksm-tab {{kinoSimActiveTab === 'biomarkers' ? 'ksm-tab-active' : ''}}"
+              bindtap="onKinoSimTabChange" data-tab="biomarkers">
+              <text>{{t.kinoSimTabBm}}</text>
+            </view>
+          </view>
+
+          <view wx:if="{{kinoSimActiveTab === 'bioage'}}" class="ksm-tab-content">
+            <view class="ksm-bioage-row">
+              <view class="ksm-bioage-chip">
+                <text class="ksm-bioage-num" style="color: {{kinoSimBioAgeColor}}">{{kinoSimBioAge}}</text>
+                <text class="ksm-bioage-chip-label">{{t.kinoSimBioAgeLabel}}</text>
+              </view>
+              <view class="ksm-bioage-chip ksm-bioage-chip-dim">
+                <text class="ksm-bioage-num" style="color: #A6C4E5">{{kinoSimChronoAge}}</text>
+                <text class="ksm-bioage-chip-label">{{t.kinoSimChronoLabel}}</text>
+              </view>
+            </view>
+            <view wx:for="{{kinoSimSubAgeList}}" wx:key="key" class="ksm-sub-row">
+              <view class="ksm-sub-dot" style="background: {{item.color}}"></view>
+              <text class="ksm-sub-label">{{item.label}}</text>
+              <text class="ksm-sub-val" style="color: {{item.color}}">{{item.value}}</text>
+            </view>
+          </view>
+
+          <view wx:if="{{kinoSimActiveTab === 'biomarkers'}}" class="ksm-tab-content">
+            <view wx:for="{{kinoSimBmList}}" wx:key="key" class="ksm-bm-row">
+              <text class="ksm-bm-label">{{item.label}}</text>
+              <text class="ksm-bm-val">{{item.value !== null ? item.value : '—'}}<text class="ksm-bm-unit"> {{item.unit}}</text></text>
+            </view>
+          </view>
+        </view>
+
+        <!-- Action button -->
+        <view class="ksm-btn ksm-btn-{{kinoSimStatus}}" bindtap="handleKinoSimStart">
+          <view wx:if="{{kinoSimStatus === 'analyzing'}}" class="ksm-dots-row">
+            <view class="ksm-dot"></view>
+            <view class="ksm-dot"></view>
+            <view class="ksm-dot"></view>
+          </view>
+          <text wx:elif="{{kinoSimStatus === 'complete'}}">{{t.kinoSimBtnRunAnother}}</text>
+          <text wx:else>{{t.kinoSimBtnStart}}</text>
+        </view>
+
+        <view class="ksm-quit-btn" bindtap="closeKinoSim">
+          <text>✕  {{t.kinoSimQuit}}</text>
+        </view>
+
+        <view style="height: 48rpx;"></view>
+      </view>
+      </scroll-view>
+
+    </view>
+  </view>
 
   <!-- ── Bottom Tab Bar ── -->
   <view class="tab-bar">

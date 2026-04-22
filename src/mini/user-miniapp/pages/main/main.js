@@ -69,6 +69,19 @@ const T = {
     toolTestChip: '使用芯片',
     toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
     toolTestChipMsg: '我想使用 Kino 芯片',
+    kinoSimMenu: 'Kino 模拟器',
+    kinoSimTitle: 'KINO 模拟器',
+    kinoSimStatusReady: '就绪',
+    kinoSimStatusAnalyzing: '分析中…',
+    kinoSimStatusComplete: '完成',
+    kinoSimStatusFailed: '失败',
+    kinoSimBtnStart: '开始生物标志物检测',
+    kinoSimBtnRunAnother: '再次检测',
+    kinoSimQuit: '退出模拟器',
+    kinoSimTabBioAge: '生物年龄',
+    kinoSimTabBm: '生物标志物',
+    kinoSimBioAgeLabel: '生物年龄',
+    kinoSimChronoLabel: '实际年龄',
     kinoScanPrompt: '请扫描您 Kino 芯片上的二维码，以登记您的样本。',
     kinoScanBtn: '扫描二维码',
     kinoScanSuccess: '您的 Kino 芯片已成功登记！我们将处理您的样本，完成后会通知您结果。',
@@ -154,6 +167,19 @@ const T = {
     toolTestChip: 'Use Kino Chip',
     toolFormulaDotMsg: 'Please formula my dots plan',
     toolTestChipMsg: 'I want to use a Kino chip',
+    kinoSimMenu: 'Kino Simulator',
+    kinoSimTitle: 'KINO SIMULATOR',
+    kinoSimStatusReady: 'Ready',
+    kinoSimStatusAnalyzing: 'Analyzing...',
+    kinoSimStatusComplete: 'Complete',
+    kinoSimStatusFailed: 'Failed',
+    kinoSimBtnStart: 'Start Biomarker Test',
+    kinoSimBtnRunAnother: 'Run Another Test',
+    kinoSimQuit: 'Quit Simulator',
+    kinoSimTabBioAge: 'Bio Age',
+    kinoSimTabBm: 'Biomarkers',
+    kinoSimBioAgeLabel: 'BIO AGE',
+    kinoSimChronoLabel: 'CHRONO AGE',
     kinoScanPrompt: 'Please scan the QR code on your Kino chip to register your sample.',
     kinoScanBtn: 'Scan QR Code',
     kinoScanSuccess: 'Your Kino chip has been registered! We\'ll process your sample and notify you with the results.',
@@ -332,6 +358,18 @@ Page({
     typing: false,
     toolboxOpen: false,
     kinoScanPending: false,
+
+    // Kino Simulator
+    kinoSimOpen: false,
+    kinoSimStatus: 'ready',
+    kinoSimBmList: [],
+    kinoSimSubAgeList: [],
+    kinoSimBioAge: null,
+    kinoSimChronoAge: null,
+    kinoSimBioAgeColor: '#A6C4E5',
+    kinoSimActiveTab: 'bioage',
+    kinoSimSlideIndex: 0,
+    kinoSimSlideVisible: true,
     obStep: null,   // 'name'|'gender'|'birthday'|'body'|'conditions'|'done'|null
     obName: '',
     obBirthday: '',
@@ -371,6 +409,7 @@ Page({
   },
 
   _pollingTimer: null,
+  _kinoSlideTimer: null,
   _seenIds: null,
   _rawStoreItems: null,
   _rawStoreOrders: null,
@@ -404,10 +443,12 @@ Page({
 
   onHide() {
     this._stopPolling()
+    this._stopKinoSlide()
   },
 
   onUnload() {
     this._stopPolling()
+    this._stopKinoSlide()
   },
 
   // ── Tab navigation ──────────────────────────────────────────────────────────
@@ -433,6 +474,105 @@ Page({
     this.setData({ lang, t: T[lang], menuOpen: false, storeItems, storeOrders })
     this._loadHealth(this.data.user, lang)
     this._loadDots(this.data.user, lang)
+  },
+
+  // ── Kino Simulator ──────────────────────────────────────────────────────────
+
+  openKinoSim() {
+    this.setData({ kinoSimOpen: true, menuOpen: false })
+  },
+
+  closeKinoSim() {
+    this._stopKinoSlide()
+    this.setData({
+      kinoSimOpen: false, kinoSimStatus: 'ready',
+      kinoSimBmList: [], kinoSimSubAgeList: [],
+      kinoSimBioAge: null, kinoSimChronoAge: null, kinoSimBioAgeColor: '#A6C4E5',
+      kinoSimActiveTab: 'bioage', kinoSimSlideIndex: 0, kinoSimSlideVisible: true,
+    })
+  },
+
+  _stopKinoSlide() {
+    if (this._kinoSlideTimer) { clearInterval(this._kinoSlideTimer); this._kinoSlideTimer = null }
+  },
+
+  _startKinoSlide() {
+    this._stopKinoSlide()
+    const len = BM_META.length
+    this._kinoSlideTimer = setInterval(() => {
+      this.setData({ kinoSimSlideVisible: false })
+      setTimeout(() => {
+        const next = (this.data.kinoSimSlideIndex + 1) % len
+        this.setData({ kinoSimSlideIndex: next, kinoSimSlideVisible: true })
+      }, 300)
+    }, 2300)
+  },
+
+  onKinoSimTabChange(e) {
+    this.setData({ kinoSimActiveTab: e.currentTarget.dataset.tab })
+  },
+
+  async handleKinoSimStart() {
+    const { kinoSimStatus, user, lang } = this.data
+    if (kinoSimStatus === 'analyzing') return
+    if (kinoSimStatus === 'complete') {
+      this._stopKinoSlide()
+      this.setData({
+        kinoSimStatus: 'ready', kinoSimBmList: [], kinoSimSubAgeList: [],
+        kinoSimBioAge: null, kinoSimChronoAge: null, kinoSimBioAgeColor: '#A6C4E5',
+        kinoSimActiveTab: 'bioage', kinoSimSlideIndex: 0, kinoSimSlideVisible: true,
+      })
+      return
+    }
+    const t = T[lang]
+    this.setData({ kinoSimStatus: 'analyzing' })
+    try {
+      const randomCRP = Math.round((Math.random() * (3.5 - 0.2) + 0.2) * 100) / 100
+      const res = await this._req(`${BASE}/api/chat`, 'POST', {
+        openid: user.user_id,
+        test_type: 'kino_chip',
+        test_data: { hsCRP: randomCRP },
+      })
+      const biomarkers = res.data?.biomarkers || null
+      let bioageProfile = res.data?.bioage_profile || null
+      if (!bioageProfile) {
+        try {
+          const bmRes = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(user.user_id)}`)
+          const records = bmRes.data?.records || []
+          const latest = records[records.length - 1]
+          bioageProfile = latest?.data?.bioage_profile || null
+        } catch (e) {}
+      }
+      const bmList = BM_META.map(({ key, unit }) => ({
+        key, label: t.bmLabels[key] || key, unit,
+        value: biomarkers?.[key] ?? null,
+      }))
+      const subAgeList = bioageProfile?.SubAges
+        ? SUB_AGE_KEYS.map(key => ({
+            key,
+            label: t.subAgeLabels[key],
+            color: SUB_AGE_COLORS[key],
+            value: bioageProfile.SubAges[key] != null ? Number(bioageProfile.SubAges[key]).toFixed(1) : '—',
+          }))
+        : []
+      const rawBioAge = bioageProfile?.BioAge ?? null
+      const rawChronoAge = bioageProfile?.ChronoAge ?? null
+      this.setData({
+        kinoSimStatus: 'complete',
+        kinoSimBmList: bmList,
+        kinoSimSubAgeList: subAgeList,
+        kinoSimBioAge: rawBioAge ? Number(rawBioAge).toFixed(1) : '—',
+        kinoSimChronoAge: rawChronoAge ?? '—',
+        kinoSimBioAgeColor: bioAgeColor(rawBioAge, rawChronoAge),
+        kinoSimActiveTab: 'bioage',
+        kinoSimSlideIndex: 0,
+        kinoSimSlideVisible: true,
+      })
+      this._startKinoSlide()
+    } catch (e) {
+      this.setData({ kinoSimStatus: 'failed' })
+      setTimeout(() => { if (this.data.kinoSimOpen) this.setData({ kinoSimStatus: 'ready' }) }, 3000)
+    }
   },
 
   // ── Logout ──────────────────────────────────────────────────────────────────
