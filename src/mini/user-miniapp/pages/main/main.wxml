@@ -475,6 +475,44 @@
   </view>
   <!-- end tab-content -->
 
+  <!-- ── Kino Passcode Overlay ── -->
+  <view wx:if="{{kinoPassOpen}}" class="kpass-overlay">
+    <view class="kpass-box" style="margin-top: {{statusBarHeight + 44}}px;">
+
+      <view class="kpass-logo">⬡</view>
+      <text class="kpass-title">{{t.kinoSimPassTitle}}</text>
+
+      <!-- 4-dot indicator -->
+      <view class="kpass-dots">
+        <view class="kpass-dot {{kinoPassInput.length > 0 ? 'kpass-dot-filled' : ''}} {{kinoPassError ? 'kpass-dot-error' : ''}}"></view>
+        <view class="kpass-dot {{kinoPassInput.length > 1 ? 'kpass-dot-filled' : ''}} {{kinoPassError ? 'kpass-dot-error' : ''}}"></view>
+        <view class="kpass-dot {{kinoPassInput.length > 2 ? 'kpass-dot-filled' : ''}} {{kinoPassError ? 'kpass-dot-error' : ''}}"></view>
+        <view class="kpass-dot {{kinoPassInput.length > 3 ? 'kpass-dot-filled' : ''}} {{kinoPassError ? 'kpass-dot-error' : ''}}"></view>
+      </view>
+
+      <text wx:if="{{kinoPassError}}" class="kpass-error">{{t.kinoSimPassError}}</text>
+      <view wx:else style="height: 36rpx;"></view>
+
+      <!-- Numpad -->
+      <view class="kpass-numpad">
+        <view wx:for="{{[1,2,3,4,5,6,7,8,9]}}" wx:key="*this"
+          class="kpass-key" bindtap="handlePassKey" data-digit="{{item}}">
+          <text>{{item}}</text>
+        </view>
+        <view class="kpass-key kpass-key-empty"></view>
+        <view class="kpass-key" bindtap="handlePassKey" data-digit="0"><text>0</text></view>
+        <view class="kpass-key kpass-key-del" bindtap="handlePassDelete">
+          <text class="kpass-del-icon">⌫</text>
+        </view>
+      </view>
+
+      <view class="kpass-cancel" bindtap="closeKinoPass">
+        <text>{{t.logout}}</text>
+      </view>
+
+    </view>
+  </view>
+
   <!-- ── Kino Simulator Overlay ── -->
   <view wx:if="{{kinoSimOpen}}" class="ksm-overlay">
     <view class="ksm-container">

@@ -70,6 +70,8 @@ const T = {
     toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
     toolTestChipMsg: '我想使用 Kino 芯片',
     kinoSimMenu: 'Kino 模拟器',
+    kinoSimPassTitle: '输入密码',
+    kinoSimPassError: '密码错误',
     kinoSimTitle: 'KINO 模拟器',
     kinoSimStatusReady: '就绪',
     kinoSimStatusAnalyzing: '分析中…',
@@ -168,6 +170,8 @@ const T = {
     toolFormulaDotMsg: 'Please formula my dots plan',
     toolTestChipMsg: 'I want to use a Kino chip',
     kinoSimMenu: 'Kino Simulator',
+    kinoSimPassTitle: 'Enter Passcode',
+    kinoSimPassError: 'Incorrect passcode',
     kinoSimTitle: 'KINO SIMULATOR',
     kinoSimStatusReady: 'Ready',
     kinoSimStatusAnalyzing: 'Analyzing...',
@@ -359,6 +363,11 @@ Page({
     toolboxOpen: false,
     kinoScanPending: false,
 
+    // Kino Simulator passcode
+    kinoPassOpen: false,
+    kinoPassInput: '',
+    kinoPassError: false,
+
     // Kino Simulator
     kinoSimOpen: false,
     kinoSimStatus: 'ready',
@@ -479,7 +488,40 @@ Page({
   // ── Kino Simulator ──────────────────────────────────────────────────────────
 
   openKinoSim() {
-    this.setData({ kinoSimOpen: true, menuOpen: false })
+    this.setData({ menuOpen: false, kinoPassOpen: true, kinoPassInput: '', kinoPassError: false })
+  },
+
+  closeKinoPass() {
+    this.setData({ kinoPassOpen: false, kinoPassInput: '', kinoPassError: false })
+  },
+
+  handlePassKey(e) {
+    const { kinoPassInput, kinoPassError } = this.data
+    if (kinoPassError || kinoPassInput.length >= 4) return
+    const digit = e.currentTarget.dataset.digit
+    const next = kinoPassInput + digit
+    if (next.length < 4) {
+      this.setData({ kinoPassInput: next })
+      return
+    }
+    // 4th digit entered — check immediately
+    if (next === '1709') {
+      this.setData({ kinoPassInput: next })
+      setTimeout(() => {
+        this.setData({ kinoPassOpen: false, kinoPassInput: '', kinoSimOpen: true })
+      }, 180)
+    } else {
+      this.setData({ kinoPassInput: next, kinoPassError: true })
+      setTimeout(() => {
+        this.setData({ kinoPassInput: '', kinoPassError: false })
+      }, 900)
+    }
+  },
+
+  handlePassDelete() {
+    const { kinoPassInput } = this.data
+    if (kinoPassInput.length === 0) return
+    this.setData({ kinoPassInput: kinoPassInput.slice(0, -1), kinoPassError: false })
   },
 
   closeKinoSim() {

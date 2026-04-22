@@ -1111,6 +1111,124 @@
   font-weight: 600;
 }
 
+/* ── Kino Passcode Overlay ── */
+
+.kpass-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 101;
+  background: rgba(6, 15, 25, 0.96);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.kpass-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 0 80rpx;
+}
+
+.kpass-logo {
+  font-size: 72rpx;
+  color: #6375EC;
+  margin-bottom: 20rpx;
+}
+
+.kpass-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  letter-spacing: 4rpx;
+  color: #A6C4E5;
+  margin-bottom: 48rpx;
+}
+
+.kpass-dots {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20rpx;
+}
+
+.kpass-dot {
+  width: 22rpx;
+  height: 22rpx;
+  border-radius: 50%;
+  border: 2rpx solid rgba(99, 117, 236, 0.5);
+  background: transparent;
+  margin: 0 18rpx;
+  transition: background 0.15s;
+}
+
+.kpass-dot-filled {
+  background: #6375EC;
+  border-color: #6375EC;
+}
+
+.kpass-dot-error {
+  background: #E86060;
+  border-color: #E86060;
+  animation: kpass-shake 0.4s ease;
+}
+
+.kpass-error {
+  font-size: 24rpx;
+  color: #E86060;
+  height: 36rpx;
+  line-height: 36rpx;
+}
+
+.kpass-numpad {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+  margin-top: 16rpx;
+  margin-bottom: 40rpx;
+}
+
+.kpass-key {
+  width: 160rpx;
+  height: 100rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 8rpx 12rpx;
+  border-radius: 20rpx;
+  background: rgba(99, 117, 236, 0.1);
+  border: 1rpx solid rgba(99, 117, 236, 0.2);
+  font-size: 40rpx;
+  font-weight: 500;
+  color: #EEF2FF;
+}
+
+.kpass-key-empty {
+  background: transparent;
+  border-color: transparent;
+}
+
+.kpass-key-del {
+  background: rgba(99, 117, 236, 0.06);
+}
+
+.kpass-del-icon {
+  font-size: 36rpx;
+  color: #A6C4E5;
+}
+
+.kpass-cancel {
+  font-size: 26rpx;
+  color: rgba(166, 196, 229, 0.4);
+  padding: 16rpx 40rpx;
+}
+
+@keyframes kpass-shake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-8rpx); }
+  60%       { transform: translateX(8rpx); }
+}
+
 /* ── Kino Simulator Overlay ── */
 
 .ksm-overlay {
