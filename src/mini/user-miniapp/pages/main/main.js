@@ -65,6 +65,10 @@ const T = {
     storeEmpty: '暂无商品。',
     storeSubProducts: '商品', storeSubOrders: '我的订单',
     noOrders: '暂无订单记录。',
+    toolFormulaDots: '配制 DOTS',
+    toolTestChip: '使用芯片',
+    toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
+    toolTestChipMsg: '我想使用 Kino 测试芯片',
     orderStatus: {
       pending: '待处理', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', cancelled: '已取消',
@@ -142,6 +146,10 @@ const T = {
     storeEmpty: 'No products available.',
     storeSubProducts: 'Products', storeSubOrders: 'My Orders',
     noOrders: 'No orders yet.',
+    toolFormulaDots: 'Formula my dots',
+    toolTestChip: 'Use Test Chip',
+    toolFormulaDotMsg: 'Please formula my dots plan',
+    toolTestChipMsg: 'I want to use a Kino test chip',
     orderStatus: {
       pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', cancelled: 'Cancelled',
@@ -314,6 +322,7 @@ Page({
     messages: [],
     chatInput: '',
     typing: false,
+    toolboxOpen: false,
     obStep: null,   // 'name'|'gender'|'birthday'|'body'|'conditions'|'done'|null
     obName: '',
     obBirthday: '',
@@ -545,14 +554,33 @@ Page({
     this.setData({ chatInput: e.detail.value })
   },
 
+  toggleToolbox() {
+    this.setData({ toolboxOpen: !this.data.toolboxOpen })
+  },
+
+  handleToolAction(e) {
+    const action = e.currentTarget.dataset.action
+    const { t, typing, obStep } = this.data
+    if (typing || obStep !== 'done') return
+    this.setData({ toolboxOpen: false })
+    let text = ''
+    if (action === 'formula_dots') text = t.toolFormulaDotMsg
+    else if (action === 'test_chip') text = t.toolTestChipMsg
+    if (text) this._sendMessage(text)
+  },
+
   async handleSend() {
-    const { chatInput, typing, obStep, user } = this.data
+    const { chatInput, typing, obStep } = this.data
     const text = chatInput.trim()
     if (!text || typing || obStep !== 'done') return
+    this.setData({ chatInput: '' })
+    await this._sendMessage(text)
+  },
 
+  async _sendMessage(text) {
+    const { user } = this.data
     this._addMsg('user', text)
-    this.setData({ chatInput: '', typing: true })
-
+    this.setData({ typing: true })
     try {
       await this._req(`${BASE}/api/chat`, 'POST', { openid: user.user_id, message: text })
     } catch (e) {

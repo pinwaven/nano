@@ -165,22 +165,39 @@
       </view>
 
       <!-- Normal chat input -->
-      <view wx:if="{{obStep === 'done'}}" class="input-area">
-        <textarea
-          class="chat-textarea"
-          placeholder="{{t.inputPh}}"
-          placeholder-class="textarea-ph"
-          value="{{chatInput}}"
-          bindinput="onChatInput"
-          auto-height="true"
-          maxlength="500"
-          adjust-position="true"
-          fixed="true"
-          cursor-spacing="12"
-          show-confirm-bar="false"
-        />
-        <view class="send-btn {{chatInput ? 'send-active' : ''}}" bindtap="handleSend">
-          <text class="send-icon">↑</text>
+      <view wx:if="{{obStep === 'done'}}" class="input-container">
+        <view wx:if="{{toolboxOpen}}" class="toolbox-panel">
+          <view class="toolbox-grid">
+            <view class="tool-item" bindtap="handleToolAction" data-action="formula_dots">
+              <text class="tool-item-icon">◉</text>
+              <text class="tool-item-label">{{t.toolFormulaDots}}</text>
+            </view>
+            <view class="tool-item" bindtap="handleToolAction" data-action="test_chip">
+              <text class="tool-item-icon">⬡</text>
+              <text class="tool-item-label">{{t.toolTestChip}}</text>
+            </view>
+          </view>
+        </view>
+        <view class="input-area">
+          <view class="plus-btn {{toolboxOpen ? 'plus-btn-open' : ''}}" bindtap="toggleToolbox">
+            <text class="plus-icon">+</text>
+          </view>
+          <textarea
+            class="chat-textarea"
+            placeholder="{{t.inputPh}}"
+            placeholder-class="textarea-ph"
+            value="{{chatInput}}"
+            bindinput="onChatInput"
+            auto-height="true"
+            maxlength="500"
+            adjust-position="true"
+            fixed="true"
+            cursor-spacing="12"
+            show-confirm-bar="false"
+          />
+          <view class="send-btn {{chatInput ? 'send-active' : ''}}" bindtap="handleSend">
+            <text class="send-icon">↑</text>
+          </view>
         </view>
       </view>
 
