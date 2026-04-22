@@ -3,15 +3,15 @@ const BASE = 'https://nano.fros.cc'
 const T = {
   zh: {
     title: 'Nano 管理',
-    tabs: { users: '用户', coaches: 'Coach', dots: '营养点', store: '商城' },
+    tabs: { users: '用户', coaches: 'Coach', dots: '原粒', store: '商城' },
     refresh: '刷新', loading: '加载中…', back: '返回',
     add: '添加', edit: '编辑', delete: '删除', save: '保存', cancel: '取消',
     saving: '保存中…', deleting: '删除中…',
-    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无营养点', items: '暂无商品', orders: '暂无订单' },
+    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', items: '暂无商品', orders: '暂无订单' },
     stats: {
       totalUsers: '总用户', tested: '已检测', avgBioAge: '平均生物年龄', coaches: 'Coach 数',
       totalCoaches: 'Coach 总数', assigned: '已分配', unassigned: '未分配',
-      totalDots: '营养点', isolates: '单体', blends: '复合',
+      totalDots: '原粒', isolates: '单体', blends: '复合',
       totalItems: '商品', active: '上架中', totalOrders: '订单', pending: '待处理',
     },
     user: {
@@ -31,8 +31,8 @@ const T = {
     dot: {
       key: '标识', nameEn: '名称 (英)', nameZh: '名称 (中)', color: '颜色',
       type: '类型', desc: '描述', isolate: '单体', blend: '复合',
-      addTitle: '添加营养点', editTitle: '编辑营养点',
-      deleteWarning: '确认删除此营养点？此操作不可撤销。',
+      addTitle: '添加原粒', editTitle: '编辑原粒',
+      deleteWarning: '确认删除此原粒？此操作不可撤销。',
     },
     store: {
       itemsTab: '商品', ordersTab: '订单',
