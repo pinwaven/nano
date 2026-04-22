@@ -60,7 +60,11 @@
             id="msg{{index}}"
             class="msg-row {{item.role === 'user' ? 'msg-row-user' : 'msg-row-ai'}}"
           >
-            <view class="message-bubble {{item.role === 'user' ? 'message-user' : 'message-ai'}}">
+            <view wx:if="{{item.role === 'action'}}" class="msg-action-card" bindtap="handleMsgAction" data-action="{{item.action}}">
+              <text class="msg-action-label">{{item.label}}</text>
+              <text class="msg-action-arrow">›</text>
+            </view>
+            <view wx:else class="message-bubble {{item.role === 'user' ? 'message-user' : 'message-ai'}}">
               <text class="msg-text" selectable="true">{{item.content}}</text>
             </view>
           </view>

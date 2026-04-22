@@ -252,6 +252,155 @@ async function handleGetNutritionPlan(openid) {
     }
 }
 
+function _scoreMarker(value, normalMax, elevatedMax) {
+    const v = parseFloat(value);
+    if (isNaN(v)) return 0;
+    if (v <= normalMax) return 1;
+    if (v <= elevatedMax) return 2;
+    return 3;
+}
+
+function _calcDotCounts(biomarkers, bioageProfile) {
+    const hsCRP = _scoreMarker(biomarkers.hsCRP, 1, 3);
+    const il6   = _scoreMarker(biomarkers.IL6, 3, 6);
+    const gdf15 = _scoreMarker(biomarkers.GDF15, 750, 1500);
+    const ga    = _scoreMarker(biomarkers.GA, 15, 20);
+    const cysC  = _scoreMarker(biomarkers.CystatinC, 0.9, 1.2);
+    const bioOver = (bioageProfile.BioAge || 0) > (bioageProfile.ChronoAge || 999) ? 2 : 0;
+
+    const base = 3;
+    const raw = {
+        D01: base + gdf15 + bioOver,
+        D02: base + gdf15,
+        D03: base + Math.max(gdf15, bioOver),
+        D04: base + hsCRP + il6,
+        D05: base + gdf15,
+        D06: base + 1,
+        D07: base + ga,
+        D08: base + cysC,
+        D09: base + 1,
+        D10: base + 1,
+        D11: base + ga,
+        D12: base + hsCRP,
+        D13: base + gdf15 + bioOver,
+        D14: base + gdf15,
+        D15: base + il6 + hsCRP,
+        D16: base + il6,
+        D17: base + cysC,
+        D18: base + 1,
+    };
+
+    const counts = {};
+    for (const [k, v] of Object.entries(raw)) {
+        counts[k] = Math.min(10, Math.max(1, v));
+    }
+    return counts;
+}
+
+const MORNING_DOTS = ['D01', 'D05', 'D06', 'D07', 'D10', 'D11', 'D18'];
+const EVENING_DOTS = ['D02', 'D03', 'D04', 'D08', 'D09', 'D12', 'D13', 'D14', 'D15', 'D16', 'D17'];
+const MONTH_EN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const WEEKDAY_EN = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const WEEKDAY_ZH = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+
+function _generatePlanText(dotCounts, availableDotKeys, lang, startDate, days) {
+    // availableDotKeys is a Set of short keys like 'D01', 'D04'
+    const lines = [];
+    const start = new Date(startDate + 'T00:00:00+08:00');
+
+    for (let i = 0; i < days; i++) {
+        const d = new Date(start.getTime() + i * 86400000);
+        const dow = d.getDay();
+        const month = d.getMonth();
+        const day = d.getDate();
+
+        const mParts = MORNING_DOTS
+            .filter(k => availableDotKeys.has(k))
+            .map(k => `${k}x${dotCounts[k] || 3}`);
+        const eParts = EVENING_DOTS
+            .filter(k => availableDotKeys.has(k))
+            .map(k => `${k}x${dotCounts[k] || 3}`);
+
+        if (lang === 'zh') {
+            lines.push(`${month + 1}月${day}日 (${WEEKDAY_ZH[dow]}): 早上 ${mParts.join(' ')} 晚上 ${eParts.join(' ')}`);
+        } else {
+            lines.push(`${MONTH_EN[month]} ${day}, ${WEEKDAY_EN[dow]}: Morning ${mParts.join(' ')} Evening ${eParts.join(' ')}`);
+        }
+    }
+
+    return lines.join('\n');
+}
+
+async function handlePostFormulaDots(body) {
+    const { openid } = body;
+    if (!openid) return { success: false, error: 'openid is required' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+        const [userResult, bioResult, dotsResult] = await Promise.all([
+            pool.query('SELECT * FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]),
+            pool.query(
+                `SELECT bio_age, data FROM biomarkers WHERE user_id = (SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1)
+                 AND test_type = 'kino_chip' ORDER BY tested_at DESC LIMIT 1`,
+                [openid]
+            ),
+            pool.query(`SELECT id, key_name, name, name_zh, ingredients, ingredients_zh FROM dots ORDER BY id ASC`),
+        ]);
+
+        if (userResult.rows.length === 0) return { success: false, error: 'User not found' };
+        const user = userResult.rows[0];
+        const latestBio = bioResult.rows[0] || {};
+        const biomarkers = latestBio.data?.estimated || latestBio.data?.actual || {};
+        const bioageProfile = latestBio.data?.bioage_profile || {};
+
+        const startDate = getNowShanghai().toISO().split('T')[0];
+        const lang = user.language || 'zh';
+
+        // Ask LLM to assign per-dot counts based on biomarkers
+        const nutritionContext = {
+            language: lang,
+            biomarkers,
+            bioage_profile: bioageProfile,
+            dots_formulary: dotsResult.rows,
+        };
+        const llmClient = getLlmClient();
+        const model = process.env.MODEL || 'qwen-plus';
+        const prompt = systemNutritionTemplate(nutritionContext);
+
+        const completion = await llmClient.chat.completions.create({
+            model,
+            messages: [{ role: 'user', content: prompt }],
+        });
+
+        // Parse "DXX:N" lines into a counts map
+        const llmText = completion.choices[0].message.content || '';
+        const dotCounts = {};
+        for (const line of llmText.split('\n')) {
+            const m = line.trim().match(/^(D\d{2}):(\d+)$/);
+            if (m) dotCounts[m[1]] = Math.min(10, Math.max(1, parseInt(m[2], 10)));
+        }
+
+        // Fill any missing keys with deterministic fallback
+        const availableDotKeys = new Set(dotsResult.rows.map(r => r.key_name.replace(/^DOT/, 'D')));
+        const fallbackCounts = _calcDotCounts(biomarkers, bioageProfile);
+        for (const k of availableDotKeys) {
+            if (!dotCounts[k]) dotCounts[k] = fallbackCounts[k] || 4;
+        }
+
+        const plan = _generatePlanText(dotCounts, availableDotKeys, lang, startDate, 7);
+
+        await pool.query(
+            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+            [user.user_id, 'nutrition_plan', plan, 'pending']
+        );
+
+        return { success: true };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostFormulaDots failed', error: err.message }));
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleGetCoachList() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -809,6 +958,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostUsers(parsedBody);
             } else if (path.includes('/kino-scan')) {
                 result = await handlePostKinoScan(parsedBody);
+            } else if (path.includes('/formula-dots')) {
+                result = await handlePostFormulaDots(parsedBody);
             } else {
                 result = await handlePostChat(parsedBody);
             }

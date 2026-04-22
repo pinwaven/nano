@@ -69,6 +69,10 @@ const T = {
     toolTestChip: '使用芯片',
     toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
     toolTestChipMsg: '我想使用 Kino 芯片',
+    formulaGenerating: '正在根据您的生物标志物生成7天营养方案…',
+    formulaComplete: '您的7天营养方案已生成！',
+    formulaViewDots: '查看营养方案 →',
+    formulaError: '方案生成失败，请重试。',
     adminMenu: '管理员',
     kinoSimMenu: 'Kino 模拟器',
     kinoSimPassTitle: '输入密码',
@@ -170,6 +174,10 @@ const T = {
     toolTestChip: 'Use Kino Chip',
     toolFormulaDotMsg: 'Please formula my dots plan',
     toolTestChipMsg: 'I want to use a Kino chip',
+    formulaGenerating: 'Generating your 7-day nutrition plan from your biomarkers…',
+    formulaComplete: 'Your 7-day nutrition plan is ready!',
+    formulaViewDots: 'View Dots Plan →',
+    formulaError: 'Plan generation failed. Please try again.',
     adminMenu: 'Admin',
     kinoSimMenu: 'Kino Simulator',
     kinoSimPassTitle: 'Enter Passcode',
@@ -766,10 +774,41 @@ Page({
     if (typing || obStep !== 'done') return
     this.setData({ toolboxOpen: false })
     if (action === 'formula_dots') {
-      this._sendMessage(t.toolFormulaDotMsg)
+      this._requestFormula()
     } else if (action === 'test_chip') {
       this._addMsg('ai', t.kinoScanPrompt)
       this.setData({ kinoScanPending: true })
+    }
+  },
+
+  async _requestFormula() {
+    const { user, t } = this.data
+    this._addMsg('ai', t.formulaGenerating)
+    this.setData({ typing: true })
+    try {
+      await this._req(`${BASE}/api/formula-dots`, 'POST', { openid: user.user_id })
+      this._addMsg('ai', t.formulaComplete)
+      this._addActionMsg('view_dots', t.formulaViewDots)
+    } catch (e) {
+      this._addMsg('ai', t.formulaError)
+    } finally {
+      this.setData({ typing: false })
+    }
+  },
+
+  _addActionMsg(action, label) {
+    const msg = { id: `action-${Date.now()}`, role: 'action', action, label }
+    const messages = [...this.data.messages, msg]
+    this.setData({ messages })
+    this._scrollBottom()
+  },
+
+  handleMsgAction(e) {
+    const { action } = e.currentTarget.dataset
+    if (action === 'view_dots') {
+      const { user, lang } = this.data
+      this.setData({ tab: 'dots', dotsLoading: true })
+      this._loadDots(user, lang)
     }
   },
 

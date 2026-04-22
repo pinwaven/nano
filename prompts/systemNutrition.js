@@ -1,45 +1,54 @@
 /**
- * Nano AI Nutrition Prompt (Concise Format)
- * -------------------------------------------
- * Instructs Nano to generate a readable 7-day precision 
- * nutrition plan for Waven Dots dispensing.
+ * Nano AI Nutrition Prompt
+ * Asks the LLM to assign a daily dot count per dot key based on biomarkers.
+ * Output is parsed by the worker and used to build a 7-day dispensing plan.
  */
 module.exports = (context) => {
   const isZh = context.language === 'zh';
+
   const formularyLines = context.dots_formulary && context.dots_formulary.length > 0
     ? context.dots_formulary.map(d => {
-        const ingrObj = isZh ? (d.ingredients_zh || d.ingredients) : (d.ingredients || d.ingredients_zh);
-        const ingrStr = ingrObj && typeof ingrObj === 'object' && Object.keys(ingrObj).length > 0
-          ? ' [' + Object.entries(ingrObj).map(([k, v]) => `${k}: ${v}`).join(', ') + ']'
+        const ingrArr = isZh
+          ? (d.ingredients_zh || d.ingredients)
+          : (d.ingredients || d.ingredients_zh);
+        const ingrStr = Array.isArray(ingrArr) && ingrArr.length > 0
+          ? ' [' + ingrArr.map(i => `${i.name}: ${i.mg}mg`).join(', ') + ']'
           : '';
-        return `${d.key_name}: ${d.name}${d.name_zh ? ' / ' + d.name_zh : ''}${d.description ? ' — ' + d.description : ''}${ingrStr}`;
+        const shortKey = d.key_name.replace(/^DOT/, 'D');
+        return `${shortKey}: ${d.name}${d.name_zh ? ' / ' + d.name_zh : ''}${ingrStr}`;
       }).join('\n')
     : 'Formulary not available.';
 
-  return `
-You are the Nano Precision Nutrition Engine. Your goal is to generate a concise 7-day "Waven Dots" recipe starting from ${context.start_date}.
+  const biomarkersStr = Object.entries(context.biomarkers || {})
+    .map(([k, v]) => `  ${k}: ${v}`)
+    .join('\n') || '  (no biomarker data available)';
 
-FORMULARY (16mg Payload per Dot):
-${formularyLines}
+  return `You are a precision nutrition engine. Based on the user's biomarkers, assign a daily dot count (1–10) for each Waven Dot in the formulary.
+
+BIOMARKER REFERENCE RANGES:
+  hsCRP (mg/L):       <1 = normal | 1–3 = elevated | >3 = high inflammation
+  IL-6 (pg/mL):       <3 = normal | 3–6 = elevated | >6 = high inflammation
+  GDF-15 (pg/mL):     <750 = normal | 750–1500 = elevated | >1500 = accelerated aging
+  GA (%):             <15 = normal | 15–20 = elevated | >20 = metabolic dysfunction
+  Cystatin-C (mg/L):  <0.9 = normal | 0.9–1.2 = elevated | >1.2 = vascular/renal stress
+  BioAge vs ChronoAge: BioAge > ChronoAge means accelerated biological aging
 
 USER BIOMARKERS:
-${JSON.stringify(context.biomarkers, null, 2)}
+${biomarkersStr}
 
-OUTPUT FORMAT:
-For EACH day, output exactly ONE LINE in this format:
-${context.language === 'zh' ? 'Month月Day日星期Weekday: 早上 DxxNx 晚上 DxxNx' : 'Month Day, Weekday: Morning DxxNx Evening DxxNx'}
+BIO-AGE: BioAge = ${context.bioage_profile?.BioAge ?? 'unknown'}, ChronoAge = ${context.bioage_profile?.ChronoAge ?? 'unknown'}
 
-RULES:
-1. LANGUAGE: You MUST output all text (labels, benefits, summary) in ${context.language === 'zh' ? 'Chinese (Simplified)' : 'English'}.
-2. Use ${context.language === 'zh' ? 'Chinese' : 'English'} for Month, Day, and Weekday names.
-3. "早上" or "Morning" contains Morning dots, "晚上" or "Evening" contains Evening dots.
-3. Use the D01-D18 short keys followed by 'x' and the number of dots (e.g., D01x5).
-4. Only include dots with a count > 0.
-5. If hsCRP is high, ensure D04 and D18 are included.
-6. For BioAge issues, ensure D01, D03, and D13 are included.
-7. Output exactly ${context.days_needed} lines.
+FORMULARY (short key: name [ingredients]):
+${formularyLines}
 
-EXAMPLE:
-7月2日星期三: 早上 D01x10 D05x5 D07x2 晚上 D03x5 D09x10 D13x5
+TASK: For each dot key in the formulary, output exactly one line in this format:
+DXX:N
+
+Rules:
+- N is an integer from 1 to 10
+- Use 3–4 for dots not relevant to the user's elevated markers
+- Use 5–7 for dots addressing elevated markers
+- Use 8–10 for dots addressing high/critical markers
+- Output ONLY the DXX:N lines — no headings, no explanations, no extra text
 `;
 };
