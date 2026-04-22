@@ -391,7 +391,7 @@ Page({
     obConditionList: [],
     obOtherSelected: false,
     obConditionsOther: '',
-    scrollToId: '',
+    scrollTop: 0,
 
     // Health
     bioLoading: true,
@@ -744,8 +744,12 @@ Page({
   },
 
   _scrollBottom() {
-    const n = this.data.messages.length
-    if (n > 0) this.setData({ scrollToId: `msg${n - 1}` })
+    if (this.data.messages.length === 0) return
+    wx.nextTick(() => {
+      // Alternate between two large values so the binding always triggers a change
+      this._scrollFlip = !this._scrollFlip
+      this.setData({ scrollTop: this._scrollFlip ? 999998 : 999999 })
+    })
   },
 
   onChatInput(e) {

@@ -47,8 +47,8 @@
       <scroll-view
         class="chat-messages"
         scroll-y="true"
-        scroll-into-view="{{scrollToId}}"
-        scroll-with-animation="true"
+        scroll-top="{{scrollTop}}"
+        scroll-with-animation="false"
         enhanced="true"
         bounces="false"
       >
