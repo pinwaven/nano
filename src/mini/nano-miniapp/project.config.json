@@ -1,6 +1,6 @@
 {
-  "description": "Waven Nano User MiniApp",
-  "projectname": "user-miniapp",
+  "description": "Waven Nano MiniApp",
+  "projectname": "nano-miniapp",
   "appid": "wxecbcf00ce480fcf2",
   "compileType": "miniprogram",
   "libVersion": "2.19.4",

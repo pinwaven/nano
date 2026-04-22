@@ -18,7 +18,7 @@
 - `/src/functions/worker/`: FC 3.0 code for AI processing and WeChat notifications.
 - `/src/lib/`: Shared logic (Database clients, WeChat API helpers).
 - `/src/schemas/`: JSON Schema files for event validation.
-- `/src/mini/user-miniapp/`: WeChat Mini Program frontend (WXML/WXSS/JS, no build pipeline).
+- `/src/mini/nano-miniapp/`: WeChat Mini Program frontend (WXML/WXSS/JS, no build pipeline).
 - `/tests/mocks/`: Local EventBridge and MNS simulation scripts.
 - `/src/web/admin-panel`: Control Panel for Admin
 - **File Naming:** kebab-case (e.g., `user-repository.js`).
