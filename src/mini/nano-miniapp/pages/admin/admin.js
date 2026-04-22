@@ -3,20 +3,20 @@ const BASE = 'https://nano.fros.cc'
 const T = {
   zh: {
     title: 'Nano 管理',
-    tabs: { users: '用户', coaches: 'Coach', dots: '原粒', store: '商城' },
+    tabs: { users: '用户', coaches: '教练', dots: '原粒', store: '商城' },
     refresh: '刷新', loading: '加载中…', back: '返回',
     add: '添加', edit: '编辑', delete: '删除', save: '保存', cancel: '取消',
     saving: '保存中…', deleting: '删除中…',
-    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', items: '暂无商品', orders: '暂无订单' },
+    empty: { users: '暂无用户', coaches: '暂无教练', dots: '暂无原粒', items: '暂无商品', orders: '暂无订单' },
     stats: {
-      totalUsers: '总用户', tested: '已检测', avgBioAge: '平均生物年龄', coaches: 'Coach 数',
-      totalCoaches: 'Coach 总数', assigned: '已分配', unassigned: '未分配',
+      totalUsers: '总用户', tested: '已检测', avgBioAge: '平均生物年龄', coaches: '教练数',
+      totalCoaches: '教练总数', assigned: '已分配', unassigned: '未分配',
       totalDots: '原粒', isolates: '单体', blends: '复合',
       totalItems: '商品', active: '上架中', totalOrders: '订单', pending: '待处理',
     },
     user: {
       nickname: '昵称', gender: '性别', birthDate: '出生日期', language: '语言',
-      coach: '负责 Coach', phone: '电话', email: '邮箱', externalId: '外部 ID',
+      coach: '负责教练', phone: '电话', email: '邮箱', externalId: '外部 ID',
       externalApp: '外部应用', bioAge: '生物年龄', chronoAge: '实际年龄',
       joined: '注册时间', unassigned: '未分配',
       male: '男', female: '女', unknown: '未知',
@@ -25,12 +25,14 @@ const T = {
     },
     coach: {
       name: '姓名', email: '邮箱', phone: '电话', language: '语言', users: '用户数',
-      joined: '注册时间', addTitle: '添加 Coach', editTitle: '编辑 Coach',
-      deleteWarning: '确认删除此 Coach？其名下用户将变为未分配状态。',
+      joined: '注册时间', addTitle: '添加教练', editTitle: '编辑教练',
+      deleteWarning: '确认删除此教练？其名下用户将变为未分配状态。',
     },
     dot: {
       key: '标识', nameEn: '名称 (英)', nameZh: '名称 (中)', color: '颜色',
       type: '类型', desc: '描述', isolate: '单体', blend: '复合',
+      ingrEn: '成分 (英)', ingrZh: '成分 (中)',
+      ingrName: '成分名称', ingrMg: 'mg', addIngr: '+ 添加成分',
       addTitle: '添加原粒', editTitle: '编辑原粒',
       deleteWarning: '确认删除此原粒？此操作不可撤销。',
     },
@@ -94,6 +96,8 @@ const T = {
     dot: {
       key: 'Key', nameEn: 'Name (EN)', nameZh: 'Name (ZH)', color: 'Color',
       type: 'Type', desc: 'Description', isolate: 'Isolate', blend: 'Blend',
+      ingrEn: 'Ingredients (EN)', ingrZh: 'Ingredients (ZH)',
+      ingrName: 'Name', ingrMg: 'mg', addIngr: '+ Add Ingredient',
       addTitle: 'Add Dot', editTitle: 'Edit Dot',
       deleteWarning: 'Delete this dot? This cannot be undone.',
     },
@@ -156,6 +160,11 @@ function chronoAge(birthDate) {
   return Math.floor((Date.now() - new Date(birthDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25))
 }
 
+function _ingrToArr(arr) {
+  if (!arr || !Array.isArray(arr)) return []
+  return arr.map(item => ({ name: item.name || '', mg: item.mg != null ? String(item.mg) : '' }))
+}
+
 Page({
   data: {
     lang: 'zh',
@@ -197,6 +206,10 @@ Page({
       tag: '', sort_order: 0, active: true,
     },
     editTargetId: null,
+
+    // Dot ingredients (array of {name, value} for dynamic editing)
+    formIngredients: [],
+    formIngredientsZh: [],
 
     // Picker indices
     formLangIdx: 0,
@@ -356,6 +369,7 @@ Page({
       modalOpen: true, modalType: 'dot', modalMode: 'add', modalTitle: T[this.data.lang].dot.addTitle, modalError: '', editTargetId: null,
       form: { key_name: '', name_en: '', name_zh: '', color: '', color_zh: '', description: '', is_isolate: false },
       formTypeIdx: 0,
+      formIngredients: [], formIngredientsZh: [],
     })
   },
 
@@ -367,6 +381,8 @@ Page({
       modalOpen: true, modalType: 'dot', modalMode: 'edit', modalTitle: T[lang].dot.editTitle, modalError: '', editTargetId: d.id,
       form: { key_name: d.key_name || '', name_en: d.name || '', name_zh: d.name_zh || '', color: d.color || '', color_zh: d.color_zh || '', description: d.description || '', is_isolate: !!d.is_isolate },
       formTypeIdx: typeIdx >= 0 ? typeIdx : 0,
+      formIngredients: _ingrToArr(d.ingredients),
+      formIngredientsZh: _ingrToArr(d.ingredients_zh),
     })
   },
 
@@ -447,6 +463,28 @@ Page({
     this.setData({ formActiveIdx: idx, 'form.active': T[lang].activeValues[idx] })
   },
 
+  // ── Ingredients ───────────────────────────────────────────────────────────────
+
+  addIngredient(e) {
+    const isZh = e.currentTarget.dataset.zh
+    const key = isZh ? 'formIngredientsZh' : 'formIngredients'
+    this.setData({ [key]: [...this.data[key], { name: '', mg: '' }] })
+  },
+
+  removeIngredient(e) {
+    const { zh, idx } = e.currentTarget.dataset
+    const key = zh ? 'formIngredientsZh' : 'formIngredients'
+    const arr = [...this.data[key]]
+    arr.splice(idx, 1)
+    this.setData({ [key]: arr })
+  },
+
+  onIngredientInput(e) {
+    const { zh, idx, field } = e.currentTarget.dataset
+    const key = zh ? 'formIngredientsZh' : 'formIngredients'
+    this.setData({ [`${key}[${idx}].${field}`]: e.detail.value })
+  },
+
   // ── Save ──────────────────────────────────────────────────────────────────────
 
   async handleSave() {
@@ -470,7 +508,13 @@ Page({
         else await this._req(`${BASE}/api/coaches/${editTargetId}`, 'PUT', { name: form.name, email: form.email, phone: form.phone, language: form.language })
       } else if (modalType === 'dot') {
         if (!form.key_name.trim() || !form.name_en.trim()) { this.setData({ modalError: t.error.required, modalBusy: false }); return }
-        const payload = { key_name: form.key_name, name: form.name_en, name_zh: form.name_zh, color: form.color, color_zh: form.color_zh, description: form.description, is_isolate: form.is_isolate }
+        const ingredients = this.data.formIngredients
+          .filter(r => r.name.trim())
+          .map(r => ({ name: r.name.trim(), mg: r.mg !== '' ? Number(r.mg) : 0 }))
+        const ingredients_zh = this.data.formIngredientsZh
+          .filter(r => r.name.trim())
+          .map(r => ({ name: r.name.trim(), mg: r.mg !== '' ? Number(r.mg) : 0 }))
+        const payload = { key_name: form.key_name, name: form.name_en, name_zh: form.name_zh, color: form.color, color_zh: form.color_zh, description: form.description, is_isolate: form.is_isolate, ingredients, ingredients_zh }
         if (modalMode === 'add') await this._req(`${BASE}/api/dots`, 'POST', payload)
         else await this._req(`${BASE}/api/dots/${editTargetId}`, 'PUT', payload)
       } else if (modalType === 'item') {

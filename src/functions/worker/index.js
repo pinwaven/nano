@@ -336,17 +336,19 @@ async function handleDeleteCoach(coachId) {
 }
 
 async function handlePostDots(body) {
-    const { key_name, name, name_zh, color, color_zh, description, is_isolate } = body;
+    const { key_name, name, name_zh, color, color_zh, description, is_isolate, ingredients, ingredients_zh } = body;
     if (!key_name || !name) return { success: false, error: 'key_name and name are required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const maxIdResult = await pool.query('SELECT MAX(id) as max_id FROM dots');
         const nextId = (maxIdResult.rows[0].max_id || 0) + 1;
-        
+
         const result = await pool.query(
-            `INSERT INTO dots (id, key_name, name, name_zh, color, color_zh, description, is_isolate)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-            [nextId, key_name, name, name_zh || null, color || null, color_zh || null, description || null, !!is_isolate]
+            `INSERT INTO dots (id, key_name, name, name_zh, color, color_zh, description, is_isolate, ingredients, ingredients_zh)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+            [nextId, key_name, name, name_zh || null, color || null, color_zh || null, description || null, !!is_isolate,
+             ingredients ? JSON.stringify(ingredients) : null,
+             ingredients_zh ? JSON.stringify(ingredients_zh) : null]
         );
         return { success: true, id: result.rows[0].id };
     } catch (err) {
@@ -355,18 +357,22 @@ async function handlePostDots(body) {
 }
 
 async function handlePutDot(dotId, body) {
-    const { name, name_zh, color, color_zh, description, is_isolate } = body;
+    const { name, name_zh, color, color_zh, description, is_isolate, ingredients, ingredients_zh } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query(
-            `UPDATE dots SET name=$1, name_zh=$2, color=$3, color_zh=$4, description=$5, is_isolate=$6 WHERE id=$7`,
-            [name, name_zh || null, color || null, color_zh || null, description || null, !!is_isolate, dotId]
+            `UPDATE dots SET name=$1, name_zh=$2, color=$3, color_zh=$4, description=$5, is_isolate=$6, ingredients=$7, ingredients_zh=$8 WHERE id=$9`,
+            [name, name_zh || null, color || null, color_zh || null, description || null, !!is_isolate,
+             ingredients ? JSON.stringify(ingredients) : null,
+             ingredients_zh ? JSON.stringify(ingredients_zh) : null,
+             dotId]
         );
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
     }
 }
+
 
 async function handleDeleteDot(dotId) {
     try {

@@ -52,23 +52,9 @@
   gap: 28rpx;
 }
 
-.login-logo-ring {
+.login-logo-img {
   width: 160rpx;
   height: 160rpx;
-  border-radius: 50%;
-  background: linear-gradient(135deg, rgba(99, 117, 236, 0.25), rgba(99, 117, 236, 0.05));
-  border: 1rpx solid rgba(99, 117, 236, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 0 60rpx rgba(99, 117, 236, 0.25);
-}
-
-.login-logo-letter {
-  font-size: 64rpx;
-  font-weight: 800;
-  color: #EEF2FF;
-  opacity: 0.9;
 }
 
 .login-title {

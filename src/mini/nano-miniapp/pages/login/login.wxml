@@ -2,9 +2,7 @@
   <view class="login-glow" />
 
   <view class="login-brand">
-    <view class="login-logo-ring">
-      <text class="login-logo-letter">W</text>
-    </view>
+    <image class="login-logo-img" src="/assets/waven-logo-icon.png" mode="aspectFit" />
     <text class="login-title">NANO</text>
     <text class="login-subtitle">您的精准健康伴侣</text>
   </view>

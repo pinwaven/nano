@@ -68,13 +68,15 @@
   flex: 1;
   text-align: center;
   padding: 20rpx 0 16rpx;
-  font-size: 26rpx;
-  color: #4A6A8A;
+  font-size: 28rpx;
+  font-weight: 500;
+  color: #7A9ABF;
   position: relative;
 }
 
 .adm-tab-active {
-  color: #6375EC;
+  color: #A0B4FF;
+  font-weight: 700;
 }
 
 .adm-tab-active::after {
@@ -447,7 +449,7 @@
   border-top-left-radius: 32rpx;
   border-top-right-radius: 32rpx;
   width: 100%;
-  max-height: 85vh;
+  height: 85vh;
   display: flex;
   flex-direction: column;
 }
@@ -571,7 +573,7 @@
   border-top-left-radius: 32rpx;
   border-top-right-radius: 32rpx;
   width: 100%;
-  max-height: 88vh;
+  height: 88vh;
   display: flex;
   flex-direction: column;
 }
@@ -620,9 +622,24 @@
   background: #0B1C2E;
   border: 1rpx solid #162E4A;
   border-radius: 12rpx;
-  padding: 20rpx 24rpx;
+  padding: 0 24rpx;
+  height: 80rpx;
+  line-height: 80rpx;
   font-size: 28rpx;
   color: #E8F4FF;
+}
+
+.adm-field-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0B1C2E;
+  border: 1rpx solid #162E4A;
+  border-radius: 12rpx;
+  padding: 20rpx 24rpx;
+  min-height: 120rpx;
+  font-size: 28rpx;
+  color: #E8F4FF;
+  line-height: 1.6;
 }
 
 .adm-field-picker {
@@ -644,6 +661,60 @@
 
 .adm-ph {
   color: #2A4A6A;
+}
+
+/* ── Ingredient rows ── */
+.adm-ingr-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 10rpx;
+}
+
+.adm-ingr-name {
+  flex: 2;
+  box-sizing: border-box;
+  background: #0B1C2E;
+  border: 1rpx solid #162E4A;
+  border-radius: 10rpx;
+  padding: 0 18rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  font-size: 26rpx;
+  color: #E8F4FF;
+}
+
+.adm-ingr-value {
+  flex: 1;
+  box-sizing: border-box;
+  background: #0B1C2E;
+  border: 1rpx solid #162E4A;
+  border-radius: 10rpx;
+  padding: 0 18rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  font-size: 26rpx;
+  color: #E8F4FF;
+}
+
+.adm-ingr-del {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36rpx;
+  color: #ef4444;
+  flex-shrink: 0;
+}
+
+.adm-ingr-add {
+  margin-top: 8rpx;
+  padding: 16rpx 0;
+  font-size: 26rpx;
+  color: #6375EC;
 }
 
 .adm-modal-error {
