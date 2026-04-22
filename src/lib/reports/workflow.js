@@ -60,7 +60,7 @@ async function runWorkflow(input) {
 
   // Generate language-specific system prompts
   const reportPrompt = typeof systemReport === 'function' ? systemReport(userProfile) : systemReport;
-  const nutritionPrompt = typeof systemNutrition === 'function' ? systemNutrition({ ...userProfile, ...input }) : systemNutrition;
+  const nutritionPrompt = typeof systemNutrition === 'function' ? systemNutrition({ ...userProfile, ...input, dots_formulary: input.dots_formulary || [] }) : systemNutrition;
 
   // Nodes 141434 + 1474426: run both LLMs in parallel
   const [report, nutrition] = await Promise.all([

@@ -560,13 +560,18 @@ async function handlePostChat(body) {
         try {
             const llmClient = getLlmClient();
             const model = process.env.MODEL || 'qwen-turbo';
-            
+
+            const dotsForNutrition = await pool.query(
+                `SELECT id, key_name, name, name_zh, description, ingredients, ingredients_zh FROM dots ORDER BY id ASC`
+            );
+
             const nutritionContext = {
                 start_date: new Date().toISOString().split('T')[0],
                 days_needed: 7,
                 language: user.language,
                 biomarkers: test_data,
-                bioage_profile: bioAgeReport
+                bioage_profile: bioAgeReport,
+                dots_formulary: dotsForNutrition.rows,
             };
 
             const nutritionPrompt = systemNutritionTemplate(nutritionContext);

@@ -4,28 +4,23 @@
  * Instructs Nano to generate a readable 7-day precision 
  * nutrition plan for Waven Dots dispensing.
  */
-module.exports = (context) => `
+module.exports = (context) => {
+  const isZh = context.language === 'zh';
+  const formularyLines = context.dots_formulary && context.dots_formulary.length > 0
+    ? context.dots_formulary.map(d => {
+        const ingrObj = isZh ? (d.ingredients_zh || d.ingredients) : (d.ingredients || d.ingredients_zh);
+        const ingrStr = ingrObj && typeof ingrObj === 'object' && Object.keys(ingrObj).length > 0
+          ? ' [' + Object.entries(ingrObj).map(([k, v]) => `${k}: ${v}`).join(', ') + ']'
+          : '';
+        return `${d.key_name}: ${d.name}${d.name_zh ? ' / ' + d.name_zh : ''}${d.description ? ' — ' + d.description : ''}${ingrStr}`;
+      }).join('\n')
+    : 'Formulary not available.';
+
+  return `
 You are the Nano Precision Nutrition Engine. Your goal is to generate a concise 7-day "Waven Dots" recipe starting from ${context.start_date}.
 
 FORMULARY (16mg Payload per Dot):
-D01: NMN
-D02: L-Ergothioneine
-D03: Spermidine
-D04: Curcumin (hsCRP Focus)
-D05: PQQ
-D06: Vitamin D3
-D07: Methylation & B-Complex
-D08: Cardiovascular & CoQ10
-D09: Deep Sleep & Magnesium
-D10: Cognitive & Brain Health
-D11: Metabolic & Glycemic
-D12: Master Antioxidant
-D13: Advanced Senolytic
-D14: Mitochondrial & Muscle
-D15: Gut Barrier & Microbiome
-D16: Immunity & Zinc/Vit C
-D17: Structural Matrix
-D18: Bioavailability Enhancer
+${formularyLines}
 
 USER BIOMARKERS:
 ${JSON.stringify(context.biomarkers, null, 2)}
@@ -47,3 +42,4 @@ RULES:
 EXAMPLE:
 7月2日星期三: 早上 D01x10 D05x5 D07x2 晚上 D03x5 D09x10 D13x5
 `;
+};
