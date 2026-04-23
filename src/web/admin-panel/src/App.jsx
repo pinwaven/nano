@@ -30,7 +30,7 @@ const T = {
       name: 'Name', email: 'Email', phone: 'Phone', customers: 'Users',
       key: 'Key', nameEn: 'Name (EN)', nameZh: 'Name (ZH)', color: 'Color',
       type: 'Type', description: 'Description',
-      unassigned: 'Unassigned', channel: 'Channel',
+      unassigned: 'Unassigned', channel: 'Channel', roles: 'Roles', linkedUser: 'Linked User',
     },
     empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found' },
     count: (n) => `${n} users`,
@@ -78,6 +78,8 @@ const T = {
       deleteChannelWarning: (name) => `Delete channel "${name}"? Coaches and users in this channel will be unassigned.`,
       channelKeyName: 'Key Name *', channelName: 'Display Name *', channelLogoUrl: 'Logo URL',
       channel: 'Channel', channelUnassigned: 'No channel',
+      roles: 'Roles', roleUser: 'User', roleCoach: 'Coach', roleAdmin: 'Channel Admin', roleSuperadmin: 'Superadmin',
+      linkedUserId: 'Linked User ID', linkedUserIdPlaceholder: 'WeChat user_id',
     },
     dotType: { isolate: 'Isolate', blend: 'Blend' },
     store: {
@@ -108,7 +110,7 @@ const T = {
       name: '姓名', email: '邮箱', phone: '电话', customers: '用户数',
       key: '标识', nameEn: '名称 (英)', nameZh: '名称 (中)', color: '颜色',
       type: '类型', description: '描述',
-      unassigned: '未分配', channel: '渠道',
+      unassigned: '未分配', channel: '渠道', roles: '角色', linkedUser: '关联用户',
     },
     empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道' },
     count: (n) => `共 ${n} 位用户`,
@@ -156,6 +158,8 @@ const T = {
       deleteChannelWarning: (name) => `确认删除渠道"${name}"？该渠道下的 Coach 和用户将失去渠道关联。`,
       channelKeyName: '标识 *', channelName: '显示名称 *', channelLogoUrl: 'Logo URL',
       channel: '渠道', channelUnassigned: '无渠道',
+      roles: '角色', roleUser: '用户', roleCoach: '教练', roleAdmin: '渠道管理员', roleSuperadmin: '超级管理员',
+      linkedUserId: '关联用户 ID', linkedUserIdPlaceholder: '微信 user_id',
     },
     dotType: { isolate: '单体', blend: '复合' },
     store: {
@@ -179,7 +183,8 @@ const bioAgeColor = (bio, chrono) => {
   if (!bio || !chrono) return '#64748b';
   return Number(bio) <= Number(chrono) ? '#16a34a' : '#dc2626';
 };
-const EMPTY_USER = { nickname: '', gender: '', birth_date: '', language: 'zh', external_id: '', external_app: 'wechat', coach_id: '', channel_id: '', phone: '', email: '' };
+const ALL_ROLES = ['user', 'coach', 'admin', 'superadmin'];
+const EMPTY_USER = { nickname: '', gender: '', birth_date: '', language: 'zh', external_id: '', external_app: 'wechat', coach_id: '', channel_id: '', phone: '', email: '', roles: ['user'] };
 
 // ── shared components ─────────────────────────────────────────────────────────
 
@@ -228,11 +233,18 @@ function UserModal({ user, coaches, channels, onClose, onSave }) {
   const isEdit = !!(user?.user_id || user?.id);
   const userId = user?.user_id || user?.id;
   const [form, setForm] = useState(isEdit
-    ? { nickname: user.nickname || '', gender: user.gender || '', birth_date: user.birth_date ? user.birth_date.slice(0, 10) : '', language: user.language || 'zh', external_id: user.external_id || '', external_app: user.external_app || 'wechat', coach_id: user.coach_id ?? '', channel_id: user.channel_id ?? '', phone: user.phone || '', email: user.email || '' }
+    ? { nickname: user.nickname || '', gender: user.gender || '', birth_date: user.birth_date ? user.birth_date.slice(0, 10) : '', language: user.language || 'zh', external_id: user.external_id || '', external_app: user.external_app || 'wechat', coach_id: user.coach_id ?? '', channel_id: user.channel_id ?? '', phone: user.phone || '', email: user.email || '', roles: user.roles || ['user'] }
     : { ...EMPTY_USER });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const toggleRole = (role) => {
+    if (role === 'user') return; // 'user' is always required
+    const current = form.roles || ['user'];
+    const next = current.includes(role) ? current.filter(r => r !== role) : [...current, role];
+    set('roles', next);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -328,6 +340,21 @@ function UserModal({ user, coaches, channels, onClose, onSave }) {
               <span>{t.modal.email}</span>
               <input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="user@example.com" />
             </label>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span className="form-label-text">{t.modal.roles}</span>
+              <div className="roles-row">
+                {ALL_ROLES.map(role => {
+                  const checked = (form.roles || ['user']).includes(role);
+                  const labels = { user: t.modal.roleUser, coach: t.modal.roleCoach, admin: t.modal.roleAdmin, superadmin: t.modal.roleSuperadmin };
+                  return (
+                    <label key={role} className={`role-chip${checked ? ' checked' : ''}${role === 'user' ? ' locked' : ''}`} onClick={() => toggleRole(role)}>
+                      <span className="role-chip-check">{checked ? '✓' : ''}</span>
+                      {labels[role]}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
@@ -377,13 +404,13 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
 
 // ── Coach modal ───────────────────────────────────────────────────────────────
 
-const EMPTY_COACH = { name: '', email: '', phone: '', language: 'zh', channel_id: '' };
+const EMPTY_COACH = { name: '', email: '', phone: '', language: 'zh', channel_id: '', user_id: '' };
 
 function CoachModal({ coach, channels, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!coach?.id;
   const [form, setForm] = useState(isEdit
-    ? { name: coach.name || '', email: coach.email || '', phone: coach.phone || '', language: coach.language || 'zh', channel_id: coach.channel_id ?? '' }
+    ? { name: coach.name || '', email: coach.email || '', phone: coach.phone || '', language: coach.language || 'zh', channel_id: coach.channel_id ?? '', user_id: coach.user_id || '' }
     : { ...EMPTY_COACH });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -394,7 +421,7 @@ function CoachModal({ coach, channels, onClose, onSave }) {
     if (!form.name.trim()) { setError(t.modal.nameRequired); return; }
     setBusy(true); setError('');
     try {
-      const coachPayload = { ...form, channel_id: form.channel_id === '' ? null : parseInt(form.channel_id) };
+      const coachPayload = { ...form, channel_id: form.channel_id === '' ? null : parseInt(form.channel_id), user_id: form.user_id.trim() || null };
       if (isEdit) await axios.put(`/api/coaches/${coach.id}`, coachPayload);
       else await axios.post('/api/coaches', coachPayload);
       onSave();
@@ -442,6 +469,10 @@ function CoachModal({ coach, channels, onClose, onSave }) {
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.linkedUserId}</span>
+              <input value={form.user_id} onChange={e => set('user_id', e.target.value)} placeholder={t.modal.linkedUserIdPlaceholder} />
             </label>
           </div>
           {error && <div className="form-error">{error}</div>}
@@ -716,6 +747,14 @@ function UserDetailDrawer({ user, onClose }) {
               <span className="drawer-info-val">{fmt(user.phone)}</span>
               <span className="drawer-info-key">{t.modal.email}</span>
               <span className="drawer-info-val">{fmt(user.email)}</span>
+              <span className="drawer-info-key">{t.table.roles}</span>
+              <span className="drawer-info-val">
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {(user.roles || ['user']).map(r => (
+                    <Badge key={r} color={r === 'superadmin' ? '#dc2626' : r === 'admin' ? '#f59e0b' : r === 'coach' ? '#8b5cf6' : '#64748b'}>{r}</Badge>
+                  ))}
+                </div>
+              </span>
             </div>
           </div>
 
@@ -805,7 +844,7 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
         <table className="data-table">
           <thead>
             <tr>
-              <th>{t.table.id}</th><th>{t.table.nickname}</th><th>{t.table.channel}</th><th>{t.table.gender}</th>
+              <th>{t.table.id}</th><th>{t.table.nickname}</th><th>{t.table.channel}</th><th>{t.table.roles}</th><th>{t.table.gender}</th>
               <th>{t.table.birthDate}</th><th>{t.table.language}</th>
               <th>{t.table.bioAge}</th><th>{t.table.chronoAge}</th>
               <th>{t.table.assignedCoach}</th><th>{t.table.joined}</th>
@@ -813,7 +852,7 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
             </tr>
           </thead>
           <tbody>
-            {users.length === 0 && <tr><td colSpan={13} className="empty-row">{t.empty.users}</td></tr>}
+            {users.length === 0 && <tr><td colSpan={14} className="empty-row">{t.empty.users}</td></tr>}
             {users.map(u => (
               <tr key={u.user_id} className="clickable-row" onClick={() => setDetailUser(u)}>
                 <td className="muted">{u.user_id}</td>
@@ -826,6 +865,13 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
                   </div>
                 </td>
                 <td>{u.channel_name ? <Badge color="#6366f1">{u.channel_name}</Badge> : '—'}</td>
+                <td>
+                  <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                    {(u.roles || ['user']).map(r => (
+                      <Badge key={r} color={r === 'superadmin' ? '#dc2626' : r === 'admin' ? '#f59e0b' : r === 'coach' ? '#8b5cf6' : '#64748b'}>{r}</Badge>
+                    ))}
+                  </div>
+                </td>
                 <td>{fmt(u.gender)}</td>
                 <td className="muted">{fmtDate(u.birth_date)}</td>
                 <td><Badge color={u.language === 'zh' ? '#16a34a' : '#2563eb'}>{(u.language || 'zh').toUpperCase()}</Badge></td>
@@ -879,10 +925,10 @@ function CoachTab({ coaches, users, channels, onRefresh }) {
         </div>
         <table className="data-table">
           <thead>
-            <tr><th>{t.table.id}</th><th>{t.table.name}</th><th>{t.table.channel}</th><th>{t.table.email}</th><th>{t.table.phone}</th><th>{t.table.language}</th><th>{t.table.customers}</th><th>{t.table.joined}</th><th></th></tr>
+            <tr><th>{t.table.id}</th><th>{t.table.name}</th><th>{t.table.channel}</th><th>{t.table.linkedUser}</th><th>{t.table.email}</th><th>{t.table.phone}</th><th>{t.table.language}</th><th>{t.table.customers}</th><th>{t.table.joined}</th><th></th></tr>
           </thead>
           <tbody>
-            {coaches.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.coaches}</td></tr>}
+            {coaches.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.coaches}</td></tr>}
             {coaches.map(p => (
               <tr key={p.id}>
                 <td className="muted">{p.id}</td>
@@ -893,6 +939,7 @@ function CoachTab({ coaches, users, channels, onRefresh }) {
                   </div>
                 </td>
                 <td>{p.channel_name ? <Badge color="#6366f1">{p.channel_name}</Badge> : '—'}</td>
+                <td className="muted mono" style={{ fontSize: 11 }}>{p.user_id ? p.user_id : '—'}</td>
                 <td className="muted">{fmt(p.email)}</td>
                 <td className="muted">{fmt(p.phone)}</td>
                 <td><Badge color={p.language === 'zh' ? '#16a34a' : '#2563eb'}>{(p.language || 'zh').toUpperCase()}</Badge></td>
