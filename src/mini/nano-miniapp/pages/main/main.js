@@ -91,9 +91,13 @@ const T = {
     kinoSimTabBm: '生物标志物',
     kinoSimBioAgeLabel: '生物年龄',
     kinoSimChronoLabel: '实际年龄',
-    kinoScanPrompt: '请扫描您 Kino 芯片上的二维码，以登记您的样本。',
+    kinoScanPrompt: '请扫描您 Kino 芯片上的二维码，以登记您的芯片。',
     kinoScanBtn: '扫描二维码',
-    kinoScanSuccess: '您的 Kino 芯片已成功登记！我们将处理您的样本，完成后会通知您结果。',
+    kinoScanSuccess: '您的 Kino 芯片已成功登记！',
+    kinoScanInstruction: '请将芯片插入 Kino 分析仪，开始检测。',
+    kinoScanAlreadyLinked: '此芯片已绑定到您的账户，正在等待检测结果。',
+    kinoScanUsed: '此芯片已完成检测，无法重复登记。',
+    kinoScanInvalidChip: '此二维码不是有效的 Kino 芯片，请扫描芯片上的二维码。',
     kinoScanError: '登记失败，请重试。',
     orderStatus: {
       pending: '待处理', confirmed: '已确认', shipped: '已发货',
@@ -198,9 +202,13 @@ const T = {
     kinoSimTabBm: 'Biomarkers',
     kinoSimBioAgeLabel: 'BIO AGE',
     kinoSimChronoLabel: 'CHRONO AGE',
-    kinoScanPrompt: 'Please scan the QR code on your Kino chip to register your sample.',
+    kinoScanPrompt: 'Please scan the QR code on your Kino chip to register your Chip.',
     kinoScanBtn: 'Scan QR Code',
-    kinoScanSuccess: 'Your Kino chip has been registered! We\'ll process your sample and notify you with the results.',
+    kinoScanSuccess: 'Your Kino chip has been registered!',
+    kinoScanInstruction: 'Now insert the chip into the Kino Analyzer to begin the test.',
+    kinoScanAlreadyLinked: 'This chip is already linked to your account and is awaiting analysis.',
+    kinoScanUsed: 'This chip has already been analyzed and cannot be registered again.',
+    kinoScanInvalidChip: 'This QR code is not a valid Kino chip. Please scan the QR code on your chip.',
     kinoScanError: 'Registration failed. Please try again.',
     orderStatus: {
       pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
@@ -786,11 +794,11 @@ Page({
 
   _scrollBottom() {
     if (this.data.messages.length === 0) return
-    wx.nextTick(() => {
-      // Alternate between two large values so the binding always triggers a change
+    if (this._scrollTimer) clearTimeout(this._scrollTimer)
+    this._scrollTimer = setTimeout(() => {
       this._scrollFlip = !this._scrollFlip
       this.setData({ scrollTop: this._scrollFlip ? 999998 : 999999 })
-    })
+    }, 50)
   },
 
   onChatInput(e) {
@@ -857,10 +865,23 @@ Page({
         const chip_id = res.result
         this.setData({ kinoScanPending: false })
         this._addMsg('user', chip_id)
+        if (!chip_id.startsWith('MVNS') && !chip_id.startsWith('KINO')) {
+          this._addMsg('ai', t.kinoScanInvalidChip)
+          return
+        }
         this.setData({ typing: true })
         try {
-          await this._req(`${BASE}/api/kino-scan`, 'POST', { openid: user.user_id, chip_id })
-          this._addMsg('ai', t.kinoScanSuccess)
+          const scanRes = await this._req(`${BASE}/api/kino-scan`, 'POST', { openid: user.user_id, chip_id })
+          if (scanRes.statusCode !== 200) throw new Error('server error')
+          const status = scanRes.data?.status
+          if (status === 'already_linked') {
+            this._addMsg('ai', t.kinoScanAlreadyLinked)
+          } else if (status === 'used') {
+            this._addMsg('ai', t.kinoScanUsed)
+          } else {
+            this._addMsg('ai', t.kinoScanSuccess)
+            this._addMsg('ai', t.kinoScanInstruction)
+          }
         } catch (e) {
           this._addMsg('ai', t.kinoScanError)
         } finally {

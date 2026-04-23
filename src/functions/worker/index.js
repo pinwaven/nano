@@ -1151,11 +1151,57 @@ async function handlePostKinoScan(body) {
     if (userResult.rows.length === 0) throw new Error('User not found');
     const user_id = userResult.rows[0].user_id;
 
-    const result = await pool.query(
-        'INSERT INTO scans (user_id, scan_status, scan_results) VALUES ($1, $2, $3) RETURNING id',
-        [user_id, 'pending', JSON.stringify({ chip_id })]
+    const existing = await pool.query(
+        'SELECT id, user_id, scan_status FROM scans WHERE chip_id = $1 LIMIT 1',
+        [chip_id]
     );
-    return { success: true, scan_id: result.rows[0].id };
+
+    if (existing.rows.length > 0) {
+        const row = existing.rows[0];
+        if (row.scan_status === 'completed') {
+            return { success: true, status: 'used', scan_id: row.id };
+        }
+        if (row.user_id === user_id) {
+            return { success: true, status: 'already_linked', scan_id: row.id };
+        }
+    }
+
+    const result = await pool.query(
+        `INSERT INTO scans (user_id, chip_id, scan_status, scan_results)
+         VALUES ($1, $2, 'pending', $3)
+         ON CONFLICT (chip_id) WHERE chip_id IS NOT NULL DO UPDATE SET user_id = EXCLUDED.user_id, scan_status = 'pending', updated_at = NOW()
+         RETURNING id`,
+        [user_id, chip_id, JSON.stringify({ chip_id })]
+    );
+    return { success: true, status: 'registered', scan_id: result.rows[0].id };
+}
+
+async function handlePostKinoResult(body) {
+    const { chip_id, data, bio_age } = body;
+    if (!chip_id) throw new Error('chip_id is required');
+    if (!data) throw new Error('data is required');
+
+    const scanResult = await pool.query(
+        'SELECT id, user_id FROM scans WHERE chip_id = $1 LIMIT 1',
+        [chip_id]
+    );
+    if (scanResult.rows.length === 0) throw new Error('No registered scan found for this chip');
+
+    const { id: scan_id, user_id } = scanResult.rows[0];
+
+    await pool.query(
+        `UPDATE scans SET scan_status = 'completed', scan_results = $1 WHERE id = $2`,
+        [JSON.stringify({ chip_id, ...data }), scan_id]
+    );
+
+    const bmResult = await pool.query(
+        `INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at)
+         VALUES ($1, 'kino_chip', $2, $3, NOW())
+         RETURNING id`,
+        [user_id, JSON.stringify(data), bio_age ?? null]
+    );
+
+    return { success: true, scan_id, biomarker_id: bmResult.rows[0].id, user_id };
 }
 
 exports.handler = async (req, resp, context) => {
@@ -1267,6 +1313,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostDots(parsedBody);
             } else if (path === '/users') {
                 result = await handlePostUsers(parsedBody);
+            } else if (path.includes('/kino-result')) {
+                result = await handlePostKinoResult(parsedBody);
             } else if (path.includes('/kino-scan')) {
                 result = await handlePostKinoScan(parsedBody);
             } else if (path.includes('/formula-dots')) {
