@@ -214,10 +214,52 @@
 
 .login-footer-dot { opacity: 0.4; }
 
-.invite-input {
-  text-align: center;
-  font-size: 32rpx;
+/* PIN box input */
+.pin-field {
+  position: relative;
+  width: 100%;
+}
+
+.pin-boxes {
+  display: flex;
+  justify-content: center;
+  gap: 16rpx;
+}
+
+.pin-box {
+  width: 80rpx;
+  height: 96rpx;
+  border-radius: 16rpx;
+  border: 2rpx solid rgba(99, 117, 236, 0.25);
+  background: #162E4A;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pin-active {
+  border-color: #6375EC;
+  box-shadow: 0 0 0 4rpx rgba(99, 117, 236, 0.15);
+}
+
+.pin-filled {
+  border-color: rgba(99, 117, 236, 0.5);
+}
+
+.pin-digit {
+  font-size: 36rpx;
   font-weight: 700;
-  padding-top: 36rpx;
-  padding-bottom: 36rpx;
+  color: #EEF2FF;
+}
+
+.pin-capture {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  font-size: 1rpx;
+  color: transparent;
+  background: transparent;
 }

@@ -7,6 +7,8 @@ Page({
     loading: true,
     error: '',
     inviteCode: '',
+    inviteDigits: ['', '', '', '', '', ''],
+    pinFocus: false,
     inviteError: '',
     inviteBusy: false,
   },
@@ -43,8 +45,19 @@ Page({
     }
   },
 
+  focusPin() {
+    this.setData({ pinFocus: true })
+  },
+
+  onPinBlur() {
+    this.setData({ pinFocus: false })
+  },
+
   onInviteInput(e) {
-    this.setData({ inviteCode: e.detail.value, inviteError: '' })
+    const val = String(e.detail.value || '').slice(0, 6)
+    const digits = val.split('')
+    while (digits.length < 6) digits.push('')
+    this.setData({ inviteCode: val, inviteDigits: digits, inviteError: '' })
   },
 
   async submitInvite() {

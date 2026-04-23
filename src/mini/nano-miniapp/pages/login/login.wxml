@@ -17,15 +17,20 @@
   <view wx:elif="{{step === 'invite'}}" class="login-card">
     <text class="login-card-label">受邀注册</text>
 
-    <view class="login-field">
-      <text class="login-label">邀请码</text>
+    <view class="pin-field" bindtap="focusPin">
+      <view class="pin-boxes">
+        <view wx:for="{{inviteDigits}}" wx:key="index"
+              class="pin-box {{item ? 'pin-filled' : ''}} {{!item && index === inviteCode.length ? 'pin-active' : ''}}">
+          <text class="pin-digit">{{item}}</text>
+        </view>
+      </view>
       <input
-        class="login-input invite-input"
+        class="pin-capture"
         type="number"
-        placeholder="请输入邀请码"
-        placeholder-class="login-input-ph"
         value="{{inviteCode}}"
         bindinput="onInviteInput"
+        bindblur="onPinBlur"
+        focus="{{pinFocus}}"
         maxlength="6"
       />
     </view>
