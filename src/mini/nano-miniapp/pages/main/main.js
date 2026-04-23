@@ -343,6 +343,46 @@ function parsePlan(text, dotsMap, lang) {
   }).filter(Boolean)
 }
 
+function mapStructuredSchedules(schedules, dotsMap, lang) {
+  const dayGroups = {}
+  const now = new Date()
+  const todayStr = now.toISOString().split('T')[0]
+
+  schedules.forEach(s => {
+    // PG DATE type might come back as full ISO string or just date
+    const datePart = typeof s.scheduled_date === 'string' ? s.scheduled_date.split('T')[0] : s.scheduled_date
+    const dateStr = datePart
+    if (!dayGroups[dateStr]) {
+      dayGroups[dateStr] = {
+        label: fmtDate(dateStr, lang),
+        isToday: dateStr === todayStr,
+        morning: [],
+        evening: []
+      }
+    }
+
+    const dots = s.recipe?.dots || {}
+    const parsedDots = Object.entries(dots).map(([key, count]) => {
+      const dot = dotsMap[key] || {}
+      return {
+        displayKey: key.replace('DOT', 'D'),
+        count,
+        color: dot.color || '#6375EC'
+      }
+    })
+
+    if (s.slot_name === 'morning_cup') {
+      dayGroups[dateStr].morning = parsedDots
+    } else if (s.slot_name === 'evening_cup') {
+      dayGroups[dateStr].evening = parsedDots
+    }
+  })
+
+  return Object.values(dayGroups).sort((a, b) => {
+    return new Date(a.label).getTime() - new Date(b.label).getTime()
+  })
+}
+
 function mapStoreItems(rawItems, lang) {
   const t = T[lang]
   const tagLabel = (tag) => {
@@ -1274,11 +1314,24 @@ Page({
     try {
       const res = await this._req(`${BASE}/api/nutrition-plan?openid=${encodeURIComponent(user.user_id)}`)
       const plan = res.data?.plan || null
+      const structured = res.data?.structured_plan || null
+      const schedules = res.data?.schedules || []
       const dotsArr = res.data?.dots || []
       const dotsMap = {}
       dotsArr.forEach(d => { dotsMap[d.key_name] = d })
-      const dotsDays = plan ? parsePlan(plan, dotsMap, lang) : []
-      this.setData({ dotsLoading: false, dotsDays, hasPlan: plan !== null })
+
+      let dotsDays = []
+      if (structured && schedules.length > 0) {
+        dotsDays = mapStructuredSchedules(schedules, dotsMap, lang)
+      } else if (plan) {
+        dotsDays = parsePlan(plan, dotsMap, lang)
+      }
+
+      this.setData({
+        dotsLoading: false,
+        dotsDays,
+        hasPlan: (plan !== null || structured !== null)
+      })
     } catch (e) {
       this.setData({ dotsLoading: false, hasPlan: false })
     }

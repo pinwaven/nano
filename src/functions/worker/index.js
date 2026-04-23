@@ -234,19 +234,47 @@ async function handleGetNutritionPlan(openid) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (!openid) return { success: true, plan: null, dots: [] };
+
+        // 1. Get latest structured plan
         const planResult = await pool.query(
-            `SELECT n.content, n.sent_at
-             FROM notifications n
-             JOIN users u ON n.user_id = u.user_id
-             WHERE u.user_id = $1 AND n.notification_type = 'nutrition_plan'
-             ORDER BY n.sent_at DESC LIMIT 1`,
+            `SELECT id, start_date, end_date, goal, created_at
+             FROM nutrition_plans
+             WHERE user_id = $1
+             ORDER BY created_at DESC LIMIT 1`,
             [openid]
         );
+
+        let planData = null;
+        let schedules = [];
+
+        if (planResult.rows.length > 0) {
+            planData = planResult.rows[0];
+            const scheduleResult = await pool.query(
+                `SELECT scheduled_date, slot_name, recipe, is_taken, taken_at
+                 FROM nutrition_schedules
+                 WHERE plan_id = $1
+                 ORDER BY scheduled_date ASC, slot_name DESC`,
+                [planData.id]
+            );
+            schedules = scheduleResult.rows;
+        }
+
+        // 2. Fallback/Legacy notification content
+        const notifyResult = await pool.query(
+            `SELECT content, sent_at FROM notifications
+             WHERE user_id = $1 AND notification_type = 'nutrition_plan'
+             ORDER BY sent_at DESC LIMIT 1`,
+            [openid]
+        );
+
         const dotsResult = await pool.query('SELECT * FROM dots ORDER BY id ASC');
+
         return {
             success: true,
-            plan: planResult.rows[0]?.content || null,
-            plan_date: planResult.rows[0]?.sent_at || null,
+            plan: notifyResult.rows[0]?.content || null,
+            plan_date: notifyResult.rows[0]?.sent_at || null,
+            structured_plan: planData,
+            schedules: schedules,
             dots: dotsResult.rows,
         };
     } catch (err) {
@@ -352,10 +380,11 @@ async function handlePostFormulaDots(body) {
         if (userResult.rows.length === 0) return { success: false, error: 'User not found' };
         const user = userResult.rows[0];
         const latestBio = bioResult.rows[0] || {};
-        const biomarkers = latestBio.data?.estimated || latestBio.data?.actual || {};
-        const bioageProfile = latestBio.data?.bioage_profile || {};
+        const data = latestBio.data || {};
+        const biomarkers = data.biomarkers || data.estimated || data.actual || {};
+        const bioageProfile = data.bioage_profile || {};
 
-        const startDate = getNowShanghai().toISO().split('T')[0];
+        const startDate = getNowShanghai().toISODate();
         const lang = user.language || 'zh';
 
         // Ask LLM to assign per-dot counts based on biomarkers
@@ -364,22 +393,50 @@ async function handlePostFormulaDots(body) {
             biomarkers,
             bioage_profile: bioageProfile,
             dots_formulary: dotsResult.rows,
+            start_date: startDate,
+            days_needed: 7,
         };
         const llmClient = getLlmClient();
         const model = process.env.MODEL || 'qwen-plus';
         const prompt = systemNutritionTemplate(nutritionContext);
+        console.log(JSON.stringify({ level: 'INFO', msg: 'Formula DOTS Context', data: nutritionContext }));
 
         const completion = await llmClient.chat.completions.create({
             model,
             messages: [{ role: 'user', content: prompt }],
         });
 
-        // Parse "DXX:N" lines into a counts map
         const llmText = completion.choices[0].message.content || '';
+        console.log(JSON.stringify({ level: 'INFO', msg: 'LLM Response', text: llmText }));
+        let analysis = '';
         const dotCounts = {};
-        for (const line of llmText.split('\n')) {
-            const m = line.trim().match(/^(D\d{2}):(\d+)$/);
-            if (m) dotCounts[m[1]] = Math.min(10, Math.max(1, parseInt(m[2], 10)));
+
+        // Improved parsing for ANALYSIS and FORMULATION sections
+        const lines = llmText.split('\n');
+        let currentSection = '';
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            if (trimmed.startsWith('ANALYSIS:')) {
+                analysis = trimmed.replace('ANALYSIS:', '').trim();
+                currentSection = 'analysis';
+                continue;
+            } else if (trimmed.startsWith('FORMULATION:')) {
+                currentSection = 'formulation';
+                continue;
+            }
+
+            if (currentSection === 'formulation') {
+                const m = trimmed.match(/^(D\d{2}):\s*(\d+)$/);
+                if (m) {
+                    dotCounts[m[1]] = Math.min(10, Math.max(1, parseInt(m[2], 10)));
+                }
+            } else if (currentSection === 'analysis' && !analysis) {
+                // In case it's multi-line (though prompt says brief)
+                analysis = trimmed;
+            }
         }
 
         // Fill any missing keys with deterministic fallback
@@ -389,12 +446,61 @@ async function handlePostFormulaDots(body) {
             if (!dotCounts[k]) dotCounts[k] = fallbackCounts[k] || 4;
         }
 
-        const plan = _generatePlanText(dotCounts, availableDotKeys, lang, startDate, 7);
+        const planText = _generatePlanText(dotCounts, availableDotKeys, lang, startDate, 7);
+        const finalContent = analysis ? `${analysis}\n\n${planText}` : planText;
 
-        await pool.query(
-            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-            [user.user_id, 'nutrition_plan', plan, 'pending']
-        );
+        const startDateObj = getNowShanghai();
+        const endDateObj = startDateObj.plus({ days: 6 });
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            const planInsert = await client.query(
+                'INSERT INTO nutrition_plans (user_id, start_date, end_date, goal) VALUES ($1, $2, $3, $4) RETURNING id',
+                [user.user_id, startDateObj.toISODate(), endDateObj.toISODate(), analysis || 'Personalized Formulation']
+            );
+            const planId = planInsert.rows[0].id;
+
+            for (let i = 0; i < 7; i++) {
+                const currentDate = startDateObj.plus({ days: i }).toISODate();
+
+                const morningRecipe = { dots: {} };
+                MORNING_DOTS.forEach(k => {
+                    if (availableDotKeys.has(k) && dotCounts[k] > 0) {
+                        morningRecipe.dots[k.replace('D', 'DOT')] = dotCounts[k];
+                    }
+                });
+
+                const eveningRecipe = { dots: {} };
+                EVENING_DOTS.forEach(k => {
+                    if (availableDotKeys.has(k) && dotCounts[k] > 0) {
+                        eveningRecipe.dots[k.replace('D', 'DOT')] = dotCounts[k];
+                    }
+                });
+
+                await client.query(
+                    'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
+                    [planId, user.user_id, currentDate, 'morning_cup', morningRecipe]
+                );
+                await client.query(
+                    'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
+                    [planId, user.user_id, currentDate, 'evening_cup', eveningRecipe]
+                );
+            }
+
+            await client.query(
+                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                [user.user_id, 'nutrition_plan', finalContent, 'pending']
+            );
+
+            await client.query('COMMIT');
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
 
         return { success: true };
     } catch (err) {
