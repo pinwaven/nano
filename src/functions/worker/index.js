@@ -494,8 +494,10 @@ async function handlePostFormulaDots(body) {
                 [user.user_id, 'nutrition_plan', finalContent, 'pending']
             );
 
-            await client.query('COMMIT');
-        } catch (e) {
+            // Also save to chat history for persistence
+            await saveChatMessage(user.user_id, 'ai', finalContent);
+
+            await client.query('COMMIT');        } catch (e) {
             await client.query('ROLLBACK');
             throw e;
         } finally {
@@ -1032,6 +1034,17 @@ async function handleWxLogin(body) {
     return { success: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel };
 }
 
+async function saveChatMessage(user_id, role, content) {
+    try {
+        await pool.query(
+            'INSERT INTO chat_messages (user_id, role, content) VALUES ($1, $2, $3)',
+            [user_id, role, content]
+        );
+    } catch (err) {
+        console.error('Failed to save chat message:', err);
+    }
+}
+
 async function handleGetChatHistory(openid) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -1113,11 +1126,12 @@ async function handlePostChat(body) {
             'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
             [user_id, biomarkerId, 'biological_report', content, 'pending']
         );
+        await saveChatMessage(user_id, 'ai', content);
 
         // Generate and save Nutrition Plan / Full Report
         try {
             const llmClient = getLlmClient();
-            const model = process.env.MODEL || 'qwen-turbo';
+            const model = process.env.MODEL || 'qwen-plus';
 
             const dotsForNutrition = await pool.query(
                 `SELECT id, key_name, name, name_zh, description, ingredients, ingredients_zh FROM dots ORDER BY id ASC`
@@ -1147,6 +1161,7 @@ async function handlePostChat(body) {
                 'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
                 [user_id, biomarkerId, 'nutrition_plan', reportContent, 'pending']
             );
+            await saveChatMessage(user_id, 'ai', reportContent);
         } catch (reportErr) {
             console.error('Report Generation Error:', reportErr);
         }
@@ -1223,10 +1238,7 @@ async function handlePostChat(body) {
             const reply = completion.choices[0].message.content;
 
             // Save assistant reply to the conversation log
-            await pool.query(
-                'INSERT INTO chat_messages (user_id, role, content) VALUES ($1, $2, $3)',
-                [user_id, 'assistant', reply]
-            );
+            await saveChatMessage(user_id, 'ai', reply);
 
             // Save reply as a notification (existing delivery mechanism for frontend poll)
             await pool.query(
@@ -1243,6 +1255,13 @@ async function handlePostChat(body) {
         }
     }
     return { success: true, user_id, biomarkers: biomarkerData || null, bioage_profile: bioAgeData || null };
+}
+
+async function handlePostChatMessages(body) {
+    const { openid, role, content } = body;
+    if (!openid || !role || !content) return { success: false, error: 'openid, role, and content are required', statusCode: 400 };
+    await saveChatMessage(openid, role, content);
+    return { success: true };
 }
 
 async function handleGetKinoChip(chip_id) {
@@ -1439,6 +1458,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostKinoResult(parsedBody);
             } else if (path.includes('/kino-scan')) {
                 result = await handlePostKinoScan(parsedBody);
+            } else if (path.includes('/chat-messages')) {
+                result = await handlePostChatMessages(parsedBody);
             } else if (path.includes('/formula-dots')) {
                 result = await handlePostFormulaDots(parsedBody);
             } else {

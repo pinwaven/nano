@@ -784,21 +784,51 @@ Page({
 
   async _initChat(user, lang) {
     const t = T[lang]
-    const msgs = [{ id: 'init', role: 'ai', content: t.initMsg }]
+    const initMsg = { id: 'init', role: 'ai', content: t.initMsg }
+
+    // First try to load history
+    let historyLoaded = false
+    try {
+      const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}`)
+      const history = res.data?.messages || []
+      if (history.length > 0) {
+        const msgs = history.map((m, i) => {
+          const role = (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role
+          if (role === 'action') {
+            try {
+              const data = JSON.parse(m.content)
+              return { id: `h-${i}`, role: 'action', action: data.action, label: data.label }
+            } catch (e) {
+              return { id: `h-${i}`, role: 'ai', content: m.content }
+            }
+          }
+          return { id: `h-${i}`, role, content: m.content }
+        })
+        this.setData({ messages: msgs })
+        this._scrollBottom()
+        historyLoaded = true
+      }
+    } catch (e) {
+      console.error('History load failed', e)
+    }
+
+    if (!historyLoaded) {
+      this.setData({ messages: [initMsg] })
+    }
 
     if (!user.nickname) {
-      msgs.push({ id: 'ob-name', role: 'ai', content: t.obNamePrompt })
-      this.setData({ messages: msgs, obStep: 'name' })
+      this._addMsg('ai', t.obNamePrompt)
+      this.setData({ obStep: 'name' })
       return
     }
     if (!user.gender) {
-      msgs.push({ id: 'ob-gender', role: 'ai', content: t.obGenderPrompt })
-      this.setData({ messages: msgs, obStep: 'gender' })
+      this._addMsg('ai', t.obGenderPrompt)
+      this.setData({ obStep: 'gender' })
       return
     }
     if (!user.birth_date) {
-      msgs.push({ id: 'ob-bday', role: 'ai', content: t.obBirthdayOnly })
-      this.setData({ messages: msgs, obStep: 'birthday' })
+      this._addMsg('ai', t.obBirthdayOnly)
+      this.setData({ obStep: 'birthday' })
       return
     }
 
@@ -807,21 +837,19 @@ Page({
       const records = res.data?.records || []
       const hasBody = records.some(r => r.test_type === 'body_composition' && r.data?.actual?.weight)
       if (!hasBody) {
-        msgs.push({ id: 'ob-body', role: 'ai', content: t.obBodyOnly })
-        this.setData({ messages: msgs, obStep: 'body' })
+        this._addMsg('ai', t.obBodyOnly)
+        this.setData({ obStep: 'body' })
         return
       }
     } catch (e) {}
 
     if (user.bio_data?.health_conditions === undefined) {
-      msgs.push({ id: 'ob-cond', role: 'ai', content: t.obConditionsPrompt })
+      this._addMsg('ai', t.obConditionsPrompt)
       const list = CONDITION_KEYS.map(key => ({ key, label: t.conditionLabels[key], selected: false }))
-      this.setData({ messages: msgs, obStep: 'conditions', obConditionList: list })
+      this.setData({ obStep: 'conditions', obConditionList: list })
       return
     }
 
-    this.setData({ messages: msgs })
-    await this._loadHistory(user)
     this.setData({ obStep: 'done' })
     this._startPolling(user)
   },
@@ -845,33 +873,19 @@ Page({
     }
 
     this._addMsg('ai', t.obComplete)
-
-    try {
-      const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}`)
-      const history = res.data?.messages || []
-      if (history.length > 0) {
-        const msgs = history.map((m, i) => ({
-          id: `h-${i}`,
-          role: m.role === 'assistant' ? 'ai' : m.role,
-          content: m.content
-        }))
-        this.setData({ messages: msgs })
-        this._scrollBottom()
-      }
-    } catch (e) {}
-
     this.setData({ obStep: 'done', typing: false })
     this._startPolling(user)
   },
 
   async _loadHistory(user) {
+    // Already handled in _initChat or can be called separately to refresh
     try {
       const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}`)
       const history = res.data?.messages || []
       if (history.length > 0) {
         const msgs = history.map((m, i) => ({
           id: `h-${i}`,
-          role: m.role === 'assistant' ? 'ai' : m.role,
+          role: (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role,
           content: m.content
         }))
         this.setData({ messages: msgs })
@@ -882,11 +896,18 @@ Page({
 
   // ── Chat messaging ──────────────────────────────────────────────────────────
 
-  _addMsg(role, content) {
+  _addMsg(role, content, persist = false) {
     const msg = { id: `${role}-${Date.now()}`, role, content }
     const messages = [...this.data.messages, msg]
     this.setData({ messages })
     this._scrollBottom()
+
+    if (persist && this.data.user?.user_id) {
+      this._req(`${BASE}/api/chat-messages`, 'POST', {
+        openid: this.data.user.user_id,
+        role, content
+      }).catch(e => console.error('Persistent msg failed', e))
+    }
   },
 
   _scrollBottom() {
@@ -921,12 +942,13 @@ Page({
 
   async _requestFormula() {
     const { user, t } = this.data
-    this._addMsg('ai', t.formulaGenerating)
+    this._addMsg('user', t.toolFormulaDotMsg, true)
+    this._addMsg('ai', t.formulaGenerating, true)
     this.setData({ typing: true })
     try {
       await this._req(`${BASE}/api/formula-dots`, 'POST', { openid: user.user_id })
-      this._addMsg('ai', t.formulaComplete)
-      this._addActionMsg('view_dots', t.formulaViewDots)
+      this._addMsg('ai', t.formulaComplete, true)
+      this._addActionMsg('view_dots', t.formulaViewDots, true)
     } catch (e) {
       this._addMsg('ai', t.formulaError)
     } finally {
@@ -934,11 +956,19 @@ Page({
     }
   },
 
-  _addActionMsg(action, label) {
+  _addActionMsg(action, label, persist = false) {
     const msg = { id: `action-${Date.now()}`, role: 'action', action, label }
     const messages = [...this.data.messages, msg]
     this.setData({ messages })
     this._scrollBottom()
+
+    if (persist && this.data.user?.user_id) {
+      this._req(`${BASE}/api/chat-messages`, 'POST', {
+        openid: this.data.user.user_id,
+        role: 'action',
+        content: JSON.stringify({ action, label })
+      }).catch(e => console.error('Persistent action failed', e))
+    }
   },
 
   handleMsgAction(e) {
@@ -961,9 +991,9 @@ Page({
       success: async (res) => {
         const chip_id = res.result
         this.setData({ kinoScanPending: false })
-        this._addMsg('user', chip_id)
+        this._addMsg('user', chip_id, true)
         if (!chip_id.startsWith('MVNS') && !chip_id.startsWith('KINO')) {
-          this._addMsg('ai', t.kinoScanInvalidChip)
+          this._addMsg('ai', t.kinoScanInvalidChip, true)
           return
         }
         this.setData({ typing: true })
@@ -972,15 +1002,15 @@ Page({
           if (scanRes.statusCode !== 200) throw new Error('server error')
           const status = scanRes.data?.status
           if (status === 'already_linked') {
-            this._addMsg('ai', t.kinoScanAlreadyLinked)
+            this._addMsg('ai', t.kinoScanAlreadyLinked, true)
           } else if (status === 'used') {
-            this._addMsg('ai', t.kinoScanUsed)
+            this._addMsg('ai', t.kinoScanUsed, true)
           } else {
-            this._addMsg('ai', t.kinoScanSuccess)
-            this._addMsg('ai', t.kinoScanInstruction)
+            this._addMsg('ai', t.kinoScanSuccess, true)
+            this._addMsg('ai', t.kinoScanInstruction, true)
           }
         } catch (e) {
-          this._addMsg('ai', t.kinoScanError)
+          this._addMsg('ai', t.kinoScanError, true)
         } finally {
           this.setData({ typing: false })
         }
@@ -1047,7 +1077,7 @@ Page({
     const name = obName.trim()
     if (!name) return
 
-    this._addMsg('user', name)
+    this._addMsg('user', name, true)
     this.setData({ typing: true, obName: '' })
 
     try {
@@ -1056,10 +1086,10 @@ Page({
       this._updateUser(updated)
 
       if (!user.gender) {
-        this._addMsg('ai', T[lang].obGenderOnly)
+        this._addMsg('ai', T[lang].obGenderOnly, true)
         this.setData({ obStep: 'gender', typing: false })
       } else if (!user.birth_date) {
-        this._addMsg('ai', T[lang].obBirthdayOnly)
+        this._addMsg('ai', T[lang].obBirthdayOnly, true)
         this.setData({ obStep: 'birthday', typing: false })
       } else {
         await this._checkBodyStep(updated, lang)
@@ -1074,7 +1104,7 @@ Page({
     const gender = e.currentTarget.dataset.gender
     const { user, lang } = this.data
 
-    this._addMsg('user', T[lang][gender])
+    this._addMsg('user', T[lang][gender], true)
     this.setData({ typing: true })
 
     try {
@@ -1083,7 +1113,7 @@ Page({
       this._updateUser(updated)
 
       if (!user.birth_date) {
-        this._addMsg('ai', T[lang].obBirthdayPrompt)
+        this._addMsg('ai', T[lang].obBirthdayPrompt, true)
         this.setData({ obStep: 'birthday', typing: false })
       } else {
         await this._checkBodyStep(updated, lang)
@@ -1100,7 +1130,7 @@ Page({
     const { obBirthday, user, lang } = this.data
     if (!obBirthday) return
 
-    this._addMsg('user', obBirthday)
+    this._addMsg('user', obBirthday, true)
     this.setData({ typing: true })
 
     try {
@@ -1120,7 +1150,7 @@ Page({
   async handleSubmitBody() {
     const { obHeight, obWeight, user, t } = this.data
 
-    this._addMsg('user', `${t.bsHeight}: ${obHeight}${t.bsCm}  ${t.bsWeight}: ${obWeight}${t.bsKg}`)
+    this._addMsg('user', `${t.bsHeight}: ${obHeight}${t.bsCm}  ${t.bsWeight}: ${obWeight}${t.bsKg}`, true)
     this.setData({ typing: true })
 
     try {
@@ -1140,7 +1170,7 @@ Page({
   _startConditionsStep(user, lang) {
     const t = T[lang]
     const list = CONDITION_KEYS.map(key => ({ key, label: t.conditionLabels[key], selected: false }))
-    this._addMsg('ai', t.obConditionsPrompt)
+    this._addMsg('ai', t.obConditionsPrompt, true)
     this.setData({ obStep: 'conditions', obConditions: [], obConditionList: list, obOtherSelected: false, obConditionsOther: '', typing: false })
   },
 
@@ -1169,7 +1199,7 @@ Page({
       .map(i => i.key === 'other' && otherText ? `${i.label}（${otherText}）` : i.label)
     const label = selectedLabels.length > 0 ? selectedLabels.join(sep) : t.obConditionsNone
 
-    this._addMsg('user', label)
+    this._addMsg('user', label, true)
     this.setData({ typing: true })
 
     const bioDataUpdate = { health_conditions: obConditions }
@@ -1179,7 +1209,7 @@ Page({
       await this._saveUser(user, { bio_data: bioDataUpdate })
       const updated = { ...user, bio_data: { ...(user.bio_data || {}), ...bioDataUpdate } }
       this._updateUser(updated)
-      this._addMsg('ai', t.obComplete)
+      this._addMsg('ai', t.obComplete, true)
 
       try {
         const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}`)
@@ -1187,7 +1217,7 @@ Page({
         if (history.length > 0) {
           const msgs = history.map((m, i) => ({
             id: `h-${i}`,
-            role: m.role === 'assistant' ? 'ai' : m.role,
+            role: (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role,
             content: m.content
           }))
           this.setData({ messages: msgs })
