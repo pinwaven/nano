@@ -19,7 +19,7 @@ module.exports = (context) => {
   return `
 You are the Nano Precision Nutrition Engine. Your goal is to generate a concise 7-day "Waven Dots" recipe starting from ${context.start_date}.
 
-FORMULARY (16mg Payload per Dot):
+FORMULARY (40mg Payload per Dot):
 ${formularyLines}
 
 USER BIOMARKERS:

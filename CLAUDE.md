@@ -43,6 +43,13 @@
 ## 8. Changelog for code changes
 - CHANGELOG.md
 
+## 9. Role System
+- 4 roles: `user`, `coach`, `admin`, `superadmin` — stored as `TEXT[]` on `users.roles`.
+- A single WeChat openid can hold multiple roles simultaneously.
+- Channel scoping is implicit via `users.channel_id`; no separate role-junction table.
+- Coach role is auto-managed when `coaches.user_id` FK is set/unset.
+- Full details: `docs/architecture/role-system.md`
+
 
 ## Aliyun Function Compute 3.0 (FC 3.0) Runtime Behavior
  

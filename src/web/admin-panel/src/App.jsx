@@ -4,7 +4,7 @@ import wavenLogo from '../../shared/assets/waven-logo-icon.png';
 import {
   Users, Droplets, UserCog, RefreshCcw,
   ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout,
-  ShoppingBag, Package,
+  ShoppingBag, Package, Building2,
 } from 'lucide-react';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
@@ -12,7 +12,7 @@ import {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Precision Dots', store: 'Store', sims: 'Simulators' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Precision Dots', store: 'Store', sims: 'Simulators', channels: 'Channels' },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
     stats: {
@@ -21,6 +21,7 @@ const T = {
       assignedUsers: 'Assigned Users', unassignedUsers: 'Unassigned Users',
       totalDots: 'Total Dots', isolates: 'Isolates', blends: 'Blends',
       totalItems: 'Items', activeItems: 'Active', totalOrders: 'Orders', pendingOrders: 'Pending',
+      totalChannels: 'Channels',
     },
     table: {
       id: 'ID', nickname: 'Nickname', gender: 'Gender', birthDate: 'Birth Date',
@@ -29,16 +30,17 @@ const T = {
       name: 'Name', email: 'Email', phone: 'Phone', customers: 'Users',
       key: 'Key', nameEn: 'Name (EN)', nameZh: 'Name (ZH)', color: 'Color',
       type: 'Type', description: 'Description',
-      unassigned: 'Unassigned',
+      unassigned: 'Unassigned', channel: 'Channel',
     },
-    empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders' },
+    empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found' },
     count: (n) => `${n} users`,
     addUser: 'Add User',
-    addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item',
+    addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item', addChannel: 'Add Channel',
     countCoach: (n) => `${n} Coaches`,
     countDot: (n) => `${n} dots`,
     countItem: (n) => `${n} items`,
     countOrder: (n) => `${n} orders`,
+    countChannel: (n) => `${n} channels`,
     modal: {
       addUser: 'Add User', editUser: 'Edit User', deleteUser: 'Delete User',
       addCoach: 'Add Coach', editCoach: 'Edit Coach', deleteCoach: 'Delete Coach',
@@ -72,6 +74,10 @@ const T = {
       nameRequired: 'Name is required',
       keyRequired: 'Key name is required',
       saveFailed: 'Save failed',
+      addChannel: 'Add Channel', editChannel: 'Edit Channel', deleteChannel: 'Delete Channel',
+      deleteChannelWarning: (name) => `Delete channel "${name}"? Coaches and users in this channel will be unassigned.`,
+      channelKeyName: 'Key Name *', channelName: 'Display Name *', channelLogoUrl: 'Logo URL',
+      channel: 'Channel', channelUnassigned: 'No channel',
     },
     dotType: { isolate: 'Isolate', blend: 'Blend' },
     store: {
@@ -84,7 +90,7 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理' },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
     stats: {
@@ -93,6 +99,7 @@ const T = {
       assignedUsers: '已分配用户', unassignedUsers: '未分配用户',
       totalDots: '原粒总数', isolates: '单体', blends: '复合',
       totalItems: '商品总数', activeItems: '上架中', totalOrders: '订单总数', pendingOrders: '待处理',
+      totalChannels: '渠道数',
     },
     table: {
       id: 'ID', nickname: '昵称', gender: '性别', birthDate: '出生日期',
@@ -101,16 +108,17 @@ const T = {
       name: '姓名', email: '邮箱', phone: '电话', customers: '用户数',
       key: '标识', nameEn: '名称 (英)', nameZh: '名称 (中)', color: '颜色',
       type: '类型', description: '描述',
-      unassigned: '未分配',
+      unassigned: '未分配', channel: '渠道',
     },
-    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单' },
+    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道' },
     count: (n) => `共 ${n} 位用户`,
     addUser: '添加用户',
-    addCoach: '添加 Coach', addDot: '添加原粒', addItem: '添加商品',
+    addCoach: '添加 Coach', addDot: '添加原粒', addItem: '添加商品', addChannel: '添加渠道',
     countCoach: (n) => `共 ${n} 位 Coach`,
     countDot: (n) => `共 ${n} 个原粒`,
     countItem: (n) => `共 ${n} 件商品`,
     countOrder: (n) => `共 ${n} 笔订单`,
+    countChannel: (n) => `共 ${n} 个渠道`,
     modal: {
       addUser: '添加用户', editUser: '编辑用户', deleteUser: '删除用户',
       addCoach: '添加 Coach', editCoach: '编辑 Coach', deleteCoach: '删除 Coach',
@@ -144,6 +152,10 @@ const T = {
       nameRequired: '姓名为必填项',
       keyRequired: '标识为必填项',
       saveFailed: '保存失败',
+      addChannel: '添加渠道', editChannel: '编辑渠道', deleteChannel: '删除渠道',
+      deleteChannelWarning: (name) => `确认删除渠道"${name}"？该渠道下的 Coach 和用户将失去渠道关联。`,
+      channelKeyName: '标识 *', channelName: '显示名称 *', channelLogoUrl: 'Logo URL',
+      channel: '渠道', channelUnassigned: '无渠道',
     },
     dotType: { isolate: '单体', blend: '复合' },
     store: {
@@ -167,7 +179,7 @@ const bioAgeColor = (bio, chrono) => {
   if (!bio || !chrono) return '#64748b';
   return Number(bio) <= Number(chrono) ? '#16a34a' : '#dc2626';
 };
-const EMPTY_USER = { nickname: '', gender: '', birth_date: '', language: 'zh', external_id: '', external_app: 'wechat', coach_id: '', phone: '', email: '' };
+const EMPTY_USER = { nickname: '', gender: '', birth_date: '', language: 'zh', external_id: '', external_app: 'wechat', coach_id: '', channel_id: '', phone: '', email: '' };
 
 // ── shared components ─────────────────────────────────────────────────────────
 
@@ -211,12 +223,12 @@ function CoachSelect({ userId, currentCoachId, coaches, onAssign }) {
 
 // ── User modal ────────────────────────────────────────────────────────────────
 
-function UserModal({ user, coaches, onClose, onSave }) {
+function UserModal({ user, coaches, channels, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!(user?.user_id || user?.id);
   const userId = user?.user_id || user?.id;
   const [form, setForm] = useState(isEdit
-    ? { nickname: user.nickname || '', gender: user.gender || '', birth_date: user.birth_date ? user.birth_date.slice(0, 10) : '', language: user.language || 'zh', external_id: user.external_id || '', external_app: user.external_app || 'wechat', coach_id: user.coach_id ?? '', phone: user.phone || '', email: user.email || '' }
+    ? { nickname: user.nickname || '', gender: user.gender || '', birth_date: user.birth_date ? user.birth_date.slice(0, 10) : '', language: user.language || 'zh', external_id: user.external_id || '', external_app: user.external_app || 'wechat', coach_id: user.coach_id ?? '', channel_id: user.channel_id ?? '', phone: user.phone || '', email: user.email || '' }
     : { ...EMPTY_USER });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -227,8 +239,9 @@ function UserModal({ user, coaches, onClose, onSave }) {
     setBusy(true); setError('');
     try {
       const payload = { ...form, coach_id: form.coach_id === '' ? null : parseInt(form.coach_id) };
-      if (isEdit) await axios.put(`/api/users/${userId}`, payload);
-      else await axios.post('/api/users', payload);
+      const finalPayload = { ...payload, channel_id: payload.channel_id === '' ? null : parseInt(payload.channel_id) };
+      if (isEdit) await axios.put(`/api/users/${userId}`, finalPayload);
+      else await axios.post('/api/users', finalPayload);
       onSave();
     } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
     finally { setBusy(false); }
@@ -298,6 +311,16 @@ function UserModal({ user, coaches, onClose, onSave }) {
               </div>
             </label>
             <label className="form-field">
+              <span>{t.modal.channel}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">{t.modal.channelUnassigned}</option>
+                  {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
               <span>{t.modal.phone}</span>
               <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+86 138 0000 0000" />
             </label>
@@ -354,13 +377,13 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
 
 // ── Coach modal ───────────────────────────────────────────────────────────────
 
-const EMPTY_COACH = { name: '', email: '', phone: '', language: 'zh' };
+const EMPTY_COACH = { name: '', email: '', phone: '', language: 'zh', channel_id: '' };
 
-function CoachModal({ coach, onClose, onSave }) {
+function CoachModal({ coach, channels, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!coach?.id;
   const [form, setForm] = useState(isEdit
-    ? { name: coach.name || '', email: coach.email || '', phone: coach.phone || '', language: coach.language || 'zh' }
+    ? { name: coach.name || '', email: coach.email || '', phone: coach.phone || '', language: coach.language || 'zh', channel_id: coach.channel_id ?? '' }
     : { ...EMPTY_COACH });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -371,8 +394,9 @@ function CoachModal({ coach, onClose, onSave }) {
     if (!form.name.trim()) { setError(t.modal.nameRequired); return; }
     setBusy(true); setError('');
     try {
-      if (isEdit) await axios.put(`/api/coaches/${coach.id}`, form);
-      else await axios.post('/api/coaches', form);
+      const coachPayload = { ...form, channel_id: form.channel_id === '' ? null : parseInt(form.channel_id) };
+      if (isEdit) await axios.put(`/api/coaches/${coach.id}`, coachPayload);
+      else await axios.post('/api/coaches', coachPayload);
       onSave();
     } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
     finally { setBusy(false); }
@@ -405,6 +429,16 @@ function CoachModal({ coach, onClose, onSave }) {
                 <select value={form.language} onChange={e => set('language', e.target.value)} className="inline-select" style={{ width: '100%' }}>
                   <option value="zh">{t.modal.langZh}</option>
                   <option value="en">{t.modal.langEn}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{t.modal.channel}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">{t.modal.channelUnassigned}</option>
+                  {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -743,7 +777,7 @@ function UserDetailDrawer({ user, onClose }) {
 
 // ── Users tab ─────────────────────────────────────────────────────────────────
 
-function UsersTab({ users, coaches, onRefresh }) {
+function UsersTab({ users, coaches, channels, onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
   const [detailUser, setDetailUser] = useState(null);
@@ -771,7 +805,7 @@ function UsersTab({ users, coaches, onRefresh }) {
         <table className="data-table">
           <thead>
             <tr>
-              <th>{t.table.id}</th><th>{t.table.nickname}</th><th>{t.table.gender}</th>
+              <th>{t.table.id}</th><th>{t.table.nickname}</th><th>{t.table.channel}</th><th>{t.table.gender}</th>
               <th>{t.table.birthDate}</th><th>{t.table.language}</th>
               <th>{t.table.bioAge}</th><th>{t.table.chronoAge}</th>
               <th>{t.table.assignedCoach}</th><th>{t.table.joined}</th>
@@ -779,7 +813,7 @@ function UsersTab({ users, coaches, onRefresh }) {
             </tr>
           </thead>
           <tbody>
-            {users.length === 0 && <tr><td colSpan={12} className="empty-row">{t.empty.users}</td></tr>}
+            {users.length === 0 && <tr><td colSpan={13} className="empty-row">{t.empty.users}</td></tr>}
             {users.map(u => (
               <tr key={u.user_id} className="clickable-row" onClick={() => setDetailUser(u)}>
                 <td className="muted">{u.user_id}</td>
@@ -791,6 +825,7 @@ function UsersTab({ users, coaches, onRefresh }) {
                     <span className="bold">{fmt(u.nickname)}</span>
                   </div>
                 </td>
+                <td>{u.channel_name ? <Badge color="#6366f1">{u.channel_name}</Badge> : '—'}</td>
                 <td>{fmt(u.gender)}</td>
                 <td className="muted">{fmtDate(u.birth_date)}</td>
                 <td><Badge color={u.language === 'zh' ? '#16a34a' : '#2563eb'}>{(u.language || 'zh').toUpperCase()}</Badge></td>
@@ -813,8 +848,8 @@ function UsersTab({ users, coaches, onRefresh }) {
           </tbody>
         </table>
       </div>
-      {modal?.type === 'add'    && <UserModal user={null}       coaches={coaches} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <UserModal user={modal.user} coaches={coaches} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add'    && <UserModal user={null}       coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <UserModal user={modal.user} coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteConfirm user={modal.user} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
       {detailUser && <UserDetailDrawer user={detailUser} onClose={() => setDetailUser(null)} />}
     </>
@@ -823,7 +858,7 @@ function UsersTab({ users, coaches, onRefresh }) {
 
 // ── Coach tab ─────────────────────────────────────────────────────────────────
 
-function CoachTab({ coaches, users, onRefresh }) {
+function CoachTab({ coaches, users, channels, onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
@@ -844,10 +879,10 @@ function CoachTab({ coaches, users, onRefresh }) {
         </div>
         <table className="data-table">
           <thead>
-            <tr><th>{t.table.id}</th><th>{t.table.name}</th><th>{t.table.email}</th><th>{t.table.phone}</th><th>{t.table.language}</th><th>{t.table.customers}</th><th>{t.table.joined}</th><th></th></tr>
+            <tr><th>{t.table.id}</th><th>{t.table.name}</th><th>{t.table.channel}</th><th>{t.table.email}</th><th>{t.table.phone}</th><th>{t.table.language}</th><th>{t.table.customers}</th><th>{t.table.joined}</th><th></th></tr>
           </thead>
           <tbody>
-            {coaches.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.coaches}</td></tr>}
+            {coaches.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.coaches}</td></tr>}
             {coaches.map(p => (
               <tr key={p.id}>
                 <td className="muted">{p.id}</td>
@@ -857,6 +892,7 @@ function CoachTab({ coaches, users, onRefresh }) {
                     <span className="bold">{fmt(p.name)}</span>
                   </div>
                 </td>
+                <td>{p.channel_name ? <Badge color="#6366f1">{p.channel_name}</Badge> : '—'}</td>
                 <td className="muted">{fmt(p.email)}</td>
                 <td className="muted">{fmt(p.phone)}</td>
                 <td><Badge color={p.language === 'zh' ? '#16a34a' : '#2563eb'}>{(p.language || 'zh').toUpperCase()}</Badge></td>
@@ -873,8 +909,8 @@ function CoachTab({ coaches, users, onRefresh }) {
           </tbody>
         </table>
       </div>
-      {modal?.type === 'add'    && <CoachModal coach={null}       onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <CoachModal coach={modal.coach} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add'    && <CoachModal coach={null}        channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <CoachModal coach={modal.coach} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteCoachConfirm coach={modal.coach} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
     </>
   );
@@ -1250,6 +1286,162 @@ function SimulatorsTab() {
   );
 }
 
+// ── Channel components ────────────────────────────────────────────────────────
+
+const EMPTY_CHANNEL = { key_name: '', name: '', logo_url: '' };
+
+function ChannelModal({ channel, onClose, onSave }) {
+  const { t } = useLang();
+  const isEdit = !!channel?.id;
+  const [form, setForm] = useState(isEdit
+    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '' }
+    : { ...EMPTY_CHANNEL });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.key_name.trim()) { setError(t.modal.keyRequired); return; }
+    if (!form.name.trim())     { setError(t.modal.nameRequired); return; }
+    setBusy(true); setError('');
+    try {
+      if (isEdit) await axios.put(`/api/channels/${channel.id}`, form);
+      else        await axios.post('/api/channels', form);
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{isEdit ? t.modal.editChannel : t.modal.addChannel}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field">
+              <span>{t.modal.channelKeyName}</span>
+              <input value={form.key_name} onChange={e => set('key_name', e.target.value)} disabled={isEdit} placeholder="e.g. nanovate" />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.channelName}</span>
+              <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Nanovate" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.channelLogoUrl}</span>
+              <input value={form.logo_url} onChange={e => set('logo_url', e.target.value)} placeholder="https://..." />
+            </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? t.modal.saving : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteChannelConfirm({ channel, onClose, onConfirm }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState(false);
+  const handleDelete = async () => {
+    setBusy(true);
+    try { await axios.delete(`/api/channels/${channel.id}`); onConfirm(); }
+    catch { /* silent */ } finally { setBusy(false); }
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.modal.deleteChannel}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginBottom: 20, color: '#475569' }}>
+            {t.modal.deleteChannelWarning(<strong>{channel.name}</strong>)}
+          </p>
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-danger" onClick={handleDelete} disabled={busy}>
+              <Trash2 size={14} />{busy ? t.modal.deleting : t.modal.delete}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChannelTab({ channels, onRefresh }) {
+  const { t } = useLang();
+  const [modal, setModal] = useState(null);
+  const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={Building2} label={t.stats.totalChannels} value={channels.length} color="#6366f1" />
+      </div>
+      <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count">{t.countChannel(channels.length)}</span>
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{t.addChannel}
+          </button>
+        </div>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>{t.table.id}</th>
+              <th>{t.modal.channelKeyName.replace(' *', '')}</th>
+              <th>{t.modal.channelName.replace(' *', '')}</th>
+              <th>{t.modal.channelLogoUrl}</th>
+              <th>{t.table.customers}</th>
+              <th>{t.stats.coaches}</th>
+              <th>{t.table.joined}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {channels.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.channels}</td></tr>}
+            {channels.map(c => (
+              <tr key={c.id}>
+                <td className="muted">{c.id}</td>
+                <td><code className="code-tag">{c.key_name}</code></td>
+                <td className="bold">{fmt(c.name)}</td>
+                <td className="muted">
+                  {c.logo_url
+                    ? <a href={c.logo_url} target="_blank" rel="noreferrer" style={{ color: '#6366f1', fontSize: 12 }}>View</a>
+                    : '—'}
+                </td>
+                <td><Badge color="#3b82f6">{c.user_count || 0}</Badge></td>
+                <td><Badge color="#10b981">{c.coach_count || 0}</Badge></td>
+                <td className="muted">{fmtDate(c.created_at)}</td>
+                <td>
+                  <div className="row-actions">
+                    <button className="icon-btn" title={t.modal.editChannel} onClick={() => setModal({ type: 'edit', channel: c })}><Pencil size={14} /></button>
+                    <button className="icon-btn danger" title={t.modal.deleteChannel} onClick={() => setModal({ type: 'delete', channel: c })}><Trash2 size={14} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {modal?.type === 'add'    && <ChannelModal channel={null}          onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <ChannelModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete' && <DeleteChannelConfirm channel={modal.channel} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+    </>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -1258,19 +1450,20 @@ export default function App() {
   const toggleLang = () => setLang(l => l === 'en' ? 'zh' : 'en');
 
   const [tab, setTab] = useState('users');
-  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [] });
+  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [uRes, dRes, pRes, sRes, oRes] = await Promise.all([
+      const [uRes, dRes, pRes, sRes, oRes, chRes] = await Promise.all([
         axios.get('/api/users'),
         axios.get('/api/dots-inventory'),
         axios.get('/api/coach-list'),
         axios.get('/api/store-items?all=true'),
         axios.get('/api/orders'),
+        axios.get('/api/channels'),
       ]);
       setData({
         users: uRes.data.users || [],
@@ -1278,6 +1471,7 @@ export default function App() {
         coaches: pRes.data.coaches || [],
         storeItems: sRes.data.items || [],
         orders: oRes.data.orders || [],
+        channels: chRes.data.channels || [],
       });
       setLastRefresh(new Date());
     } catch (err) { console.error('Admin fetch error:', err); }
@@ -1287,11 +1481,12 @@ export default function App() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const NAV = [
-    { id: 'users',   label: t.nav.users,   icon: Users    },
-    { id: 'coaches', label: t.nav.coaches, icon: UserCog  },
-    { id: 'dots',    label: t.nav.dots,    icon: Droplets    },
-    { id: 'store',   label: t.nav.store,   icon: ShoppingBag },
-    { id: 'sims',    label: t.nav.sims,    icon: Layout      },
+    { id: 'users',    label: t.nav.users,    icon: Users       },
+    { id: 'coaches',  label: t.nav.coaches,  icon: UserCog     },
+    { id: 'dots',     label: t.nav.dots,     icon: Droplets    },
+    { id: 'store',    label: t.nav.store,    icon: ShoppingBag },
+    { id: 'channels', label: t.nav.channels, icon: Building2   },
+    { id: 'sims',     label: t.nav.sims,     icon: Layout      },
   ];
 
   return (
@@ -1325,11 +1520,12 @@ export default function App() {
           </button>
         </header>
         <div className="content">
-          {tab === 'users'   && <UsersTab   users={data.users} coaches={data.coaches} onRefresh={fetchData} />}
-          {tab === 'coaches' && <CoachTab   coaches={data.coaches} users={data.users} onRefresh={fetchData} />}
-          {tab === 'dots'    && <DotsTab    dots={data.dots} onRefresh={fetchData} />}
-          {tab === 'store'   && <StoreTab   storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
-          {tab === 'sims'    && <SimulatorsTab />}
+          {tab === 'users'    && <UsersTab  users={data.users} coaches={data.coaches} channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'coaches'  && <CoachTab  coaches={data.coaches} users={data.users} channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'dots'     && <DotsTab   dots={data.dots} onRefresh={fetchData} />}
+          {tab === 'store'    && <StoreTab  storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
+          {tab === 'channels' && <ChannelTab channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'sims'     && <SimulatorsTab />}
         </div>
       </div>
     </LangCtx.Provider>

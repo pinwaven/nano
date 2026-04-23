@@ -7,18 +7,25 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 ## [Unreleased]
 
 ### Added
-- **Nano Mini App — Admin panel** (`src/mini/nano-miniapp/pages/admin/`): full four-tab control panel (Users, Coaches, Dots, Store) accessible via ⚙ icon in the nano miniapp menu. Features per-tab card lists, bottom-sheet add/edit forms, bilingual dot names, and ingredient editing (name + mg rows with add/remove).
-- **Nano Mini App — Formula generation flow**: "Formula my dots" chat tool now calls `POST /api/formula-dots`, shows a generating message, then a completion message with a tappable action card that navigates directly to the Dots tab.
-- **Nano Mini App — Action message type**: chat messages now support `role: 'action'` cards rendered as tappable banners; wired to `handleMsgAction` which routes to the appropriate tab.
-- **Backend — `POST /api/formula-dots`** (worker): generates a 7-day personalised Waven Dots dispensing plan and saves it as a `nutrition_plan` notification.
-  - LLM (qwen-plus via DashScope) receives the formulary (all dots with ingredient mg data), the user's latest kino-chip biomarker values, and bio-age profile.
-  - Prompt instructs the model to output one `DXX:N` count line per dot; explicit reference ranges (hsCRP, IL-6, GDF-15, GA, Cystatin-C) and a scoring guide (3–4 normal · 5–7 elevated · 8–10 critical) are included so counts vary by clinical need.
-  - Worker parses the `DXX:N` lines; any dot not covered by the LLM falls back to a deterministic biomarker-severity score.
-  - The resulting per-dot counts are passed to `_generatePlanText` which produces the 7-day calendar text in the `Dxx Month D, Weekday: Morning DXXxN … Evening DXXxN …` format consumed by `parsePlan` in the miniapp.
-- **Backend — deterministic fallback scorer** (`_scoreMarker`, `_calcDotCounts`, `_generatePlanText` in worker): scores each biomarker on a 0–3 severity scale and maps it to per-dot counts (base 3, +score per relevant marker, clamped 1–10); used when the LLM output is missing a dot key.
-- **Login screen**: replaced placeholder "W" ring with `waven-logo-icon.png`.
+- **Role system**: users can hold multiple roles simultaneously (`user`, `coach`, `admin`, `superadmin`).
+  - **DB migration** `migration_add_roles.sql`: `roles TEXT[]` on `users` (default `{user}`); `user_id` FK on `coaches` to link a WeChat identity; GIN index on roles; Pin and echo seeded as superadmins.
+  - **Worker API**: `handleWxLogin` now returns `roles` on the user object and fetches the `coach` record when the user has the coach role; `handleGetUsers` includes `roles`; `handlePutUser` accepts `roles`; `handlePostCoaches`/`handlePutCoach` accept `user_id` and auto-manage the `coach` role; new scoped endpoints `GET /channel-users/:id`, `GET /channel-coaches/:id`, `GET /coach-users/:id`.
+  - **Mini-app global state**: `app.globalData` now holds `coach` (set at login, persisted to `nano_coach`).
+  - **Mini-app header menu** (`pages/main`): shows **Coach Panel**, **Channel Admin**, and **Super Admin** links conditionally based on `user.roles`.
+  - **New `pages/coach/coach`**: coach dashboard — lists assigned clients with bio/chrono age chips, client detail overlay with latest biomarkers, send health instruction to any client.
+  - **Rebuilt `pages/admin/admin`**: now role-gated on `onLoad` (redirects if user lacks `admin`/`superadmin` role); data scoped to the user's own channel via `/channel-users/:id` and `/channel-coaches/:id`.
+  - **New `pages/superadmin/superadmin`**: platform-wide panel — Channels tab (full CRUD), Users tab (all users with channel + roles display, inline role-management modal), Coaches tab (all coaches with channel and linked-user display).
+- **Multi-channel support**: distribution channels (e.g. Nanovate, Aeviva) with per-channel branding (name, logo). distribution channels (e.g. Nanovate, Aeviva) with per-channel branding (name, logo).
+  - **DB migration** `migration_add_channels.sql`: new `channels` table; `channel_id` FK added to `coaches` and `users`; existing rows backfilled to `nanovate`.
+  - **Worker API**: `GET/POST /channels`, `PUT/DELETE /channels/:id`; all user and coach CRUD endpoints accept `channel_id`; `GET /users` and `GET /coach-list` return `channel_name` and `channel_logo_url`; `POST /wx-login` accepts optional `coach_id` (from deep-link invite), resolves channel from coach, and returns `{ user, channel }`.
+  - **Admin panel**: new **Channels** tab (CRUD); channel badge column in Users and Coaches tables; channel selector in Add/Edit modals for both users and coaches.
+  - **Mini-app login**: reads `coach_id` from URL params (deep-link onboarding), passes to `wx-login`, stores returned `channel` in `globalData` and local storage.
+  - **Mini-app header**: displays `channel.name | username` and `channel.logo_url` (falls back to Waven logo if not set).
 
 ### Changed
+- **Waven Dots Payload Update**: each dot is now 40mg (previously 16mg).
+  - **Database — `dots` table**: scaled all `mg` values in `ingredients` and `ingredients_zh` columns by 2.5x.
+  - **AI Prompts**: updated `systemChat.js`, `systemNutrition.js` (worker), and `systemNutrition.js` (dispatcher) to reflect the new 40mg payload per dot.
 - **"营养点" renamed to "原粒"** throughout nano-miniapp admin panel and web admin panel.
 - **Admin panel coach label**: Chinese label updated to "教练".
 - **Admin panel tab text**: inactive tabs use `#7A9ABF` at weight 500; active tab uses `#A0B4FF` at weight 700 for clearer visibility.

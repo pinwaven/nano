@@ -73,7 +73,9 @@ const T = {
     formulaComplete: '您的7天营养方案已生成！',
     formulaViewDots: '查看营养方案 →',
     formulaError: '方案生成失败，请重试。',
-    adminMenu: '管理员',
+    adminMenu: '渠道管理',
+    coachMenu: '教练面板',
+    superadminMenu: '超管面板',
     kinoSimMenu: 'Kino 模拟器',
     kinoSimPassTitle: '输入密码',
     kinoSimPassError: '密码错误',
@@ -178,7 +180,9 @@ const T = {
     formulaComplete: 'Your 7-day nutrition plan is ready!',
     formulaViewDots: 'View Dots Plan →',
     formulaError: 'Plan generation failed. Please try again.',
-    adminMenu: 'Admin',
+    adminMenu: 'Channel Admin',
+    coachMenu: 'Coach Panel',
+    superadminMenu: 'Super Admin',
     kinoSimMenu: 'Kino Simulator',
     kinoSimPassTitle: 'Enter Passcode',
     kinoSimPassError: 'Incorrect passcode',
@@ -415,6 +419,15 @@ Page({
     healthConditionsList: [],
     hasConditionsData: false,
 
+    // Channel
+    channel: null,
+
+    // Role menu flags
+    menuOpen: false,
+    isCoach: false,
+    isAdmin: false,
+    isSuperadmin: false,
+
     // Dots
     dotsLoading: true,
     dotsDays: [],
@@ -445,7 +458,12 @@ Page({
     const capsuleRightPad = windowWidth - (capsule.left || windowWidth - 96) + 8
     const menuTop = statusBarHeight + 44
     const lang = app.globalData.lang || (user.language === 'en' ? 'en' : 'zh')
-    this.setData({ user: { ...user }, lang, t: T[lang], statusBarHeight, capsuleRightPad, menuTop, menuOpen: false })
+    const channel = app.globalData.channel || null
+    const roles = user.roles || ['user']
+    const isCoach = roles.includes('coach')
+    const isAdmin = roles.includes('admin') || roles.includes('superadmin')
+    const isSuperadmin = roles.includes('superadmin')
+    this.setData({ user: { ...user }, channel, lang, t: T[lang], statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin })
     this._initChat(user, lang)
     this._loadHealth(user, lang)
     this._loadDots(user, lang)
@@ -495,9 +513,19 @@ Page({
     this._loadDots(this.data.user, lang)
   },
 
+  openCoach() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/coach/coach' })
+  },
+
   openAdmin() {
     this.setData({ menuOpen: false })
     wx.navigateTo({ url: '/pages/admin/admin' })
+  },
+
+  openSuperadmin() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/superadmin/superadmin' })
   },
 
   // ── Kino Simulator ──────────────────────────────────────────────────────────

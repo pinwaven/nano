@@ -1,0 +1,107 @@
+<view class="coach-page">
+  <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
+
+  <!-- Header -->
+  <view class="coach-header">
+    <view class="header-back" bindtap="handleBack">
+      <text class="back-arrow">‹</text>
+    </view>
+    <text class="header-title">{{t.title}}</text>
+    <view class="header-refresh" bindtap="handleRefresh">
+      <text class="refresh-icon">↻</text>
+    </view>
+  </view>
+
+  <!-- Loading -->
+  <view wx:if="{{loading}}" class="loading-row">
+    <text class="loading-text">{{t.loading}}</text>
+  </view>
+
+  <!-- Client List -->
+  <view wx:else class="client-list">
+    <view wx:if="{{clients.length === 0}}" class="empty-state">
+      <text class="empty-text">{{t.noClients}}</text>
+    </view>
+    <view wx:for="{{clients}}" wx:key="user_id" class="client-card">
+      <view class="client-row" bindtap="openClientDetail" data-client="{{item}}">
+        <view class="client-avatar" style="background: #1E3A5F;">
+          <text class="avatar-letter">{{item._avatar}}</text>
+        </view>
+        <view class="client-info">
+          <text class="client-name">{{item.nickname || '—'}}</text>
+          <view class="client-ages">
+            <view wx:if="{{item.bio_age}}" class="age-chip" style="background: {{item._bioAgeColor}}20; border-color: {{item._bioAgeColor}};">
+              <text class="age-chip-text" style="color: {{item._bioAgeColor}};">{{t.bioAge}} {{item.bio_age}}</text>
+            </view>
+            <view wx:if="{{item._cAge}}" class="age-chip chrono">
+              <text class="age-chip-text">{{t.chronoAge}} {{item._cAge}}</text>
+            </view>
+          </view>
+          <text class="client-joined">{{t.joined}}: {{item._joinedFmt}}</text>
+        </view>
+      </view>
+      <view class="client-actions">
+        <view class="action-btn send-btn" bindtap="openInstruction" data-client="{{item}}">
+          <text class="action-btn-text">{{t.sendInstruction}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- Client Detail Overlay -->
+  <view wx:if="{{detailOpen}}" class="overlay-mask" catchtouchmove="noop">
+    <view class="overlay-panel" catchtap="noop">
+      <view class="overlay-header">
+        <text class="overlay-title">{{detailClient.nickname || t.detailTitle}}</text>
+        <view class="overlay-close" bindtap="closeClientDetail">
+          <text class="close-x">✕</text>
+        </view>
+      </view>
+      <scroll-view scroll-y class="overlay-scroll">
+        <view class="bm-section">
+          <text class="section-label">{{t.biomarkers}}</text>
+          <view wx:if="{{detailBmLoading}}" class="bm-loading">
+            <text class="loading-text">{{t.loading}}</text>
+          </view>
+          <view wx:elif="{{detailBmList.length === 0}}" class="bm-empty">
+            <text class="empty-text">{{t.noBmData}}</text>
+          </view>
+          <view wx:else class="bm-grid">
+            <view wx:for="{{detailBmList}}" wx:key="key" class="bm-item">
+              <view class="bm-dot" style="background: {{item.color}};"></view>
+              <view class="bm-info">
+                <text class="bm-label">{{item.label}}</text>
+                <text class="bm-value">{{item.value !== null ? item.value : '—'}} {{item.unit}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <!-- Send Instruction Overlay -->
+  <view wx:if="{{instructionOpen}}" class="overlay-mask" catchtouchmove="noop">
+    <view class="overlay-panel" catchtap="noop">
+      <view class="overlay-header">
+        <text class="overlay-title">{{instructionTarget.nickname}}</text>
+        <view class="overlay-close" bindtap="closeInstruction">
+          <text class="close-x">✕</text>
+        </view>
+      </view>
+      <view class="instr-body">
+        <textarea
+          class="instr-textarea"
+          placeholder="{{t.instructionPh}}"
+          value="{{instructionText}}"
+          bindinput="onInstructionInput"
+          maxlength="500"
+          auto-height
+        />
+        <view class="instr-send-btn {{instructionBusy ? 'btn-busy' : ''}}" bindtap="sendInstruction">
+          <text class="instr-send-text">{{instructionBusy ? t.sending : t.send}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

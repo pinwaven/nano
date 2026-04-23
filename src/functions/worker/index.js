@@ -21,13 +21,15 @@ async function handleGetUsers() {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
-                    u.coach_id, u.created_at, u.phone, u.email,
+                    u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
                     b.bio_age, b.data as bio_data,
                     p.name as coach_name,
+                    c.name as channel_name, c.logo_url as channel_logo_url,
                     (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report,
                     (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan
             FROM users u
             LEFT JOIN coaches p ON u.coach_id = p.id
+            LEFT JOIN channels c ON u.channel_id = c.id
             LEFT JOIN (
                 SELECT DISTINCT ON (user_id) user_id, bio_age, data
                 FROM biomarkers
@@ -405,13 +407,83 @@ async function handleGetCoachList() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
-            SELECT p.id, p.name, p.email, p.phone, p.language, p.created_at, COUNT(u.user_id) as user_count
+            SELECT p.id, p.name, p.email, p.phone, p.language, p.channel_id, p.user_id, p.created_at,
+                   COUNT(u.user_id) AS user_count,
+                   c.name AS channel_name
             FROM coaches p
             LEFT JOIN users u ON p.id = u.coach_id
-            GROUP BY p.id;
+            LEFT JOIN channels c ON p.channel_id = c.id
+            GROUP BY p.id, c.name;
         `;
         const result = await pool.query(query);
         return { success: true, coaches: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetChannelUsers(channelId) {
+    if (!channelId) return { success: false, error: 'channelId is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
+                    u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
+                    b.bio_age, p.name AS coach_name
+             FROM users u
+             LEFT JOIN coaches p ON u.coach_id = p.id
+             LEFT JOIN (
+                 SELECT DISTINCT ON (user_id) user_id, bio_age
+                 FROM biomarkers ORDER BY user_id, tested_at DESC
+             ) b ON u.user_id = b.user_id
+             WHERE u.channel_id = $1
+             ORDER BY u.created_at DESC`,
+            [channelId]
+        );
+        return { success: true, users: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetChannelCoaches(channelId) {
+    if (!channelId) return { success: false, error: 'channelId is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `SELECT p.id, p.name, p.email, p.phone, p.language, p.channel_id, p.user_id, p.created_at,
+                    COUNT(u.user_id) AS user_count
+             FROM coaches p
+             LEFT JOIN users u ON p.id = u.coach_id
+             WHERE p.channel_id = $1
+             GROUP BY p.id
+             ORDER BY p.created_at DESC`,
+            [channelId]
+        );
+        return { success: true, coaches: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetCoachUsers(coachId) {
+    if (!coachId) return { success: false, error: 'coachId is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
+                    u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
+                    b.bio_age, b.data AS bio_data
+             FROM users u
+             LEFT JOIN (
+                 SELECT DISTINCT ON (user_id) user_id, bio_age, data
+                 FROM biomarkers ORDER BY user_id, tested_at DESC
+             ) b ON u.user_id = b.user_id
+             WHERE u.coach_id = $1
+             ORDER BY u.created_at DESC`,
+            [coachId]
+        );
+        return { success: true, users: result.rows };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -446,14 +518,21 @@ async function handlePostAssignCoach(body) {
 }
 
 async function handlePostCoaches(body) {
-    const { name, email, phone, language } = body;
+    const { name, email, phone, language, channel_id, user_id } = body;
     if (!name) return { success: false, error: 'name is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            'INSERT INTO coaches (name, email, phone, language) VALUES ($1, $2, $3, $4) RETURNING id',
-            [name, email || null, phone || null, language || 'zh']
+            'INSERT INTO coaches (name, email, phone, language, channel_id, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+            [name, email || null, phone || null, language || 'zh', channel_id || null, user_id || null]
         );
+        // If user_id provided, add 'coach' role to that user
+        if (user_id) {
+            await pool.query(
+                `UPDATE users SET roles = array_append(roles, 'coach') WHERE user_id = $1 AND NOT ('coach' = ANY(roles))`,
+                [user_id]
+            );
+        }
         return { success: true, id: result.rows[0].id };
     } catch (err) {
         return { success: false, error: err.detail || err.message };
@@ -461,13 +540,33 @@ async function handlePostCoaches(body) {
 }
 
 async function handlePutCoach(coachId, body) {
-    const { name, email, phone, language } = body;
+    const { name, email, phone, language, channel_id, user_id } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        // Get old user_id to potentially remove coach role
+        const oldResult = await pool.query('SELECT user_id FROM coaches WHERE id = $1', [coachId]);
+        const oldUserId = oldResult.rows[0]?.user_id;
         await pool.query(
-            'UPDATE coaches SET name=$1, email=$2, phone=$3, language=$4 WHERE id=$5',
-            [name, email || null, phone || null, language || 'zh', coachId]
+            'UPDATE coaches SET name=$1, email=$2, phone=$3, language=$4, channel_id=$5, user_id=$6 WHERE id=$7',
+            [name, email || null, phone || null, language || 'zh', channel_id || null, user_id || null, coachId]
         );
+        // Add coach role to new user_id
+        if (user_id) {
+            await pool.query(
+                `UPDATE users SET roles = array_append(roles, 'coach') WHERE user_id = $1 AND NOT ('coach' = ANY(roles))`,
+                [user_id]
+            );
+        }
+        // Remove coach role from old user_id if changed
+        if (oldUserId && oldUserId !== user_id) {
+            const stillCoach = await pool.query('SELECT id FROM coaches WHERE user_id = $1', [oldUserId]);
+            if (stillCoach.rows.length === 0) {
+                await pool.query(
+                    `UPDATE users SET roles = array_remove(roles, 'coach') WHERE user_id = $1`,
+                    [oldUserId]
+                );
+            }
+        }
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -533,16 +632,76 @@ async function handleDeleteDot(dotId) {
     }
 }
 
+async function handleGetChannels() {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(`
+            SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at,
+                   COUNT(DISTINCT u.user_id) AS user_count,
+                   COUNT(DISTINCT p.id) AS coach_count
+            FROM channels c
+            LEFT JOIN users u ON u.channel_id = c.id
+            LEFT JOIN coaches p ON p.channel_id = c.id
+            GROUP BY c.id
+            ORDER BY c.id
+        `);
+        return { success: true, channels: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostChannel(body) {
+    const { key_name, name, logo_url } = body;
+    if (!key_name) return { success: false, error: 'key_name is required', statusCode: 400 };
+    if (!name)     return { success: false, error: 'name is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `INSERT INTO channels (key_name, name, logo_url) VALUES ($1, $2, $3) RETURNING id`,
+            [key_name, name, logo_url || null]
+        );
+        return { success: true, id: result.rows[0].id };
+    } catch (err) {
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handlePutChannel(channelId, body) {
+    const { name, logo_url } = body;
+    if (!name) return { success: false, error: 'name is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query(
+            `UPDATE channels SET name=$1, logo_url=$2 WHERE id=$3`,
+            [name, logo_url || null, channelId]
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteChannel(channelId) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('DELETE FROM channels WHERE id = $1', [channelId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handlePostUsers(body) {
-    const { openid, external_id: extId, external_app, nickname, phone, email, gender, birth_date, language, coach_id } = body;
+    const { openid, external_id: extId, external_app, nickname, phone, email, gender, birth_date, language, coach_id, channel_id } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const newUserId = generateUserId();
         const external_id = extId || openid || null;
         const result = await pool.query(
-            `INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, coach_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING user_id`,
-            [newUserId, external_id, external_app || null, nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null]
+            `INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, coach_id, channel_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING user_id`,
+            [newUserId, external_id, external_app || null, nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null]
         );
         return { success: true, user_id: result.rows[0].user_id };
     } catch (err) {
@@ -551,18 +710,28 @@ async function handlePostUsers(body) {
 }
 
 async function handlePutUser(user_id, body) {
-    const { nickname, phone, email, gender, birth_date, language, coach_id, bio_data } = body;
+    const { nickname, phone, email, gender, birth_date, language, coach_id, channel_id, bio_data, roles } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        if (bio_data) {
+        if (bio_data && roles) {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, bio_data = bio_data || $8 WHERE user_id=$9`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, JSON.stringify(bio_data), user_id]
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, bio_data = bio_data || $9, roles=$10 WHERE user_id=$11`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), roles, user_id]
+            );
+        } else if (bio_data) {
+            await pool.query(
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, bio_data = bio_data || $9 WHERE user_id=$10`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), user_id]
+            );
+        } else if (roles) {
+            await pool.query(
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, roles=$9 WHERE user_id=$10`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, roles, user_id]
             );
         } else {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7 WHERE user_id=$8`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, user_id]
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8 WHERE user_id=$9`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, user_id]
             );
         }
         return { success: true };
@@ -582,14 +751,13 @@ async function handleDeleteUser(user_id) {
 }
 
 async function handleWxLogin(body) {
-    const { code } = body;
+    const { code, coach_id } = body;
     if (!code) return { success: false, error: 'code is required' };
 
     const appid  = process.env.WX_APPID;
     const secret = process.env.WX_SECRET;
     if (!appid || !secret) return { success: false, error: 'WX_APPID / WX_SECRET not configured' };
 
-    // Exchange code for openid via WeChat API
     const wxRes = await fetch(
         `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${code}&grant_type=authorization_code`
     );
@@ -598,13 +766,15 @@ async function handleWxLogin(body) {
 
     const openid = wxData.openid;
 
-    // Look up existing user by external_id or user_id
+    // Look up existing user — return with channel info and roles
     const existing = await pool.query(
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                u.coach_id, u.created_at, u.bio_data, b.bio_age,
-                p.name as coach_name
+                u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
+                p.name AS coach_name,
+                c.name AS channel_name, c.logo_url AS channel_logo_url
          FROM users u
          LEFT JOIN coaches p ON u.coach_id = p.id
+         LEFT JOIN channels c ON u.channel_id = c.id
          LEFT JOIN (
              SELECT DISTINCT ON (user_id) user_id, bio_age
              FROM biomarkers ORDER BY user_id, tested_at DESC
@@ -615,18 +785,46 @@ async function handleWxLogin(body) {
     );
 
     if (existing.rows.length > 0) {
-        return { success: true, user: existing.rows[0] };
+        const { channel_name, channel_logo_url, ...user } = existing.rows[0];
+        const channel = channel_name ? { name: channel_name, logo_url: channel_logo_url } : null;
+        // If user is a coach, fetch their coach record
+        let coach = null;
+        if (user.roles && user.roles.includes('coach')) {
+            const coachRes = await pool.query(
+                `SELECT id, name, email, phone, language, channel_id, user_id FROM coaches WHERE user_id = $1 LIMIT 1`,
+                [user.user_id]
+            );
+            if (coachRes.rows.length > 0) coach = coachRes.rows[0];
+        }
+        return { success: true, user, channel, coach };
     }
 
-    // New user — create with openid as external_id
+    // New user — determine channel from coach invite or default to nanovate
+    let channelId = null;
+    if (coach_id) {
+        const coachRes = await pool.query('SELECT channel_id FROM coaches WHERE id = $1', [parseInt(coach_id)]);
+        if (coachRes.rows.length > 0) channelId = coachRes.rows[0].channel_id;
+    }
+    if (!channelId) {
+        const defaultCh = await pool.query("SELECT id FROM channels WHERE key_name = 'nanovate' LIMIT 1");
+        channelId = defaultCh.rows[0]?.id || null;
+    }
+
     const newUserId = generateUserId();
     const created = await pool.query(
-        `INSERT INTO users (user_id, external_id, external_app, language)
-         VALUES ($1, $2, 'wechat', 'zh')
-         RETURNING user_id, nickname, birth_date, gender, language, phone, email, coach_id, created_at, bio_data`,
-        [newUserId, openid]
+        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id)
+         VALUES ($1, $2, 'wechat', 'zh', $3, $4)
+         RETURNING user_id, nickname, birth_date, gender, language, phone, email, coach_id, channel_id, roles, created_at, bio_data`,
+        [newUserId, openid, coach_id ? parseInt(coach_id) : null, channelId]
     );
-    return { success: true, user: { ...created.rows[0], bio_age: null, coach_name: null } };
+
+    let channel = null;
+    if (channelId) {
+        const chanRes = await pool.query('SELECT name, logo_url FROM channels WHERE id = $1', [channelId]);
+        if (chanRes.rows.length > 0) channel = { name: chanRes.rows[0].name, logo_url: chanRes.rows[0].logo_url };
+    }
+
+    return { success: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel };
 }
 
 async function handleGetChatHistory(openid) {
@@ -666,8 +864,8 @@ async function handlePostChat(body) {
     } else {
         const { phone, email } = body;
         const userQuery = `
-            INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, bio_data)
-            VALUES ($1, $2, 'wechat', $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, bio_data, channel_id)
+            VALUES ($1, $2, 'wechat', $3, $4, $5, $6, $7, $8, $9, (SELECT id FROM channels WHERE key_name = 'nanovate' LIMIT 1))
             ON CONFLICT (external_id)
             DO UPDATE SET
                 nickname = COALESCE(EXCLUDED.nickname, users.nickname),
@@ -934,6 +1132,14 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetOrders();
             } else if (path.includes('/coach-list')) {
                 result = await handleGetCoachList();
+            } else if (path.match(/\/channel-users\/(\d+)/)) {
+                result = await handleGetChannelUsers(path.match(/\/channel-users\/(\d+)/)[1]);
+            } else if (path.match(/\/channel-coaches\/(\d+)/)) {
+                result = await handleGetChannelCoaches(path.match(/\/channel-coaches\/(\d+)/)[1]);
+            } else if (path.match(/\/coach-users\/(\d+)/)) {
+                result = await handleGetCoachUsers(path.match(/\/coach-users\/(\d+)/)[1]);
+            } else if (path.includes('/channels')) {
+                result = await handleGetChannels();
             } else if (path.includes('/users') || path === '/' || path === '') {
                 result = await handleGetUsers();
             } else {
@@ -946,6 +1152,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostCoachInstruction(parsedBody);
             } else if (path.includes('/assign-coach')) {
                 result = await handlePostAssignCoach(parsedBody);
+            } else if (path.includes('/channels')) {
+                result = await handlePostChannel(parsedBody);
             } else if (path.includes('/coaches')) {
                 result = await handlePostCoaches(parsedBody);
             } else if (path.includes('/store-items')) {
@@ -970,6 +1178,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/coaches/')) {
                 const coachId = path.split('/coaches/')[1];
                 result = await handlePutCoach(coachId, parsedBody);
+            } else if (path.includes('/channels/')) {
+                const channelId = path.split('/channels/')[1];
+                result = await handlePutChannel(channelId, parsedBody);
             } else if (path.includes('/dots/')) {
                 const dotId = path.split('/dots/')[1];
                 result = await handlePutDot(dotId, parsedBody);
@@ -989,6 +1200,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/coaches/')) {
                 const coachId = path.split('/coaches/')[1];
                 result = await handleDeleteCoach(coachId);
+            } else if (path.includes('/channels/')) {
+                const channelId = path.split('/channels/')[1];
+                result = await handleDeleteChannel(channelId);
             } else if (path.includes('/dots/')) {
                 const dotId = path.split('/dots/')[1];
                 result = await handleDeleteDot(dotId);

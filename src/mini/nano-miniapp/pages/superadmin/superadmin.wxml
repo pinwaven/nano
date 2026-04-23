@@ -1,0 +1,153 @@
+<view class="sa-page">
+  <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
+
+  <!-- Header -->
+  <view class="sa-header">
+    <view class="header-back" bindtap="handleBack">
+      <text class="back-arrow">‹</text>
+    </view>
+    <text class="header-title">{{t.title}}</text>
+    <view class="header-refresh" bindtap="handleRefresh">
+      <text class="refresh-icon">↻</text>
+    </view>
+  </view>
+
+  <!-- Tabs -->
+  <view class="tab-bar">
+    <view wx:for="{{['channels','users','coaches']}}" wx:key="*this"
+          class="tab-item {{tab === item ? 'tab-active' : ''}}"
+          bindtap="switchTab" data-tab="{{item}}">
+      <text class="tab-text">{{t.tabs[item]}}</text>
+    </view>
+  </view>
+
+  <!-- Loading -->
+  <view wx:if="{{loading}}" class="loading-row">
+    <text class="loading-text">{{t.loading}}</text>
+  </view>
+
+  <!-- ════ Channels Tab ════ -->
+  <view wx:elif="{{tab === 'channels'}}" class="tab-content">
+    <view class="add-row">
+      <view class="add-btn" bindtap="openAddChannel">
+        <text class="add-btn-text">+ {{t.add}}</text>
+      </view>
+    </view>
+    <view wx:if="{{channels.length === 0}}" class="empty-state">
+      <text class="empty-text">{{t.empty.channels}}</text>
+    </view>
+    <view wx:for="{{channels}}" wx:key="id" class="list-card">
+      <view class="card-main">
+        <view class="card-info">
+          <text class="card-name">{{item.name}}</text>
+          <text class="card-sub">{{item.key_name}} · {{item.user_count}} {{t.channel.users}} · {{item.coach_count}} {{t.channel.coaches}}</text>
+        </view>
+        <view class="card-actions">
+          <view class="action-btn edit-btn" bindtap="openEditChannel" data-channel="{{item}}">
+            <text class="action-text">{{t.edit}}</text>
+          </view>
+          <view class="action-btn del-btn" bindtap="deleteChannel" data-channel="{{item}}">
+            <text class="action-text del-text">{{t.delete}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ════ Users Tab ════ -->
+  <view wx:elif="{{tab === 'users'}}" class="tab-content">
+    <view wx:if="{{users.length === 0}}" class="empty-state">
+      <text class="empty-text">{{t.empty.users}}</text>
+    </view>
+    <view wx:for="{{users}}" wx:key="user_id" class="list-card">
+      <view class="card-main">
+        <view class="user-avatar">
+          <text class="avatar-letter">{{item._avatar}}</text>
+        </view>
+        <view class="card-info">
+          <text class="card-name">{{item.nickname || '—'}}</text>
+          <text class="card-sub">{{item._channelName}} · {{item._rolesLabel}}</text>
+          <text class="card-sub2">{{t.user.joined}}: {{item._joinedFmt}}</text>
+        </view>
+        <view class="card-actions">
+          <view class="action-btn role-btn" bindtap="openRoles" data-user="{{item}}">
+            <text class="action-text">{{t.user.roles}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ════ Coaches Tab ════ -->
+  <view wx:elif="{{tab === 'coaches'}}" class="tab-content">
+    <view wx:if="{{coaches.length === 0}}" class="empty-state">
+      <text class="empty-text">{{t.empty.coaches}}</text>
+    </view>
+    <view wx:for="{{coaches}}" wx:key="id" class="list-card">
+      <view class="card-main">
+        <view class="card-info">
+          <text class="card-name">{{item.name}}</text>
+          <text class="card-sub">{{item._channelName}} · {{item.user_count}} {{t.coach.users}}</text>
+          <text wx:if="{{item.user_id}}" class="card-sub2">{{t.coach.linkedUser}}: {{item.user_id}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ════ Channel Modal ════ -->
+  <view wx:if="{{channelModalOpen}}" class="modal-mask" catchtouchmove="noop">
+    <view class="modal-panel" catchtap="noop">
+      <view class="modal-header">
+        <text class="modal-title">{{channelModalTitle}}</text>
+        <view class="modal-close" bindtap="closeChannelModal"><text class="close-x">✕</text></view>
+      </view>
+      <scroll-view scroll-y class="modal-scroll">
+        <view class="modal-body">
+          <view class="form-row">
+            <text class="form-label">{{t.channel.key}}</text>
+            <input class="form-input" value="{{channelForm.key_name}}" bindinput="onChannelFormInput" data-key="key_name" placeholder="nanovate" disabled="{{channelModalMode === 'edit'}}" />
+          </view>
+          <view class="form-row">
+            <text class="form-label">{{t.channel.name}}</text>
+            <input class="form-input" value="{{channelForm.name}}" bindinput="onChannelFormInput" data-key="name" placeholder="Nanovate" />
+          </view>
+          <view class="form-row">
+            <text class="form-label">{{t.channel.logo}}</text>
+            <input class="form-input" value="{{channelForm.logo_url}}" bindinput="onChannelFormInput" data-key="logo_url" placeholder="https://…" />
+          </view>
+          <view wx:if="{{channelModalError}}" class="modal-error">
+            <text class="error-text">{{channelModalError}}</text>
+          </view>
+        </view>
+      </scroll-view>
+      <view class="modal-footer">
+        <view class="footer-btn cancel-btn" bindtap="closeChannelModal"><text class="btn-text">{{t.cancel}}</text></view>
+        <view class="footer-btn save-btn {{channelModalBusy ? 'btn-busy' : ''}}" bindtap="saveChannel">
+          <text class="btn-text">{{channelModalBusy ? t.saving : t.save}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ════ Roles Modal ════ -->
+  <view wx:if="{{rolesModalOpen}}" class="modal-mask" catchtouchmove="noop">
+    <view class="modal-panel" catchtap="noop">
+      <view class="modal-header">
+        <text class="modal-title">{{rolesTarget.nickname || '—'}} — {{t.roles.label}}</text>
+        <view class="modal-close" bindtap="closeRolesModal"><text class="close-x">✕</text></view>
+      </view>
+      <view class="modal-body">
+        <view wx:for="{{['user','coach','admin','superadmin']}}" wx:key="*this" class="role-row" bindtap="toggleRole" data-idx="{{index}}">
+          <view class="role-check {{rolesChecked[index] ? 'checked' : ''}}">
+            <text wx:if="{{rolesChecked[index]}}" class="check-mark">✓</text>
+          </view>
+          <text class="role-label">{{t.roles[item]}}</text>
+        </view>
+      </view>
+      <view class="modal-footer">
+        <view class="footer-btn cancel-btn" bindtap="closeRolesModal"><text class="btn-text">{{t.cancel}}</text></view>
+        <view class="footer-btn save-btn" bindtap="saveRoles"><text class="btn-text">{{t.roles.saveRoles}}</text></view>
+      </view>
+    </view>
+  </view>
+</view>

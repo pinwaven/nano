@@ -1,3 +1,4 @@
+const app = getApp()
 const BASE = 'https://nano.fros.cc'
 
 const T = {
@@ -223,9 +224,20 @@ Page({
     coachPickerValues: [],
   },
 
+  _channelId: null,
+
   onLoad() {
+    const user = app.globalData.user
+    if (!user) { wx.reLaunch({ url: '/pages/login/login' }); return }
+    const roles = user.roles || []
+    if (!roles.includes('admin') && !roles.includes('superadmin')) {
+      wx.showToast({ title: '无权限', icon: 'none' })
+      wx.navigateBack()
+      return
+    }
     const { statusBarHeight = 0 } = wx.getSystemInfoSync()
-    const lang = 'zh'
+    const lang = app.globalData.lang || 'zh'
+    this._channelId = user.channel_id || null
     this.setData({ statusBarHeight, lang, t: T[lang] })
     this._loadAll()
   },
@@ -235,9 +247,10 @@ Page({
   async _loadAll() {
     this.setData({ loading: true })
     try {
+      const cid = this._channelId
       const [uRes, cRes, dRes, sRes, oRes] = await Promise.all([
-        this._req(`${BASE}/api/users`),
-        this._req(`${BASE}/api/coach-list`),
+        cid ? this._req(`${BASE}/api/channel-users/${cid}`) : this._req(`${BASE}/api/users`),
+        cid ? this._req(`${BASE}/api/channel-coaches/${cid}`) : this._req(`${BASE}/api/coach-list`),
         this._req(`${BASE}/api/dots-inventory`),
         this._req(`${BASE}/api/store-items?all=true`),
         this._req(`${BASE}/api/orders`),

@@ -6,8 +6,8 @@
   <!-- ── Header ── -->
   <view class="app-header" style="padding-right: {{capsuleRightPad}}px;" bindtap="toggleMenu">
     <view class="header-logo-btn">
-      <image class="header-logo-img" src="/assets/waven-logo-icon.png" mode="aspectFit" />
-      <text class="header-title">NANO</text>
+      <image class="header-logo-img" src="{{channel.logo_url || '/assets/waven-logo-icon.png'}}" mode="aspectFit" />
+      <text class="header-title">{{channel.name || 'NANO'}}</text>
     </view>
     <view class="header-divider"></view>
     <text class="header-user">{{user.nickname || 'User'}}</text>
@@ -25,10 +25,20 @@
         <text class="menu-item-icon">⬡</text>
         <text class="menu-item-label">{{t.kinoSimMenu}}</text>
       </view>
-      <view class="menu-divider"></view>
-      <view class="menu-item" bindtap="openAdmin">
+      <view wx:if="{{isCoach}}" class="menu-divider"></view>
+      <view wx:if="{{isCoach}}" class="menu-item" bindtap="openCoach">
+        <text class="menu-item-icon">👨‍⚕️</text>
+        <text class="menu-item-label">{{t.coachMenu}}</text>
+      </view>
+      <view wx:if="{{isAdmin}}" class="menu-divider"></view>
+      <view wx:if="{{isAdmin}}" class="menu-item" bindtap="openAdmin">
         <text class="menu-item-icon">⚙</text>
         <text class="menu-item-label">{{t.adminMenu}}</text>
+      </view>
+      <view wx:if="{{isSuperadmin}}" class="menu-divider"></view>
+      <view wx:if="{{isSuperadmin}}" class="menu-item" bindtap="openSuperadmin">
+        <text class="menu-item-icon">🌐</text>
+        <text class="menu-item-label">{{t.superadminMenu}}</text>
       </view>
       <view class="menu-divider"></view>
       <view class="menu-item" bindtap="handleLogout">

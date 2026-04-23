@@ -2,7 +2,9 @@
   "pages": [
     "pages/login/login",
     "pages/main/main",
-    "pages/admin/admin"
+    "pages/admin/admin",
+    "pages/coach/coach",
+    "pages/superadmin/superadmin"
   ],
   "window": {
     "backgroundTextStyle": "light",

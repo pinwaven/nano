@@ -22,7 +22,7 @@ module.exports = (context) => {
     : `BIOLOGICAL AGE: Not yet assessed.`;
 
   const dotsSection = dots_formulary && dots_formulary.length > 0
-    ? `WAVEN DOTS FORMULARY (16 mg payload per dot):\n${dots_formulary.map(d =>
+    ? `WAVEN DOTS FORMULARY (40 mg payload per dot):\n${dots_formulary.map(d =>
         `• ${d.key_name} (D${String(d.id).padStart(2,'0')}): ${d.name}${d.name_zh ? ' / ' + d.name_zh : ''} — ${d.description || ''} [${d.is_isolate ? 'Isolate' : 'Blend'}]`
       ).join('\n')}`
     : `WAVEN DOTS FORMULARY: Not available.`;
