@@ -7,12 +7,41 @@
     <text class="login-subtitle">您的精准健康伴侣</text>
   </view>
 
-  <view wx:if="{{loading}}" class="status-wrap">
+  <!-- Checking / auto-login -->
+  <view wx:if="{{step === 'checking'}}" class="status-wrap">
     <view class="spinner" />
     <text class="status-text">正在登录…</text>
   </view>
 
-  <view wx:elif="{{error}}" class="status-wrap">
+  <!-- Invite code required -->
+  <view wx:elif="{{step === 'invite'}}" class="login-card">
+    <text class="login-card-label">受邀注册</text>
+
+    <view class="login-field">
+      <text class="login-label">邀请码</text>
+      <input
+        class="login-input invite-input"
+        type="number"
+        placeholder="请输入邀请码"
+        placeholder-class="login-input-ph"
+        value="{{inviteCode}}"
+        bindinput="onInviteInput"
+        maxlength="6"
+      />
+    </view>
+
+    <view wx:if="{{inviteError}}" class="login-error">
+      <text>{{inviteError}}</text>
+    </view>
+
+    <view class="login-btn {{inviteBusy ? 'login-btn-disabled' : ''}}" bindtap="submitInvite">
+      <view wx:if="{{inviteBusy}}" class="login-spinner" />
+      <text>{{inviteBusy ? '注册中…' : '加入 Nano'}}</text>
+    </view>
+  </view>
+
+  <!-- Error -->
+  <view wx:elif="{{step === 'error'}}" class="status-wrap">
     <text class="error-text">{{error}}</text>
     <view class="retry-btn" bindtap="retry">
       <text>重试</text>

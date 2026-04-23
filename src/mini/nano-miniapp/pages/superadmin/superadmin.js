@@ -4,11 +4,18 @@ const BASE = 'https://nano.fros.cc'
 const T = {
   zh: {
     title: '超管面板',
-    tabs: { channels: '渠道', users: '用户', coaches: '教练', dots: '原粒' },
+    tabs: { channels: '渠道', users: '用户', coaches: '教练', dots: '原粒', invites: '邀请' },
     back: '返回', refresh: '刷新', loading: '加载中…',
     add: '添加', edit: '编辑', delete: '删除', save: '保存', cancel: '取消',
     saving: '保存中…', deleting: '删除中…',
-    empty: { channels: '暂无渠道', users: '暂无用户', coaches: '暂无教练', dots: '暂无原粒' },
+    empty: { channels: '暂无渠道', users: '暂无用户', coaches: '暂无教练', dots: '暂无原粒', invites: '暂无邀请码' },
+    invite: {
+      generate: '生成邀请码', deactivate: '停用', copy: '复制链接',
+      uses: '已使用', active: '有效', inactive: '已停用',
+      channel: '渠道', creator: '创建者',
+      deactivateWarning: '停用此邀请码？已复制的链接将失效。',
+      copied: '链接已复制',
+    },
     channel: {
       key: '标识', name: '名称', logo: 'Logo URL', users: '用户', coaches: '教练',
       addTitle: '添加渠道', editTitle: '编辑渠道',
@@ -40,11 +47,18 @@ const T = {
   },
   en: {
     title: 'Super Admin',
-    tabs: { channels: 'Channels', users: 'Users', coaches: 'Coaches', dots: 'Dots' },
+    tabs: { channels: 'Channels', users: 'Users', coaches: 'Coaches', dots: 'Dots', invites: 'Invites' },
     back: 'Back', refresh: 'Refresh', loading: 'Loading…',
     add: 'Add', edit: 'Edit', delete: 'Delete', save: 'Save', cancel: 'Cancel',
     saving: 'Saving…', deleting: 'Deleting…',
-    empty: { channels: 'No channels', users: 'No users', coaches: 'No coaches', dots: 'No dots' },
+    empty: { channels: 'No channels', users: 'No users', coaches: 'No coaches', dots: 'No dots', invites: 'No invite codes' },
+    invite: {
+      generate: 'Generate Code', deactivate: 'Deactivate', copy: 'Copy Link',
+      uses: 'Uses', active: 'Active', inactive: 'Inactive',
+      channel: 'Channel', creator: 'Creator',
+      deactivateWarning: 'Deactivate this invite code? Shared links will stop working.',
+      copied: 'Link copied',
+    },
     channel: {
       key: 'Key', name: 'Name', logo: 'Logo URL', users: 'Users', coaches: 'Coaches',
       addTitle: 'Add Channel', editTitle: 'Edit Channel',
@@ -101,6 +115,7 @@ Page({
     users: [],
     coaches: [],
     dots: [],
+    invites: [],
 
     // Channel modal
     channelModalOpen: false,
@@ -151,11 +166,12 @@ Page({
   async _loadAll() {
     this.setData({ loading: true })
     try {
-      const [chRes, uRes, cRes, dRes] = await Promise.all([
+      const [chRes, uRes, cRes, dRes, iRes] = await Promise.all([
         this._req(`${BASE}/api/channels`),
         this._req(`${BASE}/api/users`),
         this._req(`${BASE}/api/coach-list`),
         this._req(`${BASE}/api/dots-inventory`),
+        this._req(`${BASE}/api/invitations`),
       ])
       const lang = this.data.lang
       const channels = chRes.data?.channels || []
@@ -174,7 +190,7 @@ Page({
       const channelPickerOptions = [lang === 'zh' ? '— 无渠道 —' : '— No Channel —', ...channels.map(c => c.name)]
       const channelPickerValues = ['', ...channels.map(c => String(c.id))]
 
-      this.setData({ channels, users, coaches, dots: dRes.data?.dots || [], channelPickerOptions, channelPickerValues })
+      this.setData({ channels, users, coaches, dots: dRes.data?.dots || [], invites: iRes.data?.invitations || [], channelPickerOptions, channelPickerValues })
     } catch (e) {
       wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' })
     } finally {
@@ -409,6 +425,62 @@ Page({
           await this._req(`${BASE}/api/dots/${dot.id}`, 'DELETE')
           this._loadAll()
         } catch (e) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
+      },
+    })
+  },
+
+  // ── Invites ──────────────────────────────────────────────────────────────────
+
+  generateInviteForChannel(e) {
+    const channel = e.currentTarget.dataset.channel
+    const { lang } = this.data
+    const t = T[lang]
+    const user = app.globalData.user
+    wx.showModal({
+      title: t.invite.generate,
+      content: channel.name,
+      confirmText: t.invite.generate,
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/invitations`, 'POST', {
+            created_by: user.user_id,
+            channel_id: channel.id,
+            type: 'channel',
+          })
+          this.setData({ tab: 'invites' })
+          this._loadAll()
+        } catch (ex) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
+      },
+    })
+  },
+
+  copyInvite(e) {
+    const invite = e.currentTarget.dataset.invite
+    const { lang } = this.data
+    const t = T[lang]
+    const path = `pages/login/login?invite=${invite.code}`
+    wx.setClipboardData({
+      data: path,
+      success: () => wx.showToast({ title: t.invite.copied, icon: 'success' }),
+    })
+  },
+
+  deactivateInvite(e) {
+    const invite = e.currentTarget.dataset.invite
+    const { lang } = this.data
+    const t = T[lang]
+    wx.showModal({
+      title: t.invite.deactivate,
+      content: t.invite.deactivateWarning,
+      confirmColor: '#ef4444',
+      confirmText: t.invite.deactivate,
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/invitations/${invite.id}`, 'DELETE')
+          this._loadAll()
+        } catch (ex) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
       },
     })
   },

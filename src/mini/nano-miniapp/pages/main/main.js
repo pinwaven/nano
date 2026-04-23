@@ -523,6 +523,7 @@ Page({
     wx.navigateTo({ url: '/pages/admin/admin' })
   },
 
+
   openSuperadmin() {
     this.setData({ menuOpen: false })
     wx.navigateTo({ url: '/pages/superadmin/superadmin' })

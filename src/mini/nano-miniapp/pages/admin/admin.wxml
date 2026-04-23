@@ -25,6 +25,9 @@
     <view class="adm-tab {{tab === 'store' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="store">
       <text>{{t.tabs.store}}</text>
     </view>
+    <view class="adm-tab {{tab === 'invites' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="invites">
+      <text>{{t.tabs.invites}}</text>
+    </view>
   </view>
 
   <!-- ── Loading ── -->
@@ -215,6 +218,38 @@
           </view>
         </view>
       </block>
+
+      <view style="height: 48rpx;"></view>
+    </view>
+  </scroll-view>
+
+  <!-- ════ INVITES TAB ════ -->
+  <scroll-view wx:elif="{{tab === 'invites'}}" class="adm-scroll" scroll-y="true">
+    <view class="adm-inner">
+
+      <view class="adm-add-btn" bindtap="generateInvite">
+        <text>+ {{t.invite.generate}}</text>
+      </view>
+
+      <view wx:if="{{invites.length === 0}}" class="adm-empty">
+        <text>{{t.empty.invites}}</text>
+      </view>
+      <view wx:for="{{invites}}" wx:key="id" class="adm-card">
+        <view class="adm-card-top">
+          <view class="adm-card-info">
+            <text class="adm-card-title" style="font-family: monospace; letter-spacing: 2rpx;">{{item.code}}</text>
+            <text class="adm-card-sub">{{t.invite.uses}}: {{item.use_count}} · {{item.is_active ? t.invite.active : t.invite.inactive}}</text>
+          </view>
+        </view>
+        <view class="adm-card-actions" catchtap="noop">
+          <view class="adm-action-btn adm-action-edit" catchtap="copyInvite" data-invite="{{item}}">
+            <text>{{t.invite.copy}}</text>
+          </view>
+          <view wx:if="{{item.is_active}}" class="adm-action-btn adm-action-del" catchtap="deactivateInvite" data-invite="{{item}}">
+            <text>{{t.invite.deactivate}}</text>
+          </view>
+        </view>
+      </view>
 
       <view style="height: 48rpx;"></view>
     </view>

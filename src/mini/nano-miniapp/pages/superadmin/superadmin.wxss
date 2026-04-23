@@ -361,3 +361,12 @@
 .check-mark { font-size: 13px; color: #fff; }
 
 .role-label { font-size: 15px; color: #E8F0F8; }
+
+/* Invite codes */
+.invite-code-text {
+  font-family: monospace;
+  letter-spacing: 4rpx;
+  font-size: 20px;
+  font-weight: 700;
+  color: #A0B4FF;
+}

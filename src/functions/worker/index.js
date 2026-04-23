@@ -750,8 +750,67 @@ async function handleDeleteUser(user_id) {
     }
 }
 
+async function handleGetInvitations(query) {
+    const { channel_id, created_by } = query;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        let sql = `
+            SELECT i.id, i.code, i.type, i.max_uses, i.use_count, i.is_active, i.created_at, i.expires_at,
+                   i.channel_id, i.created_by,
+                   c.name AS channel_name,
+                   u.nickname AS creator_name
+            FROM invitations i
+            LEFT JOIN channels c ON i.channel_id = c.id
+            LEFT JOIN users u ON i.created_by = u.user_id
+        `;
+        const params = [];
+        const conditions = [];
+        if (channel_id) { params.push(parseInt(channel_id)); conditions.push(`i.channel_id = $${params.length}`); }
+        if (created_by) { params.push(created_by); conditions.push(`i.created_by = $${params.length}`); }
+        if (conditions.length) sql += ` WHERE ${conditions.join(' AND ')}`;
+        sql += ` ORDER BY i.created_at DESC`;
+        const result = await pool.query(sql, params);
+        return { success: true, invitations: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostInvitation(body) {
+    const { created_by, channel_id, type = 'coach', max_uses = null } = body;
+    if (!channel_id) return { success: false, error: 'channel_id is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        let code, attempts = 0;
+        do {
+            code = String(100000 + (parseInt(crypto.randomBytes(3).toString('hex'), 16) % 900000));
+            const exists = await pool.query('SELECT id FROM invitations WHERE code = $1', [code]);
+            if (exists.rows.length === 0) break;
+            attempts++;
+        } while (attempts < 10);
+        const result = await pool.query(
+            `INSERT INTO invitations (code, created_by, channel_id, type, max_uses)
+             VALUES ($1, $2, $3, $4, $5) RETURNING id, code`,
+            [code, created_by || null, parseInt(channel_id), type, max_uses || null]
+        );
+        return { success: true, id: result.rows[0].id, code: result.rows[0].code };
+    } catch (err) {
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handleDeleteInvitation(inviteId) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('UPDATE invitations SET is_active = FALSE WHERE id = $1', [inviteId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleWxLogin(body) {
-    const { code, coach_id } = body;
+    const { code, coach_id, invite_code } = body;
     if (!code) return { success: false, error: 'code is required' };
 
     const appid  = process.env.WX_APPID;
@@ -799,10 +858,38 @@ async function handleWxLogin(body) {
         return { success: true, user, channel, coach };
     }
 
-    // New user — determine channel from coach invite or default to nanovate
+    // New user — require an invite code to register
+    if (!invite_code && !coach_id) {
+        return { success: false, new_user: true };
+    }
+
+    // New user — determine channel from invite code, coach invite, or default to nanovate
     let channelId = null;
-    if (coach_id) {
-        const coachRes = await pool.query('SELECT channel_id FROM coaches WHERE id = $1', [parseInt(coach_id)]);
+    let resolvedCoachId = coach_id ? parseInt(coach_id) : null;
+    let inviteRecord = null;
+
+    if (invite_code) {
+        const invRes = await pool.query(
+            `SELECT id, channel_id, created_by, max_uses, use_count FROM invitations
+             WHERE code = $1 AND is_active = TRUE AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1`,
+            [invite_code.toUpperCase()]
+        );
+        if (invRes.rows.length === 0) {
+            return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
+        }
+        if (invRes.rows.length > 0) {
+            inviteRecord = invRes.rows[0];
+            channelId = inviteRecord.channel_id;
+            // If invite was created by a coach, assign that coach
+            if (inviteRecord.created_by && !resolvedCoachId) {
+                const coachByUser = await pool.query('SELECT id FROM coaches WHERE user_id = $1 LIMIT 1', [inviteRecord.created_by]);
+                if (coachByUser.rows.length > 0) resolvedCoachId = coachByUser.rows[0].id;
+            }
+        }
+    }
+
+    if (!channelId && resolvedCoachId) {
+        const coachRes = await pool.query('SELECT channel_id FROM coaches WHERE id = $1', [resolvedCoachId]);
         if (coachRes.rows.length > 0) channelId = coachRes.rows[0].channel_id;
     }
     if (!channelId) {
@@ -812,11 +899,23 @@ async function handleWxLogin(body) {
 
     const newUserId = generateUserId();
     const created = await pool.query(
-        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id)
-         VALUES ($1, $2, 'wechat', 'zh', $3, $4)
+        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id)
+         VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5)
          RETURNING user_id, nickname, birth_date, gender, language, phone, email, coach_id, channel_id, roles, created_at, bio_data`,
-        [newUserId, openid, coach_id ? parseInt(coach_id) : null, channelId]
+        [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null]
     );
+
+    if (inviteRecord) {
+        await pool.query(
+            `UPDATE invitations SET use_count = use_count + 1 WHERE id = $1
+             AND (max_uses IS NULL OR use_count < max_uses)`,
+            [inviteRecord.id]
+        );
+        await pool.query(
+            'INSERT INTO invitation_uses (invitation_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            [inviteRecord.id, newUserId]
+        );
+    }
 
     let channel = null;
     if (channelId) {
@@ -1138,6 +1237,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetChannelCoaches(path.match(/\/channel-coaches\/(\d+)/)[1]);
             } else if (path.match(/\/coach-users\/(\d+)/)) {
                 result = await handleGetCoachUsers(path.match(/\/coach-users\/(\d+)/)[1]);
+            } else if (path.includes('/invitations')) {
+                result = await handleGetInvitations(query);
             } else if (path.includes('/channels')) {
                 result = await handleGetChannels();
             } else if (path.includes('/users') || path === '/' || path === '') {
@@ -1152,6 +1253,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostCoachInstruction(parsedBody);
             } else if (path.includes('/assign-coach')) {
                 result = await handlePostAssignCoach(parsedBody);
+            } else if (path.includes('/invitations')) {
+                result = await handlePostInvitation(parsedBody);
             } else if (path.includes('/channels')) {
                 result = await handlePostChannel(parsedBody);
             } else if (path.includes('/coaches')) {
@@ -1206,6 +1309,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/dots/')) {
                 const dotId = path.split('/dots/')[1];
                 result = await handleDeleteDot(dotId);
+            } else if (path.includes('/invitations/')) {
+                const inviteId = path.split('/invitations/')[1];
+                result = await handleDeleteInvitation(inviteId);
             } else if (path.includes('/store-items/')) {
                 const itemId = path.split('/store-items/')[1];
                 result = await handleDeleteStoreItem(itemId);

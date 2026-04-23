@@ -12,13 +12,23 @@
     </view>
   </view>
 
+  <!-- Tab bar -->
+  <view class="coach-tabs">
+    <view class="coach-tab {{tab === 'clients' ? 'coach-tab-active' : ''}}" bindtap="switchTab" data-tab="clients">
+      <text class="coach-tab-text">{{t.tabs.clients}}</text>
+    </view>
+    <view class="coach-tab {{tab === 'invites' ? 'coach-tab-active' : ''}}" bindtap="switchTab" data-tab="invites">
+      <text class="coach-tab-text">{{t.tabs.invites}}</text>
+    </view>
+  </view>
+
   <!-- Loading -->
   <view wx:if="{{loading}}" class="loading-row">
     <text class="loading-text">{{t.loading}}</text>
   </view>
 
   <!-- Client List -->
-  <view wx:else class="client-list">
+  <view wx:elif="{{tab === 'clients'}}" class="client-list">
     <view wx:if="{{clients.length === 0}}" class="empty-state">
       <text class="empty-text">{{t.noClients}}</text>
     </view>
@@ -43,6 +53,33 @@
       <view class="client-actions">
         <view class="action-btn send-btn" bindtap="openInstruction" data-client="{{item}}">
           <text class="action-btn-text">{{t.sendInstruction}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- Invites Tab -->
+  <view wx:elif="{{tab === 'invites'}}" class="client-list">
+    <view class="invite-generate-btn" bindtap="generateInvite">
+      <text class="invite-generate-text">+ {{t.invite.generate}}</text>
+    </view>
+    <view wx:if="{{invites.length === 0}}" class="empty-state">
+      <text class="empty-text">{{t.invite.noInvites}}</text>
+    </view>
+    <view wx:for="{{invites}}" wx:key="id" class="client-card">
+      <view class="invite-code-row">
+        <text class="invite-code">{{item.code}}</text>
+        <view class="invite-status {{item.is_active ? 'invite-active' : 'invite-inactive'}}">
+          <text class="invite-status-text">{{item.is_active ? t.invite.active : t.invite.inactive}}</text>
+        </view>
+      </view>
+      <text class="invite-uses">{{t.invite.uses}}: {{item.use_count}}</text>
+      <view class="client-actions" style="margin-top: 12px;">
+        <view class="action-btn send-btn" catchtap="copyInvite" data-invite="{{item}}">
+          <text class="action-btn-text">{{t.invite.copy}}</text>
+        </view>
+        <view wx:if="{{item.is_active}}" class="action-btn deact-btn" catchtap="deactivateInvite" data-invite="{{item}}">
+          <text class="action-btn-text deact-text">{{t.invite.deactivate}}</text>
         </view>
       </view>
     </view>

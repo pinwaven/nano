@@ -4,11 +4,17 @@ const BASE = 'https://nano.fros.cc'
 const T = {
   zh: {
     title: 'Nano 管理',
-    tabs: { users: '用户', coaches: '教练', store: '商城' },
+    tabs: { users: '用户', coaches: '教练', store: '商城', invites: '邀请' },
     refresh: '刷新', loading: '加载中…', back: '返回',
     add: '添加', edit: '编辑', delete: '删除', save: '保存', cancel: '取消',
     saving: '保存中…', deleting: '删除中…',
-    empty: { users: '暂无用户', coaches: '暂无教练', items: '暂无商品', orders: '暂无订单' },
+    empty: { users: '暂无用户', coaches: '暂无教练', items: '暂无商品', orders: '暂无订单', invites: '暂无邀请码' },
+    invite: {
+      generate: '生成邀请码', deactivate: '停用', copy: '复制链接',
+      uses: '已使用', active: '有效', inactive: '已停用',
+      deactivateWarning: '停用此邀请码？已复制的链接将失效。',
+      copied: '链接已复制',
+    },
     stats: {
       totalUsers: '总用户', tested: '已检测', avgBioAge: '平均生物年龄', coaches: '教练数',
       totalCoaches: '教练总数', assigned: '已分配', unassigned: '未分配',
@@ -59,11 +65,17 @@ const T = {
   },
   en: {
     title: 'Nano Admin',
-    tabs: { users: 'Users', coaches: 'Coaches', store: 'Store' },
+    tabs: { users: 'Users', coaches: 'Coaches', store: 'Store', invites: 'Invites' },
     refresh: 'Refresh', loading: 'Loading…', back: 'Back',
     add: 'Add', edit: 'Edit', delete: 'Delete', save: 'Save', cancel: 'Cancel',
     saving: 'Saving…', deleting: 'Deleting…',
-    empty: { users: 'No users', coaches: 'No coaches', items: 'No items', orders: 'No orders' },
+    empty: { users: 'No users', coaches: 'No coaches', items: 'No items', orders: 'No orders', invites: 'No invite codes' },
+    invite: {
+      generate: 'Generate Code', deactivate: 'Deactivate', copy: 'Copy Link',
+      uses: 'Uses', active: 'Active', inactive: 'Inactive',
+      deactivateWarning: 'Deactivate this invite code? Shared links will stop working.',
+      copied: 'Link copied',
+    },
     stats: {
       totalUsers: 'Users', tested: 'Tested', avgBioAge: 'Avg Bio Age', coaches: 'Coaches',
       totalCoaches: 'Coaches', assigned: 'Assigned', unassigned: 'Unassigned',
@@ -149,7 +161,7 @@ Page({
     loading: false,
     statusBarHeight: 0,
 
-    users: [], coaches: [], storeItems: [], orders: [],
+    users: [], coaches: [], storeItems: [], orders: [], invites: [],
     storeSubTab: 'items',
 
     // User detail overlay
@@ -218,11 +230,12 @@ Page({
     this.setData({ loading: true })
     try {
       const cid = this._channelId
-      const [uRes, cRes, sRes, oRes] = await Promise.all([
+      const [uRes, cRes, sRes, oRes, iRes] = await Promise.all([
         cid ? this._req(`${BASE}/api/channel-users/${cid}`) : this._req(`${BASE}/api/users`),
         cid ? this._req(`${BASE}/api/channel-coaches/${cid}`) : this._req(`${BASE}/api/coach-list`),
         this._req(`${BASE}/api/store-items?all=true`),
         this._req(`${BASE}/api/orders`),
+        cid ? this._req(`${BASE}/api/invitations?channel_id=${cid}`) : this._req(`${BASE}/api/invitations`),
       ])
       const lang = this.data.lang
       const users = (uRes.data?.users || []).map(u => ({
@@ -236,6 +249,7 @@ Page({
       this.setData({
         users,
         coaches,
+        invites: iRes.data?.invitations || [],
         storeItems: sRes.data?.items || [],
         orders: (oRes.data?.orders || []).map(o => ({
           ...o,
@@ -526,6 +540,54 @@ Page({
           await this._req(`${BASE}/api/orders/${order.id}`, 'PUT', { status: newStatus })
           this._loadAll()
         } catch (e) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
+      },
+    })
+  },
+
+  // ── Invites ───────────────────────────────────────────────────────────────────
+
+  async generateInvite() {
+    const { lang } = this.data
+    const t = T[lang]
+    const user = app.globalData.user
+    const cid = this._channelId
+    if (!cid) { wx.showToast({ title: t.error.networkError, icon: 'none' }); return }
+    try {
+      await this._req(`${BASE}/api/invitations`, 'POST', {
+        created_by: user.user_id,
+        channel_id: cid,
+        type: 'channel',
+      })
+      this._loadAll()
+    } catch (e) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
+  },
+
+  copyInvite(e) {
+    const invite = e.currentTarget.dataset.invite
+    const { lang } = this.data
+    const t = T[lang]
+    const path = `pages/login/login?invite=${invite.code}`
+    wx.setClipboardData({
+      data: path,
+      success: () => wx.showToast({ title: t.invite.copied, icon: 'success' }),
+    })
+  },
+
+  deactivateInvite(e) {
+    const invite = e.currentTarget.dataset.invite
+    const { lang } = this.data
+    const t = T[lang]
+    wx.showModal({
+      title: t.invite.deactivate,
+      content: t.invite.deactivateWarning,
+      confirmColor: '#ef4444',
+      confirmText: t.invite.deactivate,
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/invitations/${invite.id}`, 'DELETE')
+          this._loadAll()
+        } catch (ex) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
       },
     })
   },

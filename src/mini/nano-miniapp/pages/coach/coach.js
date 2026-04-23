@@ -7,6 +7,7 @@ const T = {
     back: '返回',
     refresh: '刷新',
     loading: '加载中…',
+    tabs: { clients: '我的客户', invites: '邀请码' },
     clients: '我的客户',
     noClients: '暂无分配的客户',
     bioAge: '生物年龄', chronoAge: '实际年龄', unknown: '未知',
@@ -22,12 +23,20 @@ const T = {
     networkError: '网络错误',
     joined: '注册时间',
     noPermission: '无权限',
+    invite: {
+      generate: '生成邀请码', deactivate: '停用', copy: '复制链接',
+      uses: '已使用', active: '有效', inactive: '已停用',
+      noInvites: '暂无邀请码',
+      deactivateWarning: '停用此邀请码？已复制的链接将失效。',
+      copied: '链接已复制',
+    },
   },
   en: {
     title: 'Coach Panel',
     back: 'Back',
     refresh: 'Refresh',
     loading: 'Loading…',
+    tabs: { clients: 'My Clients', invites: 'Invite Codes' },
     clients: 'My Clients',
     noClients: 'No clients assigned yet',
     bioAge: 'Bio Age', chronoAge: 'Chrono Age', unknown: 'Unknown',
@@ -43,6 +52,13 @@ const T = {
     networkError: 'Network error',
     joined: 'Joined',
     noPermission: 'No permission',
+    invite: {
+      generate: 'Generate Code', deactivate: 'Deactivate', copy: 'Copy Link',
+      uses: 'Uses', active: 'Active', inactive: 'Inactive',
+      noInvites: 'No invite codes yet',
+      deactivateWarning: 'Deactivate this invite code? Shared links will stop working.',
+      copied: 'Link copied',
+    },
   },
 }
 
@@ -76,9 +92,11 @@ Page({
   data: {
     lang: 'zh',
     t: T.zh,
+    tab: 'clients',
     loading: false,
     statusBarHeight: 0,
     clients: [],
+    invites: [],
     detailOpen: false,
     detailClient: null,
     detailBmList: [],
@@ -90,6 +108,8 @@ Page({
   },
 
   _coachId: null,
+  _coachChannelId: null,
+  _coachUserId: null,
 
   onLoad() {
     const user = app.globalData.user
@@ -102,25 +122,30 @@ Page({
     }
     const coach = app.globalData.coach
     this._coachId = coach ? coach.id : null
+    this._coachChannelId = coach ? coach.channel_id : null
+    this._coachUserId = user.user_id
     const { statusBarHeight = 0 } = wx.getSystemInfoSync()
     const lang = app.globalData.lang || 'zh'
     this.setData({ statusBarHeight, lang, t: T[lang] })
-    if (this._coachId) this._loadClients()
+    this._loadAll()
   },
 
-  async _loadClients() {
+  async _loadAll() {
     this.setData({ loading: true })
     try {
-      const res = await this._req(`${BASE}/api/coach-users/${this._coachId}`)
+      const [clientsRes, invitesRes] = await Promise.all([
+        this._coachId ? this._req(`${BASE}/api/coach-users/${this._coachId}`) : Promise.resolve({ data: { users: [] } }),
+        this._req(`${BASE}/api/invitations?created_by=${encodeURIComponent(this._coachUserId)}`),
+      ])
       const lang = this.data.lang
-      const clients = (res.data?.users || []).map(u => ({
+      const clients = (clientsRes.data?.users || []).map(u => ({
         ...u,
         _cAge: chronoAge(u.birth_date),
         _bioAgeColor: bioAgeColor(u.bio_age, chronoAge(u.birth_date)),
         _joinedFmt: fmtDate(u.created_at),
         _avatar: (u.nickname || 'U')[0].toUpperCase(),
       }))
-      this.setData({ clients })
+      this.setData({ clients, invites: invitesRes.data?.invitations || [] })
     } catch (e) {
       wx.showToast({ title: T[this.data.lang].networkError, icon: 'none' })
     } finally {
@@ -128,7 +153,8 @@ Page({
     }
   },
 
-  handleRefresh() { if (this._coachId) this._loadClients() },
+  handleRefresh() { this._loadAll() },
+  switchTab(e) { this.setData({ tab: e.currentTarget.dataset.tab }) },
 
   handleBack() { wx.navigateBack() },
 
@@ -183,6 +209,55 @@ Page({
     } finally {
       this.setData({ instructionBusy: false })
     }
+  },
+
+  async generateInvite() {
+    const { lang } = this.data
+    const t = T[lang]
+    if (!this._coachChannelId) {
+      wx.showToast({ title: t.networkError, icon: 'none' })
+      return
+    }
+    try {
+      await this._req(`${BASE}/api/invitations`, 'POST', {
+        created_by: this._coachUserId,
+        channel_id: this._coachChannelId,
+        type: 'coach',
+      })
+      this._loadAll()
+    } catch (e) {
+      wx.showToast({ title: t.networkError, icon: 'none' })
+    }
+  },
+
+  copyInvite(e) {
+    const invite = e.currentTarget.dataset.invite
+    const { lang } = this.data
+    wx.setClipboardData({
+      data: `pages/login/login?invite=${invite.code}`,
+      success: () => wx.showToast({ title: T[lang].invite.copied, icon: 'success' }),
+    })
+  },
+
+  deactivateInvite(e) {
+    const invite = e.currentTarget.dataset.invite
+    const { lang } = this.data
+    const t = T[lang]
+    wx.showModal({
+      title: t.invite.deactivate,
+      content: t.invite.deactivateWarning,
+      confirmColor: '#ef4444',
+      confirmText: t.invite.deactivate,
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/invitations/${invite.id}`, 'DELETE')
+          this._loadAll()
+        } catch (ex) {
+          wx.showToast({ title: t.networkError, icon: 'none' })
+        }
+      },
+    })
   },
 
   _req(url, method = 'GET', data = null) {

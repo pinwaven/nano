@@ -30,6 +30,7 @@
         <text class="menu-item-icon">👨‍⚕️</text>
         <text class="menu-item-label">{{t.coachMenu}}</text>
       </view>
+
       <view wx:if="{{isAdmin}}" class="menu-divider"></view>
       <view wx:if="{{isAdmin}}" class="menu-item" bindtap="openAdmin">
         <text class="menu-item-icon">⚙</text>

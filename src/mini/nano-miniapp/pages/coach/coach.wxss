@@ -33,6 +33,24 @@
   color: #E8F0F8;
 }
 
+/* Tab bar */
+.coach-tabs {
+  display: flex;
+  background: #0F2540;
+  border-bottom: 1rpx solid #1E3A5F;
+}
+
+.coach-tab {
+  flex: 1;
+  padding: 12px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.coach-tab-text { font-size: 14px; color: #7A9ABF; font-weight: 500; }
+.coach-tab-active .coach-tab-text { color: #A0B4FF; font-weight: 700; }
+
 .loading-row {
   display: flex;
   justify-content: center;
@@ -100,7 +118,52 @@
 
 .client-joined { font-size: 12px; color: #7A9ABF; }
 
-.client-actions { display: flex; justify-content: flex-end; }
+.client-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Invite tab */
+.invite-generate-btn {
+  background: #1E3A5F;
+  border: 1rpx solid #6375EC;
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.invite-generate-text { font-size: 14px; color: #A0B4FF; font-weight: 600; }
+
+.invite-code-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.invite-code {
+  font-family: monospace;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 4rpx;
+  color: #A0B4FF;
+}
+
+.invite-status {
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+.invite-active { background: rgba(99,117,236,0.2); }
+.invite-inactive { background: rgba(120,120,120,0.15); }
+
+.invite-status-text { font-size: 11px; font-weight: 600; color: #A0B4FF; }
+.invite-inactive .invite-status-text { color: #4A6A8A; }
+
+.invite-uses { font-size: 12px; color: #7A9ABF; }
+
+.deact-btn { background: transparent; border: 1rpx solid rgba(239,68,68,0.3); }
+.deact-text { color: #ef4444; }
 
 .action-btn {
   padding: 8px 16px;
