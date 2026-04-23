@@ -563,7 +563,8 @@
               <text class="ksm-face-status ksm-face-status-{{kinoSimStatus}}">
                 {{kinoSimStatus === 'ready' ? t.kinoSimStatusReady : kinoSimStatus === 'analyzing' ? t.kinoSimStatusAnalyzing : kinoSimStatus === 'complete' ? t.kinoSimStatusComplete : t.kinoSimStatusFailed}}
               </text>
-              <text class="ksm-face-user">{{user.nickname || 'User'}}</text>
+              <text wx:if="{{kinoSimScannedUserName}}" class="ksm-face-patient-label">{{t.kinoSimPatientLabel}}</text>
+              <text class="ksm-face-user">{{kinoSimScannedUserName || '—'}}</text>
             </view>
           </view>
         </view>

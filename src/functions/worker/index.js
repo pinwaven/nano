@@ -1139,6 +1139,20 @@ async function handlePostChat(body) {
     return { success: true, user_id, biomarkers: biomarkerData || null, bioage_profile: bioAgeData || null };
 }
 
+async function handleGetKinoChip(chip_id) {
+    if (!chip_id) throw new Error('chip_id is required');
+    const result = await pool.query(
+        `SELECT s.id, s.user_id, s.scan_status, u.nickname
+         FROM scans s
+         JOIN users u ON u.user_id = s.user_id
+         WHERE s.chip_id = $1 LIMIT 1`,
+        [chip_id]
+    );
+    if (result.rows.length === 0) return { found: false };
+    const { id: scan_id, user_id, scan_status, nickname } = result.rows[0];
+    return { found: true, used: scan_status === 'completed', scan_id, user_id, nickname, scan_status };
+}
+
 async function handlePostKinoScan(body) {
     const { openid, chip_id } = body;
     if (!openid) throw new Error('openid is required');
@@ -1259,7 +1273,9 @@ exports.handler = async (req, resp, context) => {
         }
 
         if (method === 'GET') {
-            if (path.includes('/chat-history')) {
+            if (path.includes('/kino-chip')) {
+                result = await handleGetKinoChip(query.chip_id);
+            } else if (path.includes('/chat-history')) {
                 result = await handleGetChatHistory(query.openid);
             } else if (path.includes('/biomarkers')) {
                 result = await handleGetBiomarkers(query.openid);

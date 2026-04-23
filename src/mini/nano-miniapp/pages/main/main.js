@@ -87,6 +87,9 @@ const T = {
     kinoSimBtnStart: '开始生物标志物检测',
     kinoSimBtnRunAnother: '再次检测',
     kinoSimQuit: '退出模拟器',
+    kinoSimChipNotFound: '未找到芯片记录，请先在手机端登记芯片。',
+    kinoSimChipUsed: '此芯片已完成检测，无法重复使用。',
+    kinoSimPatientLabel: '受检者',
     kinoSimTabBioAge: '生物年龄',
     kinoSimTabBm: '生物标志物',
     kinoSimBioAgeLabel: '生物年龄',
@@ -198,6 +201,9 @@ const T = {
     kinoSimBtnStart: 'Start Biomarker Test',
     kinoSimBtnRunAnother: 'Run Another Test',
     kinoSimQuit: 'Quit Simulator',
+    kinoSimChipNotFound: 'Chip not registered. Please register it in the app first.',
+    kinoSimChipUsed: 'This chip has already been analyzed and cannot be used again.',
+    kinoSimPatientLabel: 'PATIENT',
     kinoSimTabBioAge: 'Bio Age',
     kinoSimTabBm: 'Biomarkers',
     kinoSimBioAgeLabel: 'BIO AGE',
@@ -401,6 +407,9 @@ Page({
     kinoSimActiveTab: 'bioage',
     kinoSimSlideIndex: 0,
     kinoSimSlideVisible: true,
+    kinoSimScannedUserId: null,
+    kinoSimScannedUserName: null,
+    kinoSimChipId: null,
     obStep: null,   // 'name'|'gender'|'birthday'|'body'|'conditions'|'done'|null
     obName: '',
     obBirthday: '',
@@ -587,6 +596,7 @@ Page({
       kinoSimBmList: [], kinoSimSubAgeList: [],
       kinoSimBioAge: null, kinoSimChronoAge: null, kinoSimBioAgeColor: '#A6C4E5',
       kinoSimActiveTab: 'bioage', kinoSimSlideIndex: 0, kinoSimSlideVisible: true,
+      kinoSimScannedUserId: null, kinoSimScannedUserName: null, kinoSimChipId: null,
     })
   },
 
@@ -610,8 +620,8 @@ Page({
     this.setData({ kinoSimActiveTab: e.currentTarget.dataset.tab })
   },
 
-  async handleKinoSimStart() {
-    const { kinoSimStatus, user, lang } = this.data
+  handleKinoSimStart() {
+    const { kinoSimStatus, lang } = this.data
     if (kinoSimStatus === 'analyzing') return
     if (kinoSimStatus === 'complete') {
       this._stopKinoSlide()
@@ -619,15 +629,52 @@ Page({
         kinoSimStatus: 'ready', kinoSimBmList: [], kinoSimSubAgeList: [],
         kinoSimBioAge: null, kinoSimChronoAge: null, kinoSimBioAgeColor: '#A6C4E5',
         kinoSimActiveTab: 'bioage', kinoSimSlideIndex: 0, kinoSimSlideVisible: true,
+        kinoSimScannedUserId: null, kinoSimScannedUserName: null, kinoSimChipId: null,
       })
       return
     }
     const t = T[lang]
-    this.setData({ kinoSimStatus: 'analyzing' })
+    wx.scanCode({
+      onlyFromCamera: false,
+      success: async (scanRes) => {
+        const chip_id = scanRes.result
+        if (!chip_id.startsWith('MVNS') && !chip_id.startsWith('KINO')) {
+          wx.showToast({ title: t.kinoScanInvalidChip, icon: 'none', duration: 2500 })
+          return
+        }
+        this.setData({ kinoSimStatus: 'analyzing' })
+        try {
+          const chipRes = await this._req(`${BASE}/api/kino-chip?chip_id=${encodeURIComponent(chip_id)}`)
+          if (chipRes.statusCode !== 200 || !chipRes.data?.found) {
+            wx.showToast({ title: t.kinoSimChipNotFound, icon: 'none', duration: 2500 })
+            this.setData({ kinoSimStatus: 'failed' })
+            setTimeout(() => { if (this.data.kinoSimOpen) this.setData({ kinoSimStatus: 'ready' }) }, 3000)
+            return
+          }
+          if (chipRes.data.used) {
+            wx.showToast({ title: t.kinoSimChipUsed, icon: 'none', duration: 2500 })
+            this.setData({ kinoSimStatus: 'ready' })
+            return
+          }
+          const { user_id: chipUserId, nickname: chipNickname } = chipRes.data
+          this.setData({ kinoSimScannedUserId: chipUserId, kinoSimScannedUserName: chipNickname, kinoSimChipId: chip_id })
+          await this._runKinoAnalysis(chipUserId)
+        } catch (e) {
+          this.setData({ kinoSimStatus: 'failed' })
+          setTimeout(() => { if (this.data.kinoSimOpen) this.setData({ kinoSimStatus: 'ready' }) }, 3000)
+        }
+      },
+      fail: () => {},
+    })
+  },
+
+  async _runKinoAnalysis(targetUserId) {
+    const { lang } = this.data
+    const t = T[lang]
     try {
       const randomCRP = Math.round((Math.random() * (3.5 - 0.2) + 0.2) * 100) / 100
       const res = await this._req(`${BASE}/api/chat`, 'POST', {
-        openid: user.user_id,
+        openid: targetUserId,
         test_type: 'kino_chip',
         test_data: { hsCRP: randomCRP },
       })
@@ -635,7 +682,7 @@ Page({
       let bioageProfile = res.data?.bioage_profile || null
       if (!bioageProfile) {
         try {
-          const bmRes = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(user.user_id)}`)
+          const bmRes = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(targetUserId)}`)
           const records = bmRes.data?.records || []
           const latest = records[records.length - 1]
           bioageProfile = latest?.data?.bioage_profile || null
@@ -655,6 +702,16 @@ Page({
         : []
       const rawBioAge = bioageProfile?.BioAge ?? null
       const rawChronoAge = bioageProfile?.ChronoAge ?? null
+      const { kinoSimChipId } = this.data
+      if (kinoSimChipId) {
+        try {
+          await this._req(`${BASE}/api/kino-result`, 'POST', {
+            chip_id: kinoSimChipId,
+            data: { biomarkers, bioage_profile: bioageProfile },
+            bio_age: rawBioAge,
+          })
+        } catch (e) {}
+      }
       this.setData({
         kinoSimStatus: 'complete',
         kinoSimBmList: bmList,

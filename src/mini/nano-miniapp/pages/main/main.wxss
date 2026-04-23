@@ -1437,6 +1437,14 @@
 .ksm-face-status-complete  { color: #1A8A6A; }
 .ksm-face-status-failed    { color: #E86060; }
 
+.ksm-face-patient-label {
+  font-size: 14rpx;
+  letter-spacing: 4rpx;
+  color: rgba(26, 62, 95, 0.35);
+  margin-top: 10rpx;
+  margin-bottom: 2rpx;
+}
+
 .ksm-face-user {
   font-size: 22rpx;
   color: #6375EC;
