@@ -14,7 +14,7 @@
 
   <!-- Tabs -->
   <view class="tab-bar">
-    <view wx:for="{{['channels','users','coaches']}}" wx:key="*this"
+    <view wx:for="{{['channels','users','coaches','dots']}}" wx:key="*this"
           class="tab-item {{tab === item ? 'tab-active' : ''}}"
           bindtap="switchTab" data-tab="{{item}}">
       <text class="tab-text">{{t.tabs[item]}}</text>
@@ -94,6 +94,41 @@
     </view>
   </view>
 
+  <!-- ════ Dots Tab ════ -->
+  <view wx:elif="{{tab === 'dots'}}" class="tab-content">
+    <view class="add-row">
+      <view class="add-btn" bindtap="openAddDot">
+        <text class="add-btn-text">+ {{t.add}}</text>
+      </view>
+    </view>
+    <view wx:if="{{dots.length === 0}}" class="empty-state">
+      <text class="empty-text">{{t.empty.dots}}</text>
+    </view>
+    <view wx:for="{{dots}}" wx:key="id" class="list-card">
+      <view class="card-main">
+        <view class="dot-swatch" style="background: {{item.color || '#6375EC'}};"></view>
+        <view class="card-info">
+          <text class="card-name">{{lang === 'zh' && item.name_zh ? item.name_zh : item.name}}</text>
+          <text class="card-sub">{{item.key_name}}</text>
+        </view>
+        <view class="dot-type-tag {{item.is_isolate ? 'dot-type-isolate' : 'dot-type-blend'}}">
+          <text class="dot-type-text">{{item.is_isolate ? t.dot.isolate : t.dot.blend}}</text>
+        </view>
+        <view class="card-actions">
+          <view class="action-btn edit-btn" catchtap="openEditDot" data-dot="{{item}}">
+            <text class="action-text">{{t.edit}}</text>
+          </view>
+          <view class="action-btn del-btn" catchtap="handleDeleteDot" data-dot="{{item}}">
+            <text class="action-text del-text">{{t.delete}}</text>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{item.description}}" class="dot-desc">
+        <text class="dot-desc-text">{{item.description}}</text>
+      </view>
+    </view>
+  </view>
+
   <!-- ════ Channel Modal ════ -->
   <view wx:if="{{channelModalOpen}}" class="modal-mask" catchtouchmove="noop">
     <view class="modal-panel" catchtap="noop">
@@ -150,4 +185,90 @@
       </view>
     </view>
   </view>
+
+  <!-- ════ Dot Modal ════ -->
+  <view wx:if="{{dotModalOpen}}" class="modal-mask" catchtouchmove="noop">
+    <view class="modal-panel modal-panel-tall" catchtap="noop">
+      <view class="modal-header">
+        <text class="modal-title">{{dotModalTitle}}</text>
+        <view wx:if="{{!dotModalBusy}}" class="modal-close" bindtap="closeDotModal"><text class="close-x">✕</text></view>
+      </view>
+      <scroll-view scroll-y class="modal-scroll">
+        <view class="modal-body">
+
+          <view class="form-row">
+            <text class="form-label">{{t.dot.key}} *</text>
+            <input class="form-input" value="{{dotForm.key_name}}" bindinput="onDotFormInput" data-key="key_name" placeholder="e.g. omega3" placeholder-class="form-ph" />
+          </view>
+
+          <view class="form-row">
+            <text class="form-label">{{t.dot.nameEn}} *</text>
+            <input class="form-input" value="{{dotForm.name_en}}" bindinput="onDotFormInput" data-key="name_en" placeholder-class="form-ph" />
+          </view>
+
+          <view class="form-row">
+            <text class="form-label">{{t.dot.nameZh}}</text>
+            <input class="form-input" value="{{dotForm.name_zh}}" bindinput="onDotFormInput" data-key="name_zh" placeholder-class="form-ph" />
+          </view>
+
+          <view class="form-row">
+            <text class="form-label">{{t.dot.color}}</text>
+            <input class="form-input" value="{{dotForm.color}}" bindinput="onDotFormInput" data-key="color" placeholder="e.g. Ocean Blue" placeholder-class="form-ph" />
+          </view>
+
+          <view class="form-row">
+            <text class="form-label">{{t.dot.colorZh}}</text>
+            <input class="form-input" value="{{dotForm.color_zh}}" bindinput="onDotFormInput" data-key="color_zh" placeholder-class="form-ph" />
+          </view>
+
+          <view class="form-row">
+            <text class="form-label">{{t.dot.type}}</text>
+            <picker range="{{t.typeOptions}}" value="{{formTypeIdx}}" bindchange="onPickerType">
+              <view class="form-picker">
+                <text class="form-picker-val">{{t.typeOptions[formTypeIdx]}}</text>
+                <text class="form-picker-arrow">›</text>
+              </view>
+            </picker>
+          </view>
+
+          <view class="form-row">
+            <text class="form-label">{{t.dot.desc}}</text>
+            <textarea class="form-textarea" value="{{dotForm.description}}" bindinput="onDotFormInput" data-key="description" placeholder-class="form-ph" auto-height />
+          </view>
+
+          <!-- Ingredients EN -->
+          <text class="form-label" style="display:block; margin-top:16px; margin-bottom:8px;">{{t.dot.ingrEn}}</text>
+          <view wx:for="{{formIngredients}}" wx:key="index" class="ingr-row">
+            <input class="ingr-name" value="{{item.name}}" bindinput="onIngredientInput" data-zh="{{false}}" data-idx="{{index}}" data-field="name" placeholder="{{t.dot.ingrName}}" placeholder-class="form-ph" />
+            <input class="ingr-value" value="{{item.mg}}" bindinput="onIngredientInput" data-zh="{{false}}" data-idx="{{index}}" data-field="mg" type="digit" placeholder="{{t.dot.ingrMg}}" placeholder-class="form-ph" />
+            <view class="ingr-del" bindtap="removeIngredient" data-zh="{{false}}" data-idx="{{index}}"><text>−</text></view>
+          </view>
+          <view class="ingr-add" bindtap="addIngredient" data-zh="{{false}}">
+            <text>{{t.dot.addIngr}}</text>
+          </view>
+
+          <!-- Ingredients ZH -->
+          <text class="form-label" style="display:block; margin-top:16px; margin-bottom:8px;">{{t.dot.ingrZh}}</text>
+          <view wx:for="{{formIngredientsZh}}" wx:key="index" class="ingr-row">
+            <input class="ingr-name" value="{{item.name}}" bindinput="onIngredientInput" data-zh="{{true}}" data-idx="{{index}}" data-field="name" placeholder="{{t.dot.ingrName}}" placeholder-class="form-ph" />
+            <input class="ingr-value" value="{{item.mg}}" bindinput="onIngredientInput" data-zh="{{true}}" data-idx="{{index}}" data-field="mg" type="digit" placeholder="{{t.dot.ingrMg}}" placeholder-class="form-ph" />
+            <view class="ingr-del" bindtap="removeIngredient" data-zh="{{true}}" data-idx="{{index}}"><text>−</text></view>
+          </view>
+          <view class="ingr-add" bindtap="addIngredient" data-zh="{{true}}">
+            <text>{{t.dot.addIngr}}</text>
+          </view>
+
+          <text wx:if="{{dotModalError}}" class="modal-error-text">{{dotModalError}}</text>
+
+        </view>
+      </scroll-view>
+      <view class="modal-footer">
+        <view wx:if="{{!dotModalBusy}}" class="footer-btn cancel-btn" bindtap="closeDotModal"><text class="btn-text">{{t.cancel}}</text></view>
+        <view class="footer-btn save-btn {{dotModalBusy ? 'btn-busy' : ''}}" bindtap="saveDot">
+          <text class="btn-text">{{dotModalBusy ? t.saving : t.save}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
 </view>

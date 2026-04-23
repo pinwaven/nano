@@ -22,9 +22,6 @@
     <view class="adm-tab {{tab === 'coaches' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="coaches">
       <text>{{t.tabs.coaches}}</text>
     </view>
-    <view class="adm-tab {{tab === 'dots' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="dots">
-      <text>{{t.tabs.dots}}</text>
-    </view>
     <view class="adm-tab {{tab === 'store' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="store">
       <text>{{t.tabs.store}}</text>
     </view>
@@ -133,52 +130,6 @@
             <text>{{t.edit}}</text>
           </view>
           <view class="adm-action-btn adm-action-del" catchtap="handleDeleteCoach" data-coach="{{item}}">
-            <text>{{t.delete}}</text>
-          </view>
-        </view>
-      </view>
-
-      <view style="height: 48rpx;"></view>
-    </view>
-  </scroll-view>
-
-  <!-- ════ DOTS TAB ════ -->
-  <scroll-view wx:elif="{{tab === 'dots'}}" class="adm-scroll" scroll-y="true">
-    <view class="adm-inner">
-
-      <view class="adm-stats-row">
-        <view class="adm-stat">
-          <text class="adm-stat-val">{{dots.length}}</text>
-          <text class="adm-stat-key">{{t.stats.totalDots}}</text>
-        </view>
-      </view>
-
-      <view class="adm-add-btn" bindtap="openAddDot">
-        <text>+ {{t.add}} {{t.tabs.dots}}</text>
-      </view>
-
-      <view wx:if="{{dots.length === 0}}" class="adm-empty">
-        <text>{{t.empty.dots}}</text>
-      </view>
-      <view wx:for="{{dots}}" wx:key="id" class="adm-card adm-card-dot">
-        <view class="adm-card-top">
-          <view class="adm-dot-swatch" style="background: {{item.color || '#6375EC'}};"></view>
-          <view class="adm-card-info">
-            <text class="adm-card-title">{{lang === 'zh' && item.name_zh ? item.name_zh : item.name}}</text>
-            <text class="adm-card-sub">{{item.key_name}}</text>
-          </view>
-          <view class="adm-type-tag {{item.is_isolate ? 'adm-type-isolate' : 'adm-type-blend'}}">
-            <text>{{item.is_isolate ? t.dot.isolate : t.dot.blend}}</text>
-          </view>
-        </view>
-        <view wx:if="{{item.description}}" class="adm-card-desc">
-          <text>{{item.description}}</text>
-        </view>
-        <view class="adm-card-actions" catchtap="noop">
-          <view class="adm-action-btn adm-action-edit" catchtap="openEditDot" data-dot="{{item}}">
-            <text>{{t.edit}}</text>
-          </view>
-          <view class="adm-action-btn adm-action-del" catchtap="handleDeleteDot" data-dot="{{item}}">
             <text>{{t.delete}}</text>
           </view>
         </view>
@@ -418,61 +369,6 @@
                 <text class="adm-picker-arrow">›</text>
               </view>
             </picker>
-          </block>
-
-          <!-- ── DOT FORM ── -->
-          <block wx:elif="{{modalType === 'dot'}}">
-            <text class="adm-field-label">{{t.dot.key}} *</text>
-            <input class="adm-field-input" value="{{form.key_name}}" bindinput="onFormInput" data-key="key_name" placeholder="e.g. omega3" placeholder-class="adm-ph" />
-
-            <text class="adm-field-label">{{t.dot.nameEn}} *</text>
-            <input class="adm-field-input" value="{{form.name_en}}" bindinput="onFormInput" data-key="name_en" placeholder-class="adm-ph" />
-
-            <text class="adm-field-label">{{t.dot.nameZh}}</text>
-            <input class="adm-field-input" value="{{form.name_zh}}" bindinput="onFormInput" data-key="name_zh" placeholder-class="adm-ph" />
-
-            <text class="adm-field-label">{{t.dot.color}} (EN)</text>
-            <input class="adm-field-input" value="{{form.color}}" bindinput="onFormInput" data-key="color" placeholder="e.g. Ocean Blue" placeholder-class="adm-ph" />
-
-            <text class="adm-field-label">{{t.dot.color}} (ZH)</text>
-            <input class="adm-field-input" value="{{form.color_zh}}" bindinput="onFormInput" data-key="color_zh" placeholder-class="adm-ph" />
-
-            <text class="adm-field-label">{{t.dot.type}}</text>
-            <picker range="{{t.typeOptions}}" value="{{formTypeIdx}}" bindchange="onPickerType">
-              <view class="adm-field-picker">
-                <text>{{t.typeOptions[formTypeIdx]}}</text>
-                <text class="adm-picker-arrow">›</text>
-              </view>
-            </picker>
-
-            <text class="adm-field-label">{{t.dot.desc}}</text>
-            <textarea class="adm-field-textarea" value="{{form.description}}" bindinput="onFormInput" data-key="description" placeholder-class="adm-ph" auto-height />
-
-            <!-- Ingredients EN -->
-            <text class="adm-field-label" style="margin-top: 28rpx;">{{t.dot.ingrEn}}</text>
-            <view wx:for="{{formIngredients}}" wx:key="index" class="adm-ingr-row">
-              <input class="adm-ingr-name" value="{{item.name}}" bindinput="onIngredientInput" data-zh="{{false}}" data-idx="{{index}}" data-field="name" placeholder="{{t.dot.ingrName}}" placeholder-class="adm-ph" />
-              <input class="adm-ingr-value" value="{{item.mg}}" bindinput="onIngredientInput" data-zh="{{false}}" data-idx="{{index}}" data-field="mg" type="digit" placeholder="{{t.dot.ingrMg}}" placeholder-class="adm-ph" />
-              <view class="adm-ingr-del" bindtap="removeIngredient" data-zh="{{false}}" data-idx="{{index}}">
-                <text>−</text>
-              </view>
-            </view>
-            <view class="adm-ingr-add" bindtap="addIngredient" data-zh="{{false}}">
-              <text>{{t.dot.addIngr}}</text>
-            </view>
-
-            <!-- Ingredients ZH -->
-            <text class="adm-field-label" style="margin-top: 28rpx;">{{t.dot.ingrZh}}</text>
-            <view wx:for="{{formIngredientsZh}}" wx:key="index" class="adm-ingr-row">
-              <input class="adm-ingr-name" value="{{item.name}}" bindinput="onIngredientInput" data-zh="{{true}}" data-idx="{{index}}" data-field="name" placeholder="{{t.dot.ingrName}}" placeholder-class="adm-ph" />
-              <input class="adm-ingr-value" value="{{item.mg}}" bindinput="onIngredientInput" data-zh="{{true}}" data-idx="{{index}}" data-field="mg" type="digit" placeholder="{{t.dot.ingrMg}}" placeholder-class="adm-ph" />
-              <view class="adm-ingr-del" bindtap="removeIngredient" data-zh="{{true}}" data-idx="{{index}}">
-                <text>−</text>
-              </view>
-            </view>
-            <view class="adm-ingr-add" bindtap="addIngredient" data-zh="{{true}}">
-              <text>{{t.dot.addIngr}}</text>
-            </view>
           </block>
 
           <!-- ── STORE ITEM FORM ── -->

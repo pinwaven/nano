@@ -230,6 +230,112 @@
 
 .btn-text { font-size: 15px; font-weight: 600; color: #fff; }
 
+/* Dot list */
+.dot-swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-type-tag {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.dot-type-isolate { background: rgba(99,117,236,0.2); }
+.dot-type-blend   { background: rgba(16,185,129,0.2); }
+
+.dot-type-isolate .dot-type-text { color: #A0B4FF; }
+.dot-type-blend .dot-type-text   { color: #34d399; }
+
+.dot-desc { margin-top: 8px; padding-left: 48px; }
+.dot-desc-text { font-size: 12px; color: #4A6A8A; line-height: 1.5; }
+
+/* Taller modal for dot form */
+.modal-panel-tall { max-height: 92vh; }
+
+/* Dot form extras */
+.form-ph { color: #2A4A6A; }
+
+.form-picker {
+  width: 100%;
+  background: #1A2F4A;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+}
+
+.form-picker-val { font-size: 14px; color: #E8F0F8; }
+.form-picker-arrow { font-size: 18px; color: #4A6A8A; }
+
+.form-textarea {
+  width: 100%;
+  background: #1A2F4A;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: #E8F0F8;
+  min-height: 80px;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+/* Ingredient rows */
+.ingr-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ingr-name {
+  flex: 2;
+  background: #1A2F4A;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #E8F0F8;
+  box-sizing: border-box;
+}
+
+.ingr-value {
+  flex: 1;
+  background: #1A2F4A;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #E8F0F8;
+  box-sizing: border-box;
+}
+
+.ingr-del {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(239,68,68,0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #ef4444;
+  flex-shrink: 0;
+}
+
+.ingr-add {
+  font-size: 13px;
+  color: #6375EC;
+  padding: 8px 0;
+}
+
+.modal-error-text { font-size: 13px; color: #ef4444; display: block; margin-top: 12px; text-align: center; }
+
 /* Roles */
 .role-row {
   display: flex;

@@ -4,15 +4,14 @@ const BASE = 'https://nano.fros.cc'
 const T = {
   zh: {
     title: 'Nano 管理',
-    tabs: { users: '用户', coaches: '教练', dots: '原粒', store: '商城' },
+    tabs: { users: '用户', coaches: '教练', store: '商城' },
     refresh: '刷新', loading: '加载中…', back: '返回',
     add: '添加', edit: '编辑', delete: '删除', save: '保存', cancel: '取消',
     saving: '保存中…', deleting: '删除中…',
-    empty: { users: '暂无用户', coaches: '暂无教练', dots: '暂无原粒', items: '暂无商品', orders: '暂无订单' },
+    empty: { users: '暂无用户', coaches: '暂无教练', items: '暂无商品', orders: '暂无订单' },
     stats: {
       totalUsers: '总用户', tested: '已检测', avgBioAge: '平均生物年龄', coaches: '教练数',
       totalCoaches: '教练总数', assigned: '已分配', unassigned: '未分配',
-      totalDots: '原粒', isolates: '单体', blends: '复合',
       totalItems: '商品', active: '上架中', totalOrders: '订单', pending: '待处理',
     },
     user: {
@@ -23,19 +22,12 @@ const T = {
       male: '男', female: '女', unknown: '未知',
       addTitle: '添加用户', editTitle: '编辑用户',
       deleteWarning: '确认删除此用户？将同时删除其所有检测记录和通知。',
+      deleteRolesError: '无法删除：该用户拥有附加角色，请先在超管面板移除所有附加角色后再删除。',
     },
     coach: {
       name: '姓名', email: '邮箱', phone: '电话', language: '语言', users: '用户数',
       joined: '注册时间', addTitle: '添加教练', editTitle: '编辑教练',
       deleteWarning: '确认删除此教练？其名下用户将变为未分配状态。',
-    },
-    dot: {
-      key: '标识', nameEn: '名称 (英)', nameZh: '名称 (中)', color: '颜色',
-      type: '类型', desc: '描述', isolate: '单体', blend: '复合',
-      ingrEn: '成分 (英)', ingrZh: '成分 (中)',
-      ingrName: '成分名称', ingrMg: 'mg', addIngr: '+ 添加成分',
-      addTitle: '添加原粒', editTitle: '编辑原粒',
-      deleteWarning: '确认删除此原粒？此操作不可撤销。',
     },
     store: {
       itemsTab: '商品', ordersTab: '订单',
@@ -57,8 +49,6 @@ const T = {
     appValues: ['wechat', 'whatsapp', 'wavenapp'],
     genderOptions: ['—', '男', '女'],
     genderValues: ['', 'male', 'female'],
-    typeOptions: ['复合', '单体'],
-    typeValues: [false, true],
     tagOptions: ['无标签', '热销', '超值'],
     tagValues: ['', 'bestseller', 'value'],
     activeOptions: ['上架', '下架'],
@@ -69,15 +59,14 @@ const T = {
   },
   en: {
     title: 'Nano Admin',
-    tabs: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store' },
+    tabs: { users: 'Users', coaches: 'Coaches', store: 'Store' },
     refresh: 'Refresh', loading: 'Loading…', back: 'Back',
     add: 'Add', edit: 'Edit', delete: 'Delete', save: 'Save', cancel: 'Cancel',
     saving: 'Saving…', deleting: 'Deleting…',
-    empty: { users: 'No users', coaches: 'No coaches', dots: 'No dots', items: 'No items', orders: 'No orders' },
+    empty: { users: 'No users', coaches: 'No coaches', items: 'No items', orders: 'No orders' },
     stats: {
       totalUsers: 'Users', tested: 'Tested', avgBioAge: 'Avg Bio Age', coaches: 'Coaches',
       totalCoaches: 'Coaches', assigned: 'Assigned', unassigned: 'Unassigned',
-      totalDots: 'Dots', isolates: 'Isolates', blends: 'Blends',
       totalItems: 'Items', active: 'Active', totalOrders: 'Orders', pending: 'Pending',
     },
     user: {
@@ -88,19 +77,12 @@ const T = {
       male: 'Male', female: 'Female', unknown: 'Unknown',
       addTitle: 'Add User', editTitle: 'Edit User',
       deleteWarning: 'Delete this user? All their biomarkers, scans and notifications will also be removed.',
+      deleteRolesError: 'Cannot delete: user has elevated roles. Remove all extra roles in the Super Admin panel first.',
     },
     coach: {
       name: 'Name', email: 'Email', phone: 'Phone', language: 'Language', users: 'Users',
       joined: 'Joined', addTitle: 'Add Coach', editTitle: 'Edit Coach',
       deleteWarning: 'Delete this coach? Their assigned users will become unassigned.',
-    },
-    dot: {
-      key: 'Key', nameEn: 'Name (EN)', nameZh: 'Name (ZH)', color: 'Color',
-      type: 'Type', desc: 'Description', isolate: 'Isolate', blend: 'Blend',
-      ingrEn: 'Ingredients (EN)', ingrZh: 'Ingredients (ZH)',
-      ingrName: 'Name', ingrMg: 'mg', addIngr: '+ Add Ingredient',
-      addTitle: 'Add Dot', editTitle: 'Edit Dot',
-      deleteWarning: 'Delete this dot? This cannot be undone.',
     },
     store: {
       itemsTab: 'Items', ordersTab: 'Orders',
@@ -122,8 +104,6 @@ const T = {
     appValues: ['wechat', 'whatsapp', 'wavenapp'],
     genderOptions: ['—', 'Male', 'Female'],
     genderValues: ['', 'male', 'female'],
-    typeOptions: ['Blend', 'Isolate'],
-    typeValues: [false, true],
     tagOptions: ['No tag', 'Best Seller', 'Value Pack'],
     tagValues: ['', 'bestseller', 'value'],
     activeOptions: ['Active', 'Inactive'],
@@ -161,11 +141,6 @@ function chronoAge(birthDate) {
   return Math.floor((Date.now() - new Date(birthDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25))
 }
 
-function _ingrToArr(arr) {
-  if (!arr || !Array.isArray(arr)) return []
-  return arr.map(item => ({ name: item.name || '', mg: item.mg != null ? String(item.mg) : '' }))
-}
-
 Page({
   data: {
     lang: 'zh',
@@ -174,7 +149,7 @@ Page({
     loading: false,
     statusBarHeight: 0,
 
-    users: [], coaches: [], dots: [], storeItems: [], orders: [],
+    users: [], coaches: [], storeItems: [], orders: [],
     storeSubTab: 'items',
 
     // User detail overlay
@@ -208,16 +183,11 @@ Page({
     },
     editTargetId: null,
 
-    // Dot ingredients (array of {name, value} for dynamic editing)
-    formIngredients: [],
-    formIngredientsZh: [],
-
     // Picker indices
     formLangIdx: 0,
     formAppIdx: 0,
     formGenderIdx: 0,
     formCoachIdx: 0,
-    formTypeIdx: 0,
     formTagIdx: 0,
     formActiveIdx: 0,
     coachPickerOptions: [],
@@ -248,10 +218,9 @@ Page({
     this.setData({ loading: true })
     try {
       const cid = this._channelId
-      const [uRes, cRes, dRes, sRes, oRes] = await Promise.all([
+      const [uRes, cRes, sRes, oRes] = await Promise.all([
         cid ? this._req(`${BASE}/api/channel-users/${cid}`) : this._req(`${BASE}/api/users`),
         cid ? this._req(`${BASE}/api/channel-coaches/${cid}`) : this._req(`${BASE}/api/coach-list`),
-        this._req(`${BASE}/api/dots-inventory`),
         this._req(`${BASE}/api/store-items?all=true`),
         this._req(`${BASE}/api/orders`),
       ])
@@ -267,7 +236,6 @@ Page({
       this.setData({
         users,
         coaches,
-        dots: dRes.data?.dots || [],
         storeItems: sRes.data?.items || [],
         orders: (oRes.data?.orders || []).map(o => ({
           ...o,
@@ -377,28 +345,6 @@ Page({
     })
   },
 
-  openAddDot() {
-    this.setData({
-      modalOpen: true, modalType: 'dot', modalMode: 'add', modalTitle: T[this.data.lang].dot.addTitle, modalError: '', editTargetId: null,
-      form: { key_name: '', name_en: '', name_zh: '', color: '', color_zh: '', description: '', is_isolate: false },
-      formTypeIdx: 0,
-      formIngredients: [], formIngredientsZh: [],
-    })
-  },
-
-  openEditDot(e) {
-    const d = e.currentTarget.dataset.dot
-    const { lang } = this.data
-    const typeIdx = T[lang].typeValues.indexOf(!!d.is_isolate)
-    this.setData({
-      modalOpen: true, modalType: 'dot', modalMode: 'edit', modalTitle: T[lang].dot.editTitle, modalError: '', editTargetId: d.id,
-      form: { key_name: d.key_name || '', name_en: d.name || '', name_zh: d.name_zh || '', color: d.color || '', color_zh: d.color_zh || '', description: d.description || '', is_isolate: !!d.is_isolate },
-      formTypeIdx: typeIdx >= 0 ? typeIdx : 0,
-      formIngredients: _ingrToArr(d.ingredients),
-      formIngredientsZh: _ingrToArr(d.ingredients_zh),
-    })
-  },
-
   openAddItem() {
     this.setData({
       modalOpen: true, modalType: 'item', modalMode: 'add', modalTitle: T[this.data.lang].store.addTitle, modalError: '', editTargetId: null,
@@ -458,12 +404,6 @@ Page({
     this.setData({ formCoachIdx: idx, 'form.coach_id': val })
   },
 
-  onPickerType(e) {
-    const { lang } = this.data
-    const idx = Number(e.detail.value)
-    this.setData({ formTypeIdx: idx, 'form.is_isolate': T[lang].typeValues[idx] })
-  },
-
   onPickerTag(e) {
     const { lang } = this.data
     const idx = Number(e.detail.value)
@@ -474,28 +414,6 @@ Page({
     const { lang } = this.data
     const idx = Number(e.detail.value)
     this.setData({ formActiveIdx: idx, 'form.active': T[lang].activeValues[idx] })
-  },
-
-  // ── Ingredients ───────────────────────────────────────────────────────────────
-
-  addIngredient(e) {
-    const isZh = e.currentTarget.dataset.zh
-    const key = isZh ? 'formIngredientsZh' : 'formIngredients'
-    this.setData({ [key]: [...this.data[key], { name: '', mg: '' }] })
-  },
-
-  removeIngredient(e) {
-    const { zh, idx } = e.currentTarget.dataset
-    const key = zh ? 'formIngredientsZh' : 'formIngredients'
-    const arr = [...this.data[key]]
-    arr.splice(idx, 1)
-    this.setData({ [key]: arr })
-  },
-
-  onIngredientInput(e) {
-    const { zh, idx, field } = e.currentTarget.dataset
-    const key = zh ? 'formIngredientsZh' : 'formIngredients'
-    this.setData({ [`${key}[${idx}].${field}`]: e.detail.value })
   },
 
   // ── Save ──────────────────────────────────────────────────────────────────────
@@ -519,17 +437,6 @@ Page({
         if (!form.name.trim()) { this.setData({ modalError: t.error.required, modalBusy: false }); return }
         if (modalMode === 'add') await this._req(`${BASE}/api/coaches`, 'POST', { name: form.name, email: form.email, phone: form.phone, language: form.language })
         else await this._req(`${BASE}/api/coaches/${editTargetId}`, 'PUT', { name: form.name, email: form.email, phone: form.phone, language: form.language })
-      } else if (modalType === 'dot') {
-        if (!form.key_name.trim() || !form.name_en.trim()) { this.setData({ modalError: t.error.required, modalBusy: false }); return }
-        const ingredients = this.data.formIngredients
-          .filter(r => r.name.trim())
-          .map(r => ({ name: r.name.trim(), mg: r.mg !== '' ? Number(r.mg) : 0 }))
-        const ingredients_zh = this.data.formIngredientsZh
-          .filter(r => r.name.trim())
-          .map(r => ({ name: r.name.trim(), mg: r.mg !== '' ? Number(r.mg) : 0 }))
-        const payload = { key_name: form.key_name, name: form.name_en, name_zh: form.name_zh, color: form.color, color_zh: form.color_zh, description: form.description, is_isolate: form.is_isolate, ingredients, ingredients_zh }
-        if (modalMode === 'add') await this._req(`${BASE}/api/dots`, 'POST', payload)
-        else await this._req(`${BASE}/api/dots/${editTargetId}`, 'PUT', payload)
       } else if (modalType === 'item') {
         if (!form.key_name.trim() || !form.name_en.trim()) { this.setData({ modalError: t.error.required, modalBusy: false }); return }
         if (modalMode === 'add') await this._req(`${BASE}/api/store-items`, 'POST', form)
@@ -547,6 +454,15 @@ Page({
   handleDeleteUser(e) {
     const user = e.currentTarget.dataset.user
     const { lang } = this.data
+    const extraRoles = (user.roles || ['user']).filter(r => r !== 'user')
+    if (extraRoles.length > 0) {
+      wx.showModal({
+        title: T[lang].user.deleteWarning.split('？')[0],
+        content: T[lang].user.deleteRolesError,
+        showCancel: false,
+      })
+      return
+    }
     wx.showModal({
       title: T[lang].user.deleteWarning.split('？')[0] + '？',
       content: T[lang].user.deleteWarning,
@@ -574,24 +490,6 @@ Page({
         if (!res.confirm) return
         try {
           await this._req(`${BASE}/api/coaches/${coach.id}`, 'DELETE')
-          this._loadAll()
-        } catch (e) { wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' }) }
-      },
-    })
-  },
-
-  handleDeleteDot(e) {
-    const dot = e.currentTarget.dataset.dot
-    const { lang } = this.data
-    wx.showModal({
-      title: T[lang].dot.deleteWarning.split('？')[0] + '？',
-      content: T[lang].dot.deleteWarning,
-      confirmColor: '#ef4444',
-      confirmText: T[lang].delete,
-      success: async (res) => {
-        if (!res.confirm) return
-        try {
-          await this._req(`${BASE}/api/dots/${dot.id}`, 'DELETE')
           this._loadAll()
         } catch (e) { wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' }) }
       },

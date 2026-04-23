@@ -5,7 +5,7 @@ const BASE = 'https://nano.fros.cc'
 
 const T = {
   zh: {
-    tabChat: '对话', tabHealth: '健康', tabDots: '营养', tabStore: '商城',
+    tabChat: '对话', tabHealth: '健康', tabDots: '原粒', tabStore: '商城',
     logout: '退出',
     initMsg: '您好！我是 Nano，您的AI健康伴侣。今天有什么可以帮您的？',
     inputPh: '输入消息…',
@@ -531,7 +531,11 @@ Page({
   // ── Kino Simulator ──────────────────────────────────────────────────────────
 
   openKinoSim() {
-    this.setData({ menuOpen: false, kinoPassOpen: true, kinoPassInput: '', kinoPassError: false })
+    if (this.data.isSuperadmin) {
+      this.setData({ menuOpen: false, kinoSimOpen: true })
+    } else {
+      this.setData({ menuOpen: false, kinoPassOpen: true, kinoPassInput: '', kinoPassError: false })
+    }
   },
 
   closeKinoPass() {

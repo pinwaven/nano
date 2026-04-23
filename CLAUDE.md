@@ -19,6 +19,8 @@
 - `/src/lib/`: Shared logic (Database clients, WeChat API helpers).
 - `/src/schemas/`: JSON Schema files for event validation.
 - `/src/mini/nano-miniapp/`: WeChat Mini Program frontend (WXML/WXSS/JS, no build pipeline).
+  - The **Kino Simulator** is implemented as a native WXML overlay inside `pages/main/` — it is not an iframe or externally loaded resource. All UI, state, and logic live in `main.wxml`, `main.wxss`, and `main.js`. Only the biomarker result data is fetched remotely (`/api/biomarkers`).
+  - The simulator iframes in `/src/web/admin-panel` (`/admin/sim/kino/`) are a **separate** web-only thing and unrelated to the miniapp simulator.
 - `/tests/mocks/`: Local EventBridge and MNS simulation scripts.
 - `/src/web/admin-panel`: Control Panel for Admin
 - **File Naming:** kebab-case (e.g., `user-repository.js`).

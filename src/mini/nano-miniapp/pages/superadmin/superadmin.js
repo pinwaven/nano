@@ -4,11 +4,11 @@ const BASE = 'https://nano.fros.cc'
 const T = {
   zh: {
     title: '超管面板',
-    tabs: { channels: '渠道', users: '用户', coaches: '教练' },
+    tabs: { channels: '渠道', users: '用户', coaches: '教练', dots: '原粒' },
     back: '返回', refresh: '刷新', loading: '加载中…',
     add: '添加', edit: '编辑', delete: '删除', save: '保存', cancel: '取消',
     saving: '保存中…', deleting: '删除中…',
-    empty: { channels: '暂无渠道', users: '暂无用户', coaches: '暂无教练' },
+    empty: { channels: '暂无渠道', users: '暂无用户', coaches: '暂无教练', dots: '暂无原粒' },
     channel: {
       key: '标识', name: '名称', logo: 'Logo URL', users: '用户', coaches: '教练',
       addTitle: '添加渠道', editTitle: '编辑渠道',
@@ -21,20 +21,30 @@ const T = {
     coach: {
       name: '姓名', channel: '渠道', linkedUser: '关联用户 ID', users: '客户数',
     },
+    dot: {
+      key: '标识', nameEn: '名称 (英)', nameZh: '名称 (中)', color: '颜色 (英)', colorZh: '颜色 (中)',
+      type: '类型', desc: '描述', isolate: '单体', blend: '复合',
+      ingrEn: '成分 (英)', ingrZh: '成分 (中)',
+      ingrName: '成分名称', ingrMg: 'mg', addIngr: '+ 添加成分',
+      addTitle: '添加原粒', editTitle: '编辑原粒',
+      deleteWarning: '确认删除此原粒？此操作不可撤销。',
+    },
     roles: {
       label: '角色管理',
       user: '用户', coach: '教练', admin: '渠道管理员', superadmin: '超级管理员',
       saveRoles: '保存角色',
     },
+    typeOptions: ['复合', '单体'],
+    typeValues: [false, true],
     error: { required: '此项为必填', saveFailed: '保存失败', networkError: '网络错误' },
   },
   en: {
     title: 'Super Admin',
-    tabs: { channels: 'Channels', users: 'Users', coaches: 'Coaches' },
+    tabs: { channels: 'Channels', users: 'Users', coaches: 'Coaches', dots: 'Dots' },
     back: 'Back', refresh: 'Refresh', loading: 'Loading…',
     add: 'Add', edit: 'Edit', delete: 'Delete', save: 'Save', cancel: 'Cancel',
     saving: 'Saving…', deleting: 'Deleting…',
-    empty: { channels: 'No channels', users: 'No users', coaches: 'No coaches' },
+    empty: { channels: 'No channels', users: 'No users', coaches: 'No coaches', dots: 'No dots' },
     channel: {
       key: 'Key', name: 'Name', logo: 'Logo URL', users: 'Users', coaches: 'Coaches',
       addTitle: 'Add Channel', editTitle: 'Edit Channel',
@@ -47,11 +57,21 @@ const T = {
     coach: {
       name: 'Name', channel: 'Channel', linkedUser: 'Linked User ID', users: 'Clients',
     },
+    dot: {
+      key: 'Key', nameEn: 'Name (EN)', nameZh: 'Name (ZH)', color: 'Color (EN)', colorZh: 'Color (ZH)',
+      type: 'Type', desc: 'Description', isolate: 'Isolate', blend: 'Blend',
+      ingrEn: 'Ingredients (EN)', ingrZh: 'Ingredients (ZH)',
+      ingrName: 'Name', ingrMg: 'mg', addIngr: '+ Add Ingredient',
+      addTitle: 'Add Dot', editTitle: 'Edit Dot',
+      deleteWarning: 'Delete this dot? This cannot be undone.',
+    },
     roles: {
       label: 'Role Management',
       user: 'User', coach: 'Coach', admin: 'Channel Admin', superadmin: 'Superadmin',
       saveRoles: 'Save Roles',
     },
+    typeOptions: ['Blend', 'Isolate'],
+    typeValues: [false, true],
     error: { required: 'Required', saveFailed: 'Save failed', networkError: 'Network error' },
   },
 }
@@ -65,6 +85,11 @@ function fmtDate(d) {
   return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`
 }
 
+function ingrToArr(arr) {
+  if (!arr || !Array.isArray(arr)) return []
+  return arr.map(item => ({ name: item.name || '', mg: item.mg != null ? String(item.mg) : '' }))
+}
+
 Page({
   data: {
     lang: 'zh',
@@ -75,6 +100,7 @@ Page({
     channels: [],
     users: [],
     coaches: [],
+    dots: [],
 
     // Channel modal
     channelModalOpen: false,
@@ -90,13 +116,18 @@ Page({
     rolesTarget: null,
     rolesChecked: [],
 
-    // Coaches modal
-    coachModalOpen: false,
-    coachModalMode: '',
-    coachModalBusy: false,
-    coachModalError: '',
-    coachForm: { name: '', email: '', phone: '', language: 'zh', channel_id: '', user_id: '' },
-    editCoachId: null,
+    // Dot modal
+    dotModalOpen: false,
+    dotModalMode: '',
+    dotModalTitle: '',
+    dotModalBusy: false,
+    dotModalError: '',
+    dotForm: { key_name: '', name_en: '', name_zh: '', color: '', color_zh: '', description: '', is_isolate: false },
+    editDotId: null,
+    formIngredients: [],
+    formIngredientsZh: [],
+    formTypeIdx: 0,
+
     channelPickerOptions: [],
     channelPickerValues: [],
     channelPickerIdx: 0,
@@ -120,10 +151,11 @@ Page({
   async _loadAll() {
     this.setData({ loading: true })
     try {
-      const [chRes, uRes, cRes] = await Promise.all([
+      const [chRes, uRes, cRes, dRes] = await Promise.all([
         this._req(`${BASE}/api/channels`),
         this._req(`${BASE}/api/users`),
         this._req(`${BASE}/api/coach-list`),
+        this._req(`${BASE}/api/dots-inventory`),
       ])
       const lang = this.data.lang
       const channels = chRes.data?.channels || []
@@ -142,7 +174,7 @@ Page({
       const channelPickerOptions = [lang === 'zh' ? '— 无渠道 —' : '— No Channel —', ...channels.map(c => c.name)]
       const channelPickerValues = ['', ...channels.map(c => String(c.id))]
 
-      this.setData({ channels, users, coaches, channelPickerOptions, channelPickerValues })
+      this.setData({ channels, users, coaches, dots: dRes.data?.dots || [], channelPickerOptions, channelPickerValues })
     } catch (e) {
       wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' })
     } finally {
@@ -266,6 +298,119 @@ Page({
     } catch (e) {
       wx.showToast({ title: T[lang].error.saveFailed, icon: 'none' })
     }
+  },
+
+  // ── Dots CRUD ────────────────────────────────────────────────────────────────
+
+  openAddDot() {
+    const t = T[this.data.lang]
+    this.setData({
+      dotModalOpen: true, dotModalMode: 'add', dotModalTitle: t.dot.addTitle,
+      dotModalError: '', editDotId: null,
+      dotForm: { key_name: '', name_en: '', name_zh: '', color: '', color_zh: '', description: '', is_isolate: false },
+      formTypeIdx: 0, formIngredients: [], formIngredientsZh: [],
+    })
+  },
+
+  openEditDot(e) {
+    const d = e.currentTarget.dataset.dot
+    const { lang } = this.data
+    const t = T[lang]
+    const typeIdx = t.typeValues.indexOf(!!d.is_isolate)
+    this.setData({
+      dotModalOpen: true, dotModalMode: 'edit', dotModalTitle: t.dot.editTitle,
+      dotModalError: '', editDotId: d.id,
+      dotForm: { key_name: d.key_name || '', name_en: d.name || '', name_zh: d.name_zh || '', color: d.color || '', color_zh: d.color_zh || '', description: d.description || '', is_isolate: !!d.is_isolate },
+      formTypeIdx: typeIdx >= 0 ? typeIdx : 0,
+      formIngredients: ingrToArr(d.ingredients),
+      formIngredientsZh: ingrToArr(d.ingredients_zh),
+    })
+  },
+
+  closeDotModal() {
+    if (this.data.dotModalBusy) return
+    this.setData({ dotModalOpen: false })
+  },
+
+  onDotFormInput(e) {
+    const key = e.currentTarget.dataset.key
+    this.setData({ [`dotForm.${key}`]: e.detail.value })
+  },
+
+  onPickerType(e) {
+    const { lang } = this.data
+    const idx = Number(e.detail.value)
+    this.setData({ formTypeIdx: idx, 'dotForm.is_isolate': T[lang].typeValues[idx] })
+  },
+
+  addIngredient(e) {
+    const isZh = e.currentTarget.dataset.zh
+    const key = isZh ? 'formIngredientsZh' : 'formIngredients'
+    this.setData({ [key]: [...this.data[key], { name: '', mg: '' }] })
+  },
+
+  removeIngredient(e) {
+    const { zh, idx } = e.currentTarget.dataset
+    const key = zh ? 'formIngredientsZh' : 'formIngredients'
+    const arr = [...this.data[key]]
+    arr.splice(idx, 1)
+    this.setData({ [key]: arr })
+  },
+
+  onIngredientInput(e) {
+    const { zh, idx, field } = e.currentTarget.dataset
+    const key = zh ? 'formIngredientsZh' : 'formIngredients'
+    this.setData({ [`${key}[${idx}].${field}`]: e.detail.value })
+  },
+
+  async saveDot() {
+    const { dotModalMode, dotForm, editDotId, lang } = this.data
+    const t = T[lang]
+    if (!dotForm.key_name.trim() || !dotForm.name_en.trim()) {
+      this.setData({ dotModalError: t.error.required })
+      return
+    }
+    this.setData({ dotModalBusy: true, dotModalError: '' })
+    try {
+      const ingredients = this.data.formIngredients
+        .filter(r => r.name.trim())
+        .map(r => ({ name: r.name.trim(), mg: r.mg !== '' ? Number(r.mg) : 0 }))
+      const ingredients_zh = this.data.formIngredientsZh
+        .filter(r => r.name.trim())
+        .map(r => ({ name: r.name.trim(), mg: r.mg !== '' ? Number(r.mg) : 0 }))
+      const payload = {
+        key_name: dotForm.key_name, name: dotForm.name_en, name_zh: dotForm.name_zh,
+        color: dotForm.color, color_zh: dotForm.color_zh, description: dotForm.description,
+        is_isolate: dotForm.is_isolate, ingredients, ingredients_zh,
+      }
+      if (dotModalMode === 'add') await this._req(`${BASE}/api/dots`, 'POST', payload)
+      else await this._req(`${BASE}/api/dots/${editDotId}`, 'PUT', payload)
+      this.setData({ dotModalOpen: false })
+      this._loadAll()
+    } catch (e) {
+      this.setData({ dotModalError: t.error.saveFailed })
+    } finally {
+      this.setData({ dotModalBusy: false })
+    }
+  },
+
+  handleDeleteDot(e) {
+    const dot = e.currentTarget.dataset.dot
+    const { lang } = this.data
+    const t = T[lang]
+    wx.showModal({
+      title: t.dot.deleteWarning.split('？')[0] + '？',
+      content: t.dot.deleteWarning,
+      confirmColor: '#ef4444',
+      confirmText: t.delete,
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/dots/${dot.id}`, 'DELETE')
+          this._loadAll()
+        } catch (e) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
+      },
+    })
   },
 
   // ── HTTP helper ─────────────────────────────────────────────────────────────

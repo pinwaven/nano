@@ -61,6 +61,7 @@ const T = {
       cancel: 'Cancel', save: 'Save', saving: 'Saving…',
       delete: 'Delete', deleting: 'Deleting…',
       deleteWarning: (name) => `Delete ${name}? This will also remove all their biomarkers, scans, and notifications.`,
+      deleteBlockedByRoles: (roles) => `Cannot delete: user has the roles "${roles}". Remove all extra roles first.`,
       deleteCoachWarning: (name) => `Delete Coach ${name}? Their assigned users will become unassigned.`,
       deleteDotWarning: (name) => `Delete dot "${name}"? This cannot be undone.`,
       addItem: 'Add Item', editItem: 'Edit Item', deleteItem: 'Delete Item',
@@ -141,6 +142,7 @@ const T = {
       cancel: '取消', save: '保存', saving: '保存中…',
       delete: '删除', deleting: '删除中…',
       deleteWarning: (name) => `确认删除 ${name}？此操作将同时删除该用户的所有生物标志物、扫描记录和通知。`,
+      deleteBlockedByRoles: (roles) => `无法删除：该用户拥有附加角色（${roles}），请先移除所有附加角色。`,
       deleteCoachWarning: (name) => `确认删除 Coach ${name}？其名下用户将变为未分配状态。`,
       deleteDotWarning: (name) => `确认删除原粒"${name}"？此操作不可撤销。`,
       addItem: '添加商品', editItem: '编辑商品', deleteItem: '删除商品',
@@ -374,6 +376,8 @@ function UserModal({ user, coaches, channels, onClose, onSave }) {
 function DeleteConfirm({ user, onClose, onConfirm }) {
   const { t } = useLang();
   const [busy, setBusy] = useState(false);
+  const extraRoles = (user.roles || ['user']).filter(r => r !== 'user');
+  const blocked = extraRoles.length > 0;
   const handleDelete = async () => {
     setBusy(true);
     try { await axios.delete(`/api/users/${user.user_id || user.id}`); onConfirm(); }
@@ -387,14 +391,22 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="modal-body">
-          <p style={{ marginBottom: 20, color: '#475569' }}>
-            {t.modal.deleteWarning(<strong>{user.nickname || user.external_id || user.user_id}</strong>)}
-          </p>
+          {blocked ? (
+            <p style={{ marginBottom: 20, color: '#dc2626' }}>
+              {t.modal.deleteBlockedByRoles(extraRoles.join(', '))}
+            </p>
+          ) : (
+            <p style={{ marginBottom: 20, color: '#475569' }}>
+              {t.modal.deleteWarning(<strong>{user.nickname || user.external_id || user.user_id}</strong>)}
+            </p>
+          )}
           <div className="modal-footer">
             <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
-            <button className="btn-danger" onClick={handleDelete} disabled={busy}>
-              <Trash2 size={14} />{busy ? t.modal.deleting : t.modal.delete}
-            </button>
+            {!blocked && (
+              <button className="btn-danger" onClick={handleDelete} disabled={busy}>
+                <Trash2 size={14} />{busy ? t.modal.deleting : t.modal.delete}
+              </button>
+            )}
           </div>
         </div>
       </div>

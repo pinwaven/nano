@@ -57,3 +57,15 @@ cd ../.. && s deploy admin-panel -y
   - `/admin/sim/chat/` — Chat simulator standalone
   - `/admin/sim/kino/` — Kino simulator standalone
   - `/admin/sim/coach/` — Coach simulator standalone
+
+## Kino Simulator in the WeChat Mini Program
+
+The **web Kino Simulator** (`tests/kino-simulator/`) described above is **not** the same as the Kino Simulator feature inside the WeChat Mini Program.
+
+The miniapp's Kino Simulator is a **native WXML overlay** implemented entirely within `src/mini/nano-miniapp/pages/main/`:
+
+- `main.wxml` — the `.ksm-overlay` view tree (ring animation, results panel, action button)
+- `main.wxss` — all `.ksm-*` styles
+- `main.js` — `openKinoSim`, `handleKinoSimStart`, `closeKinoSim`, slide timer logic
+
+No build step, no iframe, no external assets. The only remote call is fetching biomarker results from `/api/biomarkers`. To change the miniapp simulator, edit those three files directly.
