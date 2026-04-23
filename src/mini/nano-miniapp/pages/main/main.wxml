@@ -195,6 +195,7 @@
           <text class="kino-scan-icon">⬡</text>
           <text class="kino-scan-label">{{t.kinoScanBtn}}</text>
         </view>
+        <view class="kino-scan-close" bindtap="cancelKinoScan">✕</view>
       </view>
 
       <!-- Normal chat input -->

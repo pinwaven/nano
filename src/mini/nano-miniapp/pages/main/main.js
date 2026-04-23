@@ -19,7 +19,7 @@ const T = {
     obBirthdayOnly: '还有一件事——请告诉我您的出生日期？',
     obBodyPrompt: '最后一步——请告诉我您的身高和体重，帮助计算您的健康指标。',
     obBodyOnly: '还有一件事——请告诉我您的身高和体重？',
-    obComplete: '您的个人信息已完善！今天有什么可以帮您的？',
+    obComplete: '您的个人基础信息已完善！',
     confirm: '确认',
     bsHeight: '身高', bsWeight: '体重', bsCm: 'cm', bsKg: 'kg',
     male: '男', female: '女',
@@ -126,7 +126,7 @@ const T = {
     obBirthdayOnly: 'One quick thing — could you share your date of birth?',
     obBodyPrompt: 'Last step — could you share your height and weight? This helps calculate your health metrics.',
     obBodyOnly: 'One more thing — could you share your height and weight?',
-    obComplete: 'Your profile is all set! How can I help you today?',
+    obComplete: 'Your basic profile is all set! ',
     confirm: 'Confirm',
     bsHeight: 'Height', bsWeight: 'Weight', bsCm: 'cm', bsKg: 'kg',
     male: 'Male', female: 'Female',
@@ -172,9 +172,9 @@ const T = {
     storeEmpty: 'No products available.',
     storeSubProducts: 'Products', storeSubOrders: 'My Orders',
     noOrders: 'No orders yet.',
-    toolFormulaDots: 'Formula my dots',
+    toolFormulaDots: 'Formulate Dots',
     toolTestChip: 'Use Kino Chip',
-    toolFormulaDotMsg: 'Please formula my dots plan',
+    toolFormulaDotMsg: 'Please formulate my Dots plan',
     toolTestChipMsg: 'I want to use a Kino chip',
     formulaGenerating: 'Generating your 7-day nutrition plan from your biomarkers…',
     formulaComplete: 'Your 7-day nutrition plan is ready!',
@@ -843,6 +843,10 @@ Page({
       this.setData({ tab: 'dots', dotsLoading: true })
       this._loadDots(user, lang)
     }
+  },
+
+  cancelKinoScan() {
+    this.setData({ kinoScanPending: false })
   },
 
   handleKinoScan() {

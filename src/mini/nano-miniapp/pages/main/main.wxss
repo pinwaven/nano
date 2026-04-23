@@ -1112,6 +1112,21 @@
   flex-direction: row;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+.kino-scan-close {
+  position: absolute;
+  right: 28rpx;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 56rpx;
+  height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 32rpx;
 }
 
 .kino-scan-btn {
