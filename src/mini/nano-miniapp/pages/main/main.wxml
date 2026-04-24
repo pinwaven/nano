@@ -380,8 +380,44 @@
     <!-- ════ DOTS ════ -->
     <view class="dots-tab{{tab !== 'dots' ? ' tab-hidden' : ''}}">
 
+      <!-- ── Cartridge panel ─────────────────────────────────────────── -->
+      <view class="cart-section">
+        <view class="cart-section-hdr">
+          <text class="cart-section-title">{{t.cartridgeTitle}}</text>
+          <view class="cart-sim-btn" bindtap="openCartSim">
+            <text class="cart-sim-btn-icon">+</text>
+          </view>
+        </view>
+
+        <view wx:if="{{cartridgesLoading}}" class="cart-loading">
+          <view class="pulse-dot"></view>
+          <view class="pulse-dot"></view>
+          <view class="pulse-dot"></view>
+        </view>
+
+        <view wx:elif="{{cartridges.length > 0}}" class="cart-grid">
+          <view
+            wx:for="{{cartridges}}"
+            wx:key="id"
+            class="cart-slot{{item.isEmpty ? ' cart-slot-empty' : ''}}"
+          >
+            <view class="ink-bar-wrap">
+              <view class="ink-bar-fill" style="height:{{item.percent}}%;background:{{item.barColor}};"></view>
+            </view>
+            <text class="cart-key">{{item.dotKey}}</text>
+            <text class="cart-remaining">{{item.remaining}}</text>
+          </view>
+        </view>
+
+        <view wx:else class="cart-empty">
+          <text>{{t.noCartridges}}</text>
+        </view>
+      </view>
+
+      <!-- ── Weekly plan ─────────────────────────────────────────────── -->
       <view class="dots-header">
         <text class="dots-title">{{t.dotsTitle}}</text>
+        <text wx:if="{{weekLabel}}" class="dots-week-label">{{weekLabel}}</text>
       </view>
 
       <view wx:if="{{dotsLoading}}" class="center-wrap">
@@ -435,7 +471,7 @@
         </view>
       </scroll-view>
 
-      <view wx:else class="dots-empty">
+      <view wx:elif="{{!dotsLoading}}" class="dots-empty">
         <text>{{t.noPlan}}</text>
       </view>
 
@@ -522,6 +558,51 @@
 
   </view>
   <!-- end tab-content -->
+
+  <!-- ── Cartridge Sim Overlay ── -->
+  <view wx:if="{{simCartOpen}}" class="csim-overlay" bindtap="closeCartSim">
+    <view class="csim-sheet" catchtap="noop">
+      <view class="csim-handle"></view>
+      <text class="csim-title">{{t.simCartTitle}}</text>
+      <text class="csim-subtitle">{{t.simCartSubtitle}}</text>
+
+      <view class="csim-sets">
+        <view
+          wx:for="{{simCartSets}}"
+          wx:key="key"
+          class="csim-set-card"
+          style="border-color: {{item.color}}22;"
+          bindtap="{{simCartLoading ? '' : 'handleSelectCartSet'}}"
+          data-dots-raw="{{item.dots_raw}}"
+        >
+          <view class="csim-set-accent" style="background: {{item.color}};"></view>
+          <view class="csim-set-body">
+            <text class="csim-set-name">{{item.name}}</text>
+            <text class="csim-set-desc">{{item.desc}}</text>
+            <view class="csim-dot-badges">
+              <view
+                wx:for="{{item.dotItems}}"
+                wx:key="displayKey"
+                wx:for-item="di"
+                class="csim-dot-badge"
+              >
+                <text class="csim-badge-key" style="color:{{item.color}};">{{di.displayKey}}</text>
+                <text class="csim-badge-name">{{di.dotName}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view wx:if="{{simCartLoading}}" class="csim-loading">
+        <view class="pulse-dot"></view><view class="pulse-dot"></view><view class="pulse-dot"></view>
+      </view>
+
+      <view class="csim-cancel" bindtap="closeCartSim">
+        <text>{{t.simCartCancel}}</text>
+      </view>
+    </view>
+  </view>
 
   <!-- ── Kino Passcode Overlay ── -->
   <view wx:if="{{kinoPassOpen}}" class="kpass-overlay">

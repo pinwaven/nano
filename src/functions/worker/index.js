@@ -94,6 +94,138 @@ async function handleGetDotsInventory() {
     }
 }
 
+async function handleGetMyCartridges(openid) {
+    if (!openid) return { success: false, error: 'openid is required' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const userResult = await pool.query(
+            'SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]
+        );
+        if (userResult.rows.length === 0) return { success: false, error: 'User not found' };
+        const userId = userResult.rows[0].user_id;
+
+        const result = await pool.query(`
+            SELECT uc.id, uc.nfc_tag_id, uc.total_dots, uc.remaining_dots, uc.status,
+                   uc.inserted_at, uc.last_dispensed_at,
+                   d.key_name AS dot_key, d.name AS dot_name, d.name_zh AS dot_name_zh,
+                   d.color_hex, d.timing
+            FROM user_cartridges uc
+            JOIN dots d ON d.id = uc.dot_id
+            WHERE uc.user_id = $1 AND uc.status != 'removed'
+            ORDER BY d.id ASC
+        `, [userId]);
+
+        return { success: true, cartridges: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostCartridgeInsert(body) {
+    const { openid, nfc_tag_id, dot_key } = body;
+    if (!openid || !nfc_tag_id || !dot_key) return { success: false, error: 'openid, nfc_tag_id and dot_key are required' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+        const [userResult, dotResult] = await Promise.all([
+            pool.query('SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]),
+            pool.query('SELECT id FROM dots WHERE key_name = $1 LIMIT 1', [dot_key.toUpperCase()]),
+        ]);
+        if (userResult.rows.length === 0) return { success: false, error: 'User not found' };
+        if (dotResult.rows.length === 0) return { success: false, error: `Dot not found: ${dot_key}` };
+        const userId = userResult.rows[0].user_id;
+        const dotId = dotResult.rows[0].id;
+
+        // Previous active cartridge of same dot type is auto-removed
+        await pool.query(
+            `UPDATE user_cartridges SET status = 'removed' WHERE user_id = $1 AND dot_id = $2 AND status = 'active'`,
+            [userId, dotId]
+        );
+
+        // Upsert: if this NFC tag existed before (e.g. removed), reactivate it fresh
+        await pool.query(`
+            INSERT INTO user_cartridges (user_id, dot_id, nfc_tag_id, total_dots, remaining_dots, status, inserted_at)
+            VALUES ($1, $2, $3, 800, 800, 'active', NOW())
+            ON CONFLICT (nfc_tag_id) DO UPDATE
+              SET user_id = EXCLUDED.user_id, dot_id = EXCLUDED.dot_id,
+                  status = 'active', inserted_at = NOW(), remaining_dots = 800, total_dots = 800
+        `, [userId, dotId, nfc_tag_id]);
+
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostCartridgeRemove(body) {
+    const { openid, nfc_tag_id } = body;
+    if (!openid || !nfc_tag_id) return { success: false, error: 'openid and nfc_tag_id are required' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const userResult = await pool.query(
+            'SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]
+        );
+        if (userResult.rows.length === 0) return { success: false, error: 'User not found' };
+        const userId = userResult.rows[0].user_id;
+        await pool.query(
+            `UPDATE user_cartridges SET status = 'removed' WHERE nfc_tag_id = $1 AND user_id = $2`,
+            [nfc_tag_id, userId]
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostDispense(body) {
+    const { openid, slot, date, dispensed } = body;
+    if (!openid || !slot || !date || !dispensed) return { success: false, error: 'openid, slot, date and dispensed are required' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const userResult = await pool.query(
+            'SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]
+        );
+        if (userResult.rows.length === 0) return { success: false, error: 'User not found' };
+        const userId = userResult.rows[0].user_id;
+
+        const dispenseLog = {};
+        const updatedCartridges = [];
+
+        for (const [dotKey, count] of Object.entries(dispensed)) {
+            const cartResult = await pool.query(`
+                SELECT uc.id, uc.remaining_dots
+                FROM user_cartridges uc
+                JOIN dots d ON d.id = uc.dot_id
+                WHERE uc.user_id = $1 AND d.key_name = $2 AND uc.status = 'active'
+                LIMIT 1
+            `, [userId, dotKey]);
+
+            if (cartResult.rows.length === 0) continue;
+            const cart = cartResult.rows[0];
+            const newRemaining = Math.max(0, cart.remaining_dots - count);
+            const newStatus = newRemaining <= 0 ? 'empty' : 'active';
+
+            await pool.query(
+                `UPDATE user_cartridges SET remaining_dots = $1, status = $2, last_dispensed_at = NOW() WHERE id = $3`,
+                [newRemaining, newStatus, cart.id]
+            );
+
+            dispenseLog[dotKey] = { deducted: count, cartridge_id: cart.id, remaining_after: newRemaining };
+            updatedCartridges.push({ dot_key: dotKey, cartridge_id: cart.id, remaining: newRemaining, status: newStatus });
+        }
+
+        await pool.query(
+            `UPDATE nutrition_schedules SET dispensed_at = NOW(), dispense_log = $1
+             WHERE user_id = $2 AND scheduled_date = $3 AND slot_name = $4`,
+            [JSON.stringify(dispenseLog), userId, date, slot]
+        );
+
+        return { success: true, dispensed: updatedCartridges };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleGetStoreItems(query = {}) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -1524,6 +1656,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetNotifications(query.openid);
             } else if (path.includes('/nutrition-plan')) {
                 result = await handleGetNutritionPlan(query.openid);
+            } else if (path.includes('/my-cartridges')) {
+                result = await handleGetMyCartridges(query.openid);
             } else if (path.includes('/dots-inventory')) {
                 result = await handleGetDotsInventory();
             } else if (path.includes('/store-items')) {
@@ -1576,6 +1710,12 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostKinoScan(parsedBody);
             } else if (path.includes('/chat-messages')) {
                 result = await handlePostChatMessages(parsedBody);
+            } else if (path.includes('/cartridge-insert')) {
+                result = await handlePostCartridgeInsert(parsedBody);
+            } else if (path.includes('/cartridge-remove')) {
+                result = await handlePostCartridgeRemove(parsedBody);
+            } else if (path.includes('/dispense')) {
+                result = await handlePostDispense(parsedBody);
             } else if (path.includes('/formula-dots')) {
                 result = await handlePostFormulaDots(parsedBody);
             } else if (path.includes('/health-advice')) {

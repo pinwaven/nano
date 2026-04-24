@@ -1,6 +1,51 @@
 const app = getApp()
 const BASE = 'https://nano.fros.cc'
 
+const CART_SETS = [
+  {
+    key: 'set-bioage-reducing',
+    nameZh: '逆龄还原套装', nameEn: 'BioAge Reducing',
+    descZh: '细胞年龄 · 代谢韧性', descEn: 'Cellular Age · Metabolic Resilience',
+    color: '#6375EC',
+    dotItems: [
+      { key: 'DOT01', zhName: '细胞原力', enName: 'Cellular Fuel' },
+      { key: 'DOT02', zhName: '细胞守护', enName: 'Cellular Guard' },
+      { key: 'DOT03', zhName: '细胞催化', enName: 'Cellular Catalyst' },
+      { key: 'DOT04', zhName: '细胞净化', enName: 'Cellular Cleanup' },
+      { key: 'DOT05', zhName: '代谢韧性', enName: 'Metabolic Resilience' },
+      { key: 'DOT06', zhName: '紧致焕颜', enName: 'Dermal Radiance' },
+    ],
+  },
+  {
+    key: 'set-energy-boost',
+    nameZh: '能量提升套装', nameEn: 'Energy Boost',
+    descZh: '代谢 · 微血管 · 抗压 · 睡眠', descEn: 'Metabolic · Vascular · Resilience · Sleep',
+    color: '#10b981',
+    dotItems: [
+      { key: 'DOT07', zhName: '代谢动力', enName: 'Metabolic Power' },
+      { key: 'DOT08', zhName: '血管唤醒', enName: 'Vascular Awakening' },
+      { key: 'DOT09', zhName: '抗压支持', enName: 'Resilience Support' },
+      { key: 'DOT10', zhName: '晨间引擎', enName: 'Morning Ignition' },
+      { key: 'DOT11', zhName: '巅峰体能', enName: 'Athletic Peak' },
+      { key: 'DOT12', zhName: '深度睡眠', enName: 'Deep Sleep' },
+    ],
+  },
+  {
+    key: 'set-system-optimization',
+    nameZh: '系统调优套装', nameEn: 'System Optimization',
+    descZh: '微血管 · 抗压年龄 · 肠道 · 免疫', descEn: 'Vascular · Resilience · Gut · Immunity',
+    color: '#f59e0b',
+    dotItems: [
+      { key: 'DOT13', zhName: '微血管通流', enName: 'Vascular Flow' },
+      { key: 'DOT14', zhName: '微血管保护', enName: 'Vascular Protection' },
+      { key: 'DOT15', zhName: '禅意共振', enName: 'Zen Resonance' },
+      { key: 'DOT16', zhName: '抗压防御', enName: 'Resilience Defense' },
+      { key: 'DOT17', zhName: '肠道微生态', enName: 'Gut & Microbiome' },
+      { key: 'DOT18', zhName: '免疫防御', enName: 'Immunity & Gastric' },
+    ],
+  },
+]
+
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
 const T = {
@@ -52,6 +97,13 @@ const T = {
       GA: '糖化白蛋白', CystatinC: '胱抑素 C', CD38: 'CD38',
     },
     dotsTitle: '营养方案',
+    cartridgeTitle: '原粒盒',
+    noCartridges: '未插入原粒盒。请将原粒盒插入分配器。',
+    simCartTitle: '选择套装',
+    simCartSubtitle: '测试模式 · 自动生成 NFC 标签并插入',
+    simCartInserting: '正在插入…',
+    simCartDone: '套装已插入！',
+    simCartCancel: '取消',
     noPlan: '暂无营养方案。完成 Kino 生物标志物检测后，系统将为您生成个性化方案。',
     morning: '早上', evening: '晚上', today: '今天', tomorrow: '明天',
     obConditionsPrompt: '您是否曾被诊断/体检出以下方面的问题？（可多选）',
@@ -170,6 +222,13 @@ const T = {
       GA: 'Glycated Albumin', CystatinC: 'Cystatin C', CD38: 'CD38',
     },
     dotsTitle: 'Nutrition Plan',
+    cartridgeTitle: 'Cartridges',
+    noCartridges: 'No cartridges inserted. Insert cartridges into your dispenser.',
+    simCartTitle: 'Choose a Set',
+    simCartSubtitle: 'Test mode · Auto-generates NFC tags and inserts',
+    simCartInserting: 'Inserting…',
+    simCartDone: 'Set inserted!',
+    simCartCancel: 'Cancel',
     noPlan: 'No nutrition plan yet. Complete a Kino biomarker test to generate your personalized plan.',
     morning: 'Morning', evening: 'Evening', today: 'Today', tomorrow: 'Tomorrow',
     obConditionsPrompt: 'Have you ever been diagnosed with or identified any of the following? (Select all that apply)',
@@ -287,6 +346,46 @@ function fmtDate(d, lang) {
   return `${months[date.getMonth()]} ${day}, ${y}`
 }
 
+function getWeekRange() {
+  const now = new Date()
+  const dow = now.getDay()
+  const daysFromMonday = dow === 0 ? 6 : dow - 1
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - daysFromMonday)
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  const toISO = d => d.toISOString().split('T')[0]
+  return { monday: toISO(monday), sunday: toISO(sunday) }
+}
+
+function fmtWeekLabel(monday, sunday, lang) {
+  const m = new Date(monday + 'T12:00:00Z')
+  const s = new Date(sunday + 'T12:00:00Z')
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  if (lang === 'zh') return `${m.getUTCMonth()+1}月${m.getUTCDate()}日 – ${s.getUTCMonth()+1}月${s.getUTCDate()}日`
+  return `${months[m.getUTCMonth()]} ${m.getUTCDate()} – ${months[s.getUTCMonth()]} ${s.getUTCDate()}`
+}
+
+function mapCartridges(cartridges, lang) {
+  return cartridges.map(c => {
+    const pct = Math.max(0, Math.round((c.remaining_dots / c.total_dots) * 100))
+    const barColor = pct < 10 ? '#FF4D4D' : pct < 25 ? '#F5A623' : (c.color_hex || '#6375EC')
+    return {
+      id: c.id,
+      dotKey: c.dot_key.replace('DOT', 'D'),
+      dotName: lang === 'zh' ? (c.dot_name_zh || c.dot_name) : c.dot_name,
+      colorHex: c.color_hex || '#6375EC',
+      barColor,
+      timing: c.timing,
+      remaining: c.remaining_dots,
+      total: c.total_dots,
+      percent: pct,
+      status: c.status,
+      isEmpty: c.status === 'empty',
+    }
+  })
+}
+
 function bioAgeColor(bio, chrono) {
   if (!bio || !chrono) return '#EEF2FF'
   const diff = Number(bio) - Number(chrono)
@@ -322,7 +421,7 @@ function parsePlan(text, dotsMap, lang) {
         return {
           displayKey: `D${m[1]}`,
           count: parseInt(m[2]),
-          color: dot.color || '#6375EC',
+          color: dot.color_hex || '#6375EC',
         }
       })
     }
@@ -362,6 +461,7 @@ function mapStructuredSchedules(schedules, dotsMap, lang) {
     const dateStr = datePart
     if (!dayGroups[dateStr]) {
       dayGroups[dateStr] = {
+        dateStr,
         label: fmtDate(dateStr, lang),
         isToday: dateStr === todayStr,
         morning: [],
@@ -375,7 +475,7 @@ function mapStructuredSchedules(schedules, dotsMap, lang) {
       return {
         displayKey: key.replace('DOT', 'D'),
         count,
-        color: dot.color || '#6375EC'
+        color: dot.color_hex || '#6375EC'
       }
     })
 
@@ -499,6 +599,12 @@ Page({
     dotsLoading: true,
     dotsDays: [],
     hasPlan: false,
+    cartridges: [],
+    cartridgesLoading: true,
+    weekLabel: '',
+    simCartOpen: false,
+    simCartLoading: false,
+    simCartSets: [],
 
     // Store
     storeLoading: true,
@@ -534,6 +640,7 @@ Page({
     this._initChat(user, lang)
     this._loadHealth(user, lang)
     this._loadDots(user, lang)
+    this._loadCartridges(user, lang)
     this._loadStore(user, lang)
   },
 
@@ -561,7 +668,11 @@ Page({
     const tab = e.currentTarget.dataset.tab
     this.setData({ tab })
     if (tab === 'health') this._loadHealth(this.data.user, this.data.lang)
-    if (tab === 'dots')   this._loadDots(this.data.user, this.data.lang)
+    if (tab === 'dots') {
+      this.setData({ dotsLoading: true, cartridgesLoading: true })
+      this._loadDots(this.data.user, this.data.lang)
+      this._loadCartridges(this.data.user, this.data.lang)
+    }
   },
 
   // ── Logo menu ───────────────────────────────────────────────────────────────
@@ -578,6 +689,7 @@ Page({
     this.setData({ lang, t: T[lang], menuOpen: false, storeItems, storeOrders })
     this._loadHealth(this.data.user, lang)
     this._loadDots(this.data.user, lang)
+    this._loadCartridges(this.data.user, lang)
   },
 
   openCoach() {
@@ -1007,8 +1119,9 @@ Page({
     const { action } = e.currentTarget.dataset
     if (action === 'view_dots') {
       const { user, lang } = this.data
-      this.setData({ tab: 'dots', dotsLoading: true })
+      this.setData({ tab: 'dots', dotsLoading: true, cartridgesLoading: true })
       this._loadDots(user, lang)
+      this._loadCartridges(user, lang)
     }
   },
 
@@ -1399,8 +1512,13 @@ Page({
       dotsArr.forEach(d => { dotsMap[d.key_name] = d })
 
       let dotsDays = []
+      let weekLabel = ''
+      const { monday, sunday } = getWeekRange()
+      weekLabel = fmtWeekLabel(monday, sunday, lang)
+
       if (structured && schedules.length > 0) {
-        dotsDays = mapStructuredSchedules(schedules, dotsMap, lang)
+        const allDays = mapStructuredSchedules(schedules, dotsMap, lang)
+        dotsDays = allDays.filter(d => d.dateStr >= monday && d.dateStr <= sunday)
       } else if (plan) {
         dotsDays = parsePlan(plan, dotsMap, lang)
       }
@@ -1408,11 +1526,63 @@ Page({
       this.setData({
         dotsLoading: false,
         dotsDays,
+        weekLabel,
         hasPlan: (plan !== null || structured !== null)
       })
     } catch (e) {
       this.setData({ dotsLoading: false, hasPlan: false })
     }
+  },
+
+  async _loadCartridges(user, lang) {
+    try {
+      const res = await this._req(`${BASE}/api/my-cartridges?openid=${encodeURIComponent(user.user_id)}`)
+      const raw = res.data?.cartridges || []
+      this.setData({ cartridgesLoading: false, cartridges: mapCartridges(raw, lang) })
+    } catch (e) {
+      this.setData({ cartridgesLoading: false })
+    }
+  },
+
+  openCartSim() {
+    const lang = this.data.lang
+    const sets = CART_SETS.map(s => ({
+      key: s.key,
+      name: lang === 'zh' ? s.nameZh : s.nameEn,
+      desc: lang === 'zh' ? s.descZh : s.descEn,
+      color: s.color,
+      dotItems: s.dotItems.map(d => ({
+        displayKey: d.key.replace('DOT', 'D'),
+        dotName: lang === 'zh' ? d.zhName : d.enName,
+      })),
+      dots_raw: s.dotItems.map(d => d.key),
+    }))
+    this.setData({ simCartOpen: true, simCartSets: sets })
+  },
+
+  closeCartSim() {
+    this.setData({ simCartOpen: false, simCartLoading: false })
+  },
+
+  async handleSelectCartSet(e) {
+    const { dotsRaw } = e.currentTarget.dataset
+    const { user, lang } = this.data
+    this.setData({ simCartLoading: true })
+    try {
+      const ts = Date.now()
+      await Promise.all(dotsRaw.map((dotKey, i) =>
+        this._req(`${BASE}/api/cartridge-insert`, 'POST', {
+          openid: user.user_id,
+          nfc_tag_id: `SIM-${dotKey}-${ts}-${i}`,
+          dot_key: dotKey,
+        })
+      ))
+      wx.showToast({ title: this.data.t.simCartDone, icon: 'success', duration: 1500 })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.errServer, icon: 'none', duration: 2000 })
+    }
+    this.setData({ simCartOpen: false, simCartLoading: false, cartridgesLoading: true })
+    this._loadCartridges(user, lang)
   },
 
   // ── Store tab ───────────────────────────────────────────────────────────────

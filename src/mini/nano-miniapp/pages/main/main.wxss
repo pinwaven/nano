@@ -883,9 +883,125 @@
 
 /* ── Dots tab ── */
 
+/* Cartridge panel */
+.cart-section {
+  flex-shrink: 0;
+  padding: 36rpx 36rpx 0;
+}
+
+.cart-section-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+}
+
+.cart-section-title {
+  font-size: 22rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+  text-transform: uppercase;
+  color: rgba(166, 196, 229, 0.4);
+}
+
+.cart-sim-btn {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 50%;
+  background: rgba(99, 117, 236, 0.15);
+  border: 1rpx solid rgba(99, 117, 236, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cart-sim-btn-icon {
+  font-size: 32rpx;
+  font-weight: 300;
+  color: #6375EC;
+  line-height: 1;
+  margin-top: -2rpx;
+}
+
+.cart-loading {
+  display: flex;
+  flex-direction: row;
+  gap: 12rpx;
+  align-items: center;
+  height: 160rpx;
+}
+
+/* 9 slots per row, 2 rows.
+   Usable width = 750 - 72 (padding) = 678rpx.
+   8 gaps × 6rpx = 48rpx  →  slot = (678-48)/9 = 70rpx */
+.cart-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6rpx;
+}
+
+.cart-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  width: 70rpx;
+}
+
+.cart-slot-empty {
+  opacity: 0.35;
+}
+
+.ink-bar-wrap {
+  width: 44rpx;
+  height: 110rpx;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid rgba(255, 255, 255, 0.10);
+  border-radius: 10rpx;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+}
+
+.ink-bar-fill {
+  width: 100%;
+  border-radius: 8rpx;
+  min-height: 4rpx;
+  transition: height 0.4s ease;
+}
+
+.cart-key {
+  font-size: 17rpx;
+  font-weight: 700;
+  color: #A6C4E5;
+  letter-spacing: 0.5rpx;
+}
+
+.cart-remaining {
+  font-size: 15rpx;
+  color: rgba(166, 196, 229, 0.4);
+}
+
+.cart-empty {
+  font-size: 22rpx;
+  color: rgba(166, 196, 229, 0.35);
+  padding: 16rpx 0 8rpx;
+  line-height: 1.6;
+}
+
 .dots-header {
   flex-shrink: 0;
-  padding: 36rpx 36rpx 20rpx;
+  padding: 28rpx 36rpx 20rpx;
+  display: flex;
+  align-items: baseline;
+  gap: 16rpx;
+}
+
+.dots-week-label {
+  font-size: 22rpx;
+  color: rgba(166, 196, 229, 0.5);
+  font-weight: 500;
 }
 
 .dots-title {
@@ -1219,6 +1335,137 @@
 .kino-scan-label {
   font-size: 30rpx;
   font-weight: 600;
+}
+
+/* ── Cartridge Sim Overlay ── */
+
+.csim-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 100;
+  background: rgba(6, 15, 25, 0.75);
+  display: flex;
+  align-items: flex-end;
+}
+
+.csim-sheet {
+  width: 100%;
+  background: #0D1E35;
+  border-top-left-radius: 40rpx;
+  border-top-right-radius: 40rpx;
+  padding: 20rpx 36rpx 60rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.csim-handle {
+  width: 64rpx;
+  height: 6rpx;
+  border-radius: 3rpx;
+  background: rgba(166, 196, 229, 0.2);
+  margin-bottom: 32rpx;
+}
+
+.csim-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+  margin-bottom: 8rpx;
+}
+
+.csim-subtitle {
+  font-size: 20rpx;
+  color: rgba(166, 196, 229, 0.4);
+  margin-bottom: 36rpx;
+  letter-spacing: 0.5rpx;
+}
+
+.csim-sets {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  margin-bottom: 28rpx;
+}
+
+.csim-set-card {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1rpx solid transparent;
+  border-radius: 20rpx;
+  overflow: hidden;
+}
+
+.csim-set-accent {
+  width: 8rpx;
+  flex-shrink: 0;
+}
+
+.csim-set-body {
+  flex: 1;
+  padding: 20rpx 24rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.csim-set-name {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+}
+
+.csim-set-desc {
+  font-size: 20rpx;
+  color: rgba(166, 196, 229, 0.5);
+}
+
+.csim-dot-badges {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 10rpx;
+}
+
+.csim-dot-badge {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6rpx;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8rpx;
+  padding: 5rpx 12rpx 5rpx 10rpx;
+}
+
+.csim-badge-key {
+  font-size: 17rpx;
+  font-weight: 800;
+  letter-spacing: 0.5rpx;
+}
+
+.csim-badge-name {
+  font-size: 17rpx;
+  color: rgba(166, 196, 229, 0.55);
+  letter-spacing: 0.5rpx;
+}
+
+.csim-loading {
+  display: flex;
+  flex-direction: row;
+  gap: 12rpx;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.csim-cancel {
+  margin-top: 4rpx;
+  padding: 16rpx 48rpx;
+  font-size: 26rpx;
+  color: rgba(166, 196, 229, 0.4);
 }
 
 /* ── Kino Passcode Overlay ── */
