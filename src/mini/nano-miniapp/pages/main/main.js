@@ -24,7 +24,7 @@ const T = {
     bsHeight: '身高', bsWeight: '体重', bsCm: 'cm', bsKg: 'kg',
     male: '男', female: '女',
     selectBirthday: '选择出生日期',
-    profile: '个人信息',
+    profile: '个人信息', showMore: '更多', showLess: '收起',
     gender: '性别', born: '出生日期', language: '语言',
     height: '身高', weight: '体重',
     coach: 'Coach', joined: '注册时间', phone: '手机', email: '邮箱',
@@ -138,7 +138,7 @@ const T = {
     bsHeight: 'Height', bsWeight: 'Weight', bsCm: 'cm', bsKg: 'kg',
     male: 'Male', female: 'Female',
     selectBirthday: 'Select Birthday',
-    profile: 'Profile',
+    profile: 'Profile', showMore: 'More', showLess: 'Less',
     gender: 'Gender', born: 'Born', language: 'Language',
     height: 'Height', weight: 'Weight',
     coach: 'Coach', joined: 'Joined', phone: 'Phone', email: 'Email',
@@ -470,7 +470,9 @@ Page({
     cAge: null,
     bAge: null,
     bAgeColor: '#EEF2FF',
-    profileInfo: [],
+    profileInfoWeight: [],
+    profileInfoExtra: [],
+    profileExpanded: false,
     recordCount: 0,
     hasBm: false,
     healthConditionsList: [],
@@ -1250,6 +1252,10 @@ Page({
     })
   },
 
+  toggleProfile() {
+    this.setData({ profileExpanded: !this.data.profileExpanded })
+  },
+
   // ── Health tab ──────────────────────────────────────────────────────────────
 
   async _loadHealth(user, lang) {
@@ -1299,11 +1305,13 @@ Page({
       const heightVal = bodyRecord?.data?.actual?.height ?? null
       const weightVal = bodyRecord?.data?.actual?.weight ?? null
 
-      const profileInfo = [
+      const profileInfoWeight = [
+        { label: t.weight, val: weightVal != null ? `${weightVal} ${t.bsKg}` : '—' },
+      ]
+      const profileInfoExtra = [
         { label: t.gender,   val: t.genderMap[user.gender] || user.gender || '—' },
         { label: t.born,     val: fmtDate(user.birth_date, lang) },
         { label: t.height,   val: heightVal != null ? `${heightVal} ${t.bsCm}` : '—' },
-        { label: t.weight,   val: weightVal != null ? `${weightVal} ${t.bsKg}` : '—' },
         { label: t.language, val: t.langMap[user.language] || user.language || '—' },
         { label: t.coach,    val: user.coach_name || '—' },
         { label: t.joined,   val: fmtDate(user.created_at, lang) },
@@ -1327,7 +1335,7 @@ Page({
         subAgeList, bmList, trendList,
         cAge, bAge,
         bAgeColor: bioAgeColor(rawBioAge, cAge),
-        profileInfo,
+        profileInfoWeight, profileInfoExtra,
         recordCount: kinoRecords.length,
         hasBm: latestBm !== null,
         healthConditionsList,

@@ -276,9 +276,21 @@
 
           <!-- Profile -->
           <view class="health-section">
-            <text class="section-title">{{t.profile}}</text>
+            <view class="section-title-row">
+              <text class="section-title">{{t.profile}}</text>
+              <view class="profile-toggle" bindtap="toggleProfile">
+                <text class="profile-toggle-text">{{profileExpanded ? t.showLess : t.showMore}}</text>
+                <text class="profile-toggle-arrow">{{profileExpanded ? '▲' : '▼'}}</text>
+              </view>
+            </view>
             <view class="info-grid">
-              <block wx:for="{{profileInfo}}" wx:key="label">
+              <block wx:for="{{profileInfoWeight}}" wx:key="label">
+                <text class="info-key">{{item.label}}</text>
+                <text class="info-val info-val-weight">{{item.val}}</text>
+              </block>
+            </view>
+            <view wx:if="{{profileExpanded}}" class="info-grid info-grid-extra">
+              <block wx:for="{{profileInfoExtra}}" wx:key="label">
                 <text class="info-key">{{item.label}}</text>
                 <text class="info-val">{{item.val}}</text>
               </block>
