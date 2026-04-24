@@ -1,19 +1,23 @@
 # Waven Nano AI Backend
 
 # Project Rules
+
 ## 1. Project Context
+
 - **Name:** Waven Nano AI (Precision Health Ecosystem)
 - **Tech Stack:** Node.js (Latest LTS), PostgreSQL 14 (Aliyun PolarDB Serverless)
 - **Architecture:** Serverless Event-Driven (Aliyun FC 3.0 + EventBridge)
 - **Infrastructure:** All production code must respect Aliyun FC 3.0 constraints (max 24h runtime, stateless execution).
 
 ## 2. Core Technical Constraints
+
 - **Database:** Use the `pg` library for raw SQL. **STRICTLY PROHIBITED:** No ORMs (like Prisma or TypeORM) to minimize cold-start latency and overhead.
 - **SQL Standards:** PostgreSQL 14 compatible syntax. Use `ON CONFLICT` for upserts.
 - **Messaging:** Follow **CloudEvents 1.0** standards for all event payloads.
 - **AI Logic:** The AI Worker must decouple prompt engineering from execution. Prompts should be stored in `/prompts` as template files.
 
 ## 3. Directory Structure & Naming
+
 - `/src/functions/dispatcher/`: FC 3.0 code for user scanning (Cron-triggered).
 - `/src/functions/worker/`: FC 3.0 code for AI processing and WeChat notifications.
 - `/src/lib/`: Shared logic (Database clients, WeChat API helpers).
@@ -26,32 +30,35 @@
 - **File Naming:** kebab-case (e.g., `user-repository.js`).
 
 ## 4. Coding Standards (Node.js)
+
 - **Style:** Modern ES Modules (`import/export`).
 - **Error Handling:** Every async operation MUST be wrapped in a `try/catch` block.
 - **Logging:** Use `console.log` for Aliyun CloudWatch integration, but format as JSON: `console.log(JSON.stringify({level: 'INFO', msg: '...', data: {}}))`.
 - **Latency:** Keep the `lib/db.js` client outside the handler to leverage Aliyun container reuse.
 
 ## 5. Local Development & Testing
+
 - Use `.env` for local variables. Never hardcode the PolarDB endpoint.
 - **Command:** Run `npm run test:local` to trigger the `local-bus.js` harness.
 - **Git:** Commit after every successful modular feature build. Do not bundle multiple components into one commit.
 
 ## 6. AI Interaction Rules
+
 - Before suggesting a change, check `src/schemas/` to ensure you aren't breaking the event contract.
 - If writing a new Aliyun FC handler, always provide the `s.yaml` (Serverless Devs) configuration snippet.
 - Prioritize **token efficiency**: Don't rewrite entire files if only one function needs a fix.
 
-
 ## 8. Changelog for code changes
+
 - CHANGELOG.md
 
 ## 9. Role System
+
 - 4 roles: `user`, `coach`, `admin`, `superadmin` — stored as `TEXT[]` on `users.roles`.
 - A single WeChat openid can hold multiple roles simultaneously.
 - Channel scoping is implicit via `users.channel_id`; no separate role-junction table.
 - Coach role is auto-managed when `coaches.user_id` FK is set/unset.
 - Full details: `docs/architecture/role-system.md`
-
 
 ## 10. The Four Sub Bio Ages
 
@@ -61,16 +68,17 @@ Waven Nano measures biological age across four independent dimensions. Each dime
 
 These exact strings are used everywhere — in `bioage_profile.SubAges`, the `dots.sub_age_target` column, and any code that routes biomarkers to dots:
 
-| Key (code) | English display | Chinese display | DB value (`sub_age_target`) |
-|---|---|---|---|
-| `SubAges.CellularAge` | Cellular Age | 细胞年龄 | `Cellular Age` |
-| `SubAges.MetabolicAge` | Metabolic Age | 代谢年龄 | `Metabolic Age` |
-| `SubAges.MicroVascularAge` | Micro-Vascular Age | 微血管年龄 | `Micro-Vascular Age` |
-| `SubAges.ResilienceAge` | Resilience Age | 抗压年龄 | `Resilience Age` |
+| Key (code)                   | English display    | Chinese display | DB value (`sub_age_target`) |
+| ---------------------------- | ------------------ | --------------- | ----------------------------- |
+| `SubAges.CellularAge`      | Cellular Age       | 细胞年龄        | `Cellular Age`              |
+| `SubAges.MetabolicAge`     | Metabolic Age      | 代谢年龄        | `Metabolic Age`             |
+| `SubAges.MicroVascularAge` | Micro-Vascular Age | 微血管年龄      | `Micro-Vascular Age`        |
+| `SubAges.ResilienceAge`    | Resilience Age     | 抗压年龄        | `Resilience Age`            |
 
 ### Dimension details
 
 #### 1. Cellular Age (`CellularAge`)
+
 - **What it measures:** Raw vitality of individual cells — NAD+ metabolism, senescence burden, sirtuin activity.
 - **Input biomarkers:** `GDF-15` (pg/mL), `CD38` (fold-change above 1.0)
 - **Reference ranges:**
@@ -80,6 +88,7 @@ These exact strings are used everywhere — in `bioage_profile.SubAges`, the `do
 - **Target dots:** DOT01 (NMN), DOT02 (Apigenin/CD38 inhibitor), DOT03 (Trans-Resveratrol), DOT04 (senolytic blend), DOT06 (Collagen matrix), DOT10 (Dynamine+TeaCrine)
 
 #### 2. Metabolic Age (`MetabolicAge`)
+
 - **What it measures:** Fuel-burning efficiency and mitochondrial throughput.
 - **Input biomarker:** `GA` — Glycated Albumin (%)
 - **Reference ranges:** `<15%` normal · `15–20%` elevated · `>20%` metabolic dysfunction
@@ -87,6 +96,7 @@ These exact strings are used everywhere — in `bioage_profile.SubAges`, the `do
 - **Target dots:** DOT05 (Urolithin A + Ca-AKG), DOT07 (PQQ), DOT11 (Cordyceps + Rhodiola)
 
 #### 3. Micro-Vascular Age (`MicroVascularAge`)
+
 - **What it measures:** Capillary health and nutrient/O₂ delivery to tissues.
 - **Input biomarker:** `Cystatin C` (mg/L)
 - **Reference ranges:** `<0.9` normal · `0.9–1.2` elevated · `>1.2` vascular/renal stress
@@ -94,6 +104,7 @@ These exact strings are used everywhere — in `bioage_profile.SubAges`, the `do
 - **Target dots:** DOT08 (Vascular Awakening — Beta-Alanine, Niacin, Methyl-B), DOT13 (CoQ10 + Nattokinase), DOT14 (D3 + K2 + MCT)
 
 #### 4. Resilience Age (`ResilienceAge`)
+
 - **What it measures:** Capacity to buffer chronic stress and suppress systemic inflammation.
 - **Input biomarkers:** `hsCRP` (mg/L), `IL-6` (pg/mL)
 - **Reference ranges:**
@@ -115,26 +126,27 @@ Kino chip scan
 ```
 
 ### Coupling rule
+
 `MetabolicAge` is the only dimension with cross-dimension coupling: when `ResilienceAge` score < 4 (severe inflammation), Metabolic scoring takes a 10% penalty. This reflects the biological reality that chronic inflammation accelerates metabolic dysfunction.
 
-## Aliyun Function Compute 3.0 (FC 3.0) Runtime Behavior
- 
+## 11. Aliyun Function Compute 3.0 (FC 3.0) Runtime Behavior
+
 When writing or modifying FC handler code, use these facts. They were confirmed by live debugging against the deployed function.
- 
+
 ### Handler invocation model
- 
+
 FC 3.0 invokes HTTP trigger functions as **event functions**, not as Node.js HTTP server functions. The handler receives:
- 
+
 ```
 exports.handler = async (req, resp, context) => { ... }
 ```
- 
+
 - `req` — a plain JS object (already parsed from the raw event Buffer). It is **not** a Node.js `http.IncomingMessage`.
 - `resp` — the FC context object. It does **not** have `.send()`, `.setStatusCode()`, or `.setHeader()`. Do not test for `resp.send` to detect HTTP mode.
 - Response is sent by **returning** a payload object (see below), not by calling `resp`.
- 
+
 ### Event object shape (FC 3.0 HTTP trigger)
- 
+
 ```js
 {
   version: "v1",
@@ -154,18 +166,18 @@ exports.handler = async (req, resp, context) => { ... }
   }
 }
 ```
- 
+
 Key differences from AWS Lambda / FC 2.0 / Express conventions:
- 
-| Correct (FC 3.0)              | Wrong (will be undefined)                              |
-|-------------------------------|--------------------------------------------------------|
-| `event.rawPath`               | `event.path`, `req.path`, `req.url`                    |
-| `event.queryParameters`       | `event.queryStringParameters`, `req.queries`, `req.query` |
-| `event.requestContext.http.method` | `event.httpMethod`, `event.method`, `req.method`  |
-| `event.headers`               | `req.headers`                                          |
- 
+
+| Correct (FC 3.0)                     | Wrong (will be undefined)                                       |
+| ------------------------------------ | --------------------------------------------------------------- |
+| `event.rawPath`                    | `event.path`, `req.path`, `req.url`                       |
+| `event.queryParameters`            | `event.queryStringParameters`, `req.queries`, `req.query` |
+| `event.requestContext.http.method` | `event.httpMethod`, `event.method`, `req.method`          |
+| `event.headers`                    | `req.headers`                                                 |
+
 ### Canonical way to extract path, method, query in a handler
- 
+
 ```js
 exports.handler = async (req, resp, context) => {
     const event = req; // req IS the event object in FC 3.0
@@ -194,11 +206,11 @@ exports.handler = async (req, resp, context) => {
     };
 };
 ```
- 
+
 ### Response format
- 
+
 Return a plain object — do NOT call `resp.send()`:
- 
+
 ```js
 return {
     statusCode: 200,
@@ -207,14 +219,25 @@ return {
     isBase64Encoded: false,
 };
 ```
- 
+
 ### Deployment
- 
-- `s worker deploy` — deploys only the worker function, the syntax is 's worker deploy', not 's deploy worker' 
-- `s deploy` — deploys all functions (dispatcher + worker)  
-- Confirm trigger changes with `Y` when prompted, or use `-y` flag  
+
+- `s worker deploy` — deploys only the worker function, the syntax is 's worker deploy', not 's deploy worker'
+- `s deploy` — deploys all functions (dispatcher + worker)
+- Confirm trigger changes with `Y` when prompted, or use `-y` flag
 - FC 3.0 does not hot-reload; each deploy takes ~15 s before changes are live
- 
+
 ### Local dev vs FC 3.0 parity
- 
+
 `scripts/local-dev.js` bridges Express → FC handler format by wrapping `req.body` in a Buffer and providing a minimal `resp` shim (`setStatusCode`, `setHeader`, `send`). Keep this shim in sync with any response API changes in the worker handler.
+
+## 12. Dots System
+
+Waven Dots are 24 mg precision nutrition cartridges. Each cartridge delivers one or more active compounds in an exact dose, calibrated to the user's biomarker profile. The system targets four biological age dimensions measured by the Kino chip. The Dots can be mixed by AI at realtime according to the user's actual health data.
+
+### Cartridge Format
+
+- **Payload:** 24 mg per dot
+- **Pack size:** 800 dots per cartridge
+- **Timing:** Morning or Evening (fixed per dot — set by the `timing` column in the `dots` table)
+- **Types:** Isolates (single active compound) and Blends (two or more actives)
