@@ -346,6 +346,13 @@ function fmtDate(d, lang) {
   return `${months[date.getMonth()]} ${day}, ${y}`
 }
 
+function localISODate(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function getWeekRange() {
   const now = new Date()
   const dow = now.getDay()
@@ -354,8 +361,7 @@ function getWeekRange() {
   monday.setDate(now.getDate() - daysFromMonday)
   const sunday = new Date(monday)
   sunday.setDate(monday.getDate() + 6)
-  const toISO = d => d.toISOString().split('T')[0]
-  return { monday: toISO(monday), sunday: toISO(sunday) }
+  return { monday: localISODate(monday), sunday: localISODate(sunday) }
 }
 
 function fmtWeekLabel(monday, sunday, lang) {
@@ -453,7 +459,7 @@ function parsePlan(text, dotsMap, lang) {
 function mapStructuredSchedules(schedules, dotsMap, lang) {
   const dayGroups = {}
   const now = new Date()
-  const todayStr = now.toISOString().split('T')[0]
+  const todayStr = localISODate(now)
 
   schedules.forEach(s => {
     // PG DATE type might come back as full ISO string or just date
@@ -599,6 +605,7 @@ Page({
     dotsLoading: true,
     dotsDays: [],
     hasPlan: false,
+    todayScrollLeft: 0,
     cartridges: [],
     cartridgesLoading: true,
     weekLabel: '',
@@ -1523,10 +1530,22 @@ Page({
         dotsDays = parsePlan(plan, dotsMap, lang)
       }
 
+      const todayIndex = dotsDays.findIndex(d => d.isToday)
+      let todayScrollLeft = 0
+      if (todayIndex >= 0) {
+        const { windowWidth } = wx.getSystemInfoSync()
+        const r = windowWidth / 750
+        const cardPx = 500 * r
+        const gapPx = 16 * r
+        const padPx = 28 * r
+        todayScrollLeft = Math.max(0, todayIndex * (cardPx + gapPx) + padPx - (windowWidth - cardPx) / 2)
+      }
+
       this.setData({
         dotsLoading: false,
         dotsDays,
         weekLabel,
+        todayScrollLeft,
         hasPlan: (plan !== null || structured !== null)
       })
     } catch (e) {

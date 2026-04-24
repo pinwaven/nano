@@ -426,7 +426,7 @@
         <view class="pulse-dot"></view>
       </view>
 
-      <scroll-view wx:elif="{{dotsDays.length > 0}}" class="dots-scroll" scroll-y="true">
+      <scroll-view wx:elif="{{dotsDays.length > 0}}" class="dots-scroll" scroll-x enhanced="{{true}}" show-scrollbar="{{false}}" scroll-left="{{todayScrollLeft}}">
         <view class="dots-days">
           <view
             wx:for="{{dotsDays}}"
@@ -467,7 +467,7 @@
               </view>
             </view>
           </view>
-          <view style="height: 32px;"></view>
+          <view style="width: 8rpx; flex-shrink: 0;"></view>
         </view>
       </scroll-view>
 

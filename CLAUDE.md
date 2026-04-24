@@ -241,3 +241,7 @@ Waven Dots are 24 mg precision nutrition cartridges. Each cartridge delivers one
 - **Pack size:** 800 dots per cartridge
 - **Timing:** Morning or Evening (fixed per dot — set by the `timing` column in the `dots` table)
 - **Types:** Isolates (single active compound) and Blends (two or more actives)
+
+## TEMP Folder
+- location: ./temp
+- save one time scripts such as migration scripts in the temp folder

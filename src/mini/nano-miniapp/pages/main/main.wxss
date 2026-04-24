@@ -1013,18 +1013,20 @@
 }
 
 .dots-scroll {
-  flex: 1;
-  height: 0;
+  flex-shrink: 0;
+  padding: 0 0 20rpx;
 }
 
 .dots-days {
-  padding: 0 28rpx 0;
   display: flex;
-  flex-direction: column;
-  gap: 20rpx;
+  flex-direction: row;
+  gap: 16rpx;
+  padding: 0 28rpx;
 }
 
 .day-card {
+  flex-shrink: 0;
+  width: 500rpx;
   background: #0F2540;
   border: 1rpx solid rgba(99, 117, 236, 0.18);
   border-radius: 28rpx;
@@ -1062,28 +1064,29 @@
 .dot-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 10rpx;
+  gap: 8rpx;
 }
 
 .dot-chip {
+  flex: 0 0 100rpx;
   display: flex;
   align-items: center;
-  gap: 8rpx;
+  gap: 5rpx;
   background: rgba(255, 255, 255, 0.05);
   border: 1rpx solid rgba(255, 255, 255, 0.08);
-  border-radius: 16rpx;
-  padding: 6rpx 16rpx 6rpx 10rpx;
+  border-radius: 14rpx;
+  padding: 5rpx 8rpx;
 }
 
 .dot-swatch {
-  width: 16rpx;
-  height: 16rpx;
+  width: 12rpx;
+  height: 12rpx;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
-.dot-key   { font-size: 20rpx; font-weight: 700; color: #EEF2FF; letter-spacing: 0.5rpx; }
-.dot-count { font-size: 20rpx; color: rgba(166, 196, 229, 0.4); }
+.dot-key   { font-size: 18rpx; font-weight: 700; color: #EEF2FF; letter-spacing: 0.3rpx; }
+.dot-count { font-size: 18rpx; color: rgba(166, 196, 229, 0.4); }
 
 .dots-empty {
   flex: 1;
