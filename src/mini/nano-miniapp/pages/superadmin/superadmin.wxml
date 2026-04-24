@@ -109,13 +109,18 @@
     </view>
     <view wx:for="{{dots}}" wx:key="id" class="list-card">
       <view class="card-main">
-        <view class="dot-swatch" style="background: {{item.color || '#6375EC'}};"></view>
+        <view class="dot-swatch" style="background: {{item.color_hex || '#6375EC'}};"></view>
         <view class="card-info">
-          <text class="card-name">{{lang === 'zh' && item.name_zh ? item.name_zh : item.name}}</text>
-          <text class="card-sub">{{item.key_name}}</text>
-        </view>
-        <view class="dot-type-tag {{item.is_isolate ? 'dot-type-isolate' : 'dot-type-blend'}}">
-          <text class="dot-type-text">{{item.is_isolate ? t.dot.isolate : t.dot.blend}}</text>
+          <view class="dot-name-row">
+            <text class="card-name">{{lang === 'zh' && item.name_zh ? item.name_zh : item.name}}</text>
+            <view class="dot-timing-tag dot-timing-{{item.timing === 'Evening' ? 'eve' : 'morn'}}">
+              <text class="dot-timing-text">{{item._timingLabel}}</text>
+            </view>
+          </view>
+          <text class="card-sub">{{item.key_name}} · {{item._subAgeLabel}}</text>
+          <view wx:if="{{item._groupLabel}}" class="dot-group-pill dot-group-{{item._groupKey}}">
+            <text class="dot-group-text">{{item._groupLabel}}</text>
+          </view>
         </view>
         <view class="card-actions">
           <view class="action-btn edit-btn" catchtap="openEditDot" data-dot="{{item}}">
@@ -252,6 +257,44 @@
           </view>
 
           <view class="form-row">
+            <text class="form-label">{{t.dot.colorHex}}</text>
+            <view class="color-hex-row">
+              <view class="color-hex-preview" style="background: {{dotForm.color_hex || '#6375EC'}};"></view>
+              <input class="form-input-hex" value="{{dotForm.color_hex}}" bindinput="onDotFormInput" data-key="color_hex" placeholder="#4A5D7B" placeholder-class="form-ph" />
+            </view>
+          </view>
+
+          <view class="form-row">
+            <text class="form-label">{{t.dot.timing}}</text>
+            <picker range="{{t.timingOptions}}" value="{{formTimingIdx}}" bindchange="onPickerTiming">
+              <view class="form-picker">
+                <text class="form-picker-val">{{t.timingOptions[formTimingIdx]}}</text>
+                <text class="form-picker-arrow">›</text>
+              </view>
+            </picker>
+          </view>
+
+          <view class="form-row">
+            <text class="form-label">{{t.dot.group}}</text>
+            <picker range="{{t.groupOptions}}" value="{{formGroupIdx}}" bindchange="onPickerGroup">
+              <view class="form-picker">
+                <text class="form-picker-val">{{t.groupOptions[formGroupIdx]}}</text>
+                <text class="form-picker-arrow">›</text>
+              </view>
+            </picker>
+          </view>
+
+          <view class="form-row">
+            <text class="form-label">{{t.dot.subAge}}</text>
+            <picker range="{{t.subAgeOptions}}" value="{{formSubAgeIdx}}" bindchange="onPickerSubAge">
+              <view class="form-picker">
+                <text class="form-picker-val">{{t.subAgeOptions[formSubAgeIdx]}}</text>
+                <text class="form-picker-arrow">›</text>
+              </view>
+            </picker>
+          </view>
+
+          <view class="form-row">
             <text class="form-label">{{t.dot.type}}</text>
             <picker range="{{t.typeOptions}}" value="{{formTypeIdx}}" bindchange="onPickerType">
               <view class="form-picker">
@@ -264,6 +307,11 @@
           <view class="form-row">
             <text class="form-label">{{t.dot.desc}}</text>
             <textarea class="form-textarea" value="{{dotForm.description}}" bindinput="onDotFormInput" data-key="description" placeholder-class="form-ph" auto-height />
+          </view>
+
+          <view class="form-row">
+            <text class="form-label">{{t.dot.ingrSummary}}</text>
+            <textarea class="form-textarea" value="{{dotForm.ingredients_summary}}" bindinput="onDotFormInput" data-key="ingredients_summary" placeholder-class="form-ph" auto-height />
           </view>
 
           <!-- Ingredients EN -->

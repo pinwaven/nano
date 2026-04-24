@@ -156,7 +156,7 @@
 
 .modal-panel {
   width: 100%;
-  max-height: 85vh;
+  height: 85vh;
   background: #0F2540;
   border-radius: 16px 16px 0 0;
   display: flex;
@@ -182,7 +182,7 @@
 
 .close-x { font-size: 16px; color: #7A9ABF; }
 
-.modal-scroll { flex: 1; overflow: hidden; }
+.modal-scroll { flex: 1; height: 0; }
 
 .modal-body { padding: 16px; }
 
@@ -197,9 +197,11 @@
 
 .form-input {
   width: 100%;
+  height: 44px;
+  line-height: 44px;
   background: #1A2F4A;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 0 12px;
   font-size: 14px;
   color: #E8F0F8;
   box-sizing: border-box;
@@ -238,25 +240,48 @@
   flex-shrink: 0;
 }
 
-.dot-type-tag {
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  flex-shrink: 0;
+.dot-name-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.dot-type-isolate { background: rgba(99,117,236,0.2); }
-.dot-type-blend   { background: rgba(16,185,129,0.2); }
+/* Timing badge */
+.dot-timing-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.dot-timing-text { font-size: 10px; font-weight: 600; }
+.dot-timing-morn { background: rgba(201,166,107,0.2); }
+.dot-timing-morn .dot-timing-text { color: #E8C87A; }
+.dot-timing-eve  { background: rgba(99,117,236,0.2); }
+.dot-timing-eve  .dot-timing-text { color: #A0B4FF; }
 
-.dot-type-isolate .dot-type-text { color: #A0B4FF; }
-.dot-type-blend .dot-type-text   { color: #34d399; }
+/* Group pill */
+.dot-group-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+.dot-group-text { font-size: 10px; font-weight: 600; }
+.dot-group-bioage { background: rgba(99,117,236,0.15); }
+.dot-group-bioage .dot-group-text { color: #A0B4FF; }
+.dot-group-energy { background: rgba(201,166,107,0.15); }
+.dot-group-energy .dot-group-text { color: #C9A66B; }
+.dot-group-system { background: rgba(139,168,137,0.15); }
+.dot-group-system .dot-group-text { color: #8BA889; }
 
 .dot-desc { margin-top: 8px; padding-left: 48px; }
 .dot-desc-text { font-size: 12px; color: #4A6A8A; line-height: 1.5; }
 
 /* Taller modal for dot form */
-.modal-panel-tall { max-height: 92vh; }
+.modal-panel-tall { height: 92vh; }
 
 /* Dot form extras */
 .form-ph { color: #2A4A6A; }
@@ -287,6 +312,37 @@
   box-sizing: border-box;
 }
 
+/* Color hex preview row */
+.color-hex-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.color-hex-preview {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  border: 1rpx solid rgba(255,255,255,0.08);
+}
+
+.form-input-hex {
+  flex: 1;
+  min-width: 0;
+  width: 0;
+  height: 44px;
+  line-height: 44px;
+  background: #1A2F4A;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 14px;
+  color: #E8F0F8;
+  box-sizing: border-box;
+  font-family: monospace;
+  letter-spacing: 1px;
+}
+
 /* Ingredient rows */
 .ingr-row {
   display: flex;
@@ -297,9 +353,11 @@
 
 .ingr-name {
   flex: 2;
+  height: 38px;
+  line-height: 38px;
   background: #1A2F4A;
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: 0 10px;
   font-size: 13px;
   color: #E8F0F8;
   box-sizing: border-box;
@@ -307,9 +365,11 @@
 
 .ingr-value {
   flex: 1;
+  height: 38px;
+  line-height: 38px;
   background: #1A2F4A;
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: 0 10px;
   font-size: 13px;
   color: #E8F0F8;
   box-sizing: border-box;

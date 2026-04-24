@@ -694,7 +694,7 @@ async function handleDeleteCoach(coachId) {
 }
 
 async function handlePostDots(body) {
-    const { key_name, name, name_zh, color, color_zh, description, is_isolate, ingredients, ingredients_zh } = body;
+    const { key_name, name, name_zh, color, color_zh, color_hex, group_name, group_name_zh, sub_age_target, sub_age_target_zh, timing, ingredients_summary, description, is_isolate, ingredients, ingredients_zh } = body;
     if (!key_name || !name) return { success: false, error: 'key_name and name are required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -702,9 +702,11 @@ async function handlePostDots(body) {
         const nextId = (maxIdResult.rows[0].max_id || 0) + 1;
 
         const result = await pool.query(
-            `INSERT INTO dots (id, key_name, name, name_zh, color, color_zh, description, is_isolate, ingredients, ingredients_zh)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-            [nextId, key_name, name, name_zh || null, color || null, color_zh || null, description || null, !!is_isolate,
+            `INSERT INTO dots (id, key_name, name, name_zh, color, color_zh, color_hex, group_name, group_name_zh, sub_age_target, sub_age_target_zh, timing, ingredients_summary, description, is_isolate, ingredients, ingredients_zh)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
+            [nextId, key_name, name, name_zh || null, color || null, color_zh || null, color_hex || null,
+             group_name || null, group_name_zh || null, sub_age_target || null, sub_age_target_zh || null,
+             timing || null, ingredients_summary || null, description || null, !!is_isolate,
              ingredients ? JSON.stringify(ingredients) : null,
              ingredients_zh ? JSON.stringify(ingredients_zh) : null]
         );
@@ -715,12 +717,16 @@ async function handlePostDots(body) {
 }
 
 async function handlePutDot(dotId, body) {
-    const { name, name_zh, color, color_zh, description, is_isolate, ingredients, ingredients_zh } = body;
+    const { name, name_zh, color, color_zh, color_hex, group_name, group_name_zh, sub_age_target, sub_age_target_zh, timing, ingredients_summary, description, is_isolate, ingredients, ingredients_zh } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query(
-            `UPDATE dots SET name=$1, name_zh=$2, color=$3, color_zh=$4, description=$5, is_isolate=$6, ingredients=$7, ingredients_zh=$8 WHERE id=$9`,
-            [name, name_zh || null, color || null, color_zh || null, description || null, !!is_isolate,
+            `UPDATE dots SET name=$1, name_zh=$2, color=$3, color_zh=$4, color_hex=$5, group_name=$6, group_name_zh=$7,
+             sub_age_target=$8, sub_age_target_zh=$9, timing=$10, ingredients_summary=$11,
+             description=$12, is_isolate=$13, ingredients=$14, ingredients_zh=$15 WHERE id=$16`,
+            [name, name_zh || null, color || null, color_zh || null, color_hex || null,
+             group_name || null, group_name_zh || null, sub_age_target || null, sub_age_target_zh || null,
+             timing || null, ingredients_summary || null, description || null, !!is_isolate,
              ingredients ? JSON.stringify(ingredients) : null,
              ingredients_zh ? JSON.stringify(ingredients_zh) : null,
              dotId]

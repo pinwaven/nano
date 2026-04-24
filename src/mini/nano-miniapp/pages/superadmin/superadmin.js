@@ -1,6 +1,18 @@
 const app = getApp()
 const BASE = 'https://nano.fros.cc'
 
+// Language-independent picker values (always stored in English in DB)
+const TIMING_VALUES   = ['Morning', 'Evening']
+const GROUP_VALUES    = ['BioAge Reducing', 'Energy & Performance Boost', 'System Optimization']
+const GROUP_ZH        = ['生物减龄', '能量焕发', '系统调优']
+const SUB_AGE_VALUES  = ['Cellular Age', 'Metabolic Age', 'Micro-Vascular Age', 'Resilience Age']
+const SUB_AGE_ZH      = ['细胞年龄', '代谢年龄', '微血管年龄', '抗压年龄']
+const GROUP_KEY_MAP   = {
+  'BioAge Reducing': 'bioage',
+  'Energy & Performance Boost': 'energy',
+  'System Optimization': 'system',
+}
+
 const T = {
   zh: {
     title: '超管面板',
@@ -29,8 +41,11 @@ const T = {
       name: '姓名', channel: '渠道', linkedUser: '关联用户 ID', users: '客户数',
     },
     dot: {
-      key: '标识', nameEn: '名称 (英)', nameZh: '名称 (中)', color: '颜色 (英)', colorZh: '颜色 (中)',
-      type: '类型', desc: '描述', isolate: '单体', blend: '复合',
+      key: '标识', nameEn: '名称 (英)', nameZh: '名称 (中)',
+      color: '颜色名称 (英)', colorZh: '颜色名称 (中)', colorHex: '颜色代码',
+      timing: '服用时机', group: '功能分组', subAge: '目标年龄',
+      type: '类型', desc: '描述', ingrSummary: '成分摘要',
+      isolate: '单体', blend: '复合',
       ingrEn: '成分 (英)', ingrZh: '成分 (中)',
       ingrName: '成分名称', ingrMg: 'mg', addIngr: '+ 添加成分',
       addTitle: '添加原粒', editTitle: '编辑原粒',
@@ -43,6 +58,9 @@ const T = {
     },
     typeOptions: ['复合', '单体'],
     typeValues: [false, true],
+    timingOptions: ['早上', '晚上'],
+    groupOptions: ['生物减龄', '能量焕发', '系统调优'],
+    subAgeOptions: ['细胞年龄', '代谢年龄', '微血管年龄', '抗压年龄'],
     error: { required: '此项为必填', saveFailed: '保存失败', networkError: '网络错误' },
   },
   en: {
@@ -72,8 +90,11 @@ const T = {
       name: 'Name', channel: 'Channel', linkedUser: 'Linked User ID', users: 'Clients',
     },
     dot: {
-      key: 'Key', nameEn: 'Name (EN)', nameZh: 'Name (ZH)', color: 'Color (EN)', colorZh: 'Color (ZH)',
-      type: 'Type', desc: 'Description', isolate: 'Isolate', blend: 'Blend',
+      key: 'Key', nameEn: 'Name (EN)', nameZh: 'Name (ZH)',
+      color: 'Color Name (EN)', colorZh: 'Color Name (ZH)', colorHex: 'Color Hex',
+      timing: 'Timing', group: 'Group', subAge: 'Sub Age Target',
+      type: 'Type', desc: 'Description', ingrSummary: 'Ingredients Summary',
+      isolate: 'Isolate', blend: 'Blend',
       ingrEn: 'Ingredients (EN)', ingrZh: 'Ingredients (ZH)',
       ingrName: 'Name', ingrMg: 'mg', addIngr: '+ Add Ingredient',
       addTitle: 'Add Dot', editTitle: 'Edit Dot',
@@ -86,6 +107,9 @@ const T = {
     },
     typeOptions: ['Blend', 'Isolate'],
     typeValues: [false, true],
+    timingOptions: ['Morning', 'Evening'],
+    groupOptions: ['BioAge Reducing', 'Energy & Performance Boost', 'System Optimization'],
+    subAgeOptions: ['Cellular Age', 'Metabolic Age', 'Micro-Vascular Age', 'Resilience Age'],
     error: { required: 'Required', saveFailed: 'Save failed', networkError: 'Network error' },
   },
 }
@@ -102,6 +126,19 @@ function fmtDate(d) {
 function ingrToArr(arr) {
   if (!arr || !Array.isArray(arr)) return []
   return arr.map(item => ({ name: item.name || '', mg: item.mg != null ? String(item.mg) : '' }))
+}
+
+function decorateDot(d, lang) {
+  const isZh = lang === 'zh'
+  return {
+    ...d,
+    _timingLabel: d.timing === 'Evening'
+      ? (isZh ? '晚上' : 'Evening')
+      : (isZh ? '早上' : 'Morning'),
+    _groupLabel: isZh ? (d.group_name_zh || d.group_name || '') : (d.group_name || ''),
+    _subAgeLabel: isZh ? (d.sub_age_target_zh || d.sub_age_target || '') : (d.sub_age_target || ''),
+    _groupKey: GROUP_KEY_MAP[d.group_name] || 'bioage',
+  }
 }
 
 Page({
@@ -137,11 +174,19 @@ Page({
     dotModalTitle: '',
     dotModalBusy: false,
     dotModalError: '',
-    dotForm: { key_name: '', name_en: '', name_zh: '', color: '', color_zh: '', description: '', is_isolate: false },
+    dotForm: {
+      key_name: '', name_en: '', name_zh: '',
+      color: '', color_zh: '', color_hex: '',
+      timing: 'Morning', group_name: 'BioAge Reducing', sub_age_target: 'Cellular Age',
+      ingredients_summary: '', description: '', is_isolate: false,
+    },
     editDotId: null,
     formIngredients: [],
     formIngredientsZh: [],
     formTypeIdx: 0,
+    formTimingIdx: 0,
+    formGroupIdx: 0,
+    formSubAgeIdx: 0,
 
     channelPickerOptions: [],
     channelPickerValues: [],
@@ -190,7 +235,9 @@ Page({
       const channelPickerOptions = [lang === 'zh' ? '— 无渠道 —' : '— No Channel —', ...channels.map(c => c.name)]
       const channelPickerValues = ['', ...channels.map(c => String(c.id))]
 
-      this.setData({ channels, users, coaches, dots: dRes.data?.dots || [], invites: iRes.data?.invitations || [], channelPickerOptions, channelPickerValues })
+      const dots = (dRes.data?.dots || []).map(d => decorateDot(d, lang))
+
+      this.setData({ channels, users, coaches, dots, invites: iRes.data?.invitations || [], channelPickerOptions, channelPickerValues })
     } catch (e) {
       wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' })
     } finally {
@@ -288,8 +335,7 @@ Page({
     const idx = e.currentTarget.dataset.idx
     const rolesChecked = [...this.data.rolesChecked]
     rolesChecked[idx] = !rolesChecked[idx]
-    // Always keep 'user' checked
-    rolesChecked[0] = true
+    rolesChecked[0] = true // always keep 'user'
     this.setData({ rolesChecked })
   },
 
@@ -323,8 +369,14 @@ Page({
     this.setData({
       dotModalOpen: true, dotModalMode: 'add', dotModalTitle: t.dot.addTitle,
       dotModalError: '', editDotId: null,
-      dotForm: { key_name: '', name_en: '', name_zh: '', color: '', color_zh: '', description: '', is_isolate: false },
-      formTypeIdx: 0, formIngredients: [], formIngredientsZh: [],
+      dotForm: {
+        key_name: '', name_en: '', name_zh: '',
+        color: '', color_zh: '', color_hex: '',
+        timing: 'Morning', group_name: GROUP_VALUES[0], sub_age_target: SUB_AGE_VALUES[0],
+        ingredients_summary: '', description: '', is_isolate: false,
+      },
+      formTypeIdx: 0, formTimingIdx: 0, formGroupIdx: 0, formSubAgeIdx: 0,
+      formIngredients: [], formIngredientsZh: [],
     })
   },
 
@@ -332,12 +384,31 @@ Page({
     const d = e.currentTarget.dataset.dot
     const { lang } = this.data
     const t = T[lang]
-    const typeIdx = t.typeValues.indexOf(!!d.is_isolate)
+    const typeIdx = Math.max(0, t.typeValues.indexOf(!!d.is_isolate))
+    const timingIdx = Math.max(0, TIMING_VALUES.indexOf(d.timing || 'Morning'))
+    const groupIdx = Math.max(0, GROUP_VALUES.indexOf(d.group_name || GROUP_VALUES[0]))
+    const subAgeIdx = Math.max(0, SUB_AGE_VALUES.indexOf(d.sub_age_target || SUB_AGE_VALUES[0]))
     this.setData({
       dotModalOpen: true, dotModalMode: 'edit', dotModalTitle: t.dot.editTitle,
       dotModalError: '', editDotId: d.id,
-      dotForm: { key_name: d.key_name || '', name_en: d.name || '', name_zh: d.name_zh || '', color: d.color || '', color_zh: d.color_zh || '', description: d.description || '', is_isolate: !!d.is_isolate },
-      formTypeIdx: typeIdx >= 0 ? typeIdx : 0,
+      dotForm: {
+        key_name: d.key_name || '',
+        name_en: d.name || '',
+        name_zh: d.name_zh || '',
+        color: d.color || '',
+        color_zh: d.color_zh || '',
+        color_hex: d.color_hex || '',
+        timing: d.timing || 'Morning',
+        group_name: d.group_name || GROUP_VALUES[0],
+        sub_age_target: d.sub_age_target || SUB_AGE_VALUES[0],
+        ingredients_summary: d.ingredients_summary || '',
+        description: d.description || '',
+        is_isolate: !!d.is_isolate,
+      },
+      formTypeIdx: typeIdx,
+      formTimingIdx: timingIdx,
+      formGroupIdx: groupIdx,
+      formSubAgeIdx: subAgeIdx,
       formIngredients: ingrToArr(d.ingredients),
       formIngredientsZh: ingrToArr(d.ingredients_zh),
     })
@@ -357,6 +428,21 @@ Page({
     const { lang } = this.data
     const idx = Number(e.detail.value)
     this.setData({ formTypeIdx: idx, 'dotForm.is_isolate': T[lang].typeValues[idx] })
+  },
+
+  onPickerTiming(e) {
+    const idx = Number(e.detail.value)
+    this.setData({ formTimingIdx: idx, 'dotForm.timing': TIMING_VALUES[idx] })
+  },
+
+  onPickerGroup(e) {
+    const idx = Number(e.detail.value)
+    this.setData({ formGroupIdx: idx, 'dotForm.group_name': GROUP_VALUES[idx] })
+  },
+
+  onPickerSubAge(e) {
+    const idx = Number(e.detail.value)
+    this.setData({ formSubAgeIdx: idx, 'dotForm.sub_age_target': SUB_AGE_VALUES[idx] })
   },
 
   addIngredient(e) {
@@ -394,10 +480,28 @@ Page({
       const ingredients_zh = this.data.formIngredientsZh
         .filter(r => r.name.trim())
         .map(r => ({ name: r.name.trim(), mg: r.mg !== '' ? Number(r.mg) : 0 }))
+
+      // Auto-derive _zh counterparts from the English value
+      const groupIdx = GROUP_VALUES.indexOf(dotForm.group_name)
+      const subAgeIdx = SUB_AGE_VALUES.indexOf(dotForm.sub_age_target)
+
       const payload = {
-        key_name: dotForm.key_name, name: dotForm.name_en, name_zh: dotForm.name_zh,
-        color: dotForm.color, color_zh: dotForm.color_zh, description: dotForm.description,
-        is_isolate: dotForm.is_isolate, ingredients, ingredients_zh,
+        key_name: dotForm.key_name,
+        name: dotForm.name_en,
+        name_zh: dotForm.name_zh,
+        color: dotForm.color,
+        color_zh: dotForm.color_zh,
+        color_hex: dotForm.color_hex,
+        timing: dotForm.timing,
+        group_name: dotForm.group_name,
+        group_name_zh: groupIdx >= 0 ? GROUP_ZH[groupIdx] : dotForm.group_name,
+        sub_age_target: dotForm.sub_age_target,
+        sub_age_target_zh: subAgeIdx >= 0 ? SUB_AGE_ZH[subAgeIdx] : dotForm.sub_age_target,
+        ingredients_summary: dotForm.ingredients_summary,
+        description: dotForm.description,
+        is_isolate: dotForm.is_isolate,
+        ingredients,
+        ingredients_zh,
       }
       if (dotModalMode === 'add') await this._req(`${BASE}/api/dots`, 'POST', payload)
       else await this._req(`${BASE}/api/dots/${editDotId}`, 'PUT', payload)
