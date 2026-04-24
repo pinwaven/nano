@@ -647,6 +647,64 @@
   margin-top: 10rpx;
 }
 
+/* Bio-age comparison bars */
+
+.bio-bars {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.bio-bar-item { width: 100%; }
+
+.bio-bar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10rpx;
+}
+
+.bio-bar-label {
+  font-size: 19rpx;
+  font-weight: 600;
+  letter-spacing: 0.4rpx;
+  color: rgba(166, 196, 229, 0.6);
+}
+
+.bio-bar-val {
+  font-size: 26rpx;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.bio-bar-track {
+  height: 10rpx;
+  background: rgba(15, 37, 64, 0.9);
+  border-radius: 5rpx;
+  position: relative;
+  overflow: visible;
+}
+
+.bio-bar-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 5rpx;
+  opacity: 0.75;
+}
+
+.bio-bar-ref {
+  position: absolute;
+  left: 50%;
+  top: -6rpx;
+  height: calc(100% + 12rpx);
+  width: 2rpx;
+  background: rgba(166, 196, 229, 0.35);
+  transform: translateX(-50%);
+}
+
 /* Sub-age grid — supporting detail, visually subordinate */
 
 .sub-age-grid {

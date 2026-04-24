@@ -1287,17 +1287,25 @@ Page({
         return { key, label: t.bmLabels[key], unit, color, lastVal, sparkBars }
       })
 
-      const subAgeList = subAgesRaw
-        ? SUB_AGE_KEYS.map(key => ({
-            key,
-            label: t.subAgeLabels[key],
-            desc: t.subAgeDesc[key],
-            color: SUB_AGE_COLORS[key],
-            value: subAgesRaw[key] != null ? subAgesRaw[key].toFixed(1) : '—',
-          }))
-        : []
-
       const cAge = chronoAge(user.birth_date)
+
+      const subAgeList = subAgesRaw
+        ? SUB_AGE_KEYS.map(key => {
+            const rawVal = subAgesRaw[key]
+            const valStr = rawVal != null ? rawVal.toFixed(1) : '—'
+            const score  = rawVal != null && cAge != null
+              ? Math.max(5, Math.min(95, Math.round((cAge + 15 - rawVal) / 30 * 100)))
+              : 50
+            return {
+              key,
+              label: t.subAgeLabels[key],
+              desc:  t.subAgeDesc[key],
+              color: SUB_AGE_COLORS[key],
+              value: valStr,
+              score,
+            }
+          })
+        : []
       const rawBioAge = latest?.bio_age ?? user.bio_age
       const bAge = rawBioAge ? Number(rawBioAge).toFixed(1) : null
 

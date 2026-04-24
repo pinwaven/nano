@@ -265,6 +265,21 @@
               </view>
             </view>
 
+            <!-- Bio-age comparison bars -->
+            <view wx:if="{{subAgeList.length > 0}}" class="bio-bars">
+              <view wx:for="{{subAgeList}}" wx:key="key" class="bio-bar-item">
+                <view class="bio-bar-header">
+                  <text class="bio-bar-label">{{item.label}}</text>
+                  <text class="bio-bar-val" style="color: {{item.color}}">{{item.value}}</text>
+                </view>
+                <view class="bio-bar-track">
+                  <view class="bio-bar-fill" style="width: {{item.score}}%; background: {{item.color}};"></view>
+                  <view class="bio-bar-ref"></view>
+                </view>
+              </view>
+            </view>
+
+            <!-- Sub-age detail cards -->
             <view wx:if="{{subAgeList.length > 0}}" class="sub-age-grid">
               <view wx:for="{{subAgeList}}" wx:key="key" class="sub-age-card">
                 <text class="sub-age-val" style="color: {{item.color}}">{{item.value}}</text>
