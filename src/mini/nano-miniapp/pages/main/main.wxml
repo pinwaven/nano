@@ -253,19 +253,15 @@
           <!-- Hero -->
           <view class="health-hero">
             <view class="health-hero-bg"></view>
-            <view class="health-avatar">
-              <text class="avatar-letter">{{user.nickname ? user.nickname[0] : 'U'}}</text>
-            </view>
-            <text class="health-name">{{user.nickname || 'User'}}</text>
 
             <view wx:if="{{bAge || cAge}}" class="bio-row">
-              <view class="bio-chip bio-chip-dim">
-                <text class="bio-num bio-num-sub">{{cAge || '—'}}</text>
-                <text class="bio-unit">{{t.chronoAge}}</text>
-              </view>
-              <view class="bio-chip">
-                <text class="bio-num" style="color: {{bAgeColor}}">{{bAge || '—'}}</text>
+              <view class="bio-chip bio-chip-primary">
+                <text class="bio-num bio-num-primary" style="color: {{bAgeColor}}">{{bAge || '—'}}</text>
                 <text class="bio-unit">{{t.bioAge}}</text>
+              </view>
+              <view class="bio-chip bio-chip-dim">
+                <text class="bio-num bio-num-chrono">{{cAge || '—'}}</text>
+                <text class="bio-unit">{{t.chronoAge}}</text>
               </view>
             </view>
 
