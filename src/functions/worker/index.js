@@ -327,14 +327,12 @@ function _calcDotCounts(biomarkers, bioageProfile) {
     return counts;
 }
 
-const MORNING_DOTS = ['D01', 'D05', 'D06', 'D07', 'D10', 'D11', 'D18'];
-const EVENING_DOTS = ['D02', 'D03', 'D04', 'D08', 'D09', 'D12', 'D13', 'D14', 'D15', 'D16', 'D17'];
+// Derived from dots.timing column at formulation time — do not hardcode here
 const MONTH_EN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const WEEKDAY_EN = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const WEEKDAY_ZH = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
 
-function _generatePlanText(dotCounts, availableDotKeys, lang, startDate, days) {
-    // availableDotKeys is a Set of short keys like 'D01', 'D04'
+function _generatePlanText(dotCounts, availableDotKeys, lang, startDate, days, morningKeys, eveningKeys) {
     const lines = [];
     const start = new Date(startDate + 'T00:00:00+08:00');
 
@@ -344,10 +342,10 @@ function _generatePlanText(dotCounts, availableDotKeys, lang, startDate, days) {
         const month = d.getMonth();
         const day = d.getDate();
 
-        const mParts = MORNING_DOTS
+        const mParts = morningKeys
             .filter(k => availableDotKeys.has(k))
             .map(k => `${k}x${dotCounts[k] || 3}`);
-        const eParts = EVENING_DOTS
+        const eParts = eveningKeys
             .filter(k => availableDotKeys.has(k))
             .map(k => `${k}x${dotCounts[k] || 3}`);
 
@@ -374,7 +372,7 @@ async function handlePostFormulaDots(body) {
                  AND test_type = 'kino_chip' ORDER BY tested_at DESC LIMIT 1`,
                 [openid]
             ),
-            pool.query(`SELECT id, key_name, name, name_zh, ingredients, ingredients_zh FROM dots ORDER BY id ASC`),
+            pool.query(`SELECT id, key_name, name, name_zh, timing, ingredients, ingredients_zh FROM dots ORDER BY id ASC`),
         ]);
 
         if (userResult.rows.length === 0) return { success: false, error: 'User not found' };
@@ -439,6 +437,10 @@ async function handlePostFormulaDots(body) {
             }
         }
 
+        // Build morning/evening splits from DB timing column
+        const morningKeys = dotsResult.rows.filter(r => r.timing === 'Morning').map(r => r.key_name.replace(/^DOT/, 'D'));
+        const eveningKeys = dotsResult.rows.filter(r => r.timing === 'Evening').map(r => r.key_name.replace(/^DOT/, 'D'));
+
         // Fill any missing keys with deterministic fallback
         const availableDotKeys = new Set(dotsResult.rows.map(r => r.key_name.replace(/^DOT/, 'D')));
         const fallbackCounts = _calcDotCounts(biomarkers, bioageProfile);
@@ -446,7 +448,7 @@ async function handlePostFormulaDots(body) {
             if (!dotCounts[k]) dotCounts[k] = fallbackCounts[k] || 4;
         }
 
-        const planText = _generatePlanText(dotCounts, availableDotKeys, lang, startDate, 7);
+        const planText = _generatePlanText(dotCounts, availableDotKeys, lang, startDate, 7, morningKeys, eveningKeys);
         const finalContent = analysis ? `${analysis}\n\n${planText}` : planText;
 
         const startDateObj = getNowShanghai();
@@ -466,14 +468,14 @@ async function handlePostFormulaDots(body) {
                 const currentDate = startDateObj.plus({ days: i }).toISODate();
 
                 const morningRecipe = { dots: {} };
-                MORNING_DOTS.forEach(k => {
+                morningKeys.forEach(k => {
                     if (availableDotKeys.has(k) && dotCounts[k] > 0) {
                         morningRecipe.dots[k.replace('D', 'DOT')] = dotCounts[k];
                     }
                 });
 
                 const eveningRecipe = { dots: {} };
-                EVENING_DOTS.forEach(k => {
+                eveningKeys.forEach(k => {
                     if (availableDotKeys.has(k) && dotCounts[k] > 0) {
                         eveningRecipe.dots[k.replace('D', 'DOT')] = dotCounts[k];
                     }
