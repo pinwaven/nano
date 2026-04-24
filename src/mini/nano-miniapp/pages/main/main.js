@@ -106,6 +106,8 @@ const T = {
     simCartCancel: '取消',
     noPlan: '暂无营养方案。完成 Kino 生物标志物检测后，系统将为您生成个性化方案。',
     morning: '早上', evening: '晚上', today: '今天', tomorrow: '明天',
+    dispenseTitle: '分发原粒', dispenseMorning: '今日早上配方', dispenseEvening: '今日晚上配方',
+    dispenseBtn: '立即分发', dispensing: '正在分发…', dispenseOk: '✓ 已成功分发', dispenseErr: '分发失败，点击重试', dispenseNoDots: '此时段暂无配方',
     obConditionsPrompt: '您是否曾被诊断/体检出以下方面的问题？（可多选）',
     obConditionsNone: '以上均无',
     obConditionsOtherPh: '请描述您的其他健康状况',
@@ -231,6 +233,8 @@ const T = {
     simCartCancel: 'Cancel',
     noPlan: 'No nutrition plan yet. Complete a Kino biomarker test to generate your personalized plan.',
     morning: 'Morning', evening: 'Evening', today: 'Today', tomorrow: 'Tomorrow',
+    dispenseTitle: 'Dispense Dots', dispenseMorning: "Today's Morning Dose", dispenseEvening: "Today's Evening Dose",
+    dispenseBtn: 'Dispense Now', dispensing: 'Dispensing…', dispenseOk: '✓ Dispensed Successfully', dispenseErr: 'Failed — tap to retry', dispenseNoDots: 'No dots scheduled for this slot',
     obConditionsPrompt: 'Have you ever been diagnosed with or identified any of the following? (Select all that apply)',
     obConditionsNone: 'None of the above',
     obConditionsOtherPh: 'Please describe your other health condition',
@@ -606,6 +610,11 @@ Page({
     dotsDays: [],
     hasPlan: false,
     todayScrollLeft: 0,
+    dispenseSlot: '',
+    dispenseSlotDots: [],
+    dispenseDate: '',
+    dispenseHasToday: false,
+    dispenseStatus: '',
     cartridges: [],
     cartridgesLoading: true,
     weekLabel: '',
@@ -1535,18 +1544,29 @@ Page({
       if (todayIndex >= 0) {
         const { windowWidth } = wx.getSystemInfoSync()
         const r = windowWidth / 750
-        const cardPx = 500 * r
+        const cardPx = windowWidth * 0.7
         const gapPx = 16 * r
         const padPx = 28 * r
         todayScrollLeft = Math.max(0, todayIndex * (cardPx + gapPx) + padPx - (windowWidth - cardPx) / 2)
       }
+
+      const todayDay = todayIndex >= 0 ? dotsDays[todayIndex] : null
+      const dispenseSlot = new Date().getHours() < 12 ? 'morning_cup' : 'evening_cup'
+      const dispenseSlotDots = todayDay
+        ? (dispenseSlot === 'morning_cup' ? todayDay.morning : todayDay.evening)
+        : []
 
       this.setData({
         dotsLoading: false,
         dotsDays,
         weekLabel,
         todayScrollLeft,
-        hasPlan: (plan !== null || structured !== null)
+        hasPlan: (plan !== null || structured !== null),
+        dispenseSlot,
+        dispenseSlotDots,
+        dispenseDate: localISODate(new Date()),
+        dispenseHasToday: !!todayDay,
+        dispenseStatus: '',
       })
     } catch (e) {
       this.setData({ dotsLoading: false, hasPlan: false })
@@ -1560,6 +1580,30 @@ Page({
       this.setData({ cartridgesLoading: false, cartridges: mapCartridges(raw, lang) })
     } catch (e) {
       this.setData({ cartridgesLoading: false })
+    }
+  },
+
+  async dispenseToday() {
+    const { user, dispenseSlot, dispenseSlotDots, dispenseDate, dispenseStatus } = this.data
+    if (dispenseStatus === 'loading' || dispenseStatus === 'done') return
+    if (!dispenseSlotDots || dispenseSlotDots.length === 0) return
+    this.setData({ dispenseStatus: 'loading' })
+    try {
+      const dispensed = {}
+      dispenseSlotDots.forEach(dot => {
+        dispensed['DOT' + dot.displayKey.slice(1)] = dot.count
+      })
+      const res = await this._req(`${BASE}/api/dispense`, 'POST', {
+        openid: user.user_id, slot: dispenseSlot, date: dispenseDate, dispensed
+      })
+      if (res.data?.success) {
+        this.setData({ dispenseStatus: 'done' })
+        this._loadCartridges(user, this.data.lang)
+      } else {
+        this.setData({ dispenseStatus: 'error' })
+      }
+    } catch (e) {
+      this.setData({ dispenseStatus: 'error' })
     }
   },
 

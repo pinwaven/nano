@@ -426,50 +426,63 @@
         <view class="pulse-dot"></view>
       </view>
 
-      <scroll-view wx:elif="{{dotsDays.length > 0}}" class="dots-scroll" scroll-x enhanced="{{true}}" show-scrollbar="{{false}}" scroll-left="{{todayScrollLeft}}">
-        <view class="dots-days">
-          <view
-            wx:for="{{dotsDays}}"
-            wx:key="label"
-            class="day-card {{item.isToday ? 'day-today' : ''}}"
-          >
-            <text class="day-label">{{item.label}}</text>
+      <block wx:elif="{{dotsDays.length > 0}}">
+        <scroll-view class="dots-scroll" scroll-x enhanced="{{true}}" show-scrollbar="{{false}}" scroll-left="{{todayScrollLeft}}">
+          <view class="dots-days">
+            <view
+              wx:for="{{dotsDays}}"
+              wx:key="label"
+              class="day-card {{item.isToday ? 'day-today' : ''}}"
+            >
+              <text class="day-label">{{item.label}}</text>
 
-            <view wx:if="{{item.morning.length > 0}}" class="meal-slot">
-              <text class="meal-name">{{t.morning}}</text>
-              <view class="dot-chips">
-                <view
-                  wx:for="{{item.morning}}"
-                  wx:key="displayKey"
-                  wx:for-item="dot"
-                  class="dot-chip"
-                >
-                  <view class="dot-swatch" style="background: {{dot.color}}"></view>
-                  <text class="dot-key">{{dot.displayKey}}</text>
-                  <text class="dot-count">×{{dot.count}}</text>
+              <view wx:if="{{item.morning.length > 0}}" class="meal-slot{{item.isToday && dispenseSlot === 'morning_cup' ? ' meal-slot-active' : ''}}">
+                <text class="meal-name">{{t.morning}}</text>
+                <view class="dot-chips">
+                  <view
+                    wx:for="{{item.morning}}"
+                    wx:key="displayKey"
+                    wx:for-item="dot"
+                    class="dot-chip"
+                  >
+                    <view class="dot-swatch" style="background: {{dot.color}}"></view>
+                    <text class="dot-key">{{dot.displayKey}}</text>
+                    <text class="dot-count">×{{dot.count}}</text>
+                  </view>
+                </view>
+              </view>
+
+              <view wx:if="{{item.evening.length > 0}}" class="meal-slot{{item.isToday && dispenseSlot === 'evening_cup' ? ' meal-slot-active' : ''}}">
+                <text class="meal-name">{{t.evening}}</text>
+                <view class="dot-chips">
+                  <view
+                    wx:for="{{item.evening}}"
+                    wx:key="displayKey"
+                    wx:for-item="dot"
+                    class="dot-chip"
+                  >
+                    <view class="dot-swatch" style="background: {{dot.color}}"></view>
+                    <text class="dot-key">{{dot.displayKey}}</text>
+                    <text class="dot-count">×{{dot.count}}</text>
+                  </view>
                 </view>
               </view>
             </view>
-
-            <view wx:if="{{item.evening.length > 0}}" class="meal-slot">
-              <text class="meal-name">{{t.evening}}</text>
-              <view class="dot-chips">
-                <view
-                  wx:for="{{item.evening}}"
-                  wx:key="displayKey"
-                  wx:for-item="dot"
-                  class="dot-chip"
-                >
-                  <view class="dot-swatch" style="background: {{dot.color}}"></view>
-                  <text class="dot-key">{{dot.displayKey}}</text>
-                  <text class="dot-count">×{{dot.count}}</text>
-                </view>
-              </view>
-            </view>
+            <view style="width: 8rpx; flex-shrink: 0;"></view>
           </view>
-          <view style="width: 8rpx; flex-shrink: 0;"></view>
+        </scroll-view>
+
+        <!-- ── Dispense section ─────────────────────────────────────────── -->
+        <view wx:if="{{dispenseHasToday}}" class="dispense-section">
+          <view
+            class="dispense-btn{{dispenseStatus === 'done' ? ' dispense-btn-done' : dispenseStatus === 'error' ? ' dispense-btn-error' : dispenseStatus === 'loading' ? ' dispense-btn-loading' : ''}}"
+            bindtap="dispenseToday"
+          >
+            <view class="dispense-btn-gloss"></view>
+            <text class="dispense-btn-text">{{dispenseStatus === 'loading' ? t.dispensing : dispenseStatus === 'done' ? t.dispenseOk : dispenseStatus === 'error' ? t.dispenseErr : t.dispenseBtn}}</text>
+          </view>
         </view>
-      </scroll-view>
+      </block>
 
       <view wx:elif="{{!dotsLoading}}" class="dots-empty">
         <text>{{t.noPlan}}</text>
