@@ -9,6 +9,7 @@ const { runWorkflow: runFirstReportWorkflow } = require('./lib/reports/workflow'
 const OpenAI = require('openai');
 const systemChatTemplate = require('./prompts/systemChat');
 const systemNutritionTemplate = require('./prompts/systemNutrition');
+const systemHealthAdviceTemplate = require('./prompts/systemHealthAdvice');
 const strings = require('./prompts/strings');
 
 const getLlmClient = () => new OpenAI({
@@ -1232,6 +1233,23 @@ async function handlePostChat(body) {
                 [user_id, historyLimit]
             );
 
+            // Normalize roles ('ai' → 'assistant') and collapse consecutive same-role turns
+            // that can accumulate from orphaned tool responses (health-advice, kino, etc.)
+            const cleanHistory = [];
+            for (const row of historyResult.rows) {
+                const role = row.role === 'ai' ? 'assistant' : row.role;
+                const last = cleanHistory[cleanHistory.length - 1];
+                if (last && last.role === role) {
+                    last.content = row.content; // keep most recent of consecutive same-role
+                } else {
+                    cleanHistory.push({ role, content: row.content });
+                }
+            }
+            // History must start with a user turn after the system message
+            while (cleanHistory.length > 0 && cleanHistory[0].role !== 'user') {
+                cleanHistory.shift();
+            }
+
             const client = getLlmClient();
             const model = process.env.MODEL || 'qwen-turbo';
 
@@ -1239,7 +1257,7 @@ async function handlePostChat(body) {
                 model: model,
                 messages: [
                     { role: 'system', content: systemPrompt },
-                    ...historyResult.rows  // already shaped as { role, content }
+                    ...cleanHistory,
                 ],
             });
 
@@ -1349,6 +1367,96 @@ async function handlePostKinoResult(body) {
     );
 
     return { success: true, scan_id, biomarker_id: bmResult.rows[0].id, user_id };
+}
+
+async function handlePostHealthAdvice(body) {
+    const { openid } = body;
+    if (!openid) return { success: false, error: 'openid required', statusCode: 400 };
+
+    try {
+        const userResult = await pool.query(
+            `SELECT user_id, nickname, gender, birth_date, language, bio_data
+             FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
+            [openid]
+        );
+        if (!userResult.rows.length) return { success: false, error: 'User not found', statusCode: 404 };
+        const user = userResult.rows[0];
+        const user_id = user.user_id;
+
+        const [bioResult, dotsResult] = await Promise.all([
+            pool.query(
+                `SELECT bio_age, data FROM biomarkers
+                 WHERE user_id = $1 AND test_type = 'kino_chip'
+                 ORDER BY tested_at DESC LIMIT 1`,
+                [user_id]
+            ),
+            pool.query(
+                `SELECT key_name, name, name_zh, sub_age_target, description, timing
+                 FROM dots ORDER BY id ASC`
+            ),
+        ]);
+
+        const latestBio = bioResult.rows[0] || null;
+        const bioageProfile = latestBio?.data?.bioage_profile || null;
+        const estimatedBm = latestBio?.data?.estimated || {};
+        const actualBm = latestBio?.data?.actual || {};
+        const biomarkers = { ...estimatedBm, ...actualBm };
+        const subAges = bioageProfile?.SubAges || {};
+        const bioAge = bioageProfile?.BioAge ?? null;
+        const age = calculateAge(user.birth_date);
+        const chronoAge = bioageProfile?.ChronoAge ?? age;
+
+        const dotsByDimension = {};
+        dotsResult.rows.forEach(d => {
+            const t = d.sub_age_target;
+            if (!t) return;
+            if (!dotsByDimension[t]) dotsByDimension[t] = [];
+            dotsByDimension[t].push(d);
+        });
+
+        const healthConditions = user.bio_data?.health_conditions || [];
+        const healthConditionsOther = user.bio_data?.health_conditions_other || '';
+        const isZh = (user.language || 'zh') !== 'en';
+
+        const systemPrompt = systemHealthAdviceTemplate({
+            isZh,
+            nickname: user.nickname,
+            age,
+            gender: user.gender,
+            bioAge,
+            chronoAge,
+            subAges,
+            biomarkers,
+            dotsByDimension,
+            healthConditions,
+            healthConditionsOther,
+        });
+
+        const userMsg = isZh
+            ? '请分析我目前的健康状态，并给我专业的健康建议。'
+            : 'Please analyze my current health status and give me personalized health advice.';
+
+        // Save user trigger to keep conversation history well-formed (no consecutive AI turns)
+        await saveChatMessage(user_id, 'user', userMsg);
+
+        const llmClient = getLlmClient();
+        const model = process.env.MODEL || 'qwen-plus';
+        const completion = await llmClient.chat.completions.create({
+            model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userMsg },
+            ],
+        });
+
+        const reply = completion.choices[0].message.content;
+        await saveChatMessage(user_id, 'ai', reply);
+
+        return { success: true, message: reply };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostHealthAdvice failed', error: err.message }));
+        return { success: false, error: err.message, statusCode: 500 };
+    }
 }
 
 exports.handler = async (req, resp, context) => {
@@ -1470,6 +1578,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostChatMessages(parsedBody);
             } else if (path.includes('/formula-dots')) {
                 result = await handlePostFormulaDots(parsedBody);
+            } else if (path.includes('/health-advice')) {
+                result = await handlePostHealthAdvice(parsedBody);
             } else {
                 result = await handlePostChat(parsedBody);
             }

@@ -67,8 +67,12 @@ const T = {
     noOrders: '暂无订单记录。',
     toolFormulaDots: '配制 DOTS',
     toolTestChip: '使用芯片',
+    toolHealthAdvice: '健康建议',
     toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
     toolTestChipMsg: '我想使用 Kino 芯片',
+    toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
+    healthAdviceGenerating: '正在分析您的健康数据，请稍候…',
+    healthAdviceError: '健康分析请求失败，请重试。',
     formulaGenerating: '正在根据您的生物标志物生成7天营养方案…',
     formulaComplete: '您的7天营养方案已生成！',
     formulaViewDots: '查看营养方案 →',
@@ -181,8 +185,12 @@ const T = {
     noOrders: 'No orders yet.',
     toolFormulaDots: 'Formulate Dots',
     toolTestChip: 'Use Kino Chip',
+    toolHealthAdvice: 'Health Advice',
     toolFormulaDotMsg: 'Please formulate my Dots plan',
     toolTestChipMsg: 'I want to use a Kino chip',
+    toolHealthAdviceMsg: 'Please analyze my current health status and give me personalized health advice.',
+    healthAdviceGenerating: 'Analyzing your health data, please wait…',
+    healthAdviceError: 'Health analysis request failed. Please try again.',
     formulaGenerating: 'Generating your 7-day nutrition plan from your biomarkers…',
     formulaComplete: 'Your 7-day nutrition plan is ready!',
     formulaViewDots: 'View Dots Plan →',
@@ -939,6 +947,8 @@ Page({
     } else if (action === 'test_chip') {
       this._addMsg('ai', t.kinoScanPrompt)
       this.setData({ kinoScanPending: true })
+    } else if (action === 'health_advice') {
+      this._requestHealthAdvice()
     }
   },
 
@@ -953,6 +963,26 @@ Page({
       this._addActionMsg('view_dots', t.formulaViewDots, true)
     } catch (e) {
       this._addMsg('ai', t.formulaError)
+    } finally {
+      this.setData({ typing: false })
+    }
+  },
+
+  async _requestHealthAdvice() {
+    const { user, t } = this.data
+    this._addMsg('user', t.toolHealthAdviceMsg)
+    this.setData({ typing: true })
+    try {
+      const res = await this._req(`${BASE}/api/health-advice`, 'POST', { openid: user.user_id })
+      if (res.statusCode !== 200 && res.statusCode !== 201) throw new Error('server error')
+      const reply = res.data?.message
+      if (reply) {
+        this._addMsg('ai', reply, true)
+      } else {
+        throw new Error('empty response')
+      }
+    } catch (e) {
+      this._addMsg('ai', t.healthAdviceError)
     } finally {
       this.setData({ typing: false })
     }
@@ -1265,8 +1295,10 @@ Page({
       const records = res.data?.records || []
       const kinoRecords = records.filter(r => r.test_type === 'kino_chip')
       const latest = kinoRecords.length > 0 ? kinoRecords[kinoRecords.length - 1] : null
-      const latestBm = latest?.data?.estimated || null
-      const subAgesRaw = latest?.data?.bioage_profile?.SubAges || null
+      // Walk backwards to find the most recent record that actually has results
+      const latestAnalyzed = [...kinoRecords].reverse().find(r => r.data?.estimated) || null
+      const latestBm = latestAnalyzed?.data?.estimated || null
+      const subAgesRaw = latestAnalyzed?.data?.bioage_profile?.SubAges || null
 
       const bmList = BM_META.map(({ key, unit, color }) => ({
         key, label: t.bmLabels[key], unit, color,
@@ -1306,7 +1338,7 @@ Page({
             }
           })
         : []
-      const rawBioAge = latest?.bio_age ?? user.bio_age
+      const rawBioAge = latestAnalyzed?.bio_age ?? latest?.bio_age ?? user.bio_age
       const bAge = rawBioAge ? Number(rawBioAge).toFixed(1) : null
 
       const bodyRecord = records.slice().reverse().find(r => r.test_type === 'body_composition')
