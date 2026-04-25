@@ -76,6 +76,7 @@ resources:
         MODEL: "qwen-plus-latest"
         WX_APPID: "wxecbcf00ce480fcf2"
         WX_SECRET: "dd527ce18b4ac5c319e2ec57163aa21b"
+        API_BEARER_TOKEN: "tokenData-gh9bc7917115bid72c68c8c4693g"
       triggers:
         - triggerName: http-webhook
           triggerType: http

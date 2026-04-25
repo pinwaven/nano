@@ -1781,6 +1781,26 @@ exports.handler = async (req, resp, context) => {
         return optionsPayload;
     }
 
+    const expectedBearer = process.env.API_BEARER_TOKEN;
+    if (expectedBearer && rawPath) {
+        const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
+        if (authHeader !== `Bearer ${expectedBearer}`) {
+            const unauthorizedPayload = {
+                isBase64Encoded: false,
+                statusCode: 401,
+                headers: corsHeaders,
+                body: JSON.stringify({ error: 'Unauthorized' })
+            };
+            if (isStandardHttp) {
+                resp.setStatusCode(401);
+                Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v));
+                resp.send(JSON.stringify({ error: 'Unauthorized' }));
+                return;
+            }
+            return unauthorizedPayload;
+        }
+    }
+
     try {
         let result;
         let parsedBody = body;

@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     define: {
       __SIM_VERSION__: JSON.stringify(Date.now().toString()),
+      'import.meta.env.VITE_API_TOKEN': JSON.stringify(env.VITE_API_TOKEN || ''),
     },
     base: '/admin/',
     build: {
