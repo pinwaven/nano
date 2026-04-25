@@ -1393,7 +1393,49 @@ async function handlePostChat(body) {
                 ],
             });
 
-            const reply = completion.choices[0].message.content;
+            const rawReply = completion.choices[0].message.content;
+
+            // Detect weight-recording action embedded by the LLM
+            const weightActionMatch = rawReply.match(/\{"action"\s*:\s*"record_weight"\s*,\s*"value_kg"\s*:\s*([\d.]+)\}/);
+            if (weightActionMatch) {
+                const weightKg = parseFloat(weightActionMatch[1]);
+                const isZh = (user.language || 'zh') === 'zh';
+
+                if (!isNaN(weightKg) && weightKg >= 20 && weightKg <= 300) {
+                    const lastRecord = await pool.query(
+                        `SELECT data FROM biomarkers WHERE user_id = $1 AND test_type = 'body_composition' ORDER BY tested_at DESC LIMIT 1`,
+                        [user_id]
+                    );
+                    const lastWeight = lastRecord.rows[0]?.data?.actual?.weight ?? null;
+
+                    let simpleReply;
+                    let recordedWeight = null;
+
+                    if (lastWeight !== null && Math.abs(weightKg - lastWeight) > 15) {
+                        simpleReply = isZh
+                            ? `⚠️ 您上次记录的体重是 **${lastWeight} kg**，与本次输入（**${weightKg} kg**）相差较大，请核对后重新发送。`
+                            : `⚠️ Your last recorded weight was **${lastWeight} kg**. The new value **${weightKg} kg** looks quite different — please double-check and resend if it's correct.`;
+                    } else {
+                        await pool.query(
+                            'INSERT INTO biomarkers (user_id, test_type, data, tested_at) VALUES ($1, $2, $3, $4)',
+                            [user_id, 'body_composition', JSON.stringify({ actual: { weight: weightKg } }), new Date().toISOString()]
+                        );
+                        recordedWeight = weightKg;
+                        simpleReply = isZh
+                            ? `✅ 已记录您的体重：**${weightKg} kg**`
+                            : `✅ Weight recorded: **${weightKg} kg**`;
+                    }
+
+                    await saveChatMessage(user_id, 'ai', simpleReply);
+                    await pool.query(
+                        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                        [user_id, 'chat_reply', simpleReply, 'pending']
+                    );
+                    return { success: true, user_id, ...(recordedWeight !== null && { recorded_weight: recordedWeight }) };
+                }
+            }
+
+            const reply = rawReply.replace(/\n?\{"action"\s*:\s*"record_weight"[^}]*\}/g, '').trim();
 
             // Save assistant reply to the conversation log
             await saveChatMessage(user_id, 'ai', reply);

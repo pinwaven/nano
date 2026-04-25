@@ -1193,7 +1193,10 @@ Page({
     this._addMsg('user', text)
     this.setData({ typing: true })
     try {
-      await this._req(`${BASE}/api/chat`, 'POST', { openid: user.user_id, message: text })
+      const res = await this._req(`${BASE}/api/chat`, 'POST', { openid: user.user_id, message: text })
+      if (res.data?.recorded_weight != null) {
+        await this._loadHealth(user, this.data.lang)
+      }
     } catch (e) {
       this._addMsg('ai', this.data.t.errServer)
     } finally {
