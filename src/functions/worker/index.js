@@ -7,7 +7,15 @@ const { BiomarkerEstimator } = require('./lib/estimator/BiomarkerEstimator');
 const { BioAgeCalculator } = require('./lib/bioage/BioAgeCalculator');
 const { runWorkflow: runFirstReportWorkflow } = require('./lib/reports/workflow');
 const OpenAI = require('openai');
-const systemChatTemplate = require('./prompts/systemChat');
+const intentClassifierTemplate = require('./prompts/chat/intentClassifier');
+const chatPrompts = {
+    casual_chat:        require('./prompts/chat/casual'),
+    biomarker_question: require('./prompts/chat/biomarker'),
+    nutrition_question: require('./prompts/chat/nutrition'),
+    longevity_science:  require('./prompts/chat/science'),
+    record_action:      require('./prompts/chat/record'),
+    emotional_support:  require('./prompts/chat/emotional'),
+};
 const systemNutritionTemplate = require('./prompts/systemNutrition');
 const systemHealthAdviceTemplate = require('./prompts/systemHealthAdvice');
 const strings = require('./prompts/strings');
@@ -1313,39 +1321,77 @@ async function handlePostChat(body) {
             [user_id, test_type, JSON.stringify({ actual: test_data }), tested_at || new Date().toISOString()]
         );
     } else if (message) {
-        // Regular chat message handling
+        // Intent-routed chat message handling
         try {
-            // Fetch latest biomarkers, dots inventory, and nutrition plan in parallel
-            const [biomarkerResult, dotsResult, planResult] = await Promise.all([
-                pool.query(
-                    `SELECT bio_age, data FROM biomarkers WHERE user_id = $1 ORDER BY tested_at DESC LIMIT 1`,
+            const client = getLlmClient();
+            const model = process.env.MODEL || 'qwen3.6-plus';
+
+            // Step 1: Classify the user's intent
+            let intent = 'casual_chat';
+            let required_data = [];
+            try {
+                const classifierCompletion = await client.chat.completions.create({
+                    model: process.env.CLASSIFIER_MODEL || model,
+                    messages: [{ role: 'user', content: intentClassifierTemplate(message) }],
+                    max_tokens: 60,
+                });
+                const raw = classifierCompletion.choices[0].message.content.trim();
+                const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+                intent = parsed.intent || 'casual_chat';
+                required_data = Array.isArray(parsed.required_data) ? parsed.required_data : [];
+            } catch (classifyErr) {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'Intent classification failed, defaulting to casual_chat', error: classifyErr.message }));
+            }
+            console.log(JSON.stringify({ level: 'INFO', msg: 'Chat intent classified', intent, required_data }));
+
+            // Step 2: Fetch only the data the intent actually needs
+            const fetches = {};
+            if (required_data.includes('biomarkers') || required_data.includes('bioage')) {
+                fetches.biomarker = pool.query(
+                    `SELECT data FROM biomarkers WHERE user_id = $1 AND test_type = 'kino_chip' ORDER BY tested_at DESC LIMIT 1`,
                     [user_id]
-                ),
-                pool.query(`SELECT id, key_name, name, name_zh, description, is_isolate FROM dots ORDER BY id ASC`),
-                pool.query(
+                );
+            }
+            if (required_data.includes('dots')) {
+                fetches.dots = pool.query(
+                    `SELECT id, key_name, name, name_zh, description, is_isolate FROM dots ORDER BY id ASC`
+                );
+            }
+            if (required_data.includes('plan')) {
+                fetches.plan = pool.query(
                     `SELECT content FROM notifications WHERE user_id = $1 AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1`,
                     [user_id]
-                ),
-            ]);
+                );
+            }
+            if (required_data.includes('weight_history')) {
+                fetches.weight = pool.query(
+                    `SELECT data FROM biomarkers WHERE user_id = $1 AND test_type = 'body_composition' ORDER BY tested_at DESC LIMIT 1`,
+                    [user_id]
+                );
+            }
 
-            const latestBiomarker = biomarkerResult.rows[0] || {};
-            const bioageProfile = latestBiomarker.data?.bioage_profile || {};
+            const fetchKeys = Object.keys(fetches);
+            const fetchResults = await Promise.all(fetchKeys.map(k => fetches[k]));
+            const fetched = {};
+            fetchKeys.forEach((k, i) => { fetched[k] = fetchResults[i]; });
 
+            const biomarkerRow = fetched.biomarker?.rows[0] || {};
             const llmContext = {
                 user_profile: {
                     nickname: user.nickname,
                     gender: user.gender,
                     age: calculateAge(user.birth_date),
-                    language: user.language
+                    language: user.language,
                 },
-                latest_biomarkers: latestBiomarker.data?.actual || {},
-                bioage_profile: bioageProfile,
-                dots_formulary: dotsResult.rows,
-                nutrition_plan: planResult.rows[0]?.content || null,
-                message: message
+                biomarkers: biomarkerRow.data?.actual || {},
+                bioage: biomarkerRow.data?.bioage_profile || {},
+                dots: fetched.dots?.rows || [],
+                plan: fetched.plan?.rows[0]?.content || null,
+                last_weight: fetched.weight?.rows[0]?.data?.actual?.weight ?? null,
             };
 
-            const systemPrompt = systemChatTemplate(llmContext);
+            const promptBuilder = chatPrompts[intent] || chatPrompts.casual_chat;
+            const systemPrompt = promptBuilder(llmContext);
 
             // Save the incoming user message to the conversation log
             await pool.query(
@@ -1366,24 +1412,19 @@ async function handlePostChat(body) {
             );
 
             // Normalize roles ('ai' → 'assistant') and collapse consecutive same-role turns
-            // that can accumulate from orphaned tool responses (health-advice, kino, etc.)
             const cleanHistory = [];
             for (const row of historyResult.rows) {
                 const role = row.role === 'ai' ? 'assistant' : row.role;
                 const last = cleanHistory[cleanHistory.length - 1];
                 if (last && last.role === role) {
-                    last.content = row.content; // keep most recent of consecutive same-role
+                    last.content = row.content;
                 } else {
                     cleanHistory.push({ role, content: row.content });
                 }
             }
-            // History must start with a user turn after the system message
             while (cleanHistory.length > 0 && cleanHistory[0].role !== 'user') {
                 cleanHistory.shift();
             }
-
-            const client = getLlmClient();
-            const model = process.env.MODEL || 'qwen3.6-plus';
 
             const completion = await client.chat.completions.create({
                 model: model,
