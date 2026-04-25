@@ -854,7 +854,7 @@ Page({
     const t = T[lang]
     try {
       const randomCRP = Math.round((Math.random() * (3.5 - 0.2) + 0.2) * 100) / 100
-      const res = await this._req(`${BASE}/api/chat`, 'POST', {
+      const res = await this._req(`${BASE}/api/biomarkers`, 'POST', {
         openid: targetUserId,
         test_type: 'kino_chip',
         test_data: { hsCRP: randomCRP },

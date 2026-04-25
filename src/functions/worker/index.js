@@ -1278,45 +1278,49 @@ async function handleGetChatHistory(openid) {
     }
 }
 
-async function handlePostChat(body) {
-    const { openid, nickname, gender, birth_date, language, test_type, test_data, tested_at, message, ...rest } = body;
+async function resolveOrUpsertUser(body) {
+    const { openid, nickname, gender, birth_date, language, phone, email,
+            test_type, test_data, tested_at, message, ...rest } = body;
     if (!openid) throw new Error('openid is required');
 
     // If openid matches an existing user_id (admin-created or simulator users), use it directly.
     // Otherwise fall back to the external_id upsert (production WeChat flow).
-    let user, user_id;
     const byUserId = await pool.query(
         'SELECT user_id, birth_date, bio_data, nickname, language, phone, email FROM users WHERE user_id = $1',
         [openid]
     );
-    if (byUserId.rows.length > 0) {
-        user = byUserId.rows[0];
-        user_id = user.user_id;
-    } else {
-        const { phone, email } = body;
-        const userQuery = `
-            INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, bio_data, channel_id)
-            VALUES ($1, $2, 'wechat', $3, $4, $5, $6, $7, $8, $9, (SELECT id FROM channels WHERE key_name = 'nanovate' LIMIT 1))
-            ON CONFLICT (external_id)
-            DO UPDATE SET
-                nickname = COALESCE(EXCLUDED.nickname, users.nickname),
-                phone = COALESCE(EXCLUDED.phone, users.phone),
-                email = COALESCE(EXCLUDED.email, users.email),
-                gender = COALESCE(EXCLUDED.gender, users.gender),
-                birth_date = COALESCE(EXCLUDED.birth_date, users.birth_date),
-                language = COALESCE(EXCLUDED.language, users.language),
-                bio_data = users.bio_data || EXCLUDED.bio_data,
-                updated_at = CURRENT_TIMESTAMP
-            RETURNING user_id, birth_date, bio_data, nickname, language, phone, email;
-        `;
-        const userResult = await pool.query(userQuery, [generateUserId(), openid, nickname, phone || null, email || null, gender, birth_date, language || 'zh', JSON.stringify(rest)]);
-        user = userResult.rows[0];
-        user_id = user.user_id;
-    }
+    if (byUserId.rows.length > 0) return byUserId.rows[0];
 
-    let biomarkerData = null;
-    let bioAgeData = null;
-    if (test_data && test_type === 'kino_chip') {
+    const userQuery = `
+        INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, bio_data, channel_id)
+        VALUES ($1, $2, 'wechat', $3, $4, $5, $6, $7, $8, $9, (SELECT id FROM channels WHERE key_name = 'nanovate' LIMIT 1))
+        ON CONFLICT (external_id)
+        DO UPDATE SET
+            nickname = COALESCE(EXCLUDED.nickname, users.nickname),
+            phone = COALESCE(EXCLUDED.phone, users.phone),
+            email = COALESCE(EXCLUDED.email, users.email),
+            gender = COALESCE(EXCLUDED.gender, users.gender),
+            birth_date = COALESCE(EXCLUDED.birth_date, users.birth_date),
+            language = COALESCE(EXCLUDED.language, users.language),
+            bio_data = users.bio_data || EXCLUDED.bio_data,
+            updated_at = CURRENT_TIMESTAMP
+        RETURNING user_id, birth_date, bio_data, nickname, language, phone, email;
+    `;
+    const userResult = await pool.query(userQuery, [
+        generateUserId(), openid, nickname, phone || null, email || null,
+        gender, birth_date, language || 'zh', JSON.stringify(rest)
+    ]);
+    return userResult.rows[0];
+}
+
+async function handlePostBiomarkers(body) {
+    const { openid, test_type = 'kino_chip', test_data, tested_at } = body;
+    if (!test_data) throw new Error('test_data is required');
+
+    const user = await resolveOrUpsertUser(body);
+    const user_id = user.user_id;
+
+    if (test_type === 'kino_chip') {
         const age = calculateAge(user.birth_date);
         const bioData = user.bio_data || {};
         const estimator = new BiomarkerEstimator(age, test_data, { Weight: bioData.weight, Height: bioData.height });
@@ -1327,13 +1331,10 @@ async function handlePostChat(body) {
         const finalData = { actual: test_data, estimated: estimationReport.BiomarkerValues, context: estimationReport.ClinicalContext, bioage_profile: bioAgeReport };
         const biomarkerResult = await pool.query(
             'INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-            [user_id, test_type || 'kino_chip', JSON.stringify(finalData), bioAgeReport.BioAge, tested_at || new Date().toISOString()]
+            [user_id, test_type, JSON.stringify(finalData), bioAgeReport.BioAge, tested_at || new Date().toISOString()]
         );
         const biomarkerId = biomarkerResult.rows[0].id;
-        biomarkerData = estimationReport.BiomarkerValues;
-        bioAgeData = bioAgeReport;
 
-        // Create notification for the user to see in Chat
         const content = `I've analyzed your biomarker test. Your biological age is **${bioAgeReport.BioAge.toFixed(1)} years**. Check your report for details!`;
         await pool.query(
             'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
@@ -1341,15 +1342,12 @@ async function handlePostChat(body) {
         );
         await saveChatMessage(user_id, 'ai', content);
 
-        // Generate and save Nutrition Plan / Full Report
         try {
             const llmClient = getLlmClient();
             const model = process.env.MODEL || 'qwen3.6-plus';
-
             const dotsForNutrition = await pool.query(
                 `SELECT id, key_name, name, name_zh, description, ingredients, ingredients_zh FROM dots ORDER BY id ASC`
             );
-
             const nutritionContext = {
                 start_date: new Date().toISOString().split('T')[0],
                 days_needed: 7,
@@ -1358,18 +1356,15 @@ async function handlePostChat(body) {
                 bioage_profile: bioAgeReport,
                 dots_formulary: dotsForNutrition.rows,
             };
-
             const nutritionPrompt = systemNutritionTemplate(nutritionContext);
             const nutritionCompletion = await llmClient.chat.completions.create({
-                model: model,
+                model,
                 messages: [
                     { role: 'system', content: nutritionPrompt },
                     { role: 'user', content: 'Generate my 7-day nutrition plan based on these results.' }
                 ],
             });
-
             const reportContent = nutritionCompletion.choices[0].message.content;
-
             await pool.query(
                 'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
                 [user_id, biomarkerId, 'nutrition_plan', reportContent, 'pending']
@@ -1378,13 +1373,26 @@ async function handlePostChat(body) {
         } catch (reportErr) {
             console.error('Report Generation Error:', reportErr);
         }
-    } else if (test_data) {
-        // Non-kino test data (e.g. body_composition) — save raw record only, no estimation
+
+        return { success: true, user_id, biomarkers: estimationReport.BiomarkerValues, bioage_profile: bioAgeReport };
+    } else {
+        // Non-kino: save raw record only, no estimation
         await pool.query(
             'INSERT INTO biomarkers (user_id, test_type, data, tested_at) VALUES ($1, $2, $3, $4)',
             [user_id, test_type, JSON.stringify({ actual: test_data }), tested_at || new Date().toISOString()]
         );
-    } else if (message) {
+        return { success: true, user_id };
+    }
+}
+
+async function handlePostChat(body) {
+    const { openid, message } = body;
+    if (!openid) throw new Error('openid is required');
+
+    const user = await resolveOrUpsertUser(body);
+    const user_id = user.user_id;
+
+    if (message) {
         // Intent-routed chat message handling
         try {
             const client = getLlmClient();
@@ -1559,7 +1567,7 @@ async function handlePostChat(body) {
             );
         }
     }
-    return { success: true, user_id, biomarkers: biomarkerData || null, bioage_profile: bioAgeData || null };
+    return { success: true, user_id };
 }
 
 async function handlePostChatMessages(body) {
@@ -1893,6 +1901,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostFormulaDots(parsedBody);
             } else if (path.includes('/health-advice')) {
                 result = await handlePostHealthAdvice(parsedBody);
+            } else if (path === '/biomarkers') {
+                result = await handlePostBiomarkers(parsedBody);
             } else {
                 result = await handlePostChat(parsedBody);
             }
