@@ -6,6 +6,7 @@
 
 .status-bar-spacer { width: 100%; }
 
+/* ── Header ─────────────────────────────────────────────────────────────── */
 .coach-header {
   display: flex;
   align-items: center;
@@ -33,7 +34,7 @@
   color: #E8F0F8;
 }
 
-/* Tab bar */
+/* ── Top tab bar ─────────────────────────────────────────────────────────── */
 .coach-tabs {
   display: flex;
   background: #0F2540;
@@ -59,6 +60,7 @@
 
 .loading-text { color: #7A9ABF; font-size: 14px; }
 
+/* ── Client list ─────────────────────────────────────────────────────────── */
 .client-list { padding: 12px 16px; }
 
 .empty-state {
@@ -115,12 +117,67 @@
 }
 
 .age-chip-text { font-size: 11px; }
+.client-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
 
-.client-joined { font-size: 12px; color: #7A9ABF; }
+/* Bio age delta badge */
+.delta-badge {
+  padding: 2px 8px;
+  border-radius: 20px;
+  flex-shrink: 0;
+}
+
+.delta-pos { background: rgba(239,68,68,0.15); border: 1rpx solid rgba(239,68,68,0.4); }
+.delta-neg { background: rgba(16,185,129,0.15); border: 1rpx solid rgba(16,185,129,0.4); }
+
+.delta-text { font-size: 11px; font-weight: 600; }
+.delta-pos .delta-text { color: #ef4444; }
+.delta-neg .delta-text { color: #10b981; }
+
+.client-meta { font-size: 12px; color: #7A9ABF; display: block; margin-top: 2px; }
+.client-meta-dim { color: #4A6A8A; }
+
+/* Sub-ages strip */
+.sub-age-strip {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  background: #0A1F36;
+  border-radius: 8px;
+}
+
+.sub-age-pill {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.sub-age-pill-label { font-size: 10px; color: #4A6A8A; }
+.sub-age-pill-value { font-size: 14px; font-weight: 700; }
 
 .client-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
-/* Invite tab */
+.action-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.msg-btn { background: #1E3A5F; border: 1rpx solid #6375EC; }
+.action-btn-text { font-size: 13px; color: #A0B4FF; font-weight: 500; }
+
+.remind-icon-btn { background: transparent; border: 1rpx solid #1E3A5F; padding: 8px 10px; }
+
+/* ── Invite tab ──────────────────────────────────────────────────────────── */
 .invite-generate-btn {
   background: #1E3A5F;
   border: 1rpx solid #6375EC;
@@ -149,34 +206,17 @@
   color: #A0B4FF;
 }
 
-.invite-status {
-  padding: 3px 10px;
-  border-radius: 20px;
-}
-
+.invite-status { padding: 3px 10px; border-radius: 20px; }
 .invite-active { background: rgba(99,117,236,0.2); }
 .invite-inactive { background: rgba(120,120,120,0.15); }
-
 .invite-status-text { font-size: 11px; font-weight: 600; color: #A0B4FF; }
 .invite-inactive .invite-status-text { color: #4A6A8A; }
-
 .invite-uses { font-size: 12px; color: #7A9ABF; }
 
 .deact-btn { background: transparent; border: 1rpx solid rgba(239,68,68,0.3); }
 .deact-text { color: #ef4444; }
 
-.action-btn {
-  padding: 8px 16px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-}
-
-.send-btn { background: #1E3A5F; border: 1rpx solid #6375EC; }
-
-.action-btn-text { font-size: 13px; color: #A0B4FF; font-weight: 500; }
-
-/* Overlay */
+/* ── Overlay shell ───────────────────────────────────────────────────────── */
 .overlay-mask {
   position: fixed;
   inset: 0;
@@ -188,11 +228,12 @@
 
 .overlay-panel {
   width: 100%;
-  max-height: 80vh;
+  height: 82vh;
   background: #0F2540;
   border-radius: 16px 16px 0 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .overlay-header {
@@ -200,6 +241,7 @@
   align-items: center;
   padding: 16px 20px;
   border-bottom: 1rpx solid #1E3A5F;
+  flex-shrink: 0;
 }
 
 .overlay-title { flex: 1; font-size: 16px; font-weight: 600; color: #E8F0F8; }
@@ -214,38 +256,217 @@
 
 .close-x { font-size: 16px; color: #7A9ABF; }
 
+/* scrollable content area for health + chat tabs */
 .overlay-scroll { flex: 1; overflow: hidden; }
 
-.bm-section { padding: 16px; }
+/* ── Detail inner tabs (3-tab) ───────────────────────────────────────────── */
+.detail-tabs {
+  display: flex;
+  border-bottom: 1rpx solid #1E3A5F;
+  background: #0A1F36;
+  flex-shrink: 0;
+}
+
+.detail-tab {
+  flex: 1;
+  padding: 10px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.detail-tab-text { font-size: 13px; color: #7A9ABF; font-weight: 500; }
+.detail-tab-active .detail-tab-text { color: #A0B4FF; font-weight: 700; }
+
+.panel-center { display: flex; justify-content: center; padding: 36px 0; }
+
+/* ── Health tab ──────────────────────────────────────────────────────────── */
+.health-section { padding: 14px 16px 0; }
 
 .section-label {
-  font-size: 13px;
+  font-size: 11px;
   color: #7A9ABF;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   display: block;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
-.bm-loading, .bm-empty { padding: 24px 0; text-align: center; }
+/* Bio Age Trend */
+.trend-row {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
 
-.bm-grid { display: flex; flex-direction: column; gap: 10px; }
+.trend-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 48px;
+}
+
+.trend-value { font-size: 16px; font-weight: 700; color: #A0B4FF; }
+.trend-date { font-size: 10px; color: #4A6A8A; margin-top: 2px; }
+
+/* Sub-Ages grid */
+.sub-age-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.sub-age-card {
+  background: #162B45;
+  border-radius: 10px;
+  padding: 12px 14px;
+  border: 1rpx solid #1E3A5F;
+}
+
+.sub-age-value { font-size: 20px; font-weight: 700; display: block; margin-bottom: 2px; }
+.sub-age-label { font-size: 11px; color: #7A9ABF; }
+
+/* Biomarkers list */
+.bm-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 20px;
+}
 
 .bm-item { display: flex; align-items: center; gap: 10px; }
-
 .bm-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-
 .bm-info { flex: 1; }
-
 .bm-label { font-size: 13px; color: #A6C4E5; display: block; }
 .bm-value { font-size: 14px; color: #E8F0F8; font-weight: 500; }
 
-/* Instruction */
-.instr-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+/* ── AI Chat tab ─────────────────────────────────────────────────────────── */
+.chat-section { padding: 12px 16px; }
+
+.chat-list { display: flex; flex-direction: column; gap: 14px; padding-bottom: 16px; }
+
+.chat-row { display: flex; flex-direction: column; }
+.chat-row-user { align-items: flex-end; }
+.chat-row-ai  { align-items: flex-start; }
+
+.chat-role-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.chat-role-text { font-size: 11px; color: #7A9ABF; font-weight: 600; }
+.chat-time { font-size: 10px; color: #4A6A8A; }
+
+.chat-bubble {
+  max-width: 80%;
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+
+.bubble-user { background: #1E3A5F; border-bottom-right-radius: 4px; }
+.bubble-ai   { background: #162B45; border: 1rpx solid #1E3A5F; border-bottom-left-radius: 4px; }
+
+.chat-content { font-size: 13px; color: #D0E4F7; line-height: 1.5; }
+
+/* ── Messages tab ────────────────────────────────────────────────────────── */
+.msg-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.msg-history { flex: 1; overflow: hidden; }
+
+.msg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.msg-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.msg-bubble {
+  background: #1E3A5F;
+  border: 1rpx solid #6375EC;
+  border-radius: 12px;
+  border-bottom-right-radius: 4px;
+  padding: 10px 14px;
+  max-width: 85%;
+}
+
+.msg-content { font-size: 13px; color: #D0E4F7; line-height: 1.5; }
+.msg-time { font-size: 10px; color: #4A6A8A; margin-top: 4px; }
+
+/* Compose area */
+.msg-compose {
+  flex-shrink: 0;
+  border-top: 1rpx solid #1E3A5F;
+  padding: 10px 14px 16px;
+  background: #0A1F36;
+}
+
+.reminder-trigger {
+  padding: 6px 0 8px;
+}
+
+.reminder-trigger-text {
+  font-size: 12px;
+  color: #6375EC;
+  font-weight: 500;
+}
+
+.compose-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.compose-input {
+  flex: 1;
+  min-height: 36px;
+  max-height: 100px;
+  background: #1A2F4A;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: #E8F0F8;
+  box-sizing: border-box;
+}
+
+.compose-send-btn {
+  background: #6375EC;
+  border-radius: 10px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.compose-send-btn.btn-busy { opacity: 0.5; }
+.compose-send-text { font-size: 14px; font-weight: 600; color: #fff; }
+
+/* ── Reminder overlay ────────────────────────────────────────────────────── */
+.reminder-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 32px;
+}
 
 .instr-textarea {
   width: 100%;
-  min-height: 120px;
+  min-height: 100px;
   background: #1A2F4A;
   border-radius: 10px;
   padding: 12px;
@@ -254,6 +475,38 @@
   box-sizing: border-box;
 }
 
+.picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1rpx solid #1E3A5F;
+}
+
+.picker-label { font-size: 14px; color: #A6C4E5; }
+
+.picker-value {
+  background: #1A2F4A;
+  border-radius: 8px;
+  padding: 6px 14px;
+}
+
+.picker-value-text { font-size: 14px; color: #A0B4FF; font-weight: 500; }
+
+/* Recurrence toggle chips */
+.recurrence-opts { display: flex; gap: 8px; }
+
+.recurrence-opt {
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1rpx solid #1E3A5F;
+  background: transparent;
+}
+
+.recurrence-active { background: rgba(99,117,236,0.2); border-color: #6375EC; }
+.recurrence-opt-text { font-size: 12px; color: #7A9ABF; }
+.recurrence-active .recurrence-opt-text { color: #A0B4FF; font-weight: 600; }
+
 .instr-send-btn {
   background: #6375EC;
   border-radius: 10px;
@@ -261,8 +514,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-top: 4px;
 }
 
 .instr-send-btn.btn-busy { opacity: 0.6; }
-
 .instr-send-text { font-size: 15px; font-weight: 600; color: #fff; }

@@ -8,18 +8,41 @@ const T = {
     refresh: '刷新',
     loading: '加载中…',
     tabs: { clients: '我的客户', invites: '邀请码' },
-    clients: '我的客户',
     noClients: '暂无分配的客户',
-    bioAge: '生物年龄', chronoAge: '实际年龄', unknown: '未知',
-    sendInstruction: '发送指令',
-    instructionPh: '输入健康指令，发送给客户…',
+    bioAge: '生物年龄', chronoAge: '实际年龄',
+    lastScan: '上次扫描',
+    older: '岁↑', younger: '岁↓',
+    openMessages: '发消息',
+    detailTitle: '客户详情',
+    noBmData: '暂无检测数据',
+    noChatData: '暂无对话记录',
+    tabHealth: '健康',
+    tabChat: 'AI对话',
+    tabMessages: '消息',
+    you: '用户',
+    ai: 'AI',
+    subAges: '生物年龄维度',
+    bioAgeTrend: '生物年龄趋势',
+    biomarkers: '生物标志物',
+    noMessages: '暂无消息记录',
+    msgPh: '输入消息给客户…',
     send: '发送',
     sending: '发送中…',
     sent: '已发送！',
     sendError: '发送失败，请重试',
-    detailTitle: '客户详情',
-    biomarkers: '最新生物标志物',
-    noBmData: '暂无检测数据',
+    setReminder: '+ 定时提醒',
+    reminderTitle: '设置提醒',
+    reminderContentPh: '提醒内容…',
+    reminderDate: '日期',
+    reminderTime: '时间',
+    selectDate: '选择日期',
+    selectTime: '选择时间',
+    recurrence: '重复',
+    recurrenceNone: '不重复',
+    recurrenceDaily: '每天',
+    recurrenceWeekly: '每周',
+    reminderSent: '提醒已设置',
+    reminderError: '设置失败',
     networkError: '网络错误',
     joined: '注册时间',
     noPermission: '无权限',
@@ -37,18 +60,41 @@ const T = {
     refresh: 'Refresh',
     loading: 'Loading…',
     tabs: { clients: 'My Clients', invites: 'Invite Codes' },
-    clients: 'My Clients',
     noClients: 'No clients assigned yet',
-    bioAge: 'Bio Age', chronoAge: 'Chrono Age', unknown: 'Unknown',
-    sendInstruction: 'Send Instruction',
-    instructionPh: 'Enter a health instruction for your client…',
+    bioAge: 'Bio Age', chronoAge: 'Chrono Age',
+    lastScan: 'Last scan',
+    older: 'yrs↑', younger: 'yrs↓',
+    openMessages: 'Message',
+    detailTitle: 'Client Detail',
+    noBmData: 'No biomarker data yet.',
+    noChatData: 'No chat history yet.',
+    tabHealth: 'Health',
+    tabChat: 'AI Chat',
+    tabMessages: 'Messages',
+    you: 'User',
+    ai: 'AI',
+    subAges: 'Bio Age Dimensions',
+    bioAgeTrend: 'Bio Age Trend',
+    biomarkers: 'Biomarkers',
+    noMessages: 'No messages sent yet.',
+    msgPh: 'Type a message to your client…',
     send: 'Send',
     sending: 'Sending…',
     sent: 'Sent!',
     sendError: 'Send failed, please retry',
-    detailTitle: 'Client Detail',
-    biomarkers: 'Latest Biomarkers',
-    noBmData: 'No biomarker data yet.',
+    setReminder: '+ Set Reminder',
+    reminderTitle: 'New Reminder',
+    reminderContentPh: 'Reminder message…',
+    reminderDate: 'Date',
+    reminderTime: 'Time',
+    selectDate: 'Select date',
+    selectTime: 'Select time',
+    recurrence: 'Repeat',
+    recurrenceNone: 'Once',
+    recurrenceDaily: 'Daily',
+    recurrenceWeekly: 'Weekly',
+    reminderSent: 'Reminder set',
+    reminderError: 'Failed to set reminder',
     networkError: 'Network error',
     joined: 'Joined',
     noPermission: 'No permission',
@@ -63,13 +109,22 @@ const T = {
 }
 
 const BM_META = [
-  { key: 'hsCRP',     label: 'hsCRP',           unit: 'mg/L',      color: '#ef4444' },
-  { key: 'GDF15',     label: 'GDF-15',          unit: 'pg/mL',     color: '#f97316' },
-  { key: 'IL6',       label: 'IL-6',            unit: 'pg/mL',     color: '#a855f7' },
-  { key: 'GA',        label: 'Glycated Albumin', unit: '%',         color: '#6375EC' },
-  { key: 'CystatinC', label: 'Cystatin C',      unit: 'mg/L',      color: '#0ea5e9' },
-  { key: 'CD38',      label: 'CD38',            unit: 'xBaseline', color: '#10b981' },
+  { key: 'hsCRP',     label: 'hsCRP',            unit: 'mg/L',      color: '#ef4444' },
+  { key: 'GDF15',     label: 'GDF-15',           unit: 'pg/mL',     color: '#f97316' },
+  { key: 'IL6',       label: 'IL-6',             unit: 'pg/mL',     color: '#a855f7' },
+  { key: 'GA',        label: 'Glycated Albumin',  unit: '%',         color: '#6375EC' },
+  { key: 'CystatinC', label: 'Cystatin C',        unit: 'mg/L',      color: '#0ea5e9' },
+  { key: 'CD38',      label: 'CD38',             unit: 'xBaseline', color: '#10b981' },
 ]
+
+const SUB_AGE_META = [
+  { key: 'CellularAge',      labelZh: '细胞',   labelEn: 'Cellular',   shortZh: '细胞', shortEn: 'Cell', color: '#f97316' },
+  { key: 'MetabolicAge',     labelZh: '代谢',   labelEn: 'Metabolic',  shortZh: '代谢', shortEn: 'Meta', color: '#6375EC' },
+  { key: 'MicroVascularAge', labelZh: '微血管', labelEn: 'Vascular',   shortZh: '微血', shortEn: 'Vasc', color: '#0ea5e9' },
+  { key: 'ResilienceAge',    labelZh: '抗压',   labelEn: 'Resilience', shortZh: '抗压', shortEn: 'Resi', color: '#10b981' },
+]
+
+const COACH_MSG_PREFIX = /^###\s*👨‍⚕️ Coach Instruction\n\n/
 
 function bioAgeColor(bio, chrono) {
   if (!bio || !chrono) return '#A6C4E5'
@@ -81,11 +136,25 @@ function chronoAge(birthDate) {
   return Math.floor((Date.now() - new Date(birthDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25))
 }
 
+function fmtTime(d) {
+  if (!d) return ''
+  const date = new Date(d)
+  if (isNaN(date.getTime())) return ''
+  const pad = n => String(n).padStart(2, '0')
+  return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 function fmtDate(d) {
   if (!d) return '—'
   const date = new Date(d)
   if (isNaN(date.getTime())) return String(d)
   return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`
+}
+
+function todayStr() {
+  const d = new Date()
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 Page({
@@ -97,14 +166,31 @@ Page({
     statusBarHeight: 0,
     clients: [],
     invites: [],
+    // Client detail sheet
     detailOpen: false,
     detailClient: null,
+    detailTab: 'health',
+    // Health tab
     detailBmList: [],
     detailBmLoading: false,
-    instructionOpen: false,
-    instructionTarget: null,
-    instructionText: '',
-    instructionBusy: false,
+    detailSubAges: [],
+    detailBioAgeTrend: [],
+    // AI Chat tab
+    chatMessages: [],
+    chatLoading: false,
+    // Messages tab
+    msgMessages: [],
+    msgLoading: false,
+    msgText: '',
+    msgBusy: false,
+    // Reminder overlay
+    reminderOpen: false,
+    reminderTarget: null,
+    reminderDate: '',
+    reminderTime: '08:00',
+    reminderText: '',
+    reminderRecurrence: 'none',
+    reminderBusy: false,
   },
 
   _coachId: null,
@@ -126,7 +212,7 @@ Page({
     this._coachUserId = user.user_id
     const { statusBarHeight = 0 } = wx.getSystemInfoSync()
     const lang = app.globalData.lang || 'zh'
-    this.setData({ statusBarHeight, lang, t: T[lang] })
+    this.setData({ statusBarHeight, lang, t: T[lang], reminderDate: todayStr() })
     this._loadAll()
   },
 
@@ -134,17 +220,39 @@ Page({
     this.setData({ loading: true })
     try {
       const [clientsRes, invitesRes] = await Promise.all([
-        this._coachId ? this._req(`${BASE}/api/coach-users/${this._coachId}`) : Promise.resolve({ data: { users: [] } }),
+        this._coachId
+          ? this._req(`${BASE}/api/coach-users/${this._coachId}`)
+          : Promise.resolve({ data: { users: [] } }),
         this._req(`${BASE}/api/invitations?created_by=${encodeURIComponent(this._coachUserId)}`),
       ])
       const lang = this.data.lang
-      const clients = (clientsRes.data?.users || []).map(u => ({
-        ...u,
-        _cAge: chronoAge(u.birth_date),
-        _bioAgeColor: bioAgeColor(u.bio_age, chronoAge(u.birth_date)),
-        _joinedFmt: fmtDate(u.created_at),
-        _avatar: (u.nickname || 'U')[0].toUpperCase(),
-      }))
+      const clients = (clientsRes.data?.users || []).map(u => {
+        const cAge = chronoAge(u.birth_date)
+        const bioAge = u.bio_age != null ? Number(u.bio_age) : null
+        const delta = bioAge != null && cAge != null ? Number((bioAge - cAge).toFixed(1)) : null
+        const subAgesRaw = u.bio_data?.bioage_profile?.SubAges || null
+        const _subAges = subAgesRaw
+          ? SUB_AGE_META.map(m => ({
+              key: m.key,
+              label: lang === 'zh' ? m.shortZh : m.shortEn,
+              color: m.color,
+              value: subAgesRaw[m.key] != null ? Number(subAgesRaw[m.key]).toFixed(1) : null,
+              elevated: subAgesRaw[m.key] != null && cAge != null && Number(subAgesRaw[m.key]) > cAge,
+            }))
+          : []
+        return {
+          ...u,
+          _cAge: cAge,
+          _bioAgeColor: bioAgeColor(u.bio_age, cAge),
+          _joinedFmt: fmtDate(u.created_at),
+          _lastScanFmt: u.last_scan_at ? fmtDate(u.last_scan_at) : null,
+          _avatar: (u.nickname || 'U')[0].toUpperCase(),
+          _delta: delta,
+          _deltaPos: delta !== null && delta > 0,
+          _deltaLabel: delta !== null ? `${delta > 0 ? '+' : ''}${delta}` : null,
+          _subAges,
+        }
+      })
       this.setData({ clients, invites: invitesRes.data?.invitations || [] })
     } catch (e) {
       wx.showToast({ title: T[this.data.lang].networkError, icon: 'none' })
@@ -155,67 +263,183 @@ Page({
 
   handleRefresh() { this._loadAll() },
   switchTab(e) { this.setData({ tab: e.currentTarget.dataset.tab }) },
-
   handleBack() { wx.navigateBack() },
-
   noop() {},
+
+  // ── Client detail sheet ──────────────────────────────────────────────────
 
   async openClientDetail(e) {
     const client = e.currentTarget.dataset.client
-    this.setData({ detailOpen: true, detailClient: client, detailBmList: [], detailBmLoading: true })
+    const initialTab = e.currentTarget.dataset.tab || 'health'
+    this.setData({
+      detailOpen: true, detailClient: client, detailTab: initialTab,
+      detailBmList: [], detailBmLoading: true, detailSubAges: [], detailBioAgeTrend: [],
+      chatMessages: [], chatLoading: false,
+      msgMessages: [], msgText: '',
+    })
+    // Load health data eagerly regardless of initial tab
     try {
       const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(client.user_id)}`)
       const records = res.data?.records || []
       const kinoRecords = records.filter(r => r.test_type === 'kino_chip')
       const latest = kinoRecords.length > 0 ? kinoRecords[kinoRecords.length - 1] : null
       const estimated = latest?.data?.estimated || null
+      const lang = this.data.lang
+
       const bmList = BM_META.map(({ key, label, unit, color }) => ({
         key, label, unit, color,
         value: estimated?.[key] != null ? estimated[key] : null,
       }))
-      this.setData({ detailBmList: bmList, detailBmLoading: false })
-    } catch (e) {
+
+      const subAgesRaw = latest?.data?.bioage_profile?.SubAges || null
+      const detailSubAges = subAgesRaw
+        ? SUB_AGE_META.map(m => ({
+            key: m.key,
+            label: lang === 'zh' ? m.labelZh : m.labelEn,
+            color: m.color,
+            value: subAgesRaw[m.key] != null ? Number(subAgesRaw[m.key]).toFixed(1) : null,
+          }))
+        : []
+
+      const detailBioAgeTrend = kinoRecords.slice(-5).map(r => ({
+        bioAge: r.bio_age != null ? Number(r.bio_age).toFixed(1) : null,
+        date: fmtDate(r.tested_at || r.created_at),
+      }))
+
+      this.setData({ detailBmList: bmList, detailBmLoading: false, detailSubAges, detailBioAgeTrend })
+    } catch {
       this.setData({ detailBmLoading: false })
     }
+
+    if (initialTab === 'messages') this._loadCoachMessages()
   },
 
-  closeClientDetail() { this.setData({ detailOpen: false, detailClient: null }) },
-
-  openInstruction(e) {
-    const client = e.currentTarget.dataset.client
-    this.setData({ instructionOpen: true, instructionTarget: client, instructionText: '', instructionBusy: false })
+  closeClientDetail() {
+    this.setData({ detailOpen: false, detailClient: null, chatMessages: [], msgMessages: [] })
   },
 
-  closeInstruction() {
-    if (this.data.instructionBusy) return
-    this.setData({ instructionOpen: false, instructionTarget: null })
+  switchDetailTab(e) {
+    const tab = e.currentTarget.dataset.tab
+    this.setData({ detailTab: tab })
+    if (tab === 'chat' && this.data.chatMessages.length === 0) this._loadClientChat()
+    if (tab === 'messages' && this.data.msgMessages.length === 0) this._loadCoachMessages()
   },
 
-  onInstructionInput(e) { this.setData({ instructionText: e.detail.value }) },
+  // ── AI chat history ──────────────────────────────────────────────────────
 
-  async sendInstruction() {
-    const { instructionTarget, instructionText, lang } = this.data
-    if (!instructionText.trim()) return
-    this.setData({ instructionBusy: true })
+  async _loadClientChat() {
+    const { detailClient } = this.data
+    if (!detailClient) return
+    this.setData({ chatLoading: true })
     try {
-      await this._req(`${BASE}/api/coach-instruction`, 'POST', {
-        openid: instructionTarget.user_id,
-        instruction: instructionText.trim(),
-      })
-      wx.showToast({ title: T[lang].sent, icon: 'success' })
-      this.setData({ instructionOpen: false, instructionTarget: null })
-    } catch (e) {
-      wx.showToast({ title: T[lang].sendError, icon: 'none' })
-    } finally {
-      this.setData({ instructionBusy: false })
+      const params = `user_id=${encodeURIComponent(detailClient.user_id)}${this._coachId ? `&coach_id=${this._coachId}` : ''}`
+      const res = await this._req(`${BASE}/api/coach-user-chat?${params}`)
+      const chatMessages = (res.data?.messages || []).map(m => ({
+        ...m,
+        _time: fmtTime(m.created_at),
+        _isUser: m.role === 'user',
+      }))
+      this.setData({ chatMessages, chatLoading: false })
+    } catch {
+      this.setData({ chatLoading: false })
     }
   },
+
+  // ── Coach messages ───────────────────────────────────────────────────────
+
+  async _loadCoachMessages() {
+    const { detailClient } = this.data
+    if (!detailClient) return
+    this.setData({ msgLoading: true })
+    try {
+      const res = await this._req(`${BASE}/api/coach-sent-messages?user_id=${encodeURIComponent(detailClient.user_id)}`)
+      const msgMessages = (res.data?.messages || []).map(m => ({
+        ...m,
+        _time: fmtTime(m.sent_at),
+        _body: m.content.replace(COACH_MSG_PREFIX, ''),
+      }))
+      this.setData({ msgMessages, msgLoading: false })
+    } catch {
+      this.setData({ msgLoading: false })
+    }
+  },
+
+  onMsgInput(e) { this.setData({ msgText: e.detail.value }) },
+
+  async sendMessage() {
+    const { detailClient, msgText, lang } = this.data
+    if (!msgText.trim() || !detailClient) return
+    this.setData({ msgBusy: true })
+    try {
+      await this._req(`${BASE}/api/coach-instruction`, 'POST', {
+        openid: detailClient.user_id,
+        instruction: msgText.trim(),
+      })
+      wx.showToast({ title: T[lang].sent, icon: 'success' })
+      this.setData({ msgText: '' })
+      // Refresh message history
+      this.setData({ msgMessages: [] })
+      this._loadCoachMessages()
+    } catch {
+      wx.showToast({ title: T[lang].sendError, icon: 'none' })
+    } finally {
+      this.setData({ msgBusy: false })
+    }
+  },
+
+  // ── Reminders ────────────────────────────────────────────────────────────
+
+  openReminderComposer(e) {
+    const target = e.currentTarget.dataset.client || this.data.detailClient
+    this.setData({
+      reminderOpen: true,
+      reminderTarget: target,
+      reminderText: '',
+      reminderDate: todayStr(),
+      reminderTime: '08:00',
+      reminderRecurrence: 'none',
+      reminderBusy: false,
+    })
+  },
+
+  closeReminderComposer() {
+    if (this.data.reminderBusy) return
+    this.setData({ reminderOpen: false, reminderTarget: null })
+  },
+
+  onReminderDateChange(e) { this.setData({ reminderDate: e.detail.value }) },
+  onReminderTimeChange(e) { this.setData({ reminderTime: e.detail.value }) },
+  onReminderTextInput(e) { this.setData({ reminderText: e.detail.value }) },
+  setRecurrence(e) { this.setData({ reminderRecurrence: e.currentTarget.dataset.val }) },
+
+  async submitReminder() {
+    const { reminderTarget, reminderText, reminderDate, reminderTime, reminderRecurrence, lang } = this.data
+    if (!reminderText.trim() || !reminderDate || !reminderTime) return
+    this.setData({ reminderBusy: true })
+    try {
+      const scheduledFor = `${reminderDate}T${reminderTime}:00+08:00`
+      await this._req(`${BASE}/api/reminders`, 'POST', {
+        user_id: reminderTarget.user_id,
+        coach_id: this._coachId,
+        content: reminderText.trim(),
+        scheduled_for: scheduledFor,
+        recurrence: reminderRecurrence === 'none' ? null : reminderRecurrence,
+      })
+      wx.showToast({ title: T[lang].reminderSent, icon: 'success' })
+      this.setData({ reminderOpen: false, reminderTarget: null })
+    } catch {
+      wx.showToast({ title: T[lang].reminderError, icon: 'none' })
+    } finally {
+      this.setData({ reminderBusy: false })
+    }
+  },
+
+  // ── Invites ──────────────────────────────────────────────────────────────
 
   async generateInvite() {
     const { lang } = this.data
-    const t = T[lang]
     if (!this._coachChannelId) {
-      wx.showToast({ title: t.networkError, icon: 'none' })
+      wx.showToast({ title: T[lang].networkError, icon: 'none' })
       return
     }
     try {
@@ -225,8 +449,8 @@ Page({
         type: 'coach',
       })
       this._loadAll()
-    } catch (e) {
-      wx.showToast({ title: t.networkError, icon: 'none' })
+    } catch {
+      wx.showToast({ title: T[lang].networkError, icon: 'none' })
     }
   },
 
@@ -253,7 +477,7 @@ Page({
         try {
           await this._req(`${BASE}/api/invitations/${invite.id}`, 'DELETE')
           this._loadAll()
-        } catch (ex) {
+        } catch {
           wx.showToast({ title: t.networkError, icon: 'none' })
         }
       },

@@ -724,11 +724,13 @@ async function handleGetCoachUsers(coachId) {
         const result = await pool.query(
             `SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
                     u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
-                    b.bio_age, b.data AS bio_data
+                    b.bio_age, b.data AS bio_data, b.tested_at AS last_scan_at
              FROM users u
              LEFT JOIN (
-                 SELECT DISTINCT ON (user_id) user_id, bio_age, data
-                 FROM biomarkers ORDER BY user_id, tested_at DESC
+                 SELECT DISTINCT ON (user_id) user_id, bio_age, data, tested_at
+                 FROM biomarkers
+                 WHERE test_type = 'kino_chip'
+                 ORDER BY user_id, tested_at DESC
              ) b ON u.user_id = b.user_id
              WHERE u.coach_id = $1
              ORDER BY u.created_at DESC`,
@@ -752,6 +754,68 @@ async function handlePostCoachInstruction(body) {
             [user.rows[0].user_id, 'coach_instruction', coachMessage, 'pending']
         );
         return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetCoachSentMessages(userId) {
+    if (!userId) return { success: false, error: 'user_id is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `SELECT id, content, status, sent_at
+             FROM notifications
+             WHERE user_id = $1 AND notification_type = 'coach_instruction'
+             ORDER BY sent_at DESC
+             LIMIT 50`,
+            [userId]
+        );
+        return { success: true, messages: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostReminder(body) {
+    const { user_id, coach_id, content, scheduled_for, recurrence } = body;
+    if (!user_id || !content || !scheduled_for)
+        return { success: false, error: 'user_id, content, scheduled_for are required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `INSERT INTO reminders (user_id, coach_id, content, scheduled_for, recurrence)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING id, scheduled_for`,
+            [user_id, coach_id || null, content, scheduled_for, recurrence || null]
+        );
+        return { success: true, reminder: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetCoachUserChat(userId, coachId) {
+    if (!userId) return { success: false, error: 'user_id is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (coachId) {
+            const check = await pool.query(
+                'SELECT 1 FROM users WHERE user_id = $1 AND coach_id = $2',
+                [userId, coachId]
+            );
+            if (check.rows.length === 0) return { success: false, error: 'Access denied', statusCode: 403 };
+        }
+        const result = await pool.query(
+            `SELECT role, content, created_at FROM (
+                SELECT role, content, created_at FROM chat_messages
+                WHERE user_id = $1
+                ORDER BY created_at DESC
+                LIMIT 50
+            ) sub ORDER BY created_at ASC`,
+            [userId]
+        );
+        return { success: true, messages: result.rows };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -1731,6 +1795,10 @@ exports.handler = async (req, resp, context) => {
         if (method === 'GET') {
             if (path.includes('/kino-chip')) {
                 result = await handleGetKinoChip(query.chip_id);
+            } else if (path.includes('/coach-sent-messages')) {
+                result = await handleGetCoachSentMessages(query.user_id);
+            } else if (path.includes('/coach-user-chat')) {
+                result = await handleGetCoachUserChat(query.user_id, query.coach_id);
             } else if (path.includes('/chat-history')) {
                 result = await handleGetChatHistory(query.openid);
             } else if (path.includes('/biomarkers')) {
@@ -1769,6 +1837,8 @@ exports.handler = async (req, resp, context) => {
         } else if (method === 'POST') {
             if (path === '/wx-login') {
                 result = await handleWxLogin(parsedBody);
+            } else if (path.includes('/reminders')) {
+                result = await handlePostReminder(parsedBody);
             } else if (path.includes('/coach-instruction')) {
                 result = await handlePostCoachInstruction(parsedBody);
             } else if (path.includes('/assign-coach')) {

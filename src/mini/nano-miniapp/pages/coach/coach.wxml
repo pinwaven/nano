@@ -12,7 +12,7 @@
     </view>
   </view>
 
-  <!-- Tab bar -->
+  <!-- Top tab bar -->
   <view class="coach-tabs">
     <view class="coach-tab {{tab === 'clients' ? 'coach-tab-active' : ''}}" bindtap="switchTab" data-tab="clients">
       <text class="coach-tab-text">{{t.tabs.clients}}</text>
@@ -33,26 +33,46 @@
       <text class="empty-text">{{t.noClients}}</text>
     </view>
     <view wx:for="{{clients}}" wx:key="user_id" class="client-card">
-      <view class="client-row" bindtap="openClientDetail" data-client="{{item}}">
+      <!-- Top row: avatar + name/ages + delta badge -->
+      <view class="client-row" bindtap="openClientDetail" data-client="{{item}}" data-tab="health">
         <view class="client-avatar" style="background: #1E3A5F;">
           <text class="avatar-letter">{{item._avatar}}</text>
         </view>
         <view class="client-info">
-          <text class="client-name">{{item.nickname || '—'}}</text>
+          <view class="client-name-row">
+            <text class="client-name">{{item.nickname || '—'}}</text>
+            <view wx:if="{{item._deltaLabel}}" class="delta-badge {{item._deltaPos ? 'delta-pos' : 'delta-neg'}}">
+              <text class="delta-text">{{item._deltaLabel}} {{item._deltaPos ? t.older : t.younger}}</text>
+            </view>
+          </view>
           <view class="client-ages">
             <view wx:if="{{item.bio_age}}" class="age-chip" style="background: {{item._bioAgeColor}}20; border-color: {{item._bioAgeColor}};">
               <text class="age-chip-text" style="color: {{item._bioAgeColor}};">{{t.bioAge}} {{item.bio_age}}</text>
             </view>
-            <view wx:if="{{item._cAge}}" class="age-chip chrono">
+            <view wx:if="{{item._cAge}}" class="age-chip">
               <text class="age-chip-text">{{t.chronoAge}} {{item._cAge}}</text>
             </view>
           </view>
-          <text class="client-joined">{{t.joined}}: {{item._joinedFmt}}</text>
+          <text wx:if="{{item._lastScanFmt}}" class="client-meta">{{t.lastScan}}: {{item._lastScanFmt}}</text>
+          <text wx:else class="client-meta client-meta-dim">{{t.joined}}: {{item._joinedFmt}}</text>
         </view>
       </view>
+
+      <!-- Sub-ages strip -->
+      <view wx:if="{{item._subAges.length > 0}}" class="sub-age-strip">
+        <view wx:for="{{item._subAges}}" wx:key="key" wx:for-item="sa" class="sub-age-pill">
+          <text class="sub-age-pill-label">{{sa.label}}</text>
+          <text class="sub-age-pill-value" style="color: {{sa.elevated ? '#ef4444' : sa.color}};">{{sa.value || '—'}}</text>
+        </view>
+      </view>
+
+      <!-- Actions -->
       <view class="client-actions">
-        <view class="action-btn send-btn" bindtap="openInstruction" data-client="{{item}}">
-          <text class="action-btn-text">{{t.sendInstruction}}</text>
+        <view class="action-btn msg-btn" catchtap="openClientDetail" data-client="{{item}}" data-tab="messages">
+          <text class="action-btn-text">{{t.openMessages}}</text>
+        </view>
+        <view class="action-btn remind-icon-btn" catchtap="openReminderComposer" data-client="{{item}}">
+          <text class="action-btn-text">⏰</text>
         </view>
       </view>
     </view>
@@ -75,7 +95,7 @@
       </view>
       <text class="invite-uses">{{t.invite.uses}}: {{item.use_count}}</text>
       <view class="client-actions" style="margin-top: 12px;">
-        <view class="action-btn send-btn" catchtap="copyInvite" data-invite="{{item}}">
+        <view class="action-btn msg-btn" catchtap="copyInvite" data-invite="{{item}}">
           <text class="action-btn-text">{{t.invite.copy}}</text>
         </view>
         <view wx:if="{{item.is_active}}" class="action-btn deact-btn" catchtap="deactivateInvite" data-invite="{{item}}">
@@ -85,60 +105,203 @@
     </view>
   </view>
 
-  <!-- Client Detail Overlay -->
+  <!-- ── Client Detail Sheet ───────────────────────────────────────────── -->
   <view wx:if="{{detailOpen}}" class="overlay-mask" catchtouchmove="noop">
     <view class="overlay-panel" catchtap="noop">
+
       <view class="overlay-header">
         <text class="overlay-title">{{detailClient.nickname || t.detailTitle}}</text>
         <view class="overlay-close" bindtap="closeClientDetail">
           <text class="close-x">✕</text>
         </view>
       </view>
-      <scroll-view scroll-y class="overlay-scroll">
-        <view class="bm-section">
-          <text class="section-label">{{t.biomarkers}}</text>
-          <view wx:if="{{detailBmLoading}}" class="bm-loading">
-            <text class="loading-text">{{t.loading}}</text>
-          </view>
-          <view wx:elif="{{detailBmList.length === 0}}" class="bm-empty">
-            <text class="empty-text">{{t.noBmData}}</text>
-          </view>
-          <view wx:else class="bm-grid">
-            <view wx:for="{{detailBmList}}" wx:key="key" class="bm-item">
-              <view class="bm-dot" style="background: {{item.color}};"></view>
-              <view class="bm-info">
-                <text class="bm-label">{{item.label}}</text>
-                <text class="bm-value">{{item.value !== null ? item.value : '—'}} {{item.unit}}</text>
+
+      <!-- 3-tab inner bar -->
+      <view class="detail-tabs">
+        <view class="detail-tab {{detailTab === 'health' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="health">
+          <text class="detail-tab-text">{{t.tabHealth}}</text>
+        </view>
+        <view class="detail-tab {{detailTab === 'chat' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="chat">
+          <text class="detail-tab-text">{{t.tabChat}}</text>
+        </view>
+        <view class="detail-tab {{detailTab === 'messages' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="messages">
+          <text class="detail-tab-text">{{t.tabMessages}}</text>
+        </view>
+      </view>
+
+      <!-- Health panel -->
+      <scroll-view wx:if="{{detailTab === 'health'}}" scroll-y class="overlay-scroll">
+        <view wx:if="{{detailBmLoading}}" class="panel-center">
+          <text class="loading-text">{{t.loading}}</text>
+        </view>
+        <view wx:elif="{{detailBmList.length === 0}}" class="panel-center">
+          <text class="empty-text">{{t.noBmData}}</text>
+        </view>
+        <block wx:else>
+          <!-- Bio Age Trend -->
+          <view wx:if="{{detailBioAgeTrend.length > 0}}" class="health-section">
+            <text class="section-label">{{t.bioAgeTrend}}</text>
+            <view class="trend-row">
+              <view wx:for="{{detailBioAgeTrend}}" wx:key="index" class="trend-item">
+                <text class="trend-value">{{item.bioAge || '—'}}</text>
+                <text class="trend-date">{{item.date}}</text>
               </view>
             </view>
+          </view>
+          <!-- Sub-Ages -->
+          <view wx:if="{{detailSubAges.length > 0}}" class="health-section">
+            <text class="section-label">{{t.subAges}}</text>
+            <view class="sub-age-grid">
+              <view wx:for="{{detailSubAges}}" wx:key="key" class="sub-age-card">
+                <text class="sub-age-value" style="color: {{item.color}};">{{item.value || '—'}}</text>
+                <text class="sub-age-label">{{item.label}}</text>
+              </view>
+            </view>
+          </view>
+          <!-- Raw Biomarkers -->
+          <view class="health-section">
+            <text class="section-label">{{t.biomarkers}}</text>
+            <view class="bm-grid">
+              <view wx:for="{{detailBmList}}" wx:key="key" class="bm-item">
+                <view class="bm-dot" style="background: {{item.color}};"></view>
+                <view class="bm-info">
+                  <text class="bm-label">{{item.label}}</text>
+                  <text class="bm-value">{{item.value !== null ? item.value : '—'}} {{item.unit}}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+        </block>
+      </scroll-view>
+
+      <!-- AI Chat panel -->
+      <scroll-view wx:if="{{detailTab === 'chat'}}" scroll-y class="overlay-scroll">
+        <view class="chat-section">
+          <view wx:if="{{chatLoading}}" class="panel-center">
+            <text class="loading-text">{{t.loading}}</text>
+          </view>
+          <view wx:elif="{{chatMessages.length === 0}}" class="panel-center">
+            <text class="empty-text">{{t.noChatData}}</text>
+          </view>
+          <view wx:else class="chat-list">
+            <view wx:for="{{chatMessages}}" wx:key="index" class="chat-row {{item._isUser ? 'chat-row-user' : 'chat-row-ai'}}">
+              <view class="chat-role-label">
+                <text class="chat-role-text">{{item._isUser ? t.you : t.ai}}</text>
+                <text class="chat-time">{{item._time}}</text>
+              </view>
+              <view class="chat-bubble {{item._isUser ? 'bubble-user' : 'bubble-ai'}}">
+                <text class="chat-content">{{item.content}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+
+      <!-- Messages panel (scrollable history + pinned compose) -->
+      <view wx:if="{{detailTab === 'messages'}}" class="msg-panel">
+        <scroll-view scroll-y class="msg-history">
+          <view wx:if="{{msgLoading}}" class="panel-center">
+            <text class="loading-text">{{t.loading}}</text>
+          </view>
+          <view wx:elif="{{msgMessages.length === 0}}" class="panel-center">
+            <text class="empty-text">{{t.noMessages}}</text>
+          </view>
+          <view wx:else class="msg-list">
+            <view wx:for="{{msgMessages}}" wx:key="id" class="msg-item">
+              <view class="msg-bubble">
+                <text class="msg-content">{{item._body}}</text>
+              </view>
+              <text class="msg-time">{{item._time}}</text>
+            </view>
+          </view>
+        </scroll-view>
+
+        <!-- Pinned compose area -->
+        <view class="msg-compose">
+          <view class="reminder-trigger" bindtap="openReminderComposer">
+            <text class="reminder-trigger-text">{{t.setReminder}}</text>
+          </view>
+          <view class="compose-row">
+            <textarea
+              class="compose-input"
+              placeholder="{{t.msgPh}}"
+              value="{{msgText}}"
+              bindinput="onMsgInput"
+              maxlength="500"
+              auto-height
+            />
+            <view class="compose-send-btn {{msgBusy ? 'btn-busy' : ''}}" bindtap="sendMessage">
+              <text class="compose-send-text">{{msgBusy ? '…' : t.send}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+    </view>
+  </view>
+
+  <!-- ── Reminder Composer Overlay ────────────────────────────────────── -->
+  <view wx:if="{{reminderOpen}}" class="overlay-mask" catchtouchmove="noop">
+    <view class="overlay-panel" catchtap="noop">
+      <view class="overlay-header">
+        <text class="overlay-title">{{t.reminderTitle}}</text>
+        <view class="overlay-close" bindtap="closeReminderComposer">
+          <text class="close-x">✕</text>
+        </view>
+      </view>
+      <scroll-view scroll-y class="overlay-scroll">
+        <view class="reminder-body">
+          <textarea
+            class="instr-textarea"
+            placeholder="{{t.reminderContentPh}}"
+            value="{{reminderText}}"
+            bindinput="onReminderTextInput"
+            maxlength="300"
+            auto-height
+          />
+
+          <!-- Date picker -->
+          <view class="picker-row">
+            <text class="picker-label">{{t.reminderDate}}</text>
+            <picker mode="date" value="{{reminderDate}}" bindchange="onReminderDateChange">
+              <view class="picker-value">
+                <text class="picker-value-text">{{reminderDate || t.selectDate}}</text>
+              </view>
+            </picker>
+          </view>
+
+          <!-- Time picker -->
+          <view class="picker-row">
+            <text class="picker-label">{{t.reminderTime}}</text>
+            <picker mode="time" value="{{reminderTime}}" bindchange="onReminderTimeChange">
+              <view class="picker-value">
+                <text class="picker-value-text">{{reminderTime || t.selectTime}}</text>
+              </view>
+            </picker>
+          </view>
+
+          <!-- Recurrence toggle -->
+          <view class="picker-row">
+            <text class="picker-label">{{t.recurrence}}</text>
+            <view class="recurrence-opts">
+              <view class="recurrence-opt {{reminderRecurrence === 'none' ? 'recurrence-active' : ''}}" bindtap="setRecurrence" data-val="none">
+                <text class="recurrence-opt-text">{{t.recurrenceNone}}</text>
+              </view>
+              <view class="recurrence-opt {{reminderRecurrence === 'daily' ? 'recurrence-active' : ''}}" bindtap="setRecurrence" data-val="daily">
+                <text class="recurrence-opt-text">{{t.recurrenceDaily}}</text>
+              </view>
+              <view class="recurrence-opt {{reminderRecurrence === 'weekly' ? 'recurrence-active' : ''}}" bindtap="setRecurrence" data-val="weekly">
+                <text class="recurrence-opt-text">{{t.recurrenceWeekly}}</text>
+              </view>
+            </view>
+          </view>
+
+          <view class="instr-send-btn {{reminderBusy ? 'btn-busy' : ''}}" bindtap="submitReminder">
+            <text class="instr-send-text">{{reminderBusy ? t.sending : t.send}}</text>
           </view>
         </view>
       </scroll-view>
     </view>
   </view>
 
-  <!-- Send Instruction Overlay -->
-  <view wx:if="{{instructionOpen}}" class="overlay-mask" catchtouchmove="noop">
-    <view class="overlay-panel" catchtap="noop">
-      <view class="overlay-header">
-        <text class="overlay-title">{{instructionTarget.nickname}}</text>
-        <view class="overlay-close" bindtap="closeInstruction">
-          <text class="close-x">✕</text>
-        </view>
-      </view>
-      <view class="instr-body">
-        <textarea
-          class="instr-textarea"
-          placeholder="{{t.instructionPh}}"
-          value="{{instructionText}}"
-          bindinput="onInstructionInput"
-          maxlength="500"
-          auto-height
-        />
-        <view class="instr-send-btn {{instructionBusy ? 'btn-busy' : ''}}" bindtap="sendInstruction">
-          <text class="instr-send-text">{{instructionBusy ? t.sending : t.send}}</text>
-        </view>
-      </view>
-    </view>
-  </view>
 </view>

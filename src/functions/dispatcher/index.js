@@ -86,6 +86,38 @@ exports.handler = async (event, context) => {
             }
         }
 
+        // Flush due coach reminders into notifications
+        try {
+            const dueReminders = await pool.query(
+                `SELECT id, user_id, content, recurrence FROM reminders
+                 WHERE scheduled_for <= NOW() AND status = 'pending'`
+            );
+            for (const r of dueReminders.rows) {
+                await pool.query(
+                    `INSERT INTO notifications (user_id, notification_type, content, status)
+                     VALUES ($1, 'coach_reminder', $2, 'pending')`,
+                    [r.user_id, r.content]
+                );
+                if (r.recurrence === 'daily') {
+                    await pool.query(
+                        `UPDATE reminders SET scheduled_for = scheduled_for + INTERVAL '1 day' WHERE id = $1`,
+                        [r.id]
+                    );
+                } else if (r.recurrence === 'weekly') {
+                    await pool.query(
+                        `UPDATE reminders SET scheduled_for = scheduled_for + INTERVAL '7 days' WHERE id = $1`,
+                        [r.id]
+                    );
+                } else {
+                    await pool.query(`UPDATE reminders SET status = 'sent' WHERE id = $1`, [r.id]);
+                }
+            }
+            console.log(JSON.stringify({ level: 'INFO', msg: `Flushed ${dueReminders.rows.length} reminders` }));
+        } catch (reminderErr) {
+            // Table may not exist yet; skip silently
+            console.warn(JSON.stringify({ level: 'WARN', msg: 'Reminder flush skipped', error: reminderErr.message }));
+        }
+
         return {
             statusCode: 200,
             body: JSON.stringify({ message: `Dispatched ${usersToTopUp.length} top-ups.` })
