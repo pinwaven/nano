@@ -71,7 +71,7 @@ const T = {
     selectBirthday: '选择出生日期',
     profile: '个人信息', showMore: '更多', showLess: '收起',
     gender: '性别', born: '出生日期', language: '语言',
-    height: '身高', weight: '体重',
+    height: '身高', weight: '体重', bmi: 'BMI',
     coach: 'Coach', joined: '注册时间', phone: '手机', email: '邮箱',
     healthConditions: '健康状况', noConditions: '无特殊健康状况',
     bioAge: '生物年龄', chronoAge: '实际年龄',
@@ -198,7 +198,7 @@ const T = {
     selectBirthday: 'Select Birthday',
     profile: 'Profile', showMore: 'More', showLess: 'Less',
     gender: 'Gender', born: 'Born', language: 'Language',
-    height: 'Height', weight: 'Weight',
+    height: 'Height', weight: 'Weight', bmi: 'BMI',
     coach: 'Coach', joined: 'Joined', phone: 'Phone', email: 'Email',
     healthConditions: 'Health Conditions', noConditions: 'No known health conditions',
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -588,7 +588,7 @@ Page({
     cAge: null,
     bAge: null,
     bAgeColor: '#EEF2FF',
-    profileInfoWeight: [],
+    profileInfoVisible: [],
     profileInfoExtra: [],
     profileExpanded: false,
     recordCount: 0,
@@ -1474,8 +1474,12 @@ Page({
       const heightVal = bodyRecord?.data?.actual?.height ?? null
       const weightVal = bodyRecord?.data?.actual?.weight ?? null
 
-      const profileInfoWeight = [
+      const bmiVal = (heightVal != null && weightVal != null && heightVal > 0)
+        ? (weightVal / Math.pow(heightVal / 100, 2)).toFixed(1)
+        : null
+      const profileInfoVisible = [
         { label: t.weight, val: weightVal != null ? `${weightVal} ${t.bsKg}` : '—' },
+        { label: t.bmi,    val: bmiVal != null ? bmiVal : '—' },
       ]
       const profileInfoExtra = [
         { label: t.gender,   val: t.genderMap[user.gender] || user.gender || '—' },
@@ -1504,7 +1508,7 @@ Page({
         subAgeList, bmList, trendList,
         cAge, bAge,
         bAgeColor: bioAgeColor(rawBioAge, cAge),
-        profileInfoWeight, profileInfoExtra,
+        profileInfoVisible, profileInfoExtra,
         recordCount: kinoRecords.length,
         hasBm: latestBm !== null,
         healthConditionsList,

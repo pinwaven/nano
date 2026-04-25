@@ -303,9 +303,9 @@
               </view>
             </view>
             <view class="info-grid">
-              <block wx:for="{{profileInfoWeight}}" wx:key="label">
+              <block wx:for="{{profileInfoVisible}}" wx:key="label">
                 <text class="info-key">{{item.label}}</text>
-                <text class="info-val info-val-weight">{{item.val}}</text>
+                <text class="info-val">{{item.val}}</text>
               </block>
             </view>
             <view wx:if="{{profileExpanded}}" class="info-grid info-grid-extra">
