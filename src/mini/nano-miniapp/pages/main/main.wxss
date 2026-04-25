@@ -812,6 +812,44 @@
 .info-val { font-size: 24rpx; color: #EEF2FF; font-weight: 500; }
 .info-val-weight { font-size: 32rpx; font-weight: 700; color: #EEF2FF; }
 
+.weight-val-row { display: flex; align-items: center; gap: 16rpx; }
+.weight-sparkline { width: 80rpx; height: 28rpx; flex-shrink: 0; }
+
+.wchart-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 120;
+  background: rgba(6, 15, 25, 0.75);
+  display: flex;
+  align-items: flex-end;
+}
+.wchart-sheet {
+  width: 100%;
+  background: #0D1E35;
+  border-top-left-radius: 40rpx;
+  border-top-right-radius: 40rpx;
+  padding: 20rpx 36rpx 60rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.wchart-handle {
+  width: 64rpx; height: 6rpx;
+  border-radius: 3rpx;
+  background: rgba(166, 196, 229, 0.2);
+  margin-bottom: 24rpx;
+}
+.wchart-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28rpx;
+}
+.wchart-title { font-size: 30rpx; font-weight: 600; color: #EEF2FF; }
+.wchart-close { width: 48rpx; height: 48rpx; display: flex; align-items: center; justify-content: center; color: rgba(166, 196, 229, 0.5); font-size: 28rpx; }
+.weight-chart-full { width: 100%; height: 200px; }
+
 .health-empty { font-size: 24rpx; color: rgba(166, 196, 229, 0.4); }
 
 /* Biomarker list */

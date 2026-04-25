@@ -71,7 +71,7 @@ const T = {
     selectBirthday: '选择出生日期',
     profile: '个人信息', showMore: '更多', showLess: '收起',
     gender: '性别', born: '出生日期', language: '语言',
-    height: '身高', weight: '体重', bmi: 'BMI',
+    height: '身高', weight: '体重', bmi: 'BMI', weightTrend: '体重趋势',
     coach: 'Coach', joined: '注册时间', phone: '手机', email: '邮箱',
     healthConditions: '健康状况', noConditions: '无特殊健康状况',
     bioAge: '生物年龄', chronoAge: '实际年龄',
@@ -198,7 +198,7 @@ const T = {
     selectBirthday: 'Select Birthday',
     profile: 'Profile', showMore: 'More', showLess: 'Less',
     gender: 'Gender', born: 'Born', language: 'Language',
-    height: 'Height', weight: 'Weight', bmi: 'BMI',
+    height: 'Height', weight: 'Weight', bmi: 'BMI', weightTrend: 'Weight Trend',
     coach: 'Coach', joined: 'Joined', phone: 'Phone', email: 'Email',
     healthConditions: 'Health Conditions', noConditions: 'No known health conditions',
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -591,6 +591,9 @@ Page({
     profileInfoVisible: [],
     profileInfoExtra: [],
     profileExpanded: false,
+    weightHistory: [],
+    weightChartOpen: false,
+    weightChartW: 300,
     recordCount: 0,
     hasBm: false,
     healthConditionsList: [],
@@ -1418,6 +1421,100 @@ Page({
     this.setData({ profileExpanded: !this.data.profileExpanded })
   },
 
+  openWeightChart() {
+    const W = wx.getSystemInfoSync().windowWidth - 72
+    this.setData({ weightChartOpen: true, weightChartW: W }, () => { this._drawWeightFullChart() })
+  },
+
+  closeWeightChart() {
+    this.setData({ weightChartOpen: false })
+  },
+
+  _drawWeightSparkline() {
+    const { weightHistory } = this.data
+    if (weightHistory.length < 2) return
+    const W = 60, H = 22, pad = 2
+    const weights = weightHistory.map(r => r.weight)
+    const minW = Math.min(...weights), maxW = Math.max(...weights)
+    const range = maxW - minW || 1
+    const pts = weights.map((w, i) => ({
+      x: pad + (i / (weights.length - 1)) * (W - pad * 2),
+      y: pad + ((maxW - w) / range) * (H - pad * 2),
+    }))
+    const ctx = wx.createCanvasContext('weight-sparkline', this)
+    ctx.clearRect(0, 0, W, H)
+    ctx.beginPath()
+    ctx.setStrokeStyle('rgba(99,117,236,0.85)')
+    ctx.setLineWidth(1.5)
+    ctx.moveTo(pts[0].x, pts[0].y)
+    pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
+    ctx.stroke()
+    ctx.setFillStyle('#6375EC')
+    pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2); ctx.fill() })
+    ctx.draw()
+  },
+
+  _drawWeightFullChart() {
+    const { weightHistory, weightChartW } = this.data
+    if (weightHistory.length < 1) return
+    const W = weightChartW, H = 200
+    const pL = 44, pR = 16, pT = 20, pB = 44
+    const plotW = W - pL - pR, plotH = H - pT - pB
+    const weights = weightHistory.map(r => r.weight)
+    const minW = Math.floor(Math.min(...weights)) - 2
+    const maxW = Math.ceil(Math.max(...weights)) + 2
+    const range = maxW - minW
+    const toX = i => pL + (i / Math.max(weightHistory.length - 1, 1)) * plotW
+    const toY = w => pT + ((maxW - w) / range) * plotH
+    const pts = weightHistory.map((r, i) => ({ x: toX(i), y: toY(r.weight) }))
+    const ctx = wx.createCanvasContext('weight-chart-full', this)
+    ctx.clearRect(0, 0, W, H)
+    // grid lines + y labels
+    const gridSteps = 4
+    for (let i = 0; i <= gridSteps; i++) {
+      const y = pT + (i / gridSteps) * plotH
+      const val = maxW - (i / gridSteps) * range
+      ctx.setStrokeStyle('rgba(99,117,236,0.12)')
+      ctx.setLineWidth(0.5)
+      ctx.beginPath(); ctx.moveTo(pL, y); ctx.lineTo(pL + plotW, y); ctx.stroke()
+      ctx.setFillStyle('rgba(166,196,229,0.45)')
+      ctx.setFontSize(10)
+      ctx.fillText(val.toFixed(1), 0, y + 4)
+    }
+    // area fill
+    ctx.beginPath()
+    ctx.setFillStyle('rgba(99,117,236,0.1)')
+    ctx.moveTo(pts[0].x, pT + plotH)
+    pts.forEach(p => ctx.lineTo(p.x, p.y))
+    ctx.lineTo(pts[pts.length - 1].x, pT + plotH)
+    ctx.closePath(); ctx.fill()
+    // line
+    ctx.beginPath()
+    ctx.setStrokeStyle('#6375EC')
+    ctx.setLineWidth(2)
+    ctx.moveTo(pts[0].x, pts[0].y)
+    pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
+    ctx.stroke()
+    // dots + x labels
+    const labelStep = Math.max(1, Math.floor(weightHistory.length / 5))
+    ctx.setFontSize(10)
+    ctx.setFillStyle('rgba(166,196,229,0.5)')
+    weightHistory.forEach((r, i) => {
+      if (i % labelStep === 0 || i === weightHistory.length - 1) {
+        ctx.fillText(r.date.substring(5), pts[i].x - 14, H - pB + 16)
+      }
+    })
+    ctx.setFillStyle('#EEF2FF')
+    ctx.setStrokeStyle('#6375EC')
+    ctx.setLineWidth(1.5)
+    pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke() })
+    // axes
+    ctx.setStrokeStyle('rgba(99,117,236,0.3)')
+    ctx.setLineWidth(1)
+    ctx.beginPath(); ctx.moveTo(pL, pT); ctx.lineTo(pL, pT + plotH); ctx.lineTo(pL + plotW, pT + plotH); ctx.stroke()
+    ctx.draw()
+  },
+
   // ── Health tab ──────────────────────────────────────────────────────────────
 
   async _loadHealth(user, lang) {
@@ -1473,15 +1570,19 @@ Page({
       const rawBioAge = latestAnalyzed?.bio_age ?? latest?.bio_age ?? user.bio_age
       const bAge = rawBioAge ? Number(rawBioAge).toFixed(1) : null
 
-      const bodyRecord = records.slice().reverse().find(r => r.test_type === 'body_composition')
-      const heightVal = bodyRecord?.data?.actual?.height ?? null
-      const weightVal = bodyRecord?.data?.actual?.weight ?? null
+      const bodyRecords = records.filter(r => r.test_type === 'body_composition').slice().reverse()
+      const heightVal = bodyRecords.find(r => r.data?.actual?.height != null)?.data?.actual?.height ?? null
+      const weightVal = bodyRecords.find(r => r.data?.actual?.weight != null)?.data?.actual?.weight ?? null
+
+      const weightHistory = records
+        .filter(r => r.test_type === 'body_composition' && r.data?.actual?.weight != null)
+        .map(r => ({ date: (r.tested_at || '').substring(0, 10), weight: r.data.actual.weight }))
 
       const bmiVal = (heightVal != null && weightVal != null && heightVal > 0)
         ? (weightVal / Math.pow(heightVal / 100, 2)).toFixed(1)
         : null
       const profileInfoVisible = [
-        { label: t.weight, val: weightVal != null ? `${weightVal} ${t.bsKg}` : '—' },
+        { label: t.weight, val: weightVal != null ? `${weightVal} ${t.bsKg}` : '—', hasSparkline: true },
         { label: t.bmi,    val: bmiVal != null ? bmiVal : '—' },
       ]
       const profileInfoExtra = [
@@ -1512,11 +1613,12 @@ Page({
         cAge, bAge,
         bAgeColor: bioAgeColor(rawBioAge, cAge),
         profileInfoVisible, profileInfoExtra,
+        weightHistory,
         recordCount: kinoRecords.length,
         hasBm: latestBm !== null,
         healthConditionsList,
         hasConditionsData: condKeys !== null,
-      })
+      }, () => { if (weightHistory.length > 1) this._drawWeightSparkline() })
     } catch (e) {
       this.setData({ bioLoading: false })
     }

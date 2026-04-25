@@ -305,7 +305,11 @@
             <view class="info-grid">
               <block wx:for="{{profileInfoVisible}}" wx:key="label">
                 <text class="info-key">{{item.label}}</text>
-                <text class="info-val">{{item.val}}</text>
+                <view wx:if="{{item.hasSparkline}}" class="weight-val-row">
+                  <text class="info-val">{{item.val}}</text>
+                  <canvas wx:if="{{weightHistory.length > 1}}" canvas-id="weight-sparkline" class="weight-sparkline" bindtap="openWeightChart"></canvas>
+                </view>
+                <text wx:else class="info-val">{{item.val}}</text>
               </block>
             </view>
             <view wx:if="{{profileExpanded}}" class="info-grid info-grid-extra">
@@ -571,6 +575,18 @@
 
   </view>
   <!-- end tab-content -->
+
+  <!-- ── Weight Chart Modal ── -->
+  <view wx:if="{{weightChartOpen}}" class="wchart-overlay" bindtap="closeWeightChart">
+    <view class="wchart-sheet" catchtap="noop">
+      <view class="wchart-handle"></view>
+      <view class="wchart-header">
+        <text class="wchart-title">{{t.weightTrend}}</text>
+        <view class="wchart-close" bindtap="closeWeightChart"><text>✕</text></view>
+      </view>
+      <canvas canvas-id="weight-chart-full" class="weight-chart-full" style="width:{{weightChartW}}px;height:200px;"></canvas>
+    </view>
+  </view>
 
   <!-- ── Cartridge Sim Overlay ── -->
   <view wx:if="{{simCartOpen}}" class="csim-overlay" bindtap="closeCartSim">
