@@ -528,7 +528,7 @@ async function handlePostFormulaDots(body) {
             days_needed: 7,
         };
         const llmClient = getLlmClient();
-        const model = process.env.MODEL || 'qwen-plus';
+        const model = process.env.MODEL || 'qwen3.6-plus';
         const prompt = systemNutritionTemplate(nutritionContext);
         console.log(JSON.stringify({ level: 'INFO', msg: 'Formula DOTS Context', data: nutritionContext }));
 
@@ -1272,7 +1272,7 @@ async function handlePostChat(body) {
         // Generate and save Nutrition Plan / Full Report
         try {
             const llmClient = getLlmClient();
-            const model = process.env.MODEL || 'qwen-plus';
+            const model = process.env.MODEL || 'qwen3.6-plus';
 
             const dotsForNutrition = await pool.query(
                 `SELECT id, key_name, name, name_zh, description, ingredients, ingredients_zh FROM dots ORDER BY id ASC`
@@ -1383,7 +1383,7 @@ async function handlePostChat(body) {
             }
 
             const client = getLlmClient();
-            const model = process.env.MODEL || 'qwen-turbo';
+            const model = process.env.MODEL || 'qwen3.6-plus';
 
             const completion = await client.chat.completions.create({
                 model: model,
@@ -1614,7 +1614,7 @@ async function handlePostHealthAdvice(body) {
         await saveChatMessage(user_id, 'user', userMsg);
 
         const llmClient = getLlmClient();
-        const model = process.env.MODEL || 'qwen-plus';
+        const model = process.env.MODEL || 'qwen3.6-plus';
         const completion = await llmClient.chat.completions.create({
             model,
             messages: [
