@@ -486,7 +486,7 @@ Page({
 
   _req(url, method = 'GET', data = null) {
     return new Promise((resolve, reject) => {
-      const opts = { url, method, header: { 'Content-Type': 'application/json' }, success: resolve, fail: reject }
+      const opts = { url, method, header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` }, success: resolve, fail: reject }
       if (data) opts.data = data
       wx.request(opts)
     })

@@ -120,7 +120,7 @@ Page({
       wx.request({
         url: `${BASE}/api/wx-login`,
         method: 'POST',
-        header: { 'Content-Type': 'application/json' },
+        header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
         data,
         success: resolve,
         fail: reject,

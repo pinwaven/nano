@@ -3,7 +3,8 @@ App({
     user: null,
     channel: null,
     coach: null,
-    lang: 'zh'
+    lang: 'zh',
+    apiToken: 'tokenData-gh9bc7917115bid72c68c8c4693g',
   },
   onLaunch() {
     try {

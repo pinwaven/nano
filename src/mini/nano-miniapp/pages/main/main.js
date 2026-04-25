@@ -1816,7 +1816,7 @@ Page({
     return new Promise((resolve, reject) => {
       const opts = {
         url, method,
-        header: { 'Content-Type': 'application/json' },
+        header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
         success: resolve,
         fail: reject,
       }

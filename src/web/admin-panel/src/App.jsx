@@ -7,6 +7,12 @@ import {
   ShoppingBag, Package, Building2,
 } from 'lucide-react';
 
+axios.interceptors.request.use((config) => {
+  const token = import.meta.env.VITE_API_TOKEN
+  if (token) config.headers['Authorization'] = `Bearer ${token}`
+  return config
+})
+
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
 const T = {
