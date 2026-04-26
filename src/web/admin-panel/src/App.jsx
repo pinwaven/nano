@@ -135,6 +135,7 @@ const T = {
       orderId: 'Order', createdAt: 'Date',
       noSettings: 'No settings found', noPayouts: 'No payouts', noCommissions: 'No commissions',
       generate: 'Generate', generating: 'Generating…', saved: 'Saved', saveFailed: 'Save failed',
+      totalPayouts: 'Channel Payouts', pendingPayouts: 'Pending', totalCommissions: 'Coach Commissions', totalEarned: 'Total Commissions',
     },
     addBatch: 'Add Batch', countBatch: (n) => `${n} batch${n !== 1 ? 'es' : ''}`,
     chips: {
@@ -281,6 +282,7 @@ const T = {
       orderId: '订单', createdAt: '时间',
       noSettings: '暂无设置', noPayouts: '暂无结算单', noCommissions: '暂无佣金记录',
       generate: '生成', generating: '生成中…', saved: '已保存', saveFailed: '保存失败',
+      totalPayouts: '渠道结算', pendingPayouts: '待审批', totalCommissions: 'Coach 佣金', totalEarned: '佣金总额',
     },
   },
 };
@@ -1629,11 +1631,21 @@ function RewardsTab() {
 
   const productLabel = (pt) => ({ chip: r.chip, dot: r.dot, subscription: r.subscription }[pt] || pt);
   const statusLabel  = (s)  => ({ draft: r.draft, approved: r.approved, transferred: r.transferred }[s] || s);
-  const statusColor  = (s)  => ({ draft: '#64748b', approved: '#2563eb', transferred: '#16a34a' }[s] || '#64748b');
+  const statusBadgeColor = (s) => ({ draft: '#64748b', approved: '#2563eb', transferred: '#16a34a' }[s] || '#64748b');
+
+  const pendingPayouts = channelPayouts.filter(p => p.status === 'draft').length;
+  const totalCommissionsAmount = coachCommissions.reduce((sum, c) => sum + Number(c.amount_cny || 0), 0);
 
   return (
-    <div>
-      <div className="subtabs">
+    <>
+      <div className="stat-row">
+        <StatCard icon={TrendingUp} label={r.totalPayouts}     value={channelPayouts.length}                           color="#6366f1" />
+        <StatCard icon={TrendingUp} label={r.pendingPayouts}   value={pendingPayouts}                                  color="#f59e0b" />
+        <StatCard icon={Coins}      label={r.totalCommissions} value={coachCommissions.length}                         color="#3b82f6" />
+        <StatCard icon={Coins}      label={r.totalEarned}      value={`¥${totalCommissionsAmount.toFixed(0)}`}         color="#10b981" />
+      </div>
+
+      <div className="subtab-row">
         <button className={`subtab-btn${subTab === 'settings' ? ' active' : ''}`} onClick={() => setSubTab('settings')}>
           <Settings2 size={13} /> {r.settingsTab}
         </button>
@@ -1645,34 +1657,39 @@ function RewardsTab() {
         </button>
       </div>
 
-      {loading && <p style={{ padding: '1rem', color: '#64748b' }}>Loading…</p>}
+      {loading && <div className="card" style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>Loading…</div>}
 
       {!loading && subTab === 'settings' && (
-        <div style={{ padding: '1rem' }}>
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{settings.length} rule{settings.length !== 1 ? 's' : ''}</span>
+          </div>
           <table className="data-table">
-            <thead><tr>
-              <th>{r.role}</th><th>{r.productType}</th>
-              <th>{r.flatRate}</th><th>{r.pct}</th>
-            </tr></thead>
+            <thead>
+              <tr>
+                <th>{r.role}</th><th>{r.productType}</th>
+                <th>{r.flatRate}</th><th>{r.pct}</th>
+              </tr>
+            </thead>
             <tbody>
-              {settings.length === 0 && <tr><td colSpan={4} style={{ color: '#64748b' }}>{r.noSettings}</td></tr>}
+              {settings.length === 0 && <tr><td colSpan={4} className="empty-row">{r.noSettings}</td></tr>}
               {settings.map(row => (
                 <tr key={row.id}>
-                  <td>{row.role === 'coach' ? r.coach : r.channel}</td>
-                  <td>{productLabel(row.product_type)}</td>
+                  <td><Badge color={row.role === 'coach' ? '#8b5cf6' : '#6366f1'}>{row.role === 'coach' ? r.coach : r.channel}</Badge></td>
+                  <td><Badge color="#64748b">{productLabel(row.product_type)}</Badge></td>
                   <td>
                     {row.flat_rate_cny != null
                       ? <input type="number" step="0.01" defaultValue={row.flat_rate_cny}
                           onBlur={e => saveSetting(row.id, 'flat_rate_cny', e.target.value)}
-                          style={{ width: 80 }} />
-                      : '—'}
+                          style={{ width: 90 }} />
+                      : <span className="muted">—</span>}
                   </td>
                   <td>
                     {row.percentage != null
                       ? <input type="number" step="0.1" defaultValue={row.percentage}
                           onBlur={e => saveSetting(row.id, 'percentage', e.target.value)}
-                          style={{ width: 80 }} />
-                      : '—'}
+                          style={{ width: 90 }} />
+                      : <span className="muted">—</span>}
                   </td>
                 </tr>
               ))}
@@ -1682,34 +1699,45 @@ function RewardsTab() {
       )}
 
       {!loading && subTab === 'channel-payouts' && (
-        <div style={{ padding: '1rem' }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: '1rem' }}>
-            <input value={generatePeriod} onChange={e => setGeneratePeriod(e.target.value)}
-              placeholder="YYYY-MM" style={{ width: 120 }} />
-            <button className="add-btn" onClick={generateChannelPayouts} disabled={generating}>
-              {generating ? r.generating : r.generatePayouts}
-            </button>
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{channelPayouts.length} payout{channelPayouts.length !== 1 ? 's' : ''}</span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input value={generatePeriod} onChange={e => setGeneratePeriod(e.target.value)}
+                placeholder="YYYY-MM" style={{ width: 110 }} />
+              <button className="btn-primary" onClick={generateChannelPayouts} disabled={generating}>
+                <TrendingUp size={13} />{generating ? r.generating : r.generatePayouts}
+              </button>
+            </div>
           </div>
           <table className="data-table">
-            <thead><tr>
-              <th>{r.channelName}</th><th>{r.period}</th><th>{r.totalCny}</th>
-              <th>{r.status}</th><th>{r.approvedAt}</th><th>{r.transferredAt}</th><th></th>
-            </tr></thead>
+            <thead>
+              <tr>
+                <th>{r.channelName}</th><th>{r.period}</th><th>{r.totalCny}</th>
+                <th>{r.status}</th><th>{r.approvedAt}</th><th>{r.transferredAt}</th><th></th>
+              </tr>
+            </thead>
             <tbody>
-              {channelPayouts.length === 0 && <tr><td colSpan={7} style={{ color: '#64748b' }}>{r.noPayouts}</td></tr>}
+              {channelPayouts.length === 0 && <tr><td colSpan={7} className="empty-row">{r.noPayouts}</td></tr>}
               {channelPayouts.map(p => (
                 <tr key={p.id}>
-                  <td>{p.channel_name || '—'}</td>
-                  <td>{p.period}</td>
-                  <td>¥{Number(p.total_cny).toFixed(2)}</td>
-                  <td><span style={{ color: statusColor(p.status), fontWeight: 600 }}>{statusLabel(p.status)}</span></td>
-                  <td>{fmtDate(p.approved_at)}</td>
-                  <td>{fmtDate(p.transferred_at)}</td>
-                  <td style={{ display: 'flex', gap: 4 }}>
-                    {p.status === 'draft' &&
-                      <button className="edit-btn" onClick={() => updateChannelPayout(p.id, 'approved')}>{r.approve}</button>}
-                    {p.status === 'approved' &&
-                      <button className="edit-btn" onClick={() => updateChannelPayout(p.id, 'transferred')}>{r.markTransferred}</button>}
+                  <td className="bold">{p.channel_name || <span className="muted">—</span>}</td>
+                  <td><code className="code-tag">{p.period}</code></td>
+                  <td className="bold">¥{Number(p.total_cny).toFixed(2)}</td>
+                  <td><Badge color={statusBadgeColor(p.status)}>{statusLabel(p.status)}</Badge></td>
+                  <td className="muted">{fmtDate(p.approved_at)}</td>
+                  <td className="muted">{fmtDate(p.transferred_at)}</td>
+                  <td>
+                    <div className="row-actions">
+                      {p.status === 'draft' &&
+                        <button className="icon-btn" title={r.approve} onClick={() => updateChannelPayout(p.id, 'approved')}>
+                          <Check size={14} />
+                        </button>}
+                      {p.status === 'approved' &&
+                        <button className="icon-btn" title={r.markTransferred} onClick={() => updateChannelPayout(p.id, 'transferred')}>
+                          <ChevronRight size={14} />
+                        </button>}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1719,29 +1747,34 @@ function RewardsTab() {
       )}
 
       {!loading && subTab === 'coach-commissions' && (
-        <div style={{ padding: '1rem' }}>
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{coachCommissions.length} commission{coachCommissions.length !== 1 ? 's' : ''}</span>
+          </div>
           <table className="data-table">
-            <thead><tr>
-              <th>{r.coachName}</th><th>{r.channelCol}</th><th>{r.productTypeCol}</th>
-              <th>{r.amountCny}</th><th>{r.status}</th><th>{r.createdAt}</th>
-            </tr></thead>
+            <thead>
+              <tr>
+                <th>{r.coachName}</th><th>{r.channelCol}</th><th>{r.productTypeCol}</th>
+                <th>{r.amountCny}</th><th>{r.status}</th><th>{r.createdAt}</th>
+              </tr>
+            </thead>
             <tbody>
-              {coachCommissions.length === 0 && <tr><td colSpan={6} style={{ color: '#64748b' }}>{r.noCommissions}</td></tr>}
+              {coachCommissions.length === 0 && <tr><td colSpan={6} className="empty-row">{r.noCommissions}</td></tr>}
               {coachCommissions.map(c => (
                 <tr key={c.id}>
-                  <td>{c.coach_name || c.coach_id}</td>
-                  <td>{c.channel_name || '—'}</td>
-                  <td>{productLabel(c.product_type)}</td>
-                  <td>¥{Number(c.amount_cny).toFixed(2)}</td>
-                  <td><span style={{ color: statusColor(c.status) }}>{statusLabel(c.status)}</span></td>
-                  <td>{fmtDate(c.created_at)}</td>
+                  <td className="bold">{c.coach_name || c.coach_id}</td>
+                  <td>{c.channel_name || <span className="muted">—</span>}</td>
+                  <td><Badge color="#64748b">{productLabel(c.product_type)}</Badge></td>
+                  <td className="bold">¥{Number(c.amount_cny).toFixed(2)}</td>
+                  <td><Badge color={statusBadgeColor(c.status)}>{statusLabel(c.status)}</Badge></td>
+                  <td className="muted">{fmtDate(c.created_at)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
