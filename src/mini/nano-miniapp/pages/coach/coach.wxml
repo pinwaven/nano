@@ -20,6 +20,9 @@
     <view class="coach-tab {{tab === 'invites' ? 'coach-tab-active' : ''}}" bindtap="switchTab" data-tab="invites">
       <text class="coach-tab-text">{{t.tabs.invites}}</text>
     </view>
+    <view class="coach-tab {{tab === 'earnings' ? 'coach-tab-active' : ''}}" bindtap="switchTab" data-tab="earnings">
+      <text class="coach-tab-text">{{t.tabs.earnings}}</text>
+    </view>
   </view>
 
   <!-- Loading -->
@@ -103,6 +106,42 @@
         </view>
       </view>
     </view>
+  </view>
+
+  <!-- Earnings Tab -->
+  <view wx:elif="{{tab === 'earnings'}}" class="client-list">
+    <view wx:if="{{earningsLoading}}" class="loading-row">
+      <text class="loading-text">{{t.loading}}</text>
+    </view>
+    <block wx:else>
+      <!-- Summary cards -->
+      <view class="earnings-cards">
+        <view class="earnings-card">
+          <text class="earnings-card-label">{{t.earnings.thisMonth}}</text>
+          <text class="earnings-card-value">{{earningsThisMonth || '¥0.00'}}</text>
+        </view>
+        <view class="earnings-card earnings-card-green">
+          <text class="earnings-card-label">{{t.earnings.available}}</text>
+          <text class="earnings-card-value">{{earningsAvailable || '¥0.00'}}</text>
+        </view>
+      </view>
+      <!-- Payout history -->
+      <text class="section-label" style="margin: 16px 16px 8px;">{{t.earnings.payoutHistory}}</text>
+      <view wx:if="{{earningsPayouts.length === 0}}" class="empty-state">
+        <text class="empty-text">{{t.earnings.noPayouts}}</text>
+      </view>
+      <view wx:for="{{earningsPayouts}}" wx:key="id" class="client-card">
+        <view class="invite-code-row">
+          <text class="invite-code">{{item.period}}</text>
+          <view class="invite-status {{item.status === 'transferred' ? 'invite-active' : 'invite-inactive'}}">
+            <text class="invite-status-text">
+              {{item.status === 'draft' ? t.earnings.draft : item.status === 'approved' ? t.earnings.approved : t.earnings.transferred}}
+            </text>
+          </view>
+        </view>
+        <text class="invite-uses">{{t.earnings.amount}}: {{item._amountFmt}}</text>
+      </view>
+    </block>
   </view>
 
   <!-- ── Client Detail Sheet ───────────────────────────────────────────── -->

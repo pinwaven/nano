@@ -4,7 +4,7 @@ const BASE = 'https://nano.fros.cc'
 const T = {
   zh: {
     title: 'Nano 管理',
-    tabs: { users: '用户', coaches: '教练', store: '商城', invites: '邀请' },
+    tabs: { users: '用户', coaches: '教练', store: '商城', invites: '邀请', rewards: '奖励' },
     refresh: '刷新', loading: '加载中…', back: '返回',
     add: '添加', edit: '编辑', delete: '删除', save: '保存', cancel: '取消',
     saving: '保存中…', deleting: '删除中…',
@@ -62,10 +62,18 @@ const T = {
     orderStatuses: ['待处理', '已确认', '已发货', '已送达', '已取消'],
     orderStatusValues: ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'],
     error: { required: '此项为必填', saveFailed: '保存失败，请重试', networkError: '网络错误' },
+    rewards: {
+      thisMonth: '本月渠道收益', coachBreakdown: 'Coach 佣金明细',
+      coachName: 'Coach', thisMonthCol: '本月', pendingCol: '待结算',
+      pendingPayouts: '待审批结算单', period: '周期', amount: '金额',
+      approve: '审批通过', markTransferred: '标记已转账',
+      draft: '待审批', approved: '已审批', transferred: '已转账',
+      generatePayouts: '生成 Coach 结算单', generating: '生成中…', noBreakdown: '暂无数据', noPayouts: '暂无结算单',
+    },
   },
   en: {
     title: 'Nano Admin',
-    tabs: { users: 'Users', coaches: 'Coaches', store: 'Store', invites: 'Invites' },
+    tabs: { users: 'Users', coaches: 'Coaches', store: 'Store', invites: 'Invites', rewards: 'Rewards' },
     refresh: 'Refresh', loading: 'Loading…', back: 'Back',
     add: 'Add', edit: 'Edit', delete: 'Delete', save: 'Save', cancel: 'Cancel',
     saving: 'Saving…', deleting: 'Deleting…',
@@ -123,6 +131,14 @@ const T = {
     orderStatuses: ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'],
     orderStatusValues: ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'],
     error: { required: 'This field is required', saveFailed: 'Save failed, please retry', networkError: 'Network error' },
+    rewards: {
+      thisMonth: 'Channel Earnings (This Month)', coachBreakdown: 'Coach Breakdown',
+      coachName: 'Coach', thisMonthCol: 'This Month', pendingCol: 'Pending',
+      pendingPayouts: 'Pending Payouts', period: 'Period', amount: 'Amount',
+      approve: 'Approve', markTransferred: 'Mark Transferred',
+      draft: 'Pending Approval', approved: 'Approved', transferred: 'Transferred',
+      generatePayouts: 'Generate Coach Payouts', generating: 'Generating…', noBreakdown: 'No data', noPayouts: 'No payouts',
+    },
   },
 }
 
@@ -163,6 +179,13 @@ Page({
 
     users: [], coaches: [], storeItems: [], orders: [], invites: [],
     storeSubTab: 'items',
+
+    // Rewards tab
+    rewardsLoading: false,
+    rewardsThisMonth: null,
+    rewardsCoachBreakdown: [],
+    rewardsPendingPayouts: [],
+    rewardsGenerating: false,
 
     // User detail overlay
     detailOpen: false,
@@ -264,13 +287,20 @@ Page({
     }
   },
 
-  handleRefresh() { this._loadAll() },
+  handleRefresh() {
+    this._loadAll()
+    if (this.data.tab === 'rewards') this._loadRewards()
+  },
 
   handleBack() { wx.navigateBack() },
 
   // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-  switchTab(e) { this.setData({ tab: e.currentTarget.dataset.tab }) },
+  switchTab(e) {
+    const tab = e.currentTarget.dataset.tab
+    this.setData({ tab })
+    if (tab === 'rewards' && this.data.rewardsThisMonth === null) this._loadRewards()
+  },
 
   switchStoreTab(e) { this.setData({ storeSubTab: e.currentTarget.dataset.tab }) },
 
@@ -590,6 +620,60 @@ Page({
         } catch (ex) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
       },
     })
+  },
+
+  // ── Rewards ───────────────────────────────────────────────────────────────────
+
+  async _loadRewards() {
+    const cid = this._channelId
+    if (!cid) return
+    this.setData({ rewardsLoading: true })
+    try {
+      const res = await this._req(`${BASE}/api/channel-rewards-summary?channel_id=${cid}`)
+      const d = res.data || {}
+      const lang = this.data.lang
+      this.setData({
+        rewardsThisMonth: `¥${Number(d.this_month_cny || 0).toFixed(2)}`,
+        rewardsCoachBreakdown: (d.coach_breakdown || []).map(c => ({
+          ...c,
+          _thisMonth: `¥${Number(c.this_month || 0).toFixed(2)}`,
+          _pending: `¥${Number(c.pending_total || 0).toFixed(2)}`,
+        })),
+        rewardsPendingPayouts: (d.pending_payouts || []).map(p => ({
+          ...p,
+          _amountFmt: `¥${Number(p.total_cny || 0).toFixed(2)}`,
+        })),
+        rewardsLoading: false,
+      })
+    } catch {
+      this.setData({ rewardsLoading: false })
+    }
+  },
+
+  async generateCoachPayouts() {
+    const cid = this._channelId
+    if (!cid) return
+    const now = new Date()
+    const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    this.setData({ rewardsGenerating: true })
+    try {
+      await this._req(`${BASE}/api/generate-coach-payouts`, 'POST', { channel_id: cid, period })
+      await this._loadRewards()
+    } catch {
+      wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' })
+    } finally {
+      this.setData({ rewardsGenerating: false })
+    }
+  },
+
+  async updateCoachPayout(e) {
+    const { payoutId, status } = e.currentTarget.dataset
+    try {
+      await this._req(`${BASE}/api/coach-payouts/${payoutId}`, 'PUT', { status, approved_by: app.globalData.user?.user_id })
+      await this._loadRewards()
+    } catch {
+      wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' })
+    }
   },
 
   // ── HTTP helper ───────────────────────────────────────────────────────────────

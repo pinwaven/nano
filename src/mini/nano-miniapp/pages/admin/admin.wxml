@@ -28,6 +28,9 @@
     <view class="adm-tab {{tab === 'invites' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="invites">
       <text>{{t.tabs.invites}}</text>
     </view>
+    <view class="adm-tab {{tab === 'rewards' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="rewards">
+      <text>{{t.tabs.rewards}}</text>
+    </view>
   </view>
 
   <!-- ── Loading ── -->
@@ -250,6 +253,65 @@
           </view>
         </view>
       </view>
+
+      <view style="height: 48rpx;"></view>
+    </view>
+  </scroll-view>
+
+  <!-- ════ REWARDS TAB ════ -->
+  <scroll-view wx:elif="{{tab === 'rewards'}}" class="adm-scroll" scroll-y="true">
+    <view class="adm-inner">
+
+      <view wx:if="{{rewardsLoading}}" class="adm-empty">
+        <text>{{t.loading}}</text>
+      </view>
+      <block wx:else>
+
+        <!-- Channel earnings summary card -->
+        <view class="adm-rewards-summary">
+          <text class="adm-rewards-summary-label">{{t.rewards.thisMonth}}</text>
+          <text class="adm-rewards-summary-value">{{rewardsThisMonth || '¥0.00'}}</text>
+        </view>
+
+        <!-- Generate payouts button -->
+        <view class="adm-add-btn {{rewardsGenerating ? 'adm-add-btn-busy' : ''}}" bindtap="generateCoachPayouts">
+          <text>{{rewardsGenerating ? t.rewards.generating : t.rewards.generatePayouts}}</text>
+        </view>
+
+        <!-- Pending coach payouts -->
+        <text class="adm-section-label">{{t.rewards.pendingPayouts}}</text>
+        <view wx:if="{{rewardsPendingPayouts.length === 0}}" class="adm-empty" style="margin-top: 8rpx;">
+          <text>{{t.rewards.noPayouts}}</text>
+        </view>
+        <view wx:for="{{rewardsPendingPayouts}}" wx:key="id" class="adm-card">
+          <view class="adm-card-top">
+            <view class="adm-card-info">
+              <text class="adm-card-title">{{item.coach_name || item.coach_id}}</text>
+              <text class="adm-card-sub">{{t.rewards.period}}: {{item.period}} · {{item._amountFmt}}</text>
+            </view>
+          </view>
+          <view class="adm-card-actions" catchtap="noop">
+            <view class="adm-action-btn adm-action-edit" catchtap="updateCoachPayout" data-payout-id="{{item.id}}" data-status="approved">
+              <text>{{t.rewards.approve}}</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- Coach breakdown -->
+        <text class="adm-section-label" style="margin-top: 24rpx;">{{t.rewards.coachBreakdown}}</text>
+        <view wx:if="{{rewardsCoachBreakdown.length === 0}}" class="adm-empty" style="margin-top: 8rpx;">
+          <text>{{t.rewards.noBreakdown}}</text>
+        </view>
+        <view wx:for="{{rewardsCoachBreakdown}}" wx:key="coach_id" class="adm-card">
+          <view class="adm-card-top">
+            <view class="adm-card-info">
+              <text class="adm-card-title">{{item.coach_name || item.coach_id}}</text>
+              <text class="adm-card-sub">{{t.rewards.thisMonthCol}}: {{item._thisMonth}} · {{t.rewards.pendingCol}}: {{item._pending}}</text>
+            </view>
+          </view>
+        </view>
+
+      </block>
 
       <view style="height: 48rpx;"></view>
     </view>

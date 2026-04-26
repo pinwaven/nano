@@ -758,3 +758,27 @@
 .adm-modal-save-busy {
   opacity: 0.6;
 }
+
+.adm-rewards-summary {
+  background: rgba(99,117,236,0.12);
+  border: 1rpx solid #6375EC;
+  border-radius: 16rpx;
+  padding: 28rpx 24rpx;
+  margin-bottom: 16rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+.adm-rewards-summary-label { font-size: 24rpx; color: #7A9ABF; }
+.adm-rewards-summary-value { font-size: 44rpx; font-weight: 700; color: #A0B4FF; }
+
+.adm-section-label {
+  font-size: 24rpx;
+  color: #7A9ABF;
+  display: block;
+  margin-bottom: 12rpx;
+  margin-top: 4rpx;
+  letter-spacing: 0.5px;
+}
+
+.adm-add-btn-busy { opacity: 0.6; }

@@ -519,3 +519,20 @@
 
 .instr-send-btn.btn-busy { opacity: 0.6; }
 .instr-send-text { font-size: 15px; font-weight: 600; color: #fff; }
+
+.earnings-cards { display: flex; gap: 12px; padding: 16px 16px 0; }
+.earnings-card {
+  flex: 1;
+  background: rgba(30,58,95,0.5);
+  border: 1rpx solid #1E3A5F;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.earnings-card-green { border-color: #10b981; background: rgba(16,185,129,0.08); }
+.earnings-card-label { font-size: 11px; color: #7A9ABF; }
+.earnings-card-value { font-size: 20px; font-weight: 700; color: #E8F0F8; }
+.earnings-card-green .earnings-card-value { color: #10b981; }
+

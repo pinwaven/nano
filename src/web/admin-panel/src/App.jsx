@@ -5,6 +5,7 @@ import {
   Users, Droplets, UserCog, RefreshCcw,
   ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout,
   ShoppingBag, Package, Building2, Tag, Copy, Cpu, Layers, QrCode, Printer, ChevronLeft, ChevronRight, Download,
+  Coins, TrendingUp, Settings2,
 } from 'lucide-react';
 
 axios.interceptors.request.use((config) => {
@@ -18,7 +19,7 @@ axios.interceptors.request.use((config) => {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards' },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
     stats: {
@@ -122,6 +123,19 @@ const T = {
       delivered: 'Delivered', cancelled: 'Cancelled',
     },
     invites: { active: 'Active', deactivated: 'Deactivated', unlimited: 'Unlimited' },
+    rewards: {
+      settingsTab: 'Settings', channelPayoutsTab: 'Channel Payouts', coachCommissionsTab: 'Coach Commissions',
+      role: 'Role', productType: 'Product Type', flatRate: 'Flat Rate (¥)', pct: 'Percentage (%)',
+      coach: 'Coach', channel: 'Channel', chip: 'Chip', dot: 'Dot', subscription: 'Subscription',
+      generatePayouts: 'Generate Payouts', period: 'Period (YYYY-MM)',
+      channelName: 'Channel', totalCny: 'Total (¥)', status: 'Status', approvedAt: 'Approved',
+      transferredAt: 'Transferred', approve: 'Approve', markTransferred: 'Mark Transferred',
+      draft: 'Draft', approved: 'Approved', transferred: 'Transferred',
+      coachName: 'Coach', channelCol: 'Channel', productTypeCol: 'Product', amountCny: 'Amount (¥)',
+      orderId: 'Order', createdAt: 'Date',
+      noSettings: 'No settings found', noPayouts: 'No payouts', noCommissions: 'No commissions',
+      generate: 'Generate', generating: 'Generating…', saved: 'Saved', saveFailed: 'Save failed',
+    },
     addBatch: 'Add Batch', countBatch: (n) => `${n} batch${n !== 1 ? 'es' : ''}`,
     chips: {
       prefix: 'Prefix *', prefixHint: 'Auto-uppercased, e.g. KC24A',
@@ -138,7 +152,7 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理' },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
     stats: {
@@ -255,6 +269,19 @@ const T = {
       delivered: '已送达', cancelled: '已取消',
     },
     invites: { active: '有效', deactivated: '已停用', unlimited: '不限' },
+    rewards: {
+      settingsTab: '费率设置', channelPayoutsTab: '渠道结算', coachCommissionsTab: 'Coach 佣金',
+      role: '角色', productType: '产品类型', flatRate: '固定佣金 (¥)', pct: '比例 (%)',
+      coach: 'Coach', channel: '渠道', chip: '芯片', dot: '原粒', subscription: '订阅',
+      generatePayouts: '生成结算单', period: '周期 (YYYY-MM)',
+      channelName: '渠道', totalCny: '金额 (¥)', status: '状态', approvedAt: '审批时间',
+      transferredAt: '转账时间', approve: '审批通过', markTransferred: '标记已转账',
+      draft: '草稿', approved: '已审批', transferred: '已转账',
+      coachName: 'Coach', channelCol: '渠道', productTypeCol: '产品', amountCny: '金额 (¥)',
+      orderId: '订单', createdAt: '时间',
+      noSettings: '暂无设置', noPayouts: '暂无结算单', noCommissions: '暂无佣金记录',
+      generate: '生成', generating: '生成中…', saved: '已保存', saveFailed: '保存失败',
+    },
   },
 };
 
@@ -1534,6 +1561,190 @@ function StoreTab({ storeItems, orders, onRefresh }) {
   );
 }
 
+// ── Rewards tab ───────────────────────────────────────────────────────────────
+
+function RewardsTab() {
+  const { t } = useLang();
+  const r = t.rewards;
+  const [subTab, setSubTab] = useState('settings');
+  const [settings, setSettings] = useState([]);
+  const [channelPayouts, setChannelPayouts] = useState([]);
+  const [coachCommissions, setCoachCommissions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [generatePeriod, setGeneratePeriod] = useState(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [generating, setGenerating] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [sRes, cpRes, ccRes] = await Promise.all([
+        axios.get('/api/commission-settings'),
+        axios.get('/api/channel-payouts'),
+        axios.get('/api/coach-commissions'),
+      ]);
+      setSettings(sRes.data.settings || []);
+      setChannelPayouts(cpRes.data.payouts || []);
+      setCoachCommissions(ccRes.data.commissions || []);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function saveSetting(id, field, value) {
+    const row = settings.find(s => s.id === id);
+    if (!row) return;
+    const patch = { flat_rate_cny: row.flat_rate_cny, percentage: row.percentage, [field]: value === '' ? null : Number(value) };
+    try {
+      await axios.put(`/api/commission-settings/${id}`, patch);
+      setSettings(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+    } catch {
+      alert(r.saveFailed);
+    }
+  }
+
+  async function generateChannelPayouts() {
+    if (!generatePeriod) return;
+    setGenerating(true);
+    try {
+      await axios.post('/api/generate-channel-payouts', { period: generatePeriod });
+      await load();
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function updateChannelPayout(id, status) {
+    try {
+      await axios.put(`/api/channel-payouts/${id}`, { status });
+      setChannelPayouts(prev => prev.map(p => p.id === id ? { ...p, status } : p));
+    } catch {
+      alert(r.saveFailed);
+    }
+  }
+
+  const productLabel = (pt) => ({ chip: r.chip, dot: r.dot, subscription: r.subscription }[pt] || pt);
+  const statusLabel  = (s)  => ({ draft: r.draft, approved: r.approved, transferred: r.transferred }[s] || s);
+  const statusColor  = (s)  => ({ draft: '#64748b', approved: '#2563eb', transferred: '#16a34a' }[s] || '#64748b');
+
+  return (
+    <div>
+      <div className="subtabs">
+        <button className={`subtab-btn${subTab === 'settings' ? ' active' : ''}`} onClick={() => setSubTab('settings')}>
+          <Settings2 size={13} /> {r.settingsTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'channel-payouts' ? ' active' : ''}`} onClick={() => setSubTab('channel-payouts')}>
+          <TrendingUp size={13} /> {r.channelPayoutsTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'coach-commissions' ? ' active' : ''}`} onClick={() => setSubTab('coach-commissions')}>
+          <Coins size={13} /> {r.coachCommissionsTab}
+        </button>
+      </div>
+
+      {loading && <p style={{ padding: '1rem', color: '#64748b' }}>Loading…</p>}
+
+      {!loading && subTab === 'settings' && (
+        <div style={{ padding: '1rem' }}>
+          <table className="data-table">
+            <thead><tr>
+              <th>{r.role}</th><th>{r.productType}</th>
+              <th>{r.flatRate}</th><th>{r.pct}</th>
+            </tr></thead>
+            <tbody>
+              {settings.length === 0 && <tr><td colSpan={4} style={{ color: '#64748b' }}>{r.noSettings}</td></tr>}
+              {settings.map(row => (
+                <tr key={row.id}>
+                  <td>{row.role === 'coach' ? r.coach : r.channel}</td>
+                  <td>{productLabel(row.product_type)}</td>
+                  <td>
+                    {row.flat_rate_cny != null
+                      ? <input type="number" step="0.01" defaultValue={row.flat_rate_cny}
+                          onBlur={e => saveSetting(row.id, 'flat_rate_cny', e.target.value)}
+                          style={{ width: 80 }} />
+                      : '—'}
+                  </td>
+                  <td>
+                    {row.percentage != null
+                      ? <input type="number" step="0.1" defaultValue={row.percentage}
+                          onBlur={e => saveSetting(row.id, 'percentage', e.target.value)}
+                          style={{ width: 80 }} />
+                      : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!loading && subTab === 'channel-payouts' && (
+        <div style={{ padding: '1rem' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: '1rem' }}>
+            <input value={generatePeriod} onChange={e => setGeneratePeriod(e.target.value)}
+              placeholder="YYYY-MM" style={{ width: 120 }} />
+            <button className="add-btn" onClick={generateChannelPayouts} disabled={generating}>
+              {generating ? r.generating : r.generatePayouts}
+            </button>
+          </div>
+          <table className="data-table">
+            <thead><tr>
+              <th>{r.channelName}</th><th>{r.period}</th><th>{r.totalCny}</th>
+              <th>{r.status}</th><th>{r.approvedAt}</th><th>{r.transferredAt}</th><th></th>
+            </tr></thead>
+            <tbody>
+              {channelPayouts.length === 0 && <tr><td colSpan={7} style={{ color: '#64748b' }}>{r.noPayouts}</td></tr>}
+              {channelPayouts.map(p => (
+                <tr key={p.id}>
+                  <td>{p.channel_name || '—'}</td>
+                  <td>{p.period}</td>
+                  <td>¥{Number(p.total_cny).toFixed(2)}</td>
+                  <td><span style={{ color: statusColor(p.status), fontWeight: 600 }}>{statusLabel(p.status)}</span></td>
+                  <td>{fmtDate(p.approved_at)}</td>
+                  <td>{fmtDate(p.transferred_at)}</td>
+                  <td style={{ display: 'flex', gap: 4 }}>
+                    {p.status === 'draft' &&
+                      <button className="edit-btn" onClick={() => updateChannelPayout(p.id, 'approved')}>{r.approve}</button>}
+                    {p.status === 'approved' &&
+                      <button className="edit-btn" onClick={() => updateChannelPayout(p.id, 'transferred')}>{r.markTransferred}</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!loading && subTab === 'coach-commissions' && (
+        <div style={{ padding: '1rem' }}>
+          <table className="data-table">
+            <thead><tr>
+              <th>{r.coachName}</th><th>{r.channelCol}</th><th>{r.productTypeCol}</th>
+              <th>{r.amountCny}</th><th>{r.status}</th><th>{r.createdAt}</th>
+            </tr></thead>
+            <tbody>
+              {coachCommissions.length === 0 && <tr><td colSpan={6} style={{ color: '#64748b' }}>{r.noCommissions}</td></tr>}
+              {coachCommissions.map(c => (
+                <tr key={c.id}>
+                  <td>{c.coach_name || c.coach_id}</td>
+                  <td>{c.channel_name || '—'}</td>
+                  <td>{productLabel(c.product_type)}</td>
+                  <td>¥{Number(c.amount_cny).toFixed(2)}</td>
+                  <td><span style={{ color: statusColor(c.status) }}>{statusLabel(c.status)}</span></td>
+                  <td>{fmtDate(c.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Simulators tab ────────────────────────────────────────────────────────────
 
 const SIM_V = `?v=${__SIM_VERSION__}`;
@@ -2538,6 +2749,7 @@ export default function App() {
     { id: 'kino',     label: t.nav.kino,     icon: Cpu         },
     { id: 'chips',    label: t.nav.chips,    icon: Layers      },
     { id: 'invites',  label: t.nav.invites,  icon: Tag         },
+    { id: 'rewards',  label: t.nav.rewards,  icon: Coins       },
     { id: 'sims',     label: t.nav.sims,     icon: Layout,      disabled: true },
   ];
 
@@ -2585,6 +2797,7 @@ export default function App() {
           {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'rewards'  && <RewardsTab />}
           {tab === 'sims'     && <SimulatorsTab />}
         </div>
       </div>

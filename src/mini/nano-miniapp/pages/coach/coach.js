@@ -7,7 +7,7 @@ const T = {
     back: '返回',
     refresh: '刷新',
     loading: '加载中…',
-    tabs: { clients: '我的客户', invites: '邀请码' },
+    tabs: { clients: '我的客户', invites: '邀请码', earnings: '我的收益' },
     noClients: '暂无分配的客户',
     bioAge: '生物年龄', chronoAge: '实际年龄',
     lastScan: '上次扫描',
@@ -53,13 +53,18 @@ const T = {
       deactivateWarning: '停用此邀请码？已复制的链接将失效。',
       copied: '链接已复制',
     },
+    earnings: {
+      thisMonth: '本月待结算', available: '可提现余额', noPayouts: '暂无结算记录',
+      payoutHistory: '结算记录', period: '周期', amount: '金额', status: '状态',
+      draft: '待审批', approved: '已审批', transferred: '已转账',
+    },
   },
   en: {
     title: 'Coach Panel',
     back: 'Back',
     refresh: 'Refresh',
     loading: 'Loading…',
-    tabs: { clients: 'My Clients', invites: 'Invite Codes' },
+    tabs: { clients: 'My Clients', invites: 'Invite Codes', earnings: 'My Earnings' },
     noClients: 'No clients assigned yet',
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
     lastScan: 'Last scan',
@@ -104,6 +109,11 @@ const T = {
       noInvites: 'No invite codes yet',
       deactivateWarning: 'Deactivate this invite code? Shared links will stop working.',
       copied: 'Link copied',
+    },
+    earnings: {
+      thisMonth: 'This Month (Pending)', available: 'Available Balance', noPayouts: 'No payout history',
+      payoutHistory: 'Payout History', period: 'Period', amount: 'Amount', status: 'Status',
+      draft: 'Pending Approval', approved: 'Approved', transferred: 'Transferred',
     },
   },
 }
@@ -183,6 +193,11 @@ Page({
     msgLoading: false,
     msgText: '',
     msgBusy: false,
+    // Earnings tab
+    earningsThisMonth: null,
+    earningsAvailable: null,
+    earningsPayouts: [],
+    earningsLoading: false,
     // Reminder overlay
     reminderOpen: false,
     reminderTarget: null,
@@ -261,8 +276,16 @@ Page({
     }
   },
 
-  handleRefresh() { this._loadAll() },
-  switchTab(e) { this.setData({ tab: e.currentTarget.dataset.tab }) },
+  handleRefresh() {
+    this._loadAll()
+    if (this.data.tab === 'earnings') this._loadEarnings()
+  },
+
+  switchTab(e) {
+    const tab = e.currentTarget.dataset.tab
+    this.setData({ tab })
+    if (tab === 'earnings' && this.data.earningsThisMonth === null) this._loadEarnings()
+  },
   handleBack() { wx.navigateBack() },
   noop() {},
 
@@ -482,6 +505,27 @@ Page({
         }
       },
     })
+  },
+
+  async _loadEarnings() {
+    if (!this._coachUserId) return
+    this.setData({ earningsLoading: true })
+    try {
+      const res = await this._req(`${BASE}/api/coach-earnings?coach_user_id=${encodeURIComponent(this._coachUserId)}`)
+      const d = res.data || {}
+      const payouts = (d.payouts || []).map(p => ({
+        ...p,
+        _amountFmt: `¥${Number(p.total_cny).toFixed(2)}`,
+      }))
+      this.setData({
+        earningsThisMonth: `¥${Number(d.this_month_pending || 0).toFixed(2)}`,
+        earningsAvailable: `¥${Number(d.available_cny || 0).toFixed(2)}`,
+        earningsPayouts: payouts,
+        earningsLoading: false,
+      })
+    } catch {
+      this.setData({ earningsLoading: false })
+    }
   },
 
   _req(url, method = 'GET', data = null) {
