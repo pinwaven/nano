@@ -1,6 +1,8 @@
 const app = getApp()
 const BASE = 'https://nano.fros.cc'
 
+const KINO_SIM_SERIAL = 'KNA2-00000'
+
 const CART_SETS = [
   {
     key: 'set-bioage-reducing',
@@ -568,6 +570,7 @@ Page({
     kinoSimScannedUserId: null,
     kinoSimScannedUserName: null,
     kinoSimChipId: null,
+    kinoSimDeviceId: null,
     obStep: null,   // 'name'|'gender'|'birthday'|'body'|'conditions'|'done'|null
     obName: '',
     obBirthday: '',
@@ -729,9 +732,19 @@ Page({
 
   // ── Kino Simulator ──────────────────────────────────────────────────────────
 
+  async _resolveKinoSimDevice() {
+    try {
+      const res = await this._req(`${BASE}/api/kino-devices`)
+      const devices = res.data?.devices || []
+      const dev = devices.find(d => d.serial_number === KINO_SIM_SERIAL)
+      if (dev) this.setData({ kinoSimDeviceId: dev.id })
+    } catch (e) {}
+  },
+
   openKinoSim() {
     if (this.data.isSuperadmin) {
       this.setData({ menuOpen: false, kinoSimOpen: true })
+      this._resolveKinoSimDevice()
     } else {
       this.setData({ menuOpen: false, kinoPassOpen: true, kinoPassInput: '', kinoPassError: false })
     }
@@ -755,6 +768,7 @@ Page({
       this.setData({ kinoPassInput: next })
       setTimeout(() => {
         this.setData({ kinoPassOpen: false, kinoPassInput: '', kinoSimOpen: true })
+        this._resolveKinoSimDevice()
       }, 180)
     } else {
       this.setData({ kinoPassInput: next, kinoPassError: true })
@@ -819,7 +833,7 @@ Page({
       onlyFromCamera: false,
       success: async (scanRes) => {
         const chip_id = scanRes.result
-        if (!chip_id.startsWith('MVNS') && !chip_id.startsWith('KINO')) {
+        if (!chip_id.startsWith('KNC')) {
           wx.showToast({ title: t.kinoScanInvalidChip, icon: 'none', duration: 2500 })
           return
         }
@@ -858,6 +872,7 @@ Page({
         openid: targetUserId,
         test_type: 'kino_chip',
         test_data: { hsCRP: randomCRP },
+        kino_device_id: this.data.kinoSimDeviceId || undefined,
       })
       const biomarkers = res.data?.biomarkers || null
       let bioageProfile = res.data?.bioage_profile || null
@@ -890,6 +905,7 @@ Page({
             chip_id: kinoSimChipId,
             data: { biomarkers, bioage_profile: bioageProfile },
             bio_age: rawBioAge,
+            kino_device_id: this.data.kinoSimDeviceId || undefined,
           })
         } catch (e) {}
       }
@@ -1156,7 +1172,7 @@ Page({
         const chip_id = res.result
         this.setData({ kinoScanPending: false })
         this._addMsg('user', chip_id, true)
-        if (!chip_id.startsWith('MVNS') && !chip_id.startsWith('KINO')) {
+        if (!chip_id.startsWith('KNC')) {
           this._addMsg('ai', t.kinoScanInvalidChip, true)
           return
         }

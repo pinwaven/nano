@@ -4,7 +4,7 @@ import wavenLogo from '../../shared/assets/waven-logo-icon.png';
 import {
   Users, Droplets, UserCog, RefreshCcw,
   ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout,
-  ShoppingBag, Package, Building2, Tag, Copy, Cpu, Layers, QrCode, Printer, ChevronLeft, ChevronRight,
+  ShoppingBag, Package, Building2, Tag, Copy, Cpu, Layers, QrCode, Printer, ChevronLeft, ChevronRight, Download,
 } from 'lucide-react';
 
 axios.interceptors.request.use((config) => {
@@ -2245,33 +2245,68 @@ function DeleteBatchConfirm({ batch, onClose, onConfirm }) {
   );
 }
 
+function ChipCard({ chip, index }) {
+  const statusColor = { available: '#10b981', used: '#f59e0b', damaged: '#ef4444' };
+  const color = statusColor[chip.status] || '#94a3b8';
+  return (
+    <div style={{
+      background: '#0f172a', border: '1px solid #1e293b', borderRadius: 10,
+      padding: '14px 10px 10px', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', gap: 8, minWidth: 0,
+    }}>
+      <img
+        src={`https://api.qrserver.com/v1/create-qr-code/?size=96x96&data=${encodeURIComponent(chip.chip_code)}&bgcolor=0f172a&color=e2e8f0&margin=4`}
+        width={96} height={96} alt="QR"
+        style={{ borderRadius: 6, display: 'block' }}
+      />
+      <code style={{ fontSize: 10, color: '#cbd5e1', letterSpacing: '0.3px', textAlign: 'center', wordBreak: 'break-all' }}>
+        {chip.chip_code}
+      </code>
+      <span style={{
+        fontSize: 10, fontWeight: 600, color, background: color + '1a',
+        borderRadius: 99, padding: '2px 8px',
+      }}>
+        {chip.status}
+      </span>
+      {chip.nickname && (
+        <span style={{ fontSize: 10, color: '#64748b' }}>{chip.nickname}</span>
+      )}
+    </div>
+  );
+}
+
 function ChipListPanel({ batch, onClose }) {
   const { t } = useContext(LangCtx);
   const tc = t.chips;
-  const [chips, setChips] = useState([]);
-  const [total, setTotal]   = useState(0);
-  const [page, setPage]     = useState(1);
-  const [loading, setLoading] = useState(false);
-  const LIMIT = 50;
+  const [firstChips, setFirstChips] = useState([]);
+  const [lastChip,   setLastChip]   = useState(null);
+  const [total,      setTotal]      = useState(0);
+  const [loading,    setLoading]    = useState(false);
+  const [printing,   setPrinting]   = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
-  const load = useCallback(async (p) => {
-    setLoading(true);
-    try {
-      const res = await axios.get(`/api/kino-chip-batches/${batch.id}/chips?page=${p}&limit=${LIMIT}`);
-      setChips(res.data.chips || []);
-      setTotal(res.data.total || 0);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const res = await axios.get(`/api/kino-chip-batches/${batch.id}/chips?page=1&limit=10`);
+        const chips = res.data.chips || [];
+        const tot   = res.data.total || 0;
+        setFirstChips(chips);
+        setTotal(tot);
+        if (tot > 10) {
+          const lastRes = await axios.get(`/api/kino-chip-batches/${batch.id}/chips?page=${tot}&limit=1`);
+          setLastChip(lastRes.data.chips?.[0] || null);
+        }
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    };
+    load();
   }, [batch.id]);
 
-  useEffect(() => { load(page); }, [load, page]);
-
-  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
-
   const printQR = async () => {
-    setLoading(true);
+    setPrinting(true);
     try {
-      // Fetch all chips for printing (up to batch.quantity)
       const pages = Math.ceil(batch.quantity / 100);
       let all = [];
       for (let p = 1; p <= pages; p++) {
@@ -2281,81 +2316,94 @@ function ChipListPanel({ batch, onClose }) {
       const html = `<!DOCTYPE html><html><head><title>Batch ${batch.prefix}</title>
         <style>body{font-family:sans-serif;margin:16px}h2{margin-bottom:12px}
         .grid{display:flex;flex-wrap:wrap;gap:8px}
-        .chip{text-align:center;border:1px solid #ccc;border-radius:4px;padding:8px;width:116px}
-        .chip img{display:block;margin:0 auto 4px}
-        .chip p{font-size:9px;margin:0;word-break:break-all}
+        .chip{text-align:center;border:1px solid #ccc;border-radius:6px;padding:10px;width:120px}
+        .chip img{display:block;margin:0 auto 6px}
+        .chip p{font-size:9px;margin:0;word-break:break-all;font-family:monospace}
         @media print{@page{size:A4;margin:12mm}.chip{page-break-inside:avoid}}</style>
         </head><body>
         <h2>Batch: ${batch.prefix} | Model: ${batch.model} | Total: ${batch.quantity}</h2>
         <div class="grid">${all.map(c =>
-          `<div class="chip"><img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(c.chip_code)}" width="100" height="100" /><p>${c.chip_code}</p></div>`
+          `<div class="chip"><img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(c.chip_code)}" width="100" height="100"/><p>${c.chip_code}</p></div>`
         ).join('')}</div></body></html>`;
       const win = window.open('', '_blank');
       win.document.write(html);
       win.document.close();
       setTimeout(() => win.print(), 800);
     } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    finally { setPrinting(false); }
   };
 
-  const statusColor = { available: '#10b981', used: '#94a3b8', damaged: '#ef4444' };
+  const downloadCSV = async () => {
+    setDownloading(true);
+    try {
+      const pages = Math.ceil(batch.quantity / 100);
+      let all = [];
+      for (let p = 1; p <= pages; p++) {
+        const res = await axios.get(`/api/kino-chip-batches/${batch.id}/chips?page=${p}&limit=100`);
+        all = all.concat(res.data.chips || []);
+      }
+      const csv = all.map(c => c.chip_code).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = `${batch.prefix}_chips.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { console.error(e); }
+    finally { setDownloading(false); }
+  };
+
+  const hiddenCount = total > 10 ? total - 11 : 0;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-xl" onClick={e => e.stopPropagation()} style={{ maxWidth: 820 }}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 720, width: '90vw' }}>
         <div className="modal-header">
-          <span>{batch.prefix} — {batch.model} ({total} {tc.chipCode.toLowerCase()}s)</span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }} onClick={printQR} disabled={loading}>
-              <Printer size={13} style={{ marginRight: 4 }} />{tc.printQR}
+          <div>
+            <span style={{ fontWeight: 600 }}>{batch.prefix}</span>
+            <span style={{ color: '#64748b', fontSize: 13, marginLeft: 8 }}>{batch.model} · {total} chips</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+              onClick={downloadCSV} disabled={downloading}>
+              <Download size={13} />{downloading ? 'Downloading…' : 'CSV'}
+            </button>
+            <button className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+              onClick={printQR} disabled={printing}>
+              <Printer size={13} />{printing ? 'Preparing…' : tc.printQR}
             </button>
             <button className="icon-btn" onClick={onClose}><X size={16} /></button>
           </div>
         </div>
-        <div className="modal-body" style={{ padding: 0 }}>
-          {loading ? <p style={{ padding: 24, textAlign: 'center' }}>{t.topbar.loading}</p> : (
-            <table className="data-table">
-              <thead><tr>
-                <th>#</th>
-                <th>{tc.chipCode}</th>
-                <th>QR</th>
-                <th>{tc.status}</th>
-                <th>{tc.scannedBy}</th>
-              </tr></thead>
-              <tbody>
-                {chips.length === 0 && <tr><td colSpan={5} className="empty-row">{tc.noChips}</td></tr>}
-                {chips.map((c, i) => (
-                  <tr key={c.id}>
-                    <td style={{ color: '#94a3b8', fontSize: 11 }}>{(page - 1) * LIMIT + i + 1}</td>
-                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{c.chip_code}</td>
-                    <td>
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=48x48&data=${encodeURIComponent(c.chip_code)}`}
-                        width={48} height={48} alt="QR"
-                        style={{ display: 'block', borderRadius: 2 }}
-                      />
-                    </td>
-                    <td>
-                      <span style={{ color: statusColor[c.status] || '#94a3b8', fontWeight: 500, fontSize: 12 }}>
-                        {c.status}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: 12 }}>{c.nickname || c.user_id || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {totalPages > 1 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderTop: '1px solid #1e293b' }}>
-              <button className="icon-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                <ChevronLeft size={15} />
-              </button>
-              <span style={{ fontSize: 12, color: '#94a3b8' }}>{tc.page} {page} {tc.of} {totalPages}</span>
-              <button className="icon-btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
-                <ChevronRight size={15} />
-              </button>
-            </div>
+        <div className="modal-body" style={{ padding: '20px 20px 24px' }}>
+          {loading ? (
+            <p style={{ textAlign: 'center', color: '#64748b', padding: '32px 0' }}>{t.topbar.loading}</p>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
+                {firstChips.map((c, i) => <ChipCard key={c.id} chip={c} index={i + 1} />)}
+              </div>
+
+              {hiddenCount > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '16px 0' }}>
+                  <div style={{ flex: 1, height: 1, background: '#1e293b' }} />
+                  <span style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap' }}>
+                    · · · {hiddenCount.toLocaleString()} more chips · · ·
+                  </span>
+                  <div style={{ flex: 1, height: 1, background: '#1e293b' }} />
+                </div>
+              )}
+
+              {lastChip && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
+                  <ChipCard chip={lastChip} index={total} />
+                </div>
+              )}
+
+              {firstChips.length === 0 && (
+                <p style={{ textAlign: 'center', color: '#475569', padding: '32px 0' }}>{tc.noChips}</p>
+              )}
+            </>
           )}
         </div>
       </div>

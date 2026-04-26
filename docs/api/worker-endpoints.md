@@ -43,14 +43,23 @@ All paths below are relative to the Base URL (e.g., `GET /api/users`).
 | `GET` | `/biomarkers` | Fetch biomarker records for a user |
 | `GET` | `/dots-inventory` | List all Dots cartridges |
 | `GET` | `/coach-list` | List Coaches with user counts |
-| `GET` | `/kino-chip` | Look up a Kino chip and its linked user |
+| `GET` | `/kino-devices` | List all Kino devices with stats |
+| `GET` | `/kino-chip` | Look up a Kino chip scan by chip code |
+| `GET` | `/kino-chip-batches` | List all chip batches with counts |
+| `GET` | `/kino-chip-batches/:id/chips` | List chips in a batch (paginated) |
 | `POST` | `/biomarkers` | Ingest Kino chip biomarker data, run BioAge calculation |
 | `POST` | `/chat` | Send a chat message |
+| `POST` | `/kino-devices` | Register a new Kino device |
 | `POST` | `/kino-result` | Mark a chip scan complete and persist the result |
+| `POST` | `/kino-chip-batches` | Create a batch and generate chip codes |
 | `POST` | `/coach-instruction` | Send a Coach instruction to a user |
 | `POST` | `/assign-coach` | Assign a Coach to a user |
 | `POST` | `/users` | Create a new user |
+| `PUT` | `/kino-devices/:id` | Update a Kino device |
+| `PUT` | `/kino-chip-batches/:id` | Update a chip batch (model/notes) |
 | `PUT` | `/users/:id` | Update a user |
+| `DELETE` | `/kino-devices/:id` | Remove a Kino device |
+| `DELETE` | `/kino-chip-batches/:id` | Delete a batch (blocked if any chip is used) |
 | `DELETE` | `/users/:id` | Delete a user |
 
 ---
@@ -316,3 +325,156 @@ Marks a chip scan as `completed` and persists the final biomarker + bioage resul
 ```
 
 Returns an error if no registered scan exists for the `chip_id` (i.e. `GET /kino-chip` was never called first).
+
+---
+
+## Kino Devices
+
+### GET /kino-devices
+
+Returns all registered Kino devices with coach/channel assignment and usage stats.
+
+**Response**
+```json
+{
+  "success": true,
+  "devices": [
+    {
+      "id": 1,
+      "serial_number": "KNO-2024-0001",
+      "name": "Clinic Unit A",
+      "status": "active",
+      "notes": "",
+      "coach_id": 2,
+      "coach_name": "Pin",
+      "channel_id": 1,
+      "channel_name": "Shanghai",
+      "test_count": 42,
+      "last_used_at": "2026-04-26T08:00:00Z",
+      "registered_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}
+```
+
+### POST /kino-devices
+
+Registers a new Kino device.
+
+**Request body**
+```json
+{
+  "serial_number": "KNO-2024-0001",
+  "name": "Clinic Unit A",
+  "coach_id": 2,
+  "channel_id": 1,
+  "status": "active",
+  "notes": ""
+}
+```
+
+`serial_number` is required and auto-uppercased. `coach_id` and `channel_id` are optional.
+
+**Response**: `{ "success": true, "id": 1 }`
+
+### PUT /kino-devices/:id
+
+Updates a device's name, assignment, status, or notes. `serial_number` cannot be changed after registration.
+
+**Request body**: `{ "name", "coach_id", "channel_id", "status", "notes" }`
+
+**Response**: `{ "success": true }`
+
+### DELETE /kino-devices/:id
+
+Removes a device. Historical biomarker records retain the `kino_device_id` value (set to NULL via FK `ON DELETE SET NULL`).
+
+**Response**: `{ "success": true }`
+
+---
+
+## Kino Chip Batches
+
+### GET /kino-chip-batches
+
+Returns all chip batches with aggregate counts.
+
+**Response**
+```json
+{
+  "success": true,
+  "batches": [
+    {
+      "id": 1,
+      "prefix": "KNC12345678",
+      "model": "K2",
+      "quantity": 100,
+      "notes": "",
+      "created_at": "2026-04-26T08:00:00Z",
+      "total_chips": 100,
+      "available": 98,
+      "used": 2,
+      "damaged": 0
+    }
+  ]
+}
+```
+
+### GET /kino-chip-batches/:id/chips
+
+Returns a paginated list of chips in a batch with their scan status.
+
+**Query params**: `page` (default `1`), `limit` (default `50`, max `100`)
+
+**Response**
+```json
+{
+  "success": true,
+  "chips": [
+    {
+      "id": 1,
+      "chip_code": "KNC12345678-0001",
+      "status": "available",
+      "created_at": "2026-04-26T08:00:00Z",
+      "scan_status": null,
+      "user_id": null,
+      "nickname": null
+    }
+  ],
+  "total": 100,
+  "page": 1,
+  "limit": 50
+}
+```
+
+### POST /kino-chip-batches
+
+Creates a batch and auto-generates all chip codes.
+
+**Request body**
+```json
+{
+  "prefix": "KNC12345678",
+  "model": "K2",
+  "quantity": 100,
+  "notes": ""
+}
+```
+
+`prefix` must match `KNC\d{8}` (generated client-side by the admin panel). `quantity` must be 1–9,999. Chips are inserted in bulk within a single DB transaction.
+
+**Response**: `{ "success": true, "id": 1, "prefix": "KNC12345678", "quantity": 100 }`
+
+### PUT /kino-chip-batches/:id
+
+Updates a batch's model or notes. `prefix` and `quantity` are immutable after creation.
+
+**Request body**: `{ "model": "S1", "notes": "Replacement batch" }`
+
+**Response**: `{ "success": true }`
+
+### DELETE /kino-chip-batches/:id
+
+Deletes a batch and all its chips via CASCADE. Blocked if any chip in the batch has `status = 'used'`.
+
+**Response**: `{ "success": true }` or `{ "success": false, "error": "Cannot delete a batch with used chips" }`

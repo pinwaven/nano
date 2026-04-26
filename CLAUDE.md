@@ -233,7 +233,41 @@ return {
 
 `scripts/local-dev.js` bridges Express → FC handler format by wrapping `req.body` in a Buffer and providing a minimal `resp` shim (`setStatusCode`, `setHeader`, `send`). Keep this shim in sync with any response API changes in the worker handler.
 
-## 12. Dots System
+## 12. Kino Hardware System
+
+The Kino hardware ecosystem has two distinct physical components, managed separately.
+
+### Kino Device (Reusable)
+
+- Physical reader unit deployed at a clinic or partner location
+- Table: `kino_devices` — serial number, name, coach/channel assignment, status (`active` / `inactive` / `maintenance`)
+- Every biomarker record ingested via a device stores `kino_device_id` in `biomarkers.kino_device_id`
+- Migration: `src/schemas/migration_kino_devices.sql`
+- Admin Panel: **Kino** tab
+
+### Kino Chip (Disposable, Single-Use)
+
+- NFC test chip with biochemical reagent layer — one scan per chip
+- Chips are issued in **batches**: each batch has a unique 8-digit code (`KNC{8digits}`) and a model (`K2` default, `S1`)
+- **Chip code format:** `KNC{8-digit-batch}-{4-digit-sequence}` e.g. `KNC12345678-0001`
+  - The chip code IS the QR code value scanned by the Mini Program
+  - Max 9,999 chips per batch
+- Tables: `kino_chip_batches` (prefix, model, quantity), `kino_chips` (chip_code, status)
+- Chip status: `available` → `used` (after scan completed) or `damaged`
+- Migration: `src/schemas/migration_kino_chips.sql`
+- Admin Panel: **Chips** tab — add batches, view QR codes, download CSV, print
+
+### Scan Flow
+
+```
+QR scan in Mini Program → POST /kino-scan (links chip to user)
+  → POST /biomarkers (raw values → BioAge calculation)
+  → POST /kino-result (marks scan completed, chip becomes "used")
+```
+
+Full details: `docs/architecture/kino-system.md`
+
+## 13. Dots System
 
 Waven Dots are 24 mg precision nutrition cartridges. Each cartridge delivers one or more active compounds in an exact dose, calibrated to the user's biomarker profile. The system targets four biological age dimensions measured by the Kino chip. The Dots can be mixed by AI at realtime according to the user's actual health data.
 
@@ -244,6 +278,6 @@ Waven Dots are 24 mg precision nutrition cartridges. Each cartridge delivers one
 - **Timing:** Morning or Evening (fixed per dot — set by the `timing` column in the `dots` table)
 - **Types:** Isolates (single active compound) and Blends (two or more actives)
 
-## TEMP Folder
+## 14. TEMP Folder
 - location: ./temp
 - save one time scripts such as migration scripts in the temp folder

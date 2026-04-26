@@ -676,7 +676,10 @@
     <view class="ksm-container">
 
       <view class="ksm-header" style="padding-top: {{statusBarHeight}}px;">
-        <text class="ksm-title">{{t.kinoSimTitle}}</text>
+        <view>
+          <text class="ksm-title">{{t.kinoSimTitle}}</text>
+          <text class="ksm-serial">S/N: KNA2-00000</text>
+        </view>
         <view class="ksm-close" bindtap="closeKinoSim">✕</view>
       </view>
 
