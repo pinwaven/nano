@@ -4,7 +4,7 @@ import wavenLogo from '../../shared/assets/waven-logo-icon.png';
 import {
   Users, Droplets, UserCog, RefreshCcw,
   ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout,
-  ShoppingBag, Package, Building2, Tag, Copy,
+  ShoppingBag, Package, Building2, Tag, Copy, Cpu, Layers, QrCode, Printer, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 
 axios.interceptors.request.use((config) => {
@@ -18,7 +18,7 @@ axios.interceptors.request.use((config) => {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips' },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
     stats: {
@@ -29,6 +29,7 @@ const T = {
       totalItems: 'Items', activeItems: 'Active', totalOrders: 'Orders', pendingOrders: 'Pending',
       totalChannels: 'Channels',
       totalInvites: 'Total Invites', activeInvites: 'Active', usedInvites: 'Used',
+      totalDevices: 'Total Devices', activeDevices: 'Active', totalTests: 'Total Tests',
     },
     table: {
       id: 'ID', nickname: 'Nickname', gender: 'Gender', birthDate: 'Birth Date',
@@ -40,17 +41,19 @@ const T = {
       unassigned: 'Unassigned', channel: 'Channel', roles: 'Roles', linkedUser: 'Linked User',
       timing: 'Timing', group: 'Group', subAge: 'Sub-Age',
       code: 'Code', maxUses: 'Max Uses', useCount: 'Uses', creator: 'Creator',
+      serialNumber: 'Serial No.', lastUsed: 'Last Used', testCount: 'Tests', status: 'Status', notes: 'Notes',
     },
-    empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found', invites: 'No invitations found' },
+    empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found', invites: 'No invitations found', kino: 'No Kino devices registered', chipBatches: 'No chip batches created' },
     count: (n) => `${n} users`,
     addUser: 'Add User',
-    addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item', addChannel: 'Add Channel', addInvite: 'Create Invite',
+    addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item', addChannel: 'Add Channel', addInvite: 'Create Invite', addDevice: 'Register Device',
     countCoach: (n) => `${n} Coaches`,
     countDot: (n) => `${n} dots`,
     countItem: (n) => `${n} items`,
     countOrder: (n) => `${n} orders`,
     countChannel: (n) => `${n} channels`,
     countInvite: (n) => `${n} invites`,
+    countDevice: (n) => `${n} device${n !== 1 ? 's' : ''}`,
     modal: {
       addUser: 'Add User', editUser: 'Edit User', deleteUser: 'Delete User',
       addCoach: 'Add Coach', editCoach: 'Edit Coach', deleteCoach: 'Delete Coach',
@@ -102,6 +105,13 @@ const T = {
       inviteType: 'Type', inviteTypeCoach: 'Coach', inviteTypeChannel: 'Channel', inviteTypeAdmin: 'Admin',
       inviteMaxUses: 'Max Uses', inviteMaxUsesPlaceholder: 'Blank = unlimited',
       inviteChannel: 'Channel *',
+      addDevice: 'Register Kino Device', editDevice: 'Edit Kino Device', deleteDevice: 'Remove Device',
+      deleteDeviceWarning: (sn) => `Remove Kino device "${sn}"? Historical biomarker links will be preserved but the device will no longer be tracked.`,
+      serialNumber: 'Serial Number *', serialNumberPlaceholder: 'e.g. KNO-2024-0001',
+      deviceName: 'Display Name', deviceNamePlaceholder: 'e.g. Clinic Unit A',
+      deviceStatus: 'Status', statusActive: 'Active', statusInactive: 'Inactive', statusMaintenance: 'Maintenance',
+      deviceNotes: 'Notes', deviceNotesPlaceholder: 'Optional notes…',
+      assignedCoachDevice: 'Assigned Coach', assignedChannelDevice: 'Assigned Channel',
     },
     dotType: { isolate: 'Isolate', blend: 'Blend' },
     store: {
@@ -112,10 +122,23 @@ const T = {
       delivered: 'Delivered', cancelled: 'Cancelled',
     },
     invites: { active: 'Active', deactivated: 'Deactivated', unlimited: 'Unlimited' },
+    addBatch: 'Add Batch', countBatch: (n) => `${n} batch${n !== 1 ? 'es' : ''}`,
+    chips: {
+      prefix: 'Prefix *', prefixHint: 'Auto-uppercased, e.g. KC24A',
+      model: 'Model *', modelPlaceholder: 'e.g. K1, S2',
+      quantity: 'Quantity *', quantityHint: 'Max 10,000',
+      notes: 'Notes',
+      total: 'Total', used: 'Used', available: 'Available', damaged: 'Damaged',
+      addBatch: 'Add Batch', editBatch: 'Edit Batch', deleteBatch: 'Delete Batch',
+      deleteBatchWarning: (p) => `Delete batch "${p}" and all its chips? This cannot be undone.`,
+      viewChips: 'View Chips', printQR: 'Print QR',
+      chipCode: 'Chip Code', status: 'Status', scannedBy: 'Scanned By',
+      page: 'Page', of: 'of', noChips: 'No chips',
+    },
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理' },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
     stats: {
@@ -126,6 +149,7 @@ const T = {
       totalItems: '商品总数', activeItems: '上架中', totalOrders: '订单总数', pendingOrders: '待处理',
       totalChannels: '渠道数',
       totalInvites: '邀请码总数', activeInvites: '有效', usedInvites: '已使用',
+      totalDevices: '设备总数', activeDevices: '运行中', totalTests: '总检测次数',
     },
     table: {
       id: 'ID', nickname: '昵称', gender: '性别', birthDate: '出生日期',
@@ -137,17 +161,32 @@ const T = {
       unassigned: '未分配', channel: '渠道', roles: '角色', linkedUser: '关联用户',
       timing: '服用时间', group: '功能分组', subAge: '目标年龄',
       code: '邀请码', maxUses: '上限', useCount: '已用', creator: '创建者',
+      serialNumber: '序列号', lastUsed: '最后使用', testCount: '检测次数', status: '状态', notes: '备注',
     },
-    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道', invites: '暂无邀请码' },
+    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道', invites: '暂无邀请码', kino: '暂无 Kino 设备', chipBatches: '暂无芯片批次' },
     count: (n) => `共 ${n} 位用户`,
+    addBatch: '新建批次', countBatch: (n) => `共 ${n} 批次`,
+    chips: {
+      prefix: '前缀 *', prefixHint: '自动转大写，例如 KC24A',
+      model: '型号 *', modelPlaceholder: '例如 K1、S2',
+      quantity: '数量 *', quantityHint: '最多 10,000',
+      notes: '备注',
+      total: '总数', used: '已用', available: '可用', damaged: '损坏',
+      addBatch: '新建批次', editBatch: '编辑批次', deleteBatch: '删除批次',
+      deleteBatchWarning: (p) => `确认删除批次"${p}"及其所有芯片？此操作不可撤销。`,
+      viewChips: '查看芯片', printQR: '打印二维码',
+      chipCode: '芯片编码', status: '状态', scannedBy: '扫描用户',
+      page: '第', of: '页 / 共', noChips: '暂无芯片',
+    },
     addUser: '添加用户',
-    addCoach: '添加 Coach', addDot: '添加原粒', addItem: '添加商品', addChannel: '添加渠道', addInvite: '创建邀请码',
+    addCoach: '添加 Coach', addDot: '添加原粒', addItem: '添加商品', addChannel: '添加渠道', addInvite: '创建邀请码', addDevice: '注册设备',
     countCoach: (n) => `共 ${n} 位 Coach`,
     countDot: (n) => `共 ${n} 个原粒`,
     countItem: (n) => `共 ${n} 件商品`,
     countOrder: (n) => `共 ${n} 笔订单`,
     countChannel: (n) => `共 ${n} 个渠道`,
     countInvite: (n) => `共 ${n} 个邀请码`,
+    countDevice: (n) => `共 ${n} 台设备`,
     modal: {
       addUser: '添加用户', editUser: '编辑用户', deleteUser: '删除用户',
       addCoach: '添加 Coach', editCoach: '编辑 Coach', deleteCoach: '删除 Coach',
@@ -199,6 +238,13 @@ const T = {
       inviteType: '类型', inviteTypeCoach: 'Coach', inviteTypeChannel: '渠道', inviteTypeAdmin: '管理员',
       inviteMaxUses: '使用上限', inviteMaxUsesPlaceholder: '留空 = 不限次数',
       inviteChannel: '渠道 *',
+      addDevice: '注册 Kino 设备', editDevice: '编辑 Kino 设备', deleteDevice: '移除设备',
+      deleteDeviceWarning: (sn) => `确认移除 Kino 设备"${sn}"？历史生物标志物关联将保留，但设备将不再被追踪。`,
+      serialNumber: '序列号 *', serialNumberPlaceholder: '例如 KNO-2024-0001',
+      deviceName: '显示名称', deviceNamePlaceholder: '例如 诊所 A 机',
+      deviceStatus: '状态', statusActive: '运行中', statusInactive: '停用', statusMaintenance: '维护中',
+      deviceNotes: '备注', deviceNotesPlaceholder: '可选备注…',
+      assignedCoachDevice: '负责 Coach', assignedChannelDevice: '所属渠道',
     },
     dotType: { isolate: '单体', blend: '复合' },
     store: {
@@ -1667,6 +1713,225 @@ function ChannelTab({ channels, onRefresh }) {
   );
 }
 
+// ── Kino tab ──────────────────────────────────────────────────────────────────
+
+const DEVICE_STATUSES = ['active', 'inactive', 'maintenance'];
+const EMPTY_DEVICE = { serial_number: '', name: '', coach_id: '', channel_id: '', status: 'active', notes: '' };
+
+function KinoModal({ device, coaches, channels, onClose, onSave }) {
+  const { t } = useLang();
+  const isEdit = !!device?.id;
+  const [form, setForm] = useState(isEdit ? {
+    serial_number: device.serial_number || '',
+    name: device.name || '',
+    coach_id: device.coach_id ?? '',
+    channel_id: device.channel_id ?? '',
+    status: device.status || 'active',
+    notes: device.notes || '',
+  } : { ...EMPTY_DEVICE });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.serial_number.trim()) { setError(t.modal.serialNumber.replace(' *', '') + ' is required'); return; }
+    setBusy(true); setError('');
+    try {
+      const payload = {
+        ...form,
+        serial_number: form.serial_number.trim().toUpperCase(),
+        coach_id:   form.coach_id   !== '' ? parseInt(form.coach_id)   : null,
+        channel_id: form.channel_id !== '' ? parseInt(form.channel_id) : null,
+      };
+      let res;
+      if (isEdit) res = await axios.put(`/api/kino-devices/${device.id}`, payload);
+      else        res = await axios.post('/api/kino-devices', payload);
+      if (res.data?.success === false) { setError(res.data.error || t.modal.saveFailed); return; }
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
+    finally { setBusy(false); }
+  };
+
+  const statusColor = { active: '#10b981', inactive: '#94a3b8', maintenance: '#f59e0b' };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{isEdit ? t.modal.editDevice : t.modal.addDevice}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field">
+              <span>{t.modal.serialNumber}</span>
+              <input value={form.serial_number} onChange={e => set('serial_number', e.target.value)} disabled={isEdit} placeholder={t.modal.serialNumberPlaceholder} style={{ fontFamily: 'monospace' }} />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.deviceName}</span>
+              <input value={form.name} onChange={e => set('name', e.target.value)} placeholder={t.modal.deviceNamePlaceholder} />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.deviceStatus}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.status} onChange={e => set('status', e.target.value)} className="inline-select" style={{ width: '100%', color: statusColor[form.status] }}>
+                  <option value="active">{t.modal.statusActive}</option>
+                  <option value="inactive">{t.modal.statusInactive}</option>
+                  <option value="maintenance">{t.modal.statusMaintenance}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{t.modal.assignedCoachDevice}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.coach_id} onChange={e => set('coach_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">{t.modal.unassigned}</option>
+                  {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.assignedChannelDevice}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">{t.modal.channelUnassigned}</option>
+                  {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.deviceNotes}</span>
+              <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder={t.modal.deviceNotesPlaceholder} />
+            </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? t.modal.saving : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteDeviceConfirm({ device, onClose, onConfirm }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState(false);
+  const handleDelete = async () => {
+    setBusy(true);
+    try { await axios.delete(`/api/kino-devices/${device.id}`); onConfirm(); }
+    catch { /* silent */ } finally { setBusy(false); }
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.modal.deleteDevice}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginBottom: 20, color: '#475569' }}>
+            {t.modal.deleteDeviceWarning(device.serial_number)}
+          </p>
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-danger" onClick={handleDelete} disabled={busy}>
+              <Trash2 size={14} />{busy ? t.modal.deleting : t.modal.delete}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KinoTab({ devices, coaches, channels, onRefresh }) {
+  const { t } = useLang();
+  const [modal, setModal] = useState(null);
+  const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  const activeCount = devices.filter(d => d.status === 'active').length;
+  const totalTests  = devices.reduce((s, d) => s + (d.test_count || 0), 0);
+
+  const statusColor = { active: '#10b981', inactive: '#94a3b8', maintenance: '#f59e0b' };
+  const statusLabel = { active: t.modal.statusActive, inactive: t.modal.statusInactive, maintenance: t.modal.statusMaintenance };
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={Cpu} label={t.stats.totalDevices}  value={devices.length} color="#6366f1" />
+        <StatCard icon={Cpu} label={t.stats.activeDevices} value={activeCount}     color="#10b981" />
+        <StatCard icon={Activity} label={t.stats.totalTests}   value={totalTests}     color="#3b82f6" />
+      </div>
+      <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count">{t.countDevice(devices.length)}</span>
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{t.addDevice}
+          </button>
+        </div>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>{t.table.serialNumber}</th>
+              <th>{t.table.name}</th>
+              <th>{t.table.status}</th>
+              <th>{t.modal.assignedCoachDevice}</th>
+              <th>{t.table.channel}</th>
+              <th>{t.table.testCount}</th>
+              <th>{t.table.lastUsed}</th>
+              <th>{t.table.notes}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {devices.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.kino}</td></tr>}
+            {devices.map(d => (
+              <tr key={d.id}>
+                <td>
+                  <div className="avatar-cell">
+                    <div className="avatar" style={{ background: '#6366f120', color: '#6366f1', borderRadius: 6 }}>
+                      <Cpu size={13} />
+                    </div>
+                    <code style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700 }}>{d.serial_number}</code>
+                  </div>
+                </td>
+                <td>{fmt(d.name)}</td>
+                <td>
+                  <Badge color={statusColor[d.status] || '#94a3b8'}>
+                    {statusLabel[d.status] || d.status}
+                  </Badge>
+                </td>
+                <td>{d.coach_name ? <Badge color="#10b981">{d.coach_name}</Badge> : '—'}</td>
+                <td>{d.channel_name ? <Badge color="#6366f1">{d.channel_name}</Badge> : '—'}</td>
+                <td><Badge color={d.test_count > 0 ? '#3b82f6' : '#94a3b8'}>{d.test_count || 0}</Badge></td>
+                <td className="muted">{d.last_used_at ? fmtDate(d.last_used_at) : '—'}</td>
+                <td className="muted desc-cell">{fmt(d.notes)}</td>
+                <td>
+                  <div className="row-actions">
+                    <button className="icon-btn" title={t.modal.editDevice} onClick={() => setModal({ type: 'edit', device: d })}><Pencil size={14} /></button>
+                    <button className="icon-btn danger" title={t.modal.deleteDevice} onClick={() => setModal({ type: 'delete', device: d })}><Trash2 size={14} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {modal?.type === 'add'    && <KinoModal device={null}          coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <KinoModal device={modal.device}  coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete' && <DeleteDeviceConfirm device={modal.device} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+    </>
+  );
+}
+
 // ── Invites tab ───────────────────────────────────────────────────────────────
 
 function InviteModal({ channels, onClose, onSave }) {
@@ -1857,6 +2122,313 @@ function InvitesTab({ invitations, channels, onRefresh }) {
   );
 }
 
+// ── Chip Batch components ─────────────────────────────────────────────────────
+
+const CHIP_MODELS = ['K2', 'S1'];
+
+function ChipBatchModal({ batch, onClose, onSave }) {
+  const { t } = useContext(LangCtx);
+  const tc = t.chips;
+  const isEdit = !!batch;
+
+  // Auto-generate 8-digit batch number once on mount (for new batches)
+  const [batchNum] = useState(() =>
+    String(Math.floor(Math.random() * 100000000)).padStart(8, '0')
+  );
+  const prefix = isEdit ? batch.prefix : `KNC${batchNum}`;
+
+  const [form, setForm] = useState({
+    model:    batch?.model    || 'K2',
+    quantity: batch?.quantity || '',
+    notes:    batch?.notes    || '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const qty = parseInt(form.quantity) || 0;
+  const previewEnd = qty > 0 ? String(Math.min(qty, 9999)).padStart(4, '0') : '????';
+  const preview = `${prefix}-0001  →  ${prefix}-${previewEnd}`;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError('');
+    try {
+      let res;
+      if (isEdit) {
+        res = await axios.put(`/api/kino-chip-batches/${batch.id}`, { model: form.model, notes: form.notes });
+      } else {
+        res = await axios.post('/api/kino-chip-batches', { prefix, model: form.model, quantity: form.quantity, notes: form.notes });
+      }
+      if (res.data?.success === false) { setError(res.data.error || t.modal.saveFailed); return; }
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{isEdit ? tc.editBatch : tc.addBatch}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field">
+              <span>{tc.model}</span>
+              <select value={form.model} onChange={e => set('model', e.target.value)}>
+                {CHIP_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </label>
+            {!isEdit && (
+              <label className="form-field">
+                <span>{tc.quantity}</span>
+                <input type="number" min="1" max="9999"
+                       value={form.quantity} onChange={e => set('quantity', e.target.value)}
+                       placeholder="1 – 9999" required />
+              </label>
+            )}
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{tc.notes}</span>
+              <textarea rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} />
+            </label>
+          </div>
+          {!isEdit && (
+            <div style={{ margin: '12px 0 4px', padding: '10px 14px', background: '#0f172a', borderRadius: 6, border: '1px solid #1e293b' }}>
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>Chip code range preview</div>
+              <code style={{ fontSize: 13, color: '#38bdf8', letterSpacing: '0.5px' }}>{preview}</code>
+            </div>
+          )}
+          {error && <p className="form-error">{error}</p>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              {busy ? t.modal.saving : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteBatchConfirm({ batch, onClose, onConfirm }) {
+  const { t } = useContext(LangCtx);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const handleDelete = async () => {
+    setBusy(true);
+    try {
+      const res = await axios.delete(`/api/kino-chip-batches/${batch.id}`);
+      if (res.data?.success === false) { setError(res.data.error); return; }
+      onConfirm();
+    } catch (err) { setError(err.response?.data?.error || 'Delete failed'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header"><span>{t.chips.deleteBatch}</span><button className="icon-btn" onClick={onClose}><X size={16} /></button></div>
+        <div className="modal-body">
+          <p>{t.chips.deleteBatchWarning(batch.prefix)}</p>
+          {error && <p className="form-error">{error}</p>}
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-danger" onClick={handleDelete} disabled={busy}>
+              {busy ? t.modal.deleting : t.modal.delete}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChipListPanel({ batch, onClose }) {
+  const { t } = useContext(LangCtx);
+  const tc = t.chips;
+  const [chips, setChips] = useState([]);
+  const [total, setTotal]   = useState(0);
+  const [page, setPage]     = useState(1);
+  const [loading, setLoading] = useState(false);
+  const LIMIT = 50;
+
+  const load = useCallback(async (p) => {
+    setLoading(true);
+    try {
+      const res = await axios.get(`/api/kino-chip-batches/${batch.id}/chips?page=${p}&limit=${LIMIT}`);
+      setChips(res.data.chips || []);
+      setTotal(res.data.total || 0);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [batch.id]);
+
+  useEffect(() => { load(page); }, [load, page]);
+
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+
+  const printQR = async () => {
+    setLoading(true);
+    try {
+      // Fetch all chips for printing (up to batch.quantity)
+      const pages = Math.ceil(batch.quantity / 100);
+      let all = [];
+      for (let p = 1; p <= pages; p++) {
+        const res = await axios.get(`/api/kino-chip-batches/${batch.id}/chips?page=${p}&limit=100`);
+        all = all.concat(res.data.chips || []);
+      }
+      const html = `<!DOCTYPE html><html><head><title>Batch ${batch.prefix}</title>
+        <style>body{font-family:sans-serif;margin:16px}h2{margin-bottom:12px}
+        .grid{display:flex;flex-wrap:wrap;gap:8px}
+        .chip{text-align:center;border:1px solid #ccc;border-radius:4px;padding:8px;width:116px}
+        .chip img{display:block;margin:0 auto 4px}
+        .chip p{font-size:9px;margin:0;word-break:break-all}
+        @media print{@page{size:A4;margin:12mm}.chip{page-break-inside:avoid}}</style>
+        </head><body>
+        <h2>Batch: ${batch.prefix} | Model: ${batch.model} | Total: ${batch.quantity}</h2>
+        <div class="grid">${all.map(c =>
+          `<div class="chip"><img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(c.chip_code)}" width="100" height="100" /><p>${c.chip_code}</p></div>`
+        ).join('')}</div></body></html>`;
+      const win = window.open('', '_blank');
+      win.document.write(html);
+      win.document.close();
+      setTimeout(() => win.print(), 800);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  const statusColor = { available: '#10b981', used: '#94a3b8', damaged: '#ef4444' };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-xl" onClick={e => e.stopPropagation()} style={{ maxWidth: 820 }}>
+        <div className="modal-header">
+          <span>{batch.prefix} — {batch.model} ({total} {tc.chipCode.toLowerCase()}s)</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }} onClick={printQR} disabled={loading}>
+              <Printer size={13} style={{ marginRight: 4 }} />{tc.printQR}
+            </button>
+            <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+          </div>
+        </div>
+        <div className="modal-body" style={{ padding: 0 }}>
+          {loading ? <p style={{ padding: 24, textAlign: 'center' }}>{t.topbar.loading}</p> : (
+            <table className="data-table">
+              <thead><tr>
+                <th>#</th>
+                <th>{tc.chipCode}</th>
+                <th>QR</th>
+                <th>{tc.status}</th>
+                <th>{tc.scannedBy}</th>
+              </tr></thead>
+              <tbody>
+                {chips.length === 0 && <tr><td colSpan={5} className="empty-row">{tc.noChips}</td></tr>}
+                {chips.map((c, i) => (
+                  <tr key={c.id}>
+                    <td style={{ color: '#94a3b8', fontSize: 11 }}>{(page - 1) * LIMIT + i + 1}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{c.chip_code}</td>
+                    <td>
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=48x48&data=${encodeURIComponent(c.chip_code)}`}
+                        width={48} height={48} alt="QR"
+                        style={{ display: 'block', borderRadius: 2 }}
+                      />
+                    </td>
+                    <td>
+                      <span style={{ color: statusColor[c.status] || '#94a3b8', fontWeight: 500, fontSize: 12 }}>
+                        {c.status}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 12 }}>{c.nickname || c.user_id || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderTop: '1px solid #1e293b' }}>
+              <button className="icon-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                <ChevronLeft size={15} />
+              </button>
+              <span style={{ fontSize: 12, color: '#94a3b8' }}>{tc.page} {page} {tc.of} {totalPages}</span>
+              <button className="icon-btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChipsTab({ batches, onRefresh }) {
+  const { t } = useContext(LangCtx);
+  const tc = t.chips;
+  const [modal, setModal]     = useState(null);
+  const [viewBatch, setViewBatch] = useState(null);
+  const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  const totalChips = batches.reduce((s, b) => s + parseInt(b.quantity || 0), 0);
+  const usedChips  = batches.reduce((s, b) => s + parseInt(b.used  || 0), 0);
+
+  return (
+    <div>
+      <div className="tab-header">
+        <div className="stats-row">
+          <div className="stat-card"><span className="stat-label">{t.countBatch(batches.length)}</span></div>
+          <div className="stat-card"><span className="stat-label">{totalChips} chips total</span></div>
+          <div className="stat-card"><span className="stat-label">{usedChips} used</span></div>
+        </div>
+        <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+          <Plus size={14} />{t.addBatch}
+        </button>
+      </div>
+      <table className="data-table">
+        <thead><tr>
+          <th>ID</th>
+          <th>{tc.prefix || 'Prefix'}</th>
+          <th>Model</th>
+          <th>{tc.total}</th>
+          <th style={{ color: '#10b981' }}>{tc.available}</th>
+          <th style={{ color: '#94a3b8' }}>{tc.used}</th>
+          <th style={{ color: '#ef4444' }}>{tc.damaged}</th>
+          <th>Created</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+          {batches.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.chipBatches}</td></tr>}
+          {batches.map(b => (
+            <tr key={b.id}>
+              <td style={{ color: '#94a3b8', fontSize: 11 }}>{b.id}</td>
+              <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{b.prefix}</td>
+              <td>{b.model}</td>
+              <td>{b.quantity}</td>
+              <td style={{ color: '#10b981' }}>{b.available}</td>
+              <td style={{ color: '#94a3b8' }}>{b.used}</td>
+              <td style={{ color: b.damaged > 0 ? '#ef4444' : '#94a3b8' }}>{b.damaged}</td>
+              <td style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(b.created_at).toLocaleDateString()}</td>
+              <td>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button className="icon-btn" title={tc.viewChips} onClick={() => setViewBatch(b)}><QrCode size={14} /></button>
+                  <button className="icon-btn" title={tc.editBatch} onClick={() => setModal({ type: 'edit', batch: b })}><Pencil size={14} /></button>
+                  <button className="icon-btn" title={tc.deleteBatch} onClick={() => setModal({ type: 'delete', batch: b })}><Trash2 size={14} /></button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {modal?.type === 'add'    && <ChipBatchModal batch={null}        onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <ChipBatchModal batch={modal.batch} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete' && <DeleteBatchConfirm batch={modal.batch} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {viewBatch && <ChipListPanel batch={viewBatch} onClose={() => setViewBatch(null)} />}
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -1865,14 +2437,15 @@ export default function App() {
   const toggleLang = () => setLang(l => l === 'en' ? 'zh' : 'en');
 
   const [tab, setTab] = useState('users');
-  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [] });
+  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    const ok = (res) => res.status === 'fulfilled' ? res.value.data : {};
     try {
-      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes] = await Promise.all([
+      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes] = await Promise.allSettled([
         axios.get('/api/users'),
         axios.get('/api/dots-inventory'),
         axios.get('/api/coach-list'),
@@ -1880,15 +2453,19 @@ export default function App() {
         axios.get('/api/orders'),
         axios.get('/api/channels'),
         axios.get('/api/invitations'),
+        axios.get('/api/kino-devices'),
+        axios.get('/api/kino-chip-batches'),
       ]);
       setData({
-        users: uRes.data.users || [],
-        dots: dRes.data.dots || [],
-        coaches: pRes.data.coaches || [],
-        storeItems: sRes.data.items || [],
-        orders: oRes.data.orders || [],
-        channels: chRes.data.channels || [],
-        invitations: invRes.data.invitations || [],
+        users:       ok(uRes).users        || [],
+        dots:        ok(dRes).dots         || [],
+        coaches:     ok(pRes).coaches      || [],
+        storeItems:  ok(sRes).items        || [],
+        orders:      ok(oRes).orders       || [],
+        channels:    ok(chRes).channels    || [],
+        invitations: ok(invRes).invitations || [],
+        kinoDevices: ok(kinoRes).devices   || [],
+        chipBatches: ok(cbRes).batches     || [],
       });
       setLastRefresh(new Date());
     } catch (err) { console.error('Admin fetch error:', err); }
@@ -1903,6 +2480,8 @@ export default function App() {
     { id: 'dots',     label: t.nav.dots,     icon: Droplets    },
     { id: 'store',    label: t.nav.store,    icon: ShoppingBag },
     { id: 'channels', label: t.nav.channels, icon: Building2   },
+    { id: 'kino',     label: t.nav.kino,     icon: Cpu         },
+    { id: 'chips',    label: t.nav.chips,    icon: Layers      },
     { id: 'invites',  label: t.nav.invites,  icon: Tag         },
     { id: 'sims',     label: t.nav.sims,     icon: Layout      },
   ];
@@ -1943,6 +2522,8 @@ export default function App() {
           {tab === 'dots'     && <DotsTab     dots={data.dots} onRefresh={fetchData} />}
           {tab === 'store'    && <StoreTab    storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
           {tab === 'channels' && <ChannelTab  channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'sims'     && <SimulatorsTab />}
         </div>

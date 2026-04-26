@@ -30,7 +30,7 @@ resources:
         vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
       environmentVariables:
         DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
-        DB_NAME: "nano_db_dev"
+        DB_NAME: "nano_db"
         DB_USER: "nano_admin"
         DB_PASS: "Waven53Bike!"
         DB_SSL: "false"
@@ -67,7 +67,7 @@ resources:
         vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
       environmentVariables:
         DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
-        DB_NAME: "nano_db_dev"
+        DB_NAME: "nano_db"
         DB_USER: "nano_admin"
         DB_PASS: "Waven53Bike!"
         DB_SSL: "false"

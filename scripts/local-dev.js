@@ -302,6 +302,173 @@ app.delete('/coaches/:id', async (req, res) => {
     }
 });
 
+// Admin: Kino device registry
+app.get('/kino-devices', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        const result = await pool.query(`
+            SELECT kd.id, kd.serial_number, kd.name, kd.status, kd.notes, kd.registered_at, kd.created_at,
+                   kd.coach_id, c.name AS coach_name,
+                   kd.channel_id, ch.name AS channel_name,
+                   COUNT(b.id)::int AS test_count,
+                   MAX(b.tested_at) AS last_used_at
+            FROM kino_devices kd
+            LEFT JOIN coaches c ON c.id = kd.coach_id
+            LEFT JOIN channels ch ON ch.id = kd.channel_id
+            LEFT JOIN biomarkers b ON b.kino_device_id = kd.id
+            GROUP BY kd.id, c.name, ch.name
+            ORDER BY kd.id ASC
+        `);
+        res.json({ success: true, devices: result.rows });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/kino-devices', async (req, res) => {
+    const { serial_number, name, coach_id, channel_id, status, notes } = req.body;
+    const { pool } = require('../src/lib/db');
+    if (!serial_number?.trim()) return res.status(400).json({ error: 'serial_number is required' });
+    try {
+        const result = await pool.query(
+            `INSERT INTO kino_devices (serial_number, name, coach_id, channel_id, status, notes)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+            [serial_number.trim().toUpperCase(), name || null, coach_id || null, channel_id || null, status || 'active', notes || null]
+        );
+        res.json({ success: true, id: result.rows[0].id });
+    } catch (err) {
+        res.status(500).json({ error: err.detail || err.message });
+    }
+});
+
+app.put('/kino-devices/:id', async (req, res) => {
+    const { name, coach_id, channel_id, status, notes } = req.body;
+    const { pool } = require('../src/lib/db');
+    try {
+        await pool.query(
+            `UPDATE kino_devices SET name=$1, coach_id=$2, channel_id=$3, status=$4, notes=$5 WHERE id=$6`,
+            [name || null, coach_id || null, channel_id || null, status || 'active', notes || null, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/kino-devices/:id', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        await pool.query('DELETE FROM kino_devices WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Kino chip batches
+app.get('/kino-chip-batches', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        const result = await pool.query(`
+            SELECT b.id, b.prefix, b.model, b.quantity, b.notes, b.created_at,
+                   COUNT(c.id)                                          AS total_chips,
+                   COUNT(CASE WHEN c.status = 'available' THEN 1 END)  AS available,
+                   COUNT(CASE WHEN c.status = 'used'      THEN 1 END)  AS used,
+                   COUNT(CASE WHEN c.status = 'damaged'   THEN 1 END)  AS damaged
+            FROM kino_chip_batches b
+            LEFT JOIN kino_chips c ON c.batch_id = b.id
+            GROUP BY b.id
+            ORDER BY b.created_at DESC
+        `);
+        res.json({ success: true, batches: result.rows });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.get('/kino-chip-batches/:id/chips', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        const page  = Math.max(1, parseInt(req.query.page  || '1'));
+        const limit = Math.min(100, parseInt(req.query.limit || '50'));
+        const offset = (page - 1) * limit;
+        const rows = await pool.query(
+            `SELECT c.id, c.chip_code, c.status, c.created_at,
+                    s.scan_status, s.user_id, u.nickname
+             FROM kino_chips c
+             LEFT JOIN scans  s ON s.chip_id  = c.chip_code
+             LEFT JOIN users  u ON u.user_id  = s.user_id
+             WHERE c.batch_id = $1
+             ORDER BY c.chip_code
+             LIMIT $2 OFFSET $3`,
+            [req.params.id, limit, offset]
+        );
+        const cnt = await pool.query('SELECT COUNT(*) FROM kino_chips WHERE batch_id = $1', [req.params.id]);
+        res.json({ success: true, chips: rows.rows, total: parseInt(cnt.rows[0].count), page, limit });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.post('/kino-chip-batches', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    const { prefix, model, quantity, notes } = req.body;
+    if (!prefix) return res.status(400).json({ success: false, error: 'prefix is required' });
+    if (!model)  return res.status(400).json({ success: false, error: 'model is required' });
+    const qty = parseInt(quantity);
+    if (!qty || qty < 1 || qty > 9999) return res.status(400).json({ success: false, error: 'quantity must be 1–9999' });
+    const cleanPrefix = prefix.trim().toUpperCase();
+    if (!/^KNC\d{8}$/.test(cleanPrefix)) return res.status(400).json({ success: false, error: 'prefix must be KNC followed by 8 digits' });
+    const pad = 4;
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const batchRes = await client.query(
+            `INSERT INTO kino_chip_batches (prefix, model, quantity, notes) VALUES ($1,$2,$3,$4) RETURNING id`,
+            [cleanPrefix, model.trim(), qty, notes || null]
+        );
+        const batchId = batchRes.rows[0].id;
+        const CHUNK = 500;
+        for (let start = 1; start <= qty; start += CHUNK) {
+            const end = Math.min(start + CHUNK - 1, qty);
+            const vals = [], params = [];
+            for (let i = start; i <= end; i++) {
+                vals.push(`($${params.length + 1}, $${params.length + 2})`);
+                params.push(batchId, `${cleanPrefix}-${String(i).padStart(pad, '0')}`);
+            }
+            await client.query(`INSERT INTO kino_chips (batch_id, chip_code) VALUES ${vals.join(', ')}`, params);
+        }
+        await client.query('COMMIT');
+        res.json({ success: true, id: batchId, prefix: cleanPrefix, quantity: qty });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ success: false, error: err.message });
+    } finally { client.release(); }
+});
+
+app.put('/kino-chip-batches/:id', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    const { model, notes } = req.body;
+    try {
+        await pool.query(
+            `UPDATE kino_chip_batches SET model = COALESCE($1, model), notes = $2 WHERE id = $3`,
+            [model || null, notes ?? null, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.delete('/kino-chip-batches/:id', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        const check = await pool.query(
+            `SELECT COUNT(*) FROM kino_chips WHERE batch_id = $1 AND status = 'used'`,
+            [req.params.id]
+        );
+        if (parseInt(check.rows[0].count) > 0) {
+            return res.status(400).json({ success: false, error: 'Cannot delete a batch with used chips' });
+        }
+        await pool.query('DELETE FROM kino_chip_batches WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
 // Admin: Create Dot
 app.post('/dots', async (req, res) => {
     const { key_name, name, name_zh, color, color_zh, description, is_isolate } = req.body;

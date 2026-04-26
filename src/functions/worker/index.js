@@ -1314,7 +1314,7 @@ async function resolveOrUpsertUser(body) {
 }
 
 async function handlePostBiomarkers(body) {
-    const { openid, test_type = 'kino_chip', test_data, tested_at } = body;
+    const { openid, test_type = 'kino_chip', test_data, tested_at, kino_device_id } = body;
     if (!test_data) throw new Error('test_data is required');
 
     const user = await resolveOrUpsertUser(body);
@@ -1330,8 +1330,8 @@ async function handlePostBiomarkers(body) {
 
         const finalData = { actual: test_data, estimated: estimationReport.BiomarkerValues, context: estimationReport.ClinicalContext, bioage_profile: bioAgeReport };
         const biomarkerResult = await pool.query(
-            'INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-            [user_id, test_type, JSON.stringify(finalData), bioAgeReport.BioAge, tested_at || new Date().toISOString()]
+            'INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at, kino_device_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+            [user_id, test_type, JSON.stringify(finalData), bioAgeReport.BioAge, tested_at || new Date().toISOString(), kino_device_id || null]
         );
         const biomarkerId = biomarkerResult.rows[0].id;
 
@@ -1577,6 +1577,178 @@ async function handlePostChatMessages(body) {
     return { success: true };
 }
 
+async function handleGetKinoDevices() {
+    const result = await pool.query(`
+        SELECT kd.id, kd.serial_number, kd.name, kd.status, kd.notes, kd.registered_at, kd.created_at,
+               kd.coach_id, c.name AS coach_name,
+               kd.channel_id, ch.name AS channel_name,
+               COUNT(b.id)::int AS test_count,
+               MAX(b.tested_at) AS last_used_at
+        FROM kino_devices kd
+        LEFT JOIN coaches c ON c.id = kd.coach_id
+        LEFT JOIN channels ch ON ch.id = kd.channel_id
+        LEFT JOIN biomarkers b ON b.kino_device_id = kd.id
+        GROUP BY kd.id, c.name, ch.name
+        ORDER BY kd.id ASC
+    `);
+    return { success: true, devices: result.rows };
+}
+
+async function handlePostKinoDevice(body) {
+    const { serial_number, name, coach_id, channel_id, status, notes } = body;
+    if (!serial_number?.trim()) return { success: false, error: 'serial_number is required', statusCode: 400 };
+    try {
+        const result = await pool.query(
+            `INSERT INTO kino_devices (serial_number, name, coach_id, channel_id, status, notes)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+            [serial_number.trim(), name || null, coach_id || null, channel_id || null, status || 'active', notes || null]
+        );
+        return { success: true, id: result.rows[0].id };
+    } catch (err) {
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handlePutKinoDevice(id, body) {
+    const { name, coach_id, channel_id, status, notes } = body;
+    try {
+        await pool.query(
+            `UPDATE kino_devices SET name=$1, coach_id=$2, channel_id=$3, status=$4, notes=$5 WHERE id=$6`,
+            [name || null, coach_id || null, channel_id || null, status || 'active', notes || null, parseInt(id)]
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteKinoDevice(id) {
+    try {
+        await pool.query('DELETE FROM kino_devices WHERE id = $1', [parseInt(id)]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetKinoChipBatches() {
+    try {
+        const result = await pool.query(`
+            SELECT b.id, b.prefix, b.model, b.quantity, b.notes, b.created_at,
+                   COUNT(c.id)                                          AS total_chips,
+                   COUNT(CASE WHEN c.status = 'available' THEN 1 END)  AS available,
+                   COUNT(CASE WHEN c.status = 'used'      THEN 1 END)  AS used,
+                   COUNT(CASE WHEN c.status = 'damaged'   THEN 1 END)  AS damaged
+            FROM kino_chip_batches b
+            LEFT JOIN kino_chips c ON c.batch_id = b.id
+            GROUP BY b.id
+            ORDER BY b.created_at DESC
+        `);
+        return { success: true, batches: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetKinoChipBatchChips(batchId, query) {
+    try {
+        const page  = Math.max(1, parseInt(query.page  || '1'));
+        const limit = Math.min(100, parseInt(query.limit || '50'));
+        const offset = (page - 1) * limit;
+        const rows = await pool.query(
+            `SELECT c.id, c.chip_code, c.status, c.created_at,
+                    s.scan_status, s.user_id, u.nickname
+             FROM kino_chips c
+             LEFT JOIN scans  s ON s.chip_id  = c.chip_code
+             LEFT JOIN users  u ON u.user_id  = s.user_id
+             WHERE c.batch_id = $1
+             ORDER BY c.chip_code
+             LIMIT $2 OFFSET $3`,
+            [parseInt(batchId), limit, offset]
+        );
+        const cnt = await pool.query(
+            'SELECT COUNT(*) FROM kino_chips WHERE batch_id = $1',
+            [parseInt(batchId)]
+        );
+        return { success: true, chips: rows.rows, total: parseInt(cnt.rows[0].count), page, limit };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostKinoChipBatch(body) {
+    const { prefix, model, quantity, notes } = body;
+    if (!prefix || !prefix.trim()) return { success: false, error: 'prefix is required' };
+    if (!model  || !model.trim())  return { success: false, error: 'model is required' };
+    const qty = parseInt(quantity);
+    if (!qty || qty < 1 || qty > 9999) return { success: false, error: 'quantity must be 1–9999' };
+
+    const cleanPrefix = prefix.trim().toUpperCase();
+    if (!/^KNC\d{8}$/.test(cleanPrefix)) return { success: false, error: 'prefix must be KNC followed by 8 digits' };
+    const pad = 4;
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const batchRes = await client.query(
+            `INSERT INTO kino_chip_batches (prefix, model, quantity, notes)
+             VALUES ($1, $2, $3, $4) RETURNING id`,
+            [cleanPrefix, model.trim(), qty, notes || null]
+        );
+        const batchId = batchRes.rows[0].id;
+
+        // Insert chips in chunks of 500 rows to avoid huge single queries
+        const CHUNK = 500;
+        for (let start = 1; start <= qty; start += CHUNK) {
+            const end = Math.min(start + CHUNK - 1, qty);
+            const vals = [], params = [];
+            for (let i = start; i <= end; i++) {
+                vals.push(`($${params.length + 1}, $${params.length + 2})`);
+                params.push(batchId, `${cleanPrefix}-${String(i).padStart(pad, '0')}`);
+            }
+            await client.query(
+                `INSERT INTO kino_chips (batch_id, chip_code) VALUES ${vals.join(', ')}`,
+                params
+            );
+        }
+        await client.query('COMMIT');
+        return { success: true, id: batchId, prefix: cleanPrefix, quantity: qty };
+    } catch (err) {
+        await client.query('ROLLBACK');
+        return { success: false, error: err.message };
+    } finally {
+        client.release();
+    }
+}
+
+async function handlePutKinoChipBatch(id, body) {
+    const { model, notes } = body;
+    try {
+        await pool.query(
+            `UPDATE kino_chip_batches SET model = COALESCE($1, model), notes = $2 WHERE id = $3`,
+            [model || null, notes ?? null, parseInt(id)]
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteKinoChipBatch(id) {
+    try {
+        const check = await pool.query(
+            `SELECT COUNT(*) FROM kino_chips WHERE batch_id = $1 AND status = 'used'`,
+            [parseInt(id)]
+        );
+        if (parseInt(check.rows[0].count) > 0) {
+            return { success: false, error: 'Cannot delete a batch with used chips' };
+        }
+        await pool.query('DELETE FROM kino_chip_batches WHERE id = $1', [parseInt(id)]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleGetKinoChip(chip_id) {
     if (!chip_id) throw new Error('chip_id is required');
     const result = await pool.query(
@@ -1629,7 +1801,7 @@ async function handlePostKinoScan(body) {
 }
 
 async function handlePostKinoResult(body) {
-    const { chip_id, data, bio_age } = body;
+    const { chip_id, data, bio_age, kino_device_id } = body;
     if (!chip_id) throw new Error('chip_id is required');
     if (!data) throw new Error('data is required');
 
@@ -1647,10 +1819,10 @@ async function handlePostKinoResult(body) {
     );
 
     const bmResult = await pool.query(
-        `INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at)
-         VALUES ($1, 'kino_chip', $2, $3, NOW())
+        `INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at, kino_device_id)
+         VALUES ($1, 'kino_chip', $2, $3, NOW(), $4)
          RETURNING id`,
-        [user_id, JSON.stringify(data), bio_age ?? null]
+        [user_id, JSON.stringify(data), bio_age ?? null, kino_device_id || null]
     );
 
     return { success: true, scan_id, biomarker_id: bmResult.rows[0].id, user_id };
@@ -1821,7 +1993,14 @@ exports.handler = async (req, resp, context) => {
         }
 
         if (method === 'GET') {
-            if (path.includes('/kino-chip')) {
+            if (path.includes('/kino-devices')) {
+                result = await handleGetKinoDevices();
+            } else if (path.match(/\/kino-chip-batches\/(\d+)\/chips/)) {
+                const batchId = path.match(/\/kino-chip-batches\/(\d+)\/chips/)[1];
+                result = await handleGetKinoChipBatchChips(batchId, query);
+            } else if (path.includes('/kino-chip-batches')) {
+                result = await handleGetKinoChipBatches();
+            } else if (path.includes('/kino-chip')) {
                 result = await handleGetKinoChip(query.chip_id);
             } else if (path.includes('/coach-sent-messages')) {
                 result = await handleGetCoachSentMessages(query.user_id);
@@ -1885,6 +2064,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostDots(parsedBody);
             } else if (path === '/users') {
                 result = await handlePostUsers(parsedBody);
+            } else if (path.includes('/kino-chip-batches')) {
+                result = await handlePostKinoChipBatch(parsedBody);
+            } else if (path.includes('/kino-devices')) {
+                result = await handlePostKinoDevice(parsedBody);
             } else if (path.includes('/kino-result')) {
                 result = await handlePostKinoResult(parsedBody);
             } else if (path.includes('/kino-scan')) {
@@ -1907,7 +2090,13 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostChat(parsedBody);
             }
         } else if (method === 'PUT') {
-            if (path.includes('/users/')) {
+            if (path.match(/\/kino-chip-batches\/(\d+)/)) {
+                const batchId = path.match(/\/kino-chip-batches\/(\d+)/)[1];
+                result = await handlePutKinoChipBatch(batchId, parsedBody);
+            } else if (path.includes('/kino-devices/')) {
+                const deviceId = path.split('/kino-devices/')[1];
+                result = await handlePutKinoDevice(deviceId, parsedBody);
+            } else if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
                 result = await handlePutUser(user_id, parsedBody);
             } else if (path.includes('/coaches/')) {
@@ -1929,7 +2118,13 @@ exports.handler = async (req, resp, context) => {
                 result = { success: false, error: `Unknown PUT route: ${path}` };
             }
         } else if (method === 'DELETE') {
-            if (path.includes('/users/')) {
+            if (path.match(/\/kino-chip-batches\/(\d+)/)) {
+                const batchId = path.match(/\/kino-chip-batches\/(\d+)/)[1];
+                result = await handleDeleteKinoChipBatch(batchId);
+            } else if (path.includes('/kino-devices/')) {
+                const deviceId = path.split('/kino-devices/')[1];
+                result = await handleDeleteKinoDevice(deviceId);
+            } else if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
                 result = await handleDeleteUser(user_id);
             } else if (path.includes('/coaches/')) {
