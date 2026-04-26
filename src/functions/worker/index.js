@@ -1335,7 +1335,10 @@ async function handlePostBiomarkers(body) {
         );
         const biomarkerId = biomarkerResult.rows[0].id;
 
-        const content = `I've analyzed your biomarker test. Your biological age is **${bioAgeReport.BioAge.toFixed(1)} years**. Check your report for details!`;
+        const lang = user.language || 'zh';
+        const content = lang === 'zh'
+            ? `已完成生物标志物检测分析。您的生物年龄为 **${bioAgeReport.BioAge.toFixed(1)} 岁**。请查看详细报告！`
+            : `I've analyzed your biomarker test. Your biological age is **${bioAgeReport.BioAge.toFixed(1)} years**. Check your report for details!`;
         await pool.query(
             'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
             [user_id, biomarkerId, 'biological_report', content, 'pending']
@@ -1351,17 +1354,20 @@ async function handlePostBiomarkers(body) {
             const nutritionContext = {
                 start_date: new Date().toISOString().split('T')[0],
                 days_needed: 7,
-                language: user.language,
+                language: lang,
                 biomarkers: test_data,
                 bioage_profile: bioAgeReport,
                 dots_formulary: dotsForNutrition.rows,
             };
             const nutritionPrompt = systemNutritionTemplate(nutritionContext);
+            const userPromptMsg = lang === 'zh'
+                ? '请根据以上检测结果，为我生成 7 天营养方案。'
+                : 'Generate my 7-day nutrition plan based on these results.';
             const nutritionCompletion = await llmClient.chat.completions.create({
                 model,
                 messages: [
                     { role: 'system', content: nutritionPrompt },
-                    { role: 'user', content: 'Generate my 7-day nutrition plan based on these results.' }
+                    { role: 'user', content: userPromptMsg }
                 ],
             });
             const reportContent = nutritionCompletion.choices[0].message.content;
