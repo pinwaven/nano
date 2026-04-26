@@ -6,7 +6,7 @@ import {
   ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout,
   ShoppingBag, Package, Building2, Tag, Copy, Cpu, Layers, QrCode, Printer, ChevronLeft, ChevronRight, Download,
   Coins, TrendingUp, Settings2,
-  GraduationCap, Video, FileText, Upload, ExternalLink,
+  GraduationCap, Video, FileText, Upload, ExternalLink, Play,
 } from 'lucide-react';
 
 axios.interceptors.request.use((config) => {
@@ -1849,6 +1849,42 @@ function DeleteLibraryItemConfirm({ item, onClose, onConfirm }) {
   );
 }
 
+// ── Video player modal ────────────────────────────────────────────────────────
+
+function VideoPlayerModal({ course, onClose }) {
+  const [url, setUrl] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    axios.get('/api/oss/presign', { params: { action: 'get', key: course.oss_key } })
+      .then(res => setUrl(res.data.url))
+      .catch(() => setError('Could not load video URL.'));
+  }, [course.oss_key]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-video" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span><Video size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />{course.title}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body" style={{ padding: 0 }}>
+          {error && <p style={{ padding: 20, color: '#dc2626' }}>{error}</p>}
+          {!error && !url && <p style={{ padding: 20, color: 'var(--muted)' }}>Loading…</p>}
+          {url && (
+            <video
+              src={url}
+              controls
+              autoPlay
+              style={{ width: '100%', display: 'block', background: '#000', maxHeight: '70vh' }}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Academy tab ───────────────────────────────────────────────────────────────
 
 function AcademyTab() {
@@ -1879,12 +1915,7 @@ function AcademyTab() {
 
   const publishedCount = courses.filter(c => c.status === 'published').length;
 
-  const openVideo = async (course) => {
-    try {
-      const res = await axios.get('/api/oss/presign', { params: { action: 'get', key: course.oss_key } });
-      window.open(res.data.url, '_blank');
-    } catch { /* silent */ }
-  };
+  const openVideo = (course) => setModal({ type: 'play-video', course });
 
   const openDoc = async (item) => {
     try {
@@ -1952,7 +1983,7 @@ function AcademyTab() {
                     <div className="row-actions">
                       {c.oss_key && (
                         <button className="icon-btn" title={ta.viewVideo} onClick={() => openVideo(c)}>
-                          <ExternalLink size={14} />
+                          <Play size={14} />
                         </button>
                       )}
                       <button className="icon-btn" title={ta.editCourse} onClick={() => setModal({ type: 'edit-course', course: c })}>
@@ -2015,6 +2046,7 @@ function AcademyTab() {
         </div>
       )}
 
+      {modal?.type === 'play-video'    && <VideoPlayerModal course={modal.course} onClose={() => setModal(null)} />}
       {modal?.type === 'add-course'    && <CourseModal course={null}        onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit-course'   && <CourseModal course={modal.course} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete-course' && <DeleteCourseConfirm course={modal.course} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}

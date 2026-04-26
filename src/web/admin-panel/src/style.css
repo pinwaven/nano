@@ -694,6 +694,12 @@ tr:hover .row-actions { opacity: 1; }
   text-align: center;
 }
 
+/* ── Video player modal ── */
+.modal-video {
+  width: min(860px, 95vw);
+  overflow: hidden;
+}
+
 /* ── Upload zone ── */
 .upload-zone {
   display: flex;
