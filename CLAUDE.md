@@ -224,9 +224,12 @@ return {
 
 ### Deployment
 
-- `s worker deploy` — deploys only the worker function, the syntax is 's worker deploy', not 's deploy worker'
-- `s deploy` — deploys all functions (dispatcher + worker)
-- Confirm trigger changes with `Y` when prompted, or use `-y` flag
+- **Always source `.env` before deploying** — `s.yaml` uses `${env(VAR)}` references for all secrets (DB_PASS, DASHSCOPE_API_KEY, WX_SECRET, API_BEARER_TOKEN, OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET). Without sourcing, those vars resolve to empty strings and the deployed function breaks.
+- Preferred commands (handle sourcing automatically):
+  - `npm run deploy:worker` — deploys only the worker
+  - `npm run deploy:dispatcher` — deploys only the dispatcher
+- Manual equivalent: `source .env && s worker deploy -y`
+- `s deploy` — deploys all functions; prefix with `source .env &&` if used directly
 - FC 3.0 does not hot-reload; each deploy takes ~15 s before changes are live
 
 ### Local dev vs FC 3.0 parity

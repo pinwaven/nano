@@ -32,7 +32,7 @@ resources:
         DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
         DB_NAME: "nano_db"
         DB_USER: "nano_admin"
-        DB_PASS: "Waven53Bike!"
+        DB_PASS: ${env(DB_PASS)}
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         WORKER_URL: "https://nano-worker-napllanrqp.cn-shanghai-vpc.fcapp.run"
@@ -69,18 +69,18 @@ resources:
         DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
         DB_NAME: "nano_db"
         DB_USER: "nano_admin"
-        DB_PASS: "Waven53Bike!"
+        DB_PASS: ${env(DB_PASS)}
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
-        DASHSCOPE_API_KEY: "sk-c42a1129d83644ad8b0323845f51d5f5"
+        DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
         MODEL: "qwen-plus-latest"
         WX_APPID: "wxecbcf00ce480fcf2"
-        WX_SECRET: "dd527ce18b4ac5c319e2ec57163aa21b"
-        API_BEARER_TOKEN: "tokenData-gh9bc7917115bid72c68c8c4693g"
+        WX_SECRET: ${env(WX_SECRET)}
+        API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
         OSS_REGION: "oss-cn-shanghai"
         OSS_BUCKET: "waven-nano"
-        OSS_ACCESS_KEY_ID: "LTAI5t9u5dtHdPfnNYYsoDMs"
-        OSS_ACCESS_KEY_SECRET: "UYY91DpQzvevuhfVh3CBrHUXhXup4c"
+        OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
+        OSS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
       triggers:
         - triggerName: http-webhook
           triggerType: http
