@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import axios from 'axios';
+import { marked } from 'marked';
 import wavenLogo from '../../shared/assets/waven-logo-icon.png';
 import {
   Users, Droplets, UserCog, RefreshCcw,
   ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout,
   ShoppingBag, Package, Building2, Tag, Copy, Cpu, Layers, QrCode, Printer, ChevronLeft, ChevronRight, Download,
   Coins, TrendingUp, Settings2,
-  GraduationCap, Video, FileText, Upload, ExternalLink, Play,
+  GraduationCap, Video, FileText, Upload, ExternalLink, Play, BookOpen,
 } from 'lucide-react';
 
 axios.interceptors.request.use((config) => {
@@ -1885,6 +1886,44 @@ function VideoPlayerModal({ course, onClose }) {
   );
 }
 
+function MarkdownViewerModal({ item, onClose }) {
+  const [html, setHtml] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const presign = await axios.get('/api/oss/presign', { params: { action: 'get', key: item.oss_key } });
+        const raw = await fetch(presign.data.url);
+        if (!raw.ok) throw new Error(`HTTP ${raw.status}`);
+        const text = await raw.text();
+        setHtml(marked.parse(text));
+      } catch (err) {
+        setError(`Could not load document: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [item.oss_key]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-markdown" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span><BookOpen size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />{item.title}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body md-body">
+          {loading && <p style={{ color: 'var(--muted)' }}>Loading…</p>}
+          {error   && <p style={{ color: '#dc2626' }}>{error}</p>}
+          {!loading && !error && <div dangerouslySetInnerHTML={{ __html: html }} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Academy tab ───────────────────────────────────────────────────────────────
 
 function AcademyTab() {
@@ -1917,12 +1956,7 @@ function AcademyTab() {
 
   const openVideo = (course) => setModal({ type: 'play-video', course });
 
-  const openDoc = async (item) => {
-    try {
-      const res = await axios.get('/api/oss/presign', { params: { action: 'get', key: item.oss_key } });
-      window.open(res.data.url, '_blank');
-    } catch { /* silent */ }
-  };
+  const openDoc = (item) => setModal({ type: 'view-doc', item });
 
   return (
     <>
@@ -2032,7 +2066,7 @@ function AcademyTab() {
                   <td>
                     <div className="row-actions">
                       <button className="icon-btn" title={ta.viewDoc} onClick={() => openDoc(item)}>
-                        <ExternalLink size={14} />
+                        <BookOpen size={14} />
                       </button>
                       <button className="icon-btn danger" title={ta.deleteDoc} onClick={() => setModal({ type: 'delete-doc', item })}>
                         <Trash2 size={14} />
@@ -2050,6 +2084,7 @@ function AcademyTab() {
       {modal?.type === 'add-course'    && <CourseModal course={null}        onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit-course'   && <CourseModal course={modal.course} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete-course' && <DeleteCourseConfirm course={modal.course} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {modal?.type === 'view-doc'      && <MarkdownViewerModal item={modal.item} onClose={() => setModal(null)} />}
       {modal?.type === 'add-doc'       && <LibraryModal onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete-doc'    && <DeleteLibraryItemConfirm item={modal.item} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
     </>
