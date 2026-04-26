@@ -169,11 +169,6 @@ app.post('/ingest', async (req, res) => {
     await workerHandler(fcRequest, fcResponse, {});
 });
 
-app.listen(port, () => {
-    console.log(`\x1b[32m[Nano Backend] Running locally at http://localhost:${port}\x1b[0m`);
-    console.log(`[Nano Backend] Database: ${process.env.DATABASE_URL ? 'Connected' : 'Disconnected'}`);
-});
-
 // Admin: Fetch all Dots Cartridges
 app.get('/dots-inventory', async (req, res) => {
     const { pool } = require('../src/lib/db');
@@ -513,4 +508,36 @@ app.delete('/dots/:id', async (req, res) => {
     }
 });
 
+// Catch-all: forward any route not handled above to the worker handler
+app.all('*', async (req, res) => {
+    if (!workerHandler) {
+        return res.status(404).json({ error: `No handler for ${req.method} ${req.path}` });
+    }
+    const bodyBuf = req.body ? Buffer.from(JSON.stringify(req.body)) : Buffer.from('{}');
+    const fcRequest = {
+        rawPath: req.path,
+        path: req.path,
+        method: req.method,
+        queryParameters: req.query,
+        body: bodyBuf,
+        headers: req.headers,
+        requestContext: { http: { method: req.method } },
+        isBase64Encoded: false,
+    };
+    const fcResponse = {
+        setStatusCode: (code) => res.status(code),
+        setHeader: (name, value) => res.setHeader(name, value),
+        send: (data) => res.send(data),
+    };
+    try {
+        await workerHandler(fcRequest, fcResponse, {});
+    } catch (err) {
+        console.error(`[Local Dev] Worker error on ${req.method} ${req.path}:`, err.message);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 app.listen(port, () => {
+    console.log(`\x1b[32m[Nano Backend] Running locally at http://localhost:${port}\x1b[0m`);
+    console.log(`[Nano Backend] Database: ${process.env.DATABASE_URL ? 'Connected' : 'Disconnected'}`);
+});

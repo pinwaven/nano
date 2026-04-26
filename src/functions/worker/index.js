@@ -1,5 +1,6 @@
 const { pool } = require('./lib/db');
 const { recordOrderCommissions } = require('./lib/commissions');
+const ossLib = require('./lib/oss');
 const crypto = require('crypto');
 
 const generateUserId = () => crypto.randomBytes(4).toString('hex');
@@ -2257,6 +2258,131 @@ async function handlePostHealthAdvice(body) {
     }
 }
 
+// ── Academy handlers ──────────────────────────────────────────────────────────
+
+async function handleGetAcademyCourses() {
+    try {
+        const result = await pool.query('SELECT * FROM academy_courses ORDER BY sort_order ASC, created_at DESC');
+        return { success: true, courses: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAcademyCourse(body) {
+    try {
+        const { title, description, oss_key, status, sort_order } = body;
+        if (!title) return { success: false, error: 'Title is required' };
+        const result = await pool.query(
+            'INSERT INTO academy_courses (title, description, oss_key, status, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [title, description || null, oss_key || null, status || 'draft', sort_order || 0]
+        );
+        return { success: true, course: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutAcademyCourse(id, body) {
+    try {
+        const { title, description, oss_key, status, sort_order } = body;
+        const result = await pool.query(
+            `UPDATE academy_courses SET
+                title       = COALESCE($1, title),
+                description = COALESCE($2, description),
+                oss_key     = COALESCE($3, oss_key),
+                status      = COALESCE($4, status),
+                sort_order  = COALESCE($5, sort_order),
+                updated_at  = NOW()
+             WHERE id = $6 RETURNING *`,
+            [title || null, description || null, oss_key || null, status || null, sort_order != null ? sort_order : null, id]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Not found' };
+        return { success: true, course: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteAcademyCourse(id) {
+    try {
+        const res = await pool.query('SELECT oss_key FROM academy_courses WHERE id = $1', [id]);
+        if (res.rows.length > 0 && res.rows[0].oss_key) {
+            await ossLib.deleteObject(res.rows[0].oss_key);
+        }
+        await pool.query('DELETE FROM academy_courses WHERE id = $1', [id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetAcademyLibrary() {
+    try {
+        const result = await pool.query('SELECT * FROM academy_library ORDER BY created_at DESC');
+        return { success: true, items: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAcademyLibraryItem(body) {
+    try {
+        const { title, oss_key, file_size } = body;
+        if (!title || !oss_key) return { success: false, error: 'Title and oss_key are required' };
+        const result = await pool.query(
+            'INSERT INTO academy_library (title, oss_key, file_size) VALUES ($1, $2, $3) RETURNING *',
+            [title, oss_key, file_size || null]
+        );
+        return { success: true, item: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutAcademyLibraryItem(id, body) {
+    try {
+        const { title } = body;
+        const result = await pool.query(
+            'UPDATE academy_library SET title = COALESCE($1, title) WHERE id = $2 RETURNING *',
+            [title || null, id]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Not found' };
+        return { success: true, item: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteAcademyLibraryItem(id) {
+    try {
+        const res = await pool.query('SELECT oss_key FROM academy_library WHERE id = $1', [id]);
+        if (res.rows.length > 0) {
+            await ossLib.deleteObject(res.rows[0].oss_key);
+        }
+        await pool.query('DELETE FROM academy_library WHERE id = $1', [id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetOssPresign(query) {
+    try {
+        const { type, filename, action, key: existingKey } = query;
+        if (action === 'get' && existingKey) {
+            const url = ossLib.generatePresignedGetUrl(existingKey, 3600);
+            return { success: true, url };
+        }
+        if (!filename) return { success: false, error: 'filename is required' };
+        const key = ossLib.generateKey(type || 'misc', filename);
+        const url = ossLib.generatePresignedPutUrl(key, 3600);
+        return { success: true, url, key };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 exports.handler = async (req, resp, context) => {
     const isStandardHttp = resp && typeof resp.send === 'function';
     let event = req;
@@ -2375,6 +2501,12 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetInvitations(query);
             } else if (path.includes('/channels')) {
                 result = await handleGetChannels();
+            } else if (path.includes('/academy/courses')) {
+                result = await handleGetAcademyCourses();
+            } else if (path.includes('/academy/library')) {
+                result = await handleGetAcademyLibrary();
+            } else if (path.includes('/oss/presign')) {
+                result = await handleGetOssPresign(query);
             } else if (path.includes('/users') || path === '/' || path === '') {
                 result = await handleGetUsers();
             } else if (path.includes('/commission-settings')) {
@@ -2443,6 +2575,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostGenerateCoachPayouts(parsedBody);
             } else if (path.includes('/generate-channel-payouts')) {
                 result = await handlePostGenerateChannelPayouts(parsedBody);
+            } else if (path === '/academy/courses') {
+                result = await handlePostAcademyCourse(parsedBody);
+            } else if (path === '/academy/library') {
+                result = await handlePostAcademyLibraryItem(parsedBody);
             } else {
                 result = await handlePostChat(parsedBody);
             }
@@ -2480,6 +2616,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/channel-payouts/')) {
                 const payoutId = path.split('/channel-payouts/')[1];
                 result = await handlePutChannelPayout(payoutId, parsedBody);
+            } else if (path.includes('/academy/courses/')) {
+                const courseId = path.split('/academy/courses/')[1];
+                result = await handlePutAcademyCourse(courseId, parsedBody);
+            } else if (path.includes('/academy/library/')) {
+                const libId = path.split('/academy/library/')[1];
+                result = await handlePutAcademyLibraryItem(libId, parsedBody);
             } else {
                 result = { success: false, error: `Unknown PUT route: ${path}` };
             }
@@ -2508,6 +2650,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/store-items/')) {
                 const itemId = path.split('/store-items/')[1];
                 result = await handleDeleteStoreItem(itemId);
+            } else if (path.includes('/academy/courses/')) {
+                const courseId = path.split('/academy/courses/')[1];
+                result = await handleDeleteAcademyCourse(courseId);
+            } else if (path.includes('/academy/library/')) {
+                const libId = path.split('/academy/library/')[1];
+                result = await handleDeleteAcademyLibraryItem(libId);
             } else {
                 result = { success: false, error: `Unknown DELETE route: ${path}` };
             }

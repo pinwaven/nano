@@ -6,6 +6,7 @@ import {
   ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout,
   ShoppingBag, Package, Building2, Tag, Copy, Cpu, Layers, QrCode, Printer, ChevronLeft, ChevronRight, Download,
   Coins, TrendingUp, Settings2,
+  GraduationCap, Video, FileText, Upload, ExternalLink,
 } from 'lucide-react';
 
 axios.interceptors.request.use((config) => {
@@ -19,7 +20,7 @@ axios.interceptors.request.use((config) => {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', academy: 'Academy' },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
     stats: {
@@ -150,10 +151,29 @@ const T = {
       chipCode: 'Chip Code', status: 'Status', scannedBy: 'Scanned By',
       page: 'Page', of: 'of', noChips: 'No chips',
     },
+    academy: {
+      coursesTab: 'Courses', libraryTab: 'Library',
+      uploadCourse: 'Upload Course', editCourse: 'Edit Course', deleteCourse: 'Delete Course',
+      uploadDoc: 'Upload Document', deleteDoc: 'Delete Document',
+      title: 'Title *', description: 'Description', status: 'Status', videoFile: 'Video File', mdFile: 'Markdown File',
+      draft: 'Draft', published: 'Published',
+      selectVideo: 'Click to select a video file', replaceVideo: 'Click to replace video',
+      selectMd: 'Click to select a .md file',
+      uploading: 'Uploading…', uploadFailed: 'Upload failed',
+      titleRequired: 'Title is required', fileRequired: 'File is required',
+      hasVideo: 'Video', fileSize: 'Size',
+      totalCourses: 'Courses', published: 'Published', totalDocs: 'Documents',
+      countCourses: (n) => `${n} course${n !== 1 ? 's' : ''}`,
+      countDocs: (n) => `${n} document${n !== 1 ? 's' : ''}`,
+      noCourses: 'No courses yet', noDocs: 'No documents yet',
+      deleteCourseWarning: (t) => `Delete course "${t}"? The video file will also be removed from storage.`,
+      deleteDocWarning: (t) => `Delete document "${t}"? The file will also be removed from storage.`,
+      viewVideo: 'View Video', viewDoc: 'View Document',
+    },
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', academy: '学院' },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
     stats: {
@@ -283,6 +303,25 @@ const T = {
       noSettings: '暂无设置', noPayouts: '暂无结算单', noCommissions: '暂无佣金记录',
       generate: '生成', generating: '生成中…', saved: '已保存', saveFailed: '保存失败',
       totalPayouts: '渠道结算', pendingPayouts: '待审批', totalCommissions: 'Coach 佣金', totalEarned: '佣金总额',
+    },
+    academy: {
+      coursesTab: '课程', libraryTab: '文库',
+      uploadCourse: '上传课程', editCourse: '编辑课程', deleteCourse: '删除课程',
+      uploadDoc: '上传文档', deleteDoc: '删除文档',
+      title: '标题 *', description: '描述', status: '状态', videoFile: '视频文件', mdFile: 'Markdown 文件',
+      draft: '草稿', published: '已发布',
+      selectVideo: '点击选择视频文件', replaceVideo: '点击更换视频',
+      selectMd: '点击选择 .md 文件',
+      uploading: '上传中…', uploadFailed: '上传失败',
+      titleRequired: '标题为必填项', fileRequired: '文件为必填项',
+      hasVideo: '视频', fileSize: '大小',
+      totalCourses: '课程总数', published: '已发布', totalDocs: '文档总数',
+      countCourses: (n) => `共 ${n} 门课程`,
+      countDocs: (n) => `共 ${n} 份文档`,
+      noCourses: '暂无课程', noDocs: '暂无文档',
+      deleteCourseWarning: (t) => `确认删除课程"${t}"？视频文件也将从存储中移除。`,
+      deleteDocWarning: (t) => `确认删除文档"${t}"？文件也将从存储中移除。`,
+      viewVideo: '查看视频', viewDoc: '查看文档',
     },
   },
 };
@@ -1563,6 +1602,428 @@ function StoreTab({ storeItems, orders, onRefresh }) {
   );
 }
 
+// ── Academy helpers ───────────────────────────────────────────────────────────
+
+function uploadToOSS(url, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`Upload failed: HTTP ${xhr.status}`));
+    });
+    xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+    xhr.open('PUT', url);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.send(file);
+  });
+}
+
+function fmtBytes(bytes) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ── Academy modals ────────────────────────────────────────────────────────────
+
+function CourseModal({ course, onClose, onSave }) {
+  const { t } = useLang();
+  const ta = t.academy;
+  const isEdit = !!course?.id;
+  const [form, setForm] = useState({
+    title: course?.title || '',
+    description: course?.description || '',
+    status: course?.status || 'draft',
+  });
+  const [file, setFile] = useState(null);
+  const [progress, setProgress] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.title.trim()) { setError(ta.titleRequired); return; }
+    setBusy(true); setError(''); setProgress(0);
+    try {
+      let oss_key = course?.oss_key || null;
+      if (file) {
+        const presignRes = await axios.get('/api/oss/presign', { params: { type: 'video', filename: file.name } });
+        if (!presignRes.data.success) throw new Error(presignRes.data.error || ta.uploadFailed);
+        const { url, key } = presignRes.data;
+        await uploadToOSS(url, file, setProgress);
+        oss_key = key;
+      }
+      if (isEdit) {
+        await axios.put(`/api/academy/courses/${course.id}`, { ...form, oss_key });
+      } else {
+        await axios.post('/api/academy/courses', { ...form, oss_key });
+      }
+      onSave();
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || ta.uploadFailed);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{isEdit ? ta.editCourse : ta.uploadCourse}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.title}</span>
+              <input value={form.title} onChange={e => set('title', e.target.value)} placeholder="e.g. Introduction to Longevity" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.description}</span>
+              <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={3} style={{ resize: 'vertical' }} />
+            </label>
+            <label className="form-field">
+              <span>{ta.status}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.status} onChange={e => set('status', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="draft">{ta.draft}</option>
+                  <option value="published">{ta.published}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span className="form-label-text">{ta.videoFile}</span>
+              <label className="upload-zone">
+                <input type="file" accept="video/*" style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
+                <Upload size={18} style={{ marginBottom: 6, color: 'var(--muted)' }} />
+                <span className="upload-zone-hint">
+                  {file ? file.name : (course?.oss_key ? ta.replaceVideo : ta.selectVideo)}
+                </span>
+              </label>
+              {busy && (
+                <div className="upload-progress">
+                  <div className="upload-progress-bar" style={{ width: `${progress}%` }} />
+                </div>
+              )}
+            </div>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? ta.uploading : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteCourseConfirm({ course, onClose, onConfirm }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState(false);
+  const handleDelete = async () => {
+    setBusy(true);
+    try { await axios.delete(`/api/academy/courses/${course.id}`); onConfirm(); }
+    catch { /* silent */ } finally { setBusy(false); }
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.academy.deleteCourse}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginBottom: 20, color: '#475569' }}>{t.academy.deleteCourseWarning(course.title)}</p>
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-danger" onClick={handleDelete} disabled={busy}>
+              <Trash2 size={14} />{busy ? t.modal.deleting : t.modal.delete}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LibraryModal({ onClose, onSave }) {
+  const { t } = useLang();
+  const ta = t.academy;
+  const [title, setTitle] = useState('');
+  const [file, setFile] = useState(null);
+  const [progress, setProgress] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!title.trim()) { setError(ta.titleRequired); return; }
+    if (!file) { setError(ta.fileRequired); return; }
+    setBusy(true); setError(''); setProgress(0);
+    try {
+      const presignRes = await axios.get('/api/oss/presign', { params: { type: 'markdown', filename: file.name } });
+      if (!presignRes.data.success) throw new Error(presignRes.data.error || ta.uploadFailed);
+      const { url, key } = presignRes.data;
+      await uploadToOSS(url, file, setProgress);
+      await axios.post('/api/academy/library', { title, oss_key: key, file_size: file.size });
+      onSave();
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || ta.uploadFailed);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{ta.uploadDoc}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.title}</span>
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Longevity Nutrition Guide" />
+            </label>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span className="form-label-text">{ta.mdFile}</span>
+              <label className="upload-zone">
+                <input type="file" accept=".md,text/markdown,text/plain" style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
+                <Upload size={18} style={{ marginBottom: 6, color: 'var(--muted)' }} />
+                <span className="upload-zone-hint">{file ? file.name : ta.selectMd}</span>
+              </label>
+              {busy && (
+                <div className="upload-progress">
+                  <div className="upload-progress-bar" style={{ width: `${progress}%` }} />
+                </div>
+              )}
+            </div>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? ta.uploading : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteLibraryItemConfirm({ item, onClose, onConfirm }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState(false);
+  const handleDelete = async () => {
+    setBusy(true);
+    try { await axios.delete(`/api/academy/library/${item.id}`); onConfirm(); }
+    catch { /* silent */ } finally { setBusy(false); }
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.academy.deleteDoc}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginBottom: 20, color: '#475569' }}>{t.academy.deleteDocWarning(item.title)}</p>
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-danger" onClick={handleDelete} disabled={busy}>
+              <Trash2 size={14} />{busy ? t.modal.deleting : t.modal.delete}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Academy tab ───────────────────────────────────────────────────────────────
+
+function AcademyTab() {
+  const { t } = useLang();
+  const ta = t.academy;
+  const [subTab, setSubTab] = useState('courses');
+  const [courses, setCourses] = useState([]);
+  const [library, setLibrary] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [cRes, lRes] = await Promise.allSettled([
+        axios.get('/api/academy/courses'),
+        axios.get('/api/academy/library'),
+      ]);
+      setCourses(cRes.status === 'fulfilled' ? (cRes.value.data.courses || []) : []);
+      setLibrary(lRes.status === 'fulfilled' ? (lRes.value.data.items || []) : []);
+    } catch (err) { console.error('Academy fetch error:', err); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const closeAndRefresh = () => { setModal(null); fetchData(); };
+
+  const publishedCount = courses.filter(c => c.status === 'published').length;
+
+  const openVideo = async (course) => {
+    try {
+      const res = await axios.get('/api/oss/presign', { params: { action: 'get', key: course.oss_key } });
+      window.open(res.data.url, '_blank');
+    } catch { /* silent */ }
+  };
+
+  const openDoc = async (item) => {
+    try {
+      const res = await axios.get('/api/oss/presign', { params: { action: 'get', key: item.oss_key } });
+      window.open(res.data.url, '_blank');
+    } catch { /* silent */ }
+  };
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={GraduationCap} label={ta.totalCourses}  value={courses.length}   color="#6366f1" />
+        <StatCard icon={Video}          label={ta.published}     value={publishedCount}   color="#10b981" />
+        <StatCard icon={FileText}       label={ta.totalDocs}     value={library.length}   color="#3b82f6" />
+      </div>
+
+      <div className="subtab-row">
+        <button className={`subtab-btn${subTab === 'courses' ? ' active' : ''}`} onClick={() => setSubTab('courses')}>
+          <Video size={13} />{ta.coursesTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'library' ? ' active' : ''}`} onClick={() => setSubTab('library')}>
+          <FileText size={13} />{ta.libraryTab}
+        </button>
+      </div>
+
+      {subTab === 'courses' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{ta.countCourses(courses.length)}</span>
+            <button className="btn-primary" onClick={() => setModal({ type: 'add-course' })}>
+              <Upload size={14} />{ta.uploadCourse}
+            </button>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>{ta.title.replace(' *', '')}</th>
+                <th>{ta.description}</th>
+                <th>{ta.status}</th>
+                <th>{ta.hasVideo}</th>
+                <th>{t.table.joined}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {!loading && courses.length === 0 && (
+                <tr><td colSpan={7} className="empty-row">{ta.noCourses}</td></tr>
+              )}
+              {courses.map(c => (
+                <tr key={c.id}>
+                  <td className="muted mono">{c.id}</td>
+                  <td className="bold">{c.title}</td>
+                  <td className="muted" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {c.description || '—'}
+                  </td>
+                  <td>
+                    <Badge color={c.status === 'published' ? '#10b981' : '#94a3b8'}>
+                      {c.status === 'published' ? ta.published : ta.draft}
+                    </Badge>
+                  </td>
+                  <td>{c.oss_key ? <Badge color="#6366f1">✓</Badge> : '—'}</td>
+                  <td className="muted">{fmtDate(c.created_at)}</td>
+                  <td>
+                    <div className="row-actions">
+                      {c.oss_key && (
+                        <button className="icon-btn" title={ta.viewVideo} onClick={() => openVideo(c)}>
+                          <ExternalLink size={14} />
+                        </button>
+                      )}
+                      <button className="icon-btn" title={ta.editCourse} onClick={() => setModal({ type: 'edit-course', course: c })}>
+                        <Pencil size={14} />
+                      </button>
+                      <button className="icon-btn danger" title={ta.deleteCourse} onClick={() => setModal({ type: 'delete-course', course: c })}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {subTab === 'library' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{ta.countDocs(library.length)}</span>
+            <button className="btn-primary" onClick={() => setModal({ type: 'add-doc' })}>
+              <Upload size={14} />{ta.uploadDoc}
+            </button>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>{ta.title.replace(' *', '')}</th>
+                <th>{ta.fileSize}</th>
+                <th>{t.table.joined}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {!loading && library.length === 0 && (
+                <tr><td colSpan={5} className="empty-row">{ta.noDocs}</td></tr>
+              )}
+              {library.map(item => (
+                <tr key={item.id}>
+                  <td className="muted mono">{item.id}</td>
+                  <td className="bold">{item.title}</td>
+                  <td className="muted">{fmtBytes(item.file_size)}</td>
+                  <td className="muted">{fmtDate(item.created_at)}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" title={ta.viewDoc} onClick={() => openDoc(item)}>
+                        <ExternalLink size={14} />
+                      </button>
+                      <button className="icon-btn danger" title={ta.deleteDoc} onClick={() => setModal({ type: 'delete-doc', item })}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {modal?.type === 'add-course'    && <CourseModal course={null}        onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit-course'   && <CourseModal course={modal.course} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete-course' && <DeleteCourseConfirm course={modal.course} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {modal?.type === 'add-doc'       && <LibraryModal onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete-doc'    && <DeleteLibraryItemConfirm item={modal.item} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+    </>
+  );
+}
+
 // ── Rewards tab ───────────────────────────────────────────────────────────────
 
 function RewardsTab() {
@@ -2782,7 +3243,8 @@ export default function App() {
     { id: 'kino',     label: t.nav.kino,     icon: Cpu         },
     { id: 'chips',    label: t.nav.chips,    icon: Layers      },
     { id: 'invites',  label: t.nav.invites,  icon: Tag         },
-    { id: 'rewards',  label: t.nav.rewards,  icon: Coins       },
+    { id: 'rewards',  label: t.nav.rewards,  icon: Coins          },
+    { id: 'academy',  label: t.nav.academy,  icon: GraduationCap  },
     { id: 'sims',     label: t.nav.sims,     icon: Layout,      disabled: true },
   ];
 
@@ -2831,6 +3293,7 @@ export default function App() {
           {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'rewards'  && <RewardsTab />}
+          {tab === 'academy'  && <AcademyTab />}
           {tab === 'sims'     && <SimulatorsTab />}
         </div>
       </div>
