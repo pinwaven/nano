@@ -4,7 +4,7 @@ import wavenLogo from '../../shared/assets/waven-logo-icon.png';
 import {
   Users, Droplets, UserCog, RefreshCcw,
   ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout,
-  ShoppingBag, Package, Building2,
+  ShoppingBag, Package, Building2, Tag, Copy,
 } from 'lucide-react';
 
 axios.interceptors.request.use((config) => {
@@ -18,7 +18,7 @@ axios.interceptors.request.use((config) => {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Precision Dots', store: 'Store', sims: 'Simulators', channels: 'Channels' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites' },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
     stats: {
@@ -28,6 +28,7 @@ const T = {
       totalDots: 'Total Dots', isolates: 'Isolates', blends: 'Blends',
       totalItems: 'Items', activeItems: 'Active', totalOrders: 'Orders', pendingOrders: 'Pending',
       totalChannels: 'Channels',
+      totalInvites: 'Total Invites', activeInvites: 'Active', usedInvites: 'Used',
     },
     table: {
       id: 'ID', nickname: 'Nickname', gender: 'Gender', birthDate: 'Birth Date',
@@ -37,16 +38,19 @@ const T = {
       key: 'Key', nameEn: 'Name (EN)', nameZh: 'Name (ZH)', color: 'Color',
       type: 'Type', description: 'Description',
       unassigned: 'Unassigned', channel: 'Channel', roles: 'Roles', linkedUser: 'Linked User',
+      timing: 'Timing', group: 'Group', subAge: 'Sub-Age',
+      code: 'Code', maxUses: 'Max Uses', useCount: 'Uses', creator: 'Creator',
     },
-    empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found' },
+    empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found', invites: 'No invitations found' },
     count: (n) => `${n} users`,
     addUser: 'Add User',
-    addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item', addChannel: 'Add Channel',
+    addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item', addChannel: 'Add Channel', addInvite: 'Create Invite',
     countCoach: (n) => `${n} Coaches`,
     countDot: (n) => `${n} dots`,
     countItem: (n) => `${n} items`,
     countOrder: (n) => `${n} orders`,
     countChannel: (n) => `${n} channels`,
+    countInvite: (n) => `${n} invites`,
     modal: {
       addUser: 'Add User', editUser: 'Edit User', deleteUser: 'Delete User',
       addCoach: 'Add Coach', editCoach: 'Edit Coach', deleteCoach: 'Delete Coach',
@@ -62,8 +66,14 @@ const T = {
       keyName: 'Key Name *', keyNamePlaceholder: 'e.g. omega3',
       nameEn: 'Name (EN) *', nameZh: 'Name (ZH)',
       color: 'Color', colorPlaceholder: '#FF6B35',
-      colorZh: 'Color (ZH)', description: 'Description',
+      colorZh: 'Color (ZH)', colorHex: 'Color Hex',
+      description: 'Description',
       isIsolate: 'Type', isolate: 'Isolate', blend: 'Blend',
+      timing: 'Timing', timingMorning: 'Morning', timingEvening: 'Evening',
+      group: 'Group', subAge: 'Sub-Age Target',
+      ingredientsSummary: 'Summary',
+      ingredients: 'Ingredients', addIngredient: '+ Add Row',
+      ingredientNameEn: 'EN Name', ingredientNameZh: 'ZH Name', ingredientMg: 'mg',
       cancel: 'Cancel', save: 'Save', saving: 'Saving…',
       delete: 'Delete', deleting: 'Deleting…',
       deleteWarning: (name) => `Delete ${name}? This will also remove all their biomarkers, scans, and notifications.`,
@@ -87,6 +97,11 @@ const T = {
       channel: 'Channel', channelUnassigned: 'No channel',
       roles: 'Roles', roleUser: 'User', roleCoach: 'Coach', roleAdmin: 'Channel Admin', roleSuperadmin: 'Superadmin',
       linkedUserId: 'Linked User ID', linkedUserIdPlaceholder: 'WeChat user_id',
+      addInvite: 'Create Invite', deactivateInvite: 'Deactivate',
+      deleteInviteWarning: (code) => `Deactivate invite "${code}"? It can no longer be used.`,
+      inviteType: 'Type', inviteTypeCoach: 'Coach', inviteTypeChannel: 'Channel', inviteTypeAdmin: 'Admin',
+      inviteMaxUses: 'Max Uses', inviteMaxUsesPlaceholder: 'Blank = unlimited',
+      inviteChannel: 'Channel *',
     },
     dotType: { isolate: 'Isolate', blend: 'Blend' },
     store: {
@@ -96,10 +111,11 @@ const T = {
       pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', cancelled: 'Cancelled',
     },
+    invites: { active: 'Active', deactivated: 'Deactivated', unlimited: 'Unlimited' },
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码' },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
     stats: {
@@ -109,6 +125,7 @@ const T = {
       totalDots: '原粒总数', isolates: '单体', blends: '复合',
       totalItems: '商品总数', activeItems: '上架中', totalOrders: '订单总数', pendingOrders: '待处理',
       totalChannels: '渠道数',
+      totalInvites: '邀请码总数', activeInvites: '有效', usedInvites: '已使用',
     },
     table: {
       id: 'ID', nickname: '昵称', gender: '性别', birthDate: '出生日期',
@@ -118,16 +135,19 @@ const T = {
       key: '标识', nameEn: '名称 (英)', nameZh: '名称 (中)', color: '颜色',
       type: '类型', description: '描述',
       unassigned: '未分配', channel: '渠道', roles: '角色', linkedUser: '关联用户',
+      timing: '服用时间', group: '功能分组', subAge: '目标年龄',
+      code: '邀请码', maxUses: '上限', useCount: '已用', creator: '创建者',
     },
-    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道' },
+    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道', invites: '暂无邀请码' },
     count: (n) => `共 ${n} 位用户`,
     addUser: '添加用户',
-    addCoach: '添加 Coach', addDot: '添加原粒', addItem: '添加商品', addChannel: '添加渠道',
+    addCoach: '添加 Coach', addDot: '添加原粒', addItem: '添加商品', addChannel: '添加渠道', addInvite: '创建邀请码',
     countCoach: (n) => `共 ${n} 位 Coach`,
     countDot: (n) => `共 ${n} 个原粒`,
     countItem: (n) => `共 ${n} 件商品`,
     countOrder: (n) => `共 ${n} 笔订单`,
     countChannel: (n) => `共 ${n} 个渠道`,
+    countInvite: (n) => `共 ${n} 个邀请码`,
     modal: {
       addUser: '添加用户', editUser: '编辑用户', deleteUser: '删除用户',
       addCoach: '添加 Coach', editCoach: '编辑 Coach', deleteCoach: '删除 Coach',
@@ -143,8 +163,14 @@ const T = {
       keyName: '标识 *', keyNamePlaceholder: '例如 omega3',
       nameEn: '名称 (英) *', nameZh: '名称 (中)',
       color: '颜色', colorPlaceholder: '#FF6B35',
-      colorZh: '颜色 (中)', description: '描述',
+      colorZh: '颜色 (中)', colorHex: '颜色十六进制',
+      description: '描述',
       isIsolate: '类型', isolate: '单体', blend: '复合',
+      timing: '服用时间', timingMorning: '早上', timingEvening: '晚上',
+      group: '功能分组', subAge: '目标年龄',
+      ingredientsSummary: '成分摘要',
+      ingredients: '成分列表', addIngredient: '+ 添加行',
+      ingredientNameEn: '英文名', ingredientNameZh: '中文名', ingredientMg: 'mg',
       cancel: '取消', save: '保存', saving: '保存中…',
       delete: '删除', deleting: '删除中…',
       deleteWarning: (name) => `确认删除 ${name}？此操作将同时删除该用户的所有生物标志物、扫描记录和通知。`,
@@ -168,6 +194,11 @@ const T = {
       channel: '渠道', channelUnassigned: '无渠道',
       roles: '角色', roleUser: '用户', roleCoach: '教练', roleAdmin: '渠道管理员', roleSuperadmin: '超级管理员',
       linkedUserId: '关联用户 ID', linkedUserIdPlaceholder: '微信 user_id',
+      addInvite: '创建邀请码', deactivateInvite: '停用',
+      deleteInviteWarning: (code) => `确认停用邀请码"${code}"？该码将无法继续使用。`,
+      inviteType: '类型', inviteTypeCoach: 'Coach', inviteTypeChannel: '渠道', inviteTypeAdmin: '管理员',
+      inviteMaxUses: '使用上限', inviteMaxUsesPlaceholder: '留空 = 不限次数',
+      inviteChannel: '渠道 *',
     },
     dotType: { isolate: '单体', blend: '复合' },
     store: {
@@ -177,6 +208,7 @@ const T = {
       pending: '待处理', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', cancelled: '已取消',
     },
+    invites: { active: '有效', deactivated: '已停用', unlimited: '不限' },
   },
 };
 
@@ -539,17 +571,63 @@ function DeleteCoachConfirm({ coach, onClose, onConfirm }) {
 
 // ── Dot modal ─────────────────────────────────────────────────────────────────
 
-const EMPTY_DOT = { key_name: '', name: '', name_zh: '', color: '', color_zh: '', description: '', is_isolate: false };
+const GROUP_VALUES   = ['BioAge Reducing', 'Energy & Performance Boost', 'System Optimization'];
+const GROUP_ZH       = ['生物减龄', '能量焕发', '系统调优'];
+const SUB_AGE_VALUES = ['Cellular Age', 'Metabolic Age', 'Micro-Vascular Age', 'Resilience Age'];
+const SUB_AGE_ZH     = ['细胞年龄', '代谢年龄', '微血管年龄', '抗压年龄'];
+
+function mergeIngredients(en, zh) {
+  const enArr = Array.isArray(en) ? en : [];
+  const zhArr = Array.isArray(zh) ? zh : [];
+  const len = Math.max(enArr.length, zhArr.length);
+  return Array.from({ length: len }, (_, i) => ({
+    name_en: enArr[i]?.name || '',
+    name_zh: zhArr[i]?.name || '',
+    mg: enArr[i]?.mg != null ? String(enArr[i].mg) : '',
+  }));
+}
+
+const EMPTY_DOT = {
+  key_name: '', name: '', name_zh: '', color: '', color_zh: '', color_hex: '',
+  group_name: GROUP_VALUES[0], sub_age_target: SUB_AGE_VALUES[0],
+  timing: 'Morning', ingredients_summary: '', description: '', is_isolate: false,
+  ingredients_combined: [],
+};
 
 function DotModal({ dot, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!dot?.id;
-  const [form, setForm] = useState(isEdit
-    ? { key_name: dot.key_name || '', name: dot.name || '', name_zh: dot.name_zh || '', color: dot.color || '', color_zh: dot.color_zh || '', description: dot.description || '', is_isolate: !!dot.is_isolate }
-    : { ...EMPTY_DOT });
+
+  const initForm = () => isEdit ? {
+    key_name: dot.key_name || '',
+    name: dot.name || '', name_zh: dot.name_zh || '',
+    color: dot.color || '', color_zh: dot.color_zh || '', color_hex: dot.color_hex || '',
+    group_name: dot.group_name || GROUP_VALUES[0],
+    sub_age_target: dot.sub_age_target || SUB_AGE_VALUES[0],
+    timing: dot.timing || 'Morning',
+    ingredients_summary: dot.ingredients_summary || '',
+    description: dot.description || '',
+    is_isolate: !!dot.is_isolate,
+    ingredients_combined: mergeIngredients(dot.ingredients, dot.ingredients_zh),
+  } : { ...EMPTY_DOT };
+
+  const [form, setForm] = useState(initForm);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const updateIngredient = (i, field, val) =>
+    setForm(f => {
+      const arr = [...f.ingredients_combined];
+      arr[i] = { ...arr[i], [field]: val };
+      return { ...f, ingredients_combined: arr };
+    });
+
+  const addIngredient = () =>
+    setForm(f => ({ ...f, ingredients_combined: [...f.ingredients_combined, { name_en: '', name_zh: '', mg: '' }] }));
+
+  const removeIngredient = (i) =>
+    setForm(f => ({ ...f, ingredients_combined: f.ingredients_combined.filter((_, idx) => idx !== i) }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -557,8 +635,25 @@ function DotModal({ dot, onClose, onSave }) {
     if (!form.name.trim()) { setError(t.modal.nameRequired); return; }
     setBusy(true); setError('');
     try {
-      if (isEdit) await axios.put(`/api/dots/${dot.id}`, form);
-      else await axios.post('/api/dots', form);
+      const gIdx = GROUP_VALUES.indexOf(form.group_name);
+      const sIdx = SUB_AGE_VALUES.indexOf(form.sub_age_target);
+      const filled = form.ingredients_combined.filter(i => i.name_en.trim() || i.name_zh.trim());
+      const payload = {
+        key_name: form.key_name, name: form.name, name_zh: form.name_zh,
+        color: form.color, color_zh: form.color_zh, color_hex: form.color_hex,
+        group_name: form.group_name,
+        group_name_zh: gIdx >= 0 ? GROUP_ZH[gIdx] : form.group_name,
+        sub_age_target: form.sub_age_target,
+        sub_age_target_zh: sIdx >= 0 ? SUB_AGE_ZH[sIdx] : form.sub_age_target,
+        timing: form.timing,
+        ingredients_summary: form.ingredients_summary,
+        description: form.description,
+        is_isolate: form.is_isolate,
+        ingredients: filled.map(i => ({ name: i.name_en.trim(), mg: i.mg !== '' ? parseFloat(i.mg) : null })),
+        ingredients_zh: filled.map(i => ({ name: i.name_zh.trim(), mg: i.mg !== '' ? parseFloat(i.mg) : null })),
+      };
+      if (isEdit) await axios.put(`/api/dots/${dot.id}`, payload);
+      else await axios.post('/api/dots', payload);
       onSave();
     } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
     finally { setBusy(false); }
@@ -566,7 +661,7 @@ function DotModal({ dot, onClose, onSave }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <span>{isEdit ? t.modal.editDot : t.modal.addDot}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
@@ -596,6 +691,34 @@ function DotModal({ dot, onClose, onSave }) {
               <input value={form.name_zh} onChange={e => set('name_zh', e.target.value)} placeholder="例如 欧米伽-3" />
             </label>
             <label className="form-field">
+              <span>{t.modal.timing}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.timing} onChange={e => set('timing', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="Morning">{t.modal.timingMorning}</option>
+                  <option value="Evening">{t.modal.timingEvening}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{t.modal.group}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.group_name} onChange={e => set('group_name', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  {GROUP_VALUES.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.subAge}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.sub_age_target} onChange={e => set('sub_age_target', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  {SUB_AGE_VALUES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
               <span>{t.modal.color}</span>
               <input value={form.color} onChange={e => set('color', e.target.value)} placeholder={t.modal.colorPlaceholder} />
             </label>
@@ -603,10 +726,37 @@ function DotModal({ dot, onClose, onSave }) {
               <span>{t.modal.colorZh}</span>
               <input value={form.color_zh} onChange={e => set('color_zh', e.target.value)} placeholder={t.modal.colorPlaceholder} />
             </label>
+            <label className="form-field">
+              <span>{t.modal.colorHex}</span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input value={form.color_hex} onChange={e => set('color_hex', e.target.value)} placeholder="#FF6B35" style={{ flex: 1 }} />
+                {form.color_hex && <span style={{ width: 22, height: 22, borderRadius: 4, background: form.color_hex, border: '1px solid #e2e8f0', flexShrink: 0 }} />}
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{t.modal.ingredientsSummary}</span>
+              <input value={form.ingredients_summary} onChange={e => set('ingredients_summary', e.target.value)} placeholder="e.g. NMN 250mg + Resveratrol 100mg" />
+            </label>
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{t.modal.description}</span>
               <input value={form.description} onChange={e => set('description', e.target.value)} placeholder="…" />
             </label>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span className="form-label-text">{t.modal.ingredients}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                {form.ingredients_combined.map((ing, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input value={ing.name_en} onChange={e => updateIngredient(i, 'name_en', e.target.value)} placeholder={t.modal.ingredientNameEn} style={{ flex: 2 }} />
+                    <input value={ing.name_zh} onChange={e => updateIngredient(i, 'name_zh', e.target.value)} placeholder={t.modal.ingredientNameZh} style={{ flex: 2 }} />
+                    <input type="number" value={ing.mg} onChange={e => updateIngredient(i, 'mg', e.target.value)} placeholder={t.modal.ingredientMg} style={{ flex: 1 }} />
+                    <button type="button" className="icon-btn danger" onClick={() => removeIngredient(i)}><X size={12} /></button>
+                  </div>
+                ))}
+                <button type="button" className="btn-secondary" style={{ alignSelf: 'flex-start', fontSize: 12, padding: '4px 10px', marginTop: 2 }} onClick={addIngredient}>
+                  {t.modal.addIngredient}
+                </button>
+              </div>
+            </div>
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
@@ -1004,23 +1154,33 @@ function DotsTab({ dots, onRefresh }) {
         </div>
         <table className="data-table">
           <thead>
-            <tr><th>{t.table.key}</th><th>{t.table.nameEn}</th><th>{t.table.nameZh}</th><th>{t.table.color}</th><th>{t.table.type}</th><th>{t.table.description}</th><th></th></tr>
+            <tr>
+              <th>{t.table.key}</th><th>{t.table.nameEn}</th><th>{t.table.nameZh}</th>
+              <th>{t.table.timing}</th><th>{t.table.group}</th><th>{t.table.subAge}</th>
+              <th>{t.table.color}</th><th>{t.table.type}</th><th></th>
+            </tr>
           </thead>
           <tbody>
-            {dots.length === 0 && <tr><td colSpan={7} className="empty-row">{t.empty.dots}</td></tr>}
+            {dots.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.dots}</td></tr>}
             {dots.map(d => (
               <tr key={d.id}>
                 <td><code className="code-tag">{d.key_name}</code></td>
                 <td className="bold">{fmt(d.name)}</td>
                 <td>{fmt(d.name_zh)}</td>
                 <td>
+                  <Badge color={d.timing === 'Evening' ? '#8b5cf6' : '#f59e0b'}>
+                    {d.timing === 'Evening' ? t.modal.timingEvening : t.modal.timingMorning}
+                  </Badge>
+                </td>
+                <td className="muted" style={{ fontSize: 11, maxWidth: 130 }}>{fmt(d.group_name)}</td>
+                <td className="muted" style={{ fontSize: 11 }}>{fmt(d.sub_age_target)}</td>
+                <td>
                   <div className="color-cell">
-                    <span className="color-dot" style={{ background: d.color?.toLowerCase() || '#ccc' }} />
+                    <span className="color-dot" style={{ background: d.color_hex || d.color?.toLowerCase() || '#ccc' }} />
                     {fmt(d.color)}
                   </div>
                 </td>
                 <td><Badge color={d.is_isolate ? '#ec4899' : '#f59e0b'}>{d.is_isolate ? t.dotType.isolate : t.dotType.blend}</Badge></td>
-                <td className="muted desc-cell">{fmt(d.description)}</td>
                 <td>
                   <div className="row-actions">
                     <button className="icon-btn" title={t.modal.editDot} onClick={() => setModal({ type: 'edit', dot: d })}><Pencil size={14} /></button>
@@ -1507,6 +1667,196 @@ function ChannelTab({ channels, onRefresh }) {
   );
 }
 
+// ── Invites tab ───────────────────────────────────────────────────────────────
+
+function InviteModal({ channels, onClose, onSave }) {
+  const { t } = useLang();
+  const [form, setForm] = useState({ channel_id: '', type: 'coach', max_uses: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.channel_id) { setError(t.modal.inviteChannel.replace(' *', '') + ' required'); return; }
+    setBusy(true); setError('');
+    try {
+      await axios.post('/api/invitations', {
+        channel_id: parseInt(form.channel_id),
+        type: form.type,
+        max_uses: form.max_uses !== '' ? parseInt(form.max_uses) : null,
+      });
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.modal.addInvite}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field">
+              <span>{t.modal.inviteChannel}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">{t.modal.channelUnassigned}</option>
+                  {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{t.modal.inviteType}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.type} onChange={e => set('type', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="coach">{t.modal.inviteTypeCoach}</option>
+                  <option value="channel">{t.modal.inviteTypeChannel}</option>
+                  <option value="admin">{t.modal.inviteTypeAdmin}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.inviteMaxUses}</span>
+              <input type="number" min="1" value={form.max_uses} onChange={e => set('max_uses', e.target.value)} placeholder={t.modal.inviteMaxUsesPlaceholder} />
+            </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? t.modal.saving : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeactivateInviteConfirm({ invite, onClose, onConfirm }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState(false);
+  const handleDeactivate = async () => {
+    setBusy(true);
+    try { await axios.delete(`/api/invitations/${invite.id}`); onConfirm(); }
+    catch { /* silent */ } finally { setBusy(false); }
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.modal.deactivateInvite}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginBottom: 20, color: '#475569' }}>
+            {t.modal.deleteInviteWarning(invite.code)}
+          </p>
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-danger" onClick={handleDeactivate} disabled={busy}>
+              <Trash2 size={14} />{busy ? t.modal.deleting : t.modal.delete}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InvitesTab({ invitations, channels, onRefresh }) {
+  const { t } = useLang();
+  const [modal, setModal] = useState(null);
+  const [copied, setCopied] = useState(null);
+  const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  const activeCount = invitations.filter(i => i.is_active).length;
+  const usedTotal   = invitations.reduce((s, i) => s + (i.use_count || 0), 0);
+
+  const copyCode = (code) => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(code);
+      setTimeout(() => setCopied(null), 1500);
+    });
+  };
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={Tag} label={t.stats.totalInvites}  value={invitations.length} color="#6366f1" />
+        <StatCard icon={Tag} label={t.stats.activeInvites} value={activeCount}         color="#10b981" />
+        <StatCard icon={Tag} label={t.stats.usedInvites}   value={usedTotal}           color="#f59e0b" />
+      </div>
+      <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count">{t.countInvite(invitations.length)}</span>
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{t.addInvite}
+          </button>
+        </div>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>{t.table.code}</th>
+              <th>{t.table.type}</th>
+              <th>{t.table.channel}</th>
+              <th>{t.table.creator}</th>
+              <th>{t.table.maxUses}</th>
+              <th>{t.table.useCount}</th>
+              <th>Status</th>
+              <th>{t.table.joined}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {invitations.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.invites}</td></tr>}
+            {invitations.map(inv => (
+              <tr key={inv.id}>
+                <td>
+                  <div className="avatar-cell" style={{ gap: 6 }}>
+                    <code className="code-tag" style={{ letterSpacing: '0.1em', fontSize: 13 }}>{inv.code}</code>
+                    <button className="icon-btn" title="Copy" onClick={() => copyCode(inv.code)} style={{ padding: 3 }}>
+                      {copied === inv.code
+                        ? <Check size={12} style={{ color: '#10b981' }} />
+                        : <Copy size={12} />}
+                    </button>
+                  </div>
+                </td>
+                <td><Badge color="#8b5cf6">{inv.type}</Badge></td>
+                <td>{inv.channel_name ? <Badge color="#6366f1">{inv.channel_name}</Badge> : '—'}</td>
+                <td className="muted">{fmt(inv.creator_name)}</td>
+                <td className="muted">{inv.max_uses != null ? inv.max_uses : t.invites.unlimited}</td>
+                <td><Badge color={inv.use_count > 0 ? '#3b82f6' : '#94a3b8'}>{inv.use_count || 0}</Badge></td>
+                <td>
+                  <Badge color={inv.is_active ? '#10b981' : '#94a3b8'}>
+                    {inv.is_active ? t.invites.active : t.invites.deactivated}
+                  </Badge>
+                </td>
+                <td className="muted">{fmtDate(inv.created_at)}</td>
+                <td>
+                  {inv.is_active && (
+                    <button className="icon-btn danger" title={t.modal.deactivateInvite} onClick={() => setModal({ type: 'deactivate', invite: inv })}>
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {modal?.type === 'add'        && <InviteModal channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'deactivate' && <DeactivateInviteConfirm invite={modal.invite} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+    </>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -1515,20 +1865,21 @@ export default function App() {
   const toggleLang = () => setLang(l => l === 'en' ? 'zh' : 'en');
 
   const [tab, setTab] = useState('users');
-  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [] });
+  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [uRes, dRes, pRes, sRes, oRes, chRes] = await Promise.all([
+      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes] = await Promise.all([
         axios.get('/api/users'),
         axios.get('/api/dots-inventory'),
         axios.get('/api/coach-list'),
         axios.get('/api/store-items?all=true'),
         axios.get('/api/orders'),
         axios.get('/api/channels'),
+        axios.get('/api/invitations'),
       ]);
       setData({
         users: uRes.data.users || [],
@@ -1537,6 +1888,7 @@ export default function App() {
         storeItems: sRes.data.items || [],
         orders: oRes.data.orders || [],
         channels: chRes.data.channels || [],
+        invitations: invRes.data.invitations || [],
       });
       setLastRefresh(new Date());
     } catch (err) { console.error('Admin fetch error:', err); }
@@ -1551,6 +1903,7 @@ export default function App() {
     { id: 'dots',     label: t.nav.dots,     icon: Droplets    },
     { id: 'store',    label: t.nav.store,    icon: ShoppingBag },
     { id: 'channels', label: t.nav.channels, icon: Building2   },
+    { id: 'invites',  label: t.nav.invites,  icon: Tag         },
     { id: 'sims',     label: t.nav.sims,     icon: Layout      },
   ];
 
@@ -1585,11 +1938,12 @@ export default function App() {
           </button>
         </header>
         <div className="content">
-          {tab === 'users'    && <UsersTab  users={data.users} coaches={data.coaches} channels={data.channels} onRefresh={fetchData} />}
-          {tab === 'coaches'  && <CoachTab  coaches={data.coaches} users={data.users} channels={data.channels} onRefresh={fetchData} />}
-          {tab === 'dots'     && <DotsTab   dots={data.dots} onRefresh={fetchData} />}
-          {tab === 'store'    && <StoreTab  storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
-          {tab === 'channels' && <ChannelTab channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'users'    && <UsersTab    users={data.users} coaches={data.coaches} channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'dots'     && <DotsTab     dots={data.dots} onRefresh={fetchData} />}
+          {tab === 'store'    && <StoreTab    storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
+          {tab === 'channels' && <ChannelTab  channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'sims'     && <SimulatorsTab />}
         </div>
       </div>
