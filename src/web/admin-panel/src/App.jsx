@@ -2366,25 +2366,31 @@ function ChipListPanel({ batch, onClose }) {
 function ChipsTab({ batches, onRefresh }) {
   const { t } = useContext(LangCtx);
   const tc = t.chips;
-  const [modal, setModal]     = useState(null);
+  const [modal, setModal]         = useState(null);
   const [viewBatch, setViewBatch] = useState(null);
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
 
-  const totalChips = batches.reduce((s, b) => s + parseInt(b.quantity || 0), 0);
-  const usedChips  = batches.reduce((s, b) => s + parseInt(b.used  || 0), 0);
+  const totalChips     = batches.reduce((s, b) => s + parseInt(b.quantity  || 0), 0);
+  const availableChips = batches.reduce((s, b) => s + parseInt(b.available || 0), 0);
+  const usedChips      = batches.reduce((s, b) => s + parseInt(b.used      || 0), 0);
+  const damagedChips   = batches.reduce((s, b) => s + parseInt(b.damaged   || 0), 0);
 
   return (
-    <div>
-      <div className="tab-header">
-        <div className="stats-row">
-          <div className="stat-card"><span className="stat-label">{t.countBatch(batches.length)}</span></div>
-          <div className="stat-card"><span className="stat-label">{totalChips} chips total</span></div>
-          <div className="stat-card"><span className="stat-label">{usedChips} used</span></div>
-        </div>
-        <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-          <Plus size={14} />{t.addBatch}
-        </button>
+    <>
+      <div className="stat-row">
+        <StatCard icon={Layers}      label={t.countBatch(batches.length)} value={batches.length}  color="#3b82f6" />
+        <StatCard icon={Package}     label={tc.total}                     value={totalChips}       color="#8b5cf6" />
+        <StatCard icon={Check}       label={tc.available}                 value={availableChips}   color="#10b981" />
+        <StatCard icon={Activity}    label={tc.used}                      value={usedChips}        color="#f59e0b" />
+        <StatCard icon={Trash2}      label={tc.damaged}                   value={damagedChips}     color="#ef4444" />
       </div>
+      <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count">{t.countBatch(batches.length)}</span>
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{t.addBatch}
+          </button>
+        </div>
       <table className="data-table">
         <thead><tr>
           <th>ID</th>
@@ -2420,12 +2426,13 @@ function ChipsTab({ batches, onRefresh }) {
           ))}
         </tbody>
       </table>
+      </div>
 
       {modal?.type === 'add'    && <ChipBatchModal batch={null}        onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit'   && <ChipBatchModal batch={modal.batch} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteBatchConfirm batch={modal.batch} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
       {viewBatch && <ChipListPanel batch={viewBatch} onClose={() => setViewBatch(null)} />}
-    </div>
+    </>
   );
 }
 
@@ -2483,7 +2490,7 @@ export default function App() {
     { id: 'kino',     label: t.nav.kino,     icon: Cpu         },
     { id: 'chips',    label: t.nav.chips,    icon: Layers      },
     { id: 'invites',  label: t.nav.invites,  icon: Tag         },
-    { id: 'sims',     label: t.nav.sims,     icon: Layout      },
+    { id: 'sims',     label: t.nav.sims,     icon: Layout,      disabled: true },
   ];
 
   return (
@@ -2494,8 +2501,13 @@ export default function App() {
           {t.brand}
         </div>
         <nav className="sidebar-nav">
-          {NAV.map(({ id, label, icon: Icon }) => (
-            <button key={id} className={`nav-item${tab === id ? ' active' : ''}`} onClick={() => setTab(id)}>
+          {NAV.map(({ id, label, icon: Icon, disabled }) => (
+            <button key={id}
+              className={`nav-item${tab === id ? ' active' : ''}${disabled ? ' disabled' : ''}`}
+              onClick={() => !disabled && setTab(id)}
+              style={disabled ? { opacity: 0.35, cursor: 'not-allowed' } : undefined}
+              title={disabled ? 'Coming soon' : undefined}
+            >
               <Icon size={15} />{label}
             </button>
           ))}
