@@ -2144,6 +2144,8 @@
 }
 .theme-light .tab-label              { color: var(--text-muted); }
 .theme-light .tab-active .tab-label  { color: var(--blue); }
+.theme-light .tab-icon-img           { filter: brightness(0); opacity: 0.3; }
+.theme-light .tab-active .tab-icon-img { filter: brightness(0); opacity: 0.75; }
 
 /* ── Chat messages ── */
 .theme-light .message-ai {
