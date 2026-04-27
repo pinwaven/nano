@@ -122,7 +122,7 @@ const T = {
     joined:            '注册时间',
     phone:             '手机',
     email:             '邮箱',
-    bioAge:            '生物年龄',
+    bioAge:            '生理年龄',
     chronoAge:         '实际年龄',
     latestBm:          '最新生物标志物',
     trends:            '趋势',

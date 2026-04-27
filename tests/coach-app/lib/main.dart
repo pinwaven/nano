@@ -57,7 +57,7 @@ class _DashboardPageState extends State<DashboardPage> {
       'title': 'Coach 移动端',
       'loading': '正在加载 Coach 移动端...',
       'metrics': '最新指标',
-      'bioAge': '生物年龄',
+      'bioAge': '生理年龄',
       'chronoAge': '实际年龄',
       'biomarkers': '生物标志物详情',
       'plan': '营养方案 (7天)',

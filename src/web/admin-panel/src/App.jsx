@@ -178,7 +178,7 @@ const T = {
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
     stats: {
-      totalUsers: '总用户数', tested: '已检测', avgBioAge: '平均生物年龄',
+      totalUsers: '总用户数', tested: '已检测', avgBioAge: '平均生理年龄',
       coaches: 'Coach 数', totalCoaches: 'Coach 总数',
       assignedUsers: '已分配用户', unassignedUsers: '未分配用户',
       totalDots: '原粒总数', isolates: '单体', blends: '复合',
@@ -189,7 +189,7 @@ const T = {
     },
     table: {
       id: 'ID', nickname: '昵称', gender: '性别', birthDate: '出生日期',
-      language: '语言', bioAge: '生物年龄', chronoAge: '实际年龄',
+      language: '语言', bioAge: '生理年龄', chronoAge: '实际年龄',
       assignedCoach: '负责 Coach', joined: '注册时间',
       name: '姓名', email: '邮箱', phone: '电话', customers: '用户数',
       key: '标识', nameEn: '名称 (英)', nameZh: '名称 (中)', color: '颜色',

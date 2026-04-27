@@ -16,14 +16,14 @@ const T = {
       copied: '链接已复制',
     },
     stats: {
-      totalUsers: '总用户', tested: '已检测', avgBioAge: '平均生物年龄', coaches: '教练数',
+      totalUsers: '总用户', tested: '已检测', avgBioAge: '平均生理年龄', coaches: '教练数',
       totalCoaches: '教练总数', assigned: '已分配', unassigned: '未分配',
       totalItems: '商品', active: '上架中', totalOrders: '订单', pending: '待处理',
     },
     user: {
       nickname: '昵称', gender: '性别', birthDate: '出生日期', language: '语言',
       coach: '负责教练', phone: '电话', email: '邮箱', externalId: '外部 ID',
-      externalApp: '外部应用', bioAge: '生物年龄', chronoAge: '实际年龄',
+      externalApp: '外部应用', bioAge: '生理年龄', chronoAge: '实际年龄',
       joined: '注册时间', unassigned: '未分配',
       male: '男', female: '女', unknown: '未知',
       addTitle: '添加用户', editTitle: '编辑用户',

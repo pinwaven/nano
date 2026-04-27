@@ -22,7 +22,7 @@ VALUES
     ('kino-chip-1',
      'Kino 生物标志物检测芯片',
      'Kino Biomarker Test Chip',
-     '单次检测 · 6项关键生物标志物 · 含生物年龄报告',
+     '单次检测 · 6项关键生物标志物 · 含生理年龄报告',
      'Single test · 6 key biomarkers · Includes Bio Age report',
      '1 片', '1 chip',
      298.00, 39.99,

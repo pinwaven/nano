@@ -1690,7 +1690,7 @@ async function handlePostBiomarkers(body) {
 
         const lang = user.language || 'zh';
         const content = lang === 'zh'
-            ? `已完成生物标志物检测分析。您的生物年龄为 **${bioAgeReport.BioAge.toFixed(1)} 岁**。请查看详细报告！`
+            ? `已完成生物标志物检测分析。您的生理年龄为 **${bioAgeReport.BioAge.toFixed(1)} 岁**。请查看详细报告！`
             : `I've analyzed your biomarker test. Your biological age is **${bioAgeReport.BioAge.toFixed(1)} years**. Check your report for details!`;
         await pool.query(
             'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',

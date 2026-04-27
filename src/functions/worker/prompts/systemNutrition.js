@@ -28,7 +28,7 @@ module.exports = (context) => {
   const chronoage = context.bioage_profile?.ChronoAge ?? 'unknown';
 
   if (isZh) {
-    return `你是一台精密营养引擎。请根据用户的生物标志物和生物年龄，分析其健康状况，并为每种 Waven Dot 分配每日摄入数量。
+    return `你是一台精密营养引擎。请根据用户的生物标志物和生理年龄，分析其健康状况，并为每种 Waven Dot 分配每日摄入数量。
 
 生物标志物参考范围：
   hsCRP (mg/L):       <1 = 正常 | 1–3 = 偏高 | >3 = 高炎症风险

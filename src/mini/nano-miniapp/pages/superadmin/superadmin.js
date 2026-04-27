@@ -34,7 +34,7 @@ const T = {
       deleteWarning: '确认删除此渠道？所有关联用户和教练将失去渠道归属。',
     },
     user: {
-      nickname: '昵称', channel: '渠道', roles: '角色', bioAge: '生物年龄',
+      nickname: '昵称', channel: '渠道', roles: '角色', bioAge: '生理年龄',
       joined: '注册时间', noPermission: '无权限',
     },
     coach: {

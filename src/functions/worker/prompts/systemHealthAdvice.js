@@ -92,7 +92,7 @@ module.exports = (context) => {
 
   const bioSummaryLine = hasBio
     ? (isZh
-      ? `生物年龄 ${Number(bioAge).toFixed(1)} 岁  |  实际年龄 ${chronoAge} 岁  |  差值 ${Number(ageDelta) >= 0 ? '+' : ''}${ageDelta} 岁`
+      ? `生理年龄 ${Number(bioAge).toFixed(1)} 岁  |  实际年龄 ${chronoAge} 岁  |  差值 ${Number(ageDelta) >= 0 ? '+' : ''}${ageDelta} 岁`
       : `BioAge: ${Number(bioAge).toFixed(1)} yrs  |  ChronoAge: ${chronoAge} yrs  |  Δ: ${Number(ageDelta) >= 0 ? '+' : ''}${ageDelta} yrs`)
     : (isZh ? '暂无检测数据' : 'No biomarker test completed yet');
 
@@ -101,7 +101,7 @@ module.exports = (context) => {
 
   const taskZh = `根据以下数据，为用户生成一条详细、有温度的健康分析消息。结构如下：
 
-1. **总体状态** — 2-3句总结：生物年龄与实际年龄的对比，以及整体健康大图（积极或需关注）。
+1. **总体状态** — 2-3句总结：生理年龄与实际年龄的对比，以及整体健康大图（积极或需关注）。
 2. **逐维度分析** — 对四个子年龄逐一分析：
    - 说明该维度的值是超前、正常还是滞后
    - 用通俗语言解释是哪些生物标志物在驱动这个结果，以及背后的生物学原理
