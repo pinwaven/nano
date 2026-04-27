@@ -2104,3 +2104,203 @@
   0%, 80%, 100% { transform: scale(0.7); opacity: 0.4; }
   40%            { transform: scale(1.2); opacity: 1; }
 }
+
+/* ════════════════════════════════════════════════════════
+   LIGHT THEME OVERRIDES
+   Applied when .main has class "theme-light"
+   ════════════════════════════════════════════════════════ */
+
+/* ── Layout ── */
+.theme-light.main {
+  background: var(--bg-gradient);
+}
+
+/* ── Header ── */
+.theme-light .status-bar-spacer {
+  background: var(--bg-surface);
+}
+.theme-light .app-header {
+  background: var(--bg-surface);
+  border-bottom-color: var(--navy-border);
+}
+.theme-light .header-title  { color: var(--text); }
+.theme-light .header-user   { color: var(--text-sub); }
+.theme-light .header-divider { background: rgba(201, 149, 106, 0.25); }
+
+/* ── Menu ── */
+.theme-light .menu-dropdown {
+  background: var(--navy-card);
+  border-color: rgba(201, 149, 106, 0.25);
+  box-shadow: 0 8rpx 40rpx rgba(44, 44, 44, 0.12);
+}
+.theme-light .menu-divider    { background: rgba(201, 149, 106, 0.15); }
+.theme-light .menu-item-icon  { color: var(--text-sub); }
+.theme-light .menu-item-label { color: var(--text); }
+
+/* ── Tab bar ── */
+.theme-light .tab-bar {
+  background: var(--bg-tabbar);
+  border-top-color: var(--navy-border);
+}
+.theme-light .tab-label              { color: var(--text-muted); }
+.theme-light .tab-active .tab-label  { color: var(--blue); }
+
+/* ── Chat messages ── */
+.theme-light .message-ai {
+  background: var(--navy-lift);
+  color: var(--text);
+  border-color: rgba(201, 149, 106, 0.2);
+}
+.theme-light .msg-action-card {
+  background: linear-gradient(135deg, rgba(201, 149, 106, 0.15), rgba(201, 149, 106, 0.06));
+  border-color: rgba(201, 149, 106, 0.4);
+}
+.theme-light .msg-action-label { color: var(--text-sub); }
+.theme-light .msg-action-arrow { color: var(--blue); }
+
+/* ── Onboarding bars ── */
+.theme-light .ob-bar {
+  background: var(--bg-input);
+  border-top-color: var(--navy-border);
+}
+.theme-light .ob-input {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(201, 149, 106, 0.3);
+  color: var(--text);
+}
+.theme-light .ob-ph        { color: var(--text-muted); }
+.theme-light .slider-key   { color: var(--text-muted); }
+.theme-light .slider-val   { color: var(--text); }
+.theme-light .slider-unit  { color: var(--text-muted); }
+.theme-light .quick-btn {
+  border-color: rgba(201, 149, 106, 0.35);
+  background: rgba(201, 149, 106, 0.1);
+  color: var(--text);
+}
+.theme-light .picker-row {
+  background: var(--navy-lift);
+  border-color: rgba(201, 149, 106, 0.28);
+}
+.theme-light .picker-val   { color: var(--text); }
+.theme-light .picker-arrow { color: var(--text-muted); }
+.theme-light .cond-chip {
+  border-color: rgba(201, 149, 106, 0.3);
+  background: rgba(201, 149, 106, 0.06);
+  color: var(--text-muted);
+}
+.theme-light .cond-chip-on {
+  border-color: var(--blue);
+  background: rgba(201, 149, 106, 0.2);
+  color: var(--text);
+}
+.theme-light .health-cond-chip {
+  border-color: rgba(201, 149, 106, 0.35);
+  background: rgba(201, 149, 106, 0.08);
+  color: var(--text-sub);
+}
+
+/* ── Chat input area ── */
+.theme-light .toolbox-panel {
+  background: var(--bg-input);
+  border-top-color: var(--navy-border);
+}
+.theme-light .tool-item {
+  background: rgba(201, 149, 106, 0.08);
+  border-color: rgba(201, 149, 106, 0.25);
+}
+.theme-light .tool-item-label  { color: var(--text); }
+.theme-light .tool-item-icon   { color: var(--blue); }
+.theme-light .input-area {
+  background: var(--bg-input);
+  border-top-color: var(--navy-border);
+}
+.theme-light .chat-textarea {
+  background: var(--navy-lift);
+  border-color: rgba(201, 149, 106, 0.22);
+  color: var(--text);
+}
+.theme-light .textarea-ph { color: var(--text-muted); }
+.theme-light .plus-btn {
+  background: rgba(201, 149, 106, 0.1);
+  border-color: rgba(201, 149, 106, 0.25);
+}
+.theme-light .plus-icon          { color: var(--text-sub); }
+.theme-light .plus-btn-open      { background: rgba(201, 149, 106, 0.25); border-color: var(--blue); }
+.theme-light .plus-btn-open .plus-icon { color: var(--blue); }
+.theme-light .kino-scan-bar {
+  background: var(--bg-input);
+  border-top-color: var(--navy-border);
+}
+
+/* ── Health tab ── */
+.theme-light .health-hero         { border-bottom-color: rgba(201, 149, 106, 0.1); }
+.theme-light .health-hero-bg      { background: var(--bg-hero); }
+.theme-light .bio-chip            { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.25); }
+.theme-light .bio-chip-primary    { border-color: rgba(201, 149, 106, 0.55); box-shadow: 0 0 40rpx rgba(201, 149, 106, 0.15); }
+.theme-light .bio-chip-dim        { background: rgba(250, 247, 242, 0.6); }
+.theme-light .bio-unit            { color: var(--text-muted); }
+.theme-light .bio-num-chrono      { color: var(--text-sub); }
+.theme-light .bio-bar-track       { background: rgba(201, 149, 106, 0.1); }
+.theme-light .bio-bar-label       { color: var(--text-muted); }
+.theme-light .bio-bar-ref         { background: rgba(139, 110, 78, 0.3); }
+.theme-light .sub-age-card        { background: rgba(255, 255, 255, 0.7); border-color: rgba(201, 149, 106, 0.15); }
+.theme-light .sub-age-label       { color: var(--text-muted); }
+.theme-light .sub-age-desc        { color: var(--text-muted); }
+.theme-light .health-section      { border-bottom-color: rgba(201, 149, 106, 0.08); }
+.theme-light .section-title       { color: var(--text-muted); }
+.theme-light .section-badge       { background: rgba(201, 149, 106, 0.1); color: var(--text-sub); border-color: rgba(201, 149, 106, 0.2); }
+.theme-light .profile-toggle      { background: rgba(201, 149, 106, 0.08); border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .profile-toggle-text { color: var(--text-sub); }
+.theme-light .profile-toggle-arrow { color: var(--text-muted); }
+.theme-light .info-grid-extra     { border-top-color: rgba(201, 149, 106, 0.08); }
+.theme-light .info-key            { color: var(--text-muted); }
+.theme-light .info-val            { color: var(--text); }
+.theme-light .bm-label            { color: var(--text-sub); }
+.theme-light .bm-val              { }
+.theme-light .bm-unit             { color: var(--text-muted); }
+.theme-light .bm-row              { border-bottom-color: rgba(201, 149, 106, 0.08); }
+.theme-light .trend-card          { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .trend-label         { color: var(--text-muted); }
+.theme-light .trend-unit          { color: var(--text-muted); }
+.theme-light .health-empty        { color: var(--text-muted); }
+.theme-light .wchart-sheet        { background: var(--bg-sheet); }
+.theme-light .wchart-handle       { background: rgba(139, 110, 78, 0.2); }
+.theme-light .wchart-title        { color: var(--text); }
+.theme-light .wchart-close        { color: var(--text-muted); }
+.theme-light .pulse-dot           { background: var(--blue); }
+.theme-light .typing-dot          { background: var(--blue); }
+
+/* ── Dots tab ── */
+.theme-light .cart-section-title  { color: var(--text-muted); }
+.theme-light .cart-sim-btn        { background: rgba(201, 149, 106, 0.12); border-color: rgba(201, 149, 106, 0.35); }
+.theme-light .cart-sim-btn-icon   { color: var(--blue); }
+.theme-light .ink-bar-wrap        { background: rgba(0, 0, 0, 0.05); border-color: rgba(0, 0, 0, 0.08); }
+.theme-light .cart-key            { color: var(--text-sub); }
+.theme-light .cart-remaining      { color: var(--text-muted); }
+.theme-light .cart-empty          { color: var(--text-muted); }
+.theme-light .dots-title          { color: var(--text-muted); }
+.theme-light .dots-week-label     { color: var(--text-muted); }
+.theme-light .day-card            { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .day-today           { border-color: rgba(201, 149, 106, 0.55); background: rgba(201, 149, 106, 0.06); }
+.theme-light .day-label           { color: var(--text-sub); }
+.theme-light .day-today .day-label { color: var(--blue); }
+.theme-light .meal-name           { color: var(--text-muted); }
+.theme-light .meal-slot-active    { background: rgba(201, 149, 106, 0.08); border-color: rgba(201, 149, 106, 0.3); }
+.theme-light .dot-chip            { background: rgba(0, 0, 0, 0.03); border-color: rgba(0, 0, 0, 0.06); }
+.theme-light .dot-key             { color: var(--text); }
+.theme-light .dot-count           { color: var(--text-muted); }
+.theme-light .dots-empty          { color: var(--text-muted); }
+
+/* ── Store tab ── */
+.theme-light .store-title         { color: var(--text-muted); }
+.theme-light .store-subtab-btn    { border-color: rgba(201, 149, 106, 0.3); background: rgba(201, 149, 106, 0.06); color: var(--text-muted); }
+.theme-light .store-card          { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .store-card-name     { color: var(--text); }
+.theme-light .store-card-desc     { color: var(--text-muted); }
+.theme-light .store-price         { color: var(--text); }
+.theme-light .store-unit          { color: var(--text-muted); }
+.theme-light .order-card          { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .order-name          { color: var(--text); }
+.theme-light .order-price         { color: var(--text); }
+.theme-light .order-meta          { color: var(--text-muted); }
+.theme-light .order-date          { color: var(--text-muted); }

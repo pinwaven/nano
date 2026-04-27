@@ -1,4 +1,4 @@
-<view class="main">
+<view class="main {{theme === 'light' ? 'theme-light' : ''}}">
 
   <!-- ── Status bar spacer ── -->
   <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
@@ -19,6 +19,11 @@
       <view class="menu-item" bindtap="toggleLang">
         <text class="menu-item-icon">{{lang === 'zh' ? '🇺🇸' : '🇨🇳'}}</text>
         <text class="menu-item-label">{{lang === 'zh' ? 'English' : '中文'}}</text>
+      </view>
+      <view class="menu-divider"></view>
+      <view class="menu-item" bindtap="toggleTheme">
+        <text class="menu-item-icon">{{theme === 'dark' ? '☀' : '🌑'}}</text>
+        <text class="menu-item-label">{{theme === 'dark' ? t.lightMode : t.darkMode}}</text>
       </view>
       <view class="menu-divider"></view>
       <view class="menu-item" bindtap="openKinoSim">

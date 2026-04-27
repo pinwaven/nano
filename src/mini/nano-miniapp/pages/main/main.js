@@ -162,6 +162,8 @@ const T = {
     kinoScanUsed: '此芯片已完成检测，无法重复登记。',
     kinoScanInvalidChip: '此二维码不是有效的 Kino 芯片，请扫描芯片上的二维码。',
     kinoScanError: '登记失败，请重试。',
+    lightMode: '浅色模式',
+    darkMode: '深色模式',
     orderStatus: {
       pending: '待处理', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', cancelled: '已取消',
@@ -289,6 +291,8 @@ const T = {
     kinoScanUsed: 'This chip has already been analyzed and cannot be registered again.',
     kinoScanInvalidChip: 'This QR code is not a valid Kino chip. Please scan the QR code on your chip.',
     kinoScanError: 'Registration failed. Please try again.',
+    lightMode: 'Light Mode',
+    darkMode: 'Dark Mode',
     orderStatus: {
       pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', cancelled: 'Cancelled',
@@ -658,7 +662,9 @@ Page({
     const isCoach = roles.includes('coach')
     const isAdmin = roles.includes('admin') || roles.includes('superadmin')
     const isSuperadmin = roles.includes('superadmin')
-    this.setData({ user: { ...user }, channel, lang, t: T[lang], statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin })
+    const theme = user.theme || app.globalData.theme || 'dark'
+    app.globalData.theme = theme
+    this.setData({ user: { ...user }, channel, lang, t: T[lang], statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme })
     this._initChat(user, lang)
     this._loadHealth(user, lang)
     this._loadDots(user, lang)
@@ -712,6 +718,17 @@ Page({
     this._loadHealth(this.data.user, lang)
     this._loadDots(this.data.user, lang)
     this._loadCartridges(this.data.user, lang)
+  },
+
+  async toggleTheme() {
+    const theme = this.data.theme === 'dark' ? 'light' : 'dark'
+    app.globalData.theme = theme
+    const user = { ...this.data.user, theme }
+    wx.setStorageSync('nano_user', user)
+    this.setData({ theme, menuOpen: false, user })
+    try {
+      await this._req(`${BASE}/api/users/${user.user_id}`, 'PATCH', { theme })
+    } catch (e) {}
   },
 
   openCoach() {

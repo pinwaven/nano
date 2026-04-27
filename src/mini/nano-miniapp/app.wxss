@@ -1,4 +1,5 @@
 page {
+  /* ── Dark theme (default) ── */
   --blue:        #6375EC;
   --blue-glow:   rgba(99, 117, 236, 0.45);
   --blue-dim:    rgba(99, 117, 236, 0.12);
@@ -11,11 +12,48 @@ page {
   --text-sub:    #A6C4E5;
   --text-muted:  rgba(166, 196, 229, 0.4);
 
+  /* RGB components for composing rgba() values */
+  --blue-rgb:    99, 117, 236;
+  --wave-rgb:    166, 196, 229;
+
+  /* Surface backgrounds */
+  --bg-gradient: radial-gradient(ellipse at 50% 0%, #142847 0%, #0B1C2E 70%);
+  --bg-surface:  rgba(11, 28, 46, 0.85);
+  --bg-input:    rgba(11, 28, 46, 0.92);
+  --bg-tabbar:   rgba(8, 18, 32, 0.92);
+  --bg-sheet:    #0D1E35;
+  --bg-hero:     radial-gradient(ellipse at 50% 0%, rgba(99, 117, 236, 0.18) 0%, transparent 70%);
+
   height: 100%;
   background-color: #0B1C2E;
   color: #EEF2FF;
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
   box-sizing: border-box;
+}
+
+/* ── Light theme overrides (applied via .theme-light on .main root view) ── */
+.theme-light {
+  --blue:        #C9956A;
+  --blue-glow:   rgba(201, 149, 106, 0.35);
+  --blue-dim:    rgba(201, 149, 106, 0.1);
+  --wave:        #8B6E4E;
+  --navy:        #FAF7F2;
+  --navy-card:   #FFFFFF;
+  --navy-lift:   #F5EDE3;
+  --navy-border: rgba(201, 149, 106, 0.2);
+  --text:        #2C2C2C;
+  --text-sub:    #8B6E4E;
+  --text-muted:  rgba(139, 110, 78, 0.45);
+
+  --blue-rgb:    201, 149, 106;
+  --wave-rgb:    139, 110, 78;
+
+  --bg-gradient: radial-gradient(ellipse at 50% 0%, #F5EDE3 0%, #FAF7F2 70%);
+  --bg-surface:  rgba(250, 247, 242, 0.92);
+  --bg-input:    rgba(250, 247, 242, 0.97);
+  --bg-tabbar:   rgba(250, 247, 242, 0.97);
+  --bg-sheet:    #FFFFFF;
+  --bg-hero:     radial-gradient(ellipse at 50% 0%, rgba(201, 149, 106, 0.12) 0%, transparent 70%);
 }
 
 view, text, input, textarea, button {

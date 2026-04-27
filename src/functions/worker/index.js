@@ -1395,6 +1395,25 @@ async function handlePutUser(user_id, body) {
     }
 }
 
+async function handlePatchUser(user_id, body) {
+    const { theme } = body;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const updates = [];
+        const params = [];
+        if (theme !== undefined) {
+            params.push(theme === 'light' ? 'light' : 'dark');
+            updates.push(`theme = $${params.length}`);
+        }
+        if (updates.length === 0) return { success: true };
+        params.push(user_id);
+        await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE user_id = $${params.length}`, params);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleDeleteUser(user_id) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -2658,6 +2677,13 @@ exports.handler = async (req, resp, context) => {
                 result = await handleDeleteAcademyLibraryItem(libId);
             } else {
                 result = { success: false, error: `Unknown DELETE route: ${path}` };
+            }
+        } else if (method === 'PATCH') {
+            if (path.includes('/users/')) {
+                const user_id = path.split('/users/')[1];
+                result = await handlePatchUser(user_id, parsedBody);
+            } else {
+                result = { success: false, error: `Unknown PATCH route: ${path}` };
             }
         } else {
             result = { success: false, error: `Unknown route: ${method} ${path}` };

@@ -4,6 +4,7 @@ App({
     channel: null,
     coach: null,
     lang: 'zh',
+    theme: 'dark',
     apiToken: 'tokenData-gh9bc7917115bid72c68c8c4693g',
   },
   onLaunch() {
@@ -16,6 +17,7 @@ App({
         this.globalData.channel = channel || null
         this.globalData.coach = coach || null
         this.globalData.lang = user.language === 'en' ? 'en' : 'zh'
+        this.globalData.theme = user.theme || 'dark'
       }
     } catch (e) {}
   }
