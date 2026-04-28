@@ -11,17 +11,86 @@ import {
 } from 'lucide-react';
 
 axios.interceptors.request.use((config) => {
-  const token = import.meta.env.VITE_API_TOKEN
+  const token = sessionStorage.getItem('nano_admin_token') || import.meta.env.VITE_API_TOKEN
   if (token) config.headers['Authorization'] = `Bearer ${token}`
   return config
 })
+
+function LoginScreen({ onLogin }) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError]       = useState('')
+  const [loading, setLoading]   = useState(false)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    try {
+      const res = await axios.post('/api/admin/login', { username, password })
+      if (res.data?.token) {
+        sessionStorage.setItem('nano_admin_token', res.data.token)
+        onLogin(res.data.token)
+      } else {
+        setError('Login failed')
+      }
+    } catch {
+      setError('Invalid username or password')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0B1C2E' }}>
+      <div style={{ background: '#0F2540', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 16, padding: '48px 40px', width: 360, boxShadow: '0 16px 64px rgba(0,0,0,0.4)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
+          <img src={wavenLogo} alt="Waven" style={{ width: 32, height: 32 }} />
+          <span style={{ color: '#EEF2FF', fontWeight: 700, fontSize: 18, letterSpacing: 4 }}>NANO ADMIN</span>
+        </div>
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ color: 'rgba(166,196,229,0.6)', fontSize: 12, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' }}>Username</label>
+            <input
+              type="text"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              autoFocus
+              required
+              style={{ background: '#162E4A', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 8, padding: '10px 14px', color: '#EEF2FF', fontSize: 14, outline: 'none' }}
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ color: 'rgba(166,196,229,0.6)', fontSize: 12, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' }}>Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              style={{ background: '#162E4A', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 8, padding: '10px 14px', color: '#EEF2FF', fontSize: 14, outline: 'none' }}
+            />
+          </div>
+          {error && <div style={{ color: '#f87171', fontSize: 13, textAlign: 'center' }}>{error}</div>}
+          <button
+            type="submit"
+            disabled={loading}
+            style={{ marginTop: 8, background: 'linear-gradient(135deg, #6375EC, #8B9FFF)', border: 'none', borderRadius: 8, padding: '12px 0', color: '#fff', fontWeight: 700, fontSize: 14, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}
+          >
+            {loading ? 'Signing in…' : 'Sign In'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', academy: 'Academy' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', academy: 'Academy', adminAccounts: 'Admin' },
+    adminAccounts: { title: 'Admin Accounts', add: 'Add Admin', changePassword: 'Change Password', confirmDelete: 'Delete this admin account?', newPassword: 'New Password', usernameLabel: 'Username', passwordLabel: 'Password', count: (n) => `${n} account${n !== 1 ? 's' : ''}` },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
     stats: {
@@ -174,7 +243,8 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', academy: '学院' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', academy: '学院', adminAccounts: '管理员' },
+    adminAccounts: { title: '管理员账号', add: '添加管理员', changePassword: '修改密码', confirmDelete: '确认删除此管理员账号？', newPassword: '新密码', usernameLabel: '用户名', passwordLabel: '密码', count: (n) => `${n} 个账号` },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
     stats: {
@@ -3258,13 +3328,119 @@ function ChipsTab({ batches, onRefresh }) {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
-export default function App() {
+function AdminAccountsTab({ accounts, onRefresh }) {
+  const { t } = useLang();
+  const ta = t.adminAccounts;
+  const [modal, setModal] = useState(null); // { type: 'add' } | { type: 'password', account }
+  const [form, setForm]   = useState({ username: '', password: '' });
+  const [err, setErr]     = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const openAdd      = () => { setForm({ username: '', password: '' }); setErr(''); setModal({ type: 'add' }); };
+  const openPassword = (account) => { setForm({ password: '' }); setErr(''); setModal({ type: 'password', account }); };
+  const close        = () => setModal(null);
+
+  const save = async () => {
+    setSaving(true); setErr('');
+    try {
+      if (modal.type === 'add') {
+        await axios.post('/api/admin-accounts', { username: form.username, password: form.password });
+      } else {
+        await axios.put(`/api/admin-accounts/${modal.account.id}`, { password: form.password });
+      }
+      close(); onRefresh();
+    } catch (e) {
+      setErr(e.response?.data?.error || 'Error');
+    } finally { setSaving(false); }
+  };
+
+  const del = async (account) => {
+    if (!window.confirm(ta.confirmDelete)) return;
+    try { await axios.delete(`/api/admin-accounts/${account.id}`); onRefresh(); }
+    catch (e) { alert(e.response?.data?.error || 'Error'); }
+  };
+
+  return (
+    <>
+      <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count">{ta.count(accounts.length)}</span>
+          <button className="btn-primary" onClick={openAdd}><Plus size={14} />{ta.add}</button>
+        </div>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>{ta.usernameLabel}</th>
+              <th>{t.table.joined}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.length === 0 && <tr><td colSpan={3} className="empty-row">No admin accounts</td></tr>}
+            {accounts.map(a => (
+              <tr key={a.id}>
+                <td><strong style={{ color: '#EEF2FF' }}>{a.username}</strong></td>
+                <td className="muted">{fmtDate(a.created_at)}</td>
+                <td style={{ display: 'flex', gap: 6 }}>
+                  <button className="icon-btn" title={ta.changePassword} onClick={() => openPassword(a)}>
+                    <Pencil size={14} />
+                  </button>
+                  <button className="icon-btn danger" title="Delete" onClick={() => del(a)}>
+                    <Trash2 size={14} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && (
+        <div className="modal-overlay" onClick={close}>
+          <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span>{modal.type === 'add' ? ta.add : ta.changePassword}</span>
+              <button className="icon-btn" onClick={close}><X size={16} /></button>
+            </div>
+            <div className="modal-body">
+              {modal.type === 'add' && (
+                <label className="form-field">
+                  <span>{ta.usernameLabel}</span>
+                  <input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} autoFocus />
+                </label>
+              )}
+              {modal.type === 'password' && (
+                <label className="form-field">
+                  <span>{ta.usernameLabel}</span>
+                  <input value={modal.account.username} disabled />
+                </label>
+              )}
+              <label className="form-field">
+                <span>{modal.type === 'add' ? ta.passwordLabel : ta.newPassword}</span>
+                <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} autoFocus={modal.type === 'password'} />
+              </label>
+              {err && <p className="form-error">{err}</p>}
+              <div className="modal-footer">
+                <button className="btn-secondary" onClick={close}>Cancel</button>
+                <button className="btn-primary" onClick={save} disabled={saving}>
+                  {saving ? 'Saving…' : <><Check size={14} />Save</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function AdminPanel({ onLogout }) {
   const [lang, setLang] = useState('en');
   const t = T[lang];
   const toggleLang = () => setLang(l => l === 'en' ? 'zh' : 'en');
 
   const [tab, setTab] = useState('users');
-  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [] });
+  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [], adminAccounts: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -3272,7 +3448,7 @@ export default function App() {
     setLoading(true);
     const ok = (res) => res.status === 'fulfilled' ? res.value.data : {};
     try {
-      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes] = await Promise.allSettled([
+      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, aaRes] = await Promise.allSettled([
         axios.get('/api/users'),
         axios.get('/api/dots-inventory'),
         axios.get('/api/coach-list'),
@@ -3282,17 +3458,19 @@ export default function App() {
         axios.get('/api/invitations'),
         axios.get('/api/kino-devices'),
         axios.get('/api/kino-chip-batches'),
+        axios.get('/api/admin-accounts'),
       ]);
       setData({
-        users:       ok(uRes).users        || [],
-        dots:        ok(dRes).dots         || [],
-        coaches:     ok(pRes).coaches      || [],
-        storeItems:  ok(sRes).items        || [],
-        orders:      ok(oRes).orders       || [],
-        channels:    ok(chRes).channels    || [],
-        invitations: ok(invRes).invitations || [],
-        kinoDevices: ok(kinoRes).devices   || [],
-        chipBatches: ok(cbRes).batches     || [],
+        users:         ok(uRes).users          || [],
+        dots:          ok(dRes).dots           || [],
+        coaches:       ok(pRes).coaches        || [],
+        storeItems:    ok(sRes).items          || [],
+        orders:        ok(oRes).orders         || [],
+        channels:      ok(chRes).channels      || [],
+        invitations:   ok(invRes).invitations  || [],
+        kinoDevices:   ok(kinoRes).devices     || [],
+        chipBatches:   ok(cbRes).batches       || [],
+        adminAccounts: ok(aaRes).accounts      || [],
       });
       setLastRefresh(new Date());
     } catch (err) { console.error('Admin fetch error:', err); }
@@ -3313,6 +3491,7 @@ export default function App() {
     { id: 'rewards',  label: t.nav.rewards,  icon: Coins          },
     { id: 'academy',  label: t.nav.academy,  icon: GraduationCap  },
     { id: 'sims',     label: t.nav.sims,     icon: Layout,      disabled: true },
+    { id: 'admin-accounts', label: t.nav.adminAccounts, icon: Settings2 },
   ];
 
   return (
@@ -3338,6 +3517,9 @@ export default function App() {
           <button className="lang-toggle" onClick={toggleLang}>
             <Globe size={13} />{lang === 'en' ? '中文' : 'English'}
           </button>
+          <button className="lang-toggle" onClick={onLogout} style={{ color: '#f87171' }}>
+            Sign Out
+          </button>
           {lastRefresh && <span>{t.updated} {lastRefresh.toLocaleTimeString()}</span>}
         </div>
       </aside>
@@ -3362,8 +3544,15 @@ export default function App() {
           {tab === 'rewards'  && <RewardsTab />}
           {tab === 'academy'  && <AcademyTab />}
           {tab === 'sims'     && <SimulatorsTab />}
+          {tab === 'admin-accounts' && <AdminAccountsTab accounts={data.adminAccounts} onRefresh={fetchData} />}
         </div>
       </div>
     </LangCtx.Provider>
   );
+}
+
+export default function App() {
+  const [session, setSession] = useState(() => sessionStorage.getItem('nano_admin_token'));
+  if (!session) return <LoginScreen onLogin={(token) => setSession(token)} />;
+  return <AdminPanel onLogout={() => { sessionStorage.removeItem('nano_admin_token'); setSession(null); }} />;
 }

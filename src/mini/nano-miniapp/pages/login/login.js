@@ -3,14 +3,9 @@ const BASE = 'https://nano.fros.cc'
 
 Page({
   data: {
-    step: 'checking',   // 'checking' | 'invite' | 'error'
+    step: 'checking',
     loading: true,
     error: '',
-    inviteCode: '',
-    inviteDigits: ['', '', '', '', '', ''],
-    pinFocus: false,
-    inviteError: '',
-    inviteBusy: false,
   },
 
   _coachId: null,
@@ -28,9 +23,11 @@ Page({
       const { code } = await this._getCode()
       const res = await this._callWxLogin(code, this._inviteCode)
 
-      if (res.data?.new_user) {
-        // Not registered yet — prompt for invite code
-        this.setData({ loading: false, step: 'invite', inviteError: '' })
+      if (res.data?.guest) {
+        app.globalData.user = { guest: true, user_id: res.data.openid, nickname: null, language: 'zh' }
+        app.globalData.channel = null
+        app.globalData.coach = null
+        wx.reLaunch({ url: '/pages/main/main' })
         return
       }
 
@@ -45,47 +42,8 @@ Page({
     }
   },
 
-  focusPin() {
-    this.setData({ pinFocus: true })
-  },
-
-  onPinBlur() {
-    this.setData({ pinFocus: false })
-  },
-
-  onInviteInput(e) {
-    const val = String(e.detail.value || '').slice(0, 6)
-    const digits = val.split('')
-    while (digits.length < 6) digits.push('')
-    this.setData({ inviteCode: val, inviteDigits: digits, inviteError: '' })
-  },
-
-  async submitInvite() {
-    const { inviteCode, inviteBusy } = this.data
-    if (inviteBusy) return
-    const code = inviteCode.trim()
-    if (!code) {
-      this.setData({ inviteError: '请输入邀请码' })
-      return
-    }
-    this.setData({ inviteBusy: true, inviteError: '' })
-    try {
-      const { code: wxCode } = await this._getCode()
-      const res = await this._callWxLogin(wxCode, code)
-
-      if (res.data?.invalid_code) {
-        this.setData({ inviteError: '邀请码无效或已失效，请重新输入', inviteBusy: false })
-        return
-      }
-      if (!res.data?.success) {
-        this.setData({ inviteError: res.data?.error || '注册失败，请重试', inviteBusy: false })
-        return
-      }
-
-      this._finishLogin(res.data)
-    } catch (e) {
-      this.setData({ inviteError: '网络错误，请重试', inviteBusy: false })
-    }
+  retry() {
+    this.wxLogin()
   },
 
   _finishLogin(data) {
@@ -100,10 +58,6 @@ Page({
     wx.setStorageSync('nano_channel', channel)
     wx.setStorageSync('nano_coach', coach)
     wx.reLaunch({ url: '/pages/main/main' })
-  },
-
-  retry() {
-    this.wxLogin()
   },
 
   _getCode() {

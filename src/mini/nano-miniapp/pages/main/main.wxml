@@ -10,7 +10,7 @@
       <text class="header-title">{{channel.name || 'NANO'}}</text>
     </view>
     <view class="header-divider"></view>
-    <text class="header-user">{{user.nickname || 'User'}}</text>
+    <text class="header-user">{{isGuest ? t.guestHeaderName : (user.nickname || 'User')}}</text>
   </view>
 
   <!-- ── Logo menu ── -->
@@ -25,8 +25,8 @@
         <text class="menu-item-icon">{{theme === 'dark' ? '☀' : '🌑'}}</text>
         <text class="menu-item-label">{{theme === 'dark' ? t.lightMode : t.darkMode}}</text>
       </view>
-      <view class="menu-divider"></view>
-      <view class="menu-item" bindtap="openKinoSim">
+      <view wx:if="{{!isGuest}}" class="menu-divider"></view>
+      <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openKinoSim">
         <text class="menu-item-icon">⬡</text>
         <text class="menu-item-label">{{t.kinoSimMenu}}</text>
       </view>
@@ -35,7 +35,6 @@
         <text class="menu-item-icon">👨‍⚕️</text>
         <text class="menu-item-label">{{t.coachMenu}}</text>
       </view>
-
       <view wx:if="{{isAdmin}}" class="menu-divider"></view>
       <view wx:if="{{isAdmin}}" class="menu-item" bindtap="openAdmin">
         <text class="menu-item-icon">⚙</text>
@@ -47,9 +46,13 @@
         <text class="menu-item-label">{{t.superadminMenu}}</text>
       </view>
       <view class="menu-divider"></view>
-      <view class="menu-item" bindtap="handleLogout">
+      <view wx:if="{{!isGuest}}" class="menu-item" bindtap="handleLogout">
         <text class="menu-item-icon">↪</text>
         <text class="menu-item-label">{{t.logout}}</text>
+      </view>
+      <view wx:if="{{isGuest}}" class="menu-item" bindtap="openGuestSheet">
+        <text class="menu-item-icon">✦</text>
+        <text class="menu-item-label">{{t.guestMenuSignUp}}</text>
       </view>
     </view>
   </view>
@@ -76,10 +79,23 @@
             id="msg{{index}}"
             class="msg-row {{item.role === 'user' ? 'msg-row-user' : 'msg-row-ai'}}"
           >
-            <view wx:if="{{item.role === 'action'}}" class="msg-action-card" bindtap="handleMsgAction" data-action="{{item.action}}">
-              <text class="msg-action-label">{{item.label}}</text>
-              <text class="msg-action-arrow">›</text>
-            </view>
+            <block wx:if="{{item.role === 'action'}}">
+              <button
+                wx:if="{{item.action === 'bind_phone'}}"
+                class="msg-action-card msg-phone-btn"
+                open-type="getPhoneNumber"
+                bindgetphonenumber="handleBindPhone"
+              ><text class="msg-action-label">{{item.label}}</text><text class="msg-action-arrow">›</text></button>
+              <view
+                wx:else
+                class="msg-action-card"
+                bindtap="handleMsgAction"
+                data-action="{{item.action}}"
+              >
+                <text class="msg-action-label">{{item.label}}</text>
+                <text class="msg-action-arrow">›</text>
+              </view>
+            </block>
             <view wx:else class="message-bubble {{item.role === 'user' ? 'message-user' : 'message-ai'}}">
               <text class="msg-text" selectable="true">{{item.content}}</text>
             </view>
@@ -203,6 +219,14 @@
         <view class="kino-scan-close" bindtap="cancelKinoScan">✕</view>
       </view>
 
+      <!-- Guest CTA bar -->
+      <view wx:if="{{isGuest}}" class="guest-cta-bar" bindtap="openGuestSheet">
+        <text class="guest-cta-text">{{t.guestChatCtaText}}</text>
+        <view class="guest-cta-btn">
+          <text>{{t.guestChatCtaBtn}}</text>
+        </view>
+      </view>
+
       <!-- Normal chat input -->
       <view wx:if="{{obStep === 'done'}}" class="input-container">
         <view wx:if="{{toolboxOpen}}" class="toolbox-panel">
@@ -251,7 +275,14 @@
     <view class="health-tab{{tab !== 'health' ? ' tab-hidden' : ''}}">
       <scroll-view class="health-scroll" scroll-y="true">
 
-        <view wx:if="{{bioLoading}}" class="center-wrap">
+        <!-- Guest lock -->
+        <view wx:if="{{isGuest}}" class="guest-lock-card" bindtap="openGuestSheet">
+          <text class="guest-lock-icon">🔬</text>
+          <text class="guest-lock-title">{{t.guestHealthCta}}</text>
+          <view class="guest-lock-btn"><text>{{t.guestJoinBtn}}</text></view>
+        </view>
+
+        <view wx:elif="{{bioLoading}}" class="center-wrap">
           <view class="pulse-dot"></view>
           <view class="pulse-dot"></view>
           <view class="pulse-dot"></view>
@@ -390,7 +421,7 @@
     <view class="dots-tab{{tab !== 'dots' ? ' tab-hidden' : ''}}">
 
       <!-- ── Cartridge panel ─────────────────────────────────────────── -->
-      <view class="cart-section">
+      <view wx:if="{{!isGuest}}" class="cart-section">
         <view class="cart-section-hdr">
           <text class="cart-section-title">{{t.cartridgeTitle}}</text>
           <view class="cart-sim-btn" bindtap="openCartSim">
@@ -429,7 +460,14 @@
         <text wx:if="{{weekLabel}}" class="dots-week-label">{{weekLabel}}</text>
       </view>
 
-      <view wx:if="{{dotsLoading}}" class="center-wrap">
+      <!-- Guest lock -->
+      <view wx:if="{{isGuest}}" class="guest-lock-card" bindtap="openGuestSheet">
+        <text class="guest-lock-icon">◉</text>
+        <text class="guest-lock-title">{{t.guestDotsCta}}</text>
+        <view class="guest-lock-btn"><text>{{t.guestJoinBtn}}</text></view>
+      </view>
+
+      <view wx:elif="{{dotsLoading}}" class="center-wrap">
         <view class="pulse-dot"></view>
         <view class="pulse-dot"></view>
         <view class="pulse-dot"></view>
@@ -797,6 +835,40 @@
       <view wx:if="{{tab === 'store'}}" class="tab-line"></view>
       <image class="tab-icon-img" src="/assets/icons/store.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabStore}}</text>
+    </view>
+  </view>
+
+  <!-- ── Guest Join Sheet ── -->
+  <view wx:if="{{guestSheetOpen}}" class="guest-sheet-mask" bindtap="closeGuestSheet">
+    <view class="guest-sheet" catchtap="noop">
+      <view class="guest-sheet-handle"></view>
+      <text class="guest-sheet-title">{{t.guestJoinTitle}}</text>
+      <text class="guest-sheet-desc">{{t.guestJoinDesc}}</text>
+      <view class="pin-field">
+        <view class="pin-boxes">
+          <view
+            wx:for="{{guestInviteDigits}}"
+            wx:key="index"
+            class="pin-box {{item ? 'pin-filled' : ''}} {{!item && index === guestInviteCode.length ? 'pin-active' : ''}}"
+          >
+            <text class="pin-digit">{{item}}</text>
+          </view>
+        </view>
+        <input
+          class="pin-capture"
+          type="number"
+          value="{{guestInviteCode}}"
+          bindinput="onGuestInviteInput"
+          focus="{{guestSheetOpen}}"
+          maxlength="6"
+        />
+      </view>
+      <view wx:if="{{guestInviteError}}" class="guest-sheet-error">
+        <text>{{guestInviteError}}</text>
+      </view>
+      <view class="guest-sheet-btn {{guestInviteBusy ? 'guest-sheet-btn-disabled' : ''}}" bindtap="submitGuestInvite">
+        <text>{{guestInviteBusy ? t.guestActivating : t.guestJoinBtn}}</text>
+      </view>
     </view>
   </view>
 

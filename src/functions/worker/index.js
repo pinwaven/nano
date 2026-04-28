@@ -4,6 +4,21 @@ const ossLib = require('./lib/oss');
 const crypto = require('crypto');
 
 const generateUserId = () => crypto.randomBytes(4).toString('hex');
+
+// WeChat access_token cache (module-level, survives container reuse)
+let _wxToken = null;
+let _wxTokenExpiry = 0;
+async function getWxAccessToken() {
+    if (_wxToken && Date.now() < _wxTokenExpiry) return _wxToken;
+    const appid = process.env.WX_APPID;
+    const secret = process.env.WX_SECRET;
+    const res = await fetch(`https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${appid}&secret=${secret}`);
+    const data = await res.json();
+    if (data.errcode) throw new Error(`WX token error: ${data.errmsg} (${data.errcode})`);
+    _wxToken = data.access_token;
+    _wxTokenExpiry = Date.now() + (data.expires_in - 300) * 1000;
+    return _wxToken;
+}
 const { getNowShanghai, calculateAge } = require('./lib/time-utils');
 const { BiomarkerEstimator } = require('./lib/estimator/BiomarkerEstimator');
 const { BioAgeCalculator } = require('./lib/bioage/BioAgeCalculator');
@@ -1395,6 +1410,83 @@ async function handlePutUser(user_id, body) {
     }
 }
 
+async function handleGetAdminAccounts() {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query('SELECT id, username, created_at FROM admin_accounts ORDER BY created_at ASC');
+        return { success: true, accounts: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAdminAccount(body) {
+    const { username, password } = body || {};
+    if (!username || !password) return { statusCode: 400, success: false, error: 'Username and password required' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { scryptSync, randomBytes } = require('crypto');
+        const salt = randomBytes(16).toString('hex');
+        const hash = scryptSync(password, salt, 64).toString('hex');
+        const result = await pool.query(
+            'INSERT INTO admin_accounts (username, password_hash) VALUES ($1, $2) RETURNING id, username, created_at',
+            [username, `${salt}:${hash}`]
+        );
+        return { success: true, account: result.rows[0] };
+    } catch (err) {
+        if (err.code === '23505') return { statusCode: 409, success: false, error: 'Username already exists' };
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutAdminAccount(id, body) {
+    const { password } = body || {};
+    if (!password) return { statusCode: 400, success: false, error: 'Password required' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { scryptSync, randomBytes } = require('crypto');
+        const salt = randomBytes(16).toString('hex');
+        const hash = scryptSync(password, salt, 64).toString('hex');
+        await pool.query('UPDATE admin_accounts SET password_hash = $1 WHERE id = $2', [`${salt}:${hash}`, id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteAdminAccount(id) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const remaining = await pool.query('SELECT COUNT(*) FROM admin_accounts');
+        if (parseInt(remaining.rows[0].count) <= 1) return { statusCode: 400, success: false, error: 'Cannot delete the last admin account' };
+        await pool.query('DELETE FROM admin_accounts WHERE id = $1', [id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleAdminLogin(body) {
+    const { username, password } = body || {};
+    if (!username || !password) return { statusCode: 400, success: false, error: 'Missing credentials' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query('SELECT password_hash FROM admin_accounts WHERE username = $1', [username]);
+        if (result.rows.length === 0) {
+            await new Promise(r => setTimeout(r, 200));
+            return { statusCode: 401, success: false, error: 'Invalid credentials' };
+        }
+        const { scryptSync, timingSafeEqual } = require('crypto');
+        const [salt, storedHash] = result.rows[0].password_hash.split(':');
+        const derivedKey = scryptSync(password, salt, 64);
+        const match = timingSafeEqual(derivedKey, Buffer.from(storedHash, 'hex'));
+        if (!match) return { statusCode: 401, success: false, error: 'Invalid credentials' };
+        return { success: true, token: process.env.API_BEARER_TOKEN };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handlePatchUser(user_id, body) {
     const { theme } = body;
     try {
@@ -1483,6 +1575,26 @@ async function handleDeleteInvitation(inviteId) {
     }
 }
 
+async function handleBindPhone(user_id, code) {
+    try {
+        if (!code) return { success: false, error: 'code is required' };
+        const token = await getWxAccessToken();
+        const wxRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code }),
+        });
+        const wxData = await wxRes.json();
+        if (wxData.errcode) return { success: false, error: `WeChat: ${wxData.errmsg} (${wxData.errcode})` };
+        const phone = wxData.phone_info?.purePhoneNumber;
+        if (!phone) return { success: false, error: 'No phone number returned' };
+        await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [phone, user_id]);
+        return { success: true, phone };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleWxLogin(body) {
     const { code, coach_id, invite_code } = body;
     if (!code) return { success: false, error: 'code is required' };
@@ -1532,9 +1644,9 @@ async function handleWxLogin(body) {
         return { success: true, user, channel, coach };
     }
 
-    // New user — require an invite code to register
+    // New user — no invite code, allow guest browsing
     if (!invite_code && !coach_id) {
-        return { success: false, new_user: true };
+        return { success: true, guest: true, openid };
     }
 
     // New user — determine channel from invite code, coach invite, or default to nanovate
@@ -2446,7 +2558,7 @@ exports.handler = async (req, resp, context) => {
     }
 
     const expectedBearer = process.env.API_BEARER_TOKEN;
-    if (expectedBearer && rawPath) {
+    if (expectedBearer && rawPath && path !== '/admin/login') {
         const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
         if (authHeader !== `Bearer ${expectedBearer}`) {
             const unauthorizedPayload = {
@@ -2542,12 +2654,21 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetChannelPayouts(query);
             } else if (path.includes('/channel-rewards-summary')) {
                 result = await handleGetChannelRewardsSummary(query.channel_id);
+            } else if (path === '/admin-accounts') {
+                result = await handleGetAdminAccounts();
             } else {
                 result = { success: false, error: `Unknown GET route: ${path}` };
             }
         } else if (method === 'POST') {
-            if (path === '/wx-login') {
+            if (path === '/admin/login') {
+                result = await handleAdminLogin(parsedBody);
+            } else if (path === '/admin-accounts') {
+                result = await handlePostAdminAccount(parsedBody);
+            } else if (path === '/wx-login') {
                 result = await handleWxLogin(parsedBody);
+            } else if (path === '/bind-phone') {
+                const { user_id, code } = parsedBody;
+                result = await handleBindPhone(user_id, code);
             } else if (path.includes('/reminders')) {
                 result = await handlePostReminder(parsedBody);
             } else if (path.includes('/coach-instruction')) {
@@ -2641,6 +2762,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/academy/library/')) {
                 const libId = path.split('/academy/library/')[1];
                 result = await handlePutAcademyLibraryItem(libId, parsedBody);
+            } else if (path.includes('/admin-accounts/')) {
+                const accountId = path.split('/admin-accounts/')[1];
+                result = await handlePutAdminAccount(accountId, parsedBody);
             } else {
                 result = { success: false, error: `Unknown PUT route: ${path}` };
             }
@@ -2675,6 +2799,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/academy/library/')) {
                 const libId = path.split('/academy/library/')[1];
                 result = await handleDeleteAcademyLibraryItem(libId);
+            } else if (path.includes('/admin-accounts/')) {
+                const accountId = path.split('/admin-accounts/')[1];
+                result = await handleDeleteAdminAccount(accountId);
             } else {
                 result = { success: false, error: `Unknown DELETE route: ${path}` };
             }

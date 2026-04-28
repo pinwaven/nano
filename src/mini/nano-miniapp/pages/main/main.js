@@ -164,6 +164,23 @@ const T = {
     kinoScanError: '登记失败，请重试。',
     lightMode: '浅色模式',
     darkMode: '深色模式',
+    phonePromptMsg: '最后一步！绑定手机号，让您的健康顾问可以随时联系到您。',
+    phonePromptBtn: '📱 绑定手机号',
+    phoneMaybeLater: '稍后再说',
+    phoneBindSuccess: '手机号绑定成功！',
+    phoneBindError: '绑定失败，请稍后重试。',
+    guestHeaderName: '游客',
+    guestJoinTitle: '激活健康账户',
+    guestJoinDesc: '输入您的邀请码，解锁 AI 健康顾问、生物标志物检测与精准营养方案。',
+    guestJoinBtn: '激活账户',
+    guestActivating: '注册中…',
+    guestInviteRequired: '请输入邀请码',
+    guestInviteInvalid: '邀请码无效或已失效，请重新输入',
+    guestChatCtaText: '输入邀请码，激活您的 AI 健康伴侣',
+    guestChatCtaBtn: '立即加入',
+    guestHealthCta: '激活账户后，查看您的健康数据与生物年龄',
+    guestDotsCta: '激活账户后，获取您的专属营养方案',
+    guestMenuSignUp: '注册账户',
     orderStatus: {
       pending: '待处理', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', cancelled: '已取消',
@@ -293,6 +310,23 @@ const T = {
     kinoScanError: 'Registration failed. Please try again.',
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
+    phonePromptMsg: 'One last thing — link your phone number so your health advisor can reach you when needed.',
+    phonePromptBtn: '📱 Link Phone Number',
+    phoneMaybeLater: 'Maybe later',
+    phoneBindSuccess: 'Phone number linked successfully!',
+    phoneBindError: 'Failed to link phone number. Please try again.',
+    guestHeaderName: 'Guest',
+    guestJoinTitle: 'Activate Your Account',
+    guestJoinDesc: 'Enter your invite code to unlock AI health coaching, biomarker testing, and precision nutrition.',
+    guestJoinBtn: 'Activate Account',
+    guestActivating: 'Activating…',
+    guestInviteRequired: 'Please enter an invite code',
+    guestInviteInvalid: 'Invalid or expired invite code. Please try again.',
+    guestChatCtaText: 'Enter your invite code to activate your AI health companion',
+    guestChatCtaBtn: 'Join Now',
+    guestHealthCta: 'Activate your account to view your health data and Bio Age',
+    guestDotsCta: 'Activate your account to get your personalized nutrition plan',
+    guestMenuSignUp: 'Sign Up',
     orderStatus: {
       pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', cancelled: 'Cancelled',
@@ -614,6 +648,14 @@ Page({
     isCoach: false,
     isAdmin: false,
     isSuperadmin: false,
+    isGuest: false,
+
+    // Guest join sheet
+    guestSheetOpen: false,
+    guestInviteCode: '',
+    guestInviteDigits: ['', '', '', '', '', ''],
+    guestInviteBusy: false,
+    guestInviteError: '',
 
     // Dots
     dotsLoading: true,
@@ -658,13 +700,19 @@ Page({
     const menuTop = statusBarHeight + 44
     const lang = app.globalData.lang || (user.language === 'en' ? 'en' : 'zh')
     const channel = app.globalData.channel || null
-    const roles = user.roles || ['user']
+    const isGuest = !!user.guest
+    const roles = user.roles || (isGuest ? [] : ['user'])
     const isCoach = roles.includes('coach')
     const isAdmin = roles.includes('admin') || roles.includes('superadmin')
     const isSuperadmin = roles.includes('superadmin')
     const theme = user.theme || app.globalData.theme || 'dark'
     app.globalData.theme = theme
-    this.setData({ user: { ...user }, channel, lang, t: T[lang], statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme })
+    this.setData({ user: { ...user }, channel, lang, t: T[lang], statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest })
+    if (isGuest) {
+      this.setData({ messages: [{ id: 'init', role: 'ai', content: T[lang].initMsg }], obStep: null, storeLoading: true })
+      this._loadGuestStore(lang)
+      return
+    }
     this._initChat(user, lang)
     this._loadHealth(user, lang)
     this._loadDots(user, lang)
@@ -673,8 +721,8 @@ Page({
   },
 
   onShow() {
-    const { user, lang } = this.data
-    if (user) {
+    const { user, lang, isGuest } = this.data
+    if (user && !isGuest) {
       this._loadHealth(user, lang)
       this._startPolling(user)
     }
@@ -1025,6 +1073,14 @@ Page({
     }
 
     this.setData({ obStep: 'done' })
+    if (!user.phone && !wx.getStorageSync('nano_phone_prompted')) {
+      wx.setStorageSync('nano_phone_prompted', '1')
+      setTimeout(() => {
+        this._addMsg('ai', t.phonePromptMsg)
+        this._addActionMsg('bind_phone', t.phonePromptBtn)
+        this._addActionMsg('maybe_later', t.phoneMaybeLater)
+      }, 800)
+    }
     this._startPolling(user)
   },
 
@@ -1069,6 +1125,11 @@ Page({
   },
 
   // ── Chat messaging ──────────────────────────────────────────────────────────
+
+  _removePhonePrompt() {
+    const messages = this.data.messages.filter(m => m.action !== 'bind_phone' && m.action !== 'maybe_later')
+    this.setData({ messages })
+  },
 
   _addMsg(role, content, persist = false) {
     const msg = { id: `${role}-${Date.now()}`, role, content }
@@ -1174,6 +1235,29 @@ Page({
       this.setData({ tab: 'dots', dotsLoading: true, cartridgesLoading: true })
       this._loadDots(user, lang)
       this._loadCartridges(user, lang)
+    } else if (action === 'maybe_later') {
+      this._removePhonePrompt()
+    }
+  },
+
+  async handleBindPhone(e) {
+    const { t, user } = this.data
+    const { code, errMsg } = e.detail
+    this._removePhonePrompt()
+    if (errMsg !== 'getPhoneNumber:ok' || !code) return
+    try {
+      const res = await this._req(`${BASE}/api/bind-phone`, 'POST', { user_id: user.user_id, code })
+      if (res.data?.success) {
+        const updatedUser = { ...user, phone: res.data.phone }
+        app.globalData.user = updatedUser
+        wx.setStorageSync('nano_user', updatedUser)
+        this.setData({ user: updatedUser })
+        this._addMsg('ai', t.phoneBindSuccess)
+      } else {
+        this._addMsg('ai', t.phoneBindError)
+      }
+    } catch (err) {
+      this._addMsg('ai', t.phoneBindError)
     }
   },
 
@@ -1818,6 +1902,7 @@ Page({
   },
 
   handleBuyItem(e) {
+    if (this.data.isGuest) { this.openGuestSheet(); return }
     const item = e.currentTarget.dataset.item
     const { t, user, lang } = this.data
     wx.showModal({
@@ -1840,6 +1925,83 @@ Page({
           wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
         }
       }
+    })
+  },
+
+  // ── Guest join sheet ────────────────────────────────────────────────────────
+
+  async _loadGuestStore(lang) {
+    try {
+      const res = await this._req(`${BASE}/api/store-items`)
+      const raw = res.data?.items || []
+      this._rawStoreItems = raw
+      this.setData({ storeLoading: false, storeItems: mapStoreItems(raw, lang) })
+    } catch (e) {
+      this.setData({ storeLoading: false })
+    }
+  },
+
+  openGuestSheet() {
+    this.setData({ guestSheetOpen: true, guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '', menuOpen: false })
+  },
+
+  closeGuestSheet() {
+    this.setData({ guestSheetOpen: false })
+  },
+
+  onGuestInviteInput(e) {
+    const val = String(e.detail.value || '').slice(0, 6)
+    const digits = val.split('')
+    while (digits.length < 6) digits.push('')
+    this.setData({ guestInviteCode: val, guestInviteDigits: digits, guestInviteError: '' })
+  },
+
+  async submitGuestInvite() {
+    const { guestInviteCode, guestInviteBusy, t } = this.data
+    if (guestInviteBusy) return
+    const code = guestInviteCode.trim()
+    if (!code) { this.setData({ guestInviteError: t.guestInviteRequired }); return }
+    this.setData({ guestInviteBusy: true, guestInviteError: '' })
+    try {
+      const { code: wxCode } = await this._getCode()
+      const res = await this._req(`${BASE}/api/wx-login`, 'POST', { code: wxCode, invite_code: code })
+      if (res.data?.invalid_code) {
+        this.setData({ guestInviteError: t.guestInviteInvalid, guestInviteBusy: false })
+        return
+      }
+      if (!res.data?.success) {
+        this.setData({ guestInviteError: res.data?.error || t.errServer, guestInviteBusy: false })
+        return
+      }
+      const user = res.data.user
+      const channel = res.data.channel || null
+      const coach = res.data.coach || null
+      app.globalData.user = user
+      app.globalData.channel = channel
+      app.globalData.coach = coach
+      app.globalData.lang = user.language === 'en' ? 'en' : 'zh'
+      wx.setStorageSync('nano_user', user)
+      wx.setStorageSync('nano_channel', channel)
+      wx.setStorageSync('nano_coach', coach)
+      const lang = user.language === 'en' ? 'en' : 'zh'
+      const roles = user.roles || ['user']
+      const isCoach = roles.includes('coach')
+      const isAdmin = roles.includes('admin') || roles.includes('superadmin')
+      const isSuperadmin = roles.includes('superadmin')
+      this.setData({ user: { ...user }, channel, lang, t: T[lang], isGuest: false, guestSheetOpen: false, guestInviteBusy: false, isCoach, isAdmin, isSuperadmin })
+      this._initChat(user, lang)
+      this._loadHealth(user, lang)
+      this._loadDots(user, lang)
+      this._loadCartridges(user, lang)
+      this._loadStore(user, lang)
+    } catch (e) {
+      this.setData({ guestInviteError: this.data.t.errServer, guestInviteBusy: false })
+    }
+  },
+
+  _getCode() {
+    return new Promise((resolve, reject) => {
+      wx.login({ success: resolve, fail: reject })
     })
   },
 

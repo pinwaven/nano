@@ -13,38 +13,6 @@
     <text class="status-text">正在登录…</text>
   </view>
 
-  <!-- Invite code required -->
-  <view wx:elif="{{step === 'invite'}}" class="login-card">
-    <text class="login-card-label">受邀注册</text>
-
-    <view class="pin-field" bindtap="focusPin">
-      <view class="pin-boxes">
-        <view wx:for="{{inviteDigits}}" wx:key="index"
-              class="pin-box {{item ? 'pin-filled' : ''}} {{!item && index === inviteCode.length ? 'pin-active' : ''}}">
-          <text class="pin-digit">{{item}}</text>
-        </view>
-      </view>
-      <input
-        class="pin-capture"
-        type="number"
-        value="{{inviteCode}}"
-        bindinput="onInviteInput"
-        bindblur="onPinBlur"
-        focus="{{pinFocus}}"
-        maxlength="6"
-      />
-    </view>
-
-    <view wx:if="{{inviteError}}" class="login-error">
-      <text>{{inviteError}}</text>
-    </view>
-
-    <view class="login-btn {{inviteBusy ? 'login-btn-disabled' : ''}}" bindtap="submitInvite">
-      <view wx:if="{{inviteBusy}}" class="login-spinner" />
-      <text>{{inviteBusy ? '注册中…' : '加入 Nano'}}</text>
-    </view>
-  </view>
-
   <!-- Error -->
   <view wx:elif="{{step === 'error'}}" class="status-wrap">
     <text class="error-text">{{error}}</text>
