@@ -2223,15 +2223,35 @@ async function handleDeleteKinoChipBatch(id) {
 async function handleGetKinoChip(chip_id) {
     if (!chip_id) throw new Error('chip_id is required');
     const result = await pool.query(
-        `SELECT s.id, s.user_id, s.scan_status, u.nickname
+        `SELECT s.id, s.user_id, s.scan_status, u.nickname, u.birth_date, u.gender,
+                cb.model,
+                m.biomarker_keys, m.config AS chip_config, m.guide_video, m.guide_text
          FROM scans s
          JOIN users u ON u.user_id = s.user_id
+         LEFT JOIN kino_chips        c  ON c.chip_code = s.chip_id
+         LEFT JOIN kino_chip_batches cb ON cb.id       = c.batch_id
+         LEFT JOIN kino_chip_models  m  ON m.code      = cb.model
          WHERE s.chip_id = $1 LIMIT 1`,
         [chip_id]
     );
     if (result.rows.length === 0) return { found: false };
-    const { id: scan_id, user_id, scan_status, nickname } = result.rows[0];
-    return { found: true, used: scan_status === 'completed', scan_id, user_id, nickname, scan_status };
+    const row = result.rows[0];
+    return {
+        found: true,
+        used: row.scan_status === 'completed',
+        scan_id: row.id,
+        user_id: row.user_id,
+        scan_status: row.scan_status,
+        nickname: row.nickname,
+        birth_date: row.birth_date || null,
+        chrono_age: row.birth_date ? calculateAge(row.birth_date) : null,
+        gender: row.gender || null,
+        model: row.model || null,
+        biomarker_keys: row.biomarker_keys || null,
+        chip_config: row.chip_config || null,
+        guide_video: row.guide_video || null,
+        guide_text: row.guide_text || null,
+    };
 }
 
 async function handlePostKinoScan(body) {
