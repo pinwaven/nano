@@ -10,11 +10,12 @@ Nano AI is a precision health ecosystem powered by Aliyun FC 3.0. It ingests bio
 4. [Dots System](dots-system.md)
 5. [Rewards System](architecture/rewards-system.md)
 6. [Role System](architecture/role-system.md)
-7. [Deployment Guide](deployment.md)
-8. [Worker API Endpoints](api/worker-endpoints.md)
-9. [Local Testing & Simulators](api/testing.md)
-10. [FC Logging Setup](fc-logging-setup.md)
-11. [Simulator Build & Deploy](simulator-build-deploy.md)
+7. [User Deletion Lifecycle](architecture/user-deletion.md)
+8. [Deployment Guide](deployment.md)
+9. [Worker API Endpoints](api/worker-endpoints.md)
+10. [Local Testing & Simulators](api/testing.md)
+11. [FC Logging Setup](fc-logging-setup.md)
+12. [Simulator Build & Deploy](simulator-build-deploy.md)
 
 ## Core Technologies
 
