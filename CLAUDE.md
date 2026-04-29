@@ -251,14 +251,23 @@ The Kino hardware ecosystem has two distinct physical components, managed separa
 ### Kino Chip (Disposable, Single-Use)
 
 - NFC test chip with biochemical reagent layer — one scan per chip
-- Chips are issued in **batches**: each batch has a unique 8-digit code (`KNC{8digits}`) and a model (`K2` default, `S1`)
+- Chips are issued in **batches**: each batch has a unique 8-digit code (`KNC{8digits}`) and a `model` that FK-references `kino_chip_models.code`
 - **Chip code format:** `KNC{8-digit-batch}-{4-digit-sequence}` e.g. `KNC12345678-0001`
   - The chip code IS the QR code value scanned by the Mini Program
   - Max 9,999 chips per batch
 - Tables: `kino_chip_batches` (prefix, model, quantity), `kino_chips` (chip_code, status)
 - Chip status: `available` → `used` (after scan completed) or `damaged`
 - Migration: `src/schemas/migration_kino_chips.sql`
-- Admin Panel: **Chips** tab — add batches, view QR codes, download CSV, print
+- Admin Panel: **Chips** tab → **Batches** sub-tab — add batches, view QR codes, download CSV, print
+
+### Kino Chip Model (per-chip-type config)
+
+- Table `kino_chip_models` — one row per chip type (`K2`, future `K6`, `S1`, …). FK target of `kino_chip_batches.model`.
+- Carries `biomarker_keys` (which biomarkers the chip outputs) and `config` JSONB (verbatim `card_config` consumed by the Kino reader: `scan_ppmm`, `top_list`, `var_list`, `cut_off*`, noise floors, …) plus optional `guide_video` / `guide_text` and a `status` (`active` / `inactive`).
+- `GET /kino-chip` joins through to expose `model`, `biomarker_keys`, `chip_config`, `guide_video`, `guide_text` to the Mini Program at scan time.
+- Migration: `temp/migration_kino_chip_models.sql` (one-shot runner: `node temp/run-migration-kino-chip-models.js`).
+- Admin Panel: **Chips** tab → **Models** sub-tab — full CRUD; delete is blocked while any batch references the model. Inactive models are hidden from the Add Batch dropdown but still resolve for existing batches.
+- Full details: `docs/architecture/kino-system.md`
 
 ### Scan Flow
 

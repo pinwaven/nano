@@ -43,8 +43,9 @@ The token is configured via the `API_BEARER_TOKEN` environment variable on the `
 | `GET` | `/my-cartridges` | Dots | Get user's active cartridges |
 | `GET` | `/coach-list` | Admin | List Coaches |
 | `GET` | `/kino-devices` | Kino | List Kino devices |
-| `GET` | `/kino-chip` | Kino | Look up chip scan |
+| `GET` | `/kino-chip` | Kino | Look up chip scan (joins model config) |
 | `GET` | `/kino-chip-batches` | Kino | List chip batches |
+| `GET` | `/kino-chip-models` | Kino | List chip models with usage counts |
 | `GET` | `/store-items` | E-commerce | List store items |
 | `GET` | `/my-orders` | E-commerce | User's order history |
 | `GET` | `/academy/courses` | Academy | List courses |
@@ -140,6 +141,23 @@ Lists all generated chip batches.
 
 ### GET /kino-chip-batches/:id/chips?page=1
 Lists chips within a batch (paginated).
+
+### GET /kino-chip-models
+Lists every row in `kino_chip_models` with usage stats joined from `kino_chip_batches`.
+**Response:** `{ success, models: [{ code, name, biomarker_keys, config, guide_video, guide_text, status, notes, created_at, updated_at, batch_count, chip_count }] }`
+
+### POST /kino-chip-models
+(Admin) Creates a new chip model. `code` is auto-uppercased and must match `^[A-Z0-9]{1,16}$`. `biomarker_keys` must be a non-empty array. `config` must be a JSON object.
+**Body:** `{ code, name?, biomarker_keys, config, guide_video?, guide_text?, status?, notes? }`
+
+### PUT /kino-chip-models/:code
+(Admin) Partial update — only the fields supplied in the body are changed. `updated_at` is bumped automatically. `code` itself is immutable.
+
+### DELETE /kino-chip-models/:code
+(Admin) Deletes a chip model. Returns `409` if any `kino_chip_batches` row still references it (the FK would block the delete anyway; the handler precounts and returns a friendlier error).
+
+### GET /kino-chip?chip_id=…
+Looks up a chip by code and returns the scan/user state alongside the model's `biomarker_keys`, `chip_config`, `guide_video`, and `guide_text` (all joined through `kino_chips → kino_chip_batches → kino_chip_models`). Used by the Mini Program to drive scan UI per chip type.
 
 ### POST /kino-result
 Finalizes a scan flow. Marks the chip as `used` and persists the final `bio_age`.

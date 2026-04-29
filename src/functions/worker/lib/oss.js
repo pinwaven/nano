@@ -9,10 +9,10 @@ const getClient = () => new OSS({
     secure:          true,
 });
 
-function generateKey(type, filename) {
+function generateKey(type, filename, category = 'academy') {
     const ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : 'bin';
     const id  = crypto.randomBytes(8).toString('hex');
-    return `academy/${type}/${id}.${ext}`;
+    return `${category}/${type}/${id}.${ext}`;
 }
 
 // Returns a signed URL the client can PUT to directly (no credentials needed).

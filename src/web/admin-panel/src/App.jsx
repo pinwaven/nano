@@ -8,6 +8,7 @@ import {
   ShoppingBag, Package, Building2, Tag, Copy, Cpu, Layers, QrCode, Printer, ChevronLeft, ChevronRight, Download,
   Coins, TrendingUp, Settings2,
   GraduationCap, Video, FileText, Upload, ExternalLink, Play, BookOpen,
+  Bug, AlertCircle, Image as ImageIcon,
 } from 'lucide-react';
 
 axios.interceptors.request.use((config) => {
@@ -89,7 +90,7 @@ function LoginScreen({ onLogin }) {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', academy: 'Academy', adminAccounts: 'Admin' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin' },
     adminAccounts: { title: 'Admin Accounts', add: 'Add Admin', changePassword: 'Change Password', confirmDelete: 'Delete this admin account?', newPassword: 'New Password', usernameLabel: 'Username', passwordLabel: 'Password', count: (n) => `${n} account${n !== 1 ? 's' : ''}` },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
@@ -115,7 +116,7 @@ const T = {
       code: 'Code', maxUses: 'Max Uses', useCount: 'Uses', creator: 'Creator',
       serialNumber: 'Serial No.', lastUsed: 'Last Used', testCount: 'Tests', status: 'Status', notes: 'Notes',
     },
-    empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found', invites: 'No invitations found', kino: 'No Kino devices registered', chipBatches: 'No chip batches created', chipModels: 'No chip models defined' },
+    empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found', invites: 'No invitations found', kino: 'No Kino devices registered', chipBatches: 'No chip batches created', chipModels: 'No chip models defined', tickets: 'No tickets yet' },
     count: (n) => `${n} users`,
     addUser: 'Add User',
     addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item', addChannel: 'Add Channel', addInvite: 'Create Invite', addDevice: 'Register Device',
@@ -235,6 +236,24 @@ const T = {
       invalidJson: 'Config is not valid JSON',
       biomarkersRequired: 'At least one biomarker key is required',
     },
+    tickets: {
+      addTicket: 'New Ticket', editTicket: 'Edit Ticket', deleteTicket: 'Delete Ticket',
+      deleteWarning: (title) => `Delete ticket "${title}"? Attached images will also be removed.`,
+      title: 'Title *', titlePlaceholder: 'Brief summary',
+      description: 'Description', descriptionPlaceholder: 'Steps to reproduce, expected vs actual, …',
+      status: 'Status', priority: 'Priority',
+      reporter: 'Reporter', reporterPlaceholder: 'Your name (optional)',
+      images: 'Images', addImage: 'Add Image', uploading: 'Uploading…', removeImage: 'Remove',
+      imageDropHint: 'Click to add an image (PNG / JPG)',
+      statOpen: 'Open', statInProgress: 'In Progress', statResolved: 'Resolved', statClosed: 'Closed',
+      sOpen: 'Open', sInProgress: 'In Progress', sResolved: 'Resolved', sClosed: 'Closed',
+      pLow: 'Low', pNormal: 'Normal', pHigh: 'High',
+      filterAll: 'All',
+      countTicket: (n) => `${n} ticket${n !== 1 ? 's' : ''}`,
+      titleRequired: 'Title is required',
+      uploadFailed: 'Image upload failed',
+      noImages: 'No images',
+    },
     academy: {
       coursesTab: 'Courses', libraryTab: 'Library',
       uploadCourse: 'Upload Course', editCourse: 'Edit Course', deleteCourse: 'Delete Course',
@@ -257,7 +276,7 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', academy: '学院', adminAccounts: '管理员' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', academy: '学院', tickets: '工单', adminAccounts: '管理员' },
     adminAccounts: { title: '管理员账号', add: '添加管理员', changePassword: '修改密码', confirmDelete: '确认删除此管理员账号？', newPassword: '新密码', usernameLabel: '用户名', passwordLabel: '密码', count: (n) => `${n} 个账号` },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
@@ -283,7 +302,7 @@ const T = {
       code: '邀请码', maxUses: '上限', useCount: '已用', creator: '创建者',
       serialNumber: '序列号', lastUsed: '最后使用', testCount: '检测次数', status: '状态', notes: '备注',
     },
-    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道', invites: '暂无邀请码', kino: '暂无 Kino 设备', chipBatches: '暂无芯片批次', chipModels: '暂无芯片型号' },
+    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道', invites: '暂无邀请码', kino: '暂无 Kino 设备', chipBatches: '暂无芯片批次', chipModels: '暂无芯片型号', tickets: '暂无工单' },
     count: (n) => `共 ${n} 位用户`,
     addBatch: '新建批次', countBatch: (n) => `共 ${n} 批次`,
     chips: {
@@ -311,6 +330,24 @@ const T = {
       modelInUse: (n) => `${n} 个批次正在使用此型号`,
       invalidJson: '配置不是合法 JSON',
       biomarkersRequired: '至少需要一个生物标志物代码',
+    },
+    tickets: {
+      addTicket: '新建工单', editTicket: '编辑工单', deleteTicket: '删除工单',
+      deleteWarning: (title) => `确认删除工单"${title}"？相关图片也将被移除。`,
+      title: '标题 *', titlePlaceholder: '简短描述',
+      description: '详情', descriptionPlaceholder: '复现步骤、预期与实际现象等',
+      status: '状态', priority: '优先级',
+      reporter: '提交人', reporterPlaceholder: '你的名字（可选）',
+      images: '图片', addImage: '添加图片', uploading: '上传中…', removeImage: '移除',
+      imageDropHint: '点击添加图片（PNG / JPG）',
+      statOpen: '待处理', statInProgress: '处理中', statResolved: '已解决', statClosed: '已关闭',
+      sOpen: '待处理', sInProgress: '处理中', sResolved: '已解决', sClosed: '已关闭',
+      pLow: '低', pNormal: '中', pHigh: '高',
+      filterAll: '全部',
+      countTicket: (n) => `共 ${n} 个工单`,
+      titleRequired: '标题不能为空',
+      uploadFailed: '图片上传失败',
+      noImages: '暂无图片',
     },
     addUser: '添加用户',
     addCoach: '添加 Coach', addDot: '添加原粒', addItem: '添加商品', addChannel: '添加渠道', addInvite: '创建邀请码', addDevice: '注册设备',
@@ -3639,6 +3676,365 @@ function DeleteChipModelConfirm({ model, onClose, onConfirm }) {
   );
 }
 
+// ── Tickets ───────────────────────────────────────────────────────────────────
+
+const TICKET_STATUS_COLORS = {
+  open:        '#ef4444',
+  in_progress: '#f59e0b',
+  resolved:    '#10b981',
+  closed:      '#64748b',
+};
+const TICKET_PRIORITY_COLORS = {
+  low:    '#64748b',
+  normal: '#6375EC',
+  high:   '#f87171',
+};
+
+function TicketStatusLabel({ status }) {
+  const { t } = useContext(LangCtx);
+  const tk = t.tickets;
+  const map = { open: tk.sOpen, in_progress: tk.sInProgress, resolved: tk.sResolved, closed: tk.sClosed };
+  const color = TICKET_STATUS_COLORS[status] || '#94a3b8';
+  return (
+    <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 10, background: `${color}22`, color, fontSize: 11, fontWeight: 600 }}>
+      {map[status] || status}
+    </span>
+  );
+}
+
+function TicketPriorityLabel({ priority }) {
+  const { t } = useContext(LangCtx);
+  const tk = t.tickets;
+  const map = { low: tk.pLow, normal: tk.pNormal, high: tk.pHigh };
+  const color = TICKET_PRIORITY_COLORS[priority] || '#94a3b8';
+  return (
+    <span style={{ fontSize: 11, color, fontWeight: 600 }}>{map[priority] || priority}</span>
+  );
+}
+
+function TicketImageThumb({ ossKey, onClick }) {
+  const [url, setUrl] = useState(null);
+  const [err, setErr] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    axios.get('/api/oss/presign', { params: { action: 'get', key: ossKey } })
+      .then(res => { if (alive && res.data?.success) setUrl(res.data.url); else if (alive) setErr(true); })
+      .catch(() => { if (alive) setErr(true); });
+    return () => { alive = false; };
+  }, [ossKey]);
+  if (err) return <div style={{ width: 64, height: 64, borderRadius: 6, background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 10 }}>!</div>;
+  if (!url) return <div style={{ width: 64, height: 64, borderRadius: 6, background: '#1e293b' }} />;
+  return (
+    <img src={url} alt=""
+         onClick={onClick}
+         style={{ width: 64, height: 64, borderRadius: 6, objectFit: 'cover', cursor: onClick ? 'zoom-in' : 'default', border: '1px solid rgba(99,117,236,0.25)' }} />
+  );
+}
+
+function TicketImageLightbox({ ossKey, onClose }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    axios.get('/api/oss/presign', { params: { action: 'get', key: ossKey } })
+      .then(res => { if (alive && res.data?.success) setUrl(res.data.url); });
+    return () => { alive = false; };
+  }, [ossKey]);
+  return (
+    <div className="modal-overlay" onClick={onClose}
+         style={{ background: 'rgba(0,0,0,0.85)' }}>
+      {url && <img src={url} alt="" style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8 }} />}
+    </div>
+  );
+}
+
+function TicketsTab({ tickets, onRefresh }) {
+  const { t } = useContext(LangCtx);
+  const tk = t.tickets;
+  const [modal, setModal]     = useState(null);
+  const [filter, setFilter]   = useState('all');
+  const [lightbox, setLightbox] = useState(null);
+  const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  const counts = {
+    all:         tickets.length,
+    open:        tickets.filter(t => t.status === 'open').length,
+    in_progress: tickets.filter(t => t.status === 'in_progress').length,
+    resolved:    tickets.filter(t => t.status === 'resolved').length,
+    closed:      tickets.filter(t => t.status === 'closed').length,
+  };
+  const filtered = filter === 'all' ? tickets : tickets.filter(t => t.status === filter);
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={Bug}         label={tk.statOpen}       value={counts.open}        color={TICKET_STATUS_COLORS.open}        />
+        <StatCard icon={Activity}    label={tk.statInProgress} value={counts.in_progress} color={TICKET_STATUS_COLORS.in_progress} />
+        <StatCard icon={Check}       label={tk.statResolved}   value={counts.resolved}    color={TICKET_STATUS_COLORS.resolved}    />
+        <StatCard icon={X}           label={tk.statClosed}     value={counts.closed}      color={TICKET_STATUS_COLORS.closed}      />
+      </div>
+
+      <div className="card">
+        <div className="table-toolbar">
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {['all', 'open', 'in_progress', 'resolved', 'closed'].map(s => (
+              <button key={s}
+                      className={`subtab-btn${filter === s ? ' active' : ''}`}
+                      onClick={() => setFilter(s)}>
+                {s === 'all' ? tk.filterAll : (s === 'open' ? tk.sOpen : s === 'in_progress' ? tk.sInProgress : s === 'resolved' ? tk.sResolved : tk.sClosed)}
+                {' '}<span style={{ opacity: 0.6 }}>({counts[s]})</span>
+              </button>
+            ))}
+          </div>
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{tk.addTicket}
+          </button>
+        </div>
+        <table className="data-table">
+          <thead><tr>
+            <th>ID</th>
+            <th>{tk.title.replace(' *', '')}</th>
+            <th>{tk.status}</th>
+            <th>{tk.priority}</th>
+            <th>{tk.images}</th>
+            <th>{tk.reporter}</th>
+            <th>Created</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+            {filtered.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.tickets}</td></tr>}
+            {filtered.map(ticket => (
+              <tr key={ticket.id}>
+                <td style={{ color: '#94a3b8', fontSize: 11 }}>#{ticket.id}</td>
+                <td>
+                  <div style={{ fontWeight: 600 }}>{ticket.title}</div>
+                  {ticket.description && (
+                    <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2, maxWidth: 480, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {ticket.description}
+                    </div>
+                  )}
+                </td>
+                <td><TicketStatusLabel status={ticket.status} /></td>
+                <td><TicketPriorityLabel priority={ticket.priority} /></td>
+                <td>
+                  {(ticket.images && ticket.images.length > 0) ? (
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {ticket.images.slice(0, 3).map(k => (
+                        <TicketImageThumb key={k} ossKey={k} onClick={() => setLightbox(k)} />
+                      ))}
+                      {ticket.images.length > 3 && (
+                        <div style={{ width: 64, height: 64, borderRadius: 6, background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 12, fontWeight: 600 }}>
+                          +{ticket.images.length - 3}
+                        </div>
+                      )}
+                    </div>
+                  ) : <span style={{ color: '#475569', fontSize: 11 }}>—</span>}
+                </td>
+                <td style={{ fontSize: 12 }}>{ticket.reporter || <span style={{ color: '#475569' }}>—</span>}</td>
+                <td style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(ticket.created_at).toLocaleString()}</td>
+                <td>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button className="icon-btn" title={tk.editTicket}   onClick={() => setModal({ type: 'edit', ticket })}><Pencil size={14} /></button>
+                    <button className="icon-btn" title={tk.deleteTicket} onClick={() => setModal({ type: 'delete', ticket })}><Trash2 size={14} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {(modal?.type === 'add' || modal?.type === 'edit') && (
+        <TicketModal ticket={modal.type === 'edit' ? modal.ticket : null}
+                     onClose={() => setModal(null)} onSave={closeAndRefresh} />
+      )}
+      {modal?.type === 'delete' && (
+        <DeleteTicketConfirm ticket={modal.ticket}
+                             onClose={() => setModal(null)} onConfirm={closeAndRefresh} />
+      )}
+      {lightbox && <TicketImageLightbox ossKey={lightbox} onClose={() => setLightbox(null)} />}
+    </>
+  );
+}
+
+function TicketModal({ ticket, onClose, onSave }) {
+  const { t } = useContext(LangCtx);
+  const tk = t.tickets;
+  const isEdit = !!ticket;
+
+  const [form, setForm] = useState({
+    title:       ticket?.title       || '',
+    description: ticket?.description || '',
+    status:      ticket?.status      || 'open',
+    priority:    ticket?.priority    || 'normal',
+    reporter:    ticket?.reporter    || '',
+  });
+  const [images, setImages]     = useState(ticket?.images || []);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress]   = useState(0);
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handlePickFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true); setProgress(0); setError('');
+    try {
+      const presignRes = await axios.get('/api/oss/presign', {
+        params: { type: 'image', filename: file.name, category: 'tickets' },
+      });
+      if (!presignRes.data.success) throw new Error(presignRes.data.error || tk.uploadFailed);
+      const { url, key } = presignRes.data;
+      await uploadToOSS(url, file, setProgress);
+      setImages(arr => [...arr, key]);
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || tk.uploadFailed);
+    } finally { setUploading(false); }
+  };
+
+  const removeImage = (key) => setImages(arr => arr.filter(k => k !== key));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.title.trim()) { setError(tk.titleRequired); return; }
+    setBusy(true); setError('');
+    try {
+      const payload = { ...form, images };
+      let res;
+      if (isEdit) {
+        res = await axios.put(`/api/tickets/${ticket.id}`, payload);
+      } else {
+        res = await axios.post('/api/tickets', payload);
+      }
+      if (res.data?.success === false) { setError(res.data.error || t.modal.saveFailed); return; }
+      onSave();
+    } catch (err) {
+      setError(err.response?.data?.error || t.modal.saveFailed);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{isEdit ? tk.editTicket : tk.addTicket}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{tk.title}</span>
+              <input value={form.title}
+                     onChange={e => set('title', e.target.value)}
+                     placeholder={tk.titlePlaceholder} required autoFocus />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{tk.description}</span>
+              <textarea rows={5} value={form.description}
+                        onChange={e => set('description', e.target.value)}
+                        placeholder={tk.descriptionPlaceholder}
+                        style={{ resize: 'vertical' }} />
+            </label>
+            <label className="form-field">
+              <span>{tk.status}</span>
+              <select value={form.status} onChange={e => set('status', e.target.value)}>
+                <option value="open">{tk.sOpen}</option>
+                <option value="in_progress">{tk.sInProgress}</option>
+                <option value="resolved">{tk.sResolved}</option>
+                <option value="closed">{tk.sClosed}</option>
+              </select>
+            </label>
+            <label className="form-field">
+              <span>{tk.priority}</span>
+              <select value={form.priority} onChange={e => set('priority', e.target.value)}>
+                <option value="low">{tk.pLow}</option>
+                <option value="normal">{tk.pNormal}</option>
+                <option value="high">{tk.pHigh}</option>
+              </select>
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{tk.reporter}</span>
+              <input value={form.reporter}
+                     onChange={e => set('reporter', e.target.value)}
+                     placeholder={tk.reporterPlaceholder} />
+            </label>
+
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span className="form-label-text">{tk.images}</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                {images.map(k => (
+                  <div key={k} style={{ position: 'relative' }}>
+                    <TicketImageThumb ossKey={k} />
+                    <button type="button" className="icon-btn" title={tk.removeImage}
+                            onClick={() => removeImage(k)}
+                            style={{ position: 'absolute', top: -6, right: -6, background: '#0F2540', border: '1px solid rgba(99,117,236,0.4)', borderRadius: '50%', width: 22, height: 22, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+                <label className="upload-zone" style={{ width: 64, height: 64, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: uploading ? 'wait' : 'pointer' }}>
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePickFile} disabled={uploading} />
+                  {uploading ? <span style={{ fontSize: 10, color: '#94a3b8' }}>{progress}%</span> : <Plus size={18} style={{ color: 'var(--muted)' }} />}
+                </label>
+              </div>
+              {!uploading && images.length === 0 && (
+                <small style={{ color: '#64748b', fontSize: 11 }}>{tk.imageDropHint}</small>
+              )}
+            </div>
+          </div>
+          {error && <p className="form-error">{error}</p>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy || uploading}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy || uploading}>
+              {busy ? t.modal.saving : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteTicketConfirm({ ticket, onClose, onConfirm }) {
+  const { t } = useContext(LangCtx);
+  const tk = t.tickets;
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState('');
+
+  const handleDelete = async () => {
+    setBusy(true); setError('');
+    try {
+      const res = await axios.delete(`/api/tickets/${ticket.id}`);
+      if (res.data?.success === false) { setError(res.data.error || 'Failed to delete'); return; }
+      onConfirm();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to delete');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{tk.deleteTicket}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p>{tk.deleteWarning(ticket.title)}</p>
+          {error && <p className="form-error">{error}</p>}
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-primary danger" onClick={handleDelete} disabled={busy}>
+              {busy ? t.modal.deleting : t.modal.delete}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 function AdminAccountsTab({ accounts, onRefresh }) {
@@ -3753,7 +4149,7 @@ function AdminPanel({ onLogout }) {
   const toggleLang = () => setLang(l => l === 'en' ? 'zh' : 'en');
 
   const [tab, setTab] = useState('users');
-  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [], chipModels: [], adminAccounts: [] });
+  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [], chipModels: [], tickets: [], adminAccounts: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -3761,7 +4157,7 @@ function AdminPanel({ onLogout }) {
     setLoading(true);
     const ok = (res) => res.status === 'fulfilled' ? res.value.data : {};
     try {
-      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, aaRes] = await Promise.allSettled([
+      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, tkRes, aaRes] = await Promise.allSettled([
         axios.get('/api/users'),
         axios.get('/api/dots-inventory'),
         axios.get('/api/coach-list'),
@@ -3772,6 +4168,7 @@ function AdminPanel({ onLogout }) {
         axios.get('/api/kino-devices'),
         axios.get('/api/kino-chip-batches'),
         axios.get('/api/kino-chip-models'),
+        axios.get('/api/tickets'),
         axios.get('/api/admin-accounts'),
       ]);
       setData({
@@ -3785,6 +4182,7 @@ function AdminPanel({ onLogout }) {
         kinoDevices:   ok(kinoRes).devices     || [],
         chipBatches:   ok(cbRes).batches       || [],
         chipModels:    ok(cmRes).models        || [],
+        tickets:       ok(tkRes).tickets       || [],
         adminAccounts: ok(aaRes).accounts      || [],
       });
       setLastRefresh(new Date());
@@ -3805,6 +4203,7 @@ function AdminPanel({ onLogout }) {
     { id: 'invites',  label: t.nav.invites,  icon: Tag         },
     { id: 'rewards',  label: t.nav.rewards,  icon: Coins          },
     { id: 'academy',  label: t.nav.academy,  icon: GraduationCap  },
+    { id: 'tickets',  label: t.nav.tickets,  icon: Bug            },
     { id: 'sims',     label: t.nav.sims,     icon: Layout,      disabled: true },
     { id: 'admin-accounts', label: t.nav.adminAccounts, icon: Settings2 },
   ];
@@ -3858,6 +4257,7 @@ function AdminPanel({ onLogout }) {
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'rewards'  && <RewardsTab />}
           {tab === 'academy'  && <AcademyTab />}
+          {tab === 'tickets'  && <TicketsTab tickets={data.tickets} onRefresh={fetchData} />}
           {tab === 'sims'     && <SimulatorsTab />}
           {tab === 'admin-accounts' && <AdminAccountsTab accounts={data.adminAccounts} onRefresh={fetchData} />}
         </div>
