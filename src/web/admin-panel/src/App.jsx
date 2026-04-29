@@ -115,7 +115,7 @@ const T = {
       code: 'Code', maxUses: 'Max Uses', useCount: 'Uses', creator: 'Creator',
       serialNumber: 'Serial No.', lastUsed: 'Last Used', testCount: 'Tests', status: 'Status', notes: 'Notes',
     },
-    empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found', invites: 'No invitations found', kino: 'No Kino devices registered', chipBatches: 'No chip batches created' },
+    empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found', invites: 'No invitations found', kino: 'No Kino devices registered', chipBatches: 'No chip batches created', chipModels: 'No chip models defined' },
     count: (n) => `${n} users`,
     addUser: 'Add User',
     addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item', addChannel: 'Add Channel', addInvite: 'Create Invite', addDevice: 'Register Device',
@@ -220,6 +220,20 @@ const T = {
       viewChips: 'View Chips', printQR: 'Print QR',
       chipCode: 'Chip Code', status: 'Status', scannedBy: 'Scanned By',
       page: 'Page', of: 'of', noChips: 'No chips',
+      batchesTab: 'Batches', modelsTab: 'Models',
+      addModel: 'Add Model', editModel: 'Edit Model', deleteModel: 'Delete Model',
+      deleteModelWarning: (c) => `Delete chip model "${c}"? This cannot be undone.`,
+      modelCode: 'Code *', modelCodeHint: 'Auto-uppercased, e.g. K2, S1',
+      modelName: 'Display Name', modelNamePlaceholder: 'e.g. Kino K2 (hsCRP)',
+      biomarkerKeys: 'Biomarkers *', biomarkerKeysHint: 'Comma-separated, e.g. hsCRP, IL-6',
+      configJson: 'Config (JSON) *', configJsonHint: 'scan_ppmm, top_list, var_list, …',
+      guideVideo: 'Guide Video URL', guideText: 'Guide Text',
+      modelStatus: 'Status', statusActive: 'Active', statusInactive: 'Inactive',
+      batchCount: 'Batches', chipCount: 'Chips',
+      countModel: (n) => `${n} model${n !== 1 ? 's' : ''}`,
+      modelInUse: (n) => `${n} batch(es) reference this model`,
+      invalidJson: 'Config is not valid JSON',
+      biomarkersRequired: 'At least one biomarker key is required',
     },
     academy: {
       coursesTab: 'Courses', libraryTab: 'Library',
@@ -269,7 +283,7 @@ const T = {
       code: '邀请码', maxUses: '上限', useCount: '已用', creator: '创建者',
       serialNumber: '序列号', lastUsed: '最后使用', testCount: '检测次数', status: '状态', notes: '备注',
     },
-    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道', invites: '暂无邀请码', kino: '暂无 Kino 设备', chipBatches: '暂无芯片批次' },
+    empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道', invites: '暂无邀请码', kino: '暂无 Kino 设备', chipBatches: '暂无芯片批次', chipModels: '暂无芯片型号' },
     count: (n) => `共 ${n} 位用户`,
     addBatch: '新建批次', countBatch: (n) => `共 ${n} 批次`,
     chips: {
@@ -283,6 +297,20 @@ const T = {
       viewChips: '查看芯片', printQR: '打印二维码',
       chipCode: '芯片编码', status: '状态', scannedBy: '扫描用户',
       page: '第', of: '页 / 共', noChips: '暂无芯片',
+      batchesTab: '批次', modelsTab: '型号',
+      addModel: '新建型号', editModel: '编辑型号', deleteModel: '删除型号',
+      deleteModelWarning: (c) => `确认删除芯片型号"${c}"？此操作不可撤销。`,
+      modelCode: '型号代码 *', modelCodeHint: '自动转大写，例如 K2、S1',
+      modelName: '显示名称', modelNamePlaceholder: '例如 Kino K2 (hsCRP)',
+      biomarkerKeys: '生物标志物 *', biomarkerKeysHint: '逗号分隔，例如 hsCRP, IL-6',
+      configJson: '配置 (JSON) *', configJsonHint: 'scan_ppmm、top_list、var_list 等',
+      guideVideo: '操作视频 URL', guideText: '操作说明',
+      modelStatus: '状态', statusActive: '启用', statusInactive: '停用',
+      batchCount: '批次数', chipCount: '芯片数',
+      countModel: (n) => `共 ${n} 个型号`,
+      modelInUse: (n) => `${n} 个批次正在使用此型号`,
+      invalidJson: '配置不是合法 JSON',
+      biomarkersRequired: '至少需要一个生物标志物代码',
     },
     addUser: '添加用户',
     addCoach: '添加 Coach', addDot: '添加原粒', addItem: '添加商品', addChannel: '添加渠道', addInvite: '创建邀请码', addDevice: '注册设备',
@@ -2966,12 +2994,14 @@ function InvitesTab({ invitations, channels, onRefresh }) {
 
 // ── Chip Batch components ─────────────────────────────────────────────────────
 
-const CHIP_MODELS = ['K2', 'S1'];
-
-function ChipBatchModal({ batch, onClose, onSave }) {
+function ChipBatchModal({ batch, models, onClose, onSave }) {
   const { t } = useContext(LangCtx);
   const tc = t.chips;
   const isEdit = !!batch;
+
+  const activeModels = (models || []).filter(m => m.status === 'active');
+  const modelOptions = activeModels.length > 0 ? activeModels : (models || []);
+  const fallbackModel = modelOptions[0]?.code || 'K2';
 
   // Auto-generate 8-digit batch number once on mount (for new batches)
   const [batchNum] = useState(() =>
@@ -2980,7 +3010,7 @@ function ChipBatchModal({ batch, onClose, onSave }) {
   const prefix = isEdit ? batch.prefix : `KNC${batchNum}`;
 
   const [form, setForm] = useState({
-    model:    batch?.model    || 'K2',
+    model:    batch?.model    || fallbackModel,
     quantity: batch?.quantity || '',
     notes:    batch?.notes    || '',
   });
@@ -3020,7 +3050,12 @@ function ChipBatchModal({ batch, onClose, onSave }) {
             <label className="form-field">
               <span>{tc.model}</span>
               <select value={form.model} onChange={e => set('model', e.target.value)}>
-                {CHIP_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+                {modelOptions.length === 0 && <option value={form.model}>{form.model}</option>}
+                {modelOptions.map(m => (
+                  <option key={m.code} value={m.code}>
+                    {m.name ? `${m.code} — ${m.name}` : m.code}
+                  </option>
+                ))}
               </select>
             </label>
             {!isEdit && (
@@ -3253,7 +3288,29 @@ function ChipListPanel({ batch, onClose }) {
   );
 }
 
-function ChipsTab({ batches, onRefresh }) {
+function ChipsTab({ batches, models, onRefresh }) {
+  const { t } = useContext(LangCtx);
+  const tc = t.chips;
+  const [subTab, setSubTab] = useState('batches');
+
+  return (
+    <>
+      <div className="subtab-row" style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <button className={`subtab-btn${subTab === 'batches' ? ' active' : ''}`} onClick={() => setSubTab('batches')}>
+          <Layers size={13} />{tc.batchesTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'models' ? ' active' : ''}`} onClick={() => setSubTab('models')}>
+          <Cpu size={13} />{tc.modelsTab}
+        </button>
+      </div>
+
+      {subTab === 'batches' && <ChipBatchesPanel batches={batches} models={models} onRefresh={onRefresh} />}
+      {subTab === 'models'  && <ChipModelsPanel  models={models} onRefresh={onRefresh} />}
+    </>
+  );
+}
+
+function ChipBatchesPanel({ batches, models, onRefresh }) {
   const { t } = useContext(LangCtx);
   const tc = t.chips;
   const [modal, setModal]         = useState(null);
@@ -3318,11 +3375,267 @@ function ChipsTab({ batches, onRefresh }) {
       </table>
       </div>
 
-      {modal?.type === 'add'    && <ChipBatchModal batch={null}        onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <ChipBatchModal batch={modal.batch} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add'    && <ChipBatchModal batch={null}        models={models} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <ChipBatchModal batch={modal.batch} models={models} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteBatchConfirm batch={modal.batch} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
       {viewBatch && <ChipListPanel batch={viewBatch} onClose={() => setViewBatch(null)} />}
     </>
+  );
+}
+
+function ChipModelsPanel({ models, onRefresh }) {
+  const { t } = useContext(LangCtx);
+  const tc = t.chips;
+  const [modal, setModal] = useState(null);
+  const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  const totalBatches = models.reduce((s, m) => s + (parseInt(m.batch_count) || 0), 0);
+  const totalChips   = models.reduce((s, m) => s + (parseInt(m.chip_count)  || 0), 0);
+  const activeCount  = models.filter(m => m.status === 'active').length;
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={Cpu}     label={tc.countModel(models.length)} value={models.length} color="#3b82f6" />
+        <StatCard icon={Check}   label={tc.statusActive}              value={activeCount}   color="#10b981" />
+        <StatCard icon={Layers}  label={tc.batchCount}                value={totalBatches}  color="#8b5cf6" />
+        <StatCard icon={Package} label={tc.chipCount}                 value={totalChips}    color="#f59e0b" />
+      </div>
+      <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count">{tc.countModel(models.length)}</span>
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{tc.addModel}
+          </button>
+        </div>
+        <table className="data-table">
+          <thead><tr>
+            <th>{tc.modelCode.replace(' *', '')}</th>
+            <th>{tc.modelName}</th>
+            <th>{tc.biomarkerKeys.replace(' *', '')}</th>
+            <th>{tc.modelStatus}</th>
+            <th>{tc.batchCount}</th>
+            <th>{tc.chipCount}</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+            {models.length === 0 && <tr><td colSpan={7} className="empty-row">{t.empty.chipModels}</td></tr>}
+            {models.map(m => (
+              <tr key={m.code}>
+                <td style={{ fontFamily: 'monospace', fontWeight: 700 }}>{m.code}</td>
+                <td>{m.name || <span style={{ color: '#64748b' }}>—</span>}</td>
+                <td style={{ fontSize: 12 }}>
+                  {(m.biomarker_keys || []).map(k => (
+                    <span key={k} style={{ display: 'inline-block', padding: '2px 8px', marginRight: 4, marginBottom: 2, borderRadius: 10, background: '#162E4A', color: '#A6C4E5', fontSize: 11 }}>{k}</span>
+                  ))}
+                </td>
+                <td>
+                  <span style={{ fontSize: 11, color: m.status === 'active' ? '#10b981' : '#94a3b8' }}>
+                    {m.status === 'active' ? tc.statusActive : tc.statusInactive}
+                  </span>
+                </td>
+                <td>{m.batch_count}</td>
+                <td>{m.chip_count}</td>
+                <td>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button className="icon-btn" title={tc.editModel} onClick={() => setModal({ type: 'edit', model: m })}><Pencil size={14} /></button>
+                    <button className="icon-btn" title={tc.deleteModel}
+                            onClick={() => setModal({ type: 'delete', model: m })}
+                            disabled={parseInt(m.batch_count) > 0}
+                            style={parseInt(m.batch_count) > 0 ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {(modal?.type === 'add' || modal?.type === 'edit') && (
+        <ChipModelModal model={modal.type === 'edit' ? modal.model : null}
+                        onClose={() => setModal(null)} onSave={closeAndRefresh} />
+      )}
+      {modal?.type === 'delete' && (
+        <DeleteChipModelConfirm model={modal.model}
+                                onClose={() => setModal(null)} onConfirm={closeAndRefresh} />
+      )}
+    </>
+  );
+}
+
+function ChipModelModal({ model, onClose, onSave }) {
+  const { t } = useContext(LangCtx);
+  const tc = t.chips;
+  const isEdit = !!model;
+
+  const [form, setForm] = useState({
+    code:           model?.code           || '',
+    name:           model?.name           || '',
+    biomarkers:     (model?.biomarker_keys || []).join(', '),
+    config:         model?.config ? JSON.stringify(model.config, null, 2) : '{\n  \n}',
+    guide_video:    model?.guide_video    || '',
+    guide_text:     model?.guide_text     || '',
+    status:         model?.status         || 'active',
+    notes:          model?.notes          || '',
+  });
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    const code = form.code.trim().toUpperCase();
+    if (!isEdit && !/^[A-Z0-9]{1,16}$/.test(code)) {
+      setError('Code must be 1–16 uppercase letters/digits'); return;
+    }
+    const biomarker_keys = form.biomarkers.split(',').map(s => s.trim()).filter(Boolean);
+    if (biomarker_keys.length === 0) { setError(tc.biomarkersRequired); return; }
+
+    let config;
+    try {
+      config = JSON.parse(form.config);
+      if (!config || typeof config !== 'object' || Array.isArray(config)) {
+        setError(tc.invalidJson); return;
+      }
+    } catch (err) {
+      setError(`${tc.invalidJson}: ${err.message}`); return;
+    }
+
+    const payload = {
+      name:        form.name.trim() || null,
+      biomarker_keys,
+      config,
+      guide_video: form.guide_video.trim() || null,
+      guide_text:  form.guide_text.trim()  || null,
+      status:      form.status,
+      notes:       form.notes.trim() || null,
+    };
+
+    setBusy(true);
+    try {
+      let res;
+      if (isEdit) {
+        res = await axios.put(`/api/kino-chip-models/${encodeURIComponent(model.code)}`, payload);
+      } else {
+        res = await axios.post('/api/kino-chip-models', { code, ...payload });
+      }
+      if (res.data?.success === false) { setError(res.data.error || t.modal.saveFailed); return; }
+      onSave();
+    } catch (err) {
+      setError(err.response?.data?.error || t.modal.saveFailed);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{isEdit ? tc.editModel : tc.addModel}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field">
+              <span>{tc.modelCode}</span>
+              <input value={form.code}
+                     onChange={e => set('code', e.target.value.toUpperCase())}
+                     placeholder="K2" disabled={isEdit} required={!isEdit} maxLength={16} />
+              <small style={{ color: '#64748b', fontSize: 10 }}>{tc.modelCodeHint}</small>
+            </label>
+            <label className="form-field">
+              <span>{tc.modelName}</span>
+              <input value={form.name} onChange={e => set('name', e.target.value)}
+                     placeholder={tc.modelNamePlaceholder} />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{tc.biomarkerKeys}</span>
+              <input value={form.biomarkers} onChange={e => set('biomarkers', e.target.value)}
+                     placeholder="hsCRP, IL-6" required />
+              <small style={{ color: '#64748b', fontSize: 10 }}>{tc.biomarkerKeysHint}</small>
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{tc.configJson}</span>
+              <textarea rows={12} value={form.config}
+                        onChange={e => set('config', e.target.value)}
+                        style={{ fontFamily: 'monospace', fontSize: 12 }} required />
+              <small style={{ color: '#64748b', fontSize: 10 }}>{tc.configJsonHint}</small>
+            </label>
+            <label className="form-field">
+              <span>{tc.modelStatus}</span>
+              <select value={form.status} onChange={e => set('status', e.target.value)}>
+                <option value="active">{tc.statusActive}</option>
+                <option value="inactive">{tc.statusInactive}</option>
+              </select>
+            </label>
+            <label className="form-field">
+              <span>{tc.guideVideo}</span>
+              <input value={form.guide_video} onChange={e => set('guide_video', e.target.value)}
+                     placeholder="https://…" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{tc.guideText}</span>
+              <textarea rows={2} value={form.guide_text} onChange={e => set('guide_text', e.target.value)} />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{tc.notes}</span>
+              <textarea rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} />
+            </label>
+          </div>
+          {error && <p className="form-error">{error}</p>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              {busy ? t.modal.saving : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteChipModelConfirm({ model, onClose, onConfirm }) {
+  const { t } = useContext(LangCtx);
+  const tc = t.chips;
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState('');
+  const inUse = parseInt(model.batch_count) > 0;
+
+  const handleDelete = async () => {
+    if (inUse) return;
+    setBusy(true); setError('');
+    try {
+      const res = await axios.delete(`/api/kino-chip-models/${encodeURIComponent(model.code)}`);
+      if (res.data?.success === false) { setError(res.data.error || 'Failed to delete'); return; }
+      onConfirm();
+    } catch (err) { setError(err.response?.data?.error || 'Failed to delete'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{tc.deleteModel}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p>{tc.deleteModelWarning(model.code)}</p>
+          {inUse && <p className="form-error">{tc.modelInUse(model.batch_count)}</p>}
+          {error && <p className="form-error">{error}</p>}
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-primary danger" onClick={handleDelete} disabled={busy || inUse}>
+              {busy ? t.modal.deleting : t.modal.delete}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -3440,7 +3753,7 @@ function AdminPanel({ onLogout }) {
   const toggleLang = () => setLang(l => l === 'en' ? 'zh' : 'en');
 
   const [tab, setTab] = useState('users');
-  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [], adminAccounts: [] });
+  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [], chipModels: [], adminAccounts: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -3448,7 +3761,7 @@ function AdminPanel({ onLogout }) {
     setLoading(true);
     const ok = (res) => res.status === 'fulfilled' ? res.value.data : {};
     try {
-      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, aaRes] = await Promise.allSettled([
+      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, aaRes] = await Promise.allSettled([
         axios.get('/api/users'),
         axios.get('/api/dots-inventory'),
         axios.get('/api/coach-list'),
@@ -3458,6 +3771,7 @@ function AdminPanel({ onLogout }) {
         axios.get('/api/invitations'),
         axios.get('/api/kino-devices'),
         axios.get('/api/kino-chip-batches'),
+        axios.get('/api/kino-chip-models'),
         axios.get('/api/admin-accounts'),
       ]);
       setData({
@@ -3470,6 +3784,7 @@ function AdminPanel({ onLogout }) {
         invitations:   ok(invRes).invitations  || [],
         kinoDevices:   ok(kinoRes).devices     || [],
         chipBatches:   ok(cbRes).batches       || [],
+        chipModels:    ok(cmRes).models        || [],
         adminAccounts: ok(aaRes).accounts      || [],
       });
       setLastRefresh(new Date());
@@ -3539,7 +3854,7 @@ function AdminPanel({ onLogout }) {
           {tab === 'store'    && <StoreTab    storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
           {tab === 'channels' && <ChannelTab  channels={data.channels} onRefresh={fetchData} />}
           {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} onRefresh={fetchData} />}
-          {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} onRefresh={fetchData} />}
+          {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'rewards'  && <RewardsTab />}
           {tab === 'academy'  && <AcademyTab />}

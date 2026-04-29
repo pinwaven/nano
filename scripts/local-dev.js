@@ -464,6 +464,131 @@ app.delete('/kino-chip-batches/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
+// Kino chip models
+app.get('/kino-chip-models', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        const result = await pool.query(`
+            SELECT m.code, m.name, m.biomarker_keys, m.config,
+                   m.guide_video, m.guide_text, m.status, m.notes,
+                   m.created_at, m.updated_at,
+                   COALESCE(b.batch_count, 0)::int  AS batch_count,
+                   COALESCE(b.chip_count, 0)::int   AS chip_count
+            FROM kino_chip_models m
+            LEFT JOIN (
+                SELECT cb.model AS code,
+                       COUNT(DISTINCT cb.id)::int AS batch_count,
+                       COALESCE(SUM(cb.quantity), 0)::int AS chip_count
+                FROM kino_chip_batches cb
+                GROUP BY cb.model
+            ) b ON b.code = m.code
+            ORDER BY m.code
+        `);
+        res.json({ success: true, models: result.rows });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+function normalizeChipModelInput(body) {
+    const out = {};
+    if (typeof body.code === 'string') out.code = body.code.trim().toUpperCase();
+    if (typeof body.name === 'string') out.name = body.name.trim() || null;
+    if (Array.isArray(body.biomarker_keys)) {
+        out.biomarker_keys = body.biomarker_keys
+            .map(k => typeof k === 'string' ? k.trim() : '')
+            .filter(Boolean);
+    }
+    if (body.config !== undefined) {
+        if (typeof body.config === 'string') {
+            out.config = JSON.parse(body.config);
+        } else if (typeof body.config === 'object' && body.config !== null) {
+            out.config = body.config;
+        } else {
+            throw new Error('config must be a JSON object');
+        }
+    }
+    if (typeof body.guide_video === 'string') out.guide_video = body.guide_video.trim() || null;
+    if (typeof body.guide_text  === 'string') out.guide_text  = body.guide_text.trim()  || null;
+    if (typeof body.status      === 'string') out.status      = body.status.trim() || 'active';
+    if (typeof body.notes       === 'string') out.notes       = body.notes.trim() || null;
+    return out;
+}
+
+app.post('/kino-chip-models', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        const m = normalizeChipModelInput(req.body || {});
+        if (!m.code) return res.status(400).json({ success: false, error: 'code is required' });
+        if (!/^[A-Z0-9]{1,16}$/.test(m.code)) return res.status(400).json({ success: false, error: 'code must be 1–16 uppercase letters/digits' });
+        if (!Array.isArray(m.biomarker_keys) || m.biomarker_keys.length === 0) {
+            return res.status(400).json({ success: false, error: 'biomarker_keys must be a non-empty array' });
+        }
+        if (!m.config || typeof m.config !== 'object') {
+            return res.status(400).json({ success: false, error: 'config (JSON object) is required' });
+        }
+        const result = await pool.query(
+            `INSERT INTO kino_chip_models
+                (code, name, biomarker_keys, config, guide_video, guide_text, status, notes)
+             VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'active'), $8)
+             RETURNING code`,
+            [m.code, m.name || null, m.biomarker_keys, m.config,
+             m.guide_video || null, m.guide_text || null, m.status, m.notes || null]
+        );
+        res.json({ success: true, code: result.rows[0].code });
+    } catch (err) {
+        if (err.code === '23505') return res.status(409).json({ success: false, error: 'A model with this code already exists' });
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.put('/kino-chip-models/:code', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        const m = normalizeChipModelInput(req.body || {});
+        const sets = [];
+        const params = [];
+        const push = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+
+        if ('name'           in m) push('name',           m.name);
+        if ('biomarker_keys' in m) push('biomarker_keys', m.biomarker_keys);
+        if ('config'         in m) push('config',         m.config);
+        if ('guide_video'    in m) push('guide_video',    m.guide_video);
+        if ('guide_text'     in m) push('guide_text',     m.guide_text);
+        if ('status'         in m) push('status',         m.status);
+        if ('notes'          in m) push('notes',          m.notes);
+
+        if (sets.length === 0) return res.status(400).json({ success: false, error: 'No fields to update' });
+        sets.push('updated_at = CURRENT_TIMESTAMP');
+        params.push(String(req.params.code).toUpperCase());
+
+        const result = await pool.query(
+            `UPDATE kino_chip_models SET ${sets.join(', ')} WHERE code = $${params.length} RETURNING code`,
+            params
+        );
+        if (result.rowCount === 0) return res.status(404).json({ success: false, error: 'Model not found' });
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.delete('/kino-chip-models/:code', async (req, res) => {
+    const { pool } = require('../src/lib/db');
+    try {
+        const upper = String(req.params.code).toUpperCase();
+        const ref = await pool.query(
+            'SELECT COUNT(*)::int AS n FROM kino_chip_batches WHERE model = $1',
+            [upper]
+        );
+        if (ref.rows[0].n > 0) {
+            return res.status(409).json({ success: false, error: `Cannot delete: ${ref.rows[0].n} batch(es) reference this model` });
+        }
+        const result = await pool.query(
+            'DELETE FROM kino_chip_models WHERE code = $1 RETURNING code',
+            [upper]
+        );
+        if (result.rowCount === 0) return res.status(404).json({ success: false, error: 'Model not found' });
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
 // Admin: Create Dot
 app.post('/dots', async (req, res) => {
     const { key_name, name, name_zh, color, color_zh, description, is_isolate } = req.body;
