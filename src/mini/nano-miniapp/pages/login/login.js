@@ -6,10 +6,12 @@ Page({
     step: 'checking',
     loading: true,
     error: '',
+    phoneLoading: false,
   },
 
   _coachId: null,
   _inviteCode: null,
+  _pendingLogin: null,
 
   onLoad(options) {
     if (options.coach_id) this._coachId = options.coach_id
@@ -35,11 +37,40 @@ Page({
         throw new Error(res.data?.error || '登录失败，请重试')
       }
 
+      if (res.data.new_user) {
+        this._pendingLogin = res.data
+        this.setData({ step: 'phone', loading: false })
+        return
+      }
+
       this._finishLogin(res.data)
     } catch (e) {
       console.error('wxLogin error', e)
       this.setData({ loading: false, step: 'error', error: e.message || '登录失败，请重试' })
     }
+  },
+
+  async handleGetPhone(e) {
+    const { code, errMsg } = e.detail
+    if (errMsg !== 'getPhoneNumber:ok' || !code) {
+      this._finishLogin(this._pendingLogin)
+      return
+    }
+    this.setData({ phoneLoading: true })
+    try {
+      const user = this._pendingLogin.user
+      await wx.request({
+        url: `${BASE}/api/bind-phone`,
+        method: 'POST',
+        header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
+        data: { user_id: user.user_id, code },
+      })
+    } catch (e) {}
+    this._finishLogin(this._pendingLogin)
+  },
+
+  skipPhone() {
+    this._finishLogin(this._pendingLogin)
   },
 
   retry() {

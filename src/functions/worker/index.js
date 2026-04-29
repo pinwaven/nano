@@ -1709,7 +1709,7 @@ async function handleWxLogin(body) {
         if (chanRes.rows.length > 0) channel = { name: chanRes.rows[0].name, logo_url: chanRes.rows[0].logo_url };
     }
 
-    return { success: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel };
+    return { success: true, new_user: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel };
 }
 
 async function saveChatMessage(user_id, role, content) {

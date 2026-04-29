@@ -842,33 +842,50 @@
   <view wx:if="{{guestSheetOpen}}" class="guest-sheet-mask" bindtap="closeGuestSheet">
     <view class="guest-sheet" catchtap="noop">
       <view class="guest-sheet-handle"></view>
-      <text class="guest-sheet-title">{{t.guestJoinTitle}}</text>
-      <text class="guest-sheet-desc">{{t.guestJoinDesc}}</text>
-      <view class="pin-field">
-        <view class="pin-boxes">
-          <view
-            wx:for="{{guestInviteDigits}}"
-            wx:key="index"
-            class="pin-box {{item ? 'pin-filled' : ''}} {{!item && index === guestInviteCode.length ? 'pin-active' : ''}}"
-          >
-            <text class="pin-digit">{{item}}</text>
-          </view>
+
+      <block wx:if="{{guestSheetStep === 'phone'}}">
+        <text class="guest-sheet-title">{{t.guestPhoneTitle}}</text>
+        <text class="guest-sheet-desc">{{t.guestPhoneDesc}}</text>
+        <button
+          class="guest-sheet-btn {{guestInviteBusy ? 'guest-sheet-btn-disabled' : ''}}"
+          open-type="getPhoneNumber"
+          bindgetphonenumber="handleGuestPhone"
+          disabled="{{guestInviteBusy}}"
+        ><text>{{t.guestPhoneBtn}}</text></button>
+        <view class="guest-sheet-skip" bindtap="skipGuestPhone">
+          <text>{{t.guestPhoneSkip}}</text>
         </view>
-        <input
-          class="pin-capture"
-          type="number"
-          value="{{guestInviteCode}}"
-          bindinput="onGuestInviteInput"
-          focus="{{guestSheetOpen}}"
-          maxlength="6"
-        />
-      </view>
-      <view wx:if="{{guestInviteError}}" class="guest-sheet-error">
-        <text>{{guestInviteError}}</text>
-      </view>
-      <view class="guest-sheet-btn {{guestInviteBusy ? 'guest-sheet-btn-disabled' : ''}}" bindtap="submitGuestInvite">
-        <text>{{guestInviteBusy ? t.guestActivating : t.guestJoinBtn}}</text>
-      </view>
+      </block>
+
+      <block wx:else>
+        <text class="guest-sheet-title">{{t.guestJoinTitle}}</text>
+        <text class="guest-sheet-desc">{{t.guestJoinDesc}}</text>
+        <view class="pin-field">
+          <view class="pin-boxes">
+            <view
+              wx:for="{{guestInviteDigits}}"
+              wx:key="index"
+              class="pin-box {{item ? 'pin-filled' : ''}} {{!item && index === guestInviteCode.length ? 'pin-active' : ''}}"
+            >
+              <text class="pin-digit">{{item}}</text>
+            </view>
+          </view>
+          <input
+            class="pin-capture"
+            type="number"
+            value="{{guestInviteCode}}"
+            bindinput="onGuestInviteInput"
+            focus="{{guestSheetOpen}}"
+            maxlength="6"
+          />
+        </view>
+        <view wx:if="{{guestInviteError}}" class="guest-sheet-error">
+          <text>{{guestInviteError}}</text>
+        </view>
+        <view class="guest-sheet-btn {{guestInviteBusy ? 'guest-sheet-btn-disabled' : ''}}" bindtap="submitGuestInvite">
+          <text>{{guestInviteBusy ? t.guestActivating : t.guestJoinBtn}}</text>
+        </view>
+      </block>
     </view>
   </view>
 

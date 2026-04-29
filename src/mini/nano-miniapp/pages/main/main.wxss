@@ -2426,6 +2426,16 @@
 }
 .guest-sheet-btn-disabled { opacity: 0.35; box-shadow: none; }
 
+button.guest-sheet-btn { line-height: 1.4; border: none; }
+button.guest-sheet-btn::after { border: none; }
+
+.guest-sheet-skip {
+  text-align: center;
+  padding: 16rpx;
+  font-size: 26rpx;
+  color: rgba(166, 196, 229, 0.5);
+}
+
 /* Pin input (used in guest sheet) */
 .pin-field {
   position: relative;

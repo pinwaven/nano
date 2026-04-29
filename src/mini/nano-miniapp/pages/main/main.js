@@ -176,6 +176,10 @@ const T = {
     guestActivating: '注册中…',
     guestInviteRequired: '请输入邀请码',
     guestInviteInvalid: '邀请码无效或已失效，请重新输入',
+    guestPhoneTitle: '最后一步',
+    guestPhoneDesc: '绑定手机号，让您的健康顾问可以随时联系到您。',
+    guestPhoneBtn: '📱 授权手机号',
+    guestPhoneSkip: '稍后再说',
     guestChatCtaText: '输入邀请码，激活您的 AI 健康伴侣',
     guestChatCtaBtn: '立即加入',
     guestHealthCta: '激活账户后，查看您的健康数据与生物年龄',
@@ -322,6 +326,10 @@ const T = {
     guestActivating: 'Activating…',
     guestInviteRequired: 'Please enter an invite code',
     guestInviteInvalid: 'Invalid or expired invite code. Please try again.',
+    guestPhoneTitle: 'One Last Step',
+    guestPhoneDesc: 'Link your phone number so your health advisor can reach you when needed.',
+    guestPhoneBtn: '📱 Authorize Phone',
+    guestPhoneSkip: 'Maybe later',
     guestChatCtaText: 'Enter your invite code to activate your AI health companion',
     guestChatCtaBtn: 'Join Now',
     guestHealthCta: 'Activate your account to view your health data and Bio Age',
@@ -656,6 +664,7 @@ Page({
     guestInviteDigits: ['', '', '', '', '', ''],
     guestInviteBusy: false,
     guestInviteError: '',
+    guestSheetStep: 'invite',
 
     // Dots
     dotsLoading: true,
@@ -1942,10 +1951,11 @@ Page({
   },
 
   openGuestSheet() {
-    this.setData({ guestSheetOpen: true, guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '', menuOpen: false })
+    this.setData({ guestSheetOpen: true, guestSheetStep: 'invite', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '', menuOpen: false })
   },
 
   closeGuestSheet() {
+    if (this.data.guestSheetStep === 'phone') return
     this.setData({ guestSheetOpen: false })
   },
 
@@ -1973,30 +1983,61 @@ Page({
         this.setData({ guestInviteError: res.data?.error || t.errServer, guestInviteBusy: false })
         return
       }
-      const user = res.data.user
-      const channel = res.data.channel || null
-      const coach = res.data.coach || null
-      app.globalData.user = user
-      app.globalData.channel = channel
-      app.globalData.coach = coach
-      app.globalData.lang = user.language === 'en' ? 'en' : 'zh'
-      wx.setStorageSync('nano_user', user)
-      wx.setStorageSync('nano_channel', channel)
-      wx.setStorageSync('nano_coach', coach)
-      const lang = user.language === 'en' ? 'en' : 'zh'
-      const roles = user.roles || ['user']
-      const isCoach = roles.includes('coach')
-      const isAdmin = roles.includes('admin') || roles.includes('superadmin')
-      const isSuperadmin = roles.includes('superadmin')
-      this.setData({ user: { ...user }, channel, lang, t: T[lang], isGuest: false, guestSheetOpen: false, guestInviteBusy: false, isCoach, isAdmin, isSuperadmin })
-      this._initChat(user, lang)
-      this._loadHealth(user, lang)
-      this._loadDots(user, lang)
-      this._loadCartridges(user, lang)
-      this._loadStore(user, lang)
+      this._pendingGuestSignup = res.data
+      if (res.data.new_user) {
+        this.setData({ guestSheetStep: 'phone', guestInviteBusy: false })
+        return
+      }
+      this._completeGuestSignup()
     } catch (e) {
       this.setData({ guestInviteError: this.data.t.errServer, guestInviteBusy: false })
     }
+  },
+
+  async handleGuestPhone(e) {
+    const { code, errMsg } = e.detail
+    if (errMsg === 'getPhoneNumber:ok' && code) {
+      this.setData({ guestInviteBusy: true })
+      try {
+        const u = this._pendingGuestSignup.user
+        const res = await this._req(`${BASE}/api/bind-phone`, 'POST', { user_id: u.user_id, code })
+        if (res.data?.success && res.data.phone) {
+          this._pendingGuestSignup.user = { ...u, phone: res.data.phone }
+        }
+      } catch (err) {}
+    }
+    this._completeGuestSignup()
+  },
+
+  skipGuestPhone() {
+    this._completeGuestSignup()
+  },
+
+  _completeGuestSignup() {
+    const data = this._pendingGuestSignup
+    if (!data) return
+    this._pendingGuestSignup = null
+    const user = data.user
+    const channel = data.channel || null
+    const coach = data.coach || null
+    app.globalData.user = user
+    app.globalData.channel = channel
+    app.globalData.coach = coach
+    app.globalData.lang = user.language === 'en' ? 'en' : 'zh'
+    wx.setStorageSync('nano_user', user)
+    wx.setStorageSync('nano_channel', channel)
+    wx.setStorageSync('nano_coach', coach)
+    const lang = user.language === 'en' ? 'en' : 'zh'
+    const roles = user.roles || ['user']
+    const isCoach = roles.includes('coach')
+    const isAdmin = roles.includes('admin') || roles.includes('superadmin')
+    const isSuperadmin = roles.includes('superadmin')
+    this.setData({ user: { ...user }, channel, lang, t: T[lang], isGuest: false, guestSheetOpen: false, guestSheetStep: 'invite', guestInviteBusy: false, isCoach, isAdmin, isSuperadmin })
+    this._initChat(user, lang)
+    this._loadHealth(user, lang)
+    this._loadDots(user, lang)
+    this._loadCartridges(user, lang)
+    this._loadStore(user, lang)
   },
 
   _getCode() {

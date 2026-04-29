@@ -13,6 +13,21 @@
     <text class="status-text">正在登录…</text>
   </view>
 
+  <!-- Phone binding for new invite-code users -->
+  <view wx:elif="{{step === 'phone'}}" class="login-card">
+    <text class="login-card-label">最后一步</text>
+    <text class="phone-step-desc">绑定手机号，让您的健康顾问可以随时联系到您。</text>
+    <button
+      class="login-btn"
+      open-type="getPhoneNumber"
+      bindgetphonenumber="handleGetPhone"
+      disabled="{{phoneLoading}}"
+    ><text>📱 授权手机号</text></button>
+    <view class="phone-skip-btn" bindtap="skipPhone">
+      <text>稍后再说</text>
+    </view>
+  </view>
+
   <!-- Error -->
   <view wx:elif="{{step === 'error'}}" class="status-wrap">
     <text class="error-text">{{error}}</text>

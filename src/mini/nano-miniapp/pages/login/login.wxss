@@ -150,6 +150,9 @@
   box-shadow: none;
 }
 
+button.login-btn { line-height: 1.4; border: none; }
+button.login-btn::after { border: none; }
+
 .login-spinner {
   width: 28rpx;
   height: 28rpx;
@@ -213,6 +216,20 @@
 }
 
 .login-footer-dot { opacity: 0.4; }
+
+.phone-step-desc {
+  font-size: 28rpx;
+  color: rgba(166, 196, 229, 0.7);
+  line-height: 1.6;
+  text-align: center;
+}
+
+.phone-skip-btn {
+  text-align: center;
+  padding: 16rpx;
+  font-size: 26rpx;
+  color: rgba(166, 196, 229, 0.4);
+}
 
 /* PIN box input */
 .pin-field {
