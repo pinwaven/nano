@@ -1810,41 +1810,6 @@ async function handlePostBiomarkers(body) {
         );
         await saveChatMessage(user_id, 'ai', content);
 
-        try {
-            const llmClient = getLlmClient();
-            const model = process.env.MODEL || 'qwen3.6-plus';
-            const dotsForNutrition = await pool.query(
-                `SELECT id, key_name, name, name_zh, description, ingredients, ingredients_zh FROM dots ORDER BY id ASC`
-            );
-            const nutritionContext = {
-                start_date: new Date().toISOString().split('T')[0],
-                days_needed: 7,
-                language: lang,
-                biomarkers: test_data,
-                bioage_profile: bioAgeReport,
-                dots_formulary: dotsForNutrition.rows,
-            };
-            const nutritionPrompt = systemNutritionTemplate(nutritionContext);
-            const userPromptMsg = lang === 'zh'
-                ? '请根据以上检测结果，为我生成 7 天营养方案。'
-                : 'Generate my 7-day nutrition plan based on these results.';
-            const nutritionCompletion = await llmClient.chat.completions.create({
-                model,
-                messages: [
-                    { role: 'system', content: nutritionPrompt },
-                    { role: 'user', content: userPromptMsg }
-                ],
-            });
-            const reportContent = nutritionCompletion.choices[0].message.content;
-            await pool.query(
-                'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
-                [user_id, biomarkerId, 'nutrition_plan', reportContent, 'pending']
-            );
-            await saveChatMessage(user_id, 'ai', reportContent);
-        } catch (reportErr) {
-            console.error('Report Generation Error:', reportErr);
-        }
-
         return { success: true, user_id, biomarkers: estimationReport.BiomarkerValues, bioage_profile: bioAgeReport };
     } else {
         // Non-kino: save raw record only, no estimation
