@@ -229,7 +229,8 @@ const T = {
       biomarkerKeys: 'Biomarkers *', biomarkerKeysHint: 'Comma-separated, e.g. hsCRP, IL-6',
       configJson: 'Config (JSON) *', configJsonHint: 'scan_ppmm, top_list, var_list, …',
       guideVideo: 'Guide Video URL', guideText: 'Guide Text',
-      modelStatus: 'Status', statusActive: 'Active', statusInactive: 'Inactive',
+      modelStatus: 'Status', statusActive: 'Active', statusInactive: 'Inactive', statusRecalled: 'Recalled',
+      batchStatus: 'Status',
       batchCount: 'Batches', chipCount: 'Chips',
       countModel: (n) => `${n} model${n !== 1 ? 's' : ''}`,
       modelInUse: (n) => `${n} batch(es) reference this model`,
@@ -324,7 +325,8 @@ const T = {
       biomarkerKeys: '生物标志物 *', biomarkerKeysHint: '逗号分隔，例如 hsCRP, IL-6',
       configJson: '配置 (JSON) *', configJsonHint: 'scan_ppmm、top_list、var_list 等',
       guideVideo: '操作视频 URL', guideText: '操作说明',
-      modelStatus: '状态', statusActive: '启用', statusInactive: '停用',
+      modelStatus: '状态', statusActive: '启用', statusInactive: '停用', statusRecalled: '已召回',
+      batchStatus: '状态',
       batchCount: '批次数', chipCount: '芯片数',
       countModel: (n) => `共 ${n} 个型号`,
       modelInUse: (n) => `${n} 个批次正在使用此型号`,
@@ -3050,6 +3052,7 @@ function ChipBatchModal({ batch, models, onClose, onSave }) {
     model:    batch?.model    || fallbackModel,
     quantity: batch?.quantity || '',
     notes:    batch?.notes    || '',
+    status:   batch?.status   || 'active',
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -3065,7 +3068,7 @@ function ChipBatchModal({ batch, models, onClose, onSave }) {
     try {
       let res;
       if (isEdit) {
-        res = await axios.put(`/api/kino-chip-batches/${batch.id}`, { model: form.model, notes: form.notes });
+        res = await axios.put(`/api/kino-chip-batches/${batch.id}`, { model: form.model, notes: form.notes, status: form.status });
       } else {
         res = await axios.post('/api/kino-chip-batches', { prefix, model: form.model, quantity: form.quantity, notes: form.notes });
       }
@@ -3107,6 +3110,16 @@ function ChipBatchModal({ batch, models, onClose, onSave }) {
               <span>{tc.notes}</span>
               <textarea rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} />
             </label>
+            {isEdit && (
+              <label className="form-field">
+                <span>{tc.batchStatus}</span>
+                <select value={form.status} onChange={e => set('status', e.target.value)}>
+                  <option value="active">{tc.statusActive}</option>
+                  <option value="inactive">{tc.statusInactive}</option>
+                  <option value="recalled">{tc.statusRecalled}</option>
+                </select>
+              </label>
+            )}
           </div>
           {!isEdit && (
             <div style={{ margin: '12px 0 4px', padding: '10px 14px', background: '#0f172a', borderRadius: 6, border: '1px solid #1e293b' }}>
@@ -3380,6 +3393,7 @@ function ChipBatchesPanel({ batches, models, onRefresh }) {
           <th>ID</th>
           <th>{tc.prefix || 'Prefix'}</th>
           <th>Model</th>
+          <th>{tc.batchStatus}</th>
           <th>{tc.total}</th>
           <th style={{ color: '#10b981' }}>{tc.available}</th>
           <th style={{ color: '#94a3b8' }}>{tc.used}</th>
@@ -3388,12 +3402,17 @@ function ChipBatchesPanel({ batches, models, onRefresh }) {
           <th></th>
         </tr></thead>
         <tbody>
-          {batches.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.chipBatches}</td></tr>}
+          {batches.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.chipBatches}</td></tr>}
           {batches.map(b => (
             <tr key={b.id}>
               <td style={{ color: '#94a3b8', fontSize: 11 }}>{b.id}</td>
               <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{b.prefix}</td>
               <td>{b.model}</td>
+              <td>
+                <span style={{ fontSize: 11, color: b.status === 'active' ? '#10b981' : b.status === 'recalled' ? '#ef4444' : '#94a3b8' }}>
+                  {b.status === 'active' ? tc.statusActive : b.status === 'recalled' ? tc.statusRecalled : tc.statusInactive}
+                </span>
+              </td>
               <td>{b.quantity}</td>
               <td style={{ color: '#10b981' }}>{b.available}</td>
               <td style={{ color: '#94a3b8' }}>{b.used}</td>

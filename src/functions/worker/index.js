@@ -2105,7 +2105,7 @@ async function handleDeleteKinoDevice(id) {
 async function handleGetKinoChipBatches() {
     try {
         const result = await pool.query(`
-            SELECT b.id, b.prefix, b.model, b.quantity, b.notes, b.created_at,
+            SELECT b.id, b.prefix, b.model, b.quantity, b.status, b.notes, b.created_at,
                    COUNT(c.id)                                          AS total_chips,
                    COUNT(CASE WHEN c.status = 'available' THEN 1 END)  AS available,
                    COUNT(CASE WHEN c.status = 'used'      THEN 1 END)  AS used,
@@ -2192,11 +2192,19 @@ async function handlePostKinoChipBatch(body) {
 }
 
 async function handlePutKinoChipBatch(id, body) {
-    const { model, notes } = body;
+    const { model, notes, status } = body;
+    const validStatuses = ['active', 'inactive', 'recalled'];
+    if (status !== undefined && !validStatuses.includes(status)) {
+        return { success: false, error: `status must be one of: ${validStatuses.join(', ')}` };
+    }
     try {
         await pool.query(
-            `UPDATE kino_chip_batches SET model = COALESCE($1, model), notes = $2 WHERE id = $3`,
-            [model || null, notes ?? null, parseInt(id)]
+            `UPDATE kino_chip_batches
+             SET model  = COALESCE($1, model),
+                 notes  = $2,
+                 status = COALESCE($3, status)
+             WHERE id = $4`,
+            [model || null, notes ?? null, status || null, parseInt(id)]
         );
         return { success: true };
     } catch (err) {
@@ -2349,6 +2357,18 @@ async function handleDeleteKinoChipModel(code) {
 
 async function handleGetKinoChip(chip_id) {
     if (!chip_id) throw new Error('chip_id is required');
+
+    const batchCheck = await pool.query(
+        `SELECT kb.status AS batch_status
+         FROM kino_chips kc
+         JOIN kino_chip_batches kb ON kb.id = kc.batch_id
+         WHERE kc.chip_code = $1`,
+        [chip_id]
+    );
+    if (batchCheck.rows.length === 0 || batchCheck.rows[0].batch_status !== 'active') {
+        return { found: false };
+    }
+
     const result = await pool.query(
         `SELECT s.id, s.user_id, s.scan_status, u.nickname, u.birth_date, u.gender,
                 cb.model,
@@ -2385,6 +2405,17 @@ async function handlePostKinoScan(body) {
     const { openid, chip_id } = body;
     if (!openid) throw new Error('openid is required');
     if (!chip_id) throw new Error('chip_id is required');
+
+    const batchCheck = await pool.query(
+        `SELECT kb.status AS batch_status
+         FROM kino_chips kc
+         JOIN kino_chip_batches kb ON kb.id = kc.batch_id
+         WHERE kc.chip_code = $1`,
+        [chip_id]
+    );
+    if (batchCheck.rows.length === 0 || batchCheck.rows[0].batch_status !== 'active') {
+        return { success: false, status: 'invalid_chip' };
+    }
 
     const userResult = await pool.query(
         'SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1',

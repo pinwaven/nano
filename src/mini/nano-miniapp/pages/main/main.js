@@ -907,10 +907,6 @@ Page({
       onlyFromCamera: false,
       success: async (scanRes) => {
         const chip_id = scanRes.result
-        if (!chip_id.startsWith('KNC')) {
-          wx.showToast({ title: t.kinoScanInvalidChip, icon: 'none', duration: 2500 })
-          return
-        }
         this.setData({ kinoSimStatus: 'analyzing' })
         try {
           const chipRes = await this._req(`${BASE}/api/kino-chip?chip_id=${encodeURIComponent(chip_id)}`)
@@ -1282,16 +1278,14 @@ Page({
         const chip_id = res.result
         this.setData({ kinoScanPending: false })
         this._addMsg('user', chip_id, true)
-        if (!chip_id.startsWith('KNC')) {
-          this._addMsg('ai', t.kinoScanInvalidChip, true)
-          return
-        }
         this.setData({ typing: true })
         try {
           const scanRes = await this._req(`${BASE}/api/kino-scan`, 'POST', { openid: user.user_id, chip_id })
           if (scanRes.statusCode !== 200) throw new Error('server error')
           const status = scanRes.data?.status
-          if (status === 'already_linked') {
+          if (status === 'invalid_chip') {
+            this._addMsg('ai', t.kinoScanInvalidChip, true)
+          } else if (status === 'already_linked') {
             this._addMsg('ai', t.kinoScanAlreadyLinked, true)
           } else if (status === 'used') {
             this._addMsg('ai', t.kinoScanUsed, true)
