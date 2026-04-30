@@ -2155,7 +2155,7 @@ async function handlePostKinoChipBatch(body) {
     if (!qty || qty < 1 || qty > 9999) return { success: false, error: 'quantity must be 1–9999' };
 
     const cleanPrefix = prefix.trim().toUpperCase();
-    if (!/^KNC\d{8}$/.test(cleanPrefix)) return { success: false, error: 'prefix must be KNC followed by 8 digits' };
+    if (!/^[A-Z0-9]{3,20}$/.test(cleanPrefix)) return { success: false, error: 'prefix must be 3–20 uppercase letters/digits' };
     const pad = 4;
     const client = await pool.connect();
     try {

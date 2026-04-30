@@ -211,7 +211,7 @@ const T = {
     },
     addBatch: 'Add Batch', countBatch: (n) => `${n} batch${n !== 1 ? 'es' : ''}`,
     chips: {
-      prefix: 'Prefix *', prefixHint: 'Auto-uppercased, e.g. KC24A',
+      prefix: 'Prefix *', prefixHint: 'Auto-uppercased, e.g. KNC12345678 or MVNS0725122201',
       model: 'Model *', modelPlaceholder: 'e.g. K1, S2',
       quantity: 'Quantity *', quantityHint: 'Max 10,000',
       notes: 'Notes',
@@ -307,7 +307,7 @@ const T = {
     count: (n) => `共 ${n} 位用户`,
     addBatch: '新建批次', countBatch: (n) => `共 ${n} 批次`,
     chips: {
-      prefix: '前缀 *', prefixHint: '自动转大写，例如 KC24A',
+      prefix: '前缀 *', prefixHint: '自动转大写，例如 KNC12345678 或 MVNS0725122201',
       model: '型号 *', modelPlaceholder: '例如 K1、S2',
       quantity: '数量 *', quantityHint: '最多 10,000',
       notes: '备注',
@@ -3042,13 +3042,12 @@ function ChipBatchModal({ batch, models, onClose, onSave }) {
   const modelOptions = activeModels.length > 0 ? activeModels : (models || []);
   const fallbackModel = modelOptions[0]?.code || 'K2';
 
-  // Auto-generate 8-digit batch number once on mount (for new batches)
   const [batchNum] = useState(() =>
     String(Math.floor(Math.random() * 100000000)).padStart(8, '0')
   );
-  const prefix = isEdit ? batch.prefix : `KNC${batchNum}`;
 
   const [form, setForm] = useState({
+    prefix:   isEdit ? batch.prefix : `KNC${batchNum}`,
     model:    batch?.model    || fallbackModel,
     quantity: batch?.quantity || '',
     notes:    batch?.notes    || '',
@@ -3058,9 +3057,12 @@ function ChipBatchModal({ batch, models, onClose, onSave }) {
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const [prefixOverride, setPrefixOverride] = useState(false);
+
+  const displayPrefix = form.prefix.trim().toUpperCase();
   const qty = parseInt(form.quantity) || 0;
   const previewEnd = qty > 0 ? String(Math.min(qty, 9999)).padStart(4, '0') : '????';
-  const preview = `${prefix}-0001  →  ${prefix}-${previewEnd}`;
+  const preview = `${displayPrefix || '???'}-0001  →  ${displayPrefix || '???'}-${previewEnd}`;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -3070,7 +3072,7 @@ function ChipBatchModal({ batch, models, onClose, onSave }) {
       if (isEdit) {
         res = await axios.put(`/api/kino-chip-batches/${batch.id}`, { model: form.model, notes: form.notes, status: form.status });
       } else {
-        res = await axios.post('/api/kino-chip-batches', { prefix, model: form.model, quantity: form.quantity, notes: form.notes });
+        res = await axios.post('/api/kino-chip-batches', { prefix: form.prefix, model: form.model, quantity: form.quantity, notes: form.notes });
       }
       if (res.data?.success === false) { setError(res.data.error || t.modal.saveFailed); return; }
       onSave();
@@ -3087,6 +3089,22 @@ function ChipBatchModal({ batch, models, onClose, onSave }) {
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
           <div className="form-grid">
+            {!isEdit && (
+              <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: '#94a3b8' }}>{tc.prefix.replace(' *', '')}</span>
+                  <code style={{ fontSize: 13, color: '#e2e8f0' }}>{displayPrefix}</code>
+                  {!prefixOverride && (
+                    <button type="button" style={{ fontSize: 11, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                      onClick={() => setPrefixOverride(true)}>Override</button>
+                  )}
+                </div>
+                {prefixOverride && (
+                  <input value={form.prefix} onChange={e => set('prefix', e.target.value.toUpperCase())}
+                         placeholder={tc.prefixHint} required style={{ fontFamily: 'monospace', marginTop: 6 }} />
+                )}
+              </div>
+            )}
             <label className="form-field">
               <span>{tc.model}</span>
               <select value={form.model} onChange={e => set('model', e.target.value)}>
