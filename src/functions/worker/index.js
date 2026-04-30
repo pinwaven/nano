@@ -1793,10 +1793,17 @@ async function handlePostBiomarkers(body) {
         const bioAgeCalc = new BioAgeCalculator();
         const bioAgeReport = bioAgeCalc.calculateBioAge(age, estimationReport.BiomarkerValues);
 
+        // Resolve serial number → integer FK (kino_device_id is INTEGER referencing kino_devices.id)
+        let deviceFk = null;
+        if (kino_device_id) {
+            const devRow = await pool.query('SELECT id FROM kino_devices WHERE serial_number = $1', [kino_device_id]);
+            if (devRow.rows.length > 0) deviceFk = devRow.rows[0].id;
+        }
+
         const finalData = { actual: test_data, estimated: estimationReport.BiomarkerValues, context: estimationReport.ClinicalContext, bioage_profile: bioAgeReport };
         const biomarkerResult = await pool.query(
             'INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at, kino_device_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-            [user_id, test_type, JSON.stringify(finalData), bioAgeReport.BioAge, tested_at || new Date().toISOString(), kino_device_id || null]
+            [user_id, test_type, JSON.stringify(finalData), bioAgeReport.BioAge, tested_at || new Date().toISOString(), deviceFk]
         );
         const biomarkerId = biomarkerResult.rows[0].id;
 
