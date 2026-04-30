@@ -1447,7 +1447,7 @@ Page({
     this.setData({ typing: true })
 
     try {
-      await this._req(`${BASE}/api/chat`, 'POST', {
+      await this._req(`${BASE}/api/biomarkers`, 'POST', {
         openid: user.user_id,
         test_type: 'body_composition',
         test_data: { height: obHeight, weight: obWeight },
