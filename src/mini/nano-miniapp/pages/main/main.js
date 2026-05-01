@@ -2043,6 +2043,49 @@ Page({
     }
   },
 
+  handleHealthChooseAvatar(e) {
+    const avatarUrl = e.detail?.avatarUrl
+    if (!avatarUrl) return
+    this.setData({ avatarUpdating: true })
+    const { user } = this.data
+    const upload = (localPath) => {
+      this._req(`${BASE}/api/oss/presign?type=avatar&filename=avatar.jpg&category=users`, 'GET').then(presignRes => {
+        const { put_url, get_url } = presignRes.data || {}
+        if (!put_url) { this.setData({ avatarUpdating: false }); return }
+        wx.getFileSystemManager().readFile({
+          filePath: localPath,
+          success: (fileRes) => {
+            wx.request({
+              url: put_url,
+              method: 'PUT',
+              data: fileRes.data,
+              header: { 'Content-Type': 'application/octet-stream' },
+              responseType: 'text',
+              success: () => {
+                this._saveUser(user, { avatar_url: get_url }).then(() => {
+                  this._updateUser({ ...user, avatar_url: get_url })
+                }).catch(() => {}).finally(() => {
+                  this.setData({ avatarUpdating: false })
+                })
+              },
+              fail: () => this.setData({ avatarUpdating: false }),
+            })
+          },
+          fail: () => this.setData({ avatarUpdating: false }),
+        })
+      }).catch(() => this.setData({ avatarUpdating: false }))
+    }
+    if (avatarUrl.startsWith('http')) {
+      wx.downloadFile({
+        url: avatarUrl,
+        success: (res) => upload(res.tempFilePath),
+        fail: () => this.setData({ avatarUpdating: false }),
+      })
+    } else {
+      upload(avatarUrl)
+    }
+  },
+
   handleGuestPhone(e) {
     const { code, errMsg } = e.detail
     if (errMsg !== 'getPhoneNumber:ok' || !code) return

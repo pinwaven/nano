@@ -295,11 +295,15 @@
             <view class="health-hero-bg"></view>
 
             <!-- Avatar -->
-            <view class="health-avatar-wrap">
-              <image wx:if="{{user.avatar_url}}" class="health-avatar-img" src="{{user.avatar_url}}" mode="aspectFill" />
-              <view wx:else class="health-avatar-placeholder">
-                <text class="health-avatar-letter">{{userAvatarLetter}}</text>
+            <view class="health-avatar-container">
+              <view class="health-avatar-wrap">
+                <image wx:if="{{user.avatar_url}}" class="health-avatar-img" src="{{user.avatar_url}}" mode="aspectFill" />
+                <view wx:else class="health-avatar-placeholder">
+                  <text class="health-avatar-letter">{{userAvatarLetter}}</text>
+                </view>
               </view>
+              <button class="health-avatar-btn" open-type="chooseAvatar" bindchooseavatar="handleHealthChooseAvatar"></button>
+              <view wx:if="{{avatarUpdating}}" class="health-avatar-ring"></view>
             </view>
 
             <view wx:if="{{bAge || cAge}}" class="bio-row">
