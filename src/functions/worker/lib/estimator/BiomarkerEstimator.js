@@ -1,13 +1,12 @@
 'use strict';
 
+const { TAG_REGISTRY, normalizeTag } = require('./tagRegistry');
+
 /**
- * Inflammaging Estimation Engine (Stochastic Version v2)
+ * Inflammaging Estimation Engine (Stochastic Version v3)
  * -----------------------------------------------------------
- * A computational model to estimate key biomarkers of aging
- * based on chronological age.
- *
- * UPDATE v2: Replaced HbA1c with Glycated Albumin (GA) to
- * provide a more sensitive, shorter-term metabolic metric.
+ * v2: Replaced HbA1c with Glycated Albumin (GA).
+ * v3: Tag-driven adjustments via tagRegistry; seeded reproducible noise.
  *
  * Sources:
  * - Inflammatory Aging Quantitative Assessment System
@@ -17,18 +16,36 @@
  * -----------------------------------------------------------
  */
 class BiomarkerEstimator {
-  constructor(chronologicalAge, testResults = {}, biometrics = {}, tags = []) {
+  constructor(chronologicalAge, testResults = {}, biometrics = {}, tags = [], options = {}) {
     this.age = Math.max(20, Math.min(100, chronologicalAge));
     this.estimates = {};
     this.testResults = { ...testResults };
     this.biometrics = { ...biometrics };
-    this.tags = [...tags];
+    this.tags = tags.map(normalizeTag).filter(t => TAG_REGISTRY[t]);
     this.referenceData = {};
+    this.rand = options.seed ? mulberry32(hashSeed(options.seed)) : Math.random;
+  }
+
+  applyTagAdjustments(biomarkerKey, value) {
+    for (const tag of this.tags) {
+      const rule = TAG_REGISTRY[tag][biomarkerKey];
+      if (!rule) continue;
+      const [op, n] = rule;
+      value = op === '*' ? value * n : value + n;
+    }
+    return value;
   }
 
   applyBiologicalNoise(value, variancePercent) {
-    const noiseFactor = 1 + (Math.random() * (variancePercent * 2) - variancePercent);
-    return value * noiseFactor;
+    // Box-Muller normal noise; variancePercent ≈ 3σ (99.7% within ±variance).
+    let u = 0, v = 0;
+    while (u === 0) u = this.rand();
+    while (v === 0) v = this.rand();
+    const num = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    const stdDev = variancePercent / 3;
+    const noiseMultiplier = 1 + (num * stdDev);
+    const cappedMultiplier = Math.max(1 - variancePercent, Math.min(1 + variancePercent, noiseMultiplier));
+    return value * cappedMultiplier;
   }
 
   runEstimation() {
@@ -53,6 +70,7 @@ class BiomarkerEstimator {
       if (bmi >= 25) val *= 1.1;
       if (bmi >= 30) val *= 1.2;
     }
+    val = this.applyTagAdjustments('GDF15', val);
     val = this.applyBiologicalNoise(val, 0.25);
     this.estimates.gdf15 = Math.round(val);
     this.referenceData.gdf15 = 'pg/mL';
@@ -66,6 +84,7 @@ class BiomarkerEstimator {
     }
     let val = 0.5;
     if (this.age > 30) val += Math.pow(this.age - 30, 2.0) / 450;
+    val = this.applyTagAdjustments('IL6', val);
     val = this.applyBiologicalNoise(val, 0.30);
     val = Math.max(0.1, val);
     this.estimates.il6 = parseFloat(val.toFixed(2));
@@ -81,6 +100,7 @@ class BiomarkerEstimator {
     const slope = (3.0 - 1.2) / 60;
     let val = -0.1 + slope * this.age;
     if (this.age > 65) val *= 1.1;
+    val = this.applyTagAdjustments('hsCRP', val);
     val = this.applyBiologicalNoise(val, 0.20);
     this.estimates.hscrp = parseFloat(val.toFixed(2));
     this.referenceData.hscrp = 'mg/L';
@@ -98,8 +118,7 @@ class BiomarkerEstimator {
       if (bmi >= 25) val += 0.5;
       if (bmi >= 30) val += 1.0;
     }
-    if (this.tags.includes('糖尿病前期')) val += 1.0;
-    else if (this.tags.includes('糖尿病')) val += 2.0;
+    val = this.applyTagAdjustments('GA', val);
     val = this.applyBiologicalNoise(val, 0.05);
     this.estimates.ga = parseFloat(val.toFixed(1));
     this.referenceData.ga = '%';
@@ -119,6 +138,7 @@ class BiomarkerEstimator {
     } else {
       val += (this.age - 20) * 0.002;
     }
+    val = this.applyTagAdjustments('CystatinC', val);
     val = this.applyBiologicalNoise(val, 0.03);
     this.estimates.cystatinC = parseFloat(val.toFixed(2));
     this.referenceData.cystatinC = 'mg/L';
@@ -131,6 +151,7 @@ class BiomarkerEstimator {
       return;
     }
     let val = 1.0 + (this.age - 20) * (2.0 / 60);
+    val = this.applyTagAdjustments('CD38', val);
     val = this.applyBiologicalNoise(val, 0.15);
     this.estimates.cd38 = parseFloat(val.toFixed(1));
     this.referenceData.cd38 = 'xBaseline';
@@ -157,6 +178,7 @@ class BiomarkerEstimator {
         CD38: `${this.estimates.cd38} ${this.referenceData.cd38}`,
       },
       ClinicalContext: this.generateContext(),
+      AppliedTags: [...this.tags],
     };
   }
 
@@ -165,6 +187,25 @@ class BiomarkerEstimator {
     if (this.age < 60) return 'Phase: Maintenance Abandonment. Onset of Inflammaging.';
     return 'Phase: Clinical Senescence. High risk of SASP-driven pathology.';
   }
+}
+
+function hashSeed(str) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(a) {
+  return function () {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 module.exports = { BiomarkerEstimator };

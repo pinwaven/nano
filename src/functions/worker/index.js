@@ -21,6 +21,7 @@ async function getWxAccessToken() {
 }
 const { getNowShanghai, calculateAge } = require('./lib/time-utils');
 const { BiomarkerEstimator } = require('./lib/estimator/BiomarkerEstimator');
+const { deriveTags } = require('./lib/estimator/tagDerivation');
 const { BioAgeCalculator } = require('./lib/bioage/BioAgeCalculator');
 const { runWorkflow: runFirstReportWorkflow } = require('./lib/reports/workflow');
 const OpenAI = require('openai');
@@ -1817,6 +1818,78 @@ async function resolveOrUpsertUser(body) {
     return userResult.rows[0];
 }
 
+// Fetch the structured context that drives tag derivation: prior kino_chip estimates,
+// recent body_composition entries, and 14-day per-pathway dot-compliance.
+// Pathway keys returned use the canonical sub-age code keys (CellularAge, MetabolicAge, ...).
+async function fetchTagDerivationContext(user_id) {
+    const PATHWAY_DB_TO_CODE = {
+        'Cellular Age':       'CellularAge',
+        'Metabolic Age':      'MetabolicAge',
+        'Micro-Vascular Age': 'MicroVascularAge',
+        'Resilience Age':     'ResilienceAge',
+    };
+    const ctx = { history: [], weightHistory: [], compliance: {}, selfReported: [] };
+
+    try {
+        const r = await pool.query(
+            `SELECT data, tested_at FROM biomarkers
+             WHERE user_id = $1 AND test_type = 'kino_chip'
+             ORDER BY tested_at DESC LIMIT 5`,
+            [user_id]
+        );
+        ctx.history = r.rows.map(row => {
+            const d = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            return { tested_at: row.tested_at, biomarkers: (d && (d.estimated || d.actual)) || {} };
+        });
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'fetchTagDerivationContext.history failed', error: err.message }));
+    }
+
+    try {
+        const r = await pool.query(
+            `SELECT data, tested_at FROM biomarkers
+             WHERE user_id = $1 AND test_type = 'body_composition'
+             ORDER BY tested_at DESC LIMIT 10`,
+            [user_id]
+        );
+        ctx.weightHistory = r.rows
+            .map(row => {
+                const d = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                const weight = d && d.actual && typeof d.actual.weight === 'number' ? d.actual.weight : null;
+                return weight === null ? null : { tested_at: row.tested_at, weight };
+            })
+            .filter(Boolean);
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'fetchTagDerivationContext.weight failed', error: err.message }));
+    }
+
+    try {
+        const r = await pool.query(
+            `SELECT d.sub_age_target AS pathway,
+                    SUM(CASE WHEN ns.is_taken THEN (kv.value)::int ELSE 0 END)::float AS taken_count,
+                    SUM((kv.value)::int)::float AS total_count
+             FROM nutrition_schedules ns
+             CROSS JOIN LATERAL jsonb_each_text(ns.recipe -> 'dots') AS kv(key, value)
+             JOIN dots d ON d.key_name = kv.key
+             WHERE ns.user_id = $1
+               AND ns.scheduled_date >= CURRENT_DATE - INTERVAL '14 days'
+               AND ns.scheduled_date <= CURRENT_DATE
+               AND d.sub_age_target IS NOT NULL
+             GROUP BY d.sub_age_target`,
+            [user_id]
+        );
+        for (const row of r.rows) {
+            const codeKey = PATHWAY_DB_TO_CODE[row.pathway];
+            if (!codeKey || !row.total_count) continue;
+            ctx.compliance[codeKey] = row.taken_count / row.total_count;
+        }
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'fetchTagDerivationContext.compliance failed', error: err.message }));
+    }
+
+    return ctx;
+}
+
 async function handlePostBiomarkers(body) {
     const { openid, test_type = 'kino_chip', test_data, tested_at, kino_device_id } = body;
     if (!test_data) throw new Error('test_data is required');
@@ -1827,7 +1900,18 @@ async function handlePostBiomarkers(body) {
     if (test_type === 'kino_chip') {
         const age = calculateAge(user.birth_date);
         const bioData = user.bio_data || {};
-        const estimator = new BiomarkerEstimator(age, test_data, { Weight: bioData.weight, Height: bioData.height });
+
+        const tagContext = await fetchTagDerivationContext(user_id);
+        const tags = deriveTags(tagContext);
+        const scanDate = (tested_at || new Date().toISOString()).slice(0, 10);
+        const seed = `${user_id}:${scanDate}`;
+        console.log(JSON.stringify({
+            level: 'INFO',
+            msg: 'biomarker_tags_derived',
+            data: { user_id, tags, compliance: tagContext.compliance, history_count: tagContext.history.length, weight_count: tagContext.weightHistory.length }
+        }));
+
+        const estimator = new BiomarkerEstimator(age, test_data, { Weight: bioData.weight, Height: bioData.height }, tags, { seed });
         const estimationReport = estimator.generateReport();
         const bioAgeCalc = new BioAgeCalculator();
         const bioAgeReport = bioAgeCalc.calculateBioAge(age, estimationReport.BiomarkerValues);
@@ -1839,7 +1923,7 @@ async function handlePostBiomarkers(body) {
             if (devRow.rows.length > 0) deviceFk = devRow.rows[0].id;
         }
 
-        const finalData = { actual: test_data, estimated: estimationReport.BiomarkerValues, context: estimationReport.ClinicalContext, bioage_profile: bioAgeReport };
+        const finalData = { actual: test_data, estimated: estimationReport.BiomarkerValues, context: estimationReport.ClinicalContext, bioage_profile: bioAgeReport, tags };
         const biomarkerResult = await pool.query(
             'INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at, kino_device_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
             [user_id, test_type, JSON.stringify(finalData), bioAgeReport.BioAge, tested_at || new Date().toISOString(), deviceFk]
