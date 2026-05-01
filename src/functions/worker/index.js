@@ -3173,6 +3173,59 @@ async function handleGetQuestionnaires(query) {
     }
 }
 
+async function handleGenerateQuestionnaire(body) {
+    const { topic } = body || {};
+    if (!topic || !topic.trim()) return { statusCode: 400, success: false, error: 'topic required' };
+    const systemPrompt = `You are a health questionnaire designer for a longevity wellness platform. Generate a structured health questionnaire based on the given topic.
+
+Return ONLY valid JSON with no markdown fences, no explanation, no preamble. Use this exact shape:
+{
+  "name": "Questionnaire name in English",
+  "name_zh": "问卷名称（中文）",
+  "description": "One-sentence description in English",
+  "description_zh": "一句话描述（中文）",
+  "questions": [
+    {
+      "key": "snake_case_unique_key",
+      "prompt_en": "Question text in English",
+      "prompt_zh": "问题（中文）",
+      "input_type": "text|button_select|date_picker|slider_group|multi_select",
+      "config": {}
+    }
+  ]
+}
+
+Config shape per input_type:
+- text: {}
+- button_select: {"options":[{"label":"Option","label_zh":"选项","value":"value"}]}
+- date_picker: {"mode":"date","min_date":"1900-01-01","max_date":"today"}
+- slider_group: {"sliders":[{"key":"slug","label":"Label","label_zh":"标签","unit":"unit","min":0,"max":200,"step":1,"default":70}]}
+- multi_select: {"options":[{"label":"Option","label_zh":"选项","value":"value"}]}
+
+Rules: 3–8 questions; choose input_type that best fits each question; button_select/multi_select must have 3–7 options; all text in both EN and ZH; keys must be unique snake_case.`;
+    try {
+        const llmClient = getLlmClient();
+        const model = process.env.MODEL || 'qwen3.6-plus';
+        const completion = await llmClient.chat.completions.create({
+            model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: `Topic: ${topic.trim()}` },
+            ],
+        });
+        let text = (completion.choices[0].message.content || '').trim();
+        // Strip markdown fences if present
+        text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        let generated;
+        try { generated = JSON.parse(text); }
+        catch (e) { return { statusCode: 502, success: false, error: 'LLM returned invalid JSON', raw: text.slice(0, 500) }; }
+        return { success: true, questionnaire: generated };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGenerateQuestionnaire', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
 async function handlePostQuestionnaire(body) {
     const { name, name_zh, description, description_zh, type = 'custom', channel_id, created_by } = body || {};
     if (!name) return { statusCode: 400, success: false, error: 'name required' };
@@ -3628,6 +3681,8 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/questionnaires\/(\d+)\/questions/)) {
                 const qid = path.match(/\/questionnaires\/(\d+)\/questions/)[1];
                 result = await handlePostQuestionnaireQuestion(qid, parsedBody);
+            } else if (path === '/questionnaires/generate') {
+                result = await handleGenerateQuestionnaire(parsedBody);
             } else if (path === '/questionnaires') {
                 result = await handlePostQuestionnaire(parsedBody);
             } else if (path === '/questionnaire-responses') {

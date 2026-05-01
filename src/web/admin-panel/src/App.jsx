@@ -3879,6 +3879,136 @@ function TicketImageLightbox({ ossKey, onClose }) {
 const INPUT_TYPES = ['text', 'button_select', 'date_picker', 'slider_group', 'multi_select'];
 const SAVE_TARGETS = ['user_field', 'bio_data_field', 'biomarker'];
 
+function GenerateQuestionnaireModal({ channels, onClose, onSave }) {
+  const [topic, setTopic] = useState('');
+  const [channelId, setChannelId] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState('');
+
+  const generate = async () => {
+    if (!topic.trim()) return;
+    setGenerating(true); setError(''); setPreview(null);
+    try {
+      const res = await axios.post('/api/questionnaires/generate', { topic: topic.trim() });
+      if (res.data.success) setPreview(res.data.questionnaire);
+      else setError(res.data.error || 'Generation failed');
+    } catch (e) { setError(e.response?.data?.error || e.message); }
+    finally { setGenerating(false); }
+  };
+
+  const create = async () => {
+    if (!preview) return;
+    setSaving(true); setError('');
+    try {
+      const qRes = await axios.post('/api/questionnaires', {
+        name: preview.name,
+        name_zh: preview.name_zh || null,
+        description: preview.description || null,
+        description_zh: preview.description_zh || null,
+        type: 'custom',
+        channel_id: channelId === '' ? null : parseInt(channelId),
+      });
+      const qId = qRes.data.questionnaire.id;
+      for (let i = 0; i < (preview.questions || []).length; i++) {
+        const q = preview.questions[i];
+        await axios.post(`/api/questionnaires/${qId}/questions`, {
+          key: q.key,
+          sort_order: i,
+          input_type: q.input_type,
+          prompt_zh: q.prompt_zh || '',
+          prompt_en: q.prompt_en || '',
+          config: q.config || {},
+          completion_check: {},
+        });
+      }
+      onSave();
+    } catch (e) { setError(e.response?.data?.error || e.message); }
+    finally { setSaving(false); }
+  };
+
+  const INPUT_TYPE_COLOR = { text: '#6366f1', button_select: '#0ea5e9', date_picker: '#f59e0b', slider_group: '#10b981', multi_select: '#8b5cf6' };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 600 }}>
+        <div className="modal-header">
+          <h3>✨ Generate Questionnaire with AI</h3>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          {error && <div className="error-banner">{error}</div>}
+          <label>Describe the questionnaire topic</label>
+          <textarea
+            className="form-input"
+            rows={3}
+            placeholder="e.g. Sleep quality and recovery habits for longevity-focused users"
+            value={topic}
+            onChange={e => setTopic(e.target.value)}
+            disabled={generating || saving}
+            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) generate(); }}
+          />
+          <button className="btn-primary" onClick={generate} disabled={generating || saving || !topic.trim()} style={{ marginTop: 8 }}>
+            {generating ? 'Generating…' : '✨ Generate'}
+          </button>
+
+          {preview && (
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #1e293b' }}>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>
+                  {preview.name}
+                  {preview.name_zh && <span style={{ color: '#64748b', fontWeight: 400, marginLeft: 8, fontSize: 13 }}>{preview.name_zh}</span>}
+                </div>
+                {preview.description && <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>{preview.description}</div>}
+              </div>
+
+              <label>Channel</label>
+              <select className="form-input" value={channelId} onChange={e => setChannelId(e.target.value)}>
+                <option value="">Global (all channels)</option>
+                {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+
+              <div style={{ color: '#64748b', fontSize: 11, margin: '14px 0 8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {(preview.questions || []).length} Questions
+              </div>
+              {(preview.questions || []).map((q, i) => (
+                <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 12px', background: '#0f172a', borderRadius: 6, marginBottom: 6, fontSize: 13 }}>
+                  <span style={{ color: '#475569', minWidth: 18, paddingTop: 1 }}>{i + 1}.</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ marginBottom: 2 }}>{q.prompt_en}</div>
+                    <div style={{ color: '#64748b', fontSize: 12 }}>{q.prompt_zh}</div>
+                  </div>
+                  <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: (INPUT_TYPE_COLOR[q.input_type] || '#475569') + '22', color: INPUT_TYPE_COLOR[q.input_type] || '#94a3b8', alignSelf: 'flex-start', whiteSpace: 'nowrap' }}>
+                    {q.input_type}
+                  </span>
+                </div>
+              ))}
+
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 12 }}>
+                Review the preview above. Click Create to save this questionnaire and all its questions.
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          {!preview && (
+            <button className="btn-primary" onClick={generate} disabled={generating || !topic.trim()}>
+              {generating ? 'Generating…' : '✨ Generate'}
+            </button>
+          )}
+          {preview && (
+            <button className="btn-primary" onClick={create} disabled={saving}>
+              {saving ? 'Creating…' : 'Create Questionnaire'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function QuestionnaireModal({ questionnaire, channels, onClose, onSave }) {
   const isEdit = !!questionnaire;
   const [form, setForm] = useState({
@@ -4264,9 +4394,14 @@ function QuestionnairesTab({ channels, users, coaches }) {
         <div className="card">
           <div className="table-toolbar">
             <span style={{ fontWeight: 600 }}>Questionnaires ({questionnaires.length})</span>
-            <button className="btn-primary" onClick={() => setModal({ type: 'new-questionnaire' })}>
-              <Plus size={14} /> New Questionnaire
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn-secondary" onClick={() => setModal({ type: 'generate-questionnaire' })}>
+                ✨ Generate with AI
+              </button>
+              <button className="btn-primary" onClick={() => setModal({ type: 'new-questionnaire' })}>
+                <Plus size={14} /> New Questionnaire
+              </button>
+            </div>
           </div>
           {loading && <div style={{ padding: 24, textAlign: 'center', color: '#64748b' }}>Loading…</div>}
           {!loading && questionnaires.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: '#64748b' }}>No questionnaires yet.</div>}
@@ -4375,6 +4510,9 @@ function QuestionnairesTab({ channels, users, coaches }) {
         </div>
       )}
 
+      {modal?.type === 'generate-questionnaire' && (
+        <GenerateQuestionnaireModal channels={channels} onClose={() => setModal(null)} onSave={closeAndRefreshBuilder} />
+      )}
       {modal?.type === 'new-questionnaire' && (
         <QuestionnaireModal channels={channels} onClose={() => setModal(null)} onSave={closeAndRefreshBuilder} />
       )}
