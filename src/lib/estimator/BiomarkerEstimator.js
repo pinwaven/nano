@@ -27,8 +27,22 @@ class BiomarkerEstimator {
   }
 
   applyBiologicalNoise(value, variancePercent) {
-    const noiseFactor = 1 + (Math.random() * (variancePercent * 2) - variancePercent);
-    return value * noiseFactor;
+    // Generate normally distributed noise using Box-Muller transform
+    let u = 0, v = 0;
+    while(u === 0) u = Math.random(); // Converting [0,1) to (0,1)
+    while(v === 0) v = Math.random();
+    let num = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    
+    // num is standard normal (mean=0, stdDev=1).
+    // We treat variancePercent as roughly 3 standard deviations (99.7% of values within variance).
+    // So stdDev = variancePercent / 3.
+    const stdDev = variancePercent / 3;
+    const noiseMultiplier = 1 + (num * stdDev);
+    
+    // Hard cap the noise to strictly prevent extreme outlier numbers from breaking formulas
+    const cappedMultiplier = Math.max(1 - variancePercent, Math.min(1 + variancePercent, noiseMultiplier));
+
+    return value * cappedMultiplier;
   }
 
   runEstimation() {
