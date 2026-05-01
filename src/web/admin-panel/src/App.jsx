@@ -194,6 +194,8 @@ const T = {
       qty: 'Qty', status: 'Status', orderedAt: 'Ordered', yes: 'Yes', no: 'No',
       pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', cancelled: 'Cancelled',
+      image: 'Image', uploadImage: 'Click to upload image (PNG / JPG)',
+      uploading: 'Uploading…', uploadFailed: 'Image upload failed', removeImage: 'Remove image',
     },
     invites: { active: 'Active', deactivated: 'Deactivated', unlimited: 'Unlimited' },
     rewards: {
@@ -428,6 +430,8 @@ const T = {
       qty: '数量', status: '状态', orderedAt: '下单时间', yes: '是', no: '否',
       pending: '待处理', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', cancelled: '已取消',
+      image: '图片', uploadImage: '点击上传图片（PNG / JPG）',
+      uploading: '上传中…', uploadFailed: '图片上传失败', removeImage: '移除图片',
     },
     invites: { active: '有效', deactivated: '已停用', unlimited: '不限' },
     rewards: {
@@ -1479,7 +1483,7 @@ function DotsTab({ dots, onRefresh }) {
 const EMPTY_ITEM = {
   key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '',
   unit_en: '', unit_zh: '', price_cny: '', price_usd: '',
-  tag: '', sort_order: 0, active: true,
+  tag: '', sort_order: 0, active: true, image_url: '',
 };
 
 function StoreItemModal({ item, onClose, onSave }) {
@@ -1490,11 +1494,32 @@ function StoreItemModal({ item, onClose, onSave }) {
         desc_en: item.desc_en || '', desc_zh: item.desc_zh || '',
         unit_en: item.unit_en || '', unit_zh: item.unit_zh || '',
         price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '',
-        tag: item.tag || '', sort_order: item.sort_order ?? 0, active: item.active !== false }
+        tag: item.tag || '', sort_order: item.sort_order ?? 0, active: item.active !== false,
+        image_url: item.image_url || '' }
     : { ...EMPTY_ITEM });
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleImagePick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true); setUploadProgress(0); setError('');
+    try {
+      const presignRes = await axios.get('/api/oss/presign', {
+        params: { type: 'image', filename: file.name, category: 'store' },
+      });
+      if (!presignRes.data.success) throw new Error(presignRes.data.error || t.store.uploadFailed);
+      const { url, get_url } = presignRes.data;
+      await uploadToOSS(url, file, setUploadProgress);
+      set('image_url', get_url);
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || t.store.uploadFailed);
+    } finally { setUploading(false); }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -1579,11 +1604,43 @@ function StoreItemModal({ item, onClose, onSave }) {
                 <ChevronDown size={11} className="select-chevron" />
               </div>
             </label>
+
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span className="form-label-text">{t.store.image}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginTop: 6 }}>
+                {form.image_url ? (
+                  <div style={{ position: 'relative', flexShrink: 0 }}>
+                    <img src={form.image_url} alt=""
+                         style={{ width: 80, height: 80, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(99,117,236,0.3)' }} />
+                    <button type="button" className="icon-btn" title={t.store.removeImage}
+                            onClick={() => set('image_url', '')}
+                            style={{ position: 'absolute', top: -6, right: -6, background: '#0F2540', border: '1px solid rgba(99,117,236,0.4)', borderRadius: '50%', width: 22, height: 22, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <X size={12} />
+                    </button>
+                  </div>
+                ) : null}
+                <label className="upload-zone" style={{ flex: 1, minHeight: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: uploading ? 'wait' : 'pointer', flexDirection: 'column', gap: 6 }}>
+                  <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" style={{ display: 'none' }} onChange={handleImagePick} disabled={uploading} />
+                  {uploading ? (
+                    <>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>{t.store.uploading}</span>
+                      <div className="upload-progress" style={{ width: '80%' }}>
+                        <div className="upload-progress-bar" style={{ width: `${uploadProgress}%` }} />
+                      </div>
+                    </>
+                  ) : (
+                    <span className="upload-zone-hint" style={{ textAlign: 'center' }}>
+                      {form.image_url ? '↺ ' : ''}{t.store.uploadImage}
+                    </span>
+                  )}
+                </label>
+              </div>
+            </div>
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
-            <button type="submit" className="btn-primary" disabled={busy}>
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={uploading}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy || uploading}>
               <Check size={14} />{busy ? t.modal.saving : t.modal.save}
             </button>
           </div>
@@ -1683,6 +1740,7 @@ function StoreTab({ storeItems, orders, onRefresh }) {
           <table className="data-table">
             <thead>
               <tr>
+                <th>{t.store.image}</th>
                 <th>{t.table.key}</th>
                 <th>{t.table.nameEn}</th>
                 <th>{t.table.nameZh}</th>
@@ -1694,9 +1752,15 @@ function StoreTab({ storeItems, orders, onRefresh }) {
               </tr>
             </thead>
             <tbody>
-              {storeItems.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.store}</td></tr>}
+              {storeItems.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.store}</td></tr>}
               {storeItems.map(item => (
                 <tr key={item.id}>
+                  <td>
+                    {item.image_url
+                      ? <img src={item.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', border: '1px solid rgba(99,117,236,0.25)', display: 'block' }} />
+                      : <div style={{ width: 40, height: 40, borderRadius: 6, background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ImageIcon size={16} style={{ color: '#475569' }} /></div>
+                    }
+                  </td>
                   <td><code className="code-tag">{item.key_name}</code></td>
                   <td className="bold">{fmt(item.name_en)}</td>
                   <td className="muted">{fmt(item.name_zh)}</td>

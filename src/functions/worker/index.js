@@ -272,7 +272,7 @@ async function handleGetStoreItems(query = {}) {
         const showAll = query.all === 'true';
         const result = await pool.query(
             `SELECT id, key_name, name_zh, name_en, desc_zh, desc_en,
-                    unit_zh, unit_en, price_cny, price_usd, tag, sort_order, active
+                    unit_zh, unit_en, price_cny, price_usd, tag, sort_order, active, image_url
              FROM store_items
              ${showAll ? '' : 'WHERE active = TRUE'}
              ORDER BY sort_order ASC, created_at ASC`
@@ -323,17 +323,17 @@ async function handleGetMyOrders(openid) {
 }
 
 async function handlePostStoreItem(body) {
-    const { key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active } = body;
+    const { key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url } = body;
     if (!key_name) return { success: false, error: 'key_name is required', statusCode: 400 };
     if (!name_en)  return { success: false, error: 'name_en is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `INSERT INTO store_items (key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+            `INSERT INTO store_items (key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
             [key_name, name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
              parseFloat(price_cny) || 0, parseFloat(price_usd) || 0,
-             tag || null, parseInt(sort_order) || 0, active !== false]
+             tag || null, parseInt(sort_order) || 0, active !== false, image_url || null]
         );
         return { success: true, id: result.rows[0].id };
     } catch (err) {
@@ -342,16 +342,18 @@ async function handlePostStoreItem(body) {
 }
 
 async function handlePutStoreItem(itemId, body) {
-    const { name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active } = body;
+    const { name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query(
             `UPDATE store_items SET name_en=$1, name_zh=$2, desc_en=$3, desc_zh=$4,
-             unit_en=$5, unit_zh=$6, price_cny=$7, price_usd=$8, tag=$9, sort_order=$10, active=$11
-             WHERE id=$12`,
+             unit_en=$5, unit_zh=$6, price_cny=$7, price_usd=$8, tag=$9, sort_order=$10, active=$11,
+             image_url=$12
+             WHERE id=$13`,
             [name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
              parseFloat(price_cny), parseFloat(price_usd),
-             tag || null, parseInt(sort_order) || 0, active !== false, itemId]
+             tag || null, parseInt(sort_order) || 0, active !== false,
+             image_url || null, itemId]
         );
         return { success: true };
     } catch (err) {
