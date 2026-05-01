@@ -231,13 +231,13 @@
       <view wx:if="{{obStep === 'done'}}" class="input-container">
         <view wx:if="{{toolboxOpen}}" class="toolbox-panel">
           <view class="toolbox-grid">
-            <view class="tool-item" bindtap="handleToolAction" data-action="formula_dots">
-              <text class="tool-item-icon">◉</text>
-              <text class="tool-item-label">{{t.toolFormulaDots}}</text>
-            </view>
             <view class="tool-item" bindtap="handleToolAction" data-action="test_chip">
               <text class="tool-item-icon">⬡</text>
               <text class="tool-item-label">{{t.toolTestChip}}</text>
+            </view>
+            <view class="tool-item" bindtap="handleToolAction" data-action="formula_dots">
+              <text class="tool-item-icon">◉</text>
+              <text class="tool-item-label">{{t.toolFormulaDots}}</text>
             </view>
             <view class="tool-item" bindtap="handleToolAction" data-action="health_advice">
               <text class="tool-item-icon">♥</text>
