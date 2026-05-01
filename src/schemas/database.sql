@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS dots (
     ingredients JSONB, -- English Payload Breakdown
     ingredients_zh JSONB, -- Chinese Payload Breakdown
     description TEXT,
+    coating TEXT DEFAULT 'gastric', -- 'gastric' or 'enteric'
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

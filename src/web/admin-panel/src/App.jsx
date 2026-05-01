@@ -112,7 +112,7 @@ const T = {
       key: 'Key', nameEn: 'Name (EN)', nameZh: 'Name (ZH)', color: 'Color',
       type: 'Type', description: 'Description',
       unassigned: 'Unassigned', channel: 'Channel', roles: 'Roles', linkedUser: 'Linked User',
-      timing: 'Timing', group: 'Group', subAge: 'Sub-Age',
+      timing: 'Timing', coating: 'Coating', group: 'Group', subAge: 'Sub-Age',
       code: 'Code', maxUses: 'Max Uses', useCount: 'Uses', creator: 'Creator',
       serialNumber: 'Serial No.', lastUsed: 'Last Used', testCount: 'Tests', status: 'Status', notes: 'Notes',
     },
@@ -148,6 +148,7 @@ const T = {
       timing: 'Timing', timingMorning: 'Morning', timingEvening: 'Evening',
       group: 'Group', subAge: 'Sub-Age Target',
       ingredientsSummary: 'Summary',
+      coating: 'Coating', coatingGastric: 'Gastric (Stomach)', coatingEnteric: 'Enteric (Intestine)',
       ingredients: 'Ingredients', addIngredient: '+ Add Row',
       ingredientNameEn: 'EN Name', ingredientNameZh: 'ZH Name', ingredientMg: 'mg',
       cancel: 'Cancel', save: 'Save', saving: 'Saving…',
@@ -299,7 +300,7 @@ const T = {
       key: '标识', nameEn: '名称 (英)', nameZh: '名称 (中)', color: '颜色',
       type: '类型', description: '描述',
       unassigned: '未分配', channel: '渠道', roles: '角色', linkedUser: '关联用户',
-      timing: '服用时间', group: '功能分组', subAge: '目标年龄',
+      timing: '服用时间', coating: '包衣', group: '功能分组', subAge: '目标年龄',
       code: '邀请码', maxUses: '上限', useCount: '已用', creator: '创建者',
       serialNumber: '序列号', lastUsed: '最后使用', testCount: '检测次数', status: '状态', notes: '备注',
     },
@@ -381,6 +382,7 @@ const T = {
       timing: '服用时间', timingMorning: '早上', timingEvening: '晚上',
       group: '功能分组', subAge: '目标年龄',
       ingredientsSummary: '成分摘要',
+      coating: '包衣', coatingGastric: '胃溶 (胃部)', coatingEnteric: '肠溶 (肠道)',
       ingredients: '成分列表', addIngredient: '+ 添加行',
       ingredientNameEn: '英文名', ingredientNameZh: '中文名', ingredientMg: 'mg',
       cancel: '取消', save: '保存', saving: '保存中…',
@@ -842,7 +844,7 @@ function mergeIngredients(en, zh) {
 const EMPTY_DOT = {
   key_name: '', name: '', name_zh: '', color: '', color_zh: '', color_hex: '',
   group_name: GROUP_VALUES[0], sub_age_target: SUB_AGE_VALUES[0],
-  timing: 'Morning', ingredients_summary: '', description: '', is_isolate: false,
+  timing: 'Morning', coating: 'gastric', ingredients_summary: '', description: '', is_isolate: false,
   ingredients_combined: [],
 };
 
@@ -857,6 +859,7 @@ function DotModal({ dot, onClose, onSave }) {
     group_name: dot.group_name || GROUP_VALUES[0],
     sub_age_target: dot.sub_age_target || SUB_AGE_VALUES[0],
     timing: dot.timing || 'Morning',
+    coating: dot.coating || 'gastric',
     ingredients_summary: dot.ingredients_summary || '',
     description: dot.description || '',
     is_isolate: !!dot.is_isolate,
@@ -898,6 +901,7 @@ function DotModal({ dot, onClose, onSave }) {
         sub_age_target: form.sub_age_target,
         sub_age_target_zh: sIdx >= 0 ? SUB_AGE_ZH[sIdx] : form.sub_age_target,
         timing: form.timing,
+        coating: form.coating,
         ingredients_summary: form.ingredients_summary,
         description: form.description,
         is_isolate: form.is_isolate,
@@ -948,6 +952,16 @@ function DotModal({ dot, onClose, onSave }) {
                 <select value={form.timing} onChange={e => set('timing', e.target.value)} className="inline-select" style={{ width: '100%' }}>
                   <option value="Morning">{t.modal.timingMorning}</option>
                   <option value="Evening">{t.modal.timingEvening}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{t.modal.coating}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.coating} onChange={e => set('coating', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="gastric">{t.modal.coatingGastric}</option>
+                  <option value="enteric">{t.modal.coatingEnteric}</option>
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -1408,12 +1422,12 @@ function DotsTab({ dots, onRefresh }) {
           <thead>
             <tr>
               <th>{t.table.key}</th><th>{t.table.nameEn}</th><th>{t.table.nameZh}</th>
-              <th>{t.table.timing}</th><th>{t.table.group}</th><th>{t.table.subAge}</th>
+              <th>{t.table.timing}</th><th>{t.table.coating}</th><th>{t.table.group}</th><th>{t.table.subAge}</th>
               <th>{t.table.color}</th><th>{t.table.type}</th><th></th>
             </tr>
           </thead>
           <tbody>
-            {dots.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.dots}</td></tr>}
+            {dots.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.dots}</td></tr>}
             {dots.map(d => (
               <tr key={d.id}>
                 <td><code className="code-tag">{d.key_name}</code></td>
@@ -1423,6 +1437,13 @@ function DotsTab({ dots, onRefresh }) {
                   <Badge color={d.timing === 'Evening' ? '#8b5cf6' : '#f59e0b'}>
                     {d.timing === 'Evening' ? t.modal.timingEvening : t.modal.timingMorning}
                   </Badge>
+                </td>
+                <td>
+                  {d.coating === 'enteric' ? (
+                    <Badge color="#10b981">{t.modal.coatingEnteric}</Badge>
+                  ) : (
+                    <span className="muted" style={{ fontSize: 11 }}>{t.modal.coatingGastric}</span>
+                  )}
                 </td>
                 <td className="muted" style={{ fontSize: 11, maxWidth: 130 }}>{fmt(d.group_name)}</td>
                 <td className="muted" style={{ fontSize: 11 }}>{fmt(d.sub_age_target)}</td>
