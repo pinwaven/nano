@@ -294,6 +294,17 @@
           <view class="health-hero">
             <view class="health-hero-bg"></view>
 
+            <!-- Personal greeting -->
+            <view class="health-greeting">
+              <view class="health-avatar-wrap">
+                <image wx:if="{{user.avatar_url}}" class="health-avatar-img" src="{{user.avatar_url}}" mode="aspectFill" />
+                <view wx:else class="health-avatar-placeholder">
+                  <text class="health-avatar-letter">{{userAvatarLetter}}</text>
+                </view>
+              </view>
+              <text class="health-greeting-name">{{lang === 'zh' ? ('您好，' + (user.nickname || '')) : ('Hello, ' + (user.nickname || 'you'))}}</text>
+            </view>
+
             <view wx:if="{{bAge || cAge}}" class="bio-row">
               <view class="bio-chip bio-chip-primary">
                 <text class="bio-num bio-num-primary" style="color: {{bAgeColor}}">{{bAge || '—'}}</text>
@@ -846,14 +857,44 @@
       <block wx:if="{{guestSheetStep === 'phone'}}">
         <text class="guest-sheet-title">{{t.guestPhoneTitle}}</text>
         <text class="guest-sheet-desc">{{t.guestPhoneDesc}}</text>
+
+        <!-- Avatar consent row -->
         <button
-          class="guest-sheet-btn {{guestInviteBusy ? 'guest-sheet-btn-disabled' : ''}}"
+          class="consent-row {{guestAvatarDone ? 'consent-row-done' : ''}}"
+          open-type="chooseAvatar"
+          bindchooseavatar="handleGuestChooseAvatar"
+        >
+          <view class="consent-check {{guestAvatarDone ? 'consent-check-done' : ''}}">
+            <text wx:if="{{guestAvatarDone}}" class="consent-check-icon">✓</text>
+          </view>
+          <text class="consent-label">{{t.guestAvatarLabel}}</text>
+          <image wx:if="{{guestPendingAvatar}}" class="consent-avatar-preview" src="{{guestPendingAvatar}}" mode="aspectFill" />
+        </button>
+
+        <!-- Phone consent row -->
+        <button
+          class="consent-row {{guestPhoneDone ? 'consent-row-done' : ''}}"
           open-type="getPhoneNumber"
           bindgetphonenumber="handleGuestPhone"
-          disabled="{{guestInviteBusy}}"
-        ><text>{{t.guestPhoneBtn}}</text></button>
-        <view class="guest-sheet-skip" bindtap="skipGuestPhone">
-          <text>{{t.guestPhoneSkip}}</text>
+          disabled="{{guestInviteBusy || guestPhoneDone}}"
+        >
+          <view class="consent-check {{guestPhoneDone ? 'consent-check-done' : ''}}">
+            <text wx:if="{{guestPhoneDone}}" class="consent-check-icon">✓</text>
+          </view>
+          <text class="consent-label">{{t.guestPhoneLabel}}</text>
+        </button>
+
+        <!-- Continue -->
+        <view
+          class="guest-sheet-btn {{(!guestAvatarDone || !guestPhoneDone || guestInviteBusy) ? 'guest-sheet-btn-disabled' : ''}}"
+          bindtap="proceedGuestSignup"
+        >
+          <text>{{guestInviteBusy ? t.guestActivating : t.guestContinueBtn}}</text>
+        </view>
+
+        <!-- Quit -->
+        <view class="guest-sheet-skip" bindtap="cancelGuestSignup">
+          <text>{{t.guestCancelSignup}}</text>
         </view>
       </block>
 

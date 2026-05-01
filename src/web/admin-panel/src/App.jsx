@@ -267,7 +267,7 @@ const T = {
       uploading: 'Uploading…', uploadFailed: 'Upload failed',
       titleRequired: 'Title is required', fileRequired: 'File is required',
       hasVideo: 'Video', fileSize: 'Size',
-      totalCourses: 'Courses', published: 'Published', totalDocs: 'Documents',
+      totalCourses: 'Courses', totalDocs: 'Documents',
       countCourses: (n) => `${n} course${n !== 1 ? 's' : ''}`,
       countDocs: (n) => `${n} document${n !== 1 ? 's' : ''}`,
       noCourses: 'No courses yet', noDocs: 'No documents yet',
@@ -455,7 +455,7 @@ const T = {
       uploading: '上传中…', uploadFailed: '上传失败',
       titleRequired: '标题为必填项', fileRequired: '文件为必填项',
       hasVideo: '视频', fileSize: '大小',
-      totalCourses: '课程总数', published: '已发布', totalDocs: '文档总数',
+      totalCourses: '课程总数', totalDocs: '文档总数',
       countCourses: (n) => `共 ${n} 门课程`,
       countDocs: (n) => `共 ${n} 份文档`,
       noCourses: '暂无课程', noDocs: '暂无文档',
@@ -1144,9 +1144,10 @@ function UserDetailDrawer({ user, onClose }) {
       <div className="drawer" onClick={e => e.stopPropagation()}>
         <div className="drawer-header">
           <div className="drawer-title">
-            <div className="avatar" style={{ width: 32, height: 32, fontSize: 14, background: '#3b82f620', color: '#3b82f6' }}>
-              {(user.nickname || 'U')[0].toUpperCase()}
-            </div>
+            {user.avatar_url
+              ? <img src={user.avatar_url} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+              : <div className="avatar" style={{ width: 32, height: 32, fontSize: 14, background: '#3b82f620', color: '#3b82f6' }}>{(user.nickname || 'U')[0].toUpperCase()}</div>
+            }
             <span>{user.nickname || user.user_id}</span>
           </div>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
@@ -1292,9 +1293,10 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
                 <td className="muted">{u.user_id}</td>
                 <td>
                   <div className="avatar-cell">
-                    <div className="avatar" style={{ background: '#3b82f620', color: '#3b82f6' }}>
-                      {(u.nickname || 'U')[0].toUpperCase()}
-                    </div>
+                    {u.avatar_url
+                      ? <img src={u.avatar_url} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                      : <div className="avatar" style={{ background: '#3b82f620', color: '#3b82f6' }}>{(u.nickname || 'U')[0].toUpperCase()}</div>
+                    }
                     <span className="bold">{fmt(u.nickname)}</span>
                   </div>
                 </td>

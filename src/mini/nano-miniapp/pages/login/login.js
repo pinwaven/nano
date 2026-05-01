@@ -7,11 +7,13 @@ Page({
     loading: true,
     error: '',
     phoneLoading: false,
+    pendingAvatar: '',
   },
 
   _coachId: null,
   _inviteCode: null,
   _pendingLogin: null,
+  _pendingAvatarPath: '',
 
   onLoad(options) {
     if (options.coach_id) this._coachId = options.coach_id
@@ -50,6 +52,64 @@ Page({
     }
   },
 
+  handleChooseAvatar(e) {
+    const avatarUrl = e.detail?.avatarUrl
+    if (!avatarUrl) return
+    // Show immediately so the user sees feedback while uploading
+    this.setData({ pendingAvatar: avatarUrl })
+
+    const upload = (localPath) => {
+      wx.request({
+        url: `${BASE}/api/oss-presign?type=avatar&filename=avatar.jpg&category=users`,
+        method: 'GET',
+        header: { 'Authorization': `Bearer ${app.globalData.apiToken}` },
+        success: (presignRes) => {
+          const { put_url, get_url } = presignRes.data || {}
+          if (!put_url) return
+          wx.getFileSystemManager().readFile({
+            filePath: localPath,
+            success: (fileRes) => {
+              wx.request({
+                url: put_url,
+                method: 'PUT',
+                data: fileRes.data,
+                header: { 'Content-Type': 'application/octet-stream' },
+                responseType: 'text',
+                success: () => {
+                  this._pendingAvatarPath = get_url
+                  this.setData({ pendingAvatar: get_url })
+                  // Upload finished after _finishLogin already ran — update globalData + storage
+                  const gUser = app.globalData.user
+                  if (gUser && !gUser.guest && !gUser.avatar_url) {
+                    gUser.avatar_url = get_url
+                    wx.setStorageSync('nano_user', gUser)
+                    wx.request({
+                      url: `${BASE}/api/users/${gUser.user_id}`,
+                      method: 'PUT',
+                      header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
+                      data: { nickname: gUser.nickname, phone: gUser.phone, email: gUser.email,
+                              gender: gUser.gender, birth_date: gUser.birth_date, language: gUser.language,
+                              coach_id: gUser.coach_id, avatar_url: get_url },
+                    })
+                  }
+                },
+              })
+            },
+          })
+        },
+      })
+    }
+
+    if (avatarUrl.startsWith('http')) {
+      wx.downloadFile({
+        url: avatarUrl,
+        success: (res) => upload(res.tempFilePath),
+      })
+    } else {
+      upload(avatarUrl)
+    }
+  },
+
   async handleGetPhone(e) {
     const { code, errMsg } = e.detail
     if (errMsg !== 'getPhoneNumber:ok' || !code) {
@@ -81,6 +141,23 @@ Page({
     const user = data.user
     const channel = data.channel || null
     const coach = data.coach || null
+    // Use OSS URL if upload finished, otherwise the currently displayed URL as fallback.
+    // If upload is still in progress, its success callback will update main.js once main loads.
+    const avatarToSave = this._pendingAvatarPath || this.data.pendingAvatar
+    if (avatarToSave) {
+      user.avatar_url = avatarToSave
+      if (this._pendingAvatarPath) {
+        wx.request({
+          url: `${BASE}/api/users/${user.user_id}`,
+          method: 'PUT',
+          header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
+          data: { nickname: user.nickname, phone: user.phone, email: user.email,
+                  gender: user.gender, birth_date: user.birth_date, language: user.language,
+                  coach_id: user.coach_id, avatar_url: avatarToSave },
+        })
+      }
+      this._pendingAvatarPath = ''
+    }
     app.globalData.user = user
     app.globalData.channel = channel
     app.globalData.coach = coach

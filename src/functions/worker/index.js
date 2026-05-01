@@ -47,7 +47,7 @@ async function handleGetUsers() {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
-                    u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
+                    u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
                     b.bio_age, b.data as bio_data,
                     p.name as coach_name,
                     c.name as channel_name, c.logo_url as channel_logo_url,
@@ -1380,28 +1380,28 @@ async function handlePostUsers(body) {
 }
 
 async function handlePutUser(user_id, body) {
-    const { nickname, phone, email, gender, birth_date, language, coach_id, channel_id, bio_data, roles } = body;
+    const { nickname, phone, email, gender, birth_date, language, coach_id, channel_id, bio_data, roles, avatar_url } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (bio_data && roles) {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, bio_data = bio_data || $9, roles=$10 WHERE user_id=$11`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), roles, user_id]
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, bio_data = bio_data || $9, roles=$10, avatar_url=COALESCE($11, avatar_url) WHERE user_id=$12`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), roles, avatar_url || null, user_id]
             );
         } else if (bio_data) {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, bio_data = bio_data || $9 WHERE user_id=$10`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), user_id]
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, bio_data = bio_data || $9, avatar_url=COALESCE($10, avatar_url) WHERE user_id=$11`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), avatar_url || null, user_id]
             );
         } else if (roles) {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, roles=$9 WHERE user_id=$10`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, roles, user_id]
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, roles=$9, avatar_url=COALESCE($10, avatar_url) WHERE user_id=$11`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, roles, avatar_url || null, user_id]
             );
         } else {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8 WHERE user_id=$9`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, user_id]
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, avatar_url=COALESCE($9, avatar_url) WHERE user_id=$10`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, avatar_url || null, user_id]
             );
         }
         return { success: true };
@@ -1614,7 +1614,7 @@ async function handleWxLogin(body) {
     // Look up existing user — return with channel info and roles
     const existing = await pool.query(
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
+                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
                 p.name AS coach_name,
                 c.name AS channel_name, c.logo_url AS channel_logo_url
          FROM users u
@@ -1687,7 +1687,7 @@ async function handleWxLogin(body) {
     const created = await pool.query(
         `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id)
          VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5)
-         RETURNING user_id, nickname, birth_date, gender, language, phone, email, coach_id, channel_id, roles, created_at, bio_data`,
+         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, coach_id, channel_id, roles, created_at, bio_data`,
         [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null]
     );
 
@@ -1710,6 +1710,28 @@ async function handleWxLogin(body) {
     }
 
     return { success: true, new_user: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel };
+}
+
+async function handleValidateInvite(body) {
+    const { invite_code } = body;
+    if (!invite_code) return { success: false, error: 'invite_code is required' };
+
+    const invRes = await pool.query(
+        `SELECT id, channel_id FROM invitations
+         WHERE code = $1 AND is_active = TRUE AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1`,
+        [invite_code.toUpperCase()]
+    );
+    if (invRes.rows.length === 0) {
+        return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
+    }
+
+    const channelId = invRes.rows[0].channel_id;
+    let channel = null;
+    if (channelId) {
+        const chanRes = await pool.query('SELECT name, logo_url FROM channels WHERE id = $1', [channelId]);
+        if (chanRes.rows.length > 0) channel = { name: chanRes.rows[0].name, logo_url: chanRes.rows[0].logo_url };
+    }
+    return { success: true, channel };
 }
 
 async function saveChatMessage(user_id, role, content) {
@@ -2760,8 +2782,9 @@ async function handleGetOssPresign(query) {
         }
         if (!filename) return { success: false, error: 'filename is required' };
         const key = ossLib.generateKey(type || 'misc', filename, category || 'academy');
-        const url = ossLib.generatePresignedPutUrl(key, 3600);
-        return { success: true, url, key };
+        const put_url = ossLib.generatePresignedPutUrl(key, 3600);
+        const get_url = ossLib.generatePresignedGetUrl(key, 315360000); // 10 years
+        return { success: true, url: put_url, put_url, get_url, key };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -2921,6 +2944,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleAdminLogin(parsedBody);
             } else if (path === '/admin-accounts') {
                 result = await handlePostAdminAccount(parsedBody);
+            } else if (path === '/validate-invite') {
+                result = await handleValidateInvite(parsedBody);
             } else if (path === '/wx-login') {
                 result = await handleWxLogin(parsedBody);
             } else if (path === '/bind-phone') {

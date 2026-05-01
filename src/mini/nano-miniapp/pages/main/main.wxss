@@ -586,6 +586,54 @@
   pointer-events: none;
 }
 
+/* Health tab personal greeting */
+.health-greeting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+  position: relative;
+  width: 100%;
+}
+
+.health-avatar-wrap {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 3rpx solid rgba(99, 117, 236, 0.45);
+  box-shadow: 0 0 28rpx rgba(99, 117, 236, 0.22);
+  flex-shrink: 0;
+}
+
+.health-avatar-img {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 50%;
+}
+
+.health-avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  background: #0F2540;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.health-avatar-letter {
+  font-size: 44rpx;
+  font-weight: 700;
+  color: #A6C4E5;
+}
+
+.health-greeting-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: rgba(166, 196, 229, 0.85);
+  letter-spacing: 1rpx;
+}
+
 .bio-row {
   display: flex;
   gap: 20rpx;
@@ -2237,6 +2285,10 @@
 /* ── Health tab ── */
 .theme-light .health-hero         { border-bottom-color: rgba(201, 149, 106, 0.1); }
 .theme-light .health-hero-bg      { background: var(--bg-hero); }
+.theme-light .health-avatar-wrap  { border-color: rgba(201, 149, 106, 0.55); box-shadow: 0 0 28rpx rgba(201, 149, 106, 0.15); }
+.theme-light .health-avatar-placeholder { background: rgba(250, 247, 242, 0.9); }
+.theme-light .health-avatar-letter { color: var(--text-sub); }
+.theme-light .health-greeting-name { color: var(--text-sub); }
 .theme-light .bio-chip            { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.25); }
 .theme-light .bio-chip-primary    { border-color: rgba(201, 149, 106, 0.55); box-shadow: 0 0 40rpx rgba(201, 149, 106, 0.15); }
 .theme-light .bio-chip-dim        { background: rgba(250, 247, 242, 0.6); }
@@ -2366,6 +2418,58 @@
   box-shadow: 0 8rpx 40rpx rgba(99, 117, 236, 0.4);
 }
 
+/* Avatar picker (shared between login and guest sheet) */
+.avatar-pick-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.avatar-pick-btn {
+  width: 144rpx;
+  height: 144rpx;
+  border-radius: 50%;
+  padding: 0;
+  margin: 0;
+  background: rgba(99, 117, 236, 0.12);
+  border: 2rpx dashed rgba(99, 117, 236, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+button.avatar-pick-btn { line-height: 1; }
+button.avatar-pick-btn::after { border: none; }
+
+.avatar-pick-img {
+  width: 144rpx;
+  height: 144rpx;
+  border-radius: 50%;
+}
+
+.avatar-pick-default {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-pick-icon {
+  font-size: 48rpx;
+  color: rgba(99, 117, 236, 0.7);
+  font-weight: 300;
+  line-height: 1;
+}
+
+.avatar-pick-hint {
+  font-size: 22rpx;
+  color: rgba(166, 196, 229, 0.4);
+  letter-spacing: 1rpx;
+}
+
 .guest-sheet-mask {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -2434,6 +2538,58 @@ button.guest-sheet-btn::after { border: none; }
   padding: 16rpx;
   font-size: 26rpx;
   color: rgba(166, 196, 229, 0.5);
+}
+
+/* Consent checkbox rows (guest sheet phone step) */
+.consent-row {
+  width: 100%;
+  padding: 28rpx 32rpx;
+  border-radius: 24rpx;
+  background: rgba(99, 117, 236, 0.07);
+  border: 1rpx solid rgba(99, 117, 236, 0.2);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 24rpx;
+  box-sizing: border-box;
+  text-align: left;
+}
+.consent-row-done {
+  background: rgba(99, 117, 236, 0.14);
+  border-color: rgba(99, 117, 236, 0.45);
+}
+button.consent-row { line-height: 1.4; border: none; margin: 0; }
+button.consent-row::after { border: none; }
+.consent-check {
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 12rpx;
+  border: 2rpx solid rgba(99, 117, 236, 0.35);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.consent-check-done {
+  background: #6375EC;
+  border-color: #6375EC;
+}
+.consent-check-icon {
+  font-size: 26rpx;
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+}
+.consent-label {
+  font-size: 28rpx;
+  color: rgba(166, 196, 229, 0.85);
+  flex: 1;
+}
+.consent-avatar-preview {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 /* Pin input (used in guest sheet) */

@@ -16,6 +16,18 @@
   <!-- Phone binding for new invite-code users -->
   <view wx:elif="{{step === 'phone'}}" class="login-card">
     <text class="login-card-label">最后一步</text>
+
+    <!-- Avatar picker -->
+    <view class="avatar-pick-wrap">
+      <button class="avatar-pick-btn" open-type="chooseAvatar" bindchooseavatar="handleChooseAvatar">
+        <image wx:if="{{pendingAvatar}}" class="avatar-pick-img" src="{{pendingAvatar}}" mode="aspectFill" />
+        <view wx:else class="avatar-pick-default">
+          <text class="avatar-pick-icon">+</text>
+        </view>
+      </button>
+      <text class="avatar-pick-hint">点击设置头像</text>
+    </view>
+
     <text class="phone-step-desc">绑定手机号，让您的健康顾问可以随时联系到您。</text>
     <button
       class="login-btn"
