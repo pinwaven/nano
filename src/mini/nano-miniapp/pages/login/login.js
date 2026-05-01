@@ -80,7 +80,7 @@ Page({
                   this.setData({ pendingAvatar: get_url })
                   // Upload finished after _finishLogin already ran — update globalData + storage
                   const gUser = app.globalData.user
-                  if (gUser && !gUser.guest && !gUser.avatar_url) {
+                  if (gUser && !gUser.guest) {
                     gUser.avatar_url = get_url
                     wx.setStorageSync('nano_user', gUser)
                     wx.request({

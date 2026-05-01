@@ -70,6 +70,21 @@ async function handleGetUsers() {
     }
 }
 
+async function handleGetUser(user_id) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const res = await pool.query(
+            `SELECT user_id, nickname, avatar_url, phone, email, language, gender, birth_date, roles, coach_id, channel_id, created_at
+             FROM users WHERE user_id=$1`,
+            [user_id]
+        );
+        if (!res.rows.length) return { success: false, error: 'User not found' };
+        return { success: true, user: res.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleGetBiomarkers(openid) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -2916,6 +2931,9 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetAcademyLibrary();
             } else if (path.includes('/oss/presign')) {
                 result = await handleGetOssPresign(query);
+            } else if (path.match(/\/users\/([^/]+)/)) {
+                const userId = path.match(/\/users\/([^/]+)/)[1];
+                result = await handleGetUser(userId);
             } else if (path.includes('/users') || path === '/' || path === '') {
                 result = await handleGetUsers();
             } else if (path.includes('/commission-settings')) {

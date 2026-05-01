@@ -597,8 +597,8 @@
 }
 
 .health-avatar-wrap {
-  width: 120rpx;
-  height: 120rpx;
+  width: 240rpx;
+  height: 240rpx;
   border-radius: 50%;
   overflow: hidden;
   border: 3rpx solid rgba(99, 117, 236, 0.45);
@@ -607,8 +607,8 @@
 }
 
 .health-avatar-img {
-  width: 120rpx;
-  height: 120rpx;
+  width: 240rpx;
+  height: 240rpx;
   border-radius: 50%;
 }
 
@@ -622,7 +622,7 @@
 }
 
 .health-avatar-letter {
-  font-size: 44rpx;
+  font-size: 88rpx;
   font-weight: 700;
   color: #A6C4E5;
 }
@@ -2585,11 +2585,32 @@ button.consent-row::after { border: none; }
   color: rgba(166, 196, 229, 0.85);
   flex: 1;
 }
+.consent-avatar-wrap {
+  position: relative;
+  width: 56rpx;
+  height: 56rpx;
+  flex-shrink: 0;
+}
 .consent-avatar-preview {
   width: 56rpx;
   height: 56rpx;
   border-radius: 50%;
-  flex-shrink: 0;
+}
+.avatar-saving-ring {
+  position: absolute;
+  top: -6rpx;
+  left: -6rpx;
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 50%;
+  border: 4rpx solid transparent;
+  border-top-color: #6375EC;
+  border-right-color: #6375EC;
+  box-sizing: border-box;
+  animation: avatar-spin 0.8s linear infinite;
+}
+@keyframes avatar-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Pin input (used in guest sheet) */

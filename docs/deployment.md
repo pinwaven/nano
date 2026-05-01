@@ -95,6 +95,33 @@ s logs -f admin-panel --tail
 
 See [FC Logging Setup](fc-logging-setup.md) for first-time SLS provisioning.
 
+## WeChat miniapp domain configuration
+
+The miniapp makes outbound network requests to two distinct external services. Both domains must be registered in the WeChat admin console under **开发 → 开发管理 → 服务器域名**, or all requests to them will be silently blocked in production.
+
+### Required domains
+
+| 类型 | Domain | Why |
+|---|---|---|
+| request合法域名 | `nano.fros.cc` | All API calls (`wx.request` to the FC worker) |
+| request合法域名 | `waven-nano.oss-cn-shanghai.aliyuncs.com` | Presigned PUT uploads for user avatars |
+| downloadFile合法域名 | `wx.qlogo.cn` | WeChat profile picture downloads (older WeChat versions where `chooseAvatar` returns an HTTP URL instead of a local temp path) |
+
+
+### Why this matters
+
+`"urlCheck": false` is set in `src/mini/nano-miniapp/project.config.json`. This disables domain validation in the DevTools simulator, so every domain works locally. In production (any uploaded/released build), WeChat strictly enforces the whitelist — requests to unlisted domains call the `fail` callback without ever leaving the device, with no visible error.
+
+**Symptom of missing OSS domain:** `avatar_url` stays `null` in the DB after guest sign-up. The avatar preview appears in the sheet (it shows the local WeChat temp path), but the OSS upload never completes. The Continue button re-enables as if the upload succeeded, and the save step is silently skipped.
+
+### How to add domains
+
+1. Log in to [mp.weixin.qq.com](https://mp.weixin.qq.com)
+2. 开发 → 开发管理 → 服务器域名
+3. Click **修改** next to request合法域名
+4. Add each domain on its own line (scheme must be `https://`)
+5. Save — changes take effect immediately for production builds; DevTools requires a re-open
+
 ## VPC configuration
 
 All functions share the same VPC to allow internal communication between dispatcher → worker:

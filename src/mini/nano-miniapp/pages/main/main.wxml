@@ -294,25 +294,22 @@
           <view class="health-hero">
             <view class="health-hero-bg"></view>
 
-            <!-- Personal greeting -->
-            <view class="health-greeting">
-              <view class="health-avatar-wrap">
-                <image wx:if="{{user.avatar_url}}" class="health-avatar-img" src="{{user.avatar_url}}" mode="aspectFill" />
-                <view wx:else class="health-avatar-placeholder">
-                  <text class="health-avatar-letter">{{userAvatarLetter}}</text>
-                </view>
+            <!-- Avatar -->
+            <view class="health-avatar-wrap">
+              <image wx:if="{{user.avatar_url}}" class="health-avatar-img" src="{{user.avatar_url}}" mode="aspectFill" />
+              <view wx:else class="health-avatar-placeholder">
+                <text class="health-avatar-letter">{{userAvatarLetter}}</text>
               </view>
-              <text class="health-greeting-name">{{lang === 'zh' ? ('您好，' + (user.nickname || '')) : ('Hello, ' + (user.nickname || 'you'))}}</text>
             </view>
 
             <view wx:if="{{bAge || cAge}}" class="bio-row">
-              <view class="bio-chip bio-chip-primary">
-                <text class="bio-num bio-num-primary" style="color: {{bAgeColor}}">{{bAge || '—'}}</text>
-                <text class="bio-unit">{{t.bioAge}}</text>
-              </view>
               <view class="bio-chip bio-chip-dim">
                 <text class="bio-num bio-num-chrono">{{cAge || '—'}}</text>
                 <text class="bio-unit">{{t.chronoAge}}</text>
+              </view>
+              <view class="bio-chip bio-chip-primary">
+                <text class="bio-num bio-num-primary" style="color: {{bAgeColor}}">{{bAge || '—'}}</text>
+                <text class="bio-unit">{{t.bioAge}}</text>
               </view>
             </view>
 
@@ -860,15 +857,18 @@
 
         <!-- Avatar consent row -->
         <button
-          class="consent-row {{guestAvatarDone ? 'consent-row-done' : ''}}"
+          class="consent-row {{guestAvatarReady ? 'consent-row-done' : ''}}"
           open-type="chooseAvatar"
           bindchooseavatar="handleGuestChooseAvatar"
         >
-          <view class="consent-check {{guestAvatarDone ? 'consent-check-done' : ''}}">
-            <text wx:if="{{guestAvatarDone}}" class="consent-check-icon">✓</text>
+          <view class="consent-check {{guestAvatarReady ? 'consent-check-done' : ''}}">
+            <text wx:if="{{guestAvatarReady}}" class="consent-check-icon">✓</text>
           </view>
           <text class="consent-label">{{t.guestAvatarLabel}}</text>
-          <image wx:if="{{guestPendingAvatar}}" class="consent-avatar-preview" src="{{guestPendingAvatar}}" mode="aspectFill" />
+          <view wx:if="{{guestPendingAvatar}}" class="consent-avatar-wrap">
+            <image class="consent-avatar-preview" src="{{guestPendingAvatar}}" mode="aspectFill" />
+            <view wx:if="{{guestAvatarUploading || (guestAvatarReady && guestInviteBusy)}}" class="avatar-saving-ring"></view>
+          </view>
         </button>
 
         <!-- Phone consent row -->
@@ -886,7 +886,7 @@
 
         <!-- Continue -->
         <view
-          class="guest-sheet-btn {{(!guestAvatarDone || !guestPhoneDone || guestInviteBusy) ? 'guest-sheet-btn-disabled' : ''}}"
+          class="guest-sheet-btn {{(!guestAvatarReady || guestAvatarUploading || !guestPhoneDone || guestInviteBusy) ? 'guest-sheet-btn-disabled' : ''}}"
           bindtap="proceedGuestSignup"
         >
           <text>{{guestInviteBusy ? t.guestActivating : t.guestContinueBtn}}</text>

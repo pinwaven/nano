@@ -673,6 +673,8 @@ Page({
     guestSheetStep: 'invite',
     guestPendingAvatar: '',
     guestAvatarDone: false,
+    guestAvatarUploading: false,
+    guestAvatarReady: false,
     guestPhoneDone: false,
 
     // Dots
@@ -729,7 +731,7 @@ Page({
     const isSuperadmin = roles.includes('superadmin')
     const theme = user.theme || app.globalData.theme || 'dark'
     app.globalData.theme = theme
-    const userAvatarLetter = (user.nickname || 'U')[0].toUpperCase()
+    const userAvatarLetter = (user.nickname || 'U').slice(-1).toUpperCase()
     this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t: T[lang], statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest })
     if (isGuest) {
       this.setData({ messages: [{ id: 'init', role: 'ai', content: T[lang].initMsg }], obStep: null, storeLoading: true })
@@ -1539,7 +1541,7 @@ Page({
   _updateUser(updated) {
     app.globalData.user = { ...updated }
     wx.setStorageSync('nano_user', updated)
-    const userAvatarLetter = (updated.nickname || 'U')[0].toUpperCase()
+    const userAvatarLetter = (updated.nickname || 'U').slice(-1).toUpperCase()
     this.setData({ user: { ...updated }, userAvatarLetter })
   },
 
@@ -1963,7 +1965,7 @@ Page({
     this._pendingGuestAvatarUrl = ''
     this._pendingInviteCode = ''
     this._pendingPhoneCode = ''
-    this.setData({ guestSheetOpen: true, guestSheetStep: 'invite', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '', guestPendingAvatar: '', guestAvatarDone: false, guestPhoneDone: false, menuOpen: false })
+    this.setData({ guestSheetOpen: true, guestSheetStep: 'invite', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '', guestPendingAvatar: '', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, menuOpen: false })
   },
 
   closeGuestSheet() {
@@ -2005,11 +2007,11 @@ Page({
   handleGuestChooseAvatar(e) {
     const avatarUrl = e.detail?.avatarUrl
     if (!avatarUrl) return
-    this.setData({ guestPendingAvatar: avatarUrl, guestAvatarDone: true })
+    this.setData({ guestPendingAvatar: avatarUrl, guestAvatarDone: true, guestAvatarUploading: true })
     const upload = (localPath) => {
       this._req(`${BASE}/api/oss/presign?type=avatar&filename=avatar.jpg&category=users`, 'GET').then(presignRes => {
         const { put_url, get_url } = presignRes.data || {}
-        if (!put_url) return
+        if (!put_url) { this.setData({ guestAvatarUploading: false }); return }
         wx.getFileSystemManager().readFile({
           filePath: localPath,
           success: (fileRes) => {
@@ -2021,27 +2023,21 @@ Page({
               responseType: 'text',
               success: () => {
                 this._pendingGuestAvatarUrl = get_url
-                this.setData({ guestPendingAvatar: get_url })
-                // Upload finished after signup already completed — update user in place
-                if (!this.data.isGuest) {
-                  const updatedUser = { ...this.data.user, avatar_url: get_url }
-                  app.globalData.user = updatedUser
-                  wx.setStorageSync('nano_user', updatedUser)
-                  this.setData({ user: updatedUser })
-                  this._req(`${BASE}/api/users/${updatedUser.user_id}`, 'PUT', {
-                    nickname: updatedUser.nickname, phone: updatedUser.phone, email: updatedUser.email,
-                    gender: updatedUser.gender, birth_date: updatedUser.birth_date, language: updatedUser.language,
-                    coach_id: updatedUser.coach_id, avatar_url: get_url,
-                  }).catch(() => {})
-                }
+                this.setData({ guestPendingAvatar: get_url, guestAvatarUploading: false, guestAvatarReady: true })
               },
+              fail: () => this.setData({ guestAvatarUploading: false }),
             })
           },
+          fail: () => this.setData({ guestAvatarUploading: false }),
         })
-      }).catch(() => {})
+      }).catch(() => this.setData({ guestAvatarUploading: false }))
     }
     if (avatarUrl.startsWith('http')) {
-      wx.downloadFile({ url: avatarUrl, success: (res) => upload(res.tempFilePath) })
+      wx.downloadFile({
+        url: avatarUrl,
+        success: (res) => upload(res.tempFilePath),
+        fail: () => this.setData({ guestAvatarUploading: false }),
+      })
     } else {
       upload(avatarUrl)
     }
@@ -2055,8 +2051,8 @@ Page({
   },
 
   async proceedGuestSignup() {
-    const { guestAvatarDone, guestPhoneDone, guestInviteBusy, t } = this.data
-    if (!guestAvatarDone || !guestPhoneDone || guestInviteBusy) return
+    const { guestAvatarReady, guestAvatarUploading, guestPhoneDone, guestInviteBusy, t } = this.data
+    if (!guestAvatarReady || guestAvatarUploading || !guestPhoneDone || guestInviteBusy) return
     this.setData({ guestInviteBusy: true })
     try {
       const { code: wxCode } = await this._getCode()
@@ -2066,15 +2062,28 @@ Page({
         return
       }
       this._pendingGuestSignup = loginRes.data
+      const u = loginRes.data.user
       if (this._pendingPhoneCode) {
         try {
-          const u = loginRes.data.user
           const phoneRes = await this._req(`${BASE}/api/bind-phone`, 'POST', { user_id: u.user_id, code: this._pendingPhoneCode })
           if (phoneRes.data?.success && phoneRes.data.phone) {
             this._pendingGuestSignup.user = { ...u, phone: phoneRes.data.phone }
           }
         } catch (err) {}
         this._pendingPhoneCode = ''
+      }
+      if (this._pendingGuestAvatarUrl) {
+        try {
+          await this._req(`${BASE}/api/users/${u.user_id}`, 'PUT', {
+            nickname: u.nickname, phone: this._pendingGuestSignup.user.phone || u.phone,
+            email: u.email, gender: u.gender, birth_date: u.birth_date,
+            language: u.language, coach_id: u.coach_id, avatar_url: this._pendingGuestAvatarUrl,
+          })
+          const confirmedUrl = await this._pollAvatarUrl(u.user_id)
+          const finalUrl = confirmedUrl || this._pendingGuestAvatarUrl
+          this._pendingGuestSignup.user = { ...this._pendingGuestSignup.user, avatar_url: finalUrl }
+        } catch (err) {}
+        this._pendingGuestAvatarUrl = ''
       }
       this._completeGuestSignup()
     } catch (e) {
@@ -2087,7 +2096,25 @@ Page({
     this._pendingGuestAvatarUrl = ''
     this._pendingInviteCode = ''
     this._pendingPhoneCode = ''
-    this.setData({ guestSheetOpen: false, guestSheetStep: 'invite', guestAvatarDone: false, guestPhoneDone: false, guestPendingAvatar: '', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '' })
+    this.setData({ guestSheetOpen: false, guestSheetStep: 'invite', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, guestPendingAvatar: '', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '' })
+  },
+
+  _pollAvatarUrl(userId) {
+    return new Promise((resolve) => {
+      let attempts = 0
+      const poll = () => {
+        this._req(`${BASE}/api/users/${userId}`, 'GET').then(res => {
+          const url = res.data?.user?.avatar_url
+          if (url) { resolve(url); return }
+          if (++attempts < 8) setTimeout(poll, 1500)
+          else resolve(null)
+        }).catch(() => {
+          if (++attempts < 8) setTimeout(poll, 1500)
+          else resolve(null)
+        })
+      }
+      poll()
+    })
   },
 
   _completeGuestSignup() {
@@ -2097,21 +2124,6 @@ Page({
     const user = data.user
     const channel = data.channel || null
     const coach = data.coach || null
-    // Use OSS URL if upload finished, otherwise fall back to whatever is displayed.
-    // If upload is still in progress, its success callback will update user + backend once done.
-    const avatarToSave = this._pendingGuestAvatarUrl || this.data.guestPendingAvatar
-    if (avatarToSave) {
-      user.avatar_url = avatarToSave
-      if (this._pendingGuestAvatarUrl) {
-        // Upload done — persist OSS URL to backend now
-        this._req(`${BASE}/api/users/${user.user_id}`, 'PUT', {
-          nickname: user.nickname, phone: user.phone, email: user.email,
-          gender: user.gender, birth_date: user.birth_date, language: user.language,
-          coach_id: user.coach_id, avatar_url: avatarToSave,
-        }).catch(() => {})
-      }
-      this._pendingGuestAvatarUrl = ''
-    }
     this.setData({ guestPendingAvatar: '' })
     app.globalData.user = user
     app.globalData.channel = channel
@@ -2125,7 +2137,7 @@ Page({
     const isCoach = roles.includes('coach')
     const isAdmin = roles.includes('admin') || roles.includes('superadmin')
     const isSuperadmin = roles.includes('superadmin')
-    const userAvatarLetter = (user.nickname || 'U')[0].toUpperCase()
+    const userAvatarLetter = (user.nickname || 'U').slice(-1).toUpperCase()
     this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t: T[lang], isGuest: false, guestSheetOpen: false, guestSheetStep: 'invite', guestInviteBusy: false, isCoach, isAdmin, isSuperadmin })
     this._initChat(user, lang)
     this._loadHealth(user, lang)
