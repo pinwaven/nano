@@ -62,6 +62,135 @@ The token is configured via the `API_BEARER_TOKEN` environment variable on the `
 | `POST` | `/health-advice` | Engagement | AI health analysis |
 | `POST` | `/wx-login` | Auth | WeChat Login |
 | `POST` | `/admin/login` | Auth | Admin Login |
+| `GET` | `/pending-questionnaires` | Questionnaires | Pending assignments for a user |
+| `GET` | `/questionnaires` | Questionnaires | List questionnaires |
+| `GET` | `/questionnaires/:id/questions` | Questionnaires | List questions for a questionnaire |
+| `GET` | `/questionnaire-assignments` | Questionnaires | List assignments |
+| `GET` | `/questionnaire-responses` | Questionnaires | List responses |
+| `POST` | `/questionnaire-responses` | Questionnaires | Submit a single answer |
+| `POST` | `/questionnaires` | Questionnaires | Create questionnaire |
+| `POST` | `/questionnaire-assignments` | Questionnaires | Assign questionnaire to user(s) |
+| `PUT` | `/questionnaires/:id` | Questionnaires | Update questionnaire metadata |
+| `PUT` | `/questionnaire-questions/:id` | Questionnaires | Edit a question |
+| `PUT` | `/questionnaire-questions/reorder` | Questionnaires | Batch sort_order update |
+| `PATCH` | `/questionnaire-assignments/:id` | Questionnaires | Update assignment status |
+| `DELETE` | `/questionnaires/:id` | Questionnaires | Soft-delete questionnaire |
+| `DELETE` | `/questionnaire-questions/:id` | Questionnaires | Remove a question |
+
+---
+
+## Questionnaires
+
+See full system documentation: [`docs/architecture/questionnaire-system.md`](../architecture/questionnaire-system.md)
+
+### GET /pending-questionnaires?openid={user_id}
+
+Returns all non-completed questionnaire assignments for a user, with full question lists and existing responses. Used by the miniapp on init to determine what to show in chat.
+
+- Onboarding assignment is always first.
+- If no onboarding assignment exists yet, one is auto-created (uses the active onboarding questionnaire for the user's channel, or the global fallback).
+
+**Response:**
+```json
+{
+  "assignments": [
+    {
+      "id": 5,
+      "status": "pending",
+      "questionnaire": { "id": 1, "name": "Onboarding", "name_zh": "入门问卷", "type": "onboarding" },
+      "questions": [
+        {
+          "id": 1, "key": "nickname", "sort_order": 0, "input_type": "text",
+          "prompt_zh": "你好！请问你的昵称是什么？", "prompt_en": "Hi! What should we call you?",
+          "save_target": "user_field", "save_field": "nickname",
+          "completion_check": { "type": "user_field", "field": "nickname" },
+          "config": { "placeholder_zh": "输入你的昵称", "placeholder_en": "Enter your nickname", "max_length": 30 }
+        }
+      ],
+      "responses": []
+    }
+  ]
+}
+```
+
+### POST /questionnaire-responses
+
+Submit one answer to one question within an assignment.
+
+**Body:**
+```json
+{ "assignment_id": 5, "question_id": 1, "answer": "张三" }
+```
+
+- Upserts into `questionnaire_responses` (safe to resubmit).
+- If the question has a `save_target`, also writes the answer to the user's profile (user field, bio_data JSONB, or biomarkers table).
+- Marks assignment `in_progress` if it was `pending`.
+- Marks assignment `completed` when all active questions have a response.
+
+### PATCH /questionnaire-assignments/:id
+
+Update an assignment's status manually.
+
+**Body:** `{ "status": "in_progress" }`
+
+### GET /questionnaires?channel_id=&type=
+
+List questionnaires. Filterable by `channel_id` and/or `type` (`onboarding` / `custom`).
+
+### POST /questionnaires
+
+Create a questionnaire.
+
+**Body:** `{ "name", "name_zh", "description", "description_zh", "type", "channel_id", "created_by" }`
+
+### PUT /questionnaires/:id
+
+Update questionnaire metadata (name, description, is_active, etc.).
+
+### DELETE /questionnaires/:id
+
+Soft-delete: sets `is_active = false`. Does not delete existing assignments or responses.
+
+### GET /questionnaires/:id/questions
+
+Returns all active questions for a questionnaire, ordered by `sort_order`.
+
+### POST /questionnaires/:id/questions
+
+Add a question to a questionnaire.
+
+**Body:** `{ "key", "sort_order", "input_type", "prompt_zh", "prompt_en", "save_target", "save_field", "save_biomarker_type", "completion_check", "config" }`
+
+### PUT /questionnaire-questions/:id
+
+Edit a question (any field).
+
+### DELETE /questionnaire-questions/:id
+
+Removes a question (hard delete). Existing responses for that question are preserved but orphaned.
+
+### PUT /questionnaire-questions/reorder
+
+Batch update `sort_order` for multiple questions.
+
+**Body:** `{ "questions": [{ "id": 1, "sort_order": 0 }, { "id": 2, "sort_order": 1 }] }`
+
+### POST /questionnaire-assignments
+
+Assign a questionnaire to one or more users.
+
+**Body:** `{ "questionnaire_id": 1, "user_ids": ["oXxxx", "oYyyy"], "assigned_by": "oZzzz" }`
+
+- `user_ids` may contain a single ID or multiple.
+- `assigned_by` must be a coach or admin user ID. The server enforces that coaches can only assign to their own clients.
+
+### GET /questionnaire-assignments?user_id=&questionnaire_id=
+
+List assignments. Filter by `user_id`, `questionnaire_id`, or both.
+
+### GET /questionnaire-responses?assignment_id=&user_id=
+
+List responses. Filter by `assignment_id` or `user_id`. Results include `prompt_zh`, `prompt_en`, and questionnaire name for display.
 
 ---
 

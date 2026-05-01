@@ -25,6 +25,9 @@ This includes:
   - `orders` (store orders placed by the user)
 * **Onboarding:**
   - `invitation_uses` (records of which invite code the user consumed to join)
+* **Questionnaires:**
+  - `questionnaire_assignments` (assignments given to the user)
+  - `questionnaire_responses` (all answers within those assignments, via cascade from assignments)
 
 ## 2. Data Preserved (`ON DELETE SET NULL`)
 
@@ -36,6 +39,8 @@ If the user acted as an administrator or creator on the platform, their created 
   If the user held the `coach` role, their underlying Coach Profile record remains intact. This preserves the historical assignment and reporting for any users they were coaching. However, the `user_id` linkage (which ties the profile to their WeChat login) is set to `NULL`.
 * **Commissions & Payouts (`commissions.approved_by`):** 
   If the user was an admin who approved channel or coach payouts, the `approved_by` audit trail is set to `NULL`.
+* **Questionnaire assignments (`questionnaire_assignments.assigned_by`):**
+  If the user was a coach or admin who assigned questionnaires to others, those assignments are preserved but `assigned_by` is set to `NULL`.
 
 ## 3. Frontend Safeguards (Role Blocking)
 

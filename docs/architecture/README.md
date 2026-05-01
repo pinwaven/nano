@@ -76,3 +76,16 @@ All three functions write structured JSON logs (`console.log(JSON.stringify({lev
 - **Tail logs**: `s logs -f worker --tail`
 
 See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
+
+## Subsystem Docs
+
+| System | Doc |
+|---|---|
+| Kino Hardware | [kino-system.md](kino-system.md) |
+| Questionnaire System | [questionnaire-system.md](questionnaire-system.md) |
+| Role System | [role-system.md](role-system.md) |
+| BioAge Calculator | [biomarker-estimator.md](biomarker-estimator.md) |
+| Chat Prompt Chain | [chat-prompt-chain.md](chat-prompt-chain.md) |
+| Rewards | [rewards-system.md](rewards-system.md) |
+| EventBridge | [eventbridge.md](eventbridge.md) |
+| User Deletion | [user-deletion.md](user-deletion.md) |

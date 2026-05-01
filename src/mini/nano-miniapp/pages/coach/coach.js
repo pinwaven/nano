@@ -7,7 +7,7 @@ const T = {
     back: '返回',
     refresh: '刷新',
     loading: '加载中…',
-    tabs: { clients: '我的客户', invites: '邀请码', earnings: '我的收益' },
+    tabs: { clients: '我的客户', invites: '邀请码', earnings: '我的收益', questionnaires: '问卷' },
     noClients: '暂无分配的客户',
     bioAge: '生理年龄', chronoAge: '实际年龄',
     lastScan: '上次扫描',
@@ -58,13 +58,24 @@ const T = {
       payoutHistory: '结算记录', period: '周期', amount: '金额', status: '状态',
       draft: '待审批', approved: '已审批', transferred: '已转账',
     },
+    questionnaires: {
+      noQuestionnaires: '暂无可用问卷',
+      assign: '指派',
+      assignTitle: '指派问卷给客户',
+      noClients: '暂无客户',
+      noUsers: '请选择至少一名客户',
+      assigned: '指派成功',
+      assignError: '指派失败，请重试',
+      responsesTitle: '问卷回答',
+      noResponses: '暂无回答记录',
+    },
   },
   en: {
     title: 'Coach Panel',
     back: 'Back',
     refresh: 'Refresh',
     loading: 'Loading…',
-    tabs: { clients: 'My Clients', invites: 'Invite Codes', earnings: 'My Earnings' },
+    tabs: { clients: 'My Clients', invites: 'Invite Codes', earnings: 'My Earnings', questionnaires: 'Forms' },
     noClients: 'No clients assigned yet',
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
     lastScan: 'Last scan',
@@ -115,6 +126,17 @@ const T = {
       payoutHistory: 'Payout History', period: 'Period', amount: 'Amount', status: 'Status',
       draft: 'Pending Approval', approved: 'Approved', transferred: 'Transferred',
     },
+    questionnaires: {
+      noQuestionnaires: 'No questionnaires available',
+      assign: 'Assign',
+      assignTitle: 'Assign to Clients',
+      noClients: 'No clients yet',
+      noUsers: 'Please select at least one client',
+      assigned: 'Assigned successfully',
+      assignError: 'Assignment failed, please retry',
+      responsesTitle: 'Questionnaire Responses',
+      noResponses: 'No responses yet',
+    },
   },
 }
 
@@ -152,6 +174,13 @@ function fmtTime(d) {
   if (isNaN(date.getTime())) return ''
   const pad = n => String(n).padStart(2, '0')
   return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function fmtAnswer(answer) {
+  if (answer === null || answer === undefined) return '—'
+  if (Array.isArray(answer)) return answer.join(', ')
+  if (typeof answer === 'object') return Object.entries(answer).map(([k, v]) => `${k}: ${v}`).join('  ')
+  return String(answer)
 }
 
 function fmtDate(d) {
@@ -206,6 +235,20 @@ Page({
     reminderText: '',
     reminderRecurrence: 'none',
     reminderBusy: false,
+    // Questionnaires tab
+    questionnaires: [],
+    questionnairesLoading: false,
+    // Assign modal
+    qAssignOpen: false,
+    qAssignQuestionnaire: null,
+    qAssignClients: [],
+    qAssignSelectedIds: [],
+    qAssignBusy: false,
+    // Responses modal
+    qResponsesOpen: false,
+    qResponsesUser: null,
+    qResponsesList: [],
+    qResponsesLoading: false,
   },
 
   _coachId: null,
@@ -279,12 +322,14 @@ Page({
   handleRefresh() {
     this._loadAll()
     if (this.data.tab === 'earnings') this._loadEarnings()
+    if (this.data.tab === 'questionnaires') this._loadQuestionnaires()
   },
 
   switchTab(e) {
     const tab = e.currentTarget.dataset.tab
     this.setData({ tab })
     if (tab === 'earnings' && this.data.earningsThisMonth === null) this._loadEarnings()
+    if (tab === 'questionnaires' && this.data.questionnaires.length === 0) this._loadQuestionnaires()
   },
   handleBack() { wx.navigateBack() },
   noop() {},
@@ -526,6 +571,93 @@ Page({
     } catch {
       this.setData({ earningsLoading: false })
     }
+  },
+
+  // ── Questionnaires ──────────────────────────────────────────────────────
+
+  async _loadQuestionnaires() {
+    this.setData({ questionnairesLoading: true })
+    try {
+      const params = this._coachChannelId ? `channel_id=${this._coachChannelId}` : ''
+      const res = await this._req(`${BASE}/api/questionnaires?${params}`)
+      const questionnaires = (res.data?.questionnaires || []).filter(q => q.is_active)
+      this.setData({ questionnaires })
+    } catch {
+      wx.showToast({ title: T[this.data.lang].networkError, icon: 'none' })
+    } finally {
+      this.setData({ questionnairesLoading: false })
+    }
+  },
+
+  openQAssign(e) {
+    const q = e.currentTarget.dataset.q
+    const qAssignClients = this.data.clients.map(c => ({ ...c, _selected: false }))
+    this.setData({ qAssignOpen: true, qAssignQuestionnaire: q, qAssignClients, qAssignSelectedIds: [] })
+  },
+
+  closeQAssign() {
+    if (this.data.qAssignBusy) return
+    this.setData({ qAssignOpen: false, qAssignQuestionnaire: null })
+  },
+
+  toggleQUser(e) {
+    const uid = e.currentTarget.dataset.uid
+    const ids = [...this.data.qAssignSelectedIds]
+    const idx = ids.indexOf(uid)
+    if (idx >= 0) ids.splice(idx, 1)
+    else ids.push(uid)
+    const qAssignClients = this.data.clients.map(c => ({ ...c, _selected: ids.includes(c.user_id) }))
+    this.setData({ qAssignSelectedIds: ids, qAssignClients })
+  },
+
+  async submitQAssign() {
+    const { qAssignQuestionnaire, qAssignSelectedIds, lang } = this.data
+    const tq = T[lang].questionnaires
+    if (!qAssignSelectedIds.length) {
+      wx.showToast({ title: tq.noUsers, icon: 'none' })
+      return
+    }
+    this.setData({ qAssignBusy: true })
+    try {
+      await this._req(`${BASE}/api/questionnaire-assignments`, 'POST', {
+        questionnaire_id: qAssignQuestionnaire.id,
+        user_ids: qAssignSelectedIds,
+        assigned_by: this._coachUserId,
+      })
+      wx.showToast({ title: tq.assigned, icon: 'success' })
+      this.setData({ qAssignOpen: false, qAssignQuestionnaire: null })
+    } catch {
+      wx.showToast({ title: tq.assignError, icon: 'none' })
+    } finally {
+      this.setData({ qAssignBusy: false })
+    }
+  },
+
+  async openQResponses(e) {
+    const client = e.currentTarget.dataset.client
+    const lang = this.data.lang
+    this.setData({ qResponsesOpen: true, qResponsesUser: client, qResponsesList: [], qResponsesLoading: true })
+    try {
+      const res = await this._req(`${BASE}/api/questionnaire-responses?user_id=${encodeURIComponent(client.user_id)}`)
+      const responses = res.data?.responses || []
+      const grouped = {}
+      for (const r of responses) {
+        const qName = lang === 'zh' ? (r.name_zh || r.name) : r.name
+        if (!grouped[qName]) grouped[qName] = { name: qName, items: [] }
+        grouped[qName].items.push({
+          prompt: lang === 'zh' ? r.prompt_zh : r.prompt_en,
+          answer_fmt: fmtAnswer(r.answer),
+          answered_at: fmtDate(r.answered_at),
+        })
+      }
+      this.setData({ qResponsesList: Object.values(grouped), qResponsesLoading: false })
+    } catch {
+      this.setData({ qResponsesLoading: false })
+    }
+  },
+
+  closeQResponses() {
+    this.setData({ qResponsesOpen: false, qResponsesUser: null, qResponsesList: [] })
   },
 
   _req(url, method = 'GET', data = null) {

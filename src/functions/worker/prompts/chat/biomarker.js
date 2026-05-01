@@ -1,4 +1,4 @@
-module.exports = ({ user_profile, biomarkers, bioage }) => {
+module.exports = ({ user_profile, biomarkers, bioage, questionnaire_context }) => {
   const isZh = user_profile.language === 'zh';
   const hasBiomarkers = biomarkers && Object.keys(biomarkers).length > 0;
   const hasBioAge = bioage && bioage.BioAge;
@@ -13,7 +13,7 @@ BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values availa
 
 USER: ${user_profile.nickname || (isZh ? '用户' : 'the user')}, ${user_profile.age ? user_profile.age + ' years old' : 'age unknown'}${user_profile.gender ? ', ' + user_profile.gender : ''}
 LANGUAGE: ${isZh ? 'Respond in Chinese (Simplified).' : 'Respond in English.'}
-
+${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${dataSection}
 
 RESPONSE RULES:

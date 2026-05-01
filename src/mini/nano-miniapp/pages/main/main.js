@@ -67,6 +67,8 @@ const T = {
     obBodyPrompt: '最后一步——请告诉我您的身高和体重，帮助计算您的健康指标。',
     obBodyOnly: '还有一件事——请告诉我您的身高和体重？',
     obComplete: '您的个人基础信息已完善！',
+    questionnaireThanks: '感谢您的回答！您的健康顾问很快会跟进。',
+    questionnaireIntro: '您的健康顾问有几个问题想了解您。',
     confirm: '确认',
     bsHeight: '身高', bsWeight: '体重', bsCm: 'cm', bsKg: 'kg',
     male: '男', female: '女',
@@ -219,6 +221,8 @@ const T = {
     obBodyPrompt: 'Last step — could you share your height and weight? This helps calculate your health metrics.',
     obBodyOnly: 'One more thing — could you share your height and weight?',
     obComplete: 'Your basic profile is all set! ',
+    questionnaireThanks: 'Thanks for your answers! Your coach will review them shortly.',
+    questionnaireIntro: 'Your health coach has a few quick questions for you.',
     confirm: 'Confirm',
     bsHeight: 'Height', bsWeight: 'Weight', bsCm: 'cm', bsKg: 'kg',
     male: 'Male', female: 'Female',
@@ -621,7 +625,14 @@ Page({
     kinoSimScannedUserName: null,
     kinoSimChipId: null,
     kinoSimDeviceId: null,
-    obStep: null,   // 'name'|'gender'|'birthday'|'body'|'conditions'|'done'|null
+    obStep: null,              // current question key, 'done', or null
+    obQuestion: null,          // current question config from questionnaire_questions
+    obQuestions: [],           // all active questions for current questionnaire
+    obAssignmentId: null,      // current assignment ID
+    obQuestionnaireType: null, // 'onboarding' or 'custom' — used for completion message
+    obQIndex: 0,           // current question index in obQuestions
+    obSliders: {},         // { height: 165, weight: 65 } keyed by slider.key
+    obSliderDisplay: {},   // { weight: '65.0' } formatted display values
     obName: '',
     obBirthday: '',
     obHeight: 165,
@@ -746,10 +757,12 @@ Page({
   },
 
   onShow() {
-    const { user, lang, isGuest } = this.data
+    const { user, lang, isGuest, obStep } = this.data
     if (user && !isGuest) {
       this._loadHealth(user, lang)
       this._startPolling(user)
+      // Check for questionnaires assigned while the user was away
+      if (obStep === 'done') this._checkForPendingQuestionnaire()
     }
   },
 
@@ -1028,7 +1041,7 @@ Page({
     const t = T[lang]
     const initMsg = { id: 'init', role: 'ai', content: t.initMsg }
 
-    // First try to load history
+    // Load history
     let historyLoaded = false
     try {
       const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}`)
@@ -1053,45 +1066,209 @@ Page({
     } catch (e) {
       console.error('History load failed', e)
     }
+    if (!historyLoaded) { this.setData({ messages: [initMsg] }) }
 
-    if (!historyLoaded) {
-      this.setData({ messages: [initMsg] })
+    // Fetch pending questionnaires + biomarkers in parallel
+    let pendingAssignments = []
+    let biomarkerRecords = []
+    try {
+      const [qRes, bRes] = await Promise.all([
+        this._req(`${BASE}/api/pending-questionnaires?openid=${encodeURIComponent(user.user_id)}`),
+        this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(user.user_id)}`),
+      ])
+      pendingAssignments = qRes.data?.assignments || []
+      biomarkerRecords = bRes.data?.records || []
+    } catch (e) { console.error('Init fetch failed', e) }
+
+    // Find first assignment with an unanswered question
+    for (const assignment of pendingAssignments) {
+      const answeredIds = new Set((assignment.responses || []).map(r => r.question_id))
+      const questions = assignment.questions || []
+      const firstIdx = questions.findIndex(q => !this._isQuestionAnswered(q, user, biomarkerRecords, answeredIds))
+      if (firstIdx >= 0) {
+        this._startQuestionnaire(assignment, questions, firstIdx)
+        return
+      }
     }
 
-    if (!user.nickname) {
-      this._addMsg('ai', t.obNamePrompt)
-      this.setData({ obStep: 'name' })
-      return
+    this._onAllQuestionnaireDone(user)
+  },
+
+  _isQuestionAnswered(q, user, biomarkerRecords, answeredIds) {
+    if (answeredIds.has(q.id)) return true
+    const cc = q.completion_check || {}
+    if (cc.type === 'user_field') return !!(user[cc.field])
+    if (cc.type === 'bio_data_field') return (user.bio_data || {})[cc.field] !== undefined
+    if (cc.type === 'biomarker') {
+      return biomarkerRecords.some(r =>
+        r.test_type === cc.test_type && this._getNestedPath(r.data, cc.data_path)
+      )
     }
-    if (!user.gender) {
-      this._addMsg('ai', t.obGenderPrompt)
-      this.setData({ obStep: 'gender' })
-      return
+    return false
+  },
+
+  _getNestedPath(obj, dotPath) {
+    if (!dotPath || !obj) return undefined
+    return dotPath.split('.').reduce((cur, k) => (cur != null ? cur[k] : undefined), obj)
+  },
+
+  _startQuestionnaire(assignment, questions, firstIdx) {
+    const { lang } = this.data
+    const t = T[lang]
+    if (assignment.type !== 'onboarding') {
+      this._addMsg('ai', t.questionnaireIntro)
     }
-    if (!user.birth_date) {
-      this._addMsg('ai', t.obBirthdayOnly)
-      this.setData({ obStep: 'birthday' })
-      return
+    this.setData({
+      obQuestions: questions,
+      obAssignmentId: assignment.assignment_id,
+      obQIndex: firstIdx,
+      obQuestionnaireType: assignment.type,
+    })
+    if (assignment.status === 'pending') {
+      this._req(`${BASE}/api/questionnaire-assignments/${assignment.assignment_id}`, 'PATCH', { status: 'in_progress' })
+        .catch(() => {})
     }
+    this._showQuestion(questions[firstIdx])
+  },
+
+  _showQuestion(q) {
+    const { lang } = this.data
+    const prompt = lang === 'zh' ? q.prompt_zh : q.prompt_en
+    this._addMsg('ai', prompt)
+    const update = { obQuestion: q, obStep: q.key }
+
+    if (q.input_type === 'slider_group' && q.config && q.config.sliders) {
+      const sliders = {}
+      const sliderDisplay = {}
+      for (const s of q.config.sliders) {
+        sliders[s.key] = s.default
+        sliderDisplay[s.key] = s.step < 1 ? Number(s.default).toFixed(1) : String(s.default)
+      }
+      update.obSliders = sliders
+      update.obSliderDisplay = sliderDisplay
+      if (sliders.height !== undefined) update.obHeight = sliders.height
+      if (sliders.weight !== undefined) { update.obWeight = sliders.weight; update.obWeightDisplay = sliderDisplay.weight }
+    }
+
+    if (q.input_type === 'multi_select' && q.config && q.config.options) {
+      const list = q.config.options.map(opt => ({
+        key: opt.key,
+        label: lang === 'zh' ? opt.label_zh : opt.label_en,
+        selected: false,
+      }))
+      update.obConditionList = list
+      update.obConditions = []
+      update.obOtherSelected = false
+      update.obConditionsOther = ''
+    }
+
+    if (q.input_type === 'date_picker') {
+      update.obBirthday = ''
+    }
+
+    if (q.input_type === 'text') {
+      update.obName = ''
+    }
+
+    this.setData(update)
+  },
+
+  async _saveAnswer(displayText, answerValue) {
+    const { obQuestion, obAssignmentId, obQIndex, obQuestions, user } = this.data
+    if (!obQuestion || !obAssignmentId) return
+
+    this._addMsg('user', displayText, true)
+    this.setData({ typing: true })
 
     try {
-      const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(user.user_id)}`)
-      const records = res.data?.records || []
-      const hasBody = records.some(r => r.test_type === 'body_composition' && r.data?.actual?.weight)
-      if (!hasBody) {
-        this._addMsg('ai', t.obBodyOnly)
-        this.setData({ obStep: 'body' })
-        return
+      const res = await this._req(`${BASE}/api/questionnaire-responses`, 'POST', {
+        assignment_id: obAssignmentId,
+        question_id: obQuestion.id,
+        answer: answerValue,
+      })
+
+      // Update local user cache for onboarding profile fields
+      const q = obQuestion
+      if (q.save_target === 'user_field' && q.save_field) {
+        const updated = { ...this.data.user, [q.save_field]: answerValue }
+        this._updateUser(updated)
+        this.data.user = updated
+      } else if (q.save_target === 'bio_data_field' && q.save_field) {
+        const updated = { ...this.data.user, bio_data: { ...(this.data.user.bio_data || {}), [q.save_field]: answerValue } }
+        this._updateUser(updated)
+        this.data.user = updated
+      }
+
+      if (res.data && res.data.completed) {
+        this.setData({ obQuestion: null, obStep: null, typing: false })
+        await this._advanceOnboarding()
+      } else {
+        // Find next unanswered question (questions up to obQIndex are answered)
+        const nextIdx = obQuestions.findIndex((q, i) => i > obQIndex)
+        if (nextIdx >= 0) {
+          this.setData({ obQIndex: nextIdx, typing: false })
+          this._showQuestion(obQuestions[nextIdx])
+        } else {
+          this.setData({ obQuestion: null, obStep: null, typing: false })
+          await this._advanceOnboarding()
+        }
+      }
+    } catch (e) {
+      this._addMsg('ai', this.data.t.errServer)
+      this.setData({ typing: false })
+    }
+  },
+
+  async _checkForPendingQuestionnaire() {
+    const { user } = this.data
+    if (!user) return
+    try {
+      const [qRes, bRes] = await Promise.all([
+        this._req(`${BASE}/api/pending-questionnaires?openid=${encodeURIComponent(user.user_id)}`),
+        this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(user.user_id)}`),
+      ])
+      const pendingAssignments = qRes.data?.assignments || []
+      const biomarkerRecords = bRes.data?.records || []
+      for (const assignment of pendingAssignments) {
+        const answeredIds = new Set((assignment.responses || []).map(r => r.question_id))
+        const questions = assignment.questions || []
+        const firstIdx = questions.findIndex(q => !this._isQuestionAnswered(q, user, biomarkerRecords, answeredIds))
+        if (firstIdx >= 0) {
+          this._startQuestionnaire(assignment, questions, firstIdx)
+          return
+        }
+      }
+    } catch (e) {}
+  },
+
+  async _advanceOnboarding() {
+    const { user, obQuestionnaireType } = this.data
+    try {
+      const [qRes, bRes] = await Promise.all([
+        this._req(`${BASE}/api/pending-questionnaires?openid=${encodeURIComponent(user.user_id)}`),
+        this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(user.user_id)}`),
+      ])
+      const pendingAssignments = qRes.data?.assignments || []
+      const biomarkerRecords = bRes.data?.records || []
+
+      for (const assignment of pendingAssignments) {
+        const answeredIds = new Set((assignment.responses || []).map(r => r.question_id))
+        const questions = assignment.questions || []
+        const firstIdx = questions.findIndex(q => !this._isQuestionAnswered(q, user, biomarkerRecords, answeredIds))
+        if (firstIdx >= 0) {
+          if (obQuestionnaireType === 'custom') this._addMsg('ai', this.data.t.questionnaireThanks)
+          this._startQuestionnaire(assignment, questions, firstIdx)
+          return
+        }
       }
     } catch (e) {}
 
-    if (user.bio_data?.health_conditions === undefined) {
-      this._addMsg('ai', t.obConditionsPrompt)
-      const list = CONDITION_KEYS.map(key => ({ key, label: t.conditionLabels[key], selected: false }))
-      this.setData({ obStep: 'conditions', obConditionList: list })
-      return
-    }
+    this._onAllQuestionnaireDone(this.data.user, obQuestionnaireType)
+  },
 
+  _onAllQuestionnaireDone(user, completedType) {
+    const { t } = this.data
+    this._addMsg('ai', completedType === 'custom' ? t.questionnaireThanks : t.obComplete)
     this.setData({ obStep: 'done' })
     if (!user.phone && !wx.getStorageSync('nano_phone_prompted')) {
       wx.setStorageSync('nano_phone_prompted', '1')
@@ -1101,29 +1278,6 @@ Page({
         this._addActionMsg('maybe_later', t.phoneMaybeLater)
       }, 800)
     }
-    this._startPolling(user)
-  },
-
-  async _checkBodyStep(user, lang) {
-    const t = T[lang]
-    try {
-      const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(user.user_id)}`)
-      const records = res.data?.records || []
-      const hasBody = records.some(r => r.test_type === 'body_composition' && r.data?.actual?.weight)
-      if (!hasBody) {
-        this._addMsg('ai', t.obBodyPrompt)
-        this.setData({ obStep: 'body', typing: false })
-        return
-      }
-    } catch (e) {}
-
-    if (user.bio_data?.health_conditions === undefined) {
-      this._startConditionsStep(user, lang)
-      return
-    }
-
-    this._addMsg('ai', t.obComplete)
-    this.setData({ obStep: 'done', typing: false })
     this._startPolling(user)
   },
 
@@ -1374,106 +1528,54 @@ Page({
 
   onObNameInput(e) { this.setData({ obName: e.detail.value }) },
 
+  onObNameInput(e) { this.setData({ obName: e.detail.value }) },
+
   async handleSubmitName() {
-    const { obName, user, lang } = this.data
+    const { obName } = this.data
     const name = obName.trim()
     if (!name) return
-
-    this._addMsg('user', name, true)
-    this.setData({ typing: true, obName: '' })
-
-    try {
-      await this._saveUser(user, { nickname: name })
-      const updated = { ...user, nickname: name }
-      this._updateUser(updated)
-
-      if (!user.gender) {
-        this._addMsg('ai', T[lang].obGenderOnly, true)
-        this.setData({ obStep: 'gender', typing: false })
-      } else if (!user.birth_date) {
-        this._addMsg('ai', T[lang].obBirthdayOnly, true)
-        this.setData({ obStep: 'birthday', typing: false })
-      } else {
-        await this._checkBodyStep(updated, lang)
-      }
-    } catch (e) {
-      this._addMsg('ai', this.data.t.errServer)
-      this.setData({ typing: false })
-    }
+    this.setData({ obName: '' })
+    await this._saveAnswer(name, name)
   },
 
-  async handleSelectGender(e) {
-    const gender = e.currentTarget.dataset.gender
-    const { user, lang } = this.data
-
-    this._addMsg('user', T[lang][gender], true)
-    this.setData({ typing: true })
-
-    try {
-      await this._saveUser(user, { gender })
-      const updated = { ...user, gender }
-      this._updateUser(updated)
-
-      if (!user.birth_date) {
-        this._addMsg('ai', T[lang].obBirthdayPrompt, true)
-        this.setData({ obStep: 'birthday', typing: false })
-      } else {
-        await this._checkBodyStep(updated, lang)
-      }
-    } catch (e) {
-      this._addMsg('ai', this.data.t.errServer)
-      this.setData({ typing: false })
-    }
+  async handleSelectButton(e) {
+    const { lang, obQuestion } = this.data
+    const value = e.currentTarget.dataset.value
+    const opt = (obQuestion && obQuestion.config && obQuestion.config.options || []).find(o => o.value === value)
+    const label = opt ? (lang === 'zh' ? opt.label_zh : opt.label_en) : value
+    await this._saveAnswer(label, value)
   },
 
   onBirthdayChange(e) { this.setData({ obBirthday: e.detail.value }) },
 
   async handleSubmitBirthday() {
-    const { obBirthday, user, lang } = this.data
+    const { obBirthday } = this.data
     if (!obBirthday) return
-
-    this._addMsg('user', obBirthday, true)
-    this.setData({ typing: true })
-
-    try {
-      await this._saveUser(user, { birth_date: obBirthday })
-      const updated = { ...user, birth_date: obBirthday }
-      this._updateUser(updated)
-      await this._checkBodyStep(updated, lang)
-    } catch (e) {
-      this._addMsg('ai', this.data.t.errServer)
-      this.setData({ typing: false })
-    }
+    await this._saveAnswer(obBirthday, obBirthday)
   },
 
-  onHeightChange(e) { this.setData({ obHeight: e.detail.value }) },
-  onWeightChange(e) { this.setData({ obWeight: e.detail.value, obWeightDisplay: Number(e.detail.value).toFixed(1) }) },
+  onSliderChange(e) {
+    const key = e.currentTarget.dataset.key
+    const step = parseFloat(e.currentTarget.dataset.step) || 1
+    const val = e.detail.value
+    const display = step < 1 ? Number(val).toFixed(1) : String(val)
+    const obSliders = { ...this.data.obSliders, [key]: val }
+    const obSliderDisplay = { ...this.data.obSliderDisplay, [key]: display }
+    const update = { obSliders, obSliderDisplay }
+    if (key === 'height') { update.obHeight = val }
+    if (key === 'weight') { update.obWeight = val; update.obWeightDisplay = display }
+    this.setData(update)
+  },
 
   async handleSubmitBody() {
-    const { obHeight, obWeight, user, t } = this.data
-
-    this._addMsg('user', `${t.bsHeight}: ${obHeight}${t.bsCm}  ${t.bsWeight}: ${obWeight}${t.bsKg}`, true)
-    this.setData({ typing: true })
-
-    try {
-      await this._req(`${BASE}/api/biomarkers`, 'POST', {
-        openid: user.user_id,
-        test_type: 'body_composition',
-        test_data: { height: obHeight, weight: obWeight },
-        tested_at: new Date().toISOString()
-      })
-      this._startConditionsStep(user, this.data.lang)
-    } catch (e) {
-      this._addMsg('ai', t.errServer)
-      this.setData({ typing: false })
-    }
-  },
-
-  _startConditionsStep(user, lang) {
-    const t = T[lang]
-    const list = CONDITION_KEYS.map(key => ({ key, label: t.conditionLabels[key], selected: false }))
-    this._addMsg('ai', t.obConditionsPrompt, true)
-    this.setData({ obStep: 'conditions', obConditions: [], obConditionList: list, obOtherSelected: false, obConditionsOther: '', typing: false })
+    const { obSliders, obSliderDisplay, obQuestion, lang, t } = this.data
+    const sliders = (obQuestion && obQuestion.config && obQuestion.config.sliders) || []
+    const parts = sliders.map(s => {
+      const lbl = lang === 'zh' ? s.label_zh : s.label_en
+      const val = obSliderDisplay[s.key] || obSliders[s.key]
+      return `${lbl}: ${val}${s.unit}`
+    })
+    await this._saveAnswer(parts.join('  '), { ...obSliders })
   },
 
   handleToggleCondition(e) {
@@ -1481,7 +1583,8 @@ Page({
     const list = this.data.obConditionList.map(item =>
       item.key === key ? { ...item, selected: !item.selected } : item
     )
-    const otherSelected = list.some(i => i.key === 'other' && i.selected)
+    const hasOtherOpt = list.some(i => i.key === 'other')
+    const otherSelected = hasOtherOpt && list.some(i => i.key === 'other' && i.selected)
     this.setData({
       obConditionList: list,
       obConditions: list.filter(i => i.selected).map(i => i.key),
@@ -1493,45 +1596,20 @@ Page({
   onObConditionsOtherInput(e) { this.setData({ obConditionsOther: e.detail.value }) },
 
   async handleSubmitConditions() {
-    const { obConditions, obConditionList, obOtherSelected, obConditionsOther, user, lang, t } = this.data
+    const { obConditions, obConditionList, obOtherSelected, obConditionsOther, obQuestion, lang, t } = this.data
     const otherText = obOtherSelected ? obConditionsOther.trim() : ''
     const sep = lang === 'zh' ? '、' : ', '
     const selectedLabels = obConditionList
       .filter(i => i.selected)
       .map(i => i.key === 'other' && otherText ? `${i.label}（${otherText}）` : i.label)
-    const label = selectedLabels.length > 0 ? selectedLabels.join(sep) : t.obConditionsNone
+    const displayText = selectedLabels.length > 0 ? selectedLabels.join(sep) : t.obConditionsNone
 
-    this._addMsg('user', label, true)
-    this.setData({ typing: true })
+    await this._saveAnswer(displayText, obConditions)
 
-    const bioDataUpdate = { health_conditions: obConditions }
-    if (otherText) bioDataUpdate.health_conditions_other = otherText
-
-    try {
-      await this._saveUser(user, { bio_data: bioDataUpdate })
-      const updated = { ...user, bio_data: { ...(user.bio_data || {}), ...bioDataUpdate } }
-      this._updateUser(updated)
-      this._addMsg('ai', t.obComplete, true)
-
-      try {
-        const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}`)
-        const history = res.data?.messages || []
-        if (history.length > 0) {
-          const msgs = history.map((m, i) => ({
-            id: `h-${i}`,
-            role: (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role,
-            content: m.content
-          }))
-          this.setData({ messages: msgs })
-          this._scrollBottom()
-        }
-      } catch (e) {}
-
-      this.setData({ obStep: 'done', typing: false })
-      this._startPolling(user)
-    } catch (e) {
-      this._addMsg('ai', t.errServer)
-      this.setData({ typing: false })
+    // Also persist 'other' free-text to bio_data via separate update
+    if (otherText && obQuestion && obQuestion.config && obQuestion.config.other_key) {
+      const { user } = this.data
+      this._saveUser(user, { bio_data: { [obQuestion.config.other_key]: otherText } }).catch(() => {})
     }
   },
 

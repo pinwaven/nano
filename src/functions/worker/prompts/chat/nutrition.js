@@ -1,4 +1,4 @@
-module.exports = ({ user_profile, bioage, dots, plan }) => {
+module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context }) => {
   const isZh = user_profile.language === 'zh';
   const hasBioAge = bioage && bioage.BioAge;
 
@@ -24,7 +24,7 @@ Elevated dimensions: ${
 
 USER: ${user_profile.nickname || (isZh ? '用户' : 'the user')}, ${user_profile.age ? user_profile.age + ' years old' : 'age unknown'}
 LANGUAGE: ${isZh ? 'Respond in Chinese (Simplified).' : 'Respond in English.'}
-
+${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${bioageSection}
 
 ${dotsSection}

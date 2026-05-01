@@ -520,6 +520,111 @@
 .instr-send-btn.btn-busy { opacity: 0.6; }
 .instr-send-text { font-size: 15px; font-weight: 600; color: #fff; }
 
+/* ── Questionnaires tab ──────────────────────────────────────────────────── */
+.q-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.q-card-info { flex: 1; min-width: 0; }
+
+.q-card-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #E8F0F8;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.q-card-desc {
+  font-size: 12px;
+  color: #7A9ABF;
+  display: block;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.q-type-badge { display: inline-flex; margin-bottom: 0; }
+
+.q-assign-btn { flex-shrink: 0; align-self: center; }
+
+/* ── Assign overlay ──────────────────────────────────────────────────────── */
+.q-assign-quest-banner {
+  padding: 10px 20px;
+  background: rgba(99,117,236,0.12);
+  border-bottom: 1rpx solid #1E3A5F;
+  flex-shrink: 0;
+}
+
+.q-assign-quest-text { font-size: 13px; color: #A0B4FF; font-weight: 600; }
+
+.q-assign-list { padding: 8px 0; }
+
+.q-assign-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+  border-bottom: 1rpx solid #1E3A5F;
+}
+
+.q-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1rpx solid #4A6A8A;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.q-check-on { background: #6375EC; border-color: #6375EC; }
+.q-check-mark { font-size: 13px; color: #fff; font-weight: 700; }
+
+.q-assign-name { font-size: 14px; color: #E8F0F8; }
+
+.q-assign-footer {
+  padding: 12px 16px 24px;
+  border-top: 1rpx solid #1E3A5F;
+  flex-shrink: 0;
+}
+
+/* ── Responses overlay ───────────────────────────────────────────────────── */
+.q-resp-list { padding: 12px 16px; }
+
+.q-resp-group { margin-bottom: 20px; }
+
+.q-resp-item {
+  background: #162B45;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1rpx solid #1E3A5F;
+}
+
+.q-resp-prompt {
+  font-size: 11px;
+  color: #7A9ABF;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.q-resp-answer {
+  font-size: 14px;
+  color: #E8F0F8;
+  font-weight: 500;
+  display: block;
+}
+
+.q-resp-time {
+  font-size: 10px;
+  color: #4A6A8A;
+  display: block;
+  margin-top: 4px;
+}
+
 .earnings-cards { display: flex; gap: 12px; padding: 16px 16px 0; }
 .earnings-card {
   flex: 1;

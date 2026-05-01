@@ -1,4 +1,4 @@
-module.exports = ({ user_profile, bioage }) => {
+module.exports = ({ user_profile, bioage, questionnaire_context }) => {
   const isZh = user_profile.language === 'zh';
   const name = user_profile.nickname || (isZh ? '你' : 'you');
   const hasBioAge = bioage && bioage.BioAge;
@@ -11,7 +11,7 @@ module.exports = ({ user_profile, bioage }) => {
 
 USER: ${name}
 LANGUAGE: ${isZh ? 'Respond in Chinese (Simplified).' : 'Respond in English.'}
-${contextNote}
+${contextNote}${questionnaire_context ? '\n' + questionnaire_context : ''}
 
 The user is sharing something emotional — stress, fatigue, low mood, or feeling overwhelmed. Rules:
 - Acknowledge and validate their feeling first. Don't jump straight to solutions.

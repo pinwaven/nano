@@ -23,6 +23,9 @@
     <view class="coach-tab {{tab === 'earnings' ? 'coach-tab-active' : ''}}" bindtap="switchTab" data-tab="earnings">
       <text class="coach-tab-text">{{t.tabs.earnings}}</text>
     </view>
+    <view class="coach-tab {{tab === 'questionnaires' ? 'coach-tab-active' : ''}}" bindtap="switchTab" data-tab="questionnaires">
+      <text class="coach-tab-text">{{t.tabs.questionnaires}}</text>
+    </view>
   </view>
 
   <!-- Loading -->
@@ -73,6 +76,9 @@
       <view class="client-actions">
         <view class="action-btn msg-btn" catchtap="openClientDetail" data-client="{{item}}" data-tab="messages">
           <text class="action-btn-text">{{t.openMessages}}</text>
+        </view>
+        <view class="action-btn remind-icon-btn" catchtap="openQResponses" data-client="{{item}}">
+          <text class="action-btn-text">📋</text>
         </view>
         <view class="action-btn remind-icon-btn" catchtap="openReminderComposer" data-client="{{item}}">
           <text class="action-btn-text">⏰</text>
@@ -142,6 +148,36 @@
         <text class="invite-uses">{{t.earnings.amount}}: {{item._amountFmt}}</text>
       </view>
     </block>
+  </view>
+
+  <!-- Questionnaires Tab -->
+  <view wx:elif="{{tab === 'questionnaires'}}" class="client-list">
+    <view wx:if="{{questionnairesLoading}}" class="loading-row">
+      <text class="loading-text">{{t.loading}}</text>
+    </view>
+    <view wx:elif="{{questionnaires.length === 0}}" class="empty-state">
+      <text class="empty-text">{{t.questionnaires.noQuestionnaires}}</text>
+    </view>
+    <view wx:else>
+      <view wx:for="{{questionnaires}}" wx:key="id" class="client-card">
+        <view class="q-card-header">
+          <view class="q-card-info">
+            <text class="q-card-name">{{lang === 'zh' ? (item.name_zh || item.name) : item.name}}</text>
+            <text wx:if="{{item.description_zh || item.description}}" class="q-card-desc">
+              {{lang === 'zh' ? (item.description_zh || item.description) : (item.description || item.description_zh)}}
+            </text>
+            <view class="invite-status invite-active q-type-badge">
+              <text class="invite-status-text">
+                {{item.type === 'onboarding' ? (lang === 'zh' ? '入门' : 'Onboarding') : (lang === 'zh' ? '自定义' : 'Custom')}}
+              </text>
+            </view>
+          </view>
+          <view class="action-btn msg-btn q-assign-btn" bindtap="openQAssign" data-q="{{item}}">
+            <text class="action-btn-text">{{t.questionnaires.assign}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
   </view>
 
   <!-- ── Client Detail Sheet ───────────────────────────────────────────── -->
@@ -276,6 +312,71 @@
         </view>
       </view>
 
+    </view>
+  </view>
+
+  <!-- ── Assign Questionnaire Overlay ─────────────────────────────────── -->
+  <view wx:if="{{qAssignOpen}}" class="overlay-mask" catchtouchmove="noop">
+    <view class="overlay-panel" catchtap="noop">
+      <view class="overlay-header">
+        <text class="overlay-title">{{t.questionnaires.assignTitle}}</text>
+        <view class="overlay-close" bindtap="closeQAssign">
+          <text class="close-x">✕</text>
+        </view>
+      </view>
+      <view wx:if="{{qAssignQuestionnaire}}" class="q-assign-quest-banner">
+        <text class="q-assign-quest-text">
+          {{lang === 'zh' ? (qAssignQuestionnaire.name_zh || qAssignQuestionnaire.name) : qAssignQuestionnaire.name}}
+        </text>
+      </view>
+      <scroll-view scroll-y class="overlay-scroll">
+        <view wx:if="{{qAssignClients.length === 0}}" class="panel-center">
+          <text class="empty-text">{{t.questionnaires.noClients}}</text>
+        </view>
+        <view wx:else class="q-assign-list">
+          <view wx:for="{{qAssignClients}}" wx:key="user_id" class="q-assign-row" bindtap="toggleQUser" data-uid="{{item.user_id}}">
+            <view class="q-check {{item._selected ? 'q-check-on' : ''}}">
+              <text wx:if="{{item._selected}}" class="q-check-mark">✓</text>
+            </view>
+            <text class="q-assign-name">{{item.nickname || item.user_id}}</text>
+          </view>
+        </view>
+      </scroll-view>
+      <view class="q-assign-footer">
+        <view class="instr-send-btn {{qAssignBusy ? 'btn-busy' : ''}}" bindtap="submitQAssign">
+          <text class="instr-send-text">{{qAssignBusy ? t.loading : t.questionnaires.assign}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ── Questionnaire Responses Overlay ───────────────────────────────── -->
+  <view wx:if="{{qResponsesOpen}}" class="overlay-mask" catchtouchmove="noop">
+    <view class="overlay-panel" catchtap="noop">
+      <view class="overlay-header">
+        <text class="overlay-title">{{qResponsesUser.nickname}} · {{t.questionnaires.responsesTitle}}</text>
+        <view class="overlay-close" bindtap="closeQResponses">
+          <text class="close-x">✕</text>
+        </view>
+      </view>
+      <scroll-view scroll-y class="overlay-scroll">
+        <view wx:if="{{qResponsesLoading}}" class="panel-center">
+          <text class="loading-text">{{t.loading}}</text>
+        </view>
+        <view wx:elif="{{qResponsesList.length === 0}}" class="panel-center">
+          <text class="empty-text">{{t.questionnaires.noResponses}}</text>
+        </view>
+        <view wx:else class="q-resp-list">
+          <view wx:for="{{qResponsesList}}" wx:key="name" class="q-resp-group">
+            <text class="section-label">{{item.name}}</text>
+            <view wx:for="{{item.items}}" wx:key="index" wx:for-item="resp" class="q-resp-item">
+              <text class="q-resp-prompt">{{resp.prompt}}</text>
+              <text class="q-resp-answer">{{resp.answer_fmt}}</text>
+              <text class="q-resp-time">{{resp.answered_at}}</text>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
     </view>
   </view>
 

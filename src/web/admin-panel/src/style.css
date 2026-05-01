@@ -437,6 +437,25 @@ tr:hover .row-actions { opacity: 1; }
   font-size: 13px;
 }
 
+/* Utility aliases used by questionnaire components */
+.error-banner { margin-bottom: 12px; padding: 8px 12px; background: #fee2e2; color: #dc2626; border-radius: 6px; font-size: 13px; }
+.form-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  background: #fff;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.form-input:focus { border-color: var(--primary); }
+.form-input.code-input { font-family: 'SF Mono', monospace; font-size: 12px; resize: vertical; }
+.modal-body label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+
 /* ── Simulators ── */
 .sims-grid {
   display: grid;

@@ -113,16 +113,16 @@
         </view>
       </scroll-view>
 
-      <!-- Onboarding: Name -->
-      <view wx:if="{{obStep === 'name'}}" class="ob-bar name-bar">
+      <!-- Onboarding: text input -->
+      <view wx:if="{{obQuestion && obQuestion.input_type === 'text'}}" class="ob-bar name-bar">
         <input
           class="ob-input"
-          placeholder="{{t.obNamePh}}"
+          placeholder="{{obQuestion.config.placeholder_zh || obQuestion.config.placeholder_en || ''}}"
           placeholder-class="ob-ph"
           value="{{obName}}"
           bindinput="onObNameInput"
           bindconfirm="handleSubmitName"
-          focus="{{tab === 'chat' && obStep === 'name'}}"
+          focus="{{tab === 'chat' && obQuestion.input_type === 'text'}}"
           adjust-position="true"
         />
         <view class="ob-confirm" bindtap="handleSubmitName">
@@ -130,19 +130,28 @@
         </view>
       </view>
 
-      <!-- Onboarding: Gender -->
-      <view wx:if="{{obStep === 'gender' && !typing}}" class="ob-bar gender-bar">
-        <view class="quick-btn" bindtap="handleSelectGender" data-gender="male">
-          <text>{{t.male}}</text>
-        </view>
-        <view class="quick-btn" bindtap="handleSelectGender" data-gender="female">
-          <text>{{t.female}}</text>
+      <!-- Onboarding: button select -->
+      <view wx:if="{{obQuestion && obQuestion.input_type === 'button_select' && !typing}}" class="ob-bar gender-bar">
+        <view
+          wx:for="{{obQuestion.config.options}}"
+          wx:key="value"
+          class="quick-btn"
+          bindtap="handleSelectButton"
+          data-value="{{item.value}}"
+        >
+          <text>{{lang === 'zh' ? item.label_zh : item.label_en}}</text>
         </view>
       </view>
 
-      <!-- Onboarding: Birthday -->
-      <view wx:if="{{obStep === 'birthday'}}" class="ob-bar birthday-bar">
-        <picker mode="date" value="{{obBirthday}}" start="1920-01-01" end="2010-12-31" bindchange="onBirthdayChange">
+      <!-- Onboarding: date picker -->
+      <view wx:if="{{obQuestion && obQuestion.input_type === 'date_picker'}}" class="ob-bar birthday-bar">
+        <picker
+          mode="date"
+          value="{{obBirthday}}"
+          start="{{obQuestion.config.min_date || '1920-01-01'}}"
+          end="{{obQuestion.config.max_date || '2099-12-31'}}"
+          bindchange="onBirthdayChange"
+        >
           <view class="picker-row">
             <text class="picker-val">{{obBirthday || t.selectBirthday}}</text>
             <text class="picker-arrow">›</text>
@@ -153,28 +162,23 @@
         </view>
       </view>
 
-      <!-- Onboarding: Body Sliders -->
-      <view wx:if="{{obStep === 'body'}}" class="ob-bar body-bar">
-        <view class="slider-row">
+      <!-- Onboarding: slider group -->
+      <view wx:if="{{obQuestion && obQuestion.input_type === 'slider_group'}}" class="ob-bar body-bar">
+        <view
+          wx:for="{{obQuestion.config.sliders}}"
+          wx:key="key"
+          class="slider-row"
+        >
           <view class="slider-labels">
-            <text class="slider-key">{{t.bsHeight}}</text>
-            <text class="slider-val">{{obHeight}} <text class="slider-unit">{{t.bsCm}}</text></text>
+            <text class="slider-key">{{lang === 'zh' ? item.label_zh : item.label_en}}</text>
+            <text class="slider-val">{{obSliderDisplay[item.key] || obSliders[item.key]}} <text class="slider-unit">{{item.unit}}</text></text>
           </view>
           <slider
-            min="100" max="220" value="{{obHeight}}" step="1"
+            min="{{item.min}}" max="{{item.max}}" value="{{obSliders[item.key]}}" step="{{item.step}}"
             activeColor="#6375EC" backgroundColor="#162E4A" block-color="#6375EC"
-            bindchange="onHeightChange" bindchanging="onHeightChange" block-size="20"
-          />
-        </view>
-        <view class="slider-row">
-          <view class="slider-labels">
-            <text class="slider-key">{{t.bsWeight}}</text>
-            <text class="slider-val">{{obWeightDisplay}} <text class="slider-unit">{{t.bsKg}}</text></text>
-          </view>
-          <slider
-            min="30" max="150" value="{{obWeight}}" step="0.5"
-            activeColor="#6375EC" backgroundColor="#162E4A" block-color="#6375EC"
-            bindchange="onWeightChange" bindchanging="onWeightChange" block-size="20"
+            bindchange="onSliderChange" bindchanging="onSliderChange"
+            data-key="{{item.key}}" data-step="{{item.step}}"
+            block-size="20"
           />
         </view>
         <view class="ob-confirm" bindtap="handleSubmitBody">
@@ -182,8 +186,8 @@
         </view>
       </view>
 
-      <!-- Onboarding: Conditions -->
-      <view wx:if="{{obStep === 'conditions'}}" class="ob-bar conditions-bar">
+      <!-- Onboarding: multi select -->
+      <view wx:if="{{obQuestion && obQuestion.input_type === 'multi_select'}}" class="ob-bar conditions-bar">
         <view class="cond-chips">
           <view
             wx:for="{{obConditionList}}"
