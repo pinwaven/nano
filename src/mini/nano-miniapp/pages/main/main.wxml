@@ -247,6 +247,10 @@
               <text class="tool-item-icon">♥</text>
               <text class="tool-item-label">{{t.toolHealthAdvice}}</text>
             </view>
+            <view class="tool-item" bindtap="handleToolAction" data-action="upload_health_report">
+              <text class="tool-item-icon">📋</text>
+              <text class="tool-item-label">{{t.toolUploadReport}}</text>
+            </view>
           </view>
         </view>
         <view class="input-area">

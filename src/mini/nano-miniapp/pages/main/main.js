@@ -126,6 +126,10 @@ const T = {
     toolFormulaDots: '营养定制',
     toolTestChip: '检测服务',
     toolHealthAdvice: '健康管理',
+    toolUploadReport: '上传体检报告',
+    reportUploading: '正在上传体检报告…',
+    reportAnalyzing: '正在智能分析您的体检报告，请稍候…',
+    reportError: '体检报告分析失败，请重试。',
     toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
     toolTestChipMsg: '我想使用 Kino 芯片',
     toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
@@ -280,6 +284,10 @@ const T = {
     toolFormulaDots: 'Formulate Dots',
     toolTestChip: 'Use Kino Chip',
     toolHealthAdvice: 'Health Advice',
+    toolUploadReport: 'Upload Report',
+    reportUploading: 'Uploading your health report…',
+    reportAnalyzing: 'Analyzing your health report, please wait…',
+    reportError: 'Health report analysis failed. Please try again.',
     toolFormulaDotMsg: 'Please formulate my Dots plan',
     toolTestChipMsg: 'I want to use a Kino chip',
     toolHealthAdviceMsg: 'Please analyze my current health status and give me personalized health advice.',
@@ -1349,6 +1357,8 @@ Page({
       this.setData({ kinoScanPending: true })
     } else if (action === 'health_advice') {
       this._requestHealthAdvice()
+    } else if (action === 'upload_health_report') {
+      this._uploadHealthReport()
     }
   },
 
@@ -1386,6 +1396,56 @@ Page({
     } finally {
       this.setData({ typing: false })
     }
+  },
+
+  _uploadHealthReport() {
+    wx.chooseImage({
+      count: 1,
+      sizeType: ['original'],
+      sourceType: ['album', 'camera'],
+      success: (res) => this._doUploadReport(res.tempFilePaths[0], 'jpg'),
+    })
+  },
+
+  _doUploadReport(tempPath, ext) {
+    const { user, t } = this.data
+    const filename = `report_${Date.now()}.${ext}`
+    this._addMsg('user', t.toolUploadReport, true)
+    this._addMsg('ai', t.reportUploading, true)
+    this.setData({ typing: true })
+
+    this._req(`${BASE}/api/oss/presign?type=report&filename=${encodeURIComponent(filename)}&category=health-reports`, 'GET')
+      .then(presignRes => {
+        const { put_url, key } = presignRes.data || {}
+        if (!put_url) throw new Error('presign failed')
+        wx.getFileSystemManager().readFile({
+          filePath: tempPath,
+          success: (fileRes) => {
+            wx.request({
+              url: put_url,
+              method: 'PUT',
+              data: fileRes.data,
+              header: { 'Content-Type': 'application/octet-stream' },
+              responseType: 'text',
+              success: () => {
+                this._addMsg('ai', t.reportAnalyzing, true)
+                this._req(`${BASE}/api/analyze-health-report`, 'POST', {
+                  openid: user.user_id, oss_key: key, filename,
+                }).then(res => {
+                  const reply = res.data?.message
+                  if (!reply) throw new Error('empty response')
+                  this._addMsg('ai', reply, true)
+                }).catch(() => {
+                  this._addMsg('ai', t.reportError)
+                }).finally(() => this.setData({ typing: false }))
+              },
+              fail: () => { this._addMsg('ai', t.reportError); this.setData({ typing: false }) },
+            })
+          },
+          fail: () => { this._addMsg('ai', t.reportError); this.setData({ typing: false }) },
+        })
+      })
+      .catch(() => { this._addMsg('ai', t.reportError); this.setData({ typing: false }) })
   },
 
   _addActionMsg(action, label, persist = false) {

@@ -39,6 +39,7 @@ const systemNutritionTemplate = require('./prompts/systemNutrition');
 const systemHealthAdviceTemplate = require('./prompts/systemHealthAdvice');
 const strings = require('./prompts/strings');
 const systemAdminReportTemplate = require('./prompts/systemAdminReport');
+const systemHealthReportTemplate = require('./prompts/systemHealthReport');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
@@ -2763,6 +2764,102 @@ async function handlePostHealthAdvice(body) {
     }
 }
 
+async function handlePostAnalyzeHealthReport(body) {
+    const { openid, oss_key, filename } = body;
+    if (!openid) return { success: false, error: 'openid required', statusCode: 400 };
+    if (!oss_key) return { success: false, error: 'oss_key required', statusCode: 400 };
+
+    try {
+        const userResult = await pool.query(
+            `SELECT user_id, nickname, gender, birth_date, language FROM users
+             WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
+            [openid]
+        );
+        if (!userResult.rows.length) return { success: false, error: 'User not found', statusCode: 404 };
+        const user = userResult.rows[0];
+        const user_id = user.user_id;
+        const isZh = (user.language || 'zh') !== 'en';
+        const age = calculateAge(user.birth_date);
+
+        const systemPrompt = systemHealthReportTemplate({
+            isZh,
+            nickname: user.nickname,
+            age,
+            gender: user.gender,
+        });
+
+        const ext = oss_key.split('.').pop().toLowerCase();
+        const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
+        const buf = await ossLib.getObjectBuffer(oss_key);
+        const imageEntry = { type: 'image_url', image_url: { url: `data:${mime};base64,${buf.toString('base64')}` } };
+
+        const llmClient = getLlmClient();
+        const completion = await llmClient.chat.completions.create({
+            model: 'qwen-vl-plus',
+            messages: [{
+                role: 'user',
+                content: [imageEntry, { type: 'text', text: systemPrompt }],
+            }],
+        });
+
+        const rawReply = completion.choices[0].message.content || '';
+
+        // Extract fenced JSON block
+        const jsonMatch = rawReply.match(/```json\s*([\s\S]*?)```/);
+        let extracted = {};
+        let abnormalItems = [];
+        let reportDate = null;
+        let bodyWeightKg = null;
+        let bmi = null;
+
+        let contentType = 'health_photo';
+        if (jsonMatch) {
+            try {
+                const parsed = JSON.parse(jsonMatch[1]);
+                contentType = parsed.content_type || 'health_photo';
+                extracted = parsed.extracted || {};
+                abnormalItems = parsed.abnormal_items || [];
+                reportDate = parsed.report_date || null;
+                bodyWeightKg = parsed.body_weight_kg || null;
+                bmi = parsed.bmi || null;
+            } catch (e) {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'Failed to parse health report JSON', error: e.message }));
+            }
+        }
+
+        // Narrative is everything after the closing fence
+        const narrative = rawReply.replace(/```json[\s\S]*?```\s*/, '').trim();
+
+        const testedAt = reportDate ? new Date(reportDate) : new Date();
+        const data = { oss_key, content_type: contentType, extracted, abnormal_items: abnormalItems, report_date: reportDate, ai_analysis: narrative };
+
+        const insertResult = await pool.query(
+            `INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at)
+             VALUES ($1, 'health_checkup_report', $2, NULL, $3)
+             RETURNING id`,
+            [user_id, JSON.stringify(data), testedAt]
+        );
+        const biomarker_id = insertResult.rows[0].id;
+
+        if (bodyWeightKg) {
+            await pool.query(
+                `UPDATE users SET bio_data = bio_data || $1::jsonb WHERE user_id = $2`,
+                [JSON.stringify({ weight_kg: bodyWeightKg, ...(bmi ? { bmi } : {}) }), user_id]
+            );
+        }
+
+        const userTrigger = isZh ? '我上传了一份体检报告，请帮我分析。' : 'I uploaded a health report. Please analyze it.';
+        await saveChatMessage(user_id, 'user', userTrigger);
+        await saveChatMessage(user_id, 'ai', narrative);
+
+        console.log(JSON.stringify({ level: 'INFO', msg: 'Health report analyzed', user_id, biomarker_id, abnormal_count: abnormalItems.length }));
+        return { success: true, message: narrative, biomarker_id };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostAnalyzeHealthReport failed', error: err.message }));
+        return { success: false, error: err.message, statusCode: 500 };
+    }
+}
+
 // ── Academy handlers ──────────────────────────────────────────────────────────
 
 async function handleGetAcademyCourses() {
@@ -3754,6 +3851,7 @@ exports.handler = async (req, resp, context) => {
 
     try {
         let result;
+
         let parsedBody = body;
         if (method !== 'GET') {
             if (Buffer.isBuffer(body)) {
@@ -3910,6 +4008,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostFormulaDots(parsedBody);
             } else if (path.includes('/health-advice')) {
                 result = await handlePostHealthAdvice(parsedBody);
+            } else if (path.includes('/analyze-health-report')) {
+                result = await handlePostAnalyzeHealthReport(parsedBody);
             } else if (path === '/biomarkers') {
                 result = await handlePostBiomarkers(parsedBody);
             } else if (path.includes('/generate-coach-payouts')) {

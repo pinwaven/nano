@@ -41,4 +41,11 @@ async function deleteObject(key) {
     }
 }
 
-module.exports = { generateKey, generatePresignedPutUrl, generatePresignedGetUrl, deleteObject };
+// Downloads an OSS object and returns its content as a Buffer.
+async function getObjectBuffer(key) {
+    const client = getClient();
+    const result = await client.get(key);
+    return result.content;
+}
+
+module.exports = { generateKey, generatePresignedPutUrl, generatePresignedGetUrl, deleteObject, getObjectBuffer };
