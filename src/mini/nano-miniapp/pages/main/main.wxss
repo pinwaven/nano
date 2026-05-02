@@ -213,6 +213,17 @@
   border-bottom-left-radius: 6rpx;
 }
 
+.msg-bubble-image {
+  padding: 0;
+  overflow: hidden;
+}
+
+.msg-image {
+  width: 480rpx;
+  border-radius: 16rpx;
+  display: block;
+}
+
 .msg-text {
   font-size: 28rpx;
   line-height: 1.55;

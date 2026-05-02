@@ -126,10 +126,10 @@ const T = {
     toolFormulaDots: '营养定制',
     toolTestChip: '检测服务',
     toolHealthAdvice: '健康管理',
-    toolUploadReport: '上传体检报告',
-    reportUploading: '正在上传体检报告…',
-    reportAnalyzing: '正在智能分析您的体检报告，请稍候…',
-    reportError: '体检报告分析失败，请重试。',
+    toolUploadImage: '上传图片',
+    imageUploading: '正在上传图片…',
+    imageAnalyzing: '正在分析图片，请稍候…',
+    imageError: '图片分析失败，请重试。',
     toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
     toolTestChipMsg: '我想使用 Kino 芯片',
     toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
@@ -284,10 +284,10 @@ const T = {
     toolFormulaDots: 'Formulate Dots',
     toolTestChip: 'Use Kino Chip',
     toolHealthAdvice: 'Health Advice',
-    toolUploadReport: 'Upload Report',
-    reportUploading: 'Uploading your health report…',
-    reportAnalyzing: 'Analyzing your health report, please wait…',
-    reportError: 'Health report analysis failed. Please try again.',
+    toolUploadImage: 'Upload Image',
+    imageUploading: 'Uploading image…',
+    imageAnalyzing: 'Analyzing your image, please wait…',
+    imageError: 'Image analysis failed. Please try again.',
     toolFormulaDotMsg: 'Please formulate my Dots plan',
     toolTestChipMsg: 'I want to use a Kino chip',
     toolHealthAdviceMsg: 'Please analyze my current health status and give me personalized health advice.',
@@ -1357,8 +1357,8 @@ Page({
       this.setData({ kinoScanPending: true })
     } else if (action === 'health_advice') {
       this._requestHealthAdvice()
-    } else if (action === 'upload_health_report') {
-      this._uploadHealthReport()
+    } else if (action === 'upload_image') {
+      this._uploadImage()
     }
   },
 
@@ -1398,26 +1398,32 @@ Page({
     }
   },
 
-  _uploadHealthReport() {
+  _uploadImage() {
     wx.chooseImage({
       count: 1,
       sizeType: ['original'],
       sourceType: ['album', 'camera'],
-      success: (res) => this._doUploadReport(res.tempFilePaths[0], 'jpg'),
+      success: (res) => this._doUploadImage(res.tempFilePaths[0]),
     })
   },
 
-  _doUploadReport(tempPath, ext) {
+  _addImageMsg(imageUrl) {
+    const msg = { id: `user-${Date.now()}`, role: 'user', content: '', imageUrl }
+    this.setData({ messages: [...this.data.messages, msg] })
+    this._scrollBottom()
+  },
+
+  _doUploadImage(tempPath) {
     const { user, t } = this.data
-    const filename = `report_${Date.now()}.${ext}`
-    this._addMsg('user', t.toolUploadReport, true)
-    this._addMsg('ai', t.reportUploading, true)
+    const filename = `img_${Date.now()}.jpg`
+    this._addMsg('ai', t.imageUploading)
     this.setData({ typing: true })
 
-    this._req(`${BASE}/api/oss/presign?type=report&filename=${encodeURIComponent(filename)}&category=health-reports`, 'GET')
+    this._req(`${BASE}/api/oss/presign?type=image&filename=${encodeURIComponent(filename)}&category=user-images`, 'GET')
       .then(presignRes => {
-        const { put_url, key } = presignRes.data || {}
+        const { put_url, get_url, key } = presignRes.data || {}
         if (!put_url) throw new Error('presign failed')
+        this._addImageMsg(tempPath)
         wx.getFileSystemManager().readFile({
           filePath: tempPath,
           success: (fileRes) => {
@@ -1428,24 +1434,24 @@ Page({
               header: { 'Content-Type': 'application/octet-stream' },
               responseType: 'text',
               success: () => {
-                this._addMsg('ai', t.reportAnalyzing, true)
-                this._req(`${BASE}/api/analyze-health-report`, 'POST', {
-                  openid: user.user_id, oss_key: key, filename,
+                this._addMsg('ai', t.imageAnalyzing)
+                this._req(`${BASE}/api/analyze-image`, 'POST', {
+                  openid: user.user_id, oss_key: key, filename, get_url,
                 }).then(res => {
                   const reply = res.data?.message
                   if (!reply) throw new Error('empty response')
                   this._addMsg('ai', reply, true)
                 }).catch(() => {
-                  this._addMsg('ai', t.reportError)
+                  this._addMsg('ai', t.imageError)
                 }).finally(() => this.setData({ typing: false }))
               },
-              fail: () => { this._addMsg('ai', t.reportError); this.setData({ typing: false }) },
+              fail: () => { this._addMsg('ai', t.imageError); this.setData({ typing: false }) },
             })
           },
-          fail: () => { this._addMsg('ai', t.reportError); this.setData({ typing: false }) },
+          fail: () => { this._addMsg('ai', t.imageError); this.setData({ typing: false }) },
         })
       })
-      .catch(() => { this._addMsg('ai', t.reportError); this.setData({ typing: false }) })
+      .catch(() => { this._addMsg('ai', t.imageError); this.setData({ typing: false }) })
   },
 
   _addActionMsg(action, label, persist = false) {

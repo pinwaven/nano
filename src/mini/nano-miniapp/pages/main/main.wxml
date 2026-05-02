@@ -96,8 +96,15 @@
                 <text class="msg-action-arrow">›</text>
               </view>
             </block>
-            <view wx:else class="message-bubble {{item.role === 'user' ? 'message-user' : 'message-ai'}}">
-              <text class="msg-text" selectable="true">{{item.content}}</text>
+            <view wx:else class="message-bubble {{item.role === 'user' ? 'message-user' : 'message-ai'}} {{item.imageUrl ? 'msg-bubble-image' : ''}}">
+              <image
+                wx:if="{{item.imageUrl}}"
+                class="msg-image"
+                src="{{item.imageUrl}}"
+                mode="widthFix"
+                show-menu-by-longpress="{{true}}"
+              />
+              <text wx:if="{{item.content}}" class="msg-text" selectable="true">{{item.content}}</text>
             </view>
           </view>
 
@@ -235,6 +242,10 @@
       <view wx:if="{{obStep === 'done'}}" class="input-container">
         <view wx:if="{{toolboxOpen}}" class="toolbox-panel">
           <view class="toolbox-grid">
+            <view class="tool-item" bindtap="handleToolAction" data-action="upload_image">
+              <text class="tool-item-icon">▣</text>
+              <text class="tool-item-label">{{t.toolUploadImage}}</text>
+            </view>
             <view class="tool-item" bindtap="handleToolAction" data-action="test_chip">
               <text class="tool-item-icon">⬡</text>
               <text class="tool-item-label">{{t.toolTestChip}}</text>
@@ -246,10 +257,6 @@
             <view class="tool-item" bindtap="handleToolAction" data-action="health_advice">
               <text class="tool-item-icon">♥</text>
               <text class="tool-item-label">{{t.toolHealthAdvice}}</text>
-            </view>
-            <view class="tool-item" bindtap="handleToolAction" data-action="upload_health_report">
-              <text class="tool-item-icon">📋</text>
-              <text class="tool-item-label">{{t.toolUploadReport}}</text>
             </view>
           </view>
         </view>

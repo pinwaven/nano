@@ -1755,11 +1755,11 @@ async function handleValidateInvite(body) {
     return { success: true, channel };
 }
 
-async function saveChatMessage(user_id, role, content) {
+async function saveChatMessage(user_id, role, content, image_url = null) {
     try {
         await pool.query(
-            'INSERT INTO chat_messages (user_id, role, content) VALUES ($1, $2, $3)',
-            [user_id, role, content]
+            'INSERT INTO chat_messages (user_id, role, content, image_url) VALUES ($1, $2, $3, $4)',
+            [user_id, role, content, image_url]
         );
     } catch (err) {
         console.error('Failed to save chat message:', err);
@@ -2764,8 +2764,8 @@ async function handlePostHealthAdvice(body) {
     }
 }
 
-async function handlePostAnalyzeHealthReport(body) {
-    const { openid, oss_key, filename } = body;
+async function handlePostAnalyzeImage(body) {
+    const { openid, oss_key, filename, get_url } = body;
     if (!openid) return { success: false, error: 'openid required', statusCode: 400 };
     if (!oss_key) return { success: false, error: 'oss_key required', statusCode: 400 };
 
@@ -2804,7 +2804,6 @@ async function handlePostAnalyzeHealthReport(body) {
 
         const rawReply = completion.choices[0].message.content || '';
 
-        // Extract fenced JSON block
         const jsonMatch = rawReply.match(/```json\s*([\s\S]*?)```/);
         let extracted = {};
         let abnormalItems = [];
@@ -2823,21 +2822,23 @@ async function handlePostAnalyzeHealthReport(body) {
                 bodyWeightKg = parsed.body_weight_kg || null;
                 bmi = parsed.bmi || null;
             } catch (e) {
-                console.log(JSON.stringify({ level: 'WARN', msg: 'Failed to parse health report JSON', error: e.message }));
+                console.log(JSON.stringify({ level: 'WARN', msg: 'Failed to parse image analysis JSON', error: e.message }));
             }
         }
 
-        // Narrative is everything after the closing fence
         const narrative = rawReply.replace(/```json[\s\S]*?```\s*/, '').trim();
 
+        const testType = contentType === 'food_photo' ? 'food_photo'
+                       : contentType === 'health_report' ? 'health_checkup_report'
+                       : 'health_photo';
         const testedAt = reportDate ? new Date(reportDate) : new Date();
         const data = { oss_key, content_type: contentType, extracted, abnormal_items: abnormalItems, report_date: reportDate, ai_analysis: narrative };
 
         const insertResult = await pool.query(
             `INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at)
-             VALUES ($1, 'health_checkup_report', $2, NULL, $3)
+             VALUES ($1, $2, $3, NULL, $4)
              RETURNING id`,
-            [user_id, JSON.stringify(data), testedAt]
+            [user_id, testType, JSON.stringify(data), testedAt]
         );
         const biomarker_id = insertResult.rows[0].id;
 
@@ -2848,14 +2849,14 @@ async function handlePostAnalyzeHealthReport(body) {
             );
         }
 
-        const userTrigger = isZh ? '我上传了一份体检报告，请帮我分析。' : 'I uploaded a health report. Please analyze it.';
-        await saveChatMessage(user_id, 'user', userTrigger);
+        const userTrigger = isZh ? '（图片）' : '(image)';
+        await saveChatMessage(user_id, 'user', userTrigger, get_url || null);
         await saveChatMessage(user_id, 'ai', narrative);
 
-        console.log(JSON.stringify({ level: 'INFO', msg: 'Health report analyzed', user_id, biomarker_id, abnormal_count: abnormalItems.length }));
-        return { success: true, message: narrative, biomarker_id };
+        console.log(JSON.stringify({ level: 'INFO', msg: 'Image analyzed', user_id, biomarker_id, content_type: contentType }));
+        return { success: true, message: narrative, biomarker_id, get_url: get_url || null };
     } catch (err) {
-        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostAnalyzeHealthReport failed', error: err.message }));
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostAnalyzeImage failed', error: err.message }));
         return { success: false, error: err.message, statusCode: 500 };
     }
 }
@@ -4008,8 +4009,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostFormulaDots(parsedBody);
             } else if (path.includes('/health-advice')) {
                 result = await handlePostHealthAdvice(parsedBody);
-            } else if (path.includes('/analyze-health-report')) {
-                result = await handlePostAnalyzeHealthReport(parsedBody);
+            } else if (path.includes('/analyze-image')) {
+                result = await handlePostAnalyzeImage(parsedBody);
             } else if (path === '/biomarkers') {
                 result = await handlePostBiomarkers(parsedBody);
             } else if (path.includes('/generate-coach-payouts')) {
