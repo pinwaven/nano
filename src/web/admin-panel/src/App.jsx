@@ -37,6 +37,7 @@ function LoginScreen({ onLogin }) {
       const res = await axios.post('/api/admin/login', { username, password })
       if (res.data?.token) {
         sessionStorage.setItem('nano_admin_token', res.data.token)
+        sessionStorage.setItem('nano_admin_user', username)
         onLogin(res.data.token)
       } else {
         setError('Login failed')
@@ -291,6 +292,10 @@ const T = {
       insights: 'Insights', dataTable: 'Data Table', chart: 'Chart',
       history: 'History', emptyHistory: 'No previous reports', sqlLabel: 'Generated SQL',
       rowCount: (n) => `${n} row${n !== 1 ? 's' : ''}`, errorPrefix: 'Error: ',
+      saved: 'Saved Reports', emptySaved: 'No saved reports yet',
+      saveReport: 'Save Report', editReport: 'Edit Report',
+      reportTitle: 'Report Title', reportQuery: 'Query',
+      rerunSave: 'Re-run & Save',
       samples: [
         'Show user signups by month',
         'Top 5 channels by revenue',
@@ -498,6 +503,10 @@ const T = {
       insights: '洞察', dataTable: '数据表格', chart: '图表',
       history: '历史记录', emptyHistory: '暂无历史报表', sqlLabel: '生成的 SQL',
       rowCount: (n) => `${n} 行`, errorPrefix: '错误：',
+      saved: '已保存报表', emptySaved: '暂无已保存报表',
+      saveReport: '保存报表', editReport: '编辑报表',
+      reportTitle: '报表名称', reportQuery: '查询语句',
+      rerunSave: '重新运行并保存',
       samples: [
         '按月统计用户注册数',
         '按收入排名前5的渠道',
@@ -4956,17 +4965,43 @@ function ReportDataTable({ columns, data }) {
 function ReportsTab() {
   const { t } = useLang();
   const tr = t.reports;
+  const adminUser = sessionStorage.getItem('nano_admin_user') || '';
 
-  const [query, setQuery]       = useState('');
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState('');
-  const [report, setReport]     = useState(null);
-  const [history, setHistory]   = useState([]);
+  // Run state
+  const [query, setQuery]         = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState('');
+  const [report, setReport]       = useState(null);
   const [llmHistory, setLlmHistory] = useState([]);
-  const [showSql, setShowSql]   = useState(false);
+  const [showSql, setShowSql]     = useState(false);
   const [activeTab, setActiveTab] = useState('chart');
 
+  // Session history (localStorage)
+  const [history, setHistory] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('nano_report_history') || '[]'); } catch { return []; }
+  });
+
+  // Saved reports (DB, shared across admins)
+  const [savedReports, setSavedReports]   = useState([]);
+  const [savedLoading, setSavedLoading]   = useState(false);
+  const [activeSavedId, setActiveSavedId] = useState(null);
+
+  // Edit / save modal: null | { mode: 'save' | 'edit', title, query, savedId }
+  const [modal, setModal] = useState(null);
+  const [modalBusy, setModalBusy] = useState(false);
+  const [modalError, setModalError] = useState('');
+
   const textareaRef = React.useRef(null);
+
+  const fetchSaved = useCallback(async () => {
+    setSavedLoading(true);
+    try {
+      const res = await axios.get('/api/admin/saved-reports');
+      setSavedReports(res.data.reports || []);
+    } catch {} finally { setSavedLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchSaved(); }, [fetchSaved]);
 
   const runReport = async (queryText) => {
     const q = (queryText || query).trim();
@@ -4974,36 +5009,58 @@ function ReportsTab() {
     setLoading(true);
     setError('');
     setShowSql(false);
+    setActiveSavedId(null);
     try {
       const res = await axios.post('/api/admin/report', { query: q, history: llmHistory });
       if (res.data.success === false) throw new Error(res.data.error || 'Report failed');
-      const newReport = res.data;
+      const newReport = { ...res.data, query: q };
       setReport(newReport);
       setActiveTab(newReport.chart && newReport.data?.length > 0 ? 'chart' : 'table');
       const summary = `Title: ${newReport.title}. SQL: ${(newReport.sql || '').slice(0, 200)}. Rows: ${newReport.data?.length}.`;
       setLlmHistory(prev => [...prev, { role: 'user', content: q }, { role: 'assistant', content: summary }].slice(-24));
-      setHistory(prev => [{ id: Date.now(), query: q, report: newReport }, ...prev].slice(0, 20));
+      setHistory(prev => {
+        const next = [{ id: Date.now(), query: q, report: newReport }, ...prev].slice(0, 20);
+        try { localStorage.setItem('nano_report_history', JSON.stringify(next)); } catch {}
+        return next;
+      });
       setQuery('');
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Unknown error');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runReport(); }
   };
 
-  const loadHistoryEntry = (entry) => {
+  const loadFromHistory = (entry) => {
     setReport(entry.report);
     setShowSql(false);
     setError('');
+    setActiveSavedId(null);
     setActiveTab(entry.report.chart && entry.report.data?.length > 0 ? 'chart' : 'table');
   };
 
+  const loadSaved = (saved) => {
+    const r = {
+      title: saved.title,
+      query: saved.query,
+      sql: saved.sql,
+      chart: saved.chart,
+      insights: saved.insights,
+      columns: saved.columns || [],
+      data: saved.data || [],
+    };
+    setReport(r);
+    setShowSql(false);
+    setError('');
+    setActiveSavedId(saved.id);
+    setActiveTab(r.chart && r.data?.length > 0 ? 'chart' : 'table');
+  };
+
   const startNew = () => {
-    setReport(null); setQuery(''); setError(''); setShowSql(false); setLlmHistory([]);
+    setReport(null); setQuery(''); setError(''); setShowSql(false);
+    setLlmHistory([]); setActiveSavedId(null);
     setTimeout(() => textareaRef.current?.focus(), 50);
   };
 
@@ -5016,28 +5073,147 @@ function ReportsTab() {
         return v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g, '""')}"` : v;
       }).join(',')
     );
-    const csv = [cols.join(','), ...rows].join('\n');
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.href = URL.createObjectURL(new Blob([[cols.join(','), ...rows].join('\n')], { type: 'text/csv' }));
     a.download = `${(report.title || 'report').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.csv`;
     a.click();
   };
 
+  // ── Save / Edit modal actions ───────────────────────────────────────────────
+  const openSaveModal = () => {
+    setModal({ mode: 'save', title: report?.title || '', query: report?.query || '' });
+    setModalError('');
+  };
+
+  const openEditModal = (saved) => {
+    setModal({ mode: 'edit', title: saved.title, query: saved.query, savedId: saved.id });
+    setModalError('');
+  };
+
+  const closeModal = () => { setModal(null); setModalBusy(false); setModalError(''); };
+
+  const handleModalSave = async (rerun = false) => {
+    if (!modal?.title?.trim()) { setModalError('Title is required'); return; }
+    setModalBusy(true);
+    setModalError('');
+    try {
+      if (modal.mode === 'save') {
+        // New save
+        await axios.post('/api/admin/saved-reports', {
+          title: modal.title.trim(),
+          query: report.query || modal.query,
+          sql: report.sql,
+          chart: report.chart,
+          insights: report.insights,
+          columns: report.columns,
+          data: report.data,
+          created_by: adminUser,
+        });
+        await fetchSaved();
+        closeModal();
+      } else {
+        // Edit existing
+        if (rerun && modal.query?.trim()) {
+          // Re-run query first, then update saved
+          closeModal();
+          setLoading(true);
+          setError('');
+          const res = await axios.post('/api/admin/report', { query: modal.query.trim(), history: [] });
+          if (res.data.success === false) throw new Error(res.data.error || 'Report failed');
+          const newReport = res.data;
+          await axios.put(`/api/admin/saved-reports/${modal.savedId}`, {
+            title: modal.title.trim(),
+            query: modal.query.trim(),
+            sql: newReport.sql,
+            chart: newReport.chart,
+            insights: newReport.insights,
+            columns: newReport.columns,
+            data: newReport.data,
+            updated_by: adminUser,
+          });
+          setReport(newReport);
+          setActiveSavedId(modal.savedId);
+          setActiveTab(newReport.chart && newReport.data?.length > 0 ? 'chart' : 'table');
+          await fetchSaved();
+          setLoading(false);
+        } else {
+          // Title-only update
+          await axios.put(`/api/admin/saved-reports/${modal.savedId}`, {
+            title: modal.title.trim(),
+            query: modal.query,
+            sql: report?.sql || '',
+            chart: report?.chart,
+            insights: report?.insights,
+            columns: report?.columns,
+            data: report?.data,
+            updated_by: adminUser,
+          });
+          setReport(prev => prev ? { ...prev, title: modal.title.trim() } : prev);
+          await fetchSaved();
+          closeModal();
+        }
+      }
+    } catch (err) {
+      if (modal) setModalError(err.response?.data?.error || err.message);
+      setLoading(false);
+    } finally {
+      if (modal) setModalBusy(false);
+    }
+  };
+
+  const handleDeleteSaved = async (saved) => {
+    if (!window.confirm(`Delete saved report "${saved.title}"?`)) return;
+    try {
+      await axios.delete(`/api/admin/saved-reports/${saved.id}`);
+      if (activeSavedId === saved.id) startNew();
+      await fetchSaved();
+    } catch (err) { alert(err.response?.data?.error || err.message); }
+  };
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+  const isSavedLoaded = activeSavedId !== null;
+
   return (
     <div className="reports-layout">
+
+      {/* ── Left sidebar ─────────────────────────────────────────── */}
       <div className="reports-sidebar">
         <div className="reports-sidebar-header">
-          <span className="reports-sidebar-title">{tr.history}</span>
+          <span className="reports-sidebar-title">{tr.title}</span>
           <button className="btn-primary" style={{ padding: '5px 10px', fontSize: 12 }} onClick={startNew}>
             <Plus size={12} />{tr.newReport}
           </button>
         </div>
+
         <div className="reports-history-list">
+          {/* Saved reports section */}
+          <div className="reports-section-label">{tr.saved}</div>
+          {savedLoading && <div className="reports-history-empty">…</div>}
+          {!savedLoading && savedReports.length === 0 && (
+            <div className="reports-history-empty">{tr.emptySaved}</div>
+          )}
+          {savedReports.map(s => (
+            <div key={s.id} className={`reports-saved-item${activeSavedId === s.id ? ' active' : ''}`}>
+              <button className="reports-saved-main" onClick={() => loadSaved(s)}>
+                <span className="reports-history-query">{s.title}</span>
+                <span className="reports-history-title">{s.created_by ? `by ${s.created_by}` : ''}</span>
+              </button>
+              <div className="reports-saved-actions">
+                <button title="Edit" onClick={() => openEditModal(s)}><Pencil size={11} /></button>
+                <button title="Delete" onClick={() => handleDeleteSaved(s)}><Trash2 size={11} /></button>
+              </div>
+            </div>
+          ))}
+
+          <div className="reports-sidebar-divider" />
+
+          {/* Session history section */}
+          <div className="reports-section-label">{tr.history}</div>
           {history.length === 0 && <div className="reports-history-empty">{tr.emptyHistory}</div>}
           {history.map(entry => (
             <button key={entry.id}
-              className={`reports-history-item${report === entry.report ? ' active' : ''}`}
-              onClick={() => loadHistoryEntry(entry)}>
+              className={`reports-history-item${!isSavedLoaded && report === entry.report ? ' active' : ''}`}
+              onClick={() => loadFromHistory(entry)}>
               <span className="reports-history-query">{entry.query}</span>
               <span className="reports-history-title">{entry.report.title}</span>
             </button>
@@ -5045,7 +5221,10 @@ function ReportsTab() {
         </div>
       </div>
 
+      {/* ── Main area ────────────────────────────────────────────── */}
       <div className="reports-main">
+
+        {/* Empty state */}
         {!report && !loading && !error && (
           <div className="reports-empty-state">
             <BarChart2 size={48} color="#cbd5e1" />
@@ -5062,6 +5241,7 @@ function ReportsTab() {
           </div>
         )}
 
+        {/* Result area */}
         {(report || loading || error) && (
           <div className="reports-result">
             {error && <div className="form-error" style={{ marginBottom: 16 }}>{tr.errorPrefix}{error}</div>}
@@ -5076,6 +5256,17 @@ function ReportsTab() {
                 <div className="reports-result-header">
                   <h2 className="reports-result-title">{report.title}</h2>
                   <div className="reports-result-actions">
+                    {!isSavedLoaded && report.sql && (
+                      <button className="btn-secondary" style={{ fontSize: 12 }} onClick={openSaveModal}>
+                        <Check size={13} />{tr.saveReport}
+                      </button>
+                    )}
+                    {isSavedLoaded && (
+                      <button className="btn-secondary" style={{ fontSize: 12 }}
+                        onClick={() => openEditModal(savedReports.find(s => s.id === activeSavedId) || { id: activeSavedId, title: report.title, query: report.query || '' })}>
+                        <Pencil size={13} />{tr.editReport}
+                      </button>
+                    )}
                     {report.data?.length > 0 && (
                       <button className="btn-secondary" style={{ fontSize: 12 }} onClick={exportCsv}>
                         <Download size={13} />{tr.exportCsv}
@@ -5133,6 +5324,7 @@ function ReportsTab() {
           </div>
         )}
 
+        {/* Query input */}
         <div className="reports-input-area">
           <div className="reports-input-box">
             <textarea
@@ -5156,6 +5348,55 @@ function ReportsTab() {
           </div>
         </div>
       </div>
+
+      {/* ── Save / Edit modal ─────────────────────────────────────── */}
+      {modal && (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span>{modal.mode === 'save' ? tr.saveReport : tr.editReport}</span>
+              <button onClick={closeModal}><X size={16} /></button>
+            </div>
+            <div className="modal-body">
+              <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
+                <div className="form-field">
+                  <span className="form-field-label">{tr.reportTitle}</span>
+                  <input
+                    autoFocus
+                    value={modal.title}
+                    onChange={e => setModal(m => ({ ...m, title: e.target.value }))}
+                    placeholder="e.g. Monthly User Signups"
+                  />
+                </div>
+                {modal.mode === 'edit' && (
+                  <div className="form-field">
+                    <span className="form-field-label">{tr.reportQuery}</span>
+                    <textarea
+                      className="form-field-textarea"
+                      rows={3}
+                      value={modal.query}
+                      onChange={e => setModal(m => ({ ...m, query: e.target.value }))}
+                      placeholder="Natural language query…"
+                    />
+                  </div>
+                )}
+              </div>
+              {modalError && <div className="form-error">{modalError}</div>}
+              <div className="modal-footer">
+                <button className="btn-secondary" onClick={closeModal}>{t.modal.cancel}</button>
+                {modal.mode === 'edit' && (
+                  <button className="btn-secondary" disabled={modalBusy || loading} onClick={() => handleModalSave(true)}>
+                    {tr.rerunSave}
+                  </button>
+                )}
+                <button className="btn-primary" disabled={modalBusy} onClick={() => handleModalSave(false)}>
+                  {modalBusy ? t.modal.saving : t.modal.save}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3450,6 +3450,74 @@ async function handleGetQuestionnaireResponses(query) {
     }
 }
 
+// ── Admin: Saved Reports ──────────────────────────────────────────────────────
+
+async function handleGetSavedReports() {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `SELECT id, title, query, sql, chart, insights, columns, data, created_by, updated_by, created_at, updated_at
+             FROM saved_reports ORDER BY updated_at DESC`
+        );
+        return { success: true, reports: result.rows };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetSavedReports', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handlePostSavedReport(body) {
+    const { title, query, sql, chart, insights, columns, data, created_by } = body || {};
+    if (!title || !query || !sql) return { statusCode: 400, success: false, error: 'title, query, and sql are required' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `INSERT INTO saved_reports (title, query, sql, chart, insights, columns, data, created_by, updated_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+             RETURNING id, title, query, sql, chart, insights, columns, data, created_by, updated_by, created_at, updated_at`,
+            [title, query, sql, JSON.stringify(chart) || null, insights || '', JSON.stringify(columns) || null, JSON.stringify(data) || null, created_by || null]
+        );
+        console.log(JSON.stringify({ level: 'INFO', msg: 'handlePostSavedReport', id: result.rows[0].id, title }));
+        return { success: true, report: result.rows[0] };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostSavedReport', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handlePutSavedReport(id, body) {
+    const { title, query, sql, chart, insights, columns, data, updated_by } = body || {};
+    if (!title) return { statusCode: 400, success: false, error: 'title is required' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `UPDATE saved_reports
+             SET title=$1, query=$2, sql=$3, chart=$4, insights=$5, columns=$6, data=$7, updated_by=$8, updated_at=NOW()
+             WHERE id=$9
+             RETURNING id, title, query, sql, chart, insights, columns, data, created_by, updated_by, created_at, updated_at`,
+            [title, query || '', sql || '', JSON.stringify(chart) || null, insights || '', JSON.stringify(columns) || null, JSON.stringify(data) || null, updated_by || null, id]
+        );
+        if (result.rows.length === 0) return { statusCode: 404, success: false, error: 'Report not found' };
+        console.log(JSON.stringify({ level: 'INFO', msg: 'handlePutSavedReport', id, title }));
+        return { success: true, report: result.rows[0] };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePutSavedReport', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handleDeleteSavedReport(id) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('DELETE FROM saved_reports WHERE id=$1', [id]);
+        console.log(JSON.stringify({ level: 'INFO', msg: 'handleDeleteSavedReport', id }));
+        return { success: true };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleDeleteSavedReport', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
 // ── Admin: AI Report Engine ───────────────────────────────────────────────────
 
 async function handlePostAdminReport(body) {
@@ -3682,6 +3750,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetChannelPayouts(query);
             } else if (path.includes('/channel-rewards-summary')) {
                 result = await handleGetChannelRewardsSummary(query.channel_id);
+            } else if (path === '/admin/saved-reports') {
+                result = await handleGetSavedReports();
             } else if (path === '/admin-accounts') {
                 result = await handleGetAdminAccounts();
             } else if (path === '/tickets' || path.includes('/tickets')) {
@@ -3777,6 +3847,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostQuestionnaireResponse(parsedBody);
             } else if (path === '/questionnaire-assignments') {
                 result = await handlePostQuestionnaireAssignment(parsedBody);
+            } else if (path === '/admin/saved-reports') {
+                result = await handlePostSavedReport(parsedBody);
             } else if (path === '/admin/report') {
                 result = await handlePostAdminReport(parsedBody);
             } else {
@@ -3825,6 +3897,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/academy/library/')) {
                 const libId = path.split('/academy/library/')[1];
                 result = await handlePutAcademyLibraryItem(libId, parsedBody);
+            } else if (path.match(/\/admin\/saved-reports\/(\d+)/)) {
+                const rId = path.match(/\/admin\/saved-reports\/(\d+)/)[1];
+                result = await handlePutSavedReport(rId, parsedBody);
             } else if (path.includes('/admin-accounts/')) {
                 const accountId = path.split('/admin-accounts/')[1];
                 result = await handlePutAdminAccount(accountId, parsedBody);
@@ -3876,6 +3951,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/academy/library/')) {
                 const libId = path.split('/academy/library/')[1];
                 result = await handleDeleteAcademyLibraryItem(libId);
+            } else if (path.match(/\/admin\/saved-reports\/(\d+)/)) {
+                const rId = path.match(/\/admin\/saved-reports\/(\d+)/)[1];
+                result = await handleDeleteSavedReport(rId);
             } else if (path.includes('/admin-accounts/')) {
                 const accountId = path.split('/admin-accounts/')[1];
                 result = await handleDeleteAdminAccount(accountId);

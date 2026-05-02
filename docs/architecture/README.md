@@ -89,3 +89,4 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 | Rewards | [rewards-system.md](rewards-system.md) |
 | EventBridge | [eventbridge.md](eventbridge.md) |
 | User Deletion | [user-deletion.md](user-deletion.md) |
+| AI Report Engine | [report-engine.md](report-engine.md) |
