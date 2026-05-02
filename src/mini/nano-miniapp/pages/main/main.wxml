@@ -104,7 +104,7 @@
                 mode="widthFix"
                 show-menu-by-longpress="{{true}}"
               />
-              <text wx:if="{{item.content}}" class="msg-text" selectable="true">{{item.content}}</text>
+              <text wx:if="{{item.content && !item.imageUrl}}" class="msg-text" selectable="true">{{item.content}}</text>
             </view>
           </view>
 

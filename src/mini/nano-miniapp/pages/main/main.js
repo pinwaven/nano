@@ -1066,7 +1066,7 @@ Page({
               return { id: `h-${i}`, role: 'ai', content: m.content }
             }
           }
-          return { id: `h-${i}`, role, content: m.content }
+          return { id: `h-${i}`, role, content: m.content, imageUrl: m.image_url || null }
         })
         this.setData({ messages: msgs })
         this._scrollBottom()
@@ -1299,7 +1299,8 @@ Page({
         const msgs = history.map((m, i) => ({
           id: `h-${i}`,
           role: (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role,
-          content: m.content
+          content: m.content,
+          imageUrl: m.image_url || null
         }))
         this.setData({ messages: msgs })
         this._scrollBottom()

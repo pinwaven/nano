@@ -20,12 +20,17 @@ module.exports = (context) => {
 - 识别照片中的食物，从长寿与健康角度给出饮食建议
 - 重点分析食物对代谢健康、抗氧化、抗炎等维度的影响，不需要计算卡路里
 
+**类型 D — DOTS 原粒（彩色圆柱形营养微粒，直径约4mm，高约4mm）**
+- 识别照片中的 DOTS 原粒（可能散落在桌面、手掌、或专用托盘上）
+- 热情鼓励用户坚持服用，肯定他们在主动管理健康这件事上的努力
+- 简短提醒：每日坚持服用是激活四大生物年龄改善效果的关键
+
 ---
 
 **首先**，输出一个 JSON 代码块（用 \`\`\`json 和 \`\`\` 包裹）。对于类型 A 填入检测数据；对于类型 B/C，\`extracted\` 留空对象即可：
 \`\`\`json
 {
-  "content_type": "health_report 或 health_photo 或 food_photo",
+  "content_type": "health_report 或 health_photo 或 food_photo 或 waven_dots",
   "report_date": "YYYY-MM-DD 或 null",
   "extracted": {
     "<检测项英文key>": { "value": <数值>, "unit": "<单位>", "ref_range": "<参考范围>", "flag": "normal|high|low" }
@@ -57,12 +62,17 @@ module.exports = (context) => {
 - Identify the foods in the photo and give dietary advice from a longevity and health perspective
 - Focus on the food's impact on metabolic health, antioxidants, inflammation, etc. — no calorie calculation needed
 
+**Type D — DOTS** (small colorful cylinder-shaped nutrition pellets, ~4 mm diameter × 4 mm tall)
+- Recognize the DOTS in the photo (they may appear scattered on a table, in a palm, or in a tray)
+- Enthusiastically encourage the user for taking their dots — affirm their commitment to active health management
+- Briefly remind them that daily consistency is what drives real improvements across the four biological age dimensions
+
 ---
 
 **First**, output a JSON code block (wrapped in \`\`\`json and \`\`\`). For Type A, fill in the extracted test data; for Type B/C, leave \`extracted\` as an empty object:
 \`\`\`json
 {
-  "content_type": "health_report or health_photo or food_photo",
+  "content_type": "health_report or health_photo or food_photo or waven_dots",
   "report_date": "YYYY-MM-DD or null",
   "extracted": {
     "<test_key>": { "value": <number>, "unit": "<str>", "ref_range": "<str>", "flag": "normal|high|low" }

@@ -1772,8 +1772,8 @@ async function handleGetChatHistory(openid) {
         if (!openid) return { success: true, messages: [] };
         const limit = parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10);
         const result = await pool.query(
-            `SELECT role, content, created_at FROM (
-                SELECT role, content, created_at FROM chat_messages
+            `SELECT role, content, image_url, created_at FROM (
+                SELECT role, content, image_url, created_at FROM chat_messages
                 WHERE user_id = $1
                 ORDER BY created_at DESC
                 LIMIT $2
@@ -2830,6 +2830,7 @@ async function handlePostAnalyzeImage(body) {
 
         const testType = contentType === 'food_photo' ? 'food_photo'
                        : contentType === 'health_report' ? 'health_checkup_report'
+                       : contentType === 'waven_dots' ? 'waven_dots'
                        : 'health_photo';
         const testedAt = reportDate ? new Date(reportDate) : new Date();
         const data = { oss_key, content_type: contentType, extracted, abnormal_items: abnormalItems, report_date: reportDate, ai_analysis: narrative };
