@@ -10,7 +10,12 @@ import {
   GraduationCap, Video, FileText, Upload, ExternalLink, Play, BookOpen,
   Bug, AlertCircle, Image as ImageIcon,
   ClipboardList, ChevronUp, Send, Eye,
+  BarChart2,
 } from 'lucide-react';
+import {
+  BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts';
 
 axios.interceptors.request.use((config) => {
   const token = sessionStorage.getItem('nano_admin_token') || import.meta.env.VITE_API_TOKEN
@@ -91,7 +96,7 @@ function LoginScreen({ onLogin }) {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports' },
     adminAccounts: { title: 'Admin Accounts', add: 'Add Admin', changePassword: 'Change Password', confirmDelete: 'Delete this admin account?', newPassword: 'New Password', usernameLabel: 'Username', passwordLabel: 'Password', count: (n) => `${n} account${n !== 1 ? 's' : ''}` },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
@@ -278,10 +283,27 @@ const T = {
       deleteDocWarning: (t) => `Delete document "${t}"? The file will also be removed from storage.`,
       viewVideo: 'View Video', viewDoc: 'View Document',
     },
+    reports: {
+      title: 'AI Reports',
+      placeholder: 'Ask a question about your data… e.g. "Show user signups by month"',
+      run: 'Run Report', running: 'Running…', newReport: 'New Report',
+      exportCsv: 'Export CSV', showSql: 'Show SQL', hideSql: 'Hide SQL',
+      insights: 'Insights', dataTable: 'Data Table', chart: 'Chart',
+      history: 'History', emptyHistory: 'No previous reports', sqlLabel: 'Generated SQL',
+      rowCount: (n) => `${n} row${n !== 1 ? 's' : ''}`, errorPrefix: 'Error: ',
+      samples: [
+        'Show user signups by month',
+        'Top 5 channels by revenue',
+        'How many users have completed a biomarker scan?',
+        'Orders by status breakdown',
+        'Coach commission totals this month',
+        'Active vs inactive Kino devices',
+      ],
+    },
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表' },
     adminAccounts: { title: '管理员账号', add: '添加管理员', changePassword: '修改密码', confirmDelete: '确认删除此管理员账号？', newPassword: '新密码', usernameLabel: '用户名', passwordLabel: '密码', count: (n) => `${n} 个账号` },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
@@ -467,6 +489,23 @@ const T = {
       deleteCourseWarning: (t) => `确认删除课程"${t}"？视频文件也将从存储中移除。`,
       deleteDocWarning: (t) => `确认删除文档"${t}"？文件也将从存储中移除。`,
       viewVideo: '查看视频', viewDoc: '查看文档',
+    },
+    reports: {
+      title: 'AI 数据报表',
+      placeholder: '用自然语言提问，例如："按月显示用户注册数"',
+      run: '运行报表', running: '运行中…', newReport: '新建报表',
+      exportCsv: '导出 CSV', showSql: '查看 SQL', hideSql: '收起 SQL',
+      insights: '洞察', dataTable: '数据表格', chart: '图表',
+      history: '历史记录', emptyHistory: '暂无历史报表', sqlLabel: '生成的 SQL',
+      rowCount: (n) => `${n} 行`, errorPrefix: '错误：',
+      samples: [
+        '按月统计用户注册数',
+        '按收入排名前5的渠道',
+        '有多少用户完成了生物标志物检测？',
+        '按状态分类的订单',
+        '本月 Coach 佣金汇总',
+        '活跃与非活跃 Kino 设备对比',
+      ],
     },
   },
 };
@@ -4830,6 +4869,297 @@ function DeleteTicketConfirm({ ticket, onClose, onConfirm }) {
   );
 }
 
+// ── Reports Tab ───────────────────────────────────────────────────────────────
+
+const REPORT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
+
+function ReportChart({ chart, data }) {
+  if (!chart || !data || data.length === 0) return null;
+  const { type, xKey, yKeys = [] } = chart;
+  if (!xKey || yKeys.length === 0) return null;
+
+  const tickFmt = (v) => {
+    const s = String(v);
+    return s.length > 14 ? s.slice(0, 12) + '…' : s;
+  };
+
+  if (type === 'pie') {
+    const yk = yKeys[0];
+    if (!yk) return null;
+    return (
+      <ResponsiveContainer width="100%" height={300}>
+        <PieChart>
+          <Pie data={data} dataKey={yk.key} nameKey={xKey} cx="50%" cy="50%" outerRadius={110}
+            label={({ name, percent }) => `${String(name).slice(0, 10)} ${(percent * 100).toFixed(0)}%`}>
+            {data.map((_, i) => <Cell key={i} fill={REPORT_COLORS[i % REPORT_COLORS.length]} />)}
+          </Pie>
+          <Tooltip />
+          <Legend />
+        </PieChart>
+      </ResponsiveContainer>
+    );
+  }
+
+  const ChartComp   = type === 'area' ? AreaChart  : type === 'line' ? LineChart  : BarChart;
+  const SeriesComp  = type === 'area' ? Area       : type === 'line' ? Line       : Bar;
+
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <ChartComp data={data} margin={{ top: 4, right: 20, left: 0, bottom: 4 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+        <XAxis dataKey={xKey} tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={tickFmt} />
+        <YAxis tick={{ fontSize: 11, fill: '#64748b' }} width={50} />
+        <Tooltip contentStyle={{ fontSize: 12 }} />
+        {yKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
+        {yKeys.map((yk, i) => (
+          <SeriesComp
+            key={yk.key}
+            type="monotone"
+            dataKey={yk.key}
+            name={yk.label || yk.key}
+            fill={yk.color || REPORT_COLORS[i % REPORT_COLORS.length]}
+            stroke={yk.color || REPORT_COLORS[i % REPORT_COLORS.length]}
+            fillOpacity={type === 'area' ? 0.2 : 1}
+            radius={type === 'bar' ? [3, 3, 0, 0] : undefined}
+          />
+        ))}
+      </ChartComp>
+    </ResponsiveContainer>
+  );
+}
+
+function ReportDataTable({ columns, data }) {
+  const { t } = useLang();
+  if (!data || data.length === 0) return <div style={{ padding: 24, color: 'var(--muted)', fontSize: 13 }}>{t.reports.rowCount(0)}</div>;
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table className="data-table">
+        <thead>
+          <tr>{columns.map(col => <th key={col}>{col}</th>)}</tr>
+        </thead>
+        <tbody>
+          {data.map((row, i) => (
+            <tr key={i}>
+              {columns.map(col => (
+                <td key={col}>
+                  {row[col] == null ? '—' : typeof row[col] === 'object' ? JSON.stringify(row[col]) : String(row[col])}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ReportsTab() {
+  const { t } = useLang();
+  const tr = t.reports;
+
+  const [query, setQuery]       = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState('');
+  const [report, setReport]     = useState(null);
+  const [history, setHistory]   = useState([]);
+  const [llmHistory, setLlmHistory] = useState([]);
+  const [showSql, setShowSql]   = useState(false);
+  const [activeTab, setActiveTab] = useState('chart');
+
+  const textareaRef = React.useRef(null);
+
+  const runReport = async (queryText) => {
+    const q = (queryText || query).trim();
+    if (!q || loading) return;
+    setLoading(true);
+    setError('');
+    setShowSql(false);
+    try {
+      const res = await axios.post('/api/admin/report', { query: q, history: llmHistory });
+      if (res.data.success === false) throw new Error(res.data.error || 'Report failed');
+      const newReport = res.data;
+      setReport(newReport);
+      setActiveTab(newReport.chart && newReport.data?.length > 0 ? 'chart' : 'table');
+      const summary = `Title: ${newReport.title}. SQL: ${(newReport.sql || '').slice(0, 200)}. Rows: ${newReport.data?.length}.`;
+      setLlmHistory(prev => [...prev, { role: 'user', content: q }, { role: 'assistant', content: summary }].slice(-24));
+      setHistory(prev => [{ id: Date.now(), query: q, report: newReport }, ...prev].slice(0, 20));
+      setQuery('');
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runReport(); }
+  };
+
+  const loadHistoryEntry = (entry) => {
+    setReport(entry.report);
+    setShowSql(false);
+    setError('');
+    setActiveTab(entry.report.chart && entry.report.data?.length > 0 ? 'chart' : 'table');
+  };
+
+  const startNew = () => {
+    setReport(null); setQuery(''); setError(''); setShowSql(false); setLlmHistory([]);
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  };
+
+  const exportCsv = () => {
+    if (!report?.data?.length) return;
+    const cols = report.columns;
+    const rows = report.data.map(row =>
+      cols.map(c => {
+        const v = row[c] == null ? '' : String(row[c]);
+        return v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g, '""')}"` : v;
+      }).join(',')
+    );
+    const csv = [cols.join(','), ...rows].join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = `${(report.title || 'report').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.csv`;
+    a.click();
+  };
+
+  return (
+    <div className="reports-layout">
+      <div className="reports-sidebar">
+        <div className="reports-sidebar-header">
+          <span className="reports-sidebar-title">{tr.history}</span>
+          <button className="btn-primary" style={{ padding: '5px 10px', fontSize: 12 }} onClick={startNew}>
+            <Plus size={12} />{tr.newReport}
+          </button>
+        </div>
+        <div className="reports-history-list">
+          {history.length === 0 && <div className="reports-history-empty">{tr.emptyHistory}</div>}
+          {history.map(entry => (
+            <button key={entry.id}
+              className={`reports-history-item${report === entry.report ? ' active' : ''}`}
+              onClick={() => loadHistoryEntry(entry)}>
+              <span className="reports-history-query">{entry.query}</span>
+              <span className="reports-history-title">{entry.report.title}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="reports-main">
+        {!report && !loading && !error && (
+          <div className="reports-empty-state">
+            <BarChart2 size={48} color="#cbd5e1" />
+            <h3 className="reports-empty-title">{tr.title}</h3>
+            <p className="reports-empty-sub">Ask anything about your platform data.</p>
+            <div className="reports-samples">
+              {tr.samples.map((s, i) => (
+                <button key={i} className="reports-sample-btn"
+                  onClick={() => { setQuery(s); setTimeout(() => textareaRef.current?.focus(), 50); }}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {(report || loading || error) && (
+          <div className="reports-result">
+            {error && <div className="form-error" style={{ marginBottom: 16 }}>{tr.errorPrefix}{error}</div>}
+            {loading && (
+              <div className="reports-loading">
+                <RefreshCcw size={18} style={{ animation: 'spin 1s linear infinite' }} />
+                <span>{tr.running}</span>
+              </div>
+            )}
+            {report && !loading && (
+              <>
+                <div className="reports-result-header">
+                  <h2 className="reports-result-title">{report.title}</h2>
+                  <div className="reports-result-actions">
+                    {report.data?.length > 0 && (
+                      <button className="btn-secondary" style={{ fontSize: 12 }} onClick={exportCsv}>
+                        <Download size={13} />{tr.exportCsv}
+                      </button>
+                    )}
+                    {report.sql && (
+                      <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => setShowSql(v => !v)}>
+                        <Eye size={13} />{showSql ? tr.hideSql : tr.showSql}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {report.data && (
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>{tr.rowCount(report.data.length)}</div>
+                )}
+                {showSql && report.sql && (
+                  <div className="reports-sql-block">
+                    <div className="reports-sql-label">{tr.sqlLabel}</div>
+                    <pre className="reports-sql-pre">{report.sql}</pre>
+                  </div>
+                )}
+                {report.insights && (
+                  <div className="reports-insights">
+                    <div className="reports-insights-label">{tr.insights}</div>
+                    <p className="reports-insights-text">{report.insights}</p>
+                  </div>
+                )}
+                {report.data && report.data.length > 0 && (
+                  <>
+                    <div className="subtab-row" style={{ marginBottom: 12 }}>
+                      {report.chart && (
+                        <button className={`subtab-btn${activeTab === 'chart' ? ' active' : ''}`} onClick={() => setActiveTab('chart')}>
+                          {tr.chart}
+                        </button>
+                      )}
+                      <button className={`subtab-btn${activeTab === 'table' ? ' active' : ''}`} onClick={() => setActiveTab('table')}>
+                        {tr.dataTable}
+                      </button>
+                    </div>
+                    <div className="card" style={{ overflow: 'hidden' }}>
+                      {activeTab === 'chart' && report.chart && (
+                        <div style={{ padding: '20px 16px' }}>
+                          <ReportChart chart={report.chart} data={report.data} />
+                        </div>
+                      )}
+                      {activeTab === 'table' && <ReportDataTable columns={report.columns} data={report.data} />}
+                    </div>
+                  </>
+                )}
+                {report.data && report.data.length === 0 && (
+                  <div className="card"><div style={{ padding: 24, color: 'var(--muted)', fontSize: 13 }}>{tr.rowCount(0)}</div></div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="reports-input-area">
+          <div className="reports-input-box">
+            <textarea
+              ref={textareaRef}
+              className="reports-textarea"
+              placeholder={tr.placeholder}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              rows={2}
+              disabled={loading}
+            />
+            <button className="reports-send-btn" onClick={() => runReport()} disabled={!query.trim() || loading}>
+              {loading
+                ? <RefreshCcw size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                : <Send size={16} />}
+            </button>
+          </div>
+          <div className="reports-input-hint">
+            {navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Enter to run
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 function AdminAccountsTab({ accounts, onRefresh }) {
@@ -4999,6 +5329,7 @@ function AdminPanel({ onLogout }) {
     { id: 'rewards',  label: t.nav.rewards,  icon: Coins          },
     { id: 'academy',  label: t.nav.academy,  icon: GraduationCap  },
     { id: 'questionnaires', label: t.nav.questionnaires, icon: ClipboardList },
+    { id: 'reports',        label: t.nav.reports,        icon: BarChart2     },
     { id: 'tickets',  label: t.nav.tickets,  icon: Bug            },
     { id: 'sims',     label: t.nav.sims,     icon: Layout,      disabled: true },
     { id: 'admin-accounts', label: t.nav.adminAccounts, icon: Settings2 },
@@ -5054,6 +5385,7 @@ function AdminPanel({ onLogout }) {
           {tab === 'rewards'  && <RewardsTab />}
           {tab === 'academy'  && <AcademyTab />}
           {tab === 'questionnaires' && <QuestionnairesTab channels={data.channels} users={data.users} coaches={data.coaches} />}
+          {tab === 'reports'        && <ReportsTab />}
           {tab === 'tickets'  && <TicketsTab tickets={data.tickets} onRefresh={fetchData} />}
           {tab === 'sims'     && <SimulatorsTab />}
           {tab === 'admin-accounts' && <AdminAccountsTab accounts={data.adminAccounts} onRefresh={fetchData} />}
