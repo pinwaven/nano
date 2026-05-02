@@ -46,6 +46,15 @@ PostgreSQL — write nutrition_schedules rows + notification
 }
 ```
 
+## Event types
+
+| `type` | Published by | Consumed by | Purpose |
+|---|---|---|---|
+| `nutrition.topup` | dispatcher | worker | Trigger nutrition plan generation for a user |
+| `agent.coaching_session` | dispatcher | agent | Wake the proactive coach agent for a user |
+
+See [agent-system.md](agent-system.md) for the full agent flow.
+
 ## Worker trigger filter
 
 The worker's EventBridge trigger in `s.yaml` filters to only react to dispatcher events:

@@ -6,8 +6,9 @@ Nano AI is built on a serverless event-driven architecture using Aliyun Function
 
 | Function | Trigger | Role |
 |---|---|---|
-| `nano-dispatcher` | Cron (every minute) | Scans users who need periodic reassessment and invokes the worker |
+| `nano-dispatcher` | Cron (every minute) | Scans users who need periodic reassessment; detects online users for proactive coaching |
 | `nano-worker` | HTTP + EventBridge | Handles all AI processing, biomarker ingestion, chat, and admin API |
+| `nano-agent` | EventBridge + HTTP | Proactive coaching — analyses user data and initiates conversations |
 | `nano-admin-panel` | HTTP | Serves the admin SPA and proxies API calls to the worker |
 
 ## Public Domain (`nano.fros.cc`)
@@ -88,5 +89,6 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 | Chat Prompt Chain | [chat-prompt-chain.md](chat-prompt-chain.md) |
 | Rewards | [rewards-system.md](rewards-system.md) |
 | EventBridge | [eventbridge.md](eventbridge.md) |
+| Agent System | [agent-system.md](agent-system.md) |
 | User Deletion | [user-deletion.md](user-deletion.md) |
 | AI Report Engine | [report-engine.md](report-engine.md) |
