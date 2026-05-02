@@ -2083,15 +2083,74 @@ async function handlePostChat(body) {
                 cleanHistory.shift();
             }
 
-            const completion = await client.chat.completions.create({
-                model: model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    ...cleanHistory,
-                ],
-            });
+            const dbQueryTool = {
+                type: 'function',
+                function: {
+                    name: 'query_database',
+                    description: `Run a read-only SQL SELECT to retrieve this user's health data when it isn't already in context.
+Tables (always filter by user_id = $1):
+- biomarkers(tested_at TIMESTAMPTZ, test_type TEXT, data JSONB)
+    data.actual: {hsCRP, GDF15, GA, CystatinC, IL6, CD38}  (body_composition has .weight)
+    data.bioage_profile: {BioAge, ChronoAge, SubAges:{CellularAge,MetabolicAge,MicroVascularAge,ResilienceAge}}
+- nutrition_schedules(scheduled_date DATE, dot_id INT, dot_name TEXT, timing TEXT, quantity INT)
+- reminders(content TEXT, scheduled_for TIMESTAMPTZ, recurrence TEXT, status TEXT)
+- chat_messages(role TEXT, content TEXT, created_at TIMESTAMPTZ)
+SQL must be a SELECT statement. $1 is always user_id.`,
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            sql: { type: 'string', description: 'SELECT statement; use $1 for user_id, $2+ for extra params' },
+                            extra_params: { type: 'array', items: {}, description: 'Values for $2, $3, … (optional)' }
+                        },
+                        required: ['sql']
+                    }
+                }
+            };
 
-            const rawReply = completion.choices[0].message.content;
+            const chatMessages = [
+                { role: 'system', content: systemPrompt },
+                ...cleanHistory,
+            ];
+
+            let rawReply = '';
+            for (let _iter = 0; _iter < 4; _iter++) {
+                const completion = await client.chat.completions.create({
+                    model,
+                    messages: chatMessages,
+                    tools: [dbQueryTool],
+                    tool_choice: 'auto',
+                });
+                const choice = completion.choices[0];
+
+                if (choice.finish_reason === 'tool_calls') {
+                    chatMessages.push(choice.message);
+                    const toolResults = [];
+                    for (const tc of choice.message.tool_calls || []) {
+                        if (tc.function.name === 'query_database') {
+                            let toolResult;
+                            try {
+                                const args = JSON.parse(tc.function.arguments);
+                                const sql = (args.sql || '').trim();
+                                const extraParams = Array.isArray(args.extra_params) ? args.extra_params : [];
+                                if (!/^\s*(SELECT|WITH)\s/i.test(sql) || !/\$1\b/.test(sql)) {
+                                    toolResult = { error: 'Rejected: must be SELECT with $1 for user_id' };
+                                } else {
+                                    const qr = await pool.query(sql, [user_id, ...extraParams]);
+                                    toolResult = { rows: qr.rows, count: qr.rowCount };
+                                }
+                            } catch (qErr) {
+                                toolResult = { error: qErr.message };
+                            }
+                            console.log(JSON.stringify({ level: 'INFO', msg: 'DB tool call', rows: toolResult.rows?.length ?? 0 }));
+                            toolResults.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(toolResult) });
+                        }
+                    }
+                    chatMessages.push(...toolResults);
+                } else {
+                    rawReply = choice.message.content || '';
+                    break;
+                }
+            }
 
             // Detect weight-recording action embedded by the LLM
             const weightActionMatch = rawReply.match(/\{"action"\s*:\s*"record_weight"\s*,\s*"value_kg"\s*:\s*([\d.]+)\}/);
