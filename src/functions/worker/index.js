@@ -32,6 +32,7 @@ const chatPrompts = {
     nutrition_question: require('./prompts/chat/nutrition'),
     longevity_science:  require('./prompts/chat/science'),
     record_action:      require('./prompts/chat/record'),
+    set_reminder:       require('./prompts/chat/reminder'),
     emotional_support:  require('./prompts/chat/emotional'),
 };
 const systemNutritionTemplate = require('./prompts/systemNutrition');
@@ -2039,6 +2040,7 @@ async function handlePostChat(body) {
                 dots: fetched.dots?.rows || [],
                 plan: fetched.plan?.rows[0]?.content || null,
                 last_weight: fetched.weight?.rows[0]?.data?.actual?.weight ?? null,
+                now_iso: getNowShanghai().toISO(),
                 questionnaire_context: formatQuestionnaireContext(
                     fetched.questionnaire_responses?.rows || [],
                     user.language
@@ -2131,7 +2133,23 @@ async function handlePostChat(body) {
                 }
             }
 
-            const reply = rawReply.replace(/\n?\{"action"\s*:\s*"record_weight"[^}]*\}/g, '').trim();
+            // Detect reminder-setting action embedded by the LLM
+            const reminderActionMatch = rawReply.match(/\{"action"\s*:\s*"set_reminder"[^}]*\}/);
+            if (reminderActionMatch) {
+                try {
+                    const reminderAction = JSON.parse(reminderActionMatch[0]);
+                    if (reminderAction.content && reminderAction.scheduled_for) {
+                        await handlePostReminder({ user_id, content: reminderAction.content, scheduled_for: reminderAction.scheduled_for });
+                    }
+                } catch (e) {
+                    console.log(JSON.stringify({ level: 'WARN', msg: 'set_reminder action parse failed', error: e.message }));
+                }
+            }
+
+            const reply = rawReply
+                .replace(/\n?\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
+                .replace(/\n?\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
+                .trim();
 
             // Save assistant reply to the conversation log
             await saveChatMessage(user_id, 'ai', reply);

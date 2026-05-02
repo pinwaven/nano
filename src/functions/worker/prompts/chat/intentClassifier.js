@@ -8,6 +8,7 @@ INTENTS:
 - nutrition_question — asking about dots, supplements, nutrition plan, what to take, timing, dosing
 - longevity_science  — educational questions about aging, longevity science, mechanisms (not about their personal data)
 - record_action      — explicitly logging their own personal data (weight, sleep hours, meals, etc.)
+- set_reminder       — asking Nano to remind them about something at a specific future time or after a delay
 - emotional_support  — expressing stress, anxiety, fatigue, burnout, low motivation, feeling unwell emotionally
 
 REQUIRED DATA (only include keys that are truly needed to answer):

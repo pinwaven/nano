@@ -157,6 +157,14 @@ exports.handler = async (event, context) => {
             console.log(JSON.stringify({ level: 'INFO', msg: `Coaching scan: ${dueRemindersForAgent.rows.length} reminder` }));
             for (const r of dueRemindersForAgent.rows) {
                 await dispatchToAgent({ user_id: r.user_id, trigger_reason: 'reminder', reminder_content: r.content });
+                // Mark processed immediately so the offline flush below doesn't double-deliver
+                if (r.recurrence === 'daily') {
+                    await pool.query(`UPDATE reminders SET scheduled_for = scheduled_for + INTERVAL '1 day' WHERE id = $1`, [r.id]);
+                } else if (r.recurrence === 'weekly') {
+                    await pool.query(`UPDATE reminders SET scheduled_for = scheduled_for + INTERVAL '7 days' WHERE id = $1`, [r.id]);
+                } else {
+                    await pool.query(`UPDATE reminders SET status = 'sent' WHERE id = $1`, [r.id]);
+                }
             }
         } catch (reminderErr) {
             console.warn(JSON.stringify({ level: 'WARN', msg: 'reminder scan skipped', error: reminderErr.message }));
