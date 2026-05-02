@@ -43,7 +43,7 @@ exports.handler = async (event, context) => {
             console.log(`Dispatching nutrition top-up for: ${user.nickname}`);
             
             const payload = {
-                openid: user.user_id,
+                user_id: user.user_id,
                 trigger_type: 'nutrition_topup',
                 days_needed: 7 - parseInt(user.scheduled_days),
                 start_from: user.last_scheduled_date || new Date().toISOString().split('T')[0]
@@ -84,6 +84,82 @@ exports.handler = async (event, context) => {
                     console.error(`[HTTP Fallback] Failed for ${user.user_id}:`, httpErr.message);
                 }
             }
+        }
+
+        const agentUrl = process.env.AGENT_URL || 'https://nano-agent-napllanrqp.cn-shanghai-vpc.fcapp.run';
+
+        // Helper: dispatch a payload to the agent via EventBridge with HTTP fallback
+        const dispatchToAgent = async (payload) => {
+            const cloudEvent = new EventBridge.CloudEvent({
+                id: uuidv4(),
+                source: 'acs.dispatcher',
+                specversion: '1.0',
+                type: 'agent.coaching_session',
+                subject: payload.trigger_reason,
+                datacontenttype: 'application/json',
+                data: Buffer.from(JSON.stringify(payload)),
+                time: new Date().toISOString(),
+                extensions: { aliyuneventbusname: 'default' }
+            });
+            try {
+                await ebClient.putEvents([cloudEvent]);
+                console.log(JSON.stringify({ level: 'INFO', msg: '[EventBridge] Agent event published', user_id: payload.user_id, trigger: payload.trigger_reason }));
+            } catch (ebErr) {
+                console.warn(JSON.stringify({ level: 'WARN', msg: '[EventBridge] Fallback to HTTP', error: ebErr.message }));
+                try {
+                    await axios.post(agentUrl, payload, {
+                        headers: { 'Content-Type': 'application/json', 'x-fc-invocation-type': 'Async' },
+                        timeout: 10000
+                    });
+                    console.log(JSON.stringify({ level: 'INFO', msg: '[HTTP Fallback] Agent dispatched', user_id: payload.user_id, trigger: payload.trigger_reason }));
+                } catch (httpErr) {
+                    console.error(JSON.stringify({ level: 'ERROR', msg: '[HTTP Fallback] Agent failed', user_id: payload.user_id, error: httpErr.message }));
+                }
+            }
+        };
+
+        // Scan 1: user_online — conversation-aware.
+        // Only fire if the user has replied since the last agent message
+        // (last chat message is not 'assistant', or no messages yet).
+        try {
+            const onlineResult = await pool.query(`
+                SELECT user_id, nickname
+                FROM users
+                WHERE last_active_at > NOW() - INTERVAL '2 minutes'
+                  AND 'user' = ANY(roles)
+                  AND COALESCE(
+                    (SELECT role FROM chat_messages
+                     WHERE user_id = users.user_id
+                     ORDER BY created_at DESC LIMIT 1),
+                    'user'
+                  ) != 'assistant'
+            `);
+            console.log(JSON.stringify({ level: 'INFO', msg: `Coaching scan: ${onlineResult.rows.length} user_online` }));
+            for (const user of onlineResult.rows) {
+                await dispatchToAgent({ user_id: user.user_id, trigger_reason: 'user_online' });
+            }
+        } catch (coachErr) {
+            console.warn(JSON.stringify({ level: 'WARN', msg: 'user_online scan skipped', error: coachErr.message }));
+        }
+
+        // Scan 2: event-driven triggers — bypass conversation check.
+        // These fire regardless of who sent the last message, because they carry
+        // time-sensitive information the user needs to see (reminders, nutrition gaps, etc.).
+        try {
+            const dueRemindersForAgent = await pool.query(`
+                SELECT r.user_id, r.content, r.id
+                FROM reminders r
+                JOIN users u ON u.user_id = r.user_id
+                WHERE r.scheduled_for <= NOW()
+                  AND r.status = 'pending'
+                  AND u.last_active_at > NOW() - INTERVAL '2 minutes'
+            `);
+            console.log(JSON.stringify({ level: 'INFO', msg: `Coaching scan: ${dueRemindersForAgent.rows.length} reminder` }));
+            for (const r of dueRemindersForAgent.rows) {
+                await dispatchToAgent({ user_id: r.user_id, trigger_reason: 'reminder', reminder_content: r.content });
+            }
+        } catch (reminderErr) {
+            console.warn(JSON.stringify({ level: 'WARN', msg: 'reminder scan skipped', error: reminderErr.message }));
         }
 
         // Flush due coach reminders into notifications

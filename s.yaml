@@ -37,6 +37,7 @@ resources:
         TZ: "Asia/Shanghai"
         WORKER_URL: "https://nano-worker-napllanrqp.cn-shanghai-vpc.fcapp.run"
         WORKER_FUNCTION_NAME: "nano-worker"
+        AGENT_URL: "https://nano-agent-napllanrqp.cn-shanghai-vpc.fcapp.run"
       triggers:
         - triggerName: cron-scanner
           triggerType: timer
@@ -93,6 +94,48 @@ resources:
             eventSourceConfig:
               eventSourceType: Default
             eventRuleFilterPattern: '{"source":["acs.dispatcher"]}'
+
+  agent:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-agent
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 256
+      timeout: 60
+      code: ./src/functions/agent
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
+        DB_NAME: "nano_db"
+        DB_USER: "nano_admin"
+        DB_PASS: ${env(DB_PASS)}
+        DB_SSL: "false"
+        TZ: "Asia/Shanghai"
+        DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
+        MODEL: "qwen-plus-latest"
+      triggers:
+        - triggerName: http-agent
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["POST"]
+        - triggerName: eb-agent-trigger
+          triggerType: eventbridge
+          triggerConfig:
+            eventSourceConfig:
+              eventSourceType: Default
+            eventRuleFilterPattern: '{"source":["acs.dispatcher"],"type":["agent.coaching_session"]}'
 
   admin-panel:
     component: fc3
@@ -181,3 +224,7 @@ resources:
             functionName: nano-admin-panel
           - path: /worker
             functionName: nano-worker
+          - path: /agent/*
+            functionName: nano-agent
+          - path: /agent
+            functionName: nano-agent

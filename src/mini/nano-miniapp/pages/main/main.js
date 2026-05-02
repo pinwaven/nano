@@ -759,6 +759,7 @@ Page({
   onShow() {
     const { user, lang, isGuest, obStep } = this.data
     if (user && !isGuest) {
+      this._req(`${BASE}/api/heartbeat`, 'POST', { user_id: user.user_id }).catch(() => {})
       this._loadHealth(user, lang)
       this._startPolling(user)
       // Check for questionnaires assigned while the user was away

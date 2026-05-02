@@ -2160,6 +2160,13 @@ async function handlePostChatMessages(body) {
     return { success: true };
 }
 
+async function handlePostHeartbeat(body) {
+    const { user_id } = body;
+    if (!user_id) return { success: false, error: 'user_id required', statusCode: 400 };
+    await pool.query('UPDATE users SET last_active_at = NOW() WHERE user_id = $1', [user_id]);
+    return { success: true };
+}
+
 async function handleGetKinoDevices() {
     const result = await pool.query(`
         SELECT kd.id, kd.serial_number, kd.name, kd.status, kd.notes, kd.registered_at, kd.created_at,
@@ -3812,6 +3819,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostKinoResult(parsedBody);
             } else if (path.includes('/kino-scan')) {
                 result = await handlePostKinoScan(parsedBody);
+            } else if (path === '/heartbeat') {
+                result = await handlePostHeartbeat(parsedBody);
             } else if (path.includes('/chat-messages')) {
                 result = await handlePostChatMessages(parsedBody);
             } else if (path.includes('/cartridge-insert')) {

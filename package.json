@@ -11,6 +11,7 @@
     "deploy:user-app": "./scripts/deploy-user-app.sh",
     "deploy:worker": "source .env && s worker deploy -y",
     "deploy:dispatcher": "source .env && s dispatcher deploy -y",
+    "deploy:agent": "source .env && s agent deploy -y",
     "deploy:s": "source .env && s deploy -y",
     "deploy:all": "./scripts/deploy-all.sh",
     "deploy:admin": "./scripts/deploy-admin.sh",
