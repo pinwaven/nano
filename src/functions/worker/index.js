@@ -1773,11 +1773,11 @@ async function handleGetChatHistory(openid) {
         const limit = parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10);
         const result = await pool.query(
             `SELECT role, content, image_url, created_at FROM (
-                SELECT role, content, image_url, created_at FROM chat_messages
+                SELECT id, role, content, image_url, created_at FROM chat_messages
                 WHERE user_id = $1
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT $2
-            ) sub ORDER BY created_at ASC`,
+            ) sub ORDER BY created_at ASC, id ASC`,
             [openid, limit]
         );
         return { success: true, messages: result.rows };
@@ -3234,13 +3234,23 @@ async function handlePostQuestionnaireResponse(body) {
         if (!assignRes.rows.length) return { statusCode: 404, success: false, error: 'Assignment not found' };
         const { user_id, questionnaire_id } = assignRes.rows[0];
 
-        // Get question config for save_target handling
+        // Get question config for save_target handling + prompt text for chat history
         const qRes = await pool.query(
-            `SELECT save_target, save_field, save_biomarker_type FROM questionnaire_questions WHERE id = $1`,
+            `SELECT save_target, save_field, save_biomarker_type, prompt_zh, prompt_en FROM questionnaire_questions WHERE id = $1`,
             [question_id]
         );
         if (!qRes.rows.length) return { statusCode: 404, success: false, error: 'Question not found' };
-        const { save_target, save_field, save_biomarker_type } = qRes.rows[0];
+        const { save_target, save_field, save_biomarker_type, prompt_zh, prompt_en } = qRes.rows[0];
+
+        // Get user language to pick the right question prompt
+        const userLangRes = await pool.query(`SELECT language FROM users WHERE user_id = $1`, [user_id]);
+        const userLang = userLangRes.rows[0]?.language || 'zh';
+        const questionText = userLang === 'en' ? prompt_en : prompt_zh;
+
+        // Save question + answer to chat history
+        await saveChatMessage(user_id, 'ai', questionText);
+        const answerDisplay = body.answer_display != null ? String(body.answer_display) : JSON.stringify(answer);
+        await saveChatMessage(user_id, 'user', answerDisplay);
 
         // Upsert response
         await pool.query(

@@ -28,7 +28,7 @@
       <text class="avatar-pick-hint">点击设置头像</text>
     </view>
 
-    <text class="phone-step-desc">绑定手机号，让您的健康顾问可以随时联系到您。</text>
+    <text class="phone-step-desc">绑定手机号，让您的健康教练可以随时联系到您。</text>
     <button
       class="login-btn"
       open-type="getPhoneNumber"

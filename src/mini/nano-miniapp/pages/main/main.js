@@ -66,9 +66,9 @@ const T = {
     obBirthdayOnly: '还有一件事——请告诉我您的出生日期？',
     obBodyPrompt: '最后一步——请告诉我您的身高和体重，帮助计算您的健康指标。',
     obBodyOnly: '还有一件事——请告诉我您的身高和体重？',
-    obComplete: '您的个人基础信息已完善！',
-    questionnaireThanks: '感谢您的回答！您的健康顾问很快会跟进。',
-    questionnaireIntro: '您的健康顾问有几个问题想了解您。',
+    obComplete: '谢谢您的回答！',
+    questionnaireThanks: '感谢您的回答！您的健康教练很快会跟进。',
+    questionnaireIntro: '您的健康教练有几个问题想了解您。',
     confirm: '确认',
     bsHeight: '身高', bsWeight: '体重', bsCm: 'cm', bsKg: 'kg',
     male: '男', female: '女',
@@ -117,7 +117,7 @@ const T = {
     obConditionsOtherPh: '请描述您的其他健康状况',
     storeTitle: '健康商城',
     storeBuy: '立即预约',
-    storeOrderSent: '订单已提交！我们的健康顾问将尽快与您联系。',
+    storeOrderSent: '订单已提交！我们的健康教练将尽快与您联系。',
     storeConfirmTitle: '确认订单',
     storeBestseller: '热销', storeValue: '超值',
     storeEmpty: '暂无商品。',
@@ -170,14 +170,14 @@ const T = {
     kinoScanError: '登记失败，请重试。',
     lightMode: '浅色模式',
     darkMode: '深色模式',
-    phonePromptMsg: '最后一步！绑定手机号，让您的健康顾问可以随时联系到您。',
+    phonePromptMsg: '最后一步！绑定手机号，让您的健康教练可以随时联系到您。',
     phonePromptBtn: '📱 绑定手机号',
     phoneMaybeLater: '稍后再说',
     phoneBindSuccess: '手机号绑定成功！',
     phoneBindError: '绑定失败，请稍后重试。',
     guestHeaderName: '游客',
     guestJoinTitle: '激活健康账户',
-    guestJoinDesc: '输入您的邀请码，解锁 AI 健康顾问、生物标志物检测与精准营养方案。',
+    guestJoinDesc: '输入您的邀请码，解锁 AI 健康教练、生物标志物检测与精准营养方案。',
     guestJoinBtn: '激活账户',
     guestActivating: '注册中…',
     guestInviteRequired: '请输入邀请码',
@@ -224,7 +224,7 @@ const T = {
     obBirthdayOnly: 'One quick thing — could you share your date of birth?',
     obBodyPrompt: 'Last step — could you share your height and weight? This helps calculate your health metrics.',
     obBodyOnly: 'One more thing — could you share your height and weight?',
-    obComplete: 'Your basic profile is all set! ',
+    obComplete: 'Thanks for your answers!',
     questionnaireThanks: 'Thanks for your answers! Your coach will review them shortly.',
     questionnaireIntro: 'Your health coach has a few quick questions for you.',
     confirm: 'Confirm',
@@ -1100,7 +1100,7 @@ Page({
       }
     }
 
-    this._onAllQuestionnaireDone(user)
+    this._onAllQuestionnaireDone(user, null, true)
   },
 
   _isQuestionAnswered(q, user, biomarkerRecords, answeredIds) {
@@ -1125,7 +1125,7 @@ Page({
     const { lang } = this.data
     const t = T[lang]
     if (assignment.type !== 'onboarding') {
-      this._addMsg('ai', t.questionnaireIntro)
+      this._addMsg('ai', t.questionnaireIntro, true)
     }
     this.setData({
       obQuestions: questions,
@@ -1186,7 +1186,7 @@ Page({
     const { obQuestion, obAssignmentId, obQIndex, obQuestions, user } = this.data
     if (!obQuestion || !obAssignmentId) return
 
-    this._addMsg('user', displayText, true)
+    this._addMsg('user', displayText)
     this.setData({ typing: true })
 
     try {
@@ -1194,6 +1194,7 @@ Page({
         assignment_id: obAssignmentId,
         question_id: obQuestion.id,
         answer: answerValue,
+        answer_display: displayText,
       })
 
       // Update local user cache for onboarding profile fields
@@ -1265,7 +1266,7 @@ Page({
         const questions = assignment.questions || []
         const firstIdx = questions.findIndex(q => !this._isQuestionAnswered(q, user, biomarkerRecords, answeredIds))
         if (firstIdx >= 0) {
-          if (obQuestionnaireType === 'custom') this._addMsg('ai', this.data.t.questionnaireThanks)
+          if (obQuestionnaireType === 'custom') this._addMsg('ai', this.data.t.questionnaireThanks, true)
           this._startQuestionnaire(assignment, questions, firstIdx)
           return
         }
@@ -1275,9 +1276,9 @@ Page({
     this._onAllQuestionnaireDone(this.data.user, obQuestionnaireType)
   },
 
-  _onAllQuestionnaireDone(user, completedType) {
+  _onAllQuestionnaireDone(user, completedType, silent = false) {
     const { t } = this.data
-    this._addMsg('ai', completedType === 'custom' ? t.questionnaireThanks : t.obComplete)
+    if (!silent) this._addMsg('ai', t.questionnaireThanks, true)
     this.setData({ obStep: 'done' })
     if (!user.phone && !wx.getStorageSync('nano_phone_prompted')) {
       wx.setStorageSync('nano_phone_prompted', '1')
