@@ -1188,8 +1188,8 @@ Page({
     }
 
     if (q.input_type === 'multi_select' && q.config && q.config.options) {
-      const list = q.config.options.map(opt => ({
-        key: opt.key,
+      const list = q.config.options.map((opt, idx) => ({
+        key: opt.key || opt.value || String(idx),
         label: lang === 'zh' ? opt.label_zh : opt.label_en,
         selected: false,
       }))
