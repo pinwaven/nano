@@ -98,6 +98,10 @@
                 <text class="msg-action-arrow">›</text>
               </view>
             </block>
+            <view wx:elif="{{item.role === 'coach'}}" class="message-bubble message-coach">
+              <text class="msg-coach-label">Coach</text>
+              <text class="msg-text" selectable="true">{{item.content}}</text>
+            </view>
             <view wx:else class="message-bubble {{item.role === 'user' ? 'message-user' : 'message-ai'}} {{item.imageUrl ? 'msg-bubble-image' : ''}}">
               <image
                 wx:if="{{item.imageUrl}}"

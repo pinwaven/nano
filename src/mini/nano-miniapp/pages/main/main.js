@@ -1090,7 +1090,8 @@ Page({
               return { id: `h-${i}`, role: 'ai', content: m.content }
             }
           }
-          return { id: `h-${i}`, role, content: m.content, imageUrl: m.image_url || null }
+          const content = role === 'coach' ? (m.content || '').replace(/\n+/g, ' ') : m.content
+          return { id: `h-${i}`, role, content, imageUrl: m.image_url || null }
         })
         this.setData({ messages: msgs })
         this._scrollBottom()
@@ -1321,12 +1322,11 @@ Page({
       const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}`)
       const history = res.data?.messages || []
       if (history.length > 0) {
-        const msgs = history.map((m, i) => ({
-          id: `h-${i}`,
-          role: (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role,
-          content: m.content,
-          imageUrl: m.image_url || null
-        }))
+        const msgs = history.map((m, i) => {
+          const role = (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role
+          const content = role === 'coach' ? (m.content || '').replace(/\n+/g, ' ') : m.content
+          return { id: `h-${i}`, role, content, imageUrl: m.image_url || null }
+        })
         this.setData({ messages: msgs })
         this._scrollBottom()
       }

@@ -1124,10 +1124,9 @@ async function handlePostCoachInstruction(body) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const user = await pool.query('SELECT user_id FROM users WHERE user_id = $1', [openid]);
         if (user.rows.length === 0) return { success: false, error: 'User not found', statusCode: 404 };
-        const coachMessage = `### 👨‍⚕️ Coach Instruction\n\n${instruction}`;
         await pool.query(
-            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-            [user.rows[0].user_id, 'coach_instruction', coachMessage, 'pending']
+            'INSERT INTO chat_messages (user_id, role, content) VALUES ($1, $2, $3)',
+            [user.rows[0].user_id, 'coach', instruction]
         );
         return { success: true };
     } catch (err) {
@@ -2076,8 +2075,10 @@ async function handlePostChat(body) {
             );
 
             // Normalize roles ('ai' → 'assistant') and collapse consecutive same-role turns
+            // 'coach' role messages are stored for UI display but not forwarded to the LLM
             const cleanHistory = [];
             for (const row of historyResult.rows) {
+                if (row.role === 'coach') continue;
                 const role = row.role === 'ai' ? 'assistant' : row.role;
                 const last = cleanHistory[cleanHistory.length - 1];
                 if (last && last.role === role) {

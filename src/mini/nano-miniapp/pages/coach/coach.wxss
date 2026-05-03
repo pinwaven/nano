@@ -441,14 +441,24 @@
 .bm-label { font-size: 13px; color: #A6C4E5; display: block; }
 .bm-value { font-size: 14px; color: #E8F0F8; font-weight: 500; }
 
-/* ── AI Chat tab ─────────────────────────────────────────────────────────── */
+/* ── Unified chat panel (3-way: user + AI + coach) ───────────────────────── */
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-history { flex: 1; overflow: hidden; }
+
 .chat-section { padding: 12px 16px; }
 
 .chat-list { display: flex; flex-direction: column; gap: 14px; padding-bottom: 16px; }
 
 .chat-row { display: flex; flex-direction: column; }
-.chat-row-user { align-items: flex-end; }
-.chat-row-ai  { align-items: flex-start; }
+.chat-row-user  { align-items: flex-end; }
+.chat-row-ai    { align-items: flex-start; }
+.chat-row-coach { align-items: flex-start; }
 
 .chat-role-label {
   display: flex;
@@ -466,45 +476,15 @@
   border-radius: 12px;
 }
 
-.bubble-user { background: #1E3A5F; border-bottom-right-radius: 4px; }
-.bubble-ai   { background: #162B45; border: 1rpx solid #1E3A5F; border-bottom-left-radius: 4px; }
+.bubble-user  { background: #1E3A5F; border-bottom-right-radius: 4px; }
+.bubble-ai    { background: #162B45; border: 1rpx solid #1E3A5F; border-bottom-left-radius: 4px; }
+.bubble-coach {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1rpx solid rgba(16, 185, 129, 0.35);
+  border-bottom-left-radius: 4px;
+}
 
 .chat-content { font-size: 13px; color: #D0E4F7; line-height: 1.5; }
-
-/* ── Messages tab ────────────────────────────────────────────────────────── */
-.msg-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.msg-history { flex: 1; overflow: hidden; }
-
-.msg-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-}
-
-.msg-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-}
-
-.msg-bubble {
-  background: #1E3A5F;
-  border: 1rpx solid #6375EC;
-  border-radius: 12px;
-  border-bottom-right-radius: 4px;
-  padding: 10px 14px;
-  max-width: 85%;
-}
-
-.msg-content { font-size: 13px; color: #D0E4F7; line-height: 1.5; }
-.msg-time { font-size: 10px; color: #4A6A8A; margin-top: 4px; }
 
 /* Compose area */
 .msg-compose {
@@ -833,19 +813,15 @@
 .theme-light .bm-label      { color: var(--text-sub); }
 .theme-light .bm-value      { color: var(--text); }
 
-/* ── Chat tab (in overlay) ── */
+/* ── Unified chat tab (in overlay) ── */
 .theme-light .chat-role-text { color: var(--text-muted); }
 .theme-light .chat-time      { color: var(--text-muted); }
 .theme-light .bubble-user    { background: var(--navy-lift); }
 .theme-light .bubble-ai      { background: var(--navy-card); border-color: var(--navy-border); }
+.theme-light .bubble-coach   { background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.28); }
 .theme-light .chat-content   { color: var(--text); }
-
-/* ── Messages tab (in overlay) ── */
-.theme-light .msg-bubble  { background: var(--navy-lift); border-color: var(--blue); }
-.theme-light .msg-content { color: var(--text); }
-.theme-light .msg-time    { color: var(--text-muted); }
-.theme-light .msg-compose { background: var(--bg-input); border-top-color: var(--navy-border); }
-.theme-light .compose-input { background: var(--navy-card); color: var(--text); }
+.theme-light .msg-compose    { background: var(--bg-input); border-top-color: var(--navy-border); }
+.theme-light .compose-input  { background: var(--navy-card); color: var(--text); }
 
 /* ── Reminder overlay ── */
 .theme-light .instr-textarea    { background: var(--navy-lift); color: var(--text); }

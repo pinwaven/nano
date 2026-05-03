@@ -25,7 +25,7 @@ const T = {
     noBmData: '暂无检测数据',
     noChatData: '暂无对话记录',
     tabHealth: '健康',
-    tabChat: 'AI对话',
+    tabChat: '聊天',
     tabMessages: '消息',
     you: '用户',
     ai: 'AI',
@@ -101,7 +101,7 @@ const T = {
     noBmData: 'No biomarker data yet.',
     noChatData: 'No chat history yet.',
     tabHealth: 'Health',
-    tabChat: 'AI Chat',
+    tabChat: 'Chat',
     tabMessages: 'Messages',
     you: 'User',
     ai: 'AI',
@@ -172,7 +172,6 @@ const SUB_AGE_META = [
   { key: 'ResilienceAge',    labelZh: '抗压',   labelEn: 'Resilience', shortZh: '抗压', shortEn: 'Resi', color: '#10b981' },
 ]
 
-const COACH_MSG_PREFIX = /^###\s*👨‍⚕️ Coach Instruction\n\n/
 
 function bioAgeColor(bio, chrono) {
   if (!bio || !chrono) return '#A6C4E5'
@@ -240,12 +239,11 @@ Page({
     detailBmLoading: false,
     detailSubAges: [],
     detailBioAgeTrend: [],
-    // AI Chat tab
+    // Unified chat tab (user + AI + coach)
     chatMessages: [],
     chatLoading: false,
-    // Messages tab
-    msgMessages: [],
-    msgLoading: false,
+    chatScrollId: '',
+    // Compose
     msgText: '',
     msgBusy: false,
     // Earnings tab
@@ -443,11 +441,12 @@ Page({
   async openClientDetail(e) {
     const client = e.currentTarget.dataset.client
     const initialTab = e.currentTarget.dataset.tab || 'health'
+    const resolvedTab = initialTab === 'messages' ? 'chat' : initialTab
     this.setData({
-      detailOpen: true, detailClient: client, detailTab: initialTab,
+      detailOpen: true, detailClient: client, detailTab: resolvedTab,
       detailBmList: [], detailBmLoading: true, detailSubAges: [], detailBioAgeTrend: [],
-      chatMessages: [], chatLoading: false,
-      msgMessages: [], msgText: '',
+      chatMessages: [], chatLoading: false, chatScrollId: '',
+      msgText: '',
     })
     // Load health data eagerly regardless of initial tab
     try {
@@ -483,18 +482,17 @@ Page({
       this.setData({ detailBmLoading: false })
     }
 
-    if (initialTab === 'messages') this._loadCoachMessages()
+    if (resolvedTab === 'chat') this._loadClientChat()
   },
 
   closeClientDetail() {
-    this.setData({ detailOpen: false, detailClient: null, chatMessages: [], msgMessages: [] })
+    this.setData({ detailOpen: false, detailClient: null, chatMessages: [], msgText: '', chatScrollId: '' })
   },
 
   switchDetailTab(e) {
     const tab = e.currentTarget.dataset.tab
     this.setData({ detailTab: tab })
     if (tab === 'chat' && this.data.chatMessages.length === 0) this._loadClientChat()
-    if (tab === 'messages' && this.data.msgMessages.length === 0) this._loadCoachMessages()
   },
 
   // ── AI chat history ──────────────────────────────────────────────────────
@@ -506,33 +504,20 @@ Page({
     try {
       const params = `user_id=${encodeURIComponent(detailClient.user_id)}${this._coachId ? `&coach_id=${this._coachId}` : ''}`
       const res = await this._req(`${BASE}/api/coach-user-chat?${params}`)
-      const chatMessages = (res.data?.messages || []).map(m => ({
+      const chatMessages = (res.data?.messages || []).map((m, i) => ({
         ...m,
+        content: m.role === 'coach' ? (m.content || '').replace(/\n+/g, ' ') : m.content,
         _time: fmtTime(m.created_at),
         _isUser: m.role === 'user',
+        _isCoach: m.role === 'coach',
       }))
-      this.setData({ chatMessages, chatLoading: false })
+      const lastIdx = chatMessages.length - 1
+      // Set messages first, then scroll in the callback so the new elements exist in DOM
+      this.setData({ chatMessages, chatLoading: false, chatScrollId: '' }, () => {
+        if (lastIdx >= 0) this.setData({ chatScrollId: `cmsg${lastIdx}` })
+      })
     } catch {
       this.setData({ chatLoading: false })
-    }
-  },
-
-  // ── Coach messages ───────────────────────────────────────────────────────
-
-  async _loadCoachMessages() {
-    const { detailClient } = this.data
-    if (!detailClient) return
-    this.setData({ msgLoading: true })
-    try {
-      const res = await this._req(`${BASE}/api/coach-sent-messages?user_id=${encodeURIComponent(detailClient.user_id)}`)
-      const msgMessages = (res.data?.messages || []).map(m => ({
-        ...m,
-        _time: fmtTime(m.sent_at),
-        _body: m.content.replace(COACH_MSG_PREFIX, ''),
-      }))
-      this.setData({ msgMessages, msgLoading: false })
-    } catch {
-      this.setData({ msgLoading: false })
     }
   },
 
@@ -545,13 +530,11 @@ Page({
     try {
       await this._req(`${BASE}/api/coach-instruction`, 'POST', {
         openid: detailClient.user_id,
-        instruction: msgText.trim(),
+        instruction: msgText.trim().replace(/\n+/g, ' '),
       })
       wx.showToast({ title: T[lang].sent, icon: 'success' })
-      this.setData({ msgText: '' })
-      // Refresh message history
-      this.setData({ msgMessages: [] })
-      this._loadCoachMessages()
+      this.setData({ msgText: '', chatMessages: [] })
+      this._loadClientChat()
     } catch {
       wx.showToast({ title: T[lang].sendError, icon: 'none' })
     } finally {

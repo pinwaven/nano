@@ -224,6 +224,21 @@
   border-bottom-left-radius: 6rpx;
 }
 
+.message-coach {
+  background: rgba(16, 185, 129, 0.12);
+  color: #EEF2FF;
+  border: 1rpx solid rgba(16, 185, 129, 0.3);
+  border-bottom-left-radius: 6rpx;
+}
+
+.msg-coach-label {
+  font-size: 20rpx;
+  color: #10b981;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 4rpx;
+}
+
 .msg-bubble-image {
   padding: 0;
   overflow: hidden;
@@ -2261,6 +2276,12 @@
   color: var(--text);
   border-color: rgba(201, 149, 106, 0.2);
 }
+.theme-light .message-coach {
+  background: rgba(16, 185, 129, 0.08);
+  color: var(--text);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+.theme-light .msg-coach-label { color: #0a8a5f; }
 .theme-light .msg-action-card {
   background: linear-gradient(135deg, rgba(201, 149, 106, 0.15), rgba(201, 149, 106, 0.06));
   border-color: rgba(201, 149, 106, 0.4);

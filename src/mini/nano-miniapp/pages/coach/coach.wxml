@@ -104,7 +104,7 @@
 
       <!-- Actions -->
       <view class="client-actions">
-        <view class="action-btn msg-btn" catchtap="openClientDetail" data-client="{{item}}" data-tab="messages">
+        <view class="action-btn msg-btn" catchtap="openClientDetail" data-client="{{item}}" data-tab="chat">
           <text class="action-btn-text">{{t.openMessages}}</text>
         </view>
         <view class="action-btn remind-icon-btn" catchtap="openQResponses" data-client="{{item}}">
@@ -247,16 +247,13 @@
         </view>
       </view>
 
-      <!-- 3-tab inner bar -->
+      <!-- 2-tab inner bar -->
       <view class="detail-tabs">
         <view class="detail-tab {{detailTab === 'health' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="health">
           <text class="detail-tab-text">{{t.tabHealth}}</text>
         </view>
         <view class="detail-tab {{detailTab === 'chat' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="chat">
           <text class="detail-tab-text">{{t.tabChat}}</text>
-        </view>
-        <view class="detail-tab {{detailTab === 'messages' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="messages">
-          <text class="detail-tab-text">{{t.tabMessages}}</text>
         </view>
       </view>
 
@@ -305,44 +302,28 @@
         </block>
       </scroll-view>
 
-      <!-- AI Chat panel -->
-      <scroll-view wx:if="{{detailTab === 'chat'}}" scroll-y class="overlay-scroll">
-        <view class="chat-section">
-          <view wx:if="{{chatLoading}}" class="panel-center">
-            <text class="loading-text">{{t.loading}}</text>
-          </view>
-          <view wx:elif="{{chatMessages.length === 0}}" class="panel-center">
-            <text class="empty-text">{{t.noChatData}}</text>
-          </view>
-          <view wx:else class="chat-list">
-            <view wx:for="{{chatMessages}}" wx:key="index" class="chat-row {{item._isUser ? 'chat-row-user' : 'chat-row-ai'}}">
-              <view class="chat-role-label">
-                <text class="chat-role-text">{{item._isUser ? t.you : t.ai}}</text>
-                <text class="chat-time">{{item._time}}</text>
-              </view>
-              <view class="chat-bubble {{item._isUser ? 'bubble-user' : 'bubble-ai'}}">
-                <text class="chat-content">{{item.content}}</text>
-              </view>
+      <!-- Unified 3-way chat panel: user + Nano AI + Coach -->
+      <view wx:if="{{detailTab === 'chat'}}" class="chat-panel">
+        <scroll-view scroll-y class="chat-history" scroll-into-view="{{chatScrollId}}">
+          <view class="chat-section">
+            <view wx:if="{{chatLoading}}" class="panel-center">
+              <text class="loading-text">{{t.loading}}</text>
             </view>
-          </view>
-        </view>
-      </scroll-view>
-
-      <!-- Messages panel (scrollable history + pinned compose) -->
-      <view wx:if="{{detailTab === 'messages'}}" class="msg-panel">
-        <scroll-view scroll-y class="msg-history">
-          <view wx:if="{{msgLoading}}" class="panel-center">
-            <text class="loading-text">{{t.loading}}</text>
-          </view>
-          <view wx:elif="{{msgMessages.length === 0}}" class="panel-center">
-            <text class="empty-text">{{t.noMessages}}</text>
-          </view>
-          <view wx:else class="msg-list">
-            <view wx:for="{{msgMessages}}" wx:key="id" class="msg-item">
-              <view class="msg-bubble">
-                <text class="msg-content">{{item._body}}</text>
+            <view wx:elif="{{chatMessages.length === 0}}" class="panel-center">
+              <text class="empty-text">{{t.noChatData}}</text>
+            </view>
+            <view wx:else class="chat-list">
+              <view wx:for="{{chatMessages}}" wx:key="index"
+                    id="cmsg{{index}}"
+                    class="chat-row {{item._isUser ? 'chat-row-user' : item._isCoach ? 'chat-row-coach' : 'chat-row-ai'}}">
+                <view class="chat-role-label">
+                  <text class="chat-role-text">{{item._isUser ? t.you : item._isCoach ? t.coachLabel : t.ai}}</text>
+                  <text class="chat-time">{{item._time}}</text>
+                </view>
+                <view class="chat-bubble {{item._isUser ? 'bubble-user' : item._isCoach ? 'bubble-coach' : 'bubble-ai'}}">
+                  <text class="chat-content">{{item.content}}</text>
+                </view>
               </view>
-              <text class="msg-time">{{item._time}}</text>
             </view>
           </view>
         </scroll-view>
