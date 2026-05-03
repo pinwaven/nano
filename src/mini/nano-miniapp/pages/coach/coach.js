@@ -397,12 +397,12 @@ Page({
 
   openUserPanel() {
     this.setData({ menuOpen: false })
-    wx.navigateTo({ url: '/pages/main/main?from=coach', animationType: 'slide-in-left', animationDuration: 280 })
+    wx.navigateBack({ delta: 1, animationType: 'slide-out-right', animationDuration: 280 })
   },
 
   openKinoSim() {
     this.setData({ menuOpen: false })
-    wx.navigateTo({ url: '/pages/main/main?from=coach', animationType: 'slide-in-left', animationDuration: 280 })
+    wx.navigateBack({ delta: 1, animationType: 'slide-out-right', animationDuration: 280 })
   },
 
   openAdmin() {
@@ -431,8 +431,8 @@ Page({
     if (this.data.menuOpen || this.data.detailOpen || this.data.reminderOpen || this.data.qAssignOpen || this.data.qResponsesOpen) return
     const dx = e.changedTouches[0].clientX - this._touchX
     const dy = e.changedTouches[0].clientY - this._touchY
-    if (dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      wx.navigateTo({ url: '/pages/main/main?from=coach', animationType: 'slide-in-left', animationDuration: 280 })
+    if (dx > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      wx.navigateBack({ delta: 1, animationType: 'slide-out-right', animationDuration: 280 })
     }
   },
 

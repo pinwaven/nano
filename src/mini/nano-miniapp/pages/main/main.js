@@ -682,7 +682,6 @@ Page({
     isAdmin: false,
     isSuperadmin: false,
     isGuest: false,
-    fromCoach: false,
 
     // Guest join sheet
     guestSheetOpen: false,
@@ -730,16 +729,12 @@ Page({
   _pendingGuestAvatarUrl: '',
   _pendingInviteCode: '',
   _pendingPhoneCode: '',
-  _fromCoach: false,
+  _lastMsgId: null,
   _touchX: 0,
   _touchY: 0,
 
   onLoad(options) {
     this._seenIds = new Set()
-    if (options?.from === 'coach') {
-      this._fromCoach = true
-      this.setData({ fromCoach: true })
-    }
     const user = app.globalData.user
     if (!user) {
       wx.reLaunch({ url: '/pages/login/login' })
@@ -845,13 +840,13 @@ Page({
   },
 
   onTouchEnd(e) {
-    if (!this._fromCoach) return
+    if (!this.data.isCoach) return
     const d = this.data
     if (d.menuOpen || d.kinoSimOpen || d.guestSheetOpen || d.qSheetOpen) return
     const dx = e.changedTouches[0].clientX - this._touchX
     const dy = e.changedTouches[0].clientY - this._touchY
-    if (dx > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      wx.navigateBack({ delta: 1, animationType: 'slide-out-right', animationDuration: 280 })
+    if (dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      wx.navigateTo({ url: '/pages/coach/coach', animationType: 'slide-in-right', animationDuration: 280 })
     }
   },
 
@@ -1093,9 +1088,13 @@ Page({
           const content = role === 'coach' ? (m.content || '').replace(/\n+/g, ' ') : m.content
           return { id: `h-${i}`, role, content, imageUrl: m.image_url || null }
         })
+        const ids = history.map(m => m.id).filter(id => typeof id === 'number')
+        this._lastMsgId = ids.length > 0 ? Math.max(...ids) : 0
         this.setData({ messages: msgs })
         this._scrollBottom()
         historyLoaded = true
+      } else {
+        this._lastMsgId = 0
       }
     } catch (e) {
       console.error('History load failed', e)
@@ -1615,6 +1614,25 @@ Page({
         this._scrollBottom()
       }
     } catch (e) {}
+    // Check for new coach messages
+    if (this._lastMsgId !== null) {
+      try {
+        const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}&since_id=${this._lastMsgId}`)
+        const newCoach = res.data?.messages || []
+        if (newCoach.length > 0) {
+          const newMsgs = newCoach.map(m => ({
+            id: `c-${m.id}`,
+            role: 'coach',
+            content: (m.content || '').replace(/\n+/g, ' '),
+            imageUrl: null,
+          }))
+          this._lastMsgId = Math.max(...newCoach.map(m => m.id))
+          const messages = [...this.data.messages, ...newMsgs]
+          this.setData({ messages })
+          this._scrollBottom()
+        }
+      } catch (e) {}
+    }
   },
 
   // ── Onboarding handlers ─────────────────────────────────────────────────────

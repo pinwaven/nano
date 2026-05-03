@@ -1,9 +1,7 @@
 <view class="main {{theme === 'light' ? 'theme-light' : ''}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
 
   <!-- ── Status bar spacer ── -->
-  <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;">
-    <view wx:if="{{fromCoach}}" class="coach-back-pill">◀ Coach</view>
-  </view>
+  <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
 
   <!-- ── Header ── -->
   <view class="app-header" style="padding-right: {{capsuleRightPad}}px;" bindtap="toggleMenu">

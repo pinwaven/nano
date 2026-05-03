@@ -1771,13 +1771,23 @@ async function saveChatMessage(user_id, role, content, image_url = null) {
     }
 }
 
-async function handleGetChatHistory(openid) {
+async function handleGetChatHistory(openid, sinceId = null) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (!openid) return { success: true, messages: [] };
+        if (sinceId !== null) {
+            const result = await pool.query(
+                `SELECT id, role, content, image_url, created_at
+                 FROM chat_messages
+                 WHERE user_id = $1 AND id > $2 AND role = 'coach'
+                 ORDER BY created_at ASC, id ASC`,
+                [openid, sinceId]
+            );
+            return { success: true, messages: result.rows };
+        }
         const limit = parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10);
         const result = await pool.query(
-            `SELECT role, content, image_url, created_at FROM (
+            `SELECT id, role, content, image_url, created_at FROM (
                 SELECT id, role, content, image_url, created_at FROM chat_messages
                 WHERE user_id = $1
                 ORDER BY created_at DESC, id DESC
@@ -3897,7 +3907,8 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/coach-user-chat')) {
                 result = await handleGetCoachUserChat(query.user_id, query.coach_id);
             } else if (path.includes('/chat-history')) {
-                result = await handleGetChatHistory(query.openid);
+                const sinceId = query.since_id ? parseInt(query.since_id, 10) : null;
+                result = await handleGetChatHistory(query.openid, sinceId);
             } else if (path.includes('/biomarkers')) {
                 result = await handleGetBiomarkers(query.openid);
             } else if (path.includes('/notifications')) {
