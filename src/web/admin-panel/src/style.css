@@ -432,6 +432,7 @@ tr:hover .row-actions { opacity: 1; }
   background: #fff;
   color: var(--text);
   resize: vertical;
+  box-sizing: border-box;
 }
 
 .form-field input:focus, .form-field select:focus, .form-field-textarea:focus { border-color: var(--primary); }
@@ -463,7 +464,17 @@ tr:hover .row-actions { opacity: 1; }
 }
 .form-input:focus { border-color: var(--primary); }
 .form-input.code-input { font-family: 'SF Mono', monospace; font-size: 12px; resize: vertical; }
-.modal-body label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.modal-body label:not(.form-field) { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+/* Restore flex layout for form-field labels inside modal-body (higher specificity than .modal-body label) */
+.modal-body .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 0;
+}
 
 /* ── Simulators ── */
 .sims-grid {
@@ -1148,3 +1159,150 @@ tr:hover .row-actions { opacity: 1; }
 }
 .reports-saved-item.active .reports-saved-actions button { color: rgba(255,255,255,0.75); }
 .reports-saved-actions button:hover { background: rgba(0,0,0,0.08); }
+
+/* ── Multi-tab modal ── */
+.modal-tabbed {
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh;
+  overflow: hidden;
+}
+.modal-tabbed .modal-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 24px 24px 8px;
+}
+.modal-nav {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
+  background: var(--bg);
+  flex-shrink: 0;
+  gap: 2px;
+}
+.modal-nav-tab {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  font-family: inherit;
+  transition: color 0.15s;
+  white-space: nowrap;
+}
+.modal-nav-tab:hover { color: var(--text); }
+.modal-nav-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+.modal-footer-bar {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Form sections (used in tabbed modal) ── */
+.form-section { margin-bottom: 28px; }
+.form-section:last-child { margin-bottom: 8px; }
+.form-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.form-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+/* When title is inside a header (which has its own border), suppress double border */
+.form-section-header .form-section-title {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.form-section-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 3px 0 0;
+  line-height: 1.4;
+}
+.form-section-divider {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.form-empty-hint { font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+
+/* Schedule items (milestones + reminders in plan template editor) */
+.schedule-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--bg);
+}
+.schedule-item-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 7px;
+}
+.schedule-item-row:last-child { margin-bottom: 0; }
+.schedule-item-del {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 3px;
+  flex-shrink: 0;
+  transition: color 0.1s;
+}
+.schedule-item-del:hover { color: #ef4444; }
+
+/* Inputs inside schedule item rows */
+.si-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--text);
+  outline: none;
+  box-sizing: border-box;
+}
+.si-input:focus { border-color: var(--primary); }
+.si-input.si-time  { flex: none; width: 110px; }
+.si-input.si-week  { flex: none; width: 60px; text-align: center; }
+.si-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  align-self: center;
+  margin: 0;
+}
+
+.form-row-3 { display: grid; grid-template-columns: 1fr 110px 100px; gap: 14px; }
+.form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.chips-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.btn-sm { font-size: 12px !important; padding: 5px 12px !important; flex-shrink: 0; }
