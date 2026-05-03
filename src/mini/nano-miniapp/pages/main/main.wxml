@@ -604,6 +604,29 @@
             </view>
           </view>
 
+          <!-- Upcoming Reminders Section -->
+          <view wx:if="{{!plansLoading}}" class="reminders-section">
+            <text class="reminders-section-title">{{t.remindersTitle}}</text>
+            <view wx:if="{{remindersLoading}}" class="reminders-empty"><text class="reminder-date">···</text></view>
+            <view wx:elif="{{upcomingReminders.length === 0}}" class="reminders-empty">
+              <text class="reminder-date">{{t.remindersEmpty}}</text>
+            </view>
+            <view wx:for="{{upcomingReminders}}" wx:key="id" class="reminder-card">
+              <view class="reminder-card-top">
+                <text class="reminder-content">{{item.content}}</text>
+                <view class="reminder-source-badge reminder-source-{{item.isCoach ? 'coach' : 'ai'}}">
+                  <text class="reminder-source-text">{{item.isCoach ? t.reminderSourceCoach : t.reminderSourceAi}}</text>
+                </view>
+              </view>
+              <view class="reminder-card-bottom">
+                <text class="reminder-date">{{item.dateLabel}}</text>
+                <view wx:if="{{item.recurrenceLabel}}" class="reminder-recur-badge">
+                  <text class="reminder-recur-text">{{item.recurrenceLabel}}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+
           <view style="height: 48rpx;"></view>
         </scroll-view>
       </block>

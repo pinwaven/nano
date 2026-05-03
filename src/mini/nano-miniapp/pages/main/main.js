@@ -74,6 +74,12 @@ const T = {
     plansConflict: '该槽位已有方案，是否替换？',
     plansConfirmAbandon: '确认放弃此方案？放弃后可重新加入。',
     plansConfirmSwitch: '确认切换主/辅方案？',
+    remindersTitle: '即将提醒',
+    remindersEmpty: '暂无即将到来的提醒',
+    reminderSourceCoach: '教练',
+    reminderSourceAi: 'AI',
+    reminderRecurDaily: '每天',
+    reminderRecurWeekly: '每周',
     logout: '退出',
     initMsg: '您好！我是 Nano，您的AI健康伴侣。今天有什么可以帮您的？',
     inputPh: '输入消息…',
@@ -252,6 +258,12 @@ const T = {
     plansConflict: 'That slot is occupied. Replace existing plan?',
     plansConfirmAbandon: 'Abandon this plan? You can rejoin anytime.',
     plansConfirmSwitch: 'Switch primary/secondary?',
+    remindersTitle: 'Upcoming Reminders',
+    remindersEmpty: 'No upcoming reminders',
+    reminderSourceCoach: 'Coach',
+    reminderSourceAi: 'AI',
+    reminderRecurDaily: 'Daily',
+    reminderRecurWeekly: 'Weekly',
     logout: 'Logout',
     initMsg: 'Hello! I am Nano, your AI health companion. How can I help you today?',
     inputPh: 'Type a message…',
@@ -769,6 +781,8 @@ Page({
     planSubTab: 'overview',
     planBrowseOpen: false,
     planCheckinBusy: false,
+    upcomingReminders: [],
+    remindersLoading: false,
   },
 
   _pollingTimer: null,
@@ -852,8 +866,9 @@ Page({
       this._loadCartridges(this.data.user, this.data.lang)
     }
     if (tab === 'plans') {
-      this.setData({ plansLoading: true })
+      this.setData({ plansLoading: true, remindersLoading: true })
       this._loadPlans(this.data.user, this.data.lang)
+      this._loadReminders(this.data.user)
     }
   },
 
@@ -872,6 +887,7 @@ Page({
     this._loadHealth(this.data.user, lang)
     this._loadDots(this.data.user, lang)
     this._loadCartridges(this.data.user, lang)
+    if (this.data.tab === 'plans') this._loadReminders(this.data.user)
   },
 
   async toggleTheme() {
@@ -2132,6 +2148,37 @@ Page({
       this.setData({ activePlans: plans, planTemplates: templates, plansLoading: false })
     } catch {
       this.setData({ plansLoading: false })
+    }
+  },
+
+  async _loadReminders(user) {
+    if (!user) { this.setData({ remindersLoading: false }); return }
+    this.setData({ remindersLoading: true })
+    try {
+      const res = await this._req(`${BASE}/api/reminders?openid=${encodeURIComponent(user.user_id)}`)
+      const { lang, t } = this.data
+      const now = new Date()
+      const reminders = (res.data?.reminders || []).map(r => {
+        const d = new Date(r.scheduled_for)
+        const isToday = d.toDateString() === now.toDateString()
+        const isTomorrow = d.toDateString() === new Date(now.getTime() + 86400000).toDateString()
+        const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+        let dateLabel
+        if (isToday)         dateLabel = lang === 'zh' ? `今天 ${hhmm}` : `Today ${hhmm}`
+        else if (isTomorrow) dateLabel = lang === 'zh' ? `明天 ${hhmm}` : `Tomorrow ${hhmm}`
+        else                 dateLabel = fmtDate(r.scheduled_for, lang)
+        return {
+          ...r,
+          dateLabel,
+          isCoach: !!r.coach_id,
+          recurrenceLabel: r.recurrence === 'daily'  ? t.reminderRecurDaily
+                         : r.recurrence === 'weekly' ? t.reminderRecurWeekly
+                         : '',
+        }
+      })
+      this.setData({ upcomingReminders: reminders, remindersLoading: false })
+    } catch {
+      this.setData({ remindersLoading: false })
     }
   },
 

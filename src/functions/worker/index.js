@@ -1177,6 +1177,26 @@ async function handlePostReminder(body) {
     }
 }
 
+async function handleGetReminders(openid) {
+    if (!openid) return { success: false, error: 'openid is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `SELECT id, content, scheduled_for, recurrence, status, coach_id
+             FROM reminders
+             WHERE user_id = $1
+               AND status = 'pending'
+               AND scheduled_for >= NOW() - INTERVAL '1 hour'
+             ORDER BY scheduled_for ASC
+             LIMIT 50`,
+            [openid]
+        );
+        return { success: true, reminders: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleGetCoachUserChat(userId, coachId) {
     if (!userId) return { success: false, error: 'user_id is required', statusCode: 400 };
     try {
@@ -4283,6 +4303,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetBiomarkers(query.openid);
             } else if (path.includes('/notifications')) {
                 result = await handleGetNotifications(query.openid);
+            } else if (path.includes('/reminders')) {
+                result = await handleGetReminders(query.openid);
             } else if (path.includes('/nutrition-plan')) {
                 result = await handleGetNutritionPlan(query.openid);
             } else if (path.match(/\/health-plans\/(\d+)/)) {
