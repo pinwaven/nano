@@ -3,7 +3,7 @@
   <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
 
   <!-- Header -->
-  <view class="app-header" style="padding-right: {{capsuleRightPad}}px;">
+  <view class="app-header" style="padding-right: {{capsuleRightPad}}px;" bindtap="openUserPanel">
     <view class="header-logo-btn">
       <image class="header-logo-img" src="{{channelLogo}}" mode="aspectFit" />
       <text class="header-title">{{channelName}}</text>
