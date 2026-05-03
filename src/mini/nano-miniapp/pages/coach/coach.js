@@ -1,5 +1,6 @@
 const app = getApp()
 const BASE = 'https://nano.fros.cc'
+const toolActions = require('../../utils/tool-actions')
 
 const T = {
   zh: {
@@ -77,6 +78,26 @@ const T = {
       responsesTitle: '问卷回答',
       noResponses: '暂无回答记录',
     },
+    toolFormulaDots: '营养定制',
+    toolTestChip: '检测服务',
+    toolHealthAdvice: '健康管理',
+    toolUploadImage: '上传图片',
+    toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
+    toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
+    formulaGenerating: '正在根据您的生物标志物生成7天营养方案…',
+    formulaComplete: '您的7天营养方案已生成！',
+    formulaViewDots: '查看营养方案 →',
+    formulaError: '方案生成失败，请重试。',
+    healthAdviceError: '健康分析请求失败，请重试。',
+    imageUploading: '正在上传图片…',
+    imageAnalyzing: '正在分析图片，请稍候…',
+    imageError: '图片分析失败，请重试。',
+    kinoScanSuccess: '客户的 Kino 芯片已成功登记！',
+    kinoScanInstruction: '请将芯片插入 Kino 分析仪，开始检测。',
+    kinoScanAlreadyLinked: '此芯片已绑定到该客户账户，正在等待检测结果。',
+    kinoScanUsed: '此芯片已完成检测，无法重复登记。',
+    kinoScanInvalidChip: '此二维码不是有效的 Kino 芯片，请扫描芯片上的二维码。',
+    kinoScanError: '登记失败，请重试。',
   },
   en: {
     title: 'Coach Panel',
@@ -153,6 +174,26 @@ const T = {
       responsesTitle: 'Questionnaire Responses',
       noResponses: 'No responses yet',
     },
+    toolFormulaDots: 'Formulate Dots',
+    toolTestChip: 'Use Kino Chip',
+    toolHealthAdvice: 'Health Advice',
+    toolUploadImage: 'Upload Image',
+    toolFormulaDotMsg: 'Please formulate my Dots plan',
+    toolHealthAdviceMsg: 'Please analyze my current health status and give me personalized health advice.',
+    formulaGenerating: 'Generating your 7-day nutrition plan from your biomarkers…',
+    formulaComplete: 'Your 7-day nutrition plan is ready!',
+    formulaViewDots: 'View Dots Plan →',
+    formulaError: 'Plan generation failed. Please try again.',
+    healthAdviceError: 'Health analysis request failed. Please try again.',
+    imageUploading: 'Uploading image…',
+    imageAnalyzing: 'Analyzing your image, please wait…',
+    imageError: 'Image analysis failed. Please try again.',
+    kinoScanSuccess: "Client's Kino chip has been registered!",
+    kinoScanInstruction: 'Now insert the chip into the Kino Analyzer to begin the test.',
+    kinoScanAlreadyLinked: 'This chip is already linked to the client account and is awaiting analysis.',
+    kinoScanUsed: 'This chip has already been analyzed and cannot be registered again.',
+    kinoScanInvalidChip: 'This QR code is not a valid Kino chip. Please scan the QR code on the chip.',
+    kinoScanError: 'Registration failed. Please try again.',
   },
 }
 
@@ -246,6 +287,9 @@ Page({
     // Compose
     msgText: '',
     msgBusy: false,
+    chatToolboxOpen: false,
+    chatToolList: [],
+    chatToolBusy: false,
     // Earnings tab
     earningsThisMonth: null,
     earningsAvailable: null,
@@ -306,7 +350,8 @@ Page({
     const isSuperadmin = roles.includes('superadmin')
     const theme = user.theme || app.globalData.theme || 'dark'
     const lang = app.globalData.lang || 'zh'
-    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, lang, t: T[lang], reminderDate: todayStr() })
+    const t = T[lang]
+    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t) })
     this._loadAll()
   },
 
@@ -381,7 +426,7 @@ Page({
   toggleLang() {
     const lang = this.data.lang === 'zh' ? 'en' : 'zh'
     app.globalData.lang = lang
-    this.setData({ lang, t: T[lang], menuOpen: false })
+    this.setData({ lang, t: T[lang], menuOpen: false, chatToolList: toolActions.getToolList(T[lang]) })
   },
 
   async toggleTheme() {
@@ -485,7 +530,7 @@ Page({
   },
 
   closeClientDetail() {
-    this.setData({ detailOpen: false, detailClient: null, chatMessages: [], msgText: '', chatScrollId: '' })
+    this.setData({ detailOpen: false, detailClient: null, chatMessages: [], msgText: '', chatScrollId: '', chatToolboxOpen: false, chatToolBusy: false })
   },
 
   switchDetailTab(e) {
@@ -521,6 +566,68 @@ Page({
   },
 
   onMsgInput(e) { this.setData({ msgText: e.detail.value }) },
+
+  toggleChatToolbox() {
+    this.setData({ chatToolboxOpen: !this.data.chatToolboxOpen })
+  },
+
+  handleChatToolAction(e) {
+    const action = e.detail?.action
+    const { detailClient, t, chatToolBusy } = this.data
+    if (!detailClient || chatToolBusy) return
+    this.setData({ chatToolboxOpen: false })
+    const ctx = {
+      addMsg: (role, content, persist) => this._addChatMsg(role, content, persist),
+      addImageMsg: (url) => this._addChatImageMsg(url),
+      req: (url, method, data) => this._req(url, method, data),
+      setTyping: (v) => this.setData({ chatToolBusy: v }),
+    }
+    if (action === 'test_chip') {
+      toolActions.runTestChip(detailClient.user_id, t, ctx)
+    } else if (action === 'formula_dots') {
+      toolActions.runFormulaDs(detailClient.user_id, t, ctx)
+    } else if (action === 'health_advice') {
+      toolActions.runHealthAdvice(detailClient.user_id, t, ctx)
+    } else if (action === 'upload_image') {
+      toolActions.runUploadImage(detailClient.user_id, t, ctx)
+    }
+  },
+
+  // Append a message to the coach's chat view for the current detailClient.
+  // 'user' role is stored as 'coach' so it appears correctly in both panels.
+  _addChatMsg(role, content, persist = false) {
+    const persistRole = role === 'user' ? 'coach' : role
+    const msg = {
+      id: `${role}-${Date.now()}-${Math.random()}`,
+      role: persistRole,
+      content,
+      _isUser: false,
+      _isCoach: role === 'user',
+      _isAi: role === 'ai',
+      _time: '',
+    }
+    const chatMessages = [...this.data.chatMessages, msg]
+    const lastIdx = chatMessages.length - 1
+    this.setData({ chatMessages }, () => {
+      this.setData({ chatScrollId: `cmsg${lastIdx}` })
+    })
+    if (persist && this.data.detailClient?.user_id) {
+      this._req(`${BASE}/api/chat-messages`, 'POST', {
+        openid: this.data.detailClient.user_id,
+        role: persistRole,
+        content,
+      }).catch(() => {})
+    }
+  },
+
+  _addChatImageMsg(imageUrl) {
+    const msg = { id: `img-${Date.now()}`, role: 'coach', content: '', imageUrl, _isCoach: true, _isUser: false, _isAi: false, _time: '' }
+    const chatMessages = [...this.data.chatMessages, msg]
+    const lastIdx = chatMessages.length - 1
+    this.setData({ chatMessages }, () => {
+      this.setData({ chatScrollId: `cmsg${lastIdx}` })
+    })
+  },
 
   async sendMessage() {
     const { detailClient, msgText, lang } = this.data

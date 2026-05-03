@@ -2092,10 +2092,10 @@ async function handlePostChat(body) {
             );
 
             // Normalize roles ('ai' → 'assistant') and collapse consecutive same-role turns
-            // 'coach' role messages are stored for UI display but not forwarded to the LLM
+            // Only 'user' and 'ai' rows are forwarded; 'coach', 'action', and anything else is UI-only
             const cleanHistory = [];
             for (const row of historyResult.rows) {
-                if (row.role === 'coach') continue;
+                if (row.role !== 'user' && row.role !== 'ai') continue;
                 const role = row.role === 'ai' ? 'assistant' : row.role;
                 const last = cleanHistory[cleanHistory.length - 1];
                 if (last && last.role === role) {

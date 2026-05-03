@@ -284,10 +284,14 @@
 
         <!-- Pinned compose area -->
         <view class="msg-compose">
+          <toolbox wx:if="{{chatToolboxOpen}}" tools="{{chatToolList}}" disabled="{{chatToolBusy}}" bind:toolaction="handleChatToolAction" />
           <view class="reminder-trigger" bindtap="openReminderComposer">
             <text class="reminder-trigger-text">{{t.setReminder}}</text>
           </view>
           <view class="compose-row">
+            <view class="chat-plus-btn {{chatToolboxOpen ? 'chat-plus-open' : ''}}" bindtap="toggleChatToolbox">
+              <text class="chat-plus-icon">+</text>
+            </view>
             <textarea
               class="compose-input"
               placeholder="{{t.msgPh}}"

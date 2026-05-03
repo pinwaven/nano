@@ -533,6 +533,21 @@
 .compose-send-btn.btn-busy { opacity: 0.5; }
 .compose-send-text { font-size: 14px; font-weight: 600; color: #fff; }
 
+.chat-plus-btn {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: rgba(99, 117, 236, 0.12);
+  border: 1rpx solid rgba(99, 117, 236, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-plus-open { background: rgba(99, 117, 236, 0.3); border-color: #6375EC; }
+.chat-plus-icon { font-size: 22px; color: #A6C4E5; line-height: 1; }
+.chat-plus-open .chat-plus-icon { color: #8B9FFF; }
+
 /* ── Reminder overlay ────────────────────────────────────────────────────── */
 .reminder-body {
   padding: 16px;

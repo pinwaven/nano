@@ -1,0 +1,14 @@
+<view class="toolbox-panel">
+  <view class="toolbox-grid">
+    <view
+      wx:for="{{tools}}"
+      wx:key="action"
+      class="tool-item"
+      bindtap="onTap"
+      data-action="{{item.action}}"
+    >
+      <text class="tool-item-icon">{{item.icon}}</text>
+      <text class="tool-item-label">{{item.label}}</text>
+    </view>
+  </view>
+</view>

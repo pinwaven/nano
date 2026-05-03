@@ -1,5 +1,6 @@
 const app = getApp()
 const BASE = 'https://nano.fros.cc'
+const toolActions = require('../../utils/tool-actions')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
 
@@ -611,6 +612,7 @@ Page({
     chatInput: '',
     typing: false,
     toolboxOpen: false,
+    toolList: [],
     kinoScanPending: false,
 
     // Kino Simulator passcode
@@ -754,7 +756,8 @@ Page({
     const theme = user.theme || app.globalData.theme || 'dark'
     app.globalData.theme = theme
     const userAvatarLetter = (user.nickname || 'U').slice(-1).toUpperCase()
-    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t: T[lang], statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest })
+    const t = T[lang]
+    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, toolList: toolActions.getToolList(t) })
     if (isGuest) {
       this.setData({ messages: [{ id: 'init', role: 'ai', content: T[lang].initMsg }], obStep: null, storeLoading: true })
       this._loadGuestStore(lang)
@@ -812,7 +815,7 @@ Page({
     app.globalData.lang = lang
     const storeItems  = this._rawStoreItems  ? mapStoreItems(this._rawStoreItems, lang)   : []
     const storeOrders = this._rawStoreOrders ? mapStoreOrders(this._rawStoreOrders, lang) : []
-    this.setData({ lang, t: T[lang], menuOpen: false, storeItems, storeOrders })
+    this.setData({ lang, t: T[lang], menuOpen: false, storeItems, storeOrders, toolList: toolActions.getToolList(T[lang]) })
     this._loadHealth(this.data.user, lang)
     this._loadDots(this.data.user, lang)
     this._loadCartridges(this.data.user, lang)
@@ -1372,112 +1375,33 @@ Page({
   },
 
   handleToolAction(e) {
-    const action = e.currentTarget.dataset.action
-    const { t, typing, obStep } = this.data
+    const action = e.detail?.action || e.currentTarget?.dataset?.action
+    const { t, typing, obStep, user } = this.data
     if (typing || obStep !== 'done') return
     this.setData({ toolboxOpen: false })
-    if (action === 'formula_dots') {
-      this._requestFormula()
-    } else if (action === 'test_chip') {
+    const ctx = {
+      addMsg: (role, content, persist) => this._addMsg(role, content, persist),
+      addActionMsg: (action, label, persist) => this._addActionMsg(action, label, persist),
+      addImageMsg: (url) => this._addImageMsg(url),
+      req: (url, method, data) => this._req(url, method, data),
+      setTyping: (v) => this.setData({ typing: v }),
+    }
+    if (action === 'test_chip') {
       this._addMsg('ai', t.kinoScanPrompt)
       this.setData({ kinoScanPending: true })
+    } else if (action === 'formula_dots') {
+      toolActions.runFormulaDs(user.user_id, t, ctx)
     } else if (action === 'health_advice') {
-      this._requestHealthAdvice()
+      toolActions.runHealthAdvice(user.user_id, t, ctx)
     } else if (action === 'upload_image') {
-      this._uploadImage()
+      toolActions.runUploadImage(user.user_id, t, ctx)
     }
-  },
-
-  async _requestFormula() {
-    const { user, t } = this.data
-    this._addMsg('user', t.toolFormulaDotMsg, true)
-    this._addMsg('ai', t.formulaGenerating, true)
-    this.setData({ typing: true })
-    try {
-      await this._req(`${BASE}/api/formula-dots`, 'POST', { openid: user.user_id })
-      this._addMsg('ai', t.formulaComplete, true)
-      this._addActionMsg('view_dots', t.formulaViewDots, true)
-    } catch (e) {
-      this._addMsg('ai', t.formulaError)
-    } finally {
-      this.setData({ typing: false })
-    }
-  },
-
-  async _requestHealthAdvice() {
-    const { user, t } = this.data
-    this._addMsg('user', t.toolHealthAdviceMsg)
-    this.setData({ typing: true })
-    try {
-      const res = await this._req(`${BASE}/api/health-advice`, 'POST', { openid: user.user_id })
-      if (res.statusCode !== 200 && res.statusCode !== 201) throw new Error('server error')
-      const reply = res.data?.message
-      if (reply) {
-        this._addMsg('ai', reply, true)
-      } else {
-        throw new Error('empty response')
-      }
-    } catch (e) {
-      this._addMsg('ai', t.healthAdviceError)
-    } finally {
-      this.setData({ typing: false })
-    }
-  },
-
-  _uploadImage() {
-    wx.chooseImage({
-      count: 1,
-      sizeType: ['original'],
-      sourceType: ['album', 'camera'],
-      success: (res) => this._doUploadImage(res.tempFilePaths[0]),
-    })
   },
 
   _addImageMsg(imageUrl) {
     const msg = { id: `user-${Date.now()}`, role: 'user', content: '', imageUrl }
     this.setData({ messages: [...this.data.messages, msg] })
     this._scrollBottom()
-  },
-
-  _doUploadImage(tempPath) {
-    const { user, t } = this.data
-    const filename = `img_${Date.now()}.jpg`
-    this._addMsg('ai', t.imageUploading)
-    this.setData({ typing: true })
-
-    this._req(`${BASE}/api/oss/presign?type=image&filename=${encodeURIComponent(filename)}&category=user-images`, 'GET')
-      .then(presignRes => {
-        const { put_url, get_url, key } = presignRes.data || {}
-        if (!put_url) throw new Error('presign failed')
-        this._addImageMsg(tempPath)
-        wx.getFileSystemManager().readFile({
-          filePath: tempPath,
-          success: (fileRes) => {
-            wx.request({
-              url: put_url,
-              method: 'PUT',
-              data: fileRes.data,
-              header: { 'Content-Type': 'application/octet-stream' },
-              responseType: 'text',
-              success: () => {
-                this._addMsg('ai', t.imageAnalyzing)
-                this._req(`${BASE}/api/analyze-image`, 'POST', {
-                  openid: user.user_id, oss_key: key, filename, get_url,
-                }).then(res => {
-                  const reply = res.data?.message
-                  if (!reply) throw new Error('empty response')
-                  this._addMsg('ai', reply, true)
-                }).catch(() => {
-                  this._addMsg('ai', t.imageError)
-                }).finally(() => this.setData({ typing: false }))
-              },
-              fail: () => { this._addMsg('ai', t.imageError); this.setData({ typing: false }) },
-            })
-          },
-          fail: () => { this._addMsg('ai', t.imageError); this.setData({ typing: false }) },
-        })
-      })
-      .catch(() => { this._addMsg('ai', t.imageError); this.setData({ typing: false }) })
   },
 
   _addActionMsg(action, label, persist = false) {
@@ -1534,34 +1458,11 @@ Page({
 
   handleKinoScan() {
     const { user, t } = this.data
-    wx.scanCode({
-      onlyFromCamera: false,
-      success: async (res) => {
-        const chip_id = res.result
-        this.setData({ kinoScanPending: false })
-        this._addMsg('user', chip_id, true)
-        this.setData({ typing: true })
-        try {
-          const scanRes = await this._req(`${BASE}/api/kino-scan`, 'POST', { openid: user.user_id, chip_id })
-          if (scanRes.statusCode !== 200) throw new Error('server error')
-          const status = scanRes.data?.status
-          if (status === 'invalid_chip') {
-            this._addMsg('ai', t.kinoScanInvalidChip, true)
-          } else if (status === 'already_linked') {
-            this._addMsg('ai', t.kinoScanAlreadyLinked, true)
-          } else if (status === 'used') {
-            this._addMsg('ai', t.kinoScanUsed, true)
-          } else {
-            this._addMsg('ai', t.kinoScanSuccess, true)
-            this._addMsg('ai', t.kinoScanInstruction, true)
-          }
-        } catch (e) {
-          this._addMsg('ai', t.kinoScanError, true)
-        } finally {
-          this.setData({ typing: false })
-        }
-      },
-      fail: () => {},
+    this.setData({ kinoScanPending: false })
+    toolActions.runTestChip(user.user_id, t, {
+      addMsg: (role, content, persist) => this._addMsg(role, content, persist),
+      req: (url, method, data) => this._req(url, method, data),
+      setTyping: (v) => this.setData({ typing: v }),
     })
   },
 
