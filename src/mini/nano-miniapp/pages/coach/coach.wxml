@@ -1,32 +1,61 @@
-<view class="coach-page">
+<view class="coach-page {{theme === 'light' ? 'theme-light' : ''}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
   <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
 
-  <!-- Header -->
-  <view class="coach-header">
-    <view class="header-back" bindtap="handleBack">
-      <text class="back-arrow">‹</text>
+  <!-- Header (same as user panel) -->
+  <view class="app-header" style="padding-right: {{capsuleRightPad}}px;" bindtap="toggleMenu">
+    <view class="header-logo-btn">
+      <image class="header-logo-img" src="{{channelLogo}}" mode="aspectFit" />
+      <text class="header-title">{{channelName}}</text>
     </view>
-    <text class="header-title">{{t.title}}</text>
-    <view class="header-refresh" bindtap="handleRefresh">
-      <text class="refresh-icon">↻</text>
+    <view class="header-divider"></view>
+    <text class="header-user">{{nickname}} ({{t.coachLabel}})</text>
+  </view>
+
+  <!-- Menu dropdown (same as user panel) -->
+  <view wx:if="{{menuOpen}}" class="menu-mask" bindtap="closeMenu">
+    <view class="menu-dropdown" catchtap="noop" style="top: {{menuTop}}px;">
+      <view class="menu-item" bindtap="toggleLang">
+        <text class="menu-item-icon">{{lang === 'zh' ? '🇺🇸' : '🇨🇳'}}</text>
+        <text class="menu-item-label">{{lang === 'zh' ? 'English' : '中文'}}</text>
+      </view>
+      <view class="menu-divider"></view>
+      <view class="menu-item" bindtap="toggleTheme">
+        <text class="menu-item-icon">{{theme === 'dark' ? '☀' : '🌑'}}</text>
+        <text class="menu-item-label">{{theme === 'dark' ? t.lightMode : t.darkMode}}</text>
+      </view>
+      <view class="menu-divider"></view>
+      <view class="menu-item" bindtap="openKinoSim">
+        <text class="menu-item-icon">⬡</text>
+        <text class="menu-item-label">{{t.kinoSimMenu}}</text>
+      </view>
+      <view class="menu-divider"></view>
+      <view class="menu-item" bindtap="openUserPanel">
+        <text class="menu-item-icon">🫀</text>
+        <text class="menu-item-label">{{t.userPanelMenu}}</text>
+      </view>
+      <view wx:if="{{isAdmin}}" class="menu-divider"></view>
+      <view wx:if="{{isAdmin}}" class="menu-item" bindtap="openAdmin">
+        <text class="menu-item-icon">⚙</text>
+        <text class="menu-item-label">{{t.adminMenu}}</text>
+      </view>
+      <view wx:if="{{isSuperadmin}}" class="menu-divider"></view>
+      <view wx:if="{{isSuperadmin}}" class="menu-item" bindtap="openSuperadmin">
+        <text class="menu-item-icon">🌐</text>
+        <text class="menu-item-label">{{t.superadminMenu}}</text>
+      </view>
+      <view class="menu-divider"></view>
+      <view class="menu-item" bindtap="handleLogout">
+        <text class="menu-item-icon">↪</text>
+        <text class="menu-item-label">{{t.logout}}</text>
+      </view>
     </view>
   </view>
 
-  <!-- Top tab bar -->
-  <view class="coach-tabs">
-    <view class="coach-tab {{tab === 'clients' ? 'coach-tab-active' : ''}}" bindtap="switchTab" data-tab="clients">
-      <text class="coach-tab-text">{{t.tabs.clients}}</text>
-    </view>
-    <view class="coach-tab {{tab === 'invites' ? 'coach-tab-active' : ''}}" bindtap="switchTab" data-tab="invites">
-      <text class="coach-tab-text">{{t.tabs.invites}}</text>
-    </view>
-    <view class="coach-tab {{tab === 'earnings' ? 'coach-tab-active' : ''}}" bindtap="switchTab" data-tab="earnings">
-      <text class="coach-tab-text">{{t.tabs.earnings}}</text>
-    </view>
-    <view class="coach-tab {{tab === 'questionnaires' ? 'coach-tab-active' : ''}}" bindtap="switchTab" data-tab="questionnaires">
-      <text class="coach-tab-text">{{t.tabs.questionnaires}}</text>
-    </view>
-  </view>
+  <!-- Scrollable content area -->
+  <scroll-view scroll-y class="coach-content"
+    refresher-enabled="{{tab === 'clients'}}"
+    refresher-triggered="{{clientsRefreshing}}"
+    bindrefresherrefresh="onClientsRefresh">
 
   <!-- Loading -->
   <view wx:if="{{loading}}" class="loading-row">
@@ -41,8 +70,9 @@
     <view wx:for="{{clients}}" wx:key="user_id" class="client-card">
       <!-- Top row: avatar + name/ages + delta badge -->
       <view class="client-row" bindtap="openClientDetail" data-client="{{item}}" data-tab="health">
-        <view class="client-avatar" style="background: #1E3A5F;">
-          <text class="avatar-letter">{{item._avatar}}</text>
+        <view class="client-avatar" style="{{item.avatar_url ? '' : 'background: #1E3A5F;'}}">
+          <image wx:if="{{item.avatar_url}}" class="client-avatar-img" src="{{item.avatar_url}}" mode="aspectFill" />
+          <text wx:else class="avatar-letter">{{item._avatar}}</text>
         </view>
         <view class="client-info">
           <view class="client-name-row">
@@ -177,6 +207,32 @@
           </view>
         </view>
       </view>
+    </view>
+  </view>
+
+  </scroll-view>
+
+  <!-- ── Bottom Tab Bar ── -->
+  <view class="tab-bar">
+    <view class="tab-btn {{tab === 'clients' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="clients">
+      <view wx:if="{{tab === 'clients'}}" class="tab-line"></view>
+      <image class="tab-icon-img" src="/assets/icons/clients.svg" mode="aspectFit" />
+      <text class="tab-label">{{t.tabs.clients}}</text>
+    </view>
+    <view class="tab-btn {{tab === 'invites' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="invites">
+      <view wx:if="{{tab === 'invites'}}" class="tab-line"></view>
+      <image class="tab-icon-img" src="/assets/icons/invites.svg" mode="aspectFit" />
+      <text class="tab-label">{{t.tabs.invites}}</text>
+    </view>
+    <view class="tab-btn {{tab === 'earnings' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="earnings">
+      <view wx:if="{{tab === 'earnings'}}" class="tab-line"></view>
+      <image class="tab-icon-img" src="/assets/icons/earnings.svg" mode="aspectFit" />
+      <text class="tab-label">{{t.tabs.earnings}}</text>
+    </view>
+    <view class="tab-btn {{tab === 'questionnaires' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="questionnaires">
+      <view wx:if="{{tab === 'questionnaires'}}" class="tab-line"></view>
+      <image class="tab-icon-img" src="/assets/icons/questionnaires.svg" mode="aspectFit" />
+      <text class="tab-label">{{t.tabs.questionnaires}}</text>
     </view>
   </view>
 

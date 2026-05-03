@@ -1092,9 +1092,10 @@ async function handleGetCoachUsers(coachId) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
+            `SELECT u.user_id, u.external_id, u.nickname, u.avatar_url, u.birth_date, u.language, u.gender,
                     u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
-                    b.bio_age, b.data AS bio_data, b.tested_at AS last_scan_at
+                    b.bio_age, b.data AS bio_data, b.tested_at AS last_scan_at,
+                    m.last_msg_at
              FROM users u
              LEFT JOIN (
                  SELECT DISTINCT ON (user_id) user_id, bio_age, data, tested_at
@@ -1102,8 +1103,13 @@ async function handleGetCoachUsers(coachId) {
                  WHERE test_type = 'kino_chip'
                  ORDER BY user_id, tested_at DESC
              ) b ON u.user_id = b.user_id
+             LEFT JOIN (
+                 SELECT user_id, MAX(created_at) AS last_msg_at
+                 FROM chat_messages
+                 GROUP BY user_id
+             ) m ON u.user_id = m.user_id
              WHERE u.coach_id = $1
-             ORDER BY u.created_at DESC`,
+             ORDER BY COALESCE(m.last_msg_at, b.tested_at, u.created_at) DESC`,
             [coachId]
         );
         return { success: true, users: result.rows };

@@ -682,6 +682,7 @@ Page({
     isAdmin: false,
     isSuperadmin: false,
     isGuest: false,
+    fromCoach: false,
 
     // Guest join sheet
     guestSheetOpen: false,
@@ -729,9 +730,16 @@ Page({
   _pendingGuestAvatarUrl: '',
   _pendingInviteCode: '',
   _pendingPhoneCode: '',
+  _fromCoach: false,
+  _touchX: 0,
+  _touchY: 0,
 
-  onLoad() {
+  onLoad(options) {
     this._seenIds = new Set()
+    if (options?.from === 'coach') {
+      this._fromCoach = true
+      this.setData({ fromCoach: true })
+    }
     const user = app.globalData.user
     if (!user) {
       wx.reLaunch({ url: '/pages/login/login' })
@@ -829,6 +837,22 @@ Page({
   openCoach() {
     this.setData({ menuOpen: false })
     wx.navigateTo({ url: '/pages/coach/coach' })
+  },
+
+  onTouchStart(e) {
+    this._touchX = e.touches[0].clientX
+    this._touchY = e.touches[0].clientY
+  },
+
+  onTouchEnd(e) {
+    if (!this._fromCoach) return
+    const d = this.data
+    if (d.menuOpen || d.kinoSimOpen || d.guestSheetOpen || d.qSheetOpen) return
+    const dx = e.changedTouches[0].clientX - this._touchX
+    const dy = e.changedTouches[0].clientY - this._touchY
+    if (dx > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      wx.navigateBack({ delta: 1, animationType: 'slide-out-right', animationDuration: 280 })
+    }
   },
 
   openAdmin() {

@@ -1,56 +1,149 @@
 .coach-page {
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
   background: #0B1C2E;
   color: #E8F0F8;
+  overflow: hidden;
 }
 
-.status-bar-spacer { width: 100%; }
+.status-bar-spacer { width: 100%; flex-shrink: 0; }
 
-/* ── Header ─────────────────────────────────────────────────────────────── */
-.coach-header {
+/* ── Header (matches user panel exactly) ─────────────────────────────────── */
+.app-header {
+  background: rgba(11, 28, 46, 0.85);
+  border-bottom: 1rpx solid rgba(99, 117, 236, 0.18);
+  padding: 16rpx 36rpx 28rpx;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  padding: 12px 16px;
-  background: #0F2540;
-  border-bottom: 1rpx solid #1E3A5F;
+  gap: 16rpx;
 }
 
-.header-back, .header-refresh {
-  width: 44px;
-  height: 36px;
+.header-logo-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 16rpx;
+  flex-shrink: 0;
 }
 
-.back-arrow { font-size: 28px; color: #A6C4E5; }
-.refresh-icon { font-size: 20px; color: #A6C4E5; }
+.header-logo-img {
+  width: 56rpx;
+  height: 40rpx;
+  flex-shrink: 0;
+}
 
 .header-title {
-  flex: 1;
-  text-align: center;
-  font-size: 17px;
-  font-weight: 600;
-  color: #E8F0F8;
+  font-size: 28rpx;
+  font-weight: 700;
+  letter-spacing: 8rpx;
+  color: #EEF2FF;
+  flex-shrink: 0;
 }
 
-/* ── Top tab bar ─────────────────────────────────────────────────────────── */
-.coach-tabs {
-  display: flex;
+.header-divider {
+  width: 1rpx;
+  height: 32rpx;
+  background: rgba(99, 117, 236, 0.25);
+  flex-shrink: 0;
+}
+
+.header-user {
+  font-size: 28rpx;
+  color: #A6C4E5;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Menu dropdown (same as user panel) ─────────────────────────────────── */
+.menu-mask {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 100;
+}
+
+.menu-dropdown {
+  position: absolute;
+  left: 24rpx;
   background: #0F2540;
-  border-bottom: 1rpx solid #1E3A5F;
+  border: 1rpx solid rgba(99, 117, 236, 0.25);
+  border-radius: 20rpx;
+  overflow: hidden;
+  box-shadow: 0 8rpx 40rpx rgba(0, 0, 0, 0.5);
+  min-width: 240rpx;
 }
 
-.coach-tab {
-  flex: 1;
-  padding: 12px 0;
+.menu-divider {
+  height: 1rpx;
+  background: rgba(99, 117, 236, 0.15);
+  margin: 0 24rpx;
+}
+
+.menu-item {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 20rpx;
+  padding: 28rpx 32rpx;
 }
 
-.coach-tab-text { font-size: 14px; color: #7A9ABF; font-weight: 500; }
-.coach-tab-active .coach-tab-text { color: #A0B4FF; font-weight: 700; }
+.menu-item-icon { font-size: 18px; }
+.menu-item-label { font-size: 14px; color: #A6C4E5; font-weight: 500; }
+
+/* ── Scrollable content area ─────────────────────────────────────────────── */
+.coach-content {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Bottom tab bar (mirrors main page exactly) ──────────────────────────── */
+.tab-bar {
+  flex-shrink: 0;
+  display: flex;
+  background: rgba(8, 18, 32, 0.92);
+  border-top: 1rpx solid rgba(99, 117, 236, 0.18);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.tab-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  padding: 20rpx 0 24rpx;
+  position: relative;
+}
+
+.tab-line {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 64rpx;
+  height: 4rpx;
+  background: linear-gradient(90deg, #6375EC, #8B9FFF);
+  border-radius: 0 0 6rpx 6rpx;
+}
+
+.tab-icon-img {
+  width: 40rpx;
+  height: 40rpx;
+  opacity: 0.35;
+}
+.tab-active .tab-icon-img { opacity: 1; }
+
+.tab-label {
+  font-size: 20rpx;
+  font-weight: 600;
+  letter-spacing: 1rpx;
+  color: rgba(166, 196, 229, 0.4);
+}
+
+.tab-active .tab-label { color: #6375EC; }
 
 .loading-row {
   display: flex;
@@ -94,6 +187,13 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.client-avatar-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
 }
 
 .avatar-letter { font-size: 18px; font-weight: 700; color: #A6C4E5; }
@@ -640,4 +740,137 @@
 .earnings-card-label { font-size: 11px; color: #7A9ABF; }
 .earnings-card-value { font-size: 20px; font-weight: 700; color: #E8F0F8; }
 .earnings-card-green .earnings-card-value { color: #10b981; }
+
+/* ════════════════════════════════════════════════════════
+   LIGHT THEME OVERRIDES
+   Applied when .coach-page has class "theme-light"
+   ════════════════════════════════════════════════════════ */
+
+/* ── Layout ── */
+.theme-light.coach-page {
+  background: var(--bg-gradient);
+  color: var(--text);
+}
+.theme-light .status-bar-spacer { background: var(--bg-surface); }
+
+/* ── Header ── */
+.theme-light .app-header {
+  background: var(--bg-surface);
+  border-bottom-color: var(--navy-border);
+}
+.theme-light .header-title  { color: var(--text); }
+.theme-light .header-user   { color: var(--text-sub); }
+.theme-light .header-divider { background: rgba(201, 149, 106, 0.25); }
+
+/* ── Menu ── */
+.theme-light .menu-dropdown {
+  background: var(--navy-card);
+  border-color: rgba(201, 149, 106, 0.25);
+  box-shadow: 0 8rpx 40rpx rgba(44, 44, 44, 0.12);
+}
+.theme-light .menu-divider    { background: rgba(201, 149, 106, 0.15); }
+.theme-light .menu-item-icon  { color: var(--text-sub); }
+.theme-light .menu-item-label { color: var(--text); }
+
+/* ── Tab bar ── */
+.theme-light .tab-bar {
+  background: var(--bg-tabbar);
+  border-top-color: var(--navy-border);
+}
+.theme-light .tab-label              { color: var(--text-muted); }
+.theme-light .tab-active .tab-label  { color: var(--blue); }
+.theme-light .tab-icon-img           { filter: brightness(0); opacity: 0.3; }
+.theme-light .tab-active .tab-icon-img { filter: brightness(0); opacity: 0.75; }
+
+/* ── Client list ── */
+.theme-light .client-card {
+  background: var(--navy-card);
+  border-color: var(--navy-border);
+}
+.theme-light .client-name     { color: var(--text); }
+.theme-light .client-meta     { color: var(--text-muted); }
+.theme-light .avatar-letter   { color: var(--text-sub); }
+.theme-light .empty-text      { color: var(--text-muted); }
+.theme-light .loading-text    { color: var(--text-muted); }
+.theme-light .sub-age-strip   { background: var(--navy-lift); }
+.theme-light .sub-age-pill-label { color: var(--text-muted); }
+.theme-light .msg-btn         { background: var(--navy-lift); border-color: var(--blue); }
+.theme-light .action-btn-text { color: var(--blue); }
+.theme-light .remind-icon-btn { border-color: var(--navy-border); }
+.theme-light .section-label   { color: var(--text-muted); }
+
+/* ── Invites tab ── */
+.theme-light .invite-generate-btn {
+  background: var(--navy-lift);
+  border-color: var(--blue);
+}
+.theme-light .invite-generate-text { color: var(--blue); }
+.theme-light .invite-code          { color: var(--blue); }
+.theme-light .invite-uses          { color: var(--text-muted); }
+
+/* ── Earnings tab ── */
+.theme-light .earnings-card {
+  background: var(--navy-lift);
+  border-color: var(--navy-border);
+}
+.theme-light .earnings-card-label { color: var(--text-muted); }
+.theme-light .earnings-card-value { color: var(--text); }
+
+/* ── Overlay shell ── */
+.theme-light .overlay-panel         { background: var(--navy-card); }
+.theme-light .overlay-header        { border-bottom-color: var(--navy-border); }
+.theme-light .overlay-title         { color: var(--text); }
+.theme-light .close-x               { color: var(--text-muted); }
+.theme-light .detail-tabs           { background: var(--navy-lift); border-bottom-color: var(--navy-border); }
+.theme-light .detail-tab-text       { color: var(--text-muted); }
+.theme-light .detail-tab-active .detail-tab-text { color: var(--blue); }
+
+/* ── Health tab (in overlay) ── */
+.theme-light .trend-value   { color: var(--blue); }
+.theme-light .trend-date    { color: var(--text-muted); }
+.theme-light .sub-age-card  { background: var(--navy-lift); border-color: var(--navy-border); }
+.theme-light .sub-age-label { color: var(--text-muted); }
+.theme-light .bm-label      { color: var(--text-sub); }
+.theme-light .bm-value      { color: var(--text); }
+
+/* ── Chat tab (in overlay) ── */
+.theme-light .chat-role-text { color: var(--text-muted); }
+.theme-light .chat-time      { color: var(--text-muted); }
+.theme-light .bubble-user    { background: var(--navy-lift); }
+.theme-light .bubble-ai      { background: var(--navy-card); border-color: var(--navy-border); }
+.theme-light .chat-content   { color: var(--text); }
+
+/* ── Messages tab (in overlay) ── */
+.theme-light .msg-bubble  { background: var(--navy-lift); border-color: var(--blue); }
+.theme-light .msg-content { color: var(--text); }
+.theme-light .msg-time    { color: var(--text-muted); }
+.theme-light .msg-compose { background: var(--bg-input); border-top-color: var(--navy-border); }
+.theme-light .compose-input { background: var(--navy-card); color: var(--text); }
+
+/* ── Reminder overlay ── */
+.theme-light .instr-textarea    { background: var(--navy-lift); color: var(--text); }
+.theme-light .picker-row        { border-bottom-color: var(--navy-border); }
+.theme-light .picker-label      { color: var(--text-sub); }
+.theme-light .picker-value      { background: var(--navy-lift); }
+.theme-light .picker-value-text { color: var(--blue); }
+.theme-light .recurrence-opt    { border-color: var(--navy-border); }
+.theme-light .recurrence-opt-text { color: var(--text-muted); }
+.theme-light .recurrence-active .recurrence-opt-text { color: var(--blue); }
+
+/* ── Questionnaires tab ── */
+.theme-light .q-card-name         { color: var(--text); }
+.theme-light .q-card-desc         { color: var(--text-muted); }
+.theme-light .q-assign-quest-banner {
+  background: rgba(201, 149, 106, 0.1);
+  border-bottom-color: var(--navy-border);
+}
+.theme-light .q-assign-quest-text { color: var(--blue); }
+.theme-light .q-assign-row        { border-bottom-color: var(--navy-border); }
+.theme-light .q-check             { border-color: var(--text-muted); }
+.theme-light .q-assign-name       { color: var(--text); }
+.theme-light .q-assign-footer     { border-top-color: var(--navy-border); }
+.theme-light .q-resp-item         { background: var(--navy-lift); border-color: var(--navy-border); }
+.theme-light .q-resp-prompt       { color: var(--text-muted); }
+.theme-light .q-resp-answer       { color: var(--text); }
+.theme-light .q-resp-time         { color: var(--text-muted); }
 

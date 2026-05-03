@@ -4,10 +4,18 @@ const BASE = 'https://nano.fros.cc'
 const T = {
   zh: {
     title: '教练面板',
+    coachLabel: '教练',
     back: '返回',
     refresh: '刷新',
     loading: '加载中…',
     tabs: { clients: '我的客户', invites: '邀请码', earnings: '我的收益', questionnaires: '问卷' },
+    lightMode: '浅色模式',
+    darkMode: '深色模式',
+    kinoSimMenu: 'Kino 模拟器',
+    userPanelMenu: '我的健康',
+    adminMenu: '渠道管理',
+    superadminMenu: '超管面板',
+    logout: '退出',
     noClients: '暂无分配的客户',
     bioAge: '生理年龄', chronoAge: '实际年龄',
     lastScan: '上次扫描',
@@ -72,10 +80,18 @@ const T = {
   },
   en: {
     title: 'Coach Panel',
+    coachLabel: 'Coach',
     back: 'Back',
     refresh: 'Refresh',
     loading: 'Loading…',
     tabs: { clients: 'My Clients', invites: 'Invite Codes', earnings: 'My Earnings', questionnaires: 'Forms' },
+    lightMode: 'Light Mode',
+    darkMode: 'Dark Mode',
+    kinoSimMenu: 'Kino Simulator',
+    userPanelMenu: 'My Health',
+    adminMenu: 'Channel Admin',
+    superadminMenu: 'Super Admin',
+    logout: 'Logout',
     noClients: 'No clients assigned yet',
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
     lastScan: 'Last scan',
@@ -202,7 +218,17 @@ Page({
     t: T.zh,
     tab: 'clients',
     loading: false,
+    clientsRefreshing: false,
     statusBarHeight: 0,
+    capsuleRightPad: 0,
+    channelName: 'NANO',
+    channelLogo: '/assets/waven-logo-icon.png',
+    nickname: '',
+    menuOpen: false,
+    menuTop: 0,
+    theme: 'dark',
+    isAdmin: false,
+    isSuperadmin: false,
     clients: [],
     invites: [],
     // Client detail sheet
@@ -254,6 +280,8 @@ Page({
   _coachId: null,
   _coachChannelId: null,
   _coachUserId: null,
+  _touchX: 0,
+  _touchY: 0,
 
   onLoad() {
     const user = app.globalData.user
@@ -261,16 +289,26 @@ Page({
     const roles = user.roles || []
     if (!roles.includes('coach') && !roles.includes('admin') && !roles.includes('superadmin')) {
       wx.showToast({ title: T.zh.noPermission, icon: 'none' })
-      wx.navigateBack()
+      wx.reLaunch({ url: '/pages/main/main' })
       return
     }
     const coach = app.globalData.coach
     this._coachId = coach ? coach.id : null
     this._coachChannelId = coach ? coach.channel_id : null
     this._coachUserId = user.user_id
-    const { statusBarHeight = 0 } = wx.getSystemInfoSync()
+    const { statusBarHeight = 0, windowWidth = 375 } = wx.getSystemInfoSync()
+    const capsule = wx.getMenuButtonBoundingClientRect()
+    const capsuleRightPad = windowWidth - (capsule.left || windowWidth - 96) + 8
+    const menuTop = statusBarHeight + 44
+    const channel = app.globalData.channel || null
+    const channelName = channel?.name || 'NANO'
+    const channelLogo = channel?.logo_url || '/assets/waven-logo-icon.png'
+    const nickname = user.nickname || ''
+    const isAdmin = roles.includes('admin') || roles.includes('superadmin')
+    const isSuperadmin = roles.includes('superadmin')
+    const theme = user.theme || app.globalData.theme || 'dark'
     const lang = app.globalData.lang || 'zh'
-    this.setData({ statusBarHeight, lang, t: T[lang], reminderDate: todayStr() })
+    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, lang, t: T[lang], reminderDate: todayStr() })
     this._loadAll()
   },
 
@@ -325,6 +363,12 @@ Page({
     if (this.data.tab === 'questionnaires') this._loadQuestionnaires()
   },
 
+  async onClientsRefresh() {
+    this.setData({ clientsRefreshing: true })
+    await this._loadAll()
+    this.setData({ clientsRefreshing: false })
+  },
+
   switchTab(e) {
     const tab = e.currentTarget.dataset.tab
     this.setData({ tab })
@@ -333,6 +377,66 @@ Page({
   },
   handleBack() { wx.navigateBack() },
   noop() {},
+
+  toggleMenu() { this.setData({ menuOpen: !this.data.menuOpen }) },
+  closeMenu()  { this.setData({ menuOpen: false }) },
+
+  toggleLang() {
+    const lang = this.data.lang === 'zh' ? 'en' : 'zh'
+    app.globalData.lang = lang
+    this.setData({ lang, t: T[lang], menuOpen: false })
+  },
+
+  async toggleTheme() {
+    const theme = this.data.theme === 'dark' ? 'light' : 'dark'
+    app.globalData.theme = theme
+    wx.setStorageSync('nano_user', { ...wx.getStorageSync('nano_user'), theme })
+    this.setData({ theme, menuOpen: false })
+    try {
+      await this._req(`${BASE}/api/users/${this._coachUserId}`, 'PATCH', { theme })
+    } catch (e) {}
+  },
+
+  openUserPanel() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/main/main?from=coach', animationType: 'slide-in-left', animationDuration: 280 })
+  },
+
+  openKinoSim() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/main/main?from=coach', animationType: 'slide-in-left', animationDuration: 280 })
+  },
+
+  openAdmin() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/admin/admin' })
+  },
+
+  openSuperadmin() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/superadmin/superadmin' })
+  },
+
+  handleLogout() {
+    this.setData({ menuOpen: false })
+    wx.removeStorageSync('nano_user')
+    app.globalData.user = null
+    wx.reLaunch({ url: '/pages/login/login' })
+  },
+
+  onTouchStart(e) {
+    this._touchX = e.touches[0].clientX
+    this._touchY = e.touches[0].clientY
+  },
+
+  onTouchEnd(e) {
+    if (this.data.menuOpen || this.data.detailOpen || this.data.reminderOpen || this.data.qAssignOpen || this.data.qResponsesOpen) return
+    const dx = e.changedTouches[0].clientX - this._touchX
+    const dy = e.changedTouches[0].clientY - this._touchY
+    if (dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      wx.navigateTo({ url: '/pages/main/main?from=coach', animationType: 'slide-in-left', animationDuration: 280 })
+    }
+  },
 
   // ── Client detail sheet ──────────────────────────────────────────────────
 

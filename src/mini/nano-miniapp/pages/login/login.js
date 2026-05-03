@@ -165,7 +165,8 @@ Page({
     wx.setStorageSync('nano_user', user)
     wx.setStorageSync('nano_channel', channel)
     wx.setStorageSync('nano_coach', coach)
-    wx.reLaunch({ url: '/pages/main/main' })
+    const isCoach = user.roles?.includes('coach')
+    wx.reLaunch({ url: isCoach ? '/pages/coach/coach' : '/pages/main/main' })
   },
 
   _getCode() {

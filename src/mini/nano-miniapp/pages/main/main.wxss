@@ -15,6 +15,17 @@
 .status-bar-spacer {
   flex-shrink: 0;
   background: rgba(11, 28, 46, 0.85);
+  position: relative;
+}
+
+.coach-back-pill {
+  position: absolute;
+  left: 24rpx;
+  bottom: 8rpx;
+  font-size: 20rpx;
+  color: rgba(99, 117, 236, 0.6);
+  letter-spacing: 1rpx;
+  pointer-events: none;
 }
 
 .app-header {
