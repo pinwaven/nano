@@ -147,11 +147,12 @@ exports.handler = async (event, context) => {
         // time-sensitive information the user needs to see (reminders, nutrition gaps, etc.).
         try {
             const dueRemindersForAgent = await pool.query(`
-                SELECT r.user_id, r.content, r.id
+                SELECT r.user_id, r.content, r.id, r.recurrence
                 FROM reminders r
                 JOIN users u ON u.user_id = r.user_id
                 WHERE r.scheduled_for <= NOW()
                   AND r.status = 'pending'
+                  AND r.coach_id IS NULL
                   AND u.last_active_at > NOW() - INTERVAL '2 minutes'
             `);
             console.log(JSON.stringify({ level: 'INFO', msg: `Coaching scan: ${dueRemindersForAgent.rows.length} reminder` }));
