@@ -585,12 +585,12 @@ Page({
         this._req(`${BASE}/api/health-plans?openid=${encodeURIComponent(detailClient.user_id)}`),
         this._req(`${BASE}/api/health-plan-templates`),
       ])
-      const templates = (tplRes.templates || []).map(t => ({
+      const templates = (tplRes.data?.templates || []).map(t => ({
         ...t,
         sub_ages_display: (t.target_sub_ages || []).join(', '),
       }))
       this.setData({
-        detailPlans: plansRes.plans || [],
+        detailPlans: plansRes.data?.plans || [],
         planTemplates: templates,
         detailPlansLoading: false,
       })

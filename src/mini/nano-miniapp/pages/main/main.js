@@ -70,7 +70,7 @@ const T = {
     plansNoMilestones: '暂无里程碑记录',
     plansTemplates: '可加入的方案',
     plansDuration: '周期', plansSource: '来源',
-    plansJoinPrimary: '加入为主方案', plansJoinSecondary: '加入为辅方案',
+    plansJoinPrimary: '加入为主方案', plansJoinSecondary: '加入为辅方案', plansAlreadyEnrolled: '已加入',
     plansConflict: '该槽位已有方案，是否替换？',
     plansConfirmAbandon: '确认放弃此方案？放弃后可重新加入。',
     plansConfirmSwitch: '确认切换主/辅方案？',
@@ -248,7 +248,7 @@ const T = {
     plansNoMilestones: 'No milestone records yet',
     plansTemplates: 'Available Plans',
     plansDuration: 'Duration', plansSource: 'Source',
-    plansJoinPrimary: 'Join as Primary', plansJoinSecondary: 'Join as Secondary',
+    plansJoinPrimary: 'Join as Primary', plansJoinSecondary: 'Join as Secondary', plansAlreadyEnrolled: 'Current Plan',
     plansConflict: 'That slot is occupied. Replace existing plan?',
     plansConfirmAbandon: 'Abandon this plan? You can rejoin anytime.',
     plansConfirmSwitch: 'Switch primary/secondary?',
@@ -2119,9 +2119,15 @@ Page({
           checkedInToday: parseInt(p.checked_in_today || 0, 10) > 0,
         }
       })
+      const enrolledIds = new Set(plans.map(p => p.template_id))
+      const hasPrimary = plans.some(p => p.plan_type === 'primary')
+      const hasSecondary = plans.some(p => p.plan_type === 'secondary')
       const templates = (tplRes.data?.templates || []).map(t => ({
         ...t,
         sub_ages_display: (t.target_sub_ages || []).join(' · '),
+        alreadyEnrolled: enrolledIds.has(t.id),
+        canJoinPrimary: !enrolledIds.has(t.id) && !hasPrimary,
+        canJoinSecondary: !enrolledIds.has(t.id) && !hasSecondary,
       }))
       this.setData({ activePlans: plans, planTemplates: templates, plansLoading: false })
     } catch {

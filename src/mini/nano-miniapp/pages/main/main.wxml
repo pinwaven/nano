@@ -725,12 +725,17 @@
             <text class="browse-tpl-goal">{{lang === 'zh' ? item.goal_zh : item.goal_en}}</text>
             <text class="browse-tpl-meta">{{item.duration_weeks}} {{t.plansWeeks}} · {{item.sub_ages_display}}</text>
             <view class="browse-tpl-actions">
-              <view class="browse-join-btn" bindtap="handleJoinPlan" data-template-id="{{item.id}}" data-plan-type="primary">
-                <text>{{t.plansJoinPrimary}}</text>
+              <view wx:if="{{item.alreadyEnrolled}}" class="browse-enrolled-badge">
+                <text>{{t.plansAlreadyEnrolled}}</text>
               </view>
-              <view class="browse-join-btn browse-join-secondary" bindtap="handleJoinPlan" data-template-id="{{item.id}}" data-plan-type="secondary">
-                <text>{{t.plansJoinSecondary}}</text>
-              </view>
+              <block wx:else>
+                <view class="browse-join-btn{{item.canJoinPrimary ? '' : ' browse-join-disabled'}}" bindtap="{{item.canJoinPrimary ? 'handleJoinPlan' : 'noop'}}" data-template-id="{{item.id}}" data-plan-type="primary">
+                  <text>{{t.plansJoinPrimary}}</text>
+                </view>
+                <view class="browse-join-btn browse-join-secondary{{item.canJoinSecondary ? '' : ' browse-join-disabled'}}" bindtap="{{item.canJoinSecondary ? 'handleJoinPlan' : 'noop'}}" data-template-id="{{item.id}}" data-plan-type="secondary">
+                  <text>{{t.plansJoinSecondary}}</text>
+                </view>
+              </block>
             </view>
           </view>
           <view style="height: 48rpx;"></view>
