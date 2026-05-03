@@ -550,6 +550,194 @@
     </view>
     <!-- end DOTS -->
 
+    <!-- ════ PLANS ════ -->
+    <view class="plans-tab{{tab !== 'plans' ? ' tab-hidden' : ''}}">
+
+      <!-- Guest lock -->
+      <view wx:if="{{isGuest}}" class="guest-lock-card" bindtap="openGuestSheet">
+        <text class="guest-lock-icon">🔒</text>
+        <text class="guest-lock-text">{{t.guestLockMsg}}</text>
+      </view>
+
+      <!-- Loading -->
+      <view wx:elif="{{plansLoading}}" class="plans-loading">
+        <text class="loading-dots">···</text>
+      </view>
+
+      <block wx:else>
+        <scroll-view class="plans-scroll" scroll-y="true">
+
+          <!-- Header row -->
+          <view class="plans-header">
+            <text class="plans-title">{{t.plansTitle}}</text>
+            <view class="plans-browse-btn" bindtap="openPlanBrowse">
+              <text class="plans-browse-btn-text">+ {{t.plansBrowse}}</text>
+            </view>
+          </view>
+
+          <!-- Empty state -->
+          <view wx:if="{{activePlans.length === 0}}" class="plans-empty">
+            <text class="plans-empty-text">{{t.plansEmpty}}</text>
+            <view class="plans-browse-cta" bindtap="openPlanBrowse">
+              <text class="plans-browse-cta-text">{{t.plansBrowse}}</text>
+            </view>
+          </view>
+
+          <!-- Active plan cards -->
+          <view wx:for="{{activePlans}}" wx:key="id" class="plan-card" bindtap="openPlanDetail" data-plan="{{item}}">
+            <view class="plan-card-header">
+              <view class="plan-type-badge plan-type-{{item.plan_type}}">
+                <text class="plan-type-text">{{item.plan_type === 'primary' ? t.plansPrimary : t.plansSecondary}}</text>
+              </view>
+              <text class="plan-card-name">{{lang === 'zh' ? item.name_zh : item.name_en}}</text>
+            </view>
+            <view class="plan-progress-bar-track">
+              <view class="plan-progress-bar-fill" style="width: {{item.progressPct}}%;"></view>
+            </view>
+            <view class="plan-card-meta-row">
+              <text class="plan-meta-item">{{t.plansAdherence}}: {{item.adherencePct}}%</text>
+              <text class="plan-meta-item">{{item.weeksDone}}/{{item.totalWeeks}} {{t.plansWeeks}}</text>
+            </view>
+            <view class="plan-checkin-btn{{item.checkedInToday ? ' plan-checkin-done' : ''}}"
+                  catchtap="handlePlanCheckin" data-plan-id="{{item.id}}">
+              <text class="plan-checkin-text">{{item.checkedInToday ? t.plansCheckinDone : t.plansCheckin}}</text>
+            </view>
+          </view>
+
+          <view style="height: 48rpx;"></view>
+        </scroll-view>
+      </block>
+
+    </view>
+    <!-- end PLANS -->
+
+    <!-- Plan Detail Sheet -->
+    <view wx:if="{{planDetailOpen}}" class="overlay-mask" catchtouchmove="noop">
+      <view class="overlay-panel" catchtap="noop">
+
+        <view class="overlay-header">
+          <text class="overlay-title">{{lang === 'zh' ? planDetailData.name_zh : planDetailData.name_en}}</text>
+          <view class="overlay-close" bindtap="closePlanDetail"><text class="close-x">✕</text></view>
+        </view>
+
+        <!-- Sub-tab bar -->
+        <view class="detail-tabs">
+          <view class="detail-tab {{planSubTab === 'overview' ? 'detail-tab-active' : ''}}" bindtap="switchPlanSubTab" data-tab="overview">
+            <text class="detail-tab-text">{{t.plansSubTabOverview}}</text>
+          </view>
+          <view class="detail-tab {{planSubTab === 'progress' ? 'detail-tab-active' : ''}}" bindtap="switchPlanSubTab" data-tab="progress">
+            <text class="detail-tab-text">{{t.plansSubTabProgress}}</text>
+          </view>
+          <view class="detail-tab {{planSubTab === 'activities' ? 'detail-tab-active' : ''}}" bindtap="switchPlanSubTab" data-tab="activities">
+            <text class="detail-tab-text">{{t.plansSubTabActivities}}</text>
+          </view>
+          <view class="detail-tab {{planSubTab === 'guidance' ? 'detail-tab-active' : ''}}" bindtap="switchPlanSubTab" data-tab="guidance">
+            <text class="detail-tab-text">{{t.plansSubTabGuidance}}</text>
+          </view>
+        </view>
+
+        <!-- Overview sub-tab -->
+        <scroll-view wx:if="{{planSubTab === 'overview'}}" scroll-y class="overlay-scroll">
+          <view class="plan-detail-section">
+            <text class="plan-detail-label">{{t.plansGoal}}</text>
+            <text class="plan-detail-value">{{lang === 'zh' ? planDetailData.goal_zh : planDetailData.goal_en}}</text>
+          </view>
+          <view class="plan-detail-section">
+            <text class="plan-detail-label">{{t.plansStartDate}}</text>
+            <text class="plan-detail-value">{{planDetailData.start_date}}</text>
+          </view>
+          <view class="plan-detail-section">
+            <text class="plan-detail-label">{{t.plansDuration}}</text>
+            <text class="plan-detail-value">{{planDetailData.totalWeeks}} {{t.plansWeeks}}</text>
+          </view>
+          <view wx:if="{{planDetailData.target_sub_ages && planDetailData.target_sub_ages.length > 0}}" class="plan-detail-section">
+            <text class="plan-detail-label">{{t.plansTargetSubAges}}</text>
+            <view class="plan-chips-row">
+              <view wx:for="{{planDetailData.target_sub_ages}}" wx:key="*this" class="plan-chip">
+                <text class="plan-chip-text">{{item}}</text>
+              </view>
+            </view>
+          </view>
+          <!-- Actions -->
+          <view class="plan-actions-row">
+            <view class="plan-action-btn plan-action-switch" bindtap="handleSwitchPlanType" data-plan-id="{{planDetailData.id}}" data-current-type="{{planDetailData.plan_type}}">
+              <text>{{t.plansSwitch}}</text>
+            </view>
+            <view class="plan-action-btn plan-action-abandon" bindtap="handleAbandonPlan" data-plan-id="{{planDetailData.id}}">
+              <text>{{t.plansAbandon}}</text>
+            </view>
+          </view>
+        </scroll-view>
+
+        <!-- Progress sub-tab -->
+        <scroll-view wx:elif="{{planSubTab === 'progress'}}" scroll-y class="overlay-scroll">
+          <view class="plan-detail-section">
+            <text class="plan-detail-label">{{t.plansAdherence}}</text>
+            <text class="plan-detail-value">{{planDetailData.adherencePct}}% ({{planDetailData.checkin_count || 0}} {{lang === 'zh' ? '次打卡' : 'check-ins'}})</text>
+          </view>
+          <view class="plan-detail-section">
+            <text class="plan-detail-label">{{t.plansWeeks}}</text>
+            <text class="plan-detail-value">{{planDetailData.weeksDone}}/{{planDetailData.totalWeeks}}</text>
+          </view>
+          <view class="plan-detail-section">
+            <text class="plan-detail-label">{{t.plansNoMilestones}}</text>
+          </view>
+        </scroll-view>
+
+        <!-- Activities sub-tab -->
+        <scroll-view wx:elif="{{planSubTab === 'activities'}}" scroll-y class="overlay-scroll">
+          <view class="panel-center" style="padding: 60rpx 0;">
+            <text class="empty-text">{{lang === 'zh' ? '每日完成 Kino 检测和原粒计划可积累打卡记录。' : 'Complete daily Kino scans and Dots routines to build check-in records.'}}</text>
+          </view>
+          <view class="plan-checkin-btn" catchtap="handlePlanCheckin" data-plan-id="{{planDetailData.id}}">
+            <text class="plan-checkin-text">{{planDetailData.checkedInToday ? t.plansCheckinDone : t.plansCheckin}}</text>
+          </view>
+        </scroll-view>
+
+        <!-- Guidance sub-tab -->
+        <scroll-view wx:elif="{{planSubTab === 'guidance'}}" scroll-y class="overlay-scroll">
+          <view class="plan-detail-section">
+            <text class="plan-detail-value">{{lang === 'zh' ? (planDetailData.desc_zh || planDetailData.goal_zh) : (planDetailData.desc_en || planDetailData.goal_en)}}</text>
+          </view>
+          <view wx:if="{{planDetailData.recommended_dot_ids && planDetailData.recommended_dot_ids.length > 0}}" class="plan-detail-section">
+            <text class="plan-detail-label">{{t.plansRecommendedDots}}</text>
+            <view class="plan-chips-row">
+              <view wx:for="{{planDetailData.recommended_dot_ids}}" wx:key="*this" class="plan-chip plan-chip-dot">
+                <text class="plan-chip-text">DOT{{item}}</text>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+
+      </view>
+    </view>
+
+    <!-- Plan Browse Sheet -->
+    <view wx:if="{{planBrowseOpen}}" class="overlay-mask" catchtouchmove="noop">
+      <view class="overlay-panel" catchtap="noop">
+        <view class="overlay-header">
+          <text class="overlay-title">{{t.plansTemplates}}</text>
+          <view class="overlay-close" bindtap="closePlanBrowse"><text class="close-x">✕</text></view>
+        </view>
+        <scroll-view scroll-y class="overlay-scroll">
+          <view wx:for="{{planTemplates}}" wx:key="id" class="browse-tpl-card">
+            <text class="browse-tpl-name">{{lang === 'zh' ? item.name_zh : item.name_en}}</text>
+            <text class="browse-tpl-goal">{{lang === 'zh' ? item.goal_zh : item.goal_en}}</text>
+            <text class="browse-tpl-meta">{{item.duration_weeks}} {{t.plansWeeks}} · {{item.sub_ages_display}}</text>
+            <view class="browse-tpl-actions">
+              <view class="browse-join-btn" bindtap="handleJoinPlan" data-template-id="{{item.id}}" data-plan-type="primary">
+                <text>{{t.plansJoinPrimary}}</text>
+              </view>
+              <view class="browse-join-btn browse-join-secondary" bindtap="handleJoinPlan" data-template-id="{{item.id}}" data-plan-type="secondary">
+                <text>{{t.plansJoinSecondary}}</text>
+              </view>
+            </view>
+          </view>
+          <view style="height: 48rpx;"></view>
+        </scroll-view>
+      </view>
+    </view>
+
     <!-- ════ STORE ════ -->
     <view class="store-tab{{tab !== 'store' ? ' tab-hidden' : ''}}">
 
@@ -837,6 +1025,11 @@
       <view wx:if="{{tab === 'health'}}" class="tab-line"></view>
       <image class="tab-icon-img" src="/assets/icons/health.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabHealth}}</text>
+    </view>
+    <view class="tab-btn {{tab === 'plans' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="plans">
+      <view wx:if="{{tab === 'plans'}}" class="tab-line"></view>
+      <image class="tab-icon-img" src="/assets/icons/plans.svg" mode="aspectFit" />
+      <text class="tab-label">{{t.tabPlans}}</text>
     </view>
     <view class="tab-btn {{tab === 'dots' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="dots">
       <view wx:if="{{tab === 'dots'}}" class="tab-line"></view>

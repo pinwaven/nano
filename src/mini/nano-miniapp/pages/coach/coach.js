@@ -26,8 +26,21 @@ const T = {
     noBmData: '暂无检测数据',
     noChatData: '暂无对话记录',
     tabHealth: '健康',
+    tabPlans: '方案',
     tabChat: '聊天',
     tabMessages: '消息',
+    clientPlans: '客户方案',
+    recommendPlan: '推荐方案',
+    createCustomPlan: '创建定制方案',
+    noClientPlans: '暂无进行中的方案',
+    planRecommended: '方案已推荐！',
+    planPrimary: '主方案',
+    planSecondary: '辅方案',
+    planWeeks: '周',
+    planCheckins: '打卡',
+    customPlanName: '方案名称',
+    customPlanGoal: '方案目标',
+    customPlanDuration: '计划周期（周）',
     you: '用户',
     ai: 'AI',
     subAges: '生理年龄维度',
@@ -122,8 +135,21 @@ const T = {
     noBmData: 'No biomarker data yet.',
     noChatData: 'No chat history yet.',
     tabHealth: 'Health',
+    tabPlans: 'Plans',
     tabChat: 'Chat',
     tabMessages: 'Messages',
+    clientPlans: 'Client Plans',
+    recommendPlan: 'Recommend Plan',
+    createCustomPlan: 'Create Custom Plan',
+    noClientPlans: 'No active plans',
+    planRecommended: 'Plan recommended!',
+    planPrimary: 'Primary',
+    planSecondary: 'Secondary',
+    planWeeks: 'wks',
+    planCheckins: 'check-ins',
+    customPlanName: 'Plan Name',
+    customPlanGoal: 'Plan Goal',
+    customPlanDuration: 'Duration (weeks)',
     you: 'User',
     ai: 'AI',
     subAges: 'Bio Age Dimensions',
@@ -317,6 +343,16 @@ Page({
     qResponsesUser: null,
     qResponsesList: [],
     qResponsesLoading: false,
+    // Plans tab (inside client detail)
+    detailPlans: [],
+    detailPlansLoading: false,
+    planTemplates: [],
+    planRecommendOpen: false,
+    planCustomOpen: false,
+    planCustomName: '',
+    planCustomGoal: '',
+    planCustomDuration: 4,
+    planActionBusy: false,
   },
 
   _coachId: null,
@@ -537,6 +573,99 @@ Page({
     const tab = e.currentTarget.dataset.tab
     this.setData({ detailTab: tab })
     if (tab === 'chat' && this.data.chatMessages.length === 0) this._loadClientChat()
+    if (tab === 'plans') this._loadClientPlans()
+  },
+
+  async _loadClientPlans() {
+    const { detailClient } = this.data
+    if (!detailClient) return
+    this.setData({ detailPlansLoading: true })
+    try {
+      const [plansRes, tplRes] = await Promise.all([
+        this._req(`${BASE}/api/health-plans?openid=${encodeURIComponent(detailClient.user_id)}`),
+        this._req(`${BASE}/api/health-plan-templates`),
+      ])
+      const templates = (tplRes.templates || []).map(t => ({
+        ...t,
+        sub_ages_display: (t.target_sub_ages || []).join(', '),
+      }))
+      this.setData({
+        detailPlans: plansRes.plans || [],
+        planTemplates: templates,
+        detailPlansLoading: false,
+      })
+    } catch {
+      this.setData({ detailPlansLoading: false })
+    }
+  },
+
+  openPlanRecommend() {
+    this.setData({ planRecommendOpen: true })
+  },
+
+  closePlanRecommend() {
+    this.setData({ planRecommendOpen: false })
+  },
+
+  openPlanCustom() {
+    this.setData({ planCustomOpen: true, planCustomName: '', planCustomGoal: '', planCustomDuration: 4 })
+  },
+
+  closePlanCustom() {
+    this.setData({ planCustomOpen: false })
+  },
+
+  async handleRecommendPlan(e) {
+    const { detailClient, lang } = this.data
+    const templateId = e.currentTarget.dataset.templateId
+    if (!detailClient || !templateId) return
+    this.setData({ planActionBusy: true })
+    try {
+      await this._req(`${BASE}/api/health-plans`, 'POST', {
+        openid: detailClient.user_id,
+        template_id: templateId,
+        plan_type: 'secondary',
+        source: 'coach',
+        coach_id: this._coachId,
+      })
+      const t = this.data.t
+      wx.showToast({ title: t.planRecommended, icon: 'success' })
+      this.setData({ planRecommendOpen: false })
+      this._loadClientPlans()
+    } catch (err) {
+      wx.showToast({ title: err.message || 'Error', icon: 'none' })
+    } finally {
+      this.setData({ planActionBusy: false })
+    }
+  },
+
+  onPlanCustomNameInput(e) { this.setData({ planCustomName: e.detail.value }) },
+  onPlanCustomGoalInput(e) { this.setData({ planCustomGoal: e.detail.value }) },
+
+  async handleCreateCustomPlan() {
+    const { detailClient, planCustomName, planCustomGoal, planCustomDuration } = this.data
+    if (!detailClient || !planCustomName.trim()) return
+    this.setData({ planActionBusy: true })
+    try {
+      await this._req(`${BASE}/api/health-plans`, 'POST', {
+        openid: detailClient.user_id,
+        plan_type: 'secondary',
+        source: 'coach',
+        coach_id: this._coachId,
+        custom_name_zh: planCustomName,
+        custom_name_en: planCustomName,
+        custom_goal_zh: planCustomGoal,
+        custom_goal_en: planCustomGoal,
+        duration_weeks: planCustomDuration || 4,
+      })
+      wx.showToast({ title: this.data.t.planRecommended, icon: 'success' })
+      this.setData({ planCustomOpen: false })
+      this._loadClientPlans()
+    } catch (err) {
+      wx.showToast({ title: err.message || 'Error', icon: 'none' })
+    } finally {
+      this.setData({ planActionBusy: false })
+    }
   },
 
   // ── AI chat history ──────────────────────────────────────────────────────

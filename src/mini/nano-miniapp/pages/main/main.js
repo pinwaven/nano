@@ -53,7 +53,27 @@ const CART_SETS = [
 
 const T = {
   zh: {
-    tabChat: '对话', tabHealth: '健康', tabDots: '原粒', tabStore: '商城',
+    tabChat: '对话', tabHealth: '健康', tabDots: '原粒', tabPlans: '方案', tabStore: '商城',
+    plansTitle: '健康方案',
+    plansEmpty: '暂无进行中的健康方案',
+    plansBrowse: '加入方案',
+    plansPrimary: '主方案', plansSecondary: '辅方案',
+    plansAdherence: '打卡率', plansWeeks: '周',
+    plansCheckin: '今日打卡', plansCheckinDone: '已打卡',
+    plansAbandon: '放弃方案', plansSwitch: '切换主/辅',
+    plansJoin: '加入方案',
+    plansSubTabOverview: '概览', plansSubTabProgress: '进度',
+    plansSubTabActivities: '活动', plansSubTabGuidance: '指导',
+    plansStartDate: '开始日期', plansTargetSubAges: '目标维度',
+    plansRecommendedDots: '推荐原粒', plansGoal: '目标',
+    plansBaselineVsCurrent: '初始 vs 当前生理年龄',
+    plansNoMilestones: '暂无里程碑记录',
+    plansTemplates: '可加入的方案',
+    plansDuration: '周期', plansSource: '来源',
+    plansJoinPrimary: '加入为主方案', plansJoinSecondary: '加入为辅方案',
+    plansConflict: '该槽位已有方案，是否替换？',
+    plansConfirmAbandon: '确认放弃此方案？放弃后可重新加入。',
+    plansConfirmSwitch: '确认切换主/辅方案？',
     logout: '退出',
     initMsg: '您好！我是 Nano，您的AI健康伴侣。今天有什么可以帮您的？',
     inputPh: '输入消息…',
@@ -211,7 +231,27 @@ const T = {
     },
   },
   en: {
-    tabChat: 'Chat', tabHealth: 'Health', tabDots: 'Dots', tabStore: 'Store',
+    tabChat: 'Chat', tabHealth: 'Health', tabDots: 'Dots', tabPlans: 'Plans', tabStore: 'Store',
+    plansTitle: 'Health Plans',
+    plansEmpty: 'No active health plans',
+    plansBrowse: 'Browse Plans',
+    plansPrimary: 'Primary', plansSecondary: 'Secondary',
+    plansAdherence: 'Adherence', plansWeeks: 'wks',
+    plansCheckin: 'Check In', plansCheckinDone: 'Checked In',
+    plansAbandon: 'Abandon Plan', plansSwitch: 'Switch Type',
+    plansJoin: 'Join Plan',
+    plansSubTabOverview: 'Overview', plansSubTabProgress: 'Progress',
+    plansSubTabActivities: 'Activities', plansSubTabGuidance: 'Guidance',
+    plansStartDate: 'Start Date', plansTargetSubAges: 'Target Sub-Ages',
+    plansRecommendedDots: 'Recommended Dots', plansGoal: 'Goal',
+    plansBaselineVsCurrent: 'Baseline vs Current BioAge',
+    plansNoMilestones: 'No milestone records yet',
+    plansTemplates: 'Available Plans',
+    plansDuration: 'Duration', plansSource: 'Source',
+    plansJoinPrimary: 'Join as Primary', plansJoinSecondary: 'Join as Secondary',
+    plansConflict: 'That slot is occupied. Replace existing plan?',
+    plansConfirmAbandon: 'Abandon this plan? You can rejoin anytime.',
+    plansConfirmSwitch: 'Switch primary/secondary?',
     logout: 'Logout',
     initMsg: 'Hello! I am Nano, your AI health companion. How can I help you today?',
     inputPh: 'Type a message…',
@@ -720,6 +760,15 @@ Page({
     storeItems: [],
     storeOrders: [],
     storeSubTab: 'products',
+    // Plans tab
+    plansLoading: true,
+    activePlans: [],
+    planTemplates: [],
+    planDetailOpen: false,
+    planDetailData: null,
+    planSubTab: 'overview',
+    planBrowseOpen: false,
+    planCheckinBusy: false,
   },
 
   _pollingTimer: null,
@@ -801,6 +850,10 @@ Page({
       this.setData({ dotsLoading: true, cartridgesLoading: true })
       this._loadDots(this.data.user, this.data.lang)
       this._loadCartridges(this.data.user, this.data.lang)
+    }
+    if (tab === 'plans') {
+      this.setData({ plansLoading: true })
+      this._loadPlans(this.data.user, this.data.lang)
     }
   },
 
@@ -2035,6 +2088,169 @@ Page({
           wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
         }
       }
+    })
+  },
+
+  // ── Health Plans ─────────────────────────────────────────────────────────────
+
+  async _loadPlans(user, lang) {
+    if (!user) { this.setData({ plansLoading: false }); return }
+    try {
+      const [plansRes, tplRes] = await Promise.all([
+        this._req(`${BASE}/api/health-plans?openid=${encodeURIComponent(user.user_id)}`),
+        this._req(`${BASE}/api/health-plan-templates`),
+      ])
+      const now = Date.now()
+      const plans = (plansRes.data?.plans || []).map(p => {
+        const totalWeeks = p.duration_weeks || p.template_duration_weeks || 4
+        const weeksElapsed = Math.max(0, Math.floor((now - new Date(p.start_date).getTime()) / (7 * 86400000)))
+        const progressPct = Math.min(100, Math.round((weeksElapsed / totalWeeks) * 100))
+        const checkins = parseInt(p.checkin_count || 0, 10)
+        const daysSinceStart = Math.max(1, Math.floor((now - new Date(p.start_date).getTime()) / 86400000))
+        const adherencePct = Math.round((checkins / daysSinceStart) * 100)
+        return {
+          ...p,
+          name_zh: p.name_zh || p.custom_name_zh || '',
+          name_en: p.name_en || p.custom_name_en || '',
+          totalWeeks,
+          weeksDone: weeksElapsed,
+          progressPct,
+          adherencePct: Math.min(100, adherencePct),
+          checkedInToday: parseInt(p.checked_in_today || 0, 10) > 0,
+        }
+      })
+      const templates = (tplRes.data?.templates || []).map(t => ({
+        ...t,
+        sub_ages_display: (t.target_sub_ages || []).join(' · '),
+      }))
+      this.setData({ activePlans: plans, planTemplates: templates, plansLoading: false })
+    } catch {
+      this.setData({ plansLoading: false })
+    }
+  },
+
+  switchPlanSubTab(e) {
+    this.setData({ planSubTab: e.currentTarget.dataset.tab })
+  },
+
+  openPlanDetail(e) {
+    this.setData({ planDetailOpen: true, planDetailData: e.currentTarget.dataset.plan, planSubTab: 'overview' })
+  },
+
+  closePlanDetail() {
+    this.setData({ planDetailOpen: false, planDetailData: null })
+  },
+
+  openPlanBrowse() {
+    this.setData({ planBrowseOpen: true })
+  },
+
+  closePlanBrowse() {
+    this.setData({ planBrowseOpen: false })
+  },
+
+  async handlePlanCheckin(e) {
+    if (this.data.isGuest) { this.openGuestSheet(); return }
+    const { user } = this.data
+    const planId = e.currentTarget.dataset.planId
+    if (!planId || this.data.planCheckinBusy) return
+    this.setData({ planCheckinBusy: true })
+    try {
+      const today = new Date()
+      const pad = n => String(n).padStart(2, '0')
+      const checkinDate = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+      await this._req(`${BASE}/api/health-plans/${planId}/checkin`, 'POST', {
+        openid: user.user_id,
+        checkin_date: checkinDate,
+        dots_taken: true,
+        activities_done: [],
+      })
+      await this._loadPlans(user, this.data.lang)
+    } catch (err) {
+      wx.showToast({ title: err.message || 'Error', icon: 'none' })
+    } finally {
+      this.setData({ planCheckinBusy: false })
+    }
+  },
+
+  async handleJoinPlan(e) {
+    if (this.data.isGuest) { this.openGuestSheet(); return }
+    const { user, t, lang } = this.data
+    const { templateId, planType } = e.currentTarget.dataset
+    try {
+      const res = await this._req(`${BASE}/api/health-plans`, 'POST', {
+        openid: user.user_id,
+        template_id: templateId,
+        plan_type: planType || 'primary',
+        source: 'self',
+      })
+      if (!res.success && res.error === 'conflict') {
+        wx.showModal({
+          title: t.plansConflict,
+          content: '',
+          confirmText: lang === 'zh' ? '替换' : 'Replace',
+          success: async (modal) => {
+            if (!modal.confirm) return
+            // Abandon existing and retry
+            await this._req(`${BASE}/api/health-plans/${res.existing_plan_id}`, 'PUT', { openid: user.user_id, status: 'abandoned' })
+            await this._req(`${BASE}/api/health-plans`, 'POST', {
+              openid: user.user_id,
+              template_id: templateId,
+              plan_type: planType || 'primary',
+              source: 'self',
+            })
+            this.setData({ planBrowseOpen: false })
+            await this._loadPlans(user, lang)
+          },
+        })
+        return
+      }
+      this.setData({ planBrowseOpen: false })
+      await this._loadPlans(user, lang)
+    } catch (err) {
+      wx.showToast({ title: err.message || 'Error', icon: 'none' })
+    }
+  },
+
+  async handleAbandonPlan(e) {
+    const { user, t, planDetailData, lang } = this.data
+    const planId = e.currentTarget.dataset.planId || planDetailData?.id
+    if (!planId) return
+    wx.showModal({
+      title: t.plansConfirmAbandon,
+      content: '',
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/health-plans/${planId}`, 'PUT', { openid: user.user_id, status: 'abandoned' })
+          this.setData({ planDetailOpen: false })
+          await this._loadPlans(user, lang)
+        } catch (err) {
+          wx.showToast({ title: err.message || 'Error', icon: 'none' })
+        }
+      },
+    })
+  },
+
+  async handleSwitchPlanType(e) {
+    const { user, t, planDetailData, lang } = this.data
+    const planId = e.currentTarget.dataset.planId || planDetailData?.id
+    const currentType = e.currentTarget.dataset.currentType || planDetailData?.plan_type
+    const newType = currentType === 'primary' ? 'secondary' : 'primary'
+    if (!planId) return
+    wx.showModal({
+      title: t.plansConfirmSwitch,
+      content: '',
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/health-plans/${planId}`, 'PUT', { openid: user.user_id, plan_type: newType })
+          this.setData({ planDetailOpen: false })
+          await this._loadPlans(user, lang)
+        } catch (err) {
+          wx.showToast({ title: err.message || 'Error', icon: 'none' })
+        }
+      },
     })
   },
 

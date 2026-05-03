@@ -97,7 +97,7 @@ function LoginScreen({ onLogin }) {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans' },
     adminAccounts: { title: 'Admin Accounts', add: 'Add Admin', changePassword: 'Change Password', confirmDelete: 'Delete this admin account?', newPassword: 'New Password', usernameLabel: 'Username', passwordLabel: 'Password', count: (n) => `${n} account${n !== 1 ? 's' : ''}` },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
@@ -308,7 +308,7 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案' },
     adminAccounts: { title: '管理员账号', add: '添加管理员', changePassword: '修改密码', confirmDelete: '确认删除此管理员账号？', newPassword: '新密码', usernameLabel: '用户名', passwordLabel: '密码', count: (n) => `${n} 个账号` },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
@@ -5509,6 +5509,294 @@ function AdminAccountsTab({ accounts, onRefresh }) {
   );
 }
 
+const SUB_AGES = ['CellularAge', 'MetabolicAge', 'MicroVascularAge', 'ResilienceAge'];
+
+function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
+  const { lang } = useContext(LangCtx);
+  const isZh = lang === 'zh';
+  const [subTab, setSubTab] = useState('templates');
+  const [modal, setModal] = useState(null); // null | 'add' | 'edit'
+  const [editingTpl, setEditingTpl] = useState(null);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [userPlans, setUserPlans] = useState([]);
+  const [userPlansLoading, setUserPlansLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('active');
+
+  const loadUserPlans = async () => {
+    setUserPlansLoading(true);
+    try {
+      const res = await axios.get('/api/health-plans?all=true');
+      setUserPlans(res.data.plans || []);
+    } catch (e) { console.error(e); }
+    finally { setUserPlansLoading(false); }
+  };
+
+  useEffect(() => { if (subTab === 'users' && userPlans.length === 0) loadUserPlans(); }, [subTab]);
+
+  const openAdd = () => {
+    setForm({ key_name: '', name_zh: '', name_en: '', desc_zh: '', desc_en: '', goal_zh: '', goal_en: '', duration_weeks: 4, sort_order: 0, target_sub_ages: [], recommended_dot_ids: [], milestones: '[]', is_active: true });
+    setEditingTpl(null);
+    setModal('add');
+  };
+
+  const openEdit = (tpl) => {
+    setForm({
+      ...tpl,
+      target_sub_ages: tpl.target_sub_ages || [],
+      recommended_dot_ids: tpl.recommended_dot_ids || [],
+      milestones: typeof tpl.milestones === 'string' ? tpl.milestones : JSON.stringify(tpl.milestones || [], null, 2),
+    });
+    setEditingTpl(tpl);
+    setModal('edit');
+  };
+
+  const toggleSubAge = (key) => {
+    setForm(f => ({ ...f, target_sub_ages: f.target_sub_ages.includes(key) ? f.target_sub_ages.filter(s => s !== key) : [...f.target_sub_ages, key] }));
+  };
+
+  const toggleDot = (id) => {
+    setForm(f => ({ ...f, recommended_dot_ids: f.recommended_dot_ids.includes(id) ? f.recommended_dot_ids.filter(d => d !== id) : [...f.recommended_dot_ids, id] }));
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      let milestonesParsed;
+      try { milestonesParsed = JSON.parse(form.milestones || '[]'); } catch { milestonesParsed = []; }
+      const payload = { ...form, milestones: milestonesParsed };
+      if (modal === 'add') await axios.post('/api/health-plan-templates', payload);
+      else await axios.put(`/api/health-plan-templates/${editingTpl.id}`, payload);
+      setModal(null);
+      onRefresh();
+    } catch (e) { alert(e.response?.data?.error || e.message); }
+    finally { setSaving(false); }
+  };
+
+  const deleteTpl = async (tpl) => {
+    if (!window.confirm(isZh ? `确认删除「${tpl.name_zh}」？此操作不可撤销。` : `Delete "${tpl.name_en}"? This cannot be undone.`)) return;
+    try {
+      await axios.delete(`/api/health-plan-templates/${tpl.id}`);
+      onRefresh();
+    } catch (e) { alert(e.response?.data?.error || e.message); }
+  };
+
+  const filteredUserPlans = userPlans.filter(p => p.status === statusFilter);
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        {['templates', 'users'].map(s => (
+          <button key={s} className={`subtab-btn${subTab === s ? ' active' : ''}`} onClick={() => setSubTab(s)}>
+            {s === 'templates' ? (isZh ? '方案模板' : 'Templates') : (isZh ? '用户方案' : 'User Plans')}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'templates' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{healthPlanTemplates.length} {isZh ? '个模板' : 'templates'}</span>
+            <button className="btn-primary" onClick={openAdd}>
+              <Plus size={14} /> {isZh ? '添加模板' : 'Add Template'}
+            </button>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{isZh ? '标识' : 'Key'}</th>
+                <th>{isZh ? '名称' : 'Name'}</th>
+                <th>{isZh ? '周期' : 'Duration'}</th>
+                <th>{isZh ? '目标维度' : 'Target Sub-Ages'}</th>
+                <th>{isZh ? '排序' : 'Order'}</th>
+                <th>{isZh ? '状态' : 'Status'}</th>
+                <th>{isZh ? '在用' : 'Enrolled'}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {healthPlanTemplates.length === 0 && <tr><td colSpan={8} className="empty-row">{isZh ? '暂无模板' : 'No templates yet'}</td></tr>}
+              {healthPlanTemplates.map(tpl => (
+                <tr key={tpl.id}>
+                  <td><code className="code-tag">{tpl.key_name}</code></td>
+                  <td>
+                    <div className="bold">{isZh ? tpl.name_zh : tpl.name_en}</div>
+                    <div className="muted" style={{ fontSize: 11 }}>{isZh ? tpl.name_en : tpl.name_zh}</div>
+                  </td>
+                  <td>{tpl.duration_weeks}w</td>
+                  <td className="muted" style={{ fontSize: 11 }}>{(tpl.target_sub_ages || []).map(s => s.replace('Age', '')).join(', ')}</td>
+                  <td className="muted">{tpl.sort_order}</td>
+                  <td>
+                    <Badge color={tpl.is_active ? '#10b981' : '#94a3b8'}>
+                      {tpl.is_active ? (isZh ? '启用' : 'Active') : (isZh ? '停用' : 'Inactive')}
+                    </Badge>
+                  </td>
+                  <td>{tpl.active_enrollments || 0}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" onClick={() => openEdit(tpl)}><Pencil size={13} /></button>
+                      <button className="icon-btn danger" onClick={() => deleteTpl(tpl)}><Trash2 size={13} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {subTab === 'users' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {['active', 'completed', 'abandoned', 'paused'].map(s => (
+                <button key={s} className={`subtab-btn${statusFilter === s ? ' active' : ''}`} style={{ fontSize: 11 }} onClick={() => setStatusFilter(s)}>
+                  {s}
+                </button>
+              ))}
+            </div>
+            <button className="icon-btn" onClick={loadUserPlans}><RefreshCcw size={13} /></button>
+          </div>
+          {userPlansLoading ? (
+            <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)' }}>{isZh ? '加载中…' : 'Loading…'}</div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>{isZh ? '用户' : 'User'}</th>
+                  <th>{isZh ? '方案' : 'Plan'}</th>
+                  <th>{isZh ? '类型' : 'Type'}</th>
+                  <th>{isZh ? '来源' : 'Source'}</th>
+                  <th>{isZh ? '打卡数' : 'Check-ins'}</th>
+                  <th>{isZh ? '进度' : 'Progress'}</th>
+                  <th>{isZh ? '开始日期' : 'Start Date'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUserPlans.length === 0 && <tr><td colSpan={7} className="empty-row">{isZh ? '暂无数据' : 'No data'}</td></tr>}
+                {filteredUserPlans.map(p => {
+                  const weeksElapsed = Math.max(0, Math.floor((Date.now() - new Date(p.start_date).getTime()) / (7 * 86400000)));
+                  const totalWeeks = p.duration_weeks || p.template_duration_weeks || 4;
+                  return (
+                    <tr key={p.id}>
+                      <td className="bold">{p.user_nickname || p.user_id}</td>
+                      <td>{isZh ? (p.name_zh || p.custom_name_zh) : (p.name_en || p.custom_name_en)}</td>
+                      <td><Badge color={p.plan_type === 'primary' ? '#6375EC' : '#10b981'}>{p.plan_type}</Badge></td>
+                      <td className="muted" style={{ fontSize: 11 }}>{p.source}</td>
+                      <td>{p.checkin_count || 0}</td>
+                      <td className="muted" style={{ fontSize: 11 }}>{weeksElapsed}/{totalWeeks}w</td>
+                      <td className="muted" style={{ fontSize: 11 }}>{p.start_date}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {modal && (
+        <div className="modal-overlay" onClick={() => setModal(null)}>
+          <div className="modal modal-lg" onClick={e => e.stopPropagation()} style={{ width: 930, maxHeight: '85vh', overflowY: 'auto' }}>
+            <div className="modal-header">
+              <span>{modal === 'add' ? (isZh ? '添加方案模板' : 'Add Plan Template') : (isZh ? '编辑方案模板' : 'Edit Plan Template')}</span>
+              <button className="icon-btn" onClick={() => setModal(null)}><X size={16} /></button>
+            </div>
+            <div className="modal-body">
+              <div className="form-grid">
+                {/* Row 1: key name + duration + sort order in one line */}
+                <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 100px 100px', gap: 14 }}>
+                  <label className="form-field">
+                    <span>{isZh ? '标识符' : 'Key Name'}</span>
+                    <input value={form.key_name || ''} onChange={e => setForm(f => ({ ...f, key_name: e.target.value }))} placeholder="e.g. weight_loss" disabled={modal === 'edit'} />
+                  </label>
+                  <label className="form-field">
+                    <span>{isZh ? '周期（周）' : 'Weeks'}</span>
+                    <input type="number" min={1} value={form.duration_weeks || 4} onChange={e => setForm(f => ({ ...f, duration_weeks: parseInt(e.target.value) || 4 }))} />
+                  </label>
+                  <label className="form-field">
+                    <span>{isZh ? '排序' : 'Order'}</span>
+                    <input type="number" value={form.sort_order || 0} onChange={e => setForm(f => ({ ...f, sort_order: parseInt(e.target.value) || 0 }))} />
+                  </label>
+                </div>
+                {/* Row 2: names side by side */}
+                <label className="form-field">
+                  <span>{isZh ? '名称（中文）' : 'Name (Chinese)'}</span>
+                  <input value={form.name_zh || ''} onChange={e => setForm(f => ({ ...f, name_zh: e.target.value }))} />
+                </label>
+                <label className="form-field">
+                  <span>{isZh ? '名称（英文）' : 'Name (English)'}</span>
+                  <input value={form.name_en || ''} onChange={e => setForm(f => ({ ...f, name_en: e.target.value }))} />
+                </label>
+                {/* Row 3: goals side by side */}
+                <label className="form-field">
+                  <span>{isZh ? '目标（中文）' : 'Goal (Chinese)'}</span>
+                  <input value={form.goal_zh || ''} onChange={e => setForm(f => ({ ...f, goal_zh: e.target.value }))} />
+                </label>
+                <label className="form-field">
+                  <span>{isZh ? '目标（英文）' : 'Goal (English)'}</span>
+                  <input value={form.goal_en || ''} onChange={e => setForm(f => ({ ...f, goal_en: e.target.value }))} />
+                </label>
+                {/* Row 4: descriptions side by side, label on top, textarea below */}
+                <label className="form-field">
+                  <span>{isZh ? '描述（中文）' : 'Description (Chinese)'}</span>
+                  <textarea className="form-field-textarea" rows={5} value={form.desc_zh || ''} onChange={e => setForm(f => ({ ...f, desc_zh: e.target.value }))} />
+                </label>
+                <label className="form-field">
+                  <span>{isZh ? '描述（英文）' : 'Description (English)'}</span>
+                  <textarea className="form-field-textarea" rows={5} value={form.desc_en || ''} onChange={e => setForm(f => ({ ...f, desc_en: e.target.value }))} />
+                </label>
+                <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                  <span className="form-field-label">{isZh ? '目标子年龄维度' : 'Target Sub-Ages'}</span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                    {SUB_AGES.map(s => (
+                      <button key={s} type="button"
+                        className={`subtab-btn${(form.target_sub_ages || []).includes(s) ? ' active' : ''}`}
+                        onClick={() => toggleSubAge(s)}>
+                        {s.replace('Age', '')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                  <span className="form-field-label">{isZh ? '推荐原粒' : 'Recommended Dots'}</span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                    {dots.map(d => (
+                      <button key={d.id} type="button"
+                        className={`subtab-btn${(form.recommended_dot_ids || []).includes(d.id) ? ' active' : ''}`}
+                        onClick={() => toggleDot(d.id)}
+                        style={{ fontSize: 11 }}>
+                        {d.key_name}: {isZh && d.name_zh ? d.name_zh : d.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                  <span className="form-field-label">{isZh ? '里程碑（JSON数组）' : 'Milestones (JSON array)'}</span>
+                  <textarea className="form-field-textarea" rows={4} style={{ fontFamily: 'monospace', fontSize: 11, marginTop: 4 }}
+                    value={form.milestones || '[]'}
+                    onChange={e => setForm(f => ({ ...f, milestones: e.target.value }))}
+                    placeholder='[{"week":4,"label_zh":"中期检查","label_en":"Mid checkpoint"}]' />
+                </div>
+                <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                  <input type="checkbox" checked={form.is_active !== false} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
+                  {isZh ? '启用此模板' : 'Template is active'}
+                </label>
+              </div>
+              <div className="modal-footer">
+                <button className="btn-secondary" onClick={() => setModal(null)}>{isZh ? '取消' : 'Cancel'}</button>
+                <button className="btn-primary" onClick={save} disabled={saving}>
+                  {saving ? (isZh ? '保存中…' : 'Saving…') : (isZh ? '保存' : 'Save')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function AdminPanel({ onLogout }) {
   const [lang, setLang] = useState('en');
   const t = T[lang];
@@ -5523,7 +5811,7 @@ function AdminPanel({ onLogout }) {
     setLoading(true);
     const ok = (res) => res.status === 'fulfilled' ? res.value.data : {};
     try {
-      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, tkRes, aaRes] = await Promise.allSettled([
+      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, tkRes, aaRes, hptRes] = await Promise.allSettled([
         axios.get('/api/users'),
         axios.get('/api/dots-inventory'),
         axios.get('/api/coach-list'),
@@ -5536,20 +5824,22 @@ function AdminPanel({ onLogout }) {
         axios.get('/api/kino-chip-models'),
         axios.get('/api/tickets'),
         axios.get('/api/admin-accounts'),
+        axios.get('/api/health-plan-templates?all=true'),
       ]);
       setData({
-        users:         ok(uRes).users          || [],
-        dots:          ok(dRes).dots           || [],
-        coaches:       ok(pRes).coaches        || [],
-        storeItems:    ok(sRes).items          || [],
-        orders:        ok(oRes).orders         || [],
-        channels:      ok(chRes).channels      || [],
-        invitations:   ok(invRes).invitations  || [],
-        kinoDevices:   ok(kinoRes).devices     || [],
-        chipBatches:   ok(cbRes).batches       || [],
-        chipModels:    ok(cmRes).models        || [],
-        tickets:       ok(tkRes).tickets       || [],
-        adminAccounts: ok(aaRes).accounts      || [],
+        users:               ok(uRes).users              || [],
+        dots:                ok(dRes).dots               || [],
+        coaches:             ok(pRes).coaches            || [],
+        storeItems:          ok(sRes).items              || [],
+        orders:              ok(oRes).orders             || [],
+        channels:            ok(chRes).channels          || [],
+        invitations:         ok(invRes).invitations      || [],
+        kinoDevices:         ok(kinoRes).devices         || [],
+        chipBatches:         ok(cbRes).batches           || [],
+        chipModels:          ok(cmRes).models            || [],
+        tickets:             ok(tkRes).tickets           || [],
+        adminAccounts:       ok(aaRes).accounts          || [],
+        healthPlanTemplates: ok(hptRes).templates        || [],
       });
       setLastRefresh(new Date());
     } catch (err) { console.error('Admin fetch error:', err); }
@@ -5570,6 +5860,7 @@ function AdminPanel({ onLogout }) {
     { id: 'rewards',  label: t.nav.rewards,  icon: Coins          },
     { id: 'academy',  label: t.nav.academy,  icon: GraduationCap  },
     { id: 'questionnaires', label: t.nav.questionnaires, icon: ClipboardList },
+    { id: 'health-plans',   label: t.nav.healthPlans,    icon: Activity      },
     { id: 'reports',        label: t.nav.reports,        icon: BarChart2     },
     { id: 'tickets',  label: t.nav.tickets,  icon: Bug            },
     { id: 'sims',     label: t.nav.sims,     icon: Layout,      disabled: true },
@@ -5626,6 +5917,7 @@ function AdminPanel({ onLogout }) {
           {tab === 'rewards'  && <RewardsTab />}
           {tab === 'academy'  && <AcademyTab />}
           {tab === 'questionnaires' && <QuestionnairesTab channels={data.channels} users={data.users} coaches={data.coaches} />}
+          {tab === 'health-plans'   && <HealthPlansTab dots={data.dots} healthPlanTemplates={data.healthPlanTemplates || []} onRefresh={fetchData} />}
           {tab === 'reports'        && <ReportsTab />}
           {tab === 'tickets'  && <TicketsTab tickets={data.tickets} onRefresh={fetchData} />}
           {tab === 'sims'     && <SimulatorsTab />}

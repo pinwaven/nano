@@ -76,6 +76,17 @@ The token is configured via the `API_BEARER_TOKEN` environment variable on the `
 | `PATCH` | `/questionnaire-assignments/:id` | Questionnaires | Update assignment status |
 | `DELETE` | `/questionnaires/:id` | Questionnaires | Soft-delete questionnaire |
 | `DELETE` | `/questionnaire-questions/:id` | Questionnaires | Remove a question |
+| `GET` | `/health-plan-templates` | Health Plans | List plan templates (`?all=true` for admin) |
+| `POST` | `/health-plan-templates` | Health Plans | Create template |
+| `PUT` | `/health-plan-templates/:id` | Health Plans | Update template |
+| `DELETE` | `/health-plan-templates/:id` | Health Plans | Delete template (blocked if active plans exist) |
+| `GET` | `/health-plans` | Health Plans | User's plans (`?openid=X`) or all plans (`?all=true`) |
+| `POST` | `/health-plans` | Health Plans | Enroll in a plan (captures baseline biomarkers) |
+| `GET` | `/health-plans/:id` | Health Plans | Plan detail with checkins + milestones |
+| `PUT` | `/health-plans/:id` | Health Plans | Update status or swap primary↔secondary |
+| `POST` | `/health-plans/:id/checkin` | Health Plans | Daily check-in (idempotent upsert) |
+| `POST` | `/health-plans/:id/milestone` | Health Plans | Record milestone biomarker snapshot |
+| `GET` | `/coach-client-plans` | Health Plans | All active plans for a coach's clients |
 
 ---
 
@@ -322,6 +333,57 @@ Binds a phone number to a user profile using a verification code.
 
 ### GET /oss/presign?filename=x.jpg
 Returns a temporary Aliyun OSS PUT URL for client-side uploads.
+
+---
+
+## 8. Health Plan System
+
+See full system documentation: [`docs/architecture/health-plan-system.md`](../architecture/health-plan-system.md)
+
+### GET /health-plan-templates
+
+Returns all active plan templates. Add `?all=true` to include inactive templates (admin only). Add `?channel_id=N` to filter by channel.
+
+### POST /health-plan-templates / PUT /health-plan-templates/:id
+
+Create or update a plan template.
+
+**Body:** `{ key_name, name_zh, name_en, desc_zh, desc_en, goal_zh, goal_en, duration_weeks, target_sub_ages, recommended_dot_ids, activity_guidance, milestones, sort_order }`
+
+### DELETE /health-plan-templates/:id
+
+Deletes a template. Returns `409` if any user is actively enrolled in a plan that references it.
+
+### POST /health-plans
+
+Enroll a user in a plan.
+
+**Body:** `{ openid, template_id, plan_type, source }` where `source` is `'self'` | `'coach'` | `'ai'`.
+
+- Captures baseline `bioage_profile` from the user's latest Kino chip scan into `baseline_data`.
+- Returns `409` with `{ conflict: true, existing_plan_id }` if the plan slot is already occupied, allowing the client to offer a replace dialog.
+
+### PUT /health-plans/:id
+
+Update plan status or swap plan type.
+
+**Body:** `{ status }` to change lifecycle state, or `{ plan_type }` to swap primary↔secondary (uses a DB transaction to avoid violating the unique partial index).
+
+### POST /health-plans/:id/checkin
+
+Record daily adherence. Idempotent — safe to resubmit for the same date.
+
+**Body:** `{ openid, checkin_date, dots_taken, activities_done, notes }`
+
+### POST /health-plans/:id/milestone
+
+Attach a biomarker scan as a milestone snapshot.
+
+**Body:** `{ openid, biomarker_id, milestone_index, label_zh, label_en }`
+
+### GET /coach-client-plans?coach_id={id}
+
+Returns all active health plans for every user assigned to the given coach.
 
 ---
 

@@ -206,6 +206,9 @@
         <view class="detail-tab {{detailTab === 'health' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="health">
           <text class="detail-tab-text">{{t.tabHealth}}</text>
         </view>
+        <view class="detail-tab {{detailTab === 'plans' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="plans">
+          <text class="detail-tab-text">{{t.tabPlans}}</text>
+        </view>
         <view class="detail-tab {{detailTab === 'chat' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="chat">
           <text class="detail-tab-text">{{t.tabChat}}</text>
         </view>
@@ -251,6 +254,70 @@
                   <text class="bm-value">{{item.value !== null ? item.value : '—'}} {{item.unit}}</text>
                 </view>
               </view>
+            </view>
+          </view>
+        </block>
+      </scroll-view>
+
+      <!-- Plans panel -->
+      <scroll-view wx:if="{{detailTab === 'plans'}}" scroll-y class="overlay-scroll">
+        <view wx:if="{{detailPlansLoading}}" class="panel-center">
+          <text class="loading-text">{{t.loading}}</text>
+        </view>
+        <block wx:else>
+          <!-- Active plans list -->
+          <view class="plans-coach-header">
+            <text class="plans-coach-title">{{t.clientPlans}}</text>
+          </view>
+          <view wx:if="{{detailPlans.length === 0}}" class="panel-center">
+            <text class="empty-text">{{t.noClientPlans}}</text>
+          </view>
+          <view wx:for="{{detailPlans}}" wx:key="id" class="coach-plan-card">
+            <view class="coach-plan-badge coach-plan-{{item.plan_type}}">
+              <text>{{item.plan_type === 'primary' ? t.planPrimary : t.planSecondary}}</text>
+            </view>
+            <text class="coach-plan-name">{{lang === 'zh' ? (item.name_zh || item.custom_name_zh) : (item.name_en || item.custom_name_en)}}</text>
+            <text class="coach-plan-meta">{{item.checkin_count || 0}} {{t.planCheckins}} · {{item.duration_weeks}}{{t.planWeeks}}</text>
+          </view>
+
+          <!-- Actions -->
+          <view class="plans-coach-actions">
+            <view class="coach-action-btn" bindtap="openPlanRecommend">
+              <text>{{t.recommendPlan}}</text>
+            </view>
+            <view class="coach-action-btn secondary" bindtap="openPlanCustom">
+              <text>{{t.createCustomPlan}}</text>
+            </view>
+          </view>
+
+          <!-- Recommend sheet -->
+          <view wx:if="{{planRecommendOpen}}" class="plans-recommend-sheet">
+            <view class="plans-recommend-header">
+              <text class="plans-recommend-title">{{t.recommendPlan}}</text>
+              <view bindtap="closePlanRecommend" class="close-x-btn"><text>✕</text></view>
+            </view>
+            <view wx:for="{{planTemplates}}" wx:key="id" class="recommend-tpl-card" bindtap="handleRecommendPlan" data-template-id="{{item.id}}">
+              <text class="recommend-tpl-name">{{lang === 'zh' ? item.name_zh : item.name_en}}</text>
+              <text class="recommend-tpl-meta">{{item.duration_weeks}}{{t.planWeeks}} · {{item.sub_ages_display}}</text>
+            </view>
+          </view>
+
+          <!-- Custom plan form -->
+          <view wx:if="{{planCustomOpen}}" class="plans-custom-form">
+            <view class="plans-recommend-header">
+              <text class="plans-recommend-title">{{t.createCustomPlan}}</text>
+              <view bindtap="closePlanCustom" class="close-x-btn"><text>✕</text></view>
+            </view>
+            <view class="form-field">
+              <text class="form-label">{{t.customPlanName}}</text>
+              <input class="form-input" value="{{planCustomName}}" bindinput="onPlanCustomNameInput" placeholder="{{t.customPlanName}}" />
+            </view>
+            <view class="form-field">
+              <text class="form-label">{{t.customPlanGoal}}</text>
+              <input class="form-input" value="{{planCustomGoal}}" bindinput="onPlanCustomGoalInput" placeholder="{{t.customPlanGoal}}" />
+            </view>
+            <view class="coach-action-btn" bindtap="handleCreateCustomPlan">
+              <text>{{planActionBusy ? t.loading : t.createCustomPlan}}</text>
             </view>
           </view>
         </block>

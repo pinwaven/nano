@@ -863,3 +863,30 @@
 .theme-light .q-resp-answer       { color: var(--text); }
 .theme-light .q-resp-time         { color: var(--text-muted); }
 
+
+/* ── Plans tab (client detail) ── */
+.plans-coach-header { padding: 24rpx 28rpx 8rpx; }
+.plans-coach-title  { font-size: 26rpx; font-weight: 600; color: var(--text); }
+.coach-plan-card    { margin: 12rpx 24rpx; padding: 20rpx; background: var(--navy-lift); border-radius: 16rpx; }
+.coach-plan-badge   { display: inline-block; padding: 4rpx 14rpx; border-radius: 20rpx; font-size: 20rpx; font-weight: 600; margin-bottom: 8rpx; }
+.coach-plan-primary   { background: rgba(99,117,236,0.2); color: #8B9FFF; }
+.coach-plan-secondary { background: rgba(16,185,129,0.15); color: #34d399; }
+.coach-plan-name    { display: block; font-size: 26rpx; font-weight: 500; color: var(--text); margin-bottom: 4rpx; }
+.coach-plan-meta    { display: block; font-size: 22rpx; color: var(--text-muted); }
+.plans-coach-actions { display: flex; flex-direction: column; gap: 16rpx; padding: 20rpx 24rpx; }
+.coach-action-btn   { padding: 22rpx; background: linear-gradient(90deg,#6375EC,#8B9FFF); border-radius: 16rpx; text-align: center; }
+.coach-action-btn text { font-size: 26rpx; font-weight: 600; color: #fff; }
+.coach-action-btn.secondary { background: var(--navy-lift); border: 2rpx solid var(--navy-border); }
+.coach-action-btn.secondary text { color: var(--text-muted); }
+.plans-recommend-sheet { margin: 0 24rpx; padding: 20rpx; background: var(--navy-lift); border-radius: 16rpx; }
+.plans-recommend-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16rpx; }
+.plans-recommend-title  { font-size: 26rpx; font-weight: 600; color: var(--text); }
+.close-x-btn            { padding: 8rpx 16rpx; }
+.close-x-btn text       { font-size: 28rpx; color: var(--text-muted); }
+.recommend-tpl-card     { padding: 20rpx; border-bottom: 1rpx solid var(--navy-border); }
+.recommend-tpl-name     { display: block; font-size: 26rpx; color: var(--text); margin-bottom: 4rpx; }
+.recommend-tpl-meta     { display: block; font-size: 22rpx; color: var(--text-muted); }
+.plans-custom-form      { margin: 0 24rpx; padding: 20rpx; background: var(--navy-lift); border-radius: 16rpx; }
+.form-field             { margin-bottom: 16rpx; }
+.form-label             { display: block; font-size: 22rpx; color: var(--text-muted); margin-bottom: 8rpx; }
+.form-input             { width: 100%; padding: 16rpx; background: rgba(255,255,255,0.05); border: 1rpx solid var(--navy-border); border-radius: 12rpx; font-size: 26rpx; color: var(--text); box-sizing: border-box; }
