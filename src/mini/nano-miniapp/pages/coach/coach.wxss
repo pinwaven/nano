@@ -233,50 +233,32 @@
 }
 
 .age-chip-text { font-size: 11px; }
-.client-name-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-/* Bio age delta badge */
-.delta-badge {
-  padding: 2px 8px;
-  border-radius: 20px;
-  flex-shrink: 0;
-}
-
-.delta-pos { background: rgba(239,68,68,0.15); border: 1rpx solid rgba(239,68,68,0.4); }
-.delta-neg { background: rgba(16,185,129,0.15); border: 1rpx solid rgba(16,185,129,0.4); }
-
-.delta-text { font-size: 11px; font-weight: 600; }
-.delta-pos .delta-text { color: #ef4444; }
-.delta-neg .delta-text { color: #10b981; }
 
 .client-meta { font-size: 12px; color: #7A9ABF; display: block; margin-top: 2px; }
 .client-meta-dim { color: #4A6A8A; }
 
-/* Sub-ages strip */
-.sub-age-strip {
+/* Last user message preview strip */
+.last-msg-strip {
   display: flex;
-  gap: 6px;
+  align-items: baseline;
+  gap: 8px;
   margin: 10px 0 12px;
-  padding: 10px 12px;
+  padding: 8px 12px;
   background: #0A1F36;
   border-radius: 8px;
 }
 
-.sub-age-pill {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-}
+.last-msg-time { font-size: 11px; color: #4A6A8A; flex-shrink: 0; }
 
-.sub-age-pill-label { font-size: 10px; color: #4A6A8A; }
-.sub-age-pill-value { font-size: 14px; font-weight: 700; }
+.last-msg-text {
+  font-size: 13px;
+  color: #7A9ABF;
+  line-height: 1.4;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 
 .client-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
@@ -788,8 +770,8 @@
 .theme-light .avatar-letter   { color: var(--text-sub); }
 .theme-light .empty-text      { color: var(--text-muted); }
 .theme-light .loading-text    { color: var(--text-muted); }
-.theme-light .sub-age-strip   { background: var(--navy-lift); }
-.theme-light .sub-age-pill-label { color: var(--text-muted); }
+.theme-light .last-msg-strip  { background: var(--navy-lift); }
+.theme-light .last-msg-text   { color: var(--text-muted); }
 .theme-light .msg-btn         { background: var(--navy-lift); border-color: var(--blue); }
 .theme-light .action-btn-text { color: var(--blue); }
 .theme-light .remind-icon-btn { border-color: var(--navy-border); }

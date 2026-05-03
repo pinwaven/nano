@@ -821,6 +821,7 @@ Page({
   async toggleTheme() {
     const theme = this.data.theme === 'dark' ? 'light' : 'dark'
     app.globalData.theme = theme
+    wx.setStorageSync('nano_theme', theme)
     const user = { ...this.data.user, theme }
     wx.setStorageSync('nano_user', user)
     this.setData({ theme, menuOpen: false, user })

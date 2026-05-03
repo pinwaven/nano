@@ -18,7 +18,7 @@ const T = {
     logout: '退出',
     noClients: '暂无分配的客户',
     bioAge: '生理年龄', chronoAge: '实际年龄',
-    lastScan: '上次扫描',
+    lastScan: '上次检测',
     older: '岁↑', younger: '岁↓',
     openMessages: '发消息',
     detailTitle: '客户详情',
@@ -340,11 +340,10 @@ Page({
           _bioAgeColor: bioAgeColor(u.bio_age, cAge),
           _joinedFmt: fmtDate(u.created_at),
           _lastScanFmt: u.last_scan_at ? fmtDate(u.last_scan_at) : null,
+          _lastMsgTimeFmt: u.last_user_msg_at ? fmtTime(u.last_user_msg_at) : null,
           _avatar: (u.nickname || 'U')[0].toUpperCase(),
-          _delta: delta,
-          _deltaPos: delta !== null && delta > 0,
-          _deltaLabel: delta !== null ? `${delta > 0 ? '+' : ''}${delta}` : null,
           _subAges,
+          _lastUserMsg: u.last_user_msg ? String(u.last_user_msg).slice(0, 100) : null,
         }
       })
       this.setData({ clients, invites: invitesRes.data?.invitations || [] })

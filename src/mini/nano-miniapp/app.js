@@ -17,7 +17,8 @@ App({
         this.globalData.channel = channel || null
         this.globalData.coach = coach || null
         this.globalData.lang = user.language === 'en' ? 'en' : 'zh'
-        this.globalData.theme = user.theme || 'dark'
+        const savedTheme = wx.getStorageSync('nano_theme')
+        this.globalData.theme = savedTheme || user.theme || 'dark'
       }
     } catch (e) {}
   }

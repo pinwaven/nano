@@ -1095,7 +1095,8 @@ async function handleGetCoachUsers(coachId) {
             `SELECT u.user_id, u.external_id, u.nickname, u.avatar_url, u.birth_date, u.language, u.gender,
                     u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
                     b.bio_age, b.data AS bio_data, b.tested_at AS last_scan_at,
-                    m.last_msg_at
+                    m.last_msg_at,
+                    lm.last_user_msg, lm.last_user_msg_at
              FROM users u
              LEFT JOIN (
                  SELECT DISTINCT ON (user_id) user_id, bio_age, data, tested_at
@@ -1108,6 +1109,12 @@ async function handleGetCoachUsers(coachId) {
                  FROM chat_messages
                  GROUP BY user_id
              ) m ON u.user_id = m.user_id
+             LEFT JOIN (
+                 SELECT DISTINCT ON (user_id) user_id, content AS last_user_msg, created_at AS last_user_msg_at
+                 FROM chat_messages
+                 WHERE role = 'user'
+                 ORDER BY user_id, created_at DESC, id DESC
+             ) lm ON u.user_id = lm.user_id
              WHERE u.coach_id = $1
              ORDER BY COALESCE(m.last_msg_at, b.tested_at, u.created_at) DESC`,
             [coachId]

@@ -36,31 +36,24 @@
           <text wx:else class="avatar-letter">{{item._avatar}}</text>
         </view>
         <view class="client-info">
-          <view class="client-name-row">
-            <text class="client-name">{{item.nickname || '—'}}</text>
-            <view wx:if="{{item._deltaLabel}}" class="delta-badge {{item._deltaPos ? 'delta-pos' : 'delta-neg'}}">
-              <text class="delta-text">{{item._deltaLabel}} {{item._deltaPos ? t.older : t.younger}}</text>
-            </view>
-          </view>
+          <text class="client-name">{{item.nickname || '—'}}</text>
           <view class="client-ages">
-            <view wx:if="{{item.bio_age}}" class="age-chip" style="background: {{item._bioAgeColor}}20; border-color: {{item._bioAgeColor}};">
-              <text class="age-chip-text" style="color: {{item._bioAgeColor}};">{{t.bioAge}} {{item.bio_age}}</text>
-            </view>
             <view wx:if="{{item._cAge}}" class="age-chip">
               <text class="age-chip-text">{{t.chronoAge}} {{item._cAge}}</text>
             </view>
+            <view wx:if="{{item.bio_age}}" class="age-chip" style="background: {{item._bioAgeColor}}20; border-color: {{item._bioAgeColor}};">
+              <text class="age-chip-text" style="color: {{item._bioAgeColor}};">{{t.bioAge}} {{item.bio_age}}</text>
+            </view>
           </view>
-          <text wx:if="{{item._lastScanFmt}}" class="client-meta">{{t.lastScan}}: {{item._lastScanFmt}}</text>
+          <text wx:if="{{item._lastScanFmt}}" class="client-meta client-meta-dim">{{t.lastScan}}: {{item._lastScanFmt}}</text>
           <text wx:else class="client-meta client-meta-dim">{{t.joined}}: {{item._joinedFmt}}</text>
         </view>
       </view>
 
-      <!-- Sub-ages strip -->
-      <view wx:if="{{item._subAges.length > 0}}" class="sub-age-strip">
-        <view wx:for="{{item._subAges}}" wx:key="key" wx:for-item="sa" class="sub-age-pill">
-          <text class="sub-age-pill-label">{{sa.label}}</text>
-          <text class="sub-age-pill-value" style="color: {{sa.elevated ? '#ef4444' : sa.color}};">{{sa.value || '—'}}</text>
-        </view>
+      <!-- Last user message preview -->
+      <view wx:if="{{item._lastUserMsg}}" class="last-msg-strip">
+        <text wx:if="{{item._lastMsgTimeFmt}}" class="last-msg-time">{{item._lastMsgTimeFmt}}</text>
+        <text class="last-msg-text">{{item._lastUserMsg}}</text>
       </view>
 
       <!-- Actions -->
