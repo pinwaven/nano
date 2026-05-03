@@ -5535,20 +5535,41 @@ function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
   useEffect(() => { if (subTab === 'users' && userPlans.length === 0) loadUserPlans(); }, [subTab]);
 
   const openAdd = () => {
-    setForm({ key_name: '', name_zh: '', name_en: '', desc_zh: '', desc_en: '', goal_zh: '', goal_en: '', duration_weeks: 4, sort_order: 0, target_sub_ages: [], recommended_dot_ids: [], milestones: '[]', is_active: true });
+    setForm({ key_name: '', name_zh: '', name_en: '', desc_zh: '', desc_en: '', goal_zh: '', goal_en: '', duration_weeks: 4, sort_order: 0, target_sub_ages: [], recommended_dot_ids: [], milestones: '[]', reminders: [], is_active: true });
     setEditingTpl(null);
     setModal('add');
   };
 
   const openEdit = (tpl) => {
+    const rawReminders = tpl.reminders;
+    const remindersArr = Array.isArray(rawReminders) ? rawReminders
+      : typeof rawReminders === 'string' ? ((() => { try { return JSON.parse(rawReminders); } catch { return []; } })())
+      : [];
     setForm({
       ...tpl,
       target_sub_ages: tpl.target_sub_ages || [],
       recommended_dot_ids: tpl.recommended_dot_ids || [],
       milestones: typeof tpl.milestones === 'string' ? tpl.milestones : JSON.stringify(tpl.milestones || [], null, 2),
+      reminders: remindersArr,
     });
     setEditingTpl(tpl);
     setModal('edit');
+  };
+
+  const addReminder = () => {
+    setForm(f => ({ ...f, reminders: [...(f.reminders || []), { time: '08:00', label_zh: '', label_en: '', message_zh: '', message_en: '' }] }));
+  };
+
+  const removeReminder = (idx) => {
+    setForm(f => ({ ...f, reminders: f.reminders.filter((_, i) => i !== idx) }));
+  };
+
+  const updateReminder = (idx, field, value) => {
+    setForm(f => {
+      const updated = [...(f.reminders || [])];
+      updated[idx] = { ...updated[idx], [field]: value };
+      return { ...f, reminders: updated };
+    });
   };
 
   const toggleSubAge = (key) => {
@@ -5564,7 +5585,7 @@ function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
     try {
       let milestonesParsed;
       try { milestonesParsed = JSON.parse(form.milestones || '[]'); } catch { milestonesParsed = []; }
-      const payload = { ...form, milestones: milestonesParsed };
+      const payload = { ...form, milestones: milestonesParsed, reminders: form.reminders || [] };
       if (modal === 'add') await axios.post('/api/health-plan-templates', payload);
       else await axios.put(`/api/health-plan-templates/${editingTpl.id}`, payload);
       setModal(null);
@@ -5777,6 +5798,37 @@ function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
                     value={form.milestones || '[]'}
                     onChange={e => setForm(f => ({ ...f, milestones: e.target.value }))}
                     placeholder='[{"week":4,"label_zh":"中期检查","label_en":"Mid checkpoint"}]' />
+                </div>
+                <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span className="form-field-label" style={{ marginBottom: 0 }}>{isZh ? '提醒设置' : 'Reminders'}</span>
+                    <button type="button" className="btn-secondary" style={{ fontSize: 12, padding: '3px 10px' }} onClick={addReminder}>
+                      + {isZh ? '添加提醒' : 'Add Reminder'}
+                    </button>
+                  </div>
+                  {(form.reminders || []).length === 0 && (
+                    <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>{isZh ? '暂无提醒，点击右上角添加' : 'No reminders. Click Add Reminder to configure.'}</p>
+                  )}
+                  {(form.reminders || []).map((r, idx) => (
+                    <div key={idx} style={{ border: '1px solid #374151', borderRadius: 6, padding: 10, marginBottom: 8, background: '#111827' }}>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'center' }}>
+                        <label style={{ fontSize: 11, color: '#9ca3af', whiteSpace: 'nowrap' }}>{isZh ? '时间' : 'Time'}</label>
+                        <input type="time" value={r.time || ''} onChange={e => updateReminder(idx, 'time', e.target.value)}
+                          style={{ width: 110, fontSize: 12 }} className="form-input" />
+                        <input type="text" placeholder={isZh ? '标签（中文）' : 'Label ZH'} value={r.label_zh || ''} onChange={e => updateReminder(idx, 'label_zh', e.target.value)}
+                          style={{ flex: 1, fontSize: 12 }} className="form-input" />
+                        <input type="text" placeholder={isZh ? '标签（英文）' : 'Label EN'} value={r.label_en || ''} onChange={e => updateReminder(idx, 'label_en', e.target.value)}
+                          style={{ flex: 1, fontSize: 12 }} className="form-input" />
+                        <button type="button" onClick={() => removeReminder(idx)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 4px' }}>×</button>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input type="text" placeholder={isZh ? '提醒内容（中文）' : 'Message ZH'} value={r.message_zh || ''} onChange={e => updateReminder(idx, 'message_zh', e.target.value)}
+                          style={{ flex: 1, fontSize: 12 }} className="form-input" />
+                        <input type="text" placeholder={isZh ? '提醒内容（英文）' : 'Message EN'} value={r.message_en || ''} onChange={e => updateReminder(idx, 'message_en', e.target.value)}
+                          style={{ flex: 1, fontSize: 12 }} className="form-input" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
                 <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
                   <input type="checkbox" checked={form.is_active !== false} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />

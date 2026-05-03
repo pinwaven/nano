@@ -681,6 +681,25 @@
               </view>
             </view>
           </view>
+          <!-- Reminders -->
+          <view class="plan-detail-section">
+            <text class="plan-detail-label plan-section-label">{{t.planReminders}}</text>
+            <view wx:if="{{!planDetailData.reminders || planDetailData.reminders.length === 0}}" class="plan-empty-hint">
+              <text>{{t.planNoReminders}}</text>
+            </view>
+            <view wx:for="{{planDetailData.reminders}}" wx:key="id" class="plan-reminder-row">
+              <view class="plan-reminder-info">
+                <text class="plan-reminder-time">{{item.timeDisplay}}</text>
+                <text class="plan-reminder-content">{{item.content}}</text>
+              </view>
+              <view class="plan-reminder-toggle {{item.status === 'paused' ? 'reminder-paused' : 'reminder-active'}}"
+                    bindtap="handleTogglePlanReminder"
+                    data-reminder-id="{{item.id}}"
+                    data-current-status="{{item.status}}">
+                <text>{{item.status === 'paused' ? t.planReminderResume : t.planReminderPause}}</text>
+              </view>
+            </view>
+          </view>
           <!-- Actions -->
           <view class="plan-actions-row">
             <view class="plan-action-btn plan-action-switch" bindtap="handleSwitchPlanType" data-plan-id="{{planDetailData.id}}" data-current-type="{{planDetailData.plan_type}}">

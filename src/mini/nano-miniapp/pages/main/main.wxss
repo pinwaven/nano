@@ -2876,6 +2876,25 @@ button.consent-row::after { border: none; }
 .theme-light .browse-tpl-name   { color: #1a2744; }
 .theme-light .browse-tpl-goal   { color: #4a6080; }
 
+/* ── Plan Reminders (inside plan detail sheet) ── */
+.plan-section-label { text-transform: uppercase; letter-spacing: 2rpx; }
+.plan-reminder-row { display: flex; align-items: center; padding: 16rpx 0; border-bottom: 1rpx solid rgba(255,255,255,0.05); }
+.plan-reminder-info { flex: 1; display: flex; flex-direction: column; gap: 4rpx; }
+.plan-reminder-time { font-size: 28rpx; font-weight: 600; color: #E8F0F8; }
+.plan-reminder-content { font-size: 22rpx; color: #A8C0D8; line-height: 1.4; }
+.plan-reminder-toggle { padding: 10rpx 28rpx; border-radius: 24rpx; font-size: 22rpx; flex-shrink: 0; }
+.reminder-active { background: rgba(99,117,236,0.15); border: 1rpx solid rgba(99,117,236,0.4); }
+.reminder-active text { color: #8B9FFF; }
+.reminder-paused { background: rgba(120,120,120,0.12); border: 1rpx solid rgba(120,120,120,0.25); }
+.reminder-paused text { color: #7A9ABF; }
+.plan-empty-hint { padding: 12rpx 0; }
+.plan-empty-hint text { font-size: 24rpx; color: #4A6A8F; }
+
+/* Light theme overrides for plan reminders */
+.theme-light .plan-reminder-time { color: #1a2744; }
+.theme-light .plan-reminder-content { color: #607090; }
+.theme-light .plan-reminder-row { border-bottom-color: rgba(0,0,0,0.06); }
+
 /* ── Reminders Section ── */
 .reminders-section { margin: 0 24rpx 16rpx; }
 .reminders-section-title {

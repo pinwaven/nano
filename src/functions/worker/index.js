@@ -3893,22 +3893,23 @@ async function handleGetHealthPlanTemplates(query) {
 async function handlePostHealthPlanTemplate(body) {
     const { key_name, name_zh, name_en, desc_zh, desc_en, goal_zh, goal_en,
             duration_weeks, target_sub_ages, recommended_dot_ids, activity_guidance,
-            milestones, sort_order, channel_id, created_by } = body || {};
+            milestones, reminders, sort_order, channel_id, created_by } = body || {};
     if (!key_name || !name_zh || !name_en) return { statusCode: 400, success: false, error: 'key_name, name_zh, name_en required' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
             `INSERT INTO health_plan_templates
              (key_name, name_zh, name_en, desc_zh, desc_en, goal_zh, goal_en,
-              duration_weeks, target_sub_ages, recommended_dot_ids, activity_guidance, milestones,
+              duration_weeks, target_sub_ages, recommended_dot_ids, activity_guidance, milestones, reminders,
               sort_order, channel_id, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
              RETURNING *`,
             [key_name, name_zh, name_en, desc_zh || null, desc_en || null, goal_zh || null, goal_en || null,
              duration_weeks || 4, target_sub_ages || null,
              JSON.stringify(recommended_dot_ids || []),
              JSON.stringify(activity_guidance || {}),
              JSON.stringify(milestones || []),
+             JSON.stringify(reminders || []),
              sort_order || 0, channel_id || null, created_by || null]
         );
         console.log(JSON.stringify({ level: 'INFO', msg: 'handlePostHealthPlanTemplate', key_name }));
@@ -3922,22 +3923,23 @@ async function handlePostHealthPlanTemplate(body) {
 async function handlePutHealthPlanTemplate(id, body) {
     const { name_zh, name_en, desc_zh, desc_en, goal_zh, goal_en,
             duration_weeks, target_sub_ages, recommended_dot_ids, activity_guidance,
-            milestones, sort_order, is_active } = body || {};
+            milestones, reminders, sort_order, is_active } = body || {};
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
             `UPDATE health_plan_templates
              SET name_zh=$1, name_en=$2, desc_zh=$3, desc_en=$4, goal_zh=$5, goal_en=$6,
                  duration_weeks=$7, target_sub_ages=$8, recommended_dot_ids=$9,
-                 activity_guidance=$10, milestones=$11, sort_order=$12,
-                 is_active=COALESCE($13, is_active), updated_at=NOW()
-             WHERE id=$14
+                 activity_guidance=$10, milestones=$11, reminders=$12, sort_order=$13,
+                 is_active=COALESCE($14, is_active), updated_at=NOW()
+             WHERE id=$15
              RETURNING *`,
             [name_zh, name_en, desc_zh || null, desc_en || null, goal_zh || null, goal_en || null,
              duration_weeks, target_sub_ages || null,
              JSON.stringify(recommended_dot_ids || []),
              JSON.stringify(activity_guidance || {}),
              JSON.stringify(milestones || []),
+             JSON.stringify(reminders || []),
              sort_order || 0, is_active !== undefined ? is_active : null, id]
         );
         if (result.rows.length === 0) return { statusCode: 404, success: false, error: 'Template not found' };
@@ -4024,11 +4026,15 @@ async function handlePostJoinHealthPlan(body) {
             ? { bioage_profile: bioRow.rows[0].data?.bioage_profile || {}, biomarkers: bioRow.rows[0].data?.actual || {} }
             : {};
 
-        // Resolve duration from template or body
+        // Resolve duration and reminders from template
         let resolvedDuration = duration_weeks || 4;
+        let templateReminders = [];
         if (template_id) {
-            const tpl = await pool.query('SELECT duration_weeks FROM health_plan_templates WHERE id=$1', [template_id]);
-            if (tpl.rows.length > 0) resolvedDuration = duration_weeks || tpl.rows[0].duration_weeks;
+            const tpl = await pool.query('SELECT duration_weeks, reminders FROM health_plan_templates WHERE id=$1', [template_id]);
+            if (tpl.rows.length > 0) {
+                resolvedDuration = duration_weeks || tpl.rows[0].duration_weeks;
+                templateReminders = tpl.rows[0].reminders || [];
+            }
         }
 
         const startDate = new Date();
@@ -4048,6 +4054,26 @@ async function handlePostJoinHealthPlan(body) {
              startDate.toISOString().slice(0, 10),
              targetEnd.toISOString().slice(0, 10)]
         );
+        // Auto-create linked daily reminders from template config
+        if (templateReminders.length > 0) {
+            const userRow = await pool.query('SELECT language FROM users WHERE user_id=$1', [openid]);
+            const lang = userRow.rows[0]?.language || 'zh';
+            const planId = result.rows[0].id;
+            for (const r of templateReminders) {
+                if (!r.time) continue;
+                const [hh, mm] = r.time.split(':').map(Number);
+                const now = new Date();
+                const fire = new Date(now);
+                fire.setHours(hh, mm, 0, 0);
+                if (fire <= now) fire.setDate(fire.getDate() + 1);
+                const content = lang === 'zh' ? (r.message_zh || r.message_en || '') : (r.message_en || r.message_zh || '');
+                await pool.query(
+                    `INSERT INTO reminders (user_id, content, scheduled_for, recurrence, plan_id) VALUES ($1,$2,$3,'daily',$4)`,
+                    [openid, content, fire.toISOString(), planId]
+                );
+            }
+        }
+
         console.log(JSON.stringify({ level: 'INFO', msg: 'handlePostJoinHealthPlan', openid, plan_type, template_id }));
         return { success: true, plan: result.rows[0] };
     } catch (err) {
@@ -4073,12 +4099,17 @@ async function handleGetHealthPlanDetail(id, openid) {
         );
         if (planRes.rows.length === 0) return { statusCode: 404, success: false, error: 'Plan not found' };
 
-        const [checkinsRes, milestonesRes] = await Promise.all([
+        const [checkinsRes, milestonesRes, remindersRes] = await Promise.all([
             pool.query(
                 `SELECT * FROM health_plan_checkins WHERE plan_id=$1 ORDER BY checkin_date DESC LIMIT 30`, [id]
             ),
             pool.query(
                 `SELECT * FROM health_plan_milestones WHERE plan_id=$1 ORDER BY milestone_index ASC`, [id]
+            ),
+            pool.query(
+                `SELECT id, content, scheduled_for, recurrence, status FROM reminders
+                 WHERE plan_id=$1 AND status != 'sent' AND status != 'cancelled'
+                 ORDER BY scheduled_for ASC`, [id]
             ),
         ]);
         return {
@@ -4086,6 +4117,7 @@ async function handleGetHealthPlanDetail(id, openid) {
             plan: planRes.rows[0],
             checkins: checkinsRes.rows,
             milestones: milestonesRes.rows,
+            reminders: remindersRes.rows,
         };
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetHealthPlanDetail', error: err.message }));
@@ -4129,11 +4161,37 @@ async function handlePutHealthPlan(id, body) {
                 `UPDATE health_plans SET status=$1, ended_at=${endedAt}, updated_at=NOW() WHERE id=$2`,
                 [status, id]
             );
+            if (['completed', 'abandoned'].includes(status)) {
+                await pool.query(
+                    `UPDATE reminders SET status='cancelled' WHERE plan_id=$1 AND status IN ('pending','paused')`,
+                    [id]
+                );
+            }
         }
         console.log(JSON.stringify({ level: 'INFO', msg: 'handlePutHealthPlan', id, status, plan_type }));
         return { success: true };
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePutHealthPlan', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handlePatchPlanReminder(reminderId, body) {
+    const { openid, status } = body || {};
+    if (!openid) return { statusCode: 400, success: false, error: 'openid required' };
+    if (!['pending', 'paused'].includes(status)) return { statusCode: 400, success: false, error: 'status must be pending or paused' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `UPDATE reminders SET status=$1
+             WHERE id=$2 AND user_id=$3 AND plan_id IS NOT NULL AND status IN ('pending','paused')
+             RETURNING id`,
+            [status, reminderId, openid]
+        );
+        if (result.rows.length === 0) return { statusCode: 404, success: false, error: 'Reminder not found' };
+        return { success: true };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePatchPlanReminder', error: err.message }));
         return { statusCode: 500, success: false, error: err.message };
     }
 }
@@ -4612,6 +4670,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/questionnaire-assignments\/(\d+)/)) {
                 const aId = path.match(/\/questionnaire-assignments\/(\d+)/)[1];
                 result = await handlePatchQuestionnaireAssignment(aId, parsedBody);
+            } else if (path.match(/\/plan-reminders\/(\d+)/)) {
+                const rId = path.match(/\/plan-reminders\/(\d+)/)[1];
+                result = await handlePatchPlanReminder(rId, parsedBody);
             } else {
                 result = { success: false, error: `Unknown PATCH route: ${path}` };
             }

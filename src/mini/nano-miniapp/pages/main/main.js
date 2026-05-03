@@ -71,6 +71,7 @@ const T = {
     plansTemplates: '可加入的方案',
     plansDuration: '周期', plansSource: '来源',
     plansJoinPrimary: '加入为主方案', plansJoinSecondary: '加入为辅方案', plansAlreadyEnrolled: '已加入',
+    planReminders: '提醒设置', planReminderPause: '暂停', planReminderResume: '恢复', planNoReminders: '此方案暂无提醒',
     plansConflict: '该槽位已有方案，是否替换？',
     plansConfirmAbandon: '确认放弃此方案？放弃后可重新加入。',
     plansConfirmSwitch: '确认切换主/辅方案？',
@@ -255,6 +256,7 @@ const T = {
     plansTemplates: 'Available Plans',
     plansDuration: 'Duration', plansSource: 'Source',
     plansJoinPrimary: 'Join as Primary', plansJoinSecondary: 'Join as Secondary', plansAlreadyEnrolled: 'Current Plan',
+    planReminders: 'Reminders', planReminderPause: 'Pause', planReminderResume: 'Resume', planNoReminders: 'No reminders for this plan',
     plansConflict: 'That slot is occupied. Replace existing plan?',
     plansConfirmAbandon: 'Abandon this plan? You can rejoin anytime.',
     plansConfirmSwitch: 'Switch primary/secondary?',
@@ -2186,8 +2188,20 @@ Page({
     this.setData({ planSubTab: e.currentTarget.dataset.tab })
   },
 
-  openPlanDetail(e) {
-    this.setData({ planDetailOpen: true, planDetailData: e.currentTarget.dataset.plan, planSubTab: 'overview' })
+  async openPlanDetail(e) {
+    const plan = e.currentTarget.dataset.plan
+    this.setData({ planDetailOpen: true, planDetailData: plan, planSubTab: 'overview' })
+    try {
+      const { user } = this.data
+      const res = await this._req(`${BASE}/api/health-plans/${plan.id}?openid=${encodeURIComponent(user.user_id)}`)
+      const detail = res.data?.plan || plan
+      const rawReminders = res.data?.reminders || []
+      const reminders = rawReminders.map(r => {
+        const d = new Date(r.scheduled_for)
+        return { ...r, timeDisplay: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
+      })
+      this.setData({ planDetailData: { ...plan, ...detail, reminders } })
+    } catch { /* keep existing plan data if fetch fails */ }
   },
 
   closePlanDetail() {
@@ -2200,6 +2214,19 @@ Page({
 
   closePlanBrowse() {
     this.setData({ planBrowseOpen: false })
+  },
+
+  async handleTogglePlanReminder(e) {
+    const { reminderId, currentStatus } = e.currentTarget.dataset
+    const newStatus = currentStatus === 'paused' ? 'pending' : 'paused'
+    const { user, planDetailData } = this.data
+    try {
+      await this._req(`${BASE}/api/plan-reminders/${reminderId}`, 'PATCH', { openid: user.user_id, status: newStatus })
+      const reminders = (planDetailData.reminders || []).map(r =>
+        r.id === reminderId || String(r.id) === String(reminderId) ? { ...r, status: newStatus } : r
+      )
+      this.setData({ planDetailData: { ...planDetailData, reminders } })
+    } catch { /* ignore */ }
   },
 
   async handlePlanCheckin(e) {
