@@ -10,9 +10,10 @@ Plans are the common ground between the user, their coach, and the Nano AI. The 
 
 | Concept | Description |
 |---|---|
-| **Plan Template** | A reusable goal blueprint — name, description, duration, target sub-ages, recommended Dots, activity guidance, milestone schedule. Global or channel-scoped. |
+| **Plan Template** | A reusable goal blueprint — name, description, duration, target sub-ages, recommended Dots, activity guidance, milestone schedule, daily tasks config. Global or channel-scoped. |
 | **Health Plan** | A user's active enrollment in a template (or a coach-created custom plan). Records start date, baseline bioage snapshot, source, and status. |
-| **Check-in** | A daily adherence record for a plan. Idempotent — submitting twice on the same day updates the existing record. |
+| **Daily Task** | One of three per-plan check-in actions (Dots, Weight, Questions). Which tasks are shown and their labels are configured per template in the admin panel. |
+| **Check-in** | A daily adherence record for a plan. Idempotent — submitting twice on the same day updates the existing record. Tracks `dots_taken` (boolean) and `activities_done` (JSONB array of completed task keys). |
 | **Milestone** | A biomarker scan that is linked to a plan as a progress snapshot, tagged to a specific milestone slot in the template's milestone schedule. |
 | **plan_type** | `primary` or `secondary` — a user can hold at most one of each simultaneously. DB-enforced via a unique partial index. |
 | **source** | How the user joined: `self` (user browsed and joined), `coach` (coach recommended it), `ai` (Nano AI suggested it). |
@@ -32,6 +33,7 @@ Plans are the common ground between the user, their coach, and the Nano AI. The 
 ## Database Schema
 
 Migration file: `src/schemas/migration_health_plans.sql`
+Daily tasks column: `temp/migration_add_daily_tasks.sql`
 
 ### `health_plan_templates`
 
@@ -46,13 +48,34 @@ Library of reusable plan blueprints. Global templates have `channel_id = NULL`; 
 | `desc_zh` / `desc_en` | TEXT | Long-form description |
 | `goal_zh` / `goal_en` | TEXT | One-sentence goal statement shown to users |
 | `duration_weeks` | INTEGER | Estimated plan duration |
-| `target_sub_ages` | TEXT[] | Sub-age dimensions this plan targets (`CellularAge`, `MetabolicAge`, `MicroVascularAge`, `ResilienceAge`) |
-| `recommended_dot_ids` | JSONB | Array of `dots.id` values — the Dots recommended for this plan |
+| `target_sub_ages` | TEXT[] | Sub-age dimensions this plan targets |
+| `recommended_dot_ids` | JSONB | Array of `dots.id` values |
 | `activity_guidance` | JSONB | Structured daily/weekly activity suggestions |
-| `milestones` | JSONB | Array of `{ week, label_zh, label_en }` — defines when milestone check-ins should occur |
-| `is_active` | BOOLEAN | Inactive templates are hidden from the browse sheet but still resolve for existing plans |
+| `milestones` | JSONB | Array of `{ week, label_zh, label_en }` |
+| `daily_tasks` | JSONB | Array of task config objects (see below) |
+| `is_active` | BOOLEAN | Inactive templates hidden from browse sheet |
 | `sort_order` | INTEGER | Display order in the browse sheet |
 | `created_by` | TEXT FK → `users.user_id` | NULL for system-seeded templates |
+
+#### `daily_tasks` structure
+
+Each element in the `daily_tasks` array configures one check-in task for the plan card:
+
+```json
+[
+  { "key": "dots",      "label_zh": "服用原粒", "label_en": "Dots",      "enabled": true },
+  { "key": "weight",    "label_zh": "记录体重", "label_en": "Weight",    "enabled": true },
+  { "key": "questions", "label_zh": "每日问答", "label_en": "Questions", "enabled": false }
+]
+```
+
+| Field | Description |
+|---|---|
+| `key` | Fixed identifier: `dots`, `weight`, or `questions` |
+| `label_zh` / `label_en` | Customisable label shown on the task chip |
+| `enabled` | Whether this task appears on the plan card |
+
+When `daily_tasks` is an empty array (legacy or unset), the miniapp falls back to all three tasks enabled with their default labels.
 
 ### `health_plans`
 
@@ -69,11 +92,11 @@ A user's enrollment in a plan. One row per enrollment; completed or abandoned pl
 | `source` | TEXT | `self` / `coach` / `ai` |
 | `custom_name_zh` / `custom_name_en` | TEXT | Used when `template_id` is NULL |
 | `custom_goal_zh` / `custom_goal_en` | TEXT | Used when `template_id` is NULL |
-| `duration_weeks` | INTEGER | Resolved from template at join time (coach may override) |
-| `baseline_data` | JSONB | Bioage profile + raw biomarkers captured at enrollment (`{ bioage_profile, biomarkers }`) |
+| `duration_weeks` | INTEGER | Resolved from template at join time |
+| `baseline_data` | JSONB | Bioage profile + raw biomarkers at enrollment |
 | `start_date` | DATE | Day of enrollment |
 | `target_end_date` | DATE | `start_date + duration_weeks * 7` |
-| `ended_at` | TIMESTAMPTZ | Set when status changes to `completed` or `abandoned` |
+| `ended_at` | TIMESTAMPTZ | Set when status → `completed` or `abandoned` |
 
 **Unique partial index:** `UNIQUE (user_id, plan_type) WHERE status = 'active'`
 
@@ -86,44 +109,49 @@ Daily adherence records. One row per `(plan_id, checkin_date)` — upserted, nev
 | `id` | BIGSERIAL PK | — |
 | `plan_id` | BIGINT FK → `health_plans.id` | CASCADE delete |
 | `user_id` | TEXT FK → `users.user_id` | CASCADE delete |
-| `checkin_date` | DATE | The day of the check-in (client-supplied, not server time) |
-| `dots_taken` | BOOLEAN | Whether the user took their dots that day |
-| `activities_done` | JSONB | Array of completed activity key strings |
+| `checkin_date` | DATE | The day of the check-in (client-supplied) |
+| `dots_taken` | BOOLEAN | Whether the user took their dots |
+| `activities_done` | JSONB | Array of completed activity key strings (e.g. `["weight_logged", "daily_questions"]`) |
 | `notes` | TEXT | Optional free-text note |
 
-**Unique constraint:** `(plan_id, checkin_date)` — the upsert uses `ON CONFLICT ... DO UPDATE`.
+**Unique constraint:** `(plan_id, checkin_date)` — upsert uses `ON CONFLICT ... DO UPDATE`.
+
+#### `activities_done` keys
+
+| Key | Set by | Meaning |
+|---|---|---|
+| `weight_logged` | Weight task | User logged body weight via the weight modal |
+| `daily_questions` | Questions task | User completed the daily energy/sleep/mood survey |
 
 ### `health_plan_milestones`
 
-Biomarker scans linked to a plan as progress snapshots. Each milestone corresponds to a slot in the template's `milestones` array (identified by `milestone_index`).
+Biomarker scans linked to a plan as progress snapshots.
 
 | Column | Type | Description |
 |---|---|---|
 | `id` | BIGSERIAL PK | — |
 | `plan_id` | BIGINT FK → `health_plans.id` | CASCADE delete |
 | `user_id` | TEXT FK → `users.user_id` | CASCADE delete |
-| `biomarker_id` | INTEGER FK → `biomarkers.id` | The scan that triggered this milestone; SET NULL on biomarker delete |
-| `milestone_index` | INTEGER | Which milestone slot this corresponds to (0-based, matches template array) |
-| `label_zh` / `label_en` | TEXT | Copied from the template milestone at the time of achievement |
-| `snapshot_data` | JSONB | Full `biomarkers.data` at milestone time — preserves the reading even if the biomarker row is later deleted |
+| `biomarker_id` | INTEGER FK → `biomarkers.id` | SET NULL on biomarker delete |
+| `milestone_index` | INTEGER | 0-based slot index matching template array |
+| `label_zh` / `label_en` | TEXT | Copied from template at achievement time |
+| `snapshot_data` | JSONB | Full `biomarkers.data` at milestone time |
 | `achieved_at` | TIMESTAMPTZ | When the milestone was recorded |
 
 ---
 
 ## Seeded Plan Templates
 
-Six global templates are seeded at migration time via `ON CONFLICT (key_name) DO NOTHING`. All have `channel_id = NULL` and are immediately available to all users.
+Six global templates are seeded at migration time. All have `channel_id = NULL` and `daily_tasks = []` (falls back to all three tasks enabled).
 
-| key_name | name_zh | Duration | Target Sub-Ages | Primary Dots |
-|---|---|---|---|---|
-| `weight_loss` | 代谢减重 | 8 wks | MetabolicAge, MicroVascularAge | DOT07, DOT08, DOT10, DOT11, DOT13 |
-| `anti_aging` | 逆龄还原 | 12 wks | CellularAge, ResilienceAge | DOT01–DOT06, DOT09, DOT16 |
-| `energy_boost` | 能量提升 | 6 wks | MicroVascularAge, MetabolicAge | DOT07–DOT11, DOT13, DOT14 |
-| `sleep_improvement` | 深度睡眠 | 6 wks | ResilienceAge | DOT09, DOT12, DOT15, DOT16, DOT17 |
-| `immunity` | 免疫防御 | 8 wks | ResilienceAge, CellularAge | DOT04, DOT09, DOT15–DOT18 |
-| `metabolic_health` | 代谢健康 | 10 wks | MetabolicAge | DOT05, DOT07, DOT11 |
-
-Each template includes a `milestones` array with 2–3 checkpoint entries (e.g. week 4 biomarker check, week 8 mid-assessment, final Kino scan).
+| key_name | name_zh | Duration | Target Sub-Ages |
+|---|---|---|---|
+| `weight_loss` | 代谢减重 | 8 wks | MetabolicAge, MicroVascularAge |
+| `anti_aging` | 逆龄还原 | 12 wks | CellularAge, ResilienceAge |
+| `energy_boost` | 能量提升 | 6 wks | MicroVascularAge, MetabolicAge |
+| `sleep_improvement` | 深度睡眠 | 6 wks | ResilienceAge |
+| `immunity` | 免疫防御 | 8 wks | ResilienceAge, CellularAge |
+| `metabolic_health` | 代谢健康 | 10 wks | MetabolicAge |
 
 ---
 
@@ -140,7 +168,8 @@ POST /health-plans
     │
     ▼
 Daily use
-    → POST /health-plans/:id/checkin  (idempotent upsert per day)
+    → User taps individual task chips on the plan card (Dots / Weight / Questions)
+    → Each tap upserts POST /health-plans/:id/checkin with updated dots_taken + activities_done
     → Kino scans generate health_plan_milestones rows at milestone weeks
     │
     ▼
@@ -152,44 +181,27 @@ Plan end
 
 ### Switching Primary / Secondary
 
-When a user wants to promote a secondary plan to primary (or vice versa):
-
 ```
 PUT /health-plans/:id  { plan_type: 'primary' }
 ```
 
 The handler opens a transaction:
-1. Moves any other active plan currently in the `'primary'` slot to `'secondary'`
+1. Moves any other active plan in the `'primary'` slot to `'secondary'`
 2. Sets the target plan to `'primary'`
 3. Commits
-
-This ensures the unique partial index is never violated mid-transaction.
 
 ---
 
 ## AI Integration
 
-Active health plans are **always** included in the chat LLM context — unlike biomarkers or dots which are only fetched when the intent classifier requests them. The payload is small (max 2 rows) and plan-aware responses are valuable for every chat turn.
-
-### Context injection in `handlePostChat`
-
-```js
-fetches.health_plans = pool.query(
-    `SELECT hp.id, hp.plan_type, hp.start_date, hp.duration_weeks, ...
-     FROM health_plans hp
-     LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
-     WHERE hp.user_id = $1 AND hp.status = 'active'
-     ORDER BY hp.plan_type ASC LIMIT 2`,
-    [user_id]
-);
-```
+Active health plans are **always** included in the chat LLM context. The payload is small (max 2 rows) and plan-aware responses are valuable for every chat turn.
 
 Each row is projected into `llmContext.active_health_plans`:
 
 ```js
 {
   plan_type:       'primary',
-  name:            'Anti-Aging Protocol',   // language-resolved
+  name:            'Anti-Aging Protocol',
   goal:            'Reduce CellularAge and ResilienceAge',
   target_sub_ages: ['CellularAge', 'ResilienceAge'],
   weeks_elapsed:   3,
@@ -199,15 +211,7 @@ Each row is projected into `llmContext.active_health_plans`:
 }
 ```
 
-### Prompt templates that consume plan context
-
-| Prompt | File | Usage |
-|---|---|---|
-| `casual` | `prompts/chat/casual.js` | One-line plan snippet — enables natural plan references in small talk |
-| `biomarker` | `prompts/chat/biomarker.js` | Relates biomarker readings to plan goal and target sub-ages |
-| `nutrition` | `prompts/chat/nutrition.js` | Aligns nutrition and Dots advice to the active plan goal |
-
-All three templates render nothing when `active_health_plans` is empty — no changes to the prompt output for users without plans.
+Prompt templates that consume plan context: `prompts/chat/casual.js`, `prompts/chat/biomarker.js`, `prompts/chat/nutrition.js`.
 
 ---
 
@@ -217,8 +221,6 @@ All three templates render nothing when `active_health_plans` is empty — no ch
 
 **Files:** `src/mini/nano-miniapp/pages/main/main.js`, `main.wxml`, `main.wxss`
 
-**Icon:** `src/mini/nano-miniapp/assets/icons/plans.svg` — target/crosshair (two concentric circles + tick marks), matching the existing icon style.
-
 ### Tab data state
 
 ```js
@@ -227,50 +229,81 @@ activePlans: [],      // up to 2 enriched plan objects
 planTemplates: [],    // available templates for browse sheet
 planDetailOpen: false,
 planDetailData: null,
-planSubTab: 'overview', // 'overview' | 'progress' | 'activities' | 'guidance'
+planSubTab: 'overview',
 planBrowseOpen: false,
 planCheckinBusy: false,
+planTaskBusy: false,
+// Weight modal
+planWeightOpen: false,
+planWeightInput: '',
+planWeightPlanId: null,
+planWeightKeyboard: 0,   // keyboard height in px, shifts modal above keyboard
+// Questions modal
+planQuestionsOpen: false,
+planQuestionsData: { energy: 3, sleep: 3, mood: 3 },
+planQuestionsPlanId: null,
 ```
 
 Each plan in `activePlans` is enriched with computed display fields:
 - `progressPct` — `(weeksElapsed / totalWeeks) * 100`, capped at 100
 - `adherencePct` — `(checkin_count / days_since_start) * 100`, capped at 100
 - `weeksDone` / `totalWeeks` — week counts
-- `checkedInToday` — true when `checked_in_today > 0` (server computes via `CURRENT_DATE` subquery)
-- `sub_ages_display` — `target_sub_ages.join(' · ')` pre-computed in JS (WXML does not support method calls in mustache)
+- `checkedInToday` — true when `checked_in_today > 0`
+- `todayTasks` — array of `{ key, labelZh, labelEn, done }` derived from template `daily_tasks`; falls back to all three enabled if `daily_tasks` is empty
+- `todayDoneCount` — number of tasks completed today
+- `todayProgressPct` — `(todayDoneCount / todayTasks.length) * 100`
+- `today_dots_taken` — raw boolean for upsert merging
+- `today_activities` — raw `activities_done` array for upsert merging
 
 ### Plan cards
 
-Each active plan renders as a card showing:
-- Type badge (Primary / Secondary) with colour: purple for primary, green for secondary
-- Plan name (language-resolved)
+Each active plan renders a card showing:
+- Type badge (Primary / Secondary)
+- Plan name
 - Progress bar (weeks elapsed)
 - Adherence % and week count
-- "Today Check-in" / "Checked In" button
+- **Daily task chips** — one chip per enabled task; tapping completes or toggles the task
+- **Daily progress bar** — fills as tasks are completed; turns green when all done; counter shows `N/total today`
 
-Tapping a card opens the **Plan Detail Sheet**.
+Tapping the card body (not a task chip) opens the **Plan Detail Sheet**.
+
+### Daily task chips
+
+| Task key | Tap action |
+|---|---|
+| `dots` | Toggles `dots_taken` on today's check-in |
+| `weight` | Opens **Weight modal** — user enters weight (kg), app POSTs to `/api/biomarkers` (body_composition) then upserts check-in with `weight_logged` in `activities_done` |
+| `questions` | Opens **Questions modal** — three 1–5 sliders (energy, sleep, mood); submitting upserts check-in with `daily_questions` in `activities_done` |
+
+All task completions upsert `POST /health-plans/:id/checkin` preserving the full accumulated state for that day (dots_taken + all activities_done). Tapping Dots again toggles it back off.
+
+### Weight modal
+
+Bottom sheet with a digit input. Uses `adjust-position="{{false}}"` + `bindfocus` / `bindblur` to shift the sheet up by the exact keyboard height (`planWeightKeyboard` px), keeping the input visible above the keyboard. The modal lives outside the `plans-tab` view to avoid being clipped by its `overflow: hidden`.
+
+### Questions modal
+
+Bottom sheet with three labelled sliders (energy / sleep / mood, each 1–5). Labels are not stored separately — only the completion flag (`daily_questions` key in `activities_done`) is persisted.
 
 ### Plan Detail Sheet
 
-Bottom sheet overlay with 4 sub-tabs:
-
-| Sub-tab | Content |
-|---|---|
-| Overview | Goal statement, start date, duration, target sub-age chips, recommended Dots chips, Switch Type + Abandon actions |
-| Progress | Adherence %, total check-ins, weeks elapsed, milestone timeline |
-| Activities | Today's activity guidance; inline check-in button |
-| Guidance | Full template description + recommended Dots list |
+Bottom sheet overlay with 4 sub-tabs: Overview · Progress · Activities · Guidance.
 
 ### Plan Browse Sheet
 
-Half-screen modal listing all available templates. Each card shows name, goal, duration, target sub-ages, and two join buttons: "Join as Primary" / "Join as Secondary". Conflict handling via `wx.showModal` — user can replace the existing plan or cancel.
+Half-screen modal listing available templates. Join as Primary / Join as Secondary. Conflict handled via `wx.showModal`.
 
 ### Key methods
 
 | Method | Purpose |
 |---|---|
-| `_loadPlans(user, lang)` | Parallel-fetches `/health-plans` + `/health-plan-templates`; enriches plan objects |
-| `handlePlanCheckin(e)` | POSTs today's check-in; idempotent |
+| `_loadPlans(user, lang)` | Parallel-fetches `/health-plans` + `/health-plan-templates`; enriches plan objects including daily task state |
+| `handlePlanTask(e)` | Dispatcher — routes tap to `_doDotsTask`, `openWeightTask`, or `openQuestionsTask` |
+| `_upsertCheckin(planId, dots_taken, activities_done)` | Shared helper — POSTs today's check-in with full merged state |
+| `_doDotsTask(planId)` | Toggles `dots_taken`, upserts check-in, reloads plans |
+| `handleWeightSubmit()` | POSTs body_composition biomarker + adds `weight_logged` to check-in |
+| `handleQuestionsSubmit()` | Adds `daily_questions` to check-in |
+| `handlePlanCheckin(e)` | Legacy single-tap check-in (still used in the Plan Detail Sheet activities sub-tab) |
 | `handleJoinPlan(e)` | POSTs join; handles 409 conflict with replace dialog |
 | `handleAbandonPlan(e)` | Confirms + PUTs `{ status: 'abandoned' }` |
 | `handleSwitchPlanType(e)` | Confirms + PUTs `{ plan_type: newType }` |
@@ -281,27 +314,7 @@ Half-screen modal listing all available templates. Each card shows name, goal, d
 
 **Files:** `src/mini/nano-miniapp/pages/coach/coach.js`, `coach.wxml`, `coach.wxss`
 
-The client detail sheet gains a **Plans** tab between Health and Chat.
-
-### Plans panel content
-
-- List of the client's active plans (type badge, name, adherence %, weeks remaining)
-- **Recommend a Plan** button — opens a template picker; POSTs with `source: 'coach'` and `plan_type: 'secondary'`
-- **Create Custom Plan** button — opens an inline form (name, goal, duration) for template-free plans (`template_id: null`)
-
-### Coach data state
-
-```js
-detailPlans: [],
-detailPlansLoading: false,
-planTemplates: [],
-planRecommendOpen: false,
-planCustomOpen: false,
-planCustomName: '', planCustomGoal: '', planCustomDuration: 4,
-planActionBusy: false,
-```
-
-`switchDetailTab` triggers `_loadClientPlans()` when the Plans tab is opened — lazy loads client plans and available templates in parallel.
+The client detail sheet has a **Plans** tab with the client's active plans, a **Recommend a Plan** button, and a **Create Custom Plan** form.
 
 ---
 
@@ -309,62 +322,66 @@ planActionBusy: false,
 
 **File:** `src/web/admin-panel/src/App.jsx`
 
-**Navigation:** Added between Questionnaires and Reports. Icon: `Activity` from lucide-react.
-
 ### Templates sub-tab
 
-Full CRUD for `health_plan_templates`:
+Full CRUD for `health_plan_templates`. The template edit modal has four tabs:
 
-- **Table** — key_name, bilingual name, duration, target sub-ages (comma-joined), status, sort order, active enrollment count
-- **Add / Edit modal** — all fields including multi-select for target sub-ages (the 4 canonical keys), checkbox grid for recommended Dots (using the existing `dots` state), JSON textarea for milestones
-- **Delete** — blocked if `active_enrollments > 0` (both server 409 and a count-based UI disable)
-- **Status toggle** — inactive templates disappear from the miniapp browse sheet but remain resolvable for existing enrollments
+| Tab | Fields |
+|---|---|
+| Basics | key_name, duration_weeks, sort_order, name_zh/en, goal_zh/en, is_active |
+| Content | desc_zh, desc_en |
+| Targets | Target sub-ages (multi-select), Recommended Dots (multi-select), **Daily Tasks** |
+| Schedule | Milestones, Daily Reminders |
+
+#### Daily Tasks section (Targets tab)
+
+Three fixed task rows — one per built-in task type (💊 dots, ⚖️ weight, 📋 questions). Each row has:
+- **Checkbox** — enable or disable the task for this plan
+- **Chinese label** input — customise the chip label
+- **English label** input — customise the chip label
+
+New templates default to all three enabled. Editing an existing template merges saved config over the defaults, so adding a new task type in the future won't break existing templates.
 
 ### User Plans sub-tab
 
-Read-only view of all user enrollments, loaded lazily on first activation:
-
-- Filter by status (`active` / `completed` / `abandoned` / `paused`)
-- Columns: user nickname, plan name, type badge, source, check-in count, weeks elapsed/total, start date
-
-The API call uses `GET /health-plans?all=true` which bypasses the `openid` requirement and returns all plans (worker enforces via the standard Bearer token check).
+Read-only view of all enrollments, filterable by status. Uses `GET /health-plans?all=true`.
 
 ---
 
 ## API Endpoints
 
-All endpoints require the standard `Authorization: Bearer <token>` header.
+All endpoints require `Authorization: Bearer <token>`.
 
 ### Templates
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health-plan-templates` | List active templates (`?all=true` includes inactive; `?channel_id=N` scopes to channel + global) |
-| `POST` | `/health-plan-templates` | Create a new template (admin/coach) |
-| `PUT` | `/health-plan-templates/:id` | Update template fields or toggle `is_active` |
-| `DELETE` | `/health-plan-templates/:id` | Delete — returns 409 if any active plans reference the template |
+| `GET` | `/health-plan-templates` | List active templates |
+| `POST` | `/health-plan-templates` | Create template — accepts `daily_tasks` array |
+| `PUT` | `/health-plan-templates/:id` | Update template — accepts `daily_tasks` array |
+| `DELETE` | `/health-plan-templates/:id` | Delete — 409 if active plans reference it |
 
 ### User Plans
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health-plans` | User's active plans (`?openid=X`); or all plans (`?all=true`) for admin |
-| `GET` | `/health-plans/:id` | Full plan detail — plan row + last 30 check-ins + milestones (`?openid=X` ownership check) |
-| `POST` | `/health-plans` | Join a plan — returns 409 `{ error: 'conflict', existing_plan_id }` if slot occupied |
-| `PUT` | `/health-plans/:id` | Update `status` or `plan_type`; type swap uses a transaction |
+| `GET` | `/health-plans` | User's active plans (`?openid=X`) or all plans (`?all=true`). Returns `today_checkin` (today's `dots_taken` + `activities_done`) and `daily_tasks` per plan for the miniapp card |
+| `GET` | `/health-plans/:id` | Full plan detail — plan row + last 30 check-ins + milestones |
+| `POST` | `/health-plans` | Join a plan — 409 `{ error: 'conflict' }` if slot occupied |
+| `PUT` | `/health-plans/:id` | Update `status` or `plan_type` |
 
 ### Check-ins & Milestones
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/health-plans/:id/checkin` | Record daily check-in (idempotent upsert) |
+| `POST` | `/health-plans/:id/checkin` | Upsert daily check-in. Body: `{ openid, checkin_date, dots_taken, activities_done, notes? }`. Idempotent — calling multiple times per day replaces the record. |
 | `POST` | `/health-plans/:id/milestone` | Link a biomarker scan to a milestone slot |
 
 ### Coach
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/coach-client-plans` | All active plans for a coach's clients (`?coach_id=N`) |
+| `GET` | `/coach-client-plans` | All active plans for a coach's clients |
 
 ---
 
@@ -373,16 +390,13 @@ All endpoints require the standard `Authorization: Bearer <token>` header.
 | Component | File | Role |
 |---|---|---|
 | DB migration | `src/schemas/migration_health_plans.sql` | All 4 tables, indexes, triggers, 6 seed templates |
-| Migration runner | `temp/run-migration-health-plans.js` | One-shot runner with verification output |
-| API handlers | `src/functions/worker/index.js` | All 11 handlers + route registrations + plan context in chat |
-| Chat — casual | `src/functions/worker/prompts/chat/casual.js` | Plan snippet in casual conversation |
-| Chat — biomarker | `src/functions/worker/prompts/chat/biomarker.js` | Plan goal in biomarker analysis |
-| Chat — nutrition | `src/functions/worker/prompts/chat/nutrition.js` | Plan goal in nutrition/Dots advice |
-| Miniapp Plans tab | `src/mini/nano-miniapp/pages/main/main.js` | Plans tab logic, all action methods |
-| Miniapp Plans UI | `src/mini/nano-miniapp/pages/main/main.wxml` | Plans tab, detail sheet, browse sheet, tab bar |
-| Miniapp Plans CSS | `src/mini/nano-miniapp/pages/main/main.wxss` | Plans tab styles (appended) |
-| Plans icon | `src/mini/nano-miniapp/assets/icons/plans.svg` | Target/crosshair icon |
+| daily_tasks migration | `temp/migration_add_daily_tasks.sql` | Adds `daily_tasks` JSONB column to `health_plan_templates` |
+| Migration runner | `temp/run-migration-health-plans.js` | One-shot runner for initial schema |
+| daily_tasks runner | `temp/run-migration-daily-tasks.js` | One-shot runner for daily_tasks column |
+| API handlers | `src/functions/worker/index.js` | All 11 handlers + plan context in chat |
+| Chat prompts | `src/functions/worker/prompts/chat/` | casual.js, biomarker.js, nutrition.js |
+| Miniapp Plans tab | `src/mini/nano-miniapp/pages/main/main.js` | Plans tab logic, task handlers |
+| Miniapp Plans UI | `src/mini/nano-miniapp/pages/main/main.wxml` | Plan cards, task chips, daily bar, weight + questions modals, detail sheet, browse sheet |
+| Miniapp Plans CSS | `src/mini/nano-miniapp/pages/main/main.wxss` | All plans tab styles including task chips, daily bar, modals |
 | Coach panel | `src/mini/nano-miniapp/pages/coach/coach.js` | Plans sub-tab in client detail |
-| Coach panel UI | `src/mini/nano-miniapp/pages/coach/coach.wxml` | Plans panel with recommend + custom plan forms |
-| Coach panel CSS | `src/mini/nano-miniapp/pages/coach/coach.wxss` | Plans panel styles (appended) |
-| Admin panel | `src/web/admin-panel/src/App.jsx` | `HealthPlansTab` component, NAV entry, `fetchData` |
+| Admin panel | `src/web/admin-panel/src/App.jsx` | `HealthPlansTab` component — templates CRUD, daily tasks config, user plans view |

@@ -700,6 +700,7 @@ Page({
     planWeightOpen: false,
     planWeightInput: '',
     planWeightPlanId: null,
+    planWeightKeyboard: 0,
     planQuestionsOpen: false,
     planQuestionsData: { energy: 3, sleep: 3, mood: 3 },
     planQuestionsPlanId: null,
@@ -2057,7 +2058,15 @@ Page({
   },
 
   closeWeightTask() {
-    this.setData({ planWeightOpen: false })
+    this.setData({ planWeightOpen: false, planWeightKeyboard: 0 })
+  },
+
+  handleWeightFocus(e) {
+    this.setData({ planWeightKeyboard: e.detail.height || 0 })
+  },
+
+  handleWeightBlur() {
+    this.setData({ planWeightKeyboard: 0 })
   },
 
   openQuestionsTask(planId) {

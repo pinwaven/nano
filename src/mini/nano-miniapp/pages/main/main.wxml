@@ -501,49 +501,50 @@
           <view style="height: 48rpx;"></view>
         </scroll-view>
 
-        <!-- Weight entry modal -->
-        <view wx:if="{{planWeightOpen}}" class="modal-overlay" catchtouchmove="noop">
-          <view class="modal-sheet" catchtap="noop">
-            <text class="modal-title">{{t.taskWeightTitle}}</text>
-            <input class="modal-input" type="digit" placeholder="{{t.taskWeightPlaceholder}}"
-                   value="{{planWeightInput}}" bindinput="handleWeightInput" />
-            <view class="modal-actions">
-              <view class="modal-btn modal-btn-cancel" bindtap="closeWeightTask"><text>{{t.taskWeightCancel}}</text></view>
-              <view class="modal-btn modal-btn-confirm" bindtap="handleWeightSubmit"><text>{{t.taskWeightConfirm}}</text></view>
-            </view>
-          </view>
-        </view>
-
-        <!-- Daily questions modal -->
-        <view wx:if="{{planQuestionsOpen}}" class="modal-overlay" catchtouchmove="noop">
-          <view class="modal-sheet" catchtap="noop">
-            <text class="modal-title">{{t.taskQuestionsTitle}}</text>
-            <view class="q-row">
-              <text class="q-label">{{t.taskQEnergy}}</text>
-              <slider min="1" max="5" step="1" value="{{planQuestionsData.energy}}" show-value
-                      bindchange="handleQuestionChange" data-key="energy" block-size="20" activeColor="#6375EC" />
-            </view>
-            <view class="q-row">
-              <text class="q-label">{{t.taskQSleep}}</text>
-              <slider min="1" max="5" step="1" value="{{planQuestionsData.sleep}}" show-value
-                      bindchange="handleQuestionChange" data-key="sleep" block-size="20" activeColor="#6375EC" />
-            </view>
-            <view class="q-row">
-              <text class="q-label">{{t.taskQMood}}</text>
-              <slider min="1" max="5" step="1" value="{{planQuestionsData.mood}}" show-value
-                      bindchange="handleQuestionChange" data-key="mood" block-size="20" activeColor="#6375EC" />
-            </view>
-            <view class="modal-actions">
-              <view class="modal-btn modal-btn-cancel" bindtap="closeQuestionsTask"><text>{{t.taskQCancel}}</text></view>
-              <view class="modal-btn modal-btn-confirm" bindtap="handleQuestionsSubmit"><text>{{t.taskQSubmit}}</text></view>
-            </view>
-          </view>
-        </view>
-
       </block>
 
     </view>
     <!-- end PLANS -->
+
+    <!-- Weight entry modal -->
+    <view wx:if="{{planWeightOpen}}" class="modal-overlay" catchtouchmove="noop">
+      <view class="modal-sheet" catchtap="noop" style="margin-bottom: {{planWeightKeyboard}}px;">
+        <text class="modal-title">{{t.taskWeightTitle}}</text>
+        <input class="modal-input" type="digit" placeholder="{{t.taskWeightPlaceholder}}"
+               value="{{planWeightInput}}" bindinput="handleWeightInput"
+               adjust-position="{{false}}" bindfocus="handleWeightFocus" bindblur="handleWeightBlur" />
+        <view class="modal-actions">
+          <view class="modal-btn modal-btn-cancel" bindtap="closeWeightTask"><text>{{t.taskWeightCancel}}</text></view>
+          <view class="modal-btn modal-btn-confirm" bindtap="handleWeightSubmit"><text>{{t.taskWeightConfirm}}</text></view>
+        </view>
+      </view>
+    </view>
+
+    <!-- Daily questions modal -->
+    <view wx:if="{{planQuestionsOpen}}" class="modal-overlay" catchtouchmove="noop">
+      <view class="modal-sheet" catchtap="noop">
+        <text class="modal-title">{{t.taskQuestionsTitle}}</text>
+        <view class="q-row">
+          <text class="q-label">{{t.taskQEnergy}}</text>
+          <slider min="1" max="5" step="1" value="{{planQuestionsData.energy}}" show-value
+                  bindchange="handleQuestionChange" data-key="energy" block-size="20" activeColor="#6375EC" />
+        </view>
+        <view class="q-row">
+          <text class="q-label">{{t.taskQSleep}}</text>
+          <slider min="1" max="5" step="1" value="{{planQuestionsData.sleep}}" show-value
+                  bindchange="handleQuestionChange" data-key="sleep" block-size="20" activeColor="#6375EC" />
+        </view>
+        <view class="q-row">
+          <text class="q-label">{{t.taskQMood}}</text>
+          <slider min="1" max="5" step="1" value="{{planQuestionsData.mood}}" show-value
+                  bindchange="handleQuestionChange" data-key="mood" block-size="20" activeColor="#6375EC" />
+        </view>
+        <view class="modal-actions">
+          <view class="modal-btn modal-btn-cancel" bindtap="closeQuestionsTask"><text>{{t.taskQCancel}}</text></view>
+          <view class="modal-btn modal-btn-confirm" bindtap="handleQuestionsSubmit"><text>{{t.taskQSubmit}}</text></view>
+        </view>
+      </view>
+    </view>
 
     <!-- Plan Detail Sheet -->
     <view wx:if="{{planDetailOpen}}" class="overlay-mask" catchtouchmove="noop">
