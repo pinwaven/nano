@@ -983,7 +983,7 @@
       <image class="tab-icon-img" src="/assets/icons/dots.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabDots}}</text>
     </view>
-    <view class="tab-btn {{tab === 'store' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="store">
+    <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'store' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="store">
       <view wx:if="{{tab === 'store'}}" class="tab-line"></view>
       <image class="tab-icon-img" src="/assets/icons/store.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabStore}}</text>
