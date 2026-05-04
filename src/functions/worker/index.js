@@ -1434,26 +1434,27 @@ async function handlePostUsers(body) {
 
 async function handlePutUser(user_id, body) {
     const { nickname, phone, email, gender, birth_date, language, coach_id, channel_id, bio_data, roles, avatar_url } = body;
+    // channel_id uses COALESCE so a missing/null value in the request never overwrites an existing assignment
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (bio_data && roles) {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, bio_data = bio_data || $9, roles=$10, avatar_url=COALESCE($11, avatar_url) WHERE user_id=$12`,
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), bio_data = bio_data || $9, roles=$10, avatar_url=COALESCE($11, avatar_url) WHERE user_id=$12`,
                 [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), roles, avatar_url || null, user_id]
             );
         } else if (bio_data) {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, bio_data = bio_data || $9, avatar_url=COALESCE($10, avatar_url) WHERE user_id=$11`,
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), bio_data = bio_data || $9, avatar_url=COALESCE($10, avatar_url) WHERE user_id=$11`,
                 [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), avatar_url || null, user_id]
             );
         } else if (roles) {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, roles=$9, avatar_url=COALESCE($10, avatar_url) WHERE user_id=$11`,
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), roles=$9, avatar_url=COALESCE($10, avatar_url) WHERE user_id=$11`,
                 [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, roles, avatar_url || null, user_id]
             );
         } else {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=$8, avatar_url=COALESCE($9, avatar_url) WHERE user_id=$10`,
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), avatar_url=COALESCE($9, avatar_url) WHERE user_id=$10`,
                 [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, avatar_url || null, user_id]
             );
         }
@@ -1683,7 +1684,57 @@ async function handleWxLogin(body) {
     );
 
     if (existing.rows.length > 0) {
-        const { channel_name, channel_logo_url, ...user } = existing.rows[0];
+        let existingRow = existing.rows[0];
+
+        // Existing user with no channel + invite code → assign channel from invite
+        if (!existingRow.channel_id && invite_code) {
+            const invRes = await pool.query(
+                `SELECT id, channel_id, created_by, max_uses, use_count FROM invitations
+                 WHERE code = $1 AND is_active = TRUE AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1`,
+                [invite_code.toUpperCase()]
+            );
+            if (invRes.rows.length > 0) {
+                const inviteRecord = invRes.rows[0];
+                let newChannelId = inviteRecord.channel_id;
+                if (!newChannelId && inviteRecord.created_by) {
+                    const coachByUser = await pool.query('SELECT channel_id FROM coaches WHERE user_id = $1 LIMIT 1', [inviteRecord.created_by]);
+                    if (coachByUser.rows.length > 0) newChannelId = coachByUser.rows[0].channel_id;
+                }
+                if (newChannelId) {
+                    await pool.query(
+                        `UPDATE users SET channel_id = $1, invited_by_invitation_id = COALESCE(invited_by_invitation_id, $2) WHERE user_id = $3`,
+                        [newChannelId, inviteRecord.id, existingRow.user_id]
+                    );
+                    await pool.query(
+                        `UPDATE invitations SET use_count = use_count + 1 WHERE id = $1 AND (max_uses IS NULL OR use_count < max_uses)`,
+                        [inviteRecord.id]
+                    );
+                    await pool.query(
+                        'INSERT INTO invitation_uses (invitation_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                        [inviteRecord.id, existingRow.user_id]
+                    );
+                    // Re-fetch with updated channel info
+                    const refreshed = await pool.query(
+                        `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
+                                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
+                                p.name AS coach_name,
+                                c.name AS channel_name, c.logo_url AS channel_logo_url
+                         FROM users u
+                         LEFT JOIN coaches p ON u.coach_id = p.id
+                         LEFT JOIN channels c ON u.channel_id = c.id
+                         LEFT JOIN (
+                             SELECT DISTINCT ON (user_id) user_id, bio_age
+                             FROM biomarkers ORDER BY user_id, tested_at DESC
+                         ) b ON u.user_id = b.user_id
+                         WHERE u.user_id = $1 LIMIT 1`,
+                        [existingRow.user_id]
+                    );
+                    if (refreshed.rows.length > 0) existingRow = refreshed.rows[0];
+                }
+            }
+        }
+
+        const { channel_name, channel_logo_url, ...user } = existingRow;
         const channel = channel_name ? { name: channel_name, logo_url: channel_logo_url } : null;
         // If user is a coach, fetch their coach record
         let coach = null;
@@ -2753,7 +2804,7 @@ async function handlePostHealthAdvice(body) {
         const user = userResult.rows[0];
         const user_id = user.user_id;
 
-        const [bioResult, dotsResult] = await Promise.all([
+        const [bioResult, dotsResult, plansResult] = await Promise.all([
             pool.query(
                 `SELECT bio_age, data FROM biomarkers
                  WHERE user_id = $1 AND test_type = 'kino_chip'
@@ -2763,6 +2814,20 @@ async function handlePostHealthAdvice(body) {
             pool.query(
                 `SELECT key_name, name, name_zh, sub_age_target, description, timing
                  FROM dots ORDER BY id ASC`
+            ),
+            pool.query(
+                `SELECT hp.id, hp.plan_type, hp.start_date, hp.duration_weeks,
+                        COALESCE(hpt.name_en, hp.custom_name_en) AS name_en,
+                        COALESCE(hpt.name_zh, hp.custom_name_zh) AS name_zh,
+                        COALESCE(hpt.goal_en, hp.custom_goal_en) AS goal_en,
+                        COALESCE(hpt.goal_zh, hp.custom_goal_zh) AS goal_zh,
+                        COALESCE(hpt.target_sub_ages, '{}') AS target_sub_ages,
+                        (SELECT COUNT(*) FROM health_plan_checkins WHERE plan_id = hp.id) AS checkin_count
+                 FROM health_plans hp
+                 LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
+                 WHERE hp.user_id = $1 AND hp.status = 'active'
+                 ORDER BY hp.plan_type ASC LIMIT 2`,
+                [user_id]
             ),
         ]);
 
@@ -2800,6 +2865,15 @@ async function handlePostHealthAdvice(body) {
             dotsByDimension,
             healthConditions,
             healthConditionsOther,
+            active_health_plans: (plansResult.rows || []).map(p => ({
+                plan_type: p.plan_type,
+                name: isZh ? p.name_zh : p.name_en,
+                goal: isZh ? p.goal_zh : p.goal_en,
+                target_sub_ages: p.target_sub_ages || [],
+                weeks_elapsed: Math.max(0, Math.floor((Date.now() - new Date(p.start_date).getTime()) / (7 * 86400000))),
+                total_weeks: p.duration_weeks,
+                checkin_count: parseInt(p.checkin_count || 0, 10),
+            })),
         });
 
         const userMsg = isZh
