@@ -5510,6 +5510,11 @@ function AdminAccountsTab({ accounts, onRefresh }) {
 }
 
 const SUB_AGES = ['CellularAge', 'MetabolicAge', 'MicroVascularAge', 'ResilienceAge'];
+const DEFAULT_DAILY_TASKS = [
+  { key: 'dots',      label_zh: '服用原粒', label_en: 'Dots',      enabled: true },
+  { key: 'weight',    label_zh: '记录体重', label_en: 'Weight',    enabled: true },
+  { key: 'questions', label_zh: '每日问答', label_en: 'Questions', enabled: true },
+];
 
 function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
   const { lang } = useContext(LangCtx);
@@ -5538,7 +5543,7 @@ function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
   const parseJsonArr = (v) => { try { return Array.isArray(v) ? v : JSON.parse(v || '[]'); } catch { return []; } };
 
   const openAdd = () => {
-    setForm({ key_name: '', name_zh: '', name_en: '', desc_zh: '', desc_en: '', goal_zh: '', goal_en: '', duration_weeks: 4, sort_order: 0, target_sub_ages: [], recommended_dot_ids: [], milestones: [], reminders: [], is_active: true });
+    setForm({ key_name: '', name_zh: '', name_en: '', desc_zh: '', desc_en: '', goal_zh: '', goal_en: '', duration_weeks: 4, sort_order: 0, target_sub_ages: [], recommended_dot_ids: [], milestones: [], reminders: [], daily_tasks: DEFAULT_DAILY_TASKS, is_active: true });
     setEditingTpl(null);
     setModalTab('basics');
     setModal('add');
@@ -5551,6 +5556,11 @@ function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
       recommended_dot_ids: tpl.recommended_dot_ids || [],
       milestones: parseJsonArr(tpl.milestones),
       reminders: parseJsonArr(tpl.reminders),
+      daily_tasks: (() => {
+        const saved = parseJsonArr(tpl.daily_tasks);
+        if (saved.length === 0) return DEFAULT_DAILY_TASKS;
+        return DEFAULT_DAILY_TASKS.map(def => saved.find(s => s.key === def.key) || def);
+      })(),
     });
     setEditingTpl(tpl);
     setModalTab('basics');
@@ -5573,10 +5583,14 @@ function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
     setForm(f => ({ ...f, recommended_dot_ids: f.recommended_dot_ids.includes(id) ? f.recommended_dot_ids.filter(d => d !== id) : [...f.recommended_dot_ids, id] }));
   };
 
+  const updateDailyTask = (key, field, value) => {
+    setForm(f => ({ ...f, daily_tasks: (f.daily_tasks || DEFAULT_DAILY_TASKS).map(t => t.key === key ? { ...t, [field]: value } : t) }));
+  };
+
   const save = async () => {
     setSaving(true);
     try {
-      const payload = { ...form, milestones: form.milestones || [], reminders: form.reminders || [] };
+      const payload = { ...form, milestones: form.milestones || [], reminders: form.reminders || [], daily_tasks: form.daily_tasks || DEFAULT_DAILY_TASKS };
       if (modal === 'add') await axios.post('/api/health-plan-templates', payload);
       else await axios.put(`/api/health-plan-templates/${editingTpl.id}`, payload);
       setModal(null);
@@ -5850,6 +5864,33 @@ function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
                           style={{ fontSize: 11 }}>
                           {d.key_name} · {isZh && d.name_zh ? d.name_zh : d.name}
                         </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="form-section">
+                    <div className="form-section-title">{isZh ? '每日任务' : 'Daily Tasks'}</div>
+                    <p className="form-section-hint" style={{ marginBottom: 10 }}>
+                      {isZh ? '配置用户每日需完成的打卡任务，显示在方案卡片上。' : 'Configure daily check-in tasks shown on the plan card for users in this plan.'}
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {(form.daily_tasks || DEFAULT_DAILY_TASKS).map(task => (
+                        <div key={task.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                          <input type="checkbox" checked={!!task.enabled}
+                            onChange={e => updateDailyTask(task.key, 'enabled', e.target.checked)}
+                            style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />
+                          <span style={{ width: 80, fontSize: 12, color: 'var(--text2)', flexShrink: 0 }}>
+                            {task.key === 'dots' ? '💊 dots' : task.key === 'weight' ? '⚖️ weight' : '📋 questions'}
+                          </span>
+                          <input type="text" value={task.label_zh || ''} placeholder={isZh ? '中文标签' : 'Chinese label'}
+                            onChange={e => updateDailyTask(task.key, 'label_zh', e.target.value)}
+                            disabled={!task.enabled}
+                            className="si-input" style={{ flex: 1 }} />
+                          <input type="text" value={task.label_en || ''} placeholder={isZh ? '英文标签' : 'English label'}
+                            onChange={e => updateDailyTask(task.key, 'label_en', e.target.value)}
+                            disabled={!task.enabled}
+                            className="si-input" style={{ flex: 1 }} />
+                        </div>
                       ))}
                     </div>
                   </div>

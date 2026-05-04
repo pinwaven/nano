@@ -1,0 +1,168 @@
+<view class="uh-root {{theme === 'light' ? 'theme-light' : ''}}">
+  <scroll-view class="health-scroll" scroll-y="true">
+
+    <!-- Guest lock -->
+    <view wx:if="{{isGuest}}" class="guest-lock-card" bindtap="onGuestTap">
+      <text class="guest-lock-icon">🔬</text>
+      <text class="guest-lock-title">{{t.guestHealthCta}}</text>
+      <view class="guest-lock-btn"><text>{{t.guestJoinBtn}}</text></view>
+    </view>
+
+    <view wx:elif="{{bioLoading}}" class="center-wrap">
+      <view class="pulse-dot"></view>
+      <view class="pulse-dot"></view>
+      <view class="pulse-dot"></view>
+    </view>
+
+    <block wx:else>
+
+      <!-- Hero -->
+      <view class="health-hero">
+        <view class="health-hero-bg"></view>
+
+        <!-- Avatar -->
+        <view class="health-avatar-container">
+          <view class="health-avatar-wrap">
+            <image wx:if="{{user.avatar_url}}" class="health-avatar-img" src="{{user.avatar_url}}" mode="aspectFill" />
+            <view wx:else class="health-avatar-placeholder">
+              <text class="health-avatar-letter">{{avatarLetter}}</text>
+            </view>
+          </view>
+          <button wx:if="{{mode === 'self'}}" class="health-avatar-btn" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar"></button>
+          <view wx:if="{{avatarUpdating}}" class="health-avatar-ring"></view>
+        </view>
+
+        <view wx:if="{{bAge || cAge}}" class="bio-row">
+          <view class="bio-chip bio-chip-dim">
+            <text class="bio-num bio-num-chrono">{{cAge || '—'}}</text>
+            <text class="bio-unit">{{t.chronoAge}}</text>
+          </view>
+          <view class="bio-chip bio-chip-primary">
+            <text class="bio-num bio-num-primary" style="color: {{bAgeColor}}">{{bAge || '—'}}</text>
+            <text class="bio-unit">{{t.bioAge}}</text>
+          </view>
+        </view>
+
+        <!-- Bio-age comparison bars -->
+        <view wx:if="{{subAgeList.length > 0}}" class="bio-bars">
+          <view wx:for="{{subAgeList}}" wx:key="key" class="bio-bar-item">
+            <view class="bio-bar-header">
+              <text class="bio-bar-label">{{item.label}}</text>
+              <text class="bio-bar-val" style="color: {{item.color}}">{{item.value}}</text>
+            </view>
+            <view class="bio-bar-track">
+              <view class="bio-bar-fill" style="width: {{item.score}}%; background: {{item.color}};"></view>
+              <view class="bio-bar-ref"></view>
+            </view>
+          </view>
+        </view>
+
+        <!-- Sub-age detail cards -->
+        <view wx:if="{{subAgeList.length > 0}}" class="sub-age-grid">
+          <view wx:for="{{subAgeList}}" wx:key="key" class="sub-age-card">
+            <text class="sub-age-val" style="color: {{item.color}}">{{item.value}}</text>
+            <text class="sub-age-label">{{item.label}}</text>
+            <text class="sub-age-desc">{{item.desc}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- Profile (self mode only) -->
+      <view wx:if="{{mode === 'self'}}" class="health-section">
+        <view class="section-title-row">
+          <text class="section-title">{{t.profile}}</text>
+          <view class="profile-toggle" bindtap="toggleProfile">
+            <text class="profile-toggle-text">{{profileExpanded ? t.showLess : t.showMore}}</text>
+            <text class="profile-toggle-arrow">{{profileExpanded ? '▲' : '▼'}}</text>
+          </view>
+        </view>
+        <view class="info-grid">
+          <block wx:for="{{profileInfoVisible}}" wx:key="label">
+            <text class="info-key">{{item.label}}</text>
+            <view wx:if="{{item.hasSparkline}}" class="weight-val-row">
+              <text class="info-val">{{item.val}}</text>
+              <canvas wx:if="{{weightHistory.length > 1}}" canvas-id="uh-weight-sparkline" class="weight-sparkline" bindtap="openWeightChart"></canvas>
+            </view>
+            <text wx:else class="info-val">{{item.val}}</text>
+          </block>
+        </view>
+        <view wx:if="{{profileExpanded}}" class="info-grid info-grid-extra">
+          <block wx:for="{{profileInfoExtra}}" wx:key="label">
+            <text class="info-key">{{item.label}}</text>
+            <text class="info-val">{{item.val}}</text>
+          </block>
+        </view>
+      </view>
+
+      <!-- Health Conditions (self mode only) -->
+      <view wx:if="{{mode === 'self' && hasConditionsData}}" class="health-section">
+        <text class="section-title">{{t.healthConditions}}</text>
+        <view wx:if="{{healthConditionsList.length > 0}}" class="cond-chips">
+          <view wx:for="{{healthConditionsList}}" wx:key="key" class="health-cond-chip">
+            <text>{{item.label}}</text>
+          </view>
+        </view>
+        <text wx:else class="health-empty">{{t.noConditions}}</text>
+      </view>
+
+      <!-- Latest Biomarkers -->
+      <view class="health-section">
+        <text class="section-title">{{t.latestBm}}</text>
+        <view wx:if="{{hasBm}}" class="bm-list">
+          <view wx:for="{{bmList}}" wx:key="key" class="bm-row">
+            <view class="bm-dot" style="background: {{item.color}}"></view>
+            <text class="bm-label">{{item.label}}</text>
+            <text class="bm-val" style="color: {{item.color}}">{{item.value !== null ? item.value : '—'}}</text>
+            <text class="bm-unit">{{item.unit}}</text>
+          </view>
+        </view>
+        <text wx:else class="health-empty">{{t.noBmData}}</text>
+      </view>
+
+      <!-- Trends -->
+      <view class="health-section">
+        <view class="section-title-row">
+          <text class="section-title">{{t.trends}}</text>
+          <view wx:if="{{recordCount > 0}}" class="section-badge">
+            <text>{{recordCount}} {{t.tests}}</text>
+          </view>
+        </view>
+        <view wx:if="{{recordCount > 0}}" class="trend-grid">
+          <view wx:for="{{trendList}}" wx:key="key" class="trend-card">
+            <text class="trend-label">{{item.label}}</text>
+            <view class="trend-val-row">
+              <text class="trend-val" style="color: {{item.color}}">{{item.lastVal !== null ? item.lastVal : '—'}}</text>
+              <text class="trend-unit">{{item.unit}}</text>
+            </view>
+            <view wx:if="{{item.sparkBars.length > 1}}" class="spark-row">
+              <view
+                wx:for="{{item.sparkBars}}"
+                wx:for-item="bar"
+                wx:key="index"
+                class="spark-bar {{bar.empty ? 'spark-bar-empty' : ''}}"
+                style="height: {{bar.h}}rpx; background: {{bar.color}};"
+              ></view>
+            </view>
+          </view>
+        </view>
+        <text wx:else class="health-empty">{{t.noHistory}}</text>
+      </view>
+
+      <view style="height: 32px;"></view>
+    </block>
+
+  </scroll-view>
+
+  <!-- Weight Chart Modal (self mode only) -->
+  <view wx:if="{{weightChartOpen && mode === 'self'}}" class="wchart-overlay" bindtap="closeWeightChart">
+    <view class="wchart-sheet" catchtap="noop">
+      <view class="wchart-handle"></view>
+      <view class="wchart-header">
+        <text class="wchart-title">{{t.weightTrend}}</text>
+        <view class="wchart-close" bindtap="closeWeightChart"><text>✕</text></view>
+      </view>
+      <canvas canvas-id="uh-weight-chart-full" class="weight-chart-full" style="width:{{weightChartW}}px;height:200px;"></canvas>
+    </view>
+  </view>
+
+</view>

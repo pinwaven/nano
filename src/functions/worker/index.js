@@ -3893,7 +3893,7 @@ async function handleGetHealthPlanTemplates(query) {
 async function handlePostHealthPlanTemplate(body) {
     const { key_name, name_zh, name_en, desc_zh, desc_en, goal_zh, goal_en,
             duration_weeks, target_sub_ages, recommended_dot_ids, activity_guidance,
-            milestones, reminders, sort_order, channel_id, created_by } = body || {};
+            milestones, reminders, daily_tasks, sort_order, channel_id, created_by } = body || {};
     if (!key_name || !name_zh || !name_en) return { statusCode: 400, success: false, error: 'key_name, name_zh, name_en required' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -3901,8 +3901,8 @@ async function handlePostHealthPlanTemplate(body) {
             `INSERT INTO health_plan_templates
              (key_name, name_zh, name_en, desc_zh, desc_en, goal_zh, goal_en,
               duration_weeks, target_sub_ages, recommended_dot_ids, activity_guidance, milestones, reminders,
-              sort_order, channel_id, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+              daily_tasks, sort_order, channel_id, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
              RETURNING *`,
             [key_name, name_zh, name_en, desc_zh || null, desc_en || null, goal_zh || null, goal_en || null,
              duration_weeks || 4, target_sub_ages || null,
@@ -3910,6 +3910,7 @@ async function handlePostHealthPlanTemplate(body) {
              JSON.stringify(activity_guidance || {}),
              JSON.stringify(milestones || []),
              JSON.stringify(reminders || []),
+             JSON.stringify(daily_tasks || []),
              sort_order || 0, channel_id || null, created_by || null]
         );
         console.log(JSON.stringify({ level: 'INFO', msg: 'handlePostHealthPlanTemplate', key_name }));
@@ -3923,16 +3924,16 @@ async function handlePostHealthPlanTemplate(body) {
 async function handlePutHealthPlanTemplate(id, body) {
     const { name_zh, name_en, desc_zh, desc_en, goal_zh, goal_en,
             duration_weeks, target_sub_ages, recommended_dot_ids, activity_guidance,
-            milestones, reminders, sort_order, is_active } = body || {};
+            milestones, reminders, daily_tasks, sort_order, is_active } = body || {};
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
             `UPDATE health_plan_templates
              SET name_zh=$1, name_en=$2, desc_zh=$3, desc_en=$4, goal_zh=$5, goal_en=$6,
                  duration_weeks=$7, target_sub_ages=$8, recommended_dot_ids=$9,
-                 activity_guidance=$10, milestones=$11, reminders=$12, sort_order=$13,
-                 is_active=COALESCE($14, is_active), updated_at=NOW()
-             WHERE id=$15
+                 activity_guidance=$10, milestones=$11, reminders=$12, daily_tasks=$13,
+                 sort_order=$14, is_active=COALESCE($15, is_active), updated_at=NOW()
+             WHERE id=$16
              RETURNING *`,
             [name_zh, name_en, desc_zh || null, desc_en || null, goal_zh || null, goal_en || null,
              duration_weeks, target_sub_ages || null,
@@ -3940,6 +3941,7 @@ async function handlePutHealthPlanTemplate(id, body) {
              JSON.stringify(activity_guidance || {}),
              JSON.stringify(milestones || []),
              JSON.stringify(reminders || []),
+             JSON.stringify(daily_tasks || []),
              sort_order || 0, is_active !== undefined ? is_active : null, id]
         );
         if (result.rows.length === 0) return { statusCode: 404, success: false, error: 'Template not found' };
@@ -3982,9 +3984,10 @@ async function handleGetHealthPlans(query) {
                     hpt.key_name AS template_key, hpt.name_zh, hpt.name_en,
                     hpt.desc_zh, hpt.desc_en, hpt.goal_zh, hpt.goal_en,
                     hpt.target_sub_ages, hpt.recommended_dot_ids, hpt.activity_guidance, hpt.milestones AS template_milestones,
-                    hpt.duration_weeks AS template_duration_weeks,
+                    hpt.duration_weeks AS template_duration_weeks, hpt.daily_tasks,
                     (SELECT COUNT(*) FROM health_plan_checkins hpc WHERE hpc.plan_id = hp.id) AS checkin_count,
                     (SELECT COUNT(*) FROM health_plan_checkins hpc WHERE hpc.plan_id = hp.id AND hpc.checkin_date = CURRENT_DATE) AS checked_in_today,
+                    (SELECT row_to_json(t) FROM (SELECT dots_taken, activities_done FROM health_plan_checkins WHERE plan_id = hp.id AND checkin_date = CURRENT_DATE LIMIT 1) t) AS today_checkin,
                     u.nickname AS user_nickname
              FROM health_plans hp
              LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id

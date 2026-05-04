@@ -455,9 +455,23 @@
               <text class="plan-meta-item">{{t.plansAdherence}}: {{item.adherencePct}}%</text>
               <text class="plan-meta-item">{{item.weeksDone}}/{{item.totalWeeks}} {{t.plansWeeks}}</text>
             </view>
-            <view class="plan-checkin-btn{{item.checkedInToday ? ' plan-checkin-done' : ''}}"
-                  catchtap="handlePlanCheckin" data-plan-id="{{item.id}}">
-              <text class="plan-checkin-text">{{item.checkedInToday ? t.plansCheckinDone : t.plansCheckin}}</text>
+            <!-- Daily task chips + progress bar -->
+            <view class="plan-daily-section">
+              <view class="plan-daily-tasks">
+                <view wx:for="{{item.todayTasks}}" wx:key="key" wx:for-item="task"
+                      class="plan-task-chip {{task.done ? 'plan-task-done' : ''}}"
+                      catchtap="handlePlanTask" data-plan-id="{{item.id}}" data-task="{{task.key}}">
+                  <text class="plan-task-label">{{lang === 'zh' ? task.labelZh : task.labelEn}}</text>
+                  <text class="plan-task-check">{{task.done ? '✓' : '○'}}</text>
+                </view>
+              </view>
+              <view class="plan-daily-bar-row">
+                <view class="plan-daily-bar-track">
+                  <view class="plan-daily-bar-fill {{item.todayDoneCount === item.todayTasks.length ? 'plan-daily-complete' : ''}}"
+                        style="width: {{item.todayProgressPct}}%;"></view>
+                </view>
+                <text class="plan-daily-count">{{item.todayDoneCount}}/{{item.todayTasks.length}} {{t.todayProgress}}</text>
+              </view>
             </view>
           </view>
 
@@ -486,6 +500,46 @@
 
           <view style="height: 48rpx;"></view>
         </scroll-view>
+
+        <!-- Weight entry modal -->
+        <view wx:if="{{planWeightOpen}}" class="modal-overlay" catchtouchmove="noop">
+          <view class="modal-sheet" catchtap="noop">
+            <text class="modal-title">{{t.taskWeightTitle}}</text>
+            <input class="modal-input" type="digit" placeholder="{{t.taskWeightPlaceholder}}"
+                   value="{{planWeightInput}}" bindinput="handleWeightInput" />
+            <view class="modal-actions">
+              <view class="modal-btn modal-btn-cancel" bindtap="closeWeightTask"><text>{{t.taskWeightCancel}}</text></view>
+              <view class="modal-btn modal-btn-confirm" bindtap="handleWeightSubmit"><text>{{t.taskWeightConfirm}}</text></view>
+            </view>
+          </view>
+        </view>
+
+        <!-- Daily questions modal -->
+        <view wx:if="{{planQuestionsOpen}}" class="modal-overlay" catchtouchmove="noop">
+          <view class="modal-sheet" catchtap="noop">
+            <text class="modal-title">{{t.taskQuestionsTitle}}</text>
+            <view class="q-row">
+              <text class="q-label">{{t.taskQEnergy}}</text>
+              <slider min="1" max="5" step="1" value="{{planQuestionsData.energy}}" show-value
+                      bindchange="handleQuestionChange" data-key="energy" block-size="20" activeColor="#6375EC" />
+            </view>
+            <view class="q-row">
+              <text class="q-label">{{t.taskQSleep}}</text>
+              <slider min="1" max="5" step="1" value="{{planQuestionsData.sleep}}" show-value
+                      bindchange="handleQuestionChange" data-key="sleep" block-size="20" activeColor="#6375EC" />
+            </view>
+            <view class="q-row">
+              <text class="q-label">{{t.taskQMood}}</text>
+              <slider min="1" max="5" step="1" value="{{planQuestionsData.mood}}" show-value
+                      bindchange="handleQuestionChange" data-key="mood" block-size="20" activeColor="#6375EC" />
+            </view>
+            <view class="modal-actions">
+              <view class="modal-btn modal-btn-cancel" bindtap="closeQuestionsTask"><text>{{t.taskQCancel}}</text></view>
+              <view class="modal-btn modal-btn-confirm" bindtap="handleQuestionsSubmit"><text>{{t.taskQSubmit}}</text></view>
+            </view>
+          </view>
+        </view>
+
       </block>
 
     </view>

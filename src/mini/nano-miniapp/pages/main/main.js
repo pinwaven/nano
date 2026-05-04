@@ -53,7 +53,7 @@ const CART_SETS = [
 
 const T = {
   zh: {
-    tabChat: '对话', tabHealth: '健康', tabDots: '原粒', tabPlans: '方案', tabStore: '商城',
+    tabChat: '对话', tabHealth: '健康', tabDots: '原粒', tabPlans: '方案', tabStore: '补给',
     plansTitle: '健康方案',
     plansEmpty: '暂无进行中的健康方案',
     plansBrowse: '加入方案',
@@ -81,6 +81,13 @@ const T = {
     reminderSourceAi: 'AI',
     reminderRecurDaily: '每天',
     reminderRecurWeekly: '每周',
+    taskDots: '服用原粒', taskWeight: '记录体重', taskQuestions: '每日问答',
+    taskWeightTitle: '记录体重', taskWeightPlaceholder: '输入体重（公斤）',
+    taskWeightConfirm: '确认', taskWeightCancel: '取消',
+    taskQuestionsTitle: '每日问答',
+    taskQEnergy: '今天的精力如何？', taskQSleep: '昨晚睡眠如何？', taskQMood: '整体状态如何？',
+    taskQSubmit: '提交', taskQCancel: '取消',
+    todayProgress: '今日进度',
     logout: '退出',
     initMsg: '您好！我是 Nano，您的AI健康伴侣。今天有什么可以帮您的？',
     inputPh: '输入消息…',
@@ -105,7 +112,7 @@ const T = {
     cartridgeTitle: '原粒盒',
     noCartridges: '未插入原粒盒。请将原粒盒插入分配器。',
     simCartTitle: '选择套装',
-    simCartSubtitle: '测试模式 · 自动生成 NFC 标签并插入',
+    simCartSubtitle: '自动生成 NFC 标签并插入',
     simCartInserting: '正在插入…',
     simCartDone: '套装已插入！',
     simCartCancel: '取消',
@@ -116,7 +123,7 @@ const T = {
     obConditionsPrompt: '您是否曾被诊断/体检出以下方面的问题？（可多选）',
     obConditionsNone: '以上均无',
     obConditionsOtherPh: '请描述您的其他健康状况',
-    storeTitle: '健康商城',
+    storeTitle: '健康补给站',
     storeBuy: '立即预约',
     storeOrderSent: '订单已提交！我们的健康教练将尽快与您联系。',
     storeConfirmTitle: '确认订单',
@@ -227,6 +234,13 @@ const T = {
     reminderSourceAi: 'AI',
     reminderRecurDaily: 'Daily',
     reminderRecurWeekly: 'Weekly',
+    taskDots: 'Dots', taskWeight: 'Weight', taskQuestions: 'Questions',
+    taskWeightTitle: 'Log Weight', taskWeightPlaceholder: 'Enter weight (kg)',
+    taskWeightConfirm: 'Confirm', taskWeightCancel: 'Cancel',
+    taskQuestionsTitle: 'Daily Check-in',
+    taskQEnergy: "How's your energy today?", taskQSleep: 'How did you sleep?', taskQMood: 'How do you feel?',
+    taskQSubmit: 'Submit', taskQCancel: 'Cancel',
+    todayProgress: 'Today',
     logout: 'Logout',
     initMsg: 'Hello! I am Nano, your AI health companion. How can I help you today?',
     inputPh: 'Type a message…',
@@ -251,7 +265,7 @@ const T = {
     cartridgeTitle: 'Cartridges',
     noCartridges: 'No cartridges inserted. Insert cartridges into your dispenser.',
     simCartTitle: 'Choose a Set',
-    simCartSubtitle: 'Test mode · Auto-generates NFC tags and inserts',
+    simCartSubtitle: 'Auto-generates NFC tags and inserts',
     simCartInserting: 'Inserting…',
     simCartDone: 'Set inserted!',
     simCartCancel: 'Cancel',
@@ -682,6 +696,13 @@ Page({
     planSubTab: 'overview',
     planBrowseOpen: false,
     planCheckinBusy: false,
+    planTaskBusy: false,
+    planWeightOpen: false,
+    planWeightInput: '',
+    planWeightPlanId: null,
+    planQuestionsOpen: false,
+    planQuestionsData: { energy: 3, sleep: 3, mood: 3 },
+    planQuestionsPlanId: null,
     upcomingReminders: [],
     remindersLoading: false,
   },
@@ -1824,6 +1845,34 @@ Page({
           progressPct,
           adherencePct: Math.min(100, adherencePct),
           checkedInToday: parseInt(p.checked_in_today || 0, 10) > 0,
+          ...(() => {
+            const tc = p.today_checkin || null
+            const acts = Array.isArray(tc?.activities_done) ? tc.activities_done : []
+            const taskDone = {
+              dots:      () => tc?.dots_taken || false,
+              weight:    () => acts.includes('weight_logged'),
+              questions: () => acts.includes('daily_questions'),
+            }
+            const defaultTasks = [
+              { key: 'dots',      label_zh: '服用原粒', label_en: 'Dots',      enabled: true },
+              { key: 'weight',    label_zh: '记录体重', label_en: 'Weight',    enabled: true },
+              { key: 'questions', label_zh: '每日问答', label_en: 'Questions', enabled: true },
+            ]
+            const templateTasks = Array.isArray(p.daily_tasks) && p.daily_tasks.length > 0
+              ? p.daily_tasks : defaultTasks
+            const todayTasks = templateTasks
+              .filter(t => t.enabled)
+              .map(t => ({ key: t.key, labelZh: t.label_zh, labelEn: t.label_en, done: taskDone[t.key]?.() || false }))
+            const todayDoneCount = todayTasks.filter(tk => tk.done).length
+            const total = todayTasks.length || 1
+            return {
+              todayTasks,
+              todayDoneCount,
+              todayProgressPct: Math.round((todayDoneCount / total) * 100),
+              today_dots_taken: tc?.dots_taken || false,
+              today_activities: acts,
+            }
+          })(),
         }
       })
       const enrolledIds = new Set(plans.map(p => p.template_id))
@@ -1940,6 +1989,106 @@ Page({
     } finally {
       this.setData({ planCheckinBusy: false })
     }
+  },
+
+  async _upsertCheckin(planId, dots_taken, activities_done) {
+    const { user } = this.data
+    const today = new Date()
+    const pad = n => String(n).padStart(2, '0')
+    const checkin_date = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+    await this._req(`${BASE}/api/health-plans/${planId}/checkin`, 'POST', {
+      openid: user.user_id, checkin_date, dots_taken, activities_done,
+    })
+  },
+
+  handlePlanTask(e) {
+    if (this.data.isGuest) { this.openGuestSheet(); return }
+    if (this.data.planTaskBusy) return
+    const { planId, task } = e.currentTarget.dataset
+    if (task === 'dots')           this._doDotsTask(planId)
+    else if (task === 'weight')    this.openWeightTask(planId)
+    else if (task === 'questions') this.openQuestionsTask(planId)
+  },
+
+  async _doDotsTask(planId) {
+    const plan = this.data.activePlans.find(p => String(p.id) === String(planId))
+    if (!plan) return
+    this.setData({ planTaskBusy: true })
+    try {
+      await this._upsertCheckin(planId, !plan.today_dots_taken, plan.today_activities)
+      await this._loadPlans(this.data.user, this.data.lang)
+    } catch (err) {
+      wx.showToast({ title: err.message || 'Error', icon: 'none' })
+    } finally {
+      this.setData({ planTaskBusy: false })
+    }
+  },
+
+  openWeightTask(planId) {
+    this.setData({ planWeightOpen: true, planWeightInput: '', planWeightPlanId: planId })
+  },
+
+  handleWeightInput(e) {
+    this.setData({ planWeightInput: e.detail.value })
+  },
+
+  async handleWeightSubmit() {
+    const { planWeightInput, planWeightPlanId, user } = this.data
+    const w = parseFloat(planWeightInput)
+    if (!w || w < 10 || w > 500) {
+      wx.showToast({ title: user.language === 'zh' ? '请输入有效体重' : 'Enter a valid weight', icon: 'none' })
+      return
+    }
+    this.setData({ planTaskBusy: true })
+    try {
+      await this._req(`${BASE}/api/biomarkers`, 'POST', {
+        openid: user.user_id, test_type: 'body_composition', test_data: { weight: w },
+      })
+      const plan = this.data.activePlans.find(p => String(p.id) === String(planWeightPlanId))
+      const activities = [...(plan?.today_activities || []).filter(a => a !== 'weight_logged'), 'weight_logged']
+      await this._upsertCheckin(planWeightPlanId, plan?.today_dots_taken || false, activities)
+      this.setData({ planWeightOpen: false })
+      await this._loadPlans(user, this.data.lang)
+    } catch (err) {
+      wx.showToast({ title: err.message || 'Error', icon: 'none' })
+    } finally {
+      this.setData({ planTaskBusy: false })
+    }
+  },
+
+  closeWeightTask() {
+    this.setData({ planWeightOpen: false })
+  },
+
+  openQuestionsTask(planId) {
+    this.setData({ planQuestionsOpen: true, planQuestionsData: { energy: 3, sleep: 3, mood: 3 }, planQuestionsPlanId: planId })
+  },
+
+  handleQuestionChange(e) {
+    const key = e.currentTarget.dataset.key
+    const val = e.detail.value
+    const planQuestionsData = { ...this.data.planQuestionsData, [key]: val }
+    this.setData({ planQuestionsData })
+  },
+
+  async handleQuestionsSubmit() {
+    const { planQuestionsPlanId, user } = this.data
+    this.setData({ planTaskBusy: true })
+    try {
+      const plan = this.data.activePlans.find(p => String(p.id) === String(planQuestionsPlanId))
+      const activities = [...(plan?.today_activities || []).filter(a => a !== 'daily_questions'), 'daily_questions']
+      await this._upsertCheckin(planQuestionsPlanId, plan?.today_dots_taken || false, activities)
+      this.setData({ planQuestionsOpen: false })
+      await this._loadPlans(user, this.data.lang)
+    } catch (err) {
+      wx.showToast({ title: err.message || 'Error', icon: 'none' })
+    } finally {
+      this.setData({ planTaskBusy: false })
+    }
+  },
+
+  closeQuestionsTask() {
+    this.setData({ planQuestionsOpen: false })
   },
 
   async handleJoinPlan(e) {

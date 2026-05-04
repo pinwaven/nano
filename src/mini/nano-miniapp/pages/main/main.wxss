@@ -2427,3 +2427,68 @@ button.consent-row::after { border: none; }
 .theme-light .reminder-content { color: #1a2744; }
 .theme-light .reminder-date    { color: #607090; }
 .theme-light .browse-tpl-meta   { color: #607090; }
+
+/* ── Daily Task Row ─────────────────────────────────────────────────────────── */
+.plan-daily-section { margin-top: 20rpx; }
+.plan-daily-tasks { display: flex; flex-direction: row; gap: 12rpx; margin-bottom: 14rpx; }
+.plan-task-chip {
+  flex: 1; display: flex; flex-direction: row; align-items: center;
+  justify-content: space-between; padding: 12rpx 14rpx;
+  border-radius: 14rpx; border: 1rpx solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.04);
+}
+.plan-task-chip.plan-task-done {
+  border-color: rgba(52,211,153,0.35);
+  background: rgba(52,211,153,0.07);
+}
+.plan-task-label { font-size: 21rpx; color: rgba(255,255,255,0.6); }
+.plan-task-chip.plan-task-done .plan-task-label { color: #34d399; }
+.plan-task-check { font-size: 21rpx; color: rgba(255,255,255,0.25); margin-left: 6rpx; }
+.plan-task-chip.plan-task-done .plan-task-check { color: #34d399; }
+.plan-daily-bar-row { display: flex; align-items: center; gap: 16rpx; }
+.plan-daily-bar-track { flex: 1; height: 6rpx; background: rgba(255,255,255,0.07); border-radius: 6rpx; overflow: hidden; }
+.plan-daily-bar-fill { height: 100%; background: linear-gradient(90deg, #6375EC, #8B9FFF); border-radius: 6rpx; transition: width 0.3s; }
+.plan-daily-bar-fill.plan-daily-complete { background: linear-gradient(90deg, #10b981, #34d399); }
+.plan-daily-count { font-size: 20rpx; color: rgba(255,255,255,0.35); white-space: nowrap; }
+
+/* ── Daily Task Modals ──────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex; align-items: flex-end; justify-content: center;
+  z-index: 999;
+}
+.modal-sheet {
+  width: 100%; background: #1a1a2e;
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 40rpx 40rpx 64rpx;
+  box-sizing: border-box;
+}
+.modal-title { display: block; font-size: 32rpx; font-weight: 600; color: #fff; margin-bottom: 32rpx; }
+.modal-input {
+  display: block; width: 100%; background: rgba(255,255,255,0.06);
+  border: 1rpx solid rgba(255,255,255,0.12); border-radius: 16rpx;
+  padding: 20rpx 24rpx; font-size: 30rpx; color: #fff;
+  margin-bottom: 32rpx; box-sizing: border-box;
+}
+.modal-actions { display: flex; gap: 20rpx; margin-top: 20rpx; }
+.modal-btn { flex: 1; padding: 24rpx; border-radius: 20rpx; text-align: center; font-size: 28rpx; }
+.modal-btn-cancel { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.55); }
+.modal-btn-confirm { background: linear-gradient(90deg, #6375EC, #8B9FFF); color: #fff; font-weight: 600; }
+.q-row { margin-bottom: 28rpx; }
+.q-label { display: block; font-size: 26rpx; color: rgba(255,255,255,0.65); margin-bottom: 8rpx; }
+
+/* light theme overrides */
+.theme-light .plan-task-chip { border-color: rgba(0,0,0,0.08); background: rgba(0,0,0,0.03); }
+.theme-light .plan-task-chip.plan-task-done { border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.06); }
+.theme-light .plan-task-label { color: rgba(0,0,0,0.6); }
+.theme-light .plan-task-chip.plan-task-done .plan-task-label { color: #059669; }
+.theme-light .plan-task-check { color: rgba(0,0,0,0.2); }
+.theme-light .plan-task-chip.plan-task-done .plan-task-check { color: #059669; }
+.theme-light .plan-daily-bar-track { background: rgba(0,0,0,0.06); }
+.theme-light .plan-daily-count { color: rgba(0,0,0,0.35); }
+.theme-light .modal-sheet { background: #f8f9ff; }
+.theme-light .modal-title { color: #1a2744; }
+.theme-light .modal-input { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); color: #1a2744; }
+.theme-light .modal-btn-cancel { background: rgba(0,0,0,0.06); color: rgba(0,0,0,0.5); }
+.theme-light .q-label { color: rgba(0,0,0,0.6); }
