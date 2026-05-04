@@ -101,33 +101,6 @@ const T = {
     bsHeight: '身高', bsWeight: '体重', bsCm: 'cm', bsKg: 'kg',
     male: '男', female: '女',
     selectBirthday: '选择出生日期',
-    profile: '个人信息', showMore: '更多', showLess: '收起',
-    gender: '性别', born: '出生日期', language: '语言',
-    height: '身高', weight: '体重', bmi: 'BMI', weightTrend: '体重趋势',
-    coach: 'Coach', joined: '注册时间', phone: '手机', email: '邮箱',
-    healthConditions: '健康状况', noConditions: '无特殊健康状况',
-    bioAge: '生理年龄', chronoAge: '实际年龄',
-    latestBm: '最新生物标志物',
-    trends: '趋势',
-    tests: '次检测',
-    noBmData: '暂无生物标志物数据。',
-    noHistory: '暂无检测记录。',
-    genderMap: { male: '男', female: '女' },
-    langMap: { zh: '中文', en: 'English' },
-    subAgeLabels: {
-      ResilienceAge: '抗压年龄', CellularAge: '细胞年龄',
-      MetabolicAge: '代谢年龄', MicroVascularAge: '微血管年龄',
-    },
-    subAgeDesc: {
-      ResilienceAge: '衡量你的身体抵御和缓冲压力的能力。',
-      CellularAge: '衡量你细胞底层的原生生命力。',
-      MetabolicAge: '衡量你的身体燃烧能量的洁净度与效率。',
-      MicroVascularAge: '衡量你输送营养与氧气的微循环能力。',
-    },
-    bmLabels: {
-      hsCRP: 'hsCRP', GDF15: 'GDF-15', IL6: 'IL-6',
-      GA: '糖化白蛋白', CystatinC: '胱抑素 C', CD38: 'CD38',
-    },
     dotsTitle: '营养方案',
     cartridgeTitle: '原粒盒',
     noCartridges: '未插入原粒盒。请将原粒盒插入分配器。',
@@ -218,23 +191,11 @@ const T = {
     guestCancelSignup: '退出注册',
     guestChatCtaText: '输入邀请码，激活您的 AI 健康伴侣',
     guestChatCtaBtn: '立即加入',
-    guestHealthCta: '激活账户后，查看您的健康数据与生物年龄',
     guestDotsCta: '激活账户后，获取您的专属营养方案',
     guestMenuSignUp: '注册账户',
     orderStatus: {
       pending: '待处理', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', cancelled: '已取消',
-    },
-    conditionLabels: {
-      blood_sugar_high:    '血糖高',
-      blood_pressure_high: '血压高',
-      blood_lipids_high:   '血脂高',
-      cholesterol_high:    '胆固醇高',
-      heart_issues:        '心脏问题',
-      gout_uric_acid:      '痛风或尿酸高',
-      kidney_disease:      '肾病',
-      sleep_deficiency:    '睡眠不足',
-      other:               '其他',
     },
   },
   en: {
@@ -286,33 +247,6 @@ const T = {
     bsHeight: 'Height', bsWeight: 'Weight', bsCm: 'cm', bsKg: 'kg',
     male: 'Male', female: 'Female',
     selectBirthday: 'Select Birthday',
-    profile: 'Profile', showMore: 'More', showLess: 'Less',
-    gender: 'Gender', born: 'Born', language: 'Language',
-    height: 'Height', weight: 'Weight', bmi: 'BMI', weightTrend: 'Weight Trend',
-    coach: 'Coach', joined: 'Joined', phone: 'Phone', email: 'Email',
-    healthConditions: 'Health Conditions', noConditions: 'No known health conditions',
-    bioAge: 'Bio Age', chronoAge: 'Chrono Age',
-    latestBm: 'Latest Biomarkers',
-    trends: 'Trends',
-    tests: 'tests',
-    noBmData: 'No biomarker data available yet.',
-    noHistory: 'No test history yet.',
-    genderMap: { male: 'Male', female: 'Female' },
-    langMap: { zh: 'Chinese', en: 'English' },
-    subAgeLabels: {
-      ResilienceAge: 'Resilience Age', CellularAge: 'Cellular Age',
-      MetabolicAge: 'Metabolic Age', MicroVascularAge: 'Micro-Vascular Age',
-    },
-    subAgeDesc: {
-      ResilienceAge: 'How well you buffer stress.',
-      CellularAge: 'How much raw life-force your cells have.',
-      MetabolicAge: 'How cleanly you burn fuel.',
-      MicroVascularAge: 'How well you deliver nutrients and oxygen.',
-    },
-    bmLabels: {
-      hsCRP: 'hsCRP', GDF15: 'GDF-15', IL6: 'IL-6',
-      GA: 'Glycated Albumin', CystatinC: 'Cystatin C', CD38: 'CD38',
-    },
     dotsTitle: 'Nutrition Plan',
     cartridgeTitle: 'Cartridges',
     noCartridges: 'No cartridges inserted. Insert cartridges into your dispenser.',
@@ -403,26 +337,19 @@ const T = {
     guestCancelSignup: 'Cancel sign-up',
     guestChatCtaText: 'Enter your invite code to activate your AI health companion',
     guestChatCtaBtn: 'Join Now',
-    guestHealthCta: 'Activate your account to view your health data and Bio Age',
     guestDotsCta: 'Activate your account to get your personalized nutrition plan',
     guestMenuSignUp: 'Sign Up',
     orderStatus: {
       pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', cancelled: 'Cancelled',
     },
-    conditionLabels: {
-      blood_sugar_high:    'High Blood Sugar',
-      blood_pressure_high: 'High Blood Pressure',
-      blood_lipids_high:   'High Blood Lipids',
-      cholesterol_high:    'High Cholesterol',
-      heart_issues:        'Heart Problems',
-      gout_uric_acid:      'Gout / High Uric Acid',
-      kidney_disease:      'Kidney Disease',
-      sleep_deficiency:    'Sleep Deficiency',
-      other:               'Other',
-    },
   }
 }
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const MONTH_EN = ['January','February','March','April','May','June',
+  'July','August','September','October','November','December']
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -440,15 +367,6 @@ const SUB_AGE_COLORS = {
   ResilienceAge: '#c084d4', CellularAge: '#10b981',
   MetabolicAge: '#6375EC', MicroVascularAge: '#0ea5e9',
 }
-
-const MONTH_EN = ['January','February','March','April','May','June',
-  'July','August','September','October','November','December']
-
-const CONDITION_KEYS = [
-  'blood_sugar_high', 'blood_pressure_high', 'blood_lipids_high',
-  'cholesterol_high', 'heart_issues', 'gout_uric_acid',
-  'kidney_disease', 'sleep_deficiency', 'other',
-]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -710,25 +628,6 @@ Page({
 
     userAvatarLetter: 'U',
 
-    // Health
-    bioLoading: true,
-    subAgeList: [],
-    bmList: [],
-    trendList: [],
-    cAge: null,
-    bAge: null,
-    bAgeColor: '#EEF2FF',
-    profileInfoVisible: [],
-    profileInfoExtra: [],
-    profileExpanded: false,
-    weightHistory: [],
-    weightChartOpen: false,
-    weightChartW: 300,
-    recordCount: 0,
-    hasBm: false,
-    healthConditionsList: [],
-    hasConditionsData: false,
-
     // Channel
     channel: null,
 
@@ -829,7 +728,6 @@ Page({
       return
     }
     this._initChat(user, lang)
-    this._loadHealth(user, lang)
     this._loadDots(user, lang)
     this._loadCartridges(user, lang)
     this._loadStore(user, lang)
@@ -839,7 +737,7 @@ Page({
     const { user, lang, isGuest, obStep } = this.data
     if (user && !isGuest) {
       this._req(`${BASE}/api/heartbeat`, 'POST', { user_id: user.user_id }).catch(() => {})
-      this._loadHealth(user, lang)
+      this.selectComponent('#health-comp')?.refresh()
       this._startPolling(user)
       // Check for questionnaires assigned while the user was away
       if (obStep === 'done') this._checkForPendingQuestionnaire()
@@ -861,7 +759,6 @@ Page({
   switchTab(e) {
     const tab = e.currentTarget.dataset.tab
     this.setData({ tab })
-    if (tab === 'health') this._loadHealth(this.data.user, this.data.lang)
     if (tab === 'dots') {
       this.setData({ dotsLoading: true, cartridgesLoading: true })
       this._loadDots(this.data.user, this.data.lang)
@@ -886,7 +783,6 @@ Page({
     const storeItems  = this._rawStoreItems  ? mapStoreItems(this._rawStoreItems, lang)   : []
     const storeOrders = this._rawStoreOrders ? mapStoreOrders(this._rawStoreOrders, lang) : []
     this.setData({ lang, t: T[lang], menuOpen: false, storeItems, storeOrders, toolList: toolActions.getToolList(T[lang]) })
-    this._loadHealth(this.data.user, lang)
     this._loadDots(this.data.user, lang)
     this._loadCartridges(this.data.user, lang)
     if (this.data.tab === 'plans') this._loadReminders(this.data.user)
@@ -1552,7 +1448,7 @@ Page({
     try {
       const res = await this._req(`${BASE}/api/chat`, 'POST', { openid: user.user_id, message: text })
       if (res.data?.recorded_weight != null) {
-        await this._loadHealth(user, this.data.lang)
+        this.selectComponent('#health-comp')?.refresh()
       }
     } catch (e) {
       this._addMsg('ai', this.data.t.errServer)
@@ -1713,213 +1609,6 @@ Page({
       language: user.language, coach_id: user.coach_id,
       ...updates
     })
-  },
-
-  toggleProfile() {
-    this.setData({ profileExpanded: !this.data.profileExpanded })
-  },
-
-  openWeightChart() {
-    const W = wx.getSystemInfoSync().windowWidth - 72
-    this.setData({ weightChartOpen: true, weightChartW: W }, () => { this._drawWeightFullChart() })
-  },
-
-  closeWeightChart() {
-    this.setData({ weightChartOpen: false })
-  },
-
-  _drawWeightSparkline() {
-    const { weightHistory } = this.data
-    if (weightHistory.length < 2) return
-    const W = 60, H = 22, pad = 2
-    const weights = weightHistory.map(r => r.weight)
-    const minW = Math.min(...weights), maxW = Math.max(...weights)
-    const range = maxW - minW || 1
-    const pts = weights.map((w, i) => ({
-      x: pad + (i / (weights.length - 1)) * (W - pad * 2),
-      y: pad + ((maxW - w) / range) * (H - pad * 2),
-    }))
-    const ctx = wx.createCanvasContext('weight-sparkline', this)
-    ctx.clearRect(0, 0, W, H)
-    ctx.beginPath()
-    ctx.setStrokeStyle('rgba(99,117,236,0.85)')
-    ctx.setLineWidth(1.5)
-    ctx.moveTo(pts[0].x, pts[0].y)
-    pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
-    ctx.stroke()
-    ctx.setFillStyle('#6375EC')
-    pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2); ctx.fill() })
-    ctx.draw()
-  },
-
-  _drawWeightFullChart() {
-    const { weightHistory, weightChartW } = this.data
-    if (weightHistory.length < 1) return
-    const W = weightChartW, H = 200
-    const pL = 44, pR = 16, pT = 20, pB = 44
-    const plotW = W - pL - pR, plotH = H - pT - pB
-    const weights = weightHistory.map(r => r.weight)
-    const minW = Math.floor(Math.min(...weights)) - 2
-    const maxW = Math.ceil(Math.max(...weights)) + 2
-    const range = maxW - minW
-    const toX = i => pL + (i / Math.max(weightHistory.length - 1, 1)) * plotW
-    const toY = w => pT + ((maxW - w) / range) * plotH
-    const pts = weightHistory.map((r, i) => ({ x: toX(i), y: toY(r.weight) }))
-    const ctx = wx.createCanvasContext('weight-chart-full', this)
-    ctx.clearRect(0, 0, W, H)
-    // grid lines + y labels
-    const gridSteps = 4
-    for (let i = 0; i <= gridSteps; i++) {
-      const y = pT + (i / gridSteps) * plotH
-      const val = maxW - (i / gridSteps) * range
-      ctx.setStrokeStyle('rgba(99,117,236,0.12)')
-      ctx.setLineWidth(0.5)
-      ctx.beginPath(); ctx.moveTo(pL, y); ctx.lineTo(pL + plotW, y); ctx.stroke()
-      ctx.setFillStyle('rgba(166,196,229,0.45)')
-      ctx.setFontSize(10)
-      ctx.fillText(val.toFixed(1), 0, y + 4)
-    }
-    // area fill
-    ctx.beginPath()
-    ctx.setFillStyle('rgba(99,117,236,0.1)')
-    ctx.moveTo(pts[0].x, pT + plotH)
-    pts.forEach(p => ctx.lineTo(p.x, p.y))
-    ctx.lineTo(pts[pts.length - 1].x, pT + plotH)
-    ctx.closePath(); ctx.fill()
-    // line
-    ctx.beginPath()
-    ctx.setStrokeStyle('#6375EC')
-    ctx.setLineWidth(2)
-    ctx.moveTo(pts[0].x, pts[0].y)
-    pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
-    ctx.stroke()
-    // dots + x labels
-    const labelStep = Math.max(1, Math.floor(weightHistory.length / 5))
-    ctx.setFontSize(10)
-    ctx.setFillStyle('rgba(166,196,229,0.5)')
-    weightHistory.forEach((r, i) => {
-      if (i % labelStep === 0 || i === weightHistory.length - 1) {
-        ctx.fillText(r.date.substring(5), pts[i].x - 14, H - pB + 16)
-      }
-    })
-    ctx.setFillStyle('#EEF2FF')
-    ctx.setStrokeStyle('#6375EC')
-    ctx.setLineWidth(1.5)
-    pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke() })
-    // axes
-    ctx.setStrokeStyle('rgba(99,117,236,0.3)')
-    ctx.setLineWidth(1)
-    ctx.beginPath(); ctx.moveTo(pL, pT); ctx.lineTo(pL, pT + plotH); ctx.lineTo(pL + plotW, pT + plotH); ctx.stroke()
-    ctx.draw()
-  },
-
-  // ── Health tab ──────────────────────────────────────────────────────────────
-
-  async _loadHealth(user, lang) {
-    const t = T[lang]
-    try {
-      const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(user.user_id)}`)
-      const records = res.data?.records || []
-      const kinoRecords = records.filter(r => r.test_type === 'kino_chip')
-      const latest = kinoRecords.length > 0 ? kinoRecords[kinoRecords.length - 1] : null
-      // Walk backwards to find the most recent record that actually has results
-      const latestAnalyzed = [...kinoRecords].reverse().find(r => r.data?.estimated) || null
-      const latestBm = latestAnalyzed?.data?.estimated || null
-      const subAgesRaw = latestAnalyzed?.data?.bioage_profile?.SubAges || null
-
-      const bmList = BM_META.map(({ key, unit, color }) => ({
-        key, label: t.bmLabels[key], unit, color,
-        value: latestBm?.[key] != null ? latestBm[key] : null,
-      }))
-
-      const trendList = BM_META.map(({ key, unit, color }) => {
-        const allVals = kinoRecords.slice(-10).map(r => r.data?.estimated?.[key] ?? null)
-        const defined = allVals.filter(v => v != null)
-        const min = defined.length ? Math.min(...defined) : 0
-        const max = defined.length ? Math.max(...defined) : 1
-        const range = max - min || 1
-        const sparkBars = allVals.map(v => v != null
-          ? { h: Math.round(6 + ((v - min) / range) * 26), color, empty: false }
-          : { h: 6, color, empty: true }
-        )
-        const lastVal = defined[defined.length - 1] ?? null
-        return { key, label: t.bmLabels[key], unit, color, lastVal, sparkBars }
-      })
-
-      const cAge = chronoAge(user.birth_date)
-
-      const subAgeList = subAgesRaw
-        ? SUB_AGE_KEYS.map(key => {
-            const rawVal = subAgesRaw[key]
-            const valStr = rawVal != null ? rawVal.toFixed(1) : '—'
-            const score  = rawVal != null && cAge != null
-              ? Math.max(5, Math.min(95, Math.round((cAge + 15 - rawVal) / 30 * 100)))
-              : 50
-            return {
-              key,
-              label: t.subAgeLabels[key],
-              desc:  t.subAgeDesc[key],
-              color: SUB_AGE_COLORS[key],
-              value: valStr,
-              score,
-            }
-          })
-        : []
-      const rawBioAge = latestAnalyzed?.bio_age ?? latest?.bio_age ?? user.bio_age
-      const bAge = rawBioAge ? Number(rawBioAge).toFixed(1) : null
-
-      const bodyRecords = records.filter(r => r.test_type === 'body_composition').slice().reverse()
-      const heightVal = bodyRecords.find(r => r.data?.actual?.height != null)?.data?.actual?.height ?? null
-      const weightVal = bodyRecords.find(r => r.data?.actual?.weight != null)?.data?.actual?.weight ?? null
-
-      const weightHistory = records
-        .filter(r => r.test_type === 'body_composition' && r.data?.actual?.weight != null)
-        .map(r => ({ date: (r.tested_at || '').substring(0, 10), weight: r.data.actual.weight }))
-
-      const bmiVal = (heightVal != null && weightVal != null && heightVal > 0)
-        ? (weightVal / Math.pow(heightVal / 100, 2)).toFixed(1)
-        : null
-      const profileInfoVisible = [
-        { label: t.weight, val: weightVal != null ? `${weightVal} ${t.bsKg}` : '—', hasSparkline: true },
-        { label: t.bmi,    val: bmiVal != null ? bmiVal : '—' },
-      ]
-      const profileInfoExtra = [
-        { label: t.gender,   val: t.genderMap[user.gender] || user.gender || '—' },
-        { label: t.born,     val: fmtDate(user.birth_date, lang) },
-        { label: t.height,   val: heightVal != null ? `${heightVal} ${t.bsCm}` : '—' },
-        { label: t.language, val: t.langMap[user.language] || user.language || '—' },
-        { label: t.coach,    val: user.coach_name || '—' },
-        { label: t.joined,   val: fmtDate(user.created_at, lang) },
-        { label: t.phone,    val: user.phone || '—' },
-        { label: t.email,    val: user.email || '—' },
-      ]
-
-      const condKeys = user.bio_data?.health_conditions ?? null
-      const otherText = user.bio_data?.health_conditions_other || ''
-      const healthConditionsList = condKeys !== null
-        ? condKeys.map(key => ({
-            key,
-            label: key === 'other' && otherText
-              ? `${t.conditionLabels[key]}（${otherText}）`
-              : (t.conditionLabels[key] || key),
-          }))
-        : []
-
-      this.setData({
-        bioLoading: false,
-        subAgeList, bmList, trendList,
-        cAge, bAge,
-        bAgeColor: bioAgeColor(rawBioAge, cAge),
-        profileInfoVisible, profileInfoExtra,
-        weightHistory,
-        recordCount: kinoRecords.length,
-        hasBm: latestBm !== null,
-        healthConditionsList,
-        hasConditionsData: condKeys !== null,
-      }, () => { if (weightHistory.length > 1) this._drawWeightSparkline() })
-    } catch (e) {
-      this.setData({ bioLoading: false })
-    }
   },
 
   // ── Dots tab ────────────────────────────────────────────────────────────────
@@ -2432,12 +2121,13 @@ Page({
   handleHealthChooseAvatar(e) {
     const avatarUrl = e.detail?.avatarUrl
     if (!avatarUrl) return
-    this.setData({ avatarUpdating: true })
+    const comp = this.selectComponent('#health-comp')
     const { user } = this.data
+    const done = () => comp?.setData({ avatarUpdating: false })
     const upload = (localPath) => {
       this._req(`${BASE}/api/oss/presign?type=avatar&filename=avatar.jpg&category=users`, 'GET').then(presignRes => {
         const { put_url, get_url } = presignRes.data || {}
-        if (!put_url) { this.setData({ avatarUpdating: false }); return }
+        if (!put_url) { done(); return }
         wx.getFileSystemManager().readFile({
           filePath: localPath,
           success: (fileRes) => {
@@ -2450,22 +2140,20 @@ Page({
               success: () => {
                 this._saveUser(user, { avatar_url: get_url }).then(() => {
                   this._updateUser({ ...user, avatar_url: get_url })
-                }).catch(() => {}).finally(() => {
-                  this.setData({ avatarUpdating: false })
-                })
+                }).catch(() => {}).finally(done)
               },
-              fail: () => this.setData({ avatarUpdating: false }),
+              fail: done,
             })
           },
-          fail: () => this.setData({ avatarUpdating: false }),
+          fail: done,
         })
-      }).catch(() => this.setData({ avatarUpdating: false }))
+      }).catch(done)
     }
     if (avatarUrl.startsWith('http')) {
       wx.downloadFile({
         url: avatarUrl,
         success: (res) => upload(res.tempFilePath),
-        fail: () => this.setData({ avatarUpdating: false }),
+        fail: done,
       })
     } else {
       upload(avatarUrl)
@@ -2569,7 +2257,6 @@ Page({
     const userAvatarLetter = (user.nickname || 'U').slice(-1).toUpperCase()
     this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t: T[lang], isGuest: false, guestSheetOpen: false, guestSheetStep: 'invite', guestInviteBusy: false, isCoach, isAdmin, isSuperadmin })
     this._initChat(user, lang)
-    this._loadHealth(user, lang)
     this._loadDots(user, lang)
     this._loadCartridges(user, lang)
     this._loadStore(user, lang)

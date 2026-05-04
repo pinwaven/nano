@@ -1,6 +1,7 @@
 {
   "navigationStyle": "custom",
   "usingComponents": {
-    "toolbox": "/components/toolbox/toolbox"
+    "toolbox": "/components/toolbox/toolbox",
+    "user-health": "/components/user-health/user-health"
   }
 }

@@ -223,15 +223,6 @@ const T = {
   },
 }
 
-const BM_META = [
-  { key: 'hsCRP',     label: 'hsCRP',            unit: 'mg/L',      color: '#ef4444' },
-  { key: 'GDF15',     label: 'GDF-15',           unit: 'pg/mL',     color: '#f97316' },
-  { key: 'IL6',       label: 'IL-6',             unit: 'pg/mL',     color: '#a855f7' },
-  { key: 'GA',        label: 'Glycated Albumin',  unit: '%',         color: '#6375EC' },
-  { key: 'CystatinC', label: 'Cystatin C',        unit: 'mg/L',      color: '#0ea5e9' },
-  { key: 'CD38',      label: 'CD38',             unit: 'xBaseline', color: '#10b981' },
-]
-
 const SUB_AGE_META = [
   { key: 'CellularAge',      labelZh: '细胞',   labelEn: 'Cellular',   shortZh: '细胞', shortEn: 'Cell', color: '#f97316' },
   { key: 'MetabolicAge',     labelZh: '代谢',   labelEn: 'Metabolic',  shortZh: '代谢', shortEn: 'Meta', color: '#6375EC' },
@@ -301,11 +292,6 @@ Page({
     detailOpen: false,
     detailClient: null,
     detailTab: 'health',
-    // Health tab
-    detailBmList: [],
-    detailBmLoading: false,
-    detailSubAges: [],
-    detailBioAgeTrend: [],
     // Unified chat tab (user + AI + coach)
     chatMessages: [],
     chatLoading: false,
@@ -518,50 +504,15 @@ Page({
 
   // ── Client detail sheet ──────────────────────────────────────────────────
 
-  async openClientDetail(e) {
+  openClientDetail(e) {
     const client = e.currentTarget.dataset.client
     const initialTab = e.currentTarget.dataset.tab || 'health'
     const resolvedTab = initialTab === 'messages' ? 'chat' : initialTab
     this.setData({
       detailOpen: true, detailClient: client, detailTab: resolvedTab,
-      detailBmList: [], detailBmLoading: true, detailSubAges: [], detailBioAgeTrend: [],
       chatMessages: [], chatLoading: false, chatScrollId: '',
       msgText: '',
     })
-    // Load health data eagerly regardless of initial tab
-    try {
-      const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(client.user_id)}`)
-      const records = res.data?.records || []
-      const kinoRecords = records.filter(r => r.test_type === 'kino_chip')
-      const latest = kinoRecords.length > 0 ? kinoRecords[kinoRecords.length - 1] : null
-      const estimated = latest?.data?.estimated || null
-      const lang = this.data.lang
-
-      const bmList = BM_META.map(({ key, label, unit, color }) => ({
-        key, label, unit, color,
-        value: estimated?.[key] != null ? estimated[key] : null,
-      }))
-
-      const subAgesRaw = latest?.data?.bioage_profile?.SubAges || null
-      const detailSubAges = subAgesRaw
-        ? SUB_AGE_META.map(m => ({
-            key: m.key,
-            label: lang === 'zh' ? m.labelZh : m.labelEn,
-            color: m.color,
-            value: subAgesRaw[m.key] != null ? Number(subAgesRaw[m.key]).toFixed(1) : null,
-          }))
-        : []
-
-      const detailBioAgeTrend = kinoRecords.slice(-5).map(r => ({
-        bioAge: r.bio_age != null ? Number(r.bio_age).toFixed(1) : null,
-        date: fmtDate(r.tested_at || r.created_at),
-      }))
-
-      this.setData({ detailBmList: bmList, detailBmLoading: false, detailSubAges, detailBioAgeTrend })
-    } catch {
-      this.setData({ detailBmLoading: false })
-    }
-
     if (resolvedTab === 'chat') this._loadClientChat()
   },
 

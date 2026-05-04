@@ -215,49 +215,15 @@
       </view>
 
       <!-- Health panel -->
-      <scroll-view wx:if="{{detailTab === 'health'}}" scroll-y class="overlay-scroll">
-        <view wx:if="{{detailBmLoading}}" class="panel-center">
-          <text class="loading-text">{{t.loading}}</text>
-        </view>
-        <view wx:elif="{{detailBmList.length === 0}}" class="panel-center">
-          <text class="empty-text">{{t.noBmData}}</text>
-        </view>
-        <block wx:else>
-          <!-- Bio Age Trend -->
-          <view wx:if="{{detailBioAgeTrend.length > 0}}" class="health-section">
-            <text class="section-label">{{t.bioAgeTrend}}</text>
-            <view class="trend-row">
-              <view wx:for="{{detailBioAgeTrend}}" wx:key="index" class="trend-item">
-                <text class="trend-value">{{item.bioAge || '—'}}</text>
-                <text class="trend-date">{{item.date}}</text>
-              </view>
-            </view>
-          </view>
-          <!-- Sub-Ages -->
-          <view wx:if="{{detailSubAges.length > 0}}" class="health-section">
-            <text class="section-label">{{t.subAges}}</text>
-            <view class="sub-age-grid">
-              <view wx:for="{{detailSubAges}}" wx:key="key" class="sub-age-card">
-                <text class="sub-age-value" style="color: {{item.color}};">{{item.value || '—'}}</text>
-                <text class="sub-age-label">{{item.label}}</text>
-              </view>
-            </view>
-          </view>
-          <!-- Raw Biomarkers -->
-          <view class="health-section">
-            <text class="section-label">{{t.biomarkers}}</text>
-            <view class="bm-grid">
-              <view wx:for="{{detailBmList}}" wx:key="key" class="bm-item">
-                <view class="bm-dot" style="background: {{item.color}};"></view>
-                <view class="bm-info">
-                  <text class="bm-label">{{item.label}}</text>
-                  <text class="bm-value">{{item.value !== null ? item.value : '—'}} {{item.unit}}</text>
-                </view>
-              </view>
-            </view>
-          </view>
-        </block>
-      </scroll-view>
+      <view wx:if="{{detailTab === 'health'}}" class="overlay-scroll">
+        <user-health
+          user-id="{{detailClient.user_id}}"
+          user="{{detailClient}}"
+          lang="{{lang}}"
+          mode="coach"
+          theme="{{theme}}">
+        </user-health>
+      </view>
 
       <!-- Plans panel -->
       <scroll-view wx:if="{{detailTab === 'plans'}}" scroll-y class="overlay-scroll">
