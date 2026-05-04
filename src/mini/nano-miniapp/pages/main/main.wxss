@@ -449,6 +449,18 @@
 
 /* ── Chat input area ── */
 
+.ai-disclaimer {
+  flex-shrink: 0;
+  text-align: center;
+  padding: 8rpx 24rpx 4rpx;
+}
+
+.ai-disclaimer-text {
+  font-size: 20rpx;
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 0.5rpx;
+}
+
 .input-container {
   flex-shrink: 0;
   display: flex;

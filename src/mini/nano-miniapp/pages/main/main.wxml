@@ -242,6 +242,11 @@
         </view>
       </view>
 
+      <!-- AI disclaimer -->
+      <view wx:if="{{obStep === 'done'}}" class="ai-disclaimer">
+        <text class="ai-disclaimer-text">本服务为AI生成内容，结果仅供参考</text>
+      </view>
+
       <!-- Normal chat input -->
       <view wx:if="{{obStep === 'done'}}" class="input-container">
         <toolbox wx:if="{{toolboxOpen}}" tools="{{toolList}}" disabled="{{typing}}" bind:toolaction="handleToolAction" />
