@@ -13,6 +13,17 @@ To maintain HTTPS support during deployment:
 1. Ensure the `./certs` directory exists (it is git-ignored).
 2. Place your certificate files in `./certs/fullchain.pem` and `./certs/privkey.key`.
 
+## Dev vs Prod
+
+| | Dev | Prod |
+|---|---|---|
+| DB | `nano_db_dev` | `nano_db_prod` |
+| s.yaml | `s.yaml` | `s-prod.yaml` |
+| Deploy suffix | _(none)_ | `-prod` |
+| DB migrate | `npm run migrate:dev` | `npm run migrate:prod` |
+
+Always deploy and test on dev first. See [Database Migrations](architecture/database-migrations.md) for the full migration workflow.
+
 ## Functions
 
 | Name | s.yaml key | Description |

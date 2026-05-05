@@ -23,6 +23,11 @@
     "deploy:kino": "./scripts/deploy-kino.sh",
     "deploy:chat": "./scripts/deploy-chat.sh",
     "deploy:coach": "./scripts/deploy-coach.sh",
+    "migrate:dev": "node scripts/migrate.js --env dev",
+    "migrate:prod": "node scripts/migrate.js --env prod",
+    "migrate:status": "node scripts/migrate.js --status",
+    "migrate:status:prod": "node scripts/migrate.js --env prod --status",
+    "migrate:baseline:prod": "node scripts/migrate.js --env prod --baseline",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {

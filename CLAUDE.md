@@ -9,14 +9,61 @@
 - **Architecture:** Serverless Event-Driven (Aliyun FC 3.0 + EventBridge)
 - **Infrastructure:** All production code must respect Aliyun FC 3.0 constraints (max 24h runtime, stateless execution).
 
-## 2. Core Technical Constraints
+## 2. Dev vs Prod Environments
+
+There are two separate PolarDB databases. Both share the same Aliyun account and VPC.
+
+| | Dev | Prod |
+|---|---|---|
+| DB name | `nano_db_dev` | `nano_db_prod` |
+| s.yaml config | `s.yaml` | `s-prod.yaml` |
+| Deploy scripts | `deploy:worker`, `deploy:dispatcher`, etc. | `deploy:worker-prod`, `deploy:dispatcher-prod`, etc. |
+| Connection var | `DATABASE_URL` | `DATABASE_URL_PROD` |
+| Migrate | `npm run migrate:dev` | `npm run migrate:prod` |
+
+**Always develop and test on dev first. Never run untested SQL directly on prod.**
+
+### Dev/prod deploy commands
+
+```bash
+# Dev
+npm run deploy:worker
+npm run deploy:dispatcher
+
+# Prod
+npm run deploy:worker-prod
+npm run deploy:dispatcher-prod
+```
+
+## 3. Database Migrations
+
+Schema changes are tracked in a `schema_migrations` table and applied via `scripts/migrate.js`. **Never apply ad-hoc SQL directly to prod** — always write a migration file so it is tracked.
+
+### Migration workflow
+
+1. Write SQL as `src/schemas/migration_<name>.sql` (use `IF NOT EXISTS` for idempotency)
+2. Apply to dev: `npm run migrate:dev`
+3. Test, then apply to prod: `npm run migrate:prod`
+
+### Key commands
+
+```bash
+npm run migrate:status        # show pending migrations on dev
+npm run migrate:status:prod   # show pending migrations on prod
+npm run migrate:dev            # apply pending to dev
+npm run migrate:prod           # apply pending to prod
+```
+
+Full details: `docs/architecture/database-migrations.md`
+
+## 4. Core Technical Constraints
 
 - **Database:** Use the `pg` library for raw SQL. **STRICTLY PROHIBITED:** No ORMs (like Prisma or TypeORM) to minimize cold-start latency and overhead.
 - **SQL Standards:** PostgreSQL 14 compatible syntax. Use `ON CONFLICT` for upserts.
 - **Messaging:** Follow **CloudEvents 1.0** standards for all event payloads.
 - **AI Logic:** The AI Worker must decouple prompt engineering from execution. Prompts should be stored in `/prompts` as template files.
 
-## 3. Directory Structure & Naming
+## 5. Directory Structure & Naming
 
 - `/src/functions/dispatcher/`: FC 3.0 code for user scanning (Cron-triggered).
 - `/src/functions/worker/`: FC 3.0 code for AI processing and WeChat notifications.
@@ -31,30 +78,30 @@
 - `/src/mini/nano-miniapp/pages/superadmin/`: **Miniapp Superadmin Panel** — WeChat Mini Program page for superadmins. Global view of channels, users, coaches, dots (with full ingredient editing), and invites. Referred to as the **"miniapp superadmin panel"**.
 - **File Naming:** kebab-case (e.g., `user-repository.js`).
 
-## 4. Coding Standards (Node.js)
+## 6. Coding Standards (Node.js)
 
 - **Style:** Modern ES Modules (`import/export`).
 - **Error Handling:** Every async operation MUST be wrapped in a `try/catch` block.
 - **Logging:** Use `console.log` for Aliyun CloudWatch integration, but format as JSON: `console.log(JSON.stringify({level: 'INFO', msg: '...', data: {}}))`.
 - **Latency:** Keep the `lib/db.js` client outside the handler to leverage Aliyun container reuse.
 
-## 5. Local Development & Testing
+## 7. Local Development & Testing
 
 - Use `.env` for local variables. Never hardcode the PolarDB endpoint.
 - **Command:** Run `npm run test:local` to trigger the `local-bus.js` harness.
 - **Git:** Commit after every successful modular feature build. Do not bundle multiple components into one commit.
 
-## 6. AI Interaction Rules
+## 8. AI Interaction Rules
 
 - Before suggesting a change, check `src/schemas/` to ensure you aren't breaking the event contract.
 - If writing a new Aliyun FC handler, always provide the `s.yaml` (Serverless Devs) configuration snippet.
 - Prioritize **token efficiency**: Don't rewrite entire files if only one function needs a fix.
 
-## 8. Changelog for code changes
+## 9. Changelog for code changes
 
 - CHANGELOG.md
 
-## 9. Role System
+## 10. Role System
 
 - 4 roles: `user`, `coach`, `admin`, `superadmin` — stored as `TEXT[]` on `users.roles`.
 - A single WeChat openid can hold multiple roles simultaneously.
@@ -62,7 +109,7 @@
 - Coach role is auto-managed when `coaches.user_id` FK is set/unset.
 - Full details: `docs/architecture/role-system.md`
 
-## 10. The Four Sub Bio Ages
+## 11. The Four Sub Bio Ages
 
 Waven Nano measures biological age across four independent dimensions. Each dimension produces a **sub-age** (in years) that contributes equally to the combined `BioAge`. The calculator lives in `src/lib/bioage/BioAgeCalculator.js`.
 
@@ -131,7 +178,7 @@ Kino chip scan
 
 `MetabolicAge` is the only dimension with cross-dimension coupling: when `ResilienceAge` score < 4 (severe inflammation), Metabolic scoring takes a 10% penalty. This reflects the biological reality that chronic inflammation accelerates metabolic dysfunction.
 
-## 11. Aliyun Function Compute 3.0 (FC 3.0) Runtime Behavior
+## 12. Aliyun Function Compute 3.0 (FC 3.0) Runtime Behavior
 
 When writing or modifying FC handler code, use these facts. They were confirmed by live debugging against the deployed function.
 
@@ -236,7 +283,7 @@ return {
 
 `scripts/local-dev.js` bridges Express → FC handler format by wrapping `req.body` in a Buffer and providing a minimal `resp` shim (`setStatusCode`, `setHeader`, `send`). Keep this shim in sync with any response API changes in the worker handler.
 
-## 12. Kino Hardware System
+## 13. Kino Hardware System
 
 The Kino hardware ecosystem has two distinct physical components, managed separately.
 
@@ -279,7 +326,7 @@ QR scan in Mini Program → POST /kino-scan (links chip to user)
 
 Full details: `docs/architecture/kino-system.md`
 
-## 13. Dots System
+## 14. Dots System
 
 Waven Dots are 24 mg precision nutrition cartridges. Each cartridge delivers one or more active compounds in an exact dose, calibrated to the user's biomarker profile. The system targets four biological age dimensions measured by the Kino chip. The Dots can be mixed by AI at realtime according to the user's actual health data.
 
@@ -290,6 +337,6 @@ Waven Dots are 24 mg precision nutrition cartridges. Each cartridge delivers one
 - **Timing:** Morning or Evening (fixed per dot — set by the `timing` column in the `dots` table)
 - **Types:** Isolates (single active compound) and Blends (two or more actives)
 
-## 14. TEMP Folder
+## 15. TEMP Folder
 - location: ./temp
 - save one time scripts such as migration scripts in the temp folder
