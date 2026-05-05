@@ -1,5 +1,5 @@
 const app = getApp()
-const BASE = 'https://nano.fros.cc'
+const { BASE } = require('../../utils/config.js')
 
 const BM_META = [
   { key: 'hsCRP',     unit: 'mg/L',      color: '#ef4444' },

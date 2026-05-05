@@ -1,5 +1,5 @@
 const app = getApp()
-const BASE = 'https://nano.fros.cc'
+const { BASE } = require('../../utils/config.js')
 
 // Language-independent picker values (always stored in English in DB)
 const TIMING_VALUES   = ['Morning', 'Evening']

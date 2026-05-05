@@ -1,5 +1,5 @@
 const app = getApp()
-const BASE = 'https://nano.fros.cc'
+const { BASE } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'

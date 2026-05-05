@@ -1,4 +1,4 @@
-const BASE = 'https://nano.fros.cc'
+const { BASE } = require('./config.js')
 
 // Returns the ordered tool list with translated labels.
 // Add new tools here — all pages that register the toolbox component pick them up automatically.

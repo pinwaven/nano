@@ -2672,7 +2672,7 @@ async function handleGetKinoChip(chip_id) {
     if (!chip_id) throw new Error('chip_id is required');
 
     const batchCheck = await pool.query(
-        `SELECT kb.status AS batch_status
+        `SELECT kb.status AS batch_status, kc.status AS chip_status
          FROM kino_chips kc
          JOIN kino_chip_batches kb ON kb.id = kc.batch_id
          WHERE kc.chip_code = $1`,
@@ -2681,6 +2681,7 @@ async function handleGetKinoChip(chip_id) {
     if (batchCheck.rows.length === 0 || batchCheck.rows[0].batch_status !== 'active') {
         return { found: false };
     }
+    const chip_status = batchCheck.rows[0].chip_status;
 
     const result = await pool.query(
         `SELECT s.id, s.user_id, s.scan_status, u.nickname, u.birth_date, u.gender,
@@ -2694,11 +2695,15 @@ async function handleGetKinoChip(chip_id) {
          WHERE s.chip_id = $1 LIMIT 1`,
         [chip_id]
     );
-    if (result.rows.length === 0) return { found: false };
+    if (result.rows.length === 0) {
+        // If chip is used but no scan record exists (e.g. manual sync), return used: true
+        if (chip_status === 'used') return { found: true, used: true };
+        return { found: false };
+    }
     const row = result.rows[0];
     return {
         found: true,
-        used: row.scan_status === 'completed',
+        used: row.scan_status === 'completed' || chip_status === 'used',
         scan_id: row.id,
         user_id: row.user_id,
         scan_status: row.scan_status,
@@ -2720,7 +2725,7 @@ async function handlePostKinoScan(body) {
     if (!chip_id) throw new Error('chip_id is required');
 
     const batchCheck = await pool.query(
-        `SELECT kb.status AS batch_status
+        `SELECT kb.status AS batch_status, kc.status AS chip_status
          FROM kino_chips kc
          JOIN kino_chip_batches kb ON kb.id = kc.batch_id
          WHERE kc.chip_code = $1`,
@@ -2728,6 +2733,9 @@ async function handlePostKinoScan(body) {
     );
     if (batchCheck.rows.length === 0 || batchCheck.rows[0].batch_status !== 'active') {
         return { success: false, status: 'invalid_chip' };
+    }
+    if (batchCheck.rows[0].chip_status === 'used') {
+        return { success: false, status: 'used' };
     }
 
     const userResult = await pool.query(
@@ -2778,6 +2786,11 @@ async function handlePostKinoResult(body) {
     await pool.query(
         `UPDATE scans SET scan_status = 'completed', scan_results = $1 WHERE id = $2`,
         [JSON.stringify({ chip_id, ...data }), scan_id]
+    );
+
+    await pool.query(
+        `UPDATE kino_chips SET status = 'used' WHERE chip_code = $1`,
+        [chip_id]
     );
 
     const bmResult = await pool.query(
