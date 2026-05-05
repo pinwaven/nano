@@ -1,6 +1,6 @@
 # Kone APK Remote Upgrade System
 
-Admin-driven upgrade flow: upload an APK to Aliyun OSS via the admin panel → mark it active → Kone devices detect and download the new version from the API Test screen in Settings.
+Admin-driven upgrade flow: upload an APK to Aliyun OSS via the admin panel → mark it active → Kone devices detect and download the new version from the **APK 升级** tab of the API Test screen in Settings (`Settings → System Functions → API Test → APK 升级`).
 
 ---
 
