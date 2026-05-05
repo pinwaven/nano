@@ -193,6 +193,17 @@ const T = {
       deviceStatus: 'Status', statusActive: 'Active', statusInactive: 'Inactive', statusMaintenance: 'Maintenance',
       deviceNotes: 'Notes', deviceNotesPlaceholder: 'Optional notes…',
       assignedCoachDevice: 'Assigned Coach', assignedChannelDevice: 'Assigned Channel',
+      uploadApk: 'Upload New APK', apkVersion: 'Version *', apkVersionPlaceholder: 'e.g. 1.2.3',
+      apkNotes: 'Notes', apkNotesPlaceholder: 'What changed in this release…',
+      apkFile: 'APK File *', apkSetActive: 'Set as current version after upload',
+      apkUploading: 'Uploading to OSS…', apkSaving: 'Saving release…',
+      apkSetActiveBtn: 'Set Active', apkDeleteWarning: (v) => `Delete APK release "${v}"? This cannot be undone.`,
+    },
+    apk: {
+      title: 'APK Releases', activeVersion: 'Active Version', totalReleases: 'Total Releases',
+      noActive: 'None', version: 'Version', status: 'Status', notes: 'Notes', uploadedAt: 'Uploaded',
+      active: 'Active', inactive: 'Inactive', empty: 'No APK releases yet',
+      countReleases: (n) => `${n} release${n !== 1 ? 's' : ''}`,
     },
     dotType: { isolate: 'Isolate', blend: 'Blend' },
     store: {
@@ -450,6 +461,17 @@ const T = {
       deviceStatus: '状态', statusActive: '运行中', statusInactive: '停用', statusMaintenance: '维护中',
       deviceNotes: '备注', deviceNotesPlaceholder: '可选备注…',
       assignedCoachDevice: '负责 Coach', assignedChannelDevice: '所属渠道',
+      uploadApk: '上传新版本 APK', apkVersion: '版本号 *', apkVersionPlaceholder: '例如 1.2.3',
+      apkNotes: '备注', apkNotesPlaceholder: '此版本更新内容…',
+      apkFile: 'APK 文件 *', apkSetActive: '上传后设为当前版本',
+      apkUploading: '正在上传至 OSS…', apkSaving: '正在保存版本记录…',
+      apkSetActiveBtn: '设为当前版本', apkDeleteWarning: (v) => `确认删除 APK 版本"${v}"？此操作不可撤销。`,
+    },
+    apk: {
+      title: 'APK 版本管理', activeVersion: '当前版本', totalReleases: '版本总数',
+      noActive: '未设置', version: '版本号', status: '状态', notes: '备注', uploadedAt: '上传时间',
+      active: '当前版本', inactive: '未启用', empty: '暂无 APK 版本',
+      countReleases: (n) => `共 ${n} 个版本`,
     },
     dotType: { isolate: '单体', blend: '复合' },
     store: {
@@ -2897,16 +2919,106 @@ function DeleteDeviceConfirm({ device, onClose, onConfirm }) {
   );
 }
 
-function KinoTab({ devices, coaches, channels, onRefresh }) {
+function KoneApkUploadModal({ onClose, onSave }) {
+  const { t } = useLang();
+  const [form, setForm] = useState({ version: '', notes: '', setActive: true });
+  const [file, setFile] = useState(null);
+  const [phase, setPhase] = useState('idle'); // idle | uploading | saving | done
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.version.trim()) { setError(t.modal.apkVersion.replace(' *', '') + ' required'); return; }
+    if (!file) { setError('APK file required'); return; }
+    setError(''); setPhase('uploading');
+    try {
+      const presignRes = await axios.get('/api/oss/kone-apk/presign');
+      if (!presignRes.data.success) throw new Error(presignRes.data.error || 'Presign failed');
+      const { put_url, get_url, key } = presignRes.data;
+      await uploadToOSS(put_url, file, () => {});
+      setPhase('saving');
+      const createRes = await axios.post('/api/kone-apk-releases', {
+        version: form.version.trim(),
+        oss_key: key,
+        download_url: get_url,
+        notes: form.notes.trim() || null,
+      });
+      if (form.setActive && createRes.data.id) {
+        await axios.put(`/api/kone-apk-releases/${createRes.data.id}`, { is_active: true });
+      }
+      setPhase('done');
+      onSave();
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || 'Upload failed');
+      setPhase('idle');
+    }
+  };
+
+  const busy = phase === 'uploading' || phase === 'saving';
+  const phaseLabel = phase === 'uploading' ? t.modal.apkUploading : phase === 'saving' ? t.modal.apkSaving : null;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.modal.uploadApk}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form className="modal-body" onSubmit={handleSubmit}>
+          <label className="field-label">{t.modal.apkVersion}
+            <input className="field-input" value={form.version} onChange={e => set('version', e.target.value)}
+              placeholder={t.modal.apkVersionPlaceholder} disabled={busy} />
+          </label>
+          <label className="field-label">{t.modal.apkFile}
+            <input type="file" accept=".apk" disabled={busy}
+              onChange={e => setFile(e.target.files[0] || null)}
+              style={{ marginTop: 4, fontSize: 13 }} />
+          </label>
+          <label className="field-label">{t.modal.apkNotes}
+            <textarea className="field-input" value={form.notes} onChange={e => set('notes', e.target.value)}
+              placeholder={t.modal.apkNotesPlaceholder} rows={3} disabled={busy} />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.setActive} onChange={e => set('setActive', e.target.checked)} disabled={busy} />
+            {t.modal.apkSetActive}
+          </label>
+          {error && <p style={{ color: '#ef4444', fontSize: 13, margin: '4px 0 0' }}>{error}</p>}
+          {phaseLabel && <p style={{ color: '#6366f1', fontSize: 13, margin: '4px 0 0' }}>{phaseLabel}</p>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              {busy ? phaseLabel : t.modal.uploadApk}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function KinoTab({ devices, coaches, channels, releases = [], onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
 
   const activeCount = devices.filter(d => d.status === 'active').length;
   const totalTests  = devices.reduce((s, d) => s + (d.test_count || 0), 0);
+  const activeRelease = releases.find(r => r.is_active);
 
   const statusColor = { active: '#10b981', inactive: '#94a3b8', maintenance: '#f59e0b' };
   const statusLabel = { active: t.modal.statusActive, inactive: t.modal.statusInactive, maintenance: t.modal.statusMaintenance };
+
+  const handleSetActive = async (id) => {
+    try { await axios.put(`/api/kone-apk-releases/${id}`, { is_active: true }); onRefresh(); }
+    catch { /* silent */ }
+  };
+
+  const handleDeleteRelease = async (id, version) => {
+    if (!window.confirm(t.modal.apkDeleteWarning(version))) return;
+    try { await axios.delete(`/api/kone-apk-releases/${id}`); onRefresh(); }
+    catch (err) { alert(err.response?.data?.error || 'Delete failed'); }
+  };
 
   return (
     <>
@@ -2970,9 +3082,65 @@ function KinoTab({ devices, coaches, channels, onRefresh }) {
           </tbody>
         </table>
       </div>
-      {modal?.type === 'add'    && <KinoModal device={null}          coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <KinoModal device={modal.device}  coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'delete' && <DeleteDeviceConfirm device={modal.device} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+
+      <div className="card" style={{ marginTop: 20 }}>
+        <div className="table-toolbar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>{t.apk.title}</span>
+            <Badge color={activeRelease ? '#10b981' : '#94a3b8'}>
+              {t.apk.activeVersion}: {activeRelease ? activeRelease.version : t.apk.noActive}
+            </Badge>
+          </div>
+          <button className="btn-primary" onClick={() => setModal({ type: 'uploadApk' })}>
+            <Plus size={14} />{t.modal.uploadApk}
+          </button>
+        </div>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>{t.apk.version}</th>
+              <th>{t.apk.status}</th>
+              <th>{t.apk.notes}</th>
+              <th>{t.apk.uploadedAt}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {releases.length === 0 && <tr><td colSpan={5} className="empty-row">{t.apk.empty}</td></tr>}
+            {releases.map(r => (
+              <tr key={r.id}>
+                <td><code style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13 }}>{r.version}</code></td>
+                <td>
+                  <Badge color={r.is_active ? '#10b981' : '#94a3b8'}>
+                    {r.is_active ? t.apk.active : t.apk.inactive}
+                  </Badge>
+                </td>
+                <td className="muted desc-cell">{fmt(r.notes)}</td>
+                <td className="muted">{fmtDate(r.created_at)}</td>
+                <td>
+                  <div className="row-actions">
+                    {!r.is_active && (
+                      <button className="icon-btn" title={t.modal.apkSetActiveBtn} onClick={() => handleSetActive(r.id)}>
+                        <Check size={14} />
+                      </button>
+                    )}
+                    {!r.is_active && (
+                      <button className="icon-btn danger" title="Delete" onClick={() => handleDeleteRelease(r.id, r.version)}>
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {modal?.type === 'add'       && <KinoModal device={null}          coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'      && <KinoModal device={modal.device}  coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete'    && <DeleteDeviceConfirm device={modal.device} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {modal?.type === 'uploadApk' && <KoneApkUploadModal onClose={() => setModal(null)} onSave={closeAndRefresh} />}
     </>
   );
 }
@@ -5999,7 +6167,7 @@ function AdminPanel({ onLogout }) {
   const toggleLang = () => setLang(l => l === 'en' ? 'zh' : 'en');
 
   const [tab, setTab] = useState('users');
-  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [], chipModels: [], tickets: [], adminAccounts: [] });
+  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -6007,7 +6175,7 @@ function AdminPanel({ onLogout }) {
     setLoading(true);
     const ok = (res) => res.status === 'fulfilled' ? res.value.data : {};
     try {
-      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, tkRes, aaRes, hptRes] = await Promise.allSettled([
+      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, tkRes, aaRes, hptRes, apkRes] = await Promise.allSettled([
         axios.get('/api/users'),
         axios.get('/api/dots-inventory'),
         axios.get('/api/coach-list'),
@@ -6021,6 +6189,7 @@ function AdminPanel({ onLogout }) {
         axios.get('/api/tickets'),
         axios.get('/api/admin-accounts'),
         axios.get('/api/health-plan-templates?all=true'),
+        axios.get('/api/kone-apk-releases'),
       ]);
       setData({
         users:               ok(uRes).users              || [],
@@ -6036,6 +6205,7 @@ function AdminPanel({ onLogout }) {
         tickets:             ok(tkRes).tickets           || [],
         adminAccounts:       ok(aaRes).accounts          || [],
         healthPlanTemplates: ok(hptRes).templates        || [],
+        koneApkReleases:     ok(apkRes).releases         || [],
       });
       setLastRefresh(new Date());
     } catch (err) { console.error('Admin fetch error:', err); }
@@ -6107,7 +6277,7 @@ function AdminPanel({ onLogout }) {
           {tab === 'dots'     && <DotsTab     dots={data.dots} onRefresh={fetchData} />}
           {tab === 'store'    && <StoreTab    storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
           {tab === 'channels' && <ChannelTab  channels={data.channels} onRefresh={fetchData} />}
-          {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
           {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'rewards'  && <RewardsTab />}

@@ -82,6 +82,7 @@ resources:
         OSS_BUCKET: "waven-nano"
         OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
         OSS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
+        KONE_APK_CNAME_DOMAIN: ${env(KONE_APK_CNAME_DOMAIN)}
       triggers:
         - triggerName: http-webhook
           triggerType: http

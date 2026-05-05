@@ -2415,6 +2415,97 @@ async function handleDeleteKinoDevice(id) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Kone APK Release Handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+const KONE_APK_BUCKET  = process.env.KONE_APK_OSS_BUCKET  || 'kone-apk';
+const KONE_APK_CNAME   = process.env.KONE_APK_CNAME_DOMAIN || null;
+
+async function handleGetKinoUpgrade() {
+    try {
+        const result = await pool.query(
+            `SELECT version, download_url FROM kone_apk_releases WHERE is_active = true LIMIT 1`
+        );
+        if (result.rows.length === 0) return { version: '', url: '' };
+        const row = result.rows[0];
+        return { version: row.version, url: row.download_url };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetKoneApkReleases() {
+    try {
+        const result = await pool.query(
+            `SELECT id, version, oss_key, download_url, notes, is_active, created_at
+             FROM kone_apk_releases ORDER BY created_at DESC`
+        );
+        return { success: true, releases: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostKoneApkRelease(body) {
+    const { version, oss_key, download_url, notes } = body;
+    if (!version || !oss_key || !download_url) {
+        return { success: false, error: 'version, oss_key, and download_url are required' };
+    }
+    try {
+        const result = await pool.query(
+            `INSERT INTO kone_apk_releases (version, oss_key, download_url, notes)
+             VALUES ($1, $2, $3, $4) RETURNING id`,
+            [version, oss_key, download_url, notes || null]
+        );
+        return { success: true, id: result.rows[0].id };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutKoneApkRelease(id, body) {
+    try {
+        const releaseId = parseInt(id);
+        if (body.is_active === true) {
+            // Clear any existing active release, then activate this one
+            await pool.query(`UPDATE kone_apk_releases SET is_active = false`);
+            await pool.query(`UPDATE kone_apk_releases SET is_active = true WHERE id = $1`, [releaseId]);
+        }
+        if (body.notes !== undefined) {
+            await pool.query(`UPDATE kone_apk_releases SET notes = $1 WHERE id = $2`, [body.notes, releaseId]);
+        }
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteKoneApkRelease(id) {
+    try {
+        const releaseId = parseInt(id);
+        const check = await pool.query(`SELECT is_active FROM kone_apk_releases WHERE id = $1`, [releaseId]);
+        if (check.rows.length === 0) return { success: false, error: 'Release not found' };
+        if (check.rows[0].is_active) return { success: false, error: 'Cannot delete the active release' };
+        await pool.query(`DELETE FROM kone_apk_releases WHERE id = $1`, [releaseId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetKoneApkPresign() {
+    try {
+        const id = crypto.randomBytes(8).toString('hex');
+        const key = `apk/${id}.apk`;
+        const put_url = ossLib.generatePresignedPutUrl(key, 3600, KONE_APK_BUCKET);
+        const get_url = ossLib.generatePresignedGetUrl(key, 315360000, KONE_APK_BUCKET, KONE_APK_CNAME);
+        return { success: true, put_url, get_url, key };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleGetKinoChipBatches() {
     try {
         const result = await pool.query(`
@@ -4429,7 +4520,13 @@ exports.handler = async (req, resp, context) => {
         }
 
         if (method === 'GET') {
-            if (path.includes('/kino-devices')) {
+            if (path === '/kino-upgrade') {
+                result = await handleGetKinoUpgrade();
+            } else if (path.includes('/kone-apk-releases')) {
+                result = await handleGetKoneApkReleases();
+            } else if (path.includes('/oss/kone-apk/presign')) {
+                result = await handleGetKoneApkPresign();
+            } else if (path.includes('/kino-devices')) {
                 result = await handleGetKinoDevices();
             } else if (path.match(/\/kino-chip-batches\/(\d+)\/chips/)) {
                 const batchId = path.match(/\/kino-chip-batches\/(\d+)\/chips/)[1];
@@ -4563,6 +4660,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostDots(parsedBody);
             } else if (path === '/users') {
                 result = await handlePostUsers(parsedBody);
+            } else if (path.includes('/kone-apk-releases')) {
+                result = await handlePostKoneApkRelease(parsedBody);
             } else if (path.includes('/kino-chip-batches')) {
                 result = await handlePostKinoChipBatch(parsedBody);
             } else if (path.includes('/kino-chip-models')) {
@@ -4630,7 +4729,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostChat(parsedBody);
             }
         } else if (method === 'PUT') {
-            if (path.match(/\/kino-chip-batches\/(\d+)/)) {
+            if (path.match(/\/kone-apk-releases\/(\d+)/)) {
+                const releaseId = path.match(/\/kone-apk-releases\/(\d+)/)[1];
+                result = await handlePutKoneApkRelease(releaseId, parsedBody);
+            } else if (path.match(/\/kino-chip-batches\/(\d+)/)) {
                 const batchId = path.match(/\/kino-chip-batches\/(\d+)/)[1];
                 result = await handlePutKinoChipBatch(batchId, parsedBody);
             } else if (path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)) {
@@ -4699,7 +4801,10 @@ exports.handler = async (req, resp, context) => {
                 result = { success: false, error: `Unknown PUT route: ${path}` };
             }
         } else if (method === 'DELETE') {
-            if (path.match(/\/kino-chip-batches\/(\d+)/)) {
+            if (path.match(/\/kone-apk-releases\/(\d+)/)) {
+                const releaseId = path.match(/\/kone-apk-releases\/(\d+)/)[1];
+                result = await handleDeleteKoneApkRelease(releaseId);
+            } else if (path.match(/\/kino-chip-batches\/(\d+)/)) {
                 const batchId = path.match(/\/kino-chip-batches\/(\d+)/)[1];
                 result = await handleDeleteKinoChipBatch(batchId);
             } else if (path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)) {

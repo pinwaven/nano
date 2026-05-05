@@ -9,6 +9,6 @@ npx vite build
 # 2. Deploy the Admin Panel function
 echo "Deploying Admin Panel..."
 cd ../../..
-s admin-panel deploy -y
+s admin-panel deploy -t s-prod.yaml -y
 
-echo "Done! Admin Panel has been built and deployed to https://nano-dev.fros.cc/admin/"
+echo "Done! Admin Panel has been built and deployed to https://nano.fros.cc/admin/"

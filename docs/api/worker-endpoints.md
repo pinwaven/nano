@@ -42,10 +42,16 @@ The token is configured via the `API_BEARER_TOKEN` environment variable on the `
 | `GET` | `/dots-inventory` | Dots | List all Dots cartridges |
 | `GET` | `/my-cartridges` | Dots | Get user's active cartridges |
 | `GET` | `/coach-list` | Admin | List Coaches |
+| `GET` | `/kino-upgrade` | Kone Upgrade | Active APK version + download URL — **no auth** |
 | `GET` | `/kino-devices` | Kino | List Kino devices |
 | `GET` | `/kino-chip` | Kino | Look up chip scan (joins model config) |
 | `GET` | `/kino-chip-batches` | Kino | List chip batches |
 | `GET` | `/kino-chip-models` | Kino | List chip models with usage counts |
+| `GET` | `/kone-apk-releases` | Kone Upgrade | List all APK releases |
+| `GET` | `/oss/kone-apk/presign` | Kone Upgrade | Generate presigned PUT + GET URLs for APK upload |
+| `POST` | `/kone-apk-releases` | Kone Upgrade | Create a new APK release record |
+| `PUT` | `/kone-apk-releases/:id` | Kone Upgrade | Set release active or update notes |
+| `DELETE` | `/kone-apk-releases/:id` | Kone Upgrade | Delete inactive release |
 | `GET` | `/store-items` | E-commerce | List store items |
 | `GET` | `/my-orders` | E-commerce | User's order history |
 | `GET` | `/academy/courses` | Academy | List courses |
