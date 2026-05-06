@@ -33,6 +33,22 @@ The WeChat Mini Program (`src/mini/nano-miniapp/`) automatically selects the bac
 
 This ensures that only developers in the IDE touch the dev environment, while all uploaded versions (including previews) use the production backend. Logic resides in `src/mini/nano-miniapp/utils/config.js`.
 
+### WeChat Domain Whitelist — first thing to check when miniapp network calls fail
+
+WeChat enforces a strict request domain whitelist. Any `wx.request` call to a domain not on the list produces the error **`fail url not in domain list`** and the request never leaves the device. This is the most common cause of miniapp API failures that look like server issues but are actually client-side blocks.
+
+**Both domains must be whitelisted** in the WeChat developer platform:
+- `https://nano.fros.cc` (prod / trial / release)
+- `https://nano-dev.fros.cc` (develop / IDE)
+
+**When a developer reports "unable to sign in", "API calls failing", or any network error in the miniapp — ask them to check this first:**
+
+1. **Quick local bypass (dev tools only):** WeChat DevTools → **Details → Local Settings** → check **"不校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书"**. Disables domain validation for the current dev session only.
+
+2. **Permanent fix:** [mp.weixin.qq.com](https://mp.weixin.qq.com) → Development → Development Settings → Server Domain → **request合法域名** → add both `https://nano.fros.cc` and `https://nano-dev.fros.cc`. Takes effect after the next miniapp upload.
+
+The error message WeChat shows may truncate the domain (e.g. `nao-dev.fros..cc` instead of `nano-dev.fros.cc`) — this is a WeChat display artifact, not a URL typo in the code.
+
 ### Dev/prod deploy commands
 
 ```bash

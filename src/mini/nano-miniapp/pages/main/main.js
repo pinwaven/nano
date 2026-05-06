@@ -613,6 +613,8 @@ Page({
     // Kino Simulator
     kinoSimOpen: false,
     kinoSimStatus: 'ready',
+    kinoSimDebug: false,
+    kinoSimError: '',
     kinoSimBmList: [],
     kinoSimSubAgeList: [],
     kinoSimBioAge: null,
@@ -912,10 +914,14 @@ Page({
     this.setData({ kinoPassInput: kinoPassInput.slice(0, -1), kinoPassError: false })
   },
 
+  toggleKinoSimDebug() {
+    this.setData({ kinoSimDebug: !this.data.kinoSimDebug })
+  },
+
   closeKinoSim() {
     this._stopKinoSlide()
     this.setData({
-      kinoSimOpen: false, kinoSimStatus: 'ready',
+      kinoSimOpen: false, kinoSimStatus: 'ready', kinoSimDebug: false, kinoSimError: '',
       kinoSimBmList: [], kinoSimSubAgeList: [],
       kinoSimBioAge: null, kinoSimChronoAge: null, kinoSimBioAgeColor: '#A6C4E5',
       kinoSimActiveTab: 'bioage', kinoSimSlideIndex: 0, kinoSimSlideVisible: true,
@@ -949,7 +955,7 @@ Page({
     if (kinoSimStatus === 'complete') {
       this._stopKinoSlide()
       this.setData({
-        kinoSimStatus: 'ready', kinoSimBmList: [], kinoSimSubAgeList: [],
+        kinoSimStatus: 'ready', kinoSimError: '', kinoSimBmList: [], kinoSimSubAgeList: [],
         kinoSimBioAge: null, kinoSimChronoAge: null, kinoSimBioAgeColor: '#A6C4E5',
         kinoSimActiveTab: 'bioage', kinoSimSlideIndex: 0, kinoSimSlideVisible: true,
         kinoSimScannedUserId: null, kinoSimScannedUserName: null, kinoSimChipId: null,
@@ -965,22 +971,18 @@ Page({
         try {
           const chipRes = await this._req(`${BASE}/api/kino-chip?chip_id=${encodeURIComponent(chip_id)}`)
           if (chipRes.statusCode !== 200 || !chipRes.data?.found) {
-            wx.showToast({ title: t.kinoSimChipNotFound, icon: 'none', duration: 2500 })
-            this.setData({ kinoSimStatus: 'failed' })
-            setTimeout(() => { if (this.data.kinoSimOpen) this.setData({ kinoSimStatus: 'ready' }) }, 3000)
+            this.setData({ kinoSimStatus: 'failed', kinoSimError: 'Chip not bound to any user. Ask the user to scan and bind the chip first via the chat Test Chip tool.' })
             return
           }
           if (chipRes.data.used) {
-            wx.showToast({ title: t.kinoSimChipUsed, icon: 'none', duration: 2500 })
-            this.setData({ kinoSimStatus: 'ready' })
+            this.setData({ kinoSimStatus: 'failed', kinoSimError: 'chip already used' })
             return
           }
           const { user_id: chipUserId, nickname: chipNickname } = chipRes.data
           this.setData({ kinoSimScannedUserId: chipUserId, kinoSimScannedUserName: chipNickname, kinoSimChipId: chip_id })
           await this._runKinoAnalysis(chipUserId)
         } catch (e) {
-          this.setData({ kinoSimStatus: 'failed' })
-          setTimeout(() => { if (this.data.kinoSimOpen) this.setData({ kinoSimStatus: 'ready' }) }, 3000)
+          this.setData({ kinoSimStatus: 'failed', kinoSimError: e instanceof Error ? e.message : JSON.stringify(e, null, 2) })
         }
       },
       fail: () => {},
@@ -997,6 +999,9 @@ Page({
         test_data: {},
         kino_device_id: this.data.kinoSimDeviceId || undefined,
       })
+      if (res.statusCode !== 200 && res.statusCode !== 201) {
+        throw new Error(`POST /biomarkers HTTP ${res.statusCode}: ${res.data?.error || JSON.stringify(res.data)}`)
+      }
       const biomarkers = res.data?.biomarkers || null
       let bioageProfile = res.data?.bioage_profile || null
       if (!bioageProfile) {
@@ -1045,8 +1050,7 @@ Page({
       })
       this._startKinoSlide()
     } catch (e) {
-      this.setData({ kinoSimStatus: 'failed' })
-      setTimeout(() => { if (this.data.kinoSimOpen) this.setData({ kinoSimStatus: 'ready' }) }, 3000)
+      this.setData({ kinoSimStatus: 'failed', kinoSimError: e instanceof Error ? e.message : JSON.stringify(e, null, 2) })
     }
   },
 

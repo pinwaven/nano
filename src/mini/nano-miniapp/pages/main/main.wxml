@@ -959,6 +959,18 @@
           <text>✕  {{t.kinoSimQuit}}</text>
         </view>
 
+        <view class="ksm-debug-toggle" bindtap="toggleKinoSimDebug">
+          <text class="ksm-debug-toggle-text">{{kinoSimDebug ? '▲ DEBUG' : '▼ DEBUG'}}</text>
+        </view>
+
+        <view wx:if="{{kinoSimDebug && kinoSimError}}" class="ksm-debug-box">
+          <text class="ksm-debug-label">ERROR</text>
+          <text class="ksm-debug-msg" user-select="true">{{kinoSimError}}</text>
+        </view>
+        <view wx:elif="{{kinoSimDebug}}" class="ksm-debug-box">
+          <text class="ksm-debug-msg">No errors.</text>
+        </view>
+
         <view style="height: 48rpx;"></view>
       </view>
       </scroll-view>
