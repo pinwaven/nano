@@ -69,9 +69,26 @@ describe('BiomarkerEstimator - tag adjustments', () => {
         assert.deepStrictEqual(report.AppliedTags.sort(), ['diabetes_diagnosed', 'inflammation_load_high'].sort());
     });
 
-    test('test_data overrides skip tag adjustments (measured value wins)', () => {
-        const measured = { hsCRP: 0.5 };
+    test('test_data overrides skip tag adjustments (measured value wins if in [0.5, 2.5])', () => {
+        const seed = 'fixed-seed';
+        const measured = { hsCRP: 1.5 };
         const report = new BiomarkerEstimator(40, measured, { Weight: 70, Height: 175 }, ['inflammation_load_high'], { seed }).generateReport();
-        assert.strictEqual(report.BiomarkerValues.hsCRP, 0.5);
+        assert.strictEqual(report.BiomarkerValues.hsCRP, 1.5);
+    });
+
+    test('hsCRP < 0.5 is ignored and estimated instead', () => {
+        const seed = 'fixed-seed';
+        const measured = { hsCRP: 0.4 };
+        const report = new BiomarkerEstimator(40, measured, { Weight: 70, Height: 175 }, [], { seed }).generateReport();
+        assert.notStrictEqual(report.BiomarkerValues.hsCRP, 0.4);
+        assert.ok(report.BiomarkerValues.hsCRP > 0.4, 'Should have estimated a more likely value');
+    });
+
+    test('hsCRP > 2.5 is ignored and estimated instead', () => {
+        const seed = 'fixed-seed';
+        const measured = { hsCRP: 10.0 };
+        const report = new BiomarkerEstimator(40, measured, { Weight: 70, Height: 175 }, [], { seed }).generateReport();
+        assert.notStrictEqual(report.BiomarkerValues.hsCRP, 10.0);
+        assert.ok(report.BiomarkerValues.hsCRP < 5.0, 'Should have estimated a more likely value for a 40yo');
     });
 });

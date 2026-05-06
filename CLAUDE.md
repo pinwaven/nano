@@ -23,6 +23,16 @@ There are two separate PolarDB databases. Both share the same Aliyun account and
 
 **Always develop and test on dev first. Never run untested SQL directly on prod.**
 
+### Miniapp Backend Selection
+
+The WeChat Mini Program (`src/mini/nano-miniapp/`) automatically selects the backend URL based on its `envVersion`:
+
+- **`develop`** (IDE/Local Dev): `https://nano-dev.fros.cc`
+- **`trial`** (Preview/Experience): `https://nano.fros.cc`
+- **`release`** (Production): `https://nano.fros.cc`
+
+This ensures that only developers in the IDE touch the dev environment, while all uploaded versions (including previews) use the production backend. Logic resides in `src/mini/nano-miniapp/utils/config.js`.
+
 ### Dev/prod deploy commands
 
 ```bash

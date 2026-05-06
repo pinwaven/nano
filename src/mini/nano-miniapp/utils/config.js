@@ -5,9 +5,9 @@ let BASE = 'https://nano.fros.cc';
 
 switch (envVersion) {
   case 'develop':
-  case 'trial':
     BASE = 'https://nano-dev.fros.cc';
     break;
+  case 'trial':
   case 'release':
     BASE = 'https://nano.fros.cc';
     break;
