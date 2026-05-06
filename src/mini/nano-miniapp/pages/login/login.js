@@ -18,6 +18,11 @@ Page({
   onLoad(options) {
     if (options.coach_id) this._coachId = options.coach_id
     if (options.invite) this._inviteCode = options.invite
+    // If already have a valid session and no invite/coach params, go straight to main
+    if (app.globalData.user && !options.invite && !options.coach_id) {
+      wx.reLaunch({ url: '/pages/main/main' })
+      return
+    }
     this.wxLogin()
   },
 
