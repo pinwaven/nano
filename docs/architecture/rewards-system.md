@@ -27,6 +27,8 @@ When an order reaches `delivered`:
 
 Because the channel is snapshotted on the invitation at creation time, coach transfers between channels are handled automatically: old orders credit the old channel, new invitations (and their future orders) credit the new channel. No history table is needed.
 
+If the coach user account is later deleted, `invitations.created_by` becomes `NULL` but `invitations.created_by_snapshot` retains the original user ID permanently. The commission service reads `created_by` first; this field becomes NULL on deletion, so commissions are no longer attributed after the coach is removed. Existing commissions already recorded are unaffected.
+
 Users with no invitation link generate no commission.
 
 ---

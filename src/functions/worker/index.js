@@ -1678,9 +1678,9 @@ async function handleGetInvitations(query) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         let sql = `
             SELECT i.id, i.code, i.type, i.max_uses, i.use_count, i.is_active, i.created_at, i.expires_at,
-                   i.channel_id, i.created_by,
+                   i.channel_id, COALESCE(i.created_by, i.created_by_snapshot) AS created_by,
                    c.name AS channel_name,
-                   u.nickname AS creator_name
+                   COALESCE(u.nickname, i.created_by_snapshot) AS creator_name
             FROM invitations i
             LEFT JOIN channels c ON i.channel_id = c.id
             LEFT JOIN users u ON i.created_by = u.user_id
@@ -1711,8 +1711,8 @@ async function handlePostInvitation(body) {
             attempts++;
         } while (attempts < 10);
         const result = await pool.query(
-            `INSERT INTO invitations (code, created_by, channel_id, type, max_uses)
-             VALUES ($1, $2, $3, $4, $5) RETURNING id, code`,
+            `INSERT INTO invitations (code, created_by, created_by_snapshot, channel_id, type, max_uses)
+             VALUES ($1, $2, $2, $3, $4, $5) RETURNING id, code`,
             [code, created_by || null, parseInt(channel_id), type, max_uses || null]
         );
         return { success: true, id: result.rows[0].id, code: result.rows[0].code };
@@ -1813,7 +1813,7 @@ async function handleWxLogin(body) {
                         [inviteRecord.id]
                     );
                     await pool.query(
-                        'INSERT INTO invitation_uses (invitation_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                        'INSERT INTO invitation_uses (invitation_id, user_id, user_id_snapshot) VALUES ($1, $2, $2) ON CONFLICT (invitation_id, user_id_snapshot) DO NOTHING',
                         [inviteRecord.id, existingRow.user_id]
                     );
                     // Re-fetch with updated channel info
@@ -1906,7 +1906,7 @@ async function handleWxLogin(body) {
             [inviteRecord.id]
         );
         await pool.query(
-            'INSERT INTO invitation_uses (invitation_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            'INSERT INTO invitation_uses (invitation_id, user_id, user_id_snapshot) VALUES ($1, $2, $2) ON CONFLICT (invitation_id, user_id_snapshot) DO NOTHING',
             [inviteRecord.id, newUserId]
         );
     }
