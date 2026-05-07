@@ -2935,6 +2935,19 @@ async function handlePostHealthAdvice(body) {
             ),
         ]);
 
+        const activePlans = plansResult.rows;
+        let planTemplates = [];
+        if (activePlans.length === 0) {
+            const tplResult = await pool.query(
+                `SELECT name_en, name_zh, goal_en, goal_zh, desc_en, desc_zh, target_sub_ages, duration_weeks
+                 FROM health_plan_templates
+                 WHERE channel_id IS NULL OR channel_id = $1
+                 ORDER BY sort_order ASC, id ASC`,
+                [user.channel_id || null]
+            );
+            planTemplates = tplResult.rows;
+        }
+
         const latestBio = bioResult.rows[0] || null;
         const bioageProfile = latestBio?.data?.bioage_profile || null;
         const estimatedBm = latestBio?.data?.estimated || {};
@@ -2969,7 +2982,7 @@ async function handlePostHealthAdvice(body) {
             dotsByDimension,
             healthConditions,
             healthConditionsOther,
-            active_health_plans: (plansResult.rows || []).map(p => ({
+            active_health_plans: activePlans.map(p => ({
                 plan_type: p.plan_type,
                 name: isZh ? p.name_zh : p.name_en,
                 goal: isZh ? p.goal_zh : p.goal_en,
@@ -2977,6 +2990,13 @@ async function handlePostHealthAdvice(body) {
                 weeks_elapsed: Math.max(0, Math.floor((Date.now() - new Date(p.start_date).getTime()) / (7 * 86400000))),
                 total_weeks: p.duration_weeks,
                 checkin_count: parseInt(p.checkin_count || 0, 10),
+            })),
+            plan_templates: planTemplates.map(t => ({
+                name: isZh ? t.name_zh : t.name_en,
+                goal: isZh ? t.goal_zh : t.goal_en,
+                desc: isZh ? t.desc_zh : t.desc_en,
+                target_sub_ages: t.target_sub_ages || [],
+                duration_weeks: t.duration_weeks,
             })),
         });
 
