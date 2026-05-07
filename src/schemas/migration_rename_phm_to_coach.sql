@@ -1,9 +1,12 @@
 -- Migration: Rename Coach to Coach (formerly PHM)
--- 1. Rename coaches table (if it was named phms)
-ALTER TABLE phms RENAME TO coaches;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'phms') THEN
+    ALTER TABLE phms RENAME TO coaches;
+  END IF;
+END $$;
 
--- 2. Rename coach_id column in users table (if it was named phm_id)
-ALTER TABLE users RENAME COLUMN phm_id TO coach_id;
-
--- 3. If there are any other dependencies or comments, update them here.
--- Note: Foreign key constraints should automatically follow the table rename.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'phm_id') THEN
+    ALTER TABLE users RENAME COLUMN phm_id TO coach_id;
+  END IF;
+END $$;

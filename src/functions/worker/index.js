@@ -53,18 +53,20 @@ async function handleGetUsers() {
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
                     u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
                     b.bio_age, b.data as bio_data,
-                    p.name as coach_name,
+                    cu.nickname as coach_name,
                     c.name as channel_name, c.logo_url as channel_logo_url,
                     (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report,
                     (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan
             FROM users u
             LEFT JOIN coaches p ON u.coach_id = p.id
+            LEFT JOIN users cu ON p.user_id = cu.user_id
             LEFT JOIN channels c ON u.channel_id = c.id
             LEFT JOIN (
                 SELECT DISTINCT ON (user_id) user_id, bio_age, data
                 FROM biomarkers
                 ORDER BY user_id, tested_at DESC
-            ) b ON u.user_id = b.user_id;
+            ) b ON u.user_id = b.user_id
+            ORDER BY u.created_at DESC;
         `;
         const result = await pool.query(query);
         const users = result.rows.map(u => ({ ...u, chrono_age: calculateAge(u.birth_date) }));
@@ -1028,13 +1030,15 @@ async function handleGetCoachList() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const query = `
-            SELECT p.id, p.name, p.email, p.phone, p.language, p.channel_id, p.user_id, p.created_at,
-                   COUNT(u.user_id) AS user_count,
+            SELECT p.id, p.channel_id, p.user_id, p.created_at,
+                   u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
+                   COUNT(assigned.user_id) AS user_count,
                    c.name AS channel_name
             FROM coaches p
-            LEFT JOIN users u ON p.id = u.coach_id
+            JOIN users u ON p.user_id = u.user_id
+            LEFT JOIN users assigned ON p.id = assigned.coach_id
             LEFT JOIN channels c ON p.channel_id = c.id
-            GROUP BY p.id, c.name;
+            GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language, c.name;
         `;
         const result = await pool.query(query);
         return { success: true, coaches: result.rows };
@@ -1050,9 +1054,10 @@ async function handleGetChannelUsers(channelId) {
         const result = await pool.query(
             `SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
                     u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
-                    b.bio_age, p.name AS coach_name
+                    b.bio_age, cu.nickname AS coach_name
              FROM users u
              LEFT JOIN coaches p ON u.coach_id = p.id
+             LEFT JOIN users cu ON p.user_id = cu.user_id
              LEFT JOIN (
                  SELECT DISTINCT ON (user_id) user_id, bio_age
                  FROM biomarkers ORDER BY user_id, tested_at DESC
@@ -1072,12 +1077,14 @@ async function handleGetChannelCoaches(channelId) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `SELECT p.id, p.name, p.email, p.phone, p.language, p.channel_id, p.user_id, p.created_at,
-                    COUNT(u.user_id) AS user_count
+            `SELECT p.id, p.channel_id, p.user_id, p.created_at,
+                    u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
+                    COUNT(assigned.user_id) AS user_count
              FROM coaches p
-             LEFT JOIN users u ON p.id = u.coach_id
+             JOIN users u ON p.user_id = u.user_id
+             LEFT JOIN users assigned ON p.id = assigned.coach_id
              WHERE p.channel_id = $1
-             GROUP BY p.id
+             GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language
              ORDER BY p.created_at DESC`,
             [channelId]
         );
@@ -1235,21 +1242,18 @@ async function handlePostAssignCoach(body) {
 }
 
 async function handlePostCoaches(body) {
-    const { name, email, phone, language, channel_id, user_id } = body;
-    if (!name) return { success: false, error: 'name is required', statusCode: 400 };
+    const { channel_id, user_id } = body;
+    if (!user_id) return { success: false, error: 'user_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            'INSERT INTO coaches (name, email, phone, language, channel_id, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-            [name, email || null, phone || null, language || 'zh', channel_id || null, user_id || null]
+            'INSERT INTO coaches (user_id, channel_id) VALUES ($1, $2) RETURNING id',
+            [user_id, channel_id || null]
         );
-        // If user_id provided, add 'coach' role to that user
-        if (user_id) {
-            await pool.query(
-                `UPDATE users SET roles = array_append(roles, 'coach') WHERE user_id = $1 AND NOT ('coach' = ANY(roles))`,
-                [user_id]
-            );
-        }
+        await pool.query(
+            `UPDATE users SET roles = array_append(roles, 'coach') WHERE user_id = $1 AND NOT ('coach' = ANY(roles))`,
+            [user_id]
+        );
         return { success: true, id: result.rows[0].id };
     } catch (err) {
         return { success: false, error: err.detail || err.message };
@@ -1257,24 +1261,20 @@ async function handlePostCoaches(body) {
 }
 
 async function handlePutCoach(coachId, body) {
-    const { name, email, phone, language, channel_id, user_id } = body;
+    const { channel_id, user_id } = body;
+    if (!user_id) return { success: false, error: 'user_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        // Get old user_id to potentially remove coach role
         const oldResult = await pool.query('SELECT user_id FROM coaches WHERE id = $1', [coachId]);
         const oldUserId = oldResult.rows[0]?.user_id;
         await pool.query(
-            'UPDATE coaches SET name=$1, email=$2, phone=$3, language=$4, channel_id=$5, user_id=$6 WHERE id=$7',
-            [name, email || null, phone || null, language || 'zh', channel_id || null, user_id || null, coachId]
+            'UPDATE coaches SET user_id=$1, channel_id=$2 WHERE id=$3',
+            [user_id, channel_id || null, coachId]
         );
-        // Add coach role to new user_id
-        if (user_id) {
-            await pool.query(
-                `UPDATE users SET roles = array_append(roles, 'coach') WHERE user_id = $1 AND NOT ('coach' = ANY(roles))`,
-                [user_id]
-            );
-        }
-        // Remove coach role from old user_id if changed
+        await pool.query(
+            `UPDATE users SET roles = array_append(roles, 'coach') WHERE user_id = $1 AND NOT ('coach' = ANY(roles))`,
+            [user_id]
+        );
         if (oldUserId && oldUserId !== user_id) {
             const stillCoach = await pool.query('SELECT id FROM coaches WHERE user_id = $1', [oldUserId]);
             if (stillCoach.rows.length === 0) {
@@ -1293,7 +1293,20 @@ async function handlePutCoach(coachId, body) {
 async function handleDeleteCoach(coachId) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const coachRow = await pool.query('SELECT user_id FROM coaches WHERE id = $1', [coachId]);
+        if (!coachRow.rows.length) return { success: false, statusCode: 404, error: 'Coach not found' };
+        const userId = coachRow.rows[0].user_id;
+        const assigned = await pool.query('SELECT COUNT(*) FROM users WHERE coach_id = $1', [coachId]);
+        if (parseInt(assigned.rows[0].count) > 0) {
+            return { success: false, statusCode: 409, error: `Cannot delete coach: ${assigned.rows[0].count} user(s) are still assigned.` };
+        }
         await pool.query('DELETE FROM coaches WHERE id = $1', [coachId]);
+        if (userId) {
+            await pool.query(
+                `UPDATE users SET roles = array_remove(roles, 'coach') WHERE user_id = $1`,
+                [userId]
+            );
+        }
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -1458,9 +1471,31 @@ async function handlePutUser(user_id, body) {
                 [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, avatar_url || null, user_id]
             );
         }
+        // Sync coaches table when roles change
+        if (roles) {
+            if (roles.includes('coach')) {
+                await pool.query(
+                    `INSERT INTO coaches (user_id, channel_id)
+                     SELECT $1, COALESCE($2, u.channel_id) FROM users u WHERE u.user_id = $1
+                     AND NOT EXISTS (SELECT 1 FROM coaches WHERE user_id = $1)`,
+                    [user_id, channel_id || null]
+                );
+            } else {
+                // Block removal if coach still has assigned users
+                const coachRow = await pool.query('SELECT id FROM coaches WHERE user_id = $1', [user_id]);
+                if (coachRow.rows.length > 0) {
+                    const coachId = coachRow.rows[0].id;
+                    const assigned = await pool.query('SELECT COUNT(*) FROM users WHERE coach_id = $1', [coachId]);
+                    if (parseInt(assigned.rows[0].count) > 0) {
+                        return { success: false, statusCode: 409, error: `Cannot remove coach role: ${assigned.rows[0].count} user(s) are still assigned to this coach.` };
+                    }
+                    await pool.query('DELETE FROM coaches WHERE id = $1', [coachId]);
+                }
+            }
+        }
         return { success: true };
     } catch (err) {
-        return { success: false, error: err.message };
+        return { success: false, statusCode: 500, error: err.message };
     }
 }
 
@@ -1669,10 +1704,11 @@ async function handleWxLogin(body) {
     const existing = await pool.query(
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                 u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
-                p.name AS coach_name,
+                cu.nickname AS coach_name,
                 c.name AS channel_name, c.logo_url AS channel_logo_url
          FROM users u
          LEFT JOIN coaches p ON u.coach_id = p.id
+         LEFT JOIN users cu ON p.user_id = cu.user_id
          LEFT JOIN channels c ON u.channel_id = c.id
          LEFT JOIN (
              SELECT DISTINCT ON (user_id) user_id, bio_age
@@ -1717,10 +1753,11 @@ async function handleWxLogin(body) {
                     const refreshed = await pool.query(
                         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                                 u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
-                                p.name AS coach_name,
+                                cu.nickname AS coach_name,
                                 c.name AS channel_name, c.logo_url AS channel_logo_url
                          FROM users u
                          LEFT JOIN coaches p ON u.coach_id = p.id
+                         LEFT JOIN users cu ON p.user_id = cu.user_id
                          LEFT JOIN channels c ON u.channel_id = c.id
                          LEFT JOIN (
                              SELECT DISTINCT ON (user_id) user_id, bio_age
@@ -1740,7 +1777,7 @@ async function handleWxLogin(body) {
         let coach = null;
         if (user.roles && user.roles.includes('coach')) {
             const coachRes = await pool.query(
-                `SELECT id, name, email, phone, language, channel_id, user_id FROM coaches WHERE user_id = $1 LIMIT 1`,
+                `SELECT id, channel_id, user_id FROM coaches WHERE user_id = $1 LIMIT 1`,
                 [user.user_id]
             );
             if (coachRes.rows.length > 0) coach = coachRes.rows[0];

@@ -93,10 +93,12 @@ CREATE TABLE IF NOT EXISTS health_plan_milestones (
 CREATE INDEX IF NOT EXISTS idx_hpm_plan ON health_plan_milestones(plan_id, milestone_index);
 
 -- ── updated_at Triggers ──────────────────────────────────────────────────────
+DROP TRIGGER IF EXISTS update_health_plans_updated_at ON health_plans;
 CREATE TRIGGER update_health_plans_updated_at
     BEFORE UPDATE ON health_plans
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_health_plan_templates_updated_at ON health_plan_templates;
 CREATE TRIGGER update_health_plan_templates_updated_at
     BEFORE UPDATE ON health_plan_templates
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

@@ -6,6 +6,21 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Changed
+- **Coach / user architecture rationalized** — `users` is now the single source of truth for coach identity. The `coaches` table is a thin "coach seat" (`id, user_id NOT NULL UNIQUE, channel_id, created_at`); all profile data (name, email, phone, avatar_url, language) is read from the linked `users` row via JOIN.
+  - **DB migration** `src/schemas/migration_rationalize_coaches.sql`: enforces `coaches.user_id NOT NULL UNIQUE`, changes FK to `ON DELETE CASCADE`, drops the duplicated profile columns. A follow-up `migration_rationalize_coaches_fix.sql` ensures the drops are applied where the first migration was tracked but rolled back.
+  - **Worker** `src/functions/worker/index.js`:
+    - `GET /coach-list` and `GET /channel-coaches/:id` now JOIN `users` for profile fields; response shape is unchanged (same field names).
+    - `GET /users`, `GET /channel-users/:id`, `GET /wx-login` — `coach_name` now comes from the linked coach's `users.nickname` instead of the dropped `coaches.name` column.
+    - `POST /coaches` — `user_id` is now required; inserts only `(user_id, channel_id)`; always adds `'coach'` role to the linked user.
+    - `PUT /coaches/:id` — updates only `user_id` and `channel_id`; profile edits go through `PUT /users/:id`.
+    - `DELETE /coaches/:id` — **bug fixed**: now removes `'coach'` role from the linked user after deletion; blocked with 409 if the coach still has assigned users.
+    - `PUT /users/:id` — **new**: assigning the `'coach'` role automatically creates a `coaches` row (using the user's `channel_id`); removing the `'coach'` role deletes it. Removal is blocked with 409 if users are still assigned.
+    - `GET /users` — results now ordered by `created_at DESC` (newest first).
+  - **Web admin panel** `src/web/admin-panel/src/App.jsx` — `CoachModal` replaced name/email/phone/language inputs with a live user-search picker; only `user_id` and `channel_id` are submitted.
+  - **Miniapp admin panel** `src/mini/nano-miniapp/pages/admin/` — coach add/edit form replaced with a native picker over the channel's user list.
+  - **Miniapp coach panel** — no change required; only uses `coach.id` and `coach.channel_id` from the login response.
+
 ### Added
 - **NL2SQL tool call in chat** — the worker's chat LLM can now query the user's health data dynamically when the pre-loaded context isn't enough. An agentic loop (max 4 iterations) offers the model a `query_database` tool; when called, the worker validates the SQL is a `SELECT` with `$1` for `user_id`, runs it against PolarDB, and feeds the rows back. Supports `biomarkers`, `nutrition_schedules`, `reminders`, and `chat_messages`. No new routes, no schema changes — change is entirely within `handlePostChat` in `src/functions/worker/index.js`.
 - **Tag-driven biomarker estimator** — the `BiomarkerEstimator` now consumes a registry-defined tag set so its 6 estimated biomarkers respond to the user's actual nutrition compliance, weight trend, and prior-scan trajectory instead of just age + BMI. The estimator stays deterministic and synchronous — no LLM on the hot path.

@@ -30,7 +30,7 @@ if (!connString) {
 
 const pool = new Pool({
     connectionString: connString,
-    ssl: connString.includes('localhost') ? false : { rejectUnauthorized: false },
+    ssl: false,
 });
 
 const MIGRATION_DIRS = [

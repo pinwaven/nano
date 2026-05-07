@@ -658,6 +658,24 @@ tr:hover .row-actions { opacity: 1; }
   margin-left: 3px;
 }
 
+/* ── Coach user picker ── */
+.coach-user-selected {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 6px;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+}
+.coach-user-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 6px; box-shadow: 0 4px 16px #0002;
+  max-height: 260px; overflow-y: auto;
+}
+.coach-user-option {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; cursor: pointer;
+}
+.coach-user-option:hover { background: var(--bg-secondary); }
+
 /* ── User Detail Modal ── */
 .modal-user-detail { width: 960px; max-width: 96vw; }
 

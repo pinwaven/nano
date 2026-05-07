@@ -450,19 +450,10 @@
 
           <!-- ── COACH FORM ── -->
           <block wx:elif="{{modalType === 'coach'}}">
-            <text class="adm-field-label">{{t.coach.name}} *</text>
-            <input class="adm-field-input" value="{{form.name}}" bindinput="onFormInput" data-key="name" placeholder-class="adm-ph" />
-
-            <text class="adm-field-label">{{t.coach.email}}</text>
-            <input class="adm-field-input" value="{{form.email}}" bindinput="onFormInput" data-key="email" placeholder-class="adm-ph" />
-
-            <text class="adm-field-label">{{t.coach.phone}}</text>
-            <input class="adm-field-input" value="{{form.phone}}" bindinput="onFormInput" data-key="phone" type="number" placeholder-class="adm-ph" />
-
-            <text class="adm-field-label">{{t.coach.language}}</text>
-            <picker range="{{t.langOptions}}" value="{{formLangIdx}}" bindchange="onPickerLang">
+            <text class="adm-field-label">{{t.coach.selectUser}}</text>
+            <picker range="{{coachUserPickerOptions}}" value="{{coachUserPickerIdx}}" bindchange="onPickerCoachUser">
               <view class="adm-field-picker">
-                <text>{{t.langOptions[formLangIdx]}}</text>
+                <text>{{coachUserPickerIdx >= 0 ? coachUserPickerOptions[coachUserPickerIdx] : '—'}}</text>
                 <text class="adm-picker-arrow">›</text>
               </view>
             </picker>

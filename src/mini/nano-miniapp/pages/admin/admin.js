@@ -31,7 +31,7 @@ const T = {
       deleteRolesError: '无法删除：该用户拥有附加角色，请先在超管面板移除所有附加角色后再删除。',
     },
     coach: {
-      name: '姓名', email: '邮箱', phone: '电话', language: '语言', users: '用户数',
+      selectUser: '选择用户 *', users: '用户数',
       joined: '注册时间', addTitle: '添加教练', editTitle: '编辑教练',
       deleteWarning: '确认删除此教练？其名下用户将变为未分配状态。',
     },
@@ -100,7 +100,7 @@ const T = {
       deleteRolesError: 'Cannot delete: user has elevated roles. Remove all extra roles in the Super Admin panel first.',
     },
     coach: {
-      name: 'Name', email: 'Email', phone: 'Phone', language: 'Language', users: 'Users',
+      selectUser: 'Select User *', users: 'Users',
       joined: 'Joined', addTitle: 'Add Coach', editTitle: 'Edit Coach',
       deleteWarning: 'Delete this coach? Their assigned users will become unassigned.',
     },
@@ -207,7 +207,7 @@ Page({
       external_id: '', external_app: 'wechat', nickname: '', gender: '',
       birth_date: '', language: 'zh', coach_id: '', phone: '', email: '',
       // coach
-      name: '',
+      user_id: '',
       // dot
       key_name: '', name_en: '', name_zh: '', color: '', color_zh: '',
       description: '', is_isolate: false,
@@ -227,6 +227,9 @@ Page({
     formActiveIdx: 0,
     coachPickerOptions: [],
     coachPickerValues: [],
+    coachUserPickerOptions: [],
+    coachUserPickerValues: [],
+    coachUserPickerIdx: 0,
   },
 
   _channelId: null,
@@ -371,22 +374,37 @@ Page({
   },
 
   openAddCoach() {
+    const { lang, users } = this.data
+    const userOptions = users.map(u => (u.nickname || u.user_id) + ' (' + u.user_id + ')')
+    const userValues = users.map(u => u.user_id)
     this.setData({
-      modalOpen: true, modalType: 'coach', modalMode: 'add', modalTitle: T[this.data.lang].coach.addTitle, modalError: '', editTargetId: null,
-      form: { name: '', email: '', phone: '', language: 'zh' },
-      formLangIdx: 0,
+      modalOpen: true, modalType: 'coach', modalMode: 'add', modalTitle: T[lang].coach.addTitle, modalError: '', editTargetId: null,
+      form: { user_id: '' },
+      coachUserPickerOptions: userOptions,
+      coachUserPickerValues: userValues,
+      coachUserPickerIdx: -1,
     })
   },
 
   openEditCoach(e) {
     const c = e.currentTarget.dataset.coach
-    const { lang } = this.data
-    const langIdx = T[lang].langValues.indexOf(c.language || 'zh')
+    const { lang, users } = this.data
+    const userOptions = users.map(u => (u.nickname || u.user_id) + ' (' + u.user_id + ')')
+    const userValues = users.map(u => u.user_id)
+    const idx = userValues.indexOf(c.user_id || '')
     this.setData({
       modalOpen: true, modalType: 'coach', modalMode: 'edit', modalTitle: T[lang].coach.editTitle, modalError: '', editTargetId: c.id,
-      form: { name: c.name || '', email: c.email || '', phone: c.phone || '', language: c.language || 'zh' },
-      formLangIdx: langIdx >= 0 ? langIdx : 0,
+      form: { user_id: c.user_id || '' },
+      coachUserPickerOptions: userOptions,
+      coachUserPickerValues: userValues,
+      coachUserPickerIdx: idx >= 0 ? idx : 0,
     })
+  },
+
+  onPickerCoachUser(e) {
+    const idx = parseInt(e.detail.value)
+    const { coachUserPickerValues } = this.data
+    this.setData({ coachUserPickerIdx: idx, 'form.user_id': coachUserPickerValues[idx] || '' })
   },
 
   openAddItem() {
@@ -478,9 +496,9 @@ Page({
         if (modalMode === 'add') await this._req(`${BASE}/api/users`, 'POST', payload)
         else await this._req(`${BASE}/api/users/${editTargetId}`, 'PUT', payload)
       } else if (modalType === 'coach') {
-        if (!form.name.trim()) { this.setData({ modalError: t.error.required, modalBusy: false }); return }
-        if (modalMode === 'add') await this._req(`${BASE}/api/coaches`, 'POST', { name: form.name, email: form.email, phone: form.phone, language: form.language })
-        else await this._req(`${BASE}/api/coaches/${editTargetId}`, 'PUT', { name: form.name, email: form.email, phone: form.phone, language: form.language })
+        if (!form.user_id) { this.setData({ modalError: t.error.required, modalBusy: false }); return }
+        if (modalMode === 'add') await this._req(`${BASE}/api/coaches`, 'POST', { user_id: form.user_id })
+        else await this._req(`${BASE}/api/coaches/${editTargetId}`, 'PUT', { user_id: form.user_id })
       } else if (modalType === 'item') {
         if (!form.key_name.trim() || !form.name_en.trim()) { this.setData({ modalError: t.error.required, modalBusy: false }); return }
         if (modalMode === 'add') await this._req(`${BASE}/api/store-items`, 'POST', form)

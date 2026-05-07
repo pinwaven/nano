@@ -180,7 +180,7 @@ const T = {
       channelKeyName: 'Key Name *', channelName: 'Display Name *', channelLogoUrl: 'Logo URL',
       channel: 'Channel', channelUnassigned: 'No channel',
       roles: 'Roles', roleUser: 'User', roleCoach: 'Coach', roleAdmin: 'Channel Admin', roleSuperadmin: 'Superadmin',
-      linkedUserId: 'Linked User ID', linkedUserIdPlaceholder: 'WeChat user_id',
+      selectUser: 'User *', selectUserPlaceholder: 'Search by nickname or user_id…', userRequired: 'User is required',
       addInvite: 'Create Invite', deactivateInvite: 'Deactivate',
       deleteInviteWarning: (code) => `Deactivate invite "${code}"? It can no longer be used.`,
       inviteType: 'Type', inviteTypeCoach: 'Coach', inviteTypeChannel: 'Channel', inviteTypeAdmin: 'Admin',
@@ -448,7 +448,7 @@ const T = {
       channelKeyName: '标识 *', channelName: '显示名称 *', channelLogoUrl: 'Logo URL',
       channel: '渠道', channelUnassigned: '无渠道',
       roles: '角色', roleUser: '用户', roleCoach: '教练', roleAdmin: '渠道管理员', roleSuperadmin: '超级管理员',
-      linkedUserId: '关联用户 ID', linkedUserIdPlaceholder: '微信 user_id',
+      selectUser: '用户 *', selectUserPlaceholder: '按昵称或 user_id 搜索…', userRequired: '用户为必填项',
       addInvite: '创建邀请码', deactivateInvite: '停用',
       deleteInviteWarning: (code) => `确认停用邀请码"${code}"？该码将无法继续使用。`,
       inviteType: '类型', inviteTypeCoach: 'Coach', inviteTypeChannel: '渠道', inviteTypeAdmin: '管理员',
@@ -783,26 +783,35 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
 
 // ── Coach modal ───────────────────────────────────────────────────────────────
 
-const EMPTY_COACH = { name: '', email: '', phone: '', language: 'zh', channel_id: '', user_id: '' };
+const EMPTY_COACH = { user_id: '', channel_id: '' };
 
-function CoachModal({ coach, channels, onClose, onSave }) {
+function CoachModal({ coach, users, channels, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!coach?.id;
   const [form, setForm] = useState(isEdit
-    ? { name: coach.name || '', email: coach.email || '', phone: coach.phone || '', language: coach.language || 'zh', channel_id: coach.channel_id ?? '', user_id: coach.user_id || '' }
+    ? { user_id: coach.user_id || '', channel_id: coach.channel_id ?? '' }
     : { ...EMPTY_COACH });
+  const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const selectedUser = users.find(u => u.user_id === form.user_id) || null;
+  const filteredUsers = search.trim().length > 0
+    ? users.filter(u => {
+        const q = search.toLowerCase();
+        return (u.nickname || '').toLowerCase().includes(q) || (u.user_id || '').toLowerCase().includes(q);
+      }).slice(0, 8)
+    : [];
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.name.trim()) { setError(t.modal.nameRequired); return; }
+    if (!form.user_id.trim()) { setError(t.modal.userRequired); return; }
     setBusy(true); setError('');
     try {
-      const coachPayload = { ...form, channel_id: form.channel_id === '' ? null : parseInt(form.channel_id), user_id: form.user_id.trim() || null };
-      if (isEdit) await axios.put(`/api/coaches/${coach.id}`, coachPayload);
-      else await axios.post('/api/coaches', coachPayload);
+      const payload = { user_id: form.user_id, channel_id: form.channel_id === '' ? null : parseInt(form.channel_id) };
+      if (isEdit) await axios.put(`/api/coaches/${coach.id}`, payload);
+      else await axios.post('/api/coaches', payload);
       onSave();
     } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
     finally { setBusy(false); }
@@ -817,29 +826,42 @@ function CoachModal({ coach, channels, onClose, onSave }) {
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
           <div className="form-grid">
+            <div className="form-field" style={{ gridColumn: '1 / -1', position: 'relative' }}>
+              <span>{t.modal.selectUser}</span>
+              {selectedUser ? (
+                <div className="coach-user-selected">
+                  <div className="avatar" style={{ background: '#10b98120', color: '#10b981', width: 28, height: 28, fontSize: 13, flexShrink: 0 }}>{(selectedUser.nickname || 'U')[0].toUpperCase()}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600 }}>{selectedUser.nickname || '—'}</div>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>{selectedUser.user_id} · {selectedUser.email || selectedUser.phone || '—'}</div>
+                  </div>
+                  {!isEdit && <button type="button" className="icon-btn" onClick={() => { set('user_id', ''); setSearch(''); }}><X size={14} /></button>}
+                </div>
+              ) : (
+                <>
+                  <input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder={t.modal.selectUserPlaceholder}
+                    autoComplete="off"
+                  />
+                  {filteredUsers.length > 0 && (
+                    <div className="coach-user-dropdown">
+                      {filteredUsers.map(u => (
+                        <div key={u.user_id} className="coach-user-option" onClick={() => { set('user_id', u.user_id); setSearch(''); }}>
+                          <div className="avatar" style={{ background: '#10b98120', color: '#10b981', width: 24, height: 24, fontSize: 11, flexShrink: 0 }}>{(u.nickname || 'U')[0].toUpperCase()}</div>
+                          <div>
+                            <div style={{ fontWeight: 500 }}>{u.nickname || '—'}</div>
+                            <div style={{ fontSize: 11, color: '#64748b' }}>{u.user_id}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.modal.name}</span>
-              <input value={form.name} onChange={e => set('name', e.target.value)} placeholder={t.modal.name.replace(' *', '')} />
-            </label>
-            <label className="form-field">
-              <span>{t.modal.email}</span>
-              <input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="coach@example.com" />
-            </label>
-            <label className="form-field">
-              <span>{t.modal.phone}</span>
-              <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+86 138 0000 0000" />
-            </label>
-            <label className="form-field">
-              <span>{t.modal.language}</span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.language} onChange={e => set('language', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  <option value="zh">{t.modal.langZh}</option>
-                  <option value="en">{t.modal.langEn}</option>
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
-            <label className="form-field">
               <span>{t.modal.channel}</span>
               <div className="select-wrap" style={{ width: '100%' }}>
                 <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
@@ -848,10 +870,6 @@ function CoachModal({ coach, channels, onClose, onSave }) {
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
-            </label>
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.modal.linkedUserId}</span>
-              <input value={form.user_id} onChange={e => set('user_id', e.target.value)} placeholder={t.modal.linkedUserIdPlaceholder} />
             </label>
           </div>
           {error && <div className="form-error">{error}</div>}
@@ -1546,7 +1564,7 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
             <tr>
               <th>{t.table.id}</th><th>{t.table.nickname}</th><th>{t.table.channel}</th><th>{t.table.roles}</th><th>{t.table.gender}</th>
               <th>{t.table.birthDate}</th><th>{t.table.language}</th>
-              <th>{t.table.bioAge}</th><th>{t.table.chronoAge}</th>
+              <th>{t.table.chronoAge}</th><th>{t.table.bioAge}</th>
               <th>{t.table.assignedCoach}</th><th>{t.table.joined}</th>
               <th>{t.modal.phone}</th><th>{t.modal.email}</th><th></th>
             </tr>
@@ -1576,8 +1594,8 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
                 <td>{fmt(u.gender)}</td>
                 <td className="muted">{fmtDate(u.birth_date)}</td>
                 <td><Badge color={u.language === 'zh' ? '#16a34a' : '#2563eb'}>{(u.language || 'zh').toUpperCase()}</Badge></td>
-                <td style={{ fontWeight: 700, color: bioAgeColor(u.bio_age, u.chrono_age) }}>{fmt(u.bio_age)}</td>
                 <td className="muted">{fmt(u.chrono_age)}</td>
+                <td style={{ fontWeight: 700, color: bioAgeColor(u.bio_age, u.chrono_age) }}>{fmt(u.bio_age)}</td>
                 <td onClick={e => e.stopPropagation()}>
                   <CoachSelect userId={u.user_id} currentCoachId={u.coach_id} coaches={coaches} onAssign={onRefresh} />
                 </td>
@@ -1657,8 +1675,8 @@ function CoachTab({ coaches, users, channels, onRefresh }) {
           </tbody>
         </table>
       </div>
-      {modal?.type === 'add'    && <CoachModal coach={null}        channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <CoachModal coach={modal.coach} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add'    && <CoachModal coach={null}        users={users} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <CoachModal coach={modal.coach} users={users} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteCoachConfirm coach={modal.coach} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
     </>
   );
