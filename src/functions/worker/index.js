@@ -5,6 +5,29 @@ const crypto = require('crypto');
 
 const generateUserId = () => crypto.randomBytes(4).toString('hex');
 
+function signChannelAdminToken({ sub, cid, tabs }) {
+    const iat = Math.floor(Date.now() / 1000);
+    const exp = iat + 86400;
+    const payload = Buffer.from(JSON.stringify({ sub, cid, tabs, iat, exp })).toString('base64url');
+    const sig = crypto.createHmac('sha256', process.env.API_BEARER_TOKEN)
+                      .update(`ch.${payload}`).digest('hex');
+    return `ch.${payload}.${sig}`;
+}
+
+function verifyChannelAdminToken(token) {
+    const parts = token.split('.');
+    if (parts.length !== 3 || parts[0] !== 'ch') return null;
+    const [prefix, payload, sig] = parts;
+    const expected = crypto.createHmac('sha256', process.env.API_BEARER_TOKEN)
+                           .update(`${prefix}.${payload}`).digest('hex');
+    try {
+        if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) return null;
+    } catch { return null; }
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    if (data.exp < Math.floor(Date.now() / 1000)) return null;
+    return data;
+}
+
 // WeChat access_token cache (module-level, survives container reuse)
 let _wxToken = null;
 let _wxTokenExpiry = 0;
@@ -46,9 +69,11 @@ const getLlmClient = () => new OpenAI({
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
 });
 
-async function handleGetUsers() {
+async function handleGetUsers(channelId) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const params = [];
+        const channelFilter = channelId ? `AND u.channel_id = $${params.push(channelId)}` : '';
         const query = `
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
                     u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
@@ -66,9 +91,10 @@ async function handleGetUsers() {
                 FROM biomarkers
                 ORDER BY user_id, tested_at DESC
             ) b ON u.user_id = b.user_id
+            WHERE 1=1 ${channelFilter}
             ORDER BY u.created_at DESC;
         `;
-        const result = await pool.query(query);
+        const result = await pool.query(query, params);
         const users = result.rows.map(u => ({ ...u, chrono_age: calculateAge(u.birth_date) }));
         return { success: true, users };
     } catch (err) {
@@ -1026,9 +1052,11 @@ async function handlePostFormulaDots(body) {
     }
 }
 
-async function handleGetCoachList() {
+async function handleGetCoachList(channelId) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const params = [];
+        const channelFilter = channelId ? `WHERE p.channel_id = $${params.push(channelId)}` : '';
         const query = `
             SELECT p.id, p.channel_id, p.user_id, p.created_at,
                    u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
@@ -1038,9 +1066,10 @@ async function handleGetCoachList() {
             JOIN users u ON p.user_id = u.user_id
             LEFT JOIN users assigned ON p.id = assigned.coach_id
             LEFT JOIN channels c ON p.channel_id = c.id
+            ${channelFilter}
             GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language, c.name;
         `;
-        const result = await pool.query(query);
+        const result = await pool.query(query, params);
         return { success: true, coaches: result.rows };
     } catch (err) {
         return { success: false, error: err.message };
@@ -1387,7 +1416,8 @@ async function handleGetChannels() {
     }
 }
 
-async function handlePostChannel(body) {
+async function handlePostChannel(body, adminCtx) {
+    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
     const { key_name, name, logo_url } = body;
     if (!key_name) return { success: false, error: 'key_name is required', statusCode: 400 };
     if (!name)     return { success: false, error: 'name is required', statusCode: 400 };
@@ -1403,7 +1433,8 @@ async function handlePostChannel(body) {
     }
 }
 
-async function handlePutChannel(channelId, body) {
+async function handlePutChannel(channelId, body, adminCtx) {
+    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
     const { name, logo_url, commission_config } = body;
     if (!name) return { success: false, error: 'name is required', statusCode: 400 };
     try {
@@ -1418,10 +1449,27 @@ async function handlePutChannel(channelId, body) {
     }
 }
 
-async function handleDeleteChannel(channelId) {
+async function handleDeleteChannel(channelId, adminCtx) {
+    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query('DELETE FROM channels WHERE id = $1', [channelId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutChannelAdminTabs(channelId, body, adminCtx) {
+    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
+    const { tabs } = body || {};
+    if (!Array.isArray(tabs)) return { statusCode: 400, success: false, error: 'tabs must be an array' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query(
+            `UPDATE channels SET config = jsonb_set(COALESCE(config, '{}'), '{admin_tabs}', $1::jsonb) WHERE id = $2`,
+            [JSON.stringify(tabs), channelId]
+        );
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -1499,18 +1547,25 @@ async function handlePutUser(user_id, body) {
     }
 }
 
-async function handleGetAdminAccounts() {
+async function handleGetAdminAccounts(adminCtx) {
+    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const result = await pool.query('SELECT id, username, created_at FROM admin_accounts ORDER BY created_at ASC');
+        const result = await pool.query(
+            `SELECT a.id, a.username, a.created_at, a.channel_id, c.name AS channel_name
+             FROM admin_accounts a
+             LEFT JOIN channels c ON a.channel_id = c.id
+             ORDER BY a.created_at ASC`
+        );
         return { success: true, accounts: result.rows };
     } catch (err) {
         return { success: false, error: err.message };
     }
 }
 
-async function handlePostAdminAccount(body) {
-    const { username, password } = body || {};
+async function handlePostAdminAccount(body, adminCtx) {
+    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
+    const { username, password, channel_id } = body || {};
     if (!username || !password) return { statusCode: 400, success: false, error: 'Username and password required' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -1518,8 +1573,8 @@ async function handlePostAdminAccount(body) {
         const salt = randomBytes(16).toString('hex');
         const hash = scryptSync(password, salt, 64).toString('hex');
         const result = await pool.query(
-            'INSERT INTO admin_accounts (username, password_hash) VALUES ($1, $2) RETURNING id, username, created_at',
-            [username, `${salt}:${hash}`]
+            'INSERT INTO admin_accounts (username, password_hash, channel_id) VALUES ($1, $2, $3) RETURNING id, username, created_at, channel_id',
+            [username, `${salt}:${hash}`, channel_id || null]
         );
         return { success: true, account: result.rows[0] };
     } catch (err) {
@@ -1528,7 +1583,8 @@ async function handlePostAdminAccount(body) {
     }
 }
 
-async function handlePutAdminAccount(id, body) {
+async function handlePutAdminAccount(id, body, adminCtx) {
+    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
     const { password } = body || {};
     if (!password) return { statusCode: 400, success: false, error: 'Password required' };
     try {
@@ -1543,7 +1599,8 @@ async function handlePutAdminAccount(id, body) {
     }
 }
 
-async function handleDeleteAdminAccount(id) {
+async function handleDeleteAdminAccount(id, adminCtx) {
+    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const remaining = await pool.query('SELECT COUNT(*) FROM admin_accounts');
@@ -1560,17 +1617,27 @@ async function handleAdminLogin(body) {
     if (!username || !password) return { statusCode: 400, success: false, error: 'Missing credentials' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const result = await pool.query('SELECT password_hash FROM admin_accounts WHERE username = $1', [username]);
+        const result = await pool.query('SELECT id, password_hash, channel_id FROM admin_accounts WHERE username = $1', [username]);
         if (result.rows.length === 0) {
             await new Promise(r => setTimeout(r, 200));
             return { statusCode: 401, success: false, error: 'Invalid credentials' };
         }
+        const row = result.rows[0];
         const { scryptSync, timingSafeEqual } = require('crypto');
-        const [salt, storedHash] = result.rows[0].password_hash.split(':');
+        const [salt, storedHash] = row.password_hash.split(':');
         const derivedKey = scryptSync(password, salt, 64);
         const match = timingSafeEqual(derivedKey, Buffer.from(storedHash, 'hex'));
         if (!match) return { statusCode: 401, success: false, error: 'Invalid credentials' };
-        return { success: true, token: process.env.API_BEARER_TOKEN };
+
+        if (row.channel_id == null) {
+            return { success: true, token: process.env.API_BEARER_TOKEN, role: 'superadmin', channel_id: null, allowed_tabs: null };
+        }
+
+        const chRes = await pool.query(`SELECT name, config->'admin_tabs' AS admin_tabs FROM channels WHERE id = $1`, [row.channel_id]);
+        const channelRow = chRes.rows[0] || {};
+        const allowedTabs = Array.isArray(channelRow.admin_tabs) ? channelRow.admin_tabs : [];
+        const token = signChannelAdminToken({ sub: row.id, cid: row.channel_id, tabs: allowedTabs });
+        return { success: true, token, role: 'channel', channel_id: row.channel_id, channel_name: channelRow.name || '', allowed_tabs: allowedTabs };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -3276,8 +3343,19 @@ async function handleDeleteAcademyLibraryItem(id) {
 const TICKET_STATUSES   = new Set(['open', 'in_progress', 'resolved', 'closed']);
 const TICKET_PRIORITIES = new Set(['low', 'normal', 'high']);
 
-async function handleGetTickets() {
+async function handleGetTickets(channelId) {
     try {
+        if (channelId) {
+            const result = await pool.query(
+                `SELECT t.id, t.title, t.description, t.status, t.priority, t.images, t.reporter, t.created_at, t.updated_at
+                 FROM tickets t
+                 JOIN users u ON u.external_id = t.reporter
+                 WHERE u.channel_id = $1
+                 ORDER BY CASE t.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'resolved' THEN 2 ELSE 3 END, t.created_at DESC`,
+                [channelId]
+            );
+            return { success: true, tickets: result.rows };
+        }
         const result = await pool.query(
             `SELECT id, title, description, status, priority, images, reporter, created_at, updated_at
              FROM tickets ORDER BY
@@ -4544,22 +4622,26 @@ exports.handler = async (req, resp, context) => {
         return optionsPayload;
     }
 
+    const adminCtx = { role: 'superadmin', channelId: null, accountId: null };
     const expectedBearer = process.env.API_BEARER_TOKEN;
     if (expectedBearer && rawPath && path !== '/admin/login') {
         const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
-        if (authHeader !== `Bearer ${expectedBearer}`) {
-            const unauthorizedPayload = {
-                isBase64Encoded: false,
-                statusCode: 401,
-                headers: corsHeaders,
-                body: JSON.stringify({ error: 'Unauthorized' })
-            };
-            if (isStandardHttp) {
-                resp.setStatusCode(401);
-                Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v));
-                resp.send(JSON.stringify({ error: 'Unauthorized' }));
-                return;
+        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+        if (token === expectedBearer) {
+            adminCtx.role = 'superadmin';
+        } else if (token.startsWith('ch.')) {
+            const payload = verifyChannelAdminToken(token);
+            if (!payload) {
+                const unauthorizedPayload = { isBase64Encoded: false, statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized' }) };
+                if (isStandardHttp) { resp.setStatusCode(401); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Unauthorized' })); return; }
+                return unauthorizedPayload;
             }
+            adminCtx.role = 'channel';
+            adminCtx.channelId = payload.cid;
+            adminCtx.accountId = payload.sub;
+        } else {
+            const unauthorizedPayload = { isBase64Encoded: false, statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized' }) };
+            if (isStandardHttp) { resp.setStatusCode(401); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Unauthorized' })); return; }
             return unauthorizedPayload;
         }
     }
@@ -4629,7 +4711,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/orders')) {
                 result = await handleGetOrders();
             } else if (path.includes('/coach-list')) {
-                result = await handleGetCoachList();
+                result = await handleGetCoachList(adminCtx.channelId);
             } else if (path.match(/\/channel-users\/(\d+)/)) {
                 result = await handleGetChannelUsers(path.match(/\/channel-users\/(\d+)/)[1]);
             } else if (path.match(/\/channel-coaches\/(\d+)/)) {
@@ -4637,7 +4719,8 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/coach-users\/(\d+)/)) {
                 result = await handleGetCoachUsers(path.match(/\/coach-users\/(\d+)/)[1]);
             } else if (path.includes('/invitations')) {
-                result = await handleGetInvitations(query);
+                const invQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
+                result = await handleGetInvitations(invQuery);
             } else if (path.includes('/channels')) {
                 result = await handleGetChannels();
             } else if (path.includes('/academy/courses')) {
@@ -4650,7 +4733,7 @@ exports.handler = async (req, resp, context) => {
                 const userId = path.match(/\/users\/([^/]+)/)[1];
                 result = await handleGetUser(userId);
             } else if (path.includes('/users') || path === '/' || path === '') {
-                result = await handleGetUsers();
+                result = await handleGetUsers(adminCtx.channelId);
             } else if (path.includes('/commission-settings')) {
                 result = await handleGetCommissionSettings();
             } else if (path.includes('/coach-commissions')) {
@@ -4668,9 +4751,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path === '/admin/saved-reports') {
                 result = await handleGetSavedReports();
             } else if (path === '/admin-accounts') {
-                result = await handleGetAdminAccounts();
+                result = await handleGetAdminAccounts(adminCtx);
             } else if (path === '/tickets' || path.includes('/tickets')) {
-                result = await handleGetTickets();
+                result = await handleGetTickets(adminCtx.channelId);
             } else if (path.includes('/pending-questionnaires')) {
                 result = await handleGetPendingQuestionnaires(query.openid);
             } else if (path.match(/\/questionnaires\/(\d+)\/questions/)) {
@@ -4689,7 +4772,7 @@ exports.handler = async (req, resp, context) => {
             if (path === '/admin/login') {
                 result = await handleAdminLogin(parsedBody);
             } else if (path === '/admin-accounts') {
-                result = await handlePostAdminAccount(parsedBody);
+                result = await handlePostAdminAccount(parsedBody, adminCtx);
             } else if (path === '/validate-invite') {
                 result = await handleValidateInvite(parsedBody);
             } else if (path === '/wx-login') {
@@ -4706,7 +4789,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/invitations')) {
                 result = await handlePostInvitation(parsedBody);
             } else if (path.includes('/channels')) {
-                result = await handlePostChannel(parsedBody);
+                result = await handlePostChannel(parsedBody, adminCtx);
             } else if (path.includes('/coaches')) {
                 result = await handlePostCoaches(parsedBody);
             } else if (path.includes('/store-items')) {
@@ -4804,9 +4887,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/coaches/')) {
                 const coachId = path.split('/coaches/')[1];
                 result = await handlePutCoach(coachId, parsedBody);
+            } else if (path.match(/\/channels\/(\d+)\/admin-tabs$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/admin-tabs$/)[1];
+                result = await handlePutChannelAdminTabs(channelId, parsedBody, adminCtx);
             } else if (path.includes('/channels/')) {
                 const channelId = path.split('/channels/')[1];
-                result = await handlePutChannel(channelId, parsedBody);
+                result = await handlePutChannel(channelId, parsedBody, adminCtx);
             } else if (path.includes('/dots/')) {
                 const dotId = path.split('/dots/')[1];
                 result = await handlePutDot(dotId, parsedBody);
@@ -4836,7 +4922,7 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePutSavedReport(rId, parsedBody);
             } else if (path.includes('/admin-accounts/')) {
                 const accountId = path.split('/admin-accounts/')[1];
-                result = await handlePutAdminAccount(accountId, parsedBody);
+                result = await handlePutAdminAccount(accountId, parsedBody, adminCtx);
             } else if (path.match(/\/tickets\/(\d+)/)) {
                 const ticketId = path.match(/\/tickets\/(\d+)/)[1];
                 result = await handlePutTicket(ticketId, parsedBody);
@@ -4878,7 +4964,7 @@ exports.handler = async (req, resp, context) => {
                 result = await handleDeleteCoach(coachId);
             } else if (path.includes('/channels/')) {
                 const channelId = path.split('/channels/')[1];
-                result = await handleDeleteChannel(channelId);
+                result = await handleDeleteChannel(channelId, adminCtx);
             } else if (path.includes('/dots/')) {
                 const dotId = path.split('/dots/')[1];
                 result = await handleDeleteDot(dotId);
@@ -4899,7 +4985,7 @@ exports.handler = async (req, resp, context) => {
                 result = await handleDeleteSavedReport(rId);
             } else if (path.includes('/admin-accounts/')) {
                 const accountId = path.split('/admin-accounts/')[1];
-                result = await handleDeleteAdminAccount(accountId);
+                result = await handleDeleteAdminAccount(accountId, adminCtx);
             } else if (path.match(/\/tickets\/(\d+)/)) {
                 const ticketId = path.match(/\/tickets\/(\d+)/)[1];
                 result = await handleDeleteTicket(ticketId);

@@ -38,6 +38,9 @@ function LoginScreen({ onLogin }) {
       if (res.data?.token) {
         sessionStorage.setItem('nano_admin_token', res.data.token)
         sessionStorage.setItem('nano_admin_user', username)
+        sessionStorage.setItem('nano_admin_role', res.data.role || 'superadmin')
+        sessionStorage.setItem('nano_admin_channel_id', res.data.channel_id ?? '')
+        sessionStorage.setItem('nano_admin_tabs', JSON.stringify(res.data.allowed_tabs || []))
         onLogin(res.data.token)
       } else {
         setError('Login failed')
@@ -2925,7 +2928,74 @@ function DeleteChannelConfirm({ channel, onClose, onConfirm }) {
   );
 }
 
-function ChannelTab({ channels, onRefresh }) {
+const CONFIGURABLE_TABS = [
+  { id: 'users',          label: 'Users' },
+  { id: 'coaches',        label: 'Coaches' },
+  { id: 'dots',           label: 'Dots' },
+  { id: 'store',          label: 'Store' },
+  { id: 'kino',           label: 'Kino' },
+  { id: 'chips',          label: 'Chips' },
+  { id: 'invites',        label: 'Invites' },
+  { id: 'rewards',        label: 'Rewards' },
+  { id: 'academy',        label: 'Academy' },
+  { id: 'questionnaires', label: 'Questionnaires' },
+  { id: 'health-plans',   label: 'Health Plans' },
+  { id: 'reports',        label: 'Reports' },
+  { id: 'tickets',        label: 'Tickets' },
+];
+
+function ChannelAdminTabsModal({ channel, onClose, onSave }) {
+  const currentTabs = Array.isArray(channel.config?.admin_tabs) ? channel.config.admin_tabs : [];
+  const [selected, setSelected] = useState(new Set(currentTabs));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const toggle = (id) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      await axios.put(`/api/channels/${channel.id}/admin-tabs`, { tabs: [...selected] });
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || 'Save failed'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>Admin Tabs — {channel.name}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginBottom: 12, color: '#94a3b8', fontSize: 13 }}>Select tabs channel admins can access:</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {CONFIGURABLE_TABS.map(tab => (
+              <label key={tab.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#EEF2FF', fontSize: 14 }}>
+                <input type="checkbox" checked={selected.has(tab.id)} onChange={() => toggle(tab.id)} />
+                {tab.label}
+              </label>
+            ))}
+          </div>
+          {error && <p className="form-error" style={{ marginTop: 8 }}>{error}</p>}
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn-primary" onClick={save} disabled={busy}>
+              <Check size={14} />{busy ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChannelTab({ channels, onRefresh, isSuperadmin }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
@@ -2973,6 +3043,7 @@ function ChannelTab({ channels, onRefresh }) {
                 <td>
                   <div className="row-actions">
                     <button className="icon-btn" title={t.modal.editChannel} onClick={() => setModal({ type: 'edit', channel: c })}><Pencil size={14} /></button>
+                    {isSuperadmin && <button className="icon-btn" title="Configure admin tabs" onClick={() => setModal({ type: 'admin-tabs', channel: c })}><Settings2 size={14} /></button>}
                     <button className="icon-btn danger" title={t.modal.deleteChannel} onClick={() => setModal({ type: 'delete', channel: c })}><Trash2 size={14} /></button>
                   </div>
                 </td>
@@ -2981,9 +3052,10 @@ function ChannelTab({ channels, onRefresh }) {
           </tbody>
         </table>
       </div>
-      {modal?.type === 'add'    && <ChannelModal channel={null}          onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <ChannelModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'delete' && <DeleteChannelConfirm channel={modal.channel} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {modal?.type === 'add'        && <ChannelModal channel={null}          onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'       && <ChannelModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete'     && <DeleteChannelConfirm channel={modal.channel} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {modal?.type === 'admin-tabs' && <ChannelAdminTabsModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
     </>
   );
 }
@@ -5779,15 +5851,15 @@ function ReportsTab() {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
-function AdminAccountsTab({ accounts, onRefresh }) {
+function AdminAccountsTab({ accounts, channels, onRefresh }) {
   const { t } = useLang();
   const ta = t.adminAccounts;
   const [modal, setModal] = useState(null); // { type: 'add' } | { type: 'password', account }
-  const [form, setForm]   = useState({ username: '', password: '' });
+  const [form, setForm]   = useState({ username: '', password: '', channel_id: '' });
   const [err, setErr]     = useState('');
   const [saving, setSaving] = useState(false);
 
-  const openAdd      = () => { setForm({ username: '', password: '' }); setErr(''); setModal({ type: 'add' }); };
+  const openAdd      = () => { setForm({ username: '', password: '', channel_id: '' }); setErr(''); setModal({ type: 'add' }); };
   const openPassword = (account) => { setForm({ password: '' }); setErr(''); setModal({ type: 'password', account }); };
   const close        = () => setModal(null);
 
@@ -5795,7 +5867,7 @@ function AdminAccountsTab({ accounts, onRefresh }) {
     setSaving(true); setErr('');
     try {
       if (modal.type === 'add') {
-        await axios.post('/api/admin-accounts', { username: form.username, password: form.password });
+        await axios.post('/api/admin-accounts', { username: form.username, password: form.password, channel_id: form.channel_id || null });
       } else {
         await axios.put(`/api/admin-accounts/${modal.account.id}`, { password: form.password });
       }
@@ -5822,15 +5894,17 @@ function AdminAccountsTab({ accounts, onRefresh }) {
           <thead>
             <tr>
               <th>{ta.usernameLabel}</th>
+              <th>Channel</th>
               <th>{t.table.joined}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {accounts.length === 0 && <tr><td colSpan={3} className="empty-row">No admin accounts</td></tr>}
+            {accounts.length === 0 && <tr><td colSpan={4} className="empty-row">No admin accounts</td></tr>}
             {accounts.map(a => (
               <tr key={a.id}>
-                <td><strong style={{ color: '#EEF2FF' }}>{a.username}</strong></td>
+                <td><strong>{a.username}</strong></td>
+                <td className="muted">{a.channel_name || <span style={{ color: '#475569' }}>Superadmin</span>}</td>
                 <td className="muted">{fmtDate(a.created_at)}</td>
                 <td style={{ display: 'flex', gap: 6 }}>
                   <button className="icon-btn" title={ta.changePassword} onClick={() => openPassword(a)}>
@@ -5855,10 +5929,19 @@ function AdminAccountsTab({ accounts, onRefresh }) {
             </div>
             <div className="modal-body">
               {modal.type === 'add' && (
-                <label className="form-field">
-                  <span>{ta.usernameLabel}</span>
-                  <input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} autoFocus />
-                </label>
+                <>
+                  <label className="form-field">
+                    <span>{ta.usernameLabel}</span>
+                    <input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} autoFocus />
+                  </label>
+                  <label className="form-field">
+                    <span>Channel</span>
+                    <select value={form.channel_id} onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))}>
+                      <option value="">Superadmin (all channels)</option>
+                      {(channels || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </label>
+                </>
               )}
               {modal.type === 'password' && (
                 <label className="form-field">
@@ -6369,12 +6452,14 @@ function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
   );
 }
 
-function AdminPanel({ onLogout }) {
+function AdminPanel({ session, onLogout }) {
   const [lang, setLang] = useState('en');
   const t = T[lang];
   const toggleLang = () => setLang(l => l === 'en' ? 'zh' : 'en');
 
-  const [tab, setTab] = useState('users');
+  const isSuperadmin = !session || session.role === 'superadmin';
+  const SUPERADMIN_ONLY = new Set(['channels', 'admin-accounts']);
+
   const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
@@ -6382,20 +6467,22 @@ function AdminPanel({ onLogout }) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     const ok = (res) => res.status === 'fulfilled' ? res.value.data : {};
+    const cid = session?.channelId;
+    const isChannel = session?.role === 'channel';
     try {
       const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, tkRes, aaRes, hptRes, apkRes] = await Promise.allSettled([
-        axios.get('/api/users'),
+        axios.get(isChannel ? `/api/channel-users/${cid}` : '/api/users'),
         axios.get('/api/dots-inventory'),
-        axios.get('/api/coach-list'),
+        axios.get(isChannel ? `/api/channel-coaches/${cid}` : '/api/coach-list'),
         axios.get('/api/store-items?all=true'),
         axios.get('/api/orders'),
-        axios.get('/api/channels'),
-        axios.get('/api/invitations'),
+        isChannel ? Promise.resolve({ data: {} }) : axios.get('/api/channels'),
+        axios.get(isChannel ? `/api/invitations?channel_id=${cid}` : '/api/invitations'),
         axios.get('/api/kino-devices'),
         axios.get('/api/kino-chip-batches'),
         axios.get('/api/kino-chip-models'),
         axios.get('/api/tickets'),
-        axios.get('/api/admin-accounts'),
+        isChannel ? Promise.resolve({ data: {} }) : axios.get('/api/admin-accounts'),
         axios.get('/api/health-plan-templates?all=true'),
         axios.get('/api/kone-apk-releases'),
       ]);
@@ -6418,7 +6505,7 @@ function AdminPanel({ onLogout }) {
       setLastRefresh(new Date());
     } catch (err) { console.error('Admin fetch error:', err); }
     finally { setLoading(false); }
-  }, []);
+  }, [session]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -6441,6 +6528,13 @@ function AdminPanel({ onLogout }) {
     { id: 'admin-accounts', label: t.nav.adminAccounts, icon: Settings2 },
   ];
 
+  const visibleNAV = isSuperadmin
+    ? NAV
+    : NAV.filter(n => !n.disabled && !SUPERADMIN_ONLY.has(n.id) && (session?.allowedTabs || []).includes(n.id));
+
+  const defaultTab = isSuperadmin ? 'users' : ((session?.allowedTabs || [])[0] || '');
+  const [tab, setTab] = useState(defaultTab);
+
   return (
     <LangCtx.Provider value={{ lang, t, toggleLang }}>
       <aside className="sidebar">
@@ -6449,7 +6543,7 @@ function AdminPanel({ onLogout }) {
           {t.brand}
         </div>
         <nav className="sidebar-nav">
-          {NAV.map(({ id, label, icon: Icon, disabled }) => (
+          {visibleNAV.map(({ id, label, icon: Icon, disabled }) => (
             <button key={id}
               className={`nav-item${tab === id ? ' active' : ''}${disabled ? ' disabled' : ''}`}
               onClick={() => !disabled && setTab(id)}
@@ -6484,7 +6578,7 @@ function AdminPanel({ onLogout }) {
           {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'dots'     && <DotsTab     dots={data.dots} onRefresh={fetchData} />}
           {tab === 'store'    && <StoreTab    storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
-          {tab === 'channels' && <ChannelTab  channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'channels' && <ChannelTab  channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} />}
           {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
           {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} onRefresh={fetchData} />}
@@ -6495,7 +6589,7 @@ function AdminPanel({ onLogout }) {
           {tab === 'reports'        && <ReportsTab />}
           {tab === 'tickets'  && <TicketsTab tickets={data.tickets} onRefresh={fetchData} />}
           {tab === 'sims'     && <SimulatorsTab />}
-          {tab === 'admin-accounts' && <AdminAccountsTab accounts={data.adminAccounts} onRefresh={fetchData} />}
+          {tab === 'admin-accounts' && <AdminAccountsTab accounts={data.adminAccounts} channels={data.channels} onRefresh={fetchData} />}
         </div>
       </div>
     </LangCtx.Provider>
@@ -6503,7 +6597,31 @@ function AdminPanel({ onLogout }) {
 }
 
 export default function App() {
-  const [session, setSession] = useState(() => sessionStorage.getItem('nano_admin_token'));
-  if (!session) return <LoginScreen onLogin={(token) => setSession(token)} />;
-  return <AdminPanel onLogout={() => { sessionStorage.removeItem('nano_admin_token'); setSession(null); }} />;
+  const [session, setSession] = useState(() => {
+    const token = sessionStorage.getItem('nano_admin_token');
+    if (!token) return null;
+    return {
+      token,
+      role: sessionStorage.getItem('nano_admin_role') || 'superadmin',
+      channelId: sessionStorage.getItem('nano_admin_channel_id') || null,
+      allowedTabs: JSON.parse(sessionStorage.getItem('nano_admin_tabs') || '[]'),
+    };
+  });
+
+  const handleLogin = (token) => {
+    setSession({
+      token,
+      role: sessionStorage.getItem('nano_admin_role') || 'superadmin',
+      channelId: sessionStorage.getItem('nano_admin_channel_id') || null,
+      allowedTabs: JSON.parse(sessionStorage.getItem('nano_admin_tabs') || '[]'),
+    });
+  };
+
+  const handleLogout = () => {
+    ['nano_admin_token','nano_admin_user','nano_admin_role','nano_admin_channel_id','nano_admin_tabs'].forEach(k => sessionStorage.removeItem(k));
+    setSession(null);
+  };
+
+  if (!session) return <LoginScreen onLogin={handleLogin} />;
+  return <AdminPanel session={session} onLogout={handleLogout} />;
 }
