@@ -37,6 +37,8 @@ const T = {
     noBmData: '暂无生物标志物数据。', noHistory: '暂无检测记录。',
     guestHealthCta: '激活账户后，查看您的健康数据与生物年龄',
     guestJoinBtn: '激活账户',
+    editProfile: '编辑资料', save: '保存', cancel: '取消',
+    name: '姓名', otherPlaceholder: '请说明', saveOk: '已保存', saveFail: '保存失败',
     genderMap: { male: '男', female: '女' },
     langMap: { zh: '中文', en: 'English' },
     subAgeLabels: {
@@ -78,6 +80,8 @@ const T = {
     noBmData: 'No biomarker data available yet.', noHistory: 'No test history yet.',
     guestHealthCta: 'Activate your account to view your health data and Bio Age',
     guestJoinBtn: 'Activate Account',
+    editProfile: 'Edit Profile', save: 'Save', cancel: 'Cancel',
+    name: 'Name', otherPlaceholder: 'Please specify', saveOk: 'Saved', saveFail: 'Save failed',
     genderMap: { male: 'Male', female: 'Female' },
     langMap: { zh: 'Chinese', en: 'English' },
     subAgeLabels: {
@@ -161,6 +165,17 @@ Component({
     hasConditionsData: false,
     avatarUpdating: false,
     avatarLetter: 'U',
+    rawHeight: null,
+    rawWeight: null,
+    editing: false,
+    editSaving: false,
+    editOtherSelected: false,
+    editForm: {
+      nickname: '', gender: '', birth_date: '',
+      height: '', weight: '',
+      health_conditions: [], health_conditions_other: '',
+    },
+    editConditionOptions: [],
   },
 
   observers: {
@@ -263,8 +278,10 @@ Component({
 
         if (mode === 'self' && user) {
           const bodyRecords = records.filter(r => r.test_type === 'body_composition').slice().reverse()
-          const heightVal = bodyRecords.find(r => r.data?.actual?.height != null)?.data?.actual?.height ?? null
-          const weightVal = bodyRecords.find(r => r.data?.actual?.weight != null)?.data?.actual?.weight ?? null
+          const heightVal = bodyRecords.find(r => r.data?.actual?.height != null)?.data?.actual?.height
+            ?? user.bio_data?.height ?? null
+          const weightVal = bodyRecords.find(r => r.data?.actual?.weight != null)?.data?.actual?.weight
+            ?? user.bio_data?.weight ?? null
 
           const weightHistory = records
             .filter(r => r.test_type === 'body_composition' && r.data?.actual?.weight != null)
@@ -305,6 +322,8 @@ Component({
             profileInfoVisible, profileInfoExtra,
             healthConditionsList,
             hasConditionsData: condKeys !== null,
+            rawHeight: heightVal,
+            rawWeight: weightVal,
           })
         }
 
@@ -433,6 +452,130 @@ Component({
         if (data) opts.data = data
         wx.request(opts)
       })
+    },
+
+    startEdit() {
+      const { user, lang } = this.properties
+      const t = T[lang] || T.zh
+      const bioData = user?.bio_data || {}
+      const currentConditions = bioData.health_conditions || []
+      const birthDate = user?.birth_date ? String(user.birth_date).substring(0, 10) : ''
+      const rawH = this.data.rawHeight ?? bioData.height
+      const rawW = this.data.rawWeight ?? bioData.weight
+      const options = CONDITION_KEYS.map(key => ({
+        key,
+        label: t.conditionLabels[key] || key,
+        checked: currentConditions.includes(key),
+      }))
+      this.setData({
+        editing: true,
+        editOtherSelected: currentConditions.includes('other'),
+        editConditionOptions: options,
+        editForm: {
+          nickname: user?.nickname || '',
+          gender: user?.gender || '',
+          birth_date: birthDate,
+          height: rawH != null ? String(rawH) : '',
+          weight: rawW != null ? String(rawW) : '',
+          health_conditions: [...currentConditions],
+          health_conditions_other: bioData.health_conditions_other || '',
+        },
+      })
+    },
+
+    cancelEdit() {
+      this.setData({ editing: false })
+    },
+
+    onEditField(e) {
+      const field = e.currentTarget.dataset.field
+      this.setData({ [`editForm.${field}`]: e.detail.value })
+    },
+
+    onBirthDateChange(e) {
+      this.setData({ 'editForm.birth_date': e.detail.value })
+    },
+
+    onGenderSelect(e) {
+      this.setData({ 'editForm.gender': e.currentTarget.dataset.value })
+    },
+
+    onConditionToggle(e) {
+      const key = e.currentTarget.dataset.key
+      const { editConditionOptions } = this.data
+      const newOptions = editConditionOptions.map(o =>
+        o.key === key ? { ...o, checked: !o.checked } : o
+      )
+      const newConditions = newOptions.filter(o => o.checked).map(o => o.key)
+      this.setData({
+        editConditionOptions: newOptions,
+        'editForm.health_conditions': newConditions,
+        editOtherSelected: newConditions.includes('other'),
+      })
+    },
+
+    async saveEdit() {
+      if (this.data.editSaving) return
+      const lang = this.properties.lang || 'zh'
+      const t = T[lang] || T.zh
+      const { editForm } = this.data
+      const user = this.properties.user
+      this.setData({ editSaving: true })
+      try {
+        const { nickname, gender, birth_date, height, weight, health_conditions, health_conditions_other } = editForm
+        const bio_data_update = {
+          health_conditions,
+          health_conditions_other: health_conditions_other || '',
+        }
+        if (height !== '' && height != null) bio_data_update.height = Number(height)
+        if (weight !== '' && weight != null) bio_data_update.weight = Number(weight)
+
+        await this._req(`${BASE}/api/users/${user.user_id}`, 'PUT', {
+          nickname, gender, birth_date, bio_data: bio_data_update,
+        })
+
+        const newBioData = { ...(user.bio_data || {}), ...bio_data_update }
+        const updatedUser = { ...user, nickname, gender, birth_date, bio_data: newBioData }
+
+        const hVal = height !== '' ? Number(height) : (newBioData.height ?? null)
+        const wVal = weight !== '' ? Number(weight) : (newBioData.weight ?? null)
+
+        const profileInfoExtra = [
+          { label: t.gender,   val: t.genderMap[gender] || gender || '—' },
+          { label: t.born,     val: fmtDate(birth_date, lang) },
+          { label: t.height,   val: hVal != null ? `${hVal} ${t.bsCm}` : '—' },
+          { label: t.language, val: t.langMap[user.language] || user.language || '—' },
+          { label: t.coach,    val: user.coach_name || '—' },
+          { label: t.joined,   val: fmtDate(user.created_at, lang) },
+          { label: t.phone,    val: user.phone || '—' },
+          { label: t.email,    val: user.email || '—' },
+        ]
+        const healthConditionsList = health_conditions.map(key => ({
+          key,
+          label: key === 'other' && health_conditions_other
+            ? `${t.conditionLabels[key]}（${health_conditions_other}）`
+            : (t.conditionLabels[key] || key),
+        }))
+        const cAge = chronoAge(birth_date)
+
+        this.setData({
+          editing: false,
+          editSaving: false,
+          profileInfoExtra,
+          healthConditionsList,
+          hasConditionsData: true,
+          cAge,
+          bAgeColor: bioAgeColor(this.data.bAge, cAge),
+          avatarLetter: (nickname || 'U').slice(-1).toUpperCase(),
+          rawHeight: hVal,
+          rawWeight: wVal,
+        })
+        this.triggerEvent('profileUpdated', updatedUser)
+        wx.showToast({ title: t.saveOk, icon: 'success', duration: 1500 })
+      } catch (e) {
+        this.setData({ editSaving: false })
+        wx.showToast({ title: t.saveFail, icon: 'error', duration: 2000 })
+      }
     },
 
     noop() {},

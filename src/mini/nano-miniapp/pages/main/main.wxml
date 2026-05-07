@@ -286,7 +286,8 @@
         is-guest="{{isGuest}}"
         theme="{{theme}}"
         bindchooseavatar="handleHealthChooseAvatar"
-        bindguesttap="openGuestSheet">
+        bindguesttap="openGuestSheet"
+        bind:profileUpdated="onProfileUpdated">
       </user-health>
     </view>
     <!-- end HEALTH -->

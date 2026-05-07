@@ -2326,6 +2326,12 @@ Page({
     }
   },
 
+  onProfileUpdated(e) {
+    const updated = e.detail
+    if (!updated) return
+    this._updateUser(updated)
+  },
+
   handleGuestPhone(e) {
     const { code, errMsg } = e.detail
     if (errMsg !== 'getPhoneNumber:ok' || !code) return

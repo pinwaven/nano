@@ -71,31 +71,101 @@
       <view wx:if="{{mode === 'self'}}" class="health-section">
         <view class="section-title-row">
           <text class="section-title">{{t.profile}}</text>
-          <view class="profile-toggle" bindtap="toggleProfile">
-            <text class="profile-toggle-text">{{profileExpanded ? t.showLess : t.showMore}}</text>
-            <text class="profile-toggle-arrow">{{profileExpanded ? '▲' : '▼'}}</text>
+          <view class="profile-header-btns" wx:if="{{!editing}}">
+            <view class="edit-profile-btn" bindtap="startEdit"><text>{{t.editProfile}}</text></view>
+            <view class="profile-toggle" bindtap="toggleProfile">
+              <text class="profile-toggle-text">{{profileExpanded ? t.showLess : t.showMore}}</text>
+              <text class="profile-toggle-arrow">{{profileExpanded ? '▲' : '▼'}}</text>
+            </view>
           </view>
         </view>
-        <view class="info-grid">
-          <block wx:for="{{profileInfoVisible}}" wx:key="label">
-            <text class="info-key">{{item.label}}</text>
-            <view wx:if="{{item.hasSparkline}}" class="weight-val-row">
+
+        <!-- Read-only info grids (hidden while editing) -->
+        <block wx:if="{{!editing}}">
+          <view class="info-grid">
+            <block wx:for="{{profileInfoVisible}}" wx:key="label">
+              <text class="info-key">{{item.label}}</text>
+              <view wx:if="{{item.hasSparkline}}" class="weight-val-row">
+                <text class="info-val">{{item.val}}</text>
+                <canvas wx:if="{{weightHistory.length > 1}}" canvas-id="uh-weight-sparkline" class="weight-sparkline" bindtap="openWeightChart"></canvas>
+              </view>
+              <text wx:else class="info-val">{{item.val}}</text>
+            </block>
+          </view>
+          <view wx:if="{{profileExpanded}}" class="info-grid info-grid-extra">
+            <block wx:for="{{profileInfoExtra}}" wx:key="label">
+              <text class="info-key">{{item.label}}</text>
               <text class="info-val">{{item.val}}</text>
-              <canvas wx:if="{{weightHistory.length > 1}}" canvas-id="uh-weight-sparkline" class="weight-sparkline" bindtap="openWeightChart"></canvas>
+            </block>
+          </view>
+        </block>
+
+        <!-- Edit form -->
+        <view wx:if="{{editing}}" class="edit-form">
+          <view class="edit-row">
+            <text class="edit-label">{{t.name}}</text>
+            <input class="edit-input" value="{{editForm.nickname}}" bindinput="onEditField" data-field="nickname" placeholder="—" />
+          </view>
+          <view class="edit-row">
+            <text class="edit-label">{{t.gender}}</text>
+            <view class="gender-btns">
+              <view class="gender-btn {{editForm.gender === 'male' ? 'gender-btn-active' : ''}}" bindtap="onGenderSelect" data-value="male">
+                <text>{{t.genderMap.male}}</text>
+              </view>
+              <view class="gender-btn {{editForm.gender === 'female' ? 'gender-btn-active' : ''}}" bindtap="onGenderSelect" data-value="female">
+                <text>{{t.genderMap.female}}</text>
+              </view>
             </view>
-            <text wx:else class="info-val">{{item.val}}</text>
-          </block>
-        </view>
-        <view wx:if="{{profileExpanded}}" class="info-grid info-grid-extra">
-          <block wx:for="{{profileInfoExtra}}" wx:key="label">
-            <text class="info-key">{{item.label}}</text>
-            <text class="info-val">{{item.val}}</text>
-          </block>
+          </view>
+          <view class="edit-row">
+            <text class="edit-label">{{t.born}}</text>
+            <picker mode="date" value="{{editForm.birth_date}}" bindchange="onBirthDateChange">
+              <view class="edit-picker">
+                <text class="edit-picker-val">{{editForm.birth_date || '—'}}</text>
+                <text class="edit-picker-arrow">›</text>
+              </view>
+            </picker>
+          </view>
+          <view class="edit-row">
+            <text class="edit-label">{{t.height}}</text>
+            <view class="edit-input-unit">
+              <input class="edit-input" type="digit" value="{{editForm.height}}" bindinput="onEditField" data-field="height" placeholder="—" />
+              <text class="edit-unit-text">cm</text>
+            </view>
+          </view>
+          <view class="edit-row">
+            <text class="edit-label">{{t.weight}}</text>
+            <view class="edit-input-unit">
+              <input class="edit-input" type="digit" value="{{editForm.weight}}" bindinput="onEditField" data-field="weight" placeholder="—" />
+              <text class="edit-unit-text">kg</text>
+            </view>
+          </view>
+          <text class="edit-section-label">{{t.healthConditions}}</text>
+          <view class="edit-cond-list">
+            <view wx:for="{{editConditionOptions}}" wx:key="key"
+                  class="edit-cond-item"
+                  bindtap="onConditionToggle"
+                  data-key="{{item.key}}">
+              <view class="edit-cond-box {{item.checked ? 'edit-cond-box-checked' : ''}}">
+                <text wx:if="{{item.checked}}" class="edit-cond-tick">✓</text>
+              </view>
+              <text class="edit-cond-text">{{item.label}}</text>
+            </view>
+          </view>
+          <view wx:if="{{editOtherSelected}}" class="edit-other-row">
+            <input class="edit-input" value="{{editForm.health_conditions_other}}" bindinput="onEditField" data-field="health_conditions_other" placeholder="{{t.otherPlaceholder}}" />
+          </view>
+          <view class="edit-actions">
+            <view class="edit-cancel-btn" bindtap="cancelEdit"><text>{{t.cancel}}</text></view>
+            <view class="edit-save-btn" bindtap="saveEdit">
+              <text>{{editSaving ? '…' : t.save}}</text>
+            </view>
+          </view>
         </view>
       </view>
 
-      <!-- Health Conditions (self mode only) -->
-      <view wx:if="{{mode === 'self' && hasConditionsData}}" class="health-section">
+      <!-- Health Conditions (self mode only, hidden while editing) -->
+      <view wx:if="{{mode === 'self' && hasConditionsData && !editing}}" class="health-section">
         <text class="section-title">{{t.healthConditions}}</text>
         <view wx:if="{{healthConditionsList.length > 0}}" class="cond-chips">
           <view wx:for="{{healthConditionsList}}" wx:key="key" class="health-cond-chip">
