@@ -1171,153 +1171,343 @@ function Sparkline({ values, color = '#3b82f6', width = 120, height = 36 }) {
   );
 }
 
-// ── User detail drawer ────────────────────────────────────────────────────────
+// ── User detail modal ─────────────────────────────────────────────────────────
 
 const BM_META = [
-  { key: 'hsCRP',     label: 'hsCRP',           unit: 'mg/L',      color: '#ef4444' },
-  { key: 'GDF15',     label: 'GDF-15',          unit: 'pg/mL',     color: '#f97316' },
-  { key: 'IL6',       label: 'IL-6',            unit: 'pg/mL',     color: '#a855f7' },
-  { key: 'GA',        label: 'Glycated Albumin', unit: '%',         color: '#3b82f6' },
-  { key: 'CystatinC', label: 'Cystatin C',      unit: 'mg/L',      color: '#0ea5e9' },
-  { key: 'CD38',      label: 'CD38',            unit: 'xBaseline', color: '#10b981' },
+  { key: 'hsCRP',     label: 'hsCRP',            unit: 'mg/L',      color: '#ef4444' },
+  { key: 'GDF15',     label: 'GDF-15',           unit: 'pg/mL',     color: '#f97316' },
+  { key: 'IL6',       label: 'IL-6',             unit: 'pg/mL',     color: '#a855f7' },
+  { key: 'GA',        label: 'Glycated Albumin',  unit: '%',         color: '#3b82f6' },
+  { key: 'CystatinC', label: 'Cystatin C',        unit: 'mg/L',      color: '#0ea5e9' },
+  { key: 'CD38',      label: 'CD38',             unit: 'xBaseline', color: '#10b981' },
 ];
 
-function UserDetailDrawer({ user, onClose }) {
+const SUB_AGE_META_DETAIL = [
+  { key: 'ResilienceAge',    label: 'Resilience Age',     color: '#c084d4' },
+  { key: 'CellularAge',      label: 'Cellular Age',       color: '#10b981' },
+  { key: 'MetabolicAge',     label: 'Metabolic Age',      color: '#6375EC' },
+  { key: 'MicroVascularAge', label: 'Micro-Vascular Age', color: '#0ea5e9' },
+];
+
+const CONDITION_LABELS = {
+  blood_sugar_high:    'High Blood Sugar',
+  blood_pressure_high: 'High Blood Pressure',
+  blood_lipids_high:   'High Blood Lipids',
+  cholesterol_high:    'High Cholesterol',
+  heart_issues:        'Heart Problems',
+  gout_uric_acid:      'Gout / Uric Acid',
+  kidney_disease:      'Kidney Disease',
+  sleep_deficiency:    'Sleep Deficiency',
+  other:               'Other',
+};
+
+function UserDetailModal({ user, onClose }) {
   const { t } = useLang();
-  const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState(null);
+  const [tab, setTab]                     = useState('health');
+  const [records, setRecords]             = useState([]);
+  const [bmLoading, setBmLoading]         = useState(true);
+  const [plans, setPlans]                 = useState(null);
+  const [plansLoading, setPlansLoading]   = useState(false);
+  const [messages, setMessages]           = useState(null);
+  const [chatLoading, setChatLoading]     = useState(false);
 
   const openid = user?.user_id || user?.id;
 
   useEffect(() => {
     if (!openid) return;
-    setLoading(true);
-    setFetchError(null);
+    setBmLoading(true);
     axios.get(`/api/biomarkers?openid=${encodeURIComponent(openid)}`)
-      .then(r => {
-        if (r.data.success === false) throw new Error(r.data.error || 'API error');
-        setRecords(r.data.records || []);
-      })
-      .catch(err => {
-        console.error('Biomarker fetch error:', err.message);
-        setFetchError(err.message);
-        setRecords([]);
-      })
-      .finally(() => setLoading(false));
+      .then(r => setRecords(r.data.records || []))
+      .catch(() => setRecords([]))
+      .finally(() => setBmLoading(false));
   }, [openid]);
+
+  const switchTab = (next) => {
+    setTab(next);
+    if (next === 'plans' && plans === null && !plansLoading) {
+      setPlansLoading(true);
+      axios.get(`/api/health-plans?openid=${encodeURIComponent(openid)}`)
+        .then(r => setPlans(r.data.plans || []))
+        .catch(() => setPlans([]))
+        .finally(() => setPlansLoading(false));
+    }
+    if (next === 'chat' && messages === null && !chatLoading) {
+      setChatLoading(true);
+      axios.get(`/api/coach-user-chat?user_id=${encodeURIComponent(openid)}`)
+        .then(r => setMessages(r.data.messages || []))
+        .catch(() => setMessages([]))
+        .finally(() => setChatLoading(false));
+    }
+  };
 
   if (!user) return null;
 
-  const latestBm = records.length > 0 ? (records[records.length - 1].data?.estimated || {}) : null;
-  const trendFor = (key) => records
-    .map(r => r.data?.estimated?.[key])
-    .filter(v => v != null);
+  const bioData      = user.bio_data || {};
+  const kinoRecs     = records.filter(r => r.test_type === 'kino_chip');
+  const latestRec    = [...kinoRecs].reverse().find(r => r.data?.estimated) || null;
+  const latestBm     = latestRec?.data?.estimated || null;
+  const subAgesRaw   = latestRec?.data?.bioage_profile?.SubAges || null;
+  const rawBioAge    = latestRec?.bio_age
+    ?? (kinoRecs.length > 0 ? kinoRecs[kinoRecs.length - 1]?.bio_age : null)
+    ?? user.bio_age;
+  const cAge         = user.chrono_age;
+  const bAgeClr      = bioAgeColor(rawBioAge, cAge);
+  const conditions   = bioData.health_conditions || [];
+
+  const subAgeList = subAgesRaw
+    ? SUB_AGE_META_DETAIL.map(({ key, label, color }) => {
+        const v = subAgesRaw[key];
+        const score = v != null && cAge != null
+          ? Math.max(5, Math.min(95, Math.round((cAge + 15 - v) / 30 * 100)))
+          : 50;
+        return { key, label, color, value: v != null ? v.toFixed(1) : '—', score };
+      })
+    : [];
+
+  const trendFor = key => kinoRecs.slice(-10)
+    .map(r => r.data?.estimated?.[key]).filter(v => v != null);
+
+  const TABS = [
+    { id: 'health', label: 'Health' },
+    { id: 'plans',  label: 'Plans'  },
+    { id: 'chat',   label: 'Chat'   },
+  ];
 
   return (
-    <div className="drawer-overlay" onClick={onClose}>
-      <div className="drawer" onClick={e => e.stopPropagation()}>
-        <div className="drawer-header">
-          <div className="drawer-title">
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-user-detail modal-tabbed" onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="udm-header">
+          <div className="udm-identity">
             {user.avatar_url
-              ? <img src={user.avatar_url} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-              : <div className="avatar" style={{ width: 32, height: 32, fontSize: 14, background: '#3b82f620', color: '#3b82f6' }}>{(user.nickname || 'U')[0].toUpperCase()}</div>
+              ? <img src={user.avatar_url} alt="" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+              : <div className="avatar" style={{ width: 40, height: 40, fontSize: 16, background: '#3b82f620', color: '#3b82f6' }}>
+                  {(user.nickname || 'U')[0].toUpperCase()}
+                </div>
             }
-            <span>{user.nickname || user.user_id}</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.2 }}>{user.nickname || '—'}</div>
+              <div style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace', marginTop: 2 }}>{openid}</div>
+            </div>
           </div>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
 
-        <div className="drawer-body">
-          {/* Profile */}
-          <div className="drawer-section">
-            <div className="drawer-section-title">Profile</div>
-            <div className="drawer-info-grid">
-              <span className="drawer-info-key">External App</span>
-              <span className="drawer-info-val">{fmt(user.external_app)}</span>
-              <span className="drawer-info-key">External ID</span>
-              <span className="drawer-info-val mono">{fmt(user.external_id)}</span>
-              <span className="drawer-info-key">{t.table.gender}</span>
-              <span className="drawer-info-val">{fmt(user.gender)}</span>
-              <span className="drawer-info-key">{t.table.birthDate}</span>
-              <span className="drawer-info-val">{fmtDate(user.birth_date)}</span>
-              <span className="drawer-info-key">{t.table.chronoAge}</span>
-              <span className="drawer-info-val">{fmt(user.chrono_age)}</span>
-              <span className="drawer-info-key">{t.table.bioAge}</span>
-              <span className="drawer-info-val" style={{ fontWeight: 700, color: bioAgeColor(user.bio_age, user.chrono_age) }}>
-                {fmt(user.bio_age)}
-              </span>
-              <span className="drawer-info-key">{t.table.language}</span>
-              <span className="drawer-info-val">{(user.language || '—').toUpperCase()}</span>
-              <span className="drawer-info-key">{t.table.assignedCoach}</span>
-              <span className="drawer-info-val">{fmt(user.coach_name)}</span>
-              <span className="drawer-info-key">{t.table.joined}</span>
-              <span className="drawer-info-val">{fmtDate(user.created_at)}</span>
-              <span className="drawer-info-key">{t.modal.phone}</span>
-              <span className="drawer-info-val">{fmt(user.phone)}</span>
-              <span className="drawer-info-key">{t.modal.email}</span>
-              <span className="drawer-info-val">{fmt(user.email)}</span>
-              <span className="drawer-info-key">{t.table.roles}</span>
-              <span className="drawer-info-val">
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                  {(user.roles || ['user']).map(r => (
-                    <Badge key={r} color={r === 'superadmin' ? '#dc2626' : r === 'admin' ? '#f59e0b' : r === 'coach' ? '#8b5cf6' : '#64748b'}>{r}</Badge>
-                  ))}
-                </div>
-              </span>
-            </div>
-          </div>
+        {/* Tab nav */}
+        <div className="modal-nav">
+          {TABS.map(({ id, label }) => (
+            <button key={id} className={`modal-nav-tab${tab === id ? ' active' : ''}`} onClick={() => switchTab(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
 
-          {/* Latest Biomarkers */}
-          <div className="drawer-section">
-            <div className="drawer-section-title">Latest Biomarkers</div>
-            {loading ? (
-              <div className="drawer-empty">Loading…</div>
-            ) : fetchError ? (
-              <div className="drawer-error">API error: {fetchError}</div>
-            ) : latestBm ? (
-              <div className="bm-table">
-                {BM_META.map(({ key, label, unit, color }) => (
-                  <div key={key} className="bm-table-row">
-                    <span className="bm-table-label">{label}</span>
-                    <span className="bm-table-val" style={{ color }}>{latestBm[key] ?? '—'}</span>
-                    <span className="bm-table-unit">{unit}</span>
+        {/* Body */}
+        <div className="modal-body">
+
+          {/* ── HEALTH ── */}
+          {tab === 'health' && (
+            <div className="udm-health">
+
+              {/* Left: profile + conditions */}
+              <div className="udm-col-left">
+                <div className="udm-section">
+                  <div className="udm-section-title">Profile</div>
+                  <div className="drawer-info-grid">
+                    <span className="drawer-info-key">External App</span>
+                    <span className="drawer-info-val">{fmt(user.external_app)}</span>
+                    <span className="drawer-info-key">External ID</span>
+                    <span className="drawer-info-val mono">{fmt(user.external_id)}</span>
+                    <span className="drawer-info-key">{t.table.gender}</span>
+                    <span className="drawer-info-val">{fmt(user.gender)}</span>
+                    <span className="drawer-info-key">{t.table.birthDate}</span>
+                    <span className="drawer-info-val">{fmtDate(user.birth_date)}</span>
+                    <span className="drawer-info-key">Height</span>
+                    <span className="drawer-info-val">{bioData.height != null ? `${bioData.height} cm` : '—'}</span>
+                    <span className="drawer-info-key">Weight</span>
+                    <span className="drawer-info-val">{bioData.weight != null ? `${bioData.weight} kg` : '—'}</span>
+                    <span className="drawer-info-key">{t.table.language}</span>
+                    <span className="drawer-info-val">{(user.language || '—').toUpperCase()}</span>
+                    <span className="drawer-info-key">{t.table.assignedCoach}</span>
+                    <span className="drawer-info-val">{fmt(user.coach_name)}</span>
+                    <span className="drawer-info-key">{t.table.joined}</span>
+                    <span className="drawer-info-val">{fmtDate(user.created_at)}</span>
+                    <span className="drawer-info-key">{t.modal.phone}</span>
+                    <span className="drawer-info-val">{fmt(user.phone)}</span>
+                    <span className="drawer-info-key">{t.modal.email}</span>
+                    <span className="drawer-info-val">{fmt(user.email)}</span>
+                    <span className="drawer-info-key">{t.table.roles}</span>
+                    <span className="drawer-info-val">
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        {(user.roles || ['user']).map(r => (
+                          <Badge key={r} color={r === 'superadmin' ? '#dc2626' : r === 'admin' ? '#f59e0b' : r === 'coach' ? '#8b5cf6' : '#64748b'}>{r}</Badge>
+                        ))}
+                      </div>
+                    </span>
+                  </div>
+                </div>
+
+                {conditions.length > 0 && (
+                  <div className="udm-section">
+                    <div className="udm-section-title">Health Conditions</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                      {conditions.map(c => (
+                        <Badge key={c} color="#6366f1">{CONDITION_LABELS[c] || c}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Right: bio ages + biomarkers + trends */}
+              <div className="udm-col-right">
+                {bmLoading ? (
+                  <div className="drawer-empty" style={{ padding: '24px 0' }}>Loading health data…</div>
+                ) : (
+                  <>
+                    <div className="udm-section">
+                      <div className="udm-bioage-row">
+                        <div className="udm-age-chip">
+                          <div className="udm-age-val">{cAge ?? '—'}</div>
+                          <div className="udm-age-label">Chrono Age</div>
+                        </div>
+                        <div className="udm-age-chip udm-age-chip-primary">
+                          <div className="udm-age-val udm-bio-val" style={{ color: bAgeClr }}>
+                            {rawBioAge ? Number(rawBioAge).toFixed(1) : '—'}
+                          </div>
+                          <div className="udm-age-label">Bio Age</div>
+                        </div>
+                        <span className="drawer-empty" style={{ padding: 0 }}>
+                          {kinoRecs.length} Kino test{kinoRecs.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    </div>
+
+                    {subAgeList.length > 0 && (
+                      <div className="udm-section">
+                        <div className="udm-section-title">Sub-Ages</div>
+                        <div className="udm-subages">
+                          {subAgeList.map(({ key, label, color, value, score }) => (
+                            <div key={key} className="udm-subage-row">
+                              <span className="udm-subage-label">{label}</span>
+                              <div className="udm-bar-wrap">
+                                <div className="udm-bar-fill" style={{ width: `${score}%`, background: color }} />
+                              </div>
+                              <span className="udm-subage-val" style={{ color }}>{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="udm-section">
+                      <div className="udm-section-title">Latest Biomarkers</div>
+                      {latestBm ? (
+                        <div className="bm-table">
+                          {BM_META.map(({ key, label, unit, color }) => (
+                            <div key={key} className="bm-table-row">
+                              <span className="bm-table-label">{label}</span>
+                              <span className="bm-table-val" style={{ color }}>{latestBm[key] ?? '—'}</span>
+                              <span className="bm-table-unit">{unit}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="drawer-empty">No biomarker data yet.</div>
+                      )}
+                    </div>
+
+                    {kinoRecs.length > 0 && (
+                      <div className="udm-section">
+                        <div className="udm-section-title">
+                          Biomarker Trends ({kinoRecs.length} test{kinoRecs.length !== 1 ? 's' : ''})
+                        </div>
+                        <div className="trend-grid">
+                          {BM_META.map(({ key, label, unit, color }) => {
+                            const vals = trendFor(key);
+                            const last = vals[vals.length - 1];
+                            return (
+                              <div key={key} className="trend-card">
+                                <div className="trend-label">{label}</div>
+                                <div className="trend-val" style={{ color }}>
+                                  {last != null ? last : '—'}<span className="trend-unit">{unit}</span>
+                                </div>
+                                <Sparkline values={vals} color={color} width={130} height={38} />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── PLANS ── */}
+          {tab === 'plans' && (
+            plansLoading ? (
+              <div className="drawer-empty">Loading plans…</div>
+            ) : !plans || plans.length === 0 ? (
+              <div className="drawer-empty">No active health plans.</div>
+            ) : (
+              <div className="udm-plans-grid">
+                {plans.map(p => (
+                  <div key={p.id} className="udm-plan-card">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <Badge color={p.plan_type === 'primary' ? '#3b82f6' : '#8b5cf6'}>
+                        {p.plan_type === 'primary' ? 'Primary' : 'Secondary'}
+                      </Badge>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#1e293b', marginBottom: 4 }}>
+                      {p.name_zh || p.name_en || p.custom_name_zh || p.custom_name_en || '—'}
+                    </div>
+                    {(p.custom_goal_zh || p.custom_goal_en) && (
+                      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8, lineHeight: 1.5 }}>
+                        {p.custom_goal_zh || p.custom_goal_en}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#94a3b8' }}>
+                      <span>{p.checkin_count ?? 0} check-ins</span>
+                      {p.duration_weeks && <span>{p.duration_weeks} weeks</span>}
+                    </div>
                   </div>
                 ))}
               </div>
-            ) : (
-              <div className="drawer-empty">No biomarker data yet.</div>
-            )}
-          </div>
+            )
+          )}
 
-          {/* Trend charts */}
-          <div className="drawer-section">
-            <div className="drawer-section-title">Biomarker Trends ({records.length} test{records.length !== 1 ? 's' : ''})</div>
-            {loading ? (
-              <div className="drawer-empty">Loading…</div>
-            ) : fetchError ? (
-              <div className="drawer-error">API error: {fetchError}</div>
-            ) : records.length > 0 ? (
-              <div className="trend-grid">
-                {BM_META.map(({ key, label, unit, color }) => {
-                  const vals = trendFor(key);
-                  const last = vals[vals.length - 1];
-                  return (
-                    <div key={key} className="trend-card">
-                      <div className="trend-label">{label}</div>
-                      <div className="trend-val" style={{ color }}>
-                        {last != null ? last : '—'}
-                        <span className="trend-unit">{unit}</span>
-                      </div>
-                      <Sparkline values={vals} color={color} width={130} height={38} />
-                    </div>
-                  );
-                })}
-              </div>
+          {/* ── CHAT ── */}
+          {tab === 'chat' && (
+            chatLoading ? (
+              <div className="drawer-empty">Loading messages…</div>
+            ) : !messages || messages.length === 0 ? (
+              <div className="drawer-empty">No messages yet.</div>
             ) : (
-              <div className="drawer-empty">No test history yet.</div>
-            )}
-          </div>
+              <div className="udm-chat-list">
+                {messages.map((msg, i) => (
+                  <div key={msg.id || i} className={`udm-msg udm-msg-${msg.role}`}>
+                    <div className="udm-msg-meta">
+                      <span className="udm-msg-role">
+                        {msg.role === 'user' ? 'User' : msg.role === 'ai' ? 'AI' : 'Coach'}
+                      </span>
+                      <span className="udm-msg-time">
+                        {msg.created_at ? new Date(msg.created_at).toLocaleString() : ''}
+                      </span>
+                    </div>
+                    {msg.imageUrl
+                      ? <img src={msg.imageUrl} alt="attachment"
+                          style={{ maxWidth: 300, borderRadius: 8, marginTop: 4, display: 'block' }} />
+                      : <div className="udm-msg-content">{msg.content}</div>
+                    }
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+
         </div>
       </div>
     </div>
@@ -1408,7 +1598,7 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
       {modal?.type === 'add'    && <UserModal user={null}       coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit'   && <UserModal user={modal.user} coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteConfirm user={modal.user} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
-      {detailUser && <UserDetailDrawer user={detailUser} onClose={() => setDetailUser(null)} />}
+      {detailUser && <UserDetailModal user={detailUser} onClose={() => setDetailUser(null)} />}
     </>
   );
 }

@@ -658,6 +658,135 @@ tr:hover .row-actions { opacity: 1; }
   margin-left: 3px;
 }
 
+/* ── User Detail Modal ── */
+.modal-user-detail { width: 960px; max-width: 96vw; }
+
+.udm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.udm-identity { display: flex; align-items: center; gap: 10px; }
+
+.udm-health {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 32px;
+  align-items: start;
+}
+
+.udm-col-left  { display: flex; flex-direction: column; }
+.udm-col-right { display: flex; flex-direction: column; }
+
+.udm-section { margin-bottom: 22px; }
+.udm-section:last-child { margin-bottom: 0; }
+
+.udm-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.udm-bioage-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.udm-age-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #f8fafc;
+  min-width: 80px;
+}
+
+.udm-age-chip-primary { border-color: #dbeafe; background: #eff6ff; }
+
+.udm-age-val  { font-size: 26px; font-weight: 800; line-height: 1; color: var(--text); }
+.udm-bio-val  { font-size: 32px; }
+
+.udm-age-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 5px;
+}
+
+.udm-subages { display: flex; flex-direction: column; gap: 8px; }
+
+.udm-subage-row { display: flex; align-items: center; gap: 8px; }
+.udm-subage-label { width: 130px; flex-shrink: 0; color: var(--muted); font-size: 12px; }
+
+.udm-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.udm-bar-fill { height: 100%; border-radius: 3px; opacity: 0.8; }
+.udm-subage-val { font-size: 13px; font-weight: 700; min-width: 36px; text-align: right; }
+
+.udm-plans-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+.udm-plan-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: #f8fafc;
+}
+
+.udm-chat-list { display: flex; flex-direction: column; gap: 10px; }
+
+.udm-msg {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border-left: 3px solid transparent;
+  background: #f8fafc;
+}
+
+.udm-msg-user  { border-left-color: #0284c7; }
+.udm-msg-ai    { border-left-color: #16a34a; }
+.udm-msg-coach { border-left-color: #7c3aed; }
+
+.udm-msg-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+
+.udm-msg-role {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.udm-msg-user  .udm-msg-role { color: #0284c7; }
+.udm-msg-ai    .udm-msg-role { color: #16a34a; }
+.udm-msg-coach .udm-msg-role { color: #7c3aed; }
+
+.udm-msg-time { font-size: 11px; color: var(--muted); }
+
+.udm-msg-content {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ── Store subtabs ── */
 .subtab-row {
   display: flex;
