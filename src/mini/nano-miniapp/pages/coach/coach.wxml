@@ -221,7 +221,8 @@
           user="{{detailClient}}"
           lang="{{lang}}"
           mode="coach"
-          theme="{{theme}}">
+          theme="{{theme}}"
+          bind:profileUpdated="onClientProfileUpdated">
         </user-health>
       </view>
 

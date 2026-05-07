@@ -67,8 +67,8 @@
         </view>
       </view>
 
-      <!-- Profile (self mode only) -->
-      <view wx:if="{{mode === 'self'}}" class="health-section">
+      <!-- Profile (self & coach mode) -->
+      <view wx:if="{{mode === 'self' || mode === 'coach'}}" class="health-section">
         <view class="section-title-row">
           <text class="section-title">{{t.profile}}</text>
           <view class="profile-header-btns" wx:if="{{!editing}}">
@@ -164,8 +164,8 @@
         </view>
       </view>
 
-      <!-- Health Conditions (self mode only, hidden while editing) -->
-      <view wx:if="{{mode === 'self' && hasConditionsData && !editing}}" class="health-section">
+      <!-- Health Conditions (self & coach mode, hidden while editing) -->
+      <view wx:if="{{(mode === 'self' || mode === 'coach') && hasConditionsData && !editing}}" class="health-section">
         <text class="section-title">{{t.healthConditions}}</text>
         <view wx:if="{{healthConditionsList.length > 0}}" class="cond-chips">
           <view wx:for="{{healthConditionsList}}" wx:key="key" class="health-cond-chip">

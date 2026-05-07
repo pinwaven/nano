@@ -516,6 +516,16 @@ Page({
     if (resolvedTab === 'chat') this._loadClientChat()
   },
 
+  onClientProfileUpdated(e) {
+    const updated = e.detail
+    if (!updated) return
+    const detailClient = { ...this.data.detailClient, ...updated }
+    const clients = this.data.clients.map(c =>
+      c.user_id === updated.user_id ? { ...c, ...updated } : c
+    )
+    this.setData({ detailClient, clients })
+  },
+
   closeClientDetail() {
     this.setData({ detailOpen: false, detailClient: null, chatMessages: [], msgText: '', chatScrollId: '', chatToolboxOpen: false, chatToolBusy: false })
   },

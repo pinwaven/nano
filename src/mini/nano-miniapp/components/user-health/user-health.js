@@ -276,7 +276,7 @@ Component({
           hasBm: latestBm !== null,
         }
 
-        if (mode === 'self' && user) {
+        if ((mode === 'self' || mode === 'coach') && user) {
           const bodyRecords = records.filter(r => r.test_type === 'body_composition').slice().reverse()
           const heightVal = bodyRecords.find(r => r.data?.actual?.height != null)?.data?.actual?.height
             ?? user.bio_data?.height ?? null
