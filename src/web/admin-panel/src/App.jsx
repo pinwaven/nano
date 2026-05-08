@@ -180,7 +180,8 @@ const T = {
       saveFailed: 'Save failed',
       addChannel: 'Add Channel', editChannel: 'Edit Channel', deleteChannel: 'Delete Channel',
       deleteChannelWarning: (name) => `Delete channel "${name}"? Coaches and users in this channel will be unassigned.`,
-      channelKeyName: 'Key Name *', channelName: 'Display Name *', channelLogoUrl: 'Logo URL',
+      channelKeyName: 'Key Name *', channelName: 'Display Name *', channelLogoUrl: 'Logo',
+      uploadChannelLogo: 'Click to upload logo (PNG / JPG)', uploadChannelLogoFailed: 'Logo upload failed', removeChannelLogo: 'Remove logo',
       channel: 'Channel', channelUnassigned: 'No channel',
       roles: 'Roles', roleUser: 'User', roleCoach: 'Coach', roleAdmin: 'Channel Admin', roleSuperadmin: 'Superadmin',
       selectUser: 'User *', selectUserPlaceholder: 'Search by nickname or user_id…', userRequired: 'User is required',
@@ -448,7 +449,8 @@ const T = {
       saveFailed: '保存失败',
       addChannel: '添加渠道', editChannel: '编辑渠道', deleteChannel: '删除渠道',
       deleteChannelWarning: (name) => `确认删除渠道"${name}"？该渠道下的 Coach 和用户将失去渠道关联。`,
-      channelKeyName: '标识 *', channelName: '显示名称 *', channelLogoUrl: 'Logo URL',
+      channelKeyName: '标识 *', channelName: '显示名称 *', channelLogoUrl: 'Logo',
+      uploadChannelLogo: '点击上传 Logo（PNG / JPG）', uploadChannelLogoFailed: 'Logo 上传失败', removeChannelLogo: '移除 Logo',
       channel: '渠道', channelUnassigned: '无渠道',
       roles: '角色', roleUser: '用户', roleCoach: '教练', roleAdmin: '渠道管理员', roleSuperadmin: '超级管理员',
       selectUser: '用户 *', selectUserPlaceholder: '按昵称或 user_id 搜索…', userRequired: '用户为必填项',
@@ -2846,8 +2848,28 @@ function ChannelModal({ channel, onClose, onSave }) {
     ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '' }
     : { ...EMPTY_CHANNEL });
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleLogoPick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true); setUploadProgress(0); setError('');
+    try {
+      const presignRes = await axios.get('/api/oss/presign', {
+        params: { type: 'logo', filename: file.name, category: 'channels' },
+      });
+      if (!presignRes.data.success) throw new Error(presignRes.data.error || t.modal.uploadChannelLogoFailed);
+      const { url, get_url } = presignRes.data;
+      await uploadToOSS(url, file, setUploadProgress);
+      set('logo_url', get_url);
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || t.modal.uploadChannelLogoFailed);
+    } finally { setUploading(false); }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -2879,15 +2901,42 @@ function ChannelModal({ channel, onClose, onSave }) {
               <span>{t.modal.channelName}</span>
               <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Nanovate" />
             </label>
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{t.modal.channelLogoUrl}</span>
-              <input value={form.logo_url} onChange={e => set('logo_url', e.target.value)} placeholder="https://..." />
-            </label>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 6 }}>
+                {form.logo_url ? (
+                  <div style={{ position: 'relative', flexShrink: 0 }}>
+                    <img src={form.logo_url} alt=""
+                         style={{ width: 80, height: 80, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(99,117,236,0.3)' }} />
+                    <button type="button" className="icon-btn" title={t.modal.removeChannelLogo}
+                            onClick={() => set('logo_url', '')}
+                            style={{ position: 'absolute', top: -6, right: -6, background: '#0F2540', border: '1px solid rgba(99,117,236,0.4)', borderRadius: '50%', width: 22, height: 22, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <X size={12} />
+                    </button>
+                  </div>
+                ) : null}
+                <label className="upload-zone" style={{ flex: 1, minHeight: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: uploading ? 'wait' : 'pointer', flexDirection: 'column', gap: 6 }}>
+                  <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" style={{ display: 'none' }} onChange={handleLogoPick} disabled={uploading} />
+                  {uploading ? (
+                    <>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>{t.store.uploading}</span>
+                      <div className="upload-progress" style={{ width: '80%' }}>
+                        <div className="upload-progress-bar" style={{ width: `${uploadProgress}%` }} />
+                      </div>
+                    </>
+                  ) : (
+                    <span className="upload-zone-hint" style={{ textAlign: 'center' }}>
+                      {form.logo_url ? '↺ ' : ''}{t.modal.uploadChannelLogo}
+                    </span>
+                  )}
+                </label>
+              </div>
+            </div>
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
-            <button type="submit" className="btn-primary" disabled={busy}>
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={uploading}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy || uploading}>
               <Check size={14} />{busy ? t.modal.saving : t.modal.save}
             </button>
           </div>
@@ -3032,10 +3081,10 @@ function ChannelTab({ channels, onRefresh, isSuperadmin }) {
                 <td className="muted">{c.id}</td>
                 <td><code className="code-tag">{c.key_name}</code></td>
                 <td className="bold">{fmt(c.name)}</td>
-                <td className="muted">
+                <td>
                   {c.logo_url
-                    ? <a href={c.logo_url} target="_blank" rel="noreferrer" style={{ color: '#6366f1', fontSize: 12 }}>View</a>
-                    : '—'}
+                    ? <img src={c.logo_url} alt="" style={{ width: 32, height: 32, borderRadius: 4, objectFit: 'cover', display: 'block' }} />
+                    : <span className="muted">—</span>}
                 </td>
                 <td><Badge color="#3b82f6">{c.user_count || 0}</Badge></td>
                 <td><Badge color="#10b981">{c.coach_count || 0}</Badge></td>

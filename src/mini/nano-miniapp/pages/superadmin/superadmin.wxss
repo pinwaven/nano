@@ -207,6 +207,20 @@
   box-sizing: border-box;
 }
 
+.logo-picker {
+  width: 100%;
+  height: 80px;
+  background: #1A2F4A;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.logo-picker-busy { opacity: 0.6; }
+.logo-preview { width: 100%; height: 80px; }
+.logo-placeholder-text { font-size: 13px; color: #7A9ABF; }
+
 .modal-error { margin-top: 8px; }
 .error-text { font-size: 13px; color: #ef4444; }
 

@@ -19,7 +19,7 @@ const T = {
     tabs: { channels: '渠道', users: '用户', coaches: '教练', dots: '原粒', invites: '邀请' },
     back: '返回', refresh: '刷新', loading: '加载中…',
     add: '添加', edit: '编辑', delete: '删除', save: '保存', cancel: '取消',
-    saving: '保存中…', deleting: '删除中…',
+    saving: '保存中…', deleting: '删除中…', uploading: '上传中…',
     empty: { channels: '暂无渠道', users: '暂无用户', coaches: '暂无教练', dots: '暂无原粒', invites: '暂无邀请码' },
     invite: {
       generate: '生成邀请码', deactivate: '停用', copy: '复制链接',
@@ -29,7 +29,7 @@ const T = {
       copied: '链接已复制',
     },
     channel: {
-      key: '标识', name: '名称', logo: 'Logo URL', users: '用户', coaches: '教练',
+      key: '标识', name: '名称', logo: 'Logo', uploadLogo: '点击上传 Logo', users: '用户', coaches: '教练',
       addTitle: '添加渠道', editTitle: '编辑渠道',
       deleteWarning: '确认删除此渠道？所有关联用户和教练将失去渠道归属。',
     },
@@ -68,7 +68,7 @@ const T = {
     tabs: { channels: 'Channels', users: 'Users', coaches: 'Coaches', dots: 'Dots', invites: 'Invites' },
     back: 'Back', refresh: 'Refresh', loading: 'Loading…',
     add: 'Add', edit: 'Edit', delete: 'Delete', save: 'Save', cancel: 'Cancel',
-    saving: 'Saving…', deleting: 'Deleting…',
+    saving: 'Saving…', deleting: 'Deleting…', uploading: 'Uploading…',
     empty: { channels: 'No channels', users: 'No users', coaches: 'No coaches', dots: 'No dots', invites: 'No invite codes' },
     invite: {
       generate: 'Generate Code', deactivate: 'Deactivate', copy: 'Copy Link',
@@ -78,7 +78,7 @@ const T = {
       copied: 'Link copied',
     },
     channel: {
-      key: 'Key', name: 'Name', logo: 'Logo URL', users: 'Users', coaches: 'Coaches',
+      key: 'Key', name: 'Name', logo: 'Logo', uploadLogo: 'Tap to Upload Logo', users: 'Users', coaches: 'Coaches',
       addTitle: 'Add Channel', editTitle: 'Edit Channel',
       deleteWarning: 'Delete this channel? All linked users and coaches will lose their channel assignment.',
     },
@@ -161,6 +161,7 @@ Page({
     channelModalBusy: false,
     channelModalError: '',
     channelForm: { key_name: '', name: '', logo_url: '' },
+    channelLogoUploading: false,
     editChannelId: null,
 
     // Roles modal
@@ -256,7 +257,7 @@ Page({
     const t = T[this.data.lang]
     this.setData({
       channelModalOpen: true, channelModalMode: 'add', channelModalTitle: t.channel.addTitle,
-      channelModalError: '', editChannelId: null,
+      channelModalError: '', editChannelId: null, channelLogoUploading: false,
       channelForm: { key_name: '', name: '', logo_url: '' },
     })
   },
@@ -266,19 +267,55 @@ Page({
     const t = T[this.data.lang]
     this.setData({
       channelModalOpen: true, channelModalMode: 'edit', channelModalTitle: t.channel.editTitle,
-      channelModalError: '', editChannelId: c.id,
+      channelModalError: '', editChannelId: c.id, channelLogoUploading: false,
       channelForm: { key_name: c.key_name || '', name: c.name || '', logo_url: c.logo_url || '' },
     })
   },
 
   closeChannelModal() {
-    if (this.data.channelModalBusy) return
-    this.setData({ channelModalOpen: false })
+    if (this.data.channelModalBusy || this.data.channelLogoUploading) return
+    this.setData({ channelModalOpen: false, channelLogoUploading: false })
   },
 
   onChannelFormInput(e) {
     const key = e.currentTarget.dataset.key
     this.setData({ [`channelForm.${key}`]: e.detail.value })
+  },
+
+  pickChannelLogo() {
+    if (this.data.channelLogoUploading || this.data.channelModalBusy) return
+    wx.chooseImage({
+      count: 1,
+      sizeType: ['compressed'],
+      sourceType: ['album', 'camera'],
+      success: (res) => {
+        const tempPath = res.tempFilePaths[0]
+        this.setData({ channelLogoUploading: true })
+        this._req(`${BASE}/api/oss/presign?type=logo&filename=logo.jpg&category=channels`, 'GET')
+          .then(presignRes => {
+            const { put_url, get_url } = presignRes.data || {}
+            if (!put_url) { this.setData({ channelLogoUploading: false }); return }
+            wx.getFileSystemManager().readFile({
+              filePath: tempPath,
+              success: (fileRes) => {
+                wx.request({
+                  url: put_url,
+                  method: 'PUT',
+                  data: fileRes.data,
+                  header: { 'Content-Type': 'application/octet-stream' },
+                  responseType: 'text',
+                  success: () => {
+                    this.setData({ 'channelForm.logo_url': get_url, channelLogoUploading: false })
+                  },
+                  fail: () => this.setData({ channelLogoUploading: false }),
+                })
+              },
+              fail: () => this.setData({ channelLogoUploading: false }),
+            })
+          })
+          .catch(() => this.setData({ channelLogoUploading: false }))
+      },
+    })
   },
 
   async saveChannel() {

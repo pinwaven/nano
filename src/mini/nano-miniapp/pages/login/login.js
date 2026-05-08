@@ -8,6 +8,7 @@ Page({
     error: '',
     phoneLoading: false,
     pendingAvatar: '',
+    channel: null,
   },
 
   _coachId: null,
@@ -23,6 +24,8 @@ Page({
       wx.reLaunch({ url: '/pages/main/main' })
       return
     }
+    const storedChannel = wx.getStorageSync('nano_channel')
+    if (storedChannel) this.setData({ channel: storedChannel })
     this.wxLogin()
   },
 
@@ -46,7 +49,7 @@ Page({
 
       if (res.data.new_user) {
         this._pendingLogin = res.data
-        this.setData({ step: 'phone', loading: false })
+        this.setData({ step: 'phone', loading: false, channel: res.data.channel || this.data.channel })
         return
       }
 

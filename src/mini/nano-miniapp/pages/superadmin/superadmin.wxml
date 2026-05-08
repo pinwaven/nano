@@ -183,7 +183,11 @@
           </view>
           <view class="form-row">
             <text class="form-label">{{t.channel.logo}}</text>
-            <input class="form-input" value="{{channelForm.logo_url}}" bindinput="onChannelFormInput" data-key="logo_url" placeholder="https://…" />
+            <view class="logo-picker {{channelLogoUploading ? 'logo-picker-busy' : ''}}" bindtap="pickChannelLogo">
+              <image wx:if="{{channelForm.logo_url && !channelLogoUploading}}" src="{{channelForm.logo_url}}" class="logo-preview" mode="aspectFill" />
+              <text wx:elif="{{channelLogoUploading}}" class="logo-placeholder-text">{{t.uploading}}</text>
+              <text wx:else class="logo-placeholder-text">{{t.channel.uploadLogo}}</text>
+            </view>
           </view>
           <view wx:if="{{channelModalError}}" class="modal-error">
             <text class="error-text">{{channelModalError}}</text>
