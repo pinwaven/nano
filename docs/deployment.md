@@ -42,7 +42,7 @@ s deploy -y
 # Deploy a single function
 s dispatcher deploy  -y
 s worker deploy -y
-s admin-pane deployl -y
+s admin-panel deploy -y
 
 # Deploy only the domain routing
 s nano-domain deploy -y
@@ -77,8 +77,6 @@ routes:
   - path: /admin/api/* → nano-admin-panel (proxied to worker)
   - path: /worker     → nano-worker
 ```
-
-> `/api/*` is intentionally left free for future use.
 
 ## Admin panel deployment notes
 
