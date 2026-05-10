@@ -29,18 +29,17 @@ function verifyChannelAdminToken(token) {
 }
 
 // WeChat access_token cache (module-level, survives container reuse)
-let _wxToken = null;
-let _wxTokenExpiry = 0;
-async function getWxAccessToken() {
-    if (_wxToken && Date.now() < _wxTokenExpiry) return _wxToken;
-    const appid = process.env.WX_APPID;
-    const secret = process.env.WX_SECRET;
-    const res = await fetch(`https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${appid}&secret=${secret}`);
+const _wxTokenCache = {};
+async function getWxAccessToken(appid = null, secret = null) {
+    const id = appid || process.env.WX_APPID;
+    const sec = secret || process.env.WX_SECRET;
+    const cached = _wxTokenCache[id];
+    if (cached && Date.now() < cached.expiry) return cached.token;
+    const res = await fetch(`https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${id}&secret=${sec}`);
     const data = await res.json();
     if (data.errcode) throw new Error(`WX token error: ${data.errmsg} (${data.errcode})`);
-    _wxToken = data.access_token;
-    _wxTokenExpiry = Date.now() + (data.expires_in - 300) * 1000;
-    return _wxToken;
+    _wxTokenCache[id] = { token: data.access_token, expiry: Date.now() + (data.expires_in - 300) * 1000 };
+    return data.access_token;
 }
 const { getNowShanghai, calculateAge } = require('./lib/time-utils');
 const { BiomarkerEstimator } = require('./lib/estimator/BiomarkerEstimator');
@@ -1731,10 +1730,41 @@ async function handleDeleteInvitation(inviteId) {
     }
 }
 
-async function handleBindPhone(user_id, code) {
+async function handleResolvePhone(code, app_id = null) {
     try {
         if (!code) return { success: false, error: 'code is required' };
-        const token = await getWxAccessToken();
+        const credMap = {};
+        if (process.env.WX_APPID && process.env.WX_SECRET)
+            credMap[process.env.WX_APPID] = process.env.WX_SECRET;
+        if (process.env.WX_APPID_NANOVATE && process.env.WX_SECRET_NANOVATE)
+            credMap[process.env.WX_APPID_NANOVATE] = process.env.WX_SECRET_NANOVATE;
+        const appid = (app_id && credMap[app_id]) ? app_id : process.env.WX_APPID;
+        const token = await getWxAccessToken(appid, credMap[appid]);
+        const wxRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code }),
+        });
+        const wxData = await wxRes.json();
+        if (wxData.errcode) return { success: false, error: `WeChat: ${wxData.errmsg} (${wxData.errcode})` };
+        const phone = wxData.phone_info?.purePhoneNumber;
+        if (!phone) return { success: false, error: 'No phone number returned' };
+        return { success: true, phone };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleBindPhone(user_id, code, app_id = null) {
+    try {
+        if (!code) return { success: false, error: 'code is required' };
+        const credMap = {};
+        if (process.env.WX_APPID && process.env.WX_SECRET)
+            credMap[process.env.WX_APPID] = process.env.WX_SECRET;
+        if (process.env.WX_APPID_NANOVATE && process.env.WX_SECRET_NANOVATE)
+            credMap[process.env.WX_APPID_NANOVATE] = process.env.WX_SECRET_NANOVATE;
+        const appid = (app_id && credMap[app_id]) ? app_id : process.env.WX_APPID;
+        const token = await getWxAccessToken(appid, credMap[appid]);
         const wxRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1752,11 +1782,18 @@ async function handleBindPhone(user_id, code) {
 }
 
 async function handleWxLogin(body) {
-    const { code, coach_id, invite_code } = body;
+    console.log(JSON.stringify({ level: 'INFO', msg: 'wx-login-body', body_keys: Object.keys(body || {}), phone: body?.phone, phone_code: body?.phone_code }));
+    const { code, coach_id, invite_code, app_id, phone_code, phone } = body;
     if (!code) return { success: false, error: 'code is required' };
 
-    const appid  = process.env.WX_APPID;
-    const secret = process.env.WX_SECRET;
+    const credMap = {};
+    if (process.env.WX_APPID && process.env.WX_SECRET)
+        credMap[process.env.WX_APPID] = process.env.WX_SECRET;
+    if (process.env.WX_APPID_NANOVATE && process.env.WX_SECRET_NANOVATE)
+        credMap[process.env.WX_APPID_NANOVATE] = process.env.WX_SECRET_NANOVATE;
+
+    const appid  = (app_id && credMap[app_id]) ? app_id : process.env.WX_APPID;
+    const secret = credMap[appid];
     if (!appid || !secret) return { success: false, error: 'WX_APPID / WX_SECRET not configured' };
 
     const wxRes = await fetch(
@@ -1766,6 +1803,23 @@ async function handleWxLogin(body) {
     if (wxData.errcode) return { success: false, error: `WeChat: ${wxData.errmsg} (${wxData.errcode})` };
 
     const openid = wxData.openid;
+
+    // Use pre-resolved phone (already verified by /resolve-phone), or resolve from code if provided
+    console.log(JSON.stringify({ level: 'INFO', msg: 'wx-login-phone', phone_present: !!phone, phone_code_present: !!phone_code, phone_val: phone }));
+    let resolvedPhone = phone || null;
+    if (!resolvedPhone && phone_code) {
+        const token = await getWxAccessToken(appid, credMap[appid]);
+        const phoneRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: phone_code }),
+        });
+        const phoneData = await phoneRes.json();
+        if (phoneData.errcode || !phoneData.phone_info?.purePhoneNumber) {
+            return { success: false, phone_error: true, error: `手机号获取失败: ${phoneData.errmsg || 'no number returned'} (${phoneData.errcode})` };
+        }
+        resolvedPhone = phoneData.phone_info.purePhoneNumber;
+    }
 
     // Look up existing user — return with channel info and roles
     const existing = await pool.query(
@@ -1838,6 +1892,10 @@ async function handleWxLogin(body) {
             }
         }
 
+        if (resolvedPhone && !existingRow.phone) {
+            await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [resolvedPhone, existingRow.user_id]);
+            existingRow.phone = resolvedPhone;
+        }
         const { channel_name, channel_logo_url, ...user } = existingRow;
         const channel = channel_name ? { name: channel_name, logo_url: channel_logo_url } : null;
         // If user is a coach, fetch their coach record
@@ -1850,6 +1908,38 @@ async function handleWxLogin(body) {
             if (coachRes.rows.length > 0) coach = coachRes.rows[0];
         }
         return { success: true, user, channel, coach };
+    }
+
+    // New user — if phone already exists on another account, re-link that account to this openid
+    if (resolvedPhone) {
+        const phoneMatch = await pool.query(
+            `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
+                    u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
+                    cu.nickname AS coach_name,
+                    c.name AS channel_name, c.logo_url AS channel_logo_url
+             FROM users u
+             LEFT JOIN coaches p ON u.coach_id = p.id
+             LEFT JOIN users cu ON p.user_id = cu.user_id
+             LEFT JOIN channels c ON u.channel_id = c.id
+             LEFT JOIN (
+                 SELECT DISTINCT ON (user_id) user_id, bio_age
+                 FROM biomarkers ORDER BY user_id, tested_at DESC
+             ) b ON u.user_id = b.user_id
+             WHERE u.phone = $1 LIMIT 1`,
+            [resolvedPhone]
+        );
+        if (phoneMatch.rows.length > 0) {
+            const row = phoneMatch.rows[0];
+            await pool.query('UPDATE users SET external_id = $1 WHERE user_id = $2', [openid, row.user_id]);
+            const { channel_name, channel_logo_url, ...user } = row;
+            const channel = channel_name ? { name: channel_name, logo_url: channel_logo_url } : null;
+            let coach = null;
+            if (user.roles && user.roles.includes('coach')) {
+                const coachRes = await pool.query('SELECT id, channel_id, user_id FROM coaches WHERE user_id = $1 LIMIT 1', [user.user_id]);
+                if (coachRes.rows.length > 0) coach = coachRes.rows[0];
+            }
+            return { success: true, user, channel, coach };
+        }
     }
 
     // New user — no invite code, allow guest browsing
@@ -1893,10 +1983,10 @@ async function handleWxLogin(body) {
 
     const newUserId = generateUserId();
     const created = await pool.query(
-        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id)
-         VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5)
+        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, phone)
+         VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5, $6)
          RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, coach_id, channel_id, roles, created_at, bio_data`,
-        [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null]
+        [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, resolvedPhone]
     );
 
     if (inviteRecord) {
@@ -4777,9 +4867,12 @@ exports.handler = async (req, resp, context) => {
                 result = await handleValidateInvite(parsedBody);
             } else if (path === '/wx-login') {
                 result = await handleWxLogin(parsedBody);
+            } else if (path === '/resolve-phone') {
+                const { code, app_id } = parsedBody;
+                result = await handleResolvePhone(code, app_id);
             } else if (path === '/bind-phone') {
-                const { user_id, code } = parsedBody;
-                result = await handleBindPhone(user_id, code);
+                const { user_id, code, app_id } = parsedBody;
+                result = await handleBindPhone(user_id, code, app_id);
             } else if (path.includes('/reminders')) {
                 result = await handlePostReminder(parsedBody);
             } else if (path.includes('/coach-instruction')) {

@@ -77,6 +77,8 @@ resources:
         MODEL: "qwen-plus-latest"
         WX_APPID: "wxecbcf00ce480fcf2"
         WX_SECRET: ${env(WX_SECRET)}
+        WX_APPID_NANOVATE: "wx84bd7d00a6fd626e"
+        WX_SECRET_NANOVATE: ${env(WX_SECRET_NANOVATE)}
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
         OSS_REGION: "oss-cn-shanghai"
         OSS_BUCKET: "waven-nano"
