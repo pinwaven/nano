@@ -670,6 +670,7 @@ Page({
     guestAvatarUploading: false,
     guestAvatarReady: false,
     guestPhoneDone: false,
+    guestResolvedPhone: '',
 
     // Dots
     dotsLoading: true,
@@ -1434,7 +1435,8 @@ Page({
     this._removePhonePrompt()
     if (errMsg !== 'getPhoneNumber:ok' || !code) return
     try {
-      const res = await this._req(`${BASE}/api/bind-phone`, 'POST', { user_id: user.user_id, code })
+      const { appId } = wx.getAccountInfoSync().miniProgram
+      const res = await this._req(`${BASE}/api/bind-phone`, 'POST', { user_id: user.user_id, code, app_id: appId })
       if (res.data?.success) {
         const updatedUser = { ...user, phone: res.data.phone }
         app.globalData.user = updatedUser
@@ -2206,7 +2208,7 @@ Page({
     this._pendingGuestAvatarUrl = ''
     this._pendingInviteCode = ''
     this._pendingPhoneCode = ''
-    this.setData({ guestSheetOpen: true, guestSheetStep: 'invite', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '', guestPendingAvatar: '', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, menuOpen: false })
+    this.setData({ guestSheetOpen: true, guestSheetStep: 'invite', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '', guestPendingAvatar: '', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, guestResolvedPhone: '', menuOpen: false })
   },
 
   closeGuestSheet() {
@@ -2336,41 +2338,46 @@ Page({
     const { code, errMsg } = e.detail
     if (errMsg !== 'getPhoneNumber:ok' || !code) return
     this._pendingPhoneCode = code
-    this.setData({ guestPhoneDone: true })
+    this.setData({ guestPhoneDone: true, guestInviteError: '', guestResolvedPhone: '' })
+    const { appId } = wx.getAccountInfoSync().miniProgram
+    this._req(`${BASE}/api/resolve-phone`, 'POST', { code, app_id: appId }).then(res => {
+      if (res.data?.success && res.data.phone) {
+        this.setData({ guestResolvedPhone: res.data.phone })
+      }
+    }).catch(() => {})
   },
 
   async proceedGuestSignup() {
-    const { guestAvatarReady, guestAvatarUploading, guestPhoneDone, guestInviteBusy, t } = this.data
-    if (!guestAvatarReady || guestAvatarUploading || !guestPhoneDone || guestInviteBusy) return
+    const { guestAvatarReady, guestAvatarUploading, guestResolvedPhone, guestInviteBusy, t } = this.data
+    if (!guestAvatarReady || guestAvatarUploading || !guestResolvedPhone || guestInviteBusy) return
     this.setData({ guestInviteBusy: true })
     try {
       const { code: wxCode } = await this._getCode()
-      const loginRes = await this._req(`${BASE}/api/wx-login`, 'POST', { code: wxCode, invite_code: this._pendingInviteCode })
+      const { appId } = wx.getAccountInfoSync().miniProgram
+      this._pendingPhoneCode = ''
+      const loginRes = await this._req(`${BASE}/api/wx-login`, 'POST', {
+        code: wxCode, invite_code: this._pendingInviteCode, app_id: appId, phone: guestResolvedPhone,
+      })
       if (!loginRes.data?.success) {
-        this.setData({ guestInviteError: loginRes.data?.error || t.errServer, guestInviteBusy: false })
+        if (loginRes.data?.phone_error) {
+          this.setData({ guestInviteError: loginRes.data.error || t.errServer, guestInviteBusy: false, guestPhoneDone: false })
+        } else {
+          this.setData({ guestInviteError: loginRes.data?.error || t.errServer, guestInviteBusy: false })
+        }
         return
       }
       this._pendingGuestSignup = loginRes.data
       const u = loginRes.data.user
-      if (this._pendingPhoneCode) {
-        try {
-          const phoneRes = await this._req(`${BASE}/api/bind-phone`, 'POST', { user_id: u.user_id, code: this._pendingPhoneCode })
-          if (phoneRes.data?.success && phoneRes.data.phone) {
-            this._pendingGuestSignup.user = { ...u, phone: phoneRes.data.phone }
-          }
-        } catch (err) {}
-        this._pendingPhoneCode = ''
-      }
       if (this._pendingGuestAvatarUrl) {
         try {
           await this._req(`${BASE}/api/users/${u.user_id}`, 'PUT', {
-            nickname: u.nickname, phone: this._pendingGuestSignup.user.phone || u.phone,
+            nickname: u.nickname, phone: u.phone,
             email: u.email, gender: u.gender, birth_date: u.birth_date,
             language: u.language, coach_id: u.coach_id, avatar_url: this._pendingGuestAvatarUrl,
           })
           const confirmedUrl = await this._pollAvatarUrl(u.user_id)
           const finalUrl = confirmedUrl || this._pendingGuestAvatarUrl
-          this._pendingGuestSignup.user = { ...this._pendingGuestSignup.user, avatar_url: finalUrl }
+          this._pendingGuestSignup.user = { ...u, avatar_url: finalUrl }
         } catch (err) {}
         this._pendingGuestAvatarUrl = ''
       }
@@ -2385,7 +2392,7 @@ Page({
     this._pendingGuestAvatarUrl = ''
     this._pendingInviteCode = ''
     this._pendingPhoneCode = ''
-    this.setData({ guestSheetOpen: false, guestSheetStep: 'invite', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, guestPendingAvatar: '', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '' })
+    this.setData({ guestSheetOpen: false, guestSheetStep: 'invite', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, guestResolvedPhone: '', guestPendingAvatar: '', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '' })
   },
 
   _pollAvatarUrl(userId) {

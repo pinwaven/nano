@@ -131,7 +131,7 @@ Page({
         url: `${BASE}/api/bind-phone`,
         method: 'POST',
         header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
-        data: { user_id: user.user_id, code },
+        data: { user_id: user.user_id, code, app_id: wx.getAccountInfoSync().miniProgram.appId },
       })
     } catch (e) {}
     this._finishLogin(this._pendingLogin)
@@ -183,7 +183,8 @@ Page({
   },
 
   _callWxLogin(code, inviteCode) {
-    const data = { code }
+    const { appId } = wx.getAccountInfoSync().miniProgram
+    const data = { code, app_id: appId }
     if (this._coachId) data.coach_id = this._coachId
     if (inviteCode) data.invite_code = inviteCode
     return new Promise((resolve, reject) => {

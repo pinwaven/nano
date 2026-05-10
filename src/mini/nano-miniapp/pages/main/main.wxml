@@ -1043,12 +1043,17 @@
           <view class="consent-check {{guestPhoneDone ? 'consent-check-done' : ''}}">
             <text wx:if="{{guestPhoneDone}}" class="consent-check-icon">✓</text>
           </view>
-          <text class="consent-label">{{t.guestPhoneLabel}}</text>
+          <text class="consent-label">{{guestResolvedPhone || t.guestPhoneLabel}}</text>
         </button>
+
+        <!-- Error -->
+        <view wx:if="{{guestInviteError}}" class="guest-sheet-error">
+          <text>{{guestInviteError}}</text>
+        </view>
 
         <!-- Continue -->
         <view
-          class="guest-sheet-btn {{(!guestAvatarReady || guestAvatarUploading || !guestPhoneDone || guestInviteBusy) ? 'guest-sheet-btn-disabled' : ''}}"
+          class="guest-sheet-btn {{(!guestAvatarReady || guestAvatarUploading || !guestResolvedPhone || guestInviteBusy) ? 'guest-sheet-btn-disabled' : ''}}"
           bindtap="proceedGuestSignup"
         >
           <text>{{guestInviteBusy ? t.guestActivating : t.guestContinueBtn}}</text>
