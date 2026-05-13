@@ -303,15 +303,16 @@ app.get('/kino-devices', async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT kd.id, kd.serial_number, kd.name, kd.status, kd.notes, kd.registered_at, kd.created_at,
-                   kd.coach_id, c.name AS coach_name,
+                   kd.coach_id, u.nickname AS coach_name,
                    kd.channel_id, ch.name AS channel_name,
                    COUNT(b.id)::int AS test_count,
                    MAX(b.tested_at) AS last_used_at
             FROM kino_devices kd
             LEFT JOIN coaches c ON c.id = kd.coach_id
+            LEFT JOIN users u ON u.user_id = c.user_id
             LEFT JOIN channels ch ON ch.id = kd.channel_id
             LEFT JOIN biomarkers b ON b.kino_device_id = kd.id
-            GROUP BY kd.id, c.name, ch.name
+            GROUP BY kd.id, u.nickname, ch.name
             ORDER BY kd.id ASC
         `);
         res.json({ success: true, devices: result.rows });
