@@ -128,6 +128,7 @@ const T = {
     },
     empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found', invites: 'No invitations found', kino: 'No Kino devices registered', chipBatches: 'No chip batches created', chipModels: 'No chip models defined', tickets: 'No tickets yet' },
     count: (n) => `${n} users`,
+    searchUsers: 'Search by name, ID, email, phone, channel…',
     addUser: 'Add User',
     addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item', addChannel: 'Add Channel', addInvite: 'Create Invite', addDevice: 'Register Device',
     countCoach: (n) => `${n} Coaches`,
@@ -398,6 +399,7 @@ const T = {
     },
     empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道', invites: '暂无邀请码', kino: '暂无 Kino 设备', chipBatches: '暂无芯片批次', chipModels: '暂无芯片型号', tickets: '暂无工单' },
     count: (n) => `共 ${n} 位用户`,
+    searchUsers: '搜索姓名、ID、邮箱、电话、渠道…',
     addBatch: '新建批次', countBatch: (n) => `共 ${n} 批次`,
     chips: {
       prefix: '前缀 *', prefixHint: '自动转大写，例如 KNC12345678 或 MVNS0725122201',
@@ -1637,11 +1639,48 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
   const [detailUser, setDetailUser] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortField, setSortField] = useState('created_at');
+  const [sortDir, setSortDir] = useState('desc');
+
   const tested = users.filter(u => u.bio_age).length;
   const avgBioAge = tested
     ? (users.filter(u => u.bio_age).reduce((s, u) => s + Number(u.bio_age), 0) / tested).toFixed(1)
     : '—';
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  const q = searchQuery.trim().toLowerCase();
+  const filtered = q
+    ? users.filter(u =>
+        (u.nickname || '').toLowerCase().includes(q) ||
+        (u.user_id || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q) ||
+        (u.phone || '').toLowerCase().includes(q) ||
+        (u.channel_name || '').toLowerCase().includes(q)
+      )
+    : users;
+
+  const sorted = [...filtered].sort((a, b) => {
+    let av = a[sortField] ?? '', bv = b[sortField] ?? '';
+    const numA = Number(av), numB = Number(bv);
+    if (!isNaN(numA) && !isNaN(numB) && av !== '' && bv !== '') {
+      return sortDir === 'asc' ? numA - numB : numB - numA;
+    }
+    return sortDir === 'asc'
+      ? String(av).localeCompare(String(bv))
+      : String(bv).localeCompare(String(av));
+  });
+
+  const toggleSort = (field) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('asc'); }
+  };
+
+  const SortIcon = ({ field }) => (
+    <span style={{ marginLeft: 4, opacity: sortField === field ? 1 : 0.3, color: sortField === field ? 'var(--primary)' : 'inherit' }}>
+      {sortField === field ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
+    </span>
+  );
 
   return (
     <>
@@ -1653,7 +1692,16 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
       </div>
       <div className="card">
         <div className="table-toolbar">
-          <span className="table-count">{t.count(users.length)}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="table-count">{q ? `${sorted.length} / ${users.length}` : t.count(users.length)}</span>
+            <input
+              className="toolbar-search"
+              type="text"
+              placeholder={t.searchUsers}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
           <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
             <Plus size={14} />{t.addUser}
           </button>
@@ -1661,16 +1709,23 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
         <table className="data-table">
           <thead>
             <tr>
-              <th>{t.table.id}</th><th>{t.table.nickname}</th><th>{t.table.channel}</th><th>{t.table.roles}</th><th>{t.table.gender}</th>
-              <th>{t.table.birthDate}</th><th>{t.table.language}</th>
-              <th>{t.table.chronoAge}</th><th>{t.table.bioAge}</th>
-              <th>{t.table.assignedCoach}</th><th>{t.table.joined}</th>
+              <th className="sortable-th" onClick={() => toggleSort('user_id')}>{t.table.id}<SortIcon field="user_id" /></th>
+              <th className="sortable-th" onClick={() => toggleSort('nickname')}>{t.table.nickname}<SortIcon field="nickname" /></th>
+              <th className="sortable-th" onClick={() => toggleSort('channel_name')}>{t.table.channel}<SortIcon field="channel_name" /></th>
+              <th>{t.table.roles}</th>
+              <th>{t.table.gender}</th>
+              <th className="sortable-th" onClick={() => toggleSort('birth_date')}>{t.table.birthDate}<SortIcon field="birth_date" /></th>
+              <th>{t.table.language}</th>
+              <th className="sortable-th" onClick={() => toggleSort('chrono_age')}>{t.table.chronoAge}<SortIcon field="chrono_age" /></th>
+              <th className="sortable-th" onClick={() => toggleSort('bio_age')}>{t.table.bioAge}<SortIcon field="bio_age" /></th>
+              <th>{t.table.assignedCoach}</th>
+              <th className="sortable-th" onClick={() => toggleSort('created_at')}>{t.table.joined}<SortIcon field="created_at" /></th>
               <th>{t.modal.phone}</th><th>{t.modal.email}</th><th></th>
             </tr>
           </thead>
           <tbody>
-            {users.length === 0 && <tr><td colSpan={14} className="empty-row">{t.empty.users}</td></tr>}
-            {users.map(u => (
+            {sorted.length === 0 && <tr><td colSpan={14} className="empty-row">{t.empty.users}</td></tr>}
+            {sorted.map(u => (
               <tr key={u.user_id} className="clickable-row" onClick={() => setDetailUser(u)}>
                 <td className="muted">{u.user_id}</td>
                 <td>

@@ -287,6 +287,26 @@ body {
 
 .table-count { font-size: 13px; color: var(--muted); }
 
+.toolbar-search {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  background: #fff;
+  color: var(--text);
+  width: 280px;
+  transition: border-color 0.15s;
+}
+.toolbar-search:focus { border-color: var(--primary); }
+
+.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.sortable-th:hover { background: #f8fafc; }
+
 /* ── Row actions ── */
 .row-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.15s; }
 tr:hover .row-actions { opacity: 1; }
