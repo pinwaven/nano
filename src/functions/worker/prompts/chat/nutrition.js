@@ -1,4 +1,4 @@
-module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans }) => {
+module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin }) => {
   const isZh = user_profile.language === 'zh';
   const hasBioAge = bioage && bioage.BioAge;
 
@@ -26,12 +26,19 @@ Elevated dimensions: ${
         : `HEALTH PLAN GOAL: ${active_health_plans.map(p => `"${p.name}" — ${p.goal || ''} (week ${p.weeks_elapsed}/${p.total_weeks})`).join(' | ')}`)
     : '';
 
+  const twinSection = health_twin
+    ? (isZh
+        ? `近7天均值：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}`
+        : `7-day avg: Sleep ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | Steps ${health_twin.avg_daily_steps ?? '—'}${health_twin.latest_weight_kg ? ' | Weight ' + health_twin.latest_weight_kg + ' kg' : ''}`)
+    : '';
+
   return `You are Nano, a longevity AI built by Waven.
 
 USER: ${user_profile.nickname || (isZh ? '用户' : 'the user')}, ${user_profile.age ? user_profile.age + ' years old' : 'age unknown'}
 LANGUAGE: ${isZh ? 'Respond in Chinese (Simplified).' : 'Respond in English.'}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
+${twinSection ? twinSection + '\n' : ''}
 ${bioageSection}
 
 ${dotsSection}

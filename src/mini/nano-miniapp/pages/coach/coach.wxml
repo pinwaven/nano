@@ -164,6 +164,117 @@
     </view>
   </view>
 
+  <!-- Training Tab -->
+  <view wx:elif="{{tab === 'training'}}" class="training-tab">
+
+    <!-- Loading -->
+    <view wx:if="{{trainingLoading}}" class="loading-row">
+      <text class="loading-text">{{t.loading}}</text>
+    </view>
+
+    <!-- LIST VIEW: courses + library -->
+    <block wx:elif="{{trainingView === 'list'}}">
+      <view class="training-section-header">
+        <text class="training-section-title">{{t.training.courses}}</text>
+      </view>
+      <view wx:if="{{trainingCourses.length === 0}}" class="empty-state">
+        <text class="empty-text">{{t.training.noTraining}}</text>
+      </view>
+      <view wx:for="{{trainingCourses}}" wx:key="id" class="training-course-card" bindtap="trainingOpenCourse" data-course="{{item}}">
+        <view class="training-course-cover">
+          <text class="training-course-cover-text">{{item.title}}</text>
+          <view class="training-lesson-badge">
+            <text class="training-lesson-badge-text">{{item._lessonCountLabel}}</text>
+          </view>
+        </view>
+        <view class="training-course-body">
+          <view class="training-course-meta">
+            <text class="training-course-title">{{item.title}}</text>
+            <text wx:if="{{item.description}}" class="training-course-desc">{{item.description}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="training-section-header" style="margin-top: 28rpx;">
+        <text class="training-section-title">{{t.training.library}}</text>
+      </view>
+      <view wx:if="{{trainingLibrary.length === 0}}" class="empty-state">
+        <text class="empty-text">{{t.training.noLibrary}}</text>
+      </view>
+      <view wx:for="{{trainingLibrary}}" wx:key="id" class="training-library-row" bindtap="trainingOpenLibraryItem" data-item="{{item}}">
+        <text class="training-library-icon">📄</text>
+        <text class="training-library-title">{{item.title}}</text>
+        <text class="training-library-chevron">›</text>
+      </view>
+    </block>
+
+    <!-- LESSONS VIEW -->
+    <block wx:elif="{{trainingView === 'lessons'}}">
+      <view class="training-back-row" bindtap="trainingBackToList">
+        <text class="training-back-text">{{t.training.backToCourses}}</text>
+      </view>
+      <view class="training-course-header">
+        <text class="training-course-header-title">{{trainingCurrentCourse.title}}</text>
+        <text wx:if="{{trainingCurrentCourse.description}}" class="training-course-header-desc">{{trainingCurrentCourse.description}}</text>
+      </view>
+      <view wx:if="{{trainingLessons.length === 0}}" class="empty-state" style="margin-top: 40rpx;">
+        <text class="empty-text">{{t.training.noLessons}}</text>
+      </view>
+      <view wx:for="{{trainingLessons}}" wx:key="id" class="training-lesson-row" bindtap="trainingOpenLesson" data-lesson="{{item}}">
+        <view class="training-lesson-num">
+          <text class="training-lesson-num-text">{{index + 1}}</text>
+        </view>
+        <view class="training-lesson-info">
+          <text class="training-lesson-title">{{item.title}}</text>
+          <text wx:if="{{item.description}}" class="training-lesson-desc">{{item.description}}</text>
+          <text wx:if="{{!item.oss_key}}" class="training-lesson-no-video">{{lang === 'zh' ? '暂无视频' : 'No video'}}</text>
+        </view>
+        <view wx:if="{{trainingCompletedIds.indexOf(item.id) !== -1}}" class="training-lesson-done">
+          <text class="training-lesson-done-text">✓</text>
+        </view>
+        <text wx:else class="training-lesson-chevron">›</text>
+      </view>
+    </block>
+
+    <!-- VIDEO PLAYER VIEW -->
+    <block wx:elif="{{trainingView === 'player'}}">
+      <view class="training-back-row" bindtap="trainingBackToLessons">
+        <text class="training-back-text">{{t.training.backToLessons}}</text>
+      </view>
+      <view class="training-video-container">
+        <video wx:if="{{trainingVideoUrl}}" class="training-video" src="{{trainingVideoUrl}}"
+          controls show-fullscreen-btn enable-progress-gesture object-fit="contain" />
+        <view wx:else class="training-video-loading">
+          <text class="training-video-loading-text">{{t.loading}}</text>
+        </view>
+      </view>
+      <view class="training-lesson-detail">
+        <text class="training-lesson-detail-title">{{trainingCurrentLesson.title}}</text>
+        <text wx:if="{{trainingCurrentLesson.description}}" class="training-lesson-detail-desc">{{trainingCurrentLesson.description}}</text>
+        <view wx:if="{{trainingCompletedIds.indexOf(trainingCurrentLesson.id) !== -1}}" class="training-completed-badge">
+          <text class="training-completed-badge-text">{{t.training.markedComplete}}</text>
+        </view>
+        <view wx:else class="training-mark-btn {{trainingMarkingComplete ? 'training-mark-btn-busy' : ''}}" bindtap="trainingMarkComplete">
+          <text class="training-mark-btn-text">{{trainingMarkingComplete ? t.loading : t.training.markComplete}}</text>
+        </view>
+      </view>
+    </block>
+
+    <!-- LIBRARY VIEWER -->
+    <block wx:elif="{{trainingView === 'library-viewer'}}">
+      <view class="training-back-row" bindtap="trainingBackToList">
+        <text class="training-back-text">{{t.training.backToCourses}}</text>
+      </view>
+      <view class="training-library-header">
+        <text class="training-library-header-title">{{trainingCurrentLibraryItem.title}}</text>
+      </view>
+      <view class="training-library-content-scroll">
+        <text class="training-library-content-text">{{trainingLibraryContent || t.loading}}</text>
+      </view>
+    </block>
+
+  </view>
+
   </scroll-view>
 
   <!-- ── Bottom Tab Bar ── -->
@@ -187,6 +298,11 @@
       <view wx:if="{{tab === 'questionnaires'}}" class="tab-line"></view>
       <image class="tab-icon-img" src="/assets/icons/questionnaires.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabs.questionnaires}}</text>
+    </view>
+    <view class="tab-btn {{tab === 'training' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="training">
+      <view wx:if="{{tab === 'training'}}" class="tab-line"></view>
+      <image class="tab-icon-img" src="/assets/icons/training.svg" mode="aspectFit" />
+      <text class="tab-label">{{t.tabs.training}}</text>
     </view>
   </view>
 

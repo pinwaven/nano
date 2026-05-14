@@ -281,7 +281,7 @@ const T = {
       noImages: 'No images',
     },
     academy: {
-      coursesTab: 'Courses', libraryTab: 'Library',
+      coursesTab: 'Courses', libraryTab: 'Library', progressTab: 'Progress',
       uploadCourse: 'Upload Course', editCourse: 'Edit Course', deleteCourse: 'Delete Course',
       uploadDoc: 'Upload Document', deleteDoc: 'Delete Document',
       title: 'Title *', description: 'Description', status: 'Status', videoFile: 'Video File', mdFile: 'Markdown File',
@@ -298,6 +298,13 @@ const T = {
       deleteCourseWarning: (t) => `Delete course "${t}"? The video file will also be removed from storage.`,
       deleteDocWarning: (t) => `Delete document "${t}"? The file will also be removed from storage.`,
       viewVideo: 'View Video', viewDoc: 'View Document',
+      addLesson: 'Add Lesson', editLesson: 'Edit Lesson', deleteLesson: 'Delete Lesson',
+      lessons: 'Lessons', lessonCount: (n) => `${n} lesson${n !== 1 ? 's' : ''}`,
+      noLessons: 'No lessons yet — add the first lesson.',
+      deleteLessonWarning: (t) => `Delete lesson "${t}"? The video file will also be removed.`,
+      totalLessons: 'Total Lessons', coachesCompleted: 'Coaches Done', completionRate: 'Completion %',
+      noProgress: 'No progress data yet',
+      expandLessons: 'Manage Lessons', collapseLessons: 'Collapse',
     },
     reports: {
       title: 'AI Reports',
@@ -504,7 +511,7 @@ const T = {
       totalPayouts: '渠道结算', pendingPayouts: '待审批', totalCommissions: 'Coach 佣金', totalEarned: '佣金总额',
     },
     academy: {
-      coursesTab: '课程', libraryTab: '文库',
+      coursesTab: '课程', libraryTab: '文库', progressTab: '完成进度',
       uploadCourse: '上传课程', editCourse: '编辑课程', deleteCourse: '删除课程',
       uploadDoc: '上传文档', deleteDoc: '删除文档',
       title: '标题 *', description: '描述', status: '状态', videoFile: '视频文件', mdFile: 'Markdown 文件',
@@ -521,6 +528,13 @@ const T = {
       deleteCourseWarning: (t) => `确认删除课程"${t}"？视频文件也将从存储中移除。`,
       deleteDocWarning: (t) => `确认删除文档"${t}"？文件也将从存储中移除。`,
       viewVideo: '查看视频', viewDoc: '查看文档',
+      addLesson: '添加课节', editLesson: '编辑课节', deleteLesson: '删除课节',
+      lessons: '课节', lessonCount: (n) => `${n} 节`,
+      noLessons: '暂无课节，添加第一节。',
+      deleteLessonWarning: (t) => `确认删除课节"${t}"？视频也将从存储中移除。`,
+      totalLessons: '课节总数', coachesCompleted: '已完成 Coach', completionRate: '完成率 %',
+      noProgress: '暂无进度数据',
+      expandLessons: '管理课节', collapseLessons: '收起',
     },
     reports: {
       title: 'AI 数据报表',
@@ -2432,6 +2446,126 @@ function MarkdownViewerModal({ item, onClose }) {
   );
 }
 
+// ── Lesson modal ──────────────────────────────────────────────────────────────
+
+function LessonModal({ lesson, courseId, onClose, onSave }) {
+  const { t } = useLang();
+  const ta = t.academy;
+  const isEdit = !!lesson?.id;
+  const [form, setForm] = useState({
+    title: lesson?.title || '',
+    description: lesson?.description || '',
+    sort_order: lesson?.sort_order ?? 0,
+  });
+  const [file, setFile] = useState(null);
+  const [progress, setProgress] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.title.trim()) { setError(ta.titleRequired); return; }
+    setBusy(true); setError(''); setProgress(0);
+    try {
+      let oss_key = lesson?.oss_key || null;
+      if (file) {
+        const presignRes = await axios.get('/api/oss/presign', { params: { type: 'video', filename: file.name } });
+        if (!presignRes.data.success) throw new Error(presignRes.data.error || ta.uploadFailed);
+        const { url, key } = presignRes.data;
+        await uploadToOSS(url, file, setProgress);
+        oss_key = key;
+      }
+      if (isEdit) {
+        await axios.put(`/api/academy/lessons/${lesson.id}`, { ...form, oss_key });
+      } else {
+        await axios.post('/api/academy/lessons', { ...form, oss_key, course_id: courseId });
+      }
+      onSave();
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || ta.uploadFailed);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{isEdit ? ta.editLesson : ta.addLesson}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.title}</span>
+              <input value={form.title} onChange={e => set('title', e.target.value)} placeholder="e.g. Introduction to NMN" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.description}</span>
+              <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={2} style={{ resize: 'vertical' }} />
+            </label>
+            <label className="form-field">
+              <span>Sort Order</span>
+              <input type="number" min={0} value={form.sort_order} onChange={e => set('sort_order', parseInt(e.target.value) || 0)} />
+            </label>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span className="form-label-text">{ta.videoFile}</span>
+              <label className="upload-zone">
+                <input type="file" accept="video/*" style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
+                <Upload size={18} style={{ marginBottom: 6, color: 'var(--muted)' }} />
+                <span className="upload-zone-hint">
+                  {file ? file.name : (lesson?.oss_key ? ta.replaceVideo : ta.selectVideo)}
+                </span>
+              </label>
+              {busy && (
+                <div className="upload-progress">
+                  <div className="upload-progress-bar" style={{ width: `${progress}%` }} />
+                </div>
+              )}
+            </div>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? ta.uploading : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteLessonConfirm({ lesson, onClose, onConfirm }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState(false);
+  const handleDelete = async () => {
+    setBusy(true);
+    try { await axios.delete(`/api/academy/lessons/${lesson.id}`); onConfirm(); }
+    catch { /* silent */ } finally { setBusy(false); }
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.academy.deleteLesson}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginBottom: 20, color: '#475569' }}>{t.academy.deleteLessonWarning(lesson.title)}</p>
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-danger" onClick={handleDelete} disabled={busy}>
+              <Trash2 size={14} />{busy ? t.modal.deleting : t.modal.delete}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Academy tab ───────────────────────────────────────────────────────────────
 
 function AcademyTab() {
@@ -2440,18 +2574,24 @@ function AcademyTab() {
   const [subTab, setSubTab] = useState('courses');
   const [courses, setCourses] = useState([]);
   const [library, setLibrary] = useState([]);
+  const [progress, setProgress] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(null);
+  const [expandedCourse, setExpandedCourse] = useState(null);
+  const [lessonMap, setLessonMap] = useState({});
+  const [lessonLoading, setLessonLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [cRes, lRes] = await Promise.allSettled([
+      const [cRes, lRes, pRes] = await Promise.allSettled([
         axios.get('/api/academy/courses'),
         axios.get('/api/academy/library'),
+        axios.get('/api/academy/course-progress'),
       ]);
       setCourses(cRes.status === 'fulfilled' ? (cRes.value.data.courses || []) : []);
       setLibrary(lRes.status === 'fulfilled' ? (lRes.value.data.items || []) : []);
+      setProgress(pRes.status === 'fulfilled' ? (pRes.value.data.progress || []) : []);
     } catch (err) { console.error('Academy fetch error:', err); }
     finally { setLoading(false); }
   }, []);
@@ -2460,10 +2600,33 @@ function AcademyTab() {
 
   const closeAndRefresh = () => { setModal(null); fetchData(); };
 
+  const loadLessons = useCallback(async (courseId) => {
+    setLessonLoading(true);
+    try {
+      const res = await axios.get('/api/academy/lessons', { params: { course_id: courseId } });
+      setLessonMap(m => ({ ...m, [courseId]: res.data.lessons || [] }));
+    } catch { /* silent */ }
+    finally { setLessonLoading(false); }
+  }, []);
+
+  const toggleExpand = (courseId) => {
+    if (expandedCourse === courseId) {
+      setExpandedCourse(null);
+    } else {
+      setExpandedCourse(courseId);
+      if (!lessonMap[courseId]) loadLessons(courseId);
+    }
+  };
+
+  const refreshLessons = (courseId) => {
+    loadLessons(courseId);
+    fetchData();
+  };
+
   const publishedCount = courses.filter(c => c.status === 'published').length;
+  const totalLessons = courses.reduce((s, c) => s + (c.lesson_count || 0), 0);
 
   const openVideo = (course) => setModal({ type: 'play-video', course });
-
   const openDoc = (item) => setModal({ type: 'view-doc', item });
 
   return (
@@ -2472,6 +2635,7 @@ function AcademyTab() {
         <StatCard icon={GraduationCap} label={ta.totalCourses}  value={courses.length}   color="#6366f1" />
         <StatCard icon={Video}          label={ta.published}     value={publishedCount}   color="#10b981" />
         <StatCard icon={FileText}       label={ta.totalDocs}     value={library.length}   color="#3b82f6" />
+        <StatCard icon={BookOpen}       label={ta.totalLessons}  value={totalLessons}     color="#f59e0b" />
       </div>
 
       <div className="subtab-row">
@@ -2480,6 +2644,9 @@ function AcademyTab() {
         </button>
         <button className={`subtab-btn${subTab === 'library' ? ' active' : ''}`} onClick={() => setSubTab('library')}>
           <FileText size={13} />{ta.libraryTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'progress' ? ' active' : ''}`} onClick={() => setSubTab('progress')}>
+          <GraduationCap size={13} />{ta.progressTab}
         </button>
       </div>
 
@@ -2496,47 +2663,109 @@ function AcademyTab() {
               <tr>
                 <th>ID</th>
                 <th>{ta.title.replace(' *', '')}</th>
-                <th>{ta.description}</th>
                 <th>{ta.status}</th>
-                <th>{ta.hasVideo}</th>
+                <th>{ta.lessons}</th>
                 <th>{t.table.joined}</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {!loading && courses.length === 0 && (
-                <tr><td colSpan={7} className="empty-row">{ta.noCourses}</td></tr>
+                <tr><td colSpan={6} className="empty-row">{ta.noCourses}</td></tr>
               )}
               {courses.map(c => (
-                <tr key={c.id}>
-                  <td className="muted mono">{c.id}</td>
-                  <td className="bold">{c.title}</td>
-                  <td className="muted" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {c.description || '—'}
-                  </td>
-                  <td>
-                    <Badge color={c.status === 'published' ? '#10b981' : '#94a3b8'}>
-                      {c.status === 'published' ? ta.published : ta.draft}
-                    </Badge>
-                  </td>
-                  <td>{c.oss_key ? <Badge color="#6366f1">✓</Badge> : '—'}</td>
-                  <td className="muted">{fmtDate(c.created_at)}</td>
-                  <td>
-                    <div className="row-actions">
-                      {c.oss_key && (
-                        <button className="icon-btn" title={ta.viewVideo} onClick={() => openVideo(c)}>
-                          <Play size={14} />
+                <>
+                  <tr key={c.id}>
+                    <td className="muted mono">{c.id}</td>
+                    <td>
+                      <div className="bold">{c.title}</div>
+                      {c.description && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{c.description.slice(0, 80)}{c.description.length > 80 ? '…' : ''}</div>}
+                    </td>
+                    <td>
+                      <Badge color={c.status === 'published' ? '#10b981' : '#94a3b8'}>
+                        {c.status === 'published' ? ta.published : ta.draft}
+                      </Badge>
+                    </td>
+                    <td className="muted">{ta.lessonCount(c.lesson_count || 0)}</td>
+                    <td className="muted">{fmtDate(c.created_at)}</td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="icon-btn" title={expandedCourse === c.id ? ta.collapseLessons : ta.expandLessons} onClick={() => toggleExpand(c.id)}>
+                          {expandedCourse === c.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                         </button>
-                      )}
-                      <button className="icon-btn" title={ta.editCourse} onClick={() => setModal({ type: 'edit-course', course: c })}>
-                        <Pencil size={14} />
-                      </button>
-                      <button className="icon-btn danger" title={ta.deleteCourse} onClick={() => setModal({ type: 'delete-course', course: c })}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                        {c.oss_key && (
+                          <button className="icon-btn" title={ta.viewVideo} onClick={() => openVideo(c)}>
+                            <Play size={14} />
+                          </button>
+                        )}
+                        <button className="icon-btn" title={ta.editCourse} onClick={() => setModal({ type: 'edit-course', course: c })}>
+                          <Pencil size={14} />
+                        </button>
+                        <button className="icon-btn danger" title={ta.deleteCourse} onClick={() => setModal({ type: 'delete-course', course: c })}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedCourse === c.id && (
+                    <tr key={`${c.id}-lessons`}>
+                      <td colSpan={6} style={{ padding: 0, background: 'var(--bg)' }}>
+                        <div style={{ padding: '12px 20px 16px 40px', borderLeft: '3px solid #6366f1' }}>
+                          <div className="table-toolbar" style={{ marginBottom: 8 }}>
+                            <span className="table-count">{ta.lessons} — {ta.lessonCount((lessonMap[c.id] || []).length)}</span>
+                            <button className="btn-primary" style={{ fontSize: 12, padding: '4px 10px' }}
+                              onClick={() => setModal({ type: 'add-lesson', courseId: c.id })}>
+                              <Upload size={12} />{ta.addLesson}
+                            </button>
+                          </div>
+                          {lessonLoading && !lessonMap[c.id] && <p className="muted" style={{ fontSize: 12 }}>Loading…</p>}
+                          {(lessonMap[c.id] || []).length === 0 && !lessonLoading && (
+                            <p className="muted" style={{ fontSize: 12 }}>{ta.noLessons}</p>
+                          )}
+                          {(lessonMap[c.id] || []).length > 0 && (
+                            <table className="data-table" style={{ fontSize: 12 }}>
+                              <thead>
+                                <tr>
+                                  <th>#</th>
+                                  <th>{ta.title.replace(' *', '')}</th>
+                                  <th>{ta.hasVideo}</th>
+                                  <th></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(lessonMap[c.id] || []).map((l, idx) => (
+                                  <tr key={l.id}>
+                                    <td className="muted mono">{idx + 1}</td>
+                                    <td>
+                                      <div className="bold">{l.title}</div>
+                                      {l.description && <div className="muted" style={{ fontSize: 11 }}>{l.description.slice(0, 60)}{l.description.length > 60 ? '…' : ''}</div>}
+                                    </td>
+                                    <td>{l.oss_key ? <Badge color="#6366f1">✓</Badge> : '—'}</td>
+                                    <td>
+                                      <div className="row-actions">
+                                        {l.oss_key && (
+                                          <button className="icon-btn" title={ta.viewVideo} onClick={() => setModal({ type: 'play-video', course: { ...l, title: `${c.title} — ${l.title}` } })}>
+                                            <Play size={12} />
+                                          </button>
+                                        )}
+                                        <button className="icon-btn" title={ta.editLesson} onClick={() => setModal({ type: 'edit-lesson', lesson: l, courseId: c.id })}>
+                                          <Pencil size={12} />
+                                        </button>
+                                        <button className="icon-btn danger" title={ta.deleteLesson} onClick={() => setModal({ type: 'delete-lesson', lesson: l, courseId: c.id })}>
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
             </tbody>
           </table>
@@ -2588,6 +2817,49 @@ function AcademyTab() {
         </div>
       )}
 
+      {subTab === 'progress' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{ta.progressTab}</span>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{ta.title.replace(' *', '')}</th>
+                <th>{ta.totalLessons}</th>
+                <th>{ta.coachesCompleted}</th>
+                <th>{ta.completionRate}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {!loading && progress.length === 0 && (
+                <tr><td colSpan={4} className="empty-row">{ta.noProgress}</td></tr>
+              )}
+              {progress.map(p => {
+                const rate = p.total_lessons > 0
+                  ? Math.round((p.total_completions / p.total_lessons) * 100)
+                  : 0;
+                return (
+                  <tr key={p.course_id}>
+                    <td className="bold">{p.title}</td>
+                    <td className="muted">{p.total_lessons}</td>
+                    <td className="muted">{p.coaches_completed}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ flex: 1, height: 6, background: '#e2e8f0', borderRadius: 3 }}>
+                          <div style={{ width: `${rate}%`, height: '100%', background: '#10b981', borderRadius: 3 }} />
+                        </div>
+                        <span className="muted" style={{ fontSize: 12, minWidth: 32 }}>{rate}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {modal?.type === 'play-video'    && <VideoPlayerModal course={modal.course} onClose={() => setModal(null)} />}
       {modal?.type === 'add-course'    && <CourseModal course={null}        onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit-course'   && <CourseModal course={modal.course} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
@@ -2595,6 +2867,9 @@ function AcademyTab() {
       {modal?.type === 'view-doc'      && <MarkdownViewerModal item={modal.item} onClose={() => setModal(null)} />}
       {modal?.type === 'add-doc'       && <LibraryModal onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete-doc'    && <DeleteLibraryItemConfirm item={modal.item} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {modal?.type === 'add-lesson'    && <LessonModal lesson={null} courseId={modal.courseId} onClose={() => setModal(null)} onSave={() => { setModal(null); refreshLessons(modal.courseId); }} />}
+      {modal?.type === 'edit-lesson'   && <LessonModal lesson={modal.lesson} courseId={modal.courseId} onClose={() => setModal(null)} onSave={() => { setModal(null); refreshLessons(modal.courseId); }} />}
+      {modal?.type === 'delete-lesson' && <DeleteLessonConfirm lesson={modal.lesson} onClose={() => setModal(null)} onConfirm={() => { setModal(null); refreshLessons(modal.courseId); }} />}
     </>
   );
 }

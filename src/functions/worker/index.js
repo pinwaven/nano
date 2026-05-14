@@ -42,6 +42,7 @@ async function getWxAccessToken(appid = null, secret = null) {
     return data.access_token;
 }
 const { getNowShanghai, calculateAge } = require('./lib/time-utils');
+const { updateHealthTwin } = require('./lib/healthTwinUpdater');
 const { BiomarkerEstimator } = require('./lib/estimator/BiomarkerEstimator');
 const { deriveTags } = require('./lib/estimator/tagDerivation');
 const { BioAgeCalculator } = require('./lib/bioage/BioAgeCalculator');
@@ -2298,6 +2299,18 @@ async function handlePostChat(body) {
                 );
             }
 
+            // Always fetch health_twin — provides wearable/sleep/activity context for all intents
+            fetches.health_twin = pool.query(
+                `SELECT avg_hrv_ms, avg_resting_hr, avg_spo2,
+                        avg_sleep_hours, avg_sleep_score, avg_deep_sleep_pct,
+                        avg_daily_steps, avg_active_minutes,
+                        latest_weight_kg, latest_bmi, latest_body_fat_pct,
+                        latest_lab_data, latest_lab_date,
+                        trend_data, data_coverage
+                 FROM health_twin WHERE user_id = $1`,
+                [user_id]
+            );
+
             // Always fetch completed questionnaire responses — coach-collected data enriches all intents
             fetches.questionnaire_responses = pool.query(
                 `SELECT q.name, q.name_zh, qq.prompt_en, qq.prompt_zh, qr.answer
@@ -2339,6 +2352,7 @@ async function handlePostChat(body) {
                 dots: fetched.dots?.rows || [],
                 plan: fetched.plan?.rows[0]?.content || null,
                 last_weight: fetched.weight?.rows[0]?.data?.actual?.weight ?? null,
+                health_twin: fetched.health_twin?.rows[0] || null,
                 now_iso: getNowShanghai().toISO(),
                 questionnaire_context: formatQuestionnaireContext(
                     fetched.questionnaire_responses?.rows || [],
@@ -3103,7 +3117,7 @@ async function handlePostHealthAdvice(body) {
         const user = userResult.rows[0];
         const user_id = user.user_id;
 
-        const [bioResult, dotsResult, plansResult] = await Promise.all([
+        const [bioResult, dotsResult, plansResult, twinResult] = await Promise.all([
             pool.query(
                 `SELECT bio_age, data FROM biomarkers
                  WHERE user_id = $1 AND test_type = 'kino_chip'
@@ -3128,9 +3142,20 @@ async function handlePostHealthAdvice(body) {
                  ORDER BY hp.plan_type ASC LIMIT 2`,
                 [user_id]
             ),
+            pool.query(
+                `SELECT avg_hrv_ms, avg_resting_hr, avg_spo2,
+                        avg_sleep_hours, avg_sleep_score, avg_deep_sleep_pct,
+                        avg_daily_steps, avg_active_minutes,
+                        latest_weight_kg, latest_bmi, latest_body_fat_pct,
+                        latest_lab_data, latest_lab_date,
+                        trend_data, data_coverage
+                 FROM health_twin WHERE user_id = $1`,
+                [user_id]
+            ),
         ]);
 
         const activePlans = plansResult.rows;
+        const healthTwin = twinResult.rows[0] || null;
         let planTemplates = [];
         if (activePlans.length === 0) {
             const tplResult = await pool.query(
@@ -3177,6 +3202,7 @@ async function handlePostHealthAdvice(body) {
             dotsByDimension,
             healthConditions,
             healthConditionsOther,
+            health_twin: healthTwin,
             active_health_plans: activePlans.map(p => ({
                 plan_type: p.plan_type,
                 name: isZh ? p.name_zh : p.name_en,
@@ -3320,11 +3346,163 @@ async function handlePostAnalyzeImage(body) {
     }
 }
 
+// ── Health Events & Digital Twin handlers ────────────────────────────────────
+
+const VALID_CATEGORIES = new Set(['sleep', 'activity', 'vitals', 'lab_result', 'body_composition']);
+
+async function handlePostHealthEvent(body) {
+    const { openid, category, source, data_date, data, recorded_at, external_id } = body;
+    if (!openid) return { success: false, error: 'openid required', statusCode: 400 };
+    if (!category || !VALID_CATEGORIES.has(category)) {
+        return { success: false, error: `category must be one of: ${[...VALID_CATEGORIES].join(', ')}`, statusCode: 400 };
+    }
+    if (!source) return { success: false, error: 'source required', statusCode: 400 };
+    if (!data_date) return { success: false, error: 'data_date required', statusCode: 400 };
+    if (!data || typeof data !== 'object') return { success: false, error: 'data must be an object', statusCode: 400 };
+    if (!recorded_at) return { success: false, error: 'recorded_at required', statusCode: 400 };
+
+    try {
+        const userResult = await pool.query(
+            `SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
+            [openid]
+        );
+        if (!userResult.rows.length) return { success: false, error: 'User not found', statusCode: 404 };
+        const user_id = userResult.rows[0].user_id;
+
+        const insertResult = await pool.query(`
+            INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING
+            RETURNING id
+        `, [user_id, source, category, data_date, recorded_at, JSON.stringify(data), external_id || null]);
+
+        const inserted = insertResult.rows.length > 0;
+        if (inserted) {
+            await updateHealthTwin(user_id, pool);
+        }
+
+        return { success: true, id: insertResult.rows[0]?.id ?? null, inserted };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostHealthEvent failed', error: err.message }));
+        return { success: false, error: err.message, statusCode: 500 };
+    }
+}
+
+async function handlePostHealthEventsSync(body) {
+    const { openid, events } = body;
+    if (!openid) return { success: false, error: 'openid required', statusCode: 400 };
+    if (!Array.isArray(events) || events.length === 0) return { success: false, error: 'events array required', statusCode: 400 };
+    if (events.length > 500) return { success: false, error: 'max 500 events per sync call', statusCode: 400 };
+
+    try {
+        const userResult = await pool.query(
+            `SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
+            [openid]
+        );
+        if (!userResult.rows.length) return { success: false, error: 'User not found', statusCode: 404 };
+        const user_id = userResult.rows[0].user_id;
+
+        let inserted = 0;
+        for (const ev of events) {
+            if (!ev.category || !VALID_CATEGORIES.has(ev.category) || !ev.source || !ev.data_date || !ev.data || !ev.recorded_at) continue;
+            const r = await pool.query(`
+                INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING
+                RETURNING id
+            `, [user_id, ev.source, ev.category, ev.data_date, ev.recorded_at, JSON.stringify(ev.data), ev.external_id || null]);
+            if (r.rows.length > 0) inserted++;
+        }
+
+        if (inserted > 0) {
+            await updateHealthTwin(user_id, pool);
+        }
+
+        return { success: true, inserted, skipped: events.length - inserted };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostHealthEventsSync failed', error: err.message }));
+        return { success: false, error: err.message, statusCode: 500 };
+    }
+}
+
+async function handleGetHealthEvents(query) {
+    const { openid, category, from_date, to_date, limit } = query;
+    if (!openid) return { success: false, error: 'openid required', statusCode: 400 };
+
+    try {
+        const userResult = await pool.query(
+            `SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
+            [openid]
+        );
+        if (!userResult.rows.length) return { success: false, error: 'User not found', statusCode: 404 };
+        const user_id = userResult.rows[0].user_id;
+
+        const params = [user_id];
+        const conditions = ['user_id = $1'];
+        if (category && VALID_CATEGORIES.has(category)) {
+            params.push(category);
+            conditions.push(`category = $${params.length}`);
+        }
+        if (from_date) {
+            params.push(from_date);
+            conditions.push(`data_date >= $${params.length}`);
+        }
+        if (to_date) {
+            params.push(to_date);
+            conditions.push(`data_date <= $${params.length}`);
+        }
+        const rowLimit = Math.min(parseInt(limit || '30', 10), 200);
+        params.push(rowLimit);
+
+        const result = await pool.query(
+            `SELECT id, source, category, data_date, recorded_at, data, ingested_at
+             FROM health_events
+             WHERE ${conditions.join(' AND ')}
+             ORDER BY data_date DESC, recorded_at DESC
+             LIMIT $${params.length}`,
+            params
+        );
+
+        return { success: true, events: result.rows };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetHealthEvents failed', error: err.message }));
+        return { success: false, error: err.message, statusCode: 500 };
+    }
+}
+
+async function handleGetHealthTwin(openid) {
+    if (!openid) return { success: false, error: 'openid required', statusCode: 400 };
+
+    try {
+        const userResult = await pool.query(
+            `SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
+            [openid]
+        );
+        if (!userResult.rows.length) return { success: false, error: 'User not found', statusCode: 404 };
+        const user_id = userResult.rows[0].user_id;
+
+        const result = await pool.query(
+            `SELECT * FROM health_twin WHERE user_id = $1`,
+            [user_id]
+        );
+
+        return { success: true, twin: result.rows[0] || null };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetHealthTwin failed', error: err.message }));
+        return { success: false, error: err.message, statusCode: 500 };
+    }
+}
+
 // ── Academy handlers ──────────────────────────────────────────────────────────
 
 async function handleGetAcademyCourses() {
     try {
-        const result = await pool.query('SELECT * FROM academy_courses ORDER BY sort_order ASC, created_at DESC');
+        const result = await pool.query(`
+            SELECT c.*, COUNT(l.id)::int AS lesson_count
+            FROM academy_courses c
+            LEFT JOIN academy_lessons l ON l.course_id = c.id
+            GROUP BY c.id
+            ORDER BY c.sort_order ASC, c.created_at DESC`);
         return { success: true, courses: result.rows };
     } catch (err) {
         return { success: false, error: err.message };
@@ -3424,6 +3602,129 @@ async function handleDeleteAcademyLibraryItem(id) {
         }
         await pool.query('DELETE FROM academy_library WHERE id = $1', [id]);
         return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ── Academy Lessons handlers ──────────────────────────────────────────────────
+
+async function handleGetAcademyLessons(courseId) {
+    try {
+        if (!courseId) return { success: false, error: 'course_id is required' };
+        const result = await pool.query(
+            'SELECT * FROM academy_lessons WHERE course_id = $1 ORDER BY sort_order ASC, created_at ASC',
+            [courseId]
+        );
+        return { success: true, lessons: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAcademyLesson(body) {
+    try {
+        const { course_id, title, description, oss_key, sort_order } = body;
+        if (!course_id || !title) return { success: false, error: 'course_id and title are required' };
+        const result = await pool.query(
+            'INSERT INTO academy_lessons (course_id, title, description, oss_key, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [course_id, title, description || null, oss_key || null, sort_order || 0]
+        );
+        return { success: true, lesson: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutAcademyLesson(id, body) {
+    try {
+        const { title, description, oss_key, sort_order } = body;
+        const result = await pool.query(
+            `UPDATE academy_lessons SET
+                title       = COALESCE($1, title),
+                description = COALESCE($2, description),
+                oss_key     = COALESCE($3, oss_key),
+                sort_order  = COALESCE($4, sort_order)
+             WHERE id = $5 RETURNING *`,
+            [title || null, description || null, oss_key || null, sort_order != null ? sort_order : null, id]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Not found' };
+        return { success: true, lesson: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteAcademyLesson(id) {
+    try {
+        const res = await pool.query('SELECT oss_key FROM academy_lessons WHERE id = $1', [id]);
+        if (res.rows.length > 0 && res.rows[0].oss_key) {
+            await ossLib.deleteObject(res.rows[0].oss_key);
+        }
+        await pool.query('DELETE FROM academy_lessons WHERE id = $1', [id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ── Academy Progress handlers ─────────────────────────────────────────────────
+
+async function handleGetAcademyProgress(coachUserId) {
+    try {
+        if (!coachUserId) return { success: false, error: 'coach_user_id is required' };
+        const result = await pool.query(
+            'SELECT lesson_id, completed_at FROM academy_coach_progress WHERE coach_user_id = $1',
+            [coachUserId]
+        );
+        return { success: true, progress: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAcademyProgress(body) {
+    try {
+        const { coach_user_id, lesson_id } = body;
+        if (!coach_user_id || !lesson_id) return { success: false, error: 'coach_user_id and lesson_id are required' };
+        await pool.query(
+            'INSERT INTO academy_coach_progress (coach_user_id, lesson_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            [coach_user_id, lesson_id]
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetAcademyCourseProgress() {
+    try {
+        const result = await pool.query(`
+            SELECT
+                c.id AS course_id,
+                c.title,
+                COUNT(DISTINCT l.id)::int AS total_lessons,
+                COUNT(DISTINCT p.coach_user_id)::int AS coaches_completed,
+                COUNT(DISTINCT p.lesson_id)::int AS total_completions
+            FROM academy_courses c
+            LEFT JOIN academy_lessons l ON l.course_id = c.id
+            LEFT JOIN academy_coach_progress p ON p.lesson_id = l.id
+            GROUP BY c.id, c.title
+            ORDER BY c.sort_order ASC, c.created_at DESC`);
+        return { success: true, progress: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ── Academy Library content proxy ─────────────────────────────────────────────
+
+async function handleGetAcademyLibraryContent(id) {
+    try {
+        const res = await pool.query('SELECT oss_key FROM academy_library WHERE id = $1', [id]);
+        if (res.rows.length === 0) return { success: false, error: 'Not found', statusCode: 404 };
+        const buf = await ossLib.getObjectBuffer(res.rows[0].oss_key);
+        return { success: true, content: buf.toString('utf8'), _rawText: true };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -4782,6 +5083,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetReminders(query.openid);
             } else if (path.includes('/nutrition-plan')) {
                 result = await handleGetNutritionPlan(query.openid);
+            } else if (path === '/health-twin') {
+                result = await handleGetHealthTwin(query.openid);
+            } else if (path.includes('/health-events')) {
+                result = await handleGetHealthEvents(query);
             } else if (path.match(/\/health-plans\/(\d+)/)) {
                 const planId = path.match(/\/health-plans\/(\d+)/)[1];
                 result = await handleGetHealthPlanDetail(planId, query.openid);
@@ -4814,10 +5119,19 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetInvitations(invQuery);
             } else if (path.includes('/channels')) {
                 result = await handleGetChannels();
+            } else if (path.includes('/academy/course-progress')) {
+                result = await handleGetAcademyCourseProgress();
             } else if (path.includes('/academy/courses')) {
                 result = await handleGetAcademyCourses();
+            } else if (path.match(/\/academy\/library\/(\d+)\/content/)) {
+                const libId = path.match(/\/academy\/library\/(\d+)\/content/)[1];
+                result = await handleGetAcademyLibraryContent(libId);
             } else if (path.includes('/academy/library')) {
                 result = await handleGetAcademyLibrary();
+            } else if (path.includes('/academy/lessons')) {
+                result = await handleGetAcademyLessons(query.course_id);
+            } else if (path.includes('/academy/progress')) {
+                result = await handleGetAcademyProgress(query.coach_user_id);
             } else if (path.includes('/oss/presign')) {
                 result = await handleGetOssPresign(query);
             } else if (path.match(/\/users\/([^/]+)/)) {
@@ -4924,6 +5238,10 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/health-plans\/(\d+)\/milestone/)) {
                 const planId = path.match(/\/health-plans\/(\d+)\/milestone/)[1];
                 result = await handlePostHealthPlanMilestone(planId, parsedBody);
+            } else if (path === '/health-events/sync') {
+                result = await handlePostHealthEventsSync(parsedBody);
+            } else if (path === '/health-events') {
+                result = await handlePostHealthEvent(parsedBody);
             } else if (path.includes('/health-plans')) {
                 result = await handlePostJoinHealthPlan(parsedBody);
             } else if (path.includes('/health-plan-templates')) {
@@ -4942,6 +5260,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostAcademyCourse(parsedBody);
             } else if (path === '/academy/library') {
                 result = await handlePostAcademyLibraryItem(parsedBody);
+            } else if (path === '/academy/lessons') {
+                result = await handlePostAcademyLesson(parsedBody);
+            } else if (path === '/academy/progress') {
+                result = await handlePostAcademyProgress(parsedBody);
             } else if (path === '/tickets') {
                 result = await handlePostTicket(parsedBody);
             } else if (path.match(/\/questionnaires\/(\d+)\/questions/)) {
@@ -5005,6 +5327,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/channel-payouts/')) {
                 const payoutId = path.split('/channel-payouts/')[1];
                 result = await handlePutChannelPayout(payoutId, parsedBody);
+            } else if (path.includes('/academy/lessons/')) {
+                const lessonId = path.split('/academy/lessons/')[1];
+                result = await handlePutAcademyLesson(lessonId, parsedBody);
             } else if (path.includes('/academy/courses/')) {
                 const courseId = path.split('/academy/courses/')[1];
                 result = await handlePutAcademyCourse(courseId, parsedBody);
@@ -5068,6 +5393,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/store-items/')) {
                 const itemId = path.split('/store-items/')[1];
                 result = await handleDeleteStoreItem(itemId);
+            } else if (path.includes('/academy/lessons/')) {
+                const lessonId = path.split('/academy/lessons/')[1];
+                result = await handleDeleteAcademyLesson(lessonId);
             } else if (path.includes('/academy/courses/')) {
                 const courseId = path.split('/academy/courses/')[1];
                 result = await handleDeleteAcademyCourse(courseId);
@@ -5113,17 +5441,21 @@ exports.handler = async (req, resp, context) => {
         }
 
         const statusCode = result.statusCode || 200;
-        const { statusCode: _sc, ...resultBody } = result;
+        const { statusCode: _sc, _rawText, content, ...resultBody } = result;
+        const isText = _rawText === true;
+        const responseHeaders = isText
+            ? { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' }
+            : corsHeaders;
         const responsePayload = {
             isBase64Encoded: false,
             statusCode,
-            headers: corsHeaders,
-            body: JSON.stringify(resultBody)
+            headers: responseHeaders,
+            body: isText ? (content || '') : JSON.stringify(resultBody)
         };
 
         if (isStandardHttp) {
             resp.setStatusCode(statusCode);
-            Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v));
+            Object.entries(responseHeaders).forEach(([k, v]) => resp.setHeader(k, v));
             resp.send(responsePayload.body);
             return;
         }

@@ -9,7 +9,7 @@ const T = {
     back: '返回',
     refresh: '刷新',
     loading: '加载中…',
-    tabs: { clients: '我的客户', invites: '邀请码', earnings: '我的收益', questionnaires: '问卷' },
+    tabs: { clients: '我的客户', invites: '邀请码', earnings: '我的收益', questionnaires: '问卷', training: '培训' },
     lightMode: '浅色模式',
     darkMode: '深色模式',
     kinoSimMenu: 'Kino 模拟器',
@@ -111,6 +111,21 @@ const T = {
     kinoScanUsed: '此芯片已完成检测，无法重复登记。',
     kinoScanInvalidChip: '此二维码不是有效的 Kino 芯片，请扫描芯片上的二维码。',
     kinoScanError: '登记失败，请重试。',
+    training: {
+      header: '培训中心',
+      courses: '课程', library: '参考资料',
+      noTraining: '暂无已发布的培训课程',
+      noLibrary: '暂无参考资料',
+      noLessons: '本课程暂无课节',
+      lessonCount: (n) => `${n} 节`,
+      start: '开始', resume: '继续', completed: '已完成',
+      markComplete: '标记为已完成',
+      markedComplete: '已完成 ✓',
+      backToCourses: '← 课程列表',
+      backToLessons: '← 课节列表',
+      loadError: '加载失败，请重试',
+      progress: (done, total) => `${done}/${total} 已完成`,
+    },
   },
   en: {
     title: 'Coach Panel',
@@ -118,7 +133,7 @@ const T = {
     back: 'Back',
     refresh: 'Refresh',
     loading: 'Loading…',
-    tabs: { clients: 'My Clients', invites: 'Invite Codes', earnings: 'My Earnings', questionnaires: 'Forms' },
+    tabs: { clients: 'My Clients', invites: 'Invite Codes', earnings: 'My Earnings', questionnaires: 'Forms', training: 'Training' },
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
     kinoSimMenu: 'Kino Simulator',
@@ -220,6 +235,21 @@ const T = {
     kinoScanUsed: 'This chip has already been analyzed and cannot be registered again.',
     kinoScanInvalidChip: 'This QR code is not a valid Kino chip. Please scan the QR code on the chip.',
     kinoScanError: 'Registration failed. Please try again.',
+    training: {
+      header: 'Training Center',
+      courses: 'Courses', library: 'Reference Library',
+      noTraining: 'No published training courses yet',
+      noLibrary: 'No reference materials yet',
+      noLessons: 'No lessons in this course yet',
+      lessonCount: (n) => `${n} lesson${n !== 1 ? 's' : ''}`,
+      start: 'Start', resume: 'Resume', completed: 'Completed',
+      markComplete: 'Mark as Complete',
+      markedComplete: 'Completed ✓',
+      backToCourses: '← Courses',
+      backToLessons: '← Lessons',
+      loadError: 'Failed to load. Please retry.',
+      progress: (done, total) => `${done}/${total} done`,
+    },
   },
 }
 
@@ -329,6 +359,19 @@ Page({
     qResponsesUser: null,
     qResponsesList: [],
     qResponsesLoading: false,
+    // Training tab
+    trainingCourses: [],
+    trainingLibrary: [],
+    trainingCompletedIds: [],
+    trainingLessons: [],
+    trainingView: 'list',
+    trainingCurrentCourse: null,
+    trainingCurrentLesson: null,
+    trainingVideoUrl: '',
+    trainingLibraryContent: '',
+    trainingCurrentLibraryItem: null,
+    trainingLoading: false,
+    trainingMarkingComplete: false,
     // Plans tab (inside client detail)
     detailPlans: [],
     detailPlansLoading: false,
@@ -438,6 +481,7 @@ Page({
     this.setData({ tab })
     if (tab === 'earnings' && this.data.earningsThisMonth === null) this._loadEarnings()
     if (tab === 'questionnaires' && this.data.questionnaires.length === 0) this._loadQuestionnaires()
+    if (tab === 'training' && this.data.trainingCourses.length === 0) this._loadTraining()
   },
   handleBack() { wx.navigateBack() },
   noop() {},
@@ -498,6 +542,12 @@ Page({
     const dx = e.changedTouches[0].clientX - this._touchX
     const dy = e.changedTouches[0].clientY - this._touchY
     if (dx > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (this.data.tab === 'training') {
+        const view = this.data.trainingView
+        if (view === 'player') { this.trainingBackToLessons(); return }
+        if (view === 'library-viewer') { this.trainingBackToList(); return }
+        if (view === 'lessons') { this.trainingBackToList(); return }
+      }
       wx.navigateBack({ delta: 1, animationType: 'slide-out-right', animationDuration: 280 })
     }
   },
@@ -941,6 +991,97 @@ Page({
 
   closeQResponses() {
     this.setData({ qResponsesOpen: false, qResponsesUser: null, qResponsesList: [] })
+  },
+
+  // ── Training tab ────────────────────────────────────────────────────────────
+
+  async _loadTraining() {
+    const coachUserId = this._coachUserId
+    if (!coachUserId) return
+    this.setData({ trainingLoading: true })
+    try {
+      const [cRes, lRes, pRes] = await Promise.allSettled([
+        this._req(`${BASE}/api/academy/courses`),
+        this._req(`${BASE}/api/academy/library`),
+        this._req(`${BASE}/api/academy/progress?coach_user_id=${coachUserId}`),
+      ])
+      const tl = (T[this.data.lang] || T.zh).training
+      const rawCourses = (cRes.status === 'fulfilled' && cRes.value.data && cRes.value.data.courses) ? cRes.value.data.courses : []
+      const courses = rawCourses
+        .filter(c => c.status === 'published')
+        .map(c => ({ ...c, _lessonCountLabel: tl.lessonCount(c.lesson_count || 0) }))
+      const library = (lRes.status === 'fulfilled' && lRes.value.data && lRes.value.data.items) ? lRes.value.data.items : []
+      const progressRows = (pRes.status === 'fulfilled' && pRes.value.data && pRes.value.data.progress) ? pRes.value.data.progress : []
+      const completedIds = progressRows.map(p => p.lesson_id)
+      this.setData({ trainingCourses: courses, trainingLibrary: library, trainingCompletedIds: completedIds })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
+    } finally {
+      this.setData({ trainingLoading: false })
+    }
+  },
+
+  async trainingOpenCourse(e) {
+    const course = e.currentTarget.dataset.course
+    this.setData({ trainingCurrentCourse: course, trainingLessons: [], trainingView: 'lessons' })
+    try {
+      const res = await this._req(`${BASE}/api/academy/lessons?course_id=${course.id}`)
+      const lessons = res.data && res.data.lessons ? res.data.lessons : []
+      this.setData({ trainingLessons: lessons })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
+    }
+  },
+
+  async trainingOpenLesson(e) {
+    const lesson = e.currentTarget.dataset.lesson
+    if (!lesson.oss_key) return
+    this.setData({ trainingCurrentLesson: lesson, trainingVideoUrl: '', trainingView: 'player' })
+    try {
+      const res = await this._req(`${BASE}/api/oss/presign?action=get&key=${encodeURIComponent(lesson.oss_key)}`)
+      const url = res.data && res.data.url ? res.data.url : ''
+      this.setData({ trainingVideoUrl: url })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
+    }
+  },
+
+  async trainingMarkComplete() {
+    const lesson = this.data.trainingCurrentLesson
+    if (!lesson) return
+    const coachUserId = this._coachUserId
+    if (this.data.trainingCompletedIds.includes(lesson.id)) return
+    this.setData({ trainingMarkingComplete: true })
+    try {
+      await this._req(`${BASE}/api/academy/progress`, 'POST', { coach_user_id: coachUserId, lesson_id: lesson.id })
+      const completedIds = [...this.data.trainingCompletedIds, lesson.id]
+      this.setData({ trainingCompletedIds: completedIds })
+      wx.showToast({ title: this.data.t.training.markedComplete, icon: 'success' })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
+    } finally {
+      this.setData({ trainingMarkingComplete: false })
+    }
+  },
+
+  async trainingOpenLibraryItem(e) {
+    const item = e.currentTarget.dataset.item
+    this.setData({ trainingCurrentLibraryItem: item, trainingLibraryContent: '', trainingView: 'library-viewer' })
+    try {
+      const res = await this._req(`${BASE}/api/academy/library/${item.id}/content`)
+      const content = res.data || ''
+      this.setData({ trainingLibraryContent: content })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
+    }
+  },
+
+  trainingBackToList() {
+    this.setData({ trainingView: 'list', trainingCurrentCourse: null, trainingCurrentLesson: null, trainingVideoUrl: '' })
+  },
+
+  trainingBackToLessons() {
+    this.setData({ trainingView: 'lessons', trainingCurrentLesson: null, trainingVideoUrl: '', trainingCurrentLibraryItem: null, trainingLibraryContent: '' })
   },
 
   _req(url, method = 'GET', data = null) {

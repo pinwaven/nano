@@ -23,6 +23,49 @@ const CONDITION_KEYS = [
   'kidney_disease', 'sleep_deficiency', 'other',
 ]
 
+function _scoreSleep(h) {
+  if (h >= 7 && h <= 9) return Math.min(100, Math.round(80 + (h - 7) / 2 * 20))
+  if (h > 9) return Math.max(50, Math.round(100 - (h - 9) * 25))
+  if (h >= 6) return Math.round(50 + (h - 6) * 30)
+  return Math.max(10, Math.round(h / 6 * 50))
+}
+function _scoreHrv(ms) {
+  if (ms >= 80) return 100
+  if (ms >= 50) return Math.round(75 + (ms - 50) / 30 * 25)
+  if (ms >= 30) return Math.round(45 + (ms - 30) / 20 * 30)
+  return Math.max(10, Math.round(ms / 30 * 45))
+}
+function _scoreRestHr(bpm) {
+  if (bpm <= 52) return 100
+  if (bpm <= 65) return Math.round(100 - (bpm - 52) / 13 * 20)
+  if (bpm <= 75) return Math.round(80 - (bpm - 65) / 10 * 20)
+  if (bpm <= 90) return Math.round(60 - (bpm - 75) / 15 * 30)
+  return Math.max(5, Math.round(30 - (bpm - 90) / 30 * 25))
+}
+function _scoreSpo2(pct) {
+  if (pct >= 98) return 100
+  if (pct >= 95) return Math.round(70 + (pct - 95) / 3 * 30)
+  return Math.max(10, Math.round(30 + (pct - 90) / 5 * 40))
+}
+function _scoreSteps(steps) {
+  if (steps >= 10000) return 100
+  if (steps >= 7500) return Math.round(75 + (steps - 7500) / 2500 * 25)
+  if (steps >= 5000) return Math.round(50 + (steps - 5000) / 2500 * 25)
+  return Math.max(5, Math.round(steps / 5000 * 50))
+}
+function _scoreBmi(bmi) {
+  if (bmi >= 18.5 && bmi <= 24.9) return 100
+  if (bmi >= 25 && bmi <= 27.5) return Math.round(100 - (bmi - 24.9) / 2.6 * 30)
+  if (bmi >= 17 && bmi < 18.5) return Math.round(70 + (bmi - 17) / 1.5 * 30)
+  if (bmi > 27.5) return Math.max(10, Math.round(70 - (bmi - 27.5) / 10 * 60))
+  return Math.max(10, Math.round(bmi / 17 * 70))
+}
+
+const TWIN_COV_LABELS = {
+  zh: { sleep: '睡眠', activity: '活动', vitals: '体征', lab_result: '化验', body_composition: '体成分' },
+  en: { sleep: 'Sleep', activity: 'Activity', vitals: 'Vitals', lab_result: 'Labs', body_composition: 'Body' },
+}
+
 const T = {
   zh: {
     bioAge: '生理年龄', chronoAge: '实际年龄',
@@ -66,6 +109,19 @@ const T = {
       sleep_deficiency:    '睡眠不足',
       other:               '其他',
     },
+    digitalTwin: '数字孪生',
+    noTwinData: '暂无可穿戴设备数据。',
+    dtSevenDay: '7天均值',
+    dtSleepScore: '评分',
+    dtResting: '静息',
+    dtBody: '体成分',
+    dtSources: '数据来源',
+    dtFat: '体脂',
+    dtLean: '瘦体重',
+    healthScore: '健康评分',
+    healthScoreGrades: { optimal: '优秀', good: '良好', fair: '一般', low: '偏低' },
+    dtRecovery: '恢复力', dtCardio: '心血管', dtActivity: '活动量', dtBodyDomain: '体态',
+    dtVitals: '生命体征',
   },
   en: {
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -109,6 +165,19 @@ const T = {
       sleep_deficiency:    'Sleep Deficiency',
       other:               'Other',
     },
+    digitalTwin: 'Digital Twin',
+    noTwinData: 'No wearable data yet.',
+    dtSevenDay: '7-day avg',
+    dtSleepScore: 'score',
+    dtResting: 'resting',
+    dtBody: 'Body Comp.',
+    dtSources: 'Sources',
+    dtFat: 'Fat',
+    dtLean: 'Lean',
+    healthScore: 'Health Score',
+    healthScoreGrades: { optimal: 'Optimal', good: 'Good', fair: 'Fair', low: 'Low' },
+    dtRecovery: 'Recovery', dtCardio: 'Cardio', dtActivity: 'Activity', dtBodyDomain: 'Body',
+    dtVitals: 'Vitals',
   },
 }
 
@@ -176,6 +245,18 @@ Component({
       health_conditions: [], health_conditions_other: '',
     },
     editConditionOptions: [],
+    // Digital twin
+    twinLoading: true,
+    hasTwinData: false,
+    twinMetrics: [],
+    twinBody: null,
+    twinCoverage: [],
+    healthScore: null,
+    healthScoreColor: '#A6C4E5',
+    healthScoreGrade: '',
+    healthDomains: [],
+    vitalGauges: [],
+    twinBodyBar: null,
   },
 
   observers: {
@@ -217,6 +298,7 @@ Component({
       if (!userId) return
       const t = T[lang] || T.zh
       this.setData({ bioLoading: true })
+      this._loadHealthTwin()
       try {
         const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(userId)}`)
         const records = res.data?.records || []
@@ -576,6 +658,243 @@ Component({
         this.setData({ editSaving: false })
         wx.showToast({ title: t.saveFail, icon: 'error', duration: 2000 })
       }
+    },
+
+    async _loadHealthTwin() {
+      const { userId, lang } = this.properties
+      if (!userId) return
+      const isZh = (lang || 'zh') !== 'en'
+      const t = T[isZh ? 'zh' : 'en']
+      const covLabels = TWIN_COV_LABELS[isZh ? 'zh' : 'en']
+      try {
+        const res = await this._req(`${BASE}/api/health-twin?openid=${encodeURIComponent(userId)}`)
+        const twin = res.data?.twin
+        if (!twin) { this.setData({ hasTwinData: false, twinLoading: false }); return }
+
+        const trendIcon  = v => v === 'improving' ? '↑' : v === 'declining' ? '↓' : v === 'stable' ? '→' : ''
+        const trendColor = v => v === 'improving' ? '#10b981' : v === 'declining' ? '#ef4444' : 'rgba(166,196,229,0.35)'
+
+        const metrics = []
+        const td = twin.trend_data || {}
+
+        if (twin.avg_sleep_hours != null) {
+          const score = twin.avg_sleep_score != null
+            ? `${t.dtSleepScore} ${Math.round(twin.avg_sleep_score)}`
+            : t.dtSevenDay
+          metrics.push({
+            key: 'sleep', label: isZh ? '睡眠' : 'Sleep',
+            val: twin.avg_sleep_hours.toFixed(1), unit: 'h', sub: score,
+            deepPct: twin.avg_deep_sleep_pct != null ? Math.round(twin.avg_deep_sleep_pct) : null,
+            trend: trendIcon(td.sleep_trend), trendColor: trendColor(td.sleep_trend),
+            color: '#6375EC',
+          })
+        }
+
+        if (twin.avg_hrv_ms != null) {
+          metrics.push({
+            key: 'hrv', label: 'HRV',
+            val: Math.round(twin.avg_hrv_ms).toString(), unit: 'ms', sub: t.dtSevenDay,
+            trend: trendIcon(td.hrv_trend), trendColor: trendColor(td.hrv_trend),
+            color: '#10b981',
+          })
+        }
+
+        if (twin.avg_daily_steps != null) {
+          metrics.push({
+            key: 'steps', label: isZh ? '步数' : 'Steps',
+            val: twin.avg_daily_steps.toLocaleString(), unit: '', sub: t.dtSevenDay,
+            trend: '', trendColor: '', color: '#0ea5e9',
+          })
+        }
+
+        if (twin.avg_resting_hr != null) {
+          metrics.push({
+            key: 'hr', label: isZh ? '心率' : 'Resting HR',
+            val: Math.round(twin.avg_resting_hr).toString(), unit: 'bpm', sub: t.dtResting,
+            trend: '', trendColor: '', color: '#f97316',
+          })
+        }
+
+        if (twin.avg_spo2 != null && metrics.length < 4) {
+          metrics.push({
+            key: 'spo2', label: 'SpO₂',
+            val: twin.avg_spo2.toFixed(1), unit: '%', sub: t.dtSevenDay,
+            trend: '', trendColor: '', color: '#a855f7',
+          })
+        }
+
+        const bodyParts = []
+        if (twin.latest_weight_kg != null) bodyParts.push(`${twin.latest_weight_kg} kg`)
+        if (twin.latest_bmi != null) bodyParts.push(`BMI ${Number(twin.latest_bmi).toFixed(1)}`)
+        if (twin.latest_body_fat_pct != null) bodyParts.push(`${t.dtFat} ${Number(twin.latest_body_fat_pct).toFixed(1)}%`)
+        const twinBody = bodyParts.length ? bodyParts.join('  ·  ') : null
+
+        const cov = twin.data_coverage || {}
+        const twinCoverage = Object.keys(covLabels).map(key => ({
+          key, label: covLabels[key],
+          hasData: !!cov[key],
+          lastDate: cov[key] ? cov[key].substring(5) : null,
+        }))
+
+        const visuals = this._buildTwinVisuals(twin, t, isZh)
+        this.setData({
+          twinLoading: false,
+          hasTwinData: metrics.length > 0 || twinBody != null,
+          twinMetrics: metrics,
+          twinBody,
+          twinCoverage,
+          ...visuals,
+        })
+      } catch (e) {
+        this.setData({ hasTwinData: false, twinLoading: false })
+      }
+    },
+
+    _buildTwinVisuals(twin, t, isZh) {
+      const td = twin.trend_data || {}
+      const trendIcon  = v => v === 'improving' ? '↑' : v === 'declining' ? '↓' : v === 'stable' ? '→' : ''
+      const trendColor = v => v === 'improving' ? '#10b981' : v === 'declining' ? '#ef4444' : 'rgba(166,196,229,0.35)'
+
+      const domainScores = {}
+      const vitalGauges = []
+
+      if (twin.avg_sleep_hours != null) {
+        const h = twin.avg_sleep_hours
+        domainScores.sleep = _scoreSleep(h)
+        vitalGauges.push({
+          key: 'sleep',
+          label: isZh ? '睡眠时长' : 'Sleep',
+          val: h.toFixed(1), unit: 'h',
+          score: domainScores.sleep, color: '#6375EC',
+          trend: trendIcon(td.sleep_trend), trendColor: trendColor(td.sleep_trend),
+          markerPct: Math.min(97, Math.max(2, Math.round(h / 12 * 100))),
+          zones: [
+            { width: 50, color: '#ef4444' },
+            { width: 8,  color: '#f97316' },
+            { width: 17, color: '#10b981' },
+            { width: 8,  color: '#f97316' },
+            { width: 17, color: '#ef4444' },
+          ],
+          sublabel: isZh ? '最优: 7–9h' : 'Optimal: 7–9h',
+        })
+      }
+
+      if (twin.avg_hrv_ms != null) {
+        const ms = twin.avg_hrv_ms
+        domainScores.hrv = _scoreHrv(ms)
+        vitalGauges.push({
+          key: 'hrv', label: 'HRV',
+          val: Math.round(ms).toString(), unit: 'ms',
+          score: domainScores.hrv, color: '#10b981',
+          trend: trendIcon(td.hrv_trend), trendColor: trendColor(td.hrv_trend),
+          markerPct: Math.min(97, Math.max(2, Math.round(ms))),
+          zones: [
+            { width: 20, color: '#ef4444' },
+            { width: 20, color: '#f97316' },
+            { width: 30, color: '#10b981' },
+            { width: 30, color: '#0ea5e9' },
+          ],
+          sublabel: isZh ? '越高越好' : 'Higher is better',
+        })
+      }
+
+      if (twin.avg_resting_hr != null) {
+        const bpm = twin.avg_resting_hr
+        domainScores.hr = _scoreRestHr(bpm)
+        vitalGauges.push({
+          key: 'hr', label: isZh ? '静息心率' : 'Resting HR',
+          val: Math.round(bpm).toString(), unit: 'bpm',
+          score: domainScores.hr, color: '#f97316',
+          trend: '', trendColor: '',
+          markerPct: Math.min(97, Math.max(2, Math.round((bpm - 40) / 80 * 100))),
+          zones: [
+            { width: 15, color: '#0ea5e9' },
+            { width: 16, color: '#10b981' },
+            { width: 13, color: '#10b981' },
+            { width: 19, color: '#f97316' },
+            { width: 37, color: '#ef4444' },
+          ],
+          sublabel: isZh ? '最优: 50–65 bpm' : 'Optimal: 50–65 bpm',
+        })
+      }
+
+      if (twin.avg_spo2 != null) {
+        const pct = twin.avg_spo2
+        domainScores.spo2 = _scoreSpo2(pct)
+        vitalGauges.push({
+          key: 'spo2', label: 'SpO₂',
+          val: pct.toFixed(1), unit: '%',
+          score: domainScores.spo2, color: '#a855f7',
+          trend: '', trendColor: '',
+          markerPct: Math.min(97, Math.max(2, Math.round((pct - 90) / 10 * 100))),
+          zones: [
+            { width: 50, color: '#ef4444' },
+            { width: 20, color: '#f97316' },
+            { width: 10, color: '#10b981' },
+            { width: 20, color: '#0ea5e9' },
+          ],
+          sublabel: isZh ? '最优: ≥98%' : 'Optimal: ≥98%',
+        })
+      }
+
+      if (twin.avg_daily_steps != null) {
+        const steps = twin.avg_daily_steps
+        domainScores.steps = _scoreSteps(steps)
+        vitalGauges.push({
+          key: 'steps', label: isZh ? '日均步数' : 'Daily Steps',
+          val: steps >= 10000 ? `${(steps / 1000).toFixed(1)}k` : steps.toLocaleString(), unit: '',
+          score: domainScores.steps, color: '#0ea5e9',
+          trend: '', trendColor: '',
+          markerPct: Math.min(97, Math.max(2, Math.round(steps / 12000 * 100))),
+          zones: [
+            { width: 42, color: '#ef4444' },
+            { width: 21, color: '#f97316' },
+            { width: 21, color: '#10b981' },
+            { width: 16, color: '#0ea5e9' },
+          ],
+          sublabel: isZh ? '目标: 7,500+ 步' : 'Goal: 7,500+ steps',
+        })
+      }
+
+      if (twin.latest_bmi != null) {
+        domainScores.bmi = _scoreBmi(twin.latest_bmi)
+      }
+
+      // Domain aggregate scores
+      const avg = arr => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null
+      const healthDomains = []
+      const recoveryS = avg([domainScores.sleep, domainScores.hrv].filter(v => v != null))
+      const cardioS   = avg([domainScores.hr, domainScores.spo2].filter(v => v != null))
+      const activityS = avg([domainScores.steps].filter(v => v != null))
+      const bodyS     = avg([domainScores.bmi].filter(v => v != null))
+
+      if (recoveryS != null) healthDomains.push({ key: 'recovery', label: t.dtRecovery, score: recoveryS, color: '#6375EC' })
+      if (cardioS   != null) healthDomains.push({ key: 'cardio',   label: t.dtCardio,   score: cardioS,   color: '#f97316' })
+      if (activityS != null) healthDomains.push({ key: 'activity', label: t.dtActivity, score: activityS, color: '#0ea5e9' })
+      if (bodyS     != null) healthDomains.push({ key: 'body',     label: t.dtBodyDomain, score: bodyS,  color: '#a855f7' })
+
+      const allScores = [recoveryS, cardioS, activityS, bodyS].filter(v => v != null)
+      const healthScore = allScores.length ? avg(allScores) : null
+      const healthScoreColor = healthScore == null ? '#A6C4E5'
+        : healthScore >= 80 ? '#10b981'
+        : healthScore >= 65 ? '#6375EC'
+        : healthScore >= 50 ? '#f97316'
+        : '#ef4444'
+      const grades = t.healthScoreGrades
+      const healthScoreGrade = healthScore == null ? ''
+        : healthScore >= 80 ? grades.optimal
+        : healthScore >= 65 ? grades.good
+        : healthScore >= 50 ? grades.fair
+        : grades.low
+
+      // Body composition visual bar
+      let twinBodyBar = null
+      if (twin.latest_body_fat_pct != null) {
+        const fat = Math.min(60, Math.max(5, Math.round(twin.latest_body_fat_pct)))
+        twinBodyBar = { fatPct: fat, leanPct: 100 - fat }
+      }
+
+      return { healthScore, healthScoreColor, healthScoreGrade, healthDomains, vitalGauges, twinBodyBar }
     },
 
     noop() {},

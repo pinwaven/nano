@@ -218,6 +218,93 @@
         <text wx:else class="health-empty">{{t.noHistory}}</text>
       </view>
 
+      <!-- Digital Twin -->
+      <view class="health-section">
+        <text class="section-title">{{t.digitalTwin}}</text>
+        <block wx:if="{{hasTwinData}}">
+
+          <!-- Health Score Card -->
+          <view wx:if="{{healthScore != null}}" class="ht-score-card" style="border-color: {{healthScoreColor}}33;">
+            <view class="ht-score-left">
+              <view class="ht-score-ring" style="border-color: {{healthScoreColor}}44; box-shadow: 0 0 0 6rpx {{healthScoreColor}}18, inset 0 0 0 3rpx {{healthScoreColor}}22;">
+                <text class="ht-score-num" style="color: {{healthScoreColor}}">{{healthScore}}</text>
+                <text class="ht-score-title">{{t.healthScore}}</text>
+              </view>
+              <text class="ht-score-grade" style="color: {{healthScoreColor}}">{{healthScoreGrade}}</text>
+            </view>
+            <view class="ht-score-right">
+              <view wx:for="{{healthDomains}}" wx:key="key" class="ht-domain-row">
+                <text class="ht-domain-label">{{item.label}}</text>
+                <view class="ht-domain-track">
+                  <view class="ht-domain-fill" style="width: {{item.score}}%; background: {{item.color}};"></view>
+                </view>
+                <text class="ht-domain-score" style="color: {{item.color}}">{{item.score}}</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- Vital Gauges -->
+          <view wx:if="{{vitalGauges.length > 0}}" class="ht-gauges">
+            <view wx:for="{{vitalGauges}}" wx:key="key" class="ht-gauge-item">
+              <view class="ht-gauge-header">
+                <text class="ht-gauge-label">{{item.label}}</text>
+                <view class="ht-gauge-val-row">
+                  <text class="ht-gauge-val" style="color: {{item.color}}">{{item.val}}</text>
+                  <text wx:if="{{item.unit}}" class="ht-gauge-unit"> {{item.unit}}</text>
+                  <text wx:if="{{item.trend}}" class="ht-gauge-trend" style="color: {{item.trendColor}}">  {{item.trend}}</text>
+                </view>
+              </view>
+              <view class="ht-gauge-wrap">
+                <view class="ht-gauge-track">
+                  <view wx:for="{{item.zones}}" wx:for-item="zone" wx:key="index"
+                        class="ht-zone-seg"
+                        style="width: {{zone.width}}%; background: {{zone.color}};"></view>
+                </view>
+                <view class="ht-gauge-marker" style="left: {{item.markerPct}}%; background: {{item.color}};"></view>
+              </view>
+              <text class="ht-gauge-sublabel">{{item.sublabel}}</text>
+            </view>
+          </view>
+
+          <!-- Body Composition -->
+          <view wx:if="{{twinBodyBar}}" class="ht-body-card">
+            <view class="ht-body-header">
+              <text class="ht-body-title">{{t.dtBody}}</text>
+              <text wx:if="{{twinBody}}" class="ht-body-vals">{{twinBody}}</text>
+            </view>
+            <view class="ht-body-bar">
+              <view class="ht-body-lean" style="width: {{twinBodyBar.leanPct}}%;"></view>
+              <view class="ht-body-fat-fill" style="width: {{twinBodyBar.fatPct}}%;"></view>
+            </view>
+            <view class="ht-body-legend">
+              <view class="ht-body-legend-item">
+                <view class="ht-body-dot ht-lean-dot"></view>
+                <text class="ht-body-lbl">{{t.dtLean}}  {{twinBodyBar.leanPct}}%</text>
+              </view>
+              <view class="ht-body-legend-item">
+                <view class="ht-body-dot ht-fat-dot"></view>
+                <text class="ht-body-lbl">{{t.dtFat}}  {{twinBodyBar.fatPct}}%</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- Source Coverage -->
+          <view class="twin-coverage-wrap">
+            <text class="twin-coverage-title">{{t.dtSources}}</text>
+            <view class="twin-coverage">
+              <view wx:for="{{twinCoverage}}" wx:key="key"
+                    class="twin-source-chip {{item.hasData ? 'twin-source-active' : ''}}">
+                <view class="twin-source-dot {{item.hasData ? 'twin-source-dot-on' : ''}}"></view>
+                <text class="twin-source-label">{{item.label}}</text>
+                <text wx:if="{{item.hasData && item.lastDate}}" class="twin-source-date">{{item.lastDate}}</text>
+              </view>
+            </view>
+          </view>
+
+        </block>
+        <text wx:elif="{{!twinLoading}}" class="health-empty">{{t.noTwinData}}</text>
+      </view>
+
       <view style="height: 32px;"></view>
     </block>
 

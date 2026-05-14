@@ -22,6 +22,21 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   - **Miniapp coach panel** — no change required; only uses `coach.id` and `coach.channel_id` from the login response.
 
 ### Added
+- **Digital Twin health profile system** — continuous wearable/lifestyle data stored as a two-layer model alongside the existing Kino chip biomarkers.
+  - **DB migrations** `src/schemas/migration_health_events.sql` and `src/schemas/migration_health_twin.sql`: append-only event log (`health_events`) for all time-series health data and a one-row-per-user materialized summary (`health_twin`) with 7-day rolling averages, latest body/lab/Kino values, and 30-day trend signals.
+  - **Five event categories**: `sleep`, `activity`, `vitals`, `body_composition`, `lab_result`. Six data sources: `apple_health`, `garmin`, `fitbit`, `manual`, `annual_lab`, `hospital`. Deduplication via `UNIQUE (user_id, source, external_id) WHERE external_id IS NOT NULL`.
+  - **Real-time updater** `src/functions/worker/lib/healthTwinUpdater.js`: `updateHealthTwin(userId, pool)` runs aggregation queries and UPSERTs `health_twin` after every event insert. Non-fatal — ingestion never fails due to twin computation errors.
+  - **Worker API routes**: `POST /health-events` (single event), `POST /health-events/sync` (batch up to 500), `GET /health-events` (paginated query), `GET /health-twin` (full twin row).
+  - **AI prompt integration**: `health_twin` is always fetched alongside questionnaire data in `handlePostChat` and passed to intent-specific prompts (`chat/biomarker.js`, `chat/nutrition.js`, `chat/emotional.js`); `handlePostHealthAdvice` includes a full `DIGITAL TWIN` section in the system prompt with a "Lifestyle Connection" reasoning step.
+  - **Miniapp health tab** (`components/user-health/`): Digital Twin section at the bottom of the health tab with a visual health dashboard:
+    - **Health Score card** — 0–100 aggregate score with grade label (优秀/良好/一般/偏低) and per-domain breakdown bars (Recovery, Cardio, Activity, Body).
+    - **Vital gauge rows** — each metric (Sleep, HRV, Resting HR, SpO₂, Daily Steps) rendered as a color-zoned track (red/orange/green/blue clinical ranges) with a floating dot marker at the user's current value, trend arrow, and optimal-range sublabel.
+    - **Body composition bar** — horizontal segmented bar: lean mass (green gradient) and fat (orange gradient) with percentage legend.
+    - **Source coverage chips** — shows which data streams have data and their last sync date.
+  - **Scoring functions** (`user-health.js`): `_scoreSleep`, `_scoreHrv`, `_scoreRestHr`, `_scoreSpo2`, `_scoreSteps`, `_scoreBmi` map raw metric values to 0–100 health scores using clinically meaningful thresholds; domain scores are averaged into Recovery, Cardio, Activity, and Body composites.
+  - **Demo seed script** `temp/seed-pin-digital-twin.js`: inserts 14 days of realistic data across all 5 categories for user Pin and calls `updateHealthTwin`.
+  - **Architecture doc** `docs/architecture/digital-twin.md`.
+
 - **NL2SQL tool call in chat** — the worker's chat LLM can now query the user's health data dynamically when the pre-loaded context isn't enough. An agentic loop (max 4 iterations) offers the model a `query_database` tool; when called, the worker validates the SQL is a `SELECT` with `$1` for `user_id`, runs it against PolarDB, and feeds the rows back. Supports `biomarkers`, `nutrition_schedules`, `reminders`, and `chat_messages`. No new routes, no schema changes — change is entirely within `handlePostChat` in `src/functions/worker/index.js`.
 - **Tag-driven biomarker estimator** — the `BiomarkerEstimator` now consumes a registry-defined tag set so its 6 estimated biomarkers respond to the user's actual nutrition compliance, weight trend, and prior-scan trajectory instead of just age + BMI. The estimator stays deterministic and synchronous — no LLM on the hot path.
   - **New** `src/functions/worker/lib/estimator/tagRegistry.js`: controlled vocabulary mapping each tag to one or more biomarker adjustments (`['*' | '+', n]`). Includes Chinese-tag aliases (`糖尿病` → `diabetes_diagnosed`).
