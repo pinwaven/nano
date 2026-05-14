@@ -256,7 +256,7 @@ const T = {
     },
     partners: {
       addPartner: 'Add Partner', editPartner: 'Edit Partner', deactivatePartner: 'Deactivate',
-      partnersTab: 'Partners', commissionsTab: 'Commissions', payoutsTab: 'Payouts',
+      partnersTab: 'Partners', commissionsTab: 'Commissions', payoutsTab: 'Payouts', rulesTab: 'Commission Rules',
       realName: 'Real Name *', phone: 'Phone *', tier: 'Tier *', entryFee: 'Entry Fee (¥) *',
       channel: 'Channel', referredBy: 'Referred By', contractedAt: 'Contracted', status: 'Status', notes: 'Notes',
       tierLight: 'Light Entrepreneur', tierLeader: 'Leader Partner', tierOps: 'Operations Center',
@@ -274,6 +274,13 @@ const T = {
       saveFailed: 'Save failed', confirmDeactivate: 'Deactivate this partner?',
       realNameRequired: 'Real name is required', phoneRequired: 'Phone is required',
       tierRequired: 'Tier is required', entryFeeRequired: 'Entry fee is required',
+      rulesTitle: 'Commission Rules', rulesSaved: 'Rules saved',
+      referralMatrix: 'Referral Commission Matrix', referralHint: 'Rate paid to upline when they refer a new partner (% of entry fee)',
+      productDiscounts: 'Product Discount Rates', productHint: 'Partner\'s margin on product sales',
+      trainingDiscounts: 'Training Discount Rates', trainingHint: 'Partner\'s margin on training sales',
+      teamIncome: 'Team Continuous Income', teamPrimary: 'Level 1 Upline Rate', teamSecondary: 'Level 2 Upline Rate',
+      teamHint: '% of sales amount paid to each upline level',
+      uplineTier: 'Upline →', newTier: 'New Partner ↓', saveRules: 'Save Rules', saving: 'Saving…',
     },
     addBatch: 'Add Batch', countBatch: (n) => `${n} batch${n !== 1 ? 'es' : ''}`,
     chips: {
@@ -573,7 +580,7 @@ const T = {
     },
     partners: {
       addPartner: '新增合伙人', editPartner: '编辑合伙人', deactivatePartner: '停用',
-      partnersTab: '合伙人列表', commissionsTab: '佣金记录', payoutsTab: '结算单',
+      partnersTab: '合伙人列表', commissionsTab: '佣金记录', payoutsTab: '结算单', rulesTab: '佣金规则',
       realName: '真实姓名 *', phone: '手机号 *', tier: '级别 *', entryFee: '入伙费 (¥) *',
       channel: '渠道', referredBy: '推荐人', contractedAt: '签约时间', status: '状态', notes: '备注',
       tierLight: '轻创合伙人', tierLeader: '领袖合伙人', tierOps: '运营中心',
@@ -591,6 +598,13 @@ const T = {
       saveFailed: '保存失败', confirmDeactivate: '确认停用此合伙人？',
       realNameRequired: '请填写真实姓名', phoneRequired: '请填写手机号',
       tierRequired: '请选择级别', entryFeeRequired: '请填写入伙费',
+      rulesTitle: '佣金规则配置', rulesSaved: '规则已保存',
+      referralMatrix: '推荐佣金矩阵', referralHint: '上级合伙人推荐新合伙人时获得的佣金比例（基于入伙费）',
+      productDiscounts: '产品折扣率', productHint: '合伙人在产品销售中的利润空间',
+      trainingDiscounts: '培训折扣率', trainingHint: '合伙人在培训销售中的利润空间',
+      teamIncome: '团队持续收入', teamPrimary: '一级上线比例', teamSecondary: '二级上线比例',
+      teamHint: '按销售额的百分比支付给各级上线',
+      uplineTier: '上线 →', newTier: '新合伙人 ↓', saveRules: '保存规则', saving: '保存中…',
     },
     academy: {
       coursesTab: '课程', libraryTab: '文库', progressTab: '完成进度',
@@ -3437,21 +3451,58 @@ function PartnersTab() {
   const [commBusy, setCommBusy] = useState(false);
   const [commError, setCommError] = useState('');
 
+  const TIER_KEYS = ['light_entrepreneur', 'leader_partner', 'operations_center'];
+  const [config, setConfig] = useState(null);
+  const [configBusy, setConfigBusy] = useState(false);
+  const [configMsg, setConfigMsg] = useState('');
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [pRes, cRes, pyRes] = await Promise.all([
+      const [pRes, cRes, pyRes, cfgRes] = await Promise.all([
         axios.get('/api/partners'),
         axios.get('/api/partner-commissions'),
         axios.get('/api/partner-payouts'),
+        axios.get('/api/partner-commission-config'),
       ]);
       setPartners(pRes.data.partners || []);
       setCommissions(cRes.data.commissions || []);
       setPayouts(pyRes.data.payouts || []);
+      setConfig(cfgRes.data.config || null);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  function setReferralRate(upline, newTier, val) {
+    setConfig(c => ({
+      ...c,
+      referral_rates: {
+        ...c.referral_rates,
+        [upline]: { ...c.referral_rates[upline], [newTier]: val === '' ? '' : Number(val) / 100 },
+      },
+    }));
+  }
+
+  function setDiscountRate(field, tier, val) {
+    setConfig(c => ({
+      ...c,
+      [field]: { ...c[field], [tier]: val === '' ? '' : Number(val) / 100 },
+    }));
+  }
+
+  async function saveConfig() {
+    setConfigBusy(true); setConfigMsg('');
+    try {
+      await axios.put('/api/partner-commission-config', config);
+      setConfigMsg(p.rulesSaved);
+      setTimeout(() => setConfigMsg(''), 3000);
+    } catch {
+      setConfigMsg(p.saveFailed);
+    } finally {
+      setConfigBusy(false);
+    }
+  }
 
   useEffect(() => { load(); }, [load]);
 
@@ -3550,6 +3601,9 @@ function PartnersTab() {
         </button>
         <button className={`subtab-btn${subTab === 'payouts' ? ' active' : ''}`} onClick={() => setSubTab('payouts')}>
           <TrendingUp size={13} /> {p.payoutsTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'rules' ? ' active' : ''}`} onClick={() => setSubTab('rules')}>
+          <Settings2 size={13} /> {p.rulesTab}
         </button>
       </div>
 
@@ -3668,6 +3722,102 @@ function PartnersTab() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!loading && subTab === 'rules' && config && (
+        <div className="card" style={{ padding: '24px 28px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>{p.rulesTitle}</h3>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              {configMsg && <span style={{ fontSize: 13, color: configMsg === p.rulesSaved ? '#16a34a' : '#dc2626' }}>{configMsg}</span>}
+              <button className="btn-primary" onClick={saveConfig} disabled={configBusy}>
+                <Check size={13} />{configBusy ? p.saving : p.saveRules}
+              </button>
+            </div>
+          </div>
+
+          {/* Referral matrix */}
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{p.referralMatrix}</div>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>{p.referralHint}</div>
+            <table className="data-table" style={{ width: 'auto' }}>
+              <thead>
+                <tr>
+                  <th style={{ minWidth: 130 }}>{p.uplineTier} / {p.newTier}</th>
+                  {TIER_KEYS.map(tk => <th key={tk} style={{ minWidth: 120 }}>{({ light_entrepreneur: p.tierLight, leader_partner: p.tierLeader, operations_center: p.tierOps })[tk]}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {TIER_KEYS.map(upline => (
+                  <tr key={upline}>
+                    <td className="bold">{({ light_entrepreneur: p.tierLight, leader_partner: p.tierLeader, operations_center: p.tierOps })[upline]}</td>
+                    {TIER_KEYS.map(newTier => (
+                      <td key={newTier}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <input type="number" min="0" max="100" step="1"
+                            value={config.referral_rates?.[upline]?.[newTier] != null ? Math.round(Number(config.referral_rates[upline][newTier]) * 100) : ''}
+                            onChange={e => setReferralRate(upline, newTier, e.target.value)}
+                            style={{ width: 60, textAlign: 'right' }} />
+                          <span style={{ fontSize: 12, color: '#94a3b8' }}>%</span>
+                        </div>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Product & training discount rates */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 28, marginBottom: 28 }}>
+            {[
+              { field: 'product_discount_rates', label: p.productDiscounts, hint: p.productHint },
+              { field: 'training_discount_rates', label: p.trainingDiscounts, hint: p.trainingHint },
+            ].map(({ field, label, hint }) => (
+              <div key={field}>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>{hint}</div>
+                <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
+                  {TIER_KEYS.map(tk => (
+                    <label className="form-field" key={tk}>
+                      <span>{({ light_entrepreneur: p.tierLight, leader_partner: p.tierLeader, operations_center: p.tierOps })[tk]}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <input type="number" min="0" max="100" step="1"
+                          value={config[field]?.[tk] != null ? Math.round(Number(config[field][tk]) * 100) : ''}
+                          onChange={e => setDiscountRate(field, tk, e.target.value)}
+                          style={{ width: 80, textAlign: 'right' }} />
+                        <span style={{ fontSize: 12, color: '#94a3b8' }}>%</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Team income rates */}
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{p.teamIncome}</div>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>{p.teamHint}</div>
+            <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              {[
+                { key: 'team_primary_rate', label: p.teamPrimary },
+                { key: 'team_secondary_rate', label: p.teamSecondary },
+              ].map(({ key, label }) => (
+                <label className="form-field" key={key}>
+                  <span>{label}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <input type="number" min="0" max="100" step="0.1"
+                      value={config[key] != null ? Number((Number(config[key]) * 100).toFixed(1)) : ''}
+                      onChange={e => setConfig(c => ({ ...c, [key]: e.target.value === '' ? '' : Number(e.target.value) / 100 }))}
+                      style={{ width: 80, textAlign: 'right' }} />
+                    <span style={{ fontSize: 12, color: '#94a3b8' }}>%</span>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

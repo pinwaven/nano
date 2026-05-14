@@ -1,27 +1,42 @@
 const { pool } = require('./db');
 
-// Referral commission rates: REFERRAL_RATES[uplineTier][newPartnerTier] = rate
-const REFERRAL_RATES = {
-    light_entrepreneur: { light_entrepreneur: 0.25, leader_partner: 0.20, operations_center: 0.10 },
-    leader_partner:     { light_entrepreneur: 0.40, leader_partner: 0.25, operations_center: 0.20 },
-    operations_center:  { light_entrepreneur: 0.50, leader_partner: 0.30, operations_center: 0.25 },
+const DEFAULT_CONFIG = {
+    referral_rates: {
+        light_entrepreneur: { light_entrepreneur: 0.25, leader_partner: 0.20, operations_center: 0.10 },
+        leader_partner:     { light_entrepreneur: 0.40, leader_partner: 0.25, operations_center: 0.20 },
+        operations_center:  { light_entrepreneur: 0.50, leader_partner: 0.30, operations_center: 0.25 },
+    },
+    product_discount_rates: { light_entrepreneur: 0.30, leader_partner: 0.40, operations_center: 0.50 },
+    training_discount_rates: { light_entrepreneur: 0.10, leader_partner: 0.30, operations_center: 0.50 },
+    team_primary_rate: 0.02,
+    team_secondary_rate: 0.02,
 };
 
-const PRODUCT_DISCOUNT_RATES = {
-    light_entrepreneur: 0.30,
-    leader_partner:     0.40,
-    operations_center:  0.50,
-};
+async function getCommissionConfig() {
+    if (!pool) return DEFAULT_CONFIG;
+    try {
+        const { rows } = await pool.query(
+            `SELECT referral_rates, product_discount_rates, training_discount_rates,
+                    team_primary_rate, team_secondary_rate
+             FROM partner_commission_config WHERE id = 1`
+        );
+        if (rows[0]) return rows[0];
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'getCommissionConfig fallback to defaults', data: { error: err.message } }));
+    }
+    return DEFAULT_CONFIG;
+}
 
-const TRAINING_DISCOUNT_RATES = {
-    light_entrepreneur: 0.10,
-    leader_partner:     0.30,
-    operations_center:  0.50,
-};
+// Keep named exports for backward compat (reflect current DB config at import time is not feasible in CJS;
+// callers that need fresh config should use getCommissionConfig() directly)
+const REFERRAL_RATES         = DEFAULT_CONFIG.referral_rates;
+const PRODUCT_DISCOUNT_RATES = DEFAULT_CONFIG.product_discount_rates;
+const TRAINING_DISCOUNT_RATES = DEFAULT_CONFIG.training_discount_rates;
 
 async function recordReferralCommission(uplinePartner, newPartner) {
     if (!pool) return;
-    const rate = REFERRAL_RATES[uplinePartner.tier]?.[newPartner.tier];
+    const cfg = await getCommissionConfig();
+    const rate = cfg.referral_rates?.[uplinePartner.tier]?.[newPartner.tier];
     if (!rate) return;
     const amount = Number((Number(newPartner.entry_fee_paid) * rate).toFixed(2));
     if (amount <= 0) return;
@@ -60,7 +75,8 @@ async function recordSalesCommission(sellingPartnerId, saleAmountCny, descriptio
         const partner = rows[0];
         if (!partner) return;
 
-        const salesRate = PRODUCT_DISCOUNT_RATES[partner.tier] || 0;
+        const cfg = await getCommissionConfig();
+        const salesRate = cfg.product_discount_rates?.[partner.tier] || 0;
         if (salesRate > 0) {
             const salesAmount = Number((saleAmountCny * salesRate).toFixed(2));
             await pool.query(`
@@ -70,24 +86,25 @@ async function recordSalesCommission(sellingPartnerId, saleAmountCny, descriptio
             `, [sellingPartnerId, salesAmount, salesRate, saleAmountCny, description || 'Product sale']);
         }
 
-        const teamRate = 0.02;
+        const teamPrimaryRate = Number(cfg.team_primary_rate ?? 0.02);
+        const teamSecondaryRate = Number(cfg.team_secondary_rate ?? 0.02);
         if (partner.upline_id) {
-            const amount = Number((saleAmountCny * teamRate).toFixed(2));
+            const amount = Number((saleAmountCny * teamPrimaryRate).toFixed(2));
             await pool.query(`
                 INSERT INTO partner_commissions
                     (partner_id, source_type, source_partner_id, amount_cny, rate, base_amount, description)
                 VALUES ($1, 'team_primary', $2, $3, $4, $5, $6)
-            `, [partner.upline_id, sellingPartnerId, amount, teamRate, saleAmountCny,
+            `, [partner.upline_id, sellingPartnerId, amount, teamPrimaryRate, saleAmountCny,
                 `Team income (primary) from partner #${sellingPartnerId}`]);
         }
 
         if (partner.upline2_id) {
-            const amount = Number((saleAmountCny * teamRate).toFixed(2));
+            const amount = Number((saleAmountCny * teamSecondaryRate).toFixed(2));
             await pool.query(`
                 INSERT INTO partner_commissions
                     (partner_id, source_type, source_partner_id, amount_cny, rate, base_amount, description)
                 VALUES ($1, 'team_secondary', $2, $3, $4, $5, $6)
-            `, [partner.upline2_id, sellingPartnerId, amount, teamRate, saleAmountCny,
+            `, [partner.upline2_id, sellingPartnerId, amount, teamSecondaryRate, saleAmountCny,
                 `Team income (secondary) from partner #${sellingPartnerId}`]);
         }
     } catch (err) {
@@ -131,4 +148,4 @@ async function generatePartnerPayouts(period, channelId) {
     return { generated: created };
 }
 
-module.exports = { REFERRAL_RATES, PRODUCT_DISCOUNT_RATES, TRAINING_DISCOUNT_RATES, recordReferralCommission, recordSalesCommission, generatePartnerPayouts };
+module.exports = { REFERRAL_RATES, PRODUCT_DISCOUNT_RATES, TRAINING_DISCOUNT_RATES, getCommissionConfig, recordReferralCommission, recordSalesCommission, generatePartnerPayouts };

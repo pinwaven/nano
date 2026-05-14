@@ -950,6 +950,55 @@ async function handleGetPartnerTree(partnerId) {
     }
 }
 
+async function handleGetPartnerCommissionConfig() {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query(
+            `SELECT referral_rates, product_discount_rates, training_discount_rates,
+                    team_primary_rate, team_secondary_rate, updated_at
+             FROM partner_commission_config WHERE id = 1`
+        );
+        const cfg = rows[0] || {
+            referral_rates: { light_entrepreneur: { light_entrepreneur: 0.25, leader_partner: 0.20, operations_center: 0.10 }, leader_partner: { light_entrepreneur: 0.40, leader_partner: 0.25, operations_center: 0.20 }, operations_center: { light_entrepreneur: 0.50, leader_partner: 0.30, operations_center: 0.25 } },
+            product_discount_rates: { light_entrepreneur: 0.30, leader_partner: 0.40, operations_center: 0.50 },
+            training_discount_rates: { light_entrepreneur: 0.10, leader_partner: 0.30, operations_center: 0.50 },
+            team_primary_rate: 0.02,
+            team_secondary_rate: 0.02,
+        };
+        return { success: true, config: cfg };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutPartnerCommissionConfig(body) {
+    const { referral_rates, product_discount_rates, training_discount_rates, team_primary_rate, team_secondary_rate } = body;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query(`
+            INSERT INTO partner_commission_config
+                (id, referral_rates, product_discount_rates, training_discount_rates, team_primary_rate, team_secondary_rate, updated_at)
+            VALUES (1, $1, $2, $3, $4, $5, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                referral_rates = EXCLUDED.referral_rates,
+                product_discount_rates = EXCLUDED.product_discount_rates,
+                training_discount_rates = EXCLUDED.training_discount_rates,
+                team_primary_rate = EXCLUDED.team_primary_rate,
+                team_secondary_rate = EXCLUDED.team_secondary_rate,
+                updated_at = NOW()
+        `, [
+            JSON.stringify(referral_rates),
+            JSON.stringify(product_discount_rates),
+            JSON.stringify(training_discount_rates),
+            team_primary_rate,
+            team_secondary_rate,
+        ]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 // ── End partner system handlers ──────────────────────────────────────────────
 
 async function handleGetChannelRewardsSummary(channelId) {
@@ -5481,6 +5530,8 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/invitations')) {
                 const invQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
                 result = await handleGetInvitations(invQuery);
+            } else if (path.includes('/partner-commission-config')) {
+                result = await handleGetPartnerCommissionConfig();
             } else if (path.match(/\/partner-tree\/(\d+)/)) {
                 result = await handleGetPartnerTree(path.match(/\/partner-tree\/(\d+)/)[1]);
             } else if (path.match(/\/partners\/(\d+)/)) {
@@ -5712,6 +5763,8 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/channel-payouts/')) {
                 const payoutId = path.split('/channel-payouts/')[1];
                 result = await handlePutChannelPayout(payoutId, parsedBody);
+            } else if (path.includes('/partner-commission-config')) {
+                result = await handlePutPartnerCommissionConfig(parsedBody);
             } else if (path.includes('/partner-payouts/')) {
                 const payoutId = path.split('/partner-payouts/')[1];
                 result = await handlePutPartnerPayout(payoutId, parsedBody);
