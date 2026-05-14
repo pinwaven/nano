@@ -665,6 +665,7 @@ Page({
     guestInviteBusy: false,
     guestInviteError: '',
     guestSheetStep: 'invite',
+    guestKeyboardHeight: 0,
     guestPendingAvatar: '',
     guestAvatarDone: false,
     guestAvatarUploading: false,
@@ -2213,7 +2214,11 @@ Page({
 
   closeGuestSheet() {
     if (this.data.guestSheetStep === 'phone') return
-    this.setData({ guestSheetOpen: false })
+    this.setData({ guestSheetOpen: false, guestKeyboardHeight: 0 })
+  },
+
+  onGuestKeyboardHeightChange(e) {
+    this.setData({ guestKeyboardHeight: e.detail.height || 0 })
   },
 
   onGuestInviteInput(e) {
@@ -2221,6 +2226,7 @@ Page({
     const digits = val.split('')
     while (digits.length < 6) digits.push('')
     this.setData({ guestInviteCode: val, guestInviteDigits: digits, guestInviteError: '' })
+    if (val.length === 6) this.submitGuestInvite()
   },
 
   async submitGuestInvite() {

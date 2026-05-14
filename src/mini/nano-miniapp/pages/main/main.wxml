@@ -1010,7 +1010,7 @@
 
   <!-- ── Guest Join Sheet ── -->
   <view wx:if="{{guestSheetOpen}}" class="guest-sheet-mask" bindtap="closeGuestSheet">
-    <view class="guest-sheet" catchtap="noop">
+    <view class="guest-sheet" catchtap="noop" style="{{guestKeyboardHeight > 0 ? 'padding-bottom:' + guestKeyboardHeight + 'px;' : ''}}">
       <view class="guest-sheet-handle"></view>
 
       <block wx:if="{{guestSheetStep === 'phone'}}">
@@ -1083,7 +1083,9 @@
             type="number"
             value="{{guestInviteCode}}"
             bindinput="onGuestInviteInput"
+            bindkeyboardheightchange="onGuestKeyboardHeightChange"
             focus="{{guestSheetOpen}}"
+            adjust-position="{{false}}"
             maxlength="6"
           />
         </view>
