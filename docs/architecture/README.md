@@ -95,3 +95,4 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 | Health Plan System | [health-plan-system.md](health-plan-system.md) |
 | Digital Twin | [digital-twin.md](digital-twin.md) |
 | Reminder System | [reminder-system.md](reminder-system.md) |
+| Channel Inventory | [channel-inventory.md](channel-inventory.md) |

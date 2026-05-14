@@ -1,5 +1,6 @@
 const { pool } = require('./lib/db');
 const { recordOrderCommissions } = require('./lib/commissions');
+const { recordReferralCommission, generatePartnerPayouts } = require('./lib/partnerCommissions');
 const ossLib = require('./lib/oss');
 const crypto = require('crypto');
 
@@ -676,6 +677,281 @@ async function handlePutChannelPayout(payoutId, body) {
     }
 }
 
+// ── Partner system handlers ──────────────────────────────────────────────────
+
+async function handleGetPartners(query, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const conditions = [];
+        const params = [];
+        const channelId = adminCtx?.channelId || query.channel_id;
+        if (channelId) { params.push(channelId); conditions.push(`p.channel_id=$${params.length}`); }
+        if (query.status) { params.push(query.status); conditions.push(`p.status=$${params.length}`); }
+        if (query.tier)   { params.push(query.tier);   conditions.push(`p.tier=$${params.length}`); }
+        const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+        const { rows } = await pool.query(`
+            SELECT p.*,
+                   ch.name AS channel_name,
+                   up.real_name AS upline_name, up.tier AS upline_tier,
+                   COALESCE(comm.total_commissions, 0) AS total_commissions_cny
+            FROM partners p
+            LEFT JOIN channels ch ON ch.id = p.channel_id
+            LEFT JOIN partners up ON up.id = p.referred_by_partner_id
+            LEFT JOIN (
+                SELECT partner_id, SUM(amount_cny) AS total_commissions
+                FROM partner_commissions
+                GROUP BY partner_id
+            ) comm ON comm.partner_id = p.id
+            ${where}
+            ORDER BY p.created_at DESC
+            LIMIT 1000
+        `, params);
+        return { success: true, partners: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetPartner(partnerId) {
+    if (!partnerId) return { success: false, error: 'partner id required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const [partnerRes, commRes, payoutRes] = await Promise.all([
+            pool.query(`
+                SELECT p.*, ch.name AS channel_name,
+                       up.real_name AS upline_name, up.tier AS upline_tier
+                FROM partners p
+                LEFT JOIN channels ch ON ch.id = p.channel_id
+                LEFT JOIN partners up ON up.id = p.referred_by_partner_id
+                WHERE p.id = $1
+            `, [partnerId]),
+            pool.query(`
+                SELECT pc.*, sp.real_name AS source_partner_name
+                FROM partner_commissions pc
+                LEFT JOIN partners sp ON sp.id = pc.source_partner_id
+                WHERE pc.partner_id = $1
+                ORDER BY pc.created_at DESC LIMIT 100
+            `, [partnerId]),
+            pool.query(
+                `SELECT * FROM partner_payouts WHERE partner_id=$1 ORDER BY period DESC LIMIT 24`,
+                [partnerId]
+            ),
+        ]);
+        if (!partnerRes.rows[0]) return { success: false, error: 'Partner not found', statusCode: 404 };
+        return { success: true, partner: partnerRes.rows[0], commissions: commRes.rows, payouts: payoutRes.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostPartner(body) {
+    const { tier, real_name, phone, entry_fee_paid, channel_id, user_id, referred_by_partner_id, contracted_at, notes, status } = body;
+    if (!tier || !real_name || !phone || !entry_fee_paid) {
+        return { success: false, error: 'tier, real_name, phone, entry_fee_paid are required', statusCode: 400 };
+    }
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query(`
+            INSERT INTO partners (tier, real_name, phone, entry_fee_paid, channel_id, user_id,
+                                  referred_by_partner_id, contracted_at, notes, status)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            RETURNING *
+        `, [tier, real_name, phone, entry_fee_paid, channel_id || null, user_id || null,
+            referred_by_partner_id || null, contracted_at || null, notes || null, status || 'active']);
+        const newPartner = rows[0];
+
+        if (referred_by_partner_id) {
+            const { rows: uplineRows } = await pool.query(
+                `SELECT id, tier, real_name FROM partners WHERE id=$1 AND status='active'`,
+                [referred_by_partner_id]
+            );
+            if (uplineRows[0]) {
+                await recordReferralCommission(uplineRows[0], newPartner);
+            }
+        }
+
+        return { success: true, partner: newPartner };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutPartner(partnerId, body) {
+    if (!partnerId) return { success: false, error: 'partner id required', statusCode: 400 };
+    const { tier, real_name, phone, entry_fee_paid, channel_id, user_id,
+            referred_by_partner_id, contracted_at, notes, status } = body;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query(`
+            UPDATE partners SET
+                tier=$1, real_name=$2, phone=$3, entry_fee_paid=$4,
+                channel_id=$5, user_id=$6, referred_by_partner_id=$7,
+                contracted_at=$8, notes=$9, status=$10, updated_at=NOW()
+            WHERE id=$11
+        `, [tier, real_name, phone, entry_fee_paid, channel_id || null, user_id || null,
+            referred_by_partner_id || null, contracted_at || null, notes || null,
+            status || 'active', partnerId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeletePartner(partnerId) {
+    if (!partnerId) return { success: false, error: 'partner id required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query(`UPDATE partners SET status='inactive', updated_at=NOW() WHERE id=$1`, [partnerId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetPartnerCommissions(query) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const conditions = [];
+        const params = [];
+        if (query.partner_id)   { params.push(query.partner_id);   conditions.push(`pc.partner_id=$${params.length}`); }
+        if (query.source_type)  { params.push(query.source_type);  conditions.push(`pc.source_type=$${params.length}`); }
+        if (query.status)       { params.push(query.status);       conditions.push(`pc.status=$${params.length}`); }
+        if (query.from)         { params.push(query.from);         conditions.push(`pc.created_at>=$${params.length}`); }
+        if (query.to)           { params.push(query.to);           conditions.push(`pc.created_at<=$${params.length}`); }
+        const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+        const { rows } = await pool.query(`
+            SELECT pc.*, p.real_name AS partner_name, p.tier AS partner_tier,
+                   sp.real_name AS source_partner_name
+            FROM partner_commissions pc
+            JOIN partners p ON p.id = pc.partner_id
+            LEFT JOIN partners sp ON sp.id = pc.source_partner_id
+            ${where}
+            ORDER BY pc.created_at DESC
+            LIMIT 500
+        `, params);
+        return { success: true, commissions: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostPartnerCommission(body) {
+    const { partner_id, source_type, source_partner_id, amount_cny, rate, base_amount, description } = body;
+    if (!partner_id || !source_type || !amount_cny) {
+        return { success: false, error: 'partner_id, source_type, amount_cny are required', statusCode: 400 };
+    }
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query(`
+            INSERT INTO partner_commissions
+                (partner_id, source_type, source_partner_id, amount_cny, rate, base_amount, description)
+            VALUES ($1,$2,$3,$4,$5,$6,$7)
+            RETURNING *
+        `, [partner_id, source_type, source_partner_id || null, amount_cny,
+            rate || null, base_amount || null, description || null]);
+        return { success: true, commission: rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetPartnerPayouts(query) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const conditions = [];
+        const params = [];
+        if (query.partner_id) { params.push(query.partner_id); conditions.push(`pp.partner_id=$${params.length}`); }
+        if (query.status)     { params.push(query.status);     conditions.push(`pp.status=$${params.length}`); }
+        if (query.channel_id) { params.push(query.channel_id); conditions.push(`p.channel_id=$${params.length}`); }
+        const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+        const { rows } = await pool.query(`
+            SELECT pp.*, p.real_name AS partner_name, p.tier AS partner_tier,
+                   ch.name AS channel_name
+            FROM partner_payouts pp
+            JOIN partners p ON p.id = pp.partner_id
+            LEFT JOIN channels ch ON ch.id = p.channel_id
+            ${where}
+            ORDER BY pp.period DESC, pp.created_at DESC
+        `, params);
+        return { success: true, payouts: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostGeneratePartnerPayouts(body) {
+    const { period, channel_id } = body;
+    if (!period) return { success: false, error: 'period required (YYYY-MM)', statusCode: 400 };
+    try {
+        const result = await generatePartnerPayouts(period, channel_id || null);
+        return { success: true, ...result };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutPartnerPayout(payoutId, body) {
+    const { status, notes } = body;
+    if (!status) return { success: false, error: 'status required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const now = new Date().toISOString();
+        await pool.query(`
+            UPDATE partner_payouts SET
+                status=$1,
+                approved_at=CASE WHEN $1='approved' THEN $2 ELSE approved_at END,
+                transferred_at=CASE WHEN $1='transferred' THEN $2 ELSE transferred_at END,
+                notes=COALESCE($3, notes)
+            WHERE id=$4
+        `, [status, now, notes || null, payoutId]);
+        if (status === 'approved' || status === 'transferred') {
+            await pool.query(
+                `UPDATE partner_commissions SET status=$1 WHERE payout_id=$2`,
+                [status, payoutId]
+            );
+        }
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetPartnerTree(partnerId) {
+    if (!partnerId) return { success: false, error: 'partner id required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows: root } = await pool.query(
+            `SELECT id, real_name, tier, status FROM partners WHERE id=$1`, [partnerId]
+        );
+        if (!root[0]) return { success: false, error: 'Partner not found', statusCode: 404 };
+
+        const { rows: children } = await pool.query(
+            `SELECT id, real_name, tier, status FROM partners WHERE referred_by_partner_id=$1`, [partnerId]
+        );
+        const childIds = children.map(c => c.id);
+        let grandchildren = [];
+        if (childIds.length > 0) {
+            const { rows } = await pool.query(
+                `SELECT id, real_name, tier, status, referred_by_partner_id
+                 FROM partners WHERE referred_by_partner_id = ANY($1::int[])`,
+                [childIds]
+            );
+            grandchildren = rows;
+        }
+
+        const tree = children.map(child => ({
+            ...child,
+            children: grandchildren.filter(gc => gc.referred_by_partner_id === child.id),
+        }));
+
+        return { success: true, partner: root[0], tree };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ── End partner system handlers ──────────────────────────────────────────────
+
 async function handleGetChannelRewardsSummary(channelId) {
     if (!channelId) return { success: false, error: 'channel_id required', statusCode: 400 };
     try {
@@ -726,6 +1002,92 @@ async function handleDeleteStoreItem(itemId) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query('DELETE FROM store_items WHERE id = $1', [itemId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetChannelInventory(query, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.cid : query.channel_id;
+        if (!channelId) return { success: false, error: 'channel_id required', statusCode: 400 };
+        const { rows } = await pool.query(
+            'SELECT * FROM channel_inventory_items WHERE channel_id = $1 ORDER BY sort_order, created_at',
+            [channelId]
+        );
+        return { success: true, items: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostChannelInventory(body, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.cid : body.channel_id;
+        if (!channelId) return { success: false, error: 'channel_id required', statusCode: 400 };
+        if (!body.key_name) return { success: false, error: 'key_name required', statusCode: 400 };
+        if (!body.name_en) return { success: false, error: 'name_en required', statusCode: 400 };
+        const { rows } = await pool.query(
+            `INSERT INTO channel_inventory_items
+              (channel_id, key_name, name_zh, name_en, desc_zh, desc_en, item_type,
+               unit_zh, unit_en, price_cny, price_usd, stock_quantity, tag, sort_order, active, image_url, metadata)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+             RETURNING *`,
+            [channelId, body.key_name, body.name_zh || '', body.name_en,
+             body.desc_zh || '', body.desc_en || '', body.item_type || 'physical',
+             body.unit_zh || '', body.unit_en || '',
+             body.price_cny != null ? body.price_cny : null,
+             body.price_usd != null ? body.price_usd : null,
+             body.stock_quantity != null ? body.stock_quantity : null,
+             body.tag || '', body.sort_order || 0, body.active !== false,
+             body.image_url || '', body.metadata || null]
+        );
+        return { success: true, item: rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutChannelInventory(id, body, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.cid : null;
+        const params = [
+            body.name_zh || '', body.name_en || '', body.desc_zh || '', body.desc_en || '',
+            body.item_type || 'physical', body.unit_zh || '', body.unit_en || '',
+            body.price_cny != null ? body.price_cny : null,
+            body.price_usd != null ? body.price_usd : null,
+            body.stock_quantity != null ? body.stock_quantity : null,
+            body.tag || '', body.sort_order || 0, body.active !== false,
+            body.image_url || '', body.metadata || null, id,
+        ];
+        let sql = `UPDATE channel_inventory_items
+             SET name_zh=$1, name_en=$2, desc_zh=$3, desc_en=$4, item_type=$5,
+                 unit_zh=$6, unit_en=$7, price_cny=$8, price_usd=$9, stock_quantity=$10,
+                 tag=$11, sort_order=$12, active=$13, image_url=$14, metadata=$15
+             WHERE id=$16`;
+        if (channelId) { sql += ' AND channel_id=$17'; params.push(channelId); }
+        sql += ' RETURNING *';
+        const { rows } = await pool.query(sql, params);
+        if (!rows.length) return { success: false, error: 'Not found', statusCode: 404 };
+        return { success: true, item: rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteChannelInventory(id, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.cid : null;
+        if (channelId) {
+            await pool.query('DELETE FROM channel_inventory_items WHERE id=$1 AND channel_id=$2', [id, channelId]);
+        } else {
+            await pool.query('DELETE FROM channel_inventory_items WHERE id=$1', [id]);
+        }
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -5100,6 +5462,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetMyCartridges(query.openid);
             } else if (path.includes('/dots-inventory')) {
                 result = await handleGetDotsInventory();
+            } else if (path.includes('/channel-inventory')) {
+                result = await handleGetChannelInventory(query, adminCtx);
             } else if (path.includes('/store-items')) {
                 result = await handleGetStoreItems(query);
             } else if (path.includes('/my-orders')) {
@@ -5117,6 +5481,16 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/invitations')) {
                 const invQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
                 result = await handleGetInvitations(invQuery);
+            } else if (path.match(/\/partner-tree\/(\d+)/)) {
+                result = await handleGetPartnerTree(path.match(/\/partner-tree\/(\d+)/)[1]);
+            } else if (path.match(/\/partners\/(\d+)/)) {
+                result = await handleGetPartner(path.match(/\/partners\/(\d+)/)[1]);
+            } else if (path.includes('/partner-commissions')) {
+                result = await handleGetPartnerCommissions(query);
+            } else if (path.includes('/partner-payouts')) {
+                result = await handleGetPartnerPayouts(query);
+            } else if (path.includes('/partners')) {
+                result = await handleGetPartners(query, adminCtx);
             } else if (path.includes('/channels')) {
                 result = await handleGetChannels();
             } else if (path.includes('/academy/course-progress')) {
@@ -5200,6 +5574,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostChannel(parsedBody, adminCtx);
             } else if (path.includes('/coaches')) {
                 result = await handlePostCoaches(parsedBody);
+            } else if (path.includes('/channel-inventory')) {
+                result = await handlePostChannelInventory(parsedBody, adminCtx);
             } else if (path.includes('/store-items')) {
                 result = await handlePostStoreItem(parsedBody);
             } else if (path.includes('/orders')) {
@@ -5256,6 +5632,12 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostGenerateCoachPayouts(parsedBody);
             } else if (path.includes('/generate-channel-payouts')) {
                 result = await handlePostGenerateChannelPayouts(parsedBody);
+            } else if (path.includes('/generate-partner-payouts')) {
+                result = await handlePostGeneratePartnerPayouts(parsedBody);
+            } else if (path.includes('/partner-commissions')) {
+                result = await handlePostPartnerCommission(parsedBody);
+            } else if (path.includes('/partners')) {
+                result = await handlePostPartner(parsedBody);
             } else if (path === '/academy/courses') {
                 result = await handlePostAcademyCourse(parsedBody);
             } else if (path === '/academy/library') {
@@ -5312,6 +5694,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/dots/')) {
                 const dotId = path.split('/dots/')[1];
                 result = await handlePutDot(dotId, parsedBody);
+            } else if (path.includes('/channel-inventory/')) {
+                const invId = path.split('/channel-inventory/')[1];
+                result = await handlePutChannelInventory(invId, parsedBody, adminCtx);
             } else if (path.includes('/store-items/')) {
                 const itemId = path.split('/store-items/')[1];
                 result = await handlePutStoreItem(itemId, parsedBody);
@@ -5327,6 +5712,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/channel-payouts/')) {
                 const payoutId = path.split('/channel-payouts/')[1];
                 result = await handlePutChannelPayout(payoutId, parsedBody);
+            } else if (path.includes('/partner-payouts/')) {
+                const payoutId = path.split('/partner-payouts/')[1];
+                result = await handlePutPartnerPayout(payoutId, parsedBody);
+            } else if (path.includes('/partners/')) {
+                const partnerId = path.split('/partners/')[1];
+                result = await handlePutPartner(partnerId, parsedBody);
             } else if (path.includes('/academy/lessons/')) {
                 const lessonId = path.split('/academy/lessons/')[1];
                 result = await handlePutAcademyLesson(lessonId, parsedBody);
@@ -5384,12 +5775,18 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/channels/')) {
                 const channelId = path.split('/channels/')[1];
                 result = await handleDeleteChannel(channelId, adminCtx);
+            } else if (path.includes('/partners/')) {
+                const partnerId = path.split('/partners/')[1];
+                result = await handleDeletePartner(partnerId);
             } else if (path.includes('/dots/')) {
                 const dotId = path.split('/dots/')[1];
                 result = await handleDeleteDot(dotId);
             } else if (path.includes('/invitations/')) {
                 const inviteId = path.split('/invitations/')[1];
                 result = await handleDeleteInvitation(inviteId);
+            } else if (path.includes('/channel-inventory/')) {
+                const invId = path.split('/channel-inventory/')[1];
+                result = await handleDeleteChannelInventory(invId, adminCtx);
             } else if (path.includes('/store-items/')) {
                 const itemId = path.split('/store-items/')[1];
                 result = await handleDeleteStoreItem(itemId);

@@ -10,7 +10,7 @@ import {
   GraduationCap, Video, FileText, Upload, ExternalLink, Play, BookOpen,
   Bug, AlertCircle, Image as ImageIcon,
   ClipboardList, ChevronUp, Send, Eye,
-  BarChart2,
+  BarChart2, Award, Archive, Box,
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
@@ -100,7 +100,7 @@ function LoginScreen({ onLogin }) {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans' },
     adminAccounts: { title: 'Admin Accounts', add: 'Add Admin', changePassword: 'Change Password', confirmDelete: 'Delete this admin account?', newPassword: 'New Password', usernameLabel: 'Username', passwordLabel: 'Password', count: (n) => `${n} account${n !== 1 ? 's' : ''}` },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
@@ -219,6 +219,25 @@ const T = {
       image: 'Image', uploadImage: 'Click to upload image (PNG / JPG)',
       uploading: 'Uploading…', uploadFailed: 'Image upload failed', removeImage: 'Remove image',
     },
+    inventory: {
+      selectChannel: 'Select a channel to manage its inventory',
+      addItem: 'Add Item', editItem: 'Edit Item', deleteItem: 'Delete Item',
+      noItems: 'No inventory items yet', noChannel: 'No channels available',
+      physical: 'Physical', virtual: 'Virtual',
+      itemType: 'Item Type', stock: 'Stock', stockUnlimited: 'Unlimited',
+      totalItems: 'Total Items', activeItems: 'Active', physicalItems: 'Physical', virtualItems: 'Virtual',
+      keyName: 'Key Name', nameEn: 'Name (EN)', nameZh: 'Name (ZH)',
+      descEn: 'Description (EN)', descZh: 'Description (ZH)',
+      unitEn: 'Unit (EN)', unitZh: 'Unit (ZH)',
+      priceCny: 'Price CNY (¥)', priceUsd: 'Price USD ($)',
+      stockQty: 'Stock Qty', stockHint: 'Leave blank for unlimited',
+      tag: 'Tag', sortOrder: 'Sort Order', active: 'Active',
+      image: 'Image', uploadImage: 'Click to upload image (PNG / JPG)',
+      uploading: 'Uploading…', uploadFailed: 'Image upload failed', removeImage: 'Remove image',
+      yes: 'Yes', no: 'No',
+      deleteWarning: (name) => ['Delete ', name, '? This cannot be undone.'],
+      saveFailed: 'Save failed', keyRequired: 'Key name is required', nameRequired: 'Name (EN) is required',
+    },
     invites: { active: 'Active', deactivated: 'Deactivated', unlimited: 'Unlimited' },
     rewards: {
       settingsTab: 'Settings', channelPayoutsTab: 'Channel Payouts', coachCommissionsTab: 'Coach Commissions',
@@ -233,6 +252,27 @@ const T = {
       noSettings: 'No settings found', noPayouts: 'No payouts', noCommissions: 'No commissions',
       generate: 'Generate', generating: 'Generating…', saved: 'Saved', saveFailed: 'Save failed',
       totalPayouts: 'Channel Payouts', pendingPayouts: 'Pending', totalCommissions: 'Coach Commissions', totalEarned: 'Total Commissions',
+    },
+    partners: {
+      addPartner: 'Add Partner', editPartner: 'Edit Partner', deactivatePartner: 'Deactivate',
+      partnersTab: 'Partners', commissionsTab: 'Commissions', payoutsTab: 'Payouts',
+      realName: 'Real Name *', phone: 'Phone *', tier: 'Tier *', entryFee: 'Entry Fee (¥) *',
+      channel: 'Channel', referredBy: 'Referred By', contractedAt: 'Contracted', status: 'Status', notes: 'Notes',
+      tierLight: 'Light Entrepreneur', tierLeader: 'Leader Partner', tierOps: 'Operations Center',
+      statusActive: 'Active', statusPending: 'Pending', statusInactive: 'Inactive',
+      totalPartners: 'Total Partners', activePartners: 'Active', totalEarned: 'Total Commissions (¥)', pendingPayouts: 'Pending Payouts',
+      partnerName: 'Name', upline: 'Upline', totalCommissions: 'Earnings',
+      sourceType: 'Type', amount: 'Amount (¥)', rate: 'Rate', baseAmount: 'Base (¥)', description: 'Description', date: 'Date',
+      typeReferral: 'Referral', typeSales: 'Sales', typeTeamPrimary: 'Team (1°)', typeTeamSecondary: 'Team (2°)', typeWholesale: 'Wholesale',
+      addCommission: 'Add Commission', partnerId: 'Partner ID *', sourcePartnerId: 'Source Partner ID',
+      generatePayouts: 'Generate Payouts', generating: 'Generating…', period: 'Period (YYYY-MM)',
+      payoutPeriod: 'Period', payoutTotal: 'Total (¥)', payoutStatus: 'Status',
+      approve: 'Approve', markTransferred: 'Mark Transferred',
+      draft: 'Draft', approved: 'Approved', transferred: 'Transferred',
+      noPartners: 'No partners yet', noCommissions: 'No commissions', noPayouts: 'No payouts',
+      saveFailed: 'Save failed', confirmDeactivate: 'Deactivate this partner?',
+      realNameRequired: 'Real name is required', phoneRequired: 'Phone is required',
+      tierRequired: 'Tier is required', entryFeeRequired: 'Entry fee is required',
     },
     addBatch: 'Add Batch', countBatch: (n) => `${n} batch${n !== 1 ? 'es' : ''}`,
     chips: {
@@ -330,7 +370,7 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案' },
     adminAccounts: { title: '管理员账号', add: '添加管理员', changePassword: '修改密码', confirmDelete: '确认删除此管理员账号？', newPassword: '新密码', usernameLabel: '用户名', passwordLabel: '密码', count: (n) => `${n} 个账号` },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
@@ -495,6 +535,25 @@ const T = {
       image: '图片', uploadImage: '点击上传图片（PNG / JPG）',
       uploading: '上传中…', uploadFailed: '图片上传失败', removeImage: '移除图片',
     },
+    inventory: {
+      selectChannel: '请选择渠道以管理库存',
+      addItem: '添加商品', editItem: '编辑商品', deleteItem: '删除商品',
+      noItems: '暂无库存商品', noChannel: '暂无渠道',
+      physical: '实体商品', virtual: '虚拟商品',
+      itemType: '商品类型', stock: '库存', stockUnlimited: '不限',
+      totalItems: '商品总数', activeItems: '上架中', physicalItems: '实体商品', virtualItems: '虚拟商品',
+      keyName: '唯一标识', nameEn: '名称（英文）', nameZh: '名称（中文）',
+      descEn: '描述（英文）', descZh: '描述（中文）',
+      unitEn: '单位（英文）', unitZh: '单位（中文）',
+      priceCny: '售价 CNY (¥)', priceUsd: '售价 USD ($)',
+      stockQty: '库存数量', stockHint: '留空表示不限',
+      tag: '标签', sortOrder: '排序', active: '上架',
+      image: '图片', uploadImage: '点击上传图片（PNG / JPG）',
+      uploading: '上传中…', uploadFailed: '图片上传失败', removeImage: '移除图片',
+      yes: '是', no: '否',
+      deleteWarning: (name) => ['删除 ', name, '？此操作不可撤销。'],
+      saveFailed: '保存失败', keyRequired: '请填写唯一标识', nameRequired: '请填写英文名称',
+    },
     invites: { active: '有效', deactivated: '已停用', unlimited: '不限' },
     rewards: {
       settingsTab: '费率设置', channelPayoutsTab: '渠道结算', coachCommissionsTab: 'Coach 佣金',
@@ -509,6 +568,27 @@ const T = {
       noSettings: '暂无设置', noPayouts: '暂无结算单', noCommissions: '暂无佣金记录',
       generate: '生成', generating: '生成中…', saved: '已保存', saveFailed: '保存失败',
       totalPayouts: '渠道结算', pendingPayouts: '待审批', totalCommissions: 'Coach 佣金', totalEarned: '佣金总额',
+    },
+    partners: {
+      addPartner: '新增合伙人', editPartner: '编辑合伙人', deactivatePartner: '停用',
+      partnersTab: '合伙人列表', commissionsTab: '佣金记录', payoutsTab: '结算单',
+      realName: '真实姓名 *', phone: '手机号 *', tier: '级别 *', entryFee: '入伙费 (¥) *',
+      channel: '渠道', referredBy: '推荐人', contractedAt: '签约时间', status: '状态', notes: '备注',
+      tierLight: '轻创合伙人', tierLeader: '领袖合伙人', tierOps: '运营中心',
+      statusActive: '正常', statusPending: '待审核', statusInactive: '已停用',
+      totalPartners: '合伙人总数', activePartners: '正常', totalEarned: '累计佣金 (¥)', pendingPayouts: '待结算',
+      partnerName: '姓名', upline: '推荐人', totalCommissions: '累计佣金',
+      sourceType: '类型', amount: '金额 (¥)', rate: '费率', baseAmount: '基数 (¥)', description: '描述', date: '时间',
+      typeReferral: '推荐收入', typeSales: '销售收入', typeTeamPrimary: '团队(一级)', typeTeamSecondary: '团队(二级)', typeWholesale: '差价收入',
+      addCommission: '新增佣金', partnerId: '合伙人ID *', sourcePartnerId: '来源合伙人ID',
+      generatePayouts: '生成结算单', generating: '生成中…', period: '周期 (YYYY-MM)',
+      payoutPeriod: '周期', payoutTotal: '金额 (¥)', payoutStatus: '状态',
+      approve: '审批通过', markTransferred: '标记已转账',
+      draft: '草稿', approved: '已审批', transferred: '已转账',
+      noPartners: '暂无合伙人', noCommissions: '暂无佣金记录', noPayouts: '暂无结算单',
+      saveFailed: '保存失败', confirmDeactivate: '确认停用此合伙人？',
+      realNameRequired: '请填写真实姓名', phoneRequired: '请填写手机号',
+      tierRequired: '请选择级别', entryFeeRequired: '请填写入伙费',
     },
     academy: {
       coursesTab: '课程', libraryTab: '文库', progressTab: '完成进度',
@@ -1776,6 +1856,409 @@ function DotsTab({ dots, onRefresh }) {
   );
 }
 
+// ── Channel Inventory ────────────────────────────────────────────────────────
+
+const EMPTY_INV_ITEM = {
+  key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '',
+  item_type: 'physical', unit_en: '', unit_zh: '',
+  price_cny: '', price_usd: '', stock_quantity: '',
+  tag: '', sort_order: 0, active: true, image_url: '',
+};
+
+function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
+  const { t } = useLang();
+  const ti = t.inventory;
+  const isEdit = !!item?.id;
+  const [form, setForm] = useState(isEdit
+    ? { key_name: item.key_name, name_en: item.name_en || '', name_zh: item.name_zh || '',
+        desc_en: item.desc_en || '', desc_zh: item.desc_zh || '',
+        item_type: item.item_type || 'physical', unit_en: item.unit_en || '', unit_zh: item.unit_zh || '',
+        price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '',
+        stock_quantity: item.stock_quantity ?? '',
+        tag: item.tag || '', sort_order: item.sort_order ?? 0,
+        active: item.active !== false, image_url: item.image_url || '' }
+    : { ...EMPTY_INV_ITEM });
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleImagePick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true); setUploadProgress(0); setError('');
+    try {
+      const presignRes = await axios.get('/api/oss/presign', {
+        params: { type: 'image', filename: file.name, category: 'inventory' },
+      });
+      if (!presignRes.data.success) throw new Error(presignRes.data.error || ti.uploadFailed);
+      const { url, get_url } = presignRes.data;
+      await uploadToOSS(url, file, setUploadProgress);
+      set('image_url', get_url);
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || ti.uploadFailed);
+    } finally { setUploading(false); }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.key_name.trim()) { setError(ti.keyRequired); return; }
+    if (!form.name_en.trim()) { setError(ti.nameRequired); return; }
+    setBusy(true); setError('');
+    const payload = {
+      ...form,
+      channel_id: channelId,
+      price_cny: form.price_cny !== '' ? form.price_cny : null,
+      price_usd: form.price_usd !== '' ? form.price_usd : null,
+      stock_quantity: form.stock_quantity !== '' ? parseInt(form.stock_quantity, 10) : null,
+    };
+    try {
+      if (isEdit) await axios.put(`/api/channel-inventory/${item.id}`, payload);
+      else await axios.post('/api/channel-inventory', payload);
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || ti.saveFailed); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{isEdit ? ti.editItem : ti.addItem}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field">
+              <span>{ti.keyName}</span>
+              <input value={form.key_name} onChange={e => set('key_name', e.target.value)} disabled={isEdit} placeholder="e.g. health-checkup-basic" />
+            </label>
+            <label className="form-field">
+              <span>{ti.itemType}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.item_type} onChange={e => set('item_type', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="physical">{ti.physical}</option>
+                  <option value="virtual">{ti.virtual}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{ti.nameEn}</span>
+              <input value={form.name_en} onChange={e => set('name_en', e.target.value)} placeholder="e.g. Basic Health Checkup" />
+            </label>
+            <label className="form-field">
+              <span>{ti.nameZh}</span>
+              <input value={form.name_zh} onChange={e => set('name_zh', e.target.value)} placeholder="例如 基础体检套餐" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ti.descEn}</span>
+              <input value={form.desc_en} onChange={e => set('desc_en', e.target.value)} placeholder="Short description in English" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ti.descZh}</span>
+              <input value={form.desc_zh} onChange={e => set('desc_zh', e.target.value)} placeholder="中文简短描述" />
+            </label>
+            <label className="form-field">
+              <span>{ti.unitEn}</span>
+              <input value={form.unit_en} onChange={e => set('unit_en', e.target.value)} placeholder="e.g. 1 session" />
+            </label>
+            <label className="form-field">
+              <span>{ti.unitZh}</span>
+              <input value={form.unit_zh} onChange={e => set('unit_zh', e.target.value)} placeholder="例如 1 次" />
+            </label>
+            <label className="form-field">
+              <span>{ti.priceCny}</span>
+              <input type="number" step="0.01" min="0" value={form.price_cny} onChange={e => set('price_cny', e.target.value)} placeholder="0.00" />
+            </label>
+            <label className="form-field">
+              <span>{ti.priceUsd}</span>
+              <input type="number" step="0.01" min="0" value={form.price_usd} onChange={e => set('price_usd', e.target.value)} placeholder="0.00" />
+            </label>
+            <label className="form-field">
+              <span>{ti.stockQty}</span>
+              <input type="number" min="0" step="1" value={form.stock_quantity} onChange={e => set('stock_quantity', e.target.value)} placeholder={ti.stockHint} />
+            </label>
+            <label className="form-field">
+              <span>{ti.tag}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.tag} onChange={e => set('tag', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">—</option>
+                  <option value="bestseller">Bestseller</option>
+                  <option value="value">Value</option>
+                  <option value="new">New</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{ti.sortOrder}</span>
+              <input type="number" min="0" value={form.sort_order} onChange={e => set('sort_order', e.target.value)} />
+            </label>
+            <label className="form-field">
+              <span>{ti.active}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.active ? 'true' : 'false'} onChange={e => set('active', e.target.value === 'true')} className="inline-select" style={{ width: '100%' }}>
+                  <option value="true">{ti.yes}</option>
+                  <option value="false">{ti.no}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span className="form-label-text">{ti.image}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginTop: 6 }}>
+                {form.image_url ? (
+                  <div style={{ position: 'relative', flexShrink: 0 }}>
+                    <img src={form.image_url} alt="" style={{ width: 80, height: 80, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(99,117,236,0.3)' }} />
+                    <button type="button" className="icon-btn" onClick={() => set('image_url', '')}
+                      style={{ position: 'absolute', top: -6, right: -6, background: '#0F2540', border: '1px solid rgba(99,117,236,0.4)', borderRadius: '50%', width: 22, height: 22, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <X size={12} />
+                    </button>
+                  </div>
+                ) : null}
+                <label className="upload-zone" style={{ flex: 1, minHeight: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: uploading ? 'wait' : 'pointer', flexDirection: 'column', gap: 6 }}>
+                  <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" style={{ display: 'none' }} onChange={handleImagePick} disabled={uploading} />
+                  {uploading ? (
+                    <>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>{ti.uploading}</span>
+                      <div className="upload-progress" style={{ width: '80%' }}>
+                        <div className="upload-progress-bar" style={{ width: `${uploadProgress}%` }} />
+                      </div>
+                    </>
+                  ) : (
+                    <span className="upload-zone-hint" style={{ textAlign: 'center' }}>
+                      {form.image_url ? '↺ ' : ''}{ti.uploadImage}
+                    </span>
+                  )}
+                </label>
+              </div>
+            </div>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={uploading}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={busy || uploading}>
+              <Check size={14} />{busy ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteInventoryItemConfirm({ item, onClose, onConfirm }) {
+  const { t } = useLang();
+  const ti = t.inventory;
+  const [busy, setBusy] = useState(false);
+  const handleDelete = async () => {
+    setBusy(true);
+    try { await axios.delete(`/api/channel-inventory/${item.id}`); onConfirm(); }
+    catch { /* silent */ } finally { setBusy(false); }
+  };
+  const warningParts = ti.deleteWarning(item.name_en || item.key_name);
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{ti.deleteItem}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginBottom: 20, color: '#475569' }}>
+            {warningParts[0]}<strong>{warningParts[1]}</strong>{warningParts[2]}
+          </p>
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn-danger" onClick={handleDelete} disabled={busy}>
+              <Trash2 size={14} />{busy ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InventoryTab({ channels, session, isSuperadmin }) {
+  const { t } = useLang();
+  const ti = t.inventory;
+  const [selectedChannelId, setSelectedChannelId] = useState(
+    isSuperadmin ? '' : (session?.channelId || '')
+  );
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState(null);
+
+  const fetchItems = useCallback(async (cid) => {
+    if (!cid) return;
+    setLoading(true);
+    try {
+      const res = await axios.get(`/api/channel-inventory?channel_id=${cid}`);
+      setItems(res.data.items || []);
+    } catch { setItems([]); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    fetchItems(selectedChannelId);
+  }, [selectedChannelId, fetchItems]);
+
+  const closeAndRefresh = () => { setModal(null); fetchItems(selectedChannelId); };
+
+  const activeCount   = items.filter(i => i.active).length;
+  const physicalCount = items.filter(i => i.item_type === 'physical').length;
+  const virtualCount  = items.filter(i => i.item_type === 'virtual').length;
+
+  const selectedChannel = channels.find(c => String(c.id) === String(selectedChannelId));
+
+  return (
+    <>
+      {isSuperadmin && (
+        <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Archive size={16} style={{ color: '#6366f1', flexShrink: 0 }} />
+          <div className="select-wrap">
+            <select
+              value={selectedChannelId}
+              onChange={e => { setSelectedChannelId(e.target.value); setItems([]); }}
+              className="inline-select"
+              style={{ minWidth: 200 }}
+            >
+              <option value="">— Select Channel —</option>
+              {channels.map(c => (
+                <option key={c.id} value={c.id}>{c.name || c.key_name}</option>
+              ))}
+            </select>
+            <ChevronDown size={11} className="select-chevron" />
+          </div>
+          {selectedChannel && (
+            <span style={{ color: '#94a3b8', fontSize: 13 }}>
+              {selectedChannel.name || selectedChannel.key_name}
+            </span>
+          )}
+        </div>
+      )}
+
+      {!selectedChannelId ? (
+        <div style={{ textAlign: 'center', padding: '60px 0', color: '#64748b' }}>
+          <Archive size={40} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.4 }} />
+          <p>{ti.selectChannel}</p>
+        </div>
+      ) : (
+        <>
+          <div className="stat-row">
+            <StatCard icon={Box}     label={ti.totalItems}    value={items.length}   color="#6366f1" />
+            <StatCard icon={Box}     label={ti.activeItems}   value={activeCount}    color="#10b981" />
+            <StatCard icon={Package} label={ti.physicalItems} value={physicalCount}  color="#3b82f6" />
+            <StatCard icon={Archive} label={ti.virtualItems}  value={virtualCount}   color="#8b5cf6" />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+              <Plus size={13} />{ti.addItem}
+            </button>
+          </div>
+
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>Loading…</div>
+          ) : items.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>
+              <Box size={32} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.4 }} />
+              <p>{ti.noItems}</p>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 56 }}></th>
+                    <th>Name</th>
+                    <th>{ti.itemType}</th>
+                    <th>{ti.priceCny}</th>
+                    <th>{ti.stock}</th>
+                    <th>{ti.active}</th>
+                    <th style={{ width: 80 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map(item => (
+                    <tr key={item.id}>
+                      <td>
+                        {item.image_url
+                          ? <img src={item.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover' }} />
+                          : <div style={{ width: 40, height: 40, borderRadius: 6, background: 'rgba(99,117,236,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Box size={16} style={{ color: '#6366f1', opacity: 0.5 }} /></div>
+                        }
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: '#EEF2FF', fontSize: 13 }}>{item.name_en || item.key_name}</div>
+                        {item.name_zh && <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.name_zh}</div>}
+                        <div style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace' }}>{item.key_name}</div>
+                      </td>
+                      <td>
+                        <Badge color={item.item_type === 'virtual' ? '#8b5cf6' : '#3b82f6'}>
+                          {item.item_type === 'virtual' ? ti.virtual : ti.physical}
+                        </Badge>
+                      </td>
+                      <td style={{ color: '#EEF2FF' }}>
+                        {item.price_cny != null ? `¥${Number(item.price_cny).toFixed(2)}` : '—'}
+                      </td>
+                      <td style={{ color: '#EEF2FF' }}>
+                        {item.stock_quantity != null ? item.stock_quantity : <span style={{ color: '#64748b' }}>{ti.stockUnlimited}</span>}
+                      </td>
+                      <td>
+                        <Badge color={item.active ? '#10b981' : '#64748b'}>
+                          {item.active ? ti.yes : ti.no}
+                        </Badge>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="icon-btn" title="Edit" onClick={() => setModal({ type: 'edit', item })}>
+                            <Pencil size={14} />
+                          </button>
+                          <button className="icon-btn" title="Delete" style={{ color: '#f87171' }} onClick={() => setModal({ type: 'delete', item })}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {modal?.type === 'add' && (
+        <ChannelInventoryItemModal
+          item={null}
+          channelId={selectedChannelId}
+          onClose={() => setModal(null)}
+          onSave={closeAndRefresh}
+        />
+      )}
+      {modal?.type === 'edit' && (
+        <ChannelInventoryItemModal
+          item={modal.item}
+          channelId={selectedChannelId}
+          onClose={() => setModal(null)}
+          onSave={closeAndRefresh}
+        />
+      )}
+      {modal?.type === 'delete' && (
+        <DeleteInventoryItemConfirm
+          item={modal.item}
+          onClose={() => setModal(null)}
+          onConfirm={closeAndRefresh}
+        />
+      )}
+    </>
+  );
+}
+
 // ── Store tab ─────────────────────────────────────────────────────────────────
 
 const EMPTY_ITEM = {
@@ -2876,6 +3359,389 @@ function AcademyTab() {
 
 // ── Rewards tab ───────────────────────────────────────────────────────────────
 
+function PartnersTab() {
+  const { t } = useLang();
+  const p = t.partners;
+  const [subTab, setSubTab] = useState('partners');
+  const [partners, setPartners] = useState([]);
+  const [commissions, setCommissions] = useState([]);
+  const [payouts, setPayouts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [generatePeriod, setGeneratePeriod] = useState(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({});
+  const [showForm, setShowForm] = useState(false);
+  const [formBusy, setFormBusy] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [commForm, setCommForm] = useState({});
+  const [showCommForm, setShowCommForm] = useState(false);
+  const [commBusy, setCommBusy] = useState(false);
+  const [commError, setCommError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [pRes, cRes, pyRes] = await Promise.all([
+        axios.get('/api/partners'),
+        axios.get('/api/partner-commissions'),
+        axios.get('/api/partner-payouts'),
+      ]);
+      setPartners(pRes.data.partners || []);
+      setCommissions(cRes.data.commissions || []);
+      setPayouts(pyRes.data.payouts || []);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const tierLabel = (tier) => ({ light_entrepreneur: p.tierLight, leader_partner: p.tierLeader, operations_center: p.tierOps }[tier] || tier);
+  const tierColor = (tier) => ({ light_entrepreneur: '#0ea5e9', leader_partner: '#8b5cf6', operations_center: '#f59e0b' }[tier] || '#64748b');
+  const statusColor = (s) => ({ active: '#16a34a', pending: '#f59e0b', inactive: '#94a3b8', draft: '#64748b', approved: '#2563eb', transferred: '#16a34a' }[s] || '#64748b');
+  const statusLabel = (s) => ({ active: p.statusActive, pending: p.statusPending, inactive: p.statusInactive, draft: p.draft, approved: p.approved, transferred: p.transferred }[s] || s);
+  const sourceLabel = (s) => ({ referral: p.typeReferral, sales: p.typeSales, team_primary: p.typeTeamPrimary, team_secondary: p.typeTeamSecondary, wholesale_margin: p.typeWholesale }[s] || s);
+
+  function openAdd() { setEditing(null); setForm({ status: 'active' }); setFormError(''); setShowForm(true); }
+  function openEdit(partner) { setEditing(partner); setForm({ ...partner }); setFormError(''); setShowForm(true); }
+
+  async function savePartner() {
+    if (!form.real_name) { setFormError(p.realNameRequired); return; }
+    if (!form.phone)     { setFormError(p.phoneRequired);    return; }
+    if (!form.tier)      { setFormError(p.tierRequired);     return; }
+    if (!form.entry_fee_paid) { setFormError(p.entryFeeRequired); return; }
+    setFormBusy(true); setFormError('');
+    try {
+      if (editing) await axios.put(`/api/partners/${editing.id}`, form);
+      else         await axios.post('/api/partners', form);
+      setShowForm(false);
+      await load();
+    } catch (err) { setFormError(err.response?.data?.error || p.saveFailed); }
+    finally { setFormBusy(false); }
+  }
+
+  async function deactivatePartner(id) {
+    if (!confirm(p.confirmDeactivate)) return;
+    try {
+      await axios.delete(`/api/partners/${id}`);
+      await load();
+    } catch { alert(p.saveFailed); }
+  }
+
+  async function saveCommission() {
+    if (!commForm.partner_id || !commForm.source_type || !commForm.amount_cny) { setCommError(p.saveFailed); return; }
+    setCommBusy(true); setCommError('');
+    try {
+      await axios.post('/api/partner-commissions', commForm);
+      setShowCommForm(false);
+      setCommForm({});
+      await load();
+    } catch (err) { setCommError(err.response?.data?.error || p.saveFailed); }
+    finally { setCommBusy(false); }
+  }
+
+  async function generatePayouts() {
+    if (!generatePeriod) return;
+    setGenerating(true);
+    try {
+      await axios.post('/api/generate-partner-payouts', { period: generatePeriod });
+      await load();
+    } finally { setGenerating(false); }
+  }
+
+  async function updatePayout(id, status) {
+    try {
+      await axios.put(`/api/partner-payouts/${id}`, { status });
+      setPayouts(prev => prev.map(py => py.id === id ? { ...py, status } : py));
+    } catch { alert(p.saveFailed); }
+  }
+
+  const activeCount = partners.filter(pt => pt.status === 'active').length;
+  const totalEarned = commissions.reduce((sum, c) => sum + Number(c.amount_cny || 0), 0);
+  const pendingPayoutCount = payouts.filter(py => py.status === 'draft').length;
+
+  const TIERS = [
+    { value: 'light_entrepreneur', label: p.tierLight },
+    { value: 'leader_partner', label: p.tierLeader },
+    { value: 'operations_center', label: p.tierOps },
+  ];
+  const SOURCE_TYPES = [
+    { value: 'referral', label: p.typeReferral },
+    { value: 'sales', label: p.typeSales },
+    { value: 'team_primary', label: p.typeTeamPrimary },
+    { value: 'team_secondary', label: p.typeTeamSecondary },
+    { value: 'wholesale_margin', label: p.typeWholesale },
+  ];
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={Users}      label={p.totalPartners}    value={partners.length}                 color="#6366f1" />
+        <StatCard icon={Users}      label={p.activePartners}   value={activeCount}                     color="#16a34a" />
+        <StatCard icon={Coins}      label={p.totalEarned}      value={`¥${totalEarned.toFixed(0)}`}   color="#10b981" />
+        <StatCard icon={TrendingUp} label={p.pendingPayouts}   value={pendingPayoutCount}              color="#f59e0b" />
+      </div>
+
+      <div className="subtab-row">
+        <button className={`subtab-btn${subTab === 'partners' ? ' active' : ''}`} onClick={() => setSubTab('partners')}>
+          <Users size={13} /> {p.partnersTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'commissions' ? ' active' : ''}`} onClick={() => setSubTab('commissions')}>
+          <Coins size={13} /> {p.commissionsTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'payouts' ? ' active' : ''}`} onClick={() => setSubTab('payouts')}>
+          <TrendingUp size={13} /> {p.payoutsTab}
+        </button>
+      </div>
+
+      {loading && <div className="card" style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>Loading…</div>}
+
+      {!loading && subTab === 'partners' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{partners.length} partner{partners.length !== 1 ? 's' : ''}</span>
+            <button className="btn-primary" onClick={openAdd}><Plus size={13} />{p.addPartner}</button>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>#</th><th>{p.realName}</th><th>{p.tier}</th><th>{p.status}</th>
+                <th>{p.channel}</th><th>{p.upline}</th><th>{p.totalCommissions}</th>
+                <th>{p.entryFee}</th><th>{p.contractedAt}</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {partners.length === 0 && <tr><td colSpan={10} className="empty-row">{p.noPartners}</td></tr>}
+              {partners.map(pt => (
+                <tr key={pt.id}>
+                  <td className="muted">{pt.id}</td>
+                  <td className="bold">{pt.real_name}</td>
+                  <td><Badge color={tierColor(pt.tier)}>{tierLabel(pt.tier)}</Badge></td>
+                  <td><Badge color={statusColor(pt.status)}>{statusLabel(pt.status)}</Badge></td>
+                  <td>{pt.channel_name || <span className="muted">—</span>}</td>
+                  <td>{pt.upline_name ? <span>{pt.upline_name} <Badge color={tierColor(pt.upline_tier)} style={{ fontSize: 10 }}>{tierLabel(pt.upline_tier)}</Badge></span> : <span className="muted">—</span>}</td>
+                  <td className="bold">¥{Number(pt.total_commissions_cny || 0).toFixed(2)}</td>
+                  <td>¥{Number(pt.entry_fee_paid).toFixed(0)}</td>
+                  <td className="muted">{fmtDate(pt.contracted_at)}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" title={p.editPartner} onClick={() => openEdit(pt)}><Pencil size={14} /></button>
+                      {pt.status !== 'inactive' &&
+                        <button className="icon-btn" title={p.deactivatePartner} onClick={() => deactivatePartner(pt.id)}><Trash2 size={14} /></button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!loading && subTab === 'commissions' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{commissions.length} commission{commissions.length !== 1 ? 's' : ''}</span>
+            <button className="btn-primary" onClick={() => setShowCommForm(true)}><Plus size={13} />{p.addCommission}</button>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{p.partnerName}</th><th>{p.sourceType}</th><th>{p.amount}</th>
+                <th>{p.rate}</th><th>{p.baseAmount}</th><th>{p.description}</th><th>{p.status}</th><th>{p.date}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {commissions.length === 0 && <tr><td colSpan={8} className="empty-row">{p.noCommissions}</td></tr>}
+              {commissions.map(c => (
+                <tr key={c.id}>
+                  <td className="bold">{c.partner_name || c.partner_id}</td>
+                  <td><Badge color="#6366f1">{sourceLabel(c.source_type)}</Badge></td>
+                  <td className="bold">¥{Number(c.amount_cny).toFixed(2)}</td>
+                  <td className="muted">{c.rate != null ? `${(c.rate * 100).toFixed(0)}%` : '—'}</td>
+                  <td className="muted">{c.base_amount != null ? `¥${Number(c.base_amount).toFixed(0)}` : '—'}</td>
+                  <td className="muted" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.description || '—'}</td>
+                  <td><Badge color={statusColor(c.status)}>{statusLabel(c.status)}</Badge></td>
+                  <td className="muted">{fmtDate(c.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!loading && subTab === 'payouts' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{payouts.length} payout{payouts.length !== 1 ? 's' : ''}</span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input value={generatePeriod} onChange={e => setGeneratePeriod(e.target.value)}
+                placeholder="YYYY-MM" style={{ width: 110 }} />
+              <button className="btn-primary" onClick={generatePayouts} disabled={generating}>
+                <TrendingUp size={13} />{generating ? p.generating : p.generatePayouts}
+              </button>
+            </div>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{p.partnerName}</th><th>{p.tier}</th><th>{p.payoutPeriod}</th>
+                <th>{p.payoutTotal}</th><th>{p.payoutStatus}</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {payouts.length === 0 && <tr><td colSpan={6} className="empty-row">{p.noPayouts}</td></tr>}
+              {payouts.map(py => (
+                <tr key={py.id}>
+                  <td className="bold">{py.partner_name || py.partner_id}</td>
+                  <td><Badge color={tierColor(py.partner_tier)}>{tierLabel(py.partner_tier)}</Badge></td>
+                  <td><code className="code-tag">{py.period}</code></td>
+                  <td className="bold">¥{Number(py.total_cny).toFixed(2)}</td>
+                  <td><Badge color={statusColor(py.status)}>{statusLabel(py.status)}</Badge></td>
+                  <td>
+                    <div className="row-actions">
+                      {py.status === 'draft' &&
+                        <button className="icon-btn" title={p.approve} onClick={() => updatePayout(py.id, 'approved')}><Check size={14} /></button>}
+                      {py.status === 'approved' &&
+                        <button className="icon-btn" title={p.markTransferred} onClick={() => updatePayout(py.id, 'transferred')}><ChevronRight size={14} /></button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showForm && (
+        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span>{editing ? p.editPartner : p.addPartner}</span>
+              <button className="icon-btn" onClick={() => setShowForm(false)}><X size={16} /></button>
+            </div>
+            <form onSubmit={e => { e.preventDefault(); savePartner(); }}>
+              <div className="modal-body" style={{ maxHeight: '62vh', overflowY: 'auto' }}>
+                <div className="form-grid">
+                  <label className="form-field">
+                    <span>{p.realName}</span>
+                    <input value={form.real_name || ''} onChange={e => setForm(f => ({ ...f, real_name: e.target.value }))} />
+                  </label>
+                  <label className="form-field">
+                    <span>{p.phone}</span>
+                    <input value={form.phone || ''} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+                  </label>
+                  <label className="form-field">
+                    <span>{p.tier}</span>
+                    <div className="select-wrap" style={{ width: '100%' }}>
+                      <select value={form.tier || ''} onChange={e => setForm(f => ({ ...f, tier: e.target.value }))} className="inline-select" style={{ width: '100%' }}>
+                        <option value="">—</option>
+                        {TIERS.map(tier => <option key={tier.value} value={tier.value}>{tier.label}</option>)}
+                      </select>
+                      <ChevronDown size={11} className="select-chevron" />
+                    </div>
+                  </label>
+                  <label className="form-field">
+                    <span>{p.entryFee}</span>
+                    <input type="number" value={form.entry_fee_paid || ''} onChange={e => setForm(f => ({ ...f, entry_fee_paid: e.target.value }))} />
+                  </label>
+                  <label className="form-field">
+                    <span>{p.referredBy} (ID)</span>
+                    <input type="number" value={form.referred_by_partner_id || ''} onChange={e => setForm(f => ({ ...f, referred_by_partner_id: e.target.value || null }))} placeholder="Partner ID" />
+                  </label>
+                  <label className="form-field">
+                    <span>{p.status}</span>
+                    <div className="select-wrap" style={{ width: '100%' }}>
+                      <select value={form.status || 'active'} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} className="inline-select" style={{ width: '100%' }}>
+                        <option value="active">{p.statusActive}</option>
+                        <option value="pending">{p.statusPending}</option>
+                        <option value="inactive">{p.statusInactive}</option>
+                      </select>
+                      <ChevronDown size={11} className="select-chevron" />
+                    </div>
+                  </label>
+                  <label className="form-field">
+                    <span>{p.contractedAt}</span>
+                    <input type="date" value={form.contracted_at ? form.contracted_at.slice(0, 10) : ''} onChange={e => setForm(f => ({ ...f, contracted_at: e.target.value || null }))} />
+                  </label>
+                  <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                    <span>{p.notes}</span>
+                    <textarea rows={3} value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={{ width: '100%', resize: 'vertical' }} />
+                  </label>
+                </div>
+                {formError && <div className="form-error">{formError}</div>}
+              </div>
+              <div className="modal-footer" style={{ padding: '12px 20px 16px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setShowForm(false)} disabled={formBusy}>{t.modal.cancel}</button>
+                <button type="submit" className="btn-primary" disabled={formBusy}>
+                  <Check size={14} />{formBusy ? t.modal.saving : t.modal.save}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showCommForm && (
+        <div className="modal-overlay" onClick={() => setShowCommForm(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span>{p.addCommission}</span>
+              <button className="icon-btn" onClick={() => setShowCommForm(false)}><X size={16} /></button>
+            </div>
+            <form onSubmit={e => { e.preventDefault(); saveCommission(); }}>
+              <div className="modal-body">
+                <div className="form-grid">
+                  <label className="form-field">
+                    <span>{p.partnerId}</span>
+                    <input type="number" value={commForm.partner_id || ''} onChange={e => setCommForm(f => ({ ...f, partner_id: e.target.value }))} />
+                  </label>
+                  <label className="form-field">
+                    <span>{p.sourceType}</span>
+                    <div className="select-wrap" style={{ width: '100%' }}>
+                      <select value={commForm.source_type || ''} onChange={e => setCommForm(f => ({ ...f, source_type: e.target.value }))} className="inline-select" style={{ width: '100%' }}>
+                        <option value="">—</option>
+                        {SOURCE_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                      </select>
+                      <ChevronDown size={11} className="select-chevron" />
+                    </div>
+                  </label>
+                  <label className="form-field">
+                    <span>{p.amount}</span>
+                    <input type="number" step="0.01" value={commForm.amount_cny || ''} onChange={e => setCommForm(f => ({ ...f, amount_cny: e.target.value }))} />
+                  </label>
+                  <label className="form-field">
+                    <span>{p.sourcePartnerId}</span>
+                    <input type="number" value={commForm.source_partner_id || ''} onChange={e => setCommForm(f => ({ ...f, source_partner_id: e.target.value || null }))} />
+                  </label>
+                  <label className="form-field">
+                    <span>{p.baseAmount}</span>
+                    <input type="number" step="0.01" value={commForm.base_amount || ''} onChange={e => setCommForm(f => ({ ...f, base_amount: e.target.value }))} />
+                  </label>
+                  <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                    <span>{p.description}</span>
+                    <input value={commForm.description || ''} onChange={e => setCommForm(f => ({ ...f, description: e.target.value }))} style={{ width: '100%' }} />
+                  </label>
+                </div>
+                {commError && <div className="form-error">{commError}</div>}
+              </div>
+              <div className="modal-footer" style={{ padding: '12px 20px 16px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setShowCommForm(false)} disabled={commBusy}>{t.modal.cancel}</button>
+                <button type="submit" className="btn-primary" disabled={commBusy}>
+                  <Check size={14} />{commBusy ? t.modal.saving : t.modal.save}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function RewardsTab() {
   const { t } = useLang();
   const r = t.rewards;
@@ -3257,6 +4123,7 @@ const CONFIGURABLE_TABS = [
   { id: 'coaches',        label: 'Coaches' },
   { id: 'dots',           label: 'Dots' },
   { id: 'store',          label: 'Store' },
+  { id: 'inventory',      label: 'Inventory' },
   { id: 'kino',           label: 'Kino' },
   { id: 'chips',          label: 'Chips' },
   { id: 'invites',        label: 'Invites' },
@@ -6837,13 +7704,15 @@ function AdminPanel({ session, onLogout }) {
     { id: 'users',    label: t.nav.users,    icon: Users       },
     { id: 'coaches',  label: t.nav.coaches,  icon: UserCog     },
     { id: 'dots',     label: t.nav.dots,     icon: Droplets    },
-    { id: 'store',    label: t.nav.store,    icon: ShoppingBag },
-    { id: 'channels', label: t.nav.channels, icon: Building2   },
+    { id: 'store',     label: t.nav.store,      icon: ShoppingBag },
+    { id: 'inventory', label: t.nav.inventory,  icon: Archive     },
+    { id: 'channels',  label: t.nav.channels,   icon: Building2   },
     { id: 'kino',     label: t.nav.kino,     icon: Cpu         },
     { id: 'chips',    label: t.nav.chips,    icon: Layers      },
     { id: 'invites',  label: t.nav.invites,  icon: Tag         },
-    { id: 'rewards',  label: t.nav.rewards,  icon: Coins          },
-    { id: 'academy',  label: t.nav.academy,  icon: GraduationCap  },
+    { id: 'rewards',   label: t.nav.rewards,   icon: Coins          },
+    { id: 'partners',  label: t.nav.partners,  icon: Award          },
+    { id: 'academy',   label: t.nav.academy,   icon: GraduationCap  },
     { id: 'questionnaires', label: t.nav.questionnaires, icon: ClipboardList },
     { id: 'health-plans',   label: t.nav.healthPlans,    icon: Activity      },
     { id: 'reports',        label: t.nav.reports,        icon: BarChart2     },
@@ -6901,13 +7770,15 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'users'    && <UsersTab    users={data.users} coaches={data.coaches} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'dots'     && <DotsTab     dots={data.dots} onRefresh={fetchData} />}
-          {tab === 'store'    && <StoreTab    storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
-          {tab === 'channels' && <ChannelTab  channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} />}
+          {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
+          {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} />}
+          {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} />}
           {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
           {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} onRefresh={fetchData} />}
-          {tab === 'rewards'  && <RewardsTab />}
-          {tab === 'academy'  && <AcademyTab />}
+          {tab === 'rewards'   && <RewardsTab />}
+          {tab === 'partners'  && <PartnersTab />}
+          {tab === 'academy'   && <AcademyTab />}
           {tab === 'questionnaires' && <QuestionnairesTab channels={data.channels} users={data.users} coaches={data.coaches} />}
           {tab === 'health-plans'   && <HealthPlansTab dots={data.dots} healthPlanTemplates={data.healthPlanTemplates || []} onRefresh={fetchData} />}
           {tab === 'reports'        && <ReportsTab />}
