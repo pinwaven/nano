@@ -1593,11 +1593,18 @@ Page({
 
   handleToggleCondition(e) {
     const key = e.currentTarget.dataset.key
-    const list = this.data.obConditionList.map(item =>
-      item.key === key ? { ...item, selected: !item.selected } : item
-    )
-    const hasOtherOpt = list.some(i => i.key === 'other')
-    const otherSelected = hasOtherOpt && list.some(i => i.key === 'other' && i.selected)
+    let list
+    if (key === 'none') {
+      // selecting "none" clears everything else
+      list = this.data.obConditionList.map(item => ({ ...item, selected: item.key === 'none' }))
+    } else {
+      // selecting any real option deselects "none", then toggles the tapped item
+      list = this.data.obConditionList.map(item => {
+        if (item.key === 'none') return { ...item, selected: false }
+        return item.key === key ? { ...item, selected: !item.selected } : item
+      })
+    }
+    const otherSelected = list.some(i => i.key === 'other' && i.selected)
     this.setData({
       obConditionList: list,
       obConditions: list.filter(i => i.selected).map(i => i.key),
