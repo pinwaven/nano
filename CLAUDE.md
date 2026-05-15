@@ -137,7 +137,9 @@ Full details: `docs/architecture/database-migrations.md`
 
 ## 11. The Four Sub Bio Ages
 
-Waven Nano measures biological age across four independent dimensions. Each dimension produces a **sub-age** (in years) that contributes equally to the combined `BioAge`. The calculator lives in `src/lib/bioage/BioAgeCalculator.js`.
+Waven Nano measures biological age across four independent dimensions. Each dimension produces a **sub-age** (in years) that contributes equally to the combined `BioAge`.
+
+> **Canonical source:** When referring to `BiomarkerEstimator` or `BioAgeCalculator`, the canonical (production) versions are in `src/functions/worker/lib/`. The copies under `src/lib/` are mirrors kept in sync but are not used at runtime. All calibration changes, tests, and fixes go to the worker copies first.
 
 ### Canonical keys
 
