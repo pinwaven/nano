@@ -110,7 +110,7 @@ class BiomarkerEstimator {
 
   estimateHsCRP() {
     const valProvided = this.testResults.hsCRP;
-    if (valProvided !== undefined && valProvided >= 0.5 && valProvided <= 2.5) {
+    if (valProvided !== undefined && valProvided >= 0.2 && valProvided <= 2.5) {
       this.estimates.hscrp = valProvided;
       this.referenceData.hscrp = 'mg/L';
       return;
