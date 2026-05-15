@@ -15,11 +15,25 @@ const TAG_REGISTRY = Object.freeze({
   weight_gain_recent:      { GA: ['+', 0.4],  hsCRP: ['*', 1.05] },
   diabetes_prediabetic:    { GA: ['+', 1.0] },
   diabetes_diagnosed:      { GA: ['+', 2.0] },
+  hypertension:            { CystatinC: ['*', 1.15], hsCRP: ['*', 1.10] },
+  hyperlipidemia:          { hsCRP: ['*', 1.15], GA: ['+', 0.5] },
+  fatty_liver:             { IL6: ['*', 1.25], hsCRP: ['*', 1.20] },
+  hyperuricemia:           { CystatinC: ['*', 1.10], hsCRP: ['*', 1.10] },
+  cardiovascular_history:  { CystatinC: ['*', 1.20], hsCRP: ['*', 1.15] },
 });
 
 const TAG_ALIASES = Object.freeze({
   '糖尿病前期': 'diabetes_prediabetic',
   '糖尿病': 'diabetes_diagnosed',
+  '血糖高': 'diabetes_prediabetic',
+  '血压高': 'hypertension',
+  '血脂高': 'hyperlipidemia',
+  '胆固醇高': 'hyperlipidemia',
+  '心脏问题': 'cardiovascular_history',
+  '痛风或尿酸高': 'hyperuricemia',
+  '肾病': 'hypertension',
+  '睡眠不足': 'inflammation_load_high',
+  '高血压': 'hypertension',
 });
 
 const VALID_BIOMARKER_KEYS = new Set(['GDF15', 'IL6', 'hsCRP', 'GA', 'CystatinC', 'CD38']);

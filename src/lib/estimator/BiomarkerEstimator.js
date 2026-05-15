@@ -75,11 +75,13 @@ class BiomarkerEstimator {
     let val = 400 + 10 * Math.exp(0.055 * this.age);
     const bmi = this.getBMI();
     
-    // Smooth scaling: ~1.1 at 25, ~1.2 at 30, ~1.3 at 35
     if (bmi > 22) {
-      val *= (1 + (bmi - 22) * 0.023);
+      val *= (1 + (bmi - 22) * 0.05);
     }
 
+    if (this.age > 55) {
+      val *= (1 + 0.03 * (this.age - 55));
+    }
     val = this.applyTagAdjustments('GDF15', val);
     val = this.applyBiologicalNoise(val, 0.35);
     this.estimates.gdf15 = Math.round(val);
@@ -96,9 +98,8 @@ class BiomarkerEstimator {
     if (this.age > 30) val += Math.pow(this.age - 30, 2.0) / 450;
     
     const bmi = this.getBMI();
-    // Power law scaling for inflammation
-    if (bmi > 25) {
-      val *= (1 + 0.005 * Math.pow(bmi - 25, 1.8));
+    if (bmi > 23) {
+      val += 0.06 * Math.pow(bmi - 23, 1.5);
     }
 
     val = this.applyTagAdjustments('IL6', val);
@@ -116,8 +117,8 @@ class BiomarkerEstimator {
       return;
     }
     const slope = (3.0 - 1.2) / 60;
-    let val = -0.1 + slope * this.age;
-    if (this.age > 65) val *= 1.1;
+    let val = -0.3 + slope * this.age;
+    if (this.age > 65) val *= 1.35;
 
     const bmi = this.getBMI();
     // BMI is a strong, non-linear driver of CRP
@@ -138,7 +139,7 @@ class BiomarkerEstimator {
       this.referenceData.ga = '%';
       return;
     }
-    let val = 11.9 + this.age * 0.02;
+    let val = 13.0 + this.age * 0.02;
     const bmi = this.getBMI();
     if (bmi > 22) {
       val += 0.015 * Math.pow(bmi - 22, 1.6);
@@ -165,7 +166,7 @@ class BiomarkerEstimator {
       val += (this.age - 20) * 0.002;
     }
     val = this.applyTagAdjustments('CystatinC', val);
-    val = this.applyBiologicalNoise(val, 0.25);
+    val = this.applyBiologicalNoise(val, 0.03);
     this.estimates.cystatinC = parseFloat(val.toFixed(2));
     this.referenceData.cystatinC = 'mg/L';
   }

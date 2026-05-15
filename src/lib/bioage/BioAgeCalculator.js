@@ -30,7 +30,7 @@ class BioAgeCalculator {
     this.CD38_SLOPE = 4.5;     // Linear penalty per fold-change above 1.0
 
     // MicroVascular (Cystatin C)
-    this.CYS_K       = 2.0;    // Decay constant
+    this.CYS_K       = 1.3;    // Decay constant
     this.CYS_OPTIMAL = 0.68;   // Max-score threshold (mg/L)
 
     // Deficit Accumulation Model (Gompertz-calibrated to Chinese population statistics)
@@ -38,7 +38,7 @@ class BioAgeCalculator {
     this.BASELINE_AGE     = 25;
     
     // Fit: mFI = A * e^(B * age)
-    this.GOMPERTZ_A      = 0.0276; 
+    this.GOMPERTZ_A      = 0.0330;
     this.GOMPERTZ_B      = 0.0415;
 
     // Soft-compression scales (non-hard caps)

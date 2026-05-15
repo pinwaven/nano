@@ -58,6 +58,14 @@ class BiomarkerEstimator {
     return this.estimates;
   }
 
+  getBMI() {
+    if (this.biometrics.BMI !== undefined) return this.biometrics.BMI;
+    if (this.biometrics.Weight !== undefined && this.biometrics.Height !== undefined) {
+      return this.biometrics.Weight / Math.pow(this.biometrics.Height / 100, 2);
+    }
+    return 22; // Default "healthy" BMI
+  }
+
   estimateGDF15() {
     if (this.testResults.GDF15 !== undefined) {
       this.estimates.gdf15 = this.testResults.GDF15;
@@ -65,13 +73,17 @@ class BiomarkerEstimator {
       return;
     }
     let val = 400 + 10 * Math.exp(0.055 * this.age);
-    if (this.biometrics.Weight !== undefined && this.biometrics.Height !== undefined) {
-      const bmi = this.biometrics.Weight / Math.pow(this.biometrics.Height / 100, 2);
-      if (bmi >= 25) val *= 1.1;
-      if (bmi >= 30) val *= 1.2;
+    const bmi = this.getBMI();
+    
+    if (bmi > 22) {
+      val *= (1 + (bmi - 22) * 0.05);
+    }
+
+    if (this.age > 55) {
+      val *= (1 + 0.03 * (this.age - 55));
     }
     val = this.applyTagAdjustments('GDF15', val);
-    val = this.applyBiologicalNoise(val, 0.25);
+    val = this.applyBiologicalNoise(val, 0.35);
     this.estimates.gdf15 = Math.round(val);
     this.referenceData.gdf15 = 'pg/mL';
   }
@@ -84,8 +96,14 @@ class BiomarkerEstimator {
     }
     let val = 0.5;
     if (this.age > 30) val += Math.pow(this.age - 30, 2.0) / 450;
+    
+    const bmi = this.getBMI();
+    if (bmi > 23) {
+      val += 0.06 * Math.pow(bmi - 23, 1.5);
+    }
+
     val = this.applyTagAdjustments('IL6', val);
-    val = this.applyBiologicalNoise(val, 0.30);
+    val = this.applyBiologicalNoise(val, 0.40);
     val = Math.max(0.1, val);
     this.estimates.il6 = parseFloat(val.toFixed(2));
     this.referenceData.il6 = 'pg/mL';
@@ -99,10 +117,18 @@ class BiomarkerEstimator {
       return;
     }
     const slope = (3.0 - 1.2) / 60;
-    let val = -0.1 + slope * this.age;
-    if (this.age > 65) val *= 1.1;
+    let val = -0.3 + slope * this.age;
+    if (this.age > 65) val *= 1.35;
+
+    const bmi = this.getBMI();
+    // BMI is a strong, non-linear driver of CRP
+    if (bmi > 22) {
+      val += 0.03 * Math.pow(bmi - 22, 1.7);
+    }
+
     val = this.applyTagAdjustments('hsCRP', val);
-    val = this.applyBiologicalNoise(val, 0.20);
+    val = this.applyBiologicalNoise(val, 0.30);
+    val = Math.max(0.1, val);
     this.estimates.hscrp = parseFloat(val.toFixed(2));
     this.referenceData.hscrp = 'mg/L';
   }
@@ -113,14 +139,14 @@ class BiomarkerEstimator {
       this.referenceData.ga = '%';
       return;
     }
-    let val = 11.9 + this.age * 0.02;
-    if (this.biometrics.Weight !== undefined && this.biometrics.Height !== undefined) {
-      const bmi = this.biometrics.Weight / Math.pow(this.biometrics.Height / 100, 2);
-      if (bmi >= 25) val += 0.5;
-      if (bmi >= 30) val += 1.0;
+    let val = 13.0 + this.age * 0.02;
+    const bmi = this.getBMI();
+    if (bmi > 22) {
+      val += 0.015 * Math.pow(bmi - 22, 1.6);
     }
+
     val = this.applyTagAdjustments('GA', val);
-    val = this.applyBiologicalNoise(val, 0.05);
+    val = this.applyBiologicalNoise(val, 0.25);
     this.estimates.ga = parseFloat(val.toFixed(1));
     this.referenceData.ga = '%';
   }
@@ -153,7 +179,7 @@ class BiomarkerEstimator {
     }
     let val = 1.0 + (this.age - 20) * (2.0 / 60);
     val = this.applyTagAdjustments('CD38', val);
-    val = this.applyBiologicalNoise(val, 0.15);
+    val = this.applyBiologicalNoise(val, 0.25);
     this.estimates.cd38 = parseFloat(val.toFixed(1));
     this.referenceData.cd38 = 'xBaseline';
   }
