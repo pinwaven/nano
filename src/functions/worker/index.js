@@ -3576,15 +3576,18 @@ async function handlePostBiomarkers(body) {
 
         const tagContext = await fetchTagDerivationContext(user_id);
         const tags = deriveTags(tagContext);
-        const scanDate = (tested_at || new Date().toISOString()).slice(0, 10);
-        const seed = `${user_id}:${scanDate}`;
+        const scanTimestamp = tested_at || new Date().toISOString();
+        const scanDate = scanTimestamp.slice(0, 10);
+        const weekBucket = Math.floor(new Date(scanDate).getTime() / (7 * 24 * 60 * 60 * 1000));
+        const persistentSeed = `${user_id}:w${weekBucket}`;
+        const seed = `${user_id}:${scanTimestamp}`;
         console.log(JSON.stringify({
             level: 'INFO',
             msg: 'biomarker_tags_derived',
             data: { user_id, tags, compliance: tagContext.compliance, history_count: tagContext.history.length, weight_count: tagContext.weightHistory.length }
         }));
 
-        const estimator = new BiomarkerEstimator(age, test_data, { Weight: bioData.weight, Height: bioData.height }, tags, { seed });
+        const estimator = new BiomarkerEstimator(age, test_data, { Weight: bioData.weight, Height: bioData.height }, tags, { seed, persistentSeed });
         const estimationReport = estimator.generateReport();
         const bioAgeCalc = new BioAgeCalculator();
         const bioAgeReport = bioAgeCalc.calculateBioAge(age, estimationReport.BiomarkerValues);

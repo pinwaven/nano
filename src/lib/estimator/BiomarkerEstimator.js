@@ -23,6 +23,7 @@ class BiomarkerEstimator {
     this.biometrics = { ...biometrics };
     this.tags = tags.map(normalizeTag).filter(t => TAG_REGISTRY[t]);
     this.referenceData = {};
+    this.persistentRand = options.persistentSeed ? mulberry32(hashSeed(options.persistentSeed)) : Math.random;
     this.rand = options.seed ? mulberry32(hashSeed(options.seed)) : Math.random;
   }
 
@@ -36,15 +37,20 @@ class BiomarkerEstimator {
     return value;
   }
 
-  applyBiologicalNoise(value, variancePercent) {
-    // Box-Muller normal noise; variancePercent ≈ 3σ (99.7% within ±variance).
+  _normalSample(rng, stdDev) {
     let u = 0, v = 0;
-    while (u === 0) u = this.rand();
-    while (v === 0) v = this.rand();
-    const num = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
-    const stdDev = variancePercent / 3;
-    const noiseMultiplier = 1 + (num * stdDev);
-    const cappedMultiplier = Math.max(1 - variancePercent, Math.min(1 + variancePercent, noiseMultiplier));
+    while (u === 0) u = rng();
+    while (v === 0) v = rng();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v) * stdDev;
+  }
+
+  applyBiologicalNoise(value, variancePercent) {
+    // Two-component noise: slow (persistent, weekly) + fast (per-scan measurement).
+    // Fractions sqrt(0.8) and sqrt(0.4) preserve total variance: 0.8 + 0.2 = 1.
+    const baseStdDev = variancePercent / 3;
+    const slowDev = this._normalSample(this.persistentRand, baseStdDev * Math.sqrt(0.8));
+    const fastDev = this._normalSample(this.rand,           baseStdDev * Math.sqrt(0.2));
+    const cappedMultiplier = Math.max(1 - variancePercent, Math.min(1 + variancePercent, 1 + slowDev + fastDev));
     return value * cappedMultiplier;
   }
 
