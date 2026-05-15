@@ -9,7 +9,7 @@ const T = {
     back: '返回',
     refresh: '刷新',
     loading: '加载中…',
-    tabs: { clients: '我的客户', invites: '邀请码', earnings: '我的收益', questionnaires: '问卷', training: '培训' },
+    tabs: { clients: '我的客户', invites: '邀请码', earnings: '我的收益', questionnaires: '问卷', training: '培训', crm: '客户管理' },
     lightMode: '浅色模式',
     darkMode: '深色模式',
     kinoSimMenu: 'Kino 模拟器',
@@ -91,6 +91,19 @@ const T = {
       responsesTitle: '问卷回答',
       noResponses: '暂无回答记录',
     },
+    tabNotes: '笔记', tabGoals: '目标',
+    noNotes: '暂无笔记', addNotePh: '添加笔记…', saveNote: '保存', notePin: '置顶', noteUnpin: '取消置顶', noteDelete: '删除',
+    noGoals: '暂无目标', setGoal: '+ 设定目标', goalAchieved: '✓ 已达成', goalActive: '进行中', goalMissed: '未完成',
+    goalTypeLabel: '目标类型', goalTargetLabel: '目标值', goalDateLabel: '目标日期',
+    goalTypes: { bio_age: '生理年龄', sub_age: '生理维度', weight: '体重', steps: '步数', sleep_score: '睡眠分', hrv: 'HRV', custom: '自定义' },
+    crmPipeline: '客户管道', crmStages: { lead: '待跟进', onboarding: '接入中', active: '活跃', at_risk: '需关注', churned: '已流失', graduated: '已毕业' },
+    crmAppointments: '近期预约', crmActivity: '动态', noActivity: '暂无动态', noAppointments: '暂无预约',
+    newAppt: '+ 新增预约', apptTitle: '预约标题', apptDate: '日期', apptTime: '时间',
+    apptFormats: { video: '视频通话', phone: '电话', in_person: '面诊', wechat: '微信' },
+    apptCreate: '创建预约', apptCancel: '取消',
+    kpiTitle: '我的指标', kpiClients: '总客户', kpiActive: '活跃', kpiAtRisk: '需关注', kpiCommission: '本月佣金',
+    kpiNps: 'NPS 评分', kpiScans: '促成检测', topImprovers: '改善最快',
+    activityTypes: { message_sent: '发送消息', reminder_set: '设置提醒', plan_assigned: '指派方案', kino_scan: 'Kino 检测', stage_changed: '阶段变更', note_added: '添加笔记', appointment_scheduled: '创建预约', appointment_completed: '完成预约', goal_set: '设定目标', goal_achieved: '达成目标', bulk_message_sent: '群发消息' },
     toolFormulaDots: '营养定制',
     toolTestChip: '检测服务',
     toolHealthAdvice: '健康管理',
@@ -133,7 +146,7 @@ const T = {
     back: 'Back',
     refresh: 'Refresh',
     loading: 'Loading…',
-    tabs: { clients: 'My Clients', invites: 'Invite Codes', earnings: 'My Earnings', questionnaires: 'Forms', training: 'Training' },
+    tabs: { clients: 'My Clients', invites: 'Invite Codes', earnings: 'My Earnings', questionnaires: 'Forms', training: 'Training', crm: 'CRM' },
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
     kinoSimMenu: 'Kino Simulator',
@@ -215,6 +228,19 @@ const T = {
       responsesTitle: 'Questionnaire Responses',
       noResponses: 'No responses yet',
     },
+    tabNotes: 'Notes', tabGoals: 'Goals',
+    noNotes: 'No notes yet', addNotePh: 'Add a note…', saveNote: 'Save', notePin: 'Pin', noteUnpin: 'Unpin', noteDelete: 'Delete',
+    noGoals: 'No goals yet', setGoal: '+ Set Goal', goalAchieved: '✓ Achieved', goalActive: 'Active', goalMissed: 'Missed',
+    goalTypeLabel: 'Goal Type', goalTargetLabel: 'Target Value', goalDateLabel: 'Target Date',
+    goalTypes: { bio_age: 'Bio Age', sub_age: 'Sub Age', weight: 'Weight', steps: 'Steps', sleep_score: 'Sleep Score', hrv: 'HRV', custom: 'Custom' },
+    crmPipeline: 'Pipeline', crmStages: { lead: 'Lead', onboarding: 'Onboarding', active: 'Active', at_risk: 'At Risk', churned: 'Churned', graduated: 'Graduated' },
+    crmAppointments: 'Upcoming', crmActivity: 'Activity', noActivity: 'No activity yet', noAppointments: 'No upcoming appointments',
+    newAppt: '+ New Appointment', apptTitle: 'Title', apptDate: 'Date', apptTime: 'Time',
+    apptFormats: { video: 'Video Call', phone: 'Phone', in_person: 'In Person', wechat: 'WeChat' },
+    apptCreate: 'Create', apptCancel: 'Cancel',
+    kpiTitle: 'My KPIs', kpiClients: 'Total Clients', kpiActive: 'Active', kpiAtRisk: 'At Risk', kpiCommission: 'Commission',
+    kpiNps: 'NPS Score', kpiScans: 'Scans', topImprovers: 'Top Improvers',
+    activityTypes: { message_sent: 'Message sent', reminder_set: 'Reminder set', plan_assigned: 'Plan assigned', kino_scan: 'Kino scan', stage_changed: 'Stage changed', note_added: 'Note added', appointment_scheduled: 'Appointment scheduled', appointment_completed: 'Appointment completed', goal_set: 'Goal set', goal_achieved: 'Goal achieved', bulk_message_sent: 'Bulk message sent' },
     toolFormulaDots: 'Formulate Dots',
     toolTestChip: 'Use Kino Chip',
     toolHealthAdvice: 'Health Advice',
@@ -372,6 +398,37 @@ Page({
     trainingCurrentLibraryItem: null,
     trainingLoading: false,
     trainingMarkingComplete: false,
+    // CRM: Notes tab (inside client detail)
+    clientNotes: [],
+    clientNotesLoading: false,
+    noteText: '',
+    notesBusy: false,
+    // CRM: Goals tab (inside client detail)
+    clientGoals: [],
+    clientGoalsLoading: false,
+    goalFormOpen: false,
+    goalType: 'bio_age',
+    goalTargetValue: '',
+    goalTargetDate: '',
+    goalBusy: false,
+    // CRM Tab
+    crmLoading: false,
+    crmPipelineColumns: [],
+    crmActivityFeed: [],
+    crmUpcomingAppts: [],
+    apptFormOpen: false,
+    apptClientId: '',
+    apptClientName: '',
+    apptTitleText: '',
+    apptDate: '',
+    apptTime: '10:00',
+    apptFormat: 'video',
+    apptLink: '',
+    apptBusy: false,
+    // Performance Tab
+    kpiLoading: false,
+    kpiData: null,
+    topImprovers: [],
     // Plans tab (inside client detail)
     detailPlans: [],
     detailPlansLoading: false,
@@ -444,6 +501,10 @@ Page({
               elevated: subAgesRaw[m.key] != null && cAge != null && Number(subAgesRaw[m.key]) > cAge,
             }))
           : []
+        const stageColorMap = { lead: '#f59e0b', onboarding: '#6375EC', active: '#10b981', at_risk: '#ef4444', churned: '#6b7280', graduated: '#0ea5e9' }
+        const crmStage = u.crm_stage || null
+        const crmStagePill = crmStage ? { label: T[lang].crmStages[crmStage] || crmStage, color: stageColorMap[crmStage] || '#6b7280' } : null
+        const crmTags = (u.crm_tag_objects || []).filter(Boolean).slice(0, 4)
         return {
           ...u,
           _cAge: cAge,
@@ -454,6 +515,8 @@ Page({
           _avatar: (u.nickname || 'U')[0].toUpperCase(),
           _subAges,
           _lastUserMsg: u.last_user_msg ? String(u.last_user_msg).slice(0, 100) : null,
+          _crmStagePill: crmStagePill,
+          _crmTags: crmTags,
         }
       })
       this.setData({ clients, invites: invitesRes.data?.invitations || [] })
@@ -482,6 +545,7 @@ Page({
     if (tab === 'earnings' && this.data.earningsThisMonth === null) this._loadEarnings()
     if (tab === 'questionnaires' && this.data.questionnaires.length === 0) this._loadQuestionnaires()
     if (tab === 'training' && this.data.trainingCourses.length === 0) this._loadTraining()
+    if (tab === 'crm') this._loadCRM()
   },
   handleBack() { wx.navigateBack() },
   noop() {},
@@ -585,6 +649,8 @@ Page({
     this.setData({ detailTab: tab })
     if (tab === 'chat' && this.data.chatMessages.length === 0) this._loadClientChat()
     if (tab === 'plans') this._loadClientPlans()
+    if (tab === 'notes') this._loadClientNotes()
+    if (tab === 'goals') this._loadClientGoals()
   },
 
   async _loadClientPlans() {
@@ -1083,6 +1149,209 @@ Page({
   trainingBackToLessons() {
     this.setData({ trainingView: 'lessons', trainingCurrentLesson: null, trainingVideoUrl: '', trainingCurrentLibraryItem: null, trainingLibraryContent: '' })
   },
+
+  // ─── CRM: Notes ────────────────────────────────────────────────────────────
+
+  async _loadClientNotes() {
+    const { detailClient } = this.data
+    if (!detailClient || !this._coachId) return
+    this.setData({ clientNotesLoading: true })
+    try {
+      const res = await this._req(`${BASE}/api/coach-notes?coach_id=${this._coachId}&user_id=${encodeURIComponent(detailClient.user_id)}`)
+      this.setData({ clientNotes: res.data?.notes || [] })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.networkError, icon: 'none' })
+    } finally {
+      this.setData({ clientNotesLoading: false })
+    }
+  },
+
+  onNoteTextInput(e) { this.setData({ noteText: e.detail.value }) },
+
+  async saveNote() {
+    const { noteText, detailClient } = this.data
+    if (!noteText.trim() || !this._coachId) return
+    this.setData({ notesBusy: true })
+    try {
+      await this._req(`${BASE}/api/coach-notes`, 'POST', { coach_id: this._coachId, user_id: detailClient.user_id, content: noteText.trim() })
+      this.setData({ noteText: '' })
+      await this._loadClientNotes()
+    } catch (e) {
+      wx.showToast({ title: this.data.t.networkError, icon: 'none' })
+    } finally {
+      this.setData({ notesBusy: false })
+    }
+  },
+
+  async toggleNotePin(e) {
+    const note = e.currentTarget.dataset.note
+    try {
+      await this._req(`${BASE}/api/coach-notes/${note.id}`, 'PUT', { is_pinned: !note.is_pinned })
+      await this._loadClientNotes()
+    } catch (e) {}
+  },
+
+  async deleteNote(e) {
+    const noteId = e.currentTarget.dataset.id
+    wx.showModal({
+      title: '删除笔记', content: '确认删除此笔记？', success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/coach-notes/${noteId}`, 'DELETE')
+          await this._loadClientNotes()
+        } catch (e) {}
+      }
+    })
+  },
+
+  // ─── CRM: Goals ─────────────────────────────────────────────────────────────
+
+  async _loadClientGoals() {
+    const { detailClient } = this.data
+    if (!detailClient || !this._coachId) return
+    this.setData({ clientGoalsLoading: true })
+    try {
+      const res = await this._req(`${BASE}/api/client-goals?coach_id=${this._coachId}&user_id=${encodeURIComponent(detailClient.user_id)}`)
+      const goals = (res.data?.goals || []).map(g => ({
+        ...g,
+        _pct: g.baseline_value != null && g.target_value != null && g.current_value != null
+          ? Math.min(100, Math.max(0, Math.round(
+              g.goal_type === 'bio_age' || g.goal_type === 'sub_age'
+                ? (g.baseline_value - g.current_value) / (g.baseline_value - g.target_value) * 100
+                : (g.current_value - g.baseline_value) / (g.target_value - g.baseline_value) * 100
+            )))
+          : 0,
+      }))
+      this.setData({ clientGoals: goals })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.networkError, icon: 'none' })
+    } finally {
+      this.setData({ clientGoalsLoading: false })
+    }
+  },
+
+  openGoalForm() { this.setData({ goalFormOpen: true, goalType: 'bio_age', goalTargetValue: '', goalTargetDate: '' }) },
+  closeGoalForm() { this.setData({ goalFormOpen: false }) },
+  onGoalTypeChange(e) { this.setData({ goalType: e.detail.value }) },
+  onGoalTargetInput(e) { this.setData({ goalTargetValue: e.detail.value }) },
+  onGoalDateChange(e) { this.setData({ goalTargetDate: e.detail.value }) },
+
+  async submitGoal() {
+    const { goalType, goalTargetValue, goalTargetDate, detailClient, lang } = this.data
+    if (!goalTargetValue || !this._coachId) return
+    const t = T[lang]
+    this.setData({ goalBusy: true })
+    try {
+      const baselineVal = goalType === 'bio_age' ? (detailClient.bio_age ? parseFloat(detailClient.bio_age) : null) : null
+      await this._req(`${BASE}/api/client-goals`, 'POST', {
+        coach_id: this._coachId,
+        user_id: detailClient.user_id,
+        goal_type: goalType,
+        title_zh: t.goalTypes[goalType] || goalType,
+        baseline_value: baselineVal,
+        target_value: parseFloat(goalTargetValue),
+        target_date: goalTargetDate || null,
+      })
+      this.setData({ goalFormOpen: false })
+      await this._loadClientGoals()
+    } catch (e) {
+      wx.showToast({ title: this.data.t.networkError, icon: 'none' })
+    } finally {
+      this.setData({ goalBusy: false })
+    }
+  },
+
+  // ─── CRM Tab ─────────────────────────────────────────────────────────────────
+
+  async _loadCRM() {
+    if (!this._coachId) return
+    this.setData({ crmLoading: true })
+    this._loadKPIs()
+    try {
+      const [actRes, apptRes] = await Promise.all([
+        this._req(`${BASE}/api/coach-activity-feed?coach_id=${this._coachId}&limit=20`),
+        this._req(`${BASE}/api/appointments/upcoming?coach_id=${this._coachId}`),
+      ])
+      const activityFeed = (actRes.data?.activities || []).map(a => ({
+        ...a, _label: this.data.t.activityTypes[a.activity_type] || a.activity_type, _timeFmt: fmtTime(a.occurred_at),
+      }))
+      const upcomingAppts = (apptRes.data?.appointments || []).map(a => ({
+        ...a, _timeFmt: fmtTime(a.scheduled_at),
+      }))
+      // Build pipeline columns from clients
+      const stageOrder = ['lead', 'onboarding', 'active', 'at_risk', 'churned', 'graduated']
+      const stageColorMap = { lead: '#f59e0b', onboarding: '#6375EC', active: '#10b981', at_risk: '#ef4444', churned: '#6b7280', graduated: '#0ea5e9' }
+      const t = this.data.t
+      const clientsByStage = {}
+      for (const s of stageOrder) clientsByStage[s] = []
+      for (const c of this.data.clients) {
+        const stage = c.crm_stage || 'lead'
+        if (clientsByStage[stage]) clientsByStage[stage].push(c)
+      }
+      const crmPipelineColumns = stageOrder.map(s => ({
+        stage: s, label: t.crmStages[s] || s, color: stageColorMap[s], clients: clientsByStage[s],
+      }))
+      this.setData({ crmPipelineColumns, crmActivityFeed: activityFeed, crmUpcomingAppts: upcomingAppts })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.networkError, icon: 'none' })
+    } finally {
+      this.setData({ crmLoading: false })
+    }
+  },
+
+  openApptForm(e) {
+    const client = e.currentTarget.dataset.client
+    this.setData({ apptFormOpen: true, apptClientId: client ? client.user_id : '', apptClientName: client ? (client.nickname || '') : '', apptTitleText: '', apptDate: todayStr(), apptTime: '10:00', apptFormat: 'video', apptLink: '' })
+  },
+  closeApptForm() { this.setData({ apptFormOpen: false }) },
+  onApptTitleInput(e) { this.setData({ apptTitleText: e.detail.value }) },
+  onApptDateChange(e) { this.setData({ apptDate: e.detail.value }) },
+  onApptTimeChange(e) { this.setData({ apptTime: e.detail.value }) },
+  onApptFormatChange(e) { this.setData({ apptFormat: e.detail.value }) },
+  onApptLinkInput(e) { this.setData({ apptLink: e.detail.value }) },
+
+  async submitAppt() {
+    const { apptClientId, apptTitleText, apptDate, apptTime, apptFormat, apptLink } = this.data
+    if (!apptTitleText || !apptDate || !this._coachId) return
+    this.setData({ apptBusy: true })
+    try {
+      const scheduled_at = `${apptDate}T${apptTime}:00`
+      await this._req(`${BASE}/api/appointments`, 'POST', {
+        coach_id: this._coachId, user_id: apptClientId, title: apptTitleText,
+        scheduled_at, format: apptFormat, meeting_link: apptLink || null,
+      })
+      this.setData({ apptFormOpen: false })
+      await this._loadCRM()
+    } catch (e) {
+      wx.showToast({ title: this.data.t.networkError, icon: 'none' })
+    } finally {
+      this.setData({ apptBusy: false })
+    }
+  },
+
+  // ─── Performance Tab ─────────────────────────────────────────────────────────
+
+  async _loadKPIs() {
+    if (!this._coachId) return
+    this.setData({ kpiLoading: true })
+    try {
+      const res = await this._req(`${BASE}/api/coach-kpis?coach_id=${this._coachId}`)
+      const kpis = res.data?.kpis || null
+      // Top improvers from client list (sorted by bio_age delta ascending = most improved)
+      const topImprovers = [...this.data.clients]
+        .filter(c => c._cAge && c.bio_age)
+        .sort((a, b) => (a.bio_age - a._cAge) - (b.bio_age - b._cAge))
+        .slice(0, 5)
+        .map(c => ({ nickname: c.nickname, delta: Number((c.bio_age - c._cAge).toFixed(1)), _avatar: c._avatar }))
+      this.setData({ kpiData: kpis, topImprovers })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.networkError, icon: 'none' })
+    } finally {
+      this.setData({ kpiLoading: false })
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   _req(url, method = 'GET', data = null) {
     return new Promise((resolve, reject) => {

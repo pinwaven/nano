@@ -10,7 +10,7 @@ import {
   GraduationCap, Video, FileText, Upload, ExternalLink, Play, BookOpen,
   Bug, AlertCircle, Image as ImageIcon,
   ClipboardList, ChevronUp, Send, Eye,
-  BarChart2, Award, Archive, Box,
+  BarChart2, Award, Archive, Box, Target, Filter, MessageSquare,
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
@@ -100,7 +100,7 @@ function LoginScreen({ onLogin }) {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'Coach CRM' },
     adminAccounts: { title: 'Admin Accounts', add: 'Add Admin', changePassword: 'Change Password', confirmDelete: 'Delete this admin account?', newPassword: 'New Password', usernameLabel: 'Username', passwordLabel: 'Password', count: (n) => `${n} account${n !== 1 ? 's' : ''}` },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
@@ -375,10 +375,39 @@ const T = {
         'Active vs inactive Kino devices',
       ],
     },
+    coachCrm: {
+      subPipeline: 'Pipeline', subCampaigns: 'Campaigns', subPerformance: 'Performance', subNps: 'NPS',
+      selectCoach: '— Select Coach —',
+      selectCoachPrompt: 'Select a coach to view their client pipeline.',
+      selectCoachCampaignsPrompt: 'Select a coach to view their campaigns.',
+      loading: 'Loading…',
+      stageDist: 'Stage Distribution',
+      stageLead: 'Lead', stageOnboarding: 'Onboarding', stageActive: 'Active',
+      stageAtRisk: 'At Risk', stageChurned: 'Churned', stageGraduated: 'Graduated',
+      colName: 'Name', colStage: 'Stage', colTags: 'Tags', colBioAgeDelta: 'Bio Age Delta', colLastScan: 'Last Scan',
+      countClients: (n) => `${n} client${n !== 1 ? 's' : ''}`,
+      colTitle: 'Title', colStatus: 'Status', colRecipients: 'Recipients', colSent: 'Sent',
+      colCreated: 'Created', colActions: 'Actions',
+      countCampaigns: (n) => `${n} campaign${n !== 1 ? 's' : ''}`,
+      newCampaign: 'New Campaign', modalNewCampaign: 'New Bulk Campaign',
+      labelTitle: 'Title', labelContent: 'Message Content',
+      labelStageFilter: 'Filter by Stage (optional)', allClients: 'All clients',
+      createDraft: 'Create Draft', cancel: 'Cancel', send: 'Send', sending: 'Sending…',
+      statusDraft: 'draft', statusSending: 'sending', statusSent: 'sent', statusFailed: 'failed',
+      labelPeriod: 'Period:', load: 'Load',
+      perfTitle: (p) => `Coach Performance — ${p}`,
+      colCoach: 'Coach', colTotalClients: 'Total Clients', colActive: 'Active', colAtRisk: 'At Risk',
+      colScans: 'Scans', colPlansAssigned: 'Plans Assigned', colMessages: 'Messages',
+      colApptsHeld: 'Appts Held', colAvgNps: 'Avg NPS', colCommission: 'Commission ¥',
+      labelFrom: 'From:', labelTo: 'To:',
+      promoters: 'Promoters (≥9)', passives: 'Passives (7–8)', detractors: 'Detractors (≤6)', npsScore: 'NPS Score',
+      colUser: 'User', colType: 'Type', colScore: 'Score', colFeedback: 'Feedback', colRespondedAt: 'Responded At',
+      countResponses: (n) => `${n} response${n !== 1 ? 's' : ''}`,
+    },
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'Coach CRM' },
     adminAccounts: { title: '管理员账号', add: '添加管理员', changePassword: '修改密码', confirmDelete: '确认删除此管理员账号？', newPassword: '新密码', usernameLabel: '用户名', passwordLabel: '密码', count: (n) => `${n} 个账号` },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
@@ -652,6 +681,35 @@ const T = {
         '本月 Coach 佣金汇总',
         '活跃与非活跃 Kino 设备对比',
       ],
+    },
+    coachCrm: {
+      subPipeline: '客户漏斗', subCampaigns: '群发消息', subPerformance: '绩效分析', subNps: 'NPS',
+      selectCoach: '— 选择 Coach —',
+      selectCoachPrompt: '请选择 Coach 以查看其客户漏斗。',
+      selectCoachCampaignsPrompt: '请选择 Coach 以查看其群发记录。',
+      loading: '加载中…',
+      stageDist: '阶段分布',
+      stageLead: '潜在客户', stageOnboarding: '入门中', stageActive: '活跃',
+      stageAtRisk: '高风险', stageChurned: '流失', stageGraduated: '已结业',
+      colName: '姓名', colStage: '阶段', colTags: '标签', colBioAgeDelta: '生理年龄差', colLastScan: '最近检测',
+      countClients: (n) => `共 ${n} 位客户`,
+      colTitle: '标题', colStatus: '状态', colRecipients: '接收人数', colSent: '已发送',
+      colCreated: '创建时间', colActions: '操作',
+      countCampaigns: (n) => `共 ${n} 个群发`,
+      newCampaign: '新建群发', modalNewCampaign: '新建群发消息',
+      labelTitle: '标题', labelContent: '消息内容',
+      labelStageFilter: '按阶段筛选（可选）', allClients: '全部客户',
+      createDraft: '创建草稿', cancel: '取消', send: '发送', sending: '发送中…',
+      statusDraft: '草稿', statusSending: '发送中', statusSent: '已发送', statusFailed: '失败',
+      labelPeriod: '周期：', load: '查询',
+      perfTitle: (p) => `Coach 绩效 — ${p}`,
+      colCoach: 'Coach', colTotalClients: '总客户数', colActive: '活跃', colAtRisk: '高风险',
+      colScans: '检测次数', colPlansAssigned: '已分配方案', colMessages: '消息数',
+      colApptsHeld: '已完成预约', colAvgNps: '平均 NPS', colCommission: '佣金 ¥',
+      labelFrom: '开始：', labelTo: '结束：',
+      promoters: '推荐者 (≥9)', passives: '中立者 (7–8)', detractors: '批评者 (≤6)', npsScore: 'NPS 分数',
+      colUser: '用户', colType: '类型', colScore: '评分', colFeedback: '反馈', colRespondedAt: '回复时间',
+      countResponses: (n) => `共 ${n} 条回复`,
     },
   },
 };
@@ -1847,6 +1905,505 @@ function CoachTab({ coaches, users, channels, onRefresh }) {
       {modal?.type === 'edit'   && <CoachModal coach={modal.coach} users={users} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteCoachConfirm coach={modal.coach} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
     </>
+  );
+}
+
+// ── Coach CRM tab ─────────────────────────────────────────────────────────────
+
+const STAGE_COLORS = {
+  lead: '#f59e0b', onboarding: '#6375EC', active: '#10b981',
+  at_risk: '#ef4444', churned: '#6b7280', graduated: '#0ea5e9',
+};
+const STAGE_KEYS = ['lead', 'onboarding', 'active', 'at_risk', 'churned', 'graduated'];
+
+function CoachCRMTab({ coaches, users }) {
+  const { t } = useLang();
+  const tc = t.coachCrm;
+
+  const stageLabels = {
+    lead: tc.stageLead, onboarding: tc.stageOnboarding, active: tc.stageActive,
+    at_risk: tc.stageAtRisk, churned: tc.stageChurned, graduated: tc.stageGraduated,
+  };
+  const [sub, setSub] = useState('pipeline');
+  const [selectedCoachId, setSelectedCoachId] = useState('');
+  const [pipeline, setPipeline] = useState([]);
+  const [pipelineLoading, setPipelineLoading] = useState(false);
+  const [campaigns, setCampaigns] = useState([]);
+  const [campaignsLoading, setCampaignsLoading] = useState(false);
+  const [period, setPeriod] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [kpiRows, setKpiRows] = useState([]);
+  const [kpiLoading, setKpiLoading] = useState(false);
+  const [npsRows, setNpsRows] = useState([]);
+  const [npsLoading, setNpsLoading] = useState(false);
+  const [npsStart, setNpsStart] = useState('');
+  const [npsEnd, setNpsEnd] = useState('');
+  const [campaignModal, setCampaignModal] = useState(false);
+  const [newCampaign, setNewCampaign] = useState({ title: '', content: '', stage: '' });
+  const [sending, setSending] = useState(null);
+
+  const loadPipeline = useCallback(async (coachId) => {
+    if (!coachId) return;
+    setPipelineLoading(true);
+    try {
+      const r = await axios.get(`/api/client-pipeline?coach_id=${coachId}`);
+      setPipeline(r.data.clients || []);
+    } catch (e) { console.error(e); }
+    finally { setPipelineLoading(false); }
+  }, []);
+
+  const loadCampaigns = useCallback(async (coachId) => {
+    if (!coachId) return;
+    setCampaignsLoading(true);
+    try {
+      const r = await axios.get(`/api/bulk-campaigns?coach_id=${coachId}`);
+      setCampaigns(r.data.campaigns || []);
+    } catch (e) { console.error(e); }
+    finally { setCampaignsLoading(false); }
+  }, []);
+
+  const loadKPIs = useCallback(async () => {
+    setKpiLoading(true);
+    try {
+      const rows = await Promise.all(
+        coaches.map(c => axios.get(`/api/coach-kpis?coach_id=${c.id}&period=${period}`)
+          .then(r => ({ ...r.data, coach_id: c.id, coach_name: c.name }))
+          .catch(() => ({ coach_id: c.id, coach_name: c.name })))
+      );
+      setKpiRows(rows);
+    } catch (e) { console.error(e); }
+    finally { setKpiLoading(false); }
+  }, [coaches, period]);
+
+  const loadNPS = useCallback(async () => {
+    setNpsLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (npsStart) params.set('start', npsStart);
+      if (npsEnd) params.set('end', npsEnd);
+      const r = await axios.get(`/api/nps-surveys?${params}`);
+      setNpsRows(r.data.surveys || []);
+    } catch (e) { console.error(e); }
+    finally { setNpsLoading(false); }
+  }, [npsStart, npsEnd]);
+
+  useEffect(() => {
+    if (sub === 'pipeline' && selectedCoachId) loadPipeline(selectedCoachId);
+    if (sub === 'campaigns' && selectedCoachId) loadCampaigns(selectedCoachId);
+    if (sub === 'performance') loadKPIs();
+    if (sub === 'nps') loadNPS();
+  }, [sub, selectedCoachId, loadPipeline, loadCampaigns, loadKPIs, loadNPS]);
+
+  const handleCoachChange = (e) => {
+    const id = e.target.value;
+    setSelectedCoachId(id);
+    if (sub === 'pipeline') loadPipeline(id);
+    if (sub === 'campaigns') loadCampaigns(id);
+  };
+
+  const sendCampaign = async (id) => {
+    setSending(id);
+    try {
+      await axios.post(`/api/bulk-campaigns/${id}/send`);
+      if (selectedCoachId) loadCampaigns(selectedCoachId);
+    } catch (e) { console.error(e); }
+    finally { setSending(null); }
+  };
+
+  const createCampaign = async () => {
+    if (!selectedCoachId || !newCampaign.title || !newCampaign.content) return;
+    try {
+      const filter = newCampaign.stage ? { stage: [newCampaign.stage] } : {};
+      await axios.post('/api/bulk-campaigns', {
+        coach_id: parseInt(selectedCoachId),
+        title: newCampaign.title,
+        content: newCampaign.content,
+        target_filter: filter,
+      });
+      setCampaignModal(false);
+      setNewCampaign({ title: '', content: '', stage: '' });
+      loadCampaigns(selectedCoachId);
+    } catch (e) { console.error(e); }
+  };
+
+  // Build stage distribution data for selected coach's pipeline
+  const stageDist = STAGE_KEYS.map(s => ({
+    stage: stageLabels[s],
+    count: pipeline.filter(c => (c.crm_stage || 'lead') === s).length,
+    fill: STAGE_COLORS[s],
+  }));
+
+  // NPS aggregate
+  const promoters   = npsRows.filter(r => r.score >= 9).length;
+  const passives    = npsRows.filter(r => r.score >= 7 && r.score <= 8).length;
+  const detractors  = npsRows.filter(r => r.score !== null && r.score <= 6).length;
+  const responded   = promoters + passives + detractors;
+  const npsScore    = responded > 0 ? Math.round(((promoters - detractors) / responded) * 100) : null;
+
+  const SUB_TABS = [
+    { id: 'pipeline',    label: tc.subPipeline },
+    { id: 'campaigns',   label: tc.subCampaigns },
+    { id: 'performance', label: tc.subPerformance },
+    { id: 'nps',         label: tc.subNps },
+  ];
+
+  return (
+    <div>
+      {/* Sub-tab bar */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        {SUB_TABS.map(s => (
+          <button key={s.id}
+            onClick={() => setSub(s.id)}
+            style={{
+              padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500,
+              background: sub === s.id ? '#6375EC' : '#f1f5f9',
+              color: sub === s.id ? '#fff' : '#64748b',
+            }}
+          >{s.label}</button>
+        ))}
+      </div>
+
+      {/* Coach selector (pipeline + campaigns) */}
+      {(sub === 'pipeline' || sub === 'campaigns') && (
+        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Filter size={14} style={{ color: '#64748b' }} />
+          <select value={selectedCoachId} onChange={handleCoachChange}
+            style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}>
+            <option value="">{tc.selectCoach}</option>
+            {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+      )}
+
+      {/* ── Pipeline sub-tab ── */}
+      {sub === 'pipeline' && (
+        <div>
+          {!selectedCoachId ? (
+            <p style={{ color: '#94a3b8', fontSize: 13 }}>{tc.selectCoachPrompt}</p>
+          ) : pipelineLoading ? (
+            <p style={{ color: '#94a3b8', fontSize: 13 }}>{tc.loading}</p>
+          ) : (
+            <>
+              {/* Stage distribution bar chart */}
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title">{tc.stageDist}</div>
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={stageDist} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="stage" tick={{ fontSize: 11 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={28} />
+                    <Tooltip />
+                    <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                      {stageDist.map((entry, i) => (
+                        <Cell key={i} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Client table */}
+              <div className="card">
+                <div className="table-toolbar">
+                  <span className="table-count">{tc.countClients(pipeline.length)}</span>
+                </div>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>{tc.colName}</th>
+                      <th>{tc.colStage}</th>
+                      <th>{tc.colTags}</th>
+                      <th>{tc.colBioAgeDelta}</th>
+                      <th>{tc.colLastScan}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pipeline.map(c => {
+                      const stage = c.crm_stage || 'lead';
+                      const bioAge = c.latest_bio_age ? parseFloat(c.latest_bio_age).toFixed(1) : '—';
+                      const chrono = c.chrono_age ? parseFloat(c.chrono_age).toFixed(0) : null;
+                      const delta = c.latest_bio_age && chrono
+                        ? (parseFloat(c.latest_bio_age) - parseFloat(chrono)).toFixed(1)
+                        : null;
+                      return (
+                        <tr key={c.user_id}>
+                          <td style={{ fontWeight: 500 }}>{c.name || c.nickname || c.user_id}</td>
+                          <td>
+                            <span style={{
+                              background: STAGE_COLORS[stage] + '20',
+                              color: STAGE_COLORS[stage],
+                              padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600,
+                            }}>
+                              {stageLabels[stage]}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: 11 }}>
+                            {(c.crm_tags || []).join(', ') || '—'}
+                          </td>
+                          <td style={{
+                            fontWeight: 600,
+                            color: delta === null ? '#94a3b8' : parseFloat(delta) < 0 ? '#10b981' : '#ef4444',
+                          }}>
+                            {delta !== null ? (parseFloat(delta) > 0 ? `+${delta}` : delta) : '—'}
+                          </td>
+                          <td style={{ fontSize: 11, color: '#64748b' }}>
+                            {c.last_scan_at ? new Date(c.last_scan_at).toLocaleDateString() : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Campaigns sub-tab ── */}
+      {sub === 'campaigns' && (
+        <div>
+          {!selectedCoachId ? (
+            <p style={{ color: '#94a3b8', fontSize: 13 }}>{tc.selectCoachCampaignsPrompt}</p>
+          ) : (
+            <div className="card">
+              <div className="table-toolbar">
+                <span className="table-count">{tc.countCampaigns(campaigns.length)}</span>
+                <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12 }}
+                  onClick={() => setCampaignModal(true)}>
+                  <Plus size={13} /> {tc.newCampaign}
+                </button>
+              </div>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>{tc.colTitle}</th>
+                    <th>{tc.colStatus}</th>
+                    <th>{tc.colRecipients}</th>
+                    <th>{tc.colSent}</th>
+                    <th>{tc.colCreated}</th>
+                    <th>{tc.colActions}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {campaignsLoading ? (
+                    <tr><td colSpan={6} style={{ textAlign: 'center', color: '#94a3b8' }}>{tc.loading}</td></tr>
+                  ) : campaigns.map(c => {
+                    const statusLabel = tc['status' + c.status.charAt(0).toUpperCase() + c.status.slice(1)] || c.status;
+                    return (
+                    <tr key={c.id}>
+                      <td style={{ fontWeight: 500 }}>{c.title}</td>
+                      <td>
+                        <span style={{
+                          background: c.status === 'sent' ? '#d1fae5' : c.status === 'sending' ? '#fef3c7' : c.status === 'failed' ? '#fee2e2' : '#f1f5f9',
+                          color: c.status === 'sent' ? '#059669' : c.status === 'sending' ? '#d97706' : c.status === 'failed' ? '#dc2626' : '#64748b',
+                          padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600,
+                        }}>{statusLabel}</span>
+                      </td>
+                      <td>{c.recipient_count}</td>
+                      <td>{c.sent_count}</td>
+                      <td style={{ fontSize: 11, color: '#64748b' }}>
+                        {new Date(c.created_at).toLocaleDateString()}
+                      </td>
+                      <td>
+                        {c.status === 'draft' && (
+                          <button className="btn-primary" style={{ padding: '4px 10px', fontSize: 11 }}
+                            disabled={sending === c.id}
+                            onClick={() => sendCampaign(c.id)}>
+                            <Send size={11} /> {sending === c.id ? tc.sending : tc.send}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* New Campaign Modal */}
+          {campaignModal && (
+            <div className="modal-backdrop">
+              <div className="modal" style={{ maxWidth: 480 }}>
+                <div className="modal-header">
+                  <span className="modal-title">{tc.modalNewCampaign}</span>
+                  <button className="modal-close" onClick={() => setCampaignModal(false)}><X size={16} /></button>
+                </div>
+                <div className="modal-body">
+                  <label className="form-label">{tc.labelTitle}</label>
+                  <input className="form-input" value={newCampaign.title}
+                    onChange={e => setNewCampaign(p => ({ ...p, title: e.target.value }))}
+                    placeholder={tc.labelTitle} />
+                  <label className="form-label" style={{ marginTop: 12 }}>{tc.labelContent}</label>
+                  <textarea className="form-input" rows={4} value={newCampaign.content}
+                    onChange={e => setNewCampaign(p => ({ ...p, content: e.target.value }))}
+                    placeholder={tc.labelContent} />
+                  <label className="form-label" style={{ marginTop: 12 }}>{tc.labelStageFilter}</label>
+                  <select className="form-input" value={newCampaign.stage}
+                    onChange={e => setNewCampaign(p => ({ ...p, stage: e.target.value }))}>
+                    <option value="">{tc.allClients}</option>
+                    {STAGE_KEYS.map(k => <option key={k} value={k}>{stageLabels[k]}</option>)}
+                  </select>
+                </div>
+                <div className="modal-footer">
+                  <button className="btn-secondary" onClick={() => setCampaignModal(false)}>{tc.cancel}</button>
+                  <button className="btn-primary" onClick={createCampaign}>{tc.createDraft}</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Performance sub-tab ── */}
+      {sub === 'performance' && (
+        <div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+            <label style={{ fontSize: 13, color: '#64748b' }}>{tc.labelPeriod}</label>
+            <input type="month" value={period}
+              onChange={e => setPeriod(e.target.value)}
+              style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }} />
+            <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={loadKPIs}>
+              {tc.load}
+            </button>
+          </div>
+
+          <div className="card">
+            <div className="card-title">{tc.perfTitle(period)}</div>
+            {kpiLoading ? (
+              <p style={{ color: '#94a3b8', fontSize: 13 }}>{tc.loading}</p>
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>{tc.colCoach}</th>
+                    <th>{tc.colTotalClients}</th>
+                    <th>{tc.colActive}</th>
+                    <th>{tc.colAtRisk}</th>
+                    <th>{tc.colScans}</th>
+                    <th>{tc.colPlansAssigned}</th>
+                    <th>{tc.colMessages}</th>
+                    <th>{tc.colApptsHeld}</th>
+                    <th>{tc.colAvgNps}</th>
+                    <th>{tc.colCommission}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {kpiRows.map(r => (
+                    <tr key={r.coach_id}>
+                      <td style={{ fontWeight: 500 }}>{r.coach_name}</td>
+                      <td>{r.total_clients ?? '—'}</td>
+                      <td>{r.active_clients ?? '—'}</td>
+                      <td style={{ color: r.at_risk_count > 0 ? '#ef4444' : undefined }}>
+                        {r.at_risk_count ?? '—'}
+                      </td>
+                      <td>{r.scans_facilitated ?? '—'}</td>
+                      <td>{r.plans_assigned ?? '—'}</td>
+                      <td>{r.messages_sent ?? '—'}</td>
+                      <td>{r.appointments_held ?? '—'}</td>
+                      <td style={{ color: r.avg_nps_score >= 8 ? '#10b981' : r.avg_nps_score < 6 ? '#ef4444' : undefined }}>
+                        {r.avg_nps_score != null ? parseFloat(r.avg_nps_score).toFixed(1) : '—'}
+                      </td>
+                      <td style={{ fontWeight: 600 }}>
+                        {r.commission_cny != null ? `¥${parseFloat(r.commission_cny).toLocaleString()}` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── NPS sub-tab ── */}
+      {sub === 'nps' && (
+        <div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+            <label style={{ fontSize: 13, color: '#64748b' }}>{tc.labelFrom}</label>
+            <input type="date" value={npsStart} onChange={e => setNpsStart(e.target.value)}
+              style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }} />
+            <label style={{ fontSize: 13, color: '#64748b' }}>{tc.labelTo}</label>
+            <input type="date" value={npsEnd} onChange={e => setNpsEnd(e.target.value)}
+              style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }} />
+            <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={loadNPS}>
+              {tc.load}
+            </button>
+          </div>
+
+          {/* Aggregate cards */}
+          {responded > 0 && (
+            <div className="stat-row" style={{ marginBottom: 16 }}>
+              <div className="stat-card" style={{ flex: 1 }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#10b981' }}>{promoters}</div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>{tc.promoters}</div>
+              </div>
+              <div className="stat-card" style={{ flex: 1 }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#f59e0b' }}>{passives}</div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>{tc.passives}</div>
+              </div>
+              <div className="stat-card" style={{ flex: 1 }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#ef4444' }}>{detractors}</div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>{tc.detractors}</div>
+              </div>
+              <div className="stat-card" style={{ flex: 1 }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: npsScore >= 50 ? '#10b981' : npsScore >= 0 ? '#f59e0b' : '#ef4444' }}>
+                  {npsScore}
+                </div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>{tc.npsScore}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="card">
+            <div className="table-toolbar">
+              <span className="table-count">{tc.countResponses(npsRows.length)}</span>
+            </div>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>{tc.colCoach}</th>
+                  <th>{tc.colUser}</th>
+                  <th>{tc.colType}</th>
+                  <th>{tc.colScore}</th>
+                  <th>{tc.colFeedback}</th>
+                  <th>{tc.colRespondedAt}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {npsLoading ? (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#94a3b8' }}>{tc.loading}</td></tr>
+                ) : npsRows.map(r => {
+                  const coach = coaches.find(c => c.id === r.coach_id);
+                  const scoreColor = r.score >= 9 ? '#10b981' : r.score >= 7 ? '#f59e0b' : r.score !== null ? '#ef4444' : '#94a3b8';
+                  return (
+                    <tr key={r.id}>
+                      <td>{coach?.name || r.coach_id}</td>
+                      <td style={{ fontSize: 11, color: '#64748b' }}>{r.user_id}</td>
+                      <td style={{ fontSize: 11 }}>{r.survey_type}</td>
+                      <td>
+                        {r.score !== null ? (
+                          <span style={{ fontWeight: 700, color: scoreColor, fontSize: 15 }}>{r.score}</span>
+                        ) : <span style={{ color: '#94a3b8' }}>—</span>}
+                      </td>
+                      <td style={{ fontSize: 11, color: '#475569', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {r.feedback_text || '—'}
+                      </td>
+                      <td style={{ fontSize: 11, color: '#64748b' }}>
+                        {r.responded_at ? new Date(r.responded_at).toLocaleString() : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -7924,6 +8481,7 @@ function AdminPanel({ session, onLogout }) {
     { id: 'tickets',  label: t.nav.tickets,  icon: Bug            },
     { id: 'sims',     label: t.nav.sims,     icon: Layout,      disabled: true },
     { id: 'admin-accounts', label: t.nav.adminAccounts, icon: Settings2 },
+    { id: 'coach-crm',     label: t.nav.coachCrm,     icon: Target     },
   ];
 
   const visibleNAV = isSuperadmin
@@ -7990,6 +8548,7 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'tickets'  && <TicketsTab tickets={data.tickets} onRefresh={fetchData} />}
           {tab === 'sims'     && <SimulatorsTab />}
           {tab === 'admin-accounts' && <AdminAccountsTab accounts={data.adminAccounts} channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'coach-crm'     && <CoachCRMTab coaches={data.coaches} users={data.users} />}
         </div>
       </div>
     </LangCtx.Provider>

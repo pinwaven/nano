@@ -1204,3 +1204,113 @@
 .form-field             { margin-bottom: 16rpx; }
 .form-label             { display: block; font-size: 22rpx; color: var(--text-muted); margin-bottom: 8rpx; }
 .form-input             { width: 100%; padding: 16rpx; background: rgba(255,255,255,0.05); border: 1rpx solid var(--navy-border); border-radius: 12rpx; font-size: 26rpx; color: var(--text); box-sizing: border-box; }
+.form-value             { font-size: 26rpx; color: var(--text); }
+
+/* ── CRM: Stage pill + tag chips on client cards ──────────────────────────── */
+.crm-meta-row  { display: flex; flex-wrap: wrap; gap: 8rpx; padding: 6rpx 0 4rpx; }
+.stage-pill    { padding: 4rpx 14rpx; border-radius: 20rpx; border: 1rpx solid; display: inline-flex; align-items: center; }
+.stage-pill-text { font-size: 20rpx; font-weight: 600; }
+.tag-chip      { padding: 4rpx 12rpx; border-radius: 16rpx; border: 1rpx solid; display: inline-flex; align-items: center; }
+.tag-chip-text { font-size: 19rpx; font-weight: 500; }
+
+/* ── CRM: Notes tab ──────────────────────────────────────────────────────── */
+.overlay-scroll-full { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.note-item   { padding: 20rpx 24rpx; border-bottom: 1rpx solid var(--navy-border); }
+.note-pinned { background: rgba(99,117,236,0.06); }
+.note-content { font-size: 26rpx; color: var(--text); line-height: 1.6; }
+.note-footer  { display: flex; justify-content: space-between; align-items: center; margin-top: 8rpx; }
+.note-date    { font-size: 20rpx; color: var(--text-muted); }
+.note-actions { display: flex; gap: 16rpx; }
+.note-action-btn { font-size: 22rpx; color: #6375EC; padding: 4rpx 8rpx; }
+.note-delete-btn { color: #ef4444; }
+.note-compose { padding: 16rpx 24rpx; border-top: 1rpx solid var(--navy-border); display: flex; gap: 12rpx; align-items: flex-end; }
+.note-input   { flex: 1; background: rgba(255,255,255,0.05); border: 1rpx solid var(--navy-border); border-radius: 12rpx; padding: 14rpx; font-size: 26rpx; color: var(--text); min-height: 72rpx; max-height: 200rpx; }
+.note-save-btn { padding: 14rpx 28rpx; background: #6375EC; border-radius: 12rpx; flex-shrink: 0; }
+.note-save-text { font-size: 24rpx; color: #fff; font-weight: 600; }
+
+/* ── CRM: Goals tab ──────────────────────────────────────────────────────── */
+.goals-header   { padding: 20rpx 24rpx; display: flex; justify-content: flex-end; }
+.set-goal-btn   { padding: 14rpx 24rpx; background: #6375EC; border-radius: 12rpx; }
+.set-goal-text  { font-size: 24rpx; color: #fff; font-weight: 600; }
+.goal-item      { margin: 12rpx 24rpx; padding: 20rpx; background: var(--navy-lift); border-radius: 16rpx; }
+.goal-item.goal-achieved { opacity: 0.7; }
+.goal-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10rpx; }
+.goal-title     { font-size: 26rpx; font-weight: 500; color: var(--text); }
+.goal-status-badge { font-size: 20rpx; padding: 4rpx 12rpx; border-radius: 12rpx; font-weight: 600; }
+.goal-status-active   { background: rgba(99,117,236,0.2); color: #8B9FFF; }
+.goal-status-achieved { background: rgba(16,185,129,0.2); color: #34d399; }
+.goal-status-missed   { background: rgba(239,68,68,0.2); color: #ef4444; }
+.goal-progress-row  { display: flex; align-items: center; gap: 10rpx; margin: 10rpx 0; }
+.goal-baseline      { font-size: 20rpx; color: var(--text-muted); min-width: 60rpx; text-align: right; }
+.goal-target        { font-size: 20rpx; color: var(--text-muted); min-width: 60rpx; }
+.goal-bar-bg        { flex: 1; height: 10rpx; background: rgba(255,255,255,0.1); border-radius: 10rpx; overflow: hidden; }
+.goal-bar-fill      { height: 100%; background: linear-gradient(90deg, #6375EC, #34d399); border-radius: 10rpx; }
+.goal-meta-row      { display: flex; gap: 20rpx; }
+.goal-current, .goal-date { font-size: 22rpx; color: var(--text-muted); }
+.goal-form-overlay  { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: flex-end; z-index: 999; }
+.goal-form-card     { width: 100%; background: #0F2540; padding: 28rpx 28rpx 48rpx; border-radius: 24rpx 24rpx 0 0; }
+.goal-form-row      { display: flex; justify-content: space-between; align-items: center; padding: 18rpx 0; border-bottom: 1rpx solid var(--navy-border); }
+.goal-form-label    { font-size: 26rpx; color: var(--text-muted); }
+.goal-form-value    { font-size: 26rpx; color: var(--text); }
+.goal-form-input    { width: 160rpx; text-align: right; font-size: 26rpx; color: var(--text); background: transparent; border: none; }
+.goal-form-btns     { display: flex; gap: 16rpx; margin-top: 24rpx; }
+.goal-cancel-btn    { flex: 1; padding: 22rpx; background: var(--navy-lift); border-radius: 14rpx; text-align: center; font-size: 26rpx; color: var(--text-muted); }
+.goal-submit-btn    { flex: 2; padding: 22rpx; background: linear-gradient(90deg, #6375EC, #8B9FFF); border-radius: 14rpx; text-align: center; font-size: 26rpx; font-weight: 600; color: #fff; }
+
+/* ── CRM Tab ─────────────────────────────────────────────────────────────── */
+.crm-tab        { flex: 1; overflow-y: auto; padding-bottom: 160rpx; }
+.crm-section-header { display: flex; justify-content: space-between; align-items: center; padding: 24rpx 24rpx 8rpx; }
+.crm-section-title  { font-size: 26rpx; font-weight: 600; color: var(--text); }
+.crm-section-btn    { padding: 8rpx 18rpx; border: 1rpx solid #6375EC; border-radius: 12rpx; }
+.crm-section-btn-text { font-size: 22rpx; color: #6375EC; }
+.panel-center-sm    { padding: 20rpx 24rpx; }
+.empty-text-sm      { font-size: 24rpx; color: var(--text-muted); }
+
+/* Pipeline kanban */
+.pipeline-kanban { display: flex; padding: 8rpx 16rpx 16rpx; white-space: nowrap; }
+.pipeline-col    { display: inline-flex; flex-direction: column; width: 240rpx; margin-right: 16rpx; border-radius: 16rpx; background: var(--navy-lift); padding: 0 0 12rpx; flex-shrink: 0; }
+.pipeline-col-header { display: flex; justify-content: space-between; align-items: center; padding: 12rpx 16rpx; border-radius: 16rpx 16rpx 0 0; border-bottom: 2rpx solid; }
+.pipeline-col-title  { font-size: 22rpx; font-weight: 700; }
+.pipeline-col-badge  { width: 36rpx; height: 36rpx; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.pipeline-col-count  { font-size: 20rpx; font-weight: 700; }
+.pipeline-card    { margin: 8rpx 12rpx 0; padding: 14rpx; background: rgba(255,255,255,0.04); border-radius: 12rpx; display: flex; justify-content: space-between; align-items: center; }
+.pipeline-card-name  { font-size: 24rpx; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pipeline-card-delta { font-size: 20rpx; font-weight: 600; margin-left: 8rpx; flex-shrink: 0; }
+.delta-good { color: #34d399; }
+.delta-bad  { color: #ef4444; }
+
+/* Appointment cards */
+.appt-card    { margin: 8rpx 24rpx; padding: 16rpx 20rpx; background: var(--navy-lift); border-radius: 14rpx; display: flex; gap: 14rpx; align-items: center; }
+.appt-format-badge { padding: 6rpx 14rpx; background: rgba(99,117,236,0.15); border-radius: 10rpx; flex-shrink: 0; }
+.appt-format-text  { font-size: 20rpx; color: #8B9FFF; font-weight: 600; }
+.appt-info    { flex: 1; }
+.appt-title   { display: block; font-size: 26rpx; color: var(--text); font-weight: 500; }
+.appt-client  { display: block; font-size: 22rpx; color: var(--text-muted); }
+.appt-time    { display: block; font-size: 22rpx; color: var(--text-muted); }
+
+/* Activity feed */
+.activity-item { display: flex; gap: 12rpx; align-items: flex-start; padding: 14rpx 24rpx; border-bottom: 1rpx solid rgba(255,255,255,0.04); }
+.activity-dot  { width: 10rpx; height: 10rpx; background: #6375EC; border-radius: 50%; margin-top: 12rpx; flex-shrink: 0; }
+.activity-content { flex: 1; }
+.activity-label { display: block; font-size: 24rpx; color: var(--text); }
+.activity-time  { display: block; font-size: 20rpx; color: var(--text-muted); margin-top: 2rpx; }
+
+/* ── Performance Tab ──────────────────────────────────────────────────────── */
+.perf-tab   { flex: 1; overflow-y: auto; padding-bottom: 160rpx; }
+.kpi-grid   { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16rpx; padding: 24rpx; }
+.kpi-card   { background: var(--navy-lift); border-radius: 16rpx; padding: 20rpx 16rpx; text-align: center; }
+.kpi-card-green { border: 1rpx solid rgba(16,185,129,0.3); }
+.kpi-card-orange{ border: 1rpx solid rgba(239,68,68,0.3); }
+.kpi-card-blue  { border: 1rpx solid rgba(14,165,233,0.3); }
+.kpi-value  { display: block; font-size: 36rpx; font-weight: 700; color: var(--text); }
+.kpi-label  { display: block; font-size: 20rpx; color: var(--text-muted); margin-top: 4rpx; }
+.improver-row   { display: flex; align-items: center; gap: 14rpx; padding: 14rpx 24rpx; border-bottom: 1rpx solid var(--navy-border); }
+.improver-avatar { width: 56rpx; height: 56rpx; border-radius: 50%; background: #1E3A5F; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.improver-name   { flex: 1; font-size: 26rpx; color: var(--text); }
+.improver-delta  { font-size: 26rpx; font-weight: 700; }
+
+/* ── Appointment form overlay ─────────────────────────────────────────────── */
+.overlay-footer { display: flex; gap: 16rpx; padding: 20rpx 24rpx 40rpx; border-top: 1rpx solid var(--navy-border); }
+.overlay-cancel-btn  { flex: 1; padding: 22rpx; background: var(--navy-lift); border-radius: 14rpx; text-align: center; font-size: 26rpx; color: var(--text-muted); }
+.overlay-confirm-btn { flex: 2; padding: 22rpx; background: linear-gradient(90deg,#6375EC,#8B9FFF); border-radius: 14rpx; text-align: center; font-size: 26rpx; font-weight: 600; color: #fff; }
+

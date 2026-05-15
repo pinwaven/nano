@@ -50,6 +50,16 @@
         </view>
       </view>
 
+      <!-- CRM Stage pill + tags -->
+      <view wx:if="{{item._crmStagePill || item._crmTags.length}}" class="crm-meta-row">
+        <view wx:if="{{item._crmStagePill}}" class="stage-pill" style="background: {{item._crmStagePill.color}}22; border-color: {{item._crmStagePill.color}};">
+          <text class="stage-pill-text" style="color: {{item._crmStagePill.color}};">{{item._crmStagePill.label}}</text>
+        </view>
+        <view wx:for="{{item._crmTags}}" wx:key="id" class="tag-chip" style="background: {{item.color_hex}}22; border-color: {{item.color_hex}};">
+          <text class="tag-chip-text" style="color: {{item.color_hex}};">{{item.name}}</text>
+        </view>
+      </view>
+
       <!-- Last user message preview -->
       <view wx:if="{{item._lastUserMsg}}" class="last-msg-strip">
         <text wx:if="{{item._lastMsgTimeFmt}}" class="last-msg-time">{{item._lastMsgTimeFmt}}</text>
@@ -275,6 +285,121 @@
 
   </view>
 
+  <!-- CRM Tab -->
+  <view wx:elif="{{tab === 'crm'}}" class="crm-tab">
+    <view wx:if="{{crmLoading}}" class="panel-center">
+      <text class="loading-text">{{t.loading}}</text>
+    </view>
+    <block wx:else>
+      <!-- Section: Pipeline Kanban -->
+      <view class="crm-section-header">
+        <text class="crm-section-title">{{t.crmPipeline}}</text>
+      </view>
+      <scroll-view scroll-x class="pipeline-kanban">
+        <view wx:for="{{crmPipelineColumns}}" wx:key="stage" class="pipeline-col">
+          <view class="pipeline-col-header" style="border-color: {{item.color}};">
+            <text class="pipeline-col-title" style="color: {{item.color}};">{{item.label}}</text>
+            <view class="pipeline-col-badge" style="background: {{item.color}}33;">
+              <text class="pipeline-col-count" style="color: {{item.color}};">{{item.clients.length}}</text>
+            </view>
+          </view>
+          <view wx:for="{{item.clients}}" wx:key="user_id" wx:for-item="client" class="pipeline-card"
+                catchtap="openClientDetail" data-client="{{client}}" data-tab="health">
+            <text class="pipeline-card-name">{{client.nickname || '—'}}</text>
+            <text wx:if="{{client.bio_age && client._cAge}}" class="pipeline-card-delta {{client.bio_age <= client._cAge ? 'delta-good' : 'delta-bad'}}">
+              {{client.bio_age <= client._cAge ? '-' : '+'}}{{Math.abs(client.bio_age - client._cAge).toFixed(1)}}yr
+            </text>
+          </view>
+        </view>
+      </scroll-view>
+
+      <!-- Section: Upcoming Appointments -->
+      <view class="crm-section-header">
+        <text class="crm-section-title">{{t.crmAppointments}}</text>
+        <view class="crm-section-btn" catchtap="openApptForm" data-client="{{null}}">
+          <text class="crm-section-btn-text">{{t.newAppt}}</text>
+        </view>
+      </view>
+      <view wx:if="{{crmUpcomingAppts.length === 0}}" class="panel-center-sm">
+        <text class="empty-text-sm">{{t.noAppointments}}</text>
+      </view>
+      <view wx:for="{{crmUpcomingAppts}}" wx:key="id" class="appt-card">
+        <view class="appt-format-badge">
+          <text class="appt-format-text">{{t.apptFormats[item.format] || item.format}}</text>
+        </view>
+        <view class="appt-info">
+          <text class="appt-title">{{item.title}}</text>
+          <text class="appt-client">{{item.nickname}}</text>
+          <text class="appt-time">{{item._timeFmt}}</text>
+        </view>
+      </view>
+
+      <!-- Section: Activity Feed -->
+      <view class="crm-section-header">
+        <text class="crm-section-title">{{t.crmActivity}}</text>
+      </view>
+      <view wx:if="{{crmActivityFeed.length === 0}}" class="panel-center-sm">
+        <text class="empty-text-sm">{{t.noActivity}}</text>
+      </view>
+      <view wx:for="{{crmActivityFeed}}" wx:key="id" class="activity-item">
+        <view class="activity-dot"></view>
+        <view class="activity-content">
+          <text class="activity-label">{{item.nickname}} · {{item._label}}</text>
+          <text class="activity-time">{{item._timeFmt}}</text>
+        </view>
+      </view>
+
+      <!-- Section: KPIs -->
+      <view class="crm-section-header" style="margin-top: 24rpx;">
+        <text class="crm-section-title">{{t.kpiTitle}}</text>
+      </view>
+      <view wx:if="{{kpiLoading}}" class="panel-center-sm">
+        <text class="loading-text">{{t.loading}}</text>
+      </view>
+      <block wx:elif="{{kpiData}}">
+        <view class="kpi-grid">
+          <view class="kpi-card">
+            <text class="kpi-value">{{kpiData.total_clients}}</text>
+            <text class="kpi-label">{{t.kpiClients}}</text>
+          </view>
+          <view class="kpi-card kpi-card-green">
+            <text class="kpi-value">{{kpiData.active_clients}}</text>
+            <text class="kpi-label">{{t.kpiActive}}</text>
+          </view>
+          <view class="kpi-card kpi-card-orange">
+            <text class="kpi-value">{{kpiData.at_risk_count}}</text>
+            <text class="kpi-label">{{t.kpiAtRisk}}</text>
+          </view>
+          <view class="kpi-card">
+            <text class="kpi-value">¥{{kpiData.commission_cny}}</text>
+            <text class="kpi-label">{{t.kpiCommission}}</text>
+          </view>
+          <view class="kpi-card">
+            <text class="kpi-value">{{kpiData.scans_facilitated}}</text>
+            <text class="kpi-label">{{t.kpiScans}}</text>
+          </view>
+          <view class="kpi-card kpi-card-blue">
+            <text class="kpi-value">{{kpiData.avg_nps_score != null ? kpiData.avg_nps_score : '—'}}</text>
+            <text class="kpi-label">{{t.kpiNps}}</text>
+          </view>
+        </view>
+        <view class="crm-section-header">
+          <text class="crm-section-title">{{t.topImprovers}}</text>
+        </view>
+        <view wx:if="{{topImprovers.length === 0}}" class="panel-center-sm">
+          <text class="empty-text-sm">—</text>
+        </view>
+        <view wx:for="{{topImprovers}}" wx:key="nickname" class="improver-row">
+          <view class="improver-avatar"><text class="avatar-letter">{{item._avatar}}</text></view>
+          <text class="improver-name">{{item.nickname}}</text>
+          <text class="improver-delta {{item.delta <= 0 ? 'delta-good' : 'delta-bad'}}">
+            {{item.delta > 0 ? '+' : ''}}{{item.delta}}yr
+          </text>
+        </view>
+      </block>
+    </block>
+  </view>
+
   </scroll-view>
 
   <!-- ── Bottom Tab Bar ── -->
@@ -304,6 +429,58 @@
       <image class="tab-icon-img" src="/assets/icons/training.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabs.training}}</text>
     </view>
+    <view class="tab-btn {{tab === 'crm' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="crm">
+      <view wx:if="{{tab === 'crm'}}" class="tab-line"></view>
+      <image class="tab-icon-img" src="/assets/icons/crm.svg" mode="aspectFit" />
+      <text class="tab-label">{{t.tabs.crm}}</text>
+    </view>
+  </view>
+
+  <!-- ── Appointment Form Overlay ──────────────────────────────────────── -->
+  <view wx:if="{{apptFormOpen}}" class="overlay-mask" catchtouchmove="noop">
+    <view class="overlay-panel" catchtap="noop">
+      <view class="overlay-header">
+        <text class="overlay-title">{{t.newAppt}}</text>
+        <view class="overlay-close" bindtap="closeApptForm"><text class="close-x">✕</text></view>
+      </view>
+      <scroll-view scroll-y class="overlay-scroll">
+        <view class="form-row">
+          <text class="form-label">{{t.apptTitle}}</text>
+          <input class="form-input" placeholder="…" value="{{apptTitleText}}" bindinput="onApptTitleInput" />
+        </view>
+        <picker mode="date" value="{{apptDate}}" bindchange="onApptDateChange">
+          <view class="form-row">
+            <text class="form-label">{{t.apptDate}}</text>
+            <text class="form-value">{{apptDate || '—'}}</text>
+          </view>
+        </picker>
+        <picker mode="time" value="{{apptTime}}" bindchange="onApptTimeChange">
+          <view class="form-row">
+            <text class="form-label">{{t.apptTime}}</text>
+            <text class="form-value">{{apptTime}}</text>
+          </view>
+        </picker>
+        <picker mode="selector" range="{{['video','phone','in_person','wechat']}}" bindchange="onApptFormatChange">
+          <view class="form-row">
+            <text class="form-label">{{t.apptFormats[apptFormat]}}</text>
+          </view>
+        </picker>
+        <view class="form-row" wx:if="{{apptFormat === 'video' || apptFormat === 'wechat'}}">
+          <text class="form-label">Link</text>
+          <input class="form-input" placeholder="https://…" value="{{apptLink}}" bindinput="onApptLinkInput" />
+        </view>
+        <view class="form-row" wx:if="{{apptClientName}}">
+          <text class="form-label">Client</text>
+          <text class="form-value">{{apptClientName}}</text>
+        </view>
+      </scroll-view>
+      <view class="overlay-footer">
+        <view class="overlay-cancel-btn" bindtap="closeApptForm"><text>{{t.apptCancel}}</text></view>
+        <view class="overlay-confirm-btn {{apptBusy ? 'btn-busy' : ''}}" bindtap="submitAppt">
+          <text>{{apptBusy ? '…' : t.apptCreate}}</text>
+        </view>
+      </view>
+    </view>
   </view>
 
   <!-- ── Client Detail Sheet ───────────────────────────────────────────── -->
@@ -327,6 +504,12 @@
         </view>
         <view class="detail-tab {{detailTab === 'chat' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="chat">
           <text class="detail-tab-text">{{t.tabChat}}</text>
+        </view>
+        <view class="detail-tab {{detailTab === 'notes' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="notes">
+          <text class="detail-tab-text">{{t.tabNotes}}</text>
+        </view>
+        <view class="detail-tab {{detailTab === 'goals' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="goals">
+          <text class="detail-tab-text">{{t.tabGoals}}</text>
         </view>
       </view>
 
@@ -452,6 +635,94 @@
             />
             <view class="compose-send-btn {{msgBusy ? 'btn-busy' : ''}}" bindtap="sendMessage">
               <text class="compose-send-text">{{msgBusy ? '…' : t.send}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- Notes panel -->
+      <view wx:if="{{detailTab === 'notes'}}" class="overlay-scroll-full">
+        <view wx:if="{{clientNotesLoading}}" class="panel-center">
+          <text class="loading-text">{{t.loading}}</text>
+        </view>
+        <block wx:else>
+          <view wx:if="{{clientNotes.length === 0}}" class="panel-center">
+            <text class="empty-text">{{t.noNotes}}</text>
+          </view>
+          <view wx:for="{{clientNotes}}" wx:key="id" class="note-item {{item.is_pinned ? 'note-pinned' : ''}}">
+            <text class="note-content">{{item.content}}</text>
+            <view class="note-footer">
+              <text class="note-date">{{item.created_at}}</text>
+              <view class="note-actions">
+                <text class="note-action-btn" catchtap="toggleNotePin" data-note="{{item}}">{{item.is_pinned ? t.noteUnpin : t.notePin}}</text>
+                <text class="note-action-btn note-delete-btn" catchtap="deleteNote" data-id="{{item.id}}">{{t.noteDelete}}</text>
+              </view>
+            </view>
+          </view>
+        </block>
+        <!-- Compose area -->
+        <view class="note-compose">
+          <textarea class="note-input" placeholder="{{t.addNotePh}}" value="{{noteText}}" bindinput="onNoteTextInput" maxlength="1000" auto-height />
+          <view class="note-save-btn {{notesBusy ? 'btn-busy' : ''}}" bindtap="saveNote">
+            <text class="note-save-text">{{notesBusy ? '…' : t.saveNote}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- Goals panel -->
+      <view wx:if="{{detailTab === 'goals'}}" class="overlay-scroll-full">
+        <view wx:if="{{clientGoalsLoading}}" class="panel-center">
+          <text class="loading-text">{{t.loading}}</text>
+        </view>
+        <block wx:else>
+          <view class="goals-header">
+            <view class="set-goal-btn" bindtap="openGoalForm">
+              <text class="set-goal-text">{{t.setGoal}}</text>
+            </view>
+          </view>
+          <view wx:if="{{clientGoals.length === 0}}" class="panel-center">
+            <text class="empty-text">{{t.noGoals}}</text>
+          </view>
+          <view wx:for="{{clientGoals}}" wx:key="id" class="goal-item goal-{{item.status}}">
+            <view class="goal-header-row">
+              <text class="goal-title">{{item.title_zh}}</text>
+              <text class="goal-status-badge goal-status-{{item.status}}">{{item.status === 'achieved' ? t.goalAchieved : item.status === 'missed' ? t.goalMissed : t.goalActive}}</text>
+            </view>
+            <view wx:if="{{item.baseline_value != null && item.target_value != null}}" class="goal-progress-row">
+              <text class="goal-baseline">{{item.baseline_value}}</text>
+              <view class="goal-bar-bg">
+                <view class="goal-bar-fill" style="width: {{item._pct}}%;"></view>
+              </view>
+              <text class="goal-target">{{item.target_value}}</text>
+            </view>
+            <view class="goal-meta-row">
+              <text wx:if="{{item.current_value != null}}" class="goal-current">当前: {{item.current_value}}</text>
+              <text wx:if="{{item.target_date}}" class="goal-date">截止: {{item.target_date}}</text>
+            </view>
+          </view>
+        </block>
+        <!-- Goal form -->
+        <view wx:if="{{goalFormOpen}}" class="goal-form-overlay">
+          <view class="goal-form-card">
+            <picker mode="selector" range="{{['bio_age','sub_age','weight','steps','sleep_score','hrv','custom']}}" bindchange="onGoalTypeChange">
+              <view class="goal-form-row">
+                <text class="goal-form-label">{{t.goalTypeLabel}}</text>
+                <text class="goal-form-value">{{t.goalTypes[goalType] || goalType}}</text>
+              </view>
+            </picker>
+            <view class="goal-form-row">
+              <text class="goal-form-label">{{t.goalTargetLabel}}</text>
+              <input class="goal-form-input" type="digit" placeholder="0" value="{{goalTargetValue}}" bindinput="onGoalTargetInput" />
+            </view>
+            <picker mode="date" value="{{goalTargetDate}}" bindchange="onGoalDateChange">
+              <view class="goal-form-row">
+                <text class="goal-form-label">{{t.goalDateLabel}}</text>
+                <text class="goal-form-value">{{goalTargetDate || '—'}}</text>
+              </view>
+            </picker>
+            <view class="goal-form-btns">
+              <view class="goal-cancel-btn" bindtap="closeGoalForm"><text>取消</text></view>
+              <view class="goal-submit-btn {{goalBusy ? 'btn-busy' : ''}}" bindtap="submitGoal"><text>{{goalBusy ? '…' : '保存'}}</text></view>
             </view>
           </view>
         </view>

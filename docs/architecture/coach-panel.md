@@ -104,6 +104,10 @@ Both pages bind `touchstart`/`touchend` on their root view. A gesture is recogni
 
 Overlays that suppress the swipe gesture on the coach panel: `detailOpen`, `reminderOpen`, `qAssignOpen`, `qResponsesOpen`, `menuOpen`.
 
+## CRM Extension
+
+The coach panel gained a full CRM layer in a subsequent release. See [coach-crm.md](coach-crm.md) for the complete schema, API reference, miniapp UI, and admin panel additions.
+
 ## API Endpoints Used
 
 | Method | Path | Purpose |
