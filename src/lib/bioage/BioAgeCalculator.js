@@ -22,23 +22,23 @@ class BioAgeCalculator {
 
     // Metabolic (GA) — inflammation coupling preserved
     this.GA_ALPHA = 0.90;      // Sigmoid slope
-    this.GA_BETA  = 14.5;      // Sigmoid inflection point (pre-diabetes transition %)
+    this.GA_BETA  = 15.5;      // Sigmoid inflection point (pre-diabetes transition %)
 
     // Cellular (GDF-15, CD38)
-    this.GDF_M      = 1050;    // Hill half-maximal constant (pg/mL)
+    this.GDF_M      = 1150;    // Hill half-maximal constant (pg/mL)
     this.GDF_N      = 3;       // Hill coefficient
     this.CD38_SLOPE = 4.5;     // Linear penalty per fold-change above 1.0
 
     // MicroVascular (Cystatin C)
-    this.CYS_K       = 1.3;    // Decay constant
-    this.CYS_OPTIMAL = 0.68;   // Max-score threshold (mg/L)
+    this.CYS_K       = 4.5;    // Decay constant
+    this.CYS_OPTIMAL = 0.70;   // Max-score threshold (mg/L)
 
     // Deficit Accumulation Model (Gompertz-calibrated to Chinese population statistics)
     this.MAX_HEALTH_SCORE = 40; // 4 dimensions × 10 pts
     this.BASELINE_AGE     = 25;
     
     // Fit: mFI = A * e^(B * age)
-    this.GOMPERTZ_A      = 0.0330;
+    this.GOMPERTZ_A      = 0.0325;
     this.GOMPERTZ_B      = 0.0415;
 
     // Soft-compression scales (non-hard caps)
