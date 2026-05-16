@@ -5380,23 +5380,33 @@ function KinoTab({ devices, coaches, channels, releases = [], onRefresh }) {
 
 // ── Invites tab ───────────────────────────────────────────────────────────────
 
-function InviteModal({ channels, onClose, onSave }) {
+function InviteModal({ channels, coaches, onClose, onSave }) {
   const { t } = useLang();
-  const [form, setForm] = useState({ channel_id: '', type: 'coach', max_uses: '' });
+  const [form, setForm] = useState({ channel_id: '', type: 'coach', max_uses: '', created_by: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const channelCoaches = coaches.filter(c => String(c.channel_id) === String(form.channel_id));
+  const showCoachPicker = form.type === 'coach' && form.channel_id !== '';
+
+  const handleChannelChange = (val) => {
+    setForm(f => ({ ...f, channel_id: val, created_by: '' }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.channel_id) { setError(t.modal.inviteChannel.replace(' *', '') + ' required'); return; }
+    if (showCoachPicker && !form.created_by) { setError('Assigned coach required for coach invites'); return; }
     setBusy(true); setError('');
     try {
-      await axios.post('/api/invitations', {
+      const payload = {
         channel_id: parseInt(form.channel_id),
         type: form.type,
         max_uses: form.max_uses !== '' ? parseInt(form.max_uses) : null,
-      });
+      };
+      if (form.created_by) payload.created_by = form.created_by;
+      await axios.post('/api/invitations', payload);
       onSave();
     } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
     finally { setBusy(false); }
@@ -5414,7 +5424,7 @@ function InviteModal({ channels, onClose, onSave }) {
             <label className="form-field">
               <span>{t.modal.inviteChannel}</span>
               <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                <select value={form.channel_id} onChange={e => handleChannelChange(e.target.value)} className="inline-select" style={{ width: '100%' }}>
                   <option value="">{t.modal.channelUnassigned}</option>
                   {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
@@ -5432,6 +5442,18 @@ function InviteModal({ channels, onClose, onSave }) {
                 <ChevronDown size={11} className="select-chevron" />
               </div>
             </label>
+            {showCoachPicker && (
+              <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                <span>Assigned Coach *</span>
+                <div className="select-wrap" style={{ width: '100%' }}>
+                  <select value={form.created_by} onChange={e => set('created_by', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                    <option value="">— select coach —</option>
+                    {channelCoaches.map(c => <option key={c.user_id} value={c.user_id}>{c.name}</option>)}
+                  </select>
+                  <ChevronDown size={11} className="select-chevron" />
+                </div>
+              </label>
+            )}
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{t.modal.inviteMaxUses}</span>
               <input type="number" min="1" value={form.max_uses} onChange={e => set('max_uses', e.target.value)} placeholder={t.modal.inviteMaxUsesPlaceholder} />
@@ -5481,7 +5503,7 @@ function DeactivateInviteConfirm({ invite, onClose, onConfirm }) {
   );
 }
 
-function InvitesTab({ invitations, channels, onRefresh }) {
+function InvitesTab({ invitations, channels, coaches, onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
   const [copied, setCopied] = useState(null);
@@ -5562,7 +5584,7 @@ function InvitesTab({ invitations, channels, onRefresh }) {
           </tbody>
         </table>
       </div>
-      {modal?.type === 'add'        && <InviteModal channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add'        && <InviteModal channels={channels} coaches={coaches} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'deactivate' && <DeactivateInviteConfirm invite={modal.invite} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
     </>
   );
@@ -8538,7 +8560,7 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} />}
           {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
           {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
-          {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} coaches={data.coaches} onRefresh={fetchData} />}
           {tab === 'rewards'   && <RewardsTab />}
           {tab === 'partners'  && <PartnersTab />}
           {tab === 'academy'   && <AcademyTab />}

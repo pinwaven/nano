@@ -3352,6 +3352,11 @@ async function handleWxLogin(body) {
                 const coachByUser = await pool.query('SELECT id FROM coaches WHERE user_id = $1 LIMIT 1', [inviteRecord.created_by]);
                 if (coachByUser.rows.length > 0) resolvedCoachId = coachByUser.rows[0].id;
             }
+            // Option B: fallback — if channel has exactly one coach, auto-assign them
+            if (!resolvedCoachId && channelId) {
+                const channelCoaches = await pool.query('SELECT id FROM coaches WHERE channel_id = $1', [channelId]);
+                if (channelCoaches.rows.length === 1) resolvedCoachId = channelCoaches.rows[0].id;
+            }
         }
     }
 

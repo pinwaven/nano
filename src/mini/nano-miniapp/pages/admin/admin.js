@@ -34,6 +34,7 @@ const T = {
       selectUser: '选择用户 *', users: '用户数',
       joined: '注册时间', addTitle: '添加教练', editTitle: '编辑教练',
       deleteWarning: '确认删除此教练？其名下用户将变为未分配状态。',
+      phone: '电话', email: '邮箱', language: '语言',
     },
     store: {
       itemsTab: '商品', ordersTab: '订单',
@@ -103,6 +104,7 @@ const T = {
       selectUser: 'Select User *', users: 'Users',
       joined: 'Joined', addTitle: 'Add Coach', editTitle: 'Edit Coach',
       deleteWarning: 'Delete this coach? Their assigned users will become unassigned.',
+      phone: 'Phone', email: 'Email', language: 'Language',
     },
     store: {
       itemsTab: 'Items', ordersTab: 'Orders',
@@ -493,12 +495,13 @@ Page({
           coach_id: form.coach_id === '' ? null : parseInt(form.coach_id),
           external_id: form.external_id, external_app: form.external_app,
         }
-        if (modalMode === 'add') await this._req(`${BASE}/api/users`, 'POST', payload)
+        if (modalMode === 'add') await this._req(`${BASE}/api/users`, 'POST', { ...payload, channel_id: this._channelId })
         else await this._req(`${BASE}/api/users/${editTargetId}`, 'PUT', payload)
       } else if (modalType === 'coach') {
         if (!form.user_id) { this.setData({ modalError: t.error.required, modalBusy: false }); return }
-        if (modalMode === 'add') await this._req(`${BASE}/api/coaches`, 'POST', { user_id: form.user_id })
-        else await this._req(`${BASE}/api/coaches/${editTargetId}`, 'PUT', { user_id: form.user_id })
+        const coachPayload = { user_id: form.user_id, channel_id: this._channelId }
+        if (modalMode === 'add') await this._req(`${BASE}/api/coaches`, 'POST', coachPayload)
+        else await this._req(`${BASE}/api/coaches/${editTargetId}`, 'PUT', coachPayload)
       } else if (modalType === 'item') {
         if (!form.key_name.trim() || !form.name_en.trim()) { this.setData({ modalError: t.error.required, modalBusy: false }); return }
         if (modalMode === 'add') await this._req(`${BASE}/api/store-items`, 'POST', form)
@@ -553,7 +556,7 @@ Page({
         try {
           await this._req(`${BASE}/api/coaches/${coach.id}`, 'DELETE')
           this._loadAll()
-        } catch (e) { wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' }) }
+        } catch (e) { wx.showToast({ title: e.message || T[this.data.lang].error.networkError, icon: 'none', duration: 2500 }) }
       },
     })
   },
@@ -594,20 +597,34 @@ Page({
 
   // ── Invites ───────────────────────────────────────────────────────────────────
 
-  async generateInvite() {
-    const { lang } = this.data
+  generateInvite() {
+    const { lang, coaches } = this.data
     const t = T[lang]
     const user = app.globalData.user
     const cid = this._channelId
     if (!cid) { wx.showToast({ title: t.error.networkError, icon: 'none' }); return }
+    if (coaches.length === 0) {
+      this._createInvite(user.user_id, 'channel', cid)
+      return
+    }
+    wx.showActionSheet({
+      itemList: [lang === 'zh' ? '通用邀请（无指定教练）' : 'General invite (no coach)', ...coaches.map(c => c.name)],
+      success: (res) => {
+        if (res.tapIndex === 0) {
+          this._createInvite(user.user_id, 'channel', cid)
+        } else {
+          const coach = coaches[res.tapIndex - 1]
+          this._createInvite(coach.user_id, 'coach', cid)
+        }
+      },
+    })
+  },
+
+  async _createInvite(createdBy, type, cid) {
     try {
-      await this._req(`${BASE}/api/invitations`, 'POST', {
-        created_by: user.user_id,
-        channel_id: cid,
-        type: 'channel',
-      })
+      await this._req(`${BASE}/api/invitations`, 'POST', { created_by: createdBy, channel_id: cid, type })
       this._loadAll()
-    } catch (e) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
+    } catch (e) { wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' }) }
   },
 
   copyInvite(e) {
@@ -698,7 +715,18 @@ Page({
 
   _req(url, method = 'GET', data = null) {
     return new Promise((resolve, reject) => {
-      const opts = { url, method, header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` }, success: resolve, fail: reject }
+      const opts = {
+        url, method,
+        header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
+        success(res) {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(res)
+          } else {
+            reject(new Error(res.data?.error || `HTTP ${res.statusCode}`))
+          }
+        },
+        fail: reject,
+      }
       if (data) opts.data = data
       wx.request(opts)
     })
