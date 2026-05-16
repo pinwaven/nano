@@ -2,6 +2,7 @@
   "navigationStyle": "custom",
   "usingComponents": {
     "toolbox": "/components/toolbox/toolbox",
-    "user-health": "/components/user-health/user-health"
+    "user-health": "/components/user-health/user-health",
+    "mp-html": "/miniprogram_npm/mp-html/index"
   }
 }

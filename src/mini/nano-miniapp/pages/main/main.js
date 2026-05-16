@@ -1,6 +1,7 @@
 const app = getApp()
 const { BASE } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
+const { mdToHtml } = require('../../utils/markdown.js')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
 
@@ -604,6 +605,36 @@ Page({
     toolboxOpen: false,
     toolList: [],
     kinoScanPending: false,
+    mpHtmlAiStyle: {
+      p: 'color:#EEF2FF;margin:0 0 6px;line-height:1.6;font-size:14px;',
+      strong: 'color:#fff;font-weight:600;',
+      em: 'color:#CBD5E1;',
+      h1: 'color:#fff;font-size:1.2em;font-weight:700;margin:8px 0 4px;',
+      h2: 'color:#fff;font-size:1.1em;font-weight:600;margin:6px 0 4px;',
+      h3: 'color:#EEF2FF;font-size:1em;font-weight:600;margin:4px 0;',
+      ul: 'padding-left:18px;margin:4px 0;',
+      ol: 'padding-left:18px;margin:4px 0;',
+      li: 'color:#EEF2FF;margin:2px 0;font-size:14px;',
+      code: 'background:rgba(255,255,255,0.1);border-radius:4px;padding:1px 5px;color:#93C5FD;font-size:0.9em;font-family:monospace;',
+      pre: 'background:rgba(0,0,0,0.3);border-radius:8px;padding:12px;margin:8px 0;overflow:auto;',
+      blockquote: 'border-left:3px solid #6375EC;padding-left:10px;margin:6px 0;color:#CBD5E1;',
+      hr: 'border:none;border-top:1px solid rgba(99,117,236,0.3);margin:8px 0;',
+    },
+    mpHtmlCoachStyle: {
+      p: 'color:#EEF2FF;margin:0 0 6px;line-height:1.6;font-size:14px;',
+      strong: 'color:#fff;font-weight:600;',
+      em: 'color:#A7F3D0;',
+      h1: 'color:#fff;font-size:1.2em;font-weight:700;margin:8px 0 4px;',
+      h2: 'color:#fff;font-size:1.1em;font-weight:600;margin:6px 0 4px;',
+      h3: 'color:#EEF2FF;font-size:1em;font-weight:600;margin:4px 0;',
+      ul: 'padding-left:18px;margin:4px 0;',
+      ol: 'padding-left:18px;margin:4px 0;',
+      li: 'color:#EEF2FF;margin:2px 0;font-size:14px;',
+      code: 'background:rgba(16,185,129,0.15);border-radius:4px;padding:1px 5px;color:#A7F3D0;font-size:0.9em;font-family:monospace;',
+      pre: 'background:rgba(0,0,0,0.3);border-radius:8px;padding:12px;margin:8px 0;overflow:auto;',
+      blockquote: 'border-left:3px solid #10B981;padding-left:10px;margin:6px 0;color:#A7F3D0;',
+      hr: 'border:none;border-top:1px solid rgba(16,185,129,0.3);margin:8px 0;',
+    },
 
     // Kino Simulator passcode
     kinoPassOpen: false,
@@ -753,7 +784,7 @@ Page({
     const t = T[lang]
     this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, toolList: toolActions.getToolList(t) })
     if (isGuest) {
-      this.setData({ messages: [{ id: 'init', role: 'ai', content: T[lang].initMsg }], obStep: null, storeLoading: true })
+      this.setData({ messages: [{ id: 'init', role: 'ai', content: T[lang].initMsg, html: mdToHtml(T[lang].initMsg) }], obStep: null, storeLoading: true })
       this._loadGuestStore(lang)
       return
     }
@@ -1070,7 +1101,7 @@ Page({
 
   async _initChat(user, lang) {
     const t = T[lang]
-    const initMsg = { id: 'init', role: 'ai', content: t.initMsg }
+    const initMsg = { id: 'init', role: 'ai', content: t.initMsg, html: mdToHtml(t.initMsg) }
 
     // Load history
     let historyLoaded = false
@@ -1085,11 +1116,12 @@ Page({
               const data = JSON.parse(m.content)
               return { id: `h-${i}`, role: 'action', action: data.action, label: data.label }
             } catch (e) {
-              return { id: `h-${i}`, role: 'ai', content: m.content }
+              return { id: `h-${i}`, role: 'ai', content: m.content, html: mdToHtml(m.content) }
             }
           }
           const content = role === 'coach' ? (m.content || '').replace(/\n+/g, ' ') : m.content
-          return { id: `h-${i}`, role, content, imageUrl: m.image_url || null }
+          const html = (role !== 'user' && !m.image_url) ? mdToHtml(content) : null
+          return { id: `h-${i}`, role, content, html, imageUrl: m.image_url || null }
         })
         const ids = history.map(m => m.id).filter(id => typeof id === 'number')
         this._lastMsgId = ids.length > 0 ? Math.max(...ids) : 0
@@ -1343,7 +1375,8 @@ Page({
   },
 
   _addMsg(role, content, persist = false) {
-    const msg = { id: `${role}-${Date.now()}`, role, content }
+    const html = (role !== 'user') ? mdToHtml(content) : null
+    const msg = { id: `${role}-${Date.now()}`, role, content, html }
     const messages = [...this.data.messages, msg]
     this.setData({ messages })
     this._scrollBottom()
@@ -1510,7 +1543,7 @@ Page({
       const unseen = notifications.filter(n => !this._seenIds.has(n.id))
       if (unseen.length > 0) {
         unseen.forEach(n => this._seenIds.add(n.id))
-        const newMsgs = unseen.map(n => ({ id: `n-${n.id}`, role: 'ai', content: n.content }))
+        const newMsgs = unseen.map(n => ({ id: `n-${n.id}`, role: 'ai', content: n.content, html: mdToHtml(n.content) }))
         const messages = [...this.data.messages, ...newMsgs]
         this.setData({ messages, typing: false })
         this._scrollBottom()

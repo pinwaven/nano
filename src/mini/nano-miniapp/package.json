@@ -1,0 +1,7 @@
+{
+  "name": "nano-miniapp",
+  "version": "1.0.0",
+  "dependencies": {
+    "mp-html": "^2.4.4"
+  }
+}

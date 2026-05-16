@@ -1,6 +1,7 @@
 const app = getApp()
 const { BASE } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
+const { mdToHtml } = require('../../utils/markdown.js')
 
 const T = {
   zh: {
@@ -352,6 +353,36 @@ Page({
     chatMessages: [],
     chatLoading: false,
     chatScrollId: '',
+    mpHtmlAiStyle: {
+      p: 'color:#D0E4F7;margin:0 0 6px;line-height:1.6;font-size:13px;',
+      strong: 'color:#fff;font-weight:600;',
+      em: 'color:#93C5FD;',
+      h1: 'color:#fff;font-size:1.2em;font-weight:700;margin:8px 0 4px;',
+      h2: 'color:#fff;font-size:1.1em;font-weight:600;margin:6px 0 4px;',
+      h3: 'color:#D0E4F7;font-size:1em;font-weight:600;margin:4px 0;',
+      ul: 'padding-left:18px;margin:4px 0;',
+      ol: 'padding-left:18px;margin:4px 0;',
+      li: 'color:#D0E4F7;margin:2px 0;font-size:13px;',
+      code: 'background:rgba(255,255,255,0.1);border-radius:4px;padding:1px 5px;color:#93C5FD;font-size:0.85em;font-family:monospace;',
+      pre: 'background:rgba(0,0,0,0.3);border-radius:8px;padding:10px;margin:6px 0;overflow:auto;',
+      blockquote: 'border-left:3px solid #6375EC;padding-left:10px;margin:6px 0;color:#93C5FD;',
+      hr: 'border:none;border-top:1px solid rgba(99,117,236,0.3);margin:6px 0;',
+    },
+    mpHtmlCoachStyle: {
+      p: 'color:#D0E4F7;margin:0 0 6px;line-height:1.6;font-size:13px;',
+      strong: 'color:#fff;font-weight:600;',
+      em: 'color:#A7F3D0;',
+      h1: 'color:#fff;font-size:1.2em;font-weight:700;margin:8px 0 4px;',
+      h2: 'color:#fff;font-size:1.1em;font-weight:600;margin:6px 0 4px;',
+      h3: 'color:#D0E4F7;font-size:1em;font-weight:600;margin:4px 0;',
+      ul: 'padding-left:18px;margin:4px 0;',
+      ol: 'padding-left:18px;margin:4px 0;',
+      li: 'color:#D0E4F7;margin:2px 0;font-size:13px;',
+      code: 'background:rgba(16,185,129,0.15);border-radius:4px;padding:1px 5px;color:#A7F3D0;font-size:0.85em;font-family:monospace;',
+      pre: 'background:rgba(0,0,0,0.3);border-radius:8px;padding:10px;margin:6px 0;overflow:auto;',
+      blockquote: 'border-left:3px solid #10B981;padding-left:10px;margin:6px 0;color:#A7F3D0;',
+      hr: 'border:none;border-top:1px solid rgba(16,185,129,0.3);margin:6px 0;',
+    },
     // Compose
     msgText: '',
     msgBusy: false,
@@ -754,13 +785,18 @@ Page({
     try {
       const params = `user_id=${encodeURIComponent(detailClient.user_id)}${this._coachId ? `&coach_id=${this._coachId}` : ''}`
       const res = await this._req(`${BASE}/api/coach-user-chat?${params}`)
-      const chatMessages = (res.data?.messages || []).map((m, i) => ({
-        ...m,
-        content: m.role === 'coach' ? (m.content || '').replace(/\n+/g, ' ') : m.content,
-        _time: fmtTime(m.created_at),
-        _isUser: m.role === 'user',
-        _isCoach: m.role === 'coach',
-      }))
+      const chatMessages = (res.data?.messages || []).map((m, i) => {
+        const content = m.role === 'coach' ? (m.content || '').replace(/\n+/g, ' ') : m.content
+        const html = m.role !== 'user' ? mdToHtml(content) : null
+        return {
+          ...m,
+          content,
+          html,
+          _time: fmtTime(m.created_at),
+          _isUser: m.role === 'user',
+          _isCoach: m.role === 'coach',
+        }
+      })
       const lastIdx = chatMessages.length - 1
       // Set messages first, then scroll in the callback so the new elements exist in DOM
       this.setData({ chatMessages, chatLoading: false, chatScrollId: '' }, () => {
@@ -803,10 +839,12 @@ Page({
   // 'user' role is stored as 'coach' so it appears correctly in both panels.
   _addChatMsg(role, content, persist = false) {
     const persistRole = role === 'user' ? 'coach' : role
+    const html = role !== 'user' ? mdToHtml(content) : null
     const msg = {
       id: `${role}-${Date.now()}-${Math.random()}`,
       role: persistRole,
       content,
+      html,
       _isUser: false,
       _isCoach: role === 'user',
       _isAi: role === 'ai',

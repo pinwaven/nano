@@ -608,7 +608,8 @@
                   <text class="chat-time">{{item._time}}</text>
                 </view>
                 <view class="chat-bubble {{item._isUser ? 'bubble-user' : item._isCoach ? 'bubble-coach' : 'bubble-ai'}}">
-                  <text class="chat-content">{{item.content}}</text>
+                  <mp-html wx:if="{{item.html}}" content="{{item.html}}" tag-style="{{item._isCoach ? mpHtmlCoachStyle : mpHtmlAiStyle}}" />
+                  <text wx:else class="chat-content">{{item.content}}</text>
                 </view>
               </view>
             </view>

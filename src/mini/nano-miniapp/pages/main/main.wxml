@@ -98,7 +98,8 @@
             </block>
             <view wx:elif="{{item.role === 'coach'}}" class="message-bubble message-coach">
               <text class="msg-coach-label">Coach</text>
-              <text class="msg-text" selectable="true">{{item.content}}</text>
+              <mp-html wx:if="{{item.html}}" content="{{item.html}}" tag-style="{{mpHtmlCoachStyle}}" />
+              <text wx:else class="msg-text" selectable="true">{{item.content}}</text>
             </view>
             <view wx:else class="message-bubble {{item.role === 'user' ? 'message-user' : 'message-ai'}} {{item.imageUrl ? 'msg-bubble-image' : ''}}">
               <image
@@ -108,7 +109,10 @@
                 mode="widthFix"
                 show-menu-by-longpress="{{true}}"
               />
-              <text wx:if="{{item.content && !item.imageUrl}}" class="msg-text" selectable="true">{{item.content}}</text>
+              <block wx:elif="{{item.role !== 'user' && item.html}}">
+                <mp-html content="{{item.html}}" tag-style="{{mpHtmlAiStyle}}" />
+              </block>
+              <text wx:else class="msg-text" selectable="true">{{item.content}}</text>
             </view>
           </view>
 
