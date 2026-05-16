@@ -2044,7 +2044,14 @@ Page({
   },
 
   openWeightTask(planId) {
-    this.setData({ planWeightOpen: true, planWeightInput: '', planWeightPlanId: planId })
+    this.setData({ planWeightOpen: true, planWeightInput: '', planWeightPlanId: planId, _weightSubAccepted: false })
+    wx.requestSubscribeMessage({
+      tmplIds: [wx.env?.WX_WEIGHT_TMPL_ID || 'EMj8N9HC4_a2dYyUxDR87AF0nRvme8uB7IPhOi56Zl4'],
+      success: (res) => {
+        const accepted = res['EMj8N9HC4_a2dYyUxDR87AF0nRvme8uB7IPhOi56Zl4'] === 'accept'
+        this.setData({ _weightSubAccepted: accepted })
+      },
+    })
   },
 
   handleWeightInput(e) {
@@ -2062,6 +2069,7 @@ Page({
     try {
       await this._req(`${BASE}/api/biomarkers`, 'POST', {
         openid: user.user_id, test_type: 'body_composition', test_data: { weight: w },
+        send_weight_reminder: !!this.data._weightSubAccepted,
       })
       const plan = this.data.activePlans.find(p => String(p.id) === String(planWeightPlanId))
       const activities = [...(plan?.today_activities || []).filter(a => a !== 'weight_logged'), 'weight_logged']

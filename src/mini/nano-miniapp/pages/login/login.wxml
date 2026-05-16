@@ -35,9 +35,6 @@
       bindgetphonenumber="handleGetPhone"
       disabled="{{phoneLoading}}"
     ><text>📱 授权手机号</text></button>
-    <view class="phone-skip-btn" bindtap="skipPhone">
-      <text>稍后再说</text>
-    </view>
   </view>
 
   <!-- Error -->

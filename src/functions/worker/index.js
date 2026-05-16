@@ -3625,7 +3625,42 @@ async function handlePostBiomarkers(body) {
             'INSERT INTO biomarkers (user_id, test_type, data, tested_at) VALUES ($1, $2, $3, $4)',
             [user_id, test_type, JSON.stringify({ actual: test_data }), tested_at || new Date().toISOString()]
         );
+        if (test_type === 'body_composition' && body.send_weight_reminder && test_data.weight) {
+            try {
+                const token = await getWxAccessToken();
+                await sendWeightSubscribeMsg(user_id, test_data.weight, token);
+            } catch (e) {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'weight subscribe msg failed', error: e.message }));
+            }
+        }
         return { success: true, user_id };
+    }
+}
+
+async function sendWeightSubscribeMsg(openid, weightKg, accessToken) {
+    const tmplId = process.env.WX_WEIGHT_TMPL_ID;
+    if (!tmplId) return;
+    const now = getNowShanghai().toFormat('yyyy-MM-dd HH:mm');
+    const res = await fetch(
+        `https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=${accessToken}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                touser: openid,
+                template_id: tmplId,
+                page: 'pages/main/main',
+                data: {
+                    thing1: { value: '体重记录成功' },
+                    number2: { value: String(weightKg) },
+                    time3:   { value: now },
+                },
+            }),
+        }
+    );
+    const result = await res.json();
+    if (result.errcode && result.errcode !== 0) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'wx_subscribe_send_error', data: result }));
     }
 }
 

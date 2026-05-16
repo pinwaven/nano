@@ -121,7 +121,7 @@ Page({
   async handleGetPhone(e) {
     const { code, errMsg } = e.detail
     if (errMsg !== 'getPhoneNumber:ok' || !code) {
-      this._finishLogin(this._pendingLogin)
+      wx.showToast({ title: '需要授权手机号才能继续', icon: 'none', duration: 2000 })
       return
     }
     this.setData({ phoneLoading: true })
@@ -134,10 +134,6 @@ Page({
         data: { user_id: user.user_id, code, app_id: wx.getAccountInfoSync().miniProgram.appId },
       })
     } catch (e) {}
-    this._finishLogin(this._pendingLogin)
-  },
-
-  skipPhone() {
     this._finishLogin(this._pendingLogin)
   },
 
