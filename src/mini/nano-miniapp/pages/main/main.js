@@ -388,6 +388,70 @@ const SUB_AGE_COLORS = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+function buildSubAgeLabels(base, overrides, lang) {
+  if (!overrides) return base
+  const result = { ...base }
+  for (const key of SUB_AGE_KEYS) {
+    const override = overrides[key]?.[lang]
+    if (override && override.trim()) result[key] = override.trim()
+  }
+  return result
+}
+
+function _mdEsc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function _mdInline(s) {
+  return _mdEsc(s)
+    .replace(/`([^`]+)`/g, (_, c) => '<code>' + c + '</code>')
+    .replace(/\*\*\*(.+?)\*\*\*/g, (_, c) => '<strong><em>' + c + '</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, (_, c) => '<strong>' + c + '</strong>')
+    .replace(/\*(.+?)\*/g, (_, c) => '<em>' + c + '</em>')
+    .replace(/_([^_\s][^_]*)_/g, (_, c) => '<em>' + c + '</em>')
+}
+
+function mdToHtml(md) {
+  if (!md) return ''
+  const lines = md.split('\n')
+  const out = []
+  let inUl = false, inOl = false, inPre = false, preLines = []
+
+  for (const line of lines) {
+    if (line.startsWith('```')) {
+      if (inPre) {
+        out.push('<pre><code>' + _mdEsc(preLines.join('\n')) + '</code></pre>')
+        preLines = []; inPre = false
+      } else { inPre = true }
+      continue
+    }
+    if (inPre) { preLines.push(line); continue }
+
+    if (inUl && !/^[-*+] /.test(line)) { out.push('</ul>'); inUl = false }
+    if (inOl && !/^\d+\. /.test(line)) { out.push('</ol>'); inOl = false }
+
+    const hm = line.match(/^(#{1,6}) (.+)/)
+    if (hm) { out.push('<h' + hm[1].length + '>' + _mdInline(hm[2]) + '</h' + hm[1].length + '>'); continue }
+
+    const ulm = line.match(/^[-*+] (.+)/)
+    if (ulm) { if (!inUl) { out.push('<ul>'); inUl = true }; out.push('<li>' + _mdInline(ulm[1]) + '</li>'); continue }
+
+    const olm = line.match(/^\d+\. (.+)/)
+    if (olm) { if (!inOl) { out.push('<ol>'); inOl = true }; out.push('<li>' + _mdInline(olm[1]) + '</li>'); continue }
+
+    if (/^-{3,}$/.test(line.trim())) { out.push('<hr>'); continue }
+    if (line.trim() === '') { out.push('<br>'); continue }
+
+    out.push('<p>' + _mdInline(line) + '</p>')
+  }
+
+  if (inUl) out.push('</ul>')
+  if (inOl) out.push('</ol>')
+  if (inPre) out.push('<pre><code>' + _mdEsc(preLines.join('\n')) + '</code></pre>')
+
+  return out.join('')
+}
+
 function chronoAge(birthDate) {
   if (!birthDate) return null
   return Math.floor((Date.now() - new Date(birthDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25))
@@ -750,7 +814,8 @@ Page({
     const theme = user.theme || app.globalData.theme || 'dark'
     app.globalData.theme = theme
     const userAvatarLetter = (user.nickname || 'U').slice(-1).toUpperCase()
-    const t = T[lang]
+    const channelOverrides = channel?.sub_age_display_names || null
+    const t = { ...T[lang], subAgeLabels: buildSubAgeLabels(T[lang].subAgeLabels, channelOverrides, lang) }
     this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, toolList: toolActions.getToolList(t) })
     if (isGuest) {
       this.setData({ messages: [{ id: 'init', role: 'ai', content: T[lang].initMsg }], obStep: null, storeLoading: true })
@@ -812,7 +877,9 @@ Page({
     app.globalData.lang = lang
     const storeItems  = this._rawStoreItems  ? mapStoreItems(this._rawStoreItems, lang)   : []
     const storeOrders = this._rawStoreOrders ? mapStoreOrders(this._rawStoreOrders, lang) : []
-    this.setData({ lang, t: T[lang], menuOpen: false, storeItems, storeOrders, toolList: toolActions.getToolList(T[lang]) })
+    const channelOverridesLang = this.data.channel?.sub_age_display_names || null
+    const mergedT = { ...T[lang], subAgeLabels: buildSubAgeLabels(T[lang].subAgeLabels, channelOverridesLang, lang) }
+    this.setData({ lang, t: mergedT, menuOpen: false, storeItems, storeOrders, toolList: toolActions.getToolList(mergedT) })
     this._loadDots(this.data.user, lang)
     this._loadCartridges(this.data.user, lang)
     if (this.data.tab === 'plans') this._loadReminders(this.data.user)
@@ -1085,10 +1152,12 @@ Page({
               const data = JSON.parse(m.content)
               return { id: `h-${i}`, role: 'action', action: data.action, label: data.label }
             } catch (e) {
-              return { id: `h-${i}`, role: 'ai', content: m.content }
+              return { id: `h-${i}`, role: 'ai', content: mdToHtml(m.content || '') }
             }
           }
-          const content = role === 'coach' ? (m.content || '').replace(/\n+/g, ' ') : m.content
+          const content = role === 'coach'
+            ? (m.content || '').replace(/\n+/g, ' ')
+            : role === 'ai' ? mdToHtml(m.content || '') : m.content
           return { id: `h-${i}`, role, content, imageUrl: m.image_url || null }
         })
         const ids = history.map(m => m.id).filter(id => typeof id === 'number')
@@ -1326,7 +1395,9 @@ Page({
       if (history.length > 0) {
         const msgs = history.map((m, i) => {
           const role = (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role
-          const content = role === 'coach' ? (m.content || '').replace(/\n+/g, ' ') : m.content
+          const content = role === 'coach'
+            ? (m.content || '').replace(/\n+/g, ' ')
+            : role === 'ai' ? mdToHtml(m.content || '') : m.content
           return { id: `h-${i}`, role, content, imageUrl: m.image_url || null }
         })
         this.setData({ messages: msgs })
@@ -1342,7 +1413,8 @@ Page({
     this.setData({ messages })
   },
 
-  _addMsg(role, content, persist = false) {
+  _addMsg(role, rawContent, persist = false) {
+    const content = role === 'ai' ? mdToHtml(rawContent) : rawContent
     const msg = { id: `${role}-${Date.now()}`, role, content }
     const messages = [...this.data.messages, msg]
     this.setData({ messages })
@@ -1351,7 +1423,7 @@ Page({
     if (persist && this.data.user?.user_id) {
       this._req(`${BASE}/api/chat-messages`, 'POST', {
         openid: this.data.user.user_id,
-        role, content
+        role, content: rawContent
       }).catch(e => console.error('Persistent msg failed', e))
     }
   },
@@ -1510,7 +1582,7 @@ Page({
       const unseen = notifications.filter(n => !this._seenIds.has(n.id))
       if (unseen.length > 0) {
         unseen.forEach(n => this._seenIds.add(n.id))
-        const newMsgs = unseen.map(n => ({ id: `n-${n.id}`, role: 'ai', content: n.content }))
+        const newMsgs = unseen.map(n => ({ id: `n-${n.id}`, role: 'ai', content: mdToHtml(n.content || '') }))
         const messages = [...this.data.messages, ...newMsgs]
         this.setData({ messages, typing: false })
         this._scrollBottom()
@@ -2455,7 +2527,9 @@ Page({
     const isAdmin = roles.includes('admin') || roles.includes('superadmin')
     const isSuperadmin = roles.includes('superadmin')
     const userAvatarLetter = (user.nickname || 'U').slice(-1).toUpperCase()
-    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t: T[lang], isGuest: false, guestSheetOpen: false, guestSheetStep: 'invite', guestInviteBusy: false, isCoach, isAdmin, isSuperadmin })
+    const channelOverridesGuest = channel?.sub_age_display_names || null
+    const guestT = { ...T[lang], subAgeLabels: buildSubAgeLabels(T[lang].subAgeLabels, channelOverridesGuest, lang) }
+    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t: guestT, isGuest: false, guestSheetOpen: false, guestSheetStep: 'invite', guestInviteBusy: false, isCoach, isAdmin, isSuperadmin })
     this._initChat(user, lang)
     this._loadDots(user, lang)
     this._loadCartridges(user, lang)

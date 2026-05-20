@@ -10,7 +10,7 @@ import {
   GraduationCap, Video, FileText, Upload, ExternalLink, Play, BookOpen,
   Bug, AlertCircle, Image as ImageIcon,
   ClipboardList, ChevronUp, Send, Eye,
-  BarChart2, Award, Archive, Box, Target, Filter, MessageSquare,
+  BarChart2, Award, Archive, Box, Target, Filter, MessageSquare, FlaskConical,
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
@@ -100,7 +100,7 @@ function LoginScreen({ onLogin }) {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'Coach CRM' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'Coach CRM', lab: 'Lab' },
     adminAccounts: { title: 'Admin Accounts', add: 'Add Admin', changePassword: 'Change Password', confirmDelete: 'Delete this admin account?', newPassword: 'New Password', usernameLabel: 'Username', passwordLabel: 'Password', count: (n) => `${n} account${n !== 1 ? 's' : ''}` },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
@@ -407,7 +407,7 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'Coach CRM' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'Coach CRM', lab: '检验中心' },
     adminAccounts: { title: '管理员账号', add: '添加管理员', changePassword: '修改密码', confirmDelete: '确认删除此管理员账号？', newPassword: '新密码', usernameLabel: '用户名', passwordLabel: '密码', count: (n) => `${n} 个账号` },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
@@ -1380,6 +1380,13 @@ const SUB_AGE_META_DETAIL = [
   { key: 'MicroVascularAge', label: 'Micro-Vascular Age', color: '#0ea5e9' },
 ];
 
+const SUB_AGE_KEYS_CONFIG = [
+  { key: 'ResilienceAge',    defaultZh: '抗压年龄',   defaultEn: 'Resilience Age' },
+  { key: 'CellularAge',      defaultZh: '细胞年龄',   defaultEn: 'Cellular Age' },
+  { key: 'MetabolicAge',     defaultZh: '代谢年龄',   defaultEn: 'Metabolic Age' },
+  { key: 'MicroVascularAge', defaultZh: '微血管年龄', defaultEn: 'Micro-Vascular Age' },
+];
+
 const CONDITION_LABELS = {
   blood_sugar_high:    'High Blood Sugar',
   blood_pressure_high: 'High Blood Pressure',
@@ -1915,6 +1922,424 @@ const STAGE_COLORS = {
   at_risk: '#ef4444', churned: '#6b7280', graduated: '#0ea5e9',
 };
 const STAGE_KEYS = ['lead', 'onboarding', 'active', 'at_risk', 'churned', 'graduated'];
+
+// ─── Lab Tab ──────────────────────────────────────────────────────────────────
+
+function LabTab({ users, onRefresh }) {
+  const [subTab, setSubTab] = useState('providers');
+  return (
+    <>
+      <div className="subtab-row" style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <button className={`subtab-btn${subTab === 'providers' ? ' active' : ''}`} onClick={() => setSubTab('providers')}>
+          <FlaskConical size={13} />Providers
+        </button>
+        <button className={`subtab-btn${subTab === 'mappings' ? ' active' : ''}`} onClick={() => setSubTab('mappings')}>
+          <Users size={13} />Patient Mappings
+        </button>
+        <button className={`subtab-btn${subTab === 'reports' ? ' active' : ''}`} onClick={() => setSubTab('reports')}>
+          <FileText size={13} />Reports
+        </button>
+      </div>
+      {subTab === 'providers' && <LabProvidersPanel onRefresh={onRefresh} />}
+      {subTab === 'mappings'  && <LabMappingsPanel users={users} onRefresh={onRefresh} />}
+      {subTab === 'reports'   && <LabReportsPanel users={users} />}
+    </>
+  );
+}
+
+// ── Providers panel ───────────────────────────────────────────────────────────
+
+function LabProvidersPanel({ onRefresh }) {
+  const [providers, setProviders] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [modal, setModal]         = useState(null); // null | { type: 'add' | 'edit', provider? }
+  const [busy, setBusy]           = useState(false);
+  const [err, setErr]             = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { const r = await axios.get('/api/lab-providers'); setProviders(r.data.providers || []); }
+    catch { setProviders([]); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openAdd  = () => setModal({ type: 'add', form: { lab_name: '', label: '', api_base_url: '', api_key: '', webhook_secret: '', poll_enabled: true } });
+  const openEdit = (p) => setModal({ type: 'edit', provider: p, form: { lab_name: p.lab_name, label: p.label || '', api_base_url: p.api_base_url, api_key: '', webhook_secret: '', poll_enabled: p.poll_enabled, is_active: p.is_active } });
+  const close    = () => { setModal(null); setErr(''); };
+
+  const toggle = async (p, field) => {
+    try { await axios.put(`/api/lab-providers/${p.id}`, { [field]: !p[field] }); load(); }
+    catch (e) { alert(e.response?.data?.error || 'Update failed'); }
+  };
+
+  const save = async () => {
+    setBusy(true); setErr('');
+    try {
+      if (modal.type === 'add') {
+        await axios.post('/api/lab-providers', modal.form);
+      } else {
+        const body = { ...modal.form };
+        if (!body.api_key) delete body.api_key;
+        if (!body.webhook_secret) delete body.webhook_secret;
+        await axios.put(`/api/lab-providers/${modal.provider.id}`, body);
+      }
+      close(); load(); onRefresh?.();
+    } catch (e) { setErr(e.response?.data?.error || 'Save failed'); }
+    finally { setBusy(false); }
+  };
+
+  const del = async (p) => {
+    if (!confirm(`Delete provider "${p.label || p.lab_name}"?`)) return;
+    try { await axios.delete(`/api/lab-providers/${p.id}`); load(); onRefresh?.(); }
+    catch (e) { alert(e.response?.data?.error || 'Delete failed'); }
+  };
+
+  const setField = (k, v) => setModal(m => ({ ...m, form: { ...m.form, [k]: v } }));
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={FlaskConical} label="Total Providers"  value={providers.length}                        color="#6366f1" />
+        <StatCard icon={Check}        label="Active"           value={providers.filter(p => p.is_active).length}  color="#10b981" />
+        <StatCard icon={Activity}     label="Poll Enabled"     value={providers.filter(p => p.poll_enabled && p.is_active).length} color="#3b82f6" />
+      </div>
+      <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count">{providers.length} provider{providers.length !== 1 ? 's' : ''}</span>
+          <button className="btn-primary" onClick={openAdd}><Plus size={14} />Add Provider</button>
+        </div>
+        <table className="data-table">
+          <thead><tr>
+            <th>ID</th><th>Adapter Key</th><th>Label</th><th>API Base URL</th>
+            <th>Poll</th><th>Active</th><th>Last Polled</th><th></th>
+          </tr></thead>
+          <tbody>
+            {loading && <tr><td colSpan={8} className="empty-row">Loading…</td></tr>}
+            {!loading && providers.length === 0 && <tr><td colSpan={8} className="empty-row">No providers configured yet.</td></tr>}
+            {providers.map(p => (
+              <tr key={p.id}>
+                <td style={{ color: '#94a3b8', fontSize: 11 }}>{p.id}</td>
+                <td><code style={{ fontSize: 12, color: '#a5b4fc' }}>{p.lab_name}</code></td>
+                <td>{p.label || <span style={{ color: '#475569' }}>—</span>}</td>
+                <td style={{ fontSize: 12, color: '#94a3b8', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.api_base_url}</td>
+                <td>
+                  <button className={`subtab-btn${p.poll_enabled ? ' active' : ''}`} style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => toggle(p, 'poll_enabled')}>
+                    {p.poll_enabled ? 'On' : 'Off'}
+                  </button>
+                </td>
+                <td>
+                  <button className={`subtab-btn${p.is_active ? ' active' : ''}`} style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => toggle(p, 'is_active')}>
+                    {p.is_active ? 'Active' : 'Inactive'}
+                  </button>
+                </td>
+                <td style={{ fontSize: 11, color: '#94a3b8' }}>
+                  {p.last_polled_at ? new Date(p.last_polled_at).toLocaleString() : <span style={{ color: '#475569' }}>Never</span>}
+                </td>
+                <td>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button className="icon-btn" onClick={() => openEdit(p)} title="Edit"><Pencil size={13} /></button>
+                    <button className="icon-btn" style={{ color: '#ef4444' }} onClick={() => del(p)} title="Delete"><Trash2 size={13} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && (
+        <div className="modal-overlay" onClick={close}>
+          <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span>{modal.type === 'add' ? 'Add Lab Provider' : `Edit — ${modal.provider.label || modal.provider.lab_name}`}</span>
+              <button className="icon-btn" onClick={close}><X size={16} /></button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {[
+                { label: 'Adapter Key *', key: 'lab_name',    placeholder: 'kingmed', disabled: modal.type === 'edit' },
+                { label: 'Label',         key: 'label',       placeholder: 'KingMed Shanghai' },
+                { label: 'API Base URL *', key: 'api_base_url', placeholder: 'https://api.lab.com/v1' },
+                { label: modal.type === 'edit' ? 'API Key (leave blank to keep current)' : 'API Key', key: 'api_key', placeholder: '••••••', type: 'password' },
+                { label: modal.type === 'edit' ? 'Webhook Secret (leave blank to keep)' : 'Webhook Secret', key: 'webhook_secret', placeholder: '••••••', type: 'password' },
+              ].map(({ label, key, placeholder, disabled, type }) => (
+                <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: 12, color: '#94a3b8' }}>{label}</label>
+                  <input
+                    type={type || 'text'}
+                    value={modal.form[key] || ''}
+                    onChange={e => setField(key, e.target.value)}
+                    placeholder={placeholder}
+                    disabled={disabled}
+                    style={{ background: '#162E4A', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 6, padding: '8px 10px', color: '#EEF2FF', fontSize: 13 }}
+                  />
+                </div>
+              ))}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#94a3b8', cursor: 'pointer' }}>
+                <input type="checkbox" checked={modal.form.poll_enabled} onChange={e => setField('poll_enabled', e.target.checked)} />
+                Enable polling (timer trigger every 4 h)
+              </label>
+              {err && <div style={{ color: '#f87171', fontSize: 13 }}>{err}</div>}
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={close}>Cancel</button>
+              <button className="btn-primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Patient mappings panel ────────────────────────────────────────────────────
+
+function LabMappingsPanel({ users, onRefresh }) {
+  const [mappings, setMappings]   = useState([]);
+  const [providers, setProviders] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [modal, setModal]         = useState(false);
+  const [form, setForm]           = useState({ user_id: '', lab_name: '', lab_patient_id: '' });
+  const [search, setSearch]       = useState('');
+  const [busy, setBusy]           = useState(false);
+  const [err, setErr]             = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [mr, pr] = await Promise.all([axios.get('/api/lab-user-mappings'), axios.get('/api/lab-providers')]);
+      setMappings(mr.data.mappings || []);
+      setProviders(pr.data.providers || []);
+    } catch { setMappings([]); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = search
+    ? mappings.filter(m => m.nickname?.toLowerCase().includes(search.toLowerCase()) || m.lab_name.includes(search) || m.lab_patient_id.includes(search))
+    : mappings;
+
+  const del = async (m) => {
+    if (!confirm(`Remove mapping ${m.lab_patient_id} → ${m.nickname}?`)) return;
+    try { await axios.delete(`/api/lab-user-mappings/${m.id}`); load(); }
+    catch (e) { alert(e.response?.data?.error || 'Delete failed'); }
+  };
+
+  const save = async () => {
+    setBusy(true); setErr('');
+    try {
+      await axios.post('/api/lab-user-mappings', form);
+      setModal(false); setForm({ user_id: '', lab_name: '', lab_patient_id: '' }); load(); onRefresh?.();
+    } catch (e) { setErr(e.response?.data?.error || 'Save failed'); }
+    finally { setBusy(false); }
+  };
+
+  const labNames = [...new Set(providers.map(p => p.lab_name))];
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={Users}        label="Total Mappings" value={mappings.length}                                          color="#6366f1" />
+        <StatCard icon={FlaskConical} label="Labs Connected" value={new Set(mappings.map(m => m.lab_name)).size}              color="#3b82f6" />
+        <StatCard icon={Users}        label="Users Linked"   value={new Set(mappings.map(m => m.user_id)).size}               color="#10b981" />
+      </div>
+      <div className="card">
+        <div className="table-toolbar">
+          <input
+            placeholder="Search user, lab, patient ID…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ background: '#162E4A', border: '1px solid rgba(99,117,236,0.2)', borderRadius: 6, padding: '6px 10px', color: '#EEF2FF', fontSize: 13, width: 240 }}
+          />
+          <span className="table-count" style={{ flex: 1 }}>{filtered.length} mapping{filtered.length !== 1 ? 's' : ''}</span>
+          <button className="btn-primary" onClick={() => setModal(true)}><Plus size={14} />Link Patient</button>
+        </div>
+        <table className="data-table">
+          <thead><tr><th>User</th><th>Lab</th><th>Lab Patient ID</th><th>Linked</th><th></th></tr></thead>
+          <tbody>
+            {loading && <tr><td colSpan={5} className="empty-row">Loading…</td></tr>}
+            {!loading && filtered.length === 0 && <tr><td colSpan={5} className="empty-row">No mappings yet. Add one to start receiving lab results.</td></tr>}
+            {filtered.map(m => (
+              <tr key={m.id}>
+                <td>
+                  <div style={{ fontWeight: 500 }}>{m.nickname}</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>{m.user_id}</div>
+                </td>
+                <td><code style={{ fontSize: 12, color: '#a5b4fc' }}>{m.lab_name}</code></td>
+                <td><code style={{ fontSize: 12 }}>{m.lab_patient_id}</code></td>
+                <td style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(m.created_at).toLocaleDateString()}</td>
+                <td><button className="icon-btn" style={{ color: '#ef4444' }} onClick={() => del(m)}><Trash2 size={13} /></button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && (
+        <div className="modal-overlay" onClick={() => setModal(false)}>
+          <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span>Link Lab Patient ID</span>
+              <button className="icon-btn" onClick={() => setModal(false)}><X size={16} /></button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 12, color: '#94a3b8' }}>Nano User *</label>
+                <select value={form.user_id} onChange={e => setForm(f => ({ ...f, user_id: e.target.value }))}
+                  style={{ background: '#162E4A', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 6, padding: '8px 10px', color: '#EEF2FF', fontSize: 13 }}>
+                  <option value="">Select user…</option>
+                  {users.map(u => <option key={u.user_id} value={u.user_id}>{u.nickname} ({u.user_id})</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 12, color: '#94a3b8' }}>Lab *</label>
+                <select value={form.lab_name} onChange={e => setForm(f => ({ ...f, lab_name: e.target.value }))}
+                  style={{ background: '#162E4A', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 6, padding: '8px 10px', color: '#EEF2FF', fontSize: 13 }}>
+                  <option value="">Select lab…</option>
+                  {labNames.map(n => <option key={n} value={n}>{n}</option>)}
+                  <option value="__custom">Other (type below)</option>
+                </select>
+                {form.lab_name === '__custom' && (
+                  <input placeholder="adapter key, e.g. kingmed" value={form._custom_lab || ''} onChange={e => setForm(f => ({ ...f, _custom_lab: e.target.value }))}
+                    style={{ marginTop: 4, background: '#162E4A', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 6, padding: '8px 10px', color: '#EEF2FF', fontSize: 13 }} />
+                )}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 12, color: '#94a3b8' }}>Lab Patient ID *</label>
+                <input value={form.lab_patient_id} onChange={e => setForm(f => ({ ...f, lab_patient_id: e.target.value }))} placeholder="as shown on the lab's system"
+                  style={{ background: '#162E4A', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 6, padding: '8px 10px', color: '#EEF2FF', fontSize: 13 }} />
+              </div>
+              {err && <div style={{ color: '#f87171', fontSize: 13 }}>{err}</div>}
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setModal(false)}>Cancel</button>
+              <button className="btn-primary" onClick={() => {
+                const resolved = { ...form, lab_name: form.lab_name === '__custom' ? (form._custom_lab || '') : form.lab_name };
+                setForm(f => ({ ...f, ...resolved }));
+                save();
+              }} disabled={busy}>{busy ? 'Saving…' : 'Link'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Reports panel ─────────────────────────────────────────────────────────────
+
+function LabReportsPanel({ users }) {
+  const [reports, setReports]   = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [detail, setDetail]     = useState(null); // { report, events }
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [filterUser, setFilterUser] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = filterUser ? `?user_id=${filterUser}` : '';
+      const r = await axios.get(`/api/lab/reports${params}`);
+      setReports(r.data.reports || []);
+    } catch { setReports([]); }
+    finally { setLoading(false); }
+  }, [filterUser]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openDetail = async (rep) => {
+    setDetailLoading(true); setDetail({ report: rep, events: [] });
+    try { const r = await axios.get(`/api/health-reports/${rep.id}`); setDetail(r.data); }
+    catch { setDetail(d => ({ ...d, events: [] })); }
+    finally { setDetailLoading(false); }
+  };
+
+  const SOURCE_COLOR = { lab_api: '#6366f1', manual_upload: '#10b981', fhir_import: '#f59e0b' };
+  const STATUS_COLOR = { parsed: '#10b981', pending: '#f59e0b', error: '#ef4444' };
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={FileText}     label="Total Reports"  value={reports.length}                                             color="#6366f1" />
+        <StatCard icon={Activity}     label="Parsed"         value={reports.filter(r => r.status === 'parsed').length}          color="#10b981" />
+        <StatCard icon={FlaskConical} label="From Lab API"   value={reports.filter(r => r.source === 'lab_api').length}         color="#3b82f6" />
+        <StatCard icon={Upload}       label="Manual Uploads" value={reports.filter(r => r.source === 'manual_upload').length}   color="#f59e0b" />
+      </div>
+      <div className="card">
+        <div className="table-toolbar">
+          <select value={filterUser} onChange={e => setFilterUser(e.target.value)}
+            style={{ background: '#162E4A', border: '1px solid rgba(99,117,236,0.2)', borderRadius: 6, padding: '6px 10px', color: '#EEF2FF', fontSize: 13, width: 200 }}>
+            <option value="">All users</option>
+            {users.map(u => <option key={u.user_id} value={u.user_id}>{u.nickname}</option>)}
+          </select>
+          <span className="table-count" style={{ flex: 1 }}>{reports.length} report{reports.length !== 1 ? 's' : ''}</span>
+        </div>
+        <table className="data-table">
+          <thead><tr><th>User</th><th>Date</th><th>Source</th><th>Institution</th><th>Status</th><th>Events</th><th>Created</th><th></th></tr></thead>
+          <tbody>
+            {loading && <tr><td colSpan={8} className="empty-row">Loading…</td></tr>}
+            {!loading && reports.length === 0 && <tr><td colSpan={8} className="empty-row">No reports yet.</td></tr>}
+            {reports.map(r => (
+              <tr key={r.id}>
+                <td>
+                  <div style={{ fontWeight: 500 }}>{r.nickname}</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>{r.user_id}</div>
+                </td>
+                <td>{r.report_date}</td>
+                <td><span style={{ fontSize: 11, color: SOURCE_COLOR[r.source] || '#94a3b8', fontWeight: 600 }}>{r.source}</span></td>
+                <td style={{ color: '#94a3b8', fontSize: 12 }}>{r.institution || '—'}</td>
+                <td><span style={{ fontSize: 11, color: STATUS_COLOR[r.status] || '#94a3b8', fontWeight: 600 }}>{r.status}</span></td>
+                <td style={{ color: '#94a3b8' }}>{r.event_count}</td>
+                <td style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(r.created_at).toLocaleDateString()}</td>
+                <td><button className="icon-btn" onClick={() => openDetail(r)} title="View observations"><Eye size={13} /></button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {detail && (
+        <div className="modal-overlay" onClick={() => setDetail(null)}>
+          <div className="modal" style={{ maxWidth: 640, maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span>Report #{detail.report.id} — {detail.report.nickname || detail.report?.user_id} — {detail.report.report_date}</span>
+              <button className="icon-btn" onClick={() => setDetail(null)}><X size={16} /></button>
+            </div>
+            <div style={{ overflowY: 'auto', padding: '16px 24px', flex: 1 }}>
+              {detailLoading && <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>Loading observations…</div>}
+              {!detailLoading && (detail.events || []).length === 0 && <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>No observations linked to this report.</div>}
+              {!detailLoading && (detail.events || []).length > 0 && (
+                <table className="data-table">
+                  <thead><tr><th>Biomarker</th><th>LOINC</th><th>Value</th><th>Unit</th><th>Dimension</th><th>Date</th></tr></thead>
+                  <tbody>
+                    {(detail.events || []).map(ev => (
+                      <tr key={ev.id}>
+                        <td style={{ fontWeight: ev.data?.is_kino_core ? 600 : 400, color: ev.data?.is_kino_core ? '#a5b4fc' : undefined }}>
+                          {ev.data?.key_name || '—'}
+                          {ev.data?.is_kino_core && <span style={{ marginLeft: 4, fontSize: 10, color: '#6366f1', fontWeight: 700 }}>CORE</span>}
+                        </td>
+                        <td style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>{ev.data?.loinc_code || '—'}</td>
+                        <td style={{ fontWeight: 600 }}>{ev.data?.value}</td>
+                        <td style={{ color: '#94a3b8', fontSize: 12 }}>{ev.data?.unit}</td>
+                        <td style={{ fontSize: 11, color: '#64748b' }}>{ev.data?.nano_dimension || '—'}</td>
+                        <td style={{ fontSize: 11, color: '#94a3b8' }}>{ev.data_date}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setDetail(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 function CoachCRMTab({ coaches, users }) {
   const { t } = useLang();
@@ -4895,6 +5320,7 @@ const CONFIGURABLE_TABS = [
   { id: 'health-plans',   label: 'Health Plans' },
   { id: 'reports',        label: 'Reports' },
   { id: 'tickets',        label: 'Tickets' },
+  { id: 'lab',            label: 'Lab' },
 ];
 
 function ChannelAdminTabsModal({ channel, onClose, onSave }) {
@@ -4935,6 +5361,84 @@ function ChannelAdminTabsModal({ channel, onClose, onSave }) {
               </label>
             ))}
           </div>
+          {error && <p className="form-error" style={{ marginTop: 8 }}>{error}</p>}
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn-primary" onClick={save} disabled={busy}>
+              <Check size={14} />{busy ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChannelSubAgeLabelsModal({ channel, onClose, onSave }) {
+  const existing = channel.config?.sub_age_display_names || {};
+  const [labels, setLabels] = useState(
+    Object.fromEntries(
+      SUB_AGE_KEYS_CONFIG.map(({ key }) => [
+        key,
+        { zh: existing[key]?.zh || '', en: existing[key]?.en || '' },
+      ])
+    )
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const set = (key, lang, val) =>
+    setLabels(prev => ({ ...prev, [key]: { ...prev[key], [lang]: val } }));
+
+  const save = async () => {
+    setBusy(true); setError('');
+    const payload = Object.fromEntries(
+      SUB_AGE_KEYS_CONFIG
+        .filter(({ key }) => labels[key].zh.trim() || labels[key].en.trim())
+        .map(({ key }) => [key, { zh: labels[key].zh.trim(), en: labels[key].en.trim() }])
+    );
+    try {
+      await axios.put(`/api/channels/${channel.id}/sub-age-labels`, { sub_age_display_names: payload });
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || 'Save failed'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>Sub-Age Labels — {channel.name}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginBottom: 12, color: '#94a3b8', fontSize: 13 }}>
+            Override display names per dimension. Leave blank to use defaults.
+          </p>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '4px 8px', color: '#94a3b8', fontSize: 12 }}>Dimension</th>
+                <th style={{ textAlign: 'left', padding: '4px 8px', color: '#94a3b8', fontSize: 12 }}>Chinese (zh)</th>
+                <th style={{ textAlign: 'left', padding: '4px 8px', color: '#94a3b8', fontSize: 12 }}>English (en)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SUB_AGE_KEYS_CONFIG.map(({ key, defaultZh, defaultEn }) => (
+                <tr key={key}>
+                  <td style={{ padding: '6px 8px', fontSize: 13, color: '#1e293b', fontWeight: 500, whiteSpace: 'nowrap' }}>{key}</td>
+                  <td style={{ padding: '4px 8px' }}>
+                    <input className="form-input" placeholder={defaultZh} value={labels[key].zh}
+                      onChange={e => set(key, 'zh', e.target.value)} />
+                  </td>
+                  <td style={{ padding: '4px 8px' }}>
+                    <input className="form-input" placeholder={defaultEn} value={labels[key].en}
+                      onChange={e => set(key, 'en', e.target.value)} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           {error && <p className="form-error" style={{ marginTop: 8 }}>{error}</p>}
           <div className="modal-footer">
             <button className="btn-secondary" onClick={onClose}>Cancel</button>
@@ -4997,6 +5501,7 @@ function ChannelTab({ channels, onRefresh, isSuperadmin }) {
                   <div className="row-actions">
                     <button className="icon-btn" title={t.modal.editChannel} onClick={() => setModal({ type: 'edit', channel: c })}><Pencil size={14} /></button>
                     {isSuperadmin && <button className="icon-btn" title="Configure admin tabs" onClick={() => setModal({ type: 'admin-tabs', channel: c })}><Settings2 size={14} /></button>}
+                    {isSuperadmin && <button className="icon-btn" title="Sub-age labels" onClick={() => setModal({ type: 'sub-age-labels', channel: c })}><Tag size={14} /></button>}
                     <button className="icon-btn danger" title={t.modal.deleteChannel} onClick={() => setModal({ type: 'delete', channel: c })}><Trash2 size={14} /></button>
                   </div>
                 </td>
@@ -5008,7 +5513,8 @@ function ChannelTab({ channels, onRefresh, isSuperadmin }) {
       {modal?.type === 'add'        && <ChannelModal channel={null}          onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit'       && <ChannelModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete'     && <DeleteChannelConfirm channel={modal.channel} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
-      {modal?.type === 'admin-tabs' && <ChannelAdminTabsModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'admin-tabs'    && <ChannelAdminTabsModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'sub-age-labels' && <ChannelSubAgeLabelsModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
     </>
   );
 }
@@ -8503,7 +9009,8 @@ function AdminPanel({ session, onLogout }) {
     { id: 'tickets',  label: t.nav.tickets,  icon: Bug            },
     { id: 'sims',     label: t.nav.sims,     icon: Layout,      disabled: true },
     { id: 'admin-accounts', label: t.nav.adminAccounts, icon: Settings2 },
-    { id: 'coach-crm',     label: t.nav.coachCrm,     icon: Target     },
+    { id: 'coach-crm',     label: t.nav.coachCrm,     icon: Target        },
+    { id: 'lab',           label: t.nav.lab,           icon: FlaskConical  },
   ];
 
   const visibleNAV = isSuperadmin
@@ -8571,6 +9078,7 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'sims'     && <SimulatorsTab />}
           {tab === 'admin-accounts' && <AdminAccountsTab accounts={data.adminAccounts} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'coach-crm'     && <CoachCRMTab coaches={data.coaches} users={data.users} />}
+          {tab === 'lab'           && <LabTab users={data.users} onRefresh={fetchData} />}
         </div>
       </div>
     </LangCtx.Provider>

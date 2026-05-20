@@ -17,6 +17,18 @@ const SUB_AGE_META = [
   { key: 'MicroVascularAge', color: '#0ea5e9' },
 ]
 
+const SUB_AGE_KEYS = SUB_AGE_META.map(m => m.key)
+
+function buildSubAgeLabels(base, overrides, lang) {
+  if (!overrides) return base
+  const result = { ...base }
+  for (const key of SUB_AGE_KEYS) {
+    const override = overrides[key]?.[lang]
+    if (override && override.trim()) result[key] = override.trim()
+  }
+  return result
+}
+
 const CONDITION_KEYS = [
   'blood_sugar_high', 'blood_pressure_high', 'blood_lipids_high',
   'cholesterol_high', 'heart_issues', 'gout_uric_acid',
@@ -296,7 +308,9 @@ Component({
     async _loadHealth() {
       const { userId, user, lang, mode } = this.properties
       if (!userId) return
-      const t = T[lang] || T.zh
+      const rawT = T[lang] || T.zh
+      const channelOverrides = app.globalData.channel?.sub_age_display_names || null
+      const t = { ...rawT, subAgeLabels: buildSubAgeLabels(rawT.subAgeLabels, channelOverrides, lang) }
       this.setData({ bioLoading: true })
       this._loadHealthTwin()
       try {
@@ -338,7 +352,6 @@ Component({
               return {
                 key,
                 label: t.subAgeLabels[key],
-                desc: t.subAgeDesc[key],
                 color,
                 value: valStr,
                 score,

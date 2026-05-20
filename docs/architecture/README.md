@@ -10,6 +10,7 @@ Nano AI is built on a serverless event-driven architecture using Aliyun Function
 | `nano-worker` | HTTP + EventBridge | Handles all AI processing, biomarker ingestion, chat, and admin API |
 | `nano-agent` | EventBridge + HTTP | Proactive coaching — analyses user data and initiates conversations |
 | `nano-admin-panel` | HTTP | Serves the admin SPA and proxies API calls to the worker |
+| `nano-lab` | HTTP + Timer (4 h) | Ingests clinical lab results via webhook (push) or polling (pull); triggers BioAge recalc |
 
 ## Public Domain (`nano.fros.cc`)
 
@@ -97,3 +98,4 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 | Reminder System | [reminder-system.md](reminder-system.md) |
 | Channel Inventory | [channel-inventory.md](channel-inventory.md) |
 | Partner System | [partner-system.md](partner-system.md) |
+| Lab Integration | [lab-integration.md](lab-integration.md) |

@@ -62,7 +62,6 @@
           <view wx:for="{{subAgeList}}" wx:key="key" class="sub-age-card">
             <text class="sub-age-val" style="color: {{item.color}}">{{item.value}}</text>
             <text class="sub-age-label">{{item.label}}</text>
-            <text class="sub-age-desc">{{item.desc}}</text>
           </view>
         </view>
       </view>

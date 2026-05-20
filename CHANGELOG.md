@@ -22,6 +22,23 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   - **Miniapp coach panel** — no change required; only uses `coach.id` and `coach.channel_id` from the login response.
 
 ### Added
+- **External lab integration (`nano-lab`)** — new Aliyun FC function that ingests clinical lab results from third-party laboratory systems and feeds them back into the BioAge pipeline.
+  - **New FC function** `src/functions/lab/` (512 MB, 600 s timeout): routes `POST /lab/webhook/:labName` (push — lab notifies Nano) and a 4-hour timer trigger (pull — Nano polls the lab API). Both paths converge on the same normalization and storage pipeline.
+  - **Adapter registry** `src/functions/lab/lib/adapters/`: each lab is one file implementing `{ validateWebhook, fetchOrder, fetchNewResults, parseResponse }`. `generic.js` ships as a reference implementation. Adding a lab = one file + one `lab_providers` row + redeploy.
+  - **DB migrations**:
+    - `migration_biomarker_catalog.sql` — `biomarker_catalog` table: registry of all 26 known biomarkers (6 Kino core + 20 clinical panel) with LOINC codes, Chinese display names, units, categories, `nano_dimension` mapping, and reference ranges.
+    - `migration_health_reports.sql` — `health_reports` table: document-level wrapper for complete lab/health report uploads (institution, date, status, OSS key, raw observations). Adds `report_id` FK to `health_events`.
+    - `migration_lab_user_mappings.sql` — `lab_user_mappings` table: maps each lab's patient identifier to a Nano `user_id`. Fallback: phone number match.
+    - `migration_lab_providers.sql` — `lab_providers` table: per-lab instance credentials, base URL, polling state, and soft-delete flag. Supports multiple regional instances of the same lab.
+  - **EventBridge integration**: on ingestion, if ≥1 Kino core biomarker is found, `nano-lab` publishes `{ source: 'acs.lab', type: 'biomarker.lab_complete', data: { report_id, user_id } }` using FC context credentials (same pattern as the dispatcher).
+  - **Worker: `handleLabImportEvent`** — new EventBridge handler in `src/functions/worker/index.js`. Loads the report's Kino core observations, fills missing values via `BiomarkerEstimator`, runs `BioAgeCalculator`, inserts a `biomarkers` row with `test_type='lab_import'`, and calls `updateHealthTwin`.
+  - **Worker: health report API routes** — `POST /health-reports` (store a report with raw observations or a FHIR R4 Bundle), `POST /health-events/fhir` (alias with `source='fhir_import'`), `GET /health-reports` (list by user), `GET /health-reports/:id` (report + linked events).
+  - **Worker EventBridge CloudEvent detection** — the handler now checks for `event.specversion` before HTTP routing and short-circuits to the appropriate CloudEvent handler; returns 200 immediately for all EventBridge invocations.
+  - **`tagRegistry.js`**: restored `BIOMARKER_DEFINITIONS` export (6 Kino biomarkers with LOINC codes + units) that was removed by a previous linter pass.
+  - **`s.yaml` / `s-prod.yaml`**: `lab:` function block added; worker EventBridge filter extended to `["acs.dispatcher","acs.lab"]`; domain routes `/lab/*` and `/lab` added.
+  - **`package.json`**: `deploy:lab` and `deploy:lab:prod` scripts added.
+  - **Architecture doc** `docs/architecture/lab-integration.md`.
+
 - **Digital Twin health profile system** — continuous wearable/lifestyle data stored as a two-layer model alongside the existing Kino chip biomarkers.
   - **DB migrations** `src/schemas/migration_health_events.sql` and `src/schemas/migration_health_twin.sql`: append-only event log (`health_events`) for all time-series health data and a one-row-per-user materialized summary (`health_twin`) with 7-day rolling averages, latest body/lab/Kino values, and 30-day trend signals.
   - **Five event categories**: `sleep`, `activity`, `vitals`, `body_composition`, `lab_result`. Six data sources: `apple_health`, `garmin`, `fitbit`, `manual`, `annual_lab`, `hospital`. Deduplication via `UNIQUE (user_id, source, external_id) WHERE external_id IS NOT NULL`.

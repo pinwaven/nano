@@ -38,8 +38,17 @@ const TAG_ALIASES = Object.freeze({
 
 const VALID_BIOMARKER_KEYS = new Set(['GDF15', 'IL6', 'hsCRP', 'GA', 'CystatinC', 'CD38']);
 
+const BIOMARKER_DEFINITIONS = Object.freeze({
+  GDF15:     { displayName: 'GDF-15',           unit: 'pg/mL',     loinc: '96543-1', loincSystem: 'http://loinc.org' },
+  IL6:       { displayName: 'IL-6',              unit: 'pg/mL',     loinc: '26881-3', loincSystem: 'http://loinc.org' },
+  hsCRP:     { displayName: 'hs-CRP',            unit: 'mg/L',      loinc: '71426-1', loincSystem: 'http://loinc.org' },
+  GA:        { displayName: 'Glycated Albumin',  unit: '%',         loinc: '13457-7', loincSystem: 'http://loinc.org' },
+  CystatinC: { displayName: 'Cystatin C',        unit: 'mg/L',      loinc: '33863-2', loincSystem: 'http://loinc.org' },
+  CD38:      { displayName: 'CD38',              unit: 'xBaseline', loinc: null,       loincSystem: null },
+});
+
 function normalizeTag(tag) {
   return TAG_ALIASES[tag] || tag;
 }
 
-module.exports = { TAG_REGISTRY, TAG_ALIASES, VALID_BIOMARKER_KEYS, normalizeTag };
+module.exports = { TAG_REGISTRY, TAG_ALIASES, VALID_BIOMARKER_KEYS, BIOMARKER_DEFINITIONS, normalizeTag };

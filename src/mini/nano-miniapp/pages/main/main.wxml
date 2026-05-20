@@ -108,8 +108,8 @@
                 mode="widthFix"
                 show-menu-by-longpress="{{true}}"
               />
-              <text wx:if="{{item.content && !item.imageUrl}}" class="msg-text" selectable="true">{{item.content}}</text>
-            </view>
+              <text wx:elif="{{item.role === 'user'}}" class="msg-text" selectable="true">{{item.content}}</text>
+              <mp-html wx:elif="{{item.content}}" content="{{item.content}}" selectable="{{true}}" class="msg-html" /></view>
           </view>
 
           <view wx:if="{{typing}}" class="msg-row msg-row-ai">

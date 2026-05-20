@@ -48,23 +48,37 @@ PostgreSQL — write nutrition_schedules rows + notification
 
 ## Event types
 
-| `type` | Published by | Consumed by | Purpose |
-|---|---|---|---|
-| `nutrition.topup` | dispatcher | worker | Trigger nutrition plan generation for a user |
-| `agent.coaching_session` | dispatcher | agent | Wake the proactive coach agent for a user |
+| `type` | `source` | Published by | Consumed by | Purpose |
+|---|---|---|---|---|
+| `nutrition.topup` | `acs.dispatcher` | dispatcher | worker | Trigger nutrition plan generation for a user |
+| `agent.coaching_session` | `acs.dispatcher` | dispatcher | agent | Wake the proactive coach agent for a user |
+| `biomarker.lab_complete` | `acs.lab` | nano-lab | worker | Trigger BioAge recalculation after lab results are ingested |
 
 See [agent-system.md](agent-system.md) for the full agent flow.
+See [lab-integration.md](lab-integration.md) for the full lab ingestion flow.
 
 ## Worker trigger filter
 
-The worker's EventBridge trigger in `s.yaml` filters to only react to dispatcher events:
+The worker's EventBridge trigger in `s.yaml` accepts events from both the dispatcher and the lab function:
 
 ```yaml
 triggerType: eventbridge
 triggerConfig:
   eventSourceConfig:
     eventSourceType: Default
-  eventRuleFilterPattern: '{"source":["acs.dispatcher"]}'
+  eventRuleFilterPattern: '{"source":["acs.dispatcher","acs.lab"]}'
+```
+
+The worker handler detects CloudEvents by checking for `event.specversion` and routes them before HTTP processing:
+
+```js
+if (event && event.specversion && event.source) {
+    // decode event.data (Buffer or base64 string)
+    if (event.source === 'acs.lab' && event.type === 'biomarker.lab_complete') {
+        await handleLabImportEvent(cloudData);
+    }
+    return { statusCode: 200, ... };  // always acknowledge
+}
 ```
 
 ## HTTP fallback

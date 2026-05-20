@@ -2858,6 +2858,23 @@ async function handlePutChannelAdminTabs(channelId, body, adminCtx) {
     }
 }
 
+async function handlePutChannelSubAgeLabels(channelId, body, adminCtx) {
+    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
+    const { sub_age_display_names } = body || {};
+    if (!sub_age_display_names || typeof sub_age_display_names !== 'object')
+        return { statusCode: 400, success: false, error: 'sub_age_display_names must be an object' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query(
+            `UPDATE channels SET config = jsonb_set(COALESCE(config, '{}'), '{sub_age_display_names}', $1::jsonb) WHERE id = $2`,
+            [JSON.stringify(sub_age_display_names), channelId]
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handlePostUsers(body) {
     const { openid, external_id: extId, external_app, nickname, phone, email, gender, birth_date, language, coach_id, channel_id } = body;
     try {
@@ -3209,7 +3226,8 @@ async function handleWxLogin(body) {
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                 u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
                 cu.nickname AS coach_name,
-                c.name AS channel_name, c.logo_url AS channel_logo_url
+                c.name AS channel_name, c.logo_url AS channel_logo_url,
+                c.config->'sub_age_display_names' AS channel_sub_age_names
          FROM users u
          LEFT JOIN coaches p ON u.coach_id = p.id
          LEFT JOIN users cu ON p.user_id = cu.user_id
@@ -3258,7 +3276,8 @@ async function handleWxLogin(body) {
                         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                                 u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
                                 cu.nickname AS coach_name,
-                                c.name AS channel_name, c.logo_url AS channel_logo_url
+                                c.name AS channel_name, c.logo_url AS channel_logo_url,
+                                c.config->'sub_age_display_names' AS channel_sub_age_names
                          FROM users u
                          LEFT JOIN coaches p ON u.coach_id = p.id
                          LEFT JOIN users cu ON p.user_id = cu.user_id
@@ -3279,8 +3298,10 @@ async function handleWxLogin(body) {
             await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [resolvedPhone, existingRow.user_id]);
             existingRow.phone = resolvedPhone;
         }
-        const { channel_name, channel_logo_url, ...user } = existingRow;
-        const channel = channel_name ? { name: channel_name, logo_url: channel_logo_url } : null;
+        const { channel_name, channel_logo_url, channel_sub_age_names, ...user } = existingRow;
+        const channel = channel_name
+            ? { name: channel_name, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null }
+            : null;
         // If user is a coach, fetch their coach record
         let coach = null;
         if (user.roles && user.roles.includes('coach')) {
@@ -3299,7 +3320,8 @@ async function handleWxLogin(body) {
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                     u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
                     cu.nickname AS coach_name,
-                    c.name AS channel_name, c.logo_url AS channel_logo_url
+                    c.name AS channel_name, c.logo_url AS channel_logo_url,
+                    c.config->'sub_age_display_names' AS channel_sub_age_names
              FROM users u
              LEFT JOIN coaches p ON u.coach_id = p.id
              LEFT JOIN users cu ON p.user_id = cu.user_id
@@ -3314,8 +3336,10 @@ async function handleWxLogin(body) {
         if (phoneMatch.rows.length > 0) {
             const row = phoneMatch.rows[0];
             await pool.query('UPDATE users SET external_id = $1 WHERE user_id = $2', [openid, row.user_id]);
-            const { channel_name, channel_logo_url, ...user } = row;
-            const channel = channel_name ? { name: channel_name, logo_url: channel_logo_url } : null;
+            const { channel_name, channel_logo_url, channel_sub_age_names, ...user } = row;
+            const channel = channel_name
+                ? { name: channel_name, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null }
+                : null;
             let coach = null;
             if (user.roles && user.roles.includes('coach')) {
                 const coachRes = await pool.query('SELECT id, channel_id, user_id FROM coaches WHERE user_id = $1 LIMIT 1', [user.user_id]);
@@ -3391,8 +3415,15 @@ async function handleWxLogin(body) {
 
     let channel = null;
     if (channelId) {
-        const chanRes = await pool.query('SELECT name, logo_url FROM channels WHERE id = $1', [channelId]);
-        if (chanRes.rows.length > 0) channel = { name: chanRes.rows[0].name, logo_url: chanRes.rows[0].logo_url };
+        const chanRes = await pool.query(
+            `SELECT name, logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
+            [channelId]
+        );
+        if (chanRes.rows.length > 0) channel = {
+            name: chanRes.rows[0].name,
+            logo_url: chanRes.rows[0].logo_url,
+            sub_age_display_names: chanRes.rows[0].sub_age_display_names || null,
+        };
     }
 
     return { success: true, new_user: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel };
@@ -6398,12 +6429,360 @@ async function handleGetCoachClientPlans(coachId) {
     }
 }
 
+// ─── Health Reports ────────────────────────────────────────────────────────────
+
+async function handleGetHealthReports(query) {
+    try {
+        const { openid, user_id } = query;
+        if (!openid && !user_id) return { statusCode: 400, success: false, error: 'openid or user_id required' };
+        const uid = user_id || (await pool.query('SELECT user_id FROM users WHERE external_id = $1 LIMIT 1', [openid])).rows[0]?.user_id;
+        if (!uid) return { statusCode: 404, success: false, error: 'User not found' };
+        const result = await pool.query(
+            `SELECT id, report_date, source, institution, report_type, status, created_at
+             FROM health_reports WHERE user_id = $1 ORDER BY report_date DESC LIMIT 50`,
+            [uid]
+        );
+        return { success: true, reports: result.rows };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetHealthReports', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handleGetHealthReport(reportId, query) {
+    try {
+        const reportRes = await pool.query(
+            'SELECT * FROM health_reports WHERE id = $1',
+            [reportId]
+        );
+        if (reportRes.rows.length === 0) return { statusCode: 404, success: false, error: 'Report not found' };
+        const eventsRes = await pool.query(
+            'SELECT id, category, data_date, data FROM health_events WHERE report_id = $1 ORDER BY data_date',
+            [reportId]
+        );
+        return { success: true, report: reportRes.rows[0], events: eventsRes.rows };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetHealthReport', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handlePostHealthReport(body) {
+    try {
+        const { user_id, openid, report_date, source = 'manual_upload', institution, report_type = 'lab_panel', observations = [], fhir_bundle } = body || {};
+        if (!user_id && !openid) return { statusCode: 400, success: false, error: 'user_id or openid required' };
+
+        let uid = user_id;
+        if (!uid) {
+            const userRes = await pool.query('SELECT user_id FROM users WHERE external_id = $1 LIMIT 1', [openid]);
+            if (userRes.rows.length === 0) return { statusCode: 404, success: false, error: 'User not found' };
+            uid = userRes.rows[0].user_id;
+        }
+
+        // Extract observations from FHIR bundle if provided
+        let obs = observations;
+        if (fhir_bundle && fhir_bundle.resourceType === 'Bundle') {
+            obs = extractObservationsFromFhir(fhir_bundle);
+        }
+        if (obs.length === 0) return { statusCode: 400, success: false, error: 'No observations provided' };
+
+        // Resolve LOINC codes → catalog metadata
+        const catalogRes = await pool.query(
+            'SELECT key_name, loinc_code, nano_dimension, is_kino_core, unit FROM biomarker_catalog WHERE is_active = TRUE'
+        );
+        const loincMap = {};
+        for (const row of catalogRes.rows) {
+            if (row.loinc_code) loincMap[row.loinc_code] = row;
+        }
+
+        const date = report_date || obs[0]?.data_date?.split('T')[0] || new Date().toISOString().split('T')[0];
+
+        const reportRes = await pool.query(
+            `INSERT INTO health_reports (user_id, report_date, source, institution, report_type, status, raw_data)
+             VALUES ($1, $2, $3, $4, $5, 'parsed', $6) RETURNING id`,
+            [uid, date, source, institution || null, report_type, JSON.stringify({ observations: obs })]
+        );
+        const reportId = reportRes.rows[0].id;
+
+        let hasKinoCore = false;
+        for (const o of obs) {
+            const catalog = loincMap[o.loinc_code];
+            if (!catalog) continue;
+            const dataDate = (o.data_date || date).split('T')[0];
+            const externalId = `${o.loinc_code}::${dataDate}`;
+            await pool.query(
+                `INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, report_id, external_id)
+                 VALUES ($1, $2, 'lab_result', $3, NOW(), $4, $5, $6)
+                 ON CONFLICT (user_id, source, external_id) DO NOTHING`,
+                [
+                    uid, source, dataDate,
+                    JSON.stringify({
+                        key_name:       catalog.key_name,
+                        loinc_code:     o.loinc_code,
+                        value:          parseFloat(o.value),
+                        unit:           o.unit || catalog.unit,
+                        nano_dimension: catalog.nano_dimension,
+                        is_kino_core:   catalog.is_kino_core,
+                    }),
+                    reportId, externalId,
+                ]
+            );
+            if (catalog.is_kino_core) hasKinoCore = true;
+        }
+
+        return { success: true, report_id: reportId, has_kino_core: hasKinoCore };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostHealthReport', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+function extractObservationsFromFhir(bundle) {
+    const obs = [];
+    for (const entry of bundle.entry || []) {
+        const res = entry.resource;
+        if (!res || res.resourceType !== 'Observation') continue;
+        const loincCode = res.code?.coding?.find(c => c.system === 'http://loinc.org')?.code;
+        if (!loincCode) continue;
+        const value = res.valueQuantity?.value ?? res.valueCodeableConcept?.coding?.[0]?.code;
+        if (value == null) continue;
+        obs.push({
+            loinc_code: loincCode,
+            value,
+            unit: res.valueQuantity?.unit || '',
+            data_date: res.effectiveDateTime || res.issued || new Date().toISOString(),
+        });
+    }
+    return obs;
+}
+
+// ─── Lab Admin API ────────────────────────────────────────────────────────────
+
+async function handleGetLabProviders() {
+    try {
+        const result = await pool.query(
+            'SELECT id, lab_name, label, api_base_url, poll_enabled, last_polled_at, is_active FROM lab_providers ORDER BY id'
+        );
+        return { success: true, providers: result.rows };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetLabProviders', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handlePostLabProvider(body) {
+    try {
+        const { lab_name, label, api_base_url, api_key, webhook_secret, poll_enabled = true } = body || {};
+        if (!lab_name || !api_base_url) return { statusCode: 400, success: false, error: 'lab_name and api_base_url required' };
+        const result = await pool.query(
+            `INSERT INTO lab_providers (lab_name, label, api_base_url, api_key_enc, webhook_secret_enc, poll_enabled)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+            [lab_name, label || null, api_base_url, api_key || null, webhook_secret || null, poll_enabled]
+        );
+        return { success: true, id: result.rows[0].id };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostLabProvider', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handlePutLabProvider(id, body) {
+    try {
+        const { label, api_base_url, api_key, webhook_secret, poll_enabled, is_active } = body || {};
+        await pool.query(
+            `UPDATE lab_providers SET
+               label = COALESCE($1, label),
+               api_base_url = COALESCE($2, api_base_url),
+               api_key_enc = COALESCE($3, api_key_enc),
+               webhook_secret_enc = COALESCE($4, webhook_secret_enc),
+               poll_enabled = COALESCE($5, poll_enabled),
+               is_active = COALESCE($6, is_active)
+             WHERE id = $7`,
+            [label ?? null, api_base_url ?? null, api_key ?? null, webhook_secret ?? null,
+             poll_enabled ?? null, is_active ?? null, id]
+        );
+        return { success: true };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePutLabProvider', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handleDeleteLabProvider(id) {
+    try {
+        await pool.query('DELETE FROM lab_providers WHERE id = $1', [id]);
+        return { success: true };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleDeleteLabProvider', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handleGetLabUserMappings(query) {
+    try {
+        const { user_id, lab_name } = query;
+        const params = [];
+        const where = [];
+        if (user_id)  { params.push(user_id);  where.push(`m.user_id = $${params.length}`); }
+        if (lab_name) { params.push(lab_name); where.push(`m.lab_name = $${params.length}`); }
+        const result = await pool.query(
+            `SELECT m.id, m.user_id, u.nickname, m.lab_name, m.lab_patient_id, m.created_at
+             FROM lab_user_mappings m
+             JOIN users u ON u.user_id = m.user_id
+             ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+             ORDER BY m.created_at DESC LIMIT 200`,
+            params
+        );
+        return { success: true, mappings: result.rows };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetLabUserMappings', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handlePostLabUserMapping(body) {
+    try {
+        const { user_id, lab_name, lab_patient_id } = body || {};
+        if (!user_id || !lab_name || !lab_patient_id) return { statusCode: 400, success: false, error: 'user_id, lab_name and lab_patient_id required' };
+        const result = await pool.query(
+            `INSERT INTO lab_user_mappings (user_id, lab_name, lab_patient_id) VALUES ($1, $2, $3)
+             ON CONFLICT (lab_name, lab_patient_id) DO NOTHING RETURNING id`,
+            [user_id, lab_name, lab_patient_id]
+        );
+        if (result.rows.length === 0) return { statusCode: 409, success: false, error: 'This lab_patient_id is already mapped to another user' };
+        return { success: true, id: result.rows[0].id };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostLabUserMapping', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handleDeleteLabUserMapping(id) {
+    try {
+        await pool.query('DELETE FROM lab_user_mappings WHERE id = $1', [id]);
+        return { success: true };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleDeleteLabUserMapping', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handleGetLabReports(query) {
+    try {
+        const { user_id, source, limit = 100 } = query;
+        const params = [];
+        const where = [];
+        if (user_id) { params.push(user_id); where.push(`r.user_id = $${params.length}`); }
+        if (source)  { params.push(source);  where.push(`r.source = $${params.length}`); }
+        params.push(Math.min(parseInt(limit) || 100, 500));
+        const result = await pool.query(
+            `SELECT r.id, r.user_id, u.nickname, r.report_date, r.source, r.institution,
+                    r.report_type, r.status, r.created_at,
+                    COUNT(he.id) AS event_count
+             FROM health_reports r
+             JOIN users u ON u.user_id = r.user_id
+             LEFT JOIN health_events he ON he.report_id = r.id
+             ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+             GROUP BY r.id, u.nickname
+             ORDER BY r.created_at DESC
+             LIMIT $${params.length}`,
+            params
+        );
+        return { success: true, reports: result.rows };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetLabReports', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+// ─── Lab Import EventBridge handler ──────────────────────────────────────────
+
+async function handleLabImportEvent(data) {
+    const { report_id, user_id } = data || {};
+    if (!report_id || !user_id) throw new Error('report_id and user_id required');
+
+    // Load Kino core observations from this report
+    const eventsRes = await pool.query(
+        `SELECT data FROM health_events
+         WHERE report_id = $1 AND (data->>'is_kino_core')::boolean = true`,
+        [report_id]
+    );
+
+    // Build partial biomarker values from confirmed lab observations
+    const partialBiomarkers = {};
+    for (const row of eventsRes.rows) {
+        const d = row.data;
+        if (d.key_name && d.value != null) partialBiomarkers[d.key_name] = d.value;
+    }
+
+    // Get user profile for age
+    const userRes = await pool.query(
+        `SELECT birth_date, bio_data FROM users WHERE user_id = $1`,
+        [user_id]
+    );
+    if (userRes.rows.length === 0) throw new Error(`User not found: ${user_id}`);
+    const { birth_date, bio_data } = userRes.rows[0];
+    const age = calculateAge(birth_date);
+    const bioData = bio_data || {};
+
+    // Fetch tags for estimator context
+    const tagContext = await fetchTagDerivationContext(user_id);
+    const tags = deriveTags(tagContext);
+    const seed = `${user_id}:lab:${report_id}`;
+    const weekBucket = Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000));
+    const persistentSeed = `${user_id}:w${weekBucket}`;
+
+    // Fill missing Kino core values via BiomarkerEstimator
+    const estimator = new BiomarkerEstimator(age, partialBiomarkers, { Weight: bioData.weight, Height: bioData.height }, tags, { seed, persistentSeed });
+    const estimationReport = estimator.generateReport();
+
+    const bioAgeCalc = new BioAgeCalculator();
+    const bioAgeReport = bioAgeCalc.calculateBioAge(age, estimationReport.BiomarkerValues);
+
+    const finalData = {
+        actual:         partialBiomarkers,
+        estimated:      estimationReport.BiomarkerValues,
+        context:        estimationReport.ClinicalContext,
+        bioage_profile: bioAgeReport,
+        tags,
+        source_report_id: report_id,
+    };
+
+    await pool.query(
+        `INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at)
+         VALUES ($1, 'lab_import', $2, $3, NOW())`,
+        [user_id, JSON.stringify(finalData), bioAgeReport.BioAge]
+    );
+
+    await updateHealthTwin(user_id);
+
+    console.log(JSON.stringify({ level: 'INFO', msg: 'Lab import BioAge calculated', user_id, bio_age: bioAgeReport.BioAge, report_id }));
+}
+
 exports.handler = async (req, resp, context) => {
     const isStandardHttp = resp && typeof resp.send === 'function';
     let event = req;
 
     if (Buffer.isBuffer(req)) {
         try { event = JSON.parse(req.toString()); } catch (e) {}
+    }
+
+    // EventBridge CloudEvent detection — route before HTTP processing
+    if (event && event.specversion && event.source) {
+        let cloudData = event.data;
+        if (Buffer.isBuffer(cloudData)) cloudData = JSON.parse(cloudData.toString('utf8'));
+        else if (typeof cloudData === 'string') {
+            try { cloudData = JSON.parse(Buffer.from(cloudData, 'base64').toString('utf8')); }
+            catch (e) { try { cloudData = JSON.parse(cloudData); } catch (e2) {} }
+        }
+        if (event.source === 'acs.lab' && event.type === 'biomarker.lab_complete') {
+            try {
+                await handleLabImportEvent(cloudData);
+            } catch (err) {
+                console.error(JSON.stringify({ level: 'ERROR', msg: 'handleLabImportEvent failed', error: err.message }));
+            }
+        }
+        return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true }), isBase64Encoded: false };
     }
 
     const rawUrl = req.url || '';
@@ -6512,6 +6891,17 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetNutritionPlan(query.openid);
             } else if (path === '/health-twin') {
                 result = await handleGetHealthTwin(query.openid);
+            } else if (path.match(/\/health-reports\/(\d+)/)) {
+                const reportId = path.match(/\/health-reports\/(\d+)/)[1];
+                result = await handleGetHealthReport(reportId, query);
+            } else if (path === '/lab/reports') {
+                result = await handleGetLabReports(query);
+            } else if (path.includes('/health-reports')) {
+                result = await handleGetHealthReports(query);
+            } else if (path.includes('/lab-providers')) {
+                result = await handleGetLabProviders();
+            } else if (path.includes('/lab-user-mappings')) {
+                result = await handleGetLabUserMappings(query);
             } else if (path.includes('/health-events')) {
                 result = await handleGetHealthEvents(query);
             } else if (path.match(/\/health-plans\/(\d+)/)) {
@@ -6712,6 +7102,14 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/health-plans\/(\d+)\/milestone/)) {
                 const planId = path.match(/\/health-plans\/(\d+)\/milestone/)[1];
                 result = await handlePostHealthPlanMilestone(planId, parsedBody);
+            } else if (path === '/health-events/fhir') {
+                result = await handlePostHealthReport({ ...parsedBody, source: 'fhir_import' });
+            } else if (path === '/health-reports') {
+                result = await handlePostHealthReport(parsedBody);
+            } else if (path === '/lab-providers') {
+                result = await handlePostLabProvider(parsedBody);
+            } else if (path === '/lab-user-mappings') {
+                result = await handlePostLabUserMapping(parsedBody);
             } else if (path === '/health-events/sync') {
                 result = await handlePostHealthEventsSync(parsedBody);
             } else if (path === '/health-events') {
@@ -6813,6 +7211,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/coaches/')) {
                 const coachId = path.split('/coaches/')[1];
                 result = await handlePutCoach(coachId, parsedBody);
+            } else if (path.match(/\/channels\/(\d+)\/sub-age-labels$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/sub-age-labels$/)[1];
+                result = await handlePutChannelSubAgeLabels(channelId, parsedBody, adminCtx);
             } else if (path.match(/\/channels\/(\d+)\/admin-tabs$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/admin-tabs$/)[1];
                 result = await handlePutChannelAdminTabs(channelId, parsedBody, adminCtx);
@@ -6898,6 +7299,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/follow-up-rules\/(\d+)/)) {
                 const ruleId = path.match(/\/follow-up-rules\/(\d+)/)[1];
                 result = await handlePutFollowUpRule(ruleId, parsedBody);
+            } else if (path.match(/\/lab-providers\/(\d+)/)) {
+                const pid = path.match(/\/lab-providers\/(\d+)/)[1];
+                result = await handlePutLabProvider(pid, parsedBody);
             } else {
                 result = { success: false, error: `Unknown PUT route: ${path}` };
             }
@@ -6985,6 +7389,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/follow-up-rules\/(\d+)/)) {
                 const ruleId = path.match(/\/follow-up-rules\/(\d+)/)[1];
                 result = await handleDeleteFollowUpRule(ruleId);
+            } else if (path.match(/\/lab-providers\/(\d+)/)) {
+                const pid = path.match(/\/lab-providers\/(\d+)/)[1];
+                result = await handleDeleteLabProvider(pid);
+            } else if (path.match(/\/lab-user-mappings\/(\d+)/)) {
+                const mid = path.match(/\/lab-user-mappings\/(\d+)/)[1];
+                result = await handleDeleteLabUserMapping(mid);
             } else {
                 result = { success: false, error: `Unknown DELETE route: ${path}` };
             }
