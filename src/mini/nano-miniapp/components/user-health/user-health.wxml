@@ -66,6 +66,47 @@
         </view>
       </view>
 
+      <!-- Digital Twin Body Figure -->
+      <view wx:if="{{subAgeList.length > 0}}" class="health-section dt-section">
+        <view class="section-title-row">
+          <text class="section-title">{{t.digitalTwin}}</text>
+        </view>
+        <view class="dt-canvas-wrap">
+          <!-- CSS body figure — 4 anatomical zones mapped to sub-ages -->
+          <view class="dt-body-fig">
+            <view class="dt-fig-head {{subAgeZ.ResilienceAge.pulse ? 'dt-fig-pulse' : ''}}"
+              style="background:{{subAgeZ.ResilienceAge.fill}};box-shadow:0 0 {{subAgeZ.ResilienceAge.glow}}rpx {{subAgeZ.ResilienceAge.color}};border-color:{{subAgeZ.ResilienceAge.color}}88;"></view>
+            <view class="dt-fig-neck" style="background:{{subAgeZ.ResilienceAge.fill}};"></view>
+            <view class="dt-fig-mid-row">
+              <view class="dt-fig-arm {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
+                style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
+              <view class="dt-fig-chest {{subAgeZ.CellularAge.pulse ? 'dt-fig-pulse' : ''}}"
+                style="background:{{subAgeZ.CellularAge.fill}};box-shadow:0 0 {{subAgeZ.CellularAge.glow}}rpx {{subAgeZ.CellularAge.color}};border-color:{{subAgeZ.CellularAge.color}}88;">
+                <view class="dt-fig-heart" style="background:{{subAgeZ.CellularAge.color}};box-shadow:0 0 8rpx {{subAgeZ.CellularAge.color}};"></view>
+              </view>
+              <view class="dt-fig-arm {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
+                style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
+            </view>
+            <view class="dt-fig-abdomen {{subAgeZ.MetabolicAge.pulse ? 'dt-fig-pulse' : ''}}"
+              style="background:{{subAgeZ.MetabolicAge.fill}};box-shadow:0 0 {{subAgeZ.MetabolicAge.glow}}rpx {{subAgeZ.MetabolicAge.color}};border-color:{{subAgeZ.MetabolicAge.color}}88;"></view>
+            <view class="dt-fig-hips" style="background:{{subAgeZ.MetabolicAge.fill}};"></view>
+            <view class="dt-fig-leg-row">
+              <view class="dt-fig-leg {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
+                style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
+              <view class="dt-fig-leg {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
+                style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
+            </view>
+          </view>
+          <!-- Zone chips -->
+          <view class="dt-zone-chips">
+            <view wx:for="{{subAgeList}}" wx:key="key" class="dt-zone-chip" style="border-color:{{item.color}}55;color:{{item.color}}">
+              <text class="dt-zone-val">{{item.value}}</text>
+              <text class="dt-zone-lbl">{{item.label}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
       <!-- Profile (self & coach mode) -->
       <view wx:if="{{mode === 'self' || mode === 'coach'}}" class="health-section">
         <view class="section-title-row">
@@ -217,9 +258,9 @@
         <text wx:else class="health-empty">{{t.noHistory}}</text>
       </view>
 
-      <!-- Digital Twin -->
+      <!-- Health Monitoring -->
       <view class="health-section">
-        <text class="section-title">{{t.digitalTwin}}</text>
+        <text class="section-title">{{t.dtMonitoring}}</text>
         <block wx:if="{{hasTwinData}}">
 
           <!-- Health Score Card -->
@@ -287,6 +328,27 @@
             </view>
           </view>
 
+          <!-- Lab Snapshot -->
+          <view wx:if="{{labPanel.length > 0}}" class="ht-lab-card">
+            <view class="ht-lab-header">
+              <text class="ht-lab-title">{{t.dtLabPanel}}</text>
+              <text class="ht-lab-date">{{labPanelDate}}</text>
+              <view wx:if="{{labPanelAbnormal > 0}}" class="ht-lab-alert">
+                <text class="ht-lab-alert-text">{{labPanelAbnormal}} {{t.dtLabAbnormal}}</text>
+              </view>
+              <view wx:elif="{{labPanelAbnormal === 0}}" class="ht-lab-ok">
+                <text class="ht-lab-ok-text">{{t.dtLabAllNormal}}</text>
+              </view>
+            </view>
+            <view class="ht-lab-grid">
+              <view wx:for="{{labPanel}}" wx:key="key" class="ht-lab-item {{item.status !== 'normal' ? 'ht-lab-item-abn' : ''}}" style="border-color: {{item.statusColor}}22;">
+                <text class="ht-lab-name" style="color: {{item.status !== 'normal' ? item.statusColor : 'rgba(166,196,229,0.55)'}}">{{item.displayName}}</text>
+                <text class="ht-lab-val" style="color: {{item.statusColor}};">{{item.value}}</text>
+                <text class="ht-lab-unit">{{item.unit}}</text>
+              </view>
+            </view>
+          </view>
+
           <!-- Source Coverage -->
           <view class="twin-coverage-wrap">
             <text class="twin-coverage-title">{{t.dtSources}}</text>
@@ -304,10 +366,118 @@
         <text wx:elif="{{!twinLoading}}" class="health-empty">{{t.noTwinData}}</text>
       </view>
 
+      <!-- Health Reports -->
+      <view class="health-section">
+        <text class="section-title">{{t.healthReports}}</text>
+        <view wx:if="{{reportsLoading}}" class="center-wrap" style="padding:32rpx 0;">
+          <view class="pulse-dot"></view>
+          <view class="pulse-dot"></view>
+          <view class="pulse-dot"></view>
+        </view>
+        <view wx:elif="{{healthReports.length > 0}}" class="rpt-list">
+          <view wx:for="{{healthReports}}" wx:key="id"
+                class="rpt-card"
+                bindtap="onReportTap"
+                data-id="{{item.id}}">
+            <view class="rpt-card-left" style="border-left-color: {{item.type_color}};">
+              <text class="rpt-institution">{{item.institution}}</text>
+              <text class="rpt-date">{{item.report_date}}</text>
+            </view>
+            <view class="rpt-type-badge" style="background: {{item.type_color}}18; border-color: {{item.type_color}}44;">
+              <text class="rpt-type-text" style="color: {{item.type_color}};">{{item.report_type}}</text>
+            </view>
+            <text class="rpt-arrow">›</text>
+          </view>
+        </view>
+        <text wx:else class="health-empty">{{t.noReports}}</text>
+      </view>
+
       <view style="height: 32px;"></view>
     </block>
 
   </scroll-view>
+
+  <!-- Health Report Detail Sheet -->
+  <view wx:if="{{activeReport}}" class="rpt-overlay" bindtap="onCloseReport">
+    <view class="rpt-sheet" catchtap="noop">
+      <view class="rpt-sheet-handle"></view>
+      <view class="rpt-sheet-header">
+        <view class="rpt-sheet-title-group">
+          <text class="rpt-sheet-institution">{{activeReport.institution}}</text>
+          <text class="rpt-sheet-date">{{activeReport.report_date}}</text>
+        </view>
+        <view class="rpt-sheet-type-badge" style="background: {{activeReport.type_color}}18; border-color: {{activeReport.type_color}}44;">
+          <text style="color: {{activeReport.type_color}}; font-size: 20rpx; font-weight: 700;">{{activeReport.report_type}}</text>
+        </view>
+        <view class="rpt-close-btn" bindtap="onCloseReport"><text class="rpt-close-x">✕</text></view>
+      </view>
+
+      <scroll-view class="rpt-events-scroll" scroll-y="true">
+        <view wx:if="{{reportDetailLoading}}" class="center-wrap" style="padding:60rpx 0;">
+          <view class="pulse-dot"></view>
+          <view class="pulse-dot"></view>
+          <view class="pulse-dot"></view>
+        </view>
+        <block wx:else>
+
+          <!-- Diagnostics -->
+          <view wx:if="{{activeReport.hasDiag}}" class="rpt-section">
+            <view class="rpt-section-header rpt-diag-header">
+              <text class="rpt-section-icon">🔬</text>
+              <text class="rpt-section-title">{{t.rptDiagTitle}}</text>
+            </view>
+            <view class="rpt-diag-list">
+              <view wx:for="{{activeReportDiag}}" wx:key="index" class="rpt-diag-item">
+                <view class="rpt-diag-bullet"></view>
+                <text class="rpt-diag-text">{{item}}</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- Doctor's Advice -->
+          <view wx:if="{{activeReport.hasAdvice}}" class="rpt-section">
+            <view class="rpt-section-header rpt-advice-header">
+              <text class="rpt-section-icon">💊</text>
+              <text class="rpt-section-title">{{t.rptAdviceTitle}}</text>
+            </view>
+            <view class="rpt-advice-list">
+              <view wx:for="{{activeReportAdvice}}" wx:key="index" class="rpt-advice-item">
+                <text class="rpt-advice-num">{{index + 1}}</text>
+                <text class="rpt-advice-text">{{item}}</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- Lab Markers -->
+          <view wx:if="{{activeReportEvents.length > 0}}" class="rpt-section">
+            <view wx:if="{{activeReport.hasDiag || activeReport.hasAdvice}}" class="rpt-section-header">
+              <text class="rpt-section-icon">📊</text>
+              <text class="rpt-section-title">{{t.rptMarkersTitle}}</text>
+            </view>
+            <view class="rpt-events-list">
+              <view wx:for="{{activeReportEvents}}" wx:key="index" class="rpt-ev-row">
+                <view class="rpt-ev-left">
+                  <view class="rpt-ev-dot" style="background: {{item.statusColor}};"></view>
+                  <view class="rpt-ev-info">
+                    <text class="rpt-ev-name">{{item.key_name}}</text>
+                    <text wx:if="{{item.refText}}" class="rpt-ev-ref">{{t.rptRefRange}}  {{item.refText}}</text>
+                  </view>
+                </view>
+                <view class="rpt-ev-right">
+                  <text class="rpt-ev-val">{{item.value}}</text>
+                  <text class="rpt-ev-unit"> {{item.unit}}</text>
+                  <view class="rpt-ev-status" style="background: {{item.statusColor}}18; border-color: {{item.statusColor}}44;">
+                    <text style="color: {{item.statusColor}}; font-size: 18rpx; font-weight: 700;">{{item.statusLabel}}</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+          </view>
+
+        </block>
+      </scroll-view>
+    </view>
+  </view>
 
   <!-- Weight Chart Modal (self mode only) -->
   <view wx:if="{{weightChartOpen && mode === 'self'}}" class="wchart-overlay" bindtap="closeWeightChart">

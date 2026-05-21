@@ -6544,7 +6544,7 @@ async function handleGetHealthReports(query) {
     try {
         const { openid, user_id } = query;
         if (!openid && !user_id) return { statusCode: 400, success: false, error: 'openid or user_id required' };
-        const uid = user_id || (await pool.query('SELECT user_id FROM users WHERE external_id = $1 LIMIT 1', [openid])).rows[0]?.user_id;
+        const uid = user_id || (await pool.query('SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid])).rows[0]?.user_id;
         if (!uid) return { statusCode: 404, success: false, error: 'User not found' };
         const result = await pool.query(
             `SELECT id, report_date, source, institution, report_type, status, created_at

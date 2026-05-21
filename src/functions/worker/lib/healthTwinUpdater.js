@@ -37,11 +37,50 @@ async function updateHealthTwin(userId, pool) {
         `, [userId]);
 
         // Latest lab_result event
-        const labResult = await pool.query(`
-            SELECT data, data_date FROM health_events
+        // Latest lab panel: aggregate all events from the most recent lab date
+        // Handles two storage formats:
+        //   new  — one row per biomarker with data->>'key_name' set
+        //   legacy — single row with full panel already in data JSONB
+        const labDateRes = await pool.query(`
+            SELECT MAX(data_date) AS max_date FROM health_events
             WHERE user_id = $1 AND category = 'lab_result'
-            ORDER BY data_date DESC LIMIT 1
         `, [userId]);
+        const latestLabDate = labDateRes.rows[0]?.max_date || null;
+
+        let labResult = { rows: [] };
+        if (latestLabDate) {
+            const labEventsRes = await pool.query(`
+                SELECT data FROM health_events
+                WHERE user_id = $1 AND category = 'lab_result' AND data_date = $2
+            `, [userId, latestLabDate]);
+
+            const events = labEventsRes.rows.map(r => r.data);
+            const hasKeyName = events.some(e => e.key_name);
+            let panelData;
+
+            if (hasKeyName) {
+                // New per-biomarker format: build a markers map
+                const markers = {};
+                for (const ev of events) {
+                    if (ev.key_name) {
+                        markers[ev.key_name] = {
+                            value: parseFloat(ev.value),
+                            unit: ev.unit || '',
+                            nano_dimension: ev.nano_dimension || null,
+                            is_kino_core: ev.is_kino_core || false,
+                        };
+                    }
+                }
+                panelData = { markers };
+            } else {
+                // Legacy format: single event already contains the full panel
+                panelData = events[0] || null;
+            }
+
+            if (panelData) {
+                labResult = { rows: [{ data: panelData, data_date: latestLabDate }] };
+            }
+        }
 
         // Latest Kino scan from biomarkers table
         const kinoResult = await pool.query(`

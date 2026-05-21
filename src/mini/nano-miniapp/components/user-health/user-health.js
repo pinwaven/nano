@@ -2,12 +2,12 @@ const app = getApp()
 const { BASE } = require('../../utils/config.js')
 
 const BM_META = [
-  { key: 'hsCRP',     unit: 'mg/L',      color: '#ef4444' },
-  { key: 'GDF15',     unit: 'pg/mL',     color: '#f97316' },
+  { key: 'hsCRP',     unit: 'mg/L',      color: '#f472b6' },
+  { key: 'GDF15',     unit: 'pg/mL',     color: '#fb7185' },
   { key: 'IL6',       unit: 'pg/mL',     color: '#a855f7' },
   { key: 'GA',        unit: '%',         color: '#6375EC' },
   { key: 'CystatinC', unit: 'mg/L',      color: '#0ea5e9' },
-  { key: 'CD38',      unit: 'xBaseline', color: '#10b981' },
+  { key: 'CD38',      unit: 'xBaseline', color: '#e879f9' },
 ]
 
 const SUB_AGE_META = [
@@ -134,6 +134,19 @@ const T = {
     healthScoreGrades: { optimal: '优秀', good: '良好', fair: '一般', low: '偏低' },
     dtRecovery: '恢复力', dtCardio: '心血管', dtActivity: '活动量', dtBodyDomain: '体态',
     dtVitals: '生命体征',
+    dtMonitoring: '健康监测',
+    dtLabPanel: '化验快照', dtLabAbnormal: '项异常', dtLabAllNormal: '所有指标正常',
+    healthReports: '检测报告',
+    noReports: '暂无检测报告。',
+    reportTypeLabels: { annual_checkup: '年度体检', lab_panel: '化验报告', imaging: '影像检查', other: '其他' },
+    reportSourceLabels: { lab_api: '实验室', manual_upload: '手动上传', fhir_import: 'FHIR' },
+    reportItems: '项指标',
+    rptNormal: '正常', rptHigh: '偏高', rptLow: '偏低',
+    rptRefRange: '参考值',
+    rptClose: '关闭',
+    rptDiagTitle: '诊断意见',
+    rptAdviceTitle: '医生建议',
+    rptMarkersTitle: '检验指标',
   },
   en: {
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -190,6 +203,19 @@ const T = {
     healthScoreGrades: { optimal: 'Optimal', good: 'Good', fair: 'Fair', low: 'Low' },
     dtRecovery: 'Recovery', dtCardio: 'Cardio', dtActivity: 'Activity', dtBodyDomain: 'Body',
     dtVitals: 'Vitals',
+    dtMonitoring: 'Health Monitoring',
+    dtLabPanel: 'Lab Snapshot', dtLabAbnormal: 'abnormal', dtLabAllNormal: 'All markers normal',
+    healthReports: 'Lab Reports',
+    noReports: 'No lab reports yet.',
+    reportTypeLabels: { annual_checkup: 'Annual Checkup', lab_panel: 'Lab Panel', imaging: 'Imaging', other: 'Other' },
+    reportSourceLabels: { lab_api: 'Lab', manual_upload: 'Uploaded', fhir_import: 'FHIR' },
+    reportItems: 'markers',
+    rptNormal: 'Normal', rptHigh: 'High', rptLow: 'Low',
+    rptRefRange: 'Ref',
+    rptClose: 'Close',
+    rptDiagTitle: 'Diagnostics',
+    rptAdviceTitle: "Doctor's Advice",
+    rptMarkersTitle: 'Lab Markers',
   },
 }
 
@@ -215,6 +241,130 @@ function bioAgeColor(bio, chrono) {
   return Number(bio) <= Number(chrono) ? '#10b981' : '#ef4444'
 }
 
+// ref ranges: [low, high, higherIsBetter]
+const BIO_REF = {
+  hsCRP:          [null, 1.0,   false],
+  IL6:            [null, 3.0,   false],
+  GDF15:          [null, 750,   false],
+  GA:             [11.0, 15.0,  false],
+  CystatinC:      [0.51, 0.95,  false],
+  HbA1c:          [null, 5.7,   false],
+  FPG:            [3.9,  6.1,   false],
+  Triglycerides:  [null, 1.7,   false],
+  ALT:            [null, 40,    false],
+  AST:            [null, 40,    false],
+  GGT:            [null, 50,    false],
+  TSH:            [0.35, 4.5,   false],
+  TotalCholesterol:[null, 5.2,  false],
+  LDL:            [null, 3.4,   false],
+  HDL:            [1.0,  null,  true ],
+  Creatinine:     [53,   115,   false],
+  eGFR:           [90,   null,  true ],
+  BUN:            [1.7,  8.3,   false],
+  UricAcid:       [null, 416,   false],
+  CRP:            [null, 10,    false],
+  VitaminD:       [50,   150,   false],
+  WBC:            [4.0,  10.0,  false],
+  Ferritin:       [13,   150,   false],
+  Hemoglobin:     [115,  175,   false],
+}
+
+const REF_DISPLAY = {
+  hsCRP: '< 1.0 mg/L', IL6: '< 3.0 pg/mL', GDF15: '< 750 pg/mL',
+  GA: '11–15 %', CystatinC: '0.51–0.95 mg/L', HbA1c: '< 5.7 %',
+  FPG: '3.9–6.1 mmol/L', Triglycerides: '< 1.7 mmol/L',
+  ALT: '< 40 U/L', AST: '< 40 U/L', GGT: '< 50 U/L',
+  TSH: '0.35–4.5 mIU/L', TotalCholesterol: '< 5.2 mmol/L',
+  LDL: '< 3.4 mmol/L', HDL: '> 1.0 mmol/L',
+  Creatinine: '53–115 μmol/L', eGFR: '> 90', BUN: '1.7–8.3 mmol/L',
+  UricAcid: '< 416 μmol/L', CRP: '< 10 mg/L', VitaminD: '50–150 nmol/L',
+  WBC: '4–10 ×10⁹/L', Ferritin: '13–150 μg/L', Hemoglobin: '115–175 g/L',
+}
+
+function _bioStatus(keyName, value) {
+  if (value == null || !keyName) return 'normal'
+  const ref = BIO_REF[keyName]
+  if (!ref) return 'normal'
+  const [lo, hi, higherBetter] = ref
+  const v = parseFloat(value)
+  if (higherBetter) {
+    if (lo != null && v < lo) return 'low'
+    return 'normal'
+  }
+  if (hi != null && v > hi) return 'high'
+  if (lo != null && v < lo) return 'low'
+  return 'normal'
+}
+
+function _refText(keyName) {
+  return REF_DISPLAY[keyName] || ''
+}
+
+// Maps legacy (US-unit, snake_case) lab keys → catalog key_name for status lookup
+const LEGACY_KEY_MAP = {
+  ldl: 'LDL', hdl: 'HDL', alt: 'ALT', ast: 'AST', tsh: 'TSH',
+  hba1c: 'HbA1c', ferritin: 'Ferritin', uric_acid: 'UricAcid',
+  vitamin_d: 'VitaminD', creatinine: 'Creatinine',
+  triglycerides: 'Triglycerides', glucose_fasting: 'FPG',
+  total_cholesterol: 'TotalCholesterol', hsCRP: 'hsCRP', il6: 'IL6',
+}
+
+// Display label overrides for compact rendering
+const LAB_DISPLAY_NAME = {
+  TotalCholesterol: 'Chol', MicroVascularAge: 'µVasc',
+  total_cholesterol: 'Chol', uric_acid: 'UA', glucose_fasting: 'Gluc',
+  vitamin_d: 'VitD', vitamin_b12: 'B12',
+}
+
+function _buildLabPanel(twin, lang) {
+  const labData = twin.latest_lab_data
+  const labDate = twin.latest_lab_date
+  if (!labData || !labDate) return { labPanel: [], labPanelDate: '', labPanelAbnormal: 0 }
+
+  const labPanelDate = fmtDate(labDate, lang || 'zh')
+  const items = []
+
+  if (labData.markers) {
+    // New aggregated format: { markers: { LDL: { value, unit }, ... } }
+    for (const [key, info] of Object.entries(labData.markers)) {
+      const v = parseFloat(info.value)
+      const status = _bioStatus(key, v)
+      const statusColor = status === 'high' ? '#ef4444' : status === 'low' ? '#60a5fa' : '#10b981'
+      items.push({ key, displayName: LAB_DISPLAY_NAME[key] || key, value: String(v), unit: info.unit || '', status, statusColor })
+    }
+  } else if (labData.results) {
+    // Legacy format: { results: { ldl: { value, unit, ref_high, ref_low }, ... } }
+    for (const [legacyKey, info] of Object.entries(labData.results)) {
+      const catalogKey = LEGACY_KEY_MAP[legacyKey] || legacyKey
+      const v = parseFloat(info.value)
+      // Use embedded ref ranges for legacy US-unit data
+      let status = 'normal'
+      if (info.ref_high != null && v > info.ref_high) status = 'high'
+      else if (info.ref_low != null && v < info.ref_low) status = 'low'
+      const statusColor = status === 'high' ? '#ef4444' : status === 'low' ? '#60a5fa' : '#10b981'
+      const displayName = LAB_DISPLAY_NAME[legacyKey] || legacyKey.replace(/_/g, ' ')
+      items.push({ key: legacyKey, displayName, value: String(v), unit: info.unit || '', status, statusColor })
+    }
+  }
+
+  // Sort: abnormal first, then alphabetical
+  items.sort((a, b) => {
+    const aAbn = a.status !== 'normal' ? 0 : 1
+    const bAbn = b.status !== 'normal' ? 0 : 1
+    return aAbn !== bAbn ? aAbn - bAbn : a.key.localeCompare(b.key)
+  })
+
+  const labPanelAbnormal = items.filter(i => i.status !== 'normal').length
+  return { labPanel: items, labPanelDate, labPanelAbnormal }
+}
+
+function _reportTypeColor(type) {
+  if (type === 'annual_checkup') return '#a855f7'
+  if (type === 'lab_panel')      return '#0ea5e9'
+  if (type === 'imaging')        return '#14b8a6'
+  return '#6375EC'
+}
+
 Component({
   properties: {
     userId:  { type: String,  value: '' },
@@ -232,6 +382,7 @@ Component({
     cAge: null,
     bAgeColor: '#A6C4E5',
     subAgeList: [],
+    subAgeZ: {},
     bmList: [],
     trendList: [],
     recordCount: 0,
@@ -257,6 +408,18 @@ Component({
       health_conditions: [], health_conditions_other: '',
     },
     editConditionOptions: [],
+    // Health reports
+    healthReports: [],
+    reportsLoading: false,
+    activeReport: null,
+    activeReportEvents: [],
+    activeReportDiag: [],
+    activeReportAdvice: [],
+    reportDetailLoading: false,
+    // Lab panel (from digital twin)
+    labPanel: [],
+    labPanelDate: '',
+    labPanelAbnormal: 0,
     // Digital twin
     twinLoading: true,
     hasTwinData: false,
@@ -313,6 +476,7 @@ Component({
       const t = { ...rawT, subAgeLabels: buildSubAgeLabels(rawT.subAgeLabels, channelOverrides, lang) }
       this.setData({ bioLoading: true })
       this._loadHealthTwin()
+      this._loadHealthReports()
       try {
         const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(userId)}`)
         const records = res.data?.records || []
@@ -362,9 +526,22 @@ Component({
         const rawBioAge = latestAnalyzed?.bio_age ?? (kinoRecords.length > 0 ? kinoRecords[kinoRecords.length - 1]?.bio_age : null) ?? user?.bio_age
         const bAge = rawBioAge ? Number(rawBioAge).toFixed(1) : null
 
+        const slMap = {}
+        subAgeList.forEach(s => { slMap[s.key] = s })
+        const subAgeZ = {}
+        for (const { key } of SUB_AGE_META) {
+          const sa = slMap[key]
+          const score = sa?.score ?? 50
+          const color = !sa ? '#2a3550' : score >= 60 ? '#10b981' : score >= 35 ? '#6375EC' : '#f97316'
+          const alpha = !sa ? 0.2 : score >= 60 ? 0.16 : score >= 35 ? 0.22 : 0.35
+          const n = parseInt(color.slice(1), 16)
+          const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+          subAgeZ[key] = { color, fill: `rgba(${r},${g},${b},${alpha})`, glow: score < 35 ? 14 : 6, pulse: !!sa && score < 35 }
+        }
+
         const newData = {
           bioLoading: false,
-          subAgeList, bmList, trendList,
+          subAgeList, subAgeZ, bmList, trendList,
           cAge, bAge,
           bAgeColor: bioAgeColor(rawBioAge, cAge),
           recordCount: kinoRecords.length,
@@ -455,6 +632,8 @@ Component({
       pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2); ctx.fill() })
       ctx.draw()
     },
+
+
 
     _drawWeightFullChart() {
       const { weightHistory, weightChartW } = this.data
@@ -750,12 +929,19 @@ Component({
         }))
 
         const visuals = this._buildTwinVisuals(twin, t, isZh)
+
+        // Build lab panel from latest_lab_data
+        const { labPanel, labPanelDate, labPanelAbnormal } = _buildLabPanel(twin, lang)
+
         this.setData({
           twinLoading: false,
-          hasTwinData: metrics.length > 0 || twinBody != null,
+          hasTwinData: metrics.length > 0 || twinBody != null || labPanel.length > 0,
           twinMetrics: metrics,
           twinBody,
           twinCoverage,
+          labPanel,
+          labPanelDate,
+          labPanelAbnormal,
           ...visuals,
         })
       } catch (e) {
@@ -908,6 +1094,81 @@ Component({
       }
 
       return { healthScore, healthScoreColor, healthScoreGrade, healthDomains, vitalGauges, twinBodyBar }
+    },
+
+    async _loadHealthReports() {
+      const { userId } = this.properties
+      if (!userId) return
+      this.setData({ reportsLoading: true })
+      try {
+        const res = await this._req(`${BASE}/api/health-reports?openid=${encodeURIComponent(userId)}`)
+        const raw = res.data?.reports || []
+        const lang = this.properties.lang || 'zh'
+        const t = T[lang] || T.zh
+        const reports = raw.map(r => ({
+          id: r.id,
+          institution: r.institution || '—',
+          report_date: fmtDate(r.report_date, lang),
+          report_type: t.reportTypeLabels[r.report_type] || r.report_type,
+          source_label: t.reportSourceLabels[r.source] || r.source,
+          type_color: _reportTypeColor(r.report_type),
+        }))
+        this.setData({ healthReports: reports, reportsLoading: false })
+      } catch (_) {
+        this.setData({ reportsLoading: false })
+      }
+    },
+
+    async onReportTap(e) {
+      const id = e.currentTarget.dataset.id
+      if (!id) return
+      const { userId } = this.properties
+      const lang = this.properties.lang || 'zh'
+      const t = T[lang] || T.zh
+      this.setData({ activeReport: { id, loading: true }, activeReportEvents: [], activeReportDiag: [], activeReportAdvice: [], reportDetailLoading: true })
+      try {
+        const res = await this._req(`${BASE}/api/health-reports/${id}?openid=${encodeURIComponent(userId)}`)
+        const report = res.data?.report || {}
+        const events = res.data?.events || []
+        const raw = report.raw_data || {}
+        const enriched = events.map(ev => {
+          const d = ev.data || {}
+          const v = d.value != null ? d.value : null
+          const status = _bioStatus(d.key_name, v)
+          return {
+            key_name: d.key_name || '—',
+            value: v != null ? String(v) : '—',
+            unit: d.unit || '',
+            status,
+            statusLabel: status === 'high' ? t.rptHigh : status === 'low' ? t.rptLow : t.rptNormal,
+            statusColor: status === 'high' ? '#ef4444' : status === 'low' ? '#0ea5e9' : '#10b981',
+            refText: _refText(d.key_name),
+          }
+        })
+        const activeReport = {
+          id,
+          institution: report.institution || '—',
+          report_date: fmtDate(report.report_date, lang),
+          report_type: t.reportTypeLabels[report.report_type] || report.report_type,
+          type_color: _reportTypeColor(report.report_type),
+          hasDiag: Array.isArray(raw.diagnostics) && raw.diagnostics.length > 0,
+          hasAdvice: Array.isArray(raw.doctor_advice) && raw.doctor_advice.length > 0,
+          loading: false,
+        }
+        this.setData({
+          activeReport,
+          activeReportEvents: enriched,
+          activeReportDiag: raw.diagnostics || [],
+          activeReportAdvice: raw.doctor_advice || [],
+          reportDetailLoading: false,
+        })
+      } catch (_) {
+        this.setData({ reportDetailLoading: false })
+      }
+    },
+
+    onCloseReport() {
+      this.setData({ activeReport: null, activeReportEvents: [], activeReportDiag: [], activeReportAdvice: [] })
     },
 
     noop() {},

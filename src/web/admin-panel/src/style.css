@@ -1473,3 +1473,87 @@ tr:hover .row-actions { opacity: 1; }
 .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .chips-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .btn-sm { font-size: 12px !important; padding: 5px 12px !important; flex-shrink: 0; }
+
+/* === Digital Twin Body Figure === */
+.dt-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #0a0f1a;
+  padding: 16px 12px 12px;
+  margin-bottom: 20px;
+}
+.dt-halo {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 38% 45%, rgba(99,117,236,0.18) 0%, rgba(192,132,212,0.07) 45%, transparent 70%);
+  pointer-events: none;
+}
+.dt-body {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+.dt-svg {
+  width: 128px;
+  flex-shrink: 0;
+}
+.dt-chips {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  gap: 4px;
+}
+.dt-chip {
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid;
+  background: rgba(255,255,255,0.04);
+}
+.dt-chip-val {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.dt-chip-lbl {
+  display: block;
+  font-size: 9px;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-top: 2px;
+}
+.dt-footer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 4px 0;
+  margin-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+}
+.dt-bio-num {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
+.dt-bio-label {
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  font-weight: 500;
+}
+.dt-chrono {
+  font-size: 10px;
+  color: rgba(255,255,255,0.28);
+  margin-left: auto;
+}
+@keyframes dt-zone-glow {
+  0%, 100% { opacity: 0.65; }
+  50%       { opacity: 1; }
+}
+.dt-zone-pulse {
+  animation: dt-zone-glow 2s ease-in-out infinite;
+}

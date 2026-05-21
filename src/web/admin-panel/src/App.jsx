@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import DigitalBodyFigure from './DigitalBodyFigure.jsx';
 import axios from 'axios';
 import { marked } from 'marked';
 import wavenLogo from '../../shared/assets/waven-logo-icon.png';
@@ -1511,8 +1512,9 @@ function UserDetailModal({ user, onClose }) {
           {tab === 'health' && (
             <div className="udm-health">
 
-              {/* Left: profile + conditions */}
+              {/* Left: digital twin + profile + conditions */}
               <div className="udm-col-left">
+                <DigitalBodyFigure subAges={subAgeList} bioAge={rawBioAge} chronoAge={cAge} />
                 <div className="udm-section">
                   <div className="udm-section-title">Profile</div>
                   <div className="drawer-info-grid">
@@ -9341,7 +9343,7 @@ function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
 }
 
 function AdminPanel({ session, onLogout }) {
-  const [lang, setLang] = useState('en');
+  const [lang, setLang] = useState('zh');
   const t = T[lang];
   const toggleLang = () => setLang(l => l === 'en' ? 'zh' : 'en');
 
