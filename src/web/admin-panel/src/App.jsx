@@ -3758,7 +3758,7 @@ function InventoryTab({ channels, session, isSuperadmin }) {
                         }
                       </td>
                       <td>
-                        <div style={{ fontWeight: 600, color: '#EEF2FF', fontSize: 13 }}>{item.name_en || item.key_name}</div>
+                        <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: 13 }}>{item.name_en || item.key_name}</div>
                         {item.name_zh && <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.name_zh}</div>}
                         <div style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace' }}>{item.key_name}</div>
                       </td>
@@ -3767,10 +3767,10 @@ function InventoryTab({ channels, session, isSuperadmin }) {
                           {item.item_type === 'virtual' ? ti.virtual : ti.physical}
                         </Badge>
                       </td>
-                      <td style={{ color: '#EEF2FF' }}>
+                      <td>
                         {item.price_cny != null ? `¥${Number(item.price_cny).toFixed(2)}` : '—'}
                       </td>
-                      <td style={{ color: '#EEF2FF' }}>
+                      <td>
                         {item.stock_quantity != null ? item.stock_quantity : <span style={{ color: '#64748b' }}>{ti.stockUnlimited}</span>}
                       </td>
                       <td>
