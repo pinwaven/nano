@@ -129,6 +129,7 @@ const T = {
     empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found', invites: 'No invitations found', kino: 'No Kino devices registered', chipBatches: 'No chip batches created', chipModels: 'No chip models defined', tickets: 'No tickets yet' },
     count: (n) => `${n} users`,
     searchUsers: 'Search by name, ID, email, phone, channel…',
+    searchCoaches: 'Search by name, ID, email, phone, channel…',
     addUser: 'Add User',
     addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item', addChannel: 'Add Channel', addInvite: 'Create Invite', addDevice: 'Register Device',
     countCoach: (n) => `${n} Coaches`,
@@ -436,6 +437,7 @@ const T = {
     empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道', invites: '暂无邀请码', kino: '暂无 Kino 设备', chipBatches: '暂无芯片批次', chipModels: '暂无芯片型号', tickets: '暂无工单' },
     count: (n) => `共 ${n} 位用户`,
     searchUsers: '搜索姓名、ID、邮箱、电话、渠道…',
+    searchCoaches: '搜索姓名、ID、邮箱、电话、渠道…',
     addBatch: '新建批次', countBatch: (n) => `共 ${n} 批次`,
     chips: {
       prefix: '前缀 *', prefixHint: '自动转大写，例如 KNC12345678 或 MVNS0725122201',
@@ -1719,6 +1721,7 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
   const [modal, setModal] = useState(null);
   const [detailUser, setDetailUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [channelFilter, setChannelFilter] = useState('');
   const [sortField, setSortField] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -1729,15 +1732,18 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
 
   const q = searchQuery.trim().toLowerCase();
+  const byChannel = channelFilter
+    ? users.filter(u => (u.channel_name || '') === channelFilter)
+    : users;
   const filtered = q
-    ? users.filter(u =>
+    ? byChannel.filter(u =>
         (u.nickname || '').toLowerCase().includes(q) ||
         (u.user_id || '').toLowerCase().includes(q) ||
         (u.email || '').toLowerCase().includes(q) ||
         (u.phone || '').toLowerCase().includes(q) ||
         (u.channel_name || '').toLowerCase().includes(q)
       )
-    : users;
+    : byChannel;
 
   const sorted = [...filtered].sort((a, b) => {
     let av = a[sortField] ?? '', bv = b[sortField] ?? '';
@@ -1772,7 +1778,7 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
       <div className="card">
         <div className="table-toolbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className="table-count">{q ? `${sorted.length} / ${users.length}` : t.count(users.length)}</span>
+            <span className="table-count">{(q || channelFilter) ? `${sorted.length} / ${users.length}` : t.count(users.length)}</span>
             <input
               className="toolbar-search"
               type="text"
@@ -1785,6 +1791,29 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
             <Plus size={14} />{t.addUser}
           </button>
         </div>
+        {channels.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
+            {channels.map(c => {
+              const active = channelFilter === c.name;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setChannelFilter(active ? '' : c.name)}
+                  style={{
+                    padding: '3px 10px', borderRadius: 99, fontSize: 12, cursor: 'pointer',
+                    border: `1px solid ${active ? '#6366f1' : 'var(--border)'}`,
+                    background: active ? '#6366f1' : 'transparent',
+                    color: active ? '#fff' : 'var(--muted)',
+                    fontWeight: active ? 600 : 400,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <table className="data-table">
           <thead>
             <tr>
@@ -1859,7 +1888,47 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
 function CoachTab({ coaches, users, channels, onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [channelFilter, setChannelFilter] = useState('');
+  const [sortField, setSortField] = useState('created_at');
+  const [sortDir, setSortDir] = useState('desc');
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  const q = searchQuery.trim().toLowerCase();
+  const byChannel = channelFilter
+    ? coaches.filter(p => (p.channel_name || '') === channelFilter)
+    : coaches;
+  const filtered = q
+    ? byChannel.filter(p =>
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.id || '').toString().includes(q) ||
+        (p.email || '').toLowerCase().includes(q) ||
+        (p.phone || '').toLowerCase().includes(q) ||
+        (p.channel_name || '').toLowerCase().includes(q)
+      )
+    : byChannel;
+
+  const sorted = [...filtered].sort((a, b) => {
+    let av = a[sortField] ?? '', bv = b[sortField] ?? '';
+    const numA = Number(av), numB = Number(bv);
+    if (!isNaN(numA) && !isNaN(numB) && av !== '' && bv !== '') {
+      return sortDir === 'asc' ? numA - numB : numB - numA;
+    }
+    return sortDir === 'asc'
+      ? String(av).localeCompare(String(bv))
+      : String(bv).localeCompare(String(av));
+  });
+
+  const toggleSort = (field) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('asc'); }
+  };
+
+  const SortIcon = ({ field }) => (
+    <span style={{ marginLeft: 4, opacity: sortField === field ? 1 : 0.3, color: sortField === field ? 'var(--primary)' : 'inherit' }}>
+      {sortField === field ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
+    </span>
+  );
 
   return (
     <>
@@ -1870,18 +1939,61 @@ function CoachTab({ coaches, users, channels, onRefresh }) {
       </div>
       <div className="card">
         <div className="table-toolbar">
-          <span className="table-count">{t.countCoach(coaches.length)}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="table-count">{(q || channelFilter) ? `${sorted.length} / ${coaches.length}` : t.countCoach(coaches.length)}</span>
+            <input
+              className="toolbar-search"
+              type="text"
+              placeholder={t.searchCoaches}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
           <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
             <Plus size={14} />{t.addCoach}
           </button>
         </div>
+        {channels.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
+            {channels.map(c => {
+              const active = channelFilter === c.name;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setChannelFilter(active ? '' : c.name)}
+                  style={{
+                    padding: '3px 10px', borderRadius: 99, fontSize: 12, cursor: 'pointer',
+                    border: `1px solid ${active ? '#6366f1' : 'var(--border)'}`,
+                    background: active ? '#6366f1' : 'transparent',
+                    color: active ? '#fff' : 'var(--muted)',
+                    fontWeight: active ? 600 : 400,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <table className="data-table">
           <thead>
-            <tr><th>{t.table.id}</th><th>{t.table.name}</th><th>{t.table.channel}</th><th>{t.table.linkedUser}</th><th>{t.table.email}</th><th>{t.table.phone}</th><th>{t.table.language}</th><th>{t.table.customers}</th><th>{t.table.joined}</th><th></th></tr>
+            <tr>
+              <th className="sortable-th" onClick={() => toggleSort('id')}>{t.table.id}<SortIcon field="id" /></th>
+              <th className="sortable-th" onClick={() => toggleSort('name')}>{t.table.name}<SortIcon field="name" /></th>
+              <th className="sortable-th" onClick={() => toggleSort('channel_name')}>{t.table.channel}<SortIcon field="channel_name" /></th>
+              <th>{t.table.linkedUser}</th>
+              <th>{t.table.email}</th>
+              <th>{t.table.phone}</th>
+              <th>{t.table.language}</th>
+              <th className="sortable-th" onClick={() => toggleSort('user_count')}>{t.table.customers}<SortIcon field="user_count" /></th>
+              <th className="sortable-th" onClick={() => toggleSort('created_at')}>{t.table.joined}<SortIcon field="created_at" /></th>
+              <th></th>
+            </tr>
           </thead>
           <tbody>
-            {coaches.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.coaches}</td></tr>}
-            {coaches.map(p => (
+            {sorted.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.coaches}</td></tr>}
+            {sorted.map(p => (
               <tr key={p.id}>
                 <td className="muted">{p.id}</td>
                 <td>
