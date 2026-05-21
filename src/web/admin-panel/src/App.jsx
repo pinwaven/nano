@@ -3651,6 +3651,13 @@ function InventoryTab({ channels, session, isSuperadmin }) {
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(null);
 
+  // Auto-select first channel for superadmins
+  useEffect(() => {
+    if (isSuperadmin && !selectedChannelId && channels.length) {
+      setSelectedChannelId(String(channels[0].id));
+    }
+  }, [isSuperadmin, channels, selectedChannelId]);
+
   const fetchItems = useCallback(async (cid) => {
     if (!cid) return;
     setLoading(true);
