@@ -1408,6 +1408,7 @@ function UserDetailModal({ user, onClose }) {
   const [tab, setTab]                     = useState('health');
   const [records, setRecords]             = useState([]);
   const [bmLoading, setBmLoading]         = useState(true);
+  const [twinData, setTwinData]           = useState(null);
   const [plans, setPlans]                 = useState(null);
   const [plansLoading, setPlansLoading]   = useState(false);
   const [messages, setMessages]           = useState(null);
@@ -1418,10 +1419,14 @@ function UserDetailModal({ user, onClose }) {
   useEffect(() => {
     if (!openid) return;
     setBmLoading(true);
+    setTwinData(null);
     axios.get(`/api/biomarkers?openid=${encodeURIComponent(openid)}`)
       .then(r => setRecords(r.data.records || []))
       .catch(() => setRecords([]))
       .finally(() => setBmLoading(false));
+    axios.get(`/api/health-twin?openid=${encodeURIComponent(openid)}`)
+      .then(r => setTwinData(r.data.twin || null))
+      .catch(() => setTwinData(null));
   }, [openid]);
 
   const switchTab = (next) => {
@@ -1515,6 +1520,13 @@ function UserDetailModal({ user, onClose }) {
               {/* Left: digital twin + profile + conditions */}
               <div className="udm-col-left">
                 <DigitalBodyFigure subAges={subAgeList} bioAge={rawBioAge} chronoAge={cAge} />
+                {twinData?.tags?.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
+                    {twinData.tags.map((tag, i) => (
+                      <Badge key={i} color={tag.color}>{tag.labelEn}</Badge>
+                    ))}
+                  </div>
+                )}
                 <div className="udm-section">
                   <div className="udm-section-title">Profile</div>
                   <div className="drawer-info-grid">

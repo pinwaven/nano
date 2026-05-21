@@ -97,11 +97,16 @@
                 style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
             </view>
           </view>
-          <!-- Zone chips -->
-          <view class="dt-zone-chips">
-            <view wx:for="{{subAgeList}}" wx:key="key" class="dt-zone-chip" style="border-color:{{item.color}}55;color:{{item.color}}">
-              <text class="dt-zone-val">{{item.value}}</text>
-              <text class="dt-zone-lbl">{{item.label}}</text>
+          <!-- Health tags -->
+          <view class="dt-health-tags">
+            <view wx:for="{{healthTags}}" wx:key="index"
+                  class="dt-htag"
+                  style="border-color:{{item.color}}55;color:{{item.color}};">
+              <view class="dt-htag-dot" style="background:{{item.color}};"></view>
+              <text class="dt-htag-label">{{item.label}}</text>
+            </view>
+            <view wx:if="{{healthTags.length === 0}}" class="dt-htag dt-htag-empty">
+              <text class="dt-htag-label">{{t.noHealthSignals}}</text>
             </view>
           </view>
         </view>

@@ -1299,34 +1299,43 @@
   border-radius: 10rpx;
 }
 
-/* Zone chips column */
-.dt-zone-chips {
+/* Health tags column */
+.dt-health-tags {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: space-around;
-  gap: 6rpx;
+  justify-content: center;
+  gap: 10rpx;
+  padding-left: 16rpx;
 }
 
-.dt-zone-chip {
-  padding: 12rpx 14rpx;
-  border-radius: 14rpx;
-  border: 1rpx solid;
-  background: rgba(255, 255, 255, 0.04);
+.dt-htag {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8rpx;
+  border: 1.5rpx solid;
+  border-radius: 20rpx;
+  padding: 8rpx 14rpx;
+  background: rgba(255, 255, 255, 0.03);
 }
 
-.dt-zone-val {
-  display: block;
-  font-size: 30rpx;
-  font-weight: 700;
+.dt-htag-dot {
+  width: 10rpx;
+  height: 10rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dt-htag-label {
+  font-size: 20rpx;
+  font-weight: 600;
   line-height: 1.2;
 }
 
-.dt-zone-lbl {
-  display: block;
-  font-size: 18rpx;
-  opacity: 0.65;
-  margin-top: 2rpx;
+.dt-htag-empty {
+  border-color: rgba(166, 196, 229, 0.15);
+  color: rgba(166, 196, 229, 0.35);
 }
 
 @keyframes dt-fig-pulse-anim {

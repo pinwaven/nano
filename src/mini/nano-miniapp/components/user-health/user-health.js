@@ -147,6 +147,7 @@ const T = {
     rptDiagTitle: '诊断意见',
     rptAdviceTitle: '医生建议',
     rptMarkersTitle: '检验指标',
+    noHealthSignals: '暂无健康信号',
   },
   en: {
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -216,6 +217,7 @@ const T = {
     rptDiagTitle: 'Diagnostics',
     rptAdviceTitle: "Doctor's Advice",
     rptMarkersTitle: 'Lab Markers',
+    noHealthSignals: 'No signals yet',
   },
 }
 
@@ -377,6 +379,7 @@ Component({
 
   data: {
     t: {},
+    isZh: true,
     bioLoading: true,
     bAge: null,
     cAge: null,
@@ -416,6 +419,8 @@ Component({
     activeReportDiag: [],
     activeReportAdvice: [],
     reportDetailLoading: false,
+    // Health tags (populated from /api/health-twin response)
+    healthTags: [],
     // Lab panel (from digital twin)
     labPanel: [],
     labPanelDate: '',
@@ -439,7 +444,8 @@ Component({
       if (newId) this._loadHealth()
     },
     'lang': function(newLang) {
-      this.setData({ t: T[newLang] || T.zh })
+      const isZh = newLang !== 'en'
+      this.setData({ t: T[newLang] || T.zh, isZh })
       if (this.properties.userId && !this.data.bioLoading) this._loadHealth()
     },
     'user': function(newUser) {
@@ -453,7 +459,7 @@ Component({
   lifetimes: {
     attached() {
       const lang = this.properties.lang || 'zh'
-      this.setData({ t: T[lang] || T.zh })
+      this.setData({ t: T[lang] || T.zh, isZh: lang !== 'en' })
       const user = this.properties.user
       if (user) {
         const letter = (user.nickname || 'U').slice(-1).toUpperCase()
@@ -933,6 +939,12 @@ Component({
         // Build lab panel from latest_lab_data
         const { labPanel, labPanelDate, labPanelAbnormal } = _buildLabPanel(twin, lang)
 
+        // Tags generated server-side; pick label by language
+        const healthTags = (twin.tags || []).map(tag => ({
+          ...tag,
+          label: isZh ? tag.labelZh : tag.labelEn,
+        }))
+
         this.setData({
           twinLoading: false,
           hasTwinData: metrics.length > 0 || twinBody != null || labPanel.length > 0,
@@ -942,6 +954,7 @@ Component({
           labPanel,
           labPanelDate,
           labPanelAbnormal,
+          healthTags,
           ...visuals,
         })
       } catch (e) {
