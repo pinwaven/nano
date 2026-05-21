@@ -2,6 +2,8 @@
 
 The Coach CRM gives coaches a structured way to manage their clients beyond basic chat — tracking lifecycle stages, goals, notes, appointments, and communication campaigns. It is built in five phases, each adding a new capability layer, all sharing a common activity log as the audit trail.
 
+**Coach Groups** extend the CRM with a mid-tier organising layer: business entities (clinics, studios, nutrition stores) that employ multiple coaches within a single channel. Groups unlock group-level KPI aggregation without splitting the channel or creating separate user pools.
+
 ---
 
 ## Architecture Overview
@@ -19,13 +21,13 @@ The Coach CRM gives coaches a structured way to manage their clients beyond basi
                            │  pg (raw SQL)
 ┌──────────────────────────▼──────────────────────────────┐
 │  PolarDB (PostgreSQL 14)                                 │
-│  12 CRM tables across 5 migrations                      │
+│  12 CRM tables across 5 migrations + coach_groups        │
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
 │  Web admin panel  (src/web/admin-panel/src/App.jsx)      │
 │  Coach CRM nav item → CoachCRMTab                       │
-│  Sub-tabs: Pipeline | Campaigns | Performance | NPS      │
+│  Sub-tabs: Pipeline | Campaigns | Performance | NPS | Groups │
 └──────────────────────────┬──────────────────────────────┘
                            │  axios
                            └── same FC 3.0 worker
@@ -278,6 +280,136 @@ The rule engine is evaluated by calling `POST /api/follow-up-rules/evaluate`. Th
 
 ---
 
+---
+
+## Coach Groups
+
+### Concept
+
+A **coach group** represents a business entity (e.g. an anti-aging clinic, a nutrition store, a wellness studio) that employs one or more coaches within a single channel. It sits between the channel and the individual coach in the organisational hierarchy:
+
+```
+Channel
+  └── Coach Group (e.g. "Aeviva Clinic", "NutraStudio")
+        └── Coach A
+        └── Coach B
+        └── Coach C
+```
+
+Groups are purely organisational — they have no separate user pool, invite codes, or access credentials. Deleting a group ungrouped its coaches (`ON DELETE SET NULL`) without removing any coach or user data.
+
+### Database Schema
+
+**Migration:** `src/schemas/migration_coach_groups.sql`
+
+#### `coach_groups`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | SERIAL PK | |
+| `channel_id` | INTEGER FK → channels | `ON DELETE CASCADE` — deleting a channel removes its groups |
+| `name` | TEXT NOT NULL | Unique per channel |
+| `description` | TEXT | Optional free-text notes |
+| `type` | TEXT | Optional free-text category: `clinic`, `studio`, `nutrition`, etc. |
+| `created_at` | TIMESTAMPTZ | |
+
+Unique constraint: `(channel_id, name)` — duplicate group names within a channel are rejected with HTTP 409.
+
+#### `coaches.group_id` (added column)
+
+`group_id INTEGER REFERENCES coach_groups(id) ON DELETE SET NULL` is added to the `coaches` table. A coach with `group_id = NULL` is considered ungrouped.
+
+### API Reference
+
+All routes live in `src/functions/worker/index.js`. Route ordering matters: `/coach-group-kpis` and `/coach-groups` must appear before `/coach-kpis` and `/coaches` respectively in the routing chain (path matching uses `path.includes()`).
+
+#### Groups CRUD
+
+| Method | Path | Body / Query | Description |
+|---|---|---|---|
+| GET | `/api/coach-groups` | `?channel_id=X` | List groups for a channel with `coach_count`. Channel admins are auto-scoped to their own channel. |
+| POST | `/api/coach-groups` | `{channel_id, name, description?, type?}` | Create a group. Channel admins use their own `channel_id` regardless of the body value. |
+| PUT | `/api/coach-groups/:id` | `{name, description?, type?}` | Update. Channel admins may only edit groups in their own channel (403 otherwise). |
+| DELETE | `/api/coach-groups/:id` | — | Delete. Coaches in the group have `group_id` set to NULL automatically. |
+
+**Coach CRUD changes** — `POST /api/coaches` and `PUT /api/coaches/:id` now accept an optional `group_id` field. Passing `null` explicitly ungroups a coach. `GET /coach-list` and `GET /channel-coaches/:id` return `group_id` and `group_name` on every coach row.
+
+#### Group KPIs
+
+```
+GET /api/coach-group-kpis?group_id=X&period=YYYY-MM
+```
+
+Returns aggregate KPI metrics across all coaches in the group.
+
+**Response shape:**
+
+```json
+{
+  "success": true,
+  "kpis": {
+    "group_id": 3,
+    "period": "2026-05",
+    "total_clients": 42,
+    "active_clients": 28,
+    "at_risk_count": 4,
+    "scans_facilitated": 19,
+    "plans_assigned": 11,
+    "messages_sent": 87,
+    "appointments_held": 14,
+    "avg_nps_score": 8.3,
+    "nps_response_count": 9,
+    "commission_cny": 12450,
+    "coach_count": 3
+  },
+  "group": { "id": 3, "name": "Aeviva Clinic", "type": "clinic" },
+  "source": "snapshot"
+}
+```
+
+**KPI resolution strategy** — mirrors `GET /api/coach-kpis`:
+
+| Period | Source |
+|---|---|
+| Past months | Aggregated from `coach_performance_snapshots` (one SQL query) |
+| Current month | Seven parallel live SQL queries across all `coaches WHERE group_id = X` |
+
+**NPS aggregation** uses a weighted average to avoid distortion from coaches with few responses:
+
+```sql
+SUM(avg_nps_score * nps_response_count) / SUM(nps_response_count)
+```
+
+A group with no coaches returns zeroed KPIs with `coach_count: 0`.
+
+### Web Admin Panel
+
+#### Coaches Tab (`CoachTab`)
+
+- **Group filter pills** — a row of purple-tinted pills below the channel filter strip. Each pill shows the group name and a `coach_count` badge. Clicking a pill filters the coach table to that group; clicking again clears the filter.
+- **"Group" column** — new column in the coach table showing a purple badge with the group name, or `—` for ungrouped coaches.
+- **Group management panel** — a collapsible card below the coach table listing all groups with their type, description, and coach count. Add / Edit / Delete buttons open `CoachGroupModal` or `DeleteCoachGroupConfirm` respectively.
+- **"+ Add Group" shortcut** — appears inline in the filter pills row even before any groups exist, allowing quick group creation.
+- **`CoachModal` group assignment** — when groups exist for the channel, an additional `<select>` dropdown for "Group" appears below the channel selector.
+
+#### Coach CRM Tab (`CoachCRMTab`) — Groups sub-tab
+
+New sub-tab `Groups` (after NPS) in the Coach CRM nav:
+
+1. **Group selector** — dropdown listing all groups for the channel (derived from `coaches[0].channel_id`).
+2. **Period picker** — shared `<input type="month">` with the Performance sub-tab.
+3. **Stat cards** — Total Clients, Active, At Risk, Coach Count (purple).
+4. **Aggregate KPI table** — single row: Scans, Plans Assigned, Messages, Appts Held, Avg NPS, Commission ¥.
+5. **Per-coach breakdown** — table of coaches in the selected group, reusing `kpiRows` loaded in the Performance sub-tab if already populated. Shows individual Total Clients, Active, Scans, Avg NPS, Commission per coach.
+
+### Design Decisions
+
+**Why not sub-channels?** Sub-channels (`channels.parent_channel_id`) are for brand or geographic separation — they carry their own user pools, invite codes, and admin access. A business entity within a channel does not need any of that. Using sub-channels for groups would have created ownership ambiguity for users and coaches, and polluted the channel list with entities that are not top-level brands.
+
+**No user ↔ group FK** — users belong to coaches who belong to groups. There is no `users.group_id` column. Group-level stats are always derived by joining through `coaches`: `users JOIN coaches ON users.coach_id = coaches.id WHERE coaches.group_id = X`. This keeps the user model clean and means a user's group affiliation changes automatically when their coach's group assignment changes.
+
+---
+
 ## Pipeline Stages
 
 Every coach–client relationship has a lifecycle stage stored in `client_pipeline_stages`.
@@ -399,6 +531,18 @@ All routes are `else if` branches in `src/functions/worker/index.js`. Path match
 | PUT | `/api/follow-up-rules/:id` | Partial update | Edit or toggle `is_active` |
 | DELETE | `/api/follow-up-rules/:id` | — | Delete |
 | POST | `/api/follow-up-rules/evaluate` | — | Cron-callable rule engine scan |
+
+### Coach Groups
+
+See the full reference in [Coach Groups → API Reference](#api-reference-1) above. Summary:
+
+| Method | Path | Body / Query | Description |
+|---|---|---|---|
+| GET | `/api/coach-groups` | `?channel_id=X` | List groups with coach count |
+| POST | `/api/coach-groups` | `{channel_id, name, description?, type?}` | Create group |
+| PUT | `/api/coach-groups/:id` | `{name, description?, type?}` | Update group |
+| DELETE | `/api/coach-groups/:id` | — | Delete (ungroups coaches via FK cascade) |
+| GET | `/api/coach-group-kpis` | `?group_id=X&period=YYYY-MM` | Aggregate KPIs for all coaches in a group |
 
 ---
 
@@ -568,3 +712,8 @@ Implemented via LEFT JOINs rather than a separate endpoint, so the existing clie
 | Follow-up rules | Create `no_scan_days` rule with `trigger_value=14` → ensure client has no scan in 15+ days → `POST /api/follow-up-rules/evaluate` → confirm action fired |
 | Admin pipeline | Open Coach CRM → Pipeline sub-tab → select coach → confirm bar chart and client table render |
 | Admin NPS | Open NPS sub-tab → load → confirm promoter/passive/detractor counts and NPS score |
+| Coach groups CRUD | Coaches tab → "Add Group" → create a group → confirm it appears in the filter pills and management panel |
+| Coach group assignment | Edit a coach → assign to a group → confirm purple badge appears in the Group column and `coach_count` increments |
+| Group filter | Click a group pill in the Coaches tab → confirm table filters to only that group's coaches |
+| Group KPIs | Coach CRM → Groups sub-tab → select group + period → confirm aggregate stat cards and KPI row render; `coach_count` matches the number of coaches assigned |
+| Group delete cascade | Delete a group → confirm its coaches now show `group_id: null` in `GET /api/coach-list` |
