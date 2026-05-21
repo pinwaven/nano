@@ -2832,7 +2832,10 @@ function CoachCRMTab({ coaches, users }) {
     if (sub === 'campaigns' && selectedCoachId) loadCampaigns(selectedCoachId);
     if (sub === 'performance') loadKPIs();
     if (sub === 'nps') loadNPS();
-    if (sub === 'groups' && selectedGroupId) loadGroupKPIs();
+    if (sub === 'groups' && selectedGroupId) {
+      loadGroupKPIs();
+      loadKPIs();
+    }
   }, [sub, selectedCoachId, loadPipeline, loadCampaigns, loadKPIs, loadNPS, loadGroupKPIs, selectedGroupId]);
 
   const handleCoachChange = (e) => {
