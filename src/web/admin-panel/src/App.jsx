@@ -41,6 +41,7 @@ function LoginScreen({ onLogin }) {
         sessionStorage.setItem('nano_admin_role', res.data.role || 'superadmin')
         sessionStorage.setItem('nano_admin_channel_id', res.data.channel_id ?? '')
         sessionStorage.setItem('nano_admin_tabs', JSON.stringify(res.data.allowed_tabs || []))
+        sessionStorage.setItem('nano_admin_cms', res.data.can_manage_subchannels ? '1' : '')
         onLogin(res.data.token)
       } else {
         setError('Login failed')
@@ -1716,7 +1717,7 @@ function UserDetailModal({ user, onClose }) {
 
 // ── Users tab ─────────────────────────────────────────────────────────────────
 
-function UsersTab({ users, coaches, channels, onRefresh }) {
+function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
   const [detailUser, setDetailUser] = useState(null);
@@ -1724,17 +1725,30 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
   const [channelFilter, setChannelFilter] = useState('');
   const [sortField, setSortField] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
+  const [includeSubchannels, setIncludeSubchannels] = useState(false);
+  const [subUsers, setSubUsers] = useState(null);
 
-  const tested = users.filter(u => u.bio_age).length;
+  const displayUsers = includeSubchannels && subUsers !== null ? subUsers : users;
+
+  useEffect(() => {
+    if (!includeSubchannels) { setSubUsers(null); return; }
+    const cid = session?.channelId;
+    if (!cid) return;
+    axios.get(`/api/channel-users/${cid}?include_subchannels=true`)
+      .then(r => setSubUsers(r.data.users || []))
+      .catch(() => setSubUsers(null));
+  }, [includeSubchannels, session]);
+
+  const tested = displayUsers.filter(u => u.bio_age).length;
   const avgBioAge = tested
-    ? (users.filter(u => u.bio_age).reduce((s, u) => s + Number(u.bio_age), 0) / tested).toFixed(1)
+    ? (displayUsers.filter(u => u.bio_age).reduce((s, u) => s + Number(u.bio_age), 0) / tested).toFixed(1)
     : '—';
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
 
   const q = searchQuery.trim().toLowerCase();
   const byChannel = channelFilter
-    ? users.filter(u => (u.channel_name || '') === channelFilter)
-    : users;
+    ? displayUsers.filter(u => (u.channel_name || '') === channelFilter)
+    : displayUsers;
   const filtered = q
     ? byChannel.filter(u =>
         (u.nickname || '').toLowerCase().includes(q) ||
@@ -1770,7 +1784,7 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
   return (
     <>
       <div className="stat-row">
-        <StatCard icon={Users}    label={t.stats.totalUsers} value={users.length} color="#3b82f6" />
+        <StatCard icon={Users}    label={t.stats.totalUsers} value={displayUsers.length} color="#3b82f6" />
         <StatCard icon={Activity} label={t.stats.tested}     value={tested}       color="#8b5cf6" />
         <StatCard icon={Calendar} label={t.stats.avgBioAge}  value={avgBioAge}    color="#f59e0b" />
         <StatCard icon={UserCog}  label={t.stats.coaches}    value={coaches.length} color="#10b981" />
@@ -1778,7 +1792,7 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
       <div className="card">
         <div className="table-toolbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className="table-count">{(q || channelFilter) ? `${sorted.length} / ${users.length}` : t.count(users.length)}</span>
+            <span className="table-count">{(q || channelFilter) ? `${sorted.length} / ${displayUsers.length}` : t.count(displayUsers.length)}</span>
             <input
               className="toolbar-search"
               type="text"
@@ -1786,6 +1800,12 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
+            {isCmsAdmin && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                <input type="checkbox" checked={includeSubchannels} onChange={e => setIncludeSubchannels(e.target.checked)} />
+                Include sub-channels
+              </label>
+            )}
           </div>
           <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
             <Plus size={14} />{t.addUser}
@@ -1885,19 +1905,32 @@ function UsersTab({ users, coaches, channels, onRefresh }) {
 
 // ── Coach tab ─────────────────────────────────────────────────────────────────
 
-function CoachTab({ coaches, users, channels, onRefresh }) {
+function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [channelFilter, setChannelFilter] = useState('');
   const [sortField, setSortField] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
+  const [includeSubchannels, setIncludeSubchannels] = useState(false);
+  const [subCoaches, setSubCoaches] = useState(null);
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  const displayCoaches = includeSubchannels && subCoaches !== null ? subCoaches : coaches;
+
+  useEffect(() => {
+    if (!includeSubchannels) { setSubCoaches(null); return; }
+    const cid = session?.channelId;
+    if (!cid) return;
+    axios.get(`/api/channel-coaches/${cid}?include_subchannels=true`)
+      .then(r => setSubCoaches(r.data.coaches || []))
+      .catch(() => setSubCoaches(null));
+  }, [includeSubchannels, session]);
 
   const q = searchQuery.trim().toLowerCase();
   const byChannel = channelFilter
-    ? coaches.filter(p => (p.channel_name || '') === channelFilter)
-    : coaches;
+    ? displayCoaches.filter(p => (p.channel_name || '') === channelFilter)
+    : displayCoaches;
   const filtered = q
     ? byChannel.filter(p =>
         (p.name || '').toLowerCase().includes(q) ||
@@ -1933,14 +1966,14 @@ function CoachTab({ coaches, users, channels, onRefresh }) {
   return (
     <>
       <div className="stat-row">
-        <StatCard icon={UserCog} label={t.stats.totalCoaches}    value={coaches.length}                         color="#10b981" />
+        <StatCard icon={UserCog} label={t.stats.totalCoaches}    value={displayCoaches.length}                  color="#10b981" />
         <StatCard icon={Users}   label={t.stats.assignedUsers}   value={users.filter(u => u.coach_id).length}  color="#3b82f6" />
         <StatCard icon={Users}   label={t.stats.unassignedUsers} value={users.filter(u => !u.coach_id).length} color="#f59e0b" />
       </div>
       <div className="card">
         <div className="table-toolbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className="table-count">{(q || channelFilter) ? `${sorted.length} / ${coaches.length}` : t.countCoach(coaches.length)}</span>
+            <span className="table-count">{(q || channelFilter) ? `${sorted.length} / ${displayCoaches.length}` : t.countCoach(displayCoaches.length)}</span>
             <input
               className="toolbar-search"
               type="text"
@@ -1948,6 +1981,12 @@ function CoachTab({ coaches, users, channels, onRefresh }) {
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
+            {isCmsAdmin && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                <input type="checkbox" checked={includeSubchannels} onChange={e => setIncludeSubchannels(e.target.checked)} />
+                Include sub-channels
+              </label>
+            )}
           </div>
           <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
             <Plus size={14} />{t.addCoach}
@@ -5281,12 +5320,12 @@ function SimulatorsTab() {
 
 const EMPTY_CHANNEL = { key_name: '', name: '', logo_url: '' };
 
-function ChannelModal({ channel, onClose, onSave }) {
+function ChannelModal({ channel, channels, isSuperadmin, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!channel?.id;
   const [form, setForm] = useState(isEdit
-    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '' }
-    : { ...EMPTY_CHANNEL });
+    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '', parent_channel_id: channel.parent_channel_id || '' }
+    : { ...EMPTY_CHANNEL, parent_channel_id: '' });
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -5318,7 +5357,7 @@ function ChannelModal({ channel, onClose, onSave }) {
     setBusy(true); setError('');
     try {
       if (isEdit) await axios.put(`/api/channels/${channel.id}`, form);
-      else        await axios.post('/api/channels', form);
+      else        await axios.post('/api/channels', { ...form, parent_channel_id: form.parent_channel_id || undefined });
       onSave();
     } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
     finally { setBusy(false); }
@@ -5341,6 +5380,17 @@ function ChannelModal({ channel, onClose, onSave }) {
               <span>{t.modal.channelName}</span>
               <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Nanovate" />
             </label>
+            {isSuperadmin && !isEdit && (channels || []).filter(c => !c.parent_channel_id).length > 0 && (
+              <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                <span>Parent Channel (optional)</span>
+                <select value={form.parent_channel_id} onChange={e => set('parent_channel_id', e.target.value)}>
+                  <option value="">None (top-level channel)</option>
+                  {(channels || []).filter(c => !c.parent_channel_id).map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{t.modal.channelLogoUrl}</span>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 6 }}>
@@ -5433,6 +5483,7 @@ const CONFIGURABLE_TABS = [
   { id: 'reports',        label: 'Reports' },
   { id: 'tickets',        label: 'Tickets' },
   { id: 'lab',            label: 'Lab' },
+  { id: 'subchannels',    label: 'Sub-channels (requires grant)' },
 ];
 
 function ChannelAdminTabsModal({ channel, onClose, onSave }) {
@@ -5564,10 +5615,237 @@ function ChannelSubAgeLabelsModal({ channel, onClose, onSave }) {
   );
 }
 
+function SubchannelAdminsModal({ subchannel, onClose, onSave }) {
+  const [accounts, setAccounts] = useState([]);
+  const [form, setForm] = useState({ username: '', password: '' });
+  const [err, setErr] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    axios.get('/api/admin-accounts')
+      .then(r => setAccounts((r.data.accounts || []).filter(a => a.channel_id === subchannel.id)))
+      .catch(() => setAccounts([]))
+      .finally(() => setLoading(false));
+  }, [subchannel.id]);
+
+  const addAccount = async () => {
+    if (!form.username || !form.password) return;
+    setSaving(true); setErr('');
+    try {
+      await axios.post('/api/admin-accounts', { username: form.username, password: form.password, channel_id: subchannel.id });
+      setForm({ username: '', password: '' });
+      const r = await axios.get('/api/admin-accounts');
+      setAccounts((r.data.accounts || []).filter(a => a.channel_id === subchannel.id));
+    } catch (e) { setErr(e.response?.data?.error || 'Error'); }
+    finally { setSaving(false); }
+  };
+
+  const delAccount = async (id) => {
+    if (!window.confirm('Delete this admin account?')) return;
+    try {
+      await axios.delete(`/api/admin-accounts/${id}`);
+      setAccounts(prev => prev.filter(a => a.id !== id));
+      onSave();
+    } catch (e) { alert(e.response?.data?.error || 'Error'); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>Admins — {subchannel.name}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          {loading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : (
+            <>
+              <table className="data-table" style={{ marginBottom: 16 }}>
+                <thead><tr><th>Username</th><th>Created</th><th></th></tr></thead>
+                <tbody>
+                  {accounts.length === 0 && <tr><td colSpan={3} className="empty-row">No admins yet</td></tr>}
+                  {accounts.map(a => (
+                    <tr key={a.id}>
+                      <td><strong>{a.username}</strong></td>
+                      <td className="muted">{fmtDate(a.created_at)}</td>
+                      <td><button className="icon-btn danger" onClick={() => delAccount(a.id)}><Trash2 size={14} /></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>Add admin account</p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input className="form-input" placeholder="Username" value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} style={{ flex: 1, minWidth: 120 }} />
+                <input className="form-input" type="password" placeholder="Password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} style={{ flex: 1, minWidth: 120 }} />
+                <button className="btn-primary" onClick={addAccount} disabled={saving || !form.username || !form.password}>
+                  {saving ? 'Adding…' : <><Plus size={14} />Add</>}
+                </button>
+              </div>
+              {err && <p className="form-error" style={{ marginTop: 8 }}>{err}</p>}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubchannelInvitesModal({ subchannel, onClose }) {
+  const [invitations, setInvitations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    axios.get(`/api/invitations?channel_id=${subchannel.id}`)
+      .then(r => setInvitations(r.data.invitations || []))
+      .catch(() => setInvitations([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, [subchannel.id]);
+
+  const create = async () => {
+    setCreating(true);
+    try {
+      await axios.post('/api/invitations', { channel_id: subchannel.id, type: 'channel' });
+      load();
+    } catch { /* silent */ } finally { setCreating(false); }
+  };
+
+  const deactivate = async (id) => {
+    try { await axios.delete(`/api/invitations/${id}`); load(); } catch { /* silent */ }
+  };
+
+  const copy = (code) => {
+    navigator.clipboard?.writeText(`pages/login/login?invite=${code}`);
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>Invites — {subchannel.name}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+            <button className="btn-primary" onClick={create} disabled={creating}>
+              <Plus size={14} />{creating ? 'Creating…' : 'New Invite'}
+            </button>
+          </div>
+          {loading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : (
+            <table className="data-table">
+              <thead><tr><th>Code</th><th>Uses</th><th>Active</th><th>Created</th><th></th></tr></thead>
+              <tbody>
+                {invitations.length === 0 && <tr><td colSpan={5} className="empty-row">No invites yet</td></tr>}
+                {invitations.map(inv => (
+                  <tr key={inv.id}>
+                    <td><code className="code-tag">{inv.code}</code></td>
+                    <td>{inv.use_count}{inv.max_uses ? ` / ${inv.max_uses}` : ''}</td>
+                    <td><Badge color={inv.is_active ? '#10b981' : '#64748b'}>{inv.is_active ? 'Active' : 'Inactive'}</Badge></td>
+                    <td className="muted">{fmtDate(inv.created_at)}</td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="icon-btn" title="Copy link" onClick={() => copy(inv.code)}><Copy size={14} /></button>
+                        {inv.is_active && <button className="icon-btn danger" title="Deactivate" onClick={() => deactivate(inv.id)}><Trash2 size={14} /></button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubchannelsTab({ subchannels, adminAccounts, invitations, session, onRefresh }) {
+  const [modal, setModal] = useState(null);
+  const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={Building2} label="Sub-channels" value={subchannels.length} color="#6366f1" />
+        <StatCard icon={Settings2} label="Sub-channel Admins" value={adminAccounts.length} color="#8b5cf6" />
+      </div>
+      <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count">{subchannels.length} sub-channel{subchannels.length !== 1 ? 's' : ''}</span>
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />Add Sub-channel
+          </button>
+        </div>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Key</th>
+              <th>Name</th>
+              <th>Logo</th>
+              <th>Users</th>
+              <th>Coaches</th>
+              <th>Joined</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {subchannels.length === 0 && <tr><td colSpan={8} className="empty-row">No sub-channels yet. Create one to get started.</td></tr>}
+            {subchannels.map(c => (
+              <tr key={c.id}>
+                <td className="muted">{c.id}</td>
+                <td><code className="code-tag">{c.key_name}</code></td>
+                <td className="bold">{c.name}</td>
+                <td>
+                  {c.logo_url
+                    ? <img src={c.logo_url} alt="" style={{ width: 32, height: 32, borderRadius: 4, objectFit: 'cover' }} />
+                    : <span className="muted">—</span>}
+                </td>
+                <td><Badge color="#3b82f6">{c.user_count || 0}</Badge></td>
+                <td><Badge color="#10b981">{c.coach_count || 0}</Badge></td>
+                <td className="muted">{fmtDate(c.created_at)}</td>
+                <td>
+                  <div className="row-actions">
+                    <button className="icon-btn" title="Edit" onClick={() => setModal({ type: 'edit', channel: c })}><Pencil size={14} /></button>
+                    <button className="icon-btn" title="Configure admin tabs" onClick={() => setModal({ type: 'admin-tabs', channel: c })}><Settings2 size={14} /></button>
+                    <button className="icon-btn" title="Manage admins" onClick={() => setModal({ type: 'admins', channel: c })}><UserCog size={14} /></button>
+                    <button className="icon-btn" title="Manage invites" onClick={() => setModal({ type: 'invites', channel: c })}><Tag size={14} /></button>
+                    <button className="icon-btn danger" title="Delete" onClick={() => setModal({ type: 'delete', channel: c })}><Trash2 size={14} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {modal?.type === 'add'       && <ChannelModal channel={null}          onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'      && <ChannelModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete'    && <DeleteChannelConfirm channel={modal.channel} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {modal?.type === 'admin-tabs' && <ChannelAdminTabsModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'admins'    && <SubchannelAdminsModal subchannel={modal.channel} onClose={() => setModal(null)} onSave={onRefresh} />}
+      {modal?.type === 'invites'   && <SubchannelInvitesModal subchannel={modal.channel} onClose={() => setModal(null)} />}
+    </>
+  );
+}
+
 function ChannelTab({ channels, onRefresh, isSuperadmin }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
+  const [togglingId, setTogglingId] = useState(null);
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  const toggleCms = async (channel) => {
+    setTogglingId(channel.id);
+    try {
+      await axios.put(`/api/channels/${channel.id}/manage-subchannels`, { can_manage_subchannels: !channel.can_manage_subchannels });
+      onRefresh();
+    } catch { /* silent */ } finally { setTogglingId(null); }
+  };
+
+  const channelById = Object.fromEntries(channels.map(c => [c.id, c]));
 
   return (
     <>
@@ -5587,20 +5865,23 @@ function ChannelTab({ channels, onRefresh, isSuperadmin }) {
               <th>{t.table.id}</th>
               <th>{t.modal.channelKeyName.replace(' *', '')}</th>
               <th>{t.modal.channelName.replace(' *', '')}</th>
+              <th>Parent</th>
               <th>{t.modal.channelLogoUrl}</th>
               <th>{t.table.customers}</th>
               <th>{t.stats.coaches}</th>
+              <th>Sub-ch Mgmt</th>
               <th>{t.table.joined}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {channels.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.channels}</td></tr>}
+            {channels.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.channels}</td></tr>}
             {channels.map(c => (
               <tr key={c.id}>
                 <td className="muted">{c.id}</td>
                 <td><code className="code-tag">{c.key_name}</code></td>
                 <td className="bold">{fmt(c.name)}</td>
+                <td className="muted">{c.parent_channel_id ? (channelById[c.parent_channel_id]?.name || `#${c.parent_channel_id}`) : <span style={{ color: '#334155' }}>—</span>}</td>
                 <td>
                   {c.logo_url
                     ? <img src={c.logo_url} alt="" style={{ width: 32, height: 32, borderRadius: 4, objectFit: 'cover', display: 'block' }} />
@@ -5608,6 +5889,20 @@ function ChannelTab({ channels, onRefresh, isSuperadmin }) {
                 </td>
                 <td><Badge color="#3b82f6">{c.user_count || 0}</Badge></td>
                 <td><Badge color="#10b981">{c.coach_count || 0}</Badge></td>
+                <td>
+                  {isSuperadmin && !c.parent_channel_id && (
+                    <button
+                      className={`btn-secondary`}
+                      style={{ fontSize: 11, padding: '2px 8px', opacity: togglingId === c.id ? 0.5 : 1 }}
+                      onClick={() => toggleCms(c)}
+                      disabled={togglingId === c.id}
+                      title={c.can_manage_subchannels ? 'Revoke sub-channel management' : 'Grant sub-channel management'}
+                    >
+                      {c.can_manage_subchannels ? '✓ Granted' : 'Grant'}
+                    </button>
+                  )}
+                  {c.parent_channel_id && <span className="muted" style={{ fontSize: 11 }}>sub-channel</span>}
+                </td>
                 <td className="muted">{fmtDate(c.created_at)}</td>
                 <td>
                   <div className="row-actions">
@@ -5622,8 +5917,8 @@ function ChannelTab({ channels, onRefresh, isSuperadmin }) {
           </tbody>
         </table>
       </div>
-      {modal?.type === 'add'        && <ChannelModal channel={null}          onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'       && <ChannelModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add'        && <ChannelModal channel={null}          channels={channels} isSuperadmin={isSuperadmin} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'       && <ChannelModal channel={modal.channel} channels={channels} isSuperadmin={isSuperadmin} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete'     && <DeleteChannelConfirm channel={modal.channel} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
       {modal?.type === 'admin-tabs'    && <ChannelAdminTabsModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'sub-age-labels' && <ChannelSubAgeLabelsModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
@@ -9051,6 +9346,7 @@ function AdminPanel({ session, onLogout }) {
   const toggleLang = () => setLang(l => l === 'en' ? 'zh' : 'en');
 
   const isSuperadmin = !session || session.role === 'superadmin';
+  const isCmsAdmin = session?.role === 'channel' && session?.canManageSubchannels;
   const SUPERADMIN_ONLY = new Set(['channels', 'admin-accounts']);
 
   const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [] });
@@ -9069,13 +9365,13 @@ function AdminPanel({ session, onLogout }) {
         axios.get(isChannel ? `/api/channel-coaches/${cid}` : '/api/coach-list'),
         axios.get('/api/store-items?all=true'),
         axios.get('/api/orders'),
-        isChannel ? Promise.resolve({ data: {} }) : axios.get('/api/channels'),
+        (isChannel && !isCmsAdmin) ? Promise.resolve({ data: {} }) : axios.get('/api/channels'),
         axios.get(isChannel ? `/api/invitations?channel_id=${cid}` : '/api/invitations'),
         axios.get('/api/kino-devices'),
         axios.get('/api/kino-chip-batches'),
         axios.get('/api/kino-chip-models'),
         axios.get('/api/tickets'),
-        isChannel ? Promise.resolve({ data: {} }) : axios.get('/api/admin-accounts'),
+        (isChannel && !isCmsAdmin) ? Promise.resolve({ data: {} }) : axios.get('/api/admin-accounts'),
         axios.get('/api/health-plan-templates?all=true'),
         axios.get('/api/kone-apk-releases'),
       ]);
@@ -9109,6 +9405,7 @@ function AdminPanel({ session, onLogout }) {
     { id: 'store',     label: t.nav.store,      icon: ShoppingBag },
     { id: 'inventory', label: t.nav.inventory,  icon: Archive     },
     { id: 'channels',  label: t.nav.channels,   icon: Building2   },
+    { id: 'subchannels', label: 'Sub-channels', icon: Building2  },
     { id: 'kino',     label: t.nav.kino,     icon: Cpu         },
     { id: 'chips',    label: t.nav.chips,    icon: Layers      },
     { id: 'invites',  label: t.nav.invites,  icon: Tag         },
@@ -9126,8 +9423,13 @@ function AdminPanel({ session, onLogout }) {
   ];
 
   const visibleNAV = isSuperadmin
-    ? NAV
-    : NAV.filter(n => !n.disabled && !SUPERADMIN_ONLY.has(n.id) && (session?.allowedTabs || []).includes(n.id));
+    ? NAV.filter(n => n.id !== 'subchannels')
+    : NAV.filter(n => {
+        if (n.disabled) return false;
+        if (n.id === 'subchannels') return isCmsAdmin;
+        if (SUPERADMIN_ONLY.has(n.id)) return false;
+        return (session?.allowedTabs || []).includes(n.id);
+      });
 
   const defaultTab = isSuperadmin ? 'users' : ((session?.allowedTabs || [])[0] || '');
   const [tab, setTab] = useState(defaultTab);
@@ -9171,12 +9473,13 @@ function AdminPanel({ session, onLogout }) {
           </button>
         </header>
         <div className="content">
-          {tab === 'users'    && <UsersTab    users={data.users} coaches={data.coaches} channels={data.channels} onRefresh={fetchData} />}
-          {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'users'    && <UsersTab    users={data.users} coaches={data.coaches} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
+          {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
           {tab === 'dots'     && <DotsTab     dots={data.dots} onRefresh={fetchData} />}
           {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
           {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} />}
           {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} />}
+          {tab === 'subchannels' && <SubchannelsTab subchannels={data.channels} adminAccounts={data.adminAccounts} invitations={data.invitations} session={session} onRefresh={fetchData} />}
           {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
           {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} coaches={data.coaches} onRefresh={fetchData} />}
@@ -9206,6 +9509,7 @@ export default function App() {
       role: sessionStorage.getItem('nano_admin_role') || 'superadmin',
       channelId: sessionStorage.getItem('nano_admin_channel_id') || null,
       allowedTabs: JSON.parse(sessionStorage.getItem('nano_admin_tabs') || '[]'),
+      canManageSubchannels: sessionStorage.getItem('nano_admin_cms') === '1',
     };
   });
 
@@ -9215,11 +9519,12 @@ export default function App() {
       role: sessionStorage.getItem('nano_admin_role') || 'superadmin',
       channelId: sessionStorage.getItem('nano_admin_channel_id') || null,
       allowedTabs: JSON.parse(sessionStorage.getItem('nano_admin_tabs') || '[]'),
+      canManageSubchannels: sessionStorage.getItem('nano_admin_cms') === '1',
     });
   };
 
   const handleLogout = () => {
-    ['nano_admin_token','nano_admin_user','nano_admin_role','nano_admin_channel_id','nano_admin_tabs'].forEach(k => sessionStorage.removeItem(k));
+    ['nano_admin_token','nano_admin_user','nano_admin_role','nano_admin_channel_id','nano_admin_tabs','nano_admin_cms'].forEach(k => sessionStorage.removeItem(k));
     setSession(null);
   };
 
