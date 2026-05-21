@@ -187,6 +187,11 @@ const T = {
       channelKeyName: 'Key Name *', channelName: 'Display Name *', channelLogoUrl: 'Logo',
       uploadChannelLogo: 'Click to upload logo (PNG / JPG)', uploadChannelLogoFailed: 'Logo upload failed', removeChannelLogo: 'Remove logo',
       channel: 'Channel', channelUnassigned: 'No channel',
+      coachGroup: 'Group', coachGroupUnassigned: 'No group',
+      addCoachGroup: 'Add Group', editCoachGroup: 'Edit Group', deleteCoachGroup: 'Delete Group',
+      deleteCoachGroupWarning: (name) => `Delete group "${name}"? Coaches will be ungrouped.`,
+      coachGroupName: 'Group Name *', coachGroupDescription: 'Description', coachGroupType: 'Type',
+      coachGroupTypePlaceholder: 'e.g. clinic, studio, nutrition',
       roles: 'Roles', roleUser: 'User', roleCoach: 'Coach', roleAdmin: 'Channel Admin', roleSuperadmin: 'Superadmin',
       selectUser: 'User *', selectUserPlaceholder: 'Search by nickname or user_id…', userRequired: 'User is required',
       addInvite: 'Create Invite', deactivateInvite: 'Deactivate',
@@ -379,8 +384,12 @@ const T = {
       ],
     },
     coachCrm: {
-      subPipeline: 'Pipeline', subCampaigns: 'Campaigns', subPerformance: 'Performance', subNps: 'NPS',
+      subPipeline: 'Pipeline', subCampaigns: 'Campaigns', subPerformance: 'Performance', subNps: 'NPS', subGroups: 'Groups',
       selectCoach: '— Select Coach —',
+      selectGroup: '— Select Group —',
+      noGroups: 'No groups defined. Add groups in the Coaches tab.',
+      groupPerfTitle: (name, p) => `${name} — ${p}`,
+      colCoachCount: 'Coaches',
       selectCoachPrompt: 'Select a coach to view their client pipeline.',
       selectCoachCampaignsPrompt: 'Select a coach to view their campaigns.',
       loading: 'Loading…',
@@ -541,6 +550,11 @@ const T = {
       channelKeyName: '标识 *', channelName: '显示名称 *', channelLogoUrl: 'Logo',
       uploadChannelLogo: '点击上传 Logo（PNG / JPG）', uploadChannelLogoFailed: 'Logo 上传失败', removeChannelLogo: '移除 Logo',
       channel: '渠道', channelUnassigned: '无渠道',
+      coachGroup: '所属团队', coachGroupUnassigned: '无团队',
+      addCoachGroup: '添加团队', editCoachGroup: '编辑团队', deleteCoachGroup: '删除团队',
+      deleteCoachGroupWarning: (name) => `删除团队"${name}"？其下 Coach 将变为无团队状态。`,
+      coachGroupName: '团队名称 *', coachGroupDescription: '备注说明', coachGroupType: '类型',
+      coachGroupTypePlaceholder: '如：诊所、工作室、营养门店',
       roles: '角色', roleUser: '用户', roleCoach: '教练', roleAdmin: '渠道管理员', roleSuperadmin: '超级管理员',
       selectUser: '用户 *', selectUserPlaceholder: '按昵称或 user_id 搜索…', userRequired: '用户为必填项',
       addInvite: '创建邀请码', deactivateInvite: '停用',
@@ -687,8 +701,12 @@ const T = {
       ],
     },
     coachCrm: {
-      subPipeline: '客户漏斗', subCampaigns: '群发消息', subPerformance: '绩效分析', subNps: 'NPS',
+      subPipeline: '客户漏斗', subCampaigns: '群发消息', subPerformance: '绩效分析', subNps: 'NPS', subGroups: '团队分组',
       selectCoach: '— 选择 Coach —',
+      selectGroup: '— 选择团队 —',
+      noGroups: '暂无团队分组，请在 Coach 页面添加。',
+      groupPerfTitle: (name, p) => `${name} — ${p}`,
+      colCoachCount: 'Coach 数',
       selectCoachPrompt: '请选择 Coach 以查看其客户漏斗。',
       selectCoachCampaignsPrompt: '请选择 Coach 以查看其群发记录。',
       loading: '加载中…',
@@ -960,13 +978,13 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
 
 // ── Coach modal ───────────────────────────────────────────────────────────────
 
-const EMPTY_COACH = { user_id: '', channel_id: '' };
+const EMPTY_COACH = { user_id: '', channel_id: '', group_id: '' };
 
-function CoachModal({ coach, users, channels, onClose, onSave }) {
+function CoachModal({ coach, users, channels, groups, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!coach?.id;
   const [form, setForm] = useState(isEdit
-    ? { user_id: coach.user_id || '', channel_id: coach.channel_id ?? '' }
+    ? { user_id: coach.user_id || '', channel_id: coach.channel_id ?? '', group_id: coach.group_id ?? '' }
     : { ...EMPTY_COACH });
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
@@ -986,7 +1004,7 @@ function CoachModal({ coach, users, channels, onClose, onSave }) {
     if (!form.user_id.trim()) { setError(t.modal.userRequired); return; }
     setBusy(true); setError('');
     try {
-      const payload = { user_id: form.user_id, channel_id: form.channel_id === '' ? null : parseInt(form.channel_id) };
+      const payload = { user_id: form.user_id, channel_id: form.channel_id === '' ? null : parseInt(form.channel_id), group_id: form.group_id === '' ? null : parseInt(form.group_id) };
       if (isEdit) await axios.put(`/api/coaches/${coach.id}`, payload);
       else await axios.post('/api/coaches', payload);
       onSave();
@@ -1048,6 +1066,18 @@ function CoachModal({ coach, users, channels, onClose, onSave }) {
                 <ChevronDown size={11} className="select-chevron" />
               </div>
             </label>
+            {groups && groups.length > 0 && (
+              <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                <span>{t.modal.coachGroup}</span>
+                <div className="select-wrap" style={{ width: '100%' }}>
+                  <select value={form.group_id} onChange={e => set('group_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                    <option value="">{t.modal.coachGroupUnassigned}</option>
+                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
+                  <ChevronDown size={11} className="select-chevron" />
+                </div>
+              </label>
+            )}
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
@@ -1080,6 +1110,99 @@ function DeleteCoachConfirm({ coach, onClose, onConfirm }) {
         <div className="modal-body">
           <p style={{ marginBottom: 20, color: '#475569' }}>
             {t.modal.deleteCoachWarning(<strong>{coach.name}</strong>)}
+          </p>
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-danger" onClick={handleDelete} disabled={busy}>
+              <Trash2 size={14} />{busy ? t.modal.deleting : t.modal.delete}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Coach group modals ────────────────────────────────────────────────────────
+
+function CoachGroupModal({ group, channelId, onClose, onSave }) {
+  const { t } = useLang();
+  const isEdit = !!group?.id;
+  const [form, setForm] = useState({
+    name: group?.name || '',
+    description: group?.description || '',
+    type: group?.type || '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) { setError(t.modal.coachGroupName.replace(' *', '') + ' is required'); return; }
+    setBusy(true); setError('');
+    try {
+      const payload = { name: form.name.trim(), description: form.description.trim() || null, type: form.type.trim() || null, channel_id: channelId };
+      if (isEdit) await axios.put(`/api/coach-groups/${group.id}`, payload);
+      else await axios.post('/api/coach-groups', payload);
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{isEdit ? t.modal.editCoachGroup : t.modal.addCoachGroup}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.coachGroupName}</span>
+              <input value={form.name} onChange={e => set('name', e.target.value)} placeholder={t.modal.coachGroupName.replace(' *', '')} autoFocus />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.coachGroupType}</span>
+              <input value={form.type} onChange={e => set('type', e.target.value)} placeholder={t.modal.coachGroupTypePlaceholder} />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.coachGroupDescription}</span>
+              <input value={form.description} onChange={e => set('description', e.target.value)} placeholder={t.modal.coachGroupDescription} />
+            </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? t.modal.saving : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteCoachGroupConfirm({ group, onClose, onConfirm }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState(false);
+  const handleDelete = async () => {
+    setBusy(true);
+    try { await axios.delete(`/api/coach-groups/${group.id}`); onConfirm(); }
+    catch { /* silent */ } finally { setBusy(false); }
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.modal.deleteCoachGroup}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginBottom: 20, color: '#475569' }}>
+            {t.modal.deleteCoachGroupWarning(<strong>{group.name}</strong>)}
           </p>
           <div className="modal-footer">
             <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
@@ -1924,13 +2047,26 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
   const [modal, setModal] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [channelFilter, setChannelFilter] = useState('');
+  const [groupFilter, setGroupFilter] = useState('');
   const [sortField, setSortField] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
   const [includeSubchannels, setIncludeSubchannels] = useState(false);
   const [subCoaches, setSubCoaches] = useState(null);
+  const [groups, setGroups] = useState([]);
+  const [groupModal, setGroupModal] = useState(null);
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
 
   const displayCoaches = includeSubchannels && subCoaches !== null ? subCoaches : coaches;
+
+  const fetchGroups = () => {
+    const cid = session?.channelId;
+    if (!cid) return;
+    axios.get(`/api/coach-groups?channel_id=${cid}`)
+      .then(r => setGroups(r.data.groups || []))
+      .catch(() => {});
+  };
+
+  useEffect(() => { fetchGroups(); }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!includeSubchannels) { setSubCoaches(null); return; }
@@ -1945,15 +2081,18 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
   const byChannel = channelFilter
     ? displayCoaches.filter(p => (p.channel_name || '') === channelFilter)
     : displayCoaches;
+  const byGroup = groupFilter
+    ? byChannel.filter(p => String(p.group_id) === String(groupFilter))
+    : byChannel;
   const filtered = q
-    ? byChannel.filter(p =>
+    ? byGroup.filter(p =>
         (p.name || '').toLowerCase().includes(q) ||
         (p.id || '').toString().includes(q) ||
         (p.email || '').toLowerCase().includes(q) ||
         (p.phone || '').toLowerCase().includes(q) ||
         (p.channel_name || '').toLowerCase().includes(q)
       )
-    : byChannel;
+    : byGroup;
 
   const sorted = [...filtered].sort((a, b) => {
     let av = a[sortField] ?? '', bv = b[sortField] ?? '';
@@ -2029,12 +2168,33 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
             })}
           </div>
         )}
+        {groups.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 16px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
+            <button onClick={() => setGroupFilter('')} style={{ padding: '2px 9px', borderRadius: 99, fontSize: 11, cursor: 'pointer', border: `1px solid ${groupFilter === '' ? '#8b5cf6' : 'var(--border)'}`, background: groupFilter === '' ? '#8b5cf6' : 'transparent', color: groupFilter === '' ? '#fff' : 'var(--muted)', fontWeight: groupFilter === '' ? 600 : 400 }}>All Groups</button>
+            {groups.map(g => {
+              const active = String(groupFilter) === String(g.id);
+              return (
+                <button key={g.id} onClick={() => setGroupFilter(active ? '' : g.id)} style={{ padding: '2px 9px', borderRadius: 99, fontSize: 11, cursor: 'pointer', border: `1px solid ${active ? '#8b5cf6' : 'var(--border)'}`, background: active ? '#8b5cf6' : 'transparent', color: active ? '#fff' : 'var(--muted)', fontWeight: active ? 600 : 400, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {g.name}
+                  <span style={{ background: active ? 'rgba(255,255,255,0.25)' : '#e9d5ff', color: active ? '#fff' : '#7c3aed', borderRadius: 99, padding: '0 5px', fontSize: 10 }}>{g.coach_count || 0}</span>
+                </button>
+              );
+            })}
+            <button onClick={() => setGroupModal({ type: 'add-group' })} style={{ marginLeft: 4, padding: '2px 9px', borderRadius: 99, fontSize: 11, cursor: 'pointer', border: '1px dashed #c4b5fd', background: 'transparent', color: '#8b5cf6' }}>+ {t.modal.addCoachGroup}</button>
+          </div>
+        )}
+        {groups.length === 0 && session?.channelId && (
+          <div style={{ padding: '6px 16px', borderBottom: '1px solid var(--border)' }}>
+            <button onClick={() => setGroupModal({ type: 'add-group' })} style={{ padding: '2px 9px', borderRadius: 99, fontSize: 11, cursor: 'pointer', border: '1px dashed #c4b5fd', background: 'transparent', color: '#8b5cf6' }}>+ {t.modal.addCoachGroup}</button>
+          </div>
+        )}
         <table className="data-table">
           <thead>
             <tr>
               <th className="sortable-th" onClick={() => toggleSort('id')}>{t.table.id}<SortIcon field="id" /></th>
               <th className="sortable-th" onClick={() => toggleSort('name')}>{t.table.name}<SortIcon field="name" /></th>
               <th className="sortable-th" onClick={() => toggleSort('channel_name')}>{t.table.channel}<SortIcon field="channel_name" /></th>
+              <th className="sortable-th" onClick={() => toggleSort('group_name')}>{t.modal.coachGroup}<SortIcon field="group_name" /></th>
               <th>{t.table.linkedUser}</th>
               <th>{t.table.email}</th>
               <th>{t.table.phone}</th>
@@ -2045,7 +2205,7 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
             </tr>
           </thead>
           <tbody>
-            {sorted.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.coaches}</td></tr>}
+            {sorted.length === 0 && <tr><td colSpan={11} className="empty-row">{t.empty.coaches}</td></tr>}
             {sorted.map(p => (
               <tr key={p.id}>
                 <td className="muted">{p.id}</td>
@@ -2056,6 +2216,7 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
                   </div>
                 </td>
                 <td>{p.channel_name ? <Badge color="#6366f1">{p.channel_name}</Badge> : '—'}</td>
+                <td>{p.group_name ? <Badge color="#8b5cf6">{p.group_name}</Badge> : <span className="muted">—</span>}</td>
                 <td className="muted mono" style={{ fontSize: 11 }}>{p.user_id ? p.user_id : '—'}</td>
                 <td className="muted">{fmt(p.email)}</td>
                 <td className="muted">{fmt(p.phone)}</td>
@@ -2073,9 +2234,48 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
           </tbody>
         </table>
       </div>
-      {modal?.type === 'add'    && <CoachModal coach={null}        users={users} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <CoachModal coach={modal.coach} users={users} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+
+      {/* Group management panel */}
+      {groups.length > 0 && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="table-toolbar">
+            <span className="table-count">{groups.length} {groups.length === 1 ? 'group' : 'groups'}</span>
+            <button className="btn-primary" onClick={() => setGroupModal({ type: 'add-group' })}><Plus size={14} />{t.modal.addCoachGroup}</button>
+          </div>
+          <table className="data-table">
+            <thead><tr>
+              <th>{t.modal.coachGroupName.replace(' *', '')}</th>
+              <th>{t.modal.coachGroupType}</th>
+              <th>{t.modal.coachGroupDescription}</th>
+              <th>{t.coachCrm?.colCoachCount || 'Coaches'}</th>
+              <th></th>
+            </tr></thead>
+            <tbody>
+              {groups.map(g => (
+                <tr key={g.id}>
+                  <td style={{ fontWeight: 600 }}><Badge color="#8b5cf6">{g.name}</Badge></td>
+                  <td className="muted" style={{ fontSize: 12 }}>{g.type || '—'}</td>
+                  <td className="muted" style={{ fontSize: 12 }}>{g.description || '—'}</td>
+                  <td><Badge color="#6366f1">{g.coach_count || 0}</Badge></td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" title={t.modal.editCoachGroup} onClick={() => setGroupModal({ type: 'edit-group', group: g })}><Pencil size={14} /></button>
+                      <button className="icon-btn danger" title={t.modal.deleteCoachGroup} onClick={() => setGroupModal({ type: 'delete-group', group: g })}><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {modal?.type === 'add'    && <CoachModal coach={null}        users={users} channels={channels} groups={groups} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <CoachModal coach={modal.coach} users={users} channels={channels} groups={groups} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteCoachConfirm coach={modal.coach} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {groupModal?.type === 'add-group'    && <CoachGroupModal group={null} channelId={session?.channelId} onClose={() => setGroupModal(null)} onSave={() => { setGroupModal(null); fetchGroups(); }} />}
+      {groupModal?.type === 'edit-group'   && <CoachGroupModal group={groupModal.group} channelId={session?.channelId} onClose={() => setGroupModal(null)} onSave={() => { setGroupModal(null); fetchGroups(); }} />}
+      {groupModal?.type === 'delete-group' && <DeleteCoachGroupConfirm group={groupModal.group} onClose={() => setGroupModal(null)} onConfirm={() => { setGroupModal(null); setGroupFilter(''); fetchGroups(); }} />}
     </>
   );
 }
@@ -2526,6 +2726,10 @@ function CoachCRMTab({ coaches, users }) {
   });
   const [kpiRows, setKpiRows] = useState([]);
   const [kpiLoading, setKpiLoading] = useState(false);
+  const [groups, setGroups] = useState([]);
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [groupKpis, setGroupKpis] = useState(null);
+  const [groupKpiLoading, setGroupKpiLoading] = useState(false);
   const [npsRows, setNpsRows] = useState([]);
   const [npsLoading, setNpsLoading] = useState(false);
   const [npsStart, setNpsStart] = useState('');
@@ -2579,12 +2783,32 @@ function CoachCRMTab({ coaches, users }) {
     finally { setNpsLoading(false); }
   }, [npsStart, npsEnd]);
 
+  const loadGroupKPIs = useCallback(async () => {
+    if (!selectedGroupId) return;
+    setGroupKpiLoading(true);
+    try {
+      const r = await axios.get(`/api/coach-group-kpis?group_id=${selectedGroupId}&period=${period}`);
+      setGroupKpis(r.data.kpis || null);
+    } catch (e) { console.error(e); }
+    finally { setGroupKpiLoading(false); }
+  }, [selectedGroupId, period]);
+
+  useEffect(() => {
+    const cid = coaches[0]?.channel_id;
+    if (cid) {
+      axios.get(`/api/coach-groups?channel_id=${cid}`)
+        .then(r => setGroups(r.data.groups || []))
+        .catch(() => {});
+    }
+  }, [coaches]);
+
   useEffect(() => {
     if (sub === 'pipeline' && selectedCoachId) loadPipeline(selectedCoachId);
     if (sub === 'campaigns' && selectedCoachId) loadCampaigns(selectedCoachId);
     if (sub === 'performance') loadKPIs();
     if (sub === 'nps') loadNPS();
-  }, [sub, selectedCoachId, loadPipeline, loadCampaigns, loadKPIs, loadNPS]);
+    if (sub === 'groups' && selectedGroupId) loadGroupKPIs();
+  }, [sub, selectedCoachId, loadPipeline, loadCampaigns, loadKPIs, loadNPS, loadGroupKPIs, selectedGroupId]);
 
   const handleCoachChange = (e) => {
     const id = e.target.value;
@@ -2637,6 +2861,7 @@ function CoachCRMTab({ coaches, users }) {
     { id: 'campaigns',   label: tc.subCampaigns },
     { id: 'performance', label: tc.subPerformance },
     { id: 'nps',         label: tc.subNps },
+    { id: 'groups',      label: tc.subGroups },
   ];
 
   return (
@@ -2906,6 +3131,98 @@ function CoachCRMTab({ coaches, users }) {
               </table>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── Groups sub-tab ── */}
+      {sub === 'groups' && (
+        <div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+            <Filter size={14} style={{ color: '#64748b' }} />
+            <select value={selectedGroupId} onChange={e => { setSelectedGroupId(e.target.value); setGroupKpis(null); }}
+              style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}>
+              <option value="">{tc.selectGroup}</option>
+              {groups.map(g => <option key={g.id} value={g.id}>{g.name}{g.type ? ` (${g.type})` : ''}</option>)}
+            </select>
+            <input type="month" value={period} onChange={e => setPeriod(e.target.value)}
+              style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }} />
+            <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={loadGroupKPIs}>{tc.load}</button>
+          </div>
+
+          {groups.length === 0 ? (
+            <p style={{ color: '#94a3b8', fontSize: 13 }}>{tc.noGroups}</p>
+          ) : !selectedGroupId ? (
+            <p style={{ color: '#94a3b8', fontSize: 13 }}>{tc.selectGroup}</p>
+          ) : groupKpiLoading ? (
+            <p style={{ color: '#94a3b8', fontSize: 13 }}>{tc.loading}</p>
+          ) : groupKpis ? (
+            <>
+              <div className="stat-row" style={{ marginBottom: 16 }}>
+                <StatCard icon={Users}   label={tc.colTotalClients} value={groupKpis.total_clients ?? 0}  color="#3b82f6" />
+                <StatCard icon={Users}   label={tc.colActive}       value={groupKpis.active_clients ?? 0} color="#10b981" />
+                <StatCard icon={Users}   label={tc.colAtRisk}       value={groupKpis.at_risk_count ?? 0}  color="#ef4444" />
+                <StatCard icon={UserCog} label={tc.colCoachCount}   value={groupKpis.coach_count ?? 0}    color="#8b5cf6" />
+              </div>
+              <div className="card" style={{ marginBottom: 12 }}>
+                <div className="card-title">{tc.groupPerfTitle(groups.find(g => String(g.id) === String(selectedGroupId))?.name || '', period)}</div>
+                <table className="data-table">
+                  <thead><tr>
+                    <th>{tc.colScans}</th>
+                    <th>{tc.colPlansAssigned}</th>
+                    <th>{tc.colMessages}</th>
+                    <th>{tc.colApptsHeld}</th>
+                    <th>{tc.colAvgNps}</th>
+                    <th>{tc.colCommission}</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr>
+                      <td>{groupKpis.scans_facilitated ?? '—'}</td>
+                      <td>{groupKpis.plans_assigned ?? '—'}</td>
+                      <td>{groupKpis.messages_sent ?? '—'}</td>
+                      <td>{groupKpis.appointments_held ?? '—'}</td>
+                      <td style={{ color: groupKpis.avg_nps_score >= 8 ? '#10b981' : groupKpis.avg_nps_score < 6 ? '#ef4444' : undefined }}>
+                        {groupKpis.avg_nps_score != null ? parseFloat(groupKpis.avg_nps_score).toFixed(1) : '—'}
+                      </td>
+                      <td style={{ fontWeight: 600 }}>
+                        {groupKpis.commission_cny != null ? `¥${parseFloat(groupKpis.commission_cny).toLocaleString()}` : '—'}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              {/* Per-coach breakdown */}
+              {coaches.filter(c => String(c.group_id) === String(selectedGroupId)).length > 0 && (
+                <div className="card">
+                  <div className="card-title">{tc.colCoach} — {tc.colTotalClients}</div>
+                  <table className="data-table">
+                    <thead><tr>
+                      <th>{tc.colCoach}</th>
+                      <th>{tc.colTotalClients}</th>
+                      <th>{tc.colActive}</th>
+                      <th>{tc.colScans}</th>
+                      <th>{tc.colAvgNps}</th>
+                      <th>{tc.colCommission}</th>
+                    </tr></thead>
+                    <tbody>
+                      {coaches.filter(c => String(c.group_id) === String(selectedGroupId)).map(c => {
+                        const r = kpiRows.find(k => k.coach_id === c.id) || {};
+                        return (
+                          <tr key={c.id}>
+                            <td style={{ fontWeight: 500 }}>{c.name}</td>
+                            <td>{r.kpis?.total_clients ?? r.total_clients ?? '—'}</td>
+                            <td>{r.kpis?.active_clients ?? r.active_clients ?? '—'}</td>
+                            <td>{r.kpis?.scans_facilitated ?? r.scans_facilitated ?? '—'}</td>
+                            <td>{(r.kpis?.avg_nps_score ?? r.avg_nps_score) != null ? parseFloat(r.kpis?.avg_nps_score ?? r.avg_nps_score).toFixed(1) : '—'}</td>
+                            <td>{(r.kpis?.commission_cny ?? r.commission_cny) != null ? `¥${parseFloat(r.kpis?.commission_cny ?? r.commission_cny).toLocaleString()}` : '—'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          ) : null}
         </div>
       )}
 

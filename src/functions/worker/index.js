@@ -1472,13 +1472,15 @@ async function handleGetCoachList(channelId) {
             SELECT p.id, p.channel_id, p.user_id, p.created_at,
                    u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
                    COUNT(assigned.user_id) AS user_count,
-                   c.name AS channel_name
+                   c.name AS channel_name,
+                   p.group_id, cg.name AS group_name
             FROM coaches p
             JOIN users u ON p.user_id = u.user_id
             LEFT JOIN users assigned ON p.id = assigned.coach_id
             LEFT JOIN channels c ON p.channel_id = c.id
+            LEFT JOIN coach_groups cg ON cg.id = p.group_id
             ${channelFilter}
-            GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language, c.name;
+            GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language, c.name, p.group_id, cg.name;
         `;
         const result = await pool.query(query, params);
         return { success: true, coaches: result.rows };
@@ -1528,13 +1530,15 @@ async function handleGetChannelCoaches(channelId, includeSubchannels = false) {
             `SELECT p.id, p.channel_id, p.user_id, p.created_at,
                     u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
                     COUNT(assigned.user_id) AS user_count,
-                    ch.name AS channel_name
+                    ch.name AS channel_name,
+                    p.group_id, cg.name AS group_name
              FROM coaches p
              JOIN users u ON p.user_id = u.user_id
              LEFT JOIN channels ch ON ch.id = p.channel_id
              LEFT JOIN users assigned ON p.id = assigned.coach_id
+             LEFT JOIN coach_groups cg ON cg.id = p.group_id
              WHERE ${whereClause}
-             GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language, ch.name
+             GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language, ch.name, p.group_id, cg.name
              ORDER BY p.created_at DESC`,
             [channelId]
         );
@@ -2663,13 +2667,13 @@ async function handlePostAssignCoach(body) {
 }
 
 async function handlePostCoaches(body) {
-    const { channel_id, user_id } = body;
+    const { channel_id, user_id, group_id } = body;
     if (!user_id) return { success: false, error: 'user_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            'INSERT INTO coaches (user_id, channel_id) VALUES ($1, $2) RETURNING id',
-            [user_id, channel_id || null]
+            'INSERT INTO coaches (user_id, channel_id, group_id) VALUES ($1, $2, $3) RETURNING id',
+            [user_id, channel_id || null, group_id || null]
         );
         await pool.query(
             `UPDATE users SET roles = array_append(roles, 'coach') WHERE user_id = $1 AND NOT ('coach' = ANY(roles))`,
@@ -2682,15 +2686,15 @@ async function handlePostCoaches(body) {
 }
 
 async function handlePutCoach(coachId, body) {
-    const { channel_id, user_id } = body;
+    const { channel_id, user_id, group_id } = body;
     if (!user_id) return { success: false, error: 'user_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const oldResult = await pool.query('SELECT user_id FROM coaches WHERE id = $1', [coachId]);
         const oldUserId = oldResult.rows[0]?.user_id;
         await pool.query(
-            'UPDATE coaches SET user_id=$1, channel_id=$2 WHERE id=$3',
-            [user_id, channel_id || null, coachId]
+            'UPDATE coaches SET user_id=$1, channel_id=$2, group_id=$3 WHERE id=$4',
+            [user_id, channel_id || null, group_id || null, coachId]
         );
         await pool.query(
             `UPDATE users SET roles = array_append(roles, 'coach') WHERE user_id = $1 AND NOT ('coach' = ANY(roles))`,
@@ -2732,6 +2736,151 @@ async function handleDeleteCoach(coachId) {
     } catch (err) {
         return { success: false, error: err.message };
     }
+}
+
+// ── Coach Groups ──────────────────────────────────────────────────────────────
+
+async function handleGetCoachGroups(query, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const channelId = adminCtx?.channelId || query.channel_id;
+        if (!channelId) return { success: false, error: 'channel_id is required', statusCode: 400 };
+        const result = await pool.query(
+            `SELECT cg.id, cg.channel_id, cg.name, cg.description, cg.type, cg.created_at,
+                    COUNT(DISTINCT c.id) AS coach_count
+             FROM coach_groups cg
+             LEFT JOIN coaches c ON c.group_id = cg.id
+             WHERE cg.channel_id = $1
+             GROUP BY cg.id
+             ORDER BY cg.name`,
+            [channelId]
+        );
+        return { success: true, groups: result.rows };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+async function handlePostCoachGroup(body, adminCtx) {
+    const { name, description, type } = body;
+    const channelId = adminCtx?.channelId || body.channel_id;
+    if (!channelId) return { success: false, error: 'channel_id is required', statusCode: 400 };
+    if (!name) return { success: false, error: 'name is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            'INSERT INTO coach_groups (channel_id, name, description, type) VALUES ($1, $2, $3, $4) RETURNING *',
+            [channelId, name, description || null, type || null]
+        );
+        return { success: true, group: result.rows[0] };
+    } catch (err) {
+        if (err.code === '23505') return { success: false, error: 'A group with that name already exists in this channel', statusCode: 409 };
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutCoachGroup(groupId, body, adminCtx) {
+    const { name, description, type } = body;
+    if (!name) return { success: false, error: 'name is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (adminCtx?.channelId) {
+            const check = await pool.query('SELECT channel_id FROM coach_groups WHERE id = $1', [groupId]);
+            if (!check.rows.length) return { success: false, error: 'Group not found', statusCode: 404 };
+            if (parseInt(check.rows[0].channel_id) !== parseInt(adminCtx.channelId)) return { success: false, error: 'Forbidden', statusCode: 403 };
+        }
+        const result = await pool.query(
+            'UPDATE coach_groups SET name=$1, description=$2, type=$3 WHERE id=$4 RETURNING *',
+            [name, description || null, type || null, groupId]
+        );
+        if (!result.rows.length) return { success: false, error: 'Group not found', statusCode: 404 };
+        return { success: true, group: result.rows[0] };
+    } catch (err) {
+        if (err.code === '23505') return { success: false, error: 'A group with that name already exists in this channel', statusCode: 409 };
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteCoachGroup(groupId, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (adminCtx?.channelId) {
+            const check = await pool.query('SELECT channel_id FROM coach_groups WHERE id = $1', [groupId]);
+            if (!check.rows.length) return { success: false, error: 'Group not found', statusCode: 404 };
+            if (parseInt(check.rows[0].channel_id) !== parseInt(adminCtx.channelId)) return { success: false, error: 'Forbidden', statusCode: 403 };
+        }
+        await pool.query('DELETE FROM coach_groups WHERE id = $1', [groupId]);
+        return { success: true };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+async function handleGetCoachGroupKpis(query) {
+    const { group_id, period } = query;
+    if (!group_id) return { success: false, error: 'group_id is required', statusCode: 400 };
+    const targetPeriod = period || new Date().toISOString().slice(0, 7);
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const groupRow = await pool.query('SELECT id, name, type FROM coach_groups WHERE id = $1', [group_id]);
+        if (!groupRow.rows.length) return { success: false, error: 'Group not found', statusCode: 404 };
+
+        const isCurrentMonth = targetPeriod === new Date().toISOString().slice(0, 7);
+        if (!isCurrentMonth) {
+            const snap = await pool.query(
+                `SELECT
+                    SUM(cps.total_clients)::int      AS total_clients,
+                    SUM(cps.active_clients)::int     AS active_clients,
+                    SUM(cps.at_risk_count)::int      AS at_risk_count,
+                    SUM(cps.scans_facilitated)::int  AS scans_facilitated,
+                    SUM(cps.plans_assigned)::int     AS plans_assigned,
+                    SUM(cps.messages_sent)::int      AS messages_sent,
+                    SUM(cps.appointments_held)::int  AS appointments_held,
+                    SUM(cps.commission_cny)          AS commission_cny,
+                    SUM(cps.nps_response_count)::int AS nps_response_count,
+                    CASE WHEN SUM(cps.nps_response_count) > 0
+                         THEN SUM(cps.avg_nps_score * cps.nps_response_count) / SUM(cps.nps_response_count)
+                         ELSE NULL END                AS avg_nps_score,
+                    COUNT(cps.coach_id)::int          AS coach_count
+                 FROM coach_performance_snapshots cps
+                 JOIN coaches c ON c.id = cps.coach_id
+                 WHERE c.group_id = $1 AND cps.period = $2`,
+                [group_id, targetPeriod]
+            );
+            if (snap.rows.length && snap.rows[0].coach_count > 0) {
+                return { success: true, kpis: { ...snap.rows[0], group_id: parseInt(group_id), period: targetPeriod }, group: groupRow.rows[0], source: 'snapshot' };
+            }
+        }
+
+        const coachIds = await pool.query('SELECT id FROM coaches WHERE group_id = $1', [group_id]);
+        if (!coachIds.rows.length) {
+            return { success: true, kpis: { group_id: parseInt(group_id), period: targetPeriod, total_clients: 0, active_clients: 0, at_risk_count: 0, scans_facilitated: 0, plans_assigned: 0, messages_sent: 0, appointments_held: 0, avg_nps_score: null, nps_response_count: 0, commission_cny: 0, coach_count: 0 }, group: groupRow.rows[0], source: 'live' };
+        }
+        const ids = coachIds.rows.map(r => r.id);
+        const [pipeline, scans, plans, msgs, appts, nps, commissions] = await Promise.all([
+            pool.query(`SELECT stage, COUNT(*) AS cnt FROM client_pipeline_stages WHERE coach_id = ANY($1) GROUP BY stage`, [ids]),
+            pool.query(`SELECT COUNT(*) AS cnt FROM biomarkers b JOIN users u ON u.user_id = b.user_id WHERE u.coach_id = ANY($1) AND b.test_type = 'kino_chip' AND TO_CHAR(b.tested_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
+            pool.query(`SELECT COUNT(*) AS cnt FROM health_plans WHERE coach_id = ANY($1) AND TO_CHAR(created_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
+            pool.query(`SELECT COUNT(*) AS cnt FROM client_activity_log WHERE coach_id = ANY($1) AND activity_type = 'message_sent' AND TO_CHAR(occurred_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
+            pool.query(`SELECT COUNT(*) AS cnt FROM appointments WHERE coach_id = ANY($1) AND status = 'completed' AND TO_CHAR(scheduled_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
+            pool.query(`SELECT AVG(score) AS avg_score, COUNT(*) AS cnt FROM client_nps_surveys WHERE coach_id = ANY($1) AND status = 'responded' AND TO_CHAR(sent_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
+            pool.query(`SELECT COALESCE(SUM(amount_cny), 0) AS total FROM coach_commissions WHERE coach_id = ANY($1) AND TO_CHAR(created_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
+        ]);
+        const stageMap = {};
+        for (const row of pipeline.rows) stageMap[row.stage] = parseInt(row.cnt, 10);
+        const kpis = {
+            group_id: parseInt(group_id),
+            period: targetPeriod,
+            total_clients: Object.values(stageMap).reduce((a, b) => a + b, 0),
+            active_clients: stageMap['active'] || 0,
+            at_risk_count: stageMap['at_risk'] || 0,
+            scans_facilitated: parseInt(scans.rows[0].cnt, 10),
+            plans_assigned: parseInt(plans.rows[0].cnt, 10),
+            messages_sent: parseInt(msgs.rows[0].cnt, 10),
+            appointments_held: parseInt(appts.rows[0].cnt, 10),
+            avg_nps_score: nps.rows[0].avg_score ? parseFloat(parseFloat(nps.rows[0].avg_score).toFixed(2)) : null,
+            nps_response_count: parseInt(nps.rows[0].cnt, 10),
+            commission_cny: parseFloat(commissions.rows[0].total),
+            coach_count: ids.length,
+        };
+        return { success: true, kpis, group: groupRow.rows[0], source: 'live' };
+    } catch (err) { return { success: false, error: err.message }; }
 }
 
 async function handlePostDots(body) {
@@ -7200,6 +7349,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetClientGoals(query);
             } else if (path.includes('/nps-surveys')) {
                 result = await handleGetNpsSurveys(query);
+            } else if (path.includes('/coach-group-kpis')) {
+                result = await handleGetCoachGroupKpis(query);
+            } else if (path.includes('/coach-groups')) {
+                result = await handleGetCoachGroups(query, adminCtx);
             } else if (path.includes('/coach-kpis')) {
                 result = await handleGetCoachKpis(query);
             } else if (path.includes('/follow-up-rules')) {
@@ -7232,6 +7385,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostInvitation(parsedBody, adminCtx);
             } else if (path.includes('/channels')) {
                 result = await handlePostChannel(parsedBody, adminCtx);
+            } else if (path.includes('/coach-groups')) {
+                result = await handlePostCoachGroup(parsedBody, adminCtx);
             } else if (path.includes('/coaches')) {
                 result = await handlePostCoaches(parsedBody);
             } else if (path.includes('/channel-inventory')) {
@@ -7380,6 +7535,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
                 result = await handlePutUser(user_id, parsedBody);
+            } else if (path.match(/\/coach-groups\/(\d+)/)) {
+                const groupId = path.match(/\/coach-groups\/(\d+)/)[1];
+                result = await handlePutCoachGroup(groupId, parsedBody, adminCtx);
             } else if (path.includes('/coaches/')) {
                 const coachId = path.split('/coaches/')[1];
                 result = await handlePutCoach(coachId, parsedBody);
@@ -7496,6 +7654,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
                 result = await handleDeleteUser(user_id);
+            } else if (path.match(/\/coach-groups\/(\d+)/)) {
+                const groupId = path.match(/\/coach-groups\/(\d+)/)[1];
+                result = await handleDeleteCoachGroup(groupId, adminCtx);
             } else if (path.includes('/coaches/')) {
                 const coachId = path.split('/coaches/')[1];
                 result = await handleDeleteCoach(coachId);

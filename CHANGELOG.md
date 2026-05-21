@@ -6,6 +6,21 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Added
+- **Coach Groups** — business entity groupings (clinics, studios, nutrition stores) within a channel, enabling group-level KPI aggregation.
+  - **DB migration** `src/schemas/migration_coach_groups.sql`: new `coach_groups` table (`id, channel_id, name, description, type`); adds nullable `group_id` FK on `coaches`.
+  - **Backend** `src/functions/worker/index.js`:
+    - `GET /api/coach-groups?channel_id=X` — list groups with `coach_count` per group.
+    - `POST /api/coach-groups` — create a group (channel-scoped).
+    - `PUT /api/coach-groups/:id` — update name/description/type.
+    - `DELETE /api/coach-groups/:id` — delete group; `ON DELETE SET NULL` FK ungroups coaches automatically.
+    - `GET /api/coach-group-kpis?group_id=X&period=YYYY-MM` — aggregate KPIs across all coaches in the group; uses `coach_performance_snapshots` for historical months, live SQL for current month.
+    - `GET /coach-list` and `GET /channel-coaches/:id` — now return `group_id` and `group_name` per coach.
+    - `POST /coaches` and `PUT /coaches/:id` — now accept optional `group_id`.
+  - **Web admin panel** `src/web/admin-panel/src/App.jsx`:
+    - **CoachTab**: group filter pills, "Group" column in coach table, inline group management panel (add/edit/delete groups), group assignment in `CoachModal`.
+    - **CoachCRMTab**: new "Groups" sub-tab showing aggregate stat cards + KPI table + per-coach breakdown for the selected group.
+
 ### Changed
 - **Coach / user architecture rationalized** — `users` is now the single source of truth for coach identity. The `coaches` table is a thin "coach seat" (`id, user_id NOT NULL UNIQUE, channel_id, created_at`); all profile data (name, email, phone, avatar_url, language) is read from the linked `users` row via JOIN.
   - **DB migration** `src/schemas/migration_rationalize_coaches.sql`: enforces `coaches.user_id NOT NULL UNIQUE`, changes FK to `ON DELETE CASCADE`, drops the duplicated profile columns. A follow-up `migration_rationalize_coaches_fix.sql` ensures the drops are applied where the first migration was tracked but rolled back.
