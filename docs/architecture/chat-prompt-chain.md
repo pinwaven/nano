@@ -139,11 +139,63 @@ After the LLM replies:
 ---
 
 ### 7. Frontend delivery
-**File:** `src/web/user-app/src/App.jsx` — notification polling `useEffect`
+
+Two clients consume the same notification endpoint.
+
+**Web user-app** — `src/web/user-app/src/App.jsx` notification polling `useEffect`
 
 - Polls `GET /api/notifications?openid=...` every **3 seconds**, but only when `obStep === 'done'`.
 - Any unseen notifications (tracked by id in `seenIds`) are appended to the chat message list.
 - The `GET /api/notifications` handler marks all returned rows as `status = 'sent'` in the same request.
+
+**WeChat miniapp** — `src/mini/nano-miniapp/pages/main/main.js`
+
+- Same 3-second polling loop via `_pollNotifications()`.
+- AI message content (markdown) is converted to HTML by `mdToHtml()` before being stored in the `messages` array. The same conversion runs at history load time (`_initChat`, `_loadHistory`).
+- Rendered by the `mp-html` component (see below).
+
+---
+
+---
+
+## Miniapp markdown rendering (mp-html)
+
+The LLM replies in Markdown. The miniapp converts this to HTML before rendering.
+
+### Component
+
+`mp-html` v2.5.2 — a WeChat-native rich-text renderer. The pre-built WeChat dist is checked in at `src/mini/nano-miniapp/components/mp-html/` (copied from `node_modules/mp-html/dist/mp-weixin/`). It is registered in `pages/main/main.json` and used only for AI bubbles; user bubbles remain plain `<text>`.
+
+> To upgrade mp-html: `npm install mp-html@latest` inside `src/mini/nano-miniapp/`, then re-copy `node_modules/mp-html/dist/mp-weixin/` → `components/mp-html/`.
+
+### Markdown conversion
+
+`mdToHtml()` in `pages/main/main.js` — a lightweight, dependency-free converter (no external library). Handles:
+
+| Input | Output |
+|---|---|
+| `# H1` … `###### H6` | `<h1>` … `<h6>` |
+| `**bold**`, `*italic*`, `_italic_` | `<strong>`, `<em>` |
+| `` `inline code` `` | `<code>` |
+| ` ```fenced block``` ` | `<pre><code>` |
+| `- item` / `* item` / `+ item` | `<ul><li>` |
+| `1. item` | `<ol><li>` |
+| `---` | `<hr>` |
+| blank line | `<br>` |
+| everything else | `<p>` |
+
+HTML special characters (`&`, `<`, `>`) are escaped before inline patterns are applied, so raw HTML in AI responses is displayed as text rather than injected.
+
+### Where conversion is applied
+
+| Call site | File | Line |
+|---|---|---|
+| `_addMsg('ai', …)` — live responses | `pages/main/main.js` | `_addMsg()` |
+| `_initChat()` — history load on login | `pages/main/main.js` | `_initChat()` |
+| `_loadHistory()` — explicit refresh | `pages/main/main.js` | `_loadHistory()` |
+| `_pollNotifications()` — async delivery | `pages/main/main.js` | `_pollNotifications()` |
+
+Raw markdown is still what gets persisted to `chat_messages` — conversion happens at display time only.
 
 ---
 
