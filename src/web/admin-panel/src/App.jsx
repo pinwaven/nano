@@ -2732,8 +2732,14 @@ function CoachCRMTab({ coaches, users }) {
   const [groupKpiLoading, setGroupKpiLoading] = useState(false);
   const [npsRows, setNpsRows] = useState([]);
   const [npsLoading, setNpsLoading] = useState(false);
-  const [npsStart, setNpsStart] = useState('');
-  const [npsEnd, setNpsEnd] = useState('');
+  const [npsStart, setNpsStart] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [npsEnd, setNpsEnd] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
   const [campaignModal, setCampaignModal] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ title: '', content: '', stage: '' });
   const [sending, setSending] = useState(null);
@@ -2763,7 +2769,7 @@ function CoachCRMTab({ coaches, users }) {
     try {
       const rows = await Promise.all(
         coaches.map(c => axios.get(`/api/coach-kpis?coach_id=${c.id}&period=${period}`)
-          .then(r => ({ ...r.data, coach_id: c.id, coach_name: c.name }))
+          .then(r => ({ ...(r.data.kpis || {}), coach_id: c.id, coach_name: c.name }))
           .catch(() => ({ coach_id: c.id, coach_name: c.name })))
       );
       setKpiRows(rows);
@@ -2794,13 +2800,32 @@ function CoachCRMTab({ coaches, users }) {
   }, [selectedGroupId, period]);
 
   useEffect(() => {
-    const cid = coaches[0]?.channel_id;
-    if (cid) {
-      axios.get(`/api/coach-groups?channel_id=${cid}`)
-        .then(r => setGroups(r.data.groups || []))
-        .catch(() => {});
-    }
+    const channelIds = [...new Set(coaches.map(c => c.channel_id).filter(Boolean))];
+    if (!channelIds.length) return;
+    Promise.all(
+      channelIds.map(cid =>
+        axios.get(`/api/coach-groups?channel_id=${cid}`)
+          .then(r => r.data.groups || [])
+          .catch(() => [])
+      )
+    ).then(results => setGroups(results.flat()));
   }, [coaches]);
+
+  // Auto-select the top-performing coach (most clients) on first load
+  useEffect(() => {
+    if (coaches.length && !selectedCoachId) {
+      const top = [...coaches].sort((a, b) => (parseInt(b.user_count) || 0) - (parseInt(a.user_count) || 0))[0];
+      if (top) setSelectedCoachId(String(top.id));
+    }
+  }, [coaches, selectedCoachId]);
+
+  // Auto-select the largest group on first load
+  useEffect(() => {
+    if (groups.length && !selectedGroupId) {
+      const top = [...groups].sort((a, b) => (parseInt(b.coach_count) || 0) - (parseInt(a.coach_count) || 0))[0];
+      if (top) setSelectedGroupId(String(top.id));
+    }
+  }, [groups, selectedGroupId]);
 
   useEffect(() => {
     if (sub === 'pipeline' && selectedCoachId) loadPipeline(selectedCoachId);

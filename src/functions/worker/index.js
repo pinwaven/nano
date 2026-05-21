@@ -1765,9 +1765,17 @@ async function handleGetClientPipeline(coachId) {
     if (!coachId) return { success: false, error: 'coach_id is required', statusCode: 400 };
     try {
         const r = await pool.query(
-            `SELECT cps.user_id, cps.stage, cps.stage_changed_at, cps.note,
+            `SELECT cps.user_id, cps.stage AS crm_stage, cps.stage_changed_at, cps.note,
                     u.nickname, u.avatar_url,
-                    b.bio_age, b.tested_at AS last_scan_at
+                    EXTRACT(YEAR FROM AGE(u.birth_date))::integer AS chrono_age,
+                    b.bio_age AS latest_bio_age, b.tested_at AS last_scan_at,
+                    COALESCE(
+                        (SELECT array_agg(ct.name ORDER BY ct.name)
+                         FROM client_tag_assignments cta
+                         JOIN client_tags ct ON ct.id = cta.tag_id
+                         WHERE cta.user_id = cps.user_id AND cta.coach_id = $1),
+                        '{}'::text[]
+                    ) AS crm_tags
              FROM client_pipeline_stages cps
              JOIN users u ON u.user_id = cps.user_id
              LEFT JOIN (
@@ -1779,7 +1787,7 @@ async function handleGetClientPipeline(coachId) {
              ORDER BY cps.stage_changed_at DESC`,
             [coachId]
         );
-        return { success: true, pipeline: r.rows };
+        return { success: true, clients: r.rows };
     } catch (err) { return { success: false, error: err.message }; }
 }
 
@@ -2352,31 +2360,46 @@ async function handlePatchNpsSurvey(id, body) {
     } catch (err) { return { success: false, error: err.message }; }
 }
 
-async function handleGetNpsSurveys(query) {
-    const { coach_id, period } = query;
-    if (!coach_id) return { success: false, error: 'coach_id is required', statusCode: 400 };
+async function handleGetNpsSurveys(query, adminCtx = {}) {
+    const { coach_id, period, start, end } = query;
     try {
-        const conditions = ['n.coach_id = $1'];
-        const params = [coach_id];
-        if (period) {
-            conditions.push(`TO_CHAR(n.sent_at, 'YYYY-MM') = $${params.length + 1}`);
-            params.push(period);
+        const conditions = [];
+        const params = [];
+
+        if (coach_id) {
+            conditions.push(`n.coach_id = $${params.push(coach_id)}`);
+        } else {
+            // Channel-wide view — scope to the admin's channel
+            const channelId = adminCtx.channelId;
+            if (channelId) {
+                conditions.push(`c.channel_id = $${params.push(channelId)}`);
+            }
         }
+
+        if (start) conditions.push(`n.sent_at >= $${params.push(start)}`);
+        if (end)   conditions.push(`n.sent_at <  $${params.push(end + ' 23:59:59')}`);
+        if (period && !start && !end) {
+            conditions.push(`TO_CHAR(n.sent_at, 'YYYY-MM') = $${params.push(period)}`);
+        }
+
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
         const r = await pool.query(
-            `SELECT n.id, n.user_id, n.survey_type, n.score, n.feedback_text,
+            `SELECT n.id, n.coach_id, n.user_id, n.survey_type, n.score, n.feedback_text,
                     n.sent_at, n.responded_at, n.status,
                     u.nickname, u.avatar_url
              FROM client_nps_surveys n
              JOIN users u ON u.user_id = n.user_id
-             WHERE ${conditions.join(' AND ')}
-             ORDER BY n.sent_at DESC`,
+             JOIN coaches c ON c.id = n.coach_id
+             ${where}
+             ORDER BY n.sent_at DESC
+             LIMIT 500`,
             params
         );
         const surveys = r.rows;
         const responded = surveys.filter(s => s.status === 'responded' && s.score !== null);
         const avg_score = responded.length ? (responded.reduce((a, s) => a + s.score, 0) / responded.length).toFixed(2) : null;
-        const promoters = responded.filter(s => s.score >= 9).length;
-        const passives = responded.filter(s => s.score >= 7 && s.score < 9).length;
+        const promoters  = responded.filter(s => s.score >= 9).length;
+        const passives   = responded.filter(s => s.score >= 7 && s.score < 9).length;
         const detractors = responded.filter(s => s.score < 7).length;
         return { success: true, surveys, aggregate: { avg_score: avg_score ? parseFloat(avg_score) : null, promoters, passives, detractors, total: responded.length } };
     } catch (err) { return { success: false, error: err.message }; }
@@ -7348,7 +7371,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/client-goals')) {
                 result = await handleGetClientGoals(query);
             } else if (path.includes('/nps-surveys')) {
-                result = await handleGetNpsSurveys(query);
+                result = await handleGetNpsSurveys(query, adminCtx);
             } else if (path.includes('/coach-group-kpis')) {
                 result = await handleGetCoachGroupKpis(query);
             } else if (path.includes('/coach-groups')) {
