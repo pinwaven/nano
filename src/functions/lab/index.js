@@ -132,7 +132,16 @@ async function processBatch(labName, labPatientId, rawObservations, fcContext) {
 
 // ─── Webhook handler (push flow) ─────────────────────────────────────────────
 
-async function handleWebhook(labName, headers, rawBody, fcContext) {
+async function handleWebhook(labName, headers, rawBody, fcContext, url = '') {
+    console.log(JSON.stringify({
+        level: 'INFO',
+        msg: 'Lab webhook received',
+        labName,
+        url,
+        headers,
+        body: Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || ''),
+    }));
+
     const providerRes = await db.query(
         'SELECT api_base_url, api_key_enc, webhook_secret_enc FROM lab_providers WHERE lab_name = $1 AND is_active = TRUE LIMIT 1',
         [labName]
@@ -207,6 +216,13 @@ async function handlePoll(fcContext) {
     }
 }
 
+function buildRequestUrl(req) {
+    const path = req.rawPath || '';
+    const query = req.queryParameters || {};
+    const search = new URLSearchParams(query).toString();
+    return search ? `${path}?${search}` : path;
+}
+
 // ─── FC 3.0 Handler ───────────────────────────────────────────────────────────
 
 exports.handler = async (req, resp, context) => {
@@ -228,7 +244,7 @@ exports.handler = async (req, resp, context) => {
         const webhookMatch = path.match(/^\/lab\/webhook\/([^/]+)$/);
         if (method === 'POST' && webhookMatch) {
             const labName = webhookMatch[1];
-            const result  = await handleWebhook(labName, req.headers || {}, rawBody, context);
+            const result  = await handleWebhook(labName, req.headers || {}, rawBody, context, buildRequestUrl(req));
             return {
                 statusCode: result.statusCode,
                 headers: { 'Content-Type': 'application/json' },

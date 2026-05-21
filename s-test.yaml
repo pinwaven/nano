@@ -1,0 +1,246 @@
+edition: 3.0.0
+name: nano-ai
+access: default
+
+vars:
+  region: cn-shanghai
+  logProject: nano-ai-logs-test
+  logStore: nano-ai-logstore-test
+
+resources:
+  dispatcher:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-dispatcher-test
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 128
+      timeout: 60
+      code: ./src/functions/dispatcher
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
+        DB_NAME: "nano_db_test"
+        DB_USER: "nano_admin"
+        DB_PASS: ${env(DB_PASS)}
+        DB_SSL: "false"
+        TZ: "Asia/Shanghai"
+        WORKER_URL: "https://nano-worker-napllanrqp.cn-shanghai-vpc.fcapp.run"
+        WORKER_FUNCTION_NAME: "nano-worker"
+        AGENT_URL: "https://nano-agent-napllanrqp.cn-shanghai-vpc.fcapp.run"
+      triggers:
+        - triggerName: cron-scanner
+          triggerType: timer
+          triggerConfig:
+            payload: ""
+            cronExpression: "0 * * * * *" # Every minute for testing/utilization
+            enable: true
+
+  worker:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-worker-test
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 512
+      timeout: 300
+      code: ./src/functions/worker
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
+        DB_NAME: "nano_db_test"
+        DB_USER: "nano_admin"
+        DB_PASS: ${env(DB_PASS)}
+        DB_SSL: "false"
+        TZ: "Asia/Shanghai"
+        DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
+        MODEL: "qwen-plus-latest"
+        WX_APPID: "wxecbcf00ce480fcf2"
+        WX_SECRET: ${env(WX_SECRET)}
+        WX_APPID_NANOVATE: "wx84bd7d00a6fd626e"
+        WX_SECRET_NANOVATE: ${env(WX_SECRET_NANOVATE)}
+        WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
+        API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        OSS_REGION: "oss-cn-shanghai"
+        OSS_BUCKET: "waven-nano"
+        OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
+        OSS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
+        KONE_APK_CNAME_DOMAIN: ${env(KONE_APK_CNAME_DOMAIN)}
+      triggers:
+        - triggerName: http-webhook
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        - triggerName: eb-trigger
+          triggerType: eventbridge
+          triggerConfig:
+            eventSourceConfig:
+              eventSourceType: Default
+            eventRuleFilterPattern: '{"source":["acs.dispatcher","acs.lab"]}'
+
+  agent:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-agent-test
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 256
+      timeout: 60
+      code: ./src/functions/agent
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
+        DB_NAME: "nano_db_test"
+        DB_USER: "nano_admin"
+        DB_PASS: ${env(DB_PASS)}
+        DB_SSL: "false"
+        TZ: "Asia/Shanghai"
+        DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
+        MODEL: "qwen-plus-latest"
+      triggers:
+        - triggerName: http-agent
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["POST"]
+        - triggerName: eb-agent-trigger
+          triggerType: eventbridge
+          triggerConfig:
+            eventSourceConfig:
+              eventSourceType: Default
+            eventRuleFilterPattern: '{"source":["acs.dispatcher"],"type":["agent.coaching_session"]}'
+
+  lab:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-lab-test
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 512
+      timeout: 600
+      code: ./src/functions/lab
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
+        DB_NAME: "nano_db_test"
+        DB_USER: "nano_admin"
+        DB_PASS: ${env(DB_PASS)}
+        DB_SSL: "false"
+        TZ: "Asia/Shanghai"
+        LAB_WEBHOOK_SECRET: ${env(LAB_WEBHOOK_SECRET)}
+      triggers:
+        - triggerName: lab-http
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["POST"]
+        - triggerName: lab-poll
+          triggerType: timer
+          triggerConfig:
+            payload: ""
+            cronExpression: "0 0 */4 * * *"
+            enable: true
+
+  admin-panel:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-admin-panel-test
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 128
+      timeout: 30
+      code: ./src/functions/admin-panel
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        WORKER_URL: "https://nano-test.fros.cc/api"
+        TZ: "Asia/Shanghai"
+      triggers:
+        - triggerName: http-admin
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+
+  nano-domain:
+    component: fc3-domain
+    props:
+      region: ${vars.region}
+      domainName: nano-test.fros.cc
+      protocol: HTTP,HTTPS
+      certConfig:
+        certName: nano-custom-cert
+        certificate: ./certs/cert.pem
+        privateKey: ./certs/key.pem
+      routeConfig:
+        routes:
+          - path: /api/*
+            functionName: nano-worker-test
+          - path: /api
+            functionName: nano-worker-test
+          - path: /admin/api/*
+            functionName: nano-admin-panel-test
+          - path: /admin/*
+            functionName: nano-admin-panel-test
+          - path: /admin
+            functionName: nano-admin-panel-test
+          - path: /worker
+            functionName: nano-worker-test
+          - path: /agent/*
+            functionName: nano-agent-test
+          - path: /agent
+            functionName: nano-agent-test
+          - path: /lab/*
+            functionName: nano-lab-test
+          - path: /lab
+            functionName: nano-lab-test
