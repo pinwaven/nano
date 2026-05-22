@@ -2270,58 +2270,166 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
   const { t } = useLang();
   const [modal, setModal] = useState(null);
   const [detailUser, setDetailUser] = useState(null);
+  const [loadedUsers, setLoadedUsers] = useState([]);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [tested, setTested] = useState(0);
+  const [avgBioAge, setAvgBioAge] = useState('—');
+  const [tabLoading, setTabLoading] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [channelFilter, setChannelFilter] = useState('');
   const [sortField, setSortField] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
   const [includeSubchannels, setIncludeSubchannels] = useState(false);
-  const [subUsers, setSubUsers] = useState(null);
 
-  const displayUsers = includeSubchannels && subUsers !== null ? subUsers : users;
+  const loaderRef = React.useRef(null);
 
+  // Debounce search input
   useEffect(() => {
-    if (!includeSubchannels) { setSubUsers(null); return; }
+    const handler = setTimeout(() => {
+      setSearchQuery(searchInput);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchInput]);
+
+  const loadUsers = useCallback((currentOffset, append = false) => {
+    setTabLoading(true);
     const cid = session?.channelId;
-    if (!cid) return;
-    axios.get(`/api/channel-users/${cid}?include_subchannels=true`)
-      .then(r => setSubUsers(r.data.users || []))
-      .catch(() => setSubUsers(null));
-  }, [includeSubchannels, session]);
-
-  const tested = displayUsers.filter(u => u.bio_age).length;
-  const avgBioAge = tested
-    ? (displayUsers.filter(u => u.bio_age).reduce((s, u) => s + Number(u.bio_age), 0) / tested).toFixed(1)
-    : '—';
-  const closeAndRefresh = () => { setModal(null); onRefresh(); };
-
-  const q = searchQuery.trim().toLowerCase();
-  const byChannel = channelFilter
-    ? displayUsers.filter(u => (u.channel_name || '') === channelFilter)
-    : displayUsers;
-  const filtered = q
-    ? byChannel.filter(u =>
-        (u.nickname || '').toLowerCase().includes(q) ||
-        (u.user_id || '').toLowerCase().includes(q) ||
-        (u.email || '').toLowerCase().includes(q) ||
-        (u.phone || '').toLowerCase().includes(q) ||
-        (u.channel_name || '').toLowerCase().includes(q)
-      )
-    : byChannel;
-
-  const sorted = [...filtered].sort((a, b) => {
-    let av = a[sortField] ?? '', bv = b[sortField] ?? '';
-    const numA = Number(av), numB = Number(bv);
-    if (!isNaN(numA) && !isNaN(numB) && av !== '' && bv !== '') {
-      return sortDir === 'asc' ? numA - numB : numB - numA;
+    const isChannel = session?.role === 'channel';
+    const baseUrl = isChannel ? `/api/channel-users/${cid}` : '/api/users';
+    
+    const params = {
+      limit: 50,
+      offset: currentOffset,
+      q: searchQuery.trim(),
+      sort_field: sortField,
+      sort_dir: sortDir,
+    };
+    
+    if (isChannel) {
+      if (includeSubchannels) {
+        params.include_subchannels = 'true';
+      }
+    } else {
+      if (channelFilter) {
+        params.channel_name = channelFilter;
+      }
     }
-    return sortDir === 'asc'
-      ? String(av).localeCompare(String(bv))
-      : String(bv).localeCompare(String(av));
-  });
+
+    axios.get(baseUrl, { params })
+      .then(res => {
+        if (res.data.success) {
+          const fetchedUsers = res.data.users || [];
+          setLoadedUsers(prev => append ? [...prev, ...fetchedUsers] : fetchedUsers);
+          setTotal(res.data.total || 0);
+          setTested(res.data.tested || 0);
+          setAvgBioAge(res.data.avgBioAge || '—');
+        }
+      })
+      .catch(err => {
+        console.error('Failed to load users:', err);
+      })
+      .finally(() => {
+        setTabLoading(false);
+      });
+  }, [session, searchQuery, sortField, sortDir, includeSubchannels, channelFilter]);
+
+  // Reload when filters/sorting changes
+  useEffect(() => {
+    setOffset(0);
+    loadUsers(0, false);
+  }, [searchQuery, channelFilter, sortField, sortDir, includeSubchannels, loadUsers]);
+
+  // Load more pagination helper
+  const handleLoadMore = useCallback(() => {
+    if (tabLoading || loadedUsers.length >= total) return;
+    const nextOffset = offset + 50;
+    setOffset(nextOffset);
+    loadUsers(nextOffset, true);
+  }, [offset, tabLoading, loadedUsers.length, total, loadUsers]);
+
+  // Infinite scroll trigger using IntersectionObserver
+  useEffect(() => {
+    if (loadedUsers.length >= total || tabLoading) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        handleLoadMore();
+      }
+    }, {
+      root: null,
+      rootMargin: '150px',
+      threshold: 0.1,
+    });
+
+    const currentLoader = loaderRef.current;
+    if (currentLoader) {
+      observer.observe(currentLoader);
+    }
+
+    return () => {
+      if (currentLoader) {
+        observer.unobserve(currentLoader);
+      }
+    };
+  }, [loadedUsers.length, total, tabLoading, handleLoadMore]);
+
+  // Refresh current view in-place (preserves pagination scroll)
+  const refreshCurrentView = useCallback(() => {
+    onRefresh();
+    setTabLoading(true);
+    const cid = session?.channelId;
+    const isChannel = session?.role === 'channel';
+    const baseUrl = isChannel ? `/api/channel-users/${cid}` : '/api/users';
+    
+    const params = {
+      limit: offset + 50,
+      offset: 0,
+      q: searchQuery.trim(),
+      sort_field: sortField,
+      sort_dir: sortDir,
+    };
+    
+    if (isChannel) {
+      if (includeSubchannels) {
+        params.include_subchannels = 'true';
+      }
+    } else {
+      if (channelFilter) {
+        params.channel_name = channelFilter;
+      }
+    }
+
+    axios.get(baseUrl, { params })
+      .then(res => {
+        if (res.data.success) {
+          setLoadedUsers(res.data.users || []);
+          setTotal(res.data.total || 0);
+          setTested(res.data.tested || 0);
+          setAvgBioAge(res.data.avgBioAge || '—');
+        }
+      })
+      .catch(err => {
+        console.error('Failed to refresh users:', err);
+      })
+      .finally(() => {
+        setTabLoading(false);
+      });
+  }, [session, searchQuery, sortField, sortDir, includeSubchannels, channelFilter, offset, onRefresh]);
+
+  const closeAndRefresh = () => {
+    setModal(null);
+    refreshCurrentView();
+  };
 
   const toggleSort = (field) => {
-    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortField(field); setSortDir('asc'); }
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
   };
 
   const SortIcon = ({ field }) => (
@@ -2330,10 +2438,12 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
     </span>
   );
 
+  const isZh = t.count(1).includes('共');
+
   return (
     <>
       <div className="stat-row">
-        <StatCard icon={Users}    label={t.stats.totalUsers} value={displayUsers.length} color="#3b82f6" />
+        <StatCard icon={Users}    label={t.stats.totalUsers} value={total} color="#3b82f6" />
         <StatCard icon={Activity} label={t.stats.tested}     value={tested}       color="#8b5cf6" />
         <StatCard icon={Calendar} label={t.stats.avgBioAge}  value={avgBioAge}    color="#f59e0b" />
         <StatCard icon={UserCog}  label={t.stats.coaches}    value={coaches.length} color="#10b981" />
@@ -2341,13 +2451,17 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
       <div className="card">
         <div className="table-toolbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className="table-count">{(q || channelFilter) ? `${sorted.length} / ${displayUsers.length}` : t.count(displayUsers.length)}</span>
+            <span className="table-count">
+              {(searchQuery || channelFilter || includeSubchannels)
+                ? (isZh ? `已加载 ${loadedUsers.length} / 共 ${total} 个用户` : `Loaded ${loadedUsers.length} / ${total} users`)
+                : t.count(total)}
+            </span>
             <input
               className="toolbar-search"
               type="text"
               placeholder={t.searchUsers}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
             />
             {isCmsAdmin && (
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
@@ -2401,8 +2515,19 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
             </tr>
           </thead>
           <tbody>
-            {sorted.length === 0 && <tr><td colSpan={14} className="empty-row">{t.empty.users}</td></tr>}
-            {sorted.map(u => (
+            {loadedUsers.length === 0 && (
+              <tr>
+                <td colSpan={14} className="empty-row">
+                  {tabLoading ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '20px 0' }}>
+                      <span style={{ width: 14, height: 14, border: '2px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
+                      <span>{isZh ? '正在加载用户数据...' : 'Loading user data...'}</span>
+                    </div>
+                  ) : t.empty.users}
+                </td>
+              </tr>
+            )}
+            {loadedUsers.map(u => (
               <tr key={u.user_id} className="clickable-row" onClick={() => setDetailUser(u)}>
                 <td className="muted">{u.user_id}</td>
                 <td>
@@ -2428,7 +2553,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
                 <td className="muted">{fmt(u.chrono_age)}</td>
                 <td style={{ fontWeight: 700, color: bioAgeColor(u.bio_age, u.chrono_age) }}>{fmt(u.bio_age)}</td>
                 <td onClick={e => e.stopPropagation()}>
-                  <CoachSelect userId={u.user_id} currentCoachId={u.coach_id} coaches={coaches} onAssign={onRefresh} />
+                  <CoachSelect userId={u.user_id} currentCoachId={u.coach_id} coaches={coaches} onAssign={refreshCurrentView} />
                 </td>
                 <td className="muted">{fmtDate(u.created_at)}</td>
                 <td className="muted">{fmt(u.phone)}</td>
@@ -2443,6 +2568,39 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
             ))}
           </tbody>
         </table>
+        {loadedUsers.length < total && (
+          <div 
+            ref={loaderRef}
+            style={{ 
+              display: 'flex', 
+              justifyContent: 'center', 
+              padding: '24px 0', 
+              borderTop: '1px solid var(--border)',
+              alignItems: 'center' 
+            }}
+          >
+            {tabLoading ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ 
+                  width: 14, 
+                  height: 14, 
+                  border: '2px solid var(--border)', 
+                  borderTopColor: 'var(--primary)', 
+                  borderRadius: '50%', 
+                  display: 'inline-block', 
+                  animation: 'spin 1s linear infinite' 
+                }} />
+                <span style={{ fontSize: '13px', color: 'var(--muted)' }}>
+                  {isZh ? '正在加载更多用户...' : 'Loading more users...'}
+                </span>
+              </div>
+            ) : (
+              <span style={{ fontSize: '13px', color: 'var(--muted)', opacity: 0.5 }}>
+                {isZh ? '向下滚动自动加载' : 'Scroll down to load more'}
+              </span>
+            )}
+          </div>
+        )}
       </div>
       {modal?.type === 'add'    && <UserModal user={null}       coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit'   && <UserModal user={modal.user} coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
@@ -10218,7 +10376,7 @@ function AdminPanel({ session, onLogout }) {
     const isChannel = session?.role === 'channel';
     try {
       const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, tkRes, aaRes, hptRes, apkRes] = await Promise.allSettled([
-        axios.get(isChannel ? `/api/channel-users/${cid}` : '/api/users'),
+        axios.get(isChannel ? `/api/channel-users/${cid}?minimal=true` : '/api/users?minimal=true'),
         axios.get('/api/dots-inventory'),
         axios.get(isChannel ? `/api/channel-coaches/${cid}` : '/api/coach-list'),
         axios.get('/api/store-items?all=true'),

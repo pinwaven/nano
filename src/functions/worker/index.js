@@ -1554,7 +1554,7 @@ async function handleGetCoachUsers(coachId, query = {}) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const params = [coachId];
         const extraConds = [];
-        if (query.stage) { extraConds.push(`cps.stage = $${params.length + 1}`); params.push(query.stage); }
+        if (query.stage) { extraConds.push(`COALESCE(cps.stage, 'lead') = $${params.length + 1}`); params.push(query.stage); }
         if (query.tag_id) { extraConds.push(`cta.tag_id = $${params.length + 1}`); params.push(query.tag_id); }
         const whereCond = extraConds.length ? `AND ${extraConds.join(' AND ')}` : '';
         const result = await pool.query(
@@ -1563,7 +1563,7 @@ async function handleGetCoachUsers(coachId, query = {}) {
                     b.bio_age, b.data AS bio_data, b.tested_at AS last_scan_at,
                     m.last_msg_at,
                     lm.last_user_msg, lm.last_user_msg_at,
-                    cps.stage AS crm_stage,
+                    COALESCE(cps.stage, 'lead') AS crm_stage,
                     ARRAY_AGG(DISTINCT ct.name ORDER BY ct.name) FILTER (WHERE ct.name IS NOT NULL) AS crm_tags,
                     ARRAY_AGG(DISTINCT jsonb_build_object('id', ct.id, 'name', ct.name, 'color_hex', ct.color_hex))
                         FILTER (WHERE ct.id IS NOT NULL) AS crm_tag_objects
@@ -1589,7 +1589,7 @@ async function handleGetCoachUsers(coachId, query = {}) {
              LEFT JOIN client_tag_assignments cta ON cta.user_id = u.user_id AND cta.coach_id = $1
              LEFT JOIN client_tags ct ON ct.id = cta.tag_id
              WHERE u.coach_id = $1 ${whereCond}
-             GROUP BY u.user_id, b.bio_age, b.data, b.tested_at, m.last_msg_at, lm.last_user_msg, lm.last_user_msg_at, cps.stage
+             GROUP BY u.user_id, b.bio_age, b.data, b.tested_at, m.last_msg_at, lm.last_user_msg, lm.last_user_msg_at, COALESCE(cps.stage, 'lead')
              ORDER BY COALESCE(m.last_msg_at, b.tested_at, u.created_at) DESC`,
             params
         );
@@ -1765,7 +1765,7 @@ async function handleGetClientPipeline(coachId) {
     if (!coachId) return { success: false, error: 'coach_id is required', statusCode: 400 };
     try {
         const r = await pool.query(
-            `SELECT cps.user_id, cps.stage AS crm_stage, cps.stage_changed_at, cps.note,
+            `SELECT u.user_id, COALESCE(cps.stage, 'lead') AS crm_stage, cps.stage_changed_at, cps.note,
                     u.nickname, u.avatar_url,
                     EXTRACT(YEAR FROM AGE(u.birth_date))::integer AS chrono_age,
                     b.bio_age AS latest_bio_age, b.tested_at AS last_scan_at,
@@ -1773,18 +1773,18 @@ async function handleGetClientPipeline(coachId) {
                         (SELECT array_agg(ct.name ORDER BY ct.name)
                          FROM client_tag_assignments cta
                          JOIN client_tags ct ON ct.id = cta.tag_id
-                         WHERE cta.user_id = cps.user_id AND cta.coach_id = $1),
+                         WHERE cta.user_id = u.user_id AND cta.coach_id = $1),
                         '{}'::text[]
                     ) AS crm_tags
-             FROM client_pipeline_stages cps
-             JOIN users u ON u.user_id = cps.user_id
+             FROM users u
+             LEFT JOIN client_pipeline_stages cps ON cps.user_id = u.user_id AND cps.coach_id = $1
              LEFT JOIN (
                  SELECT DISTINCT ON (user_id) user_id, bio_age, tested_at
                  FROM biomarkers WHERE test_type = 'kino_chip'
                  ORDER BY user_id, tested_at DESC
-             ) b ON b.user_id = cps.user_id
-             WHERE cps.coach_id = $1
-             ORDER BY cps.stage_changed_at DESC`,
+             ) b ON b.user_id = u.user_id
+             WHERE u.coach_id = $1
+             ORDER BY COALESCE(cps.stage_changed_at, u.created_at) DESC`,
             [coachId]
         );
         return { success: true, clients: r.rows };
@@ -2010,7 +2010,7 @@ async function resolveBulkRecipients(coachId, filter) {
     const conditions = [`u.coach_id = (SELECT id FROM coaches WHERE id = $1)`];
     const params = [coachId];
     if (filter.stage && filter.stage.length) {
-        conditions.push(`cps.stage = ANY($${params.length + 1}::text[])`);
+        conditions.push(`COALESCE(cps.stage, 'lead') = ANY($${params.length + 1}::text[])`);
         params.push(filter.stage);
     }
     if (filter.tag_ids && filter.tag_ids.length) {
@@ -2421,7 +2421,14 @@ async function handleGetCoachKpis(query) {
             if (snap.rows.length) return { success: true, kpis: snap.rows[0], source: 'snapshot' };
         }
         const [pipeline, scans, plans, msgs, appts, nps, commissions] = await Promise.all([
-            pool.query(`SELECT stage, COUNT(*) AS cnt FROM client_pipeline_stages WHERE coach_id = $1 GROUP BY stage`, [coach_id]),
+            pool.query(
+                `SELECT COALESCE(cps.stage, 'lead') AS stage, COUNT(u.user_id) AS cnt
+                 FROM users u
+                 LEFT JOIN client_pipeline_stages cps ON cps.user_id = u.user_id AND cps.coach_id = $1
+                 WHERE u.coach_id = $1
+                 GROUP BY COALESCE(cps.stage, 'lead')`,
+                [coach_id]
+            ),
             pool.query(`SELECT COUNT(*) AS cnt FROM biomarkers b JOIN users u ON u.user_id = b.user_id WHERE u.coach_id = (SELECT id FROM coaches WHERE id = $1) AND b.test_type = 'kino_chip' AND TO_CHAR(b.tested_at, 'YYYY-MM') = $2`, [coach_id, targetPeriod]),
             pool.query(`SELECT COUNT(*) AS cnt FROM health_plans WHERE coach_id = $1 AND TO_CHAR(created_at, 'YYYY-MM') = $2`, [coach_id, targetPeriod]),
             pool.query(`SELECT COUNT(*) AS cnt FROM client_activity_log WHERE coach_id = $1 AND activity_type = 'message_sent' AND TO_CHAR(occurred_at, 'YYYY-MM') = $2`, [coach_id, targetPeriod]),
@@ -2589,7 +2596,6 @@ async function handlePostFollowUpRulesEvaluate() {
                 const r = await pool.query(
                     `SELECT DISTINCT u.user_id
                      FROM users u
-                     JOIN client_pipeline_stages cps ON cps.user_id = u.user_id AND cps.coach_id = $1
                      JOIN (
                          SELECT user_id, bio_age, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY tested_at DESC) AS rn
                          FROM biomarkers WHERE test_type = 'kino_chip'
@@ -2598,7 +2604,7 @@ async function handlePostFollowUpRulesEvaluate() {
                          SELECT user_id, bio_age, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY tested_at DESC) AS rn
                          FROM biomarkers WHERE test_type = 'kino_chip'
                      ) prev ON prev.user_id = u.user_id AND prev.rn = 2
-                     WHERE latest.bio_age > prev.bio_age + 2`,
+                     WHERE u.coach_id = $1 AND latest.bio_age > prev.bio_age + 2`,
                     [coach_id]
                 );
                 targetUsers = r.rows;
@@ -2877,7 +2883,14 @@ async function handleGetCoachGroupKpis(query) {
         }
         const ids = coachIds.rows.map(r => r.id);
         const [pipeline, scans, plans, msgs, appts, nps, commissions] = await Promise.all([
-            pool.query(`SELECT stage, COUNT(*) AS cnt FROM client_pipeline_stages WHERE coach_id = ANY($1) GROUP BY stage`, [ids]),
+            pool.query(
+                `SELECT COALESCE(cps.stage, 'lead') AS stage, COUNT(u.user_id) AS cnt
+                 FROM users u
+                 LEFT JOIN client_pipeline_stages cps ON cps.user_id = u.user_id AND cps.coach_id = u.coach_id
+                 WHERE u.coach_id = ANY($1)
+                 GROUP BY COALESCE(cps.stage, 'lead')`,
+                [ids]
+            ),
             pool.query(`SELECT COUNT(*) AS cnt FROM biomarkers b JOIN users u ON u.user_id = b.user_id WHERE u.coach_id = ANY($1) AND b.test_type = 'kino_chip' AND TO_CHAR(b.tested_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
             pool.query(`SELECT COUNT(*) AS cnt FROM health_plans WHERE coach_id = ANY($1) AND TO_CHAR(created_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
             pool.query(`SELECT COUNT(*) AS cnt FROM client_activity_log WHERE coach_id = ANY($1) AND activity_type = 'message_sent' AND TO_CHAR(occurred_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
