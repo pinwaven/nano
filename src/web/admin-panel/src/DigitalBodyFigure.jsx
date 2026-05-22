@@ -1,10 +1,10 @@
 import React, { useMemo } from 'react';
 
 const ZONE_DEFS = [
-  { key: 'ResilienceAge',    short: 'Resilience',  color: '#c084d4' },
-  { key: 'CellularAge',      short: 'Cellular',    color: '#10b981' },
-  { key: 'MetabolicAge',     short: 'Metabolic',   color: '#6375EC' },
-  { key: 'MicroVascularAge', short: 'Micro-Vasc',  color: '#0ea5e9' },
+  { key: 'ResilienceAge',    short: 'Resilience',  shortZh: '抗压',  color: '#c084d4' },
+  { key: 'CellularAge',      short: 'Cellular',    shortZh: '细胞',  color: '#10b981' },
+  { key: 'MetabolicAge',     short: 'Metabolic',   shortZh: '代谢',  color: '#6375EC' },
+  { key: 'MicroVascularAge', short: 'Micro-Vasc',  shortZh: '微血管', color: '#0ea5e9' },
 ];
 
 function resolvedColor(base, score) {
@@ -19,7 +19,7 @@ function fillAlpha(score) {
   return 0.42;
 }
 
-export default function DigitalBodyFigure({ subAges = [], bioAge, chronoAge }) {
+export default function DigitalBodyFigure({ subAges = [], bioAge, chronoAge, isZh }) {
   const zoneMap = useMemo(
     () => Object.fromEntries(subAges.map(s => [s.key, s])),
     [subAges],
@@ -107,10 +107,10 @@ export default function DigitalBodyFigure({ subAges = [], bioAge, chronoAge }) {
 
         {/* Zone chips */}
         <div className="dt-chips">
-          {chips.map(({ key, short, z }) => (
+          {chips.map(({ key, short, shortZh, z }) => (
             <div key={key} className="dt-chip" style={{ borderColor: z.color + '55', color: z.color }}>
               <span className="dt-chip-val">{z.value}</span>
-              <span className="dt-chip-lbl">{short}</span>
+              <span className="dt-chip-lbl">{isZh ? shortZh : short}</span>
             </div>
           ))}
         </div>
@@ -119,8 +119,8 @@ export default function DigitalBodyFigure({ subAges = [], bioAge, chronoAge }) {
       {bioNum && (
         <div className="dt-footer">
           <span className="dt-bio-num" style={{ color: bioColor }}>{bioNum.toFixed(1)}</span>
-          <span className="dt-bio-label">Bio Age</span>
-          {chronoAge && <span className="dt-chrono">vs {chronoAge} chrono</span>}
+          <span className="dt-bio-label">{isZh ? '生理年龄' : 'Bio Age'}</span>
+          {chronoAge && <span className="dt-chrono">{isZh ? `实际年龄 ${chronoAge}` : `vs ${chronoAge} chrono`}</span>}
         </div>
       )}
     </div>

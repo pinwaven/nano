@@ -416,6 +416,57 @@ const T = {
       colUser: 'User', colType: 'Type', colScore: 'Score', colFeedback: 'Feedback', colRespondedAt: 'Responded At',
       countResponses: (n) => `${n} response${n !== 1 ? 's' : ''}`,
     },
+    userDetail: {
+      tabHealth: 'Health',
+      tabPlans: 'Plans',
+      tabChat: 'Chat',
+      profile: 'Profile',
+      externalApp: 'External App',
+      externalId: 'External ID',
+      height: 'Height',
+      weight: 'Weight',
+      healthConditions: 'Health Conditions',
+      loadingHealth: 'Loading health data…',
+      chronoAge: 'Chrono Age',
+      bioAge: 'Bio Age',
+      testsCount: (n) => `${n} Kino test${n !== 1 ? 's' : ''}`,
+      subAges: 'Sub-Ages',
+      latestBiomarkers: 'Latest Biomarkers',
+      noBiomarker: 'No biomarker data yet.',
+      biomarkerTrends: (n) => `Biomarker Trends (${n} test${n !== 1 ? 's' : ''})`,
+      healthReports: 'Health Reports & Lab Results',
+      loadingReports: 'Loading reports…',
+      noReports: 'No health reports available.',
+      labApiTag: 'Lab API',
+      manualTag: 'Manual',
+      fhirTag: 'FHIR',
+      labPanelTag: 'Lab Panel',
+      annualCheckupTag: 'Annual Checkup',
+      loadingPlans: 'Loading plans…',
+      noPlans: 'No active health plans.',
+      primaryPlan: 'Primary',
+      secondaryPlan: 'Secondary',
+      checkins: (n) => `${n} check-in${n !== 1 ? 's' : ''}`,
+      weeks: (n) => `${n} week${n !== 1 ? 's' : ''}`,
+      loadingChat: 'Loading messages…',
+      noChat: 'No messages yet.',
+      userRole: 'User',
+      aiRole: 'AI',
+      coachRole: 'Coach',
+      reportIdHeader: (id, name, date) => `Report #${id} — ${name} — ${date}`,
+      loadingReportDetail: 'Loading report…',
+      vitalSigns: 'Vital Signs',
+      diagnoses: 'Diagnoses / Findings',
+      clinicalSummary: 'Clinical Summary',
+      recommendations: 'Recommendations',
+      followUp: 'Follow-up',
+      diagnostics: 'Diagnostics',
+      doctorAdvice: "Doctor's Advice",
+      labObservations: 'Lab Observations',
+      coreBiomarker: 'CORE',
+      noObservations: 'No observations linked to this report.',
+      close: 'Close',
+    },
   },
   zh: {
     brand: 'Nano 管理后台',
@@ -732,6 +783,57 @@ const T = {
       promoters: '推荐者 (≥9)', passives: '中立者 (7–8)', detractors: '批评者 (≤6)', npsScore: 'NPS 分数',
       colUser: '用户', colType: '类型', colScore: '评分', colFeedback: '反馈', colRespondedAt: '回复时间',
       countResponses: (n) => `共 ${n} 条回复`,
+    },
+    userDetail: {
+      tabHealth: '健康数据',
+      tabPlans: '方案记录',
+      tabChat: '咨询沟通',
+      profile: '个人档案',
+      externalApp: '外部应用',
+      externalId: '外部 ID',
+      height: '身高',
+      weight: '体重',
+      healthConditions: '健康状况/需求',
+      loadingHealth: '加载健康数据中…',
+      chronoAge: '实际年龄',
+      bioAge: '生理年龄',
+      testsCount: (n) => `共 ${n} 次 Kino 检测`,
+      subAges: '各维度生物年龄',
+      latestBiomarkers: '最新生物标志物',
+      noBiomarker: '暂无生物标志物数据。',
+      biomarkerTrends: (n) => `生物标志物趋势 (共 ${n} 次检测)`,
+      healthReports: '体检报告与化验单',
+      loadingReports: '加载报告中…',
+      noReports: '暂无健康报告数据。',
+      labApiTag: '化验中心',
+      manualTag: '手动',
+      fhirTag: 'FHIR',
+      labPanelTag: '化验单',
+      annualCheckupTag: '年度体检',
+      loadingPlans: '加载方案中…',
+      noPlans: '暂无生效中的健康方案。',
+      primaryPlan: '主方案',
+      secondaryPlan: '副方案',
+      checkins: (n) => `已打卡 ${n} 次`,
+      weeks: (n) => `${n} 周`,
+      loadingChat: '加载消息中…',
+      noChat: '暂无沟通记录。',
+      userRole: '用户',
+      aiRole: 'AI 顾问',
+      coachRole: 'Coach',
+      reportIdHeader: (id, name, date) => `报告 #${id} — ${name} — ${date}`,
+      loadingReportDetail: '加载报告详情中…',
+      vitalSigns: '生命体征',
+      diagnoses: '临床诊断 / 异常发现',
+      clinicalSummary: '临床小结',
+      recommendations: '改善建议',
+      followUp: '随访复查',
+      diagnostics: '辅助检查',
+      doctorAdvice: '医嘱建议',
+      labObservations: '化验指标明细',
+      coreBiomarker: '核心',
+      noObservations: '此报告暂无关联的化验指标。',
+      close: '关闭',
     },
   },
 };
@@ -1526,8 +1628,37 @@ const CONDITION_LABELS = {
   other:               'Other',
 };
 
+const CONDITION_LABELS_ZH = {
+  blood_sugar_high:    '高血糖',
+  blood_pressure_high: '高血压',
+  blood_lipids_high:   '高血脂',
+  cholesterol_high:    '高胆固醇',
+  heart_issues:        '心血管问题',
+  gout_uric_acid:      '痛风 / 高尿酸',
+  kidney_disease:      '肾脏疾病',
+  sleep_deficiency:    '睡眠不足',
+  other:               '其他',
+};
+
+const subAgeMetaZh = {
+  ResilienceAge: '抗压年龄',
+  CellularAge: '细胞年龄',
+  MetabolicAge: '代谢年龄',
+  MicroVascularAge: '微血管年龄',
+};
+
+const bmLabelsZh = {
+  hsCRP: '超敏 C 反应蛋白',
+  GDF15: '生长分化因子-15',
+  IL6: '白介素-6',
+  GA: '糖化白蛋白',
+  CystatinC: '胱抑素 C',
+  CD38: 'CD38 表达量',
+};
+
 function UserDetailModal({ user, onClose }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  const isZh = lang === 'zh';
   const [tab, setTab]                     = useState('health');
   const [records, setRecords]             = useState([]);
   const [bmLoading, setBmLoading]         = useState(true);
@@ -1537,12 +1668,20 @@ function UserDetailModal({ user, onClose }) {
   const [messages, setMessages]           = useState(null);
   const [chatLoading, setChatLoading]     = useState(false);
 
+  const [healthReports, setHealthReports]               = useState([]);
+  const [healthReportsLoading, setHealthReportsLoading] = useState(false);
+  const [selectedReport, setSelectedReport]             = useState(null);
+  const [reportDetail, setReportDetail]                 = useState(null);
+  const [reportDetailLoading, setReportDetailLoading]   = useState(false);
+
   const openid = user?.user_id || user?.id;
 
   useEffect(() => {
     if (!openid) return;
     setBmLoading(true);
     setTwinData(null);
+    setHealthReportsLoading(true);
+
     axios.get(`/api/biomarkers?openid=${encodeURIComponent(openid)}`)
       .then(r => setRecords(r.data.records || []))
       .catch(() => setRecords([]))
@@ -1550,7 +1689,26 @@ function UserDetailModal({ user, onClose }) {
     axios.get(`/api/health-twin?openid=${encodeURIComponent(openid)}`)
       .then(r => setTwinData(r.data.twin || null))
       .catch(() => setTwinData(null));
+    axios.get(`/api/health-reports?openid=${encodeURIComponent(openid)}`)
+      .then(r => setHealthReports(r.data.reports || []))
+      .catch(() => setHealthReports([]))
+      .finally(() => setHealthReportsLoading(false));
   }, [openid]);
+
+  const openReportDetail = async (rep) => {
+    setSelectedReport(rep);
+    setReportDetailLoading(true);
+    setReportDetail({ report: rep, events: [] });
+    try {
+      const r = await axios.get(`/api/health-reports/${rep.id}`);
+      setReportDetail(r.data);
+    } catch (err) {
+      console.error(err);
+      setReportDetail(d => ({ ...d, events: [] }));
+    } finally {
+      setReportDetailLoading(false);
+    }
+  };
 
   const switchTab = (next) => {
     setTab(next);
@@ -1590,7 +1748,8 @@ function UserDetailModal({ user, onClose }) {
         const score = v != null && cAge != null
           ? Math.max(5, Math.min(95, Math.round((cAge + 15 - v) / 30 * 100)))
           : 50;
-        return { key, label, color, value: v != null ? v.toFixed(1) : '—', score };
+        const translatedLabel = isZh ? (subAgeMetaZh[key] || label) : label;
+        return { key, label: translatedLabel, color, value: v != null ? v.toFixed(1) : '—', score };
       })
     : [];
 
@@ -1598,9 +1757,9 @@ function UserDetailModal({ user, onClose }) {
     .map(r => r.data?.estimated?.[key]).filter(v => v != null);
 
   const TABS = [
-    { id: 'health', label: 'Health' },
-    { id: 'plans',  label: 'Plans'  },
-    { id: 'chat',   label: 'Chat'   },
+    { id: 'health', label: t.userDetail.tabHealth },
+    { id: 'plans',  label: t.userDetail.tabPlans  },
+    { id: 'chat',   label: t.userDetail.tabChat   },
   ];
 
   return (
@@ -1642,31 +1801,31 @@ function UserDetailModal({ user, onClose }) {
 
               {/* Left: digital twin + profile + conditions */}
               <div className="udm-col-left">
-                <DigitalBodyFigure subAges={subAgeList} bioAge={rawBioAge} chronoAge={cAge} />
+                <DigitalBodyFigure subAges={subAgeList} bioAge={rawBioAge} chronoAge={cAge} isZh={isZh} />
                 {twinData?.tags?.length > 0 && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
                     {twinData.tags.map((tag, i) => (
-                      <Badge key={i} color={tag.color}>{tag.labelEn}</Badge>
+                      <Badge key={i} color={tag.color}>{isZh ? (tag.labelZh || tag.labelEn) : tag.labelEn}</Badge>
                     ))}
                   </div>
                 )}
                 <div className="udm-section">
-                  <div className="udm-section-title">Profile</div>
+                  <div className="udm-section-title">{t.userDetail.profile}</div>
                   <div className="drawer-info-grid">
-                    <span className="drawer-info-key">External App</span>
+                    <span className="drawer-info-key">{t.userDetail.externalApp}</span>
                     <span className="drawer-info-val">{fmt(user.external_app)}</span>
-                    <span className="drawer-info-key">External ID</span>
+                    <span className="drawer-info-key">{t.userDetail.externalId}</span>
                     <span className="drawer-info-val mono">{fmt(user.external_id)}</span>
                     <span className="drawer-info-key">{t.table.gender}</span>
-                    <span className="drawer-info-val">{fmt(user.gender)}</span>
+                    <span className="drawer-info-val">{fmt(user.gender === 'male' ? t.modal.male : user.gender === 'female' ? t.modal.female : user.gender)}</span>
                     <span className="drawer-info-key">{t.table.birthDate}</span>
                     <span className="drawer-info-val">{fmtDate(user.birth_date)}</span>
-                    <span className="drawer-info-key">Height</span>
+                    <span className="drawer-info-key">{t.userDetail.height}</span>
                     <span className="drawer-info-val">{bioData.height != null ? `${bioData.height} cm` : '—'}</span>
-                    <span className="drawer-info-key">Weight</span>
+                    <span className="drawer-info-key">{t.userDetail.weight}</span>
                     <span className="drawer-info-val">{bioData.weight != null ? `${bioData.weight} kg` : '—'}</span>
                     <span className="drawer-info-key">{t.table.language}</span>
-                    <span className="drawer-info-val">{(user.language || '—').toUpperCase()}</span>
+                    <span className="drawer-info-val">{user.language === 'zh' ? t.modal.langZh : user.language === 'en' ? t.modal.langEn : (user.language || '—').toUpperCase()}</span>
                     <span className="drawer-info-key">{t.table.assignedCoach}</span>
                     <span className="drawer-info-val">{fmt(user.coach_name)}</span>
                     <span className="drawer-info-key">{t.table.joined}</span>
@@ -1678,9 +1837,15 @@ function UserDetailModal({ user, onClose }) {
                     <span className="drawer-info-key">{t.table.roles}</span>
                     <span className="drawer-info-val">
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {(user.roles || ['user']).map(r => (
-                          <Badge key={r} color={r === 'superadmin' ? '#dc2626' : r === 'admin' ? '#f59e0b' : r === 'coach' ? '#8b5cf6' : '#64748b'}>{r}</Badge>
-                        ))}
+                        {(user.roles || ['user']).map(r => {
+                          const translatedRole = r === 'superadmin' ? t.modal.roleSuperadmin
+                            : r === 'admin' ? t.modal.roleAdmin
+                            : r === 'coach' ? t.modal.roleCoach
+                            : t.modal.roleUser;
+                          return (
+                            <Badge key={r} color={r === 'superadmin' ? '#dc2626' : r === 'admin' ? '#f59e0b' : r === 'coach' ? '#8b5cf6' : '#64748b'}>{translatedRole}</Badge>
+                          );
+                        })}
                       </div>
                     </span>
                   </div>
@@ -1688,11 +1853,14 @@ function UserDetailModal({ user, onClose }) {
 
                 {conditions.length > 0 && (
                   <div className="udm-section">
-                    <div className="udm-section-title">Health Conditions</div>
+                    <div className="udm-section-title">{t.userDetail.healthConditions}</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                      {conditions.map(c => (
-                        <Badge key={c} color="#6366f1">{CONDITION_LABELS[c] || c}</Badge>
-                      ))}
+                      {conditions.map(c => {
+                        const label = isZh ? (CONDITION_LABELS_ZH[c] || c) : (CONDITION_LABELS[c] || c);
+                        return (
+                          <Badge key={c} color="#6366f1">{label}</Badge>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1701,30 +1869,30 @@ function UserDetailModal({ user, onClose }) {
               {/* Right: bio ages + biomarkers + trends */}
               <div className="udm-col-right">
                 {bmLoading ? (
-                  <div className="drawer-empty" style={{ padding: '24px 0' }}>Loading health data…</div>
+                  <div className="drawer-empty" style={{ padding: '24px 0' }}>{t.userDetail.loadingHealth}</div>
                 ) : (
                   <>
                     <div className="udm-section">
                       <div className="udm-bioage-row">
                         <div className="udm-age-chip">
                           <div className="udm-age-val">{cAge ?? '—'}</div>
-                          <div className="udm-age-label">Chrono Age</div>
+                          <div className="udm-age-label">{t.userDetail.chronoAge}</div>
                         </div>
                         <div className="udm-age-chip udm-age-chip-primary">
                           <div className="udm-age-val udm-bio-val" style={{ color: bAgeClr }}>
                             {rawBioAge ? Number(rawBioAge).toFixed(1) : '—'}
                           </div>
-                          <div className="udm-age-label">Bio Age</div>
+                          <div className="udm-age-label">{t.userDetail.bioAge}</div>
                         </div>
                         <span className="drawer-empty" style={{ padding: 0 }}>
-                          {kinoRecs.length} Kino test{kinoRecs.length !== 1 ? 's' : ''}
+                          {t.userDetail.testsCount(kinoRecs.length)}
                         </span>
                       </div>
                     </div>
 
                     {subAgeList.length > 0 && (
                       <div className="udm-section">
-                        <div className="udm-section-title">Sub-Ages</div>
+                        <div className="udm-section-title">{t.userDetail.subAges}</div>
                         <div className="udm-subages">
                           {subAgeList.map(({ key, label, color, value, score }) => (
                             <div key={key} className="udm-subage-row">
@@ -1740,34 +1908,38 @@ function UserDetailModal({ user, onClose }) {
                     )}
 
                     <div className="udm-section">
-                      <div className="udm-section-title">Latest Biomarkers</div>
+                      <div className="udm-section-title">{t.userDetail.latestBiomarkers}</div>
                       {latestBm ? (
                         <div className="bm-table">
-                          {BM_META.map(({ key, label, unit, color }) => (
-                            <div key={key} className="bm-table-row">
-                              <span className="bm-table-label">{label}</span>
-                              <span className="bm-table-val" style={{ color }}>{latestBm[key] ?? '—'}</span>
-                              <span className="bm-table-unit">{unit}</span>
-                            </div>
-                          ))}
+                          {BM_META.map(({ key, label, unit, color }) => {
+                            const translatedLabel = isZh ? (bmLabelsZh[key] || label) : label;
+                            return (
+                              <div key={key} className="bm-table-row">
+                                <span className="bm-table-label">{translatedLabel}</span>
+                                <span className="bm-table-val" style={{ color }}>{latestBm[key] ?? '—'}</span>
+                                <span className="bm-table-unit">{unit}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       ) : (
-                        <div className="drawer-empty">No biomarker data yet.</div>
+                        <div className="drawer-empty">{t.userDetail.noBiomarker}</div>
                       )}
                     </div>
 
                     {kinoRecs.length > 0 && (
                       <div className="udm-section">
                         <div className="udm-section-title">
-                          Biomarker Trends ({kinoRecs.length} test{kinoRecs.length !== 1 ? 's' : ''})
+                          {t.userDetail.biomarkerTrends(kinoRecs.length)}
                         </div>
                         <div className="trend-grid">
                           {BM_META.map(({ key, label, unit, color }) => {
                             const vals = trendFor(key);
                             const last = vals[vals.length - 1];
+                            const translatedLabel = isZh ? (bmLabelsZh[key] || label) : label;
                             return (
                               <div key={key} className="trend-card">
-                                <div className="trend-label">{label}</div>
+                                <div className="trend-label">{translatedLabel}</div>
                                 <div className="trend-val" style={{ color }}>
                                   {last != null ? last : '—'}<span className="trend-unit">{unit}</span>
                                 </div>
@@ -1778,6 +1950,80 @@ function UserDetailModal({ user, onClose }) {
                         </div>
                       </div>
                     )}
+
+                    {/* ── Health Reports ── */}
+                    <div className="udm-section" style={{ marginTop: 22 }}>
+                      <div className="udm-section-title">{t.userDetail.healthReports}</div>
+                      {healthReportsLoading ? (
+                        <div className="drawer-empty">{t.userDetail.loadingReports}</div>
+                      ) : healthReports.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {healthReports.map(rep => {
+                            const sourceColor = { lab_api: '#6366f1', manual_upload: '#10b981', fhir_import: '#f59e0b' }[rep.source] || '#94a3b8';
+                            const reportTypeColor = { lab_panel: '#3b82f6', annual_checkup: '#10b981' }[rep.report_type] || '#8b5cf6';
+                            return (
+                              <div
+                                key={rep.id}
+                                className="report-list-item"
+                                onClick={() => openReportDetail(rep)}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                  <div style={{
+                                    width: 32,
+                                    height: 32,
+                                    borderRadius: 6,
+                                    background: `${reportTypeColor}15`,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: reportTypeColor
+                                  }}>
+                                    <FileText size={16} />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+                                      {rep.institution || (isZh ? '未知机构' : 'Unknown Institution')}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                                      <span style={{ fontSize: 11, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                        <Calendar size={11} /> {rep.report_date}
+                                      </span>
+                                      <span style={{
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        color: sourceColor,
+                                        background: `${sourceColor}10`,
+                                        padding: '1px 6px',
+                                        borderRadius: 4,
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.04em'
+                                      }}>
+                                        {rep.source === 'lab_api' ? t.userDetail.labApiTag : rep.source === 'manual_upload' ? t.userDetail.manualTag : t.userDetail.fhirTag}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    color: reportTypeColor,
+                                    background: `${reportTypeColor}10`,
+                                    padding: '2px 8px',
+                                    borderRadius: 12,
+                                  }}>
+                                    {rep.report_type === 'lab_panel' ? t.userDetail.labPanelTag : rep.report_type === 'annual_checkup' ? t.userDetail.annualCheckupTag : rep.report_type}
+                                  </span>
+                                  <ChevronRight size={16} style={{ color: 'var(--muted)' }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="drawer-empty">{t.userDetail.noReports}</div>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
@@ -1786,67 +2032,233 @@ function UserDetailModal({ user, onClose }) {
 
           {/* ── PLANS ── */}
           {tab === 'plans' && (
-            plansLoading ? (
-              <div className="drawer-empty">Loading plans…</div>
-            ) : !plans || plans.length === 0 ? (
-              <div className="drawer-empty">No active health plans.</div>
-            ) : (
-              <div className="udm-plans-grid">
-                {plans.map(p => (
-                  <div key={p.id} className="udm-plan-card">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <Badge color={p.plan_type === 'primary' ? '#3b82f6' : '#8b5cf6'}>
-                        {p.plan_type === 'primary' ? 'Primary' : 'Secondary'}
-                      </Badge>
-                    </div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: '#1e293b', marginBottom: 4 }}>
-                      {p.name_zh || p.name_en || p.custom_name_zh || p.custom_name_en || '—'}
-                    </div>
-                    {(p.custom_goal_zh || p.custom_goal_en) && (
-                      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8, lineHeight: 1.5 }}>
-                        {p.custom_goal_zh || p.custom_goal_en}
+            <div className="udm-plans-fill">
+              {plansLoading ? (
+                <div className="drawer-empty">{t.userDetail.loadingPlans}</div>
+              ) : !plans || plans.length === 0 ? (
+                <div className="drawer-empty">{t.userDetail.noPlans}</div>
+              ) : (
+                <div className="udm-plans-grid">
+                  {plans.map(p => (
+                    <div key={p.id} className="udm-plan-card">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <Badge color={p.plan_type === 'primary' ? '#3b82f6' : '#8b5cf6'}>
+                          {p.plan_type === 'primary' ? t.userDetail.primaryPlan : t.userDetail.secondaryPlan}
+                        </Badge>
                       </div>
-                    )}
-                    <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#94a3b8' }}>
-                      <span>{p.checkin_count ?? 0} check-ins</span>
-                      {p.duration_weeks && <span>{p.duration_weeks} weeks</span>}
+                      <div style={{ fontWeight: 700, fontSize: 14, color: '#1e293b', marginBottom: 4 }}>
+                        {isZh ? (p.name_zh || p.custom_name_zh || p.name_en || p.custom_name_en) : (p.name_en || p.custom_name_en || p.name_zh || p.custom_name_zh || '—')}
+                      </div>
+                      {(isZh ? (p.custom_goal_zh || p.custom_goal_en) : (p.custom_goal_en || p.custom_goal_zh)) && (
+                        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8, lineHeight: 1.5 }}>
+                          {isZh ? (p.custom_goal_zh || p.custom_goal_en) : (p.custom_goal_en || p.custom_goal_zh)}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#94a3b8' }}>
+                        <span>{t.userDetail.checkins(p.checkin_count ?? 0)}</span>
+                        {p.duration_weeks && <span>{t.userDetail.weeks(p.duration_weeks)}</span>}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           {/* ── CHAT ── */}
           {tab === 'chat' && (
-            chatLoading ? (
-              <div className="drawer-empty">Loading messages…</div>
-            ) : !messages || messages.length === 0 ? (
-              <div className="drawer-empty">No messages yet.</div>
-            ) : (
-              <div className="udm-chat-list">
-                {messages.map((msg, i) => (
-                  <div key={msg.id || i} className={`udm-msg udm-msg-${msg.role}`}>
-                    <div className="udm-msg-meta">
-                      <span className="udm-msg-role">
-                        {msg.role === 'user' ? 'User' : msg.role === 'ai' ? 'AI' : 'Coach'}
-                      </span>
-                      <span className="udm-msg-time">
-                        {msg.created_at ? new Date(msg.created_at).toLocaleString() : ''}
-                      </span>
+            <div className="udm-chat-fill">
+              {chatLoading ? (
+                <div className="drawer-empty">{t.userDetail.loadingChat}</div>
+              ) : !messages || messages.length === 0 ? (
+                <div className="drawer-empty">{t.userDetail.noChat}</div>
+              ) : (
+                <div className="udm-chat-list">
+                  {messages.map((msg, i) => (
+                    <div key={msg.id || i} className={`udm-msg udm-msg-${msg.role}`}>
+                      <div className="udm-msg-meta">
+                        <span className="udm-msg-role">
+                          {msg.role === 'user' ? t.userDetail.userRole : msg.role === 'ai' ? t.userDetail.aiRole : t.userDetail.coachRole}
+                        </span>
+                        <span className="udm-msg-time">
+                          {msg.created_at ? new Date(msg.created_at).toLocaleString(isZh ? 'zh-CN' : 'en-US') : ''}
+                        </span>
+                      </div>
+                      {msg.imageUrl
+                        ? <img src={msg.imageUrl} alt="attachment"
+                            style={{ maxWidth: 300, borderRadius: 8, marginTop: 4, display: 'block' }} />
+                        : <div className="udm-msg-content">{msg.content}</div>
+                      }
                     </div>
-                    {msg.imageUrl
-                      ? <img src={msg.imageUrl} alt="attachment"
-                          style={{ maxWidth: 300, borderRadius: 8, marginTop: 4, display: 'block' }} />
-                      : <div className="udm-msg-content">{msg.content}</div>
-                    }
-                  </div>
-                ))}
-              </div>
-            )
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
         </div>
+
+        {/* Detail Modal Overlay */}
+        {selectedReport && reportDetail && (
+          <div className="modal-overlay" style={{ zIndex: 110 }} onClick={() => setSelectedReport(null)}>
+            <div className="modal" style={{ maxWidth: 720, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <span>{t.userDetail.reportIdHeader(reportDetail.report.id, reportDetail.report.nickname || user.nickname || 'User', reportDetail.report.report_date)}</span>
+                <button className="icon-btn" onClick={() => setSelectedReport(null)}><X size={16} /></button>
+              </div>
+              <div style={{ overflowY: 'auto', padding: '16px 24px', flex: 1 }}>
+                {reportDetailLoading && <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>{t.userDetail.loadingReportDetail}</div>}
+
+                {/* ── Doctor Notes Section ── */}
+                {!reportDetailLoading && reportDetail.report?.raw_data?.doctor_notes && (() => {
+                  const dn = reportDetail.report.raw_data.doctor_notes;
+                  return (
+                    <div style={{ marginBottom: 20 }}>
+                      {/* Attending physician */}
+                      {dn.physician && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                          <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>👨‍⚕️</div>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14 }}>{isZh ? (dn.physician_zh || dn.physician) : dn.physician}</div>
+                            <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                              {isZh ? (dn.department_zh || dn.department) : dn.department} · {reportDetail.report.institution || (isZh ? '未知机构' : 'Unknown Institution')}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Vital signs summary */}
+                      {dn.vital_summary && (
+                        <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.18)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                          <div style={{ fontSize: 11, color: '#6366f1', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.userDetail.vitalSigns}</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px' }}>
+                            {Object.entries(dn.vital_summary).map(([k, v]) => (
+                              <span key={k} style={{ fontSize: 12 }}>
+                                <span style={{ color: '#94a3b8' }}>{k.replace(/_/g,' ')}: </span>
+                                <span style={{ fontWeight: 600 }}>{v}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Diagnoses */}
+                      {dn.diagnoses?.length > 0 && (
+                        <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                          <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.userDetail.diagnoses}</div>
+                          <ul style={{ margin: 0, paddingLeft: 16 }}>
+                            {dn.diagnoses.map((d, i) => (
+                              <li key={i} style={{ fontSize: 13, color: '#e2e8f0', marginBottom: 3 }}>{d}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Clinical narrative */}
+                      {dn.clinical_summary && (
+                        <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                          <div style={{ fontSize: 11, color: '#10b981', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.userDetail.clinicalSummary}</div>
+                          <p style={{ margin: 0, fontSize: 13, color: '#cbd5e1', lineHeight: 1.65 }}>{dn.clinical_summary}</p>
+                        </div>
+                      )}
+
+                      {/* Recommendations */}
+                      {dn.recommendations?.length > 0 && (
+                        <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                          <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.userDetail.recommendations}</div>
+                          <ul style={{ margin: 0, paddingLeft: 16 }}>
+                            {dn.recommendations.map((r, i) => (
+                              <li key={i} style={{ fontSize: 13, color: '#e2e8f0', marginBottom: 3 }}>{r}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Follow-up */}
+                      {dn.follow_up && (
+                        <div style={{ fontSize: 12, color: '#94a3b8', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10, marginTop: 6 }}>
+                          <span style={{ color: '#6366f1', fontWeight: 600 }}>{t.userDetail.followUp}: </span>{dn.follow_up}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* ── Older diagnostics/doctor_advice format ── */}
+                {!reportDetailLoading && !reportDetail.report?.raw_data?.doctor_notes && (
+                  <>
+                    {reportDetail.report?.raw_data?.diagnostics?.length > 0 && (
+                      <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.userDetail.diagnostics}</div>
+                        <ul style={{ margin: 0, paddingLeft: 16 }}>
+                          {reportDetail.report.raw_data.diagnostics.map((d, i) => (
+                            <li key={i} style={{ fontSize: 13, color: '#e2e8f0', marginBottom: 3 }}>{d}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {reportDetail.report?.raw_data?.doctor_advice?.length > 0 && (
+                      <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.userDetail.doctorAdvice}</div>
+                        <ul style={{ margin: 0, paddingLeft: 16 }}>
+                          {reportDetail.report.raw_data.doctor_advice.map((a, i) => (
+                            <li key={i} style={{ fontSize: 13, color: '#e2e8f0', marginBottom: 3 }}>{a}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* ── Biomarker Observations Table ── */}
+                {!reportDetailLoading && (reportDetail.events || []).length > 0 && (
+                  <>
+                    <div style={{ fontSize: 11, color: '#6366f1', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{t.userDetail.labObservations}</div>
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>{isZh ? '化验项目' : 'Biomarker'}</th>
+                          <th>LOINC</th>
+                          <th>{isZh ? '测定值' : 'Value'}</th>
+                          <th>{isZh ? '单位' : 'Unit'}</th>
+                          <th>{isZh ? '关联维度' : 'Dimension'}</th>
+                          <th>{isZh ? '检测日期' : 'Date'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(reportDetail.events || []).map(ev => {
+                          const obsName = isZh ? (bmLabelsZh[ev.data?.key_name] || ev.data?.key_name) : ev.data?.key_name;
+                          const obsDimension = isZh ? (subAgeMetaZh[ev.data?.nano_dimension] || ev.data?.nano_dimension) : ev.data?.nano_dimension;
+                          return (
+                            <tr key={ev.id}>
+                              <td style={{ fontWeight: ev.data?.is_kino_core ? 600 : 400, color: ev.data?.is_kino_core ? '#a5b4fc' : undefined }}>
+                                {obsName || '—'}
+                                {ev.data?.is_kino_core && <span style={{ marginLeft: 4, fontSize: 10, color: '#6366f1', fontWeight: 700 }}>{t.userDetail.coreBiomarker}</span>}
+                              </td>
+                              <td style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>{ev.data?.loinc_code || '—'}</td>
+                              <td style={{ fontWeight: 600 }}>{ev.data?.value}</td>
+                              <td style={{ color: '#94a3b8', fontSize: 12 }}>{ev.data?.unit}</td>
+                              <td style={{ fontSize: 11, color: '#64748b' }}>{obsDimension || '—'}</td>
+                              <td style={{ fontSize: 11, color: '#94a3b8' }}>{ev.data_date}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+                {!reportDetailLoading && (reportDetail.events || []).length === 0 && !reportDetail.report?.raw_data?.doctor_notes && !reportDetail.report?.raw_data?.diagnostics && !reportDetail.report?.raw_data?.doctor_advice && (
+                  <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>{t.userDetail.noObservations}</div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button className="btn-secondary" onClick={() => setSelectedReport(null)}>{t.userDetail.close}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
@@ -2667,33 +3079,113 @@ function LabReportsPanel({ users }) {
 
       {detail && (
         <div className="modal-overlay" onClick={() => setDetail(null)}>
-          <div className="modal" style={{ maxWidth: 640, maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+          <div className="modal" style={{ maxWidth: 720, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <span>Report #{detail.report.id} — {detail.report.nickname || detail.report?.user_id} — {detail.report.report_date}</span>
               <button className="icon-btn" onClick={() => setDetail(null)}><X size={16} /></button>
             </div>
             <div style={{ overflowY: 'auto', padding: '16px 24px', flex: 1 }}>
-              {detailLoading && <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>Loading observations…</div>}
-              {!detailLoading && (detail.events || []).length === 0 && <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>No observations linked to this report.</div>}
+              {detailLoading && <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>Loading report…</div>}
+
+              {/* ── Doctor Notes Section ── */}
+              {!detailLoading && detail.report?.raw_data?.doctor_notes && (() => {
+                const dn = detail.report.raw_data.doctor_notes;
+                return (
+                  <div style={{ marginBottom: 20 }}>
+                    {/* Attending physician */}
+                    {dn.physician && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>👨‍⚕️</div>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>{dn.physician}</div>
+                          <div style={{ fontSize: 11, color: '#94a3b8' }}>{dn.department} · {detail.report.institution}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Vital signs summary */}
+                    {dn.vital_summary && (
+                      <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.18)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: '#6366f1', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Vital Signs</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px' }}>
+                          {Object.entries(dn.vital_summary).map(([k, v]) => (
+                            <span key={k} style={{ fontSize: 12 }}>
+                              <span style={{ color: '#94a3b8' }}>{k.replace(/_/g,' ')}: </span>
+                              <span style={{ fontWeight: 600 }}>{v}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Diagnoses */}
+                    {dn.diagnoses?.length > 0 && (
+                      <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Diagnoses / Findings</div>
+                        <ul style={{ margin: 0, paddingLeft: 16 }}>
+                          {dn.diagnoses.map((d, i) => (
+                            <li key={i} style={{ fontSize: 13, color: '#e2e8f0', marginBottom: 3 }}>{d}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Clinical narrative */}
+                    {dn.clinical_summary && (
+                      <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: '#10b981', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Clinical Summary</div>
+                        <p style={{ margin: 0, fontSize: 13, color: '#cbd5e1', lineHeight: 1.65 }}>{dn.clinical_summary}</p>
+                      </div>
+                    )}
+
+                    {/* Recommendations */}
+                    {dn.recommendations?.length > 0 && (
+                      <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Recommendations</div>
+                        <ul style={{ margin: 0, paddingLeft: 16 }}>
+                          {dn.recommendations.map((r, i) => (
+                            <li key={i} style={{ fontSize: 13, color: '#e2e8f0', marginBottom: 3 }}>{r}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Follow-up */}
+                    {dn.follow_up && (
+                      <div style={{ fontSize: 12, color: '#94a3b8', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10, marginTop: 6 }}>
+                        <span style={{ color: '#6366f1', fontWeight: 600 }}>Follow-up: </span>{dn.follow_up}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* ── Biomarker Observations Table ── */}
               {!detailLoading && (detail.events || []).length > 0 && (
-                <table className="data-table">
-                  <thead><tr><th>Biomarker</th><th>LOINC</th><th>Value</th><th>Unit</th><th>Dimension</th><th>Date</th></tr></thead>
-                  <tbody>
-                    {(detail.events || []).map(ev => (
-                      <tr key={ev.id}>
-                        <td style={{ fontWeight: ev.data?.is_kino_core ? 600 : 400, color: ev.data?.is_kino_core ? '#a5b4fc' : undefined }}>
-                          {ev.data?.key_name || '—'}
-                          {ev.data?.is_kino_core && <span style={{ marginLeft: 4, fontSize: 10, color: '#6366f1', fontWeight: 700 }}>CORE</span>}
-                        </td>
-                        <td style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>{ev.data?.loinc_code || '—'}</td>
-                        <td style={{ fontWeight: 600 }}>{ev.data?.value}</td>
-                        <td style={{ color: '#94a3b8', fontSize: 12 }}>{ev.data?.unit}</td>
-                        <td style={{ fontSize: 11, color: '#64748b' }}>{ev.data?.nano_dimension || '—'}</td>
-                        <td style={{ fontSize: 11, color: '#94a3b8' }}>{ev.data_date}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <>
+                  <div style={{ fontSize: 11, color: '#6366f1', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Lab Observations</div>
+                  <table className="data-table">
+                    <thead><tr><th>Biomarker</th><th>LOINC</th><th>Value</th><th>Unit</th><th>Dimension</th><th>Date</th></tr></thead>
+                    <tbody>
+                      {(detail.events || []).map(ev => (
+                        <tr key={ev.id}>
+                          <td style={{ fontWeight: ev.data?.is_kino_core ? 600 : 400, color: ev.data?.is_kino_core ? '#a5b4fc' : undefined }}>
+                            {ev.data?.key_name || '—'}
+                            {ev.data?.is_kino_core && <span style={{ marginLeft: 4, fontSize: 10, color: '#6366f1', fontWeight: 700 }}>CORE</span>}
+                          </td>
+                          <td style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>{ev.data?.loinc_code || '—'}</td>
+                          <td style={{ fontWeight: 600 }}>{ev.data?.value}</td>
+                          <td style={{ color: '#94a3b8', fontSize: 12 }}>{ev.data?.unit}</td>
+                          <td style={{ fontSize: 11, color: '#64748b' }}>{ev.data?.nano_dimension || '—'}</td>
+                          <td style={{ fontSize: 11, color: '#94a3b8' }}>{ev.data_date}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+              {!detailLoading && (detail.events || []).length === 0 && !detail.report?.raw_data?.doctor_notes && (
+                <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>No observations linked to this report.</div>
               )}
             </div>
             <div className="modal-footer">
