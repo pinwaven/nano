@@ -50,20 +50,29 @@ const { BioAgeCalculator } = require('./lib/bioage/BioAgeCalculator');
 const { runWorkflow: runFirstReportWorkflow } = require('./lib/reports/workflow');
 const OpenAI = require('openai');
 const intentClassifierTemplate = require('./prompts/chat/intentClassifier');
-const chatPrompts = {
-    casual_chat:        require('./prompts/chat/casual'),
-    biomarker_question: require('./prompts/chat/biomarker'),
-    nutrition_question: require('./prompts/chat/nutrition'),
-    longevity_science:  require('./prompts/chat/science'),
-    record_action:      require('./prompts/chat/record'),
-    set_reminder:       require('./prompts/chat/reminder'),
-    emotional_support:  require('./prompts/chat/emotional'),
+const nanoPrompts = {
+    casual_chat:        require('./prompts/nano/chat/casual'),
+    biomarker_question: require('./prompts/nano/chat/biomarker'),
+    nutrition_question: require('./prompts/nano/chat/nutrition'),
+    longevity_science:  require('./prompts/nano/chat/science'),
+    record_action:      require('./prompts/nano/chat/record'),
+    set_reminder:       require('./prompts/nano/chat/reminder'),
+    emotional_support:  require('./prompts/nano/chat/emotional'),
 };
-const systemNutritionTemplate = require('./prompts/systemNutrition');
-const systemHealthAdviceTemplate = require('./prompts/systemHealthAdvice');
+const vivaPrompts = {
+    casual_chat:        require('./prompts/viva/chat/casual'),
+    biomarker_question: require('./prompts/viva/chat/biomarker'),
+    nutrition_question: require('./prompts/viva/chat/nutrition'),
+    longevity_science:  require('./prompts/viva/chat/science'),
+    record_action:      require('./prompts/viva/chat/record'),
+    set_reminder:       require('./prompts/viva/chat/reminder'),
+    emotional_support:  require('./prompts/viva/chat/emotional'),
+};
+const systemNutritionTemplate = require('./prompts/nano/systemNutrition');
+const systemHealthAdviceTemplate = require('./prompts/nano/systemHealthAdvice');
 const strings = require('./prompts/strings');
 const systemAdminReportTemplate = require('./prompts/systemAdminReport');
-const systemHealthReportTemplate = require('./prompts/systemHealthReport');
+const systemHealthReportTemplate = require('./prompts/nano/systemHealthReport');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
@@ -3745,11 +3754,11 @@ async function handleValidateInvite(body) {
     return { success: true, channel };
 }
 
-async function saveChatMessage(user_id, role, content, image_url = null) {
+async function saveChatMessage(user_id, role, content, image_url = null, persona_type = 'nano') {
     try {
         await pool.query(
-            'INSERT INTO chat_messages (user_id, role, content, image_url) VALUES ($1, $2, $3, $4)',
-            [user_id, role, content, image_url]
+            'INSERT INTO chat_messages (user_id, role, content, image_url, persona_type) VALUES ($1, $2, $3, $4, $5)',
+            [user_id, role, content, image_url, persona_type]
         );
     } catch (err) {
         console.error('Failed to save chat message:', err);
@@ -3794,7 +3803,7 @@ async function resolveOrUpsertUser(body) {
     // If openid matches an existing user_id (admin-created or simulator users), use it directly.
     // Otherwise fall back to the external_id upsert (production WeChat flow).
     const byUserId = await pool.query(
-        'SELECT user_id, birth_date, bio_data, nickname, language, phone, email FROM users WHERE user_id = $1',
+        'SELECT user_id, birth_date, bio_data, nickname, language, phone, email, channel_id FROM users WHERE user_id = $1',
         [openid]
     );
     if (byUserId.rows.length > 0) return byUserId.rows[0];
@@ -3812,7 +3821,7 @@ async function resolveOrUpsertUser(body) {
             language = COALESCE(EXCLUDED.language, users.language),
             bio_data = users.bio_data || EXCLUDED.bio_data,
             updated_at = CURRENT_TIMESTAMP
-        RETURNING user_id, birth_date, bio_data, nickname, language, phone, email;
+        RETURNING user_id, birth_date, bio_data, nickname, language, phone, email, channel_id;
     `;
     const userResult = await pool.query(userQuery, [
         generateUserId(), openid, nickname, phone || null, email || null,
@@ -4001,6 +4010,18 @@ async function handlePostChat(body) {
     const user = await resolveOrUpsertUser(body);
     const user_id = user.user_id;
 
+    // Resolve persona from channel config (defaults to 'nano')
+    let personaType = 'nano';
+    if (user.channel_id) {
+        try {
+            const chRes = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
+            personaType = chRes.rows[0]?.config?.persona_type ?? 'nano';
+        } catch (err) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'Failed to fetch channel persona, defaulting to nano', error: err.message }));
+        }
+    }
+    console.log(JSON.stringify({ level: 'INFO', msg: 'Persona resolved', user_id: user.user_id, channel_id: user.channel_id, personaType }));
+
     if (message) {
         // Intent-routed chat message handling
         try {
@@ -4122,25 +4143,26 @@ async function handlePostChat(body) {
                 })),
             };
 
-            const promptBuilder = chatPrompts[intent] || chatPrompts.casual_chat;
+            const activePrompts = personaType === 'viva' ? vivaPrompts : nanoPrompts;
+            const promptBuilder = activePrompts[intent] || activePrompts.casual_chat;
             const systemPrompt = promptBuilder(llmContext);
 
             // Save the incoming user message to the conversation log
             await pool.query(
-                'INSERT INTO chat_messages (user_id, role, content) VALUES ($1, $2, $3)',
-                [user_id, 'user', message]
+                'INSERT INTO chat_messages (user_id, role, content, persona_type) VALUES ($1, $2, $3, $4)',
+                [user_id, 'user', message, personaType]
             );
 
-            // Fetch recent conversation history (oldest-first for the LLM)
+            // Fetch recent conversation history scoped to the current persona
             const historyLimit = parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10);
             const historyResult = await pool.query(
                 `SELECT role, content FROM (
                     SELECT role, content, created_at FROM chat_messages
-                    WHERE user_id = $1
+                    WHERE user_id = $1 AND persona_type = $3
                     ORDER BY created_at DESC
                     LIMIT $2
                 ) sub ORDER BY created_at ASC`,
-                [user_id, historyLimit]
+                [user_id, historyLimit, personaType]
             );
 
             // Normalize roles ('ai' → 'assistant') and collapse consecutive same-role turns
@@ -4260,7 +4282,7 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                             : `✅ Weight recorded: **${weightKg} kg**`;
                     }
 
-                    await saveChatMessage(user_id, 'ai', simpleReply);
+                    await saveChatMessage(user_id, 'ai', simpleReply, null, personaType);
                     await pool.query(
                         'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
                         [user_id, 'chat_reply', simpleReply, 'pending']
@@ -4288,7 +4310,7 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                 .trim();
 
             // Save assistant reply to the conversation log
-            await saveChatMessage(user_id, 'ai', reply);
+            await saveChatMessage(user_id, 'ai', reply, null, personaType);
 
             // Save reply as a notification (existing delivery mechanism for frontend poll)
             await pool.query(
