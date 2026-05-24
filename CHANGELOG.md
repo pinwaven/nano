@@ -22,6 +22,13 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   - **Miniapp coach panel** — no change required; only uses `coach.id` and `coach.channel_id` from the login response.
 
 ### Added
+- **QCS lab order integration** — `nano-lab` now supports QCS outbound order creation, webhook updates, persisted order tracking, token caching, and per-order polling.
+  - **QCS adapter** `src/functions/lab/lib/adapters/qcs.js`: implements order creation via `_id_check` + sample generation, cancellation compensation, webhook signature validation, access-token caching through `global_cache`, sample-center lookup, and barcode-suffix project lookup.
+  - **Lab routes**: `POST /lab/order`, `GET /lab/qcs/sample-centers`, and `GET /lab/qcs/projects` (`?barcode=` filters by barcode suffix).
+  - **DB migrations**: `migration_lab_orders.sql` stores outbound lab order lifecycle data; `migration_global_cache.sql` stores reusable cache entries such as QCS access tokens.
+  - **Poll behavior**: timer polling now iterates unfinished, non-cancelled `lab_orders` per provider and updates each order independently; partial QCS orders marked `needs_cancel=true` are cancelled before normal polling.
+  - **Tests**: added QCS adapter, lab order API, and FC event-routing coverage.
+
 - **External lab integration (`nano-lab`)** — new Aliyun FC function that ingests clinical lab results from third-party laboratory systems and feeds them back into the BioAge pipeline.
   - **New FC function** `src/functions/lab/` (512 MB, 600 s timeout): routes `POST /lab/webhook/:labName` (push — lab notifies Nano) and a 4-hour timer trigger (pull — Nano polls the lab API). Both paths converge on the same normalization and storage pipeline.
   - **Adapter registry** `src/functions/lab/lib/adapters/`: each lab is one file implementing `{ validateWebhook, fetchOrder, fetchNewResults, parseResponse }`. `generic.js` ships as a reference implementation. Adding a lab = one file + one `lab_providers` row + redeploy.
