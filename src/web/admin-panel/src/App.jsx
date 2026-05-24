@@ -2284,6 +2284,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
   const [includeSubchannels, setIncludeSubchannels] = useState(false);
 
   const loaderRef = React.useRef(null);
+  const abortRef = React.useRef(null);
 
   // Debounce search input
   useEffect(() => {
@@ -2294,11 +2295,14 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
   }, [searchInput]);
 
   const loadUsers = useCallback((currentOffset, append = false) => {
+    if (abortRef.current) abortRef.current.abort();
+    abortRef.current = new AbortController();
+
     setTabLoading(true);
     const cid = session?.channelId;
     const isChannel = session?.role === 'channel';
     const baseUrl = isChannel ? `/api/channel-users/${cid}` : '/api/users';
-    
+
     const params = {
       limit: 50,
       offset: currentOffset,
@@ -2306,7 +2310,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
       sort_field: sortField,
       sort_dir: sortDir,
     };
-    
+
     if (isChannel) {
       if (includeSubchannels) {
         params.include_subchannels = 'true';
@@ -2317,7 +2321,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
       }
     }
 
-    axios.get(baseUrl, { params })
+    axios.get(baseUrl, { params, signal: abortRef.current.signal })
       .then(res => {
         if (res.data.success) {
           const fetchedUsers = res.data.users || [];
@@ -2328,6 +2332,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
         }
       })
       .catch(err => {
+        if (axios.isCancel(err)) return;
         console.error('Failed to load users:', err);
       })
       .finally(() => {

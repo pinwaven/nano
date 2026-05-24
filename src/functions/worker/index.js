@@ -79,19 +79,66 @@ const getLlmClient = () => new OpenAI({
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
 });
 
-async function handleGetUsers(channelId) {
+async function handleGetUsers(channelId, query = {}) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+        // Lightweight query used by other tabs that just need a user list for dropdowns
+        if (query.minimal === 'true') {
+            const params = [];
+            const channelFilter = channelId ? `AND u.channel_id = $${params.push(channelId)}` : '';
+            const res = await pool.query(
+                `SELECT u.user_id, u.nickname, u.coach_id, u.channel_id
+                 FROM users u WHERE 1=1 ${channelFilter}
+                 ORDER BY u.created_at DESC`,
+                params
+            );
+            return { success: true, users: res.rows };
+        }
+
+        const limit = Math.min(parseInt(query.limit) || 50, 200);
+        const offset = parseInt(query.offset) || 0;
+        const search = (query.q || '').trim();
+        const channelName = query.channel_name || '';
+
+        const sortFieldMap = {
+            user_id: 'u.user_id', nickname: 'u.nickname', channel_name: 'c.name',
+            birth_date: 'u.birth_date', chrono_age: 'u.birth_date',
+            bio_age: 'b.bio_age', created_at: 'u.created_at',
+        };
+        const sortCol = sortFieldMap[query.sort_field] || 'u.created_at';
+        let sortDir = query.sort_dir === 'asc' ? 'ASC' : 'DESC';
+        if (query.sort_field === 'chrono_age') sortDir = sortDir === 'ASC' ? 'DESC' : 'ASC';
+
         const params = [];
-        const channelFilter = channelId ? `AND u.channel_id = $${params.push(channelId)}` : '';
-        const query = `
+        const conditions = ['1=1'];
+
+        if (channelId) {
+            conditions.push(`u.channel_id = $${params.push(channelId)}`);
+        } else if (channelName) {
+            conditions.push(`c.name = $${params.push(channelName)}`);
+        }
+
+        if (search) {
+            const idx = params.push(`%${search}%`);
+            conditions.push(`(u.nickname ILIKE $${idx} OR u.phone ILIKE $${idx} OR u.email ILIKE $${idx} OR u.user_id::TEXT ILIKE $${idx})`);
+        }
+
+        const where = conditions.join(' AND ');
+        const limitIdx = params.push(limit);
+        const offsetIdx = params.push(offset);
+
+        const sql = `
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
                     u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
                     b.bio_age, b.data as bio_data,
                     cu.nickname as coach_name,
                     c.name as channel_name, c.logo_url as channel_logo_url,
                     (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report,
-                    (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan
+                    (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan,
+                    COUNT(*) OVER() AS _total,
+                    COUNT(b.bio_age) OVER() AS _tested,
+                    AVG(b.bio_age) OVER() AS _avg_bio_age
             FROM users u
             LEFT JOIN coaches p ON u.coach_id = p.id
             LEFT JOIN users cu ON p.user_id = cu.user_id
@@ -101,12 +148,24 @@ async function handleGetUsers(channelId) {
                 FROM biomarkers
                 ORDER BY user_id, tested_at DESC
             ) b ON u.user_id = b.user_id
-            WHERE 1=1 ${channelFilter}
-            ORDER BY u.created_at DESC;
+            WHERE ${where}
+            ORDER BY ${sortCol} ${sortDir} NULLS LAST
+            LIMIT $${limitIdx} OFFSET $${offsetIdx}
         `;
-        const result = await pool.query(query, params);
-        const users = result.rows.map(u => ({ ...u, chrono_age: calculateAge(u.birth_date) }));
-        return { success: true, users };
+
+        const result = await pool.query(sql, params);
+        const rows = result.rows;
+
+        const total = rows.length > 0 ? parseInt(rows[0]._total) : 0;
+        const tested = rows.length > 0 ? parseInt(rows[0]._tested) : 0;
+        const rawAvg = rows.length > 0 ? rows[0]._avg_bio_age : null;
+        const avgBioAge = rawAvg != null ? parseFloat(rawAvg).toFixed(1) : '—';
+
+        const users = rows.map(({ _total, _tested, _avg_bio_age, ...u }) => ({
+            ...u, chrono_age: calculateAge(u.birth_date),
+        }));
+
+        return { success: true, users, total, tested, avgBioAge };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -7348,7 +7407,7 @@ exports.handler = async (req, resp, context) => {
                 const userId = path.match(/\/users\/([^/]+)/)[1];
                 result = await handleGetUser(userId);
             } else if (path.includes('/users') || path === '/' || path === '') {
-                result = await handleGetUsers(adminCtx.channelId);
+                result = await handleGetUsers(adminCtx.channelId, query);
             } else if (path.includes('/commission-settings')) {
                 result = await handleGetCommissionSettings();
             } else if (path.includes('/coach-commissions')) {
