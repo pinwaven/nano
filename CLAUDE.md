@@ -368,3 +368,65 @@ Waven Dots are 24 mg precision nutrition cartridges. Each cartridge delivers one
 ## 15. TEMP Folder
 - location: ./temp
 - save one time scripts such as migration scripts in the temp folder
+
+## 16. AI Persona System
+
+The platform supports multiple AI personas, routed at the **channel level** via `channels.config.persona_type` (JSONB field, default `'nano'`).
+
+### Personas
+
+| Persona | Brand | LLM | Prompt language | Domain |
+|---|---|---|---|---|
+| `nano` | Waven Nano | DashScope (Qwen) | Bilingual (zh/en via `user.language`) | Kino biomarkers, BioAge, Dots nutrition |
+| `viva` | Aeviva | Alibaba Qwen Plus | Pure Chinese (simplified) | Developer-defined — prompts in `prompts/viva/` |
+
+### How routing works
+
+1. `handlePostChat` calls `resolveOrUpsertUser` (which returns `channel_id`).
+2. The channel's `config.persona_type` is fetched from the `channels` table.
+3. `personaType` defaults to `'nano'` if the field is absent or the channel lookup fails.
+4. The active prompt set (`nanoPrompts` or `vivaPrompts`) and LLM context are selected accordingly.
+5. Every `chat_messages` row stores `persona_type` — conversation history is scoped per persona so histories never bleed across personas.
+
+### Prompt directory layout
+
+```
+src/functions/worker/prompts/
+  nano/                  ← Nano-specific prompts (bilingual)
+    systemChat.js
+    systemHealthAdvice.js
+    systemHealthReport.js
+    systemNutrition.js
+    systemReport.js
+    chat/
+      casual.js  biomarker.js  nutrition.js  science.js
+      record.js  reminder.js   emotional.js
+  viva/                  ← Viva-specific prompts (pure Chinese)
+    systemChat.js
+    systemHealthAdvice.js
+    systemHealthReport.js
+    systemNutrition.js
+    systemReport.js
+    chat/
+      casual.js  biomarker.js  nutrition.js  science.js
+      record.js  reminder.js   emotional.js
+  chat/
+    intentClassifier.js  ← shared, persona-agnostic
+  strings.js             ← shared UI strings
+  systemAdminReport.js   ← shared admin report prompt
+```
+
+### Assigning a persona to a channel
+
+Update `channels.config` via the admin panel (Channels tab) or directly in the DB:
+```sql
+UPDATE channels SET config = config || '{"persona_type":"viva"}' WHERE id = <channel_id>;
+```
+
+### Adding or modifying Viva prompts
+
+Edit files under `src/functions/worker/prompts/viva/`. All Viva prompts are pure Chinese — do not add `isZh` branching. Deploy with `npm run deploy:worker`.
+
+### DB migration
+
+`chat_messages.persona_type` was added via `src/schemas/migration_chat_messages_persona_type.sql`. Existing rows default to `'nano'`.

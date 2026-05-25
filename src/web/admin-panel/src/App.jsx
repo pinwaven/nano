@@ -186,6 +186,7 @@ const T = {
       deleteChannelWarning: (name) => `Delete channel "${name}"? Coaches and users in this channel will be unassigned.`,
       channelKeyName: 'Key Name *', channelName: 'Display Name *', channelLogoUrl: 'Logo',
       uploadChannelLogo: 'Click to upload logo (PNG / JPG)', uploadChannelLogoFailed: 'Logo upload failed', removeChannelLogo: 'Remove logo',
+      channelPersonaType: 'AI Persona', channelPersonaNano: 'Nano (default)', channelPersonaViva: 'Viva (Aeviva)',
       channel: 'Channel', channelUnassigned: 'No channel',
       coachGroup: 'Group', coachGroupUnassigned: 'No group',
       addCoachGroup: 'Add Group', editCoachGroup: 'Edit Group', deleteCoachGroup: 'Delete Group',
@@ -319,7 +320,7 @@ const T = {
       biomarkersRequired: 'At least one biomarker key is required',
     },
     tickets: {
-      addTicket: 'New Ticket', editTicket: 'Edit Ticket', deleteTicket: 'Delete Ticket',
+      addTicket: 'New Ticket', editTicket: 'Edit Ticket', deleteTicket: 'Delete Ticket', viewTicket: 'Ticket Details',
       deleteWarning: (title) => `Delete ticket "${title}"? Attached images will also be removed.`,
       title: 'Title *', titlePlaceholder: 'Brief summary',
       description: 'Description', descriptionPlaceholder: 'Steps to reproduce, expected vs actual, …',
@@ -529,7 +530,7 @@ const T = {
       biomarkersRequired: '至少需要一个生物标志物代码',
     },
     tickets: {
-      addTicket: '新建工单', editTicket: '编辑工单', deleteTicket: '删除工单',
+      addTicket: '新建工单', editTicket: '编辑工单', deleteTicket: '删除工单', viewTicket: '工单详情',
       deleteWarning: (title) => `确认删除工单"${title}"？相关图片也将被移除。`,
       title: '标题 *', titlePlaceholder: '简短描述',
       description: '详情', descriptionPlaceholder: '复现步骤、预期与实际现象等',
@@ -600,6 +601,7 @@ const T = {
       deleteChannelWarning: (name) => `确认删除渠道"${name}"？该渠道下的 Coach 和用户将失去渠道关联。`,
       channelKeyName: '标识 *', channelName: '显示名称 *', channelLogoUrl: 'Logo',
       uploadChannelLogo: '点击上传 Logo（PNG / JPG）', uploadChannelLogoFailed: 'Logo 上传失败', removeChannelLogo: '移除 Logo',
+      channelPersonaType: 'AI 人格', channelPersonaNano: 'Nano（默认）', channelPersonaViva: 'Viva（Aeviva）',
       channel: '渠道', channelUnassigned: '无渠道',
       coachGroup: '所属团队', coachGroupUnassigned: '无团队',
       addCoachGroup: '添加团队', editCoachGroup: '编辑团队', deleteCoachGroup: '删除团队',
@@ -4078,7 +4080,7 @@ const EMPTY_INV_ITEM = {
   key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '',
   item_type: 'physical', unit_en: '', unit_zh: '',
   price_cny: '', price_usd: '', stock_quantity: '',
-  tag: '', sort_order: 0, active: true, image_url: '',
+  tag: '', sort_order: 0, active: true, image_url: '', store_item_id: null,
 };
 
 function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
@@ -4092,8 +4094,18 @@ function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
         price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '',
         stock_quantity: item.stock_quantity ?? '',
         tag: item.tag || '', sort_order: item.sort_order ?? 0,
-        active: item.active !== false, image_url: item.image_url || '' }
-    : { ...EMPTY_INV_ITEM });
+        active: item.active !== false, image_url: item.image_url || '',
+        store_item_id: item.store_item_id || null }
+    : item
+      ? { key_name: item.key_name || '', name_en: item.name_en || '', name_zh: item.name_zh || '',
+          desc_en: item.desc_en || '', desc_zh: item.desc_zh || '',
+          item_type: item.item_type || 'physical', unit_en: item.unit_en || '', unit_zh: item.unit_zh || '',
+          price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '',
+          stock_quantity: '',
+          tag: item.tag || '', sort_order: item.sort_order ?? 0,
+          active: true, image_url: item.image_url || '',
+          store_item_id: item.store_item_id || null }
+      : { ...EMPTY_INV_ITEM });
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -4130,6 +4142,7 @@ function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
       price_usd: form.price_usd !== '' ? form.price_usd : null,
       stock_quantity: form.stock_quantity !== '' ? parseInt(form.stock_quantity, 10) : null,
     };
+    if (isEdit) delete payload.store_item_id;
     try {
       if (isEdit) await axios.put(`/api/channel-inventory/${item.id}`, payload);
       else await axios.post('/api/channel-inventory', payload);
@@ -4142,7 +4155,14 @@ function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span>{isEdit ? ti.editItem : ti.addItem}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isEdit ? ti.editItem : ti.addItem}
+            {form.store_item_id && (
+              <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: 'rgba(99,102,241,0.15)', color: '#818cf8', fontWeight: 500 }}>
+                Linked to global store
+              </span>
+            )}
+          </span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
@@ -4299,6 +4319,84 @@ function DeleteInventoryItemConfirm({ item, onClose, onConfirm }) {
   );
 }
 
+function ImportFromStoreModal({ existingItems, onClose, onSelect }) {
+  const [storeItems, setStoreItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    axios.get('/api/store-items?all=true')
+      .then(r => setStoreItems(r.data.items || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const importedIds = new Set(existingItems.map(i => i.store_item_id).filter(Boolean));
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>Import from Store</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>Loading…</div>
+          ) : storeItems.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>No store items found.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {storeItems.map(si => {
+                const alreadyAdded = importedIds.has(si.id);
+                return (
+                  <button
+                    key={si.id}
+                    type="button"
+                    onClick={() => !alreadyAdded && onSelect(si)}
+                    disabled={alreadyAdded}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(99,117,236,0.2)',
+                      background: alreadyAdded ? 'rgba(30,41,59,0.3)' : 'rgba(30,41,59,0.6)',
+                      cursor: alreadyAdded ? 'default' : 'pointer',
+                      opacity: alreadyAdded ? 0.5 : 1,
+                      textAlign: 'left', width: '100%',
+                      transition: 'background 0.15s',
+                    }}
+                  >
+                    {si.image_url
+                      ? <img src={si.image_url} alt="" style={{ width: 44, height: 44, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                      : <div style={{ width: 44, height: 44, borderRadius: 6, background: 'rgba(99,117,236,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <ShoppingBag size={18} style={{ color: '#6366f1', opacity: 0.6 }} />
+                        </div>
+                    }
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: 13 }}>{si.name_en}</div>
+                      {si.name_zh && <div style={{ fontSize: 11, color: '#94a3b8' }}>{si.name_zh}</div>}
+                      <div style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace' }}>{si.key_name}</div>
+                    </div>
+                    <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                      {si.price_cny != null && <div style={{ fontSize: 13, color: '#e2e8f0' }}>¥{Number(si.price_cny).toFixed(2)}</div>}
+                      {alreadyAdded && (
+                        <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: 'rgba(16,185,129,0.15)', color: '#34d399' }}>
+                          Already added
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="modal-footer" style={{ marginTop: 16 }}>
+            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function InventoryTab({ channels, session, isSuperadmin }) {
   const { t } = useLang();
   const ti = t.inventory;
@@ -4379,7 +4477,10 @@ function InventoryTab({ channels, session, isSuperadmin }) {
             <StatCard icon={Archive} label={ti.virtualItems}  value={virtualCount}   color="#8b5cf6" />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
+            <button className="btn-secondary" onClick={() => setModal({ type: 'import-from-store' })}>
+              <ShoppingBag size={13} />Import from Store
+            </button>
             <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
               <Plus size={13} />{ti.addItem}
             </button>
@@ -4400,6 +4501,7 @@ function InventoryTab({ channels, session, isSuperadmin }) {
                     <th style={{ width: 56 }}></th>
                     <th>Name</th>
                     <th>{ti.itemType}</th>
+                    <th>Source</th>
                     <th>{ti.priceCny}</th>
                     <th>{ti.stock}</th>
                     <th>{ti.active}</th>
@@ -4423,6 +4525,11 @@ function InventoryTab({ channels, session, isSuperadmin }) {
                       <td>
                         <Badge color={item.item_type === 'virtual' ? '#8b5cf6' : '#3b82f6'}>
                           {item.item_type === 'virtual' ? ti.virtual : ti.physical}
+                        </Badge>
+                      </td>
+                      <td>
+                        <Badge color={item.store_item_id ? '#6366f1' : '#475569'}>
+                          {item.store_item_id ? 'Store' : 'Custom'}
                         </Badge>
                       </td>
                       <td>
@@ -4457,7 +4564,7 @@ function InventoryTab({ channels, session, isSuperadmin }) {
 
       {modal?.type === 'add' && (
         <ChannelInventoryItemModal
-          item={null}
+          item={modal.prefill || null}
           channelId={selectedChannelId}
           onClose={() => setModal(null)}
           onSave={closeAndRefresh}
@@ -4476,6 +4583,31 @@ function InventoryTab({ channels, session, isSuperadmin }) {
           item={modal.item}
           onClose={() => setModal(null)}
           onConfirm={closeAndRefresh}
+        />
+      )}
+      {modal?.type === 'import-from-store' && (
+        <ImportFromStoreModal
+          existingItems={items}
+          onClose={() => setModal(null)}
+          onSelect={si => setModal({
+            type: 'add',
+            prefill: {
+              key_name: si.key_name,
+              name_en: si.name_en,
+              name_zh: si.name_zh,
+              desc_en: si.desc_en,
+              desc_zh: si.desc_zh,
+              item_type: 'physical',
+              unit_en: si.unit_en,
+              unit_zh: si.unit_zh,
+              price_cny: si.price_cny ?? '',
+              price_usd: si.price_usd ?? '',
+              image_url: si.image_url || '',
+              tag: si.tag || '',
+              sort_order: si.sort_order ?? 0,
+              store_item_id: si.id,
+            },
+          })}
         />
       )}
     </>
@@ -6339,13 +6471,13 @@ function SimulatorsTab() {
 
 // ── Channel components ────────────────────────────────────────────────────────
 
-const EMPTY_CHANNEL = { key_name: '', name: '', logo_url: '' };
+const EMPTY_CHANNEL = { key_name: '', name: '', logo_url: '', persona_type: 'nano' };
 
 function ChannelModal({ channel, channels, isSuperadmin, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!channel?.id;
   const [form, setForm] = useState(isEdit
-    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '', parent_channel_id: channel.parent_channel_id || '' }
+    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '', parent_channel_id: channel.parent_channel_id || '', persona_type: channel.config?.persona_type ?? 'nano' }
     : { ...EMPTY_CHANNEL, parent_channel_id: '' });
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -6412,6 +6544,13 @@ function ChannelModal({ channel, channels, isSuperadmin, onClose, onSave }) {
                 </select>
               </label>
             )}
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.channelPersonaType}</span>
+              <select value={form.persona_type} onChange={e => set('persona_type', e.target.value)}>
+                <option value="nano">{t.modal.channelPersonaNano}</option>
+                <option value="viva">{t.modal.channelPersonaViva}</option>
+              </select>
+            </label>
             <div className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{t.modal.channelLogoUrl}</span>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 6 }}>
@@ -9003,7 +9142,7 @@ function TicketsTab({ tickets, onRefresh }) {
           <tbody>
             {filtered.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.tickets}</td></tr>}
             {filtered.map(ticket => (
-              <tr key={ticket.id}>
+              <tr key={ticket.id} style={{ cursor: 'pointer' }} onClick={() => setModal({ type: 'view', ticket })}>
                 <td style={{ color: '#94a3b8', fontSize: 11 }}>#{ticket.id}</td>
                 <td>
                   <div style={{ fontWeight: 600 }}>{ticket.title}</div>
@@ -9015,7 +9154,7 @@ function TicketsTab({ tickets, onRefresh }) {
                 </td>
                 <td><TicketStatusLabel status={ticket.status} /></td>
                 <td><TicketPriorityLabel priority={ticket.priority} /></td>
-                <td>
+                <td onClick={e => e.stopPropagation()}>
                   {(ticket.images && ticket.images.length > 0) ? (
                     <div style={{ display: 'flex', gap: 4 }}>
                       {ticket.images.slice(0, 3).map(k => (
@@ -9031,7 +9170,7 @@ function TicketsTab({ tickets, onRefresh }) {
                 </td>
                 <td style={{ fontSize: 12 }}>{ticket.reporter || <span style={{ color: '#475569' }}>—</span>}</td>
                 <td style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(ticket.created_at).toLocaleString()}</td>
-                <td>
+                <td onClick={e => e.stopPropagation()}>
                   <div style={{ display: 'flex', gap: 4 }}>
                     <button className="icon-btn" title={tk.editTicket}   onClick={() => setModal({ type: 'edit', ticket })}><Pencil size={14} /></button>
                     <button className="icon-btn" title={tk.deleteTicket} onClick={() => setModal({ type: 'delete', ticket })}><Trash2 size={14} /></button>
@@ -9043,6 +9182,11 @@ function TicketsTab({ tickets, onRefresh }) {
         </table>
       </div>
 
+      {modal?.type === 'view' && (
+        <TicketDetailModal ticket={modal.ticket}
+                           onClose={() => setModal(null)}
+                           onEdit={() => setModal({ type: 'edit', ticket: modal.ticket })} />
+      )}
       {(modal?.type === 'add' || modal?.type === 'edit') && (
         <TicketModal ticket={modal.type === 'edit' ? modal.ticket : null}
                      onClose={() => setModal(null)} onSave={closeAndRefresh} />
@@ -9053,6 +9197,84 @@ function TicketsTab({ tickets, onRefresh }) {
       )}
       {lightbox && <TicketImageLightbox ossKey={lightbox} onClose={() => setLightbox(null)} />}
     </>
+  );
+}
+
+function TicketDetailModal({ ticket, onClose, onEdit }) {
+  const { t } = useContext(LangCtx);
+  const tk = t.tickets;
+  const [lightbox, setLightbox] = useState(null);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{tk.viewTicket}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+            <div>
+              <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{tk.title.replace(' *', '')}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{ticket.title}</div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>{tk.status}</div>
+                <TicketStatusLabel status={ticket.status} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>{tk.priority}</div>
+                <TicketPriorityLabel priority={ticket.priority} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{tk.reporter}</div>
+                <div style={{ fontSize: 13, color: ticket.reporter ? '#1e293b' : '#94a3b8' }}>{ticket.reporter || '—'}</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>ID</div>
+                <div style={{ fontSize: 13, color: '#475569' }}>#{ticket.id}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Created</div>
+                <div style={{ fontSize: 13, color: '#475569' }}>{new Date(ticket.created_at).toLocaleString()}</div>
+              </div>
+            </div>
+
+            {ticket.description && (
+              <div>
+                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>{tk.description}</div>
+                <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.65, whiteSpace: 'pre-wrap', background: '#f8fafc', borderRadius: 8, padding: '12px 14px', border: '1px solid #e2e8f0' }}>
+                  {ticket.description}
+                </div>
+              </div>
+            )}
+
+            {ticket.images && ticket.images.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>{tk.images} ({ticket.images.length})</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {ticket.images.map(k => (
+                    <TicketImageThumb key={k} ossKey={k} onClick={() => setLightbox(k)} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-primary" onClick={onEdit}><Pencil size={13} style={{ marginRight: 4 }} />{tk.editTicket}</button>
+          </div>
+        </div>
+      </div>
+      {lightbox && <TicketImageLightbox ossKey={lightbox} onClose={() => setLightbox(null)} />}
+    </div>
   );
 }
 

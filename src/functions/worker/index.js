@@ -1150,8 +1150,8 @@ async function handlePostChannelInventory(body, adminCtx) {
         const { rows } = await pool.query(
             `INSERT INTO channel_inventory_items
               (channel_id, key_name, name_zh, name_en, desc_zh, desc_en, item_type,
-               unit_zh, unit_en, price_cny, price_usd, stock_quantity, tag, sort_order, active, image_url, metadata)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+               unit_zh, unit_en, price_cny, price_usd, stock_quantity, tag, sort_order, active, image_url, metadata, store_item_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
              RETURNING *`,
             [channelId, body.key_name, body.name_zh || '', body.name_en,
              body.desc_zh || '', body.desc_en || '', body.item_type || 'physical',
@@ -1160,7 +1160,7 @@ async function handlePostChannelInventory(body, adminCtx) {
              body.price_usd != null ? body.price_usd : null,
              body.stock_quantity != null ? body.stock_quantity : null,
              body.tag || '', body.sort_order || 0, body.active !== false,
-             body.image_url || '', body.metadata || null]
+             body.image_url || '', body.metadata || null, body.store_item_id || null]
         );
         return { success: true, item: rows[0] };
     } catch (err) {
@@ -3116,7 +3116,7 @@ async function handlePutChannel(channelId, body, adminCtx) {
         const owns = await verifySubchannelOwnership(channelId, adminCtx);
         if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
     }
-    const { name, logo_url, commission_config } = body;
+    const { name, logo_url, commission_config, persona_type } = body;
     if (!name) return { success: false, error: 'name is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -3124,6 +3124,12 @@ async function handlePutChannel(channelId, body, adminCtx) {
             `UPDATE channels SET name=$1, logo_url=$2, commission_config=$3 WHERE id=$4`,
             [name, logo_url || null, commission_config ? JSON.stringify(commission_config) : null, channelId]
         );
+        if (persona_type !== undefined) {
+            await pool.query(
+                `UPDATE channels SET config = config || $1 WHERE id = $2`,
+                [JSON.stringify({ persona_type }), channelId]
+            );
+        }
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -4071,10 +4077,13 @@ async function handlePostChat(body) {
 
     // Resolve persona from channel config (defaults to 'nano')
     let personaType = 'nano';
+    let channelSubAgeNames = null;
     if (user.channel_id) {
         try {
             const chRes = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
-            personaType = chRes.rows[0]?.config?.persona_type ?? 'nano';
+            const chConfig = chRes.rows[0]?.config || {};
+            personaType = chConfig.persona_type ?? 'nano';
+            channelSubAgeNames = chConfig.sub_age_display_names || null;
         } catch (err) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'Failed to fetch channel persona, defaulting to nano', error: err.message }));
         }
@@ -4200,6 +4209,7 @@ async function handlePostChat(body) {
                     checkin_count: parseInt(p.checkin_count || 0, 10),
                     milestones_done: parseInt(p.milestones_done || 0, 10),
                 })),
+                sub_age_display_names: channelSubAgeNames,
             };
 
             const activePrompts = personaType === 'viva' ? vivaPrompts : nanoPrompts;
