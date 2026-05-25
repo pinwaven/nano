@@ -2,11 +2,12 @@
 
 ## Overview
 
-Schema changes are tracked via a `schema_migrations` table and applied by `scripts/migrate.js`. There are two separate databases:
+Schema changes are tracked via a `schema_migrations` table and applied by `scripts/migrate.js`. There are separate databases for dev, test, and prod:
 
 | Environment | DB name | Connection var |
 |---|---|---|
 | Dev | `nano_db_dev` | `DATABASE_URL` in `.env` |
+| Test | test database | `DATABASE_URL_TEST` in `.env.test` after loading `.env` |
 | Prod | `nano_db_prod` | `DATABASE_URL_PROD` in `.env` |
 
 All migration SQL files live in two directories:
@@ -25,6 +26,7 @@ npm run migrate:status:prod   # prod
 
 # Apply pending migrations
 npm run migrate:dev
+npm run migrate:test
 npm run migrate:prod
 
 # First-time prod baseline (see below)
@@ -36,7 +38,8 @@ npm run migrate:baseline:prod
 1. Write your SQL change as `src/schemas/migration_<descriptive_name>.sql`
    - Always use `IF NOT EXISTS` / `IF EXISTS` / `ADD COLUMN IF NOT EXISTS` so the file is safe to re-run
 2. Apply and test on dev: `npm run migrate:dev`
-3. When ready for prod: `npm run migrate:prod`
+3. Apply to the test database when integration tests need the latest schema: `npm run migrate:test`
+4. When ready for prod: `npm run migrate:prod`
 
 ## First-time prod setup (one-time, already done)
 

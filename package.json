@@ -28,6 +28,7 @@
     "deploy:coach": "./scripts/deploy-coach.sh",
     "migrate:dev": "node scripts/migrate.js --env dev",
     "migrate:prod": "node scripts/migrate.js --env prod",
+    "migrate:test": "node scripts/migrate.js --env test",
     "migrate:status:dev": "node scripts/migrate.js --env dev --status",
     "migrate:status:prod": "node scripts/migrate.js --env prod --status",
     "migrate:baseline:dev": "node scripts/migrate.js --env dev --baseline",

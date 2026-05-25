@@ -23,6 +23,7 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   - **Miniapp coach panel** — no change required; only uses `coach.id` and `coach.channel_id` from the login response.
 
 ### Added
+- **Migration test environment command** — added `npm run migrate:test`, which loads `.env` then `.env.test` and applies schema migrations using `DATABASE_URL_TEST`.
 - **QCS lab order integration** — `nano-lab` now supports QCS outbound order creation, webhook updates, persisted order tracking, token caching, and per-order polling.
   - **QCS adapter** `src/functions/lab/lib/adapters/qcs.js`: implements order creation via `_id_check` + sample generation, cancellation compensation, webhook signature validation, access-token caching through `global_cache`, sample-center lookup, and barcode-suffix project lookup.
   - **Lab routes**: `POST /lab/order`, `GET /lab/providers`, `GET /lab/qcs/sample-centers`, and `GET /lab/qcs/projects` (`?barcode=` filters by barcode suffix).
