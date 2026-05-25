@@ -24,7 +24,7 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 ### Added
 - **QCS lab order integration** — `nano-lab` now supports QCS outbound order creation, webhook updates, persisted order tracking, token caching, and per-order polling.
   - **QCS adapter** `src/functions/lab/lib/adapters/qcs.js`: implements order creation via `_id_check` + sample generation, cancellation compensation, webhook signature validation, access-token caching through `global_cache`, sample-center lookup, and barcode-suffix project lookup.
-  - **Lab routes**: `POST /lab/order`, `GET /lab/qcs/sample-centers`, and `GET /lab/qcs/projects` (`?barcode=` filters by barcode suffix).
+  - **Lab routes**: `POST /lab/order`, `GET /lab/providers`, `GET /lab/qcs/sample-centers`, and `GET /lab/qcs/projects` (`?barcode=` filters by barcode suffix).
   - **DB migrations**: `migration_lab_orders.sql` stores outbound lab order lifecycle data; `migration_global_cache.sql` stores reusable cache entries such as QCS access tokens.
   - **Poll behavior**: timer polling now iterates unfinished, non-cancelled `lab_orders` per provider and updates each order independently; partial QCS orders marked `needs_cancel=true` are cancelled before normal polling.
   - **Tests**: added QCS adapter, lab order API, and FC event-routing coverage.

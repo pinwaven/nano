@@ -96,6 +96,48 @@ describe('lab order API', () => {
     assert.equal(insert.params[9], '处理中');
   });
 
+  test('GET /lab/providers returns active labs without credentials', async () => {
+    const queries = [];
+    installDbMock(async (sql, params) => {
+      queries.push({ sql, params });
+      if (sql.includes('FROM lab_providers')) {
+        return {
+          rows: [
+            {
+              id: 1,
+              lab_name: 'qcs',
+              label: '量康 QCS',
+              poll_enabled: true,
+            },
+            {
+              id: 2,
+              lab_name: 'generic',
+              label: null,
+              poll_enabled: false,
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+
+    const lab = require('../src/functions/lab');
+    const response = await lab.handler(event('GET', '/lab/providers'));
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(JSON.parse(response.body), {
+      success: true,
+      providers: [
+        { id: 1, lab_name: 'qcs', label: '量康 QCS', poll_enabled: true },
+        { id: 2, lab_name: 'generic', label: null, poll_enabled: false },
+      ],
+    });
+    assert.equal(queries.length, 1);
+    assert.equal(queries[0].params, undefined);
+    assert.match(queries[0].sql, /is_active = TRUE/);
+    assert.doesNotMatch(queries[0].sql, /api_key_enc|webhook_secret_enc|api_base_url/);
+  });
+
   test('GET /lab/qcs/sample-centers returns QCS sample center list', async () => {
     const queries = [];
     installDbMock(async (sql, params) => {

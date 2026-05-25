@@ -227,6 +227,16 @@ async function handleCreateOrder(rawBody) {
     return { statusCode: 200, body: JSON.stringify({ success: true, order }) };
 }
 
+async function handleListProviders() {
+    const providersRes = await db.query(`
+        SELECT id, lab_name, label, poll_enabled
+        FROM lab_providers
+        WHERE is_active = TRUE
+        ORDER BY id ASC
+    `);
+    return { statusCode: 200, body: JSON.stringify({ success: true, providers: providersRes.rows }) };
+}
+
 async function handleQcsSampleCenters() {
     const labName = 'qcs';
     const provider = await loadProvider(labName);
@@ -598,6 +608,15 @@ exports.handler = async (req, resp, context) => {
         // POST /lab/webhook/:labName
         const webhookMatch = path.match(/^\/lab\/webhook\/([^/]+)$/);
         console.log(JSON.stringify({ level: 'INFO', msg: 'new lab req', method, path, webhookMatch, event }));
+        if (method === 'GET' && path === '/lab/providers') {
+            const result = await handleListProviders();
+            return {
+                statusCode: result.statusCode,
+                headers: { 'Content-Type': 'application/json' },
+                body: result.body,
+                isBase64Encoded: false,
+            };
+        }
         if (method === 'GET' && path === '/lab/qcs/sample-centers') {
             const result = await handleQcsSampleCenters();
             return {
@@ -660,6 +679,7 @@ module.exports.__private = {
     setAdapterFactory(factory) {
         adapterFactory = factory || getAdapter;
     },
+    handleListProviders,
     handleCreateOrder,
     handleQcsSampleCenters,
     handleQcsProjects,
