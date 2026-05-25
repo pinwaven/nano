@@ -1,8 +1,28 @@
+/**
+ * QCS (量康) lab adapter — integrates with the QCS open API for lab test
+ * ordering, result retrieval, and webhook validation.
+ *
+ * QCS API flow:
+ *   1. OAuth2 client_credentials → access_token (cached in memory + global_cache)
+ *   2. POST orders/_id_check     → create primary order (returns order.id)
+ *   3. POST orders/:id/samples   → attach sample to order (barcode + sample form)
+ *   4. GET  orders/:id           → poll for results
+ *   5. DELETE orders/:id         → cancel failed partial orders
+ *
+ * Webhook: QCS signs callbacks with HMAC-SHA1 over "path\\nbody".
+ *
+ * @module adapters/qcs
+ */
 'use strict';
 
 const crypto = require('crypto');
 const axios = require('axios');
 
+/**
+ * Maps QCS bodyindex English names (lowercased) to LOINC codes recognized by
+ * the Nano biomarker catalog. Maintained manually — update when QCS adds new
+ * bodyindex types that map to Nano-tracked biomarkers.
+ */
 const BODYINDEX_LOINC_MAP = {
     hba1c: '4548-4',
     'glycated hemoglobin': '4548-4',
@@ -225,6 +245,21 @@ async function fetchOrder(orderId, config) {
     return res.data?.data || res.data;
 }
 
+/**
+ * Create a QCS lab order via the two-phase API.
+ *
+ * Phase 1: POST orders/_id_check  — creates the primary vendor order.
+ * Phase 2: POST orders/:id/samples — attaches the sample barcode and collection details.
+ *
+ * If Phase 1 succeeds but Phase 2 fails, the function returns a partial result
+ * with needs_cancel=true instead of throwing. This allows the poll compensation
+ * loop (cancelFailedLabOrders) to clean up the dangling vendor order on the
+ * next cycle.
+ *
+ * @param {object} args.user    - User row from the users table
+ * @param {object} args.payload - Order parameters: { goods, barcode, sample_center_id, ... }
+ * @param {object} args.config  - Provider config: { api_base_url, api_key, api_secret, cache }
+ */
 async function createOrder({ user, payload, config }) {
     const transport = config.transport || axios;
     const baseUrl = trimTrailingSlash(config.api_base_url);
@@ -373,6 +408,17 @@ function trimTrailingSlash(value) {
     return String(value || '').replace(/\/+$/, '');
 }
 
+/**
+ * Obtain a QCS OAuth2 access token with three-tier caching:
+ *
+ *   1. In-memory Map (tokenCache) — survives within a warm FC container
+ *   2. DB global_cache table      — survives cold starts and redeploys
+ *   3. Remote OAuth2 endpoint     — fallback when both caches miss or expire
+ *
+ * A 5-minute safety window is applied before expiry to avoid race conditions
+ * where a token expires mid-request. QCS rate-limits token requests, so
+ * aggressive caching is essential.
+ */
 async function getAccessToken(baseUrl, config, transport) {
     const now = config.now ? config.now() : Date.now();
     const cacheKey = `${baseUrl}:${config.api_key || ''}`;

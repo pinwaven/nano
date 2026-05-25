@@ -1,3 +1,22 @@
+/**
+ * nano-lab — FC 3.0 function for third-party clinical lab integration.
+ *
+ * Two data ingestion paths:
+ *   1. Webhook (push): POST /lab/webhook/:labName — vendor calls us when results are ready.
+ *   2. Timer poll (pull): Cron trigger → handlePoll → fetches unfinished lab_orders from vendors.
+ *
+ * Data flow:
+ *   vendor payload → adapter.parseResponse → labNormalizer → health_events + health_reports
+ *   → EventBridge biomarker.lab_complete (if Kino core biomarkers found)
+ *
+ * Additional endpoints:
+ *   POST /lab/order              — create an outbound lab order via adapter
+ *   GET  /lab/providers          — list active lab providers
+ *   GET  /lab/qcs/sample-centers — QCS sample center directory
+ *   GET  /lab/qcs/projects       — QCS project catalog (by barcode suffix)
+ *
+ * @module nano-lab
+ */
 'use strict';
 
 const db = require('./lib/db');
@@ -67,31 +86,32 @@ async function ingestObservations(userId, labName, observations, reportDate) {
     );
     const reportId = reportRes.rows[0].id;
 
-    // Insert health_event rows (dedup via external_id = loinc_code + date)
+    // Batch INSERT health_event rows (dedup via external_id = loinc_code + date).
+    // Uses unnest() to insert all observations in a single round-trip instead of
+    // N individual INSERT statements, significantly reducing DB latency for large panels.
+    const externalIds = [];
+    const dataDates = [];
+    const dataJsons = [];
     for (const obs of observations) {
-        const externalId = `${obs.loinc_code}::${obs.data_date}`;
-        const dataDate = obs.data_date ? obs.data_date.split('T')[0] : new Date().toISOString().split('T')[0];
-        await db.query(
-            `INSERT INTO health_events
-               (user_id, source, category, data_date, recorded_at, data, report_id, external_id)
-             VALUES ($1, 'lab_api', 'lab_result', $2, NOW(), $3, $4, $5)
-             ON CONFLICT (user_id, source, external_id) DO NOTHING`,
-            [
-                userId,
-                dataDate,
-                JSON.stringify({
-                    key_name:       obs.key_name,
-                    loinc_code:     obs.loinc_code,
-                    value:          obs.value,
-                    unit:           obs.unit,
-                    nano_dimension: obs.nano_dimension,
-                    is_kino_core:   obs.is_kino_core,
-                }),
-                reportId,
-                externalId,
-            ]
-        );
+        externalIds.push(`${obs.loinc_code}::${obs.data_date}`);
+        dataDates.push(obs.data_date ? obs.data_date.split('T')[0] : new Date().toISOString().split('T')[0]);
+        dataJsons.push(JSON.stringify({
+            key_name:       obs.key_name,
+            loinc_code:     obs.loinc_code,
+            value:          obs.value,
+            unit:           obs.unit,
+            nano_dimension: obs.nano_dimension,
+            is_kino_core:   obs.is_kino_core,
+        }));
     }
+    await db.query(
+        `INSERT INTO health_events
+           (user_id, source, category, data_date, recorded_at, data, report_id, external_id)
+         SELECT $1, 'lab_api', 'lab_result', d.data_date::date, NOW(), d.data::jsonb, $2, d.external_id
+         FROM unnest($3::text[], $4::text[], $5::text[]) AS d(external_id, data_date, data)
+         ON CONFLICT (user_id, source, external_id) DO NOTHING`,
+        [userId, reportId, externalIds, dataDates, dataJsons]
+    );
 
     return reportId;
 }
@@ -133,6 +153,23 @@ async function processBatch(labName, labPatientId, rawObservations, fcContext) {
     return hasKinoCore;
 }
 
+/**
+ * Group parsed observations by lab_patient_id and process each patient's batch.
+ * Shared by webhook (push) and poll (pull) flows to avoid duplicating the
+ * "group → processBatch" pattern.
+ */
+async function processObservationsByPatient(observations, labName, fcContext) {
+    const byPatient = {};
+    for (const obs of observations) {
+        const pid = obs.lab_patient_id;
+        if (!byPatient[pid]) byPatient[pid] = [];
+        byPatient[pid].push(obs);
+    }
+    await Promise.all(
+        Object.entries(byPatient).map(([pid, obs]) => processBatch(labName, pid, obs, fcContext))
+    );
+}
+
 // ─── Webhook handler (push flow) ─────────────────────────────────────────────
 
 async function handleWebhook(labName, headers, rawBody, fcContext, url = '') {
@@ -168,17 +205,15 @@ async function handleWebhook(labName, headers, rawBody, fcContext, url = '') {
     // Notification payload may not include full results — fetch the order
     const orderId = payload.order_id;
     const raw = orderId ? await adapter.fetchOrder(orderId, config) : payload;
-    await updateLabOrderFromWebhook(labName, raw);
-    const observations = adapter.parseResponse(raw);
-
-    // Group by patient ID and process
-    const byPatient = {};
-    for (const obs of observations) {
-        const pid = obs.lab_patient_id;
-        if (!byPatient[pid]) byPatient[pid] = [];
-        byPatient[pid].push(obs);
+    // Update lab_order status from vendor response
+    const externalOrderId = raw?.id || raw?.order_id || raw?.data?.id || raw?.data?.order_id;
+    if (externalOrderId) {
+        await updateLabOrder({ labName, externalOrderId }, raw);
     }
-    await Promise.all(Object.entries(byPatient).map(([pid, obs]) => processBatch(labName, pid, obs, fcContext)));
+
+    // Parse and ingest observations grouped by patient
+    const observations = adapter.parseResponse(raw);
+    await processObservationsByPatient(observations, labName, fcContext);
 
     if (labName === 'qcs') {
         return { statusCode: 200, body: JSON.stringify({ status: 0 }) };
@@ -331,11 +366,19 @@ async function insertLabOrder(order) {
     return res.rows[0];
 }
 
-async function updateLabOrderFromWebhook(labName, raw) {
-    const externalOrderId = raw?.id || raw?.order_id || raw?.data?.id || raw?.data?.order_id;
-    if (!externalOrderId) return null;
+/**
+ * Update a lab_order row with the latest vendor response.
+ * Unified handler for both webhook (push) and poll (pull) flows.
+ *
+ * @param {object} match - Row identifier: { id } for poll, { labName, externalOrderId } for webhook
+ * @param {object} raw   - Raw vendor response payload
+ */
+async function updateLabOrder(match, raw) {
     const status = mapLabStatus(raw?.progress || raw?.data?.progress);
     const finalResult = status === '已完成' ? raw : null;
+
+    // Poll identifies rows by primary key; webhook identifies by lab_name + vendor order id
+    const useId = Boolean(match.id);
     const res = await db.query(`
         UPDATE lab_orders
         SET status = $3,
@@ -343,9 +386,15 @@ async function updateLabOrderFromWebhook(labName, raw) {
             lab_final_result = COALESCE($5::jsonb, lab_final_result),
             updated_at = NOW(),
             last_polled_at = NOW()
-        WHERE lab_name = $1 AND external_order_id = $2
+        WHERE ${useId ? 'id = $1 AND external_order_id = $2' : 'lab_name = $1 AND external_order_id = $2'}
         RETURNING *
-    `, [labName, externalOrderId, status, raw, finalResult]);
+    `, [
+        useId ? match.id : match.labName,
+        match.externalOrderId,
+        status,
+        raw,
+        finalResult,
+    ]);
     return res.rows[0] || null;
 }
 
@@ -428,18 +477,12 @@ async function pollUnfinishedLabOrders(provider, adapter, config, fcContext) {
             // Fetch and update one order at a time. This keeps failures scoped
             // to a single vendor order and gives every row its own last_polled_at.
             const raw = await fetchOrder(order.external_order_id, config);
-            await updateLabOrderFromPoll(order, raw);
+            await updateLabOrder({ id: order.id, externalOrderId: order.external_order_id }, raw);
 
-            // Result ingestion still flows through the adapter normalizer so
+            // Result ingestion flows through the adapter normalizer so
             // vendor payload details remain isolated inside the adapter.
             const observations = adapter.parseResponse ? adapter.parseResponse(raw) : [];
-            const byPatient = {};
-            for (const obs of observations) {
-                const pid = obs.lab_patient_id;
-                if (!byPatient[pid]) byPatient[pid] = [];
-                byPatient[pid].push(obs);
-            }
-            await Promise.all(Object.entries(byPatient).map(([pid, obs]) => processBatch(provider.lab_name, pid, obs, fcContext)));
+            await processObservationsByPatient(observations, provider.lab_name, fcContext);
             polledCount += 1;
         } catch (err) {
             console.error(JSON.stringify({
@@ -471,21 +514,7 @@ async function pollUnfinishedLabOrders(provider, adapter, config, fcContext) {
     return polledCount;
 }
 
-async function updateLabOrderFromPoll(order, raw) {
-    const status = mapLabStatus(raw?.progress || raw?.data?.progress);
-    const finalResult = status === '已完成' ? raw : null;
-    const res = await db.query(`
-        UPDATE lab_orders
-        SET status = $3,
-            lab_last_result = $4::jsonb,
-            lab_final_result = COALESCE($5::jsonb, lab_final_result),
-            updated_at = NOW(),
-            last_polled_at = NOW()
-        WHERE id = $1 AND external_order_id = $2
-        RETURNING *
-    `, [order.id, order.external_order_id, status, raw, finalResult]);
-    return res.rows[0] || null;
-}
+// updateLabOrder (above) now handles both webhook and poll update flows.
 
 async function cancelFailedLabOrders(provider, adapter, config) {
     const cancelOrder = adapter.cancel_order || adapter.cancelOrder;
@@ -566,6 +595,14 @@ function buildRequestUrl(req) {
     return search ? `${path}?${search}` : path;
 }
 
+/**
+ * Decode the FC 3.0 event object from the raw request.
+ *
+ * FC 3.0 delivers HTTP trigger events as pre-parsed objects, but timer trigger
+ * events arrive as raw Buffers (often empty). This function normalizes both
+ * cases into a plain JS object. Empty or unparseable bodies are tagged as
+ * timer events via the __timerEvent sentinel.
+ */
 function decodeFcEvent(req) {
     if (!Buffer.isBuffer(req)) return req || {};
 
@@ -579,6 +616,13 @@ function decodeFcEvent(req) {
     }
 }
 
+/**
+ * Detect whether the event originated from a timer (cron) trigger.
+ *
+ * Timer events lack the rawPath and requestContext.http fields that HTTP
+ * trigger events always carry. This distinction drives the top-level routing:
+ * timer → handlePoll (pull flow), HTTP → route-based handlers (push flow).
+ */
 function isTimerEvent(event) {
     return Boolean(
         event?.__timerEvent
@@ -684,5 +728,5 @@ module.exports.__private = {
     handleQcsSampleCenters,
     handleQcsProjects,
     handlePoll,
-    updateLabOrderFromWebhook,
+    updateLabOrder,
 };

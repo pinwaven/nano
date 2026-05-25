@@ -1,12 +1,22 @@
+/**
+ * Lab result normalizer — maps raw LOINC-coded observations to the Nano
+ * biomarker catalog (biomarker_catalog table).
+ *
+ * The catalog is cached in memory with a 5-minute TTL so that container-reused
+ * FC instances pick up admin changes without requiring a redeploy.
+ */
 'use strict';
 
 const db = require('./db');
 
-// Cache the catalog for the lifetime of the container (cold-start only)
 let _catalogCache = null;
+let _catalogCacheTime = 0;
+
+/** Cache TTL in ms. Balances cold-start cost against catalog freshness. */
+const CATALOG_TTL_MS = 5 * 60 * 1000;
 
 async function getCatalog() {
-    if (_catalogCache) return _catalogCache;
+    if (_catalogCache && (Date.now() - _catalogCacheTime < CATALOG_TTL_MS)) return _catalogCache;
     const res = await db.query(
         'SELECT key_name, loinc_code, nano_dimension, is_kino_core, unit FROM biomarker_catalog WHERE is_active = TRUE'
     );
@@ -17,6 +27,7 @@ async function getCatalog() {
         if (row.loinc_code) byLoinc[row.loinc_code] = row;
     }
     _catalogCache = { byLoinc, byKey };
+    _catalogCacheTime = Date.now();
     return _catalogCache;
 }
 

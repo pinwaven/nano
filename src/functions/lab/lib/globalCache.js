@@ -1,3 +1,10 @@
+/**
+ * Global cache backed by the global_cache database table.
+ *
+ * Provides cross-container key-value caching with optional expiry. Primary use
+ * case: storing QCS OAuth2 access tokens so they survive FC cold starts and
+ * redeploys without re-requesting from the vendor (who rate-limits token calls).
+ */
 'use strict';
 
 const db = require('./db');
