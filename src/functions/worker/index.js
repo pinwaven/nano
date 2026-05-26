@@ -69,6 +69,7 @@ const vivaPrompts = {
     emotional_support:  require('./prompts/viva/chat/emotional'),
 };
 const systemNutritionTemplate = require('./prompts/nano/systemNutrition');
+const vivaSystemNutritionTemplate = require('./prompts/viva/systemNutrition');
 const systemHealthAdviceTemplate = require('./prompts/nano/systemHealthAdvice');
 const strings = require('./prompts/strings');
 const systemAdminReportTemplate = require('./prompts/systemAdminReport');
@@ -1724,6 +1725,14 @@ async function handlePostFormulaDots(body) {
         const biomarkers = data.biomarkers || data.estimated || data.actual || {};
         const bioageProfile = data.bioage_profile || {};
 
+        let personaType = 'nano';
+        if (user.channel_id) {
+            try {
+                const chResult = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
+                personaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
+            } catch (_) {}
+        }
+
         const startDate = getNowShanghai().toISODate();
         const lang = user.language || 'zh';
 
@@ -1738,7 +1747,8 @@ async function handlePostFormulaDots(body) {
         };
         const llmClient = getLlmClient();
         const model = process.env.MODEL || 'qwen3.6-plus';
-        const prompt = systemNutritionTemplate(nutritionContext);
+        const nutritionTemplate = personaType === 'viva' ? vivaSystemNutritionTemplate : systemNutritionTemplate;
+        const prompt = nutritionTemplate(nutritionContext);
         console.log(JSON.stringify({ level: 'INFO', msg: 'Formula DOTS Context', data: nutritionContext }));
 
         const completion = await llmClient.chat.completions.create({
@@ -4448,7 +4458,7 @@ async function handlePostChat(body) {
             }
             if (required_data.includes('dots')) {
                 fetches.dots = pool.query(
-                    `SELECT id, key_name, name, name_zh, description, is_isolate FROM dots ORDER BY id ASC`
+                    `SELECT id, key_name, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh FROM dots ORDER BY id ASC`
                 );
             }
             if (required_data.includes('plan')) {

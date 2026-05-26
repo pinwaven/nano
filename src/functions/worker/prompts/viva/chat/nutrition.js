@@ -16,7 +16,14 @@ module.exports = (ctx) => {
     : `生理年龄：暂无检测记录。`;
 
   const dotsSection = dots && dots.length > 0
-    ? `DOTS 配方库：\n${dots.map(d => `• ${d.id}号原粒 ${d.name_zh || d.name}${d.description ? ' — ' + d.description : ''} [${d.is_isolate ? '单方' : '复方'}]`).join('\n')}`
+    ? `DOTS 配方库（每粒 40mg）：\n${dots.map(d => {
+        const ingrArr = d.ingredients_zh || d.ingredients || [];
+        const ingrStr = ingrArr.length > 0
+          ? `（${ingrArr.map(i => `${i.name}${i.mg ? ' ' + i.mg + 'mg' : ''}`).join(' + ')}）`
+          : '';
+        const timing = d.timing === 'Morning' ? '早' : d.timing === 'Evening' ? '晚' : '';
+        return `• ${d.id}号 ${d.name_zh || d.name}${ingrStr}${d.description ? ' — ' + d.description : ''} [${d.is_isolate ? '单方' : '复方'}${timing ? ' · ' + timing : ''}]`;
+      }).join('\n')}`
     : `DOTS 配方库：暂不可用。`;
 
   const planSection = plan
