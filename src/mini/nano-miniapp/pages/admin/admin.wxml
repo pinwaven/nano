@@ -182,6 +182,9 @@
             <view class="adm-active-badge {{item.active !== false ? 'adm-active-on' : 'adm-active-off'}}">
               <text>{{item.active !== false ? t.store.yes : t.store.no}}</text>
             </view>
+            <view wx:if="{{item.show_in_store}}" class="adm-active-badge adm-active-on" style="margin-left: 4rpx; font-size: 20rpx;">
+              <text>{{t.store.showInStoreOn}}</text>
+            </view>
           </view>
           <view class="adm-price-row">
             <text class="adm-price">¥{{item.price_cny}}</text>
@@ -207,7 +210,7 @@
         <view wx:for="{{orders}}" wx:key="id" class="adm-card adm-order-card" bindtap="handleUpdateOrderStatus" data-order="{{item}}">
           <view class="adm-card-top">
             <view class="adm-card-info">
-              <text class="adm-card-title">{{item.item_name || item._shortId}}</text>
+              <text class="adm-card-title">{{(lang === 'zh' ? item.name_zh : item.name_en) || item._shortId}}</text>
               <text class="adm-card-sub">{{t.store.orderId}}: {{item._shortId}}…</text>
             </view>
             <view class="adm-order-status adm-order-{{item.status}}">
@@ -500,6 +503,14 @@
             <picker range="{{t.activeOptions}}" value="{{formActiveIdx}}" bindchange="onPickerActive">
               <view class="adm-field-picker">
                 <text>{{t.activeOptions[formActiveIdx]}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
+            <text class="adm-field-label">{{t.store.showInStore}}</text>
+            <picker range="{{[t.store.showInStoreOn, t.store.showInStoreOff]}}" value="{{formShowInStoreIdx}}" bindchange="onPickerShowInStore">
+              <view class="adm-field-picker">
+                <text>{{formShowInStoreIdx === 0 ? t.store.showInStoreOn : t.store.showInStoreOff}}</text>
                 <text class="adm-picker-arrow">›</text>
               </view>
             </picker>

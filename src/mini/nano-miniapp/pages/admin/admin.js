@@ -42,6 +42,7 @@ const T = {
       priceUsd: '售价 USD', tag: '标签', isActive: '上架', unit: '单位 (英)', unitZh: '单位 (中)',
       descEn: '描述 (英)', descZh: '描述 (中)', sortOrder: '排序',
       noTag: '无标签', bestseller: '热销', value: '超值', yes: '是', no: '否',
+      showInStore: '显示在商城', showInStoreOn: '显示', showInStoreOff: '不显示',
       addTitle: '添加商品', editTitle: '编辑商品',
       deleteWarning: '确认删除此商品？此操作不可撤销。',
       orderId: '订单 ID', customer: '用户', item: '商品', qty: '数量', price: '金额', status: '状态', date: '日期',
@@ -112,6 +113,7 @@ const T = {
       priceUsd: 'Price USD', tag: 'Tag', isActive: 'Active', unit: 'Unit (EN)', unitZh: 'Unit (ZH)',
       descEn: 'Desc (EN)', descZh: 'Desc (ZH)', sortOrder: 'Sort',
       noTag: 'No tag', bestseller: 'Best Seller', value: 'Value Pack', yes: 'Yes', no: 'No',
+      showInStore: 'Show in Store', showInStoreOn: 'Visible', showInStoreOff: 'Hidden',
       addTitle: 'Add Item', editTitle: 'Edit Item',
       deleteWarning: 'Delete this item? This cannot be undone.',
       orderId: 'Order ID', customer: 'Customer', item: 'Item', qty: 'Qty', price: 'Price', status: 'Status', date: 'Date',
@@ -227,6 +229,7 @@ Page({
     formCoachIdx: 0,
     formTagIdx: 0,
     formActiveIdx: 0,
+    formShowInStoreIdx: 0,
     coachPickerOptions: [],
     coachPickerValues: [],
     coachUserPickerOptions: [],
@@ -261,8 +264,8 @@ Page({
       const [uRes, cRes, sRes, oRes, iRes] = await Promise.all([
         cid ? this._req(`${BASE}/api/channel-users/${cid}`) : this._req(`${BASE}/api/users`),
         cid ? this._req(`${BASE}/api/channel-coaches/${cid}`) : this._req(`${BASE}/api/coach-list`),
-        this._req(`${BASE}/api/store-items?all=true`),
-        this._req(`${BASE}/api/orders`),
+        cid ? this._req(`${BASE}/api/channel-inventory?channel_id=${cid}`) : this._req(`${BASE}/api/store-items?all=true`),
+        cid ? this._req(`${BASE}/api/orders?channel_id=${cid}`) : this._req(`${BASE}/api/orders`),
         cid ? this._req(`${BASE}/api/invitations?channel_id=${cid}`) : this._req(`${BASE}/api/invitations`),
       ])
       const lang = this.data.lang
@@ -412,8 +415,8 @@ Page({
   openAddItem() {
     this.setData({
       modalOpen: true, modalType: 'item', modalMode: 'add', modalTitle: T[this.data.lang].store.addTitle, modalError: '', editTargetId: null,
-      form: { key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '', unit_en: '', unit_zh: '', price_cny: '', price_usd: '', tag: '', sort_order: 0, active: true },
-      formTagIdx: 0, formActiveIdx: 0,
+      form: { key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '', unit_en: '', unit_zh: '', price_cny: '', price_usd: '', tag: '', sort_order: 0, active: true, show_in_store: false },
+      formTagIdx: 0, formActiveIdx: 0, formShowInStoreIdx: 1,
     })
   },
 
@@ -422,11 +425,13 @@ Page({
     const { lang } = this.data
     const tagIdx = T[lang].tagValues.indexOf(item.tag || '')
     const activeIdx = T[lang].activeValues.indexOf(item.active !== false)
+    const showInStore = item.show_in_store === true
     this.setData({
       modalOpen: true, modalType: 'item', modalMode: 'edit', modalTitle: T[lang].store.editTitle, modalError: '', editTargetId: item.id,
-      form: { key_name: item.key_name || '', name_en: item.name_en || '', name_zh: item.name_zh || '', desc_en: item.desc_en || '', desc_zh: item.desc_zh || '', unit_en: item.unit_en || '', unit_zh: item.unit_zh || '', price_cny: String(item.price_cny ?? ''), price_usd: String(item.price_usd ?? ''), tag: item.tag || '', sort_order: item.sort_order ?? 0, active: item.active !== false },
+      form: { key_name: item.key_name || '', name_en: item.name_en || '', name_zh: item.name_zh || '', desc_en: item.desc_en || '', desc_zh: item.desc_zh || '', unit_en: item.unit_en || '', unit_zh: item.unit_zh || '', price_cny: String(item.price_cny ?? ''), price_usd: String(item.price_usd ?? ''), tag: item.tag || '', sort_order: item.sort_order ?? 0, active: item.active !== false, show_in_store: showInStore },
       formTagIdx: tagIdx >= 0 ? tagIdx : 0,
       formActiveIdx: activeIdx >= 0 ? activeIdx : 0,
+      formShowInStoreIdx: showInStore ? 0 : 1,
     })
   },
 
@@ -480,6 +485,11 @@ Page({
     this.setData({ formActiveIdx: idx, 'form.active': T[lang].activeValues[idx] })
   },
 
+  onPickerShowInStore(e) {
+    const idx = Number(e.detail.value)
+    this.setData({ formShowInStoreIdx: idx, 'form.show_in_store': idx === 0 })
+  },
+
   // ── Save ──────────────────────────────────────────────────────────────────────
 
   async handleSave() {
@@ -504,8 +514,14 @@ Page({
         else await this._req(`${BASE}/api/coaches/${editTargetId}`, 'PUT', coachPayload)
       } else if (modalType === 'item') {
         if (!form.key_name.trim() || !form.name_en.trim()) { this.setData({ modalError: t.error.required, modalBusy: false }); return }
-        if (modalMode === 'add') await this._req(`${BASE}/api/store-items`, 'POST', form)
-        else await this._req(`${BASE}/api/store-items/${editTargetId}`, 'PUT', form)
+        const cid = this._channelId
+        if (cid) {
+          if (modalMode === 'add') await this._req(`${BASE}/api/channel-inventory`, 'POST', { ...form, channel_id: cid })
+          else await this._req(`${BASE}/api/channel-inventory/${editTargetId}`, 'PUT', form)
+        } else {
+          if (modalMode === 'add') await this._req(`${BASE}/api/store-items`, 'POST', form)
+          else await this._req(`${BASE}/api/store-items/${editTargetId}`, 'PUT', form)
+        }
       }
       this.setData({ modalOpen: false, modalBusy: false })
       this._loadAll()
@@ -572,7 +588,8 @@ Page({
       success: async (res) => {
         if (!res.confirm) return
         try {
-          await this._req(`${BASE}/api/store-items/${item.id}`, 'DELETE')
+          const endpoint = this._channelId ? 'channel-inventory' : 'store-items'
+          await this._req(`${BASE}/api/${endpoint}/${item.id}`, 'DELETE')
           this._loadAll()
         } catch (e) { wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' }) }
       },
@@ -587,10 +604,46 @@ Page({
       itemList: t.orderStatuses,
       success: async (res) => {
         const newStatus = t.orderStatusValues[res.tapIndex]
-        try {
-          await this._req(`${BASE}/api/orders/${order.id}`, 'PUT', { status: newStatus })
-          this._loadAll()
-        } catch (e) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
+        if (newStatus === 'shipped') {
+          wx.showModal({
+            title: lang === 'zh' ? '输入发货物流单号' : 'Enter Tracking Info',
+            placeholderText: lang === 'zh' ? '格式: 顺丰速运 123456789' : 'e.g. SF Express 123456789',
+            editable: true,
+            success: async (modalRes) => {
+              if (!modalRes.confirm) return;
+              const content = (modalRes.content || '').trim();
+              if (!content) {
+                wx.showToast({ title: lang === 'zh' ? '快递单号不能为空' : 'Tracking number required', icon: 'none' });
+                return;
+              }
+              let carrier = lang === 'zh' ? '顺丰速运' : 'SF Express';
+              let tracking = content;
+              if (content.includes(' ')) {
+                const parts = content.split(' ');
+                carrier = parts[0];
+                tracking = parts.slice(1).join(' ');
+              }
+              try {
+                wx.showLoading({ title: 'Updating...' })
+                await this._req(`${BASE}/api/orders/${order.id}`, 'PUT', {
+                  status: newStatus,
+                  shipping_carrier: carrier,
+                  tracking_number: tracking
+                })
+                wx.hideLoading()
+                this._loadAll()
+              } catch (e) {
+                wx.hideLoading()
+                wx.showToast({ title: t.error.networkError, icon: 'none' })
+              }
+            }
+          })
+        } else {
+          try {
+            await this._req(`${BASE}/api/orders/${order.id}`, 'PUT', { status: newStatus })
+            this._loadAll()
+          } catch (e) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
+        }
       },
     })
   },
