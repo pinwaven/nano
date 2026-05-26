@@ -395,7 +395,7 @@ async function handlePostDispense(body) {
                     COALESCE(ist.quantity, 0) AS stock_quantity
              FROM store_items s
              LEFT JOIN inventory_stock ist ON s.sku_id = ist.sku_id AND ist.location_type = 'warehouse' AND ist.warehouse_name = 'shanghai-central'
-             \${showAll ? '' : 'WHERE s.active = TRUE'}
+             ${showAll ? '' : 'WHERE s.active = TRUE'}
              ORDER BY s.sort_order ASC, s.created_at ASC`
         );
         return { success: true, items: result.rows };
