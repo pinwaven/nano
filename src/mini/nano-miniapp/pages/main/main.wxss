@@ -880,6 +880,7 @@
 .store-header {
   flex-shrink: 0;
   padding: 36rpx 36rpx 20rpx;
+  position: relative;
 }
 
 .store-title {
@@ -1145,6 +1146,237 @@
   font-size: 22rpx;
   font-weight: 700;
   color: #ef4444;
+}
+
+/* ── Cart ── */
+
+.store-cart-icon {
+  position: absolute;
+  right: 36rpx;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-top: 8rpx;
+}
+
+.store-cart-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40rpx;
+  height: 40rpx;
+  padding: 0 10rpx;
+  border-radius: 20rpx;
+  background: linear-gradient(135deg, #6375EC, #8B9FFF);
+  color: #fff;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.cart-stepper {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.stepper-btn {
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 26rpx;
+  border: 1rpx solid rgba(99, 117, 236, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(99, 117, 236, 0.08);
+}
+
+.stepper-sym {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #8fa0f8;
+  line-height: 1;
+}
+
+.stepper-qty {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+  min-width: 32rpx;
+  text-align: center;
+}
+
+.cart-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100rpx;
+  background: #0a1c34;
+  border-top: 1rpx solid rgba(99, 117, 236, 0.2);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28rpx;
+  z-index: 10;
+}
+
+.cart-bar-label {
+  font-size: 24rpx;
+  color: rgba(166, 196, 229, 0.6);
+}
+
+.cart-bar-right {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.cart-bar-total {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+}
+
+.cart-bar-btn {
+  background: linear-gradient(135deg, #6375EC, #8B9FFF);
+  border-radius: 20rpx;
+  padding: 14rpx 36rpx;
+}
+
+.cart-bar-btn-text {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #fff;
+}
+
+.cart-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(5, 15, 30, 0.75);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  z-index: 200;
+}
+
+.cart-sheet {
+  background: #0d2040;
+  border-top-left-radius: 36rpx;
+  border-top-right-radius: 36rpx;
+  border: 1rpx solid rgba(99, 117, 236, 0.2);
+  display: flex;
+  flex-direction: column;
+  max-height: 70vh;
+}
+
+.cart-sheet-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 32rpx 32rpx 20rpx;
+  border-bottom: 1rpx solid rgba(99, 117, 236, 0.12);
+}
+
+.cart-sheet-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+}
+
+.cart-close-btn {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cart-close-sym {
+  font-size: 28rpx;
+  color: rgba(166, 196, 229, 0.5);
+}
+
+.cart-sheet-scroll {
+  flex: 1;
+}
+
+.cart-empty-row {
+  padding: 48rpx 32rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cart-empty-text {
+  font-size: 26rpx;
+  color: rgba(166, 196, 229, 0.4);
+}
+
+.cart-item-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 32rpx;
+  border-bottom: 1rpx solid rgba(99, 117, 236, 0.08);
+}
+
+.cart-item-info {
+  flex: 1;
+  margin-right: 20rpx;
+}
+
+.cart-item-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #EEF2FF;
+  display: block;
+  margin-bottom: 6rpx;
+}
+
+.cart-item-price {
+  font-size: 24rpx;
+  color: rgba(166, 196, 229, 0.55);
+}
+
+.cart-stepper-sm .stepper-btn {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+.cart-sheet-footer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 32rpx;
+  border-top: 1rpx solid rgba(99, 117, 236, 0.12);
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
+}
+
+.cart-total-text {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+}
+
+.cart-checkout-btn {
+  background: linear-gradient(135deg, #6375EC, #8B9FFF);
+  border-radius: 20rpx;
+  padding: 16rpx 44rpx;
+  box-shadow: 0 4rpx 20rpx rgba(99, 117, 236, 0.35);
+}
+
+.cart-checkout-text {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #fff;
 }
 
 /* ── Kino chip scan ── */

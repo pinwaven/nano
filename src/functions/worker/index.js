@@ -1573,6 +1573,113 @@ async function handlePostOrder(body) {
     }
 }
 
+async function handlePostOrderBatch(body) {
+    const {
+        openid,
+        items,
+        shipping_name,
+        shipping_phone,
+        shipping_address,
+        payment_method = 'wechat_pay',
+        payment_status = 'paid',
+    } = body;
+    if (!openid) return { success: false, error: 'openid is required', statusCode: 400 };
+    if (!Array.isArray(items) || items.length === 0)
+        return { success: false, error: 'items array is required', statusCode: 400 };
+    if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const order_ids = [];
+
+        for (const entry of items) {
+            const { channel_inventory_item_id, item_id, quantity = 1 } = entry;
+            if (!item_id && !channel_inventory_item_id)
+                throw Object.assign(new Error('Each item requires item_id or channel_inventory_item_id'), { statusCode: 400 });
+
+            let sku_id = null, channel_id = null, item_key = '', price_cny = 0, price_usd = 0;
+
+            if (channel_inventory_item_id) {
+                const r = await client.query(
+                    `SELECT id, key_name, price_cny, price_usd, channel_id, sku_id
+                     FROM channel_inventory_items WHERE id = $1 AND active = TRUE`,
+                    [channel_inventory_item_id]
+                );
+                if (r.rows.length === 0) throw Object.assign(new Error('Item not found'), { statusCode: 404 });
+                sku_id = r.rows[0].sku_id;
+                channel_id = r.rows[0].channel_id;
+                item_key = r.rows[0].key_name;
+                price_cny = r.rows[0].price_cny || 0;
+                price_usd = r.rows[0].price_usd || 0;
+            } else {
+                const r = await client.query(
+                    'SELECT id, key_name, price_cny, price_usd, sku_id FROM store_items WHERE id = $1 AND active = TRUE',
+                    [item_id]
+                );
+                if (r.rows.length === 0) throw Object.assign(new Error('Item not found'), { statusCode: 404 });
+                sku_id = r.rows[0].sku_id;
+                item_key = r.rows[0].key_name;
+                price_cny = r.rows[0].price_cny || 0;
+                price_usd = r.rows[0].price_usd || 0;
+            }
+
+            if (sku_id) {
+                const stockResult = await client.query(
+                    `SELECT id, quantity FROM inventory_stock
+                     WHERE sku_id = $1 AND (
+                         (location_type = 'channel' AND channel_id = $2) OR
+                         (location_type = 'warehouse' AND warehouse_name = 'shanghai-central')
+                     )
+                     ORDER BY (location_type = 'channel') DESC
+                     LIMIT 1`,
+                    [sku_id, channel_id || null]
+                );
+                if (stockResult.rows.length > 0) {
+                    const stock = stockResult.rows[0];
+                    if (stock.quantity !== null) {
+                        if (stock.quantity < quantity)
+                            throw Object.assign(new Error('Insufficient stock'), { statusCode: 400 });
+                        await client.query(
+                            `UPDATE inventory_stock SET quantity = quantity - $1, updated_at = NOW()
+                             WHERE id = $2 AND quantity >= $1`,
+                            [quantity, stock.id]
+                        );
+                    }
+                }
+            }
+
+            const inserted = await client.query(
+                `INSERT INTO orders (
+                    user_id, item_id, channel_inventory_item_id, item_key, quantity, price_cny, price_usd,
+                    status, channel_id, sku_id, shipping_name, shipping_phone, shipping_address,
+                    payment_method, payment_status, paid_at
+                 )
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11, $12, $13, $14, ${payment_status === 'paid' ? 'NOW()' : 'NULL'})
+                 RETURNING id`,
+                [
+                    openid,
+                    channel_inventory_item_id ? null : item_id,
+                    channel_inventory_item_id || null,
+                    item_key, quantity, price_cny, price_usd,
+                    channel_id, sku_id,
+                    shipping_name, shipping_phone, shipping_address,
+                    payment_method, payment_status,
+                ]
+            );
+            order_ids.push(inserted.rows[0].id);
+        }
+
+        await client.query('COMMIT');
+        return { success: true, order_ids };
+    } catch (err) {
+        await client.query('ROLLBACK');
+        return { success: false, error: err.message, statusCode: err.statusCode || 500 };
+    } finally {
+        client.release();
+    }
+}
+
 async function handleGetNutritionPlan(openid) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -7862,6 +7969,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostInventoryStock(parsedBody);
             } else if (path.includes('/store-items')) {
                 result = await handlePostStoreItem(parsedBody);
+            } else if (path === '/orders/batch') {
+                result = await handlePostOrderBatch(parsedBody);
             } else if (path.includes('/orders')) {
                 result = await handlePostOrder(parsedBody);
             } else if (path.includes('/dots')) {

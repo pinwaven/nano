@@ -131,6 +131,9 @@ const T = {
     storeEmpty: '暂无商品。',
     storeSubProducts: '商品', storeSubOrders: '我的订单',
     noOrders: '暂无订单记录。',
+    storeAddToCart: '加入', storeCart: '购物车',
+    storeCartCheckout: '结算', storeCartTotal: '合计',
+    storeCartItems: '件商品', storeCartEmpty: '购物车是空的',
     toolFormulaDots: '营养定制',
     toolTestChip: '检测服务',
     toolHealthAdvice: '健康管理',
@@ -286,6 +289,9 @@ const T = {
     storeEmpty: 'No products available.',
     storeSubProducts: 'Products', storeSubOrders: 'My Orders',
     noOrders: 'No orders yet.',
+    storeAddToCart: 'Add', storeCart: 'Cart',
+    storeCartCheckout: 'Checkout', storeCartTotal: 'Total',
+    storeCartItems: ' items', storeCartEmpty: 'Cart is empty',
     toolFormulaDots: 'Formulate Dots',
     toolTestChip: 'Use Kino Chip',
     toolHealthAdvice: 'Health Advice',
@@ -635,6 +641,7 @@ function mapStoreItems(rawItems, lang) {
     desc: lang === 'zh' ? item.desc_zh : item.desc_en,
     unit: lang === 'zh' ? item.unit_zh : item.unit_en,
     price: lang === 'zh' ? `¥${item.price_cny}` : `$${item.price_usd}`,
+    rawPrice: lang === 'zh' ? (item.price_cny || 0) : (item.price_usd || 0),
     tagLabel: tagLabel(item.tag),
   }))
 }
@@ -768,6 +775,11 @@ Page({
     storeItems: [],
     storeOrders: [],
     storeSubTab: 'products',
+    cart: [],
+    cartMap: {},
+    cartCount: 0,
+    cartTotal: '',
+    cartOpen: false,
     // Plans tab
     plansLoading: true,
     activePlans: [],
@@ -1893,73 +1905,95 @@ Page({
     this.setData({ storeSubTab: e.currentTarget.dataset.tab })
   },
 
-  handleBuyItem(e) {
+  _syncCart(cart) {
+    const { lang } = this.data
+    const cartMap = {}
+    let total = 0, count = 0
+    for (const entry of cart) {
+      cartMap[entry.id] = entry.quantity
+      total += entry.rawPrice * entry.quantity
+      count += entry.quantity
+    }
+    const cartTotal = lang === 'zh' ? `¥${total}` : `$${(total / 7.2).toFixed(0)}`
+    this.setData({ cart, cartMap, cartCount: count, cartTotal })
+  },
+
+  handleAddToCart(e) {
     if (this.data.isGuest) { this.openGuestSheet(); return }
     const item = e.currentTarget.dataset.item
-    const { t, user, lang } = this.data
-    wx.showModal({
-      title: t.storeConfirmTitle,
-      content: `${item.name}\n${item.price}  ·  ${item.unit}`,
-      confirmText: t.storeBuy,
-      confirmColor: '#6375EC',
-      success: async (res) => {
-        if (!res.confirm) return
-        
-        // Trigger address selection for checkout
-        wx.chooseAddress({
-          success: async (addrRes) => {
-            const address = `${addrRes.provinceName}${addrRes.cityName}${addrRes.countyName}${addrRes.detailInfo}`;
-            try {
-              wx.showLoading({ title: t.storeOrderSent || 'Processing...' })
-              await this._req(`${BASE}/api/orders`, 'POST', {
-                openid: user.user_id,
-                channel_inventory_item_id: item.id,
-                quantity: 1,
-                shipping_name: addrRes.userName,
-                shipping_phone: addrRes.telNumber,
-                shipping_address: address,
-                payment_method: 'wechat_pay',
-                payment_status: 'paid'
-              })
-              wx.hideLoading()
-              wx.showToast({ title: t.storeOrderSent || 'Order Sent', icon: 'success', duration: 2500 })
-              await this._loadStoreOrders(user, lang)
-              this.setData({ storeSubTab: 'orders' })
-            } catch (err) {
-              wx.hideLoading()
-              wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
-            }
-          },
-          fail: () => {
-            // Graceful Fallback if user cancels address picker or lacks authorization (e.g. in emulator)
-            wx.showModal({
-              title: lang === 'zh' ? '确认模拟地址' : 'Verify Mock Address',
-              content: lang === 'zh' ? '无法获取微信收货地址，是否使用模拟地址进行下单测试？' : 'Cannot fetch address, proceed with mock testing address?',
-              confirmText: lang === 'zh' ? '确认下单' : 'Confirm',
-              success: async (mockRes) => {
-                if (!mockRes.confirm) return;
-                try {
-                  wx.showLoading({ title: t.storeOrderSent })
-                  await this._req(`${BASE}/api/orders`, 'POST', {
-                    openid: user.user_id,
-                    channel_inventory_item_id: item.id,
-                    quantity: 1,
-                    shipping_name: user.nickname || 'Tester',
-                    shipping_phone: '13800138000',
-                    shipping_address: lang === 'zh' ? '上海市浦东新区张江高科技园区' : 'Pudong New Area, Shanghai',
-                    payment_method: 'wechat_pay',
-                    payment_status: 'paid'
-                  })
-                  wx.hideLoading()
-                  wx.showToast({ title: t.storeOrderSent, icon: 'success', duration: 2500 })
-                  await this._loadStoreOrders(user, lang)
-                  this.setData({ storeSubTab: 'orders' })
-                } catch (err) {
-                  wx.hideLoading()
-                  wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
-                }
-              }
-            })
+    const cart = [...this.data.cart]
+    const existing = cart.find(x => x.id === item.id)
+    if (existing) {
+      existing.quantity += 1
+    } else {
+      cart.push({ ...item, quantity: 1 })
+    }
+    this._syncCart(cart)
+  },
+
+  handleCartQtyChange(e) {
+    const { id, delta } = e.currentTarget.dataset
+    const cart = [...this.data.cart]
+    const idx = cart.findIndex(x => x.id === id)
+    if (idx === -1) return
+    cart[idx] = { ...cart[idx], quantity: cart[idx].quantity + delta }
+    if (cart[idx].quantity <= 0) cart.splice(idx, 1)
+    this._syncCart(cart)
+  },
+
+  handleOpenCart() {
+    this.setData({ cartOpen: true })
+  },
+
+  handleCloseCart() {
+    this.setData({ cartOpen: false })
+  },
+
+  handleCheckout() {
+    if (this.data.isGuest) { this.openGuestSheet(); return }
+    const { t, user, lang, cart } = this.data
+    if (cart.length === 0) return
+    const items = cart.map(x => ({ channel_inventory_item_id: x.id, quantity: x.quantity }))
+    const _submitBatchOrder = async (shipping_name, shipping_phone, shipping_address) => {
+      try {
+        wx.showLoading({ title: t.storeOrderSent || 'Processing...' })
+        await this._req(`${BASE}/api/orders/batch`, 'POST', {
+          openid: user.user_id,
+          items,
+          shipping_name,
+          shipping_phone,
+          shipping_address,
+          payment_method: 'wechat_pay',
+          payment_status: 'paid'
+        })
+        wx.hideLoading()
+        wx.showToast({ title: t.storeOrderSent || 'Order Sent', icon: 'success', duration: 2500 })
+        this._syncCart([])
+        this.setData({ cartOpen: false })
+        await this._loadStoreOrders(user, lang)
+        this.setData({ storeSubTab: 'orders' })
+      } catch (err) {
+        wx.hideLoading()
+        wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
+      }
+    }
+    wx.chooseAddress({
+      success: async (addrRes) => {
+        const address = `${addrRes.provinceName}${addrRes.cityName}${addrRes.countyName}${addrRes.detailInfo}`
+        await _submitBatchOrder(addrRes.userName, addrRes.telNumber, address)
+      },
+      fail: () => {
+        wx.showModal({
+          title: lang === 'zh' ? '确认模拟地址' : 'Verify Mock Address',
+          content: lang === 'zh' ? '无法获取微信收货地址，是否使用模拟地址进行下单测试？' : 'Cannot fetch address, proceed with mock testing address?',
+          confirmText: lang === 'zh' ? '确认下单' : 'Confirm',
+          success: async (mockRes) => {
+            if (!mockRes.confirm) return
+            await _submitBatchOrder(
+              user.nickname || 'Tester',
+              '13800138000',
+              lang === 'zh' ? '上海市浦东新区张江高科技园区' : 'Pudong New Area, Shanghai'
+            )
           }
         })
       }
