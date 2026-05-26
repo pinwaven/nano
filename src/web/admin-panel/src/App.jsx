@@ -4761,6 +4761,7 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
               tag: si.tag || '',
               sort_order: si.sort_order ?? 0,
               store_item_id: si.id,
+              sku_id: si.sku_id || '',
             },
           })}
         />
