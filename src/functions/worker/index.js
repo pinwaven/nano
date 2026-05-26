@@ -365,9 +365,7 @@ async function handlePostDispense(body) {
     } catch (err) {
         return { success: false, error: err.message };
     }
-}
-
-async function handleGetStoreItems(query = {}) {
+}async function handleGetStoreItems(query = {}) {
     if (!pool) return { success: false, error: 'Database pool not initialized' };
     try {
         if (query.openid) {
@@ -378,23 +376,27 @@ async function handleGetStoreItems(query = {}) {
             const channelId = userRes.rows[0]?.channel_id;
             if (!channelId) return { success: true, items: [] };
             const result = await pool.query(
-                `SELECT id, key_name, name_zh, name_en, desc_zh, desc_en,
-                        unit_zh, unit_en, price_cny, price_usd, tag, sort_order,
-                        active, image_url, item_type, stock_quantity
-                 FROM channel_inventory_items
-                 WHERE channel_id = $1 AND show_in_store = TRUE AND active = TRUE
-                 ORDER BY sort_order ASC, created_at ASC`,
+                `SELECT ci.id, ci.key_name, ci.name_zh, ci.name_en, ci.desc_zh, ci.desc_en,
+                        ci.unit_zh, ci.unit_en, ci.price_cny, ci.price_usd, ci.tag, ci.sort_order,
+                        ci.active, ci.image_url, ci.item_type, ci.sku_id,
+                        COALESCE(ist.quantity, ci.stock_quantity) AS stock_quantity
+                 FROM channel_inventory_items ci
+                 LEFT JOIN inventory_stock ist ON ci.sku_id = ist.sku_id AND ist.location_type = 'channel' AND ist.channel_id = $1
+                 WHERE ci.channel_id = $1 AND ci.show_in_store = TRUE AND ci.active = TRUE
+                 ORDER BY ci.sort_order ASC, ci.created_at ASC`,
                 [channelId]
             );
             return { success: true, items: result.rows };
         }
         const showAll = query.all === 'true';
         const result = await pool.query(
-            `SELECT id, key_name, name_zh, name_en, desc_zh, desc_en,
-                    unit_zh, unit_en, price_cny, price_usd, tag, sort_order, active, image_url
-             FROM store_items
-             ${showAll ? '' : 'WHERE active = TRUE'}
-             ORDER BY sort_order ASC, created_at ASC`
+            `SELECT s.id, s.key_name, s.name_zh, s.name_en, s.desc_zh, s.desc_en,
+                    s.unit_zh, s.unit_en, s.price_cny, s.price_usd, s.tag, s.sort_order, s.active, s.image_url, s.sku_id,
+                    COALESCE(ist.quantity, 0) AS stock_quantity
+             FROM store_items s
+             LEFT JOIN inventory_stock ist ON s.sku_id = ist.sku_id AND ist.location_type = 'warehouse' AND ist.warehouse_name = 'shanghai-central'
+             \${showAll ? '' : 'WHERE s.active = TRUE'}
+             ORDER BY s.sort_order ASC, s.created_at ASC`
         );
         return { success: true, items: result.rows };
     } catch (err) {
@@ -407,18 +409,23 @@ async function handleGetOrders(query = {}, adminCtx) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const channelId = adminCtx?.role === 'channel' ? adminCtx.channelId : (query.channel_id || null);
         const params = [];
-        const channelFilter = channelId ? `AND o.channel_id = $${params.push(channelId)}` : '';
+        const channelFilter = channelId ? `AND o.channel_id = \$${params.push(channelId)}` : '';
         const result = await pool.query(
             `SELECT o.id, o.user_id, o.item_id, o.channel_inventory_item_id, o.item_key,
                     o.quantity, o.price_cny, o.price_usd, o.status, o.created_at, o.channel_id,
+                    o.shipping_name, o.shipping_phone, o.shipping_address, o.shipping_carrier, o.tracking_number,
+                    o.shipped_at, o.delivered_at, o.payment_status, o.payment_method, o.fulfillment_notes, o.fulfilled_assets,
                     u.nickname, u.external_id,
-                    COALESCE(ci.name_en, s.name_en) AS name_en,
-                    COALESCE(ci.name_zh, s.name_zh) AS name_zh
+                    COALESCE(ci.name_en, s.name_en, sk.name_en, o.item_key) AS name_en,
+                    COALESCE(ci.name_zh, s.name_zh, sk.name_zh, o.item_key) AS name_zh,
+                    COALESCE(ci.unit_en, s.unit_en, sk.unit_en, 'times') AS unit_en,
+                    COALESCE(ci.unit_zh, s.unit_zh, sk.unit_zh, '次') AS unit_zh
              FROM orders o
              LEFT JOIN users u ON o.user_id = u.user_id
              LEFT JOIN store_items s ON o.item_id = s.id
              LEFT JOIN channel_inventory_items ci ON o.channel_inventory_item_id = ci.id
-             WHERE TRUE ${channelFilter}
+             LEFT JOIN skus sk ON o.sku_id = sk.id
+             WHERE TRUE \${channelFilter}
              ORDER BY o.created_at DESC
              LIMIT 500`,
             params
@@ -435,9 +442,16 @@ async function handleGetMyOrders(openid) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
             `SELECT o.id, o.item_key, o.quantity, o.price_cny, o.price_usd, o.status, o.created_at,
-                    s.name_en, s.name_zh, s.unit_en, s.unit_zh
+                    o.shipping_name, o.shipping_phone, o.shipping_address, o.shipping_carrier, o.tracking_number,
+                    o.shipped_at, o.delivered_at, o.payment_status, o.payment_method, o.fulfillment_notes, o.fulfilled_assets,
+                    COALESCE(ci.name_zh, s.name_zh, sk.name_zh, o.item_key) AS name_zh,
+                    COALESCE(ci.name_en, s.name_en, sk.name_en, o.item_key) AS name_en,
+                    COALESCE(ci.unit_zh, s.unit_zh, sk.unit_zh, '次') AS unit_zh,
+                    COALESCE(ci.unit_en, s.unit_en, sk.unit_en, 'times') AS unit_en
              FROM orders o
              LEFT JOIN store_items s ON o.item_id = s.id
+             LEFT JOIN channel_inventory_items ci ON o.channel_inventory_item_id = ci.id
+             LEFT JOIN skus sk ON o.sku_id = sk.id
              WHERE o.user_id = $1
              ORDER BY o.created_at DESC`,
             [openid]
@@ -449,17 +463,17 @@ async function handleGetMyOrders(openid) {
 }
 
 async function handlePostStoreItem(body) {
-    const { key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url } = body;
+    const { key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url, sku_id } = body;
     if (!key_name) return { success: false, error: 'key_name is required', statusCode: 400 };
     if (!name_en)  return { success: false, error: 'name_en is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `INSERT INTO store_items (key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+            `INSERT INTO store_items (key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url, sku_id)
+             VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12, \$13, \$14) RETURNING id`,
             [key_name, name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
              parseFloat(price_cny) || 0, parseFloat(price_usd) || 0,
-             tag || null, parseInt(sort_order) || 0, active !== false, image_url || null]
+             tag || null, parseInt(sort_order) || 0, active !== false, image_url || null, sku_id || null]
         );
         return { success: true, id: result.rows[0].id };
     } catch (err) {
@@ -468,20 +482,132 @@ async function handlePostStoreItem(body) {
 }
 
 async function handlePutStoreItem(itemId, body) {
-    const { name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url } = body;
+    const { name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url, sku_id } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query(
-            `UPDATE store_items SET name_en=$1, name_zh=$2, desc_en=$3, desc_zh=$4,
-             unit_en=$5, unit_zh=$6, price_cny=$7, price_usd=$8, tag=$9, sort_order=$10, active=$11,
-             image_url=$12
-             WHERE id=$13`,
+            `UPDATE store_items SET name_en=\$1, name_zh=\$2, desc_en=\$3, desc_zh=\$4,
+             unit_en=\$5, unit_zh=\$6, price_cny=\$7, price_usd=\$8, tag=\$9, sort_order=\$10, active=\$11,
+             image_url=\$12, sku_id=\$13
+             WHERE id=\$14`,
             [name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
              parseFloat(price_cny), parseFloat(price_usd),
              tag || null, parseInt(sort_order) || 0, active !== false,
-             image_url || null, itemId]
+             image_url || null, sku_id || null, itemId]
         );
         return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ── SKU & Stock handlers ──────────────────────────────────────────────────────
+async function handleGetSkus() {
+    if (!pool) return { success: false, error: 'Database pool not initialized' };
+    try {
+        const { rows } = await pool.query('SELECT * FROM skus ORDER BY sku_code ASC');
+        return { success: true, skus: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostSku(body) {
+    const { sku_code, name_zh, name_en, desc_zh, desc_en, item_type, unit_zh, unit_en } = body;
+    if (!sku_code) return { success: false, error: 'sku_code is required', statusCode: 400 };
+    if (!name_zh || !name_en) return { success: false, error: 'name_zh and name_en are required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `INSERT INTO skus (sku_code, name_zh, name_en, desc_zh, desc_en, item_type, unit_zh, unit_en)
+             VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8) RETURNING *`,
+            [sku_code, name_zh, name_en, desc_zh || null, desc_en || null, item_type || 'physical', unit_zh || '个', unit_en || 'pcs']
+        );
+        return { success: true, sku: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handlePutSku(id, body) {
+    const { sku_code, name_zh, name_en, desc_zh, desc_en, item_type, unit_zh, unit_en } = body;
+    if (!sku_code) return { success: false, error: 'sku_code is required', statusCode: 400 };
+    if (!name_zh || !name_en) return { success: false, error: 'name_zh and name_en are required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `UPDATE skus SET sku_code=\$1, name_zh=\$2, name_en=\$3, desc_zh=\$4, desc_en=\$5, item_type=\$6, unit_zh=\$7, unit_en=\$8
+             WHERE id=\$9 RETURNING *`,
+            [sku_code, name_zh, name_en, desc_zh || null, desc_en || null, item_type || 'physical', unit_zh || '个', unit_en || 'pcs', id]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'SKU not found', statusCode: 404 };
+        return { success: true, sku: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteSku(id) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('DELETE FROM skus WHERE id = \$1', [id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetInventoryStock(query) {
+    if (!pool) return { success: false, error: 'Database pool not initialized' };
+    try {
+        const { rows } = await pool.query(
+            `SELECT i.*, s.sku_code, s.name_zh AS sku_name_zh, s.name_en AS sku_name_en, c.name AS channel_name
+             FROM inventory_stock i
+             JOIN skus s ON i.sku_id = s.id
+             LEFT JOIN channels c ON i.channel_id = c.id
+             ORDER BY s.sku_code ASC, i.location_type ASC`
+        );
+        return { success: true, inventory: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostInventoryStock(body) {
+    const { sku_id, location_type, channel_id, warehouse_name, quantity, low_stock_threshold } = body;
+    if (!sku_id) return { success: false, error: 'sku_id is required', statusCode: 400 };
+    if (!location_type) return { success: false, error: 'location_type is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        let existing;
+        if (location_type === 'channel') {
+            existing = await pool.query(
+                'SELECT id FROM inventory_stock WHERE sku_id = \$1 AND location_type = \$2 AND channel_id = \$3',
+                [sku_id, location_type, channel_id]
+            );
+        } else {
+            existing = await pool.query(
+                'SELECT id FROM inventory_stock WHERE sku_id = \$1 AND location_type = \$2 AND warehouse_name = \$3',
+                [sku_id, location_type, warehouse_name]
+            );
+        }
+
+        if (existing.rows.length > 0) {
+            const updateRes = await pool.query(
+                `UPDATE inventory_stock
+                 SET quantity = \$1, low_stock_threshold = \$2, updated_at = NOW()
+                 WHERE id = \$3 RETURNING *`,
+                [quantity != null ? quantity : null, low_stock_threshold != null ? low_stock_threshold : 0, existing.rows[0].id]
+            );
+            return { success: true, stock: updateRes.rows[0] };
+        } else {
+            const insertRes = await pool.query(
+                `INSERT INTO inventory_stock (sku_id, location_type, channel_id, warehouse_name, quantity, low_stock_threshold, updated_at)
+                 VALUES (\$1, \$2, \$3, \$4, \$5, \$6, NOW()) RETURNING *`,
+                [sku_id, location_type, location_type === 'channel' ? channel_id : null, location_type === 'warehouse' ? warehouse_name : null, quantity != null ? quantity : null, low_stock_threshold != null ? low_stock_threshold : 0]
+            );
+            return { success: true, stock: insertRes.rows[0] };
+        }
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -1153,10 +1279,15 @@ async function handleDeleteStoreItem(itemId) {
 async function handleGetChannelInventory(query, adminCtx) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const channelId = adminCtx?.role === 'channel' ? adminCtx.cid : query.channel_id;
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.channelId : query.channel_id;
         if (!channelId) return { success: false, error: 'channel_id required', statusCode: 400 };
         const { rows } = await pool.query(
-            'SELECT * FROM channel_inventory_items WHERE channel_id = $1 ORDER BY sort_order, created_at',
+            `SELECT ci.*,
+                    COALESCE(ist.quantity, ci.stock_quantity) AS stock_quantity
+             FROM channel_inventory_items ci
+             LEFT JOIN inventory_stock ist ON ci.sku_id = ist.sku_id AND ist.location_type = 'channel' AND ist.channel_id = $1
+             WHERE ci.channel_id = $1
+             ORDER BY ci.sort_order, ci.created_at`,
             [channelId]
         );
         return { success: true, items: rows };
@@ -1168,15 +1299,15 @@ async function handleGetChannelInventory(query, adminCtx) {
 async function handlePostChannelInventory(body, adminCtx) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const channelId = adminCtx?.role === 'channel' ? adminCtx.cid : body.channel_id;
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.channelId : body.channel_id;
         if (!channelId) return { success: false, error: 'channel_id required', statusCode: 400 };
         if (!body.key_name) return { success: false, error: 'key_name required', statusCode: 400 };
         if (!body.name_en) return { success: false, error: 'name_en required', statusCode: 400 };
         const { rows } = await pool.query(
             `INSERT INTO channel_inventory_items
               (channel_id, key_name, name_zh, name_en, desc_zh, desc_en, item_type,
-               unit_zh, unit_en, price_cny, price_usd, stock_quantity, tag, sort_order, active, image_url, metadata, store_item_id, show_in_store)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+               unit_zh, unit_en, price_cny, price_usd, stock_quantity, tag, sort_order, active, image_url, metadata, store_item_id, show_in_store, sku_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
              RETURNING *`,
             [channelId, body.key_name, body.name_zh || '', body.name_en,
              body.desc_zh || '', body.desc_en || '', body.item_type || 'physical',
@@ -1186,7 +1317,8 @@ async function handlePostChannelInventory(body, adminCtx) {
              body.stock_quantity != null ? body.stock_quantity : null,
              body.tag || '', body.sort_order || 0, body.active !== false,
              body.image_url || '', body.metadata || null, body.store_item_id || null,
-             body.show_in_store === true || body.show_in_store === 'true']
+             body.show_in_store === true || body.show_in_store === 'true',
+             body.sku_id || null]
         );
         return { success: true, item: rows[0] };
     } catch (err) {
@@ -1197,7 +1329,7 @@ async function handlePostChannelInventory(body, adminCtx) {
 async function handlePutChannelInventory(id, body, adminCtx) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const channelId = adminCtx?.role === 'channel' ? adminCtx.cid : null;
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.channelId : null;
         const params = [
             body.name_zh || '', body.name_en || '', body.desc_zh || '', body.desc_en || '',
             body.item_type || 'physical', body.unit_zh || '', body.unit_en || '',
@@ -1207,14 +1339,15 @@ async function handlePutChannelInventory(id, body, adminCtx) {
             body.tag || '', body.sort_order || 0, body.active !== false,
             body.image_url || '', body.metadata || null,
             body.show_in_store === true || body.show_in_store === 'true',
+            body.sku_id || null,
             id,
         ];
         let sql = `UPDATE channel_inventory_items
              SET name_zh=$1, name_en=$2, desc_zh=$3, desc_en=$4, item_type=$5,
                  unit_zh=$6, unit_en=$7, price_cny=$8, price_usd=$9, stock_quantity=$10,
-                 tag=$11, sort_order=$12, active=$13, image_url=$14, metadata=$15, show_in_store=$16
-             WHERE id=$17`;
-        if (channelId) { sql += ' AND channel_id=$18'; params.push(channelId); }
+                 tag=$11, sort_order=$12, active=$13, image_url=$14, metadata=$15, show_in_store=$16, sku_id=$17
+             WHERE id=$18`;
+        if (channelId) { sql += ' AND channel_id=$19'; params.push(channelId); }
         sql += ' RETURNING *';
         const { rows } = await pool.query(sql, params);
         if (!rows.length) return { success: false, error: 'Not found', statusCode: 404 };
@@ -1227,7 +1360,7 @@ async function handlePutChannelInventory(id, body, adminCtx) {
 async function handleDeleteChannelInventory(id, adminCtx) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const channelId = adminCtx?.role === 'channel' ? adminCtx.cid : null;
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.channelId : null;
         if (channelId) {
             await pool.query('DELETE FROM channel_inventory_items WHERE id=$1 AND channel_id=$2', [id, channelId]);
         } else {
@@ -1240,19 +1373,90 @@ async function handleDeleteChannelInventory(id, adminCtx) {
 }
 
 async function handlePutOrder(orderId, body, adminCtx) {
-    const { status } = body;
-    if (!status) return { success: false, error: 'status is required', statusCode: 400 };
+    const { status, shipping_carrier, tracking_number, fulfillment_notes, fulfilled_assets, payment_status } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const params = [status, orderId];
+
+        // Get current order state
+        const orderCheck = await pool.query(
+            `SELECT status, sku_id, quantity, channel_id, payment_status FROM orders WHERE id = $1`,
+            [orderId]
+        );
+        if (orderCheck.rows.length === 0) return { success: false, error: 'Order not found', statusCode: 404 };
+        const oldOrder = orderCheck.rows[0];
+
+        // SKU-Based Stock Reclaim on Cancellation — restore to same priority location
+        if (status === 'cancelled' && oldOrder.status !== 'cancelled') {
+            if (oldOrder.sku_id) {
+                const restoreTarget = await pool.query(
+                    `SELECT id FROM inventory_stock
+                     WHERE sku_id = $1 AND (
+                         (location_type = 'channel' AND channel_id = $2) OR
+                         (location_type = 'warehouse' AND warehouse_name = 'shanghai-central')
+                     ) AND quantity IS NOT NULL
+                     ORDER BY (location_type = 'channel') DESC
+                     LIMIT 1`,
+                    [oldOrder.sku_id, oldOrder.channel_id]
+                );
+                if (restoreTarget.rows.length > 0) {
+                    await pool.query(
+                        `UPDATE inventory_stock
+                         SET quantity = quantity + $1, updated_at = NOW()
+                         WHERE id = $2`,
+                        [oldOrder.quantity, restoreTarget.rows[0].id]
+                    );
+                }
+            }
+        }
+
+        const updates = [];
+        const params = [orderId];
+
+        if (status) {
+            updates.push(`status = $${updates.length + 2}`);
+            params.push(status);
+        }
+        if (shipping_carrier !== undefined) {
+            updates.push(`shipping_carrier = $${updates.length + 2}`);
+            params.push(shipping_carrier);
+        }
+        if (tracking_number !== undefined) {
+            updates.push(`tracking_number = $${updates.length + 2}`);
+            params.push(tracking_number);
+        }
+        if (fulfillment_notes !== undefined) {
+            updates.push(`fulfillment_notes = $${updates.length + 2}`);
+            params.push(fulfillment_notes);
+        }
+        if (fulfilled_assets !== undefined) {
+            updates.push(`fulfilled_assets = $${updates.length + 2}`);
+            params.push(JSON.stringify(fulfilled_assets));
+        }
+        if (payment_status !== undefined) {
+            updates.push(`payment_status = $${updates.length + 2}`);
+            params.push(payment_status);
+            if (payment_status === 'paid' && oldOrder.payment_status !== 'paid') {
+                updates.push(`paid_at = NOW()`);
+            }
+        }
+
+        if (status === 'shipped' && oldOrder.status !== 'shipped') {
+            updates.push(`shipped_at = NOW()`);
+        }
+        if (status === 'delivered' && oldOrder.status !== 'delivered') {
+            updates.push(`delivered_at = NOW()`);
+        }
+
+        if (updates.length === 0) return { success: false, error: 'No fields to update', statusCode: 400 };
+
         const channelFilter = adminCtx?.role === 'channel'
             ? `AND channel_id = $${params.push(adminCtx.channelId)}` : '';
-        const result = await pool.query(
-            `UPDATE orders SET status = $1 WHERE id = $2 ${channelFilter} RETURNING id`,
-            params
-        );
+
+        const sql = `UPDATE orders SET ${updates.join(', ')} WHERE id = $1 ${channelFilter} RETURNING id`;
+        const result = await pool.query(sql, params);
         if (result.rows.length === 0) return { success: false, error: 'Order not found or access denied', statusCode: 404 };
-        if (status === 'delivered') {
+
+        if (status === 'delivered' && oldOrder.status !== 'delivered') {
             await recordOrderCommissions(orderId);
         }
         return { success: true };
@@ -1262,48 +1466,101 @@ async function handlePutOrder(orderId, body, adminCtx) {
 }
 
 async function handlePostOrder(body) {
-    const { openid, item_id, channel_inventory_item_id, quantity = 1 } = body;
+    const {
+        openid,
+        item_id,
+        channel_inventory_item_id,
+        quantity = 1,
+        shipping_name,
+        shipping_phone,
+        shipping_address,
+        payment_method = 'wechat_pay',
+        payment_status = 'paid',
+        payment_id,
+        fulfillment_notes
+    } = body;
     if (!openid) return { success: false, error: 'openid is required', statusCode: 400 };
     if (!item_id && !channel_inventory_item_id) return { success: false, error: 'item_id or channel_inventory_item_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
 
+        let sku_id = null;
+        let channel_id = null;
+        let item_key = '';
+        let price_cny = 0;
+        let price_usd = 0;
+
         if (channel_inventory_item_id) {
             const itemResult = await pool.query(
-                `SELECT id, key_name, price_cny, price_usd, channel_id, stock_quantity
+                `SELECT id, key_name, price_cny, price_usd, channel_id, sku_id
                  FROM channel_inventory_items WHERE id = $1 AND active = TRUE`,
                 [channel_inventory_item_id]
             );
             if (itemResult.rows.length === 0) return { success: false, error: 'Item not found', statusCode: 404 };
             const item = itemResult.rows[0];
-
-            if (item.stock_quantity !== null) {
-                const stockCheck = await pool.query(
-                    `UPDATE channel_inventory_items SET stock_quantity = stock_quantity - $1
-                     WHERE id = $2 AND stock_quantity >= $1 RETURNING id`,
-                    [quantity, item.id]
-                );
-                if (stockCheck.rows.length === 0) return { success: false, error: 'Insufficient stock', statusCode: 400 };
-            }
-
-            const result = await pool.query(
-                `INSERT INTO orders (user_id, channel_inventory_item_id, item_key, quantity, price_cny, price_usd, status, channel_id)
-                 VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7) RETURNING id`,
-                [openid, item.id, item.key_name, quantity, item.price_cny || 0, item.price_usd || 0, item.channel_id]
+            sku_id = item.sku_id;
+            channel_id = item.channel_id;
+            item_key = item.key_name;
+            price_cny = item.price_cny || 0;
+            price_usd = item.price_usd || 0;
+        } else {
+            const itemResult = await pool.query(
+                'SELECT id, key_name, price_cny, price_usd, sku_id FROM store_items WHERE id = $1 AND active = TRUE',
+                [item_id]
             );
-            return { success: true, order_id: result.rows[0].id };
+            if (itemResult.rows.length === 0) return { success: false, error: 'Item not found', statusCode: 404 };
+            const item = itemResult.rows[0];
+            sku_id = item.sku_id;
+            item_key = item.key_name;
+            price_cny = item.price_cny || 0;
+            price_usd = item.price_usd || 0;
         }
 
-        const itemResult = await pool.query(
-            'SELECT id, key_name, price_cny, price_usd FROM store_items WHERE id = $1 AND active = TRUE',
-            [item_id]
-        );
-        if (itemResult.rows.length === 0) return { success: false, error: 'Item not found', statusCode: 404 };
-        const item = itemResult.rows[0];
+        // SKU-Based Stock Check — channel stock takes priority over warehouse
+        if (sku_id) {
+            const stockResult = await pool.query(
+                `SELECT id, quantity FROM inventory_stock
+                 WHERE sku_id = $1 AND (
+                     (location_type = 'channel' AND channel_id = $2) OR
+                     (location_type = 'warehouse' AND warehouse_name = 'shanghai-central')
+                 )
+                 ORDER BY (location_type = 'channel') DESC
+                 LIMIT 1`,
+                [sku_id, channel_id || null]
+            );
+            if (stockResult.rows.length > 0) {
+                const stock = stockResult.rows[0];
+                if (stock.quantity !== null) {
+                    if (stock.quantity < quantity) {
+                        return { success: false, error: 'Insufficient stock', statusCode: 400 };
+                    }
+                    // Decrement only the one location selected above (by primary key)
+                    await pool.query(
+                        `UPDATE inventory_stock
+                         SET quantity = quantity - $1, updated_at = NOW()
+                         WHERE id = $2 AND quantity >= $1`,
+                        [quantity, stock.id]
+                    );
+                }
+            }
+        }
+
+        const paid_at = payment_status === 'paid' ? 'NOW()' : null;
+
         const result = await pool.query(
-            `INSERT INTO orders (user_id, item_id, item_key, quantity, price_cny, price_usd, status)
-             VALUES ($1, $2, $3, $4, $5, $6, 'pending') RETURNING id`,
-            [openid, item.id, item.key_name, quantity, item.price_cny, item.price_usd]
+            `INSERT INTO orders (
+                user_id, item_id, channel_inventory_item_id, item_key, quantity, price_cny, price_usd, status, channel_id, sku_id,
+                shipping_name, shipping_phone, shipping_address, payment_method, payment_status, payment_id, fulfillment_notes, paid_at
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11, $12, $13, $14, $15, $16, ${paid_at ? 'NOW()' : 'NULL'})
+             RETURNING id`,
+            [
+                openid,
+                channel_inventory_item_id ? null : item_id,
+                channel_inventory_item_id ? channel_inventory_item_id : null,
+                item_key, quantity, price_cny, price_usd, channel_id, sku_id,
+                shipping_name, shipping_phone, shipping_address, payment_method, payment_status, payment_id, fulfillment_notes
+            ]
         );
         return { success: true, order_id: result.rows[0].id };
     } catch (err) {
@@ -7430,6 +7687,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetDotsInventory();
             } else if (path.includes('/channel-inventory')) {
                 result = await handleGetChannelInventory(query, adminCtx);
+            } else if (path.includes('/skus')) {
+                result = await handleGetSkus();
+            } else if (path.includes('/inventory-stock')) {
+                result = await handleGetInventoryStock(query);
             } else if (path.includes('/store-items')) {
                 result = await handleGetStoreItems(query);
             } else if (path.includes('/my-orders')) {
@@ -7581,6 +7842,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostCoaches(parsedBody);
             } else if (path.includes('/channel-inventory')) {
                 result = await handlePostChannelInventory(parsedBody, adminCtx);
+            } else if (path.includes('/skus')) {
+                result = await handlePostSku(parsedBody);
+            } else if (path.includes('/inventory-stock')) {
+                result = await handlePostInventoryStock(parsedBody);
             } else if (path.includes('/store-items')) {
                 result = await handlePostStoreItem(parsedBody);
             } else if (path.includes('/orders')) {
@@ -7749,6 +8014,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/channel-inventory/')) {
                 const invId = path.split('/channel-inventory/')[1];
                 result = await handlePutChannelInventory(invId, parsedBody, adminCtx);
+            } else if (path.includes('/skus/')) {
+                const skuId = path.split('/skus/')[1];
+                result = await handlePutSku(skuId, parsedBody);
             } else if (path.includes('/store-items/')) {
                 const itemId = path.split('/store-items/')[1];
                 result = await handlePutStoreItem(itemId, parsedBody);
@@ -7865,6 +8133,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/channel-inventory/')) {
                 const invId = path.split('/channel-inventory/')[1];
                 result = await handleDeleteChannelInventory(invId, adminCtx);
+            } else if (path.includes('/skus/')) {
+                const skuId = path.split('/skus/')[1];
+                result = await handleDeleteSku(skuId);
             } else if (path.includes('/store-items/')) {
                 const itemId = path.split('/store-items/')[1];
                 result = await handleDeleteStoreItem(itemId);
