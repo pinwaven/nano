@@ -4080,10 +4080,10 @@ const EMPTY_INV_ITEM = {
   key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '',
   item_type: 'physical', unit_en: '', unit_zh: '',
   price_cny: '', price_usd: '', stock_quantity: '',
-  tag: '', sort_order: 0, active: true, image_url: '', store_item_id: null, show_in_store: false,
+  tag: '', sort_order: 0, active: true, image_url: '', store_item_id: null, show_in_store: false, sku_id: '',
 };
 
-function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
+function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave }) {
   const { t } = useLang();
   const ti = t.inventory;
   const isEdit = !!item?.id;
@@ -4096,7 +4096,8 @@ function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
         tag: item.tag || '', sort_order: item.sort_order ?? 0,
         active: item.active !== false, image_url: item.image_url || '',
         store_item_id: item.store_item_id || null,
-        show_in_store: item.show_in_store === true }
+        show_in_store: item.show_in_store === true,
+        sku_id: item.sku_id || '' }
     : item
       ? { key_name: item.key_name || '', name_en: item.name_en || '', name_zh: item.name_zh || '',
           desc_en: item.desc_en || '', desc_zh: item.desc_zh || '',
@@ -4105,7 +4106,8 @@ function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
           stock_quantity: '',
           tag: item.tag || '', sort_order: item.sort_order ?? 0,
           active: true, image_url: item.image_url || '',
-          store_item_id: item.store_item_id || null, show_in_store: false }
+          store_item_id: item.store_item_id || null, show_in_store: false,
+          sku_id: item.sku_id || '' }
       : { ...EMPTY_INV_ITEM });
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -4142,6 +4144,7 @@ function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
       price_cny: form.price_cny !== '' ? form.price_cny : null,
       price_usd: form.price_usd !== '' ? form.price_usd : null,
       stock_quantity: form.stock_quantity !== '' ? parseInt(form.stock_quantity, 10) : null,
+      sku_id: form.sku_id !== '' ? form.sku_id : null,
     };
     if (isEdit) delete payload.store_item_id;
     try {
@@ -4178,6 +4181,18 @@ function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
                 <select value={form.item_type} onChange={e => set('item_type', e.target.value)} className="inline-select" style={{ width: '100%' }}>
                   <option value="physical">{ti.physical}</option>
                   <option value="virtual">{ti.virtual}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>SKU Binding (Centralized Inventory Link)</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.sku_id || ''} onChange={e => set('sku_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">No SKU linked (Unlimited virtual item)</option>
+                  {skus.map(s => (
+                    <option key={s.id} value={s.id}>{s.sku_code} - {s.name_zh || s.name_en}</option>
+                  ))}
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -4408,7 +4423,7 @@ function ImportFromStoreModal({ existingItems, onClose, onSelect }) {
   );
 }
 
-function InventoryTab({ channels, session, isSuperadmin }) {
+function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
   const { t } = useLang();
   const ti = t.inventory;
   const [selectedChannelId, setSelectedChannelId] = useState(
@@ -4419,6 +4434,7 @@ function InventoryTab({ channels, session, isSuperadmin }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(null);
+  const [expandedOrderId, setExpandedOrderId] = useState(null);
 
   useEffect(() => {
     if (isSuperadmin && !selectedChannelId && channels.length) {
@@ -4636,17 +4652,60 @@ function InventoryTab({ channels, session, isSuperadmin }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {orders.map(o => (
-                      <tr key={o.id}>
-                        <td><span className="mono muted">{o.id.slice(0, 8)}…</span></td>
-                        <td>{fmt(o.nickname || o.user_id)}</td>
-                        <td className="bold">{fmt(o.name_zh || o.name_en)}</td>
-                        <td>{o.quantity}</td>
-                        <td>¥{o.price_cny}</td>
-                        <td><OrderStatusSelect orderId={o.id} status={o.status} onSave={() => fetchItems(selectedChannelId)} /></td>
-                        <td className="muted">{fmtDate(o.created_at)}</td>
-                      </tr>
-                    ))}
+                    {orders.map(o => {
+                      const isExpanded = expandedOrderId === o.id;
+                      return (
+                        <React.Fragment key={o.id}>
+                          <tr onClick={() => setExpandedOrderId(isExpanded ? null : o.id)} style={{ cursor: 'pointer' }}>
+                            <td><span className="mono muted">{o.id.slice(0, 8)}…</span></td>
+                            <td>{fmt(o.nickname || o.user_id)}</td>
+                            <td className="bold">{fmt(o.name_zh || o.name_en)}</td>
+                            <td>{o.quantity}</td>
+                            <td>¥{o.price_cny}</td>
+                            <td onClick={(e) => e.stopPropagation()}><OrderStatusSelect orderId={o.id} status={o.status} onSave={() => fetchItems(selectedChannelId)} /></td>
+                            <td className="muted">{fmtDate(o.created_at)}</td>
+                          </tr>
+                          {isExpanded && (
+                            <tr>
+                              <td colSpan={7} style={{ background: 'rgba(99, 117, 236, 0.03)', padding: '16px 24px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', fontSize: '13px', color: '#64748b' }}>
+                                  <div>
+                                    <h4 style={{ color: '#0f172a', marginBottom: '8px', fontWeight: 600 }}>Shipping Address</h4>
+                                    {o.shipping_name ? (
+                                      <div>
+                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Name:</strong> {o.shipping_name}</p>
+                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Phone:</strong> {o.shipping_phone}</p>
+                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Address:</strong> {o.shipping_address}</p>
+                                      </div>
+                                    ) : (
+                                      <p style={{ fontStyle: 'italic', margin: '4px 0' }}>No shipping address provided (virtual item/service)</p>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <h4 style={{ color: '#0f172a', marginBottom: '8px', fontWeight: 600 }}>Payment & Fulfillment</h4>
+                                    <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Payment Method:</strong> {o.payment_method || 'WeChat Pay'}</p>
+                                    <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Payment Status:</strong> <span style={{ color: o.payment_status === 'paid' ? '#10b981' : '#f59e0b', fontWeight: 600 }}>{o.payment_status || 'paid'}</span></p>
+                                    {o.tracking_number && (
+                                      <div style={{ marginTop: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
+                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Carrier:</strong> {o.shipping_carrier}</p>
+                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Tracking #:</strong> <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', color: '#6375EC' }}>{o.tracking_number}</code></p>
+                                        {o.shipped_at && <p style={{ margin: '4px 0', fontSize: '11px', color: '#94a3b8' }}>Shipped at: {fmtDate(o.shipped_at)}</p>}
+                                      </div>
+                                    )}
+                                    {o.fulfillment_notes && (
+                                      <p style={{ margin: '8px 0 4px', fontStyle: 'italic', fontSize: '12px' }}><strong style={{ color: '#334155', fontStyle: 'normal' }}>Notes:</strong> {o.fulfillment_notes}</p>
+                                    )}
+                                    {o.fulfilled_assets && (
+                                      <p style={{ margin: '4px 0', fontSize: '12px' }}><strong style={{ color: '#334155' }}>Assets:</strong> {o.fulfilled_assets.join(', ')}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -4659,6 +4718,7 @@ function InventoryTab({ channels, session, isSuperadmin }) {
         <ChannelInventoryItemModal
           item={modal.prefill || null}
           channelId={selectedChannelId}
+          skus={skus}
           onClose={() => setModal(null)}
           onSave={closeAndRefresh}
         />
@@ -4667,6 +4727,7 @@ function InventoryTab({ channels, session, isSuperadmin }) {
         <ChannelInventoryItemModal
           item={modal.item}
           channelId={selectedChannelId}
+          skus={skus}
           onClose={() => setModal(null)}
           onSave={closeAndRefresh}
         />
@@ -4712,10 +4773,10 @@ function InventoryTab({ channels, session, isSuperadmin }) {
 const EMPTY_ITEM = {
   key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '',
   unit_en: '', unit_zh: '', price_cny: '', price_usd: '',
-  tag: '', sort_order: 0, active: true, image_url: '',
+  tag: '', sort_order: 0, active: true, image_url: '', sku_id: '',
 };
 
-function StoreItemModal({ item, onClose, onSave }) {
+function StoreItemModal({ item, skus = [], onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!item?.id;
   const [form, setForm] = useState(isEdit
@@ -4724,7 +4785,7 @@ function StoreItemModal({ item, onClose, onSave }) {
         unit_en: item.unit_en || '', unit_zh: item.unit_zh || '',
         price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '',
         tag: item.tag || '', sort_order: item.sort_order ?? 0, active: item.active !== false,
-        image_url: item.image_url || '' }
+        image_url: item.image_url || '', sku_id: item.sku_id || '' }
     : { ...EMPTY_ITEM });
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -4783,6 +4844,18 @@ function StoreItemModal({ item, onClose, onSave }) {
                   <option value="">{t.modal.noTag}</option>
                   <option value="bestseller">{t.modal.tagBestseller}</option>
                   <option value="value">{t.modal.tagValue}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>SKU Binding (Centralized Inventory Link)</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.sku_id || ''} onChange={e => set('sku_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">No SKU linked (Unlimited virtual item)</option>
+                  {skus.map(s => (
+                    <option key={s.id} value={s.id}>{s.sku_code} - {s.name_zh || s.name_en}</option>
+                  ))}
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -4915,27 +4988,169 @@ const ORDER_STATUSES = ['pending', 'confirmed', 'shipped', 'delivered', 'cancell
 function OrderStatusSelect({ orderId, status, onSave }) {
   const { t } = useLang();
   const [busy, setBusy] = useState(false);
+  const [showFulfillModal, setShowFulfillModal] = useState(false);
+  const [carrier, setCarrier] = useState('SF Express (顺丰速运)');
+  const [tracking, setTracking] = useState('');
+  const [notes, setNotes] = useState('');
+  const [assets, setAssets] = useState('');
+
   const handleChange = async (e) => {
+    const val = e.target.value;
+    if (val === 'shipped') {
+      setShowFulfillModal(true);
+      return;
+    }
     setBusy(true);
-    try { await axios.put(`/api/orders/${orderId}`, { status: e.target.value }); onSave(); }
+    try { 
+      await axios.put(`/api/orders/${orderId}`, { status: val }); 
+      onSave(); 
+    }
     catch { /* silent */ } finally { setBusy(false); }
   };
+
+  const handleShipSubmit = async (e) => {
+    e.preventDefault();
+    if (!tracking.trim()) {
+      alert('Tracking number is required');
+      return;
+    }
+    setBusy(true);
+    try {
+      await axios.put(`/api/orders/${orderId}`, {
+        status: 'shipped',
+        shipping_carrier: carrier,
+        tracking_number: tracking.trim(),
+        fulfillment_notes: notes.trim() || null,
+        fulfilled_assets: assets.trim() ? assets.split(',').map(s => s.trim()) : null
+      });
+      setShowFulfillModal(false);
+      onSave();
+    } catch {
+      alert('Failed to update shipment details');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const color = { pending: '#f59e0b', confirmed: '#3b82f6', shipped: '#8b5cf6', delivered: '#10b981', cancelled: '#94a3b8' }[status] || '#94a3b8';
+  
   return (
     <div className="select-wrap">
       <select value={status} onChange={handleChange} disabled={busy} className="inline-select" style={{ color }}>
         {ORDER_STATUSES.map(s => <option key={s} value={s}>{t.store[s]}</option>)}
       </select>
       <ChevronDown size={11} className="select-chevron" />
+
+      {showFulfillModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 99999, color: '#1e293b'
+        }}>
+          <div style={{
+            background: '#ffffff', width: '420px', borderRadius: '16px',
+            padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+            border: '1px solid rgba(226, 232, 240, 0.8)'
+          }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '16px' }}>Fulfill & Ship Order</h3>
+            <form onSubmit={handleShipSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Shipping Carrier *</label>
+                <input
+                  type="text"
+                  value={carrier}
+                  onChange={(e) => setCarrier(e.target.value)}
+                  placeholder="e.g. SF Express (顺丰速运)"
+                  style={{
+                    padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1',
+                    fontSize: '13px', outline: 'none'
+                  }}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Tracking Number *</label>
+                <input
+                  type="text"
+                  value={tracking}
+                  onChange={(e) => setTracking(e.target.value)}
+                  placeholder="Enter courier barcode/tracking number"
+                  style={{
+                    padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1',
+                    fontSize: '13px', outline: 'none'
+                  }}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Physical Asset Codes (Optional)</label>
+                <input
+                  type="text"
+                  value={assets}
+                  onChange={(e) => setAssets(e.target.value)}
+                  placeholder="e.g., KNC12345678-0001 (comma separated)"
+                  style={{
+                    padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1',
+                    fontSize: '13px', outline: 'none'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Fulfillment Notes (Optional)</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Add any internal shipping notes..."
+                  style={{
+                    padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1',
+                    fontSize: '13px', outline: 'none', minHeight: '60px', resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowFulfillModal(false)}
+                  disabled={busy}
+                  style={{
+                    padding: '8px 16px', borderRadius: '8px', border: '1px solid #cbd5e1',
+                    background: '#f8fafc', color: '#475569', fontSize: '13px', fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  style={{
+                    padding: '8px 16px', borderRadius: '8px', border: 'none',
+                    background: '#6375EC', color: '#ffffff', fontSize: '13px', fontWeight: 600,
+                    cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(99, 117, 236, 0.2)'
+                  }}
+                >
+                  {busy ? 'Processing...' : 'Confirm Shipment'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function StoreTab({ storeItems, orders, channels, onRefresh }) {
+function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = [], onRefresh }) {
   const { t } = useLang();
   const [subTab, setSubTab] = useState('items');
   const [orderChannelFilter, setOrderChannelFilter] = useState('');
   const [modal, setModal] = useState(null);
+  const [expandedOrderId, setExpandedOrderId] = useState(null);
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
 
   const activeCount  = storeItems.filter(i => i.active).length;
@@ -4957,6 +5172,9 @@ function StoreTab({ storeItems, orders, channels, onRefresh }) {
         <button className={`subtab-btn${subTab === 'items' ? ' active' : ''}`} onClick={() => setSubTab('items')}>
           <ShoppingBag size={13} />{t.store.itemsTab}
         </button>
+        <button className={`subtab-btn${subTab === 'skus' ? ' active' : ''}`} onClick={() => setSubTab('skus')}>
+          <Layers size={13} />SKUs & Stock
+        </button>
         <button className={`subtab-btn${subTab === 'orders' ? ' active' : ''}`} onClick={() => setSubTab('orders')}>
           <Package size={13} />{t.store.ordersTab}
         </button>
@@ -4977,6 +5195,7 @@ function StoreTab({ storeItems, orders, channels, onRefresh }) {
                 <th>{t.table.key}</th>
                 <th>{t.table.nameEn}</th>
                 <th>{t.table.nameZh}</th>
+                <th>Linked SKU</th>
                 <th>{t.store.priceCny}</th>
                 <th>{t.store.priceUsd}</th>
                 <th>{t.store.tag}</th>
@@ -4985,34 +5204,113 @@ function StoreTab({ storeItems, orders, channels, onRefresh }) {
               </tr>
             </thead>
             <tbody>
-              {storeItems.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.store}</td></tr>}
-              {storeItems.map(item => (
-                <tr key={item.id}>
-                  <td>
-                    {item.image_url
-                      ? <img src={item.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', border: '1px solid rgba(99,117,236,0.25)', display: 'block' }} />
-                      : <div style={{ width: 40, height: 40, borderRadius: 6, background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ImageIcon size={16} style={{ color: '#475569' }} /></div>
-                    }
-                  </td>
-                  <td><code className="code-tag">{item.key_name}</code></td>
-                  <td className="bold">{fmt(item.name_en)}</td>
-                  <td className="muted">{fmt(item.name_zh)}</td>
-                  <td>¥{item.price_cny}</td>
-                  <td className="muted">${item.price_usd}</td>
-                  <td>{item.tag ? <Badge color="#6366f1">{item.tag}</Badge> : '—'}</td>
-                  <td>
-                    <Badge color={item.active ? '#10b981' : '#94a3b8'}>
-                      {item.active ? t.store.yes : t.store.no}
-                    </Badge>
-                  </td>
-                  <td>
-                    <div className="row-actions">
-                      <button className="icon-btn" title={t.modal.editItem} onClick={() => setModal({ type: 'edit', item })}><Pencil size={14} /></button>
-                      <button className="icon-btn danger" title={t.modal.deleteItem} onClick={() => setModal({ type: 'delete', item })}><Trash2 size={14} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {storeItems.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.store}</td></tr>}
+              {storeItems.map(item => {
+                const linkedSku = skus.find(s => s.id === item.sku_id);
+                return (
+                  <tr key={item.id}>
+                    <td>
+                      {item.image_url
+                        ? <img src={item.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', border: '1px solid rgba(99,117,236,0.25)', display: 'block' }} />
+                        : <div style={{ width: 40, height: 40, borderRadius: 6, background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ImageIcon size={16} style={{ color: '#475569' }} /></div>
+                      }
+                    </td>
+                    <td><code className="code-tag">{item.key_name}</code></td>
+                    <td className="bold">{fmt(item.name_en)}</td>
+                    <td className="muted">{fmt(item.name_zh)}</td>
+                    <td>
+                      {linkedSku ? <code style={{ color: '#818cf8', fontWeight: 600 }}>{linkedSku.sku_code}</code> : <span className="muted" style={{ fontStyle: 'italic', fontSize: 11 }}>No SKU (Unlimited)</span>}
+                    </td>
+                    <td>¥{item.price_cny}</td>
+                    <td className="muted">${item.price_usd}</td>
+                    <td>{item.tag ? <Badge color="#6366f1">{item.tag}</Badge> : '—'}</td>
+                    <td>
+                      <Badge color={item.active ? '#10b981' : '#94a3b8'}>
+                        {item.active ? t.store.yes : t.store.no}
+                      </Badge>
+                    </td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="icon-btn" title={t.modal.editItem} onClick={() => setModal({ type: 'edit', item })}><Pencil size={14} /></button>
+                        <button className="icon-btn danger" title={t.modal.deleteItem} onClick={() => setModal({ type: 'delete', item })}><Trash2 size={14} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {subTab === 'skus' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{skus.length} SKUs registered</span>
+            <button className="btn-primary" onClick={() => setModal({ type: 'add-sku' })}>
+              <Plus size={14} />Add SKU
+            </button>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>SKU Code</th>
+                <th>Name (EN)</th>
+                <th>Name (ZH)</th>
+                <th>Type</th>
+                <th>Unit</th>
+                <th>Location Stocks</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {skus.length === 0 && <tr><td colSpan={7} className="empty-row">No SKUs registered yet</td></tr>}
+              {skus.map(sku => {
+                const stocks = inventoryStock.filter(st => st.sku_id === sku.id);
+                return (
+                  <tr key={sku.id}>
+                    <td><code className="code-tag">{sku.sku_code}</code></td>
+                    <td className="bold">{sku.name_en}</td>
+                    <td className="muted">{sku.name_zh}</td>
+                    <td>
+                      <Badge color={sku.item_type === 'physical' ? '#6366f1' : '#10b981'}>
+                        {sku.item_type}
+                      </Badge>
+                    </td>
+                    <td>{sku.unit_zh} / {sku.unit_en}</td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {stocks.length === 0 ? <span className="muted" style={{ fontSize: 11 }}>— No stocks configured</span> : null}
+                        {stocks.map(st => {
+                          const ch = channels?.find(c => String(c.id) === String(st.channel_id));
+                          return (
+                            <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                              <span style={{ padding: '1px 5px', borderRadius: 4, background: st.location_type === 'warehouse' ? '#334155' : 'rgba(99,102,241,0.15)', color: st.location_type === 'warehouse' ? '#e2e8f0' : '#818cf8', fontWeight: 500 }}>
+                                {st.location_type === 'warehouse' ? `Warehouse: ${st.warehouse_name}` : `Channel: ${ch?.name || st.channel_id}`}
+                              </span>
+                              <span className="bold" style={{ color: (st.quantity ?? 0) <= (st.low_stock_threshold ?? 0) ? '#ef4444' : '#10b981' }}>
+                                {st.quantity === null ? '∞' : `${st.quantity} left`}
+                              </span>
+                              {(st.quantity !== null && (st.quantity <= (st.low_stock_threshold ?? 0))) && (
+                                <span style={{ color: '#ef4444', fontWeight: 600 }}>⚠️ LOW</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                        <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }} onClick={() => setModal({ type: 'adjust-stock', sku })}>
+                          Adjust Stock
+                        </button>
+                        <button className="icon-btn" title="Edit SKU" onClick={() => setModal({ type: 'edit-sku', sku })}><Pencil size={14} /></button>
+                        <button className="icon-btn danger" title="Delete SKU" onClick={() => setModal({ type: 'delete-sku', sku })}><Trash2 size={14} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -5056,19 +5354,60 @@ function StoreTab({ storeItems, orders, channels, onRefresh }) {
               {filteredOrders.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.orders}</td></tr>}
               {filteredOrders.map(o => {
                 const ch = channels?.find(c => String(c.id) === String(o.channel_id));
+                const isExpanded = expandedOrderId === o.id;
                 return (
-                  <tr key={o.id}>
-                    <td><span className="mono muted">{o.id.slice(0, 8)}…</span></td>
-                    <td>{fmt(o.nickname || o.user_id)}</td>
-                    <td className="bold">{fmt(o.name_en)}</td>
-                    <td>{o.quantity}</td>
-                    <td>¥{o.price_cny}</td>
-                    <td>
-                      {ch ? <Badge color="#6366f1">{ch.name || ch.key_name}</Badge> : <span className="muted">—</span>}
-                    </td>
-                    <td><OrderStatusSelect orderId={o.id} status={o.status} onSave={onRefresh} /></td>
-                    <td className="muted">{fmtDate(o.created_at)}</td>
-                  </tr>
+                  <React.Fragment key={o.id}>
+                    <tr onClick={() => setExpandedOrderId(isExpanded ? null : o.id)} style={{ cursor: 'pointer' }}>
+                      <td><span className="mono muted">{o.id.slice(0, 8)}…</span></td>
+                      <td>{fmt(o.nickname || o.user_id)}</td>
+                      <td className="bold">{fmt(o.name_zh || o.name_en)}</td>
+                      <td>{o.quantity}</td>
+                      <td>¥{o.price_cny}</td>
+                      <td>
+                        {ch ? <Badge color="#6366f1">{ch.name || ch.key_name}</Badge> : <span className="muted">—</span>}
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}><OrderStatusSelect orderId={o.id} status={o.status} onSave={onRefresh} /></td>
+                      <td className="muted">{fmtDate(o.created_at)}</td>
+                    </tr>
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={8} style={{ background: 'rgba(99, 117, 236, 0.03)', padding: '16px 24px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', fontSize: '13px', color: '#64748b' }}>
+                            <div>
+                              <h4 style={{ color: '#0f172a', marginBottom: '8px', fontWeight: 600 }}>Shipping Address</h4>
+                              {o.shipping_name ? (
+                                <div>
+                                  <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Name:</strong> {o.shipping_name}</p>
+                                  <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Phone:</strong> {o.shipping_phone}</p>
+                                  <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Address:</strong> {o.shipping_address}</p>
+                                </div>
+                              ) : (
+                                <p style={{ fontStyle: 'italic', margin: '4px 0' }}>No shipping address provided (virtual item/service)</p>
+                              )}
+                            </div>
+                            <div>
+                              <h4 style={{ color: '#0f172a', marginBottom: '8px', fontWeight: 600 }}>Payment & Fulfillment</h4>
+                              <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Payment Method:</strong> {o.payment_method || 'WeChat Pay'}</p>
+                              <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Payment Status:</strong> <span style={{ color: o.payment_status === 'paid' ? '#10b981' : '#f59e0b', fontWeight: 600 }}>{o.payment_status || 'paid'}</span></p>
+                              {o.tracking_number && (
+                                <div style={{ marginTop: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
+                                  <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Carrier:</strong> {o.shipping_carrier}</p>
+                                  <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Tracking #:</strong> <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', color: '#6375EC' }}>{o.tracking_number}</code></p>
+                                  {o.shipped_at && <p style={{ margin: '4px 0', fontSize: '11px', color: '#94a3b8' }}>Shipped at: {fmtDate(o.shipped_at)}</p>}
+                                </div>
+                              )}
+                              {o.fulfillment_notes && (
+                                <p style={{ margin: '8px 0 4px', fontStyle: 'italic', fontSize: '12px' }}><strong style={{ color: '#334155', fontStyle: 'normal' }}>Notes:</strong> {o.fulfillment_notes}</p>
+                              )}
+                              {o.fulfilled_assets && (
+                                <p style={{ margin: '4px 0', fontSize: '12px' }}><strong style={{ color: '#334155' }}>Assets:</strong> {o.fulfilled_assets.join(', ')}</p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -5076,10 +5415,231 @@ function StoreTab({ storeItems, orders, channels, onRefresh }) {
         </div>
       )}
 
-      {modal?.type === 'add'    && <StoreItemModal item={null}       onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <StoreItemModal item={modal.item} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add'    && <StoreItemModal item={null} skus={skus} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <StoreItemModal item={modal.item} skus={skus} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteStoreItemConfirm item={modal.item} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      
+      {modal?.type === 'add-sku'    && <SkuModal sku={null}       onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit-sku'   && <SkuModal sku={modal.sku}  onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete-sku' && <DeleteSkuConfirm sku={modal.sku} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {modal?.type === 'adjust-stock' && <StockAdjustModal sku={modal.sku} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
     </>
+  );
+}
+
+function SkuModal({ sku, onClose, onSave }) {
+  const isEdit = !!sku?.id;
+  const [form, setForm] = useState(isEdit
+    ? { sku_code: sku.sku_code, name_zh: sku.name_zh || '', name_en: sku.name_en || '',
+        desc_zh: sku.desc_zh || '', desc_en: sku.desc_en || '',
+        item_type: sku.item_type || 'physical', unit_zh: sku.unit_zh || '个', unit_en: sku.unit_en || 'pcs' }
+    : { sku_code: '', name_zh: '', name_en: '', desc_zh: '', desc_en: '', item_type: 'physical', unit_zh: '个', unit_en: 'pcs' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.sku_code.trim()) { setError('SKU Code is required'); return; }
+    if (!form.name_en.trim() || !form.name_zh.trim()) { setError('Both English and Chinese names are required'); return; }
+    setBusy(true); setError('');
+    try {
+      if (isEdit) await axios.put(`/api/skus/\${sku.id}`, form);
+      else        await axios.post('/api/skus', form);
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || 'Save failed'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{isEdit ? 'Edit SKU definition' : 'Create new SKU definition'}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field">
+              <span>SKU Code (Immutable Identifier)</span>
+              <input value={form.sku_code} onChange={e => set('sku_code', e.target.value)} disabled={isEdit} placeholder="e.g. KINO-CHIP-V2" />
+            </label>
+            <label className="form-field">
+              <span>Item Type</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.item_type} onChange={e => set('item_type', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="physical">Physical Asset</option>
+                  <option value="virtual">Virtual Service / Item</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>Name (EN)</span>
+              <input value={form.name_en} onChange={e => set('name_en', e.target.value)} placeholder="e.g. Kino Biomarker Test Chip" />
+            </label>
+            <label className="form-field">
+              <span>Name (ZH)</span>
+              <input value={form.name_zh} onChange={e => set('name_zh', e.target.value)} placeholder="例如 Kino 生物标志物检测芯片" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>Description (EN)</span>
+              <input value={form.desc_en} onChange={e => set('desc_en', e.target.value)} placeholder="Central description of physical or virtual asset" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>Description (ZH)</span>
+              <input value={form.desc_zh} onChange={e => set('desc_zh', e.target.value)} placeholder="统一中文描述" />
+            </label>
+            <label className="form-field">
+              <span>Unit (EN)</span>
+              <input value={form.unit_en} onChange={e => set('unit_en', e.target.value)} placeholder="e.g. pcs, chip, box" />
+            </label>
+            <label className="form-field">
+              <span>Unit (ZH)</span>
+              <input value={form.unit_zh} onChange={e => set('unit_zh', e.target.value)} placeholder="例如 个, 片, 盒" />
+            </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteSkuConfirm({ sku, onClose, onConfirm }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const handleDelete = async () => {
+    setBusy(true); setError('');
+    try {
+      await axios.delete(`/api/skus/\${sku.id}`);
+      onConfirm();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Delete failed. Check if listings reference this SKU.');
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>Delete SKU Registry Entry?</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p style={{ color: '#ef4444', fontWeight: 600 }}>WARNING: Are you sure you want to delete SKU "{sku.sku_code}"?</p>
+          <p className="muted" style={{ marginTop: 8, fontSize: 13 }}>This registry item will be permanently removed. Any storefront listing linking to this SKU will lose its inventory association.</p>
+          {error && <div className="form-error" style={{ marginTop: 12 }}>{error}</div>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="btn-primary danger" onClick={handleDelete} disabled={busy}>
+            {busy ? 'Deleting…' : 'Confirm Delete'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StockAdjustModal({ sku, channels = [], onClose, onSave }) {
+  const [locationType, setLocationType] = useState('warehouse'); // 'warehouse' | 'channel'
+  const [channelId, setChannelId] = useState('');
+  const [warehouseName, setWarehouseName] = useState('shanghai-central');
+  const [quantity, setQuantity] = useState('');
+  const [lowStockThreshold, setLowStockThreshold] = useState(5);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (locationType === 'channel' && !channelId) { setError('Please select a target channel'); return; }
+    if (locationType === 'warehouse' && !warehouseName.trim()) { setError('Please enter warehouse name'); return; }
+    setBusy(true); setError('');
+    try {
+      const payload = {
+        sku_id: sku.id,
+        location_type: locationType,
+        channel_id: locationType === 'channel' ? parseInt(channelId, 10) : null,
+        warehouse_name: locationType === 'warehouse' ? warehouseName : null,
+        quantity: quantity !== '' ? parseInt(quantity, 10) : null, // null represents unlimited
+        low_stock_threshold: parseInt(lowStockThreshold, 10) || 0,
+      };
+      await axios.post('/api/inventory-stock', payload);
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || 'Stock adjustment failed'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>Adjust Inventory Stock</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div style={{ marginBottom: 16 }}>
+            <span style={{ fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 600 }}>Target SKU</span>
+            <div className="bold" style={{ fontSize: 16, color: 'var(--primary)', marginTop: 4 }}>{sku.sku_code} - {sku.name_zh || sku.name_en}</div>
+          </div>
+          <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
+            <label className="form-field">
+              <span>Location Type</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={locationType} onChange={e => setLocationType(e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="warehouse">Central Warehouse</option>
+                  <option value="channel">Clinic Channel Stock</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+
+            {locationType === 'channel' ? (
+              <label className="form-field">
+                <span>Select Clinic Channel</span>
+                <div className="select-wrap" style={{ width: '100%' }}>
+                  <select value={channelId} onChange={e => setChannelId(e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                    <option value="">-- Choose Channel --</option>
+                    {channels.map(c => (
+                      <option key={c.id} value={c.id}>{c.name || c.key_name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={11} className="select-chevron" />
+                </div>
+              </label>
+            ) : (
+              <label className="form-field">
+                <span>Warehouse Name</span>
+                <input value={warehouseName} onChange={e => setWarehouseName(e.target.value)} placeholder="shanghai-central" />
+              </label>
+            )}
+
+            <label className="form-field">
+              <span>Quantity (Leave blank for Unlimited/Digital)</span>
+              <input type="number" min="0" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="Unlimited stock" />
+            </label>
+
+            <label className="form-field">
+              <span>Low Stock Warning Threshold</span>
+              <input type="number" min="0" value={lowStockThreshold} onChange={e => setLowStockThreshold(e.target.value)} />
+            </label>
+          </div>
+          {error && <div className="form-error" style={{ marginTop: 12 }}>{error}</div>}
+          <div className="modal-footer" style={{ marginTop: 20 }}>
+            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? 'Saving…' : 'Save Adjustments'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -10712,7 +11272,7 @@ function AdminPanel({ session, onLogout }) {
   const isCmsAdmin = session?.role === 'channel' && session?.canManageSubchannels;
   const SUPERADMIN_ONLY = new Set(['channels', 'admin-accounts']);
 
-  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [] });
+  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [], skus: [], inventoryStock: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -10722,7 +11282,7 @@ function AdminPanel({ session, onLogout }) {
     const cid = session?.channelId;
     const isChannel = session?.role === 'channel';
     try {
-      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, tkRes, aaRes, hptRes, apkRes] = await Promise.allSettled([
+      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, tkRes, aaRes, hptRes, apkRes, skuRes, stockRes] = await Promise.allSettled([
         axios.get(isChannel ? `/api/channel-users/${cid}?minimal=true` : '/api/users?minimal=true'),
         axios.get('/api/dots-inventory'),
         axios.get(isChannel ? `/api/channel-coaches/${cid}` : '/api/coach-list'),
@@ -10737,6 +11297,8 @@ function AdminPanel({ session, onLogout }) {
         (isChannel && !isCmsAdmin) ? Promise.resolve({ data: {} }) : axios.get('/api/admin-accounts'),
         axios.get('/api/health-plan-templates?all=true'),
         axios.get('/api/kone-apk-releases'),
+        axios.get('/api/skus'),
+        axios.get('/api/inventory-stock'),
       ]);
       setData({
         users:               ok(uRes).users              || [],
@@ -10753,6 +11315,8 @@ function AdminPanel({ session, onLogout }) {
         adminAccounts:       ok(aaRes).accounts          || [],
         healthPlanTemplates: ok(hptRes).templates        || [],
         koneApkReleases:     ok(apkRes).releases         || [],
+        skus:                ok(skuRes).skus             || [],
+        inventoryStock:      ok(stockRes).inventory      || [],
       });
       setLastRefresh(new Date());
     } catch (err) { console.error('Admin fetch error:', err); }
@@ -10839,8 +11403,8 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'users'    && <UsersTab    users={data.users} coaches={data.coaches} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
           {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
           {tab === 'dots'     && <DotsTab     dots={data.dots} onRefresh={fetchData} />}
-          {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} channels={data.channels} onRefresh={fetchData} />}
-          {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} />}
+          {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} channels={data.channels} skus={data.skus || []} inventoryStock={data.inventoryStock || []} onRefresh={fetchData} />}
+          {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} skus={data.skus || []} />}
           {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} />}
           {tab === 'subchannels' && <SubchannelsTab subchannels={data.channels} adminAccounts={data.adminAccounts} invitations={data.invitations} session={session} onRefresh={fetchData} />}
           {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
