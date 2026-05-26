@@ -768,7 +768,39 @@
               <text class="order-price">{{item.price}}</text>
               <text class="order-meta"> · {{item.unit}} · ×{{item.quantity}}</text>
             </view>
-            <text class="order-date">{{item.createdAt}}</text>
+            <view class="order-date-row">
+              <text class="order-date">{{item.createdAt}}</text>
+            </view>
+            
+            <!-- Delivery Details -->
+            <view wx:if="{{item.shippingName}}" class="order-delivery-info">
+              <view class="delivery-row">
+                <text class="delivery-label">{{lang === 'zh' ? '收货人' : 'Recipient'}}</text>
+                <text class="delivery-val">{{item.shippingName}} ({{item.shippingPhone}})</text>
+              </view>
+              <view class="delivery-row">
+                <text class="delivery-label">{{lang === 'zh' ? '收货地址' : 'Address'}}</text>
+                <text class="delivery-val">{{item.shippingAddress}}</text>
+              </view>
+              
+              <!-- Courier Tracking Details -->
+              <view wx:if="{{item.trackingNumber}}" class="delivery-row tracking-section">
+                <text class="delivery-label">{{lang === 'zh' ? '快递单号' : 'Tracking'}}</text>
+                <view class="tracking-val-wrap">
+                  <text class="delivery-val bold">{{item.shippingCarrier}} {{item.trackingNumber}}</text>
+                  <view class="copy-badge" bindtap="handleCopyTracking" data-tracking="{{item.trackingNumber}}">
+                    <text>{{lang === 'zh' ? '复制' : 'Copy'}}</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+            
+            <!-- Actions Section -->
+            <view wx:if="{{item.status === 'pending'}}" class="order-actions">
+              <view class="cancel-order-btn" bindtap="handleCancelOrder" data-id="{{item.id}}">
+                <text>{{lang === 'zh' ? '取消订单' : 'Cancel Order'}}</text>
+              </view>
+            </view>
           </view>
           <view style="height: 32px;"></view>
         </view>

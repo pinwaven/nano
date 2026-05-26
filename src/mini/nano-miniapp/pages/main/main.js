@@ -649,6 +649,15 @@ function mapStoreOrders(rawOrders, lang) {
     price: lang === 'zh' ? `¥${o.price_cny}` : `$${o.price_usd}`,
     status: o.status,
     createdAt: new Date(o.created_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US'),
+    shippingName: o.shipping_name || '',
+    shippingPhone: o.shipping_phone || '',
+    shippingAddress: o.shipping_address || '',
+    shippingCarrier: o.shipping_carrier || '',
+    trackingNumber: o.tracking_number || '',
+    paymentStatus: o.payment_status || 'paid',
+    paymentMethod: o.payment_method || 'wechat_pay',
+    shippedAt: o.shipped_at ? new Date(o.shipped_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US') : '',
+    deliveredAt: o.delivered_at ? new Date(o.delivered_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US') : '',
   }))
 }
 
@@ -1895,18 +1904,98 @@ Page({
       confirmColor: '#6375EC',
       success: async (res) => {
         if (!res.confirm) return
+        
+        // Trigger address selection for checkout
+        wx.chooseAddress({
+          success: async (addrRes) => {
+            const address = `${addrRes.provinceName}${addrRes.cityName}${addrRes.countyName}${addrRes.detailInfo}`;
+            try {
+              wx.showLoading({ title: t.storeOrderSent || 'Processing...' })
+              await this._req(`${BASE}/api/orders`, 'POST', {
+                openid: user.user_id,
+                channel_inventory_item_id: item.id,
+                quantity: 1,
+                shipping_name: addrRes.userName,
+                shipping_phone: addrRes.telNumber,
+                shipping_address: address,
+                payment_method: 'wechat_pay',
+                payment_status: 'paid'
+              })
+              wx.hideLoading()
+              wx.showToast({ title: t.storeOrderSent || 'Order Sent', icon: 'success', duration: 2500 })
+              await this._loadStoreOrders(user, lang)
+              this.setData({ storeSubTab: 'orders' })
+            } catch (err) {
+              wx.hideLoading()
+              wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
+            }
+          },
+          fail: () => {
+            // Graceful Fallback if user cancels address picker or lacks authorization (e.g. in emulator)
+            wx.showModal({
+              title: lang === 'zh' ? '确认模拟地址' : 'Verify Mock Address',
+              content: lang === 'zh' ? '无法获取微信收货地址，是否使用模拟地址进行下单测试？' : 'Cannot fetch address, proceed with mock testing address?',
+              confirmText: lang === 'zh' ? '确认下单' : 'Confirm',
+              success: async (mockRes) => {
+                if (!mockRes.confirm) return;
+                try {
+                  wx.showLoading({ title: t.storeOrderSent })
+                  await this._req(`${BASE}/api/orders`, 'POST', {
+                    openid: user.user_id,
+                    channel_inventory_item_id: item.id,
+                    quantity: 1,
+                    shipping_name: user.nickname || 'Tester',
+                    shipping_phone: '13800138000',
+                    shipping_address: lang === 'zh' ? '上海市浦东新区张江高科技园区' : 'Pudong New Area, Shanghai',
+                    payment_method: 'wechat_pay',
+                    payment_status: 'paid'
+                  })
+                  wx.hideLoading()
+                  wx.showToast({ title: t.storeOrderSent, icon: 'success', duration: 2500 })
+                  await this._loadStoreOrders(user, lang)
+                  this.setData({ storeSubTab: 'orders' })
+                } catch (err) {
+                  wx.hideLoading()
+                  wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
+                }
+              }
+            })
+          }
+        })
+      }
+    })
+  },
+
+  async handleCancelOrder(e) {
+    const orderId = e.currentTarget.dataset.id
+    const { t, user, lang } = this.data
+    wx.showModal({
+      title: lang === 'zh' ? '取消订单' : 'Cancel Order',
+      content: lang === 'zh' ? '您确定要取消此订单吗？' : 'Are you sure you want to cancel this order?',
+      confirmColor: '#ef4444',
+      success: async (res) => {
+        if (!res.confirm) return
         try {
-          await this._req(`${BASE}/api/orders`, 'POST', {
-            openid: user.user_id,
-            channel_inventory_item_id: item.id,
-            quantity: 1,
-          })
-          wx.showToast({ title: t.storeOrderSent, icon: 'none', duration: 3000 })
+          await this._req(`${BASE}/api/orders/${orderId}`, 'PUT', { status: 'cancelled' })
+          wx.showToast({ title: lang === 'zh' ? '订单已取消' : 'Order cancelled', icon: 'success' })
           await this._loadStoreOrders(user, lang)
-          this.setData({ storeSubTab: 'orders' })
-        } catch (e) {
-          wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
+        } catch (err) {
+          wx.showToast({ title: t.errServer, icon: 'none' })
         }
+      }
+    })
+  },
+
+  handleCopyTracking(e) {
+    const tracking = e.currentTarget.dataset.tracking
+    const { lang } = this.data
+    wx.setClipboardData({
+      data: tracking,
+      success: () => {
+        wx.showToast({
+          title: lang === 'zh' ? '单号已复制' : 'Tracking copied',
+          icon: 'success'
+        })
       }
     })
   },
