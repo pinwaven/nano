@@ -368,8 +368,26 @@ async function handlePostDispense(body) {
 }
 
 async function handleGetStoreItems(query = {}) {
+    if (!pool) return { success: false, error: 'Database pool not initialized' };
     try {
-        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (query.openid) {
+            const userRes = await pool.query(
+                'SELECT channel_id FROM users WHERE user_id = $1',
+                [query.openid]
+            );
+            const channelId = userRes.rows[0]?.channel_id;
+            if (!channelId) return { success: true, items: [] };
+            const result = await pool.query(
+                `SELECT id, key_name, name_zh, name_en, desc_zh, desc_en,
+                        unit_zh, unit_en, price_cny, price_usd, tag, sort_order,
+                        active, image_url, item_type, stock_quantity
+                 FROM channel_inventory_items
+                 WHERE channel_id = $1 AND show_in_store = TRUE AND active = TRUE
+                 ORDER BY sort_order ASC, created_at ASC`,
+                [channelId]
+            );
+            return { success: true, items: result.rows };
+        }
         const showAll = query.all === 'true';
         const result = await pool.query(
             `SELECT id, key_name, name_zh, name_en, desc_zh, desc_en,
@@ -384,19 +402,26 @@ async function handleGetStoreItems(query = {}) {
     }
 }
 
-async function handleGetOrders() {
+async function handleGetOrders(query = {}, adminCtx) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.channelId : (query.channel_id || null);
+        const params = [];
+        const channelFilter = channelId ? `AND o.channel_id = $${params.push(channelId)}` : '';
         const result = await pool.query(
-            `SELECT o.id, o.user_id, o.item_id, o.item_key, o.quantity,
-                    o.price_cny, o.price_usd, o.status, o.created_at,
+            `SELECT o.id, o.user_id, o.item_id, o.channel_inventory_item_id, o.item_key,
+                    o.quantity, o.price_cny, o.price_usd, o.status, o.created_at, o.channel_id,
                     u.nickname, u.external_id,
-                    s.name_en, s.name_zh
+                    COALESCE(ci.name_en, s.name_en) AS name_en,
+                    COALESCE(ci.name_zh, s.name_zh) AS name_zh
              FROM orders o
              LEFT JOIN users u ON o.user_id = u.user_id
              LEFT JOIN store_items s ON o.item_id = s.id
+             LEFT JOIN channel_inventory_items ci ON o.channel_inventory_item_id = ci.id
+             WHERE TRUE ${channelFilter}
              ORDER BY o.created_at DESC
-             LIMIT 200`
+             LIMIT 500`,
+            params
         );
         return { success: true, orders: result.rows };
     } catch (err) {
@@ -1150,8 +1175,8 @@ async function handlePostChannelInventory(body, adminCtx) {
         const { rows } = await pool.query(
             `INSERT INTO channel_inventory_items
               (channel_id, key_name, name_zh, name_en, desc_zh, desc_en, item_type,
-               unit_zh, unit_en, price_cny, price_usd, stock_quantity, tag, sort_order, active, image_url, metadata, store_item_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+               unit_zh, unit_en, price_cny, price_usd, stock_quantity, tag, sort_order, active, image_url, metadata, store_item_id, show_in_store)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
              RETURNING *`,
             [channelId, body.key_name, body.name_zh || '', body.name_en,
              body.desc_zh || '', body.desc_en || '', body.item_type || 'physical',
@@ -1160,7 +1185,8 @@ async function handlePostChannelInventory(body, adminCtx) {
              body.price_usd != null ? body.price_usd : null,
              body.stock_quantity != null ? body.stock_quantity : null,
              body.tag || '', body.sort_order || 0, body.active !== false,
-             body.image_url || '', body.metadata || null, body.store_item_id || null]
+             body.image_url || '', body.metadata || null, body.store_item_id || null,
+             body.show_in_store === true || body.show_in_store === 'true']
         );
         return { success: true, item: rows[0] };
     } catch (err) {
@@ -1179,14 +1205,16 @@ async function handlePutChannelInventory(id, body, adminCtx) {
             body.price_usd != null ? body.price_usd : null,
             body.stock_quantity != null ? body.stock_quantity : null,
             body.tag || '', body.sort_order || 0, body.active !== false,
-            body.image_url || '', body.metadata || null, id,
+            body.image_url || '', body.metadata || null,
+            body.show_in_store === true || body.show_in_store === 'true',
+            id,
         ];
         let sql = `UPDATE channel_inventory_items
              SET name_zh=$1, name_en=$2, desc_zh=$3, desc_en=$4, item_type=$5,
                  unit_zh=$6, unit_en=$7, price_cny=$8, price_usd=$9, stock_quantity=$10,
-                 tag=$11, sort_order=$12, active=$13, image_url=$14, metadata=$15
-             WHERE id=$16`;
-        if (channelId) { sql += ' AND channel_id=$17'; params.push(channelId); }
+                 tag=$11, sort_order=$12, active=$13, image_url=$14, metadata=$15, show_in_store=$16
+             WHERE id=$17`;
+        if (channelId) { sql += ' AND channel_id=$18'; params.push(channelId); }
         sql += ' RETURNING *';
         const { rows } = await pool.query(sql, params);
         if (!rows.length) return { success: false, error: 'Not found', statusCode: 404 };
@@ -1211,12 +1239,19 @@ async function handleDeleteChannelInventory(id, adminCtx) {
     }
 }
 
-async function handlePutOrder(orderId, body) {
+async function handlePutOrder(orderId, body, adminCtx) {
     const { status } = body;
     if (!status) return { success: false, error: 'status is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
+        const params = [status, orderId];
+        const channelFilter = adminCtx?.role === 'channel'
+            ? `AND channel_id = $${params.push(adminCtx.channelId)}` : '';
+        const result = await pool.query(
+            `UPDATE orders SET status = $1 WHERE id = $2 ${channelFilter} RETURNING id`,
+            params
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Order not found or access denied', statusCode: 404 };
         if (status === 'delivered') {
             await recordOrderCommissions(orderId);
         }
@@ -1227,10 +1262,38 @@ async function handlePutOrder(orderId, body) {
 }
 
 async function handlePostOrder(body) {
-    const { openid, item_id, quantity = 1 } = body;
-    if (!openid || !item_id) return { success: false, error: 'openid and item_id are required', statusCode: 400 };
+    const { openid, item_id, channel_inventory_item_id, quantity = 1 } = body;
+    if (!openid) return { success: false, error: 'openid is required', statusCode: 400 };
+    if (!item_id && !channel_inventory_item_id) return { success: false, error: 'item_id or channel_inventory_item_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+        if (channel_inventory_item_id) {
+            const itemResult = await pool.query(
+                `SELECT id, key_name, price_cny, price_usd, channel_id, stock_quantity
+                 FROM channel_inventory_items WHERE id = $1 AND active = TRUE`,
+                [channel_inventory_item_id]
+            );
+            if (itemResult.rows.length === 0) return { success: false, error: 'Item not found', statusCode: 404 };
+            const item = itemResult.rows[0];
+
+            if (item.stock_quantity !== null) {
+                const stockCheck = await pool.query(
+                    `UPDATE channel_inventory_items SET stock_quantity = stock_quantity - $1
+                     WHERE id = $2 AND stock_quantity >= $1 RETURNING id`,
+                    [quantity, item.id]
+                );
+                if (stockCheck.rows.length === 0) return { success: false, error: 'Insufficient stock', statusCode: 400 };
+            }
+
+            const result = await pool.query(
+                `INSERT INTO orders (user_id, channel_inventory_item_id, item_key, quantity, price_cny, price_usd, status, channel_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7) RETURNING id`,
+                [openid, item.id, item.key_name, quantity, item.price_cny || 0, item.price_usd || 0, item.channel_id]
+            );
+            return { success: true, order_id: result.rows[0].id };
+        }
+
         const itemResult = await pool.query(
             'SELECT id, key_name, price_cny, price_usd FROM store_items WHERE id = $1 AND active = TRUE',
             [item_id]
@@ -7372,7 +7435,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/my-orders')) {
                 result = await handleGetMyOrders(query.openid);
             } else if (path.includes('/orders')) {
-                result = await handleGetOrders();
+                result = await handleGetOrders(query, adminCtx);
             } else if (path.includes('/coach-list')) {
                 result = await handleGetCoachList(adminCtx.channelId);
             } else if (path.match(/\/channel-users\/(\d+)/)) {
@@ -7691,7 +7754,7 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePutStoreItem(itemId, parsedBody);
             } else if (path.includes('/orders/')) {
                 const orderId = path.split('/orders/')[1];
-                result = await handlePutOrder(orderId, parsedBody);
+                result = await handlePutOrder(orderId, parsedBody, adminCtx);
             } else if (path.includes('/commission-settings/')) {
                 const settingId = path.split('/commission-settings/')[1];
                 result = await handlePutCommissionSetting(settingId, parsedBody);

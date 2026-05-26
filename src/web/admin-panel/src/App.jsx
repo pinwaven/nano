@@ -4080,7 +4080,7 @@ const EMPTY_INV_ITEM = {
   key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '',
   item_type: 'physical', unit_en: '', unit_zh: '',
   price_cny: '', price_usd: '', stock_quantity: '',
-  tag: '', sort_order: 0, active: true, image_url: '', store_item_id: null,
+  tag: '', sort_order: 0, active: true, image_url: '', store_item_id: null, show_in_store: false,
 };
 
 function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
@@ -4095,7 +4095,8 @@ function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
         stock_quantity: item.stock_quantity ?? '',
         tag: item.tag || '', sort_order: item.sort_order ?? 0,
         active: item.active !== false, image_url: item.image_url || '',
-        store_item_id: item.store_item_id || null }
+        store_item_id: item.store_item_id || null,
+        show_in_store: item.show_in_store === true }
     : item
       ? { key_name: item.key_name || '', name_en: item.name_en || '', name_zh: item.name_zh || '',
           desc_en: item.desc_en || '', desc_zh: item.desc_zh || '',
@@ -4104,7 +4105,7 @@ function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
           stock_quantity: '',
           tag: item.tag || '', sort_order: item.sort_order ?? 0,
           active: true, image_url: item.image_url || '',
-          store_item_id: item.store_item_id || null }
+          store_item_id: item.store_item_id || null, show_in_store: false }
       : { ...EMPTY_INV_ITEM });
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -4239,6 +4240,16 @@ function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
                 <select value={form.active ? 'true' : 'false'} onChange={e => set('active', e.target.value === 'true')} className="inline-select" style={{ width: '100%' }}>
                   <option value="true">{ti.yes}</option>
                   <option value="false">{ti.no}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>Show in Store</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.show_in_store ? 'true' : 'false'} onChange={e => set('show_in_store', e.target.value === 'true')} className="inline-select" style={{ width: '100%' }}>
+                  <option value="false">Hidden</option>
+                  <option value="true">Live — visible in miniapp store</option>
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -4403,11 +4414,12 @@ function InventoryTab({ channels, session, isSuperadmin }) {
   const [selectedChannelId, setSelectedChannelId] = useState(
     isSuperadmin ? '' : (session?.channelId || '')
   );
+  const [subTab, setSubTab] = useState('items');
   const [items, setItems] = useState([]);
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(null);
 
-  // Auto-select first channel for superadmins
   useEffect(() => {
     if (isSuperadmin && !selectedChannelId && channels.length) {
       setSelectedChannelId(String(channels[0].id));
@@ -4418,21 +4430,25 @@ function InventoryTab({ channels, session, isSuperadmin }) {
     if (!cid) return;
     setLoading(true);
     try {
-      const res = await axios.get(`/api/channel-inventory?channel_id=${cid}`);
-      setItems(res.data.items || []);
-    } catch { setItems([]); }
+      const [itemsRes, ordersRes] = await Promise.allSettled([
+        axios.get(`/api/channel-inventory?channel_id=${cid}`),
+        axios.get(`/api/orders?channel_id=${cid}`),
+      ]);
+      setItems(itemsRes.status === 'fulfilled' ? (itemsRes.value.data.items || []) : []);
+      setOrders(ordersRes.status === 'fulfilled' ? (ordersRes.value.data.orders || []) : []);
+    } catch { setItems([]); setOrders([]); }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    fetchItems(selectedChannelId);
-  }, [selectedChannelId, fetchItems]);
+  useEffect(() => { fetchItems(selectedChannelId); }, [selectedChannelId, fetchItems]);
 
   const closeAndRefresh = () => { setModal(null); fetchItems(selectedChannelId); };
 
   const activeCount   = items.filter(i => i.active).length;
   const physicalCount = items.filter(i => i.item_type === 'physical').length;
   const virtualCount  = items.filter(i => i.item_type === 'virtual').length;
+  const pendingOrders = orders.filter(o => o.status === 'pending').length;
+  const revenue       = orders.filter(o => o.status === 'delivered').reduce((s, o) => s + Number(o.price_cny) * o.quantity, 0);
 
   const selectedChannel = channels.find(c => String(c.id) === String(selectedChannelId));
 
@@ -4444,7 +4460,7 @@ function InventoryTab({ channels, session, isSuperadmin }) {
           <div className="select-wrap">
             <select
               value={selectedChannelId}
-              onChange={e => { setSelectedChannelId(e.target.value); setItems([]); }}
+              onChange={e => { setSelectedChannelId(e.target.value); setItems([]); setOrders([]); }}
               className="inline-select"
               style={{ minWidth: 200 }}
             >
@@ -4471,92 +4487,169 @@ function InventoryTab({ channels, session, isSuperadmin }) {
       ) : (
         <>
           <div className="stat-row">
-            <StatCard icon={Box}     label={ti.totalItems}    value={items.length}   color="#6366f1" />
-            <StatCard icon={Box}     label={ti.activeItems}   value={activeCount}    color="#10b981" />
-            <StatCard icon={Package} label={ti.physicalItems} value={physicalCount}  color="#3b82f6" />
-            <StatCard icon={Archive} label={ti.virtualItems}  value={virtualCount}   color="#8b5cf6" />
+            <StatCard icon={Box}        label={ti.totalItems}    value={items.length}   color="#6366f1" />
+            <StatCard icon={Box}        label={ti.activeItems}   value={activeCount}    color="#10b981" />
+            <StatCard icon={Package}    label="Total Orders"     value={orders.length}  color="#3b82f6" />
+            <StatCard icon={ShoppingBag} label="Pending Orders"  value={pendingOrders}  color="#f59e0b" />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
-            <button className="btn-secondary" onClick={() => setModal({ type: 'import-from-store' })}>
-              <ShoppingBag size={13} />Import from Store
+          <div className="subtab-row">
+            <button className={`subtab-btn${subTab === 'items' ? ' active' : ''}`} onClick={() => setSubTab('items')}>
+              <Box size={13} />{ti.addItem ? 'Items' : 'Items'}
             </button>
-            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-              <Plus size={13} />{ti.addItem}
+            <button className={`subtab-btn${subTab === 'orders' ? ' active' : ''}`} onClick={() => setSubTab('orders')}>
+              <Package size={13} />Orders {pendingOrders > 0 && <span style={{ background: '#f59e0b', color: '#000', borderRadius: 10, padding: '1px 6px', fontSize: 11, marginLeft: 4 }}>{pendingOrders}</span>}
             </button>
           </div>
 
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>Loading…</div>
-          ) : items.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>
-              <Box size={32} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.4 }} />
-              <p>{ti.noItems}</p>
-            </div>
-          ) : (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: 56 }}></th>
-                    <th>Name</th>
-                    <th>{ti.itemType}</th>
-                    <th>Source</th>
-                    <th>{ti.priceCny}</th>
-                    <th>{ti.stock}</th>
-                    <th>{ti.active}</th>
-                    <th style={{ width: 80 }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map(item => (
-                    <tr key={item.id}>
-                      <td>
-                        {item.image_url
-                          ? <img src={item.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover' }} />
-                          : <div style={{ width: 40, height: 40, borderRadius: 6, background: 'rgba(99,117,236,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Box size={16} style={{ color: '#6366f1', opacity: 0.5 }} /></div>
-                        }
-                      </td>
-                      <td>
-                        <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: 13 }}>{item.name_en || item.key_name}</div>
-                        {item.name_zh && <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.name_zh}</div>}
-                        <div style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace' }}>{item.key_name}</div>
-                      </td>
-                      <td>
-                        <Badge color={item.item_type === 'virtual' ? '#8b5cf6' : '#3b82f6'}>
-                          {item.item_type === 'virtual' ? ti.virtual : ti.physical}
-                        </Badge>
-                      </td>
-                      <td>
-                        <Badge color={item.store_item_id ? '#6366f1' : '#475569'}>
-                          {item.store_item_id ? 'Store' : 'Custom'}
-                        </Badge>
-                      </td>
-                      <td>
-                        {item.price_cny != null ? `¥${Number(item.price_cny).toFixed(2)}` : '—'}
-                      </td>
-                      <td>
-                        {item.stock_quantity != null ? item.stock_quantity : <span style={{ color: '#64748b' }}>{ti.stockUnlimited}</span>}
-                      </td>
-                      <td>
-                        <Badge color={item.active ? '#10b981' : '#64748b'}>
-                          {item.active ? ti.yes : ti.no}
-                        </Badge>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="icon-btn" title="Edit" onClick={() => setModal({ type: 'edit', item })}>
-                            <Pencil size={14} />
-                          </button>
-                          <button className="icon-btn" title="Delete" style={{ color: '#f87171' }} onClick={() => setModal({ type: 'delete', item })}>
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
+          {subTab === 'items' && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
+                <button className="btn-secondary" onClick={() => setModal({ type: 'import-from-store' })}>
+                  <ShoppingBag size={13} />Import from Store
+                </button>
+                <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+                  <Plus size={13} />{ti.addItem}
+                </button>
+              </div>
+
+              {loading ? (
+                <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>Loading…</div>
+              ) : items.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>
+                  <Box size={32} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.4 }} />
+                  <p>{ti.noItems}</p>
+                </div>
+              ) : (
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 56 }}></th>
+                        <th>Name</th>
+                        <th>{ti.itemType}</th>
+                        <th>Source</th>
+                        <th>{ti.priceCny}</th>
+                        <th>{ti.stock}</th>
+                        <th>{ti.active}</th>
+                        <th>In Store</th>
+                        <th style={{ width: 80 }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map(item => (
+                        <tr key={item.id}>
+                          <td>
+                            {item.image_url
+                              ? <img src={item.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover' }} />
+                              : <div style={{ width: 40, height: 40, borderRadius: 6, background: 'rgba(99,117,236,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Box size={16} style={{ color: '#6366f1', opacity: 0.5 }} /></div>
+                            }
+                          </td>
+                          <td>
+                            <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: 13 }}>{item.name_zh || item.name_en || item.key_name}</div>
+                            {item.name_zh && item.name_en && <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.name_en}</div>}
+                            <div style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace' }}>{item.key_name}</div>
+                          </td>
+                          <td>
+                            <Badge color={item.item_type === 'virtual' ? '#8b5cf6' : '#3b82f6'}>
+                              {item.item_type === 'virtual' ? ti.virtual : ti.physical}
+                            </Badge>
+                          </td>
+                          <td>
+                            <Badge color={item.store_item_id ? '#6366f1' : '#475569'}>
+                              {item.store_item_id ? 'Store' : 'Custom'}
+                            </Badge>
+                          </td>
+                          <td>
+                            {item.price_cny != null ? `¥${Number(item.price_cny).toFixed(2)}` : '—'}
+                          </td>
+                          <td>
+                            {item.stock_quantity != null ? (
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {item.stock_quantity}
+                                {item.stock_quantity > 0 && item.stock_quantity < 10 && (
+                                  <Badge color="#f59e0b">Low</Badge>
+                                )}
+                                {item.stock_quantity === 0 && (
+                                  <Badge color="#ef4444">Out</Badge>
+                                )}
+                              </span>
+                            ) : (
+                              <span style={{ color: '#64748b' }}>{ti.stockUnlimited}</span>
+                            )}
+                          </td>
+                          <td>
+                            <Badge color={item.active ? '#10b981' : '#64748b'}>
+                              {item.active ? ti.yes : ti.no}
+                            </Badge>
+                          </td>
+                          <td>
+                            <Badge color={item.show_in_store ? '#10b981' : '#475569'}>
+                              {item.show_in_store ? 'Live' : 'Hidden'}
+                            </Badge>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button className="icon-btn" title="Edit" onClick={() => setModal({ type: 'edit', item })}>
+                                <Pencil size={14} />
+                              </button>
+                              <button className="icon-btn" title="Delete" style={{ color: '#f87171' }} onClick={() => setModal({ type: 'delete', item })}>
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+
+          {subTab === 'orders' && (
+            <div className="card">
+              <div className="table-toolbar">
+                <span className="table-count">{orders.length} order{orders.length !== 1 ? 's' : ''}</span>
+                <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                  Revenue (delivered): ¥{revenue.toFixed(2)}
+                </span>
+              </div>
+              {loading ? (
+                <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>Loading…</div>
+              ) : orders.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>
+                  <Package size={32} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.4 }} />
+                  <p>No orders yet</p>
+                </div>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>User</th>
+                      <th>Item</th>
+                      <th>Qty</th>
+                      <th>Price (CNY)</th>
+                      <th>Status</th>
+                      <th>Date</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {orders.map(o => (
+                      <tr key={o.id}>
+                        <td><span className="mono muted">{o.id.slice(0, 8)}…</span></td>
+                        <td>{fmt(o.nickname || o.user_id)}</td>
+                        <td className="bold">{fmt(o.name_zh || o.name_en)}</td>
+                        <td>{o.quantity}</td>
+                        <td>¥{o.price_cny}</td>
+                        <td><OrderStatusSelect orderId={o.id} status={o.status} onSave={() => fetchItems(selectedChannelId)} /></td>
+                        <td className="muted">{fmtDate(o.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           )}
         </>
@@ -4838,13 +4931,17 @@ function OrderStatusSelect({ orderId, status, onSave }) {
   );
 }
 
-function StoreTab({ storeItems, orders, onRefresh }) {
+function StoreTab({ storeItems, orders, channels, onRefresh }) {
   const { t } = useLang();
   const [subTab, setSubTab] = useState('items');
+  const [orderChannelFilter, setOrderChannelFilter] = useState('');
   const [modal, setModal] = useState(null);
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
 
   const activeCount  = storeItems.filter(i => i.active).length;
+  const filteredOrders = orderChannelFilter
+    ? orders.filter(o => String(o.channel_id) === orderChannelFilter)
+    : orders;
   const pendingCount = orders.filter(o => o.status === 'pending').length;
 
   return (
@@ -4924,7 +5021,23 @@ function StoreTab({ storeItems, orders, onRefresh }) {
       {subTab === 'orders' && (
         <div className="card">
           <div className="table-toolbar">
-            <span className="table-count">{t.countOrder(orders.length)}</span>
+            <span className="table-count">{t.countOrder(filteredOrders.length)}</span>
+            {channels && channels.length > 0 && (
+              <div className="select-wrap" style={{ marginLeft: 'auto' }}>
+                <select
+                  value={orderChannelFilter}
+                  onChange={e => setOrderChannelFilter(e.target.value)}
+                  className="inline-select"
+                  style={{ minWidth: 160 }}
+                >
+                  <option value="">All Channels</option>
+                  {channels.map(c => (
+                    <option key={c.id} value={String(c.id)}>{c.name || c.key_name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            )}
           </div>
           <table className="data-table">
             <thead>
@@ -4934,23 +5047,30 @@ function StoreTab({ storeItems, orders, onRefresh }) {
                 <th>{t.table.nameEn}</th>
                 <th>{t.store.qty}</th>
                 <th>{t.store.priceCny}</th>
+                <th>Channel</th>
                 <th>{t.store.status}</th>
                 <th>{t.store.orderedAt}</th>
               </tr>
             </thead>
             <tbody>
-              {orders.length === 0 && <tr><td colSpan={7} className="empty-row">{t.empty.orders}</td></tr>}
-              {orders.map(o => (
-                <tr key={o.id}>
-                  <td><span className="mono muted">{o.id.slice(0, 8)}…</span></td>
-                  <td>{fmt(o.nickname || o.user_id)}</td>
-                  <td className="bold">{fmt(o.name_en)}</td>
-                  <td>{o.quantity}</td>
-                  <td>¥{o.price_cny}</td>
-                  <td><OrderStatusSelect orderId={o.id} status={o.status} onSave={onRefresh} /></td>
-                  <td className="muted">{fmtDate(o.created_at)}</td>
-                </tr>
-              ))}
+              {filteredOrders.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.orders}</td></tr>}
+              {filteredOrders.map(o => {
+                const ch = channels?.find(c => String(c.id) === String(o.channel_id));
+                return (
+                  <tr key={o.id}>
+                    <td><span className="mono muted">{o.id.slice(0, 8)}…</span></td>
+                    <td>{fmt(o.nickname || o.user_id)}</td>
+                    <td className="bold">{fmt(o.name_en)}</td>
+                    <td>{o.quantity}</td>
+                    <td>¥{o.price_cny}</td>
+                    <td>
+                      {ch ? <Badge color="#6366f1">{ch.name || ch.key_name}</Badge> : <span className="muted">—</span>}
+                    </td>
+                    <td><OrderStatusSelect orderId={o.id} status={o.status} onSave={onRefresh} /></td>
+                    <td className="muted">{fmtDate(o.created_at)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -10607,7 +10727,7 @@ function AdminPanel({ session, onLogout }) {
         axios.get('/api/dots-inventory'),
         axios.get(isChannel ? `/api/channel-coaches/${cid}` : '/api/coach-list'),
         axios.get('/api/store-items?all=true'),
-        axios.get('/api/orders'),
+        axios.get(isChannel ? `/api/orders?channel_id=${cid}` : '/api/orders'),
         (isChannel && !isCmsAdmin) ? Promise.resolve({ data: {} }) : axios.get('/api/channels'),
         axios.get(isChannel ? `/api/invitations?channel_id=${cid}` : '/api/invitations'),
         axios.get('/api/kino-devices'),
@@ -10719,7 +10839,7 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'users'    && <UsersTab    users={data.users} coaches={data.coaches} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
           {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
           {tab === 'dots'     && <DotsTab     dots={data.dots} onRefresh={fetchData} />}
-          {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
+          {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} />}
           {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} />}
           {tab === 'subchannels' && <SubchannelsTab subchannels={data.channels} adminAccounts={data.adminAccounts} invitations={data.invitations} session={session} onRefresh={fetchData} />}

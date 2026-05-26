@@ -1860,7 +1860,8 @@ Page({
 
   async _loadStore(user, lang) {
     try {
-      const res = await this._req(`${BASE}/api/store-items`)
+      const openid = user?.user_id ? `?openid=${encodeURIComponent(user.user_id)}` : ''
+      const res = await this._req(`${BASE}/api/store-items${openid}`)
       const raw = res.data?.items || []
       this._rawStoreItems = raw
       this.setData({ storeLoading: false, storeItems: mapStoreItems(raw, lang) })
@@ -1897,7 +1898,7 @@ Page({
         try {
           await this._req(`${BASE}/api/orders`, 'POST', {
             openid: user.user_id,
-            item_id: item.id,
+            channel_inventory_item_id: item.id,
             quantity: 1,
           })
           wx.showToast({ title: t.storeOrderSent, icon: 'none', duration: 3000 })
