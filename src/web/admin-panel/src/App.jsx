@@ -228,14 +228,59 @@ const T = {
       delivered: 'Delivered', cancelled: 'Cancelled',
       image: 'Image', uploadImage: 'Click to upload image (PNG / JPG)',
       uploading: 'Uploading…', uploadFailed: 'Image upload failed', removeImage: 'Remove image',
+      skusRegistered: 'SKUs registered', addSku: 'Add SKU', noSkus: 'No SKUs registered yet',
+      skuCode: 'SKU Code', unit: 'Unit', locationStocks: 'Location Stocks',
+      noStocksConfigured: 'No stocks configured',
+      warehouse: 'Warehouse', channel: 'Channel', left: 'left',
+      adjustStock: 'Adjust Stock', editSku: 'Edit SKU', deleteSku: 'Delete SKU',
+      skuCodeRequired: 'SKU Code is required', skuNamesRequired: 'Both English and Chinese names are required',
+      editSkuTitle: 'Edit SKU definition', createSkuTitle: 'Create new SKU definition',
+      skuCodeLabel: 'SKU Code (Immutable Identifier)', itemType: 'Item Type',
+      physical: 'Physical Asset', virtual: 'Virtual Service / Item',
+      descEn: 'Description (EN)', descZh: 'Description (ZH)',
+      unitEn: 'Unit (EN)', unitZh: 'Unit (ZH)',
+      deleteSkuTitle: 'Delete SKU Registry Entry?',
+      deleteSkuWarning: (code) => `WARNING: Are you sure you want to delete SKU "${code}"?`,
+      deleteSkuNote: 'This registry item will be permanently removed. Any storefront listing linking to this SKU will lose its inventory association.',
+      deleteSkuFailed: 'Delete failed. Check if listings reference this SKU.',
+      confirmDelete: 'Confirm Delete', deleting: 'Deleting…',
+      adjustStockTitle: 'Adjust Inventory Stock', targetSku: 'Target SKU',
+      locationType: 'Location Type', centralWarehouse: 'Central Warehouse', clinicChannel: 'Clinic Channel Stock',
+      selectChannel: 'Select Clinic Channel', chooseChannel: '-- Choose Channel --',
+      warehouseName: 'Warehouse Name', quantityLabel: 'Quantity (Leave blank for Unlimited/Digital)',
+      unlimitedStock: 'Unlimited stock', lowStockThreshold: 'Low Stock Warning Threshold',
+      saveAdjustments: 'Save Adjustments', pleaseSelectChannel: 'Please select a target channel',
+      pleaseEnterWarehouse: 'Please enter warehouse name', stockFailed: 'Stock adjustment failed',
     },
     inventory: {
       selectChannel: 'Select a channel to manage its inventory',
+      selectChannelOption: '— Select Channel —',
       addItem: 'Add Item', editItem: 'Edit Item', deleteItem: 'Delete Item',
       noItems: 'No inventory items yet', noChannel: 'No channels available',
       physical: 'Physical', virtual: 'Virtual',
       itemType: 'Item Type', stock: 'Stock', stockUnlimited: 'Unlimited',
       totalItems: 'Total Items', activeItems: 'Active', physicalItems: 'Physical', virtualItems: 'Virtual',
+      totalOrders: 'Total Orders', pendingOrders: 'Pending Orders',
+      itemsTab: 'Items', ordersTab: 'Orders',
+      importFromStore: 'Import from Store',
+      itemName: 'Name', source: 'Source', inStore: 'In Store', user: 'User', date: 'Date',
+      sourceStore: 'Store', sourceCustom: 'Custom',
+      stockLow: 'Low', stockOut: 'Out',
+      inStoreLive: 'Live', inStoreHidden: 'Hidden',
+      showInStore: 'Show in Store', showInStoreLive: 'Live — visible in miniapp store',
+      revenueLabel: (v) => `Revenue (delivered): ¥${v}`,
+      shippingAddress: 'Shipping Address',
+      recipientName: 'Name', recipientPhone: 'Phone', recipientAddress: 'Address',
+      noShippingAddress: 'No shipping address provided (virtual item/service)',
+      paymentFulfillment: 'Payment & Fulfillment',
+      paymentMethod: 'Payment Method', paymentStatus: 'Payment Status',
+      carrier: 'Carrier', trackingNo: 'Tracking #', shippedAt: 'Shipped at',
+      orderNotes: 'Notes', assets: 'Assets',
+      skuBinding: 'SKU Binding', selectSku: '— Select a SKU —',
+      skuRequired: 'SKU is required — create the SKU first in the SKUs & Stock tab',
+      linkedToStore: 'Linked to global store',
+      tagBestseller: 'Bestseller', tagValue: 'Value', tagNew: 'New',
+      noStoreItems: 'No store items found.', alreadyAdded: 'Already added',
       keyName: 'Key Name', nameEn: 'Name (EN)', nameZh: 'Name (ZH)',
       descEn: 'Description (EN)', descZh: 'Description (ZH)',
       unitEn: 'Unit (EN)', unitZh: 'Unit (ZH)',
@@ -643,14 +688,59 @@ const T = {
       delivered: '已送达', cancelled: '已取消',
       image: '图片', uploadImage: '点击上传图片（PNG / JPG）',
       uploading: '上传中…', uploadFailed: '图片上传失败', removeImage: '移除图片',
+      skusRegistered: '个 SKU 已注册', addSku: '新增 SKU', noSkus: '暂无 SKU',
+      skuCode: 'SKU 编码', unit: '单位', locationStocks: '库存位置',
+      noStocksConfigured: '暂无库存配置',
+      warehouse: '仓库', channel: '渠道', left: '剩余',
+      adjustStock: '调整库存', editSku: '编辑 SKU', deleteSku: '删除 SKU',
+      skuCodeRequired: 'SKU 编码不能为空', skuNamesRequired: '中英文名称均为必填项',
+      editSkuTitle: '编辑 SKU 定义', createSkuTitle: '新建 SKU 定义',
+      skuCodeLabel: 'SKU 编码（唯一标识符）', itemType: '商品类型',
+      physical: '实体商品', virtual: '虚拟服务 / 商品',
+      descEn: '英文描述', descZh: '中文描述',
+      unitEn: '英文单位', unitZh: '中文单位',
+      deleteSkuTitle: '删除 SKU 注册项？',
+      deleteSkuWarning: (code) => `警告：确认要删除 SKU "${code}" 吗？`,
+      deleteSkuNote: '该 SKU 注册项将被永久删除。已关联此 SKU 的商品将失去库存绑定。',
+      deleteSkuFailed: '删除失败，请检查是否有商品正在引用此 SKU。',
+      confirmDelete: '确认删除', deleting: '删除中…',
+      adjustStockTitle: '调整库存', targetSku: '目标 SKU',
+      locationType: '库存位置类型', centralWarehouse: '中央仓库', clinicChannel: '诊所渠道库存',
+      selectChannel: '选择诊所渠道', chooseChannel: '-- 请选择渠道 --',
+      warehouseName: '仓库名称', quantityLabel: '数量（留空表示无限/虚拟商品）',
+      unlimitedStock: '无限库存', lowStockThreshold: '低库存预警阈值',
+      saveAdjustments: '保存调整', pleaseSelectChannel: '请选择目标渠道',
+      pleaseEnterWarehouse: '请输入仓库名称', stockFailed: '库存调整失败',
     },
     inventory: {
       selectChannel: '请选择渠道以管理库存',
+      selectChannelOption: '— 请选择渠道 —',
       addItem: '添加商品', editItem: '编辑商品', deleteItem: '删除商品',
       noItems: '暂无库存商品', noChannel: '暂无渠道',
       physical: '实体商品', virtual: '虚拟商品',
       itemType: '商品类型', stock: '库存', stockUnlimited: '不限',
       totalItems: '商品总数', activeItems: '上架中', physicalItems: '实体商品', virtualItems: '虚拟商品',
+      totalOrders: '订单总数', pendingOrders: '待处理订单',
+      itemsTab: '商品', ordersTab: '订单',
+      importFromStore: '从商城导入',
+      itemName: '商品名', source: '来源', inStore: '上架状态', user: '用户', date: '日期',
+      sourceStore: '商城商品', sourceCustom: '自定义',
+      stockLow: '库存低', stockOut: '已售罄',
+      inStoreLive: '已上架', inStoreHidden: '已隐藏',
+      showInStore: '商城上架', showInStoreLive: '已上架 — 在小程序商城中可见',
+      revenueLabel: (v) => `已交付营收：¥${v}`,
+      shippingAddress: '收货信息',
+      recipientName: '收货人', recipientPhone: '电话', recipientAddress: '地址',
+      noShippingAddress: '暂无收货地址（虚拟商品/服务）',
+      paymentFulfillment: '支付与履约',
+      paymentMethod: '支付方式', paymentStatus: '支付状态',
+      carrier: '快递公司', trackingNo: '快递单号', shippedAt: '发货时间',
+      orderNotes: '备注', assets: '资产',
+      skuBinding: 'SKU 绑定', selectSku: '— 请选择 SKU —',
+      skuRequired: 'SKU 为必填项 — 请先在 SKU 与库存标签页中创建 SKU',
+      linkedToStore: '已关联全局商城',
+      tagBestseller: '热销', tagValue: '超值', tagNew: '新品',
+      noStoreItems: '暂无商城商品。', alreadyAdded: '已添加',
       keyName: '唯一标识', nameEn: '名称（英文）', nameZh: '名称（中文）',
       descEn: '描述（英文）', descZh: '描述（中文）',
       unitEn: '单位（英文）', unitZh: '单位（中文）',
@@ -4137,7 +4227,7 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
     e.preventDefault();
     if (!form.key_name.trim()) { setError(ti.keyRequired); return; }
     if (!form.name_en.trim()) { setError(ti.nameRequired); return; }
-    if (!form.sku_id) { setError('SKU is required — create the SKU first in the SKUs & Stock tab'); return; }
+    if (!form.sku_id) { setError(ti.skuRequired); return; }
     setBusy(true); setError('');
     const payload = {
       ...form,
@@ -4164,7 +4254,7 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
             {isEdit ? ti.editItem : ti.addItem}
             {form.store_item_id && (
               <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: 'rgba(99,102,241,0.15)', color: '#818cf8', fontWeight: 500 }}>
-                Linked to global store
+                {ti.linkedToStore}
               </span>
             )}
           </span>
@@ -4187,10 +4277,10 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
               </div>
             </label>
             <label className="form-field">
-              <span>SKU Binding <span style={{ color: '#ef4444' }}>*</span></span>
+              <span>{ti.skuBinding} <span style={{ color: '#ef4444' }}>*</span></span>
               <div className="select-wrap" style={{ width: '100%' }}>
                 <select value={form.sku_id || ''} onChange={e => set('sku_id', e.target.value)} className="inline-select" style={{ width: '100%', borderColor: !form.sku_id ? '#ef4444' : undefined }}>
-                  <option value="">— Select a SKU —</option>
+                  <option value="">{ti.selectSku}</option>
                   {skus.map(s => (
                     <option key={s.id} value={s.id}>{s.sku_code} - {s.name_zh || s.name_en}</option>
                   ))}
@@ -4239,9 +4329,9 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
               <div className="select-wrap" style={{ width: '100%' }}>
                 <select value={form.tag} onChange={e => set('tag', e.target.value)} className="inline-select" style={{ width: '100%' }}>
                   <option value="">—</option>
-                  <option value="bestseller">Bestseller</option>
-                  <option value="value">Value</option>
-                  <option value="new">New</option>
+                  <option value="bestseller">{ti.tagBestseller}</option>
+                  <option value="value">{ti.tagValue}</option>
+                  <option value="new">{ti.tagNew}</option>
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -4261,11 +4351,11 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
               </div>
             </label>
             <label className="form-field">
-              <span>Show in Store</span>
+              <span>{ti.showInStore}</span>
               <div className="select-wrap" style={{ width: '100%' }}>
                 <select value={form.show_in_store ? 'true' : 'false'} onChange={e => set('show_in_store', e.target.value === 'true')} className="inline-select" style={{ width: '100%' }}>
-                  <option value="false">Hidden</option>
-                  <option value="true">Live — visible in miniapp store</option>
+                  <option value="false">{ti.inStoreHidden}</option>
+                  <option value="true">{ti.showInStoreLive}</option>
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -4302,9 +4392,9 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose} disabled={uploading}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={uploading}>{t.modal.cancel}</button>
             <button type="submit" className="btn-primary" disabled={busy || uploading}>
-              <Check size={14} />{busy ? 'Saving…' : 'Save'}
+              <Check size={14} />{busy ? t.modal.saving : t.modal.save}
             </button>
           </div>
         </form>
@@ -4335,9 +4425,9 @@ function DeleteInventoryItemConfirm({ item, onClose, onConfirm }) {
             {warningParts[0]}<strong>{warningParts[1]}</strong>{warningParts[2]}
           </p>
           <div className="modal-footer">
-            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
             <button className="btn-danger" onClick={handleDelete} disabled={busy}>
-              <Trash2 size={14} />{busy ? 'Deleting…' : 'Delete'}
+              <Trash2 size={14} />{busy ? t.modal.deleting : t.modal.delete}
             </button>
           </div>
         </div>
@@ -4347,6 +4437,8 @@ function DeleteInventoryItemConfirm({ item, onClose, onConfirm }) {
 }
 
 function ImportFromStoreModal({ existingItems, onClose, onSelect }) {
+  const { t } = useLang();
+  const ti = t.inventory;
   const [storeItems, setStoreItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -4363,14 +4455,14 @@ function ImportFromStoreModal({ existingItems, onClose, onSelect }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span>Import from Store</span>
+          <span>{ti.importFromStore}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="modal-body">
           {loading ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>Loading…</div>
+            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>{t.topbar.loading}</div>
           ) : storeItems.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>No store items found.</div>
+            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>{ti.noStoreItems}</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {storeItems.map(si => {
@@ -4406,7 +4498,7 @@ function ImportFromStoreModal({ existingItems, onClose, onSelect }) {
                       {si.price_cny != null && <div style={{ fontSize: 13, color: '#e2e8f0' }}>¥{Number(si.price_cny).toFixed(2)}</div>}
                       {alreadyAdded && (
                         <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: 'rgba(16,185,129,0.15)', color: '#34d399' }}>
-                          Already added
+                          {ti.alreadyAdded}
                         </span>
                       )}
                     </div>
@@ -4417,7 +4509,7 @@ function ImportFromStoreModal({ existingItems, onClose, onSelect }) {
           )}
         </div>
         <div className="modal-footer" style={{ padding: '16px 20px', borderTop: '1px solid var(--border)' }}>
-          <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
         </div>
       </div>
     </div>
@@ -4481,7 +4573,7 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
               className="inline-select"
               style={{ minWidth: 200 }}
             >
-              <option value="">— Select Channel —</option>
+              <option value="">{ti.selectChannelOption}</option>
               {channels.map(c => (
                 <option key={c.id} value={c.id}>{c.name || c.key_name}</option>
               ))}
@@ -4506,16 +4598,16 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
           <div className="stat-row">
             <StatCard icon={Box}        label={ti.totalItems}    value={items.length}   color="#6366f1" />
             <StatCard icon={Box}        label={ti.activeItems}   value={activeCount}    color="#10b981" />
-            <StatCard icon={Package}    label="Total Orders"     value={orders.length}  color="#3b82f6" />
-            <StatCard icon={ShoppingBag} label="Pending Orders"  value={pendingOrders}  color="#f59e0b" />
+            <StatCard icon={Package}    label={ti.totalOrders}   value={orders.length}  color="#3b82f6" />
+            <StatCard icon={ShoppingBag} label={ti.pendingOrders} value={pendingOrders} color="#f59e0b" />
           </div>
 
           <div className="subtab-row">
             <button className={`subtab-btn${subTab === 'items' ? ' active' : ''}`} onClick={() => setSubTab('items')}>
-              <Box size={13} />{ti.addItem ? 'Items' : 'Items'}
+              <Box size={13} />{ti.itemsTab}
             </button>
             <button className={`subtab-btn${subTab === 'orders' ? ' active' : ''}`} onClick={() => setSubTab('orders')}>
-              <Package size={13} />Orders {pendingOrders > 0 && <span style={{ background: '#f59e0b', color: '#000', borderRadius: 10, padding: '1px 6px', fontSize: 11, marginLeft: 4 }}>{pendingOrders}</span>}
+              <Package size={13} />{ti.ordersTab} {pendingOrders > 0 && <span style={{ background: '#f59e0b', color: '#000', borderRadius: 10, padding: '1px 6px', fontSize: 11, marginLeft: 4 }}>{pendingOrders}</span>}
             </button>
           </div>
 
@@ -4523,7 +4615,7 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
             <>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
                 <button className="btn-secondary" onClick={() => setModal({ type: 'import-from-store' })}>
-                  <ShoppingBag size={13} />Import from Store
+                  <ShoppingBag size={13} />{ti.importFromStore}
                 </button>
                 <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
                   <Plus size={13} />{ti.addItem}
@@ -4531,7 +4623,7 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
               </div>
 
               {loading ? (
-                <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>Loading…</div>
+                <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>{t.topbar.loading}</div>
               ) : items.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>
                   <Box size={32} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.4 }} />
@@ -4543,13 +4635,13 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
                     <thead>
                       <tr>
                         <th style={{ width: 56 }}></th>
-                        <th>Name</th>
+                        <th>{ti.itemName}</th>
                         <th>{ti.itemType}</th>
-                        <th>Source</th>
+                        <th>{ti.source}</th>
                         <th>{ti.priceCny}</th>
                         <th>{ti.stock}</th>
                         <th>{ti.active}</th>
-                        <th>In Store</th>
+                        <th>{ti.inStore}</th>
                         <th style={{ width: 80 }}></th>
                       </tr>
                     </thead>
@@ -4574,7 +4666,7 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
                           </td>
                           <td>
                             <Badge color={item.store_item_id ? '#6366f1' : '#475569'}>
-                              {item.store_item_id ? 'Store' : 'Custom'}
+                              {item.store_item_id ? ti.sourceStore : ti.sourceCustom}
                             </Badge>
                           </td>
                           <td>
@@ -4585,10 +4677,10 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
                               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 {item.stock_quantity}
                                 {item.stock_quantity > 0 && item.stock_quantity < 10 && (
-                                  <Badge color="#f59e0b">Low</Badge>
+                                  <Badge color="#f59e0b">{ti.stockLow}</Badge>
                                 )}
                                 {item.stock_quantity === 0 && (
-                                  <Badge color="#ef4444">Out</Badge>
+                                  <Badge color="#ef4444">{ti.stockOut}</Badge>
                                 )}
                               </span>
                             ) : (
@@ -4602,15 +4694,15 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
                           </td>
                           <td>
                             <Badge color={item.show_in_store ? '#10b981' : '#475569'}>
-                              {item.show_in_store ? 'Live' : 'Hidden'}
+                              {item.show_in_store ? ti.inStoreLive : ti.inStoreHidden}
                             </Badge>
                           </td>
                           <td>
                             <div style={{ display: 'flex', gap: 6 }}>
-                              <button className="icon-btn" title="Edit" onClick={() => setModal({ type: 'edit', item })}>
+                              <button className="icon-btn" title={ti.editItem} onClick={() => setModal({ type: 'edit', item })}>
                                 <Pencil size={14} />
                               </button>
-                              <button className="icon-btn" title="Delete" style={{ color: '#f87171' }} onClick={() => setModal({ type: 'delete', item })}>
+                              <button className="icon-btn" title={ti.deleteItem} style={{ color: '#f87171' }} onClick={() => setModal({ type: 'delete', item })}>
                                 <Trash2 size={14} />
                               </button>
                             </div>
@@ -4627,29 +4719,29 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
           {subTab === 'orders' && (
             <div className="card">
               <div className="table-toolbar">
-                <span className="table-count">{orders.length} order{orders.length !== 1 ? 's' : ''}</span>
+                <span className="table-count">{t.countOrder(orders.length)}</span>
                 <span style={{ fontSize: 12, color: '#94a3b8' }}>
-                  Revenue (delivered): ¥{revenue.toFixed(2)}
+                  {ti.revenueLabel(revenue.toFixed(2))}
                 </span>
               </div>
               {loading ? (
-                <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>Loading…</div>
+                <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>{t.topbar.loading}</div>
               ) : orders.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>
                   <Package size={32} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.4 }} />
-                  <p>No orders yet</p>
+                  <p>{t.empty.orders}</p>
                 </div>
               ) : (
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>ID</th>
-                      <th>User</th>
-                      <th>Item</th>
-                      <th>Qty</th>
-                      <th>Price (CNY)</th>
-                      <th>Status</th>
-                      <th>Date</th>
+                      <th>{t.table.id}</th>
+                      <th>{ti.user}</th>
+                      <th>{ti.itemName}</th>
+                      <th>{t.store.qty}</th>
+                      <th>{ti.priceCny}</th>
+                      <th>{t.store.status}</th>
+                      <th>{ti.date}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -4671,33 +4763,33 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
                               <td colSpan={7} style={{ background: 'rgba(99, 117, 236, 0.03)', padding: '16px 24px' }}>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', fontSize: '13px', color: '#64748b' }}>
                                   <div>
-                                    <h4 style={{ color: '#0f172a', marginBottom: '8px', fontWeight: 600 }}>Shipping Address</h4>
+                                    <h4 style={{ color: '#0f172a', marginBottom: '8px', fontWeight: 600 }}>{ti.shippingAddress}</h4>
                                     {o.shipping_name ? (
                                       <div>
-                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Name:</strong> {o.shipping_name}</p>
-                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Phone:</strong> {o.shipping_phone}</p>
-                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Address:</strong> {o.shipping_address}</p>
+                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.recipientName}:</strong> {o.shipping_name}</p>
+                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.recipientPhone}:</strong> {o.shipping_phone}</p>
+                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.recipientAddress}:</strong> {o.shipping_address}</p>
                                       </div>
                                     ) : (
-                                      <p style={{ fontStyle: 'italic', margin: '4px 0' }}>No shipping address provided (virtual item/service)</p>
+                                      <p style={{ fontStyle: 'italic', margin: '4px 0' }}>{ti.noShippingAddress}</p>
                                     )}
                                   </div>
                                   <div>
-                                    <h4 style={{ color: '#0f172a', marginBottom: '8px', fontWeight: 600 }}>Payment & Fulfillment</h4>
-                                    <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Payment Method:</strong> {o.payment_method || 'WeChat Pay'}</p>
-                                    <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Payment Status:</strong> <span style={{ color: o.payment_status === 'paid' ? '#10b981' : '#f59e0b', fontWeight: 600 }}>{o.payment_status || 'paid'}</span></p>
+                                    <h4 style={{ color: '#0f172a', marginBottom: '8px', fontWeight: 600 }}>{ti.paymentFulfillment}</h4>
+                                    <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.paymentMethod}:</strong> {o.payment_method || 'WeChat Pay'}</p>
+                                    <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.paymentStatus}:</strong> <span style={{ color: o.payment_status === 'paid' ? '#10b981' : '#f59e0b', fontWeight: 600 }}>{o.payment_status || 'paid'}</span></p>
                                     {o.tracking_number && (
                                       <div style={{ marginTop: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
-                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Carrier:</strong> {o.shipping_carrier}</p>
-                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Tracking #:</strong> <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', color: '#6375EC' }}>{o.tracking_number}</code></p>
-                                        {o.shipped_at && <p style={{ margin: '4px 0', fontSize: '11px', color: '#94a3b8' }}>Shipped at: {fmtDate(o.shipped_at)}</p>}
+                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.carrier}:</strong> {o.shipping_carrier}</p>
+                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.trackingNo}:</strong> <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', color: '#6375EC' }}>{o.tracking_number}</code></p>
+                                        {o.shipped_at && <p style={{ margin: '4px 0', fontSize: '11px', color: '#94a3b8' }}>{ti.shippedAt}: {fmtDate(o.shipped_at)}</p>}
                                       </div>
                                     )}
                                     {o.fulfillment_notes && (
-                                      <p style={{ margin: '8px 0 4px', fontStyle: 'italic', fontSize: '12px' }}><strong style={{ color: '#334155', fontStyle: 'normal' }}>Notes:</strong> {o.fulfillment_notes}</p>
+                                      <p style={{ margin: '8px 0 4px', fontStyle: 'italic', fontSize: '12px' }}><strong style={{ color: '#334155', fontStyle: 'normal' }}>{ti.orderNotes}:</strong> {o.fulfillment_notes}</p>
                                     )}
                                     {o.fulfilled_assets && (
-                                      <p style={{ margin: '4px 0', fontSize: '12px' }}><strong style={{ color: '#334155' }}>Assets:</strong> {o.fulfilled_assets.join(', ')}</p>
+                                      <p style={{ margin: '4px 0', fontSize: '12px' }}><strong style={{ color: '#334155' }}>{ti.assets}:</strong> {o.fulfilled_assets.join(', ')}</p>
                                     )}
                                   </div>
                                 </div>
@@ -4817,7 +4909,7 @@ function StoreItemModal({ item, skus = [], onClose, onSave }) {
     e.preventDefault();
     if (!form.key_name.trim()) { setError(t.modal.keyRequired); return; }
     if (!form.name_en.trim())  { setError(t.modal.nameRequired); return; }
-    if (!form.sku_id) { setError('SKU is required — create the SKU first in the SKUs & Stock tab'); return; }
+    if (!form.sku_id) { setError(t.store.skuRequired); return; }
     setBusy(true); setError('');
     try {
       if (isEdit) await axios.put(`/api/store-items/${item.id}`, form);
@@ -4852,10 +4944,10 @@ function StoreItemModal({ item, skus = [], onClose, onSave }) {
               </div>
             </label>
             <label className="form-field">
-              <span>SKU Binding <span style={{ color: '#ef4444' }}>*</span></span>
+              <span>{t.store.skuBinding} <span style={{ color: '#ef4444' }}>*</span></span>
               <div className="select-wrap" style={{ width: '100%' }}>
                 <select value={form.sku_id || ''} onChange={e => set('sku_id', e.target.value)} className="inline-select" style={{ width: '100%', borderColor: !form.sku_id ? '#ef4444' : undefined }}>
-                  <option value="">— Select a SKU —</option>
+                  <option value="">{t.store.selectSku}</option>
                   {skus.map(s => (
                     <option key={s.id} value={s.id}>{s.sku_code} - {s.name_zh || s.name_en}</option>
                   ))}
@@ -5249,25 +5341,25 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
       {subTab === 'skus' && (
         <div className="card">
           <div className="table-toolbar">
-            <span className="table-count">{skus.length} SKUs registered</span>
+            <span className="table-count">{skus.length} {t.store.skusRegistered}</span>
             <button className="btn-primary" onClick={() => setModal({ type: 'add-sku' })}>
-              <Plus size={14} />Add SKU
+              <Plus size={14} />{t.store.addSku}
             </button>
           </div>
           <table className="data-table">
             <thead>
               <tr>
-                <th>SKU Code</th>
-                <th>Name (EN)</th>
-                <th>Name (ZH)</th>
-                <th>Type</th>
-                <th>Unit</th>
-                <th>Location Stocks</th>
+                <th>{t.store.skuCode}</th>
+                <th>{t.table.nameEn}</th>
+                <th>{t.table.nameZh}</th>
+                <th>{t.table.type}</th>
+                <th>{t.store.unit}</th>
+                <th>{t.store.locationStocks}</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {skus.length === 0 && <tr><td colSpan={7} className="empty-row">No SKUs registered yet</td></tr>}
+              {skus.length === 0 && <tr><td colSpan={7} className="empty-row">{t.store.noSkus}</td></tr>}
               {skus.map(sku => {
                 const stocks = inventoryStock.filter(st => st.sku_id === sku.id);
                 return (
@@ -5277,22 +5369,22 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
                     <td className="muted">{sku.name_zh}</td>
                     <td>
                       <Badge color={sku.item_type === 'physical' ? '#6366f1' : '#10b981'}>
-                        {sku.item_type}
+                        {sku.item_type === 'physical' ? t.store.physical : t.store.virtual}
                       </Badge>
                     </td>
                     <td>{sku.unit_zh} / {sku.unit_en}</td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {stocks.length === 0 ? <span className="muted" style={{ fontSize: 11 }}>— No stocks configured</span> : null}
+                        {stocks.length === 0 ? <span className="muted" style={{ fontSize: 11 }}>— {t.store.noStocksConfigured}</span> : null}
                         {stocks.map(st => {
                           const ch = channels?.find(c => String(c.id) === String(st.channel_id));
                           return (
                             <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
                               <span style={{ padding: '1px 5px', borderRadius: 4, background: st.location_type === 'warehouse' ? '#334155' : 'rgba(99,102,241,0.15)', color: st.location_type === 'warehouse' ? '#e2e8f0' : '#818cf8', fontWeight: 500 }}>
-                                {st.location_type === 'warehouse' ? `Warehouse: ${st.warehouse_name}` : `Channel: ${ch?.name || st.channel_id}`}
+                                {st.location_type === 'warehouse' ? `${t.store.warehouse}: ${st.warehouse_name}` : `${t.store.channel}: ${ch?.name || st.channel_id}`}
                               </span>
                               <span className="bold" style={{ color: (st.quantity ?? 0) <= (st.low_stock_threshold ?? 0) ? '#ef4444' : '#10b981' }}>
-                                {st.quantity === null ? '∞' : `${st.quantity} left`}
+                                {st.quantity === null ? '∞' : `${st.quantity} ${t.store.left}`}
                               </span>
                               {(st.quantity !== null && (st.quantity <= (st.low_stock_threshold ?? 0))) && (
                                 <span style={{ color: '#ef4444', fontWeight: 600 }}>⚠️ LOW</span>
@@ -5305,10 +5397,10 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
                     <td>
                       <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
                         <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }} onClick={() => setModal({ type: 'adjust-stock', sku })}>
-                          Adjust Stock
+                          {t.store.adjustStock}
                         </button>
-                        <button className="icon-btn" title="Edit SKU" onClick={() => setModal({ type: 'edit-sku', sku })}><Pencil size={14} /></button>
-                        <button className="icon-btn danger" title="Delete SKU" onClick={() => setModal({ type: 'delete-sku', sku })}><Trash2 size={14} /></button>
+                        <button className="icon-btn" title={t.store.editSku} onClick={() => setModal({ type: 'edit-sku', sku })}><Pencil size={14} /></button>
+                        <button className="icon-btn danger" title={t.store.deleteSku} onClick={() => setModal({ type: 'delete-sku', sku })}><Trash2 size={14} /></button>
                       </div>
                     </td>
                   </tr>
@@ -5431,6 +5523,7 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
 }
 
 function SkuModal({ sku, onClose, onSave }) {
+  const { t } = useLang();
   const isEdit = !!sku?.id;
   const [form, setForm] = useState(isEdit
     ? { sku_code: sku.sku_code, name_zh: sku.name_zh || '', name_en: sku.name_en || '',
@@ -5443,14 +5536,14 @@ function SkuModal({ sku, onClose, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.sku_code.trim()) { setError('SKU Code is required'); return; }
-    if (!form.name_en.trim() || !form.name_zh.trim()) { setError('Both English and Chinese names are required'); return; }
+    if (!form.sku_code.trim()) { setError(t.store.skuCodeRequired); return; }
+    if (!form.name_en.trim() || !form.name_zh.trim()) { setError(t.store.skuNamesRequired); return; }
     setBusy(true); setError('');
     try {
       if (isEdit) await axios.put(`/api/skus/\${sku.id}`, form);
       else        await axios.post('/api/skus', form);
       onSave();
-    } catch (err) { setError(err.response?.data?.error || 'Save failed'); }
+    } catch (err) { setError(err.response?.data?.error || t.saveFailed); }
     finally { setBusy(false); }
   };
 
@@ -5458,55 +5551,55 @@ function SkuModal({ sku, onClose, onSave }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span>{isEdit ? 'Edit SKU definition' : 'Create new SKU definition'}</span>
+          <span>{isEdit ? t.store.editSkuTitle : t.store.createSkuTitle}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
           <div className="form-grid">
             <label className="form-field">
-              <span>SKU Code (Immutable Identifier)</span>
+              <span>{t.store.skuCodeLabel}</span>
               <input value={form.sku_code} onChange={e => set('sku_code', e.target.value)} disabled={isEdit} placeholder="e.g. KINO-CHIP-V2" />
             </label>
             <label className="form-field">
-              <span>Item Type</span>
+              <span>{t.store.itemType}</span>
               <div className="select-wrap" style={{ width: '100%' }}>
                 <select value={form.item_type} onChange={e => set('item_type', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  <option value="physical">Physical Asset</option>
-                  <option value="virtual">Virtual Service / Item</option>
+                  <option value="physical">{t.store.physical}</option>
+                  <option value="virtual">{t.store.virtual}</option>
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
             </label>
             <label className="form-field">
-              <span>Name (EN)</span>
+              <span>{t.table.nameEn}</span>
               <input value={form.name_en} onChange={e => set('name_en', e.target.value)} placeholder="e.g. Kino Biomarker Test Chip" />
             </label>
             <label className="form-field">
-              <span>Name (ZH)</span>
+              <span>{t.table.nameZh}</span>
               <input value={form.name_zh} onChange={e => set('name_zh', e.target.value)} placeholder="例如 Kino 生物标志物检测芯片" />
             </label>
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>Description (EN)</span>
+              <span>{t.store.descEn}</span>
               <input value={form.desc_en} onChange={e => set('desc_en', e.target.value)} placeholder="Central description of physical or virtual asset" />
             </label>
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>Description (ZH)</span>
+              <span>{t.store.descZh}</span>
               <input value={form.desc_zh} onChange={e => set('desc_zh', e.target.value)} placeholder="统一中文描述" />
             </label>
             <label className="form-field">
-              <span>Unit (EN)</span>
+              <span>{t.store.unitEn}</span>
               <input value={form.unit_en} onChange={e => set('unit_en', e.target.value)} placeholder="e.g. pcs, chip, box" />
             </label>
             <label className="form-field">
-              <span>Unit (ZH)</span>
+              <span>{t.store.unitZh}</span>
               <input value={form.unit_zh} onChange={e => set('unit_zh', e.target.value)} placeholder="例如 个, 片, 盒" />
             </label>
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
             <button type="submit" className="btn-primary" disabled={busy}>
-              <Check size={14} />{busy ? 'Saving…' : 'Save'}
+              <Check size={14} />{busy ? t.modal.saving : t.modal.save}
             </button>
           </div>
         </form>
@@ -5516,6 +5609,7 @@ function SkuModal({ sku, onClose, onSave }) {
 }
 
 function DeleteSkuConfirm({ sku, onClose, onConfirm }) {
+  const { t } = useLang();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const handleDelete = async () => {
@@ -5524,25 +5618,25 @@ function DeleteSkuConfirm({ sku, onClose, onConfirm }) {
       await axios.delete(`/api/skus/\${sku.id}`);
       onConfirm();
     } catch (err) {
-      setError(err.response?.data?.error || 'Delete failed. Check if listings reference this SKU.');
+      setError(err.response?.data?.error || t.store.deleteSkuFailed);
     } finally { setBusy(false); }
   };
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span>Delete SKU Registry Entry?</span>
+          <span>{t.store.deleteSkuTitle}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="modal-body">
-          <p style={{ color: '#ef4444', fontWeight: 600 }}>WARNING: Are you sure you want to delete SKU "{sku.sku_code}"?</p>
-          <p className="muted" style={{ marginTop: 8, fontSize: 13 }}>This registry item will be permanently removed. Any storefront listing linking to this SKU will lose its inventory association.</p>
+          <p style={{ color: '#ef4444', fontWeight: 600 }}>{t.store.deleteSkuWarning(sku.sku_code)}</p>
+          <p className="muted" style={{ marginTop: 8, fontSize: 13 }}>{t.store.deleteSkuNote}</p>
           {error && <div className="form-error" style={{ marginTop: 12 }}>{error}</div>}
         </div>
         <div className="modal-footer">
-          <button className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="btn-secondary" onClick={onClose} disabled={busy}>{t.modal.cancel}</button>
           <button className="btn-primary danger" onClick={handleDelete} disabled={busy}>
-            {busy ? 'Deleting…' : 'Confirm Delete'}
+            {busy ? t.store.deleting : t.store.confirmDelete}
           </button>
         </div>
       </div>
@@ -5551,6 +5645,7 @@ function DeleteSkuConfirm({ sku, onClose, onConfirm }) {
 }
 
 function StockAdjustModal({ sku, channels = [], onClose, onSave }) {
+  const { t } = useLang();
   const [locationType, setLocationType] = useState('warehouse'); // 'warehouse' | 'channel'
   const [channelId, setChannelId] = useState('');
   const [warehouseName, setWarehouseName] = useState('shanghai-central');
@@ -5561,8 +5656,8 @@ function StockAdjustModal({ sku, channels = [], onClose, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (locationType === 'channel' && !channelId) { setError('Please select a target channel'); return; }
-    if (locationType === 'warehouse' && !warehouseName.trim()) { setError('Please enter warehouse name'); return; }
+    if (locationType === 'channel' && !channelId) { setError(t.store.pleaseSelectChannel); return; }
+    if (locationType === 'warehouse' && !warehouseName.trim()) { setError(t.store.pleaseEnterWarehouse); return; }
     setBusy(true); setError('');
     try {
       const payload = {
@@ -5575,7 +5670,7 @@ function StockAdjustModal({ sku, channels = [], onClose, onSave }) {
       };
       await axios.post('/api/inventory-stock', payload);
       onSave();
-    } catch (err) { setError(err.response?.data?.error || 'Stock adjustment failed'); }
+    } catch (err) { setError(err.response?.data?.error || t.store.stockFailed); }
     finally { setBusy(false); }
   };
 
@@ -5583,21 +5678,21 @@ function StockAdjustModal({ sku, channels = [], onClose, onSave }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span>Adjust Inventory Stock</span>
+          <span>{t.store.adjustStockTitle}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
           <div style={{ marginBottom: 16 }}>
-            <span style={{ fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 600 }}>Target SKU</span>
+            <span style={{ fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 600 }}>{t.store.targetSku}</span>
             <div className="bold" style={{ fontSize: 16, color: 'var(--primary)', marginTop: 4 }}>{sku.sku_code} - {sku.name_zh || sku.name_en}</div>
           </div>
           <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
             <label className="form-field">
-              <span>Location Type</span>
+              <span>{t.store.locationType}</span>
               <div className="select-wrap" style={{ width: '100%' }}>
                 <select value={locationType} onChange={e => setLocationType(e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  <option value="warehouse">Central Warehouse</option>
-                  <option value="channel">Clinic Channel Stock</option>
+                  <option value="warehouse">{t.store.centralWarehouse}</option>
+                  <option value="channel">{t.store.clinicChannel}</option>
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -5605,10 +5700,10 @@ function StockAdjustModal({ sku, channels = [], onClose, onSave }) {
 
             {locationType === 'channel' ? (
               <label className="form-field">
-                <span>Select Clinic Channel</span>
+                <span>{t.store.selectChannel}</span>
                 <div className="select-wrap" style={{ width: '100%' }}>
                   <select value={channelId} onChange={e => setChannelId(e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                    <option value="">-- Choose Channel --</option>
+                    <option value="">{t.store.chooseChannel}</option>
                     {channels.map(c => (
                       <option key={c.id} value={c.id}>{c.name || c.key_name}</option>
                     ))}
@@ -5618,26 +5713,26 @@ function StockAdjustModal({ sku, channels = [], onClose, onSave }) {
               </label>
             ) : (
               <label className="form-field">
-                <span>Warehouse Name</span>
+                <span>{t.store.warehouseName}</span>
                 <input value={warehouseName} onChange={e => setWarehouseName(e.target.value)} placeholder="shanghai-central" />
               </label>
             )}
 
             <label className="form-field">
-              <span>Quantity (Leave blank for Unlimited/Digital)</span>
-              <input type="number" min="0" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="Unlimited stock" />
+              <span>{t.store.quantityLabel}</span>
+              <input type="number" min="0" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder={t.store.unlimitedStock} />
             </label>
 
             <label className="form-field">
-              <span>Low Stock Warning Threshold</span>
+              <span>{t.store.lowStockThreshold}</span>
               <input type="number" min="0" value={lowStockThreshold} onChange={e => setLowStockThreshold(e.target.value)} />
             </label>
           </div>
           {error && <div className="form-error" style={{ marginTop: 12 }}>{error}</div>}
           <div className="modal-footer" style={{ marginTop: 20 }}>
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
             <button type="submit" className="btn-primary" disabled={busy}>
-              <Check size={14} />{busy ? 'Saving…' : 'Save Adjustments'}
+              <Check size={14} />{busy ? t.modal.saving : t.store.saveAdjustments}
             </button>
           </div>
         </form>
