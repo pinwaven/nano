@@ -466,6 +466,7 @@ async function handlePostStoreItem(body) {
     const { key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url, sku_id } = body;
     if (!key_name) return { success: false, error: 'key_name is required', statusCode: 400 };
     if (!name_en)  return { success: false, error: 'name_en is required', statusCode: 400 };
+    if (!sku_id)   return { success: false, error: 'sku_id is required — create the SKU first', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
@@ -473,7 +474,7 @@ async function handlePostStoreItem(body) {
              VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12, \$13, \$14) RETURNING id`,
             [key_name, name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
              parseFloat(price_cny) || 0, parseFloat(price_usd) || 0,
-             tag || null, parseInt(sort_order) || 0, active !== false, image_url || null, sku_id || null]
+             tag || null, parseInt(sort_order) || 0, active !== false, image_url || null, sku_id]
         );
         return { success: true, id: result.rows[0].id };
     } catch (err) {
@@ -483,6 +484,7 @@ async function handlePostStoreItem(body) {
 
 async function handlePutStoreItem(itemId, body) {
     const { name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url, sku_id } = body;
+    if (!sku_id) return { success: false, error: 'sku_id is required — create the SKU first', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query(
@@ -493,7 +495,7 @@ async function handlePutStoreItem(itemId, body) {
             [name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
              parseFloat(price_cny), parseFloat(price_usd),
              tag || null, parseInt(sort_order) || 0, active !== false,
-             image_url || null, sku_id || null, itemId]
+             image_url || null, sku_id, itemId]
         );
         return { success: true };
     } catch (err) {
@@ -1303,6 +1305,7 @@ async function handlePostChannelInventory(body, adminCtx) {
         if (!channelId) return { success: false, error: 'channel_id required', statusCode: 400 };
         if (!body.key_name) return { success: false, error: 'key_name required', statusCode: 400 };
         if (!body.name_en) return { success: false, error: 'name_en required', statusCode: 400 };
+        if (!body.sku_id)  return { success: false, error: 'sku_id required — create the SKU first', statusCode: 400 };
         const { rows } = await pool.query(
             `INSERT INTO channel_inventory_items
               (channel_id, key_name, name_zh, name_en, desc_zh, desc_en, item_type,
@@ -1327,6 +1330,7 @@ async function handlePostChannelInventory(body, adminCtx) {
 }
 
 async function handlePutChannelInventory(id, body, adminCtx) {
+    if (!body.sku_id) return { success: false, error: 'sku_id required — create the SKU first', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const channelId = adminCtx?.role === 'channel' ? adminCtx.channelId : null;

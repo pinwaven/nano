@@ -507,6 +507,14 @@
               </view>
             </picker>
 
+            <text class="adm-field-label">{{t.store.sku}}</text>
+            <picker range="{{skuPickerOptions}}" value="{{formSkuIdx}}" bindchange="onPickerSku" disabled="{{skuPickerOptions.length === 0}}">
+              <view class="adm-field-picker {{!form.sku_id ? 'adm-picker-error' : ''}}">
+                <text>{{form.sku_id ? skuPickerOptions[formSkuIdx] : t.store.skuPlaceholder}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
             <text class="adm-field-label">{{t.store.showInStore}}</text>
             <picker range="{{[t.store.showInStoreOn, t.store.showInStoreOff]}}" value="{{formShowInStoreIdx}}" bindchange="onPickerShowInStore">
               <view class="adm-field-picker">

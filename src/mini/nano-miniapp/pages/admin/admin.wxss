@@ -659,6 +659,11 @@
   color: #4A6A8A;
 }
 
+.adm-picker-error {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
 .adm-ph {
   color: #2A4A6A;
 }

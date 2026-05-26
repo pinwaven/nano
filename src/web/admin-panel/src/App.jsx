@@ -4137,6 +4137,7 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
     e.preventDefault();
     if (!form.key_name.trim()) { setError(ti.keyRequired); return; }
     if (!form.name_en.trim()) { setError(ti.nameRequired); return; }
+    if (!form.sku_id) { setError('SKU is required — create the SKU first in the SKUs & Stock tab'); return; }
     setBusy(true); setError('');
     const payload = {
       ...form,
@@ -4144,7 +4145,7 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
       price_cny: form.price_cny !== '' ? form.price_cny : null,
       price_usd: form.price_usd !== '' ? form.price_usd : null,
       stock_quantity: form.stock_quantity !== '' ? parseInt(form.stock_quantity, 10) : null,
-      sku_id: form.sku_id !== '' ? form.sku_id : null,
+      sku_id: form.sku_id,
     };
     if (isEdit) delete payload.store_item_id;
     try {
@@ -4186,10 +4187,10 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
               </div>
             </label>
             <label className="form-field">
-              <span>SKU Binding (Centralized Inventory Link)</span>
+              <span>SKU Binding <span style={{ color: '#ef4444' }}>*</span></span>
               <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.sku_id || ''} onChange={e => set('sku_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  <option value="">No SKU linked (Unlimited virtual item)</option>
+                <select value={form.sku_id || ''} onChange={e => set('sku_id', e.target.value)} className="inline-select" style={{ width: '100%', borderColor: !form.sku_id ? '#ef4444' : undefined }}>
+                  <option value="">— Select a SKU —</option>
                   {skus.map(s => (
                     <option key={s.id} value={s.id}>{s.sku_code} - {s.name_zh || s.name_en}</option>
                   ))}
@@ -4815,6 +4816,7 @@ function StoreItemModal({ item, skus = [], onClose, onSave }) {
     e.preventDefault();
     if (!form.key_name.trim()) { setError(t.modal.keyRequired); return; }
     if (!form.name_en.trim())  { setError(t.modal.nameRequired); return; }
+    if (!form.sku_id) { setError('SKU is required — create the SKU first in the SKUs & Stock tab'); return; }
     setBusy(true); setError('');
     try {
       if (isEdit) await axios.put(`/api/store-items/${item.id}`, form);
@@ -4849,10 +4851,10 @@ function StoreItemModal({ item, skus = [], onClose, onSave }) {
               </div>
             </label>
             <label className="form-field">
-              <span>SKU Binding (Centralized Inventory Link)</span>
+              <span>SKU Binding <span style={{ color: '#ef4444' }}>*</span></span>
               <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.sku_id || ''} onChange={e => set('sku_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  <option value="">No SKU linked (Unlimited virtual item)</option>
+                <select value={form.sku_id || ''} onChange={e => set('sku_id', e.target.value)} className="inline-select" style={{ width: '100%', borderColor: !form.sku_id ? '#ef4444' : undefined }}>
+                  <option value="">— Select a SKU —</option>
                   {skus.map(s => (
                     <option key={s.id} value={s.id}>{s.sku_code} - {s.name_zh || s.name_en}</option>
                   ))}

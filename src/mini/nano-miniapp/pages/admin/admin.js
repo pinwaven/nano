@@ -43,6 +43,7 @@ const T = {
       descEn: '描述 (英)', descZh: '描述 (中)', sortOrder: '排序',
       noTag: '无标签', bestseller: '热销', value: '超值', yes: '是', no: '否',
       showInStore: '显示在商城', showInStoreOn: '显示', showInStoreOff: '不显示',
+      sku: 'SKU *', skuPlaceholder: '请先选择 SKU',
       addTitle: '添加商品', editTitle: '编辑商品',
       deleteWarning: '确认删除此商品？此操作不可撤销。',
       orderId: '订单 ID', customer: '用户', item: '商品', qty: '数量', price: '金额', status: '状态', date: '日期',
@@ -114,6 +115,7 @@ const T = {
       descEn: 'Desc (EN)', descZh: 'Desc (ZH)', sortOrder: 'Sort',
       noTag: 'No tag', bestseller: 'Best Seller', value: 'Value Pack', yes: 'Yes', no: 'No',
       showInStore: 'Show in Store', showInStoreOn: 'Visible', showInStoreOff: 'Hidden',
+      sku: 'SKU *', skuPlaceholder: 'Select a SKU first',
       addTitle: 'Add Item', editTitle: 'Edit Item',
       deleteWarning: 'Delete this item? This cannot be undone.',
       orderId: 'Order ID', customer: 'Customer', item: 'Item', qty: 'Qty', price: 'Price', status: 'Status', date: 'Date',
@@ -218,7 +220,7 @@ Page({
       // store item
       name_en: '', name_zh: '', desc_en: '', desc_zh: '',
       unit_en: '', unit_zh: '', price_cny: '', price_usd: '',
-      tag: '', sort_order: 0, active: true,
+      tag: '', sort_order: 0, active: true, sku_id: '',
     },
     editTargetId: null,
 
@@ -230,6 +232,10 @@ Page({
     formTagIdx: 0,
     formActiveIdx: 0,
     formShowInStoreIdx: 0,
+    formSkuIdx: 0,
+    skus: [],
+    skuPickerOptions: [],
+    skuPickerValues: [],
     coachPickerOptions: [],
     coachPickerValues: [],
     coachUserPickerOptions: [],
@@ -261,12 +267,13 @@ Page({
     this.setData({ loading: true })
     try {
       const cid = this._channelId
-      const [uRes, cRes, sRes, oRes, iRes] = await Promise.all([
+      const [uRes, cRes, sRes, oRes, iRes, skuRes] = await Promise.all([
         cid ? this._req(`${BASE}/api/channel-users/${cid}`) : this._req(`${BASE}/api/users`),
         cid ? this._req(`${BASE}/api/channel-coaches/${cid}`) : this._req(`${BASE}/api/coach-list`),
         cid ? this._req(`${BASE}/api/channel-inventory?channel_id=${cid}`) : this._req(`${BASE}/api/store-items?all=true`),
         cid ? this._req(`${BASE}/api/orders?channel_id=${cid}`) : this._req(`${BASE}/api/orders`),
         cid ? this._req(`${BASE}/api/invitations?channel_id=${cid}`) : this._req(`${BASE}/api/invitations`),
+        this._req(`${BASE}/api/skus`),
       ])
       const lang = this.data.lang
       const users = (uRes.data?.users || []).map(u => ({
@@ -277,9 +284,13 @@ Page({
         _avatar: (u.nickname || 'U')[0].toUpperCase(),
       }))
       const coaches = cRes.data?.coaches || []
+      const skus = skuRes.data?.skus || []
       this.setData({
         users,
         coaches,
+        skus,
+        skuPickerOptions: skus.map(s => `${s.sku_code} - ${s.name_zh || s.name_en}`),
+        skuPickerValues: skus.map(s => s.id),
         invites: iRes.data?.invitations || [],
         storeItems: sRes.data?.items || [],
         orders: (oRes.data?.orders || []).map(o => ({
@@ -415,23 +426,25 @@ Page({
   openAddItem() {
     this.setData({
       modalOpen: true, modalType: 'item', modalMode: 'add', modalTitle: T[this.data.lang].store.addTitle, modalError: '', editTargetId: null,
-      form: { key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '', unit_en: '', unit_zh: '', price_cny: '', price_usd: '', tag: '', sort_order: 0, active: true, show_in_store: false },
-      formTagIdx: 0, formActiveIdx: 0, formShowInStoreIdx: 1,
+      form: { key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '', unit_en: '', unit_zh: '', price_cny: '', price_usd: '', tag: '', sort_order: 0, active: true, show_in_store: false, sku_id: '' },
+      formTagIdx: 0, formActiveIdx: 0, formShowInStoreIdx: 1, formSkuIdx: 0,
     })
   },
 
   openEditItem(e) {
     const item = e.currentTarget.dataset.item
-    const { lang } = this.data
+    const { lang, skuPickerValues } = this.data
     const tagIdx = T[lang].tagValues.indexOf(item.tag || '')
     const activeIdx = T[lang].activeValues.indexOf(item.active !== false)
     const showInStore = item.show_in_store === true
+    const skuIdx = item.sku_id ? Math.max(0, skuPickerValues.indexOf(item.sku_id)) : 0
     this.setData({
       modalOpen: true, modalType: 'item', modalMode: 'edit', modalTitle: T[lang].store.editTitle, modalError: '', editTargetId: item.id,
-      form: { key_name: item.key_name || '', name_en: item.name_en || '', name_zh: item.name_zh || '', desc_en: item.desc_en || '', desc_zh: item.desc_zh || '', unit_en: item.unit_en || '', unit_zh: item.unit_zh || '', price_cny: String(item.price_cny ?? ''), price_usd: String(item.price_usd ?? ''), tag: item.tag || '', sort_order: item.sort_order ?? 0, active: item.active !== false, show_in_store: showInStore },
+      form: { key_name: item.key_name || '', name_en: item.name_en || '', name_zh: item.name_zh || '', desc_en: item.desc_en || '', desc_zh: item.desc_zh || '', unit_en: item.unit_en || '', unit_zh: item.unit_zh || '', price_cny: String(item.price_cny ?? ''), price_usd: String(item.price_usd ?? ''), tag: item.tag || '', sort_order: item.sort_order ?? 0, active: item.active !== false, show_in_store: showInStore, sku_id: item.sku_id || '' },
       formTagIdx: tagIdx >= 0 ? tagIdx : 0,
       formActiveIdx: activeIdx >= 0 ? activeIdx : 0,
       formShowInStoreIdx: showInStore ? 0 : 1,
+      formSkuIdx: skuIdx,
     })
   },
 
@@ -490,6 +503,11 @@ Page({
     this.setData({ formShowInStoreIdx: idx, 'form.show_in_store': idx === 0 })
   },
 
+  onPickerSku(e) {
+    const idx = Number(e.detail.value)
+    this.setData({ formSkuIdx: idx, 'form.sku_id': this.data.skuPickerValues[idx] || '' })
+  },
+
   // ── Save ──────────────────────────────────────────────────────────────────────
 
   async handleSave() {
@@ -514,6 +532,7 @@ Page({
         else await this._req(`${BASE}/api/coaches/${editTargetId}`, 'PUT', coachPayload)
       } else if (modalType === 'item') {
         if (!form.key_name.trim() || !form.name_en.trim()) { this.setData({ modalError: t.error.required, modalBusy: false }); return }
+        if (!form.sku_id) { this.setData({ modalError: t.store.sku + ': ' + t.error.required, modalBusy: false }); return }
         const cid = this._channelId
         if (cid) {
           if (modalMode === 'add') await this._req(`${BASE}/api/channel-inventory`, 'POST', { ...form, channel_id: cid })
