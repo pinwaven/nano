@@ -425,6 +425,44 @@
         </view>
         <block wx:else>
 
+          <!-- Doctor Notes (admin panel / liangkang format) -->
+          <view wx:if="{{activeReport.hasDoctorNotes}}" class="rpt-section">
+            <view class="rpt-section-header">
+              <text class="rpt-section-icon">🩺</text>
+              <text class="rpt-section-title">{{t.rptDoctorTitle}}</text>
+            </view>
+            <view wx:if="{{activeReportDoctorNotes.physician}}" class="rpt-dn-meta">
+              <text class="rpt-dn-key">{{t.rptPhysician}}</text>
+              <text class="rpt-dn-val">{{activeReportDoctorNotes.physician}}{{activeReportDoctorNotes.department ? ' · ' + activeReportDoctorNotes.department : ''}}</text>
+            </view>
+            <view wx:if="{{activeReportDoctorNotes.vitals.length > 0}}" class="rpt-vitals-grid">
+              <view wx:for="{{activeReportDoctorNotes.vitals}}" wx:key="key" class="rpt-vital-item">
+                <text class="rpt-vital-key">{{item.key}}</text>
+                <text class="rpt-vital-val">{{item.value}}</text>
+              </view>
+            </view>
+            <view wx:if="{{activeReportDoctorNotes.clinical_summary}}" class="rpt-clinical">
+              <text class="rpt-clinical-label">{{t.rptClinicalSummary}}</text>
+              <text class="rpt-clinical-text">{{activeReportDoctorNotes.clinical_summary}}</text>
+            </view>
+            <view wx:if="{{activeReportDoctorNotes.recommendations.length > 0}}" class="rpt-dn-subsection">
+              <view class="rpt-section-header rpt-advice-header" style="padding-left:0;">
+                <text class="rpt-section-icon">💊</text>
+                <text class="rpt-section-title">{{t.rptRecommendations}}</text>
+              </view>
+              <view class="rpt-advice-list">
+                <view wx:for="{{activeReportDoctorNotes.recommendations}}" wx:key="index" class="rpt-advice-item">
+                  <text class="rpt-advice-num">{{index + 1}}</text>
+                  <text class="rpt-advice-text">{{item}}</text>
+                </view>
+              </view>
+            </view>
+            <view wx:if="{{activeReportDoctorNotes.follow_up}}" class="rpt-followup">
+              <text class="rpt-followup-label">{{t.rptFollowUp}}</text>
+              <text class="rpt-followup-text">{{activeReportDoctorNotes.follow_up}}</text>
+            </view>
+          </view>
+
           <!-- Diagnostics -->
           <view wx:if="{{activeReport.hasDiag}}" class="rpt-section">
             <view class="rpt-section-header rpt-diag-header">

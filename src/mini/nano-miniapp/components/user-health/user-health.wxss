@@ -1662,6 +1662,90 @@
   padding-top: 4rpx;
 }
 
+/* ── Doctor Notes Format ── */
+
+.rpt-dn-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+  padding: 16rpx 20rpx;
+  background: rgba(99,117,236,0.08);
+  border-radius: 16rpx;
+}
+.rpt-dn-key {
+  font-size: 22rpx;
+  color: rgba(166,196,229,0.55);
+  flex-shrink: 0;
+}
+.rpt-dn-val {
+  font-size: 26rpx;
+  color: #A6C4E5;
+  flex: 1;
+}
+.rpt-vitals-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-bottom: 20rpx;
+}
+.rpt-vital-item {
+  background: rgba(15,37,64,0.7);
+  border: 1rpx solid rgba(99,117,236,0.2);
+  border-radius: 14rpx;
+  padding: 12rpx 18rpx;
+  min-width: 140rpx;
+}
+.rpt-vital-key {
+  font-size: 20rpx;
+  color: rgba(166,196,229,0.5);
+  display: block;
+  margin-bottom: 4rpx;
+}
+.rpt-vital-val {
+  font-size: 26rpx;
+  color: #C8DCF0;
+  font-weight: 600;
+  display: block;
+}
+.rpt-clinical {
+  margin-bottom: 20rpx;
+}
+.rpt-clinical-label {
+  font-size: 22rpx;
+  color: rgba(166,196,229,0.5);
+  display: block;
+  margin-bottom: 8rpx;
+}
+.rpt-clinical-text {
+  font-size: 26rpx;
+  color: #A6C4E5;
+  line-height: 1.7;
+  display: block;
+}
+.rpt-dn-subsection {
+  margin-top: 8rpx;
+}
+.rpt-followup {
+  margin-top: 20rpx;
+  padding: 16rpx 20rpx;
+  background: rgba(16,185,129,0.07);
+  border-left: 4rpx solid rgba(16,185,129,0.4);
+  border-radius: 0 14rpx 14rpx 0;
+}
+.rpt-followup-label {
+  font-size: 22rpx;
+  color: rgba(16,185,129,0.7);
+  display: block;
+  margin-bottom: 6rpx;
+}
+.rpt-followup-text {
+  font-size: 26rpx;
+  color: #A6C4E5;
+  line-height: 1.6;
+  display: block;
+}
+
 /* ── Digital Twin — Lab Snapshot ── */
 
 .ht-lab-card {

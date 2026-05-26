@@ -147,6 +147,12 @@ const T = {
     rptDiagTitle: '诊断意见',
     rptAdviceTitle: '医生建议',
     rptMarkersTitle: '检验指标',
+    rptDoctorTitle: '医生评估',
+    rptPhysician: '主诊医生',
+    rptVitals: '生命体征',
+    rptClinicalSummary: '临床概述',
+    rptRecommendations: '建议方案',
+    rptFollowUp: '随访计划',
     noHealthSignals: '暂无健康信号',
   },
   en: {
@@ -217,6 +223,12 @@ const T = {
     rptDiagTitle: 'Diagnostics',
     rptAdviceTitle: "Doctor's Advice",
     rptMarkersTitle: 'Lab Markers',
+    rptDoctorTitle: 'Doctor Assessment',
+    rptPhysician: 'Physician',
+    rptVitals: 'Vitals',
+    rptClinicalSummary: 'Clinical Summary',
+    rptRecommendations: 'Recommendations',
+    rptFollowUp: 'Follow-up',
     noHealthSignals: 'No signals yet',
   },
 }
@@ -418,6 +430,7 @@ Component({
     activeReportEvents: [],
     activeReportDiag: [],
     activeReportAdvice: [],
+    activeReportDoctorNotes: null,
     reportDetailLoading: false,
     // Health tags (populated from /api/health-twin response)
     healthTags: [],
@@ -1158,6 +1171,22 @@ Component({
             refText: _refText(d.key_name),
           }
         })
+        // Parse doctor_notes format (admin panel / liangkang reports)
+        const dnRaw = raw.doctor_notes || null
+        let activeReportDoctorNotes = null
+        if (dnRaw) {
+          const vitals = dnRaw.vital_summary
+            ? Object.entries(dnRaw.vital_summary).map(([k, v]) => ({ key: k, value: String(v) }))
+            : []
+          activeReportDoctorNotes = {
+            physician: dnRaw.physician || '',
+            department: dnRaw.department || '',
+            vitals,
+            clinical_summary: dnRaw.clinical_summary || '',
+            recommendations: Array.isArray(dnRaw.recommendations) ? dnRaw.recommendations : [],
+            follow_up: dnRaw.follow_up || '',
+          }
+        }
         const activeReport = {
           id,
           institution: report.institution || '—',
@@ -1166,6 +1195,7 @@ Component({
           type_color: _reportTypeColor(report.report_type),
           hasDiag: Array.isArray(raw.diagnostics) && raw.diagnostics.length > 0,
           hasAdvice: Array.isArray(raw.doctor_advice) && raw.doctor_advice.length > 0,
+          hasDoctorNotes: !!activeReportDoctorNotes,
           loading: false,
         }
         this.setData({
@@ -1173,6 +1203,7 @@ Component({
           activeReportEvents: enriched,
           activeReportDiag: raw.diagnostics || [],
           activeReportAdvice: raw.doctor_advice || [],
+          activeReportDoctorNotes,
           reportDetailLoading: false,
         })
       } catch (_) {
@@ -1181,7 +1212,7 @@ Component({
     },
 
     onCloseReport() {
-      this.setData({ activeReport: null, activeReportEvents: [], activeReportDiag: [], activeReportAdvice: [] })
+      this.setData({ activeReport: null, activeReportEvents: [], activeReportDiag: [], activeReportAdvice: [], activeReportDoctorNotes: null })
     },
 
     noop() {},
