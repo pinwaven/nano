@@ -4415,9 +4415,9 @@ function ImportFromStoreModal({ existingItems, onClose, onSelect }) {
               })}
             </div>
           )}
-          <div className="modal-footer" style={{ marginTop: 16 }}>
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-          </div>
+        </div>
+        <div className="modal-footer" style={{ padding: '16px 20px', borderTop: '1px solid var(--border)' }}>
+          <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
         </div>
       </div>
     </div>
