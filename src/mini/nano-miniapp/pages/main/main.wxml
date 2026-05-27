@@ -731,7 +731,7 @@
       </view>
 
       <!-- Products subtab -->
-      <scroll-view wx:elif="{{storeSubTab === 'products' && storeItems.length > 0}}" class="store-scroll" scroll-y="true">
+      <scroll-view wx:elif="{{storeSubTab === 'products' && storeItems.length > 0}}" class="store-scroll" scroll-y="true" refresher-enabled="{{true}}" refresher-triggered="{{storeRefreshing}}" bindrefresherrefresh="onStoreRefresh">
         <view class="store-list">
           <view wx:for="{{storeItems}}" wx:key="id" class="store-card">
             <view wx:if="{{item.tagLabel}}" class="store-tag">
@@ -774,7 +774,7 @@
       </view>
 
       <!-- Orders subtab -->
-      <scroll-view wx:if="{{!storeLoading && storeSubTab === 'orders' && storeOrders.length > 0}}" class="store-scroll" scroll-y="true">
+      <scroll-view wx:if="{{!storeLoading && storeSubTab === 'orders' && storeOrders.length > 0}}" class="store-scroll" scroll-y="true" refresher-enabled="{{true}}" refresher-triggered="{{storeRefreshing}}" bindrefresherrefresh="onStoreRefresh">
         <view class="store-list">
           <view wx:for="{{storeOrders}}" wx:key="id" class="order-card">
             <view class="order-card-top">

@@ -1,5 +1,6 @@
 {
   "navigationStyle": "custom",
+  "enablePullDownRefresh": true,
   "usingComponents": {
     "toolbox": "/components/toolbox/toolbox",
     "user-health": "/components/user-health/user-health",

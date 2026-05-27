@@ -772,6 +772,7 @@ Page({
 
     // Store
     storeLoading: true,
+    storeRefreshing: false,
     storeItems: [],
     storeOrders: [],
     storeSubTab: 'products',
@@ -868,6 +869,22 @@ Page({
   onUnload() {
     this._stopPolling()
     this._stopKinoSlide()
+  },
+
+  async onPullDownRefresh() {
+    const { tab, user, lang } = this.data
+    if (tab === 'store') {
+      this.setData({ storeLoading: true })
+      await this._loadStore(user, lang)
+    }
+    wx.stopPullDownRefresh()
+  },
+
+  async onStoreRefresh() {
+    const { user, lang } = this.data
+    this.setData({ storeRefreshing: true })
+    await this._loadStore(user, lang)
+    this.setData({ storeRefreshing: false })
   },
 
   // ── Tab navigation ──────────────────────────────────────────────────────────
