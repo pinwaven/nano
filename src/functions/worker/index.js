@@ -154,19 +154,100 @@ async function handleGetUsers(channelId, query = {}) {
             LIMIT $${limitIdx} OFFSET $${offsetIdx}
         `;
 
-        const result = await pool.query(sql, params);
-        const rows = result.rows;
+        // Stats queries — channel-scoped but no search filter and no pagination
+        const sParams = [];
+        const sConditions = ['1=1'];
+        let statsChannelsJoin = '';
+        if (channelId) {
+            sConditions.push(`u.channel_id = $${sParams.push(channelId)}`);
+        } else if (channelName) {
+            statsChannelsJoin = 'LEFT JOIN channels c ON u.channel_id = c.id';
+            sConditions.push(`c.name = $${sParams.push(channelName)}`);
+        }
+        const sWhere = sConditions.join(' AND ');
 
+        const csParams = [];
+        const csConditions = ['1=1'];
+        let coachChannelsJoin = '';
+        if (channelId) {
+            csConditions.push(`p.channel_id = $${csParams.push(channelId)}`);
+        } else if (channelName) {
+            coachChannelsJoin = 'LEFT JOIN channels c ON p.channel_id = c.id';
+            csConditions.push(`c.name = $${csParams.push(channelName)}`);
+        }
+        const csWhere = csConditions.join(' AND ');
+
+        const [mainResult, userStatsResult, coachStatsResult, scanStatsResult, bioAgeDeltaResult] = await Promise.all([
+            pool.query(sql, params),
+            pool.query(`
+                SELECT
+                    COUNT(*) FILTER (WHERE u.gender = 'male') AS male_count,
+                    COUNT(*) FILTER (WHERE u.gender = 'female') AS female_count,
+                    COUNT(*) FILTER (WHERE u.created_at >= NOW() - INTERVAL '7 days') AS new_users_7d
+                FROM users u ${statsChannelsJoin} WHERE ${sWhere}
+            `, sParams),
+            pool.query(`
+                SELECT
+                    COUNT(*) FILTER (WHERE u.gender = 'male') AS male_coach_count,
+                    COUNT(*) FILTER (WHERE u.gender = 'female') AS female_coach_count,
+                    COUNT(*) FILTER (WHERE p.created_at >= NOW() - INTERVAL '7 days') AS new_coaches_7d,
+                    COUNT(*) AS total_coaches
+                FROM coaches p
+                JOIN users u ON p.user_id = u.user_id
+                ${coachChannelsJoin} WHERE ${csWhere}
+            `, csParams),
+            pool.query(`
+                SELECT
+                    COUNT(*) FILTER (WHERE b.tested_at >= NOW() - INTERVAL '7 days') AS scans_7d,
+                    COUNT(*) FILTER (WHERE b.tested_at >= NOW() - INTERVAL '14 days') AS scans_14d,
+                    COUNT(*) FILTER (WHERE b.tested_at >= NOW() - INTERVAL '30 days') AS scans_30d,
+                    COUNT(*) AS scans_total
+                FROM biomarkers b
+                JOIN users u ON u.user_id = b.user_id
+                ${statsChannelsJoin} WHERE ${sWhere}
+            `, sParams),
+            pool.query(`
+                SELECT ROUND(AVG(b.bio_age - EXTRACT(YEAR FROM AGE(u.birth_date))::numeric)::numeric, 1)::text AS bio_age_delta
+                FROM users u
+                JOIN (
+                    SELECT DISTINCT ON (user_id) user_id, bio_age
+                    FROM biomarkers ORDER BY user_id, tested_at DESC
+                ) b ON u.user_id = b.user_id
+                ${statsChannelsJoin}
+                WHERE u.birth_date IS NOT NULL AND b.bio_age IS NOT NULL AND ${sWhere}
+            `, sParams),
+        ]);
+
+        const rows = mainResult.rows;
         const total = rows.length > 0 ? parseInt(rows[0]._total) : 0;
         const tested = rows.length > 0 ? parseInt(rows[0]._tested) : 0;
         const rawAvg = rows.length > 0 ? rows[0]._avg_bio_age : null;
         const avgBioAge = rawAvg != null ? parseFloat(rawAvg).toFixed(1) : '—';
 
+        const userStats = userStatsResult.rows[0] || {};
+        const coachStats = coachStatsResult.rows[0] || {};
+        const scanStats = scanStatsResult.rows[0] || {};
+        const bioAgeDeltaRow = bioAgeDeltaResult.rows[0] || {};
+
         const users = rows.map(({ _total, _tested, _avg_bio_age, ...u }) => ({
             ...u, chrono_age: calculateAge(u.birth_date),
         }));
 
-        return { success: true, users, total, tested, avgBioAge };
+        return {
+            success: true, users, total, tested, avgBioAge,
+            maleCount: parseInt(userStats.male_count) || 0,
+            femaleCount: parseInt(userStats.female_count) || 0,
+            newUsers7d: parseInt(userStats.new_users_7d) || 0,
+            maleCoachCount: parseInt(coachStats.male_coach_count) || 0,
+            femaleCoachCount: parseInt(coachStats.female_coach_count) || 0,
+            newCoaches7d: parseInt(coachStats.new_coaches_7d) || 0,
+            coachTotal: parseInt(coachStats.total_coaches) || 0,
+            scansTotal: parseInt(scanStats.scans_total) || 0,
+            scans7d: parseInt(scanStats.scans_7d) || 0,
+            scans14d: parseInt(scanStats.scans_14d) || 0,
+            scans30d: parseInt(scanStats.scans_30d) || 0,
+            bioAgeDelta: bioAgeDeltaRow.bio_age_delta || null,
+        };
     } catch (err) {
         return { success: false, error: err.message };
     }

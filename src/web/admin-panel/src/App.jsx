@@ -109,6 +109,9 @@ const T = {
     stats: {
       totalUsers: 'Total Users', tested: 'Tested', avgBioAge: 'Avg Bio Age',
       coaches: 'Coaches', totalCoaches: 'Total Coaches',
+      male: 'M', female: 'F', new7d: '+7d',
+      days7: '7d', days14: '14d', days30: '30d',
+      aboveChrono: 'above age', belowChrono: 'below age',
       assignedUsers: 'Assigned Users', unassignedUsers: 'Unassigned Users',
       totalDots: 'Total Dots', isolates: 'Isolates', blends: 'Blends',
       totalItems: 'Items', activeItems: 'Active', totalOrders: 'Orders', pendingOrders: 'Pending',
@@ -523,6 +526,9 @@ const T = {
     stats: {
       totalUsers: '总用户数', tested: '已检测', avgBioAge: '平均生理年龄',
       coaches: 'Coach 数', totalCoaches: 'Coach 总数',
+      male: '男', female: '女', new7d: '近7天',
+      days7: '7天', days14: '14天', days30: '30天',
+      aboveChrono: '高于实际', belowChrono: '低于实际',
       assignedUsers: '已分配用户', unassignedUsers: '未分配用户',
       totalDots: '原粒总数', isolates: '单体', blends: '复合',
       totalItems: '商品总数', activeItems: '上架中', totalOrders: '订单总数', pendingOrders: '待处理',
@@ -955,6 +961,35 @@ function StatCard({ icon: Icon, label, value, color = '#3b82f6' }) {
       <div>
         <div className="stat-value">{value}</div>
         <div className="stat-label">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+function RichStatCard({ icon: Icon, label, value, color = '#3b82f6', subs = [] }) {
+  return (
+    <div className="stat-card" style={{ alignItems: 'flex-start', paddingTop: 14, paddingBottom: 14 }}>
+      <div className="stat-icon" style={{ background: color + '1a', color, marginTop: 2 }}>
+        <Icon size={20} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="stat-value">{value}</div>
+        <div className="stat-label">{label}</div>
+        {subs.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+            {subs.map((s, i) => (
+              <span key={i} style={{
+                fontSize: 11, whiteSpace: 'nowrap', borderRadius: 4, padding: '1px 6px',
+                background: s.highlight ? color + '15' : '#f1f5f9',
+                color: s.highlight ? color : '#64748b',
+                border: `1px solid ${s.highlight ? color + '30' : '#e2e8f0'}`,
+                fontWeight: s.highlight ? 600 : 400,
+              }}>
+                {s.label} {s.value}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2367,6 +2402,18 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
   const [total, setTotal] = useState(0);
   const [tested, setTested] = useState(0);
   const [avgBioAge, setAvgBioAge] = useState('—');
+  const [maleCount, setMaleCount] = useState(0);
+  const [femaleCount, setFemaleCount] = useState(0);
+  const [newUsers7d, setNewUsers7d] = useState(0);
+  const [maleCoachCount, setMaleCoachCount] = useState(0);
+  const [femaleCoachCount, setFemaleCoachCount] = useState(0);
+  const [newCoaches7d, setNewCoaches7d] = useState(0);
+  const [coachTotal, setCoachTotal] = useState(0);
+  const [scansTotal, setScansTotal] = useState(0);
+  const [scans7d, setScans7d] = useState(0);
+  const [scans14d, setScans14d] = useState(0);
+  const [scans30d, setScans30d] = useState(0);
+  const [bioAgeDelta, setBioAgeDelta] = useState(null);
   const [tabLoading, setTabLoading] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -2421,6 +2468,20 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
           setTotal(res.data.total || 0);
           setTested(res.data.tested || 0);
           setAvgBioAge(res.data.avgBioAge || '—');
+          if (!append) {
+            setMaleCount(res.data.maleCount || 0);
+            setFemaleCount(res.data.femaleCount || 0);
+            setNewUsers7d(res.data.newUsers7d || 0);
+            setMaleCoachCount(res.data.maleCoachCount || 0);
+            setFemaleCoachCount(res.data.femaleCoachCount || 0);
+            setNewCoaches7d(res.data.newCoaches7d || 0);
+            setCoachTotal(res.data.coachTotal || 0);
+            setScansTotal(res.data.scansTotal || 0);
+            setScans7d(res.data.scans7d || 0);
+            setScans14d(res.data.scans14d || 0);
+            setScans30d(res.data.scans30d || 0);
+            setBioAgeDelta(res.data.bioAgeDelta || null);
+          }
         }
       })
       .catch(err => {
@@ -2505,6 +2566,18 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
           setTotal(res.data.total || 0);
           setTested(res.data.tested || 0);
           setAvgBioAge(res.data.avgBioAge || '—');
+          setMaleCount(res.data.maleCount || 0);
+          setFemaleCount(res.data.femaleCount || 0);
+          setNewUsers7d(res.data.newUsers7d || 0);
+          setMaleCoachCount(res.data.maleCoachCount || 0);
+          setFemaleCoachCount(res.data.femaleCoachCount || 0);
+          setNewCoaches7d(res.data.newCoaches7d || 0);
+          setCoachTotal(res.data.coachTotal || 0);
+          setScansTotal(res.data.scansTotal || 0);
+          setScans7d(res.data.scans7d || 0);
+          setScans14d(res.data.scans14d || 0);
+          setScans30d(res.data.scans30d || 0);
+          setBioAgeDelta(res.data.bioAgeDelta || null);
         }
       })
       .catch(err => {
@@ -2540,10 +2613,28 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
   return (
     <>
       <div className="stat-row">
-        <StatCard icon={Users}    label={t.stats.totalUsers} value={total} color="#3b82f6" />
-        <StatCard icon={Activity} label={t.stats.tested}     value={tested}       color="#8b5cf6" />
-        <StatCard icon={Calendar} label={t.stats.avgBioAge}  value={avgBioAge}    color="#f59e0b" />
-        <StatCard icon={UserCog}  label={t.stats.coaches}    value={coaches.length} color="#10b981" />
+        <RichStatCard icon={Users} label={t.stats.totalUsers} value={total} color="#3b82f6" subs={[
+          { label: t.stats.male, value: maleCount },
+          { label: t.stats.female, value: femaleCount },
+          { label: t.stats.new7d, value: newUsers7d, highlight: true },
+        ]} />
+        <RichStatCard icon={UserCog} label={t.stats.coaches} value={coachTotal || coaches.length} color="#10b981" subs={[
+          { label: t.stats.male, value: maleCoachCount },
+          { label: t.stats.female, value: femaleCoachCount },
+          { label: t.stats.new7d, value: newCoaches7d, highlight: true },
+        ]} />
+        <RichStatCard icon={Activity} label={t.stats.tested} value={scansTotal || tested} color="#8b5cf6" subs={[
+          { label: t.stats.days7, value: scans7d },
+          { label: t.stats.days14, value: scans14d },
+          { label: t.stats.days30, value: scans30d },
+        ]} />
+        <RichStatCard icon={Calendar} label={t.stats.avgBioAge} value={avgBioAge} color="#f59e0b" subs={
+          bioAgeDelta != null ? [{
+            label: parseFloat(bioAgeDelta) >= 0 ? t.stats.aboveChrono : t.stats.belowChrono,
+            value: `${Math.abs(parseFloat(bioAgeDelta)).toFixed(1)}${isZh ? '岁' : 'y'}`,
+            highlight: Math.abs(parseFloat(bioAgeDelta)) > 2,
+          }] : []
+        } />
       </div>
       <div className="card">
         <div className="table-toolbar">
