@@ -182,6 +182,46 @@ resources:
             cronExpression: "0 0 */4 * * *"
             enable: true
 
+  payment:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-payment
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 256
+      timeout: 120
+      code: ./src/functions/payment
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
+        DB_NAME: "nano_db_prod"
+        DB_USER: "nano_admin"
+        DB_PASS: ${env(DB_PASS)}
+        DB_SSL: "false"
+        TZ: "Asia/Shanghai"
+      triggers:
+        - triggerName: payment-http
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["GET", "POST", "OPTIONS"]
+        - triggerName: payment-refund-poll
+          triggerType: timer
+          triggerConfig:
+            payload: ""
+            cronExpression: "0 */5 * * * *"
+            enable: true
+
   admin-panel:
     component: fc3
     props:
@@ -277,3 +317,7 @@ resources:
             functionName: nano-lab
           - path: /lab
             functionName: nano-lab
+          - path: /payment/*
+            functionName: nano-payment
+          - path: /payment
+            functionName: nano-payment
