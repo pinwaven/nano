@@ -158,6 +158,36 @@ describe('QCS lab adapter', () => {
     assert.deepEqual(result.lab_last_result, { id: 'QCS-1001', progress: 'processing', samples: [{ id: 1 }] });
   });
 
+  test('createOrder uses configured default sample center when payload omits sample_center_id', async () => {
+    const qcs = require('../src/functions/lab/lib/adapters/qcs');
+    qcs.clearTokenCache();
+    const calls = [];
+    const transport = {
+      async post(url, data, options) {
+        calls.push({ url, data, headers: options.headers });
+        if (url.endsWith('/oauth/access_token')) return { data: { access_token: 'token' } };
+        if (url.endsWith('/services/labtest/orders/_id_check')) {
+          return { data: { data: { id: 'QCS-DEFAULT', progress: 'tobeconfirmed' } } };
+        }
+        return { data: { data: { id: 'QCS-DEFAULT', progress: 'processing' } } };
+      },
+    };
+
+    await qcs.createOrder({
+      user: { user_id: 'u1', nickname: '张三' },
+      payload: { goods: ['1080'], barcode: '287002730175' },
+      config: {
+        api_base_url: 'https://qcs.example/third-party',
+        api_key: 'client-id',
+        api_secret: 'client-secret',
+        default_sample_center_id: 46,
+        transport,
+      },
+    });
+
+    assert.equal(calls[2].data.sample_center_id, 46);
+  });
+
   test('createOrder returns a persisted partial order when samples endpoint fails', async () => {
     const qcs = require('../src/functions/lab/lib/adapters/qcs');
     qcs.clearTokenCache();

@@ -240,6 +240,7 @@ async function handleCreateOrder(rawBody) {
         api_base_url: provider.api_base_url,
         api_key: provider.api_key_enc,
         api_secret: provider.webhook_secret_enc,
+        default_sample_center_id: numberEnv('QCS_DEFAULT_SAMPLE_CENTER_ID'),
         cache: globalCache,
     };
     const createOrder = adapter.create_order || adapter.createOrder;
@@ -341,6 +342,13 @@ async function loadUser(userId) {
         [userId]
     );
     return userRes.rows[0] || null;
+}
+
+function numberEnv(name) {
+    const value = process.env[name];
+    if (value === undefined || value === '') return undefined;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : undefined;
 }
 
 async function insertLabOrder(order) {

@@ -33,6 +33,8 @@ describe('lab order API', () => {
   });
 
   test('POST /lab/order creates QCS order through adapter and records lab_orders', async () => {
+    const previousDefaultSampleCenterId = process.env.QCS_DEFAULT_SAMPLE_CENTER_ID;
+    process.env.QCS_DEFAULT_SAMPLE_CENTER_ID = '46';
     const queries = [];
     installDbMock(async (sql, params) => {
       queries.push({ sql, params });
@@ -86,6 +88,7 @@ describe('lab order API', () => {
     assert.equal(calls[0].user.user_id, 'u1');
     assert.equal(calls[0].config.api_key, 'client-id');
     assert.equal(calls[0].config.api_secret, 'client-secret');
+    assert.equal(calls[0].config.default_sample_center_id, 46);
     const insert = queries.find((q) => q.sql.includes('INSERT INTO lab_orders'));
     assert.ok(insert);
     assert.equal(insert.params[0], 'qcs');
@@ -94,6 +97,11 @@ describe('lab order API', () => {
     assert.equal(insert.params[3], 'client-secret');
     assert.equal(insert.params[5], 'QCS-1001');
     assert.equal(insert.params[9], '处理中');
+    if (previousDefaultSampleCenterId === undefined) {
+      delete process.env.QCS_DEFAULT_SAMPLE_CENTER_ID;
+    } else {
+      process.env.QCS_DEFAULT_SAMPLE_CENTER_ID = previousDefaultSampleCenterId;
+    }
   });
 
   test('GET /lab/providers returns active labs without credentials', async () => {

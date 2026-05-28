@@ -284,7 +284,7 @@ async function createOrder({ user, payload, config }) {
     const samplePayload = {
         barcode: payload.barcode || externalOrderId,
         sample_form_id: sampleFormIdFromBarcode(payload.barcode),
-        sample_center_id: Number(payload.sample_center_id || 0),
+        sample_center_id: sampleCenterIdFromPayload(payload, config),
         sample_time: Number(payload.sample_time || Math.floor(Date.now() / 1000)),
         empty_stomach: Boolean(payload.empty_stomach),
     };
@@ -534,6 +534,15 @@ function sampleFormIdFromBarcode(barcode) {
     return BARCODE_SUFFIX_SAMPLE_FORM_ID[suffix] || DEFAULT_SAMPLE_FORM_ID;
 }
 
+function sampleCenterIdFromPayload(payload, config) {
+    const hasPayloadValue = payload.sample_center_id !== undefined
+        && payload.sample_center_id !== null
+        && payload.sample_center_id !== '';
+    const value = hasPayloadValue ? payload.sample_center_id : config.default_sample_center_id;
+    const sampleCenterId = Number(value);
+    return Number.isFinite(sampleCenterId) ? sampleCenterId : 0;
+}
+
 function projectsByBarcode(barcode) {
     const suffix = String(barcode || '').slice(-2);
     return cloneProjects(BARCODE_SUFFIX_PROJECTS[suffix] || []);
@@ -574,6 +583,7 @@ module.exports = {
     all_projects_by_barcode_suffix: allProjectsByBarcodeSuffix,
     qcsProgressToLabStatus,
     sampleFormIdFromBarcode,
+    sampleCenterIdFromPayload,
     BARCODE_SUFFIX_SAMPLE_FORM_ID,
     BARCODE_SUFFIX_PROJECTS,
     clearTokenCache,
