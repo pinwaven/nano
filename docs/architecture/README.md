@@ -97,5 +97,6 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 | Digital Twin | [digital-twin.md](digital-twin.md) |
 | Reminder System | [reminder-system.md](reminder-system.md) |
 | Channel Inventory | [channel-inventory.md](channel-inventory.md) |
+| Orders & SKU Fulfillment | [orders-fulfillment.md](orders-fulfillment.md) |
 | Partner System | [partner-system.md](partner-system.md) |
 | Lab Integration | [lab-integration.md](lab-integration.md) |

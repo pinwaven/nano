@@ -7,6 +7,25 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 ## [Unreleased]
 
 ### Added
+- **Complete Orders Fulfillment & SKU Registry System** — comprehensive, enterprise-grade e-commerce, multi-location stock tracking, and logistics workflow across backend, mini program client, and web admin dashboards.
+  - **DB Migration (`migration_orders_fulfillment.sql`)**:
+    - `skus` table: centralized registry of raw physical/virtual product assets (`WD-DOT-MONTHLY`, `KINO-CHIP-V2`, etc.) mapping standard names, units, and types.
+    - `inventory_stock` table: maps SKU assets to specific warehouse (`shanghai-central`) or clinic channels with quantities and low-stock warning thresholds.
+    - Extended `orders` table: adds support for shipping recipient name, phone, address, carrier name, tracking numbers, shipped/delivered timestamps, and asset serial logs.
+  - **Worker Backend (`index.js`)**:
+    - Extended `handlePostOrder` to extract `sku_id` and perform atomic location-scoped stock checks and decrements.
+    - Upgraded `handlePutOrder` to log shipped/delivered timestamps and implement **auto-restock on cancellation** (cancelling orders automatically returns stock to locations).
+    - Upgraded `handleGetMyOrders` and `handleGetOrders` to resolve joined custom names, units, and tracking data via `skus` fallbacks.
+    - Added SKU CRUD APIs (`GET/POST/PUT/DELETE /api/skus`) and Stock Adjustments APIs (`POST /api/inventory-stock`).
+  - **WeChat Mini Program Client**:
+    - Integrated native WeChat address picker (`wx.chooseAddress`) with developer mock fallbacks.
+    - Upgraded order cards with recipient details, collapsible logs, click-to-copy courier codes (`wx.setClipboardData`), and client-side cancellation actions.
+    - Fixed shortId fallback naming rendering bug in client-side order listings.
+  - **Web Admin Panel Dashboard (`App.jsx`)**:
+    - Added collapsible order drawer rows displaying shipping address cards, fulfillment logs, and payment states.
+    - Built a premium glassmorphic **Fulfillment & Shipping Modal** to collect courier carrier, tracking code, logistical comments, and pre-printed hardware serial IDs.
+    - Built the **SKUs & Stock Registry Subtab** inside the Store Management page with comprehensive SKU CRUD modals (`SkuModal`, `DeleteSkuConfirm`) and a premium **Location Stock Adjuster Widget** (`StockAdjustModal`) with low-stock warnings.
+    - Added SKU binding selectors to both global `StoreItemModal` and channel-specific `ChannelInventoryItemModal`.
 - **Coach Groups** — business entity groupings (clinics, studios, nutrition stores) within a channel, enabling group-level KPI aggregation.
   - **DB migration** `src/schemas/migration_coach_groups.sql`: new `coach_groups` table (`id, channel_id, name, description, type`); adds nullable `group_id` FK on `coaches`.
   - **Backend** `src/functions/worker/index.js`:
