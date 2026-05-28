@@ -4,7 +4,8 @@
     "pages/main/main",
     "pages/admin/admin",
     "pages/coach/coach",
-    "pages/superadmin/superadmin"
+    "pages/superadmin/superadmin",
+    "pages/referral/referral"
   ],
   "window": {
     "backgroundTextStyle": "light",

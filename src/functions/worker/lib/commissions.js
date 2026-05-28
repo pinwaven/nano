@@ -82,4 +82,43 @@ async function recordOrderCommissions(orderId) {
     }
 }
 
-module.exports = { recordOrderCommissions };
+async function recordUserReferralCommission(orderId) {
+    if (!pool) return;
+    try {
+        const { rows } = await pool.query(`
+            SELECT o.id, o.user_id, o.item_key, o.quantity, o.price_cny,
+                   u.referred_by_user_id AS referrer_user_id,
+                   u.channel_id
+            FROM orders o
+            JOIN users u ON u.user_id = o.user_id
+            WHERE o.id = $1
+        `, [orderId]);
+
+        const order = rows[0];
+        if (!order || !order.referrer_user_id) return;
+
+        const productType = getProductType(order.item_key);
+
+        let rate = 5; // default 5%
+        if (order.channel_id) {
+            const chanRes = await pool.query('SELECT config FROM channels WHERE id = $1', [order.channel_id]);
+            const cfg = chanRes.rows[0]?.config;
+            if (cfg?.referral_commission_rate != null) rate = Number(cfg.referral_commission_rate);
+        }
+
+        const amount = Number((order.price_cny * rate / 100).toFixed(2));
+        if (amount <= 0) return;
+
+        await pool.query(`
+            INSERT INTO referral_commissions
+                (referrer_user_id, referee_user_id, order_id, product_type, item_key, quantity, amount_cny)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (order_id, referrer_user_id) DO NOTHING
+        `, [order.referrer_user_id, order.user_id, orderId,
+            productType, order.item_key, order.quantity, amount]);
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'recordUserReferralCommission failed', data: { orderId, error: err.message } }));
+    }
+}
+
+module.exports = { recordOrderCommissions, recordUserReferralCommission };

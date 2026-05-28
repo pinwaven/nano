@@ -31,6 +31,11 @@
         <text class="menu-item-label">{{t.superadminMenu}}</text>
       </view>
       <view wx:if="{{!isGuest}}" class="menu-divider"></view>
+      <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openReferral">
+        <text class="menu-item-icon">★</text>
+        <text class="menu-item-label">{{t.referralMenu}}</text>
+      </view>
+      <view wx:if="{{!isGuest}}" class="menu-divider"></view>
       <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openKinoSim">
         <text class="menu-item-icon">⬡</text>
         <text class="menu-item-label">{{t.kinoSimMenu}}</text>

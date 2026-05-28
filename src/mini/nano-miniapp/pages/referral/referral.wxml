@@ -1,0 +1,85 @@
+<view class="referral-page {{theme === 'light' ? 'theme-light' : ''}}">
+  <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
+
+  <!-- Header -->
+  <view class="app-header">
+    <view class="back-btn" bindtap="goBack">
+      <text class="back-icon">‹</text>
+      <text class="back-label">{{t.back}}</text>
+    </view>
+    <text class="header-title">{{t.title}}</text>
+  </view>
+
+  <!-- Loading -->
+  <view wx:if="{{loading}}" class="center-msg">
+    <text class="dim-text">{{t.loading}}</text>
+  </view>
+
+  <!-- Error -->
+  <view wx:elif="{{error}}" class="center-msg">
+    <text class="error-text">{{error}}</text>
+  </view>
+
+  <!-- Content -->
+  <scroll-view wx:else scroll-y class="referral-content">
+
+    <!-- Referral Code Card -->
+    <view class="card">
+      <text class="card-label">{{t.yourCode}}</text>
+      <view class="code-row">
+        <text class="code-value">{{referralCode}}</text>
+      </view>
+      <view class="btn-row">
+        <view class="btn btn-outline" bindtap="copyCode">
+          <text>{{t.copyCode}}</text>
+        </view>
+        <button class="btn btn-primary" open-type="share">
+          <text>{{t.shareCard}}</text>
+        </button>
+      </view>
+    </view>
+
+    <!-- Stats -->
+    <view class="stats-row">
+      <view class="stat-item">
+        <text class="stat-num">{{totalReferred}}</text>
+        <text class="stat-label">{{t.totalReferred}}</text>
+      </view>
+      <view class="stat-divider"></view>
+      <view class="stat-item">
+        <text class="stat-num">{{t.cnyUnit}}{{totalEarned}}</text>
+        <text class="stat-label">{{t.totalEarned}}</text>
+      </view>
+    </view>
+
+    <!-- How it works -->
+    <view class="card how-card">
+      <text class="card-label">{{t.howTitle}}</text>
+      <view class="how-row"><text class="how-num">1</text><text class="how-text">{{t.how1}}</text></view>
+      <view class="how-row"><text class="how-num">2</text><text class="how-text">{{t.how2}}</text></view>
+      <view class="how-row"><text class="how-num">3</text><text class="how-text">{{t.how3}}</text></view>
+    </view>
+
+    <!-- Friends List -->
+    <view class="section-title">{{t.friendList}}</view>
+
+    <view wx:if="{{referrals.length === 0}}" class="empty-state">
+      <text class="dim-text">{{t.noFriends}}</text>
+    </view>
+
+    <view wx:for="{{referrals}}" wx:key="user_id" class="friend-card">
+      <view class="friend-avatar">
+        <text class="avatar-letter">{{item._avatarLetter}}</text>
+      </view>
+      <view class="friend-info">
+        <text class="friend-name">{{item.nickname || '—'}}</text>
+        <text class="friend-meta">{{t.joined}}: {{item._joinedFmt}}</text>
+      </view>
+      <view wx:if="{{item.commission_earned > 0}}" class="friend-commission">
+        <text class="commission-amt">+{{t.cnyUnit}}{{item.commission_earned}}</text>
+      </view>
+    </view>
+
+    <view class="bottom-safe"></view>
+  </scroll-view>
+</view>

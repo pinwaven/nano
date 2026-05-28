@@ -13,12 +13,17 @@ Page({
 
   _coachId: null,
   _inviteCode: null,
+  _refCode: null,
   _pendingLogin: null,
   _pendingAvatarPath: '',
 
   onLoad(options) {
     if (options.coach_id) this._coachId = options.coach_id
     if (options.invite) this._inviteCode = options.invite
+    if (options.ref) {
+      this._refCode = options.ref
+      wx.setStorageSync('nano_ref', options.ref)
+    }
     // If already have a valid session and no invite/coach params, go straight to main
     if (app.globalData.user && !options.invite && !options.coach_id) {
       wx.reLaunch({ url: '/pages/main/main' })
@@ -183,13 +188,18 @@ Page({
     const data = { code, app_id: appId }
     if (this._coachId) data.coach_id = this._coachId
     if (inviteCode) data.invite_code = inviteCode
+    const ref = this._refCode || wx.getStorageSync('nano_ref')
+    if (ref) data.ref = ref
     return new Promise((resolve, reject) => {
       wx.request({
         url: `${BASE}/api/wx-login`,
         method: 'POST',
         header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
         data,
-        success: resolve,
+        success: (res) => {
+          wx.removeStorageSync('nano_ref')
+          resolve(res)
+        },
         fail: reject,
       })
     })

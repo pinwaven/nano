@@ -1,5 +1,5 @@
 const { pool } = require('./lib/db');
-const { recordOrderCommissions } = require('./lib/commissions');
+const { recordOrderCommissions, recordUserReferralCommission } = require('./lib/commissions');
 const { recordReferralCommission, generatePartnerPayouts } = require('./lib/partnerCommissions');
 const ossLib = require('./lib/oss');
 const crypto = require('crypto');
@@ -1552,6 +1552,7 @@ async function handlePutOrder(orderId, body, adminCtx) {
 
         if (status === 'delivered' && oldOrder.status !== 'delivered') {
             await recordOrderCommissions(orderId);
+            await recordUserReferralCommission(orderId);
         }
         return { success: true };
     } catch (err) {
@@ -4098,7 +4099,7 @@ async function handleBindPhone(user_id, code, app_id = null) {
 
 async function handleWxLogin(body) {
     console.log(JSON.stringify({ level: 'INFO', msg: 'wx-login-body', body_keys: Object.keys(body || {}), phone: body?.phone, phone_code: body?.phone_code }));
-    const { code, coach_id, invite_code, app_id, phone_code, phone } = body;
+    const { code, coach_id, invite_code, ref, app_id, phone_code, phone } = body;
     if (!code) return { success: false, error: 'code is required' };
 
     const credMap = {};
@@ -4264,15 +4265,25 @@ async function handleWxLogin(body) {
         }
     }
 
-    // New user — no invite code, allow guest browsing
-    if (!invite_code && !coach_id) {
+    // New user — no invite code, coach, or referral link → allow guest browsing
+    if (!invite_code && !coach_id && !ref) {
         return { success: true, guest: true, openid };
     }
 
-    // New user — determine channel from invite code, coach invite, or default to nanovate
+    // New user — determine channel from invite code, coach invite, referral, or default to nanovate
     let channelId = null;
     let resolvedCoachId = coach_id ? parseInt(coach_id) : null;
     let inviteRecord = null;
+    let referralUserId = null;
+
+    // Resolve referral — validate the referring user and inherit their channel if no other source
+    if (ref) {
+        const refRes = await pool.query('SELECT user_id, channel_id FROM users WHERE user_id = $1 LIMIT 1', [ref]);
+        if (refRes.rows.length > 0) {
+            referralUserId = ref;
+            if (!invite_code && !coach_id) channelId = refRes.rows[0].channel_id;
+        }
+    }
 
     if (invite_code) {
         const invRes = await pool.query(
@@ -4310,10 +4321,10 @@ async function handleWxLogin(body) {
 
     const newUserId = generateUserId();
     const created = await pool.query(
-        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, phone)
-         VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5, $6)
+        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, phone)
+         VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5, $6, $7)
          RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, coach_id, channel_id, roles, created_at, bio_data`,
-        [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, resolvedPhone]
+        [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, resolvedPhone]
     );
 
     if (inviteRecord) {
@@ -4374,6 +4385,40 @@ async function saveChatMessage(user_id, role, content, image_url = null, persona
         );
     } catch (err) {
         console.error('Failed to save chat message:', err);
+    }
+}
+
+async function handleGetMyReferrals(query) {
+    const { user_id } = query;
+    if (!user_id) return { success: false, error: 'user_id is required' };
+    try {
+        const { rows } = await pool.query(`
+            SELECT u.user_id, u.nickname, u.avatar_url, u.created_at AS joined_at,
+                   COALESCE(SUM(rc.amount_cny), 0) AS commission_earned
+            FROM users u
+            LEFT JOIN referral_commissions rc
+                   ON rc.referee_user_id = u.user_id AND rc.referrer_user_id = $1
+            WHERE u.referred_by_user_id = $1
+            GROUP BY u.user_id, u.nickname, u.avatar_url, u.created_at
+            ORDER BY u.created_at DESC
+        `, [user_id]);
+
+        const totalCommission = rows.reduce((sum, r) => sum + parseFloat(r.commission_earned), 0);
+        return {
+            success: true,
+            referral_code: user_id,
+            total_referred: rows.length,
+            total_commission_earned: Number(totalCommission.toFixed(2)),
+            referrals: rows.map(r => ({
+                user_id: r.user_id,
+                nickname: r.nickname || null,
+                avatar_url: r.avatar_url || null,
+                joined_at: r.joined_at,
+                commission_earned: Number(parseFloat(r.commission_earned).toFixed(2)),
+            })),
+        };
+    } catch (err) {
+        return { success: false, error: err.message };
     }
 }
 
@@ -7933,6 +7978,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetChannelCoaches(path.match(/\/channel-coaches\/(\d+)/)[1], query.include_subchannels === 'true');
             } else if (path.match(/\/coach-users\/(\d+)/)) {
                 result = await handleGetCoachUsers(path.match(/\/coach-users\/(\d+)/)[1], query);
+            } else if (path.includes('/my-referrals')) {
+                result = await handleGetMyReferrals(query);
             } else if (path.includes('/invitations')) {
                 const invQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
                 result = await handleGetInvitations(invQuery);

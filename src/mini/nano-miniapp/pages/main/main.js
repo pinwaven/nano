@@ -154,6 +154,7 @@ const T = {
     coachMenu: '教练面板',
     superadminMenu: '超管面板',
     kinoSimMenu: 'Kino 模拟器',
+    referralMenu: '邀请好友',
     kinoSimPassTitle: '输入密码',
     kinoSimPassError: '密码错误',
     kinoSimTitle: 'KINO 模拟器',
@@ -312,6 +313,7 @@ const T = {
     coachMenu: 'Coach Panel',
     superadminMenu: 'Super Admin',
     kinoSimMenu: 'Kino Simulator',
+    referralMenu: 'Invite Friends',
     kinoSimPassTitle: 'Enter Passcode',
     kinoSimPassError: 'Incorrect passcode',
     kinoSimTitle: 'KINO SIMULATOR',
@@ -954,6 +956,11 @@ Page({
     if (dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
       wx.navigateTo({ url: '/pages/coach/coach', animationType: 'slide-in-right', animationDuration: 280 })
     }
+  },
+
+  openReferral() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/referral/referral' })
   },
 
   openAdmin() {
