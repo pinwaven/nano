@@ -11,7 +11,7 @@ import {
   GraduationCap, Video, FileText, Upload, ExternalLink, Play, BookOpen,
   Bug, AlertCircle, Image as ImageIcon,
   ClipboardList, ChevronUp, Send, Eye,
-  BarChart2, Award, Archive, Box, Target, Filter, MessageSquare, FlaskConical,
+  BarChart2, Award, Archive, Box, Target, Filter, MessageSquare, FlaskConical, Shield,
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
@@ -6583,7 +6583,7 @@ function AcademyTab() {
 
 // ── Rewards tab ───────────────────────────────────────────────────────────────
 
-function PartnersTab() {
+function PartnersTab({ users = [] }) {
   const { t } = useLang();
   const p = t.partners;
   const [subTab, setSubTab] = useState('partners');
@@ -6601,6 +6601,7 @@ function PartnersTab() {
   const [showForm, setShowForm] = useState(false);
   const [formBusy, setFormBusy] = useState(false);
   const [formError, setFormError] = useState('');
+  const [userSearch, setUserSearch] = useState('');
   const [commForm, setCommForm] = useState({});
   const [showCommForm, setShowCommForm] = useState(false);
   const [commBusy, setCommBusy] = useState(false);
@@ -6667,10 +6668,11 @@ function PartnersTab() {
   const statusLabel = (s) => ({ active: p.statusActive, pending: p.statusPending, inactive: p.statusInactive, draft: p.draft, approved: p.approved, transferred: p.transferred }[s] || s);
   const sourceLabel = (s) => ({ referral: p.typeReferral, sales: p.typeSales, team_primary: p.typeTeamPrimary, team_secondary: p.typeTeamSecondary, wholesale_margin: p.typeWholesale }[s] || s);
 
-  function openAdd() { setEditing(null); setForm({ status: 'active' }); setFormError(''); setShowForm(true); }
+  function openAdd() { setEditing(null); setForm({ status: 'active' }); setFormError(''); setUserSearch(''); setShowForm(true); }
   function openEdit(partner) { setEditing(partner); setForm({ ...partner }); setFormError(''); setShowForm(true); }
 
   async function savePartner() {
+    if (!editing && !form.user_id) { setFormError('A linked user is required'); return; }
     if (!form.real_name) { setFormError(p.realNameRequired); return; }
     if (!form.phone)     { setFormError(p.phoneRequired);    return; }
     if (!form.tier)      { setFormError(p.tierRequired);     return; }
@@ -6986,6 +6988,55 @@ function PartnersTab() {
             <form onSubmit={e => { e.preventDefault(); savePartner(); }}>
               <div className="modal-body" style={{ maxHeight: '62vh', overflowY: 'auto' }}>
                 <div className="form-grid">
+                  {!editing && (() => {
+                    const selectedUser = users.find(u => u.user_id === form.user_id) || null;
+                    const filteredUsers = userSearch.trim().length > 0
+                      ? users.filter(u => {
+                          const q = userSearch.toLowerCase();
+                          return (u.nickname || '').toLowerCase().includes(q) || (u.user_id || '').toLowerCase().includes(q);
+                        }).slice(0, 8)
+                      : [];
+                    return (
+                      <div className="form-field" style={{ gridColumn: '1 / -1', position: 'relative' }}>
+                        <span>Linked User *</span>
+                        {selectedUser ? (
+                          <div className="coach-user-selected">
+                            <div className="avatar" style={{ background: '#6366f120', color: '#6366f1', width: 28, height: 28, fontSize: 13, flexShrink: 0 }}>{(selectedUser.nickname || 'U')[0].toUpperCase()}</div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 600 }}>{selectedUser.nickname || '—'}</div>
+                              <div style={{ fontSize: 11, color: '#64748b' }}>{selectedUser.user_id}</div>
+                            </div>
+                            <button type="button" className="icon-btn" onClick={() => { setForm(f => ({ ...f, user_id: null, real_name: '' })); setUserSearch(''); }}><X size={14} /></button>
+                          </div>
+                        ) : (
+                          <>
+                            <input
+                              value={userSearch}
+                              onChange={e => setUserSearch(e.target.value)}
+                              placeholder="Search by nickname or user ID…"
+                              autoComplete="off"
+                            />
+                            {filteredUsers.length > 0 && (
+                              <div className="coach-user-dropdown">
+                                {filteredUsers.map(u => (
+                                  <div key={u.user_id} className="coach-user-option" onClick={() => {
+                                    setForm(f => ({ ...f, user_id: u.user_id, real_name: f.real_name || u.nickname || '' }));
+                                    setUserSearch('');
+                                  }}>
+                                    <div className="avatar" style={{ background: '#6366f120', color: '#6366f1', width: 24, height: 24, fontSize: 11, flexShrink: 0 }}>{(u.nickname || 'U')[0].toUpperCase()}</div>
+                                    <div>
+                                      <div style={{ fontWeight: 500 }}>{u.nickname || '—'}</div>
+                                      <div style={{ fontSize: 11, color: '#64748b' }}>{u.user_id}</div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <label className="form-field">
                     <span>{p.realName}</span>
                     <input value={form.real_name || ''} onChange={e => setForm(f => ({ ...f, real_name: e.target.value }))} />
@@ -7875,77 +7926,119 @@ function ChannelTab({ channels, onRefresh, isSuperadmin }) {
   };
 
   const channelById = Object.fromEntries(channels.map(c => [c.id, c]));
+  const totalUsers = channels.reduce((s, c) => s + (parseInt(c.user_count) || 0), 0);
+  const totalScans = channels.reduce((s, c) => s + (parseInt(c.scan_count) || 0), 0);
+  const totalDevices = channels.reduce((s, c) => s + (parseInt(c.kino_device_count) || 0), 0);
 
   return (
     <>
       <div className="stat-row">
         <StatCard icon={Building2} label={t.stats.totalChannels} value={channels.length} color="#6366f1" />
+        <StatCard icon={Users} label="Total Users" value={totalUsers} color="#3b82f6" />
+        <StatCard icon={Cpu} label="Kino Devices" value={totalDevices} color="#f59e0b" />
+        <StatCard icon={Activity} label="Total Scans" value={totalScans} color="#8b5cf6" />
       </div>
-      <div className="card">
+
+      <div className="card" style={{ overflow: 'visible' }}>
         <div className="table-toolbar">
           <span className="table-count">{t.countChannel(channels.length)}</span>
           <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
             <Plus size={14} />{t.addChannel}
           </button>
         </div>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>{t.table.id}</th>
-              <th>{t.modal.channelKeyName.replace(' *', '')}</th>
-              <th>{t.modal.channelName.replace(' *', '')}</th>
-              <th>Parent</th>
-              <th>{t.modal.channelLogoUrl}</th>
-              <th>{t.table.customers}</th>
-              <th>{t.stats.coaches}</th>
-              <th>Sub-ch Mgmt</th>
-              <th>{t.table.joined}</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {channels.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.channels}</td></tr>}
-            {channels.map(c => (
-              <tr key={c.id}>
-                <td className="muted">{c.id}</td>
-                <td><code className="code-tag">{c.key_name}</code></td>
-                <td className="bold">{fmt(c.name)}</td>
-                <td className="muted">{c.parent_channel_id ? (channelById[c.parent_channel_id]?.name || `#${c.parent_channel_id}`) : <span style={{ color: '#334155' }}>—</span>}</td>
-                <td>
-                  {c.logo_url
-                    ? <img src={c.logo_url} alt="" style={{ width: 32, height: 32, borderRadius: 4, objectFit: 'cover', display: 'block' }} />
-                    : <span className="muted">—</span>}
-                </td>
-                <td><Badge color="#3b82f6">{c.user_count || 0}</Badge></td>
-                <td><Badge color="#10b981">{c.coach_count || 0}</Badge></td>
-                <td>
-                  {isSuperadmin && !c.parent_channel_id && (
-                    <button
-                      className={`btn-secondary`}
-                      style={{ fontSize: 11, padding: '2px 8px', opacity: togglingId === c.id ? 0.5 : 1 }}
-                      onClick={() => toggleCms(c)}
-                      disabled={togglingId === c.id}
-                      title={c.can_manage_subchannels ? 'Revoke sub-channel management' : 'Grant sub-channel management'}
-                    >
-                      {c.can_manage_subchannels ? '✓ Granted' : 'Grant'}
-                    </button>
-                  )}
-                  {c.parent_channel_id && <span className="muted" style={{ fontSize: 11 }}>sub-channel</span>}
-                </td>
-                <td className="muted">{fmtDate(c.created_at)}</td>
-                <td>
-                  <div className="row-actions">
-                    <button className="icon-btn" title={t.modal.editChannel} onClick={() => setModal({ type: 'edit', channel: c })}><Pencil size={14} /></button>
-                    {isSuperadmin && <button className="icon-btn" title="Configure admin tabs" onClick={() => setModal({ type: 'admin-tabs', channel: c })}><Settings2 size={14} /></button>}
-                    {isSuperadmin && <button className="icon-btn" title="Sub-age labels" onClick={() => setModal({ type: 'sub-age-labels', channel: c })}><Tag size={14} /></button>}
-                    <button className="icon-btn danger" title={t.modal.deleteChannel} onClick={() => setModal({ type: 'delete', channel: c })}><Trash2 size={14} /></button>
+
+        {channels.length === 0 ? (
+          <div className="empty-row" style={{ padding: 40 }}>{t.empty.channels}</div>
+        ) : (
+          <div style={{ padding: '4px 16px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+            {channels.map(c => {
+              const persona = c.config?.persona_type || 'nano';
+              const personaColor = persona === 'viva' ? '#8b5cf6' : '#6366f1';
+              const initial = (c.name || c.key_name || '?')[0].toUpperCase();
+              const parentName = c.parent_channel_id ? (channelById[c.parent_channel_id]?.name || `#${c.parent_channel_id}`) : null;
+              const userCount = parseInt(c.user_count) || 0;
+              const coachCount = parseInt(c.coach_count) || 0;
+              const deviceCount = parseInt(c.kino_device_count) || 0;
+              const activeDeviceCount = parseInt(c.kino_active_count) || 0;
+              const scanCount = parseInt(c.scan_count) || 0;
+              return (
+                <div key={c.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                  {/* Card header */}
+                  <div style={{ padding: '14px 14px 12px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      {c.logo_url ? (
+                        <img src={c.logo_url} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+                      ) : (
+                        <div style={{ width: 40, height: 40, borderRadius: 8, background: personaColor + '1a', color: personaColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 16, flexShrink: 0 }}>
+                          {initial}
+                        </div>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>{fmt(c.name)}</span>
+                          <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: personaColor + '15', color: personaColor }}>{persona}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                          <code className="code-tag">{c.key_name}</code>
+                          {parentName && (
+                            <span style={{ fontSize: 10, color: '#94a3b8' }}>↳ {parentName}</span>
+                          )}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 11, color: '#94a3b8', flexShrink: 0, paddingTop: 2 }}>#{c.id}</span>
+                    </div>
                   </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+                  {/* Stats grid */}
+                  <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, flex: 1 }}>
+                    {[
+                      { icon: Users, label: 'Users', value: userCount, color: '#3b82f6' },
+                      { icon: UserCog, label: 'Coaches', value: coachCount, color: '#10b981' },
+                      { icon: Cpu, label: 'Kino Devices', value: deviceCount, sub: `${activeDeviceCount} active`, color: '#f59e0b' },
+                      { icon: Activity, label: 'Scans', value: scanCount, color: '#8b5cf6' },
+                    ].map(({ icon: Icon, label, value, sub, color }) => (
+                      <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#f8fafc', borderRadius: 7 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: 6, background: color + '18', color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Icon size={13} />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.2, color: '#0f172a' }}>{value}</div>
+                          <div style={{ fontSize: 10, color: '#64748b', marginTop: 1 }}>{label}{sub ? <span style={{ color: '#94a3b8' }}> · {sub}</span> : ''}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Footer */}
+                  <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      {isSuperadmin && !c.parent_channel_id && (
+                        <button
+                          className="btn-secondary"
+                          style={{ fontSize: 11, padding: '2px 8px', opacity: togglingId === c.id ? 0.5 : 1 }}
+                          onClick={() => toggleCms(c)}
+                          disabled={togglingId === c.id}
+                          title={c.can_manage_subchannels ? 'Revoke sub-channel management' : 'Grant sub-channel management'}
+                        >
+                          {c.can_manage_subchannels ? '✓ Sub-ch Mgmt' : 'Grant Sub-ch'}
+                        </button>
+                      )}
+                      <span style={{ fontSize: 10, color: '#94a3b8' }}>{fmtDate(c.created_at)}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      <button className="icon-btn" title={t.modal.editChannel} onClick={() => setModal({ type: 'edit', channel: c })}><Pencil size={13} /></button>
+                      {isSuperadmin && <button className="icon-btn" title="Configure admin tabs" onClick={() => setModal({ type: 'admin-tabs', channel: c })}><Settings2 size={13} /></button>}
+                      {isSuperadmin && <button className="icon-btn" title="Sub-age labels" onClick={() => setModal({ type: 'sub-age-labels', channel: c })}><Tag size={13} /></button>}
+                      <button className="icon-btn danger" title={t.modal.deleteChannel} onClick={() => setModal({ type: 'delete', channel: c })}><Trash2 size={13} /></button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
+
       {modal?.type === 'add'        && <ChannelModal channel={null}          channels={channels} isSuperadmin={isSuperadmin} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit'       && <ChannelModal channel={modal.channel} channels={channels} isSuperadmin={isSuperadmin} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete'     && <DeleteChannelConfirm channel={modal.channel} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
@@ -10851,25 +10944,56 @@ function ReportsTab() {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
+const ALL_ADMIN_TABS = ['users', 'coaches', 'store', 'invites', 'rewards'];
+
 function AdminAccountsTab({ accounts, channels, onRefresh }) {
   const { t } = useLang();
   const ta = t.adminAccounts;
-  const [modal, setModal] = useState(null); // { type: 'add' } | { type: 'password', account }
-  const [form, setForm]   = useState({ username: '', password: '', channel_id: '' });
+  const [modal, setModal] = useState(null); // { type: 'add' } | { type: 'password', account } | { type: 'permissions', account }
+  const [form, setForm]   = useState({ username: '', password: '', channel_id: '', permissions: [] });
   const [err, setErr]     = useState('');
   const [saving, setSaving] = useState(false);
 
-  const openAdd      = () => { setForm({ username: '', password: '', channel_id: '' }); setErr(''); setModal({ type: 'add' }); };
+  const channelTabsFor = (channel_id) => {
+    if (!channel_id) return [];
+    const ch = (channels || []).find(c => String(c.id) === String(channel_id));
+    return Array.isArray(ch?.config?.admin_tabs) ? ch.config.admin_tabs : ALL_ADMIN_TABS;
+  };
+
+  const openAdd = () => {
+    setForm({ username: '', password: '', channel_id: '', permissions: [] });
+    setErr('');
+    setModal({ type: 'add' });
+  };
   const openPassword = (account) => { setForm({ password: '' }); setErr(''); setModal({ type: 'password', account }); };
-  const close        = () => setModal(null);
+  const openPermissions = (account) => {
+    setForm({ permissions: Array.isArray(account.permissions) ? [...account.permissions] : [] });
+    setErr('');
+    setModal({ type: 'permissions', account });
+  };
+  const close = () => setModal(null);
+
+  const togglePerm = (tab) => {
+    setForm(f => ({
+      ...f,
+      permissions: f.permissions.includes(tab) ? f.permissions.filter(p => p !== tab) : [...f.permissions, tab],
+    }));
+  };
 
   const save = async () => {
     setSaving(true); setErr('');
     try {
       if (modal.type === 'add') {
-        await axios.post('/api/admin-accounts', { username: form.username, password: form.password, channel_id: form.channel_id || null });
-      } else {
+        await axios.post('/api/admin-accounts', {
+          username: form.username,
+          password: form.password,
+          channel_id: form.channel_id || null,
+          permissions: form.channel_id ? form.permissions : [],
+        });
+      } else if (modal.type === 'password') {
         await axios.put(`/api/admin-accounts/${modal.account.id}`, { password: form.password });
+      } else {
+        await axios.put(`/api/admin-accounts/${modal.account.id}`, { permissions: form.permissions });
       }
       close(); onRefresh();
     } catch (e) {
@@ -10883,6 +11007,12 @@ function AdminAccountsTab({ accounts, channels, onRefresh }) {
     catch (e) { alert(e.response?.data?.error || 'Error'); }
   };
 
+  const availableTabs = modal?.type === 'add'
+    ? channelTabsFor(form.channel_id)
+    : modal?.type === 'permissions'
+      ? channelTabsFor(modal.account.channel_id)
+      : [];
+
   return (
     <>
       <div className="card">
@@ -10895,27 +11025,48 @@ function AdminAccountsTab({ accounts, channels, onRefresh }) {
             <tr>
               <th>{ta.usernameLabel}</th>
               <th>Channel</th>
+              <th>Permissions</th>
               <th>{t.table.joined}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {accounts.length === 0 && <tr><td colSpan={4} className="empty-row">No admin accounts</td></tr>}
-            {accounts.map(a => (
-              <tr key={a.id}>
-                <td><strong>{a.username}</strong></td>
-                <td className="muted">{a.channel_name || <span style={{ color: '#475569' }}>Superadmin</span>}</td>
-                <td className="muted">{fmtDate(a.created_at)}</td>
-                <td style={{ display: 'flex', gap: 6 }}>
-                  <button className="icon-btn" title={ta.changePassword} onClick={() => openPassword(a)}>
-                    <Pencil size={14} />
-                  </button>
-                  <button className="icon-btn danger" title="Delete" onClick={() => del(a)}>
-                    <Trash2 size={14} />
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {accounts.length === 0 && <tr><td colSpan={5} className="empty-row">No admin accounts</td></tr>}
+            {accounts.map(a => {
+              const perms = Array.isArray(a.permissions) ? a.permissions : [];
+              const chTabs = channelTabsFor(a.channel_id);
+              const effectivePerms = perms.length === 0 ? chTabs : perms;
+              return (
+                <tr key={a.id}>
+                  <td><strong>{a.username}</strong></td>
+                  <td className="muted">{a.channel_name || <span style={{ color: '#475569' }}>Superadmin</span>}</td>
+                  <td>
+                    {a.channel_id ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {effectivePerms.map(p => (
+                          <span key={p} style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#1e3a5f', color: '#93c5fd' }}>{p}</span>
+                        ))}
+                        {effectivePerms.length === 0 && <span className="muted" style={{ fontSize: 11 }}>none</span>}
+                      </div>
+                    ) : <span className="muted" style={{ fontSize: 11 }}>all</span>}
+                  </td>
+                  <td className="muted">{fmtDate(a.created_at)}</td>
+                  <td style={{ display: 'flex', gap: 6 }}>
+                    {a.channel_id && (
+                      <button className="icon-btn" title="Edit permissions" onClick={() => openPermissions(a)}>
+                        <Shield size={14} />
+                      </button>
+                    )}
+                    <button className="icon-btn" title={ta.changePassword} onClick={() => openPassword(a)}>
+                      <Pencil size={14} />
+                    </button>
+                    <button className="icon-btn danger" title="Delete" onClick={() => del(a)}>
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -10924,7 +11075,7 @@ function AdminAccountsTab({ accounts, channels, onRefresh }) {
         <div className="modal-overlay" onClick={close}>
           <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span>{modal.type === 'add' ? ta.add : ta.changePassword}</span>
+              <span>{modal.type === 'add' ? ta.add : modal.type === 'permissions' ? 'Edit Permissions' : ta.changePassword}</span>
               <button className="icon-btn" onClick={close}><X size={16} /></button>
             </div>
             <div className="modal-body">
@@ -10936,11 +11087,27 @@ function AdminAccountsTab({ accounts, channels, onRefresh }) {
                   </label>
                   <label className="form-field">
                     <span>Channel</span>
-                    <select value={form.channel_id} onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))}>
+                    <select value={form.channel_id} onChange={e => {
+                      const cid = e.target.value;
+                      setForm(f => ({ ...f, channel_id: cid, permissions: channelTabsFor(cid) }));
+                    }}>
                       <option value="">Superadmin (all channels)</option>
                       {(channels || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </label>
+                  {form.channel_id && availableTabs.length > 0 && (
+                    <div className="form-field">
+                      <span>Permissions</span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+                        {availableTabs.map(tab => (
+                          <label key={tab} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 13 }}>
+                            <input type="checkbox" checked={form.permissions.includes(tab)} onChange={() => togglePerm(tab)} />
+                            {tab}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
               {modal.type === 'password' && (
@@ -10949,10 +11116,32 @@ function AdminAccountsTab({ accounts, channels, onRefresh }) {
                   <input value={modal.account.username} disabled />
                 </label>
               )}
-              <label className="form-field">
-                <span>{modal.type === 'add' ? ta.passwordLabel : ta.newPassword}</span>
-                <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} autoFocus={modal.type === 'password'} />
-              </label>
+              {modal.type === 'permissions' && (
+                <>
+                  <label className="form-field">
+                    <span>{ta.usernameLabel}</span>
+                    <input value={modal.account.username} disabled />
+                  </label>
+                  <div className="form-field">
+                    <span>Permissions</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+                      {availableTabs.map(tab => (
+                        <label key={tab} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 13 }}>
+                          <input type="checkbox" checked={form.permissions.includes(tab)} onChange={() => togglePerm(tab)} />
+                          {tab}
+                        </label>
+                      ))}
+                    </div>
+                    {availableTabs.length === 0 && <span className="muted" style={{ fontSize: 12 }}>No tabs configured for this channel.</span>}
+                  </div>
+                </>
+              )}
+              {modal.type !== 'permissions' && (
+                <label className="form-field">
+                  <span>{modal.type === 'add' ? ta.passwordLabel : ta.newPassword}</span>
+                  <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} autoFocus={modal.type === 'password'} />
+                </label>
+              )}
               {err && <p className="form-error">{err}</p>}
               <div className="modal-footer">
                 <button className="btn-secondary" onClick={close}>Cancel</button>
@@ -11600,7 +11789,7 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} coaches={data.coaches} onRefresh={fetchData} />}
           {tab === 'rewards'   && <RewardsTab />}
-          {tab === 'partners'  && <PartnersTab />}
+          {tab === 'partners'  && <PartnersTab users={data.users} />}
           {tab === 'academy'   && <AcademyTab />}
           {tab === 'questionnaires' && <QuestionnairesTab channels={data.channels} users={data.users} coaches={data.coaches} />}
           {tab === 'health-plans'   && <HealthPlansTab dots={data.dots} healthPlanTemplates={data.healthPlanTemplates || []} onRefresh={fetchData} />}

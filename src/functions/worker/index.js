@@ -29,6 +29,14 @@ function verifyChannelAdminToken(token) {
     return data;
 }
 
+function requireAdminTab(adminCtx, tab) {
+    if (adminCtx.role === 'superadmin') return null;
+    if (!adminCtx.tabs || !adminCtx.tabs.includes(tab)) {
+        return { statusCode: 403, success: false, error: `Permission denied: requires '${tab}' tab` };
+    }
+    return null;
+}
+
 // WeChat access_token cache (module-level, survives container reuse)
 const _wxTokenCache = {};
 async function getWxAccessToken(appid = null, secret = null) {
@@ -3578,10 +3586,15 @@ async function handleGetChannels(adminCtx) {
             const result = await pool.query(`
                 SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, c.parent_channel_id, c.can_manage_subchannels,
                        COUNT(DISTINCT u.user_id) AS user_count,
-                       COUNT(DISTINCT p.id) AS coach_count
+                       COUNT(DISTINCT p.id) AS coach_count,
+                       COUNT(DISTINCT kd.id) AS kino_device_count,
+                       COUNT(DISTINCT CASE WHEN kd.status = 'active' THEN kd.id END) AS kino_active_count,
+                       COUNT(DISTINCT b.id) AS scan_count
                 FROM channels c
                 LEFT JOIN users u ON u.channel_id = c.id
                 LEFT JOIN coaches p ON p.channel_id = c.id
+                LEFT JOIN kino_devices kd ON kd.channel_id = c.id
+                LEFT JOIN biomarkers b ON b.kino_device_id = kd.id
                 WHERE c.parent_channel_id = $1
                 GROUP BY c.id
                 ORDER BY c.id
@@ -3591,10 +3604,15 @@ async function handleGetChannels(adminCtx) {
         const result = await pool.query(`
             SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, c.parent_channel_id, c.can_manage_subchannels,
                    COUNT(DISTINCT u.user_id) AS user_count,
-                   COUNT(DISTINCT p.id) AS coach_count
+                   COUNT(DISTINCT p.id) AS coach_count,
+                   COUNT(DISTINCT kd.id) AS kino_device_count,
+                   COUNT(DISTINCT CASE WHEN kd.status = 'active' THEN kd.id END) AS kino_active_count,
+                   COUNT(DISTINCT b.id) AS scan_count
             FROM channels c
             LEFT JOIN users u ON u.channel_id = c.id
             LEFT JOIN coaches p ON p.channel_id = c.id
+            LEFT JOIN kino_devices kd ON kd.channel_id = c.id
+            LEFT JOIN biomarkers b ON b.kino_device_id = kd.id
             GROUP BY c.id
             ORDER BY c.id
         `);
@@ -3805,7 +3823,7 @@ async function handleGetAdminAccounts(adminCtx) {
         let result;
         if (adminCtx?.role === 'channel' && adminCtx.canManageSubchannels) {
             result = await pool.query(
-                `SELECT a.id, a.username, a.created_at, a.channel_id, c.name AS channel_name
+                `SELECT a.id, a.username, a.created_at, a.channel_id, a.permissions, c.name AS channel_name
                  FROM admin_accounts a
                  JOIN channels c ON a.channel_id = c.id
                  WHERE c.parent_channel_id = $1
@@ -3814,7 +3832,7 @@ async function handleGetAdminAccounts(adminCtx) {
             );
         } else {
             result = await pool.query(
-                `SELECT a.id, a.username, a.created_at, a.channel_id, c.name AS channel_name
+                `SELECT a.id, a.username, a.created_at, a.channel_id, a.permissions, c.name AS channel_name
                  FROM admin_accounts a
                  LEFT JOIN channels c ON a.channel_id = c.id
                  ORDER BY a.created_at ASC`
@@ -3829,7 +3847,7 @@ async function handleGetAdminAccounts(adminCtx) {
 async function handlePostAdminAccount(body, adminCtx) {
     const isCmsAdmin = adminCtx?.role === 'channel' && adminCtx?.canManageSubchannels;
     if (adminCtx?.role === 'channel' && !isCmsAdmin) return { statusCode: 403, success: false, error: 'Forbidden' };
-    const { username, password, channel_id } = body || {};
+    const { username, password, channel_id, permissions } = body || {};
     if (!username || !password) return { statusCode: 400, success: false, error: 'Username and password required' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -3841,8 +3859,8 @@ async function handlePostAdminAccount(body, adminCtx) {
         const salt = randomBytes(16).toString('hex');
         const hash = scryptSync(password, salt, 64).toString('hex');
         const result = await pool.query(
-            'INSERT INTO admin_accounts (username, password_hash, channel_id) VALUES ($1, $2, $3) RETURNING id, username, created_at, channel_id',
-            [username, `${salt}:${hash}`, channel_id || null]
+            'INSERT INTO admin_accounts (username, password_hash, channel_id, permissions) VALUES ($1, $2, $3, $4) RETURNING id, username, created_at, channel_id, permissions',
+            [username, `${salt}:${hash}`, channel_id || null, Array.isArray(permissions) ? permissions : []]
         );
         return { success: true, account: result.rows[0] };
     } catch (err) {
@@ -3861,14 +3879,19 @@ async function handlePutAdminAccount(id, body, adminCtx) {
         );
         if (acct.rows.length === 0) return { statusCode: 403, success: false, error: 'Forbidden' };
     }
-    const { password } = body || {};
-    if (!password) return { statusCode: 400, success: false, error: 'Password required' };
+    const { password, permissions } = body || {};
+    if (!password && permissions === undefined) return { statusCode: 400, success: false, error: 'Password or permissions required' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const { scryptSync, randomBytes } = require('crypto');
-        const salt = randomBytes(16).toString('hex');
-        const hash = scryptSync(password, salt, 64).toString('hex');
-        await pool.query('UPDATE admin_accounts SET password_hash = $1 WHERE id = $2', [`${salt}:${hash}`, id]);
+        if (password) {
+            const { scryptSync, randomBytes } = require('crypto');
+            const salt = randomBytes(16).toString('hex');
+            const hash = scryptSync(password, salt, 64).toString('hex');
+            await pool.query('UPDATE admin_accounts SET password_hash = $1 WHERE id = $2', [`${salt}:${hash}`, id]);
+        }
+        if (permissions !== undefined) {
+            await pool.query('UPDATE admin_accounts SET permissions = $1 WHERE id = $2', [Array.isArray(permissions) ? permissions : [], id]);
+        }
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -3901,7 +3924,7 @@ async function handleAdminLogin(body) {
     if (!username || !password) return { statusCode: 400, success: false, error: 'Missing credentials' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const result = await pool.query('SELECT id, password_hash, channel_id FROM admin_accounts WHERE username = $1', [username]);
+        const result = await pool.query('SELECT id, password_hash, channel_id, permissions FROM admin_accounts WHERE username = $1', [username]);
         if (result.rows.length === 0) {
             await new Promise(r => setTimeout(r, 200));
             return { statusCode: 401, success: false, error: 'Invalid credentials' };
@@ -3919,10 +3942,12 @@ async function handleAdminLogin(body) {
 
         const chRes = await pool.query(`SELECT name, config->'admin_tabs' AS admin_tabs, can_manage_subchannels FROM channels WHERE id = $1`, [row.channel_id]);
         const channelRow = chRes.rows[0] || {};
-        const allowedTabs = Array.isArray(channelRow.admin_tabs) ? channelRow.admin_tabs : [];
+        const channelTabs = Array.isArray(channelRow.admin_tabs) ? channelRow.admin_tabs : [];
+        const accountPerms = Array.isArray(row.permissions) ? row.permissions : [];
+        const tabs = accountPerms.length === 0 ? channelTabs : accountPerms.filter(p => channelTabs.includes(p));
         const cms = channelRow.can_manage_subchannels ?? false;
-        const token = signChannelAdminToken({ sub: row.id, cid: row.channel_id, tabs: allowedTabs, cms });
-        return { success: true, token, role: 'channel', channel_id: row.channel_id, channel_name: channelRow.name || '', allowed_tabs: allowedTabs, can_manage_subchannels: cms };
+        const token = signChannelAdminToken({ sub: row.id, cid: row.channel_id, tabs, cms });
+        return { success: true, token, role: 'channel', channel_id: row.channel_id, channel_name: channelRow.name || '', allowed_tabs: tabs, can_manage_subchannels: cms };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -7807,6 +7832,7 @@ exports.handler = async (req, resp, context) => {
             adminCtx.channelId = payload.cid;
             adminCtx.accountId = payload.sub;
             adminCtx.canManageSubchannels = payload.cms ?? false;
+            adminCtx.tabs = payload.tabs ?? [];
         } else {
             const unauthorizedPayload = { isBase64Encoded: false, statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized' }) };
             if (isStandardHttp) { resp.setStatusCode(401); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Unauthorized' })); return; }
@@ -8035,15 +8061,15 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/assign-coach')) {
                 result = await handlePostAssignCoach(parsedBody);
             } else if (path.includes('/invitations')) {
-                result = await handlePostInvitation(parsedBody, adminCtx);
+                result = requireAdminTab(adminCtx, 'invites') || await handlePostInvitation(parsedBody, adminCtx);
             } else if (path.includes('/channels')) {
                 result = await handlePostChannel(parsedBody, adminCtx);
             } else if (path.includes('/coach-groups')) {
                 result = await handlePostCoachGroup(parsedBody, adminCtx);
             } else if (path.includes('/coaches')) {
-                result = await handlePostCoaches(parsedBody);
+                result = requireAdminTab(adminCtx, 'coaches') || await handlePostCoaches(parsedBody);
             } else if (path.includes('/channel-inventory')) {
-                result = await handlePostChannelInventory(parsedBody, adminCtx);
+                result = requireAdminTab(adminCtx, 'store') || await handlePostChannelInventory(parsedBody, adminCtx);
             } else if (path.includes('/skus')) {
                 result = await handlePostSku(parsedBody);
             } else if (path.includes('/inventory-stock')) {
@@ -8057,7 +8083,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/dots')) {
                 result = await handlePostDots(parsedBody);
             } else if (path === '/users') {
-                result = await handlePostUsers(parsedBody);
+                result = requireAdminTab(adminCtx, 'users') || await handlePostUsers(parsedBody);
             } else if (path.includes('/kone-apk-releases')) {
                 result = await handlePostKoneApkRelease(parsedBody);
             } else if (path.includes('/kino-chip-batches')) {
@@ -8193,13 +8219,13 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePutKinoDevice(deviceId, parsedBody);
             } else if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
-                result = await handlePutUser(user_id, parsedBody);
+                result = requireAdminTab(adminCtx, 'users') || await handlePutUser(user_id, parsedBody);
             } else if (path.match(/\/coach-groups\/(\d+)/)) {
                 const groupId = path.match(/\/coach-groups\/(\d+)/)[1];
                 result = await handlePutCoachGroup(groupId, parsedBody, adminCtx);
             } else if (path.includes('/coaches/')) {
                 const coachId = path.split('/coaches/')[1];
-                result = await handlePutCoach(coachId, parsedBody);
+                result = requireAdminTab(adminCtx, 'coaches') || await handlePutCoach(coachId, parsedBody);
             } else if (path.match(/\/channels\/(\d+)\/sub-age-labels$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/sub-age-labels$/)[1];
                 result = await handlePutChannelSubAgeLabels(channelId, parsedBody, adminCtx);
@@ -8217,7 +8243,7 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePutDot(dotId, parsedBody);
             } else if (path.includes('/channel-inventory/')) {
                 const invId = path.split('/channel-inventory/')[1];
-                result = await handlePutChannelInventory(invId, parsedBody, adminCtx);
+                result = requireAdminTab(adminCtx, 'store') || await handlePutChannelInventory(invId, parsedBody, adminCtx);
             } else if (path.includes('/skus/')) {
                 const skuId = path.split('/skus/')[1];
                 result = await handlePutSku(skuId, parsedBody);
@@ -8226,7 +8252,7 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePutStoreItem(itemId, parsedBody);
             } else if (path.includes('/orders/')) {
                 const orderId = path.split('/orders/')[1];
-                result = await handlePutOrder(orderId, parsedBody, adminCtx);
+                result = requireAdminTab(adminCtx, 'store') || await handlePutOrder(orderId, parsedBody, adminCtx);
             } else if (path.includes('/commission-settings/')) {
                 const settingId = path.split('/commission-settings/')[1];
                 result = await handlePutCommissionSetting(settingId, parsedBody);
@@ -8315,13 +8341,13 @@ exports.handler = async (req, resp, context) => {
                 result = await handleDeleteKinoDevice(deviceId);
             } else if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
-                result = await handleDeleteUser(user_id);
+                result = requireAdminTab(adminCtx, 'users') || await handleDeleteUser(user_id);
             } else if (path.match(/\/coach-groups\/(\d+)/)) {
                 const groupId = path.match(/\/coach-groups\/(\d+)/)[1];
                 result = await handleDeleteCoachGroup(groupId, adminCtx);
             } else if (path.includes('/coaches/')) {
                 const coachId = path.split('/coaches/')[1];
-                result = await handleDeleteCoach(coachId);
+                result = requireAdminTab(adminCtx, 'coaches') || await handleDeleteCoach(coachId);
             } else if (path.includes('/channels/')) {
                 const channelId = path.split('/channels/')[1];
                 result = await handleDeleteChannel(channelId, adminCtx);
@@ -8333,10 +8359,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handleDeleteDot(dotId);
             } else if (path.includes('/invitations/')) {
                 const inviteId = path.split('/invitations/')[1];
-                result = await handleDeleteInvitation(inviteId);
+                result = requireAdminTab(adminCtx, 'invites') || await handleDeleteInvitation(inviteId);
             } else if (path.includes('/channel-inventory/')) {
                 const invId = path.split('/channel-inventory/')[1];
-                result = await handleDeleteChannelInventory(invId, adminCtx);
+                result = requireAdminTab(adminCtx, 'store') || await handleDeleteChannelInventory(invId, adminCtx);
             } else if (path.includes('/skus/')) {
                 const skuId = path.split('/skus/')[1];
                 result = await handleDeleteSku(skuId);
