@@ -168,7 +168,7 @@ resources:
         DB_PASS: ${env(DB_PASS)}
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
-        LAB_WEBHOOK_SECRET: ${env(LAB_WEBHOOK_SECRET)}
+        QCS_DEFAULT_SAMPLE_CENTER_ID: "46"
       triggers:
         - triggerName: lab-http
           triggerType: http
