@@ -649,13 +649,45 @@
           </view>
         </scroll-view>
 
-        <!-- Activities sub-tab -->
+        <!-- Activities sub-tab (offline events) -->
         <scroll-view wx:elif="{{planSubTab === 'activities'}}" scroll-y class="overlay-scroll">
-          <view class="panel-center" style="padding: 60rpx 0;">
-            <text class="empty-text">{{lang === 'zh' ? '每日完成 Kino 检测和原粒计划可积累打卡记录。' : 'Complete daily Kino scans and Dots routines to build check-in records.'}}</text>
+          <view wx:if="{{eventsLoading}}" class="panel-center" style="padding:60rpx 0">
+            <text class="empty-text">{{t.eventsLoading}}</text>
           </view>
-          <view class="plan-checkin-btn" catchtap="handlePlanCheckin" data-plan-id="{{planDetailData.id}}">
-            <text class="plan-checkin-text">{{planDetailData.checkedInToday ? t.plansCheckinDone : t.plansCheckin}}</text>
+          <view wx:elif="{{events.length === 0}}" class="panel-center" style="padding:60rpx 0">
+            <text class="empty-text">{{t.eventsEmpty}}</text>
+          </view>
+          <view wx:else class="events-list">
+            <view wx:for="{{events}}" wx:key="id" class="event-card">
+              <view class="event-card-header">
+                <text class="event-title">{{item.title}}</text>
+                <view wx:if="{{mySignupEventIds.indexOf(item.id) > -1}}" class="event-badge-signed">
+                  <text>{{t.eventsSignedUp}}</text>
+                </view>
+              </view>
+              <text class="event-meta">📅 {{item.scheduled_at_display}}</text>
+              <text wx:if="{{item.location}}" class="event-meta">📍 {{item.location}}</text>
+              <text wx:if="{{item.description}}" class="event-desc">{{item.description}}</text>
+              <text wx:if="{{item.capacity}}" class="event-meta">{{t.eventsCapacity}}: {{item.remaining}}/{{item.capacity}}</text>
+              <view class="event-card-actions">
+                <view wx:if="{{mySignupEventIds.indexOf(item.id) > -1}}"
+                      class="event-btn event-btn-cancel"
+                      catchtap="handleEventCancelSignup"
+                      data-event-id="{{item.id}}">
+                  <text>{{t.eventsCancel}}</text>
+                </view>
+                <view wx:elif="{{item.is_full}}"
+                      class="event-btn event-btn-disabled">
+                  <text>{{t.eventsFull}}</text>
+                </view>
+                <view wx:else
+                      class="event-btn event-btn-signup"
+                      catchtap="handleEventSignUp"
+                      data-event-id="{{item.id}}">
+                  <text>{{t.eventsSignUp}}</text>
+                </view>
+              </view>
+            </view>
           </view>
         </scroll-view>
 

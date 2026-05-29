@@ -102,7 +102,7 @@ function LoginScreen({ onLogin }) {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'Coach CRM', lab: 'Lab' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'Coach CRM', lab: 'Lab', events: 'Events' },
     adminAccounts: { title: 'Admin Accounts', add: 'Add Admin', changePassword: 'Change Password', confirmDelete: 'Delete this admin account?', newPassword: 'New Password', usernameLabel: 'Username', passwordLabel: 'Password', count: (n) => `${n} account${n !== 1 ? 's' : ''}` },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
@@ -519,7 +519,7 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'Coach CRM', lab: '检验中心' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'Coach CRM', lab: '检验中心', events: '线下活动' },
     adminAccounts: { title: '管理员账号', add: '添加管理员', changePassword: '修改密码', confirmDelete: '确认删除此管理员账号？', newPassword: '新密码', usernameLabel: '用户名', passwordLabel: '密码', count: (n) => `${n} 个账号` },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
@@ -11641,6 +11641,262 @@ function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
   );
 }
 
+function EventCreateModal({ channels, isSuperadmin, channelId, headers, onClose, onSave }) {
+  const { t } = useLang();
+  const [form, setForm] = useState({ title: '', description: '', location: '', scheduled_at: '', end_at: '', capacity: '', channel_id: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const payload = { ...form, capacity: form.capacity ? parseInt(form.capacity, 10) : null };
+      if (!isSuperadmin) payload.channel_id = channelId;
+      await axios.post('/api/events', payload, { headers });
+      onSave();
+    } catch (e) { setError(e.response?.data?.error || e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.nav.events} — {t.modal?.add || 'Create'}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal?.title || 'Title'} *</span>
+              <input required value={form.title} onChange={e => set('title', e.target.value)} />
+            </label>
+            <label className="form-field">
+              <span>{t.modal?.location || 'Location'}</span>
+              <input value={form.location} onChange={e => set('location', e.target.value)} />
+            </label>
+            <label className="form-field">
+              <span>{t.modal?.capacity || 'Capacity'}</span>
+              <input type="number" min="1" value={form.capacity} onChange={e => set('capacity', e.target.value)} placeholder="—" />
+            </label>
+            <label className="form-field">
+              <span>{t.modal?.startTime || 'Start Time'} *</span>
+              <input type="datetime-local" required value={form.scheduled_at} onChange={e => set('scheduled_at', e.target.value)} />
+            </label>
+            <label className="form-field">
+              <span>{t.modal?.endTime || 'End Time'}</span>
+              <input type="datetime-local" value={form.end_at} onChange={e => set('end_at', e.target.value)} />
+            </label>
+            {isSuperadmin && (
+              <label className="form-field">
+                <span>{t.modal?.channel || 'Channel'}</span>
+                <div className="select-wrap" style={{ width: '100%' }}>
+                  <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                    <option value="">—</option>
+                    {(channels || []).map(ch => <option key={ch.id} value={ch.id}>{ch.name}</option>)}
+                  </select>
+                  <ChevronDown size={11} className="select-chevron" />
+                </div>
+              </label>
+            )}
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal?.description || 'Description'}</span>
+              <textarea rows={3} value={form.description} onChange={e => set('description', e.target.value)} style={{ resize: 'vertical' }} />
+            </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal?.cancel || 'Cancel'}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>{busy ? '…' : (t.modal?.save || 'Create')}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EventSignupsModal({ event, headers, onClose }) {
+  const { t } = useLang();
+  const [signups, setSignups] = useState(null);
+
+  useEffect(() => {
+    axios.get(`/api/events/${event.id}/signups`, { headers })
+      .then(r => setSignups(r.data?.signups || []))
+      .catch(() => setSignups([]));
+  }, [event.id]);
+
+  const fmtDt = (dt) => dt ? new Date(dt).toLocaleString() : '—';
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 600 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{event.title}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          {signups === null ? (
+            <p className="muted">Loading…</p>
+          ) : signups.length === 0 ? (
+            <p className="muted">{t.modal?.noSignups || 'No signups yet'}</p>
+          ) : (
+            <table className="data-table">
+              <thead><tr>
+                <th>{t.table?.nickname || 'Name'}</th>
+                <th>{t.table?.phone || 'Phone'}</th>
+                <th>{t.table?.joined || 'Signed Up'}</th>
+              </tr></thead>
+              <tbody>
+                {signups.map(s => (
+                  <tr key={s.user_id}>
+                    <td>{fmt(s.nickname)}</td>
+                    <td className="muted">{fmt(s.phone)}</td>
+                    <td className="muted">{fmtDt(s.signed_up_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal?.close || 'Close'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EventsTab({ channels, session, isSuperadmin, onRefresh }) {
+  const { t } = useLang();
+  const headers = session?.token ? { Authorization: `Bearer ${session.token}` } : {};
+  const channelId = isSuperadmin ? null : session?.channelId;
+
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState(null);
+
+  const fetchEvents = useCallback(async () => {
+    setLoading(true);
+    try {
+      if (channelId) {
+        const res = await axios.get(`/api/events?channel_id=${channelId}`, { headers });
+        setEvents(res.data?.events || []);
+      } else {
+        const results = await Promise.all(
+          (channels || []).map(ch =>
+            axios.get(`/api/events?channel_id=${ch.id}`, { headers })
+              .catch(() => ({ data: { events: [] } }))
+          )
+        );
+        setEvents(results.flatMap((r, i) =>
+          (r.data?.events || []).map(ev => ({ ...ev, channel_name: channels[i]?.name }))
+        ));
+      }
+    } catch { /* silently fail */ }
+    finally { setLoading(false); }
+  }, [channelId, channels, JSON.stringify(headers)]);
+
+  useEffect(() => { fetchEvents(); }, [fetchEvents]);
+
+  const handleCancel = async (id) => {
+    if (!window.confirm(t.modal?.confirmCancel || 'Cancel this event?')) return;
+    try {
+      await axios.delete(`/api/events/${id}`, { headers });
+      fetchEvents();
+    } catch (e) { alert(e.message); }
+  };
+
+  const activeCount     = events.filter(e => e.status === 'active').length;
+  const totalSignups    = events.reduce((s, e) => s + (parseInt(e.signup_count, 10) || 0), 0);
+  const upcomingCount   = events.filter(e => new Date(e.scheduled_at) > new Date()).length;
+
+  const fmtDt = (dt) => dt ? new Date(dt).toLocaleString() : '—';
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={Calendar}  label={t.nav.events}                              value={events.length}  color="#6366f1" />
+        <StatCard icon={Activity}  label={t.stats?.activeEvents  || 'Active'}        value={activeCount}    color="#10b981" />
+        <StatCard icon={Calendar}  label={t.stats?.upcomingEvents || 'Upcoming'}     value={upcomingCount}  color="#f59e0b" />
+        <StatCard icon={Users}     label={t.stats?.totalSignups  || 'Total Signups'} value={totalSignups}   color="#3b82f6" />
+      </div>
+
+      <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count">{events.length} {t.nav.events}</span>
+          <button className="btn-primary" onClick={() => setModal({ type: 'create' })}>
+            <Plus size={14} />{t.modal?.addEvent || 'Create Event'}
+          </button>
+        </div>
+        <table className="data-table">
+          <thead><tr>
+            <th>{t.table?.title || 'Title'}</th>
+            {isSuperadmin && <th>{t.table?.channel || 'Channel'}</th>}
+            <th>{t.table?.startTime || 'Start'}</th>
+            <th>{t.table?.location || 'Location'}</th>
+            <th>{t.table?.capacity || 'Capacity'}</th>
+            <th>{t.table?.signups || 'Signups'}</th>
+            <th>Status</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+            {loading && <tr><td colSpan={isSuperadmin ? 8 : 7} className="empty-row">Loading…</td></tr>}
+            {!loading && events.length === 0 && (
+              <tr><td colSpan={isSuperadmin ? 8 : 7} className="empty-row">{t.modal?.noEvents || 'No events yet'}</td></tr>
+            )}
+            {events.map(ev => (
+              <tr key={ev.id} style={{ cursor: 'pointer' }} onClick={() => setModal({ type: 'signups', event: ev })}>
+                <td>
+                  <div style={{ fontWeight: 600 }}>{ev.title}</div>
+                  {ev.description && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{ev.description.slice(0, 60)}{ev.description.length > 60 ? '…' : ''}</div>}
+                </td>
+                {isSuperadmin && <td className="muted">{fmt(ev.channel_name)}</td>}
+                <td className="muted">{fmtDt(ev.scheduled_at)}</td>
+                <td className="muted">{fmt(ev.location)}</td>
+                <td className="muted">{ev.capacity ?? '∞'}</td>
+                <td><Badge color="#3b82f6">{ev.signup_count || 0}</Badge></td>
+                <td>
+                  <Badge color={ev.status === 'cancelled' ? '#ef4444' : ev.status === 'completed' ? '#94a3b8' : '#10b981'}>
+                    {ev.status}
+                  </Badge>
+                </td>
+                <td onClick={e => e.stopPropagation()}>
+                  {ev.status === 'active' && (
+                    <button className="icon-btn danger" title={t.modal?.cancelEvent || 'Cancel event'} onClick={() => handleCancel(ev.id)}>
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {modal?.type === 'create' && (
+        <EventCreateModal
+          channels={channels}
+          isSuperadmin={isSuperadmin}
+          channelId={channelId}
+          headers={headers}
+          onClose={() => setModal(null)}
+          onSave={() => { setModal(null); fetchEvents(); }}
+        />
+      )}
+      {modal?.type === 'signups' && (
+        <EventSignupsModal
+          event={modal.event}
+          headers={headers}
+          onClose={() => setModal(null)}
+        />
+      )}
+    </>
+  );
+}
+
 function AdminPanel({ session, onLogout }) {
   const [lang, setLang] = useState('zh');
   const t = T[lang];
@@ -11719,6 +11975,7 @@ function AdminPanel({ session, onLogout }) {
     { id: 'academy',   label: t.nav.academy,   icon: GraduationCap  },
     { id: 'questionnaires', label: t.nav.questionnaires, icon: ClipboardList },
     { id: 'health-plans',   label: t.nav.healthPlans,    icon: Activity      },
+    { id: 'events',         label: t.nav.events,         icon: Calendar      },
     { id: 'reports',        label: t.nav.reports,        icon: BarChart2     },
     { id: 'tickets',  label: t.nav.tickets,  icon: Bug            },
     { id: 'sims',     label: t.nav.sims,     icon: Layout,      disabled: true },
@@ -11793,6 +12050,7 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'academy'   && <AcademyTab />}
           {tab === 'questionnaires' && <QuestionnairesTab channels={data.channels} users={data.users} coaches={data.coaches} />}
           {tab === 'health-plans'   && <HealthPlansTab dots={data.dots} healthPlanTemplates={data.healthPlanTemplates || []} onRefresh={fetchData} />}
+          {tab === 'events'         && <EventsTab channels={data.channels} session={session} isSuperadmin={isSuperadmin} onRefresh={fetchData} />}
           {tab === 'reports'        && <ReportsTab />}
           {tab === 'tickets'  && <TicketsTab tickets={data.tickets} onRefresh={fetchData} />}
           {tab === 'sims'     && <SimulatorsTab />}

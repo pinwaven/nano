@@ -2851,3 +2851,28 @@ button.consent-row::after { border: none; }
 .theme-light .modal-input { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); color: #1a2744; }
 .theme-light .modal-btn-cancel { background: rgba(0,0,0,0.06); color: rgba(0,0,0,0.5); }
 .theme-light .q-label { color: rgba(0,0,0,0.6); }
+
+/* ── Events (线下活动) ─────────────────────────────────────────────────────── */
+.events-list { padding: 16rpx 0; }
+.event-card { padding: 28rpx 32rpx; border-bottom: 1rpx solid rgba(255,255,255,0.07); }
+.event-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12rpx; }
+.event-title { font-size: 28rpx; font-weight: 600; color: #EEF2FF; flex: 1; }
+.event-badge-signed { padding: 6rpx 18rpx; background: rgba(52,211,153,0.15); border: 1rpx solid rgba(52,211,153,0.4); border-radius: 20rpx; }
+.event-badge-signed text { font-size: 20rpx; color: #34D399; }
+.event-meta { display: block; font-size: 24rpx; color: #A6C4E5; margin-bottom: 6rpx; }
+.event-desc { display: block; font-size: 24rpx; color: #7A96B8; margin-bottom: 8rpx; line-height: 1.5; }
+.event-card-actions { margin-top: 20rpx; }
+.event-btn { padding: 16rpx 0; border-radius: 16rpx; text-align: center; }
+.event-btn text { font-size: 24rpx; font-weight: 600; }
+.event-btn-signup { background: linear-gradient(90deg, #6375EC, #8B9FFF); }
+.event-btn-signup text { color: #fff; }
+.event-btn-cancel { background: rgba(99,117,236,0.15); border: 1rpx solid rgba(99,117,236,0.35); }
+.event-btn-cancel text { color: #8B9FFF; }
+.event-btn-disabled { background: rgba(255,255,255,0.06); }
+.event-btn-disabled text { color: rgba(255,255,255,0.3); }
+.theme-light .event-card { border-bottom-color: #e2e8f0; }
+.theme-light .event-title { color: #1a2744; }
+.theme-light .event-meta { color: #607090; }
+.theme-light .event-desc { color: #7A8DAE; }
+.theme-light .event-btn-disabled { background: rgba(0,0,0,0.06); }
+.theme-light .event-btn-disabled text { color: rgba(0,0,0,0.25); }

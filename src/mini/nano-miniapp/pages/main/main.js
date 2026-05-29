@@ -206,6 +206,9 @@ const T = {
     guestChatCtaBtn: '立即加入',
     guestDotsCta: '激活账户后，获取您的专属营养方案',
     guestMenuSignUp: '注册账户',
+    eventsTitle: '线下活动', eventsSignUp: '立即报名', eventsSignedUp: '已报名',
+    eventsCancel: '取消报名', eventsFull: '已满', eventsEmpty: '暂无线下活动',
+    eventsLocation: '地点', eventsCapacity: '名额', eventsLoading: '加载中…',
     orderStatus: {
       pending: '待处理', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', cancelled: '已取消',
@@ -365,6 +368,9 @@ const T = {
     guestChatCtaBtn: 'Join Now',
     guestDotsCta: 'Activate your account to get your personalized nutrition plan',
     guestMenuSignUp: 'Sign Up',
+    eventsTitle: 'Events', eventsSignUp: 'Sign Up', eventsSignedUp: 'Registered',
+    eventsCancel: 'Cancel Registration', eventsFull: 'Full', eventsEmpty: 'No events available',
+    eventsLocation: 'Location', eventsCapacity: 'Spots', eventsLoading: 'Loading…',
     orderStatus: {
       pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', cancelled: 'Cancelled',
@@ -791,6 +797,9 @@ Page({
     planDetailData: null,
     planSubTab: 'overview',
     planBrowseOpen: false,
+    events: [],
+    mySignupEventIds: [],
+    eventsLoading: false,
     planCheckinBusy: false,
     planTaskBusy: false,
     planWeightOpen: false,
@@ -2162,7 +2171,9 @@ Page({
   },
 
   switchPlanSubTab(e) {
-    this.setData({ planSubTab: e.currentTarget.dataset.tab })
+    const tab = e.currentTarget.dataset.tab
+    this.setData({ planSubTab: tab })
+    if (tab === 'activities') this.loadEvents()
   },
 
   async openPlanDetail(e) {
@@ -2425,6 +2436,62 @@ Page({
         }
       },
     })
+  },
+
+  // ── Events (线下活动) ──────────────────────────────────────────────────────
+
+  async loadEvents() {
+    const { user } = this.data
+    if (!user?.channel_id) return
+    this.setData({ eventsLoading: true })
+    try {
+      const res = await this._req(`${BASE}/api/events?channel_id=${encodeURIComponent(user.channel_id)}&user_id=${encodeURIComponent(user.user_id)}`)
+      const raw = res.data?.events || []
+      const now = Date.now()
+      const events = raw.map(ev => {
+        const d = new Date(ev.scheduled_at)
+        const signupCount = parseInt(ev.signup_count, 10) || 0
+        const remaining = ev.capacity ? Math.max(0, ev.capacity - signupCount) : null
+        return {
+          ...ev,
+          scheduled_at_display: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`,
+          remaining,
+          is_full: ev.capacity !== null && remaining === 0,
+        }
+      })
+      const mySignupEventIds = events.filter(ev => ev.signed_up).map(ev => ev.id)
+      this.setData({ events, mySignupEventIds, eventsLoading: false })
+    } catch {
+      this.setData({ eventsLoading: false })
+    }
+  },
+
+  async handleEventSignUp(e) {
+    const { user, t, mySignupEventIds } = this.data
+    const eventId = e.currentTarget.dataset.eventId
+    try {
+      const res = await this._req(`${BASE}/api/event-signups`, 'POST', { event_id: eventId, user_id: user.user_id })
+      if (res.data?.success) {
+        this.setData({ mySignupEventIds: [...mySignupEventIds, eventId] })
+        wx.showToast({ title: t.eventsSignedUp, icon: 'success' })
+      } else {
+        wx.showToast({ title: res.data?.error || 'Error', icon: 'none' })
+      }
+    } catch {
+      wx.showToast({ title: t.errServer, icon: 'none' })
+    }
+  },
+
+  async handleEventCancelSignup(e) {
+    const { user, t, mySignupEventIds } = this.data
+    const eventId = e.currentTarget.dataset.eventId
+    try {
+      await this._req(`${BASE}/api/event-signups/${eventId}?user_id=${encodeURIComponent(user.user_id)}`, 'DELETE')
+      this.setData({ mySignupEventIds: mySignupEventIds.filter(id => id !== eventId) })
+      wx.showToast({ title: t.eventsCancel, icon: 'none' })
+    } catch {
+      wx.showToast({ title: t.errServer, icon: 'none' })
+    }
   },
 
   // ── Guest join sheet ────────────────────────────────────────────────────────
