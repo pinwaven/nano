@@ -158,10 +158,18 @@ WITH RECURSIVE subtree AS (
     UNION ALL
     SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
 )
+-- Users: filter directly on users.channel_id
 SELECT u.* FROM users u JOIN subtree st ON u.channel_id = st.id
+
+-- Coaches: no channel_id on the coaches table — channel is derived from the linked user
+SELECT p.*, u.channel_id FROM coaches p
+JOIN users u ON p.user_id = u.user_id
+JOIN subtree st ON u.channel_id = st.id
 ```
 
 This returns users/coaches from the entire descendant tree regardless of depth.
+
+> **Note:** `coaches` has no `channel_id` column. A coach's channel is always `users.channel_id` for the linked `user_id`. All channel-scoped coach queries join `coaches → users → channels`.
 
 ---
 

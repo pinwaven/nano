@@ -133,6 +133,7 @@ Full details: `docs/architecture/database-migrations.md`
 - A single WeChat openid can hold multiple roles simultaneously.
 - Channel scoping is implicit via `users.channel_id`; no separate role-junction table.
 - Coach role is auto-managed when `coaches.user_id` FK is set/unset.
+- **`coaches` has NO `channel_id` column.** A coach's channel is always `users.channel_id` for the linked `user_id`. All channel-scoped coach queries join `coaches → users → channels`. Dropped via `migration_coaches_drop_channel_id.sql`.
 - Full details: `docs/architecture/role-system.md`
 
 ## 11. The Four Sub Bio Ages
