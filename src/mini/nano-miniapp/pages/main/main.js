@@ -745,6 +745,8 @@ Page({
     isAdmin: false,
     isSuperadmin: false,
     isGuest: false,
+    creditBalance: 0,
+    creditCurrency: 'CNY',
 
     // Guest join sheet
     guestSheetOpen: false,
@@ -859,6 +861,7 @@ Page({
     this._loadDots(user, lang)
     this._loadCartridges(user, lang)
     this._loadStore(user, lang)
+    this._loadCreditBalance(user)
   },
 
   onShow() {
@@ -867,6 +870,7 @@ Page({
       this._req(`${BASE}/api/heartbeat`, 'POST', { user_id: user.user_id }).catch(() => {})
       this.selectComponent('#health-comp')?.refresh()
       this._startPolling(user)
+      this._loadCreditBalance(user)
       // Check for questionnaires assigned while the user was away
       if (obStep === 'done') this._checkForPendingQuestionnaire()
     }
@@ -1923,6 +1927,16 @@ Page({
       this.setData({ storeLoading: false })
     }
     await this._loadStoreOrders(user, lang)
+  },
+
+  async _loadCreditBalance(user) {
+    if (!user?.user_id) return
+    try {
+      const res = await this._req(`${BASE}/api/credits/balance?user_id=${encodeURIComponent(user.user_id)}`)
+      if (res.data?.success) {
+        this.setData({ creditBalance: res.data.balance || 0, creditCurrency: res.data.currency || 'CNY' })
+      }
+    } catch (e) {}
   },
 
   async _loadStoreOrders(user, lang) {

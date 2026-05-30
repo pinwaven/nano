@@ -120,6 +120,29 @@
   font-weight: 500;
 }
 
+.menu-credit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 32rpx;
+  background: rgba(99, 117, 236, 0.08);
+}
+
+.menu-credit-label {
+  font-size: 22rpx;
+  color: rgba(166, 196, 229, 0.7);
+  letter-spacing: 1rpx;
+}
+
+.menu-credit-value {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #6375EC;
+}
+
+.theme-light .menu-credit-row { background: rgba(99, 117, 236, 0.06); }
+.theme-light .menu-credit-value { color: #4f5fcc; }
+
 /* ── Tab content container ── */
 
 .tab-content {

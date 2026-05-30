@@ -1,6 +1,6 @@
 # Rewards System
 
-Coaches and Channels earn commissions on every sale attributed to them. Commissions are tracked in a ledger and paid out in monthly batches by Waven. No virtual currency is used — all amounts are in CNY.
+Coaches, Channels, and Users earn commissions on every sale attributed to them. Commissions are converted into **credits** stored in a per-user ledger. Users can exchange credits for cash via a withdrawal request. Each channel sets its own credit-to-currency exchange rate.
 
 ## Hierarchy
 
@@ -244,5 +244,144 @@ The `recordOrderCommissions(orderId)` function is called from `handlePutOrder` w
 2. Determines `product_type` from `item_key`
 3. Looks up the applicable rate (channel override → global default)
 4. Inserts into `coach_commissions` and `channel_commissions` with `ON CONFLICT (order_id) DO NOTHING`
+5. **Calls `creditUser()` for each inserted row**, converting `amount_cny × exchange_rate` into credit ledger entries
+
+`recordUserReferralCommission(orderId)` follows the same pattern for user-to-user referral commissions.
 
 Errors are caught and logged to CloudWatch without bubbling — a failed commission record never blocks an order status update.
+
+---
+
+## Credit System
+
+### Overview
+
+Every commission event (referral, coach, channel) produces both a commission row (existing tables) and a **credit ledger entry**. The ledger is append-only — balance is always derived as `SUM(amount)`. Credits can be redeemed for cash via a withdrawal request processed by a superadmin.
+
+### Credit library
+
+`src/functions/worker/lib/credits.js`
+
+| Function | Description |
+|---|---|
+| `creditUser(userId, cnyAmount, exchangeRate, type, referenceId, referenceType, note)` | Insert a positive ledger entry. `credits = cnyAmount × exchangeRate` |
+| `debitUser(userId, credits, type, referenceId, referenceType, note)` | Insert a negative ledger entry (used on withdrawal approval) |
+| `getUserBalance(userId)` | `SUM(amount)` from `credit_ledger` for one user |
+| `getLedgerHistory(userId, limit, offset)` | Paginated ledger rows, newest first |
+| `getChannelExchangeRate(channelId)` | Reads `channels.config.credit_exchange_rate` (default `1.0`) |
+| `getChannelCurrency(channelId)` | Reads `channels.config.currency` (default `'CNY'`) |
+
+### Exchange rate
+
+Each channel stores its own rate in `channels.config` (JSONB):
+
+```json
+{ "credit_exchange_rate": 10.0, "currency": "CNY" }
+```
+
+`credit_exchange_rate` = credits awarded per 1 unit of the channel's currency. With a rate of `10`, a ¥5 commission → 50 credits → ¥5 cash on redemption. The rate at the time of withdrawal is snapshotted on the `credit_withdrawals` row so future rate changes do not affect pending requests.
+
+Defaults: `credit_exchange_rate = 1.0`, `currency = 'CNY'`.
+
+### Database schema
+
+Migration: `src/schemas/migration_credit_system.sql`
+
+#### `credit_ledger`
+
+Immutable, append-only. One row per credit event.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID | Primary key |
+| `user_id` | TEXT FK | Earning or debited user |
+| `amount` | NUMERIC(12,2) | Positive = earn, negative = debit |
+| `type` | TEXT | `referral_commission` \| `coach_commission` \| `channel_commission` \| `withdrawal` \| `adjustment` |
+| `reference_id` | UUID | ID of the source record (commission row, withdrawal row) |
+| `reference_type` | TEXT | Table name of the source |
+| `note` | TEXT | Optional human-readable note |
+| `created_at` | TIMESTAMPTZ | |
+
+Balance for a user = `SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = $1`.
+
+#### `credit_withdrawals`
+
+One row per cash-out request.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID | Primary key |
+| `user_id` | TEXT FK | Requesting user |
+| `credits_amount` | NUMERIC(12,2) | Credits to redeem |
+| `currency_amount` | NUMERIC(12,2) | Cash value = `credits_amount / exchange_rate` |
+| `exchange_rate` | NUMERIC(10,4) | Snapshot of channel rate at request time |
+| `currency` | TEXT | ISO currency code (e.g. `CNY`, `USD`) |
+| `payment_method` | TEXT | `wechat_pay` (default) |
+| `payment_account` | TEXT | WeChat ID / phone / bank account |
+| `status` | TEXT | `pending` → `approved` → `completed` (or `rejected`) |
+| `admin_note` | TEXT | Optional note from the reviewing admin |
+| `requested_at` | TIMESTAMPTZ | |
+| `processed_at` | TIMESTAMPTZ | When admin actioned the request |
+| `processed_by` | TEXT | `user_id` of the admin who actioned it |
+
+### Withdrawal lifecycle
+
+```
+User submits POST /api/credits/withdraw
+  └── credit_withdrawals row created (status: pending)
+        └── Superadmin reviews in Admin Panel → Rewards → Credit Withdrawals
+              ├── Approve → status: approved
+              │     └── debitUser() inserts negative credit_ledger entry
+              │           → balance decreases immediately, locking credits
+              └── Reject  → status: rejected (no ledger entry)
+
+After external payment (WeChat Pay / bank transfer):
+  Superadmin marks → status: completed
+```
+
+Approval debits the ledger immediately so the user cannot submit a second withdrawal against the same credits while the payment is being processed externally.
+
+### API endpoints
+
+#### User-facing
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/credits/balance` | Returns `{ balance, exchange_rate, currency }` |
+| `GET` | `/api/credits/history` | Paginated ledger entries (`limit`, `offset`) |
+| `POST` | `/api/credits/withdraw` | Body: `{ user_id, credits_amount, payment_method, payment_account }` |
+| `GET` | `/api/credits/withdrawals` | User's own withdrawal history |
+
+#### Admin-facing (superadmin)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/admin/credit-withdrawals` | List all requests, filterable by `?status=` |
+| `PUT` | `/api/admin/credit-withdrawals/:id` | Body: `{ status, admin_note }`. Approve triggers ledger debit. |
+
+#### Channel config (via existing channel PATCH)
+
+`PUT /api/channels/:id` now accepts `credit_exchange_rate` (number) and `currency` (string) in the request body. Both are merged into `channels.config` JSONB.
+
+### UI surfaces
+
+#### Web Admin Panel — Rewards tab → Credit Withdrawals sub-tab
+
+Lists all `credit_withdrawals` rows. Filterable by status. Actions:
+- **Approve** — debits the user's ledger and moves status to `approved`
+- **Reject** — moves status to `rejected`, no ledger change
+- **Mark Completed** — moves status to `completed` after external payment is confirmed
+
+#### Web Admin Panel — Channels tab → Edit channel modal
+
+Added **Credit Exchange Rate** and **Currency** fields. Saved into `channels.config`.
+
+#### Miniapp — Main page menu
+
+Credit balance is fetched on `onLoad` and refreshed on `onShow`. When `creditBalance > 0`, a tinted balance row appears at the top of the header dropdown menu. Tapping it navigates to the referral/withdrawal page.
+
+#### Miniapp — Referral page
+
+- Credit balance card showing current balance and approximate cash value
+- Withdrawal form (bottom sheet): enter credits amount and payment account, submits `POST /api/credits/withdraw`
+- Withdrawal history list with status badges (pending / approved / rejected / completed)

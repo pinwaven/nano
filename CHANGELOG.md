@@ -7,6 +7,27 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 ## [Unreleased]
 
 ### Added
+- **Credit system for commissions** — all commission earnings (referral, coach, channel) now flow into a per-user credit ledger. Users can exchange credits for cash via a withdrawal request processed by a superadmin.
+  - **DB migration** `src/schemas/migration_credit_system.sql`:
+    - `credit_ledger` — append-only ledger; one row per earn or debit event; balance = `SUM(amount)` per user.
+    - `credit_withdrawals` — tracks cash-out requests through `pending → approved → completed` (or `rejected`). Exchange rate is snapshotted at request time.
+  - **Credit library** `src/functions/worker/lib/credits.js`: `creditUser`, `debitUser`, `getUserBalance`, `getLedgerHistory`, `getChannelExchangeRate`, `getChannelCurrency`.
+  - **Commission service** `src/functions/worker/lib/commissions.js`: after each commission insert, calls `creditUser()` using the channel's exchange rate. Covers referral, coach, and channel commissions.
+  - **Per-channel exchange rate**: stored in `channels.config.credit_exchange_rate` (credits per 1 unit of currency) and `channels.config.currency` (ISO code). Configurable in the Channels edit modal.
+  - **Backend** `src/functions/worker/index.js`:
+    - `GET /api/credits/balance` — user's balance, exchange rate, currency.
+    - `GET /api/credits/history` — paginated ledger.
+    - `POST /api/credits/withdraw` — submit a cash-out request (validates balance).
+    - `GET /api/credits/withdrawals` — user's own withdrawal history.
+    - `GET /api/admin/credit-withdrawals` — admin list, filterable by status.
+    - `PUT /api/admin/credit-withdrawals/:id` — approve (triggers ledger debit) / reject / complete.
+  - **Web Admin Panel** `src/web/admin-panel/src/App.jsx`:
+    - Rewards tab → new **Credit Withdrawals** sub-tab: table with approve / reject / mark-completed actions.
+    - Channels edit modal → **Exchange Rate** and **Currency** fields.
+  - **Miniapp main page** `pages/main/main.js` + `main.wxml` + `main.wxss`: credit balance fetched on load and on show; displayed as a tinted row at the top of the header menu when balance > 0; tapping navigates to the referral page.
+  - **Miniapp referral page** `pages/referral/referral.js` + `.wxml` + `.wxss`: credit balance card, cash-equivalent display, withdrawal bottom-sheet form, withdrawal history list with status badges.
+
+
 - **Complete Orders Fulfillment & SKU Registry System** — comprehensive, enterprise-grade e-commerce, multi-location stock tracking, and logistics workflow across backend, mini program client, and web admin dashboards.
   - **DB Migration (`migration_orders_fulfillment.sql`)**:
     - `skus` table: centralized registry of raw physical/virtual product assets (`WD-DOT-MONTHLY`, `KINO-CHIP-V2`, etc.) mapping standard names, units, and types.

@@ -16,6 +16,11 @@
   <!-- ── Logo menu ── -->
   <view wx:if="{{menuOpen}}" class="menu-mask" bindtap="closeMenu">
     <view class="menu-dropdown" catchtap="noop" style="top: {{menuTop}}px;">
+      <view wx:if="{{!isGuest && creditBalance > 0}}" class="menu-credit-row" bindtap="openReferral">
+        <text class="menu-credit-label">{{lang === 'zh' ? '积分余额' : 'Credits'}}</text>
+        <text class="menu-credit-value">{{creditBalance}} pts</text>
+      </view>
+      <view wx:if="{{!isGuest && creditBalance > 0}}" class="menu-divider"></view>
       <view wx:if="{{isCoach}}" class="menu-item" bindtap="openCoach">
         <text class="menu-item-icon">👨‍⚕️</text>
         <text class="menu-item-label">{{t.coachMenu}}</text>
