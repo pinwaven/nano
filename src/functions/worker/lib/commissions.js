@@ -1,4 +1,5 @@
 const { pool } = require('./db');
+const { getChannelExchangeRate, creditUser } = require('./credits');
 
 function getProductType(itemKey) {
     if (itemKey && itemKey.startsWith('kino-chip')) return 'chip';
@@ -52,29 +53,47 @@ async function recordOrderCommissions(orderId) {
         const productType = getProductType(order.item_key);
         const channelId   = order.channel_id;
 
+        const exchangeRate = await getChannelExchangeRate(channelId);
+
         const coachRate   = await getRate('coach', productType, channelId);
         const coachAmount = calcAmount(coachRate, order.quantity, order.price_cny);
         if (coachAmount > 0) {
-            await pool.query(`
+            const coachRes = await pool.query(`
                 INSERT INTO coach_commissions
                     (coach_id, channel_id, user_id, order_id, product_type, item_key, quantity, amount_cny)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
                 ON CONFLICT (order_id) DO NOTHING
+                RETURNING id
             `, [order.coach_user_id, channelId, order.user_id, orderId,
                 productType, order.item_key, order.quantity, coachAmount]);
+            if (coachRes.rows[0]?.id) {
+                await creditUser(order.coach_user_id, coachAmount, exchangeRate,
+                    'coach_commission', coachRes.rows[0].id, 'coach_commissions');
+            }
         }
 
         if (channelId) {
             const chRate   = await getRate('channel', productType, channelId);
             const chAmount = calcAmount(chRate, order.quantity, order.price_cny);
             if (chAmount > 0) {
-                await pool.query(`
+                const chRes = await pool.query(`
                     INSERT INTO channel_commissions
                         (channel_id, coach_id, user_id, order_id, product_type, item_key, quantity, amount_cny)
                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
                     ON CONFLICT (order_id) DO NOTHING
+                    RETURNING id
                 `, [channelId, order.coach_user_id, order.user_id, orderId,
                     productType, order.item_key, order.quantity, chAmount]);
+                if (chRes.rows[0]?.id) {
+                    // Credit the channel's admin user — look up via channel config
+                    const chAdminRes = await pool.query(
+                        `SELECT config->>'admin_user_id' AS admin_user_id FROM channels WHERE id = $1`, [channelId]);
+                    const adminUserId = chAdminRes.rows[0]?.admin_user_id;
+                    if (adminUserId) {
+                        await creditUser(adminUserId, chAmount, exchangeRate,
+                            'channel_commission', chRes.rows[0].id, 'channel_commissions');
+                    }
+                }
             }
         }
     } catch (err) {
@@ -109,13 +128,20 @@ async function recordUserReferralCommission(orderId) {
         const amount = Number((order.price_cny * rate / 100).toFixed(2));
         if (amount <= 0) return;
 
-        await pool.query(`
+        const exchangeRate = await getChannelExchangeRate(order.channel_id);
+
+        const refRes = await pool.query(`
             INSERT INTO referral_commissions
                 (referrer_user_id, referee_user_id, order_id, product_type, item_key, quantity, amount_cny)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (order_id, referrer_user_id) DO NOTHING
+            RETURNING id
         `, [order.referrer_user_id, order.user_id, orderId,
             productType, order.item_key, order.quantity, amount]);
+        if (refRes.rows[0]?.id) {
+            await creditUser(order.referrer_user_id, amount, exchangeRate,
+                'referral_commission', refRes.rows[0].id, 'referral_commissions');
+        }
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'recordUserReferralCommission failed', data: { orderId, error: err.message } }));
     }

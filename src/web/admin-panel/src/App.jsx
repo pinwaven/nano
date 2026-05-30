@@ -190,6 +190,8 @@ const T = {
       channelKeyName: 'Key Name *', channelName: 'Display Name *', channelLogoUrl: 'Logo',
       uploadChannelLogo: 'Click to upload logo (PNG / JPG)', uploadChannelLogoFailed: 'Logo upload failed', removeChannelLogo: 'Remove logo',
       channelPersonaType: 'AI Persona', channelPersonaNano: 'Nano (default)', channelPersonaViva: 'Viva (Aeviva)',
+      channelExchangeRate: 'Credit Exchange Rate', channelExchangeRateHint: 'Credits per 1 unit of currency (default 1.0)',
+      channelCurrency: 'Currency', channelCurrencyHint: 'ISO code, e.g. CNY, USD',
       channel: 'Channel', channelUnassigned: 'No channel',
       coachGroup: 'Group', coachGroupUnassigned: 'No group',
       addCoachGroup: 'Add Group', editCoachGroup: 'Edit Group', deleteCoachGroup: 'Delete Group',
@@ -310,6 +312,14 @@ const T = {
       noSettings: 'No settings found', noPayouts: 'No payouts', noCommissions: 'No commissions',
       generate: 'Generate', generating: 'Generating…', saved: 'Saved', saveFailed: 'Save failed',
       totalPayouts: 'Channel Payouts', pendingPayouts: 'Pending', totalCommissions: 'Coach Commissions', totalEarned: 'Total Commissions',
+      withdrawalsTab: 'Credit Withdrawals',
+      withdrawalUser: 'User', withdrawalCredits: 'Credits', withdrawalCash: 'Cash Value', withdrawalCurrency: 'Currency',
+      withdrawalMethod: 'Method', withdrawalAccount: 'Account', withdrawalStatus: 'Status', withdrawalDate: 'Requested',
+      withdrawalNote: 'Admin Note', approve: 'Approve', reject: 'Reject', markCompleted: 'Mark Completed',
+      noWithdrawals: 'No withdrawal requests', filterAll: 'All', filterPending: 'Pending',
+      filterApproved: 'Approved', filterRejected: 'Rejected', filterCompleted: 'Completed',
+      totalWithdrawals: 'Withdrawals', pendingWithdrawals: 'Pending',
+      pending: 'Pending', rejected: 'Rejected', completed: 'Completed',
     },
     partners: {
       addPartner: 'Add Partner', editPartner: 'Edit Partner', deactivatePartner: 'Deactivate',
@@ -653,6 +663,8 @@ const T = {
       channelKeyName: '标识 *', channelName: '显示名称 *', channelLogoUrl: 'Logo',
       uploadChannelLogo: '点击上传 Logo（PNG / JPG）', uploadChannelLogoFailed: 'Logo 上传失败', removeChannelLogo: '移除 Logo',
       channelPersonaType: 'AI 人格', channelPersonaNano: 'Nano（默认）', channelPersonaViva: 'Viva（Aeviva）',
+      channelExchangeRate: '积分汇率', channelExchangeRateHint: '每单位货币对应的积分数（默认 1.0）',
+      channelCurrency: '货币', channelCurrencyHint: 'ISO 代码，如 CNY、USD',
       channel: '渠道', channelUnassigned: '无渠道',
       coachGroup: '所属团队', coachGroupUnassigned: '无团队',
       addCoachGroup: '添加团队', editCoachGroup: '编辑团队', deleteCoachGroup: '删除团队',
@@ -773,6 +785,14 @@ const T = {
       noSettings: '暂无设置', noPayouts: '暂无结算单', noCommissions: '暂无佣金记录',
       generate: '生成', generating: '生成中…', saved: '已保存', saveFailed: '保存失败',
       totalPayouts: '渠道结算', pendingPayouts: '待审批', totalCommissions: 'Coach 佣金', totalEarned: '佣金总额',
+      withdrawalsTab: '积分提现',
+      withdrawalUser: '用户', withdrawalCredits: '积分', withdrawalCash: '现金金额', withdrawalCurrency: '币种',
+      withdrawalMethod: '支付方式', withdrawalAccount: '账号', withdrawalStatus: '状态', withdrawalDate: '申请时间',
+      withdrawalNote: '备注', approve: '审批通过', reject: '拒绝', markCompleted: '标记完成',
+      noWithdrawals: '暂无提现申请', filterAll: '全部', filterPending: '待审批',
+      filterApproved: '已审批', filterRejected: '已拒绝', filterCompleted: '已完成',
+      totalWithdrawals: '提现申请', pendingWithdrawals: '待审批',
+      pending: '待审批', rejected: '已拒绝', completed: '已完成',
     },
     partners: {
       addPartner: '新增合伙人', editPartner: '编辑合伙人', deactivatePartner: '停用',
@@ -7160,6 +7180,8 @@ function RewardsTab() {
   const [settings, setSettings] = useState([]);
   const [channelPayouts, setChannelPayouts] = useState([]);
   const [coachCommissions, setCoachCommissions] = useState([]);
+  const [withdrawals, setWithdrawals] = useState([]);
+  const [wdFilter, setWdFilter] = useState('pending');
   const [loading, setLoading] = useState(false);
   const [generatePeriod, setGeneratePeriod] = useState(() => {
     const n = new Date();
@@ -7170,14 +7192,16 @@ function RewardsTab() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [sRes, cpRes, ccRes] = await Promise.all([
+      const [sRes, cpRes, ccRes, wdRes] = await Promise.all([
         axios.get('/api/commission-settings'),
         axios.get('/api/channel-payouts'),
         axios.get('/api/coach-commissions'),
+        axios.get('/api/admin/credit-withdrawals'),
       ]);
       setSettings(sRes.data.settings || []);
       setChannelPayouts(cpRes.data.payouts || []);
       setCoachCommissions(ccRes.data.commissions || []);
+      setWithdrawals(wdRes.data.withdrawals || []);
     } finally {
       setLoading(false);
     }
@@ -7217,20 +7241,32 @@ function RewardsTab() {
     }
   }
 
+  async function updateWithdrawal(id, status) {
+    try {
+      await axios.put(`/api/admin/credit-withdrawals/${id}`, { status });
+      setWithdrawals(prev => prev.map(w => w.id === id ? { ...w, status } : w));
+    } catch {
+      alert(r.saveFailed);
+    }
+  }
+
   const productLabel = (pt) => ({ chip: r.chip, dot: r.dot, subscription: r.subscription }[pt] || pt);
   const statusLabel  = (s)  => ({ draft: r.draft, approved: r.approved, transferred: r.transferred }[s] || s);
   const statusBadgeColor = (s) => ({ draft: '#64748b', approved: '#2563eb', transferred: '#16a34a' }[s] || '#64748b');
 
   const pendingPayouts = channelPayouts.filter(p => p.status === 'draft').length;
   const totalCommissionsAmount = coachCommissions.reduce((sum, c) => sum + Number(c.amount_cny || 0), 0);
+  const pendingWithdrawals = withdrawals.filter(w => w.status === 'pending').length;
+  const filteredWithdrawals = wdFilter === 'all' ? withdrawals : withdrawals.filter(w => w.status === wdFilter);
 
   return (
     <>
       <div className="stat-row">
-        <StatCard icon={TrendingUp} label={r.totalPayouts}     value={channelPayouts.length}                           color="#6366f1" />
-        <StatCard icon={TrendingUp} label={r.pendingPayouts}   value={pendingPayouts}                                  color="#f59e0b" />
-        <StatCard icon={Coins}      label={r.totalCommissions} value={coachCommissions.length}                         color="#3b82f6" />
-        <StatCard icon={Coins}      label={r.totalEarned}      value={`¥${totalCommissionsAmount.toFixed(0)}`}         color="#10b981" />
+        <StatCard icon={TrendingUp} label={r.totalPayouts}       value={channelPayouts.length}           color="#6366f1" />
+        <StatCard icon={TrendingUp} label={r.pendingPayouts}     value={pendingPayouts}                  color="#f59e0b" />
+        <StatCard icon={Coins}      label={r.totalCommissions}   value={coachCommissions.length}         color="#3b82f6" />
+        <StatCard icon={Coins}      label={r.totalWithdrawals}   value={withdrawals.length}              color="#8b5cf6" />
+        <StatCard icon={Coins}      label={r.pendingWithdrawals} value={pendingWithdrawals}              color="#ef4444" />
       </div>
 
       <div className="subtab-row">
@@ -7242,6 +7278,9 @@ function RewardsTab() {
         </button>
         <button className={`subtab-btn${subTab === 'coach-commissions' ? ' active' : ''}`} onClick={() => setSubTab('coach-commissions')}>
           <Coins size={13} /> {r.coachCommissionsTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'withdrawals' ? ' active' : ''}`} onClick={() => setSubTab('withdrawals')}>
+          <Coins size={13} /> {r.withdrawalsTab}
         </button>
       </div>
 
@@ -7362,6 +7401,78 @@ function RewardsTab() {
           </table>
         </div>
       )}
+
+      {!loading && subTab === 'withdrawals' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <div style={{ display: 'flex', gap: 6 }}>
+              {['all', 'pending', 'approved', 'rejected', 'completed'].map(f => (
+                <button key={f} className={`subtab-btn${wdFilter === f ? ' active' : ''}`}
+                  style={{ fontSize: 11, padding: '3px 10px' }}
+                  onClick={() => setWdFilter(f)}>
+                  {r[`filter${f.charAt(0).toUpperCase() + f.slice(1)}`]}
+                </button>
+              ))}
+            </div>
+            <span className="table-count">{filteredWithdrawals.length}</span>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{r.withdrawalUser}</th>
+                <th>{r.withdrawalCredits}</th>
+                <th>{r.withdrawalCash}</th>
+                <th>{r.withdrawalMethod}</th>
+                <th>{r.withdrawalAccount}</th>
+                <th>{r.withdrawalStatus}</th>
+                <th>{r.withdrawalDate}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredWithdrawals.length === 0 && (
+                <tr><td colSpan={8} className="empty-row">{r.noWithdrawals}</td></tr>
+              )}
+              {filteredWithdrawals.map(w => {
+                const wdStatusColor = { pending: '#f59e0b', approved: '#2563eb', rejected: '#ef4444', completed: '#16a34a' }[w.status] || '#64748b';
+                return (
+                  <tr key={w.id}>
+                    <td>
+                      <div className="bold" style={{ fontSize: 12 }}>{w.nickname || w.user_id}</div>
+                      <div className="muted" style={{ fontSize: 10, fontFamily: 'monospace' }}>{w.user_id}</div>
+                    </td>
+                    <td className="bold">{Number(w.credits_amount).toFixed(2)} pts</td>
+                    <td className="bold">{Number(w.currency_amount).toFixed(2)} {w.currency}</td>
+                    <td className="muted">{w.payment_method}</td>
+                    <td className="muted" style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {w.payment_account || '—'}
+                    </td>
+                    <td><Badge color={wdStatusColor}>{r[w.status] || w.status}</Badge></td>
+                    <td className="muted">{fmtDate(w.requested_at)}</td>
+                    <td>
+                      {w.status === 'pending' && (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button className="icon-btn" title={r.approve} onClick={() => updateWithdrawal(w.id, 'approved')}>
+                            <Check size={13} />
+                          </button>
+                          <button className="icon-btn danger" title={r.reject} onClick={() => updateWithdrawal(w.id, 'rejected')}>
+                            <X size={13} />
+                          </button>
+                        </div>
+                      )}
+                      {w.status === 'approved' && (
+                        <button className="icon-btn" title={r.markCompleted} onClick={() => updateWithdrawal(w.id, 'completed')}>
+                          <ChevronRight size={13} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   );
 }
@@ -7391,13 +7502,13 @@ function SimulatorsTab() {
 
 // ── Channel components ────────────────────────────────────────────────────────
 
-const EMPTY_CHANNEL = { key_name: '', name: '', logo_url: '', persona_type: 'nano' };
+const EMPTY_CHANNEL = { key_name: '', name: '', logo_url: '', persona_type: 'nano', credit_exchange_rate: '1.0', currency: 'CNY' };
 
 function ChannelModal({ channel, channels, isSuperadmin, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!channel?.id;
   const [form, setForm] = useState(isEdit
-    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '', parent_channel_id: channel.parent_channel_id || '', persona_type: channel.config?.persona_type ?? 'nano' }
+    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '', parent_channel_id: channel.parent_channel_id || '', persona_type: channel.config?.persona_type ?? 'nano', credit_exchange_rate: channel.config?.credit_exchange_rate ?? '1.0', currency: channel.config?.currency ?? 'CNY' }
     : { ...EMPTY_CHANNEL, parent_channel_id: '' });
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -7470,6 +7581,17 @@ function ChannelModal({ channel, channels, isSuperadmin, onClose, onSave }) {
                 <option value="nano">{t.modal.channelPersonaNano}</option>
                 <option value="viva">{t.modal.channelPersonaViva}</option>
               </select>
+            </label>
+            <label className="form-field">
+              <span>{t.modal.channelExchangeRate}</span>
+              <input type="number" step="0.01" min="0.01" value={form.credit_exchange_rate}
+                onChange={e => set('credit_exchange_rate', e.target.value)}
+                placeholder={t.modal.channelExchangeRateHint} />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.channelCurrency}</span>
+              <input value={form.currency} onChange={e => set('currency', e.target.value.toUpperCase())}
+                placeholder={t.modal.channelCurrencyHint} maxLength={10} />
             </label>
             <div className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{t.modal.channelLogoUrl}</span>

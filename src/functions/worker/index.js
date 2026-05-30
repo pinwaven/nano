@@ -1,5 +1,6 @@
 const { pool } = require('./lib/db');
 const { recordOrderCommissions, recordUserReferralCommission } = require('./lib/commissions');
+const { getUserBalance, getLedgerHistory, debitUser, getChannelExchangeRate, getChannelCurrency } = require('./lib/credits');
 const { recordReferralCommission, generatePartnerPayouts } = require('./lib/partnerCommissions');
 const ossLib = require('./lib/oss');
 const crypto = require('crypto');
@@ -3792,7 +3793,7 @@ async function handlePutChannel(channelId, body, adminCtx) {
         const owns = await verifySubchannelOwnership(channelId, adminCtx);
         if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
     }
-    const { name, logo_url, commission_config, persona_type } = body;
+    const { name, logo_url, commission_config, persona_type, credit_exchange_rate, currency } = body;
     if (!name) return { success: false, error: 'name is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -3800,10 +3801,14 @@ async function handlePutChannel(channelId, body, adminCtx) {
             `UPDATE channels SET name=$1, logo_url=$2, commission_config=$3 WHERE id=$4`,
             [name, logo_url || null, commission_config ? JSON.stringify(commission_config) : null, channelId]
         );
-        if (persona_type !== undefined) {
+        const configPatch = {};
+        if (persona_type !== undefined) configPatch.persona_type = persona_type;
+        if (credit_exchange_rate !== undefined) configPatch.credit_exchange_rate = parseFloat(credit_exchange_rate) || 1.0;
+        if (currency !== undefined) configPatch.currency = currency;
+        if (Object.keys(configPatch).length > 0) {
             await pool.query(
                 `UPDATE channels SET config = config || $1 WHERE id = $2`,
-                [JSON.stringify({ persona_type }), channelId]
+                [JSON.stringify(configPatch), channelId]
             );
         }
         return { success: true };
@@ -4552,6 +4557,129 @@ async function handleGetMyReferrals(query) {
                 commission_earned: Number(parseFloat(r.commission_earned).toFixed(2)),
             })),
         };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetCreditBalance(query) {
+    const { user_id, openid } = query;
+    const uid = user_id || openid;
+    if (!uid) return { success: false, error: 'user_id is required', statusCode: 400 };
+    try {
+        const userRes = await pool.query('SELECT channel_id FROM users WHERE user_id = $1', [uid]);
+        if (!userRes.rows[0]) return { success: false, error: 'User not found', statusCode: 404 };
+        const channelId = userRes.rows[0].channel_id;
+        const [balance, exchangeRate, currency] = await Promise.all([
+            getUserBalance(uid),
+            getChannelExchangeRate(channelId),
+            getChannelCurrency(channelId),
+        ]);
+        return { success: true, balance, exchange_rate: exchangeRate, currency };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetCreditHistory(query) {
+    const { user_id, openid, limit, offset } = query;
+    const uid = user_id || openid;
+    if (!uid) return { success: false, error: 'user_id is required', statusCode: 400 };
+    try {
+        const rows = await getLedgerHistory(uid, parseInt(limit || 50), parseInt(offset || 0));
+        return { success: true, history: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostCreditWithdraw(body) {
+    const { user_id, openid, credits_amount, payment_method, payment_account } = body;
+    const uid = user_id || openid;
+    if (!uid) return { success: false, error: 'user_id is required', statusCode: 400 };
+    if (!credits_amount || parseFloat(credits_amount) <= 0) return { success: false, error: 'credits_amount must be positive', statusCode: 400 };
+    try {
+        const userRes = await pool.query('SELECT channel_id FROM users WHERE user_id = $1', [uid]);
+        if (!userRes.rows[0]) return { success: false, error: 'User not found', statusCode: 404 };
+        const channelId = userRes.rows[0].channel_id;
+        const [balance, exchangeRate, currency] = await Promise.all([
+            getUserBalance(uid),
+            getChannelExchangeRate(channelId),
+            getChannelCurrency(channelId),
+        ]);
+        const credits = parseFloat(parseFloat(credits_amount).toFixed(2));
+        if (credits > balance) return { success: false, error: 'Insufficient credit balance', statusCode: 400 };
+        const currencyAmount = parseFloat((credits / exchangeRate).toFixed(2));
+        const { rows } = await pool.query(
+            `INSERT INTO credit_withdrawals
+                (user_id, credits_amount, currency_amount, exchange_rate, currency, payment_method, payment_account)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+            [uid, credits, currencyAmount, exchangeRate, currency,
+             payment_method || 'wechat_pay', payment_account || null]
+        );
+        return { success: true, withdrawal_id: rows[0].id, credits_amount: credits, currency_amount: currencyAmount, currency };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetUserWithdrawals(query) {
+    const { user_id, openid } = query;
+    const uid = user_id || openid;
+    if (!uid) return { success: false, error: 'user_id is required', statusCode: 400 };
+    try {
+        const { rows } = await pool.query(
+            `SELECT * FROM credit_withdrawals WHERE user_id = $1 ORDER BY requested_at DESC LIMIT 50`,
+            [uid]
+        );
+        return { success: true, withdrawals: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetAdminWithdrawals(query) {
+    const { status } = query;
+    try {
+        const params = [];
+        let where = '';
+        if (status) { params.push(status); where = `WHERE cw.status = $1`; }
+        const { rows } = await pool.query(
+            `SELECT cw.*, u.nickname, u.avatar_url
+             FROM credit_withdrawals cw
+             JOIN users u ON u.user_id = cw.user_id
+             ${where}
+             ORDER BY cw.requested_at DESC
+             LIMIT 200`,
+            params
+        );
+        return { success: true, withdrawals: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutAdminWithdrawal(withdrawalId, body, adminCtx) {
+    const { status, admin_note } = body;
+    const allowed = ['approved', 'rejected', 'completed'];
+    if (!allowed.includes(status)) return { success: false, error: `status must be one of: ${allowed.join(', ')}`, statusCode: 400 };
+    try {
+        const { rows } = await pool.query(
+            `SELECT * FROM credit_withdrawals WHERE id = $1`, [withdrawalId]
+        );
+        const wd = rows[0];
+        if (!wd) return { success: false, error: 'Withdrawal not found', statusCode: 404 };
+        if (wd.status !== 'pending') return { success: false, error: `Cannot update a withdrawal with status: ${wd.status}`, statusCode: 400 };
+        await pool.query(
+            `UPDATE credit_withdrawals SET status=$1, admin_note=$2, processed_at=NOW(), processed_by=$3 WHERE id=$4`,
+            [status, admin_note || null, adminCtx?.userId || null, withdrawalId]
+        );
+        // On approval: debit the user's credit ledger to lock the credits
+        if (status === 'approved') {
+            await debitUser(wd.user_id, parseFloat(wd.credits_amount), 'withdrawal',
+                wd.id, 'credit_withdrawals', `Withdrawal approved: ${wd.currency_amount} ${wd.currency}`);
+        }
+        return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -8115,6 +8243,14 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetCoachUsers(path.match(/\/coach-users\/(\d+)/)[1], query);
             } else if (path.includes('/my-referrals')) {
                 result = await handleGetMyReferrals(query);
+            } else if (path === '/credits/balance') {
+                result = await handleGetCreditBalance(query);
+            } else if (path === '/credits/history') {
+                result = await handleGetCreditHistory(query);
+            } else if (path === '/credits/withdrawals') {
+                result = await handleGetUserWithdrawals(query);
+            } else if (path === '/admin/credit-withdrawals') {
+                result = await handleGetAdminWithdrawals(query);
             } else if (path.includes('/invitations')) {
                 const invQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
                 result = await handleGetInvitations(invQuery);
@@ -8325,6 +8461,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostAnalyzeImage(parsedBody);
             } else if (path === '/biomarkers') {
                 result = await handlePostBiomarkers(parsedBody);
+            } else if (path === '/credits/withdraw') {
+                result = await handlePostCreditWithdraw(parsedBody);
             } else if (path.includes('/generate-coach-payouts')) {
                 result = await handlePostGenerateCoachPayouts(parsedBody);
             } else if (path.includes('/generate-channel-payouts')) {
@@ -8446,6 +8584,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/orders/')) {
                 const orderId = path.split('/orders/')[1];
                 result = requireAdminTab(adminCtx, 'store') || await handlePutOrder(orderId, parsedBody, adminCtx);
+            } else if (path.match(/\/admin\/credit-withdrawals\/([a-f0-9-]+)/i)) {
+                const wdId = path.match(/\/admin\/credit-withdrawals\/([a-f0-9-]+)/i)[1];
+                result = await handlePutAdminWithdrawal(wdId, parsedBody, adminCtx);
             } else if (path.includes('/commission-settings/')) {
                 const settingId = path.split('/commission-settings/')[1];
                 result = await handlePutCommissionSetting(settingId, parsedBody);
