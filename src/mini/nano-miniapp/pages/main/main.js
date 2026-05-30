@@ -144,6 +144,16 @@ const T = {
     labServicesEmpty: '暂无可预约的检测服务',
     labServiceProducts: '项可选项目',
     labServiceNext: '选择项目将在下一步开放',
+    labProductsLoading: '正在加载项目…',
+    labProductsEmpty: '暂无可预约项目',
+    labCheckoutTitle: '选择检测项目',
+    labCheckoutAddress: '联系地址',
+    labCheckoutSelected: '已选',
+    labCheckoutTotal: '合计',
+    labCheckoutSubmitNext: '下一步下单',
+    labCheckoutNeedGoods: '请先选择检测项目',
+    labCheckoutNeedAddress: '请先添加联系地址',
+    labCheckoutReady: '订单创建将在下一阶段接入',
     toolHealthAdvice: '健康管理',
     toolUploadImage: '上传图片',
     imageUploading: '正在上传图片…',
@@ -310,6 +320,16 @@ const T = {
     labServicesEmpty: 'No lab services available',
     labServiceProducts: 'available tests',
     labServiceNext: 'Product selection opens next',
+    labProductsLoading: 'Loading tests...',
+    labProductsEmpty: 'No tests available',
+    labCheckoutTitle: 'Choose Lab Tests',
+    labCheckoutAddress: 'Contact Address',
+    labCheckoutSelected: 'Selected',
+    labCheckoutTotal: 'Total',
+    labCheckoutSubmitNext: 'Next',
+    labCheckoutNeedGoods: 'Choose at least one test',
+    labCheckoutNeedAddress: 'Add a contact address first',
+    labCheckoutReady: 'Order creation will be connected in the next stage',
     toolHealthAdvice: 'Health Advice',
     toolUploadImage: 'Upload Image',
     imageUploading: 'Uploading image…',
@@ -694,6 +714,47 @@ function mapLabServices(rawServices, lang) {
   }))
 }
 
+function formatLabPrice(product, lang) {
+  const cny = product.price_cny != null ? product.price_cny : product.priceCny
+  const cents = Number(cny || 0)
+  const amount = cents / 100
+  return `¥${amount.toFixed(2)}`
+}
+
+function mapLabProducts(rawProducts, lang, selectedIds = []) {
+  const selected = new Set(selectedIds.map(id => String(id)))
+  return rawProducts.map(p => {
+    const name = lang === 'zh' ? (p.name_zh || p.name_en || p.name || p.sku) : (p.name_en || p.name_zh || p.name || p.sku)
+    const desc = lang === 'zh' ? (p.desc_zh || p.desc_en || p.desc || '') : (p.desc_en || p.desc_zh || p.desc || '')
+    const unit = lang === 'zh' ? (p.unit_zh || p.unit_en || p.unit || '') : (p.unit_en || p.unit_zh || p.unit || '')
+    return {
+      id: p.id,
+      lab_name: p.lab_name,
+      sku: p.sku,
+      upc: p.upc,
+      name,
+      desc,
+      unit,
+      priceCny: Number(p.price_cny != null ? p.price_cny : (p.priceCny || 0)),
+      priceUsd: Number(p.price_usd != null ? p.price_usd : (p.priceUsd || 0)),
+      priceText: formatLabPrice(p, lang),
+      selected: selected.has(String(p.id)),
+    }
+  })
+}
+
+function buildLabCheckoutState(products, selectedIds, lang) {
+  const selected = new Set(selectedIds.map(id => String(id)))
+  const selectedProducts = products.filter(p => selected.has(String(p.id)))
+  const totalCents = selectedProducts.reduce((sum, p) => {
+    return sum + Number(p.priceCny || 0)
+  }, 0)
+  return {
+    selectedLabProducts: selectedProducts,
+    labCheckoutTotalText: `¥${(totalCents / 100).toFixed(2)}`,
+  }
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 Page({
@@ -713,6 +774,14 @@ Page({
     labServicesVisible: false,
     labServicesLoading: false,
     labServices: [],
+    labProductSheetOpen: false,
+    labProductLoading: false,
+    selectedLabService: null,
+    labProducts: [],
+    selectedLabProductIds: [],
+    selectedLabProducts: [],
+    labCheckoutTotalText: '¥0.00',
+    labCheckoutBusy: false,
 
     // Kino Simulator passcode
     kinoPassOpen: false,
@@ -1583,7 +1652,7 @@ Page({
   },
 
   cancelKinoScan() {
-    this.setData({ kinoScanPending: false, labServicesVisible: false })
+    this.setData({ kinoScanPending: false, labServicesVisible: false, labProductSheetOpen: false })
   },
 
   handleKinoScan() {
@@ -1608,8 +1677,81 @@ Page({
     }
   },
 
-  handleLabServiceTap() {
-    wx.showToast({ title: this.data.t.labServiceNext, icon: 'none' })
+  async _loadLabProducts(labName) {
+    const { lang } = this.data
+    this.setData({ labProductLoading: true, labProducts: [], selectedLabProductIds: [], selectedLabProducts: [] })
+    try {
+      const res = await this._req(`${BASE}/lab/products?lab_name=${encodeURIComponent(labName)}`)
+      const products = mapLabProducts(res.data?.products || [], lang)
+      const checkoutState = buildLabCheckoutState(products, [], lang)
+      this.setData({ labProducts: products, labProductLoading: false, ...checkoutState })
+    } catch (e) {
+      this.setData({ labProducts: [], labProductLoading: false })
+    }
+  },
+
+  async handleLabServiceTap(e) {
+    if (this.data.isGuest) { this.openGuestSheet(); return }
+    const labName = e.currentTarget.dataset.lab
+    const service = this.data.labServices.find(s => s.lab_name === labName)
+    if (!service) return
+    this.setData({
+      selectedLabService: service,
+      labProductSheetOpen: true,
+      selectedLabProductIds: [],
+      selectedLabProducts: [],
+      labCheckoutTotalText: '¥0.00',
+    })
+    await Promise.all([
+      this._loadLabProducts(labName),
+      this._loadAddresses(this.data.user),
+    ])
+  },
+
+  closeLabProductSheet() {
+    this.setData({ labProductSheetOpen: false })
+  },
+
+  noop() {},
+
+  toggleLabProduct(e) {
+    const id = String(e.currentTarget.dataset.id)
+    const selected = new Set(this.data.selectedLabProductIds.map(v => String(v)))
+    if (selected.has(id)) selected.delete(id)
+    else selected.add(id)
+    const selectedLabProductIds = Array.from(selected)
+    const labProducts = mapLabProducts(this.data.labProducts, this.data.lang, selectedLabProductIds)
+    const checkoutState = buildLabCheckoutState(labProducts, selectedLabProductIds, this.data.lang)
+    this.setData({ selectedLabProductIds, labProducts, ...checkoutState })
+  },
+
+  async submitLabCheckout() {
+    const { t, user, selectedLabProductIds, selectedStoreAddress, selectedLabService, selectedLabProducts } = this.data
+    if (selectedLabProductIds.length === 0) {
+      wx.showToast({ title: t.labCheckoutNeedGoods, icon: 'none' })
+      return
+    }
+    await this._loadAddresses(user)
+    const address = this.data.selectedStoreAddress || selectedStoreAddress
+    if (!address) {
+      wx.showModal({
+        title: t.addressMissingTitle,
+        content: t.labCheckoutNeedAddress,
+        confirmText: t.addressAddNow,
+        confirmColor: '#6375EC',
+        success: (res) => {
+          if (!res.confirm) return
+          wx.navigateTo({ url: '/pages/address/address?mode=checkout' })
+        }
+      })
+      return
+    }
+    wx.setStorageSync('nano_pending_lab_checkout', {
+      lab_name: selectedLabService?.lab_name,
+      goods: selectedLabProducts.map(p => ({ sku: p.sku, name: p.name, price_cny: p.priceCny, price_usd: p.priceUsd })),
+      address_id: address.id,
+    })
+    wx.showToast({ title: t.labCheckoutReady, icon: 'none' })
   },
 
   async handleSend() {

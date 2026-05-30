@@ -290,6 +290,37 @@ async function handleListServices() {
     return { statusCode: 200, body: JSON.stringify({ success: true, services: servicesRes.rows }) };
 }
 
+async function handleListProducts(query = {}) {
+    const labName = String(query.lab_name || '').trim();
+    if (!labName) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'lab_name is required' }) };
+    }
+
+    const productsRes = await db.query(`
+        SELECT id,
+               lab_name,
+               sku,
+               upc,
+               name_zh,
+               name_en,
+               desc_zh,
+               desc_en,
+               unit_zh,
+               unit_en,
+               extra_data_zh,
+               extra_data_en,
+               price_cny,
+               price_usd,
+               sort_idx
+        FROM lab_products
+        WHERE lab_name = $1
+          AND active = TRUE
+        ORDER BY sort_idx ASC, id ASC
+    `, [labName]);
+
+    return { statusCode: 200, body: JSON.stringify({ success: true, products: productsRes.rows }) };
+}
+
 async function handleQcsSampleCenters() {
     const labName = 'qcs';
     const provider = await loadProvider(labName);
@@ -695,6 +726,15 @@ exports.handler = async (req, resp, context) => {
                 isBase64Encoded: false,
             };
         }
+        if (method === 'GET' && path === '/lab/products') {
+            const result = await handleListProducts(event.queryParameters || {});
+            return {
+                statusCode: result.statusCode,
+                headers: { 'Content-Type': 'application/json' },
+                body: result.body,
+                isBase64Encoded: false,
+            };
+        }
         if (method === 'GET' && path === '/lab/qcs/sample-centers') {
             const result = await handleQcsSampleCenters();
             return {
@@ -758,6 +798,7 @@ module.exports.__private = {
         adapterFactory = factory || getAdapter;
     },
     handleListProviders,
+    handleListProducts,
     handleCreateOrder,
     handleQcsSampleCenters,
     handleQcsProjects,

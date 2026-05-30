@@ -189,6 +189,88 @@ describe('lab order API', () => {
     assert.doesNotMatch(queries[0].sql, /api_key_enc|webhook_secret_enc|api_base_url/);
   });
 
+  test('GET /lab/products returns active products filtered by lab name', async () => {
+    const queries = [];
+    installDbMock(async (sql, params) => {
+      queries.push({ sql, params });
+      if (sql.includes('FROM lab_products')) {
+        return {
+          rows: [
+            {
+              id: 11,
+              lab_name: 'qcs',
+              sku: '1080',
+              upc: '287002730175',
+              name_zh: '糖化血红蛋白',
+              name_en: 'HbA1c',
+              desc_zh: '评估血糖控制',
+              desc_en: 'Glycemic control marker',
+              unit_zh: '项',
+              unit_en: 'test',
+              extra_data_zh: { fasting: false },
+              extra_data_en: { fasting: false },
+              price_cny: 19900,
+              price_usd: 2900,
+              sort_idx: 10,
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+
+    const lab = require('../src/functions/lab');
+    const request = event('GET', '/lab/products');
+    request.rawQueryString = 'lab_name=qcs';
+    request.queryParameters = { lab_name: 'qcs' };
+    const response = await lab.handler(request);
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(JSON.parse(response.body), {
+      success: true,
+      products: [
+        {
+          id: 11,
+          lab_name: 'qcs',
+          sku: '1080',
+          upc: '287002730175',
+          name_zh: '糖化血红蛋白',
+          name_en: 'HbA1c',
+          desc_zh: '评估血糖控制',
+          desc_en: 'Glycemic control marker',
+          unit_zh: '项',
+          unit_en: 'test',
+          extra_data_zh: { fasting: false },
+          extra_data_en: { fasting: false },
+          price_cny: 19900,
+          price_usd: 2900,
+          sort_idx: 10,
+        },
+      ],
+    });
+    assert.equal(queries.length, 1);
+    assert.deepEqual(queries[0].params, ['qcs']);
+    assert.match(queries[0].sql, /WHERE lab_name = \$1/);
+    assert.match(queries[0].sql, /active = TRUE/);
+    assert.match(queries[0].sql, /ORDER BY sort_idx ASC, id ASC/);
+    assert.doesNotMatch(queries[0].sql, /api_key_enc|webhook_secret_enc|api_base_url/);
+  });
+
+  test('GET /lab/products requires lab_name', async () => {
+    const queries = [];
+    installDbMock(async (sql, params) => {
+      queries.push({ sql, params });
+      return { rows: [] };
+    });
+
+    const lab = require('../src/functions/lab');
+    const response = await lab.handler(event('GET', '/lab/products'));
+
+    assert.equal(response.statusCode, 400);
+    assert.deepEqual(JSON.parse(response.body), { error: 'lab_name is required' });
+    assert.equal(queries.length, 0);
+  });
+
   test('GET /lab/qcs/sample-centers returns QCS sample center list', async () => {
     const queries = [];
     installDbMock(async (sql, params) => {

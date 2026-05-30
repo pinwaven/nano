@@ -127,3 +127,26 @@
   - `node tests/lab-order.test.js`
   - `node tests/worker-addresses.test.js`
 - Next pending confirmation: Stage 4 lab product multi-select checkout prep.
+
+## 2026-05-30 Stage 4 Lab Product Multi-Select Checkout Prep
+
+- Added a public lab product-list endpoint:
+  - `GET /lab/products?lab_name=...`
+  - Requires `lab_name`.
+  - Returns active `lab_products` rows for the selected lab ordered by `sort_idx, id`.
+  - Keeps provider credentials and API URL out of the response.
+- Updated mini-program detection service purchase prep:
+  - Tapping a lab service chip now opens a product selection sheet.
+  - The sheet loads products for the selected `lab_name`.
+  - Products can be multi-selected and the sheet shows selected count plus total price.
+  - The existing address model is reused so the selected contact name, phone, and address are available before order submission.
+  - If no address exists, the user is guided to add one before continuing.
+  - Actual worker order creation and payment remain deferred to Stage 5/6.
+- Added test coverage:
+  - `tests/lab-order.test.js` covers `GET /lab/products`, required `lab_name`, active-product filtering, ordering, and credential non-disclosure.
+- Verification:
+  - `node --check src/functions/lab/index.js`
+  - `node --check src/mini/nano-miniapp/pages/main/main.js`
+  - `node tests/lab-order.test.js`
+  - `node tests/worker-addresses.test.js`
+- Next pending confirmation: Stage 5 worker order and transaction creation.

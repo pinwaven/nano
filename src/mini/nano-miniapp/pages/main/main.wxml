@@ -251,6 +251,58 @@
         </scroll-view>
       </view>
 
+      <view wx:if="{{labProductSheetOpen}}" class="lab-product-overlay" bindtap="closeLabProductSheet">
+        <view class="lab-product-sheet" catchtap="noop">
+          <view class="lab-product-head">
+            <view>
+              <text class="lab-product-title">{{t.labCheckoutTitle}}</text>
+              <text class="lab-product-subtitle">{{selectedLabService.label}}</text>
+            </view>
+            <view class="lab-product-close" bindtap="closeLabProductSheet">✕</view>
+          </view>
+
+          <view wx:if="{{labProductLoading}}" class="lab-product-state">{{t.labProductsLoading}}</view>
+          <view wx:elif="{{labProducts.length === 0}}" class="lab-product-state">{{t.labProductsEmpty}}</view>
+          <scroll-view wx:else class="lab-product-list" scroll-y="true">
+            <view
+              wx:for="{{labProducts}}"
+              wx:key="id"
+              class="lab-product-item {{item.selected ? 'is-selected' : ''}}"
+              bindtap="toggleLabProduct"
+              data-id="{{item.id}}"
+            >
+              <view class="lab-product-check">{{item.selected ? '✓' : ''}}</view>
+              <view class="lab-product-main">
+                <text class="lab-product-name">{{item.name}}</text>
+                <text wx:if="{{item.desc}}" class="lab-product-desc">{{item.desc}}</text>
+                <text wx:if="{{item.sku}}" class="lab-product-sku">{{item.sku}}{{item.unit ? ' · ' + item.unit : ''}}</text>
+              </view>
+              <text class="lab-product-price">{{item.priceText}}</text>
+            </view>
+          </scroll-view>
+
+          <view class="lab-checkout-address" bindtap="chooseStoreAddress">
+            <view class="lab-checkout-address-main">
+              <text class="lab-checkout-address-label">{{t.labCheckoutAddress}}</text>
+              <text wx:if="{{selectedStoreAddress}}" class="lab-checkout-address-text">{{selectedStoreAddress.summary}}</text>
+              <text wx:if="{{selectedStoreAddress}}" class="lab-checkout-address-detail">{{selectedStoreAddress.detail}}</text>
+              <text wx:else class="lab-checkout-address-empty">{{t.addressNone}}</text>
+            </view>
+            <text class="lab-checkout-address-arrow">›</text>
+          </view>
+
+          <view class="lab-product-footer">
+            <view class="lab-product-total">
+              <text class="lab-product-total-label">{{t.labCheckoutSelected}} {{selectedLabProducts.length}}</text>
+              <text class="lab-product-total-price">{{t.labCheckoutTotal}} {{labCheckoutTotalText}}</text>
+            </view>
+            <view class="lab-product-submit" bindtap="submitLabCheckout">
+              <text>{{t.labCheckoutSubmitNext}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
       <!-- Guest CTA bar -->
       <view wx:if="{{isGuest}}" class="guest-cta-bar" bindtap="openGuestSheet">
         <text class="guest-cta-text">{{t.guestChatCtaText}}</text>
