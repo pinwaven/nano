@@ -1172,6 +1172,73 @@
   font-weight: 600;
 }
 
+.lab-services-bar {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 20rpx 24rpx 22rpx;
+  gap: 16rpx;
+}
+
+.lab-services-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lab-services-head .kino-scan-close {
+  position: static;
+  transform: none;
+}
+
+.lab-services-title {
+  font-size: 24rpx;
+  font-weight: 800;
+  color: rgba(238, 242, 255, 0.86);
+}
+
+.lab-services-state {
+  font-size: 23rpx;
+  color: rgba(166, 196, 229, 0.58);
+}
+
+.lab-services-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.lab-services-list {
+  display: flex;
+  gap: 16rpx;
+}
+
+.lab-service-chip {
+  width: 260rpx;
+  min-height: 112rpx;
+  box-sizing: border-box;
+  padding: 20rpx;
+  border-radius: 18rpx;
+  border: 1rpx solid rgba(99, 117, 236, 0.24);
+  background: rgba(99, 117, 236, 0.08);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8rpx;
+}
+
+.lab-service-name {
+  font-size: 26rpx;
+  font-weight: 800;
+  color: #EEF2FF;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lab-service-meta {
+  font-size: 22rpx;
+  color: rgba(166, 196, 229, 0.56);
+}
+
 /* ── Cartridge Sim Overlay ── */
 
 .csim-overlay {
@@ -2007,6 +2074,14 @@
 .theme-light .kino-scan-bar {
   background: var(--bg-input);
   border-top-color: var(--navy-border);
+}
+.theme-light .lab-services-title,
+.theme-light .lab-service-name { color: var(--text); }
+.theme-light .lab-services-state,
+.theme-light .lab-service-meta { color: var(--text-muted); }
+.theme-light .lab-service-chip {
+  background: rgba(201, 149, 106, 0.08);
+  border-color: rgba(201, 149, 106, 0.24);
 }
 
 .theme-light .pulse-dot           { background: var(--blue); }

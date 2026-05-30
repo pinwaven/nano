@@ -234,6 +234,23 @@
         <view class="kino-scan-close" bindtap="cancelKinoScan">✕</view>
       </view>
 
+      <view wx:if="{{labServicesVisible}}" class="ob-bar lab-services-bar">
+        <view class="lab-services-head">
+          <text class="lab-services-title">{{t.labServicesTitle}}</text>
+          <view class="kino-scan-close" bindtap="cancelKinoScan">✕</view>
+        </view>
+        <view wx:if="{{labServicesLoading}}" class="lab-services-state">{{t.labServicesLoading}}</view>
+        <view wx:elif="{{labServices.length === 0}}" class="lab-services-state">{{t.labServicesEmpty}}</view>
+        <scroll-view wx:else class="lab-services-scroll" scroll-x="true">
+          <view class="lab-services-list">
+            <view wx:for="{{labServices}}" wx:key="id" class="lab-service-chip" bindtap="handleLabServiceTap" data-lab="{{item.lab_name}}">
+              <text class="lab-service-name">{{item.label}}</text>
+              <text class="lab-service-meta">{{item.productText}}</text>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+
       <!-- Guest CTA bar -->
       <view wx:if="{{isGuest}}" class="guest-cta-bar" bindtap="openGuestSheet">
         <text class="guest-cta-text">{{t.guestChatCtaText}}</text>

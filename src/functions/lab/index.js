@@ -273,6 +273,23 @@ async function handleListProviders() {
     return { statusCode: 200, body: JSON.stringify({ success: true, providers: providersRes.rows }) };
 }
 
+async function handleListServices() {
+    const servicesRes = await db.query(`
+        SELECT p.id,
+               p.lab_name,
+               p.label,
+               COUNT(lp.id)::int AS product_count
+        FROM lab_providers p
+        LEFT JOIN lab_products lp
+          ON lp.lab_name = p.lab_name
+         AND lp.active = TRUE
+        WHERE p.is_active = TRUE
+        GROUP BY p.id, p.lab_name, p.label
+        ORDER BY p.id ASC
+    `);
+    return { statusCode: 200, body: JSON.stringify({ success: true, services: servicesRes.rows }) };
+}
+
 async function handleQcsSampleCenters() {
     const labName = 'qcs';
     const provider = await loadProvider(labName);
@@ -662,6 +679,15 @@ exports.handler = async (req, resp, context) => {
         console.log(JSON.stringify({ level: 'INFO', msg: 'new lab req', method, path, webhookMatch, event }));
         if (method === 'GET' && path === '/lab/providers') {
             const result = await handleListProviders();
+            return {
+                statusCode: result.statusCode,
+                headers: { 'Content-Type': 'application/json' },
+                body: result.body,
+                isBase64Encoded: false,
+            };
+        }
+        if (method === 'GET' && path === '/lab/services') {
+            const result = await handleListServices();
             return {
                 statusCode: result.statusCode,
                 headers: { 'Content-Type': 'application/json' },

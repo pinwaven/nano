@@ -174,7 +174,7 @@ resources:
           triggerType: http
           triggerConfig:
             authType: anonymous
-            methods: ["POST"]
+            methods: ["GET", "POST", "OPTIONS"]
         - triggerName: lab-poll
           triggerType: timer
           triggerConfig:

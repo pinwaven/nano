@@ -139,6 +139,11 @@ const T = {
     addressAddNow: '去添加',
     toolFormulaDots: '营养定制',
     toolTestChip: '检测服务',
+    labServicesTitle: '第三方检测服务',
+    labServicesLoading: '正在加载检测服务…',
+    labServicesEmpty: '暂无可预约的检测服务',
+    labServiceProducts: '项可选项目',
+    labServiceNext: '选择项目将在下一步开放',
     toolHealthAdvice: '健康管理',
     toolUploadImage: '上传图片',
     imageUploading: '正在上传图片…',
@@ -300,6 +305,11 @@ const T = {
     addressAddNow: 'Add now',
     toolFormulaDots: 'Formulate Dots',
     toolTestChip: 'Use Kino Chip',
+    labServicesTitle: 'Lab Services',
+    labServicesLoading: 'Loading lab services...',
+    labServicesEmpty: 'No lab services available',
+    labServiceProducts: 'available tests',
+    labServiceNext: 'Product selection opens next',
     toolHealthAdvice: 'Health Advice',
     toolUploadImage: 'Upload Image',
     imageUploading: 'Uploading image…',
@@ -672,6 +682,18 @@ function mapAddresses(rawAddresses) {
   }))
 }
 
+function mapLabServices(rawServices, lang) {
+  return rawServices.map(s => ({
+    id: s.id,
+    lab_name: s.lab_name,
+    label: s.label || s.lab_name,
+    productCount: Number(s.product_count || 0),
+    productText: lang === 'zh'
+      ? `${Number(s.product_count || 0)}项可选项目`
+      : `${Number(s.product_count || 0)} available tests`,
+  }))
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 Page({
@@ -688,6 +710,9 @@ Page({
     toolboxOpen: false,
     toolList: [],
     kinoScanPending: false,
+    labServicesVisible: false,
+    labServicesLoading: false,
+    labServices: [],
 
     // Kino Simulator passcode
     kinoPassOpen: false,
@@ -849,6 +874,7 @@ Page({
     this._loadDots(user, lang)
     this._loadCartridges(user, lang)
     this._loadStore(user, lang)
+    this._loadLabServices(false)
   },
 
   onShow() {
@@ -1491,6 +1517,7 @@ Page({
     if (action === 'test_chip') {
       this._addMsg('ai', t.kinoScanPrompt)
       this.setData({ kinoScanPending: true })
+      this._loadLabServices(true)
     } else if (action === 'formula_dots') {
       toolActions.runFormulaDs(user.user_id, t, ctx)
     } else if (action === 'health_advice') {
@@ -1556,7 +1583,7 @@ Page({
   },
 
   cancelKinoScan() {
-    this.setData({ kinoScanPending: false })
+    this.setData({ kinoScanPending: false, labServicesVisible: false })
   },
 
   handleKinoScan() {
@@ -1567,6 +1594,22 @@ Page({
       req: (url, method, data) => this._req(url, method, data),
       setTyping: (v) => this.setData({ typing: v }),
     })
+  },
+
+  async _loadLabServices(visible = false) {
+    const { lang } = this.data
+    this.setData({ labServicesLoading: true, labServicesVisible: visible || this.data.labServicesVisible })
+    try {
+      const res = await this._req(`${BASE}/lab/services`)
+      const services = mapLabServices(res.data?.services || [], lang)
+      this.setData({ labServices: services, labServicesLoading: false })
+    } catch (e) {
+      this.setData({ labServices: [], labServicesLoading: false })
+    }
+  },
+
+  handleLabServiceTap() {
+    wx.showToast({ title: this.data.t.labServiceNext, icon: 'none' })
   },
 
   async handleSend() {

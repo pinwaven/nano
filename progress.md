@@ -104,3 +104,26 @@
 - Known verification gap:
   - `node tests/worker-endpoints.test.js` targets `https://nano-dev.fros.cc/api` and failed because the remote target was unreachable from this environment.
 - Next pending confirmation: Stage 3 home-page lab service list integration.
+
+## 2026-05-30 Stage 3 Lab Service List
+
+- Added a public lab service-list endpoint:
+  - `GET /lab/services`
+  - Returns active lab providers with `id`, `lab_name`, `label`, and active `lab_products` count.
+  - Keeps provider credentials and `api_base_url` out of the response.
+- Updated FC deployment configuration:
+  - `s.yaml` and `s-prod.yaml` lab HTTP trigger now allow `GET`, `POST`, and `OPTIONS`.
+  - This is required because the lab function already exposes GET routes and the mini-program now calls `/lab/services`.
+- Updated mini-program detection service entry:
+  - Existing Kino scan prompt and scan flow remain unchanged.
+  - When the user taps the existing "检测服务 / Use Kino Chip" tool, the app still shows the Kino scan action and additionally loads `/lab/services`.
+  - Lab services are displayed as service chips with active product counts.
+  - Tapping a lab service currently shows a placeholder toast; product selection belongs to Stage 4.
+- Added test coverage:
+  - `tests/lab-order.test.js` now covers `GET /lab/services`, confirms active provider filtering, confirms `lab_products` count join, and checks credentials are not leaked.
+- Verification:
+  - `node --check src/functions/lab/index.js`
+  - `node --check src/mini/nano-miniapp/pages/main/main.js`
+  - `node tests/lab-order.test.js`
+  - `node tests/worker-addresses.test.js`
+- Next pending confirmation: Stage 4 lab product multi-select checkout prep.
