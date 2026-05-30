@@ -131,6 +131,12 @@ const T = {
     storeEmpty: '暂无商品。',
     storeSubProducts: '商品', storeSubOrders: '我的订单',
     noOrders: '暂无订单记录。',
+    addressManage: '地址管理',
+    addressNone: '请先添加联系地址',
+    addressDefault: '默认地址',
+    addressMissingTitle: '需要联系地址',
+    addressMissingMsg: '添加地址后可继续下单。',
+    addressAddNow: '去添加',
     toolFormulaDots: '营养定制',
     toolTestChip: '检测服务',
     toolHealthAdvice: '健康管理',
@@ -286,6 +292,12 @@ const T = {
     storeEmpty: 'No products available.',
     storeSubProducts: 'Products', storeSubOrders: 'My Orders',
     noOrders: 'No orders yet.',
+    addressManage: 'Addresses',
+    addressNone: 'Add a contact address first',
+    addressDefault: 'Default address',
+    addressMissingTitle: 'Address needed',
+    addressMissingMsg: 'Add an address to continue checkout.',
+    addressAddNow: 'Add now',
     toolFormulaDots: 'Formulate Dots',
     toolTestChip: 'Use Kino Chip',
     toolHealthAdvice: 'Health Advice',
@@ -652,6 +664,14 @@ function mapStoreOrders(rawOrders, lang) {
   }))
 }
 
+function mapAddresses(rawAddresses) {
+  return rawAddresses.map(a => ({
+    ...a,
+    summary: `${a.contact_name} ${a.phone}`,
+    detail: `${a.province || ''} ${a.city || ''} ${a.district || ''} ${a.address_line1 || ''}`.replace(/\s+/g, ' ').trim(),
+  }))
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 Page({
@@ -758,6 +778,9 @@ Page({
     storeLoading: true,
     storeItems: [],
     storeOrders: [],
+    storeAddresses: [],
+    selectedStoreAddressId: null,
+    selectedStoreAddress: null,
     storeSubTab: 'products',
     // Plans tab
     plansLoading: true,
@@ -836,6 +859,14 @@ Page({
       this._startPolling(user)
       // Check for questionnaires assigned while the user was away
       if (obStep === 'done') this._checkForPendingQuestionnaire()
+      this._loadAddresses(user)
+      const pendingItem = wx.getStorageSync('nano_pending_checkout_item')
+      const addressReady = wx.getStorageSync('nano_checkout_address_ready')
+      if (pendingItem && addressReady === '1') {
+        wx.removeStorageSync('nano_checkout_address_ready')
+        wx.removeStorageSync('nano_pending_checkout_item')
+        setTimeout(() => this._confirmBuyItem(pendingItem), 250)
+      }
     }
   },
 
@@ -1867,7 +1898,22 @@ Page({
     } catch (e) {
       this.setData({ storeLoading: false })
     }
+    await this._loadAddresses(user)
     await this._loadStoreOrders(user, lang)
+  },
+
+  async _loadAddresses(user) {
+    try {
+      const res = await this._req(`${BASE}/api/addresses?openid=${encodeURIComponent(user.user_id)}`)
+      const addresses = mapAddresses(res.data?.addresses || [])
+      const selected = addresses.find(a => a.id === this.data.selectedStoreAddressId)
+      const defaultAddress = selected || addresses.find(a => a.is_default) || addresses[0] || null
+      this.setData({
+        storeAddresses: addresses,
+        selectedStoreAddressId: defaultAddress ? defaultAddress.id : null,
+        selectedStoreAddress: defaultAddress,
+      })
+    } catch (e) {}
   },
 
   async _loadStoreOrders(user, lang) {
@@ -1883,13 +1929,53 @@ Page({
     this.setData({ storeSubTab: e.currentTarget.dataset.tab })
   },
 
+  openAddressManager() {
+    wx.navigateTo({ url: '/pages/address/address' })
+  },
+
+  chooseStoreAddress() {
+    const { storeAddresses } = this.data
+    if (storeAddresses.length === 0) {
+      wx.navigateTo({ url: '/pages/address/address?mode=checkout' })
+      return
+    }
+    wx.showActionSheet({
+      itemList: storeAddresses.map(a => `${a.contact_name} ${a.phone}`),
+      success: (res) => {
+        const address = storeAddresses[res.tapIndex]
+        if (address) this.setData({ selectedStoreAddressId: address.id, selectedStoreAddress: address })
+      },
+      fail: () => {},
+    })
+  },
+
   handleBuyItem(e) {
     if (this.data.isGuest) { this.openGuestSheet(); return }
     const item = e.currentTarget.dataset.item
+    this._confirmBuyItem(item)
+  },
+
+  async _confirmBuyItem(item) {
     const { t, user, lang } = this.data
+    await this._loadAddresses(user)
+    const address = this.data.storeAddresses.find(a => a.id === this.data.selectedStoreAddressId)
+    if (!address) {
+      wx.showModal({
+        title: t.addressMissingTitle,
+        content: t.addressMissingMsg,
+        confirmText: t.addressAddNow,
+        confirmColor: '#6375EC',
+        success: (res) => {
+          if (!res.confirm) return
+          wx.setStorageSync('nano_pending_checkout_item', item)
+          wx.navigateTo({ url: '/pages/address/address?mode=checkout' })
+        }
+      })
+      return
+    }
     wx.showModal({
       title: t.storeConfirmTitle,
-      content: `${item.name}\n${item.price}  ·  ${item.unit}`,
+      content: `${item.name}\n${item.price}  ·  ${item.unit}\n${address.summary}\n${address.detail}`,
       confirmText: t.storeBuy,
       confirmColor: '#6375EC',
       success: async (res) => {
@@ -1899,6 +1985,7 @@ Page({
             openid: user.user_id,
             item_id: item.id,
             quantity: 1,
+            address_id: address.id,
           })
           wx.showToast({ title: t.storeOrderSent, icon: 'none', duration: 3000 })
           await this._loadStoreOrders(user, lang)

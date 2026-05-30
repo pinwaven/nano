@@ -708,6 +708,9 @@
 
       <view class="store-header">
         <text class="store-title">{{t.storeTitle}}</text>
+        <view class="store-address-manage" bindtap="openAddressManager">
+          <text>{{t.addressManage}}</text>
+        </view>
       </view>
 
       <!-- Subtab toggle -->
@@ -718,6 +721,16 @@
         <view class="store-subtab-btn{{storeSubTab === 'orders' ? ' store-subtab-active' : ''}}" bindtap="switchStoreTab" data-tab="orders">
           <text>{{t.storeSubOrders}}</text>
         </view>
+      </view>
+
+      <view wx:if="{{!storeLoading && storeSubTab === 'products'}}" class="checkout-address" bindtap="chooseStoreAddress">
+        <view class="checkout-address-main">
+          <text class="checkout-address-label">{{t.addressDefault}}</text>
+          <text wx:if="{{selectedStoreAddress}}" class="checkout-address-text">{{selectedStoreAddress.summary}}</text>
+          <text wx:if="{{selectedStoreAddress}}" class="checkout-address-detail">{{selectedStoreAddress.detail}}</text>
+          <text wx:else class="checkout-address-empty">{{t.addressNone}}</text>
+        </view>
+        <text class="checkout-address-arrow">›</text>
       </view>
 
       <!-- Loading -->

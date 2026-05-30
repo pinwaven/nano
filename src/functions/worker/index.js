@@ -355,6 +355,150 @@ async function handleGetMyOrders(openid) {
     }
 }
 
+function normalizeAddressBody(body = {}) {
+    return {
+        openid: body.openid || body.user_id,
+        contact_name: String(body.contact_name || '').trim(),
+        phone: String(body.phone || '').trim(),
+        province: String(body.province || '').trim(),
+        city: String(body.city || '').trim(),
+        district: String(body.district || '').trim(),
+        address_line1: String(body.address_line1 || body.address || '').trim(),
+        postal_code: body.postal_code == null ? '' : String(body.postal_code).trim(),
+        is_default: body.is_default === true,
+    };
+}
+
+function validateAddressPayload(address, requireOpenid = true) {
+    const missing = [];
+    if (requireOpenid && !address.openid) missing.push('openid');
+    for (const key of ['contact_name', 'phone', 'province', 'city', 'address_line1']) {
+        if (!address[key]) missing.push(key);
+    }
+    if (missing.length) {
+        return { success: false, error: `${missing.join(', ')} required`, statusCode: 400 };
+    }
+    return null;
+}
+
+async function clearDefaultAddress(userId) {
+    await pool.query('UPDATE user_addresses SET is_default = FALSE WHERE user_id = $1', [userId]);
+}
+
+async function handleGetAddresses(openid) {
+    if (!openid) return { success: false, error: 'openid is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `SELECT id, user_id, contact_name, phone, province, city, district,
+                    address_line1, postal_code, is_default, created_at, updated_at
+             FROM user_addresses
+             WHERE user_id = $1
+             ORDER BY is_default DESC, updated_at DESC`,
+            [openid]
+        );
+        return { success: true, addresses: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAddress(body) {
+    const address = normalizeAddressBody(body);
+    const invalid = validateAddressPayload(address);
+    if (invalid) return invalid;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('BEGIN');
+        if (address.is_default) await clearDefaultAddress(address.openid);
+        const result = await pool.query(
+            `INSERT INTO user_addresses
+               (user_id, contact_name, phone, province, city, district, address_line1, postal_code, is_default)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             RETURNING id, user_id, contact_name, phone, province, city, district,
+                       address_line1, postal_code, is_default, created_at, updated_at`,
+            [
+                address.openid,
+                address.contact_name,
+                address.phone,
+                address.province,
+                address.city,
+                address.district,
+                address.address_line1,
+                address.postal_code,
+                address.is_default,
+            ]
+        );
+        await pool.query('COMMIT');
+        return { success: true, address: result.rows[0] };
+    } catch (err) {
+        try { await pool.query('ROLLBACK'); } catch (rollbackErr) {}
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handlePutAddress(addressId, body) {
+    const address = normalizeAddressBody(body);
+    const invalid = validateAddressPayload(address);
+    if (invalid) return invalid;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('BEGIN');
+        if (address.is_default) await clearDefaultAddress(address.openid);
+        const result = await pool.query(
+            `UPDATE user_addresses
+             SET contact_name = $1,
+                 phone = $2,
+                 province = $3,
+                 city = $4,
+                 district = $5,
+                 address_line1 = $6,
+                 postal_code = $7,
+                 is_default = $8
+             WHERE user_id = $9 AND id = $10
+             RETURNING id, user_id, contact_name, phone, province, city, district,
+                       address_line1, postal_code, is_default, created_at, updated_at`,
+            [
+                address.contact_name,
+                address.phone,
+                address.province,
+                address.city,
+                address.district,
+                address.address_line1,
+                address.postal_code,
+                address.is_default,
+                address.openid,
+                addressId,
+            ]
+        );
+        if (result.rows.length === 0) {
+            await pool.query('ROLLBACK');
+            return { success: false, error: 'Address not found', statusCode: 404 };
+        }
+        await pool.query('COMMIT');
+        return { success: true, address: result.rows[0] };
+    } catch (err) {
+        try { await pool.query('ROLLBACK'); } catch (rollbackErr) {}
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handleDeleteAddress(addressId, body = {}, query = {}) {
+    const openid = body.openid || body.user_id || query.openid || query.user_id;
+    if (!openid) return { success: false, error: 'openid is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            'DELETE FROM user_addresses WHERE user_id = $1 AND id = $2',
+            [openid, addressId]
+        );
+        if (result.rowCount === 0) return { success: false, error: 'Address not found', statusCode: 404 };
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handlePostStoreItem(body) {
     const { key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url } = body;
     if (!key_name) return { success: false, error: 'key_name is required', statusCode: 400 };
@@ -1159,7 +1303,7 @@ async function handlePutOrder(orderId, body) {
 }
 
 async function handlePostOrder(body) {
-    const { openid, item_id, quantity = 1 } = body;
+    const { openid, item_id, quantity = 1, address_id } = body;
     if (!openid || !item_id) return { success: false, error: 'openid and item_id are required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -1169,10 +1313,32 @@ async function handlePostOrder(body) {
         );
         if (itemResult.rows.length === 0) return { success: false, error: 'Item not found', statusCode: 404 };
         const item = itemResult.rows[0];
+        let address = null;
+        if (address_id) {
+            const addressResult = await pool.query(
+                `SELECT id, contact_name, phone, province, city, district, address_line1, postal_code
+                 FROM user_addresses
+                 WHERE user_id = $1 AND id = $2`,
+                [openid, address_id]
+            );
+            if (addressResult.rows.length === 0) return { success: false, error: 'Address not found', statusCode: 404 };
+            address = addressResult.rows[0];
+        }
         const result = await pool.query(
-            `INSERT INTO orders (user_id, item_id, item_key, quantity, price_cny, price_usd, status)
-             VALUES ($1, $2, $3, $4, $5, $6, 'pending') RETURNING id`,
-            [openid, item.id, item.key_name, quantity, item.price_cny, item.price_usd]
+            `INSERT INTO orders
+               (user_id, item_id, item_key, quantity, price_cny, price_usd, status, address_id, shipping_contact)
+             VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8::jsonb)
+             RETURNING id`,
+            [
+                openid,
+                item.id,
+                item.key_name,
+                quantity,
+                item.price_cny,
+                item.price_usd,
+                address ? address.id : null,
+                JSON.stringify(address || {}),
+            ]
         );
         return { success: true, order_id: result.rows[0].id };
     } catch (err) {
@@ -6919,6 +7085,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetDotsInventory();
             } else if (path.includes('/channel-inventory')) {
                 result = await handleGetChannelInventory(query, adminCtx);
+            } else if (path === '/addresses') {
+                result = await handleGetAddresses(query.openid || query.user_id);
             } else if (path.includes('/store-items')) {
                 result = await handleGetStoreItems(query);
             } else if (path.includes('/my-orders')) {
@@ -7064,6 +7232,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostCoaches(parsedBody);
             } else if (path.includes('/channel-inventory')) {
                 result = await handlePostChannelInventory(parsedBody, adminCtx);
+            } else if (path === '/addresses') {
+                result = await handlePostAddress(parsedBody);
             } else if (path.includes('/store-items')) {
                 result = await handlePostStoreItem(parsedBody);
             } else if (path.includes('/orders')) {
@@ -7217,6 +7387,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/channels\/(\d+)\/admin-tabs$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/admin-tabs$/)[1];
                 result = await handlePutChannelAdminTabs(channelId, parsedBody, adminCtx);
+            } else if (path.match(/^\/addresses\/(\d+)$/)) {
+                const addressId = path.match(/^\/addresses\/(\d+)$/)[1];
+                result = await handlePutAddress(addressId, parsedBody);
             } else if (path.includes('/channels/')) {
                 const channelId = path.split('/channels/')[1];
                 result = await handlePutChannel(channelId, parsedBody, adminCtx);
@@ -7395,6 +7568,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/lab-user-mappings\/(\d+)/)) {
                 const mid = path.match(/\/lab-user-mappings\/(\d+)/)[1];
                 result = await handleDeleteLabUserMapping(mid);
+            } else if (path.match(/^\/addresses\/(\d+)$/)) {
+                const addressId = path.match(/^\/addresses\/(\d+)$/)[1];
+                result = await handleDeleteAddress(addressId, parsedBody, query);
             } else {
                 result = { success: false, error: `Unknown DELETE route: ${path}` };
             }

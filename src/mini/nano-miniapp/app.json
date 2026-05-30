@@ -2,6 +2,7 @@
   "pages": [
     "pages/login/login",
     "pages/main/main",
+    "pages/address/address",
     "pages/admin/admin",
     "pages/coach/coach",
     "pages/superadmin/superadmin"

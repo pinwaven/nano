@@ -1,0 +1,65 @@
+<view class="address-page {{theme === 'light' ? 'theme-light' : ''}}">
+  <view class="status-bar" style="height: {{statusBarHeight}}px;"></view>
+  <view class="address-nav">
+    <view class="nav-back" bindtap="goBack">‹</view>
+    <text class="nav-title">{{t.title}}</text>
+    <view class="nav-spacer"></view>
+  </view>
+
+  <scroll-view class="address-scroll" scroll-y="true">
+    <view class="address-list">
+      <view wx:if="{{loading}}" class="empty-card">
+        <text>{{t.loading}}</text>
+      </view>
+
+      <view wx:elif="{{addresses.length === 0 && !formOpen}}" class="empty-card">
+        <text>{{t.empty}}</text>
+      </view>
+
+      <view wx:for="{{addresses}}" wx:key="id" class="address-card {{item.is_default ? 'address-card-default' : ''}}">
+        <view class="address-top">
+          <text class="address-name">{{item.contact_name}}</text>
+          <text class="address-phone">{{item.phone}}</text>
+          <text wx:if="{{item.is_default}}" class="address-default">{{t.defaultLabel}}</text>
+        </view>
+        <text class="address-line">{{item.province}} {{item.city}} {{item.district}} {{item.address_line1}}</text>
+        <view class="address-actions">
+          <view class="address-action" bindtap="editAddress" data-item="{{item}}">{{t.edit}}</view>
+          <view wx:if="{{!item.is_default}}" class="address-action" bindtap="makeDefault" data-item="{{item}}">{{t.setDefault}}</view>
+          <view class="address-action danger" bindtap="deleteAddress" data-id="{{item.id}}">{{t.delete}}</view>
+        </view>
+      </view>
+      <view style="height: 180rpx;"></view>
+    </view>
+  </scroll-view>
+
+  <view class="address-footer">
+    <view class="primary-btn" bindtap="openAdd">
+      <text>{{t.add}}</text>
+    </view>
+  </view>
+
+  <view wx:if="{{formOpen}}" class="modal-mask" bindtap="closeForm">
+    <view class="form-sheet" catchtap="noop">
+      <text class="form-title">{{editingId ? t.editTitle : t.addTitle}}</text>
+      <input class="form-input" placeholder="{{t.namePh}}" value="{{form.contact_name}}" data-field="contact_name" bindinput="onInput" />
+      <input class="form-input" placeholder="{{t.phonePh}}" type="number" value="{{form.phone}}" data-field="phone" bindinput="onInput" />
+      <picker mode="region" value="{{region}}" bindchange="onRegionChange">
+        <view class="form-picker">
+          <text>{{regionText || t.regionPh}}</text>
+          <text>›</text>
+        </view>
+      </picker>
+      <input class="form-input" placeholder="{{t.addressPh}}" value="{{form.address_line1}}" data-field="address_line1" bindinput="onInput" />
+      <input class="form-input" placeholder="{{t.postalPh}}" value="{{form.postal_code}}" data-field="postal_code" bindinput="onInput" />
+      <view class="default-row" bindtap="toggleDefault">
+        <view class="check {{form.is_default ? 'check-on' : ''}}">{{form.is_default ? '✓' : ''}}</view>
+        <text>{{t.defaultToggle}}</text>
+      </view>
+      <view class="form-actions">
+        <view class="secondary-btn" bindtap="closeForm">{{t.cancel}}</view>
+        <view class="primary-btn form-save {{saving ? 'btn-disabled' : ''}}" bindtap="saveAddress">{{saving ? t.saving : t.save}}</view>
+      </view>
+    </view>
+  </view>
+</view>
