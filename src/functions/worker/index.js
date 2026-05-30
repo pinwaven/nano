@@ -7,10 +7,10 @@ const crypto = require('crypto');
 
 const generateUserId = () => crypto.randomBytes(4).toString('hex');
 
-function signChannelAdminToken({ sub, cid, tabs, cms }) {
+function signChannelAdminToken({ sub, cid, tabs, perms, cms }) {
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + 86400;
-    const payload = Buffer.from(JSON.stringify({ sub, cid, tabs, cms: cms ?? false, iat, exp })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({ sub, cid, tabs, perms: perms ?? tabs, cms: cms ?? false, iat, exp })).toString('base64url');
     const sig = crypto.createHmac('sha256', process.env.API_BEARER_TOKEN)
                       .update(`ch.${payload}`).digest('hex');
     return `ch.${payload}.${sig}`;
@@ -30,12 +30,68 @@ function verifyChannelAdminToken(token) {
     return data;
 }
 
+// All permissions a root channel admin holds (hardcoded — no manual config needed).
+// Does not include superadmin-only features (global channels, dots, chips hardware, etc.).
+const CHANNEL_ADMIN_FULL_PERMS = [
+    'users:read','users:write','users:delete',
+    'coaches:read','coaches:write','coaches:delete',
+    'store:read','store:write','store:delete',
+    'orders:read','orders:write',
+    'invites:read','invites:write','invites:delete',
+    'inventory:read','inventory:write',
+    'rewards:read','rewards:write','rewards:delete',
+    'partners:read','partners:write','partners:delete',
+    'academy:read','academy:write',
+    'questionnaires:read',
+    'health-plans:read',
+    'reports:read',
+    'tickets:read',
+    'admin-accounts:read','admin-accounts:write',
+];
+
+// Maps legacy tab names to resource:action strings for backward compat.
+const LEGACY_TAB_EXPANSION = {
+    users:            ['users:read','users:write','users:delete'],
+    coaches:          ['coaches:read','coaches:write','coaches:delete'],
+    store:            ['store:read','store:write','store:delete','orders:read','orders:write'],
+    invites:          ['invites:read','invites:write','invites:delete'],
+    inventory:        ['inventory:read','inventory:write'],
+    rewards:          ['rewards:read','rewards:write','rewards:delete'],
+    partners:         ['partners:read','partners:write','partners:delete'],
+    academy:          ['academy:read','academy:write'],
+    questionnaires:   ['questionnaires:read'],
+    'health-plans':   ['health-plans:read'],
+    reports:          ['reports:read'],
+    tickets:          ['tickets:read'],
+    lab:              ['lab:read','lab:write'],
+    kino:             ['kino:read'],
+    chips:            ['chips:read'],
+    dots:             ['dots:read'],
+    'admin-accounts': ['admin-accounts:read','admin-accounts:write'],
+    subchannels:      [],
+};
+
+function expandPermissions(perms) {
+    if (!Array.isArray(perms)) return [];
+    const result = new Set();
+    for (const p of perms) {
+        if (p.includes(':')) { result.add(p); }
+        else { for (const e of (LEGACY_TAB_EXPANSION[p] || [])) result.add(e); }
+    }
+    return [...result];
+}
+
+function requirePermission(adminCtx, permission) {
+    if (adminCtx.role === 'superadmin') return null;
+    if (!adminCtx.perms || !adminCtx.perms.includes(permission))
+        return { statusCode: 403, success: false, error: `Permission denied: requires '${permission}'` };
+    return null;
+}
+
+// Shim — all existing requireAdminTab call sites work unchanged.
 function requireAdminTab(adminCtx, tab) {
     if (adminCtx.role === 'superadmin') return null;
-    if (!adminCtx.tabs || !adminCtx.tabs.includes(tab)) {
-        return { statusCode: 403, success: false, error: `Permission denied: requires '${tab}' tab` };
-    }
-    return null;
+    return requirePermission(adminCtx, `${tab}:write`);
 }
 
 // WeChat access_token cache (module-level, survives container reuse)
@@ -4060,47 +4116,33 @@ async function handlePutUser(user_id, body) {
 
 async function handleGetAdminAccounts(adminCtx) {
     const isChannel = adminCtx?.role === 'channel';
-    const canManageOwn = isChannel && (adminCtx.tabs || []).includes('admin-accounts');
+    const canManageOwn = isChannel && !requirePermission(adminCtx, 'admin-accounts:read');
     const canManageSubs = isChannel && adminCtx.canManageSubchannels;
     if (isChannel && !canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const cols = `a.id, a.username, a.created_at, a.channel_id, a.is_channel_admin, a.role_id, a.permissions_override, a.permissions, r.name AS role_name, r.label AS role_label, c.name AS channel_name`;
         let result;
         if (isChannel) {
             if (canManageOwn && canManageSubs) {
                 result = await pool.query(
-                    `SELECT a.id, a.username, a.created_at, a.channel_id, a.permissions, c.name AS channel_name
-                     FROM admin_accounts a
-                     JOIN channels c ON a.channel_id = c.id
-                     WHERE a.channel_id = $1 OR c.parent_channel_id = $1
-                     ORDER BY a.created_at ASC`,
+                    `SELECT ${cols} FROM admin_accounts a LEFT JOIN admin_channel_roles r ON r.id = a.role_id JOIN channels c ON a.channel_id = c.id WHERE a.channel_id = $1 OR c.parent_channel_id = $1 ORDER BY a.created_at ASC`,
                     [adminCtx.channelId]
                 );
             } else if (canManageOwn) {
                 result = await pool.query(
-                    `SELECT a.id, a.username, a.created_at, a.channel_id, a.permissions, c.name AS channel_name
-                     FROM admin_accounts a
-                     JOIN channels c ON a.channel_id = c.id
-                     WHERE a.channel_id = $1
-                     ORDER BY a.created_at ASC`,
+                    `SELECT ${cols} FROM admin_accounts a LEFT JOIN admin_channel_roles r ON r.id = a.role_id JOIN channels c ON a.channel_id = c.id WHERE a.channel_id = $1 ORDER BY a.created_at ASC`,
                     [adminCtx.channelId]
                 );
             } else {
                 result = await pool.query(
-                    `SELECT a.id, a.username, a.created_at, a.channel_id, a.permissions, c.name AS channel_name
-                     FROM admin_accounts a
-                     JOIN channels c ON a.channel_id = c.id
-                     WHERE c.parent_channel_id = $1
-                     ORDER BY a.created_at ASC`,
+                    `SELECT ${cols} FROM admin_accounts a LEFT JOIN admin_channel_roles r ON r.id = a.role_id JOIN channels c ON a.channel_id = c.id WHERE c.parent_channel_id = $1 ORDER BY a.created_at ASC`,
                     [adminCtx.channelId]
                 );
             }
         } else {
             result = await pool.query(
-                `SELECT a.id, a.username, a.created_at, a.channel_id, a.permissions, c.name AS channel_name
-                 FROM admin_accounts a
-                 LEFT JOIN channels c ON a.channel_id = c.id
-                 ORDER BY a.created_at ASC`
+                `SELECT ${cols} FROM admin_accounts a LEFT JOIN admin_channel_roles r ON r.id = a.role_id LEFT JOIN channels c ON a.channel_id = c.id ORDER BY a.created_at ASC`
             );
         }
         return { success: true, accounts: result.rows };
@@ -4111,11 +4153,13 @@ async function handleGetAdminAccounts(adminCtx) {
 
 async function handlePostAdminAccount(body, adminCtx) {
     const isChannel = adminCtx?.role === 'channel';
-    const canManageOwn = isChannel && (adminCtx.tabs || []).includes('admin-accounts');
+    const canManageOwn = isChannel && !requirePermission(adminCtx, 'admin-accounts:write');
     const canManageSubs = isChannel && adminCtx.canManageSubchannels;
     if (isChannel && !canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
-    const { username, password, channel_id, permissions } = body || {};
+    const { username, password, channel_id, role_id, permissions_override, is_channel_admin } = body || {};
     if (!username || !password) return { statusCode: 400, success: false, error: 'Username and password required' };
+    // Only superadmin can create channel admin accounts
+    const makeChannelAdmin = !isChannel && !!is_channel_admin && !!channel_id;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (isChannel) {
@@ -4129,16 +4173,29 @@ async function handlePostAdminAccount(body, adminCtx) {
                 if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
             }
         }
-        const actorTabs = isChannel ? (adminCtx.tabs || []) : null;
-        const sanitizedPermissions = Array.isArray(permissions)
-            ? (actorTabs ? permissions.filter(p => actorTabs.includes(p)) : permissions)
+        // For channel admins, auto-assign the global 'channel_admin' role for proper display
+        let sanitizedRoleId = role_id ? parseInt(role_id) : null;
+        if (makeChannelAdmin) {
+            const caRole = await pool.query(`SELECT id FROM admin_channel_roles WHERE channel_id IS NULL AND name = 'channel_admin'`);
+            if (caRole.rows[0]) sanitizedRoleId = caRole.rows[0].id;
+        } else if (sanitizedRoleId && isChannel) {
+            const roleCheck = await pool.query('SELECT channel_id FROM admin_channel_roles WHERE id = $1', [sanitizedRoleId]);
+            const roleCid = roleCheck.rows[0]?.channel_id;
+            if (roleCid !== null && roleCid !== adminCtx.channelId) sanitizedRoleId = null;
+        }
+        // Sanitize overrides: only perms the actor holds and within CHANNEL_ADMIN_FULL_PERMS ceiling
+        const actorPerms = isChannel ? (adminCtx.perms || []) : null;
+        const sanitizedOverrides = makeChannelAdmin ? [] : Array.isArray(permissions_override)
+            ? permissions_override.filter(p => CHANNEL_ADMIN_FULL_PERMS.includes(p) && (!actorPerms || actorPerms.includes(p)))
             : [];
         const { scryptSync, randomBytes } = require('crypto');
         const salt = randomBytes(16).toString('hex');
         const hash = scryptSync(password, salt, 64).toString('hex');
         const result = await pool.query(
-            'INSERT INTO admin_accounts (username, password_hash, channel_id, permissions) VALUES ($1, $2, $3, $4) RETURNING id, username, created_at, channel_id, permissions',
-            [username, `${salt}:${hash}`, channel_id || null, sanitizedPermissions]
+            `INSERT INTO admin_accounts (username, password_hash, channel_id, is_channel_admin, role_id, permissions_override)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id, username, created_at, channel_id, is_channel_admin, role_id, permissions_override`,
+            [username, `${salt}:${hash}`, channel_id || null, makeChannelAdmin, sanitizedRoleId, sanitizedOverrides]
         );
         return { success: true, account: result.rows[0] };
     } catch (err) {
@@ -4149,7 +4206,7 @@ async function handlePostAdminAccount(body, adminCtx) {
 
 async function handlePutAdminAccount(id, body, adminCtx) {
     if (adminCtx?.role === 'channel') {
-        const canManageOwn = (adminCtx.tabs || []).includes('admin-accounts');
+        const canManageOwn = !requirePermission(adminCtx, 'admin-accounts:write');
         const canManageSubs = adminCtx.canManageSubchannels;
         if (!canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -4163,13 +4220,9 @@ async function handlePutAdminAccount(id, body, adminCtx) {
             const owns = await verifySubchannelOwnership(targetCid, adminCtx);
             if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
         }
-        if (body?.permissions !== undefined) {
-            const actorTabs = adminCtx.tabs || [];
-            body = { ...body, permissions: Array.isArray(body.permissions) ? body.permissions.filter(p => actorTabs.includes(p)) : [] };
-        }
     }
-    const { password, permissions } = body || {};
-    if (!password && permissions === undefined) return { statusCode: 400, success: false, error: 'Password or permissions required' };
+    const { password, role_id, permissions_override } = body || {};
+    if (!password && role_id === undefined && permissions_override === undefined) return { statusCode: 400, success: false, error: 'Nothing to update' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (password) {
@@ -4178,8 +4231,23 @@ async function handlePutAdminAccount(id, body, adminCtx) {
             const hash = scryptSync(password, salt, 64).toString('hex');
             await pool.query('UPDATE admin_accounts SET password_hash = $1 WHERE id = $2', [`${salt}:${hash}`, id]);
         }
-        if (permissions !== undefined) {
-            await pool.query('UPDATE admin_accounts SET permissions = $1 WHERE id = $2', [Array.isArray(permissions) ? permissions : [], id]);
+        if (role_id !== undefined) {
+            const isChannel = adminCtx?.role === 'channel';
+            let sanitizedRoleId = role_id ? parseInt(role_id) : null;
+            if (sanitizedRoleId && isChannel) {
+                const roleCheck = await pool.query('SELECT channel_id FROM admin_channel_roles WHERE id = $1', [sanitizedRoleId]);
+                const roleCid = roleCheck.rows[0]?.channel_id;
+                if (roleCid !== null && roleCid !== adminCtx.channelId) sanitizedRoleId = null;
+            }
+            await pool.query('UPDATE admin_accounts SET role_id = $1 WHERE id = $2', [sanitizedRoleId, id]);
+        }
+        if (permissions_override !== undefined) {
+            const isChannel = adminCtx?.role === 'channel';
+            const actorPerms = isChannel ? (adminCtx.perms || []) : null;
+            const sanitized = Array.isArray(permissions_override)
+                ? permissions_override.filter(p => CHANNEL_ADMIN_FULL_PERMS.includes(p) && (!actorPerms || actorPerms.includes(p)))
+                : [];
+            await pool.query('UPDATE admin_accounts SET permissions_override = $1 WHERE id = $2', [sanitized, id]);
         }
         return { success: true };
     } catch (err) {
@@ -4189,7 +4257,7 @@ async function handlePutAdminAccount(id, body, adminCtx) {
 
 async function handleDeleteAdminAccount(id, adminCtx) {
     if (adminCtx?.role === 'channel') {
-        const canManageOwn = (adminCtx.tabs || []).includes('admin-accounts');
+        const canManageOwn = !requirePermission(adminCtx, 'admin-accounts:write');
         const canManageSubs = adminCtx.canManageSubchannels;
         if (!canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
         if (adminCtx.accountId && parseInt(id) === adminCtx.accountId) return { statusCode: 400, success: false, error: 'Cannot delete your own account' };
@@ -4216,12 +4284,118 @@ async function handleDeleteAdminAccount(id, adminCtx) {
     }
 }
 
+async function handleGetAdminChannelRoles(adminCtx) {
+    const isChannel = adminCtx?.role === 'channel';
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const cid = isChannel ? adminCtx.channelId : null;
+        const result = await pool.query(
+            `SELECT * FROM admin_channel_roles WHERE channel_id IS NULL OR channel_id = $1 ORDER BY channel_id NULLS FIRST, name`,
+            [cid]
+        );
+        return { success: true, roles: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAdminChannelRole(body, adminCtx) {
+    const isChannel = adminCtx?.role === 'channel';
+    if (isChannel) {
+        const check = requirePermission(adminCtx, 'admin-accounts:write');
+        if (check) return check;
+    }
+    const { name, label, permissions } = body || {};
+    if (!name || !label) return { statusCode: 400, success: false, error: 'name and label required' };
+    const cid = isChannel ? adminCtx.channelId : null;
+    // Channel admins can only set perms within CHANNEL_ADMIN_FULL_PERMS and their own perms
+    const actorPerms = isChannel ? (adminCtx.perms || []) : null;
+    const safePerms = Array.isArray(permissions)
+        ? permissions.filter(p => CHANNEL_ADMIN_FULL_PERMS.includes(p) && (!actorPerms || actorPerms.includes(p)))
+        : [];
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        // Channel roles cannot shadow global role names
+        if (cid !== null) {
+            const conflict = await pool.query('SELECT id FROM admin_channel_roles WHERE channel_id IS NULL AND name = $1', [name]);
+            if (conflict.rows.length > 0) return { statusCode: 409, success: false, error: 'Name conflicts with a global role' };
+        }
+        const result = await pool.query(
+            `INSERT INTO admin_channel_roles (channel_id, name, label, permissions) VALUES ($1, $2, $3, $4) RETURNING *`,
+            [cid, name, label, safePerms]
+        );
+        return { success: true, role: result.rows[0] };
+    } catch (err) {
+        if (err.code === '23505') return { statusCode: 409, success: false, error: 'Role name already exists for this channel' };
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutAdminChannelRole(id, body, adminCtx) {
+    const isChannel = adminCtx?.role === 'channel';
+    if (isChannel) {
+        const check = requirePermission(adminCtx, 'admin-accounts:write');
+        if (check) return check;
+    }
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const existing = await pool.query('SELECT channel_id FROM admin_channel_roles WHERE id = $1', [id]);
+        if (!existing.rows[0]) return { statusCode: 404, success: false, error: 'Not found' };
+        if (existing.rows[0].channel_id === null) return { statusCode: 403, success: false, error: 'Global roles cannot be modified' };
+        if (isChannel && existing.rows[0].channel_id !== adminCtx.channelId) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const { label, permissions } = body || {};
+        const updates = [];
+        const params = [];
+        if (label) { params.push(label); updates.push(`label = $${params.length}`); }
+        if (Array.isArray(permissions)) {
+            const actorPerms = isChannel ? (adminCtx.perms || []) : null;
+            const safePerms = permissions.filter(p => CHANNEL_ADMIN_FULL_PERMS.includes(p) && (!actorPerms || actorPerms.includes(p)));
+            params.push(safePerms); updates.push(`permissions = $${params.length}`);
+        }
+        if (!updates.length) return { statusCode: 400, success: false, error: 'Nothing to update' };
+        params.push(id);
+        await pool.query(`UPDATE admin_channel_roles SET ${updates.join(',')} WHERE id = $${params.length}`, params);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteAdminChannelRole(id, adminCtx) {
+    const isChannel = adminCtx?.role === 'channel';
+    if (isChannel) {
+        const check = requirePermission(adminCtx, 'admin-accounts:write');
+        if (check) return check;
+    }
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const existing = await pool.query('SELECT channel_id FROM admin_channel_roles WHERE id = $1', [id]);
+        if (!existing.rows[0]) return { statusCode: 404, success: false, error: 'Not found' };
+        if (existing.rows[0].channel_id === null) return { statusCode: 403, success: false, error: 'Global roles cannot be deleted' };
+        if (isChannel && existing.rows[0].channel_id !== adminCtx.channelId) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const inUse = await pool.query('SELECT COUNT(*) FROM admin_accounts WHERE role_id = $1', [id]);
+        if (parseInt(inUse.rows[0].count) > 0) return { statusCode: 400, success: false, error: 'Role is assigned to one or more accounts' };
+        await pool.query('DELETE FROM admin_channel_roles WHERE id = $1', [id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleAdminLogin(body) {
     const { username, password } = body || {};
     if (!username || !password) return { statusCode: 400, success: false, error: 'Missing credentials' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const result = await pool.query('SELECT id, password_hash, channel_id, permissions FROM admin_accounts WHERE username = $1', [username]);
+        const result = await pool.query(`
+            SELECT a.id, a.password_hash, a.channel_id,
+                   a.is_channel_admin, a.permissions_override,
+                   a.permissions AS legacy_perms,
+                   r.permissions AS role_permissions
+            FROM admin_accounts a
+            LEFT JOIN admin_channel_roles r ON r.id = a.role_id
+            WHERE a.username = $1
+        `, [username]);
         if (result.rows.length === 0) {
             await new Promise(r => setTimeout(r, 200));
             return { statusCode: 401, success: false, error: 'Invalid credentials' };
@@ -4239,12 +4413,35 @@ async function handleAdminLogin(body) {
 
         const chRes = await pool.query(`SELECT name, logo_url, config->'admin_tabs' AS admin_tabs, can_manage_subchannels FROM channels WHERE id = $1`, [row.channel_id]);
         const channelRow = chRes.rows[0] || {};
-        const channelTabs = Array.isArray(channelRow.admin_tabs) ? channelRow.admin_tabs : [];
-        const accountPerms = Array.isArray(row.permissions) ? row.permissions : [];
-        const tabs = accountPerms.length === 0 ? channelTabs : accountPerms.filter(p => channelTabs.includes(p));
+        // admin_tabs on a channel are feature flags ("is store enabled?"), not permission ceilings
+        const channelFeatureTabs = Array.isArray(channelRow.admin_tabs) ? channelRow.admin_tabs : [];
+        const channelActivePerms = channelFeatureTabs.length > 0 ? expandPermissions(channelFeatureTabs) : null;
+
+        // Permission resolution — three cases in priority order:
+        let resolvedPerms;
+        if (row.is_channel_admin) {
+            // Root channel admin: always gets full hardcoded rights — feature flags don't restrict access
+            resolvedPerms = CHANNEL_ADMIN_FULL_PERMS;
+        } else if (Array.isArray(row.role_permissions) && row.role_permissions.length > 0) {
+            // Staff account with assigned role + optional per-account overrides
+            const combined = [...new Set([...row.role_permissions, ...(row.permissions_override || [])])];
+            // Staff can never exceed channel admin ceiling
+            resolvedPerms = combined.filter(p => CHANNEL_ADMIN_FULL_PERMS.includes(p));
+        } else {
+            // Legacy fallback: old permissions column (tab names or resource:action strings)
+            const legacyExpanded = expandPermissions(Array.isArray(row.legacy_perms) ? row.legacy_perms : []);
+            resolvedPerms = legacyExpanded.length > 0
+                ? legacyExpanded.filter(p => CHANNEL_ADMIN_FULL_PERMS.includes(p))
+                : (channelActivePerms || CHANNEL_ADMIN_FULL_PERMS);
+        }
+
+        // Derive tab names from resolved perms for nav visibility (existing behavior preserved)
+        const tabs = [...new Set(resolvedPerms.map(p => p.split(':')[0]))];
         const cms = channelRow.can_manage_subchannels ?? false;
-        const token = signChannelAdminToken({ sub: row.id, cid: row.channel_id, tabs, cms });
-        return { success: true, token, role: 'channel', channel_id: row.channel_id, channel_name: channelRow.name || '', channel_logo: channelRow.logo_url || '', allowed_tabs: tabs, can_manage_subchannels: cms };
+        const token = signChannelAdminToken({ sub: row.id, cid: row.channel_id, tabs, perms: resolvedPerms, cms });
+        return { success: true, token, role: 'channel', channel_id: row.channel_id,
+                 channel_name: channelRow.name || '', channel_logo: channelRow.logo_url || '',
+                 allowed_tabs: tabs, allowed_perms: resolvedPerms, can_manage_subchannels: cms };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -6657,8 +6854,9 @@ async function handleGetTickets(channelId) {
             const result = await pool.query(
                 `SELECT t.id, t.title, t.description, t.status, t.priority, t.images, t.reporter, t.created_at, t.updated_at
                  FROM tickets t
-                 JOIN users u ON u.external_id = t.reporter
-                 WHERE u.channel_id = $1
+                 LEFT JOIN users u ON u.external_id = t.reporter
+                 WHERE t.channel_id = $1
+                    OR (t.channel_id IS NULL AND u.channel_id = $1)
                  ORDER BY CASE t.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'resolved' THEN 2 ELSE 3 END, t.created_at DESC`,
                 [channelId]
             );
@@ -6697,15 +6895,16 @@ function normalizeTicketInput(body) {
     return out;
 }
 
-async function handlePostTicket(body) {
+async function handlePostTicket(body, adminCtx = {}) {
     try {
         const t = normalizeTicketInput(body || {});
         if (!t.title) return { success: false, error: 'title is required' };
+        const channelId = adminCtx.channelId || null;
         const result = await pool.query(
-            `INSERT INTO tickets (title, description, status, priority, images, reporter)
-             VALUES ($1, $2, COALESCE($3, 'open'), COALESCE($4, 'normal'), COALESCE($5, ARRAY[]::TEXT[]), $6)
+            `INSERT INTO tickets (title, description, status, priority, images, reporter, channel_id)
+             VALUES ($1, $2, COALESCE($3, 'open'), COALESCE($4, 'normal'), COALESCE($5, ARRAY[]::TEXT[]), $6, $7)
              RETURNING *`,
-            [t.title, t.description || null, t.status, t.priority, t.images || null, t.reporter || null]
+            [t.title, t.description || null, t.status, t.priority, t.images || null, t.reporter || null, channelId]
         );
         return { success: true, ticket: result.rows[0] };
     } catch (err) {
@@ -8297,6 +8496,9 @@ exports.handler = async (req, resp, context) => {
             adminCtx.accountId = payload.sub;
             adminCtx.canManageSubchannels = payload.cms ?? false;
             adminCtx.tabs = payload.tabs ?? [];
+            adminCtx.perms = Array.isArray(payload.perms)
+                ? payload.perms
+                : expandPermissions(payload.tabs ?? []);
         } else {
             const unauthorizedPayload = { isBase64Encoded: false, statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized' }) };
             if (isStandardHttp) { resp.setStatusCode(401); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Unauthorized' })); return; }
@@ -8462,6 +8664,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetSavedReports();
             } else if (path === '/admin-accounts') {
                 result = await handleGetAdminAccounts(adminCtx);
+            } else if (path === '/admin-channel-roles') {
+                result = await handleGetAdminChannelRoles(adminCtx);
             } else if (path === '/tickets' || path.includes('/tickets')) {
                 result = await handleGetTickets(adminCtx.channelId);
             } else if (path.includes('/pending-questionnaires')) {
@@ -8525,6 +8729,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleAdminLogin(parsedBody);
             } else if (path === '/admin-accounts') {
                 result = await handlePostAdminAccount(parsedBody, adminCtx);
+            } else if (path === '/admin-channel-roles') {
+                result = await handlePostAdminChannelRole(parsedBody, adminCtx);
             } else if (path === '/validate-invite') {
                 result = await handleValidateInvite(parsedBody);
             } else if (path === '/wx-login') {
@@ -8638,7 +8844,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path === '/academy/progress') {
                 result = await handlePostAcademyProgress(parsedBody);
             } else if (path === '/tickets') {
-                result = await handlePostTicket(parsedBody);
+                result = await handlePostTicket(parsedBody, adminCtx);
             } else if (path.match(/\/questionnaires\/(\d+)\/questions/)) {
                 const qid = path.match(/\/questionnaires\/(\d+)\/questions/)[1];
                 result = await handlePostQuestionnaireQuestion(qid, parsedBody);
@@ -8775,6 +8981,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/admin-accounts/')) {
                 const accountId = path.split('/admin-accounts/')[1];
                 result = await handlePutAdminAccount(accountId, parsedBody, adminCtx);
+            } else if (path.match(/\/admin-channel-roles\/(\d+)/)) {
+                const roleId = path.match(/\/admin-channel-roles\/(\d+)/)[1];
+                result = await handlePutAdminChannelRole(roleId, parsedBody, adminCtx);
             } else if (path.match(/\/tickets\/(\d+)/)) {
                 const ticketId = path.match(/\/tickets\/(\d+)/)[1];
                 result = await handlePutTicket(ticketId, parsedBody);
@@ -8834,13 +9043,13 @@ exports.handler = async (req, resp, context) => {
                 result = await handleDeleteKinoDevice(deviceId);
             } else if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
-                result = requireAdminTab(adminCtx, 'users') || await handleDeleteUser(user_id);
+                result = requirePermission(adminCtx, 'users:delete') || await handleDeleteUser(user_id);
             } else if (path.match(/\/coach-groups\/(\d+)/)) {
                 const groupId = path.match(/\/coach-groups\/(\d+)/)[1];
                 result = await handleDeleteCoachGroup(groupId, adminCtx);
             } else if (path.includes('/coaches/')) {
                 const coachId = path.split('/coaches/')[1];
-                result = requireAdminTab(adminCtx, 'coaches') || await handleDeleteCoach(coachId);
+                result = requirePermission(adminCtx, 'coaches:delete') || await handleDeleteCoach(coachId);
             } else if (path.includes('/channels/')) {
                 const channelId = path.split('/channels/')[1];
                 result = await handleDeleteChannel(channelId, adminCtx);
@@ -8852,10 +9061,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handleDeleteDot(dotId);
             } else if (path.includes('/invitations/')) {
                 const inviteId = path.split('/invitations/')[1];
-                result = requireAdminTab(adminCtx, 'invites') || await handleDeleteInvitation(inviteId);
+                result = requirePermission(adminCtx, 'invites:delete') || await handleDeleteInvitation(inviteId);
             } else if (path.includes('/channel-inventory/')) {
                 const invId = path.split('/channel-inventory/')[1];
-                result = requireAdminTab(adminCtx, 'store') || await handleDeleteChannelInventory(invId, adminCtx);
+                result = requirePermission(adminCtx, 'store:delete') || await handleDeleteChannelInventory(invId, adminCtx);
             } else if (path.includes('/skus/')) {
                 const skuId = path.split('/skus/')[1];
                 result = await handleDeleteSku(skuId);
@@ -8877,6 +9086,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/admin-accounts/')) {
                 const accountId = path.split('/admin-accounts/')[1];
                 result = await handleDeleteAdminAccount(accountId, adminCtx);
+            } else if (path.match(/\/admin-channel-roles\/(\d+)/)) {
+                const roleId = path.match(/\/admin-channel-roles\/(\d+)/)[1];
+                result = await handleDeleteAdminChannelRole(roleId, adminCtx);
             } else if (path.match(/\/tickets\/(\d+)/)) {
                 const ticketId = path.match(/\/tickets\/(\d+)/)[1];
                 result = await handleDeleteTicket(ticketId);

@@ -24,6 +24,25 @@ axios.interceptors.request.use((config) => {
   return config
 })
 
+// ── Permission constants ───────────────────────────────────────────────────────
+const PERMS = {
+  USERS_READ: 'users:read', USERS_WRITE: 'users:write', USERS_DELETE: 'users:delete',
+  COACHES_READ: 'coaches:read', COACHES_WRITE: 'coaches:write', COACHES_DELETE: 'coaches:delete',
+  STORE_READ: 'store:read', STORE_WRITE: 'store:write', STORE_DELETE: 'store:delete',
+  ORDERS_READ: 'orders:read', ORDERS_WRITE: 'orders:write',
+  INVITES_READ: 'invites:read', INVITES_WRITE: 'invites:write', INVITES_DELETE: 'invites:delete',
+  INVENTORY_READ: 'inventory:read', INVENTORY_WRITE: 'inventory:write',
+  ADMIN_ACCTS_READ: 'admin-accounts:read', ADMIN_ACCTS_WRITE: 'admin-accounts:write',
+};
+
+// Superadmin always passes. Falls back to tab-name check when allowedPerms absent (compat for old tokens).
+function hasPermission(session, perm) {
+  if (!session || session.role !== 'channel') return true;
+  if (Array.isArray(session.allowedPerms) && session.allowedPerms.length > 0)
+    return session.allowedPerms.includes(perm);
+  return (session.allowedTabs || []).includes(perm.split(':')[0]);
+}
+
 function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -44,6 +63,7 @@ function LoginScreen({ onLogin }) {
         sessionStorage.setItem('nano_admin_channel_name', res.data.channel_name || '')
         sessionStorage.setItem('nano_admin_channel_logo', res.data.channel_logo || '')
         sessionStorage.setItem('nano_admin_tabs', JSON.stringify(res.data.allowed_tabs || []))
+        sessionStorage.setItem('nano_admin_perms', JSON.stringify(res.data.allowed_perms || []))
         sessionStorage.setItem('nano_admin_cms', res.data.can_manage_subchannels ? '1' : '')
         onLogin(res.data.token)
       } else {
@@ -104,7 +124,7 @@ function LoginScreen({ onLogin }) {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'Coach CRM', lab: 'Lab', events: 'Events' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'CRM', lab: 'Lab', events: 'Events' },
     adminAccounts: { title: 'Admin Accounts', add: 'Add Admin', changePassword: 'Change Password', confirmDelete: 'Delete this admin account?', newPassword: 'New Password', usernameLabel: 'Username', passwordLabel: 'Password', count: (n) => `${n} account${n !== 1 ? 's' : ''}` },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
@@ -531,7 +551,7 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'Coach CRM', lab: '检验中心', events: '线下活动' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'CRM', lab: '检验中心', events: '线下活动' },
     adminAccounts: { title: '管理员账号', add: '添加管理员', changePassword: '修改密码', confirmDelete: '确认删除此管理员账号？', newPassword: '新密码', usernameLabel: '用户名', passwordLabel: '密码', count: (n) => `${n} 个账号` },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
@@ -2670,9 +2690,11 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
               </label>
             )}
           </div>
-          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-            <Plus size={14} />{t.addUser}
-          </button>
+          {hasPermission(session, PERMS.USERS_WRITE) && (
+            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+              <Plus size={14} />{t.addUser}
+            </button>
+          )}
         </div>
         {channels.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
@@ -2760,8 +2782,8 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
                 <td className="muted">{fmt(u.email)}</td>
                 <td onClick={e => e.stopPropagation()}>
                   <div className="row-actions">
-                    <button className="icon-btn" title={t.modal.editUser} onClick={() => setModal({ type: 'edit', user: u })}><Pencil size={14} /></button>
-                    <button className="icon-btn danger" title={t.modal.deleteUser} onClick={() => setModal({ type: 'delete', user: u })}><Trash2 size={14} /></button>
+                    {hasPermission(session, PERMS.USERS_WRITE) && <button className="icon-btn" title={t.modal.editUser} onClick={() => setModal({ type: 'edit', user: u })}><Pencil size={14} /></button>}
+                    {hasPermission(session, PERMS.USERS_DELETE) && <button className="icon-btn danger" title={t.modal.deleteUser} onClick={() => setModal({ type: 'delete', user: u })}><Trash2 size={14} /></button>}
                   </div>
                 </td>
               </tr>
@@ -2926,9 +2948,11 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
               </label>
             )}
           </div>
-          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-            <Plus size={14} />{t.addCoach}
-          </button>
+          {hasPermission(session, PERMS.COACHES_WRITE) && (
+            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+              <Plus size={14} />{t.addCoach}
+            </button>
+          )}
         </div>
         {channels.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
@@ -3010,8 +3034,8 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
                 <td className="muted">{fmtDate(p.created_at)}</td>
                 <td>
                   <div className="row-actions">
-                    <button className="icon-btn" title={t.modal.editCoach} onClick={() => setModal({ type: 'edit', coach: p })}><Pencil size={14} /></button>
-                    <button className="icon-btn danger" title={t.modal.deleteCoach} onClick={() => setModal({ type: 'delete', coach: p })}><Trash2 size={14} /></button>
+                    {hasPermission(session, PERMS.COACHES_WRITE) && <button className="icon-btn" title={t.modal.editCoach} onClick={() => setModal({ type: 'edit', coach: p })}><Pencil size={14} /></button>}
+                    {hasPermission(session, PERMS.COACHES_DELETE) && <button className="icon-btn danger" title={t.modal.deleteCoach} onClick={() => setModal({ type: 'delete', coach: p })}><Trash2 size={14} /></button>}
                   </div>
                 </td>
               </tr>
@@ -5358,7 +5382,7 @@ function OrderStatusSelect({ orderId, status, onSave }) {
   );
 }
 
-function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = [], onRefresh }) {
+function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = [], session, onRefresh }) {
   const { t } = useLang();
   const [subTab, setSubTab] = useState('items');
   const [orderChannelFilter, setOrderChannelFilter] = useState('');
@@ -5397,9 +5421,11 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
         <div className="card">
           <div className="table-toolbar">
             <span className="table-count">{t.countItem(storeItems.length)}</span>
-            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-              <Plus size={14} />{t.addItem}
-            </button>
+            {hasPermission(session, PERMS.STORE_WRITE) && (
+              <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+                <Plus size={14} />{t.addItem}
+              </button>
+            )}
           </div>
           <table className="data-table">
             <thead>
@@ -5444,8 +5470,8 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
                     </td>
                     <td>
                       <div className="row-actions">
-                        <button className="icon-btn" title={t.modal.editItem} onClick={() => setModal({ type: 'edit', item })}><Pencil size={14} /></button>
-                        <button className="icon-btn danger" title={t.modal.deleteItem} onClick={() => setModal({ type: 'delete', item })}><Trash2 size={14} /></button>
+                        {hasPermission(session, PERMS.STORE_WRITE) && <button className="icon-btn" title={t.modal.editItem} onClick={() => setModal({ type: 'edit', item })}><Pencil size={14} /></button>}
+                        {hasPermission(session, PERMS.STORE_DELETE) && <button className="icon-btn danger" title={t.modal.deleteItem} onClick={() => setModal({ type: 'delete', item })}><Trash2 size={14} /></button>}
                       </div>
                     </td>
                   </tr>
@@ -8051,7 +8077,7 @@ function SubchannelsTab_UNUSED({ subchannels, adminAccounts, invitations, sessio
                 </button>
               )}
               <button className="icon-btn" title="Edit" onClick={() => setModal({ type: 'edit', channel: c })}><Pencil size={14} /></button>
-              <button className="icon-btn" title="Configure admin tabs" onClick={() => setModal({ type: 'admin-tabs', channel: c })}><Settings2 size={14} /></button>
+              <button className="icon-btn" title="Channel settings" onClick={() => setModal({ type: 'admin-tabs', channel: c })}><Settings2 size={14} /></button>
               <button className="icon-btn" title="Manage admins" onClick={() => setModal({ type: 'admins', channel: c })}><UserCog size={14} /></button>
               <button className="icon-btn" title="Manage invites" onClick={() => setModal({ type: 'invites', channel: c })}><Tag size={14} /></button>
               <button className="icon-btn danger" title="Delete" onClick={() => setModal({ type: 'delete', channel: c })}><Trash2 size={14} /></button>
@@ -8262,9 +8288,11 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
   };
 
   // ── Tab list ──────────────────────────────────────────────────────────────────
+  const isRootChannel = !channel.parent_channel_id;
   const configTabs = [
     { id: 'general', label: 'General' },
-    { id: 'admin-tabs', label: 'Admin Tabs' },
+    // Root channels always have full access — feature flags only apply to sub-channels
+    ...(!isRootChannel ? [{ id: 'admin-tabs', label: 'Channel Features' }] : []),
     { id: 'admins', label: 'Admins' },
     { id: 'invites', label: 'Invites' },
     ...(isSuperadmin ? [{ id: 'sub-age', label: 'Sub-age Labels' }] : []),
@@ -8375,7 +8403,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
 
           {activeTab === 'admin-tabs' && (
             <>
-              <p style={{ marginBottom: 12, color: '#94a3b8', fontSize: 13 }}>Select tabs channel admins can access:</p>
+              <p style={{ marginBottom: 12, color: '#94a3b8', fontSize: 13 }}>Select which features are enabled for this channel. Channel admins always have full access to all enabled features — this is not a permission limit.</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {CONFIGURABLE_TABS.map(tab => (
                   <label key={tab.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#EEF2FF', fontSize: 14 }}>
@@ -9164,7 +9192,7 @@ function DeactivateInviteConfirm({ invite, onClose, onConfirm }) {
   );
 }
 
-function InvitesTab({ invitations, channels, coaches, onRefresh }) {
+function InvitesTab({ invitations, channels, coaches, session, onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
   const [copied, setCopied] = useState(null);
@@ -9190,9 +9218,11 @@ function InvitesTab({ invitations, channels, coaches, onRefresh }) {
       <div className="card">
         <div className="table-toolbar">
           <span className="table-count">{t.countInvite(invitations.length)}</span>
-          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-            <Plus size={14} />{t.addInvite}
-          </button>
+          {hasPermission(session, PERMS.INVITES_WRITE) && (
+            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+              <Plus size={14} />{t.addInvite}
+            </button>
+          )}
         </div>
         <table className="data-table">
           <thead>
@@ -9234,7 +9264,7 @@ function InvitesTab({ invitations, channels, coaches, onRefresh }) {
                 </td>
                 <td className="muted">{fmtDate(inv.created_at)}</td>
                 <td>
-                  {inv.is_active && (
+                  {inv.is_active && hasPermission(session, PERMS.INVITES_DELETE) && (
                     <button className="icon-btn danger" title={t.modal.deactivateInvite} onClick={() => setModal({ type: 'deactivate', invite: inv })}>
                       <Trash2 size={14} />
                     </button>
@@ -11570,53 +11600,101 @@ function ReportsTab() {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
-const ALL_ADMIN_TABS = ['users', 'coaches', 'store', 'invites', 'rewards'];
+const PERMISSION_GROUPS = [
+  { resource: 'users',         actions: ['read','write','delete'], label: 'Users' },
+  { resource: 'coaches',       actions: ['read','write','delete'], label: 'Coaches' },
+  { resource: 'store',         actions: ['read','write','delete'], label: 'Store' },
+  { resource: 'orders',        actions: ['read','write'],          label: 'Orders' },
+  { resource: 'invites',       actions: ['read','write','delete'], label: 'Invites' },
+  { resource: 'inventory',     actions: ['read','write'],          label: 'Inventory' },
+  { resource: 'rewards',       actions: ['read','write','delete'], label: 'Rewards' },
+  { resource: 'partners',      actions: ['read','write','delete'], label: 'Partners' },
+  { resource: 'academy',       actions: ['read','write'],          label: 'Academy' },
+  { resource: 'questionnaires',actions: ['read'],                  label: 'Questionnaires' },
+  { resource: 'health-plans',  actions: ['read'],                  label: 'Health Plans' },
+  { resource: 'reports',       actions: ['read'],                  label: 'Reports' },
+  { resource: 'tickets',       actions: ['read'],                  label: 'Tickets' },
+  { resource: 'lab',           actions: ['read','write'],          label: 'Lab' },
+  { resource: 'kino',          actions: ['read'],                  label: 'Kino' },
+  { resource: 'chips',         actions: ['read'],                  label: 'Chips' },
+  { resource: 'admin-accounts',actions: ['read','write'],          label: 'Admin Accounts' },
+];
+
+function PermissionGroupsEditor({ available, value, onChange }) {
+  const toggle = (perm) => onChange(value.includes(perm) ? value.filter(p => p !== perm) : [...value, perm]);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
+      {PERMISSION_GROUPS.filter(g => available.some(p => p.startsWith(g.resource + ':'))).map(g => (
+        <div key={g.resource}>
+          <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{g.label}</div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            {g.actions.map(action => {
+              const perm = `${g.resource}:${action}`;
+              if (!available.includes(perm)) return null;
+              return (
+                <label key={perm} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={value.includes(perm)} onChange={() => toggle(perm)} />
+                  {action}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
   const { t } = useLang();
   const ta = t.adminAccounts;
-  const [modal, setModal] = useState(null); // { type: 'add' } | { type: 'password', account } | { type: 'permissions', account }
-  const [form, setForm]   = useState({ username: '', password: '', channel_id: '', permissions: [] });
+  const [channelRoles, setChannelRoles] = useState([]);
+  const [modal, setModal] = useState(null);
+  const [form, setForm]   = useState({ username: '', password: '', channel_id: '', role_id: '', permissions_override: [] });
+  const [roleForm, setRoleForm] = useState({ name: '', label: '', permissions: [] });
   const [err, setErr]     = useState('');
   const [saving, setSaving] = useState(false);
+  const [subTab, setSubTab] = useState('accounts'); // 'accounts' | 'roles'
 
   const isChannelAdmin = session?.role === 'channel';
+  const canManageRoles = hasPermission(session, PERMS.ADMIN_ACCTS_WRITE);
   const myChannelId = session?.channelId ? String(session.channelId) : '';
 
-  const channelTabsFor = (channel_id) => {
-    if (!channel_id) return [];
-    if (isChannelAdmin && String(channel_id) === myChannelId) {
-      return session?.allowedTabs || [];
-    }
-    const ch = (channels || []).find(c => String(c.id) === String(channel_id));
-    const chTabs = Array.isArray(ch?.config?.admin_tabs) ? ch.config.admin_tabs : ALL_ADMIN_TABS;
-    if (isChannelAdmin) {
-      const actorTabs = session?.allowedTabs || [];
-      return chTabs.filter(t => actorTabs.includes(t));
-    }
-    return chTabs;
+  const loadRoles = useCallback(() => {
+    axios.get('/api/admin-channel-roles').then(r => setChannelRoles(r.data.roles || []));
+  }, []);
+
+  useEffect(() => { loadRoles(); }, [loadRoles]);
+
+  // Actor's available perms (ceiling for what they can assign)
+  const actorPerms = isChannelAdmin
+    ? (session?.allowedPerms || [])
+    : PERMISSION_GROUPS.flatMap(g => g.actions.map(a => `${g.resource}:${a}`));
+
+  const rolesForChannel = (cid) => {
+    if (!cid) return [];
+    return channelRoles.filter(r => r.channel_id === null || String(r.channel_id) === String(cid));
   };
 
   const openAdd = () => {
     const defaultCid = isChannelAdmin ? myChannelId : '';
-    setForm({ username: '', password: '', channel_id: defaultCid, permissions: defaultCid ? channelTabsFor(defaultCid) : [] });
-    setErr('');
-    setModal({ type: 'add' });
+    setForm({ username: '', password: '', channel_id: defaultCid, role_id: '', permissions_override: [], is_channel_admin: false });
+    setErr(''); setModal({ type: 'add' });
   };
   const openPassword = (account) => { setForm({ password: '' }); setErr(''); setModal({ type: 'password', account }); };
-  const openPermissions = (account) => {
-    setForm({ permissions: Array.isArray(account.permissions) ? [...account.permissions] : [] });
-    setErr('');
-    setModal({ type: 'permissions', account });
+  const openRole = (account) => {
+    setForm({ role_id: account.role_id ? String(account.role_id) : '', permissions_override: Array.isArray(account.permissions_override) ? [...account.permissions_override] : [] });
+    setErr(''); setModal({ type: 'role', account });
+  };
+  const openAddRole = () => {
+    setRoleForm({ name: '', label: '', permissions: [] });
+    setErr(''); setModal({ type: 'add-role' });
+  };
+  const openEditRole = (role) => {
+    setRoleForm({ name: role.name, label: role.label, permissions: [...role.permissions] });
+    setErr(''); setModal({ type: 'edit-role', role });
   };
   const close = () => setModal(null);
-
-  const togglePerm = (tab) => {
-    setForm(f => ({
-      ...f,
-      permissions: f.permissions.includes(tab) ? f.permissions.filter(p => p !== tab) : [...f.permissions, tab],
-    }));
-  };
 
   const save = async () => {
     setSaving(true); setErr('');
@@ -11626,12 +11704,23 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
           username: form.username,
           password: form.password,
           channel_id: form.channel_id || null,
-          permissions: form.channel_id ? form.permissions : [],
+          is_channel_admin: form.is_channel_admin || false,
+          role_id: form.is_channel_admin ? null : (form.role_id ? parseInt(form.role_id) : null),
+          permissions_override: form.is_channel_admin ? [] : form.permissions_override,
         });
       } else if (modal.type === 'password') {
         await axios.put(`/api/admin-accounts/${modal.account.id}`, { password: form.password });
-      } else {
-        await axios.put(`/api/admin-accounts/${modal.account.id}`, { permissions: form.permissions });
+      } else if (modal.type === 'role') {
+        await axios.put(`/api/admin-accounts/${modal.account.id}`, {
+          role_id: form.role_id ? parseInt(form.role_id) : null,
+          permissions_override: form.permissions_override,
+        });
+      } else if (modal.type === 'add-role') {
+        await axios.post('/api/admin-channel-roles', roleForm);
+        loadRoles();
+      } else if (modal.type === 'edit-role') {
+        await axios.put(`/api/admin-channel-roles/${modal.role.id}`, { label: roleForm.label, permissions: roleForm.permissions });
+        loadRoles();
       }
       close(); onRefresh();
     } catch (e) {
@@ -11645,80 +11734,154 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
     catch (e) { alert(e.response?.data?.error || 'Error'); }
   };
 
-  const availableTabs = modal?.type === 'add'
-    ? channelTabsFor(form.channel_id)
-    : modal?.type === 'permissions'
-      ? channelTabsFor(modal.account.channel_id)
-      : [];
+  const delRole = async (role) => {
+    if (!window.confirm(`Delete role "${role.label}"?`)) return;
+    try { await axios.delete(`/api/admin-channel-roles/${role.id}`); loadRoles(); onRefresh(); }
+    catch (e) { alert(e.response?.data?.error || 'Error'); }
+  };
+
+  const selectedRole = modal?.type === 'role' || modal?.type === 'add'
+    ? channelRoles.find(r => String(r.id) === String(form.role_id))
+    : modal?.type === 'add-role' || modal?.type === 'edit-role'
+      ? null
+      : null;
+
+  const overrideAvailable = actorPerms.filter(p => !selectedRole?.permissions.includes(p));
+
+  const myChannelRoles = channelRoles.filter(r => r.channel_id !== null &&
+    (!isChannelAdmin || String(r.channel_id) === myChannelId));
 
   return (
     <>
-      <div className="card">
-        <div className="table-toolbar">
-          <span className="table-count">{ta.count(accounts.length)}</span>
-          <button className="btn-primary" onClick={openAdd}><Plus size={14} />{ta.add}</button>
+      {/* Sub-tab nav */}
+      <div style={{ display: 'flex', gap: 2, padding: '0 16px 0', borderBottom: '1px solid var(--border)', marginBottom: 0 }}>
+        {['accounts', ...(canManageRoles && isChannelAdmin ? ['roles'] : [])].map(st => (
+          <button key={st} onClick={() => setSubTab(st)} style={{
+            padding: '8px 16px', fontSize: 13, fontWeight: subTab === st ? 600 : 400,
+            background: 'transparent', border: 'none', borderBottom: subTab === st ? '2px solid #6366f1' : '2px solid transparent',
+            color: subTab === st ? '#6366f1' : 'var(--muted)', cursor: 'pointer', textTransform: 'capitalize',
+          }}>{st}</button>
+        ))}
+      </div>
+
+      {subTab === 'accounts' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{ta.count(accounts.length)}</span>
+            {hasPermission(session, PERMS.ADMIN_ACCTS_WRITE) && (
+              <button className="btn-primary" onClick={openAdd}><Plus size={14} />{ta.add}</button>
+            )}
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{ta.usernameLabel}</th>
+                <th>Channel</th>
+                <th>Role</th>
+                <th>{t.table.joined}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {accounts.length === 0 && <tr><td colSpan={5} className="empty-row">No admin accounts</td></tr>}
+              {accounts.map(a => {
+                const roleLabel = a.role_label || a.role_name || null;
+                const isChAdmin = a.is_channel_admin;
+                return (
+                  <tr key={a.id}>
+                    <td><strong>{a.username}</strong>{isChAdmin && <span style={{ marginLeft: 6, fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#312e81', color: '#a5b4fc' }}>Channel Admin</span>}</td>
+                    <td className="muted">{a.channel_name || <span style={{ color: '#475569' }}>Superadmin</span>}</td>
+                    <td>
+                      {a.channel_id ? (
+                        isChAdmin
+                          ? <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#1e293b', color: '#94a3b8' }}>Full Access (hardcoded)</span>
+                          : roleLabel
+                            ? <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#1e3a5f', color: '#93c5fd' }}>{roleLabel}</span>
+                            : <span className="muted" style={{ fontSize: 11 }}>no role</span>
+                      ) : <span className="muted" style={{ fontSize: 11 }}>all</span>}
+                    </td>
+                    <td className="muted">{fmtDate(a.created_at)}</td>
+                    <td style={{ display: 'flex', gap: 6 }}>
+                      {a.channel_id && !isChAdmin && hasPermission(session, PERMS.ADMIN_ACCTS_WRITE) && (
+                        <button className="icon-btn" title="Edit role & permissions" onClick={() => openRole(a)}>
+                          <Shield size={14} />
+                        </button>
+                      )}
+                      {hasPermission(session, PERMS.ADMIN_ACCTS_WRITE) && (
+                        <button className="icon-btn" title={ta.changePassword} onClick={() => openPassword(a)}>
+                          <Pencil size={14} />
+                        </button>
+                      )}
+                      {a.username !== session?.username && hasPermission(session, PERMS.ADMIN_ACCTS_WRITE) && (
+                        <button className="icon-btn danger" title="Delete" onClick={() => del(a)}>
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>{ta.usernameLabel}</th>
-              <th>Channel</th>
-              <th>Permissions</th>
-              <th>{t.table.joined}</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {accounts.length === 0 && <tr><td colSpan={5} className="empty-row">No admin accounts</td></tr>}
-            {accounts.map(a => {
-              const perms = Array.isArray(a.permissions) ? a.permissions : [];
-              const chTabs = channelTabsFor(a.channel_id);
-              const effectivePerms = perms.length === 0 ? chTabs : perms;
-              return (
-                <tr key={a.id}>
-                  <td><strong>{a.username}</strong></td>
-                  <td className="muted">{a.channel_name || <span style={{ color: '#475569' }}>Superadmin</span>}</td>
-                  <td>
-                    {a.channel_id ? (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                        {effectivePerms.map(p => (
-                          <span key={p} style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#1e3a5f', color: '#93c5fd' }}>{p}</span>
-                        ))}
-                        {effectivePerms.length === 0 && <span className="muted" style={{ fontSize: 11 }}>none</span>}
-                      </div>
-                    ) : <span className="muted" style={{ fontSize: 11 }}>all</span>}
-                  </td>
-                  <td className="muted">{fmtDate(a.created_at)}</td>
+      )}
+
+      {subTab === 'roles' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{myChannelRoles.length} custom role{myChannelRoles.length !== 1 ? 's' : ''}</span>
+            <button className="btn-primary" onClick={openAddRole}><Plus size={14} />New Role</button>
+          </div>
+          {/* Global suggestion roles (read-only) */}
+          <div style={{ padding: '8px 16px 4px', fontSize: 12, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Global Suggestions (read-only)</div>
+          <table className="data-table">
+            <thead><tr><th>Name</th><th>Permissions</th><th></th></tr></thead>
+            <tbody>
+              {channelRoles.filter(r => r.channel_id === null).map(r => (
+                <tr key={r.id}>
+                  <td><strong>{r.label}</strong><span style={{ marginLeft: 6, fontSize: 11, color: '#475569' }}>{r.name}</span></td>
+                  <td><div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>{r.permissions.map(p => <span key={p} style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#1e293b', color: '#64748b' }}>{p}</span>)}</div></td>
+                  <td></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {/* Channel's own roles */}
+          <div style={{ padding: '8px 16px 4px', fontSize: 12, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 8 }}>Your Channel Roles</div>
+          <table className="data-table">
+            <thead><tr><th>Name</th><th>Permissions</th><th></th></tr></thead>
+            <tbody>
+              {myChannelRoles.length === 0 && <tr><td colSpan={3} className="empty-row">No custom roles yet</td></tr>}
+              {myChannelRoles.map(r => (
+                <tr key={r.id}>
+                  <td><strong>{r.label}</strong><span style={{ marginLeft: 6, fontSize: 11, color: '#475569' }}>{r.name}</span></td>
+                  <td><div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>{r.permissions.map(p => <span key={p} style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#1e3a5f', color: '#93c5fd' }}>{p}</span>)}</div></td>
                   <td style={{ display: 'flex', gap: 6 }}>
-                    {a.channel_id && (
-                      <button className="icon-btn" title="Edit permissions" onClick={() => openPermissions(a)}>
-                        <Shield size={14} />
-                      </button>
-                    )}
-                    <button className="icon-btn" title={ta.changePassword} onClick={() => openPassword(a)}>
-                      <Pencil size={14} />
-                    </button>
-                    {a.username !== session?.username && (
-                      <button className="icon-btn danger" title="Delete" onClick={() => del(a)}>
-                        <Trash2 size={14} />
-                      </button>
-                    )}
+                    <button className="icon-btn" title="Edit" onClick={() => openEditRole(r)}><Pencil size={14} /></button>
+                    <button className="icon-btn danger" title="Delete" onClick={() => delRole(r)}><Trash2 size={14} /></button>
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {modal && (
         <div className="modal-overlay" onClick={close}>
           <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span>{modal.type === 'add' ? ta.add : modal.type === 'permissions' ? 'Edit Permissions' : ta.changePassword}</span>
+              <span>{
+                modal.type === 'add' ? ta.add :
+                modal.type === 'role' ? `Role — ${modal.account.username}` :
+                modal.type === 'password' ? ta.changePassword :
+                modal.type === 'add-role' ? 'New Role' :
+                `Edit Role — ${modal.role?.label}`
+              }</span>
               <button className="icon-btn" onClick={close}><X size={16} /></button>
             </div>
             <div className="modal-body">
+              {/* Add account */}
               {modal.type === 'add' && (
                 <>
                   <label className="form-field">
@@ -11733,57 +11896,81 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
                   ) : (
                     <label className="form-field">
                       <span>Channel</span>
-                      <select value={form.channel_id} onChange={e => {
-                        const cid = e.target.value;
-                        setForm(f => ({ ...f, channel_id: cid, permissions: channelTabsFor(cid) }));
-                      }}>
+                      <select value={form.channel_id} onChange={e => setForm(f => ({ ...f, channel_id: e.target.value, role_id: '', permissions_override: [], is_channel_admin: false }))}>
                         <option value="">Superadmin (all channels)</option>
                         {(channels || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                     </label>
                   )}
-                  {form.channel_id && availableTabs.length > 0 && (
-                    <div className="form-field">
-                      <span>Permissions</span>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
-                        {availableTabs.map(tab => (
-                          <label key={tab} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 13 }}>
-                            <input type="checkbox" checked={form.permissions.includes(tab)} onChange={() => togglePerm(tab)} />
-                            {tab}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
+                  {/* Channel Admin toggle — superadmin only, only when a channel is selected */}
+                  {!isChannelAdmin && form.channel_id && (
+                    <label className="form-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!form.is_channel_admin}
+                        onChange={e => setForm(f => ({ ...f, is_channel_admin: e.target.checked, role_id: '', permissions_override: [] }))} />
+                      <span style={{ margin: 0 }}>Channel Admin <span style={{ fontSize: 11, color: '#94a3b8' }}>(full access to this channel)</span></span>
+                    </label>
+                  )}
+                  {/* Role picker — hidden when creating a channel admin (role is auto-assigned) */}
+                  {form.channel_id && !form.is_channel_admin && (
+                    <label className="form-field">
+                      <span>Role</span>
+                      <select value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value, permissions_override: [] }))}>
+                        <option value="">— no role —</option>
+                        {rolesForChannel(form.channel_id).filter(r => r.name !== 'channel_admin').map(r => <option key={r.id} value={r.id}>{r.label}{r.channel_id === null ? ' (global)' : ''}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  {form.channel_id && !form.is_channel_admin && selectedRole && overrideAvailable.length > 0 && (
+                    <details style={{ marginTop: 8 }}>
+                      <summary style={{ fontSize: 12, color: '#94a3b8', cursor: 'pointer' }}>Additional permissions beyond role</summary>
+                      <PermissionGroupsEditor available={overrideAvailable} value={form.permissions_override} onChange={v => setForm(f => ({ ...f, permissions_override: v }))} />
+                    </details>
                   )}
                 </>
               )}
+              {/* Edit role assignment */}
+              {modal.type === 'role' && (
+                <>
+                  <label className="form-field">
+                    <span>Role</span>
+                    <select value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value, permissions_override: [] }))}>
+                      <option value="">— no role —</option>
+                      {rolesForChannel(modal.account.channel_id).filter(r => r.name !== 'channel_admin').map(r => <option key={r.id} value={r.id}>{r.label}{r.channel_id === null ? ' (global)' : ''}</option>)}
+                    </select>
+                  </label>
+                  {selectedRole && overrideAvailable.length > 0 && (
+                    <details style={{ marginTop: 8 }}>
+                      <summary style={{ fontSize: 12, color: '#94a3b8', cursor: 'pointer' }}>Additional permissions beyond role</summary>
+                      <PermissionGroupsEditor available={overrideAvailable} value={form.permissions_override} onChange={v => setForm(f => ({ ...f, permissions_override: v }))} />
+                    </details>
+                  )}
+                </>
+              )}
+              {/* Change password */}
               {modal.type === 'password' && (
                 <label className="form-field">
                   <span>{ta.usernameLabel}</span>
                   <input value={modal.account.username} disabled />
                 </label>
               )}
-              {modal.type === 'permissions' && (
+              {/* Add / edit channel role */}
+              {(modal.type === 'add-role' || modal.type === 'edit-role') && (
                 <>
                   <label className="form-field">
-                    <span>{ta.usernameLabel}</span>
-                    <input value={modal.account.username} disabled />
+                    <span>Internal name (slug)</span>
+                    <input value={roleForm.name} disabled={modal.type === 'edit-role'} onChange={e => setRoleForm(f => ({ ...f, name: e.target.value.toLowerCase().replace(/\s+/g, '_') }))} placeholder="e.g. clinic_staff" autoFocus={modal.type === 'add-role'} />
+                  </label>
+                  <label className="form-field">
+                    <span>Display label</span>
+                    <input value={roleForm.label} onChange={e => setRoleForm(f => ({ ...f, label: e.target.value }))} placeholder="e.g. Clinic Staff" />
                   </label>
                   <div className="form-field">
                     <span>Permissions</span>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
-                      {availableTabs.map(tab => (
-                        <label key={tab} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 13 }}>
-                          <input type="checkbox" checked={form.permissions.includes(tab)} onChange={() => togglePerm(tab)} />
-                          {tab}
-                        </label>
-                      ))}
-                    </div>
-                    {availableTabs.length === 0 && <span className="muted" style={{ fontSize: 12 }}>No tabs configured for this channel.</span>}
+                    <PermissionGroupsEditor available={actorPerms} value={roleForm.permissions} onChange={v => setRoleForm(f => ({ ...f, permissions: v }))} />
                   </div>
                 </>
               )}
-              {modal.type !== 'permissions' && (
+              {(modal.type === 'add' || modal.type === 'password') && (
                 <label className="form-field">
                   <span>{modal.type === 'add' ? ta.passwordLabel : ta.newPassword}</span>
                   <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} autoFocus={modal.type === 'password'} />
@@ -12563,11 +12750,11 @@ function AdminPanel({ session, onLogout }) {
     const cid = session?.channelId;
     const isChannel = session?.role === 'channel';
     try {
-      const canManageOwnAdmins = isChannel && (session?.allowedTabs || []).includes('admin-accounts');
+      const canManageOwnAdmins = isChannel && hasPermission(session, PERMS.ADMIN_ACCTS_READ);
     const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, tkRes, aaRes, hptRes, apkRes, skuRes, stockRes] = await Promise.allSettled([
         axios.get(isChannel ? `/api/channel-users/${cid}?minimal=true` : '/api/users?minimal=true'),
         axios.get('/api/dots-inventory'),
-        axios.get(isChannel ? `/api/channel-coaches/${cid}` : '/api/coach-list'),
+        axios.get(isChannel ? `/api/channel-coaches/${cid}?include_subchannels=true` : '/api/coach-list'),
         axios.get('/api/store-items?all=true'),
         axios.get(isChannel ? `/api/orders?channel_id=${cid}` : '/api/orders'),
         (isChannel && !isCmsAdmin && !canManageOwnAdmins) ? Promise.resolve({ data: {} }) : axios.get('/api/channels'),
@@ -12637,6 +12824,7 @@ function AdminPanel({ session, onLogout }) {
         if (n.disabled) return false;
         if (SUPERADMIN_ONLY.has(n.id)) return false;
         if (n.id === 'channels') return isCmsAdmin;
+        if (n.id === 'coach-crm') return (session?.allowedTabs || []).includes('coaches');
         return (session?.allowedTabs || []).includes(n.id);
       });
 
@@ -12688,12 +12876,12 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'users'    && <UsersTab    users={data.users} coaches={data.coaches} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
           {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
           {tab === 'dots'     && <DotsTab     dots={data.dots} onRefresh={fetchData} />}
-          {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} channels={data.channels} skus={data.skus || []} inventoryStock={data.inventoryStock || []} onRefresh={fetchData} />}
+          {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} channels={data.channels} skus={data.skus || []} inventoryStock={data.inventoryStock || []} session={session} onRefresh={fetchData} />}
           {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} skus={data.skus || []} />}
           {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} session={session} />}
           {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
           {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
-          {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} coaches={data.coaches} onRefresh={fetchData} />}
+          {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} coaches={data.coaches} session={session} onRefresh={fetchData} />}
           {tab === 'rewards'   && <RewardsTab />}
           {tab === 'partners'  && <PartnersTab users={data.users} />}
           {tab === 'academy'   && <AcademyTab />}
@@ -12720,6 +12908,7 @@ export default function App() {
     channelName: sessionStorage.getItem('nano_admin_channel_name') || '',
     channelLogo: sessionStorage.getItem('nano_admin_channel_logo') || '',
     allowedTabs: JSON.parse(sessionStorage.getItem('nano_admin_tabs') || '[]'),
+    allowedPerms: JSON.parse(sessionStorage.getItem('nano_admin_perms') || '[]'),
     canManageSubchannels: sessionStorage.getItem('nano_admin_cms') === '1',
     username: sessionStorage.getItem('nano_admin_user') || '',
   });
@@ -12732,7 +12921,7 @@ export default function App() {
   const handleLogin = (token) => setSession(readSession(token));
 
   const handleLogout = () => {
-    ['nano_admin_token','nano_admin_user','nano_admin_role','nano_admin_channel_id','nano_admin_channel_name','nano_admin_channel_logo','nano_admin_tabs','nano_admin_cms'].forEach(k => sessionStorage.removeItem(k));
+    ['nano_admin_token','nano_admin_user','nano_admin_role','nano_admin_channel_id','nano_admin_channel_name','nano_admin_channel_logo','nano_admin_tabs','nano_admin_perms','nano_admin_cms'].forEach(k => sessionStorage.removeItem(k));
     setSession(null);
   };
 
