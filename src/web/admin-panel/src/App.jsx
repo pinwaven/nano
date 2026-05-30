@@ -1229,13 +1229,13 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
 
 // ── Coach modal ───────────────────────────────────────────────────────────────
 
-const EMPTY_COACH = { user_id: '', channel_id: '', group_id: '' };
+const EMPTY_COACH = { user_id: '', group_id: '' };
 
 function CoachModal({ coach, users, channels, groups, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!coach?.id;
   const [form, setForm] = useState(isEdit
-    ? { user_id: coach.user_id || '', channel_id: coach.channel_id ?? '', group_id: coach.group_id ?? '' }
+    ? { user_id: coach.user_id || '', group_id: coach.group_id ?? '' }
     : { ...EMPTY_COACH });
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1255,7 +1255,7 @@ function CoachModal({ coach, users, channels, groups, onClose, onSave }) {
     if (!form.user_id.trim()) { setError(t.modal.userRequired); return; }
     setBusy(true); setError('');
     try {
-      const payload = { user_id: form.user_id, channel_id: form.channel_id === '' ? null : parseInt(form.channel_id), group_id: form.group_id === '' ? null : parseInt(form.group_id) };
+      const payload = { user_id: form.user_id, group_id: form.group_id === '' ? null : parseInt(form.group_id) };
       if (isEdit) await axios.put(`/api/coaches/${coach.id}`, payload);
       else await axios.post('/api/coaches', payload);
       onSave();
@@ -1307,16 +1307,6 @@ function CoachModal({ coach, users, channels, groups, onClose, onSave }) {
                 </>
               )}
             </div>
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.modal.channel}</span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  <option value="">{t.modal.channelUnassigned}</option>
-                  {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
             {groups && groups.length > 0 && (
               <label className="form-field" style={{ gridColumn: '1 / -1' }}>
                 <span>{t.modal.coachGroup}</span>
@@ -2830,7 +2820,7 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
   const [groupFilter, setGroupFilter] = useState('');
   const [sortField, setSortField] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
-  const [includeSubchannels, setIncludeSubchannels] = useState(false);
+  const [includeSubchannels, setIncludeSubchannels] = useState(true);
   const [subCoaches, setSubCoaches] = useState(null);
   const [groups, setGroups] = useState([]);
   const [groupModal, setGroupModal] = useState(null);
@@ -2858,8 +2848,23 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
   }, [includeSubchannels, session]);
 
   const q = searchQuery.trim().toLowerCase();
-  const byChannel = channelFilter
-    ? displayCoaches.filter(p => (p.channel_name || '') === channelFilter)
+  const channelFilterSet = (() => {
+    if (!channelFilter) return null;
+    if (!includeSubchannels) return new Set([channelFilter]);
+    const root = channels.find(c => c.name === channelFilter);
+    if (!root) return new Set([channelFilter]);
+    const ids = new Set([root.id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const c of channels) {
+        if (!ids.has(c.id) && ids.has(c.parent_channel_id)) { ids.add(c.id); changed = true; }
+      }
+    }
+    return new Set(channels.filter(c => ids.has(c.id)).map(c => c.name));
+  })();
+  const byChannel = channelFilterSet
+    ? displayCoaches.filter(p => channelFilterSet.has(p.channel_name || ''))
     : displayCoaches;
   const byGroup = groupFilter
     ? byChannel.filter(p => String(p.group_id) === String(groupFilter))

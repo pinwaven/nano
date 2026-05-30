@@ -6,6 +6,9 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Fixed
+- **Coaches tab shows stale channel after user reassignment** — `coaches.channel_id` was a redundant copy of `users.channel_id` that was never synced when a user's channel changed. Finished the rationalization started by `migration_rationalize_coaches`: dropped the column and updated all queries to derive channel via `JOIN coaches → users → channels`. Migration: `src/schemas/migration_coaches_drop_channel_id.sql`. The Coach modal's channel selector has been removed.
+
 ### Added
 - **Credit system for commissions** — all commission earnings (referral, coach, channel) now flow into a per-user credit ledger. Users can exchange credits for cash via a withdrawal request processed by a superadmin.
   - **DB migration** `src/schemas/migration_credit_system.sql`:

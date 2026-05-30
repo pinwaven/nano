@@ -179,9 +179,9 @@ async function handleGetUsers(channelId, query = {}) {
         const csConditions = ['1=1'];
         let coachChannelsJoin = '';
         if (channelId) {
-            csConditions.push(`p.channel_id = $${csParams.push(channelId)}`);
+            csConditions.push(`u.channel_id = $${csParams.push(channelId)}`);
         } else if (channelName) {
-            coachChannelsJoin = 'LEFT JOIN channels c ON p.channel_id = c.id';
+            coachChannelsJoin = 'LEFT JOIN channels c ON u.channel_id = c.id';
             csConditions.push(`c.name = $${csParams.push(channelName)}`);
         }
         const csWhere = csConditions.join(' AND ');
@@ -2067,9 +2067,9 @@ async function handleGetCoachList(channelId) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const params = [];
-        const channelFilter = channelId ? `WHERE p.channel_id = $${params.push(channelId)}` : '';
+        const channelFilter = channelId ? `WHERE u.channel_id = $${params.push(channelId)}` : '';
         const query = `
-            SELECT p.id, p.channel_id, p.user_id, p.created_at,
+            SELECT p.id, u.channel_id, p.user_id, p.created_at,
                    u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
                    COUNT(assigned.user_id) AS user_count,
                    c.name AS channel_name,
@@ -2077,10 +2077,10 @@ async function handleGetCoachList(channelId) {
             FROM coaches p
             JOIN users u ON p.user_id = u.user_id
             LEFT JOIN users assigned ON p.id = assigned.coach_id
-            LEFT JOIN channels c ON p.channel_id = c.id
+            LEFT JOIN channels c ON u.channel_id = c.id
             LEFT JOIN coach_groups cg ON cg.id = p.group_id
             ${channelFilter}
-            GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language, c.name, p.group_id, cg.name;
+            GROUP BY p.id, u.channel_id, u.nickname, u.email, u.phone, u.avatar_url, u.language, c.name, p.group_id, cg.name;
         `;
         const result = await pool.query(query, params);
         return { success: true, coaches: result.rows };
@@ -2131,8 +2131,8 @@ async function handleGetChannelUsers(channelId, includeSubchannels = false) {
         const [coachRes, scanRes] = await Promise.all([
             pool.query(
                 includeSubchannels
-                    ? `${subtreeCte} SELECT u.gender, p.created_at FROM coaches p JOIN subtree st ON p.channel_id = st.id JOIN users u ON p.user_id = u.user_id`
-                    : `SELECT u.gender, p.created_at FROM coaches p JOIN users u ON p.user_id = u.user_id WHERE p.channel_id = $1`,
+                    ? `${subtreeCte} SELECT u.gender, p.created_at FROM coaches p JOIN users u ON p.user_id = u.user_id JOIN subtree st ON u.channel_id = st.id`
+                    : `SELECT u.gender, p.created_at FROM coaches p JOIN users u ON p.user_id = u.user_id WHERE u.channel_id = $1`,
                 [channelId]
             ),
             channelUserIds.length > 0
@@ -2184,35 +2184,35 @@ async function handleGetChannelCoaches(channelId, includeSubchannels = false) {
                     UNION ALL
                     SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
                 )
-                SELECT p.id, p.channel_id, p.user_id, p.created_at,
+                SELECT p.id, u.channel_id, p.user_id, p.created_at,
                        u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
                        COUNT(assigned.user_id) AS user_count,
                        ch.name AS channel_name,
                        p.group_id, cg.name AS group_name
                 FROM coaches p
-                JOIN subtree st ON p.channel_id = st.id
                 JOIN users u ON p.user_id = u.user_id
-                LEFT JOIN channels ch ON ch.id = p.channel_id
+                JOIN subtree st ON u.channel_id = st.id
+                LEFT JOIN channels ch ON ch.id = u.channel_id
                 LEFT JOIN users assigned ON p.id = assigned.coach_id
                 LEFT JOIN coach_groups cg ON cg.id = p.group_id
-                GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language, ch.name, p.group_id, cg.name
+                GROUP BY p.id, u.channel_id, u.nickname, u.email, u.phone, u.avatar_url, u.language, ch.name, p.group_id, cg.name
                 ORDER BY p.created_at DESC
             `, [channelId]);
             return { success: true, coaches: result.rows };
         }
         const result = await pool.query(
-            `SELECT p.id, p.channel_id, p.user_id, p.created_at,
+            `SELECT p.id, u.channel_id, p.user_id, p.created_at,
                     u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
                     COUNT(assigned.user_id) AS user_count,
                     ch.name AS channel_name,
                     p.group_id, cg.name AS group_name
              FROM coaches p
              JOIN users u ON p.user_id = u.user_id
-             LEFT JOIN channels ch ON ch.id = p.channel_id
+             LEFT JOIN channels ch ON ch.id = u.channel_id
              LEFT JOIN users assigned ON p.id = assigned.coach_id
              LEFT JOIN coach_groups cg ON cg.id = p.group_id
-             WHERE p.channel_id = $1
-             GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language, ch.name, p.group_id, cg.name
+             WHERE u.channel_id = $1
+             GROUP BY p.id, u.channel_id, u.nickname, u.email, u.phone, u.avatar_url, u.language, ch.name, p.group_id, cg.name
              ORDER BY p.created_at DESC`,
             [channelId]
         );
@@ -3505,13 +3505,13 @@ async function handlePostAssignCoach(body) {
 }
 
 async function handlePostCoaches(body) {
-    const { channel_id, user_id, group_id } = body;
+    const { user_id, group_id } = body;
     if (!user_id) return { success: false, error: 'user_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            'INSERT INTO coaches (user_id, channel_id, group_id) VALUES ($1, $2, $3) RETURNING id',
-            [user_id, channel_id || null, group_id || null]
+            'INSERT INTO coaches (user_id, group_id) VALUES ($1, $2) RETURNING id',
+            [user_id, group_id || null]
         );
         await pool.query(
             `UPDATE users SET roles = array_append(roles, 'coach') WHERE user_id = $1 AND NOT ('coach' = ANY(roles))`,
@@ -3524,15 +3524,15 @@ async function handlePostCoaches(body) {
 }
 
 async function handlePutCoach(coachId, body) {
-    const { channel_id, user_id, group_id } = body;
+    const { user_id, group_id } = body;
     if (!user_id) return { success: false, error: 'user_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const oldResult = await pool.query('SELECT user_id FROM coaches WHERE id = $1', [coachId]);
         const oldUserId = oldResult.rows[0]?.user_id;
         await pool.query(
-            'UPDATE coaches SET user_id=$1, channel_id=$2, group_id=$3 WHERE id=$4',
-            [user_id, channel_id || null, group_id || null, coachId]
+            'UPDATE coaches SET user_id=$1, group_id=$2 WHERE id=$3',
+            [user_id, group_id || null, coachId]
         );
         await pool.query(
             `UPDATE users SET roles = array_append(roles, 'coach') WHERE user_id = $1 AND NOT ('coach' = ANY(roles))`,
@@ -3822,7 +3822,7 @@ async function handleGetChannels(adminCtx) {
                 FROM subtree st
                 JOIN channels c ON c.id = st.id
                 LEFT JOIN users u ON u.channel_id = c.id
-                LEFT JOIN coaches p ON p.channel_id = c.id
+                LEFT JOIN coaches p ON p.user_id = u.user_id
                 LEFT JOIN kino_devices kd ON kd.channel_id = c.id
                 LEFT JOIN biomarkers b ON b.kino_device_id = kd.id
                 GROUP BY c.id, st.depth
@@ -3839,7 +3839,7 @@ async function handleGetChannels(adminCtx) {
                    COUNT(DISTINCT b.id) AS scan_count
             FROM channels c
             LEFT JOIN users u ON u.channel_id = c.id
-            LEFT JOIN coaches p ON p.channel_id = c.id
+            LEFT JOIN coaches p ON p.user_id = u.user_id
             LEFT JOIN kino_devices kd ON kd.channel_id = c.id
             LEFT JOIN biomarkers b ON b.kino_device_id = kd.id
             GROUP BY c.id
@@ -4034,10 +4034,10 @@ async function handlePutUser(user_id, body) {
         if (roles) {
             if (roles.includes('coach')) {
                 await pool.query(
-                    `INSERT INTO coaches (user_id, channel_id)
-                     SELECT $1, COALESCE($2, u.channel_id) FROM users u WHERE u.user_id = $1
+                    `INSERT INTO coaches (user_id)
+                     SELECT $1 FROM users WHERE user_id = $1
                      AND NOT EXISTS (SELECT 1 FROM coaches WHERE user_id = $1)`,
-                    [user_id, channel_id || null]
+                    [user_id]
                 );
             } else {
                 // Block removal if coach still has assigned users
@@ -4467,7 +4467,7 @@ async function handleWxLogin(body) {
                 const inviteRecord = invRes.rows[0];
                 let newChannelId = inviteRecord.channel_id;
                 if (!newChannelId && inviteRecord.created_by) {
-                    const coachByUser = await pool.query('SELECT channel_id FROM coaches WHERE user_id = $1 LIMIT 1', [inviteRecord.created_by]);
+                    const coachByUser = await pool.query('SELECT u.channel_id FROM coaches c JOIN users u ON c.user_id = u.user_id WHERE c.user_id = $1 LIMIT 1', [inviteRecord.created_by]);
                     if (coachByUser.rows.length > 0) newChannelId = coachByUser.rows[0].channel_id;
                 }
                 if (newChannelId) {
@@ -4518,7 +4518,7 @@ async function handleWxLogin(body) {
         let coach = null;
         if (user.roles && user.roles.includes('coach')) {
             const coachRes = await pool.query(
-                `SELECT id, channel_id, user_id FROM coaches WHERE user_id = $1 LIMIT 1`,
+                `SELECT c.id, u2.channel_id, c.user_id FROM coaches c JOIN users u2 ON c.user_id = u2.user_id WHERE c.user_id = $1 LIMIT 1`,
                 [user.user_id]
             );
             if (coachRes.rows.length > 0) coach = coachRes.rows[0];
@@ -4554,7 +4554,7 @@ async function handleWxLogin(body) {
                 : null;
             let coach = null;
             if (user.roles && user.roles.includes('coach')) {
-                const coachRes = await pool.query('SELECT id, channel_id, user_id FROM coaches WHERE user_id = $1 LIMIT 1', [user.user_id]);
+                const coachRes = await pool.query('SELECT c.id, u2.channel_id, c.user_id FROM coaches c JOIN users u2 ON c.user_id = u2.user_id WHERE c.user_id = $1 LIMIT 1', [user.user_id]);
                 if (coachRes.rows.length > 0) coach = coachRes.rows[0];
             }
             return { success: true, user, channel, coach };
@@ -4600,14 +4600,14 @@ async function handleWxLogin(body) {
             }
             // Option B: fallback — if channel has exactly one coach, auto-assign them
             if (!resolvedCoachId && channelId) {
-                const channelCoaches = await pool.query('SELECT id FROM coaches WHERE channel_id = $1', [channelId]);
+                const channelCoaches = await pool.query('SELECT c.id FROM coaches c JOIN users u ON c.user_id = u.user_id WHERE u.channel_id = $1', [channelId]);
                 if (channelCoaches.rows.length === 1) resolvedCoachId = channelCoaches.rows[0].id;
             }
         }
     }
 
     if (!channelId && resolvedCoachId) {
-        const coachRes = await pool.query('SELECT channel_id FROM coaches WHERE id = $1', [resolvedCoachId]);
+        const coachRes = await pool.query('SELECT u.channel_id FROM coaches c JOIN users u ON c.user_id = u.user_id WHERE c.id = $1', [resolvedCoachId]);
         if (coachRes.rows.length > 0) channelId = coachRes.rows[0].channel_id;
     }
     if (!channelId) {
