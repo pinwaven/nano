@@ -2093,27 +2093,81 @@ async function handleGetChannelUsers(channelId, includeSubchannels = false) {
     if (!channelId) return { success: false, error: 'channelId is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const whereClause = includeSubchannels
-            ? `(u.channel_id = $1 OR ch.parent_channel_id = $1)`
-            : `u.channel_id = $1`;
-        const result = await pool.query(
-            `SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
-                    u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
-                    b.bio_age, cu.nickname AS coach_name,
-                    ch.name AS channel_name
-             FROM users u
-             LEFT JOIN channels ch ON ch.id = u.channel_id
-             LEFT JOIN coaches p ON u.coach_id = p.id
-             LEFT JOIN users cu ON p.user_id = cu.user_id
-             LEFT JOIN (
-                 SELECT DISTINCT ON (user_id) user_id, bio_age
-                 FROM biomarkers ORDER BY user_id, tested_at DESC
-             ) b ON u.user_id = b.user_id
-             WHERE ${whereClause}
-             ORDER BY u.created_at DESC`,
-            [channelId]
-        );
-        return { success: true, users: result.rows };
+
+        const channelFilter = includeSubchannels
+            ? `JOIN (WITH RECURSIVE subtree AS (
+                    SELECT id FROM channels WHERE id = $1
+                    UNION ALL
+                    SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
+                ) SELECT id FROM subtree) st ON u.channel_id = st.id`
+            : 'JOIN (SELECT $1::int AS id) st ON u.channel_id = st.id';
+
+        const result = await pool.query(`
+            SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
+                   u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
+                   b.bio_age, cu.nickname AS coach_name, ch.name AS channel_name
+            FROM users u
+            ${channelFilter}
+            LEFT JOIN channels ch ON ch.id = u.channel_id
+            LEFT JOIN coaches p ON u.coach_id = p.id
+            LEFT JOIN users cu ON p.user_id = cu.user_id
+            LEFT JOIN (
+                SELECT DISTINCT ON (user_id) user_id, bio_age
+                FROM biomarkers ORDER BY user_id, tested_at DESC
+            ) b ON u.user_id = b.user_id
+            ORDER BY u.created_at DESC
+        `, [channelId]);
+
+        const rows = result.rows.map(u => ({ ...u, chrono_age: calculateAge(u.birth_date) }));
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const testedRows = rows.filter(r => r.bio_age != null);
+        const avgBioAgeVal = testedRows.length > 0
+            ? (testedRows.reduce((s, r) => s + parseFloat(r.bio_age), 0) / testedRows.length).toFixed(1)
+            : null;
+
+        const subtreeCte = `WITH RECURSIVE subtree AS (SELECT id FROM channels WHERE id = $1 UNION ALL SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id)`;
+        const channelUserIds = rows.map(r => r.user_id);
+
+        const [coachRes, scanRes] = await Promise.all([
+            pool.query(
+                includeSubchannels
+                    ? `${subtreeCte} SELECT u.gender, p.created_at FROM coaches p JOIN subtree st ON p.channel_id = st.id JOIN users u ON p.user_id = u.user_id`
+                    : `SELECT u.gender, p.created_at FROM coaches p JOIN users u ON p.user_id = u.user_id WHERE p.channel_id = $1`,
+                [channelId]
+            ),
+            channelUserIds.length > 0
+                ? pool.query(
+                    `SELECT COUNT(*) FILTER (WHERE tested_at >= NOW() - INTERVAL '7 days') AS s7,
+                            COUNT(*) FILTER (WHERE tested_at >= NOW() - INTERVAL '14 days') AS s14,
+                            COUNT(*) FILTER (WHERE tested_at >= NOW() - INTERVAL '30 days') AS s30,
+                            COUNT(*) AS total
+                     FROM biomarkers WHERE user_id = ANY($1)`,
+                    [channelUserIds]
+                )
+                : Promise.resolve({ rows: [{ s7: 0, s14: 0, s30: 0, total: 0 }] }),
+        ]);
+
+        const coaches = coachRes.rows;
+        const scanRow = scanRes.rows[0] || {};
+
+        return {
+            success: true,
+            users: rows,
+            total: rows.length,
+            tested: testedRows.length,
+            avgBioAge: avgBioAgeVal ?? '—',
+            maleCount: rows.filter(r => r.gender === 'male').length,
+            femaleCount: rows.filter(r => r.gender === 'female').length,
+            newUsers7d: rows.filter(r => new Date(r.created_at) >= sevenDaysAgo).length,
+            coachTotal: coaches.length,
+            maleCoachCount: coaches.filter(c => c.gender === 'male').length,
+            femaleCoachCount: coaches.filter(c => c.gender === 'female').length,
+            newCoaches7d: coaches.filter(c => new Date(c.created_at) >= sevenDaysAgo).length,
+            scansTotal: parseInt(scanRow.total) || 0,
+            scans7d: parseInt(scanRow.s7) || 0,
+            scans14d: parseInt(scanRow.s14) || 0,
+            scans30d: parseInt(scanRow.s30) || 0,
+        };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -2123,9 +2177,29 @@ async function handleGetChannelCoaches(channelId, includeSubchannels = false) {
     if (!channelId) return { success: false, error: 'channelId is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const whereClause = includeSubchannels
-            ? `(p.channel_id = $1 OR ch.parent_channel_id = $1)`
-            : `p.channel_id = $1`;
+        if (includeSubchannels) {
+            const result = await pool.query(`
+                WITH RECURSIVE subtree AS (
+                    SELECT id FROM channels WHERE id = $1
+                    UNION ALL
+                    SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
+                )
+                SELECT p.id, p.channel_id, p.user_id, p.created_at,
+                       u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
+                       COUNT(assigned.user_id) AS user_count,
+                       ch.name AS channel_name,
+                       p.group_id, cg.name AS group_name
+                FROM coaches p
+                JOIN subtree st ON p.channel_id = st.id
+                JOIN users u ON p.user_id = u.user_id
+                LEFT JOIN channels ch ON ch.id = p.channel_id
+                LEFT JOIN users assigned ON p.id = assigned.coach_id
+                LEFT JOIN coach_groups cg ON cg.id = p.group_id
+                GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language, ch.name, p.group_id, cg.name
+                ORDER BY p.created_at DESC
+            `, [channelId]);
+            return { success: true, coaches: result.rows };
+        }
         const result = await pool.query(
             `SELECT p.id, p.channel_id, p.user_id, p.created_at,
                     u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
@@ -2137,7 +2211,7 @@ async function handleGetChannelCoaches(channelId, includeSubchannels = false) {
              LEFT JOIN channels ch ON ch.id = p.channel_id
              LEFT JOIN users assigned ON p.id = assigned.coach_id
              LEFT JOIN coach_groups cg ON cg.id = p.group_id
-             WHERE ${whereClause}
+             WHERE p.channel_id = $1
              GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language, ch.name, p.group_id, cg.name
              ORDER BY p.created_at DESC`,
             [channelId]
@@ -3712,7 +3786,16 @@ async function handleDeleteDot(dotId) {
 async function verifySubchannelOwnership(channelId, adminCtx) {
     if (adminCtx?.role !== 'channel') return true;
     if (!adminCtx.canManageSubchannels) return false;
-    const r = await pool.query('SELECT id FROM channels WHERE id = $1 AND parent_channel_id = $2', [channelId, adminCtx.channelId]);
+    const r = await pool.query(`
+        WITH RECURSIVE subtree AS (
+            SELECT id, 0 AS depth FROM channels WHERE id = $2
+            UNION ALL
+            SELECT c.id, s.depth + 1 FROM channels c
+            JOIN subtree s ON c.parent_channel_id = s.id
+            WHERE s.depth < 20
+        )
+        SELECT 1 FROM subtree WHERE id = $1 AND id != $2
+    `, [channelId, adminCtx.channelId]);
     return r.rows.length > 0;
 }
 
@@ -3721,20 +3804,29 @@ async function handleGetChannels(adminCtx) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (adminCtx?.role === 'channel' && adminCtx.canManageSubchannels) {
             const result = await pool.query(`
-                SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, c.parent_channel_id, c.can_manage_subchannels,
+                WITH RECURSIVE subtree AS (
+                    SELECT id, 1 AS depth FROM channels WHERE id = $1
+                    UNION ALL
+                    SELECT c.id, s.depth + 1 FROM channels c
+                    JOIN subtree s ON c.parent_channel_id = s.id
+                    WHERE s.depth < 20
+                )
+                SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at,
+                       c.parent_channel_id, c.can_manage_subchannels,
+                       st.depth,
                        COUNT(DISTINCT u.user_id) AS user_count,
                        COUNT(DISTINCT p.id) AS coach_count,
                        COUNT(DISTINCT kd.id) AS kino_device_count,
                        COUNT(DISTINCT CASE WHEN kd.status = 'active' THEN kd.id END) AS kino_active_count,
                        COUNT(DISTINCT b.id) AS scan_count
-                FROM channels c
+                FROM subtree st
+                JOIN channels c ON c.id = st.id
                 LEFT JOIN users u ON u.channel_id = c.id
                 LEFT JOIN coaches p ON p.channel_id = c.id
                 LEFT JOIN kino_devices kd ON kd.channel_id = c.id
                 LEFT JOIN biomarkers b ON b.kino_device_id = kd.id
-                WHERE c.parent_channel_id = $1
-                GROUP BY c.id
-                ORDER BY c.id
+                GROUP BY c.id, st.depth
+                ORDER BY st.depth, c.id
             `, [adminCtx.channelId]);
             return { success: true, channels: result.rows };
         }
@@ -3769,11 +3861,14 @@ async function handlePostChannel(body, adminCtx) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         let parentChannelId = null;
         if (isCmsAdmin) {
-            const parentCheck = await pool.query('SELECT parent_channel_id FROM channels WHERE id = $1', [adminCtx.channelId]);
-            if (parentCheck.rows[0]?.parent_channel_id != null) {
-                return { statusCode: 403, success: false, error: 'Cannot create sub-channels beyond 2 levels' };
+            const reqParent = parent_channel_id ? parseInt(parent_channel_id) : adminCtx.channelId;
+            if (reqParent === adminCtx.channelId) {
+                parentChannelId = adminCtx.channelId;
+            } else {
+                const owns = await verifySubchannelOwnership(reqParent, adminCtx);
+                if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+                parentChannelId = reqParent;
             }
-            parentChannelId = adminCtx.channelId;
         } else if (parent_channel_id) {
             parentChannelId = parseInt(parent_channel_id);
         }
@@ -3825,6 +3920,8 @@ async function handleDeleteChannel(channelId, adminCtx) {
     }
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const subcheck = await pool.query('SELECT 1 FROM channels WHERE parent_channel_id = $1 LIMIT 1', [channelId]);
+        if (subcheck.rows.length > 0) return { statusCode: 400, success: false, error: 'Cannot delete a channel that has sub-channels. Remove all sub-channels first.' };
         await pool.query('DELETE FROM channels WHERE id = $1', [channelId]);
         return { success: true };
     } catch (err) {
@@ -3833,7 +3930,11 @@ async function handleDeleteChannel(channelId, adminCtx) {
 }
 
 async function handlePutChannelManageSubchannels(channelId, body, adminCtx) {
-    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
+    if (adminCtx?.role === 'channel') {
+        if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const owns = await verifySubchannelOwnership(channelId, adminCtx);
+        if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+    }
     const { can_manage_subchannels } = body || {};
     if (typeof can_manage_subchannels !== 'boolean') return { statusCode: 400, success: false, error: 'can_manage_subchannels must be a boolean' };
     try {
@@ -3958,19 +4059,42 @@ async function handlePutUser(user_id, body) {
 }
 
 async function handleGetAdminAccounts(adminCtx) {
-    if (adminCtx?.role === 'channel' && !adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+    const isChannel = adminCtx?.role === 'channel';
+    const canManageOwn = isChannel && (adminCtx.tabs || []).includes('admin-accounts');
+    const canManageSubs = isChannel && adminCtx.canManageSubchannels;
+    if (isChannel && !canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         let result;
-        if (adminCtx?.role === 'channel' && adminCtx.canManageSubchannels) {
-            result = await pool.query(
-                `SELECT a.id, a.username, a.created_at, a.channel_id, a.permissions, c.name AS channel_name
-                 FROM admin_accounts a
-                 JOIN channels c ON a.channel_id = c.id
-                 WHERE c.parent_channel_id = $1
-                 ORDER BY a.created_at ASC`,
-                [adminCtx.channelId]
-            );
+        if (isChannel) {
+            if (canManageOwn && canManageSubs) {
+                result = await pool.query(
+                    `SELECT a.id, a.username, a.created_at, a.channel_id, a.permissions, c.name AS channel_name
+                     FROM admin_accounts a
+                     JOIN channels c ON a.channel_id = c.id
+                     WHERE a.channel_id = $1 OR c.parent_channel_id = $1
+                     ORDER BY a.created_at ASC`,
+                    [adminCtx.channelId]
+                );
+            } else if (canManageOwn) {
+                result = await pool.query(
+                    `SELECT a.id, a.username, a.created_at, a.channel_id, a.permissions, c.name AS channel_name
+                     FROM admin_accounts a
+                     JOIN channels c ON a.channel_id = c.id
+                     WHERE a.channel_id = $1
+                     ORDER BY a.created_at ASC`,
+                    [adminCtx.channelId]
+                );
+            } else {
+                result = await pool.query(
+                    `SELECT a.id, a.username, a.created_at, a.channel_id, a.permissions, c.name AS channel_name
+                     FROM admin_accounts a
+                     JOIN channels c ON a.channel_id = c.id
+                     WHERE c.parent_channel_id = $1
+                     ORDER BY a.created_at ASC`,
+                    [adminCtx.channelId]
+                );
+            }
         } else {
             result = await pool.query(
                 `SELECT a.id, a.username, a.created_at, a.channel_id, a.permissions, c.name AS channel_name
@@ -3986,22 +4110,35 @@ async function handleGetAdminAccounts(adminCtx) {
 }
 
 async function handlePostAdminAccount(body, adminCtx) {
-    const isCmsAdmin = adminCtx?.role === 'channel' && adminCtx?.canManageSubchannels;
-    if (adminCtx?.role === 'channel' && !isCmsAdmin) return { statusCode: 403, success: false, error: 'Forbidden' };
+    const isChannel = adminCtx?.role === 'channel';
+    const canManageOwn = isChannel && (adminCtx.tabs || []).includes('admin-accounts');
+    const canManageSubs = isChannel && adminCtx.canManageSubchannels;
+    if (isChannel && !canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
     const { username, password, channel_id, permissions } = body || {};
     if (!username || !password) return { statusCode: 400, success: false, error: 'Username and password required' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        if (isCmsAdmin && channel_id) {
-            const owns = await verifySubchannelOwnership(channel_id, adminCtx);
-            if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+        if (isChannel) {
+            const targetCid = channel_id ? parseInt(channel_id) : null;
+            if (targetCid === null) return { statusCode: 403, success: false, error: 'Forbidden' };
+            if (targetCid === adminCtx.channelId) {
+                if (!canManageOwn) return { statusCode: 403, success: false, error: 'Forbidden' };
+            } else {
+                if (!canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
+                const owns = await verifySubchannelOwnership(targetCid, adminCtx);
+                if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+            }
         }
+        const actorTabs = isChannel ? (adminCtx.tabs || []) : null;
+        const sanitizedPermissions = Array.isArray(permissions)
+            ? (actorTabs ? permissions.filter(p => actorTabs.includes(p)) : permissions)
+            : [];
         const { scryptSync, randomBytes } = require('crypto');
         const salt = randomBytes(16).toString('hex');
         const hash = scryptSync(password, salt, 64).toString('hex');
         const result = await pool.query(
             'INSERT INTO admin_accounts (username, password_hash, channel_id, permissions) VALUES ($1, $2, $3, $4) RETURNING id, username, created_at, channel_id, permissions',
-            [username, `${salt}:${hash}`, channel_id || null, Array.isArray(permissions) ? permissions : []]
+            [username, `${salt}:${hash}`, channel_id || null, sanitizedPermissions]
         );
         return { success: true, account: result.rows[0] };
     } catch (err) {
@@ -4012,13 +4149,24 @@ async function handlePostAdminAccount(body, adminCtx) {
 
 async function handlePutAdminAccount(id, body, adminCtx) {
     if (adminCtx?.role === 'channel') {
-        if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const canManageOwn = (adminCtx.tabs || []).includes('admin-accounts');
+        const canManageSubs = adminCtx.canManageSubchannels;
+        if (!canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const acct = await pool.query(
-            'SELECT a.channel_id FROM admin_accounts a JOIN channels c ON c.id = a.channel_id WHERE a.id = $1 AND c.parent_channel_id = $2',
-            [id, adminCtx.channelId]
-        );
-        if (acct.rows.length === 0) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const acct = await pool.query('SELECT channel_id FROM admin_accounts WHERE id = $1', [id]);
+        if (acct.rows.length === 0) return { statusCode: 404, success: false, error: 'Not found' };
+        const targetCid = parseInt(acct.rows[0].channel_id);
+        if (targetCid === adminCtx.channelId) {
+            if (!canManageOwn) return { statusCode: 403, success: false, error: 'Forbidden' };
+        } else {
+            if (!canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
+            const owns = await verifySubchannelOwnership(targetCid, adminCtx);
+            if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+        }
+        if (body?.permissions !== undefined) {
+            const actorTabs = adminCtx.tabs || [];
+            body = { ...body, permissions: Array.isArray(body.permissions) ? body.permissions.filter(p => actorTabs.includes(p)) : [] };
+        }
     }
     const { password, permissions } = body || {};
     if (!password && permissions === undefined) return { statusCode: 400, success: false, error: 'Password or permissions required' };
@@ -4041,13 +4189,21 @@ async function handlePutAdminAccount(id, body, adminCtx) {
 
 async function handleDeleteAdminAccount(id, adminCtx) {
     if (adminCtx?.role === 'channel') {
-        if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const canManageOwn = (adminCtx.tabs || []).includes('admin-accounts');
+        const canManageSubs = adminCtx.canManageSubchannels;
+        if (!canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
+        if (adminCtx.accountId && parseInt(id) === adminCtx.accountId) return { statusCode: 400, success: false, error: 'Cannot delete your own account' };
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const acct = await pool.query(
-            'SELECT a.channel_id FROM admin_accounts a JOIN channels c ON c.id = a.channel_id WHERE a.id = $1 AND c.parent_channel_id = $2',
-            [id, adminCtx.channelId]
-        );
-        if (acct.rows.length === 0) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const acct = await pool.query('SELECT channel_id FROM admin_accounts WHERE id = $1', [id]);
+        if (acct.rows.length === 0) return { statusCode: 404, success: false, error: 'Not found' };
+        const targetCid = parseInt(acct.rows[0].channel_id);
+        if (targetCid === adminCtx.channelId) {
+            if (!canManageOwn) return { statusCode: 403, success: false, error: 'Forbidden' };
+        } else {
+            if (!canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
+            const owns = await verifySubchannelOwnership(targetCid, adminCtx);
+            if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+        }
     }
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -4081,14 +4237,14 @@ async function handleAdminLogin(body) {
             return { success: true, token: process.env.API_BEARER_TOKEN, role: 'superadmin', channel_id: null, allowed_tabs: null };
         }
 
-        const chRes = await pool.query(`SELECT name, config->'admin_tabs' AS admin_tabs, can_manage_subchannels FROM channels WHERE id = $1`, [row.channel_id]);
+        const chRes = await pool.query(`SELECT name, logo_url, config->'admin_tabs' AS admin_tabs, can_manage_subchannels FROM channels WHERE id = $1`, [row.channel_id]);
         const channelRow = chRes.rows[0] || {};
         const channelTabs = Array.isArray(channelRow.admin_tabs) ? channelRow.admin_tabs : [];
         const accountPerms = Array.isArray(row.permissions) ? row.permissions : [];
         const tabs = accountPerms.length === 0 ? channelTabs : accountPerms.filter(p => channelTabs.includes(p));
         const cms = channelRow.can_manage_subchannels ?? false;
         const token = signChannelAdminToken({ sub: row.id, cid: row.channel_id, tabs, cms });
-        return { success: true, token, role: 'channel', channel_id: row.channel_id, channel_name: channelRow.name || '', allowed_tabs: tabs, can_manage_subchannels: cms };
+        return { success: true, token, role: 'channel', channel_id: row.channel_id, channel_name: channelRow.name || '', channel_logo: channelRow.logo_url || '', allowed_tabs: tabs, can_manage_subchannels: cms };
     } catch (err) {
         return { success: false, error: err.message };
     }

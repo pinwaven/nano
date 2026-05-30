@@ -85,6 +85,7 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 |---|---|
 | Kino Hardware | [kino-system.md](kino-system.md) |
 | Questionnaire System | [questionnaire-system.md](questionnaire-system.md) |
+| Channel System | [channel-system.md](channel-system.md) |
 | Role System | [role-system.md](role-system.md) |
 | BioAge Calculator | [biomarker-estimator.md](biomarker-estimator.md) |
 | Chat Prompt Chain | [chat-prompt-chain.md](chat-prompt-chain.md) |
