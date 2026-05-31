@@ -150,3 +150,30 @@
   - `node tests/lab-order.test.js`
   - `node tests/worker-addresses.test.js`
 - Next pending confirmation: Stage 5 worker order and transaction creation.
+
+## 2026-05-31 Stage 5 Worker Order And Transaction Creation
+
+- Added `src/schemas/migration_transactions.sql`:
+  - Extends `orders` with summary fields for lab checkout totals, order type, source, and metadata.
+  - Allows lab checkout orders to use `orders` as a summary without a single `store_items` item.
+  - Creates `transactions` with order linkage, user linkage, source, lab name, sku, localized product names, quantity, minor-unit pricing, status, and metadata.
+- Added worker lab checkout API:
+  - `POST /api/lab-orders/checkout`
+  - Validates `openid`, `lab_name`, `address_id`, and selected goods.
+  - Verifies the address belongs to the current user.
+  - Reloads active `lab_products` by `lab_name` and sku so client-submitted price/name data is not trusted.
+  - Inserts one `orders` summary row and linked `transactions` rows in a single database transaction.
+- Updated mini-program lab checkout submission:
+  - The lab product sheet now calls `/api/lab-orders/checkout`.
+  - The selected address and selected product skus are submitted to worker.
+  - The returned order id is kept in `nano_pending_lab_checkout` for the payment stage.
+  - Payment is still deferred to Stage 6.
+- Added test coverage:
+  - `tests/worker-lab-checkout.test.js` covers invalid empty goods and successful order plus transaction creation.
+- Verification:
+  - `node --check src/functions/worker/index.js`
+  - `node --check src/mini/nano-miniapp/pages/main/main.js`
+  - `node tests/worker-lab-checkout.test.js`
+  - `node tests/worker-addresses.test.js`
+  - `node tests/lab-order.test.js`
+- Next pending confirmation: Stage 6 payment and admin fulfillment.

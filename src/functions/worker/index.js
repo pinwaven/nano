@@ -1346,6 +1346,173 @@ async function handlePostOrder(body) {
     }
 }
 
+function normalizeLabCheckout(body = {}) {
+    const openid = body.openid || body.user_id;
+    const labName = String(body.lab_name || '').trim();
+    const addressId = body.address_id == null ? null : Number(body.address_id);
+    const goodsInput = Array.isArray(body.goods) ? body.goods : [];
+    const seen = new Set();
+    const goods = [];
+    for (const entry of goodsInput) {
+        const sku = String(entry && entry.sku || '').trim();
+        if (!sku || seen.has(sku)) continue;
+        const quantity = Math.max(1, parseInt(entry.quantity, 10) || 1);
+        seen.add(sku);
+        goods.push({ sku, quantity });
+    }
+    return { openid, labName, addressId, goods };
+}
+
+async function handlePostLabCheckout(body) {
+    const { openid, labName, addressId, goods } = normalizeLabCheckout(body);
+    if (!openid || !labName || !addressId) {
+        return { success: false, error: 'openid, lab_name and address_id are required', statusCode: 400 };
+    }
+    if (goods.length === 0) {
+        return { success: false, error: 'goods must include at least one sku', statusCode: 400 };
+    }
+    if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const addressResult = await client.query(
+            `SELECT id, contact_name, phone, province, city, district, address_line1, postal_code
+             FROM user_addresses
+             WHERE user_id = $1 AND id = $2`,
+            [openid, addressId]
+        );
+        if (addressResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return { success: false, error: 'Address not found', statusCode: 404 };
+        }
+        const address = addressResult.rows[0];
+
+        const skus = goods.map(g => g.sku);
+        const quantityBySku = new Map(goods.map(g => [g.sku, g.quantity]));
+        const productResult = await client.query(
+            `SELECT id, lab_name, sku, name_zh, name_en, unit_zh, unit_en, price_cny, price_usd
+             FROM lab_products
+             WHERE lab_name = $1 AND sku = ANY($2::text[]) AND active = TRUE
+             ORDER BY array_position($2::text[], sku)`,
+            [labName, skus]
+        );
+        if (productResult.rows.length !== goods.length) {
+            await client.query('ROLLBACK');
+            return { success: false, error: 'One or more lab products are not available', statusCode: 404 };
+        }
+
+        const lines = productResult.rows.map(product => {
+            const quantity = quantityBySku.get(product.sku) || 1;
+            const unitCny = Number(product.price_cny || 0);
+            const unitUsd = product.price_usd == null ? null : Number(product.price_usd);
+            return {
+                ...product,
+                quantity,
+                total_amount_cny: unitCny * quantity,
+                total_amount_usd: unitUsd == null ? null : unitUsd * quantity,
+            };
+        });
+        const totalCny = lines.reduce((sum, line) => sum + line.total_amount_cny, 0);
+        const totalUsd = lines.some(line => line.total_amount_usd == null)
+            ? null
+            : lines.reduce((sum, line) => sum + line.total_amount_usd, 0);
+        const totalQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
+        const source = 'lab_checkout';
+
+        const orderResult = await client.query(
+            `INSERT INTO orders
+               (user_id, item_id, item_key, quantity, price_cny, price_usd, order_type, status,
+                address_id, shipping_contact, total_amount_cny, total_amount_usd, source, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14::jsonb)
+             RETURNING id`,
+            [
+                openid,
+                null,
+                `lab:${labName}`,
+                totalQuantity,
+                totalCny / 100,
+                totalUsd == null ? null : totalUsd / 100,
+                'lab',
+                'pending',
+                address.id,
+                JSON.stringify(address),
+                totalCny,
+                totalUsd,
+                source,
+                JSON.stringify({ lab_name: labName, goods: skus }),
+            ]
+        );
+        const orderId = orderResult.rows[0].id;
+
+        await client.query(
+            `INSERT INTO transactions
+               (order_id, user_id, source, lab_name, sku, quantity, item_ref,
+                name_zh, name_en, unit_zh, unit_en, unit_amount_cny, total_amount_cny,
+                unit_amount_usd, total_amount_usd, status, metadata)
+             SELECT $1, $2, $3, $4, sku, quantity, item_ref,
+                    name_zh, name_en, unit_zh, unit_en, unit_amount_cny, total_amount_cny,
+                    unit_amount_usd, total_amount_usd, 'pending', metadata
+             FROM unnest(
+                    $5::text[], $6::int[], $7::text[], $8::text[], $9::text[],
+                    $10::text[], $11::text[], $12::int[], $13::int[], $14::int[], $15::int[], $16::jsonb[]
+                  ) AS line(sku, quantity, item_ref, name_zh, name_en, unit_zh, unit_en,
+                            unit_amount_cny, total_amount_cny, unit_amount_usd, total_amount_usd, metadata)`,
+            [
+                orderId,
+                openid,
+                source,
+                labName,
+                lines.map(line => line.sku),
+                lines.map(line => line.quantity),
+                lines.map(line => String(line.id)),
+                lines.map(line => line.name_zh),
+                lines.map(line => line.name_en),
+                lines.map(line => line.unit_zh || ''),
+                lines.map(line => line.unit_en || ''),
+                lines.map(line => Number(line.price_cny || 0)),
+                lines.map(line => line.total_amount_cny),
+                lines.map(line => line.price_usd == null ? null : Number(line.price_usd)),
+                lines.map(line => line.total_amount_usd),
+                lines.map(line => JSON.stringify({ lab_product_id: line.id })),
+            ]
+        );
+
+        await client.query('COMMIT');
+        return {
+            success: true,
+            order: {
+                id: orderId,
+                user_id: openid,
+                lab_name: labName,
+                quantity: totalQuantity,
+                total_amount_cny: totalCny,
+                total_amount_usd: totalUsd,
+                status: 'pending',
+            },
+            transactions: lines.map(line => ({
+                source,
+                lab_name: labName,
+                sku: line.sku,
+                quantity: line.quantity,
+                name_zh: line.name_zh,
+                name_en: line.name_en,
+                unit_amount_cny: Number(line.price_cny || 0),
+                total_amount_cny: line.total_amount_cny,
+                unit_amount_usd: line.price_usd == null ? null : Number(line.price_usd),
+                total_amount_usd: line.total_amount_usd,
+                status: 'pending',
+            })),
+        };
+    } catch (err) {
+        try { await client.query('ROLLBACK'); } catch (rollbackErr) {}
+        return { success: false, error: err.detail || err.message };
+    } finally {
+        client.release();
+    }
+}
+
 async function handleGetNutritionPlan(openid) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -7234,6 +7401,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostChannelInventory(parsedBody, adminCtx);
             } else if (path === '/addresses') {
                 result = await handlePostAddress(parsedBody);
+            } else if (path === '/lab-orders/checkout') {
+                result = await handlePostLabCheckout(parsedBody);
             } else if (path.includes('/store-items')) {
                 result = await handlePostStoreItem(parsedBody);
             } else if (path.includes('/orders')) {

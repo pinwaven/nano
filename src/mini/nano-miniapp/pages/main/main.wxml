@@ -300,7 +300,7 @@
               <text class="lab-product-total-label">{{t.labCheckoutSelected}} {{selectedLabProducts.length}}</text>
               <text class="lab-product-total-price">{{t.labCheckoutTotal}} {{labCheckoutTotalText}}</text>
             </view>
-            <view class="lab-product-submit" bindtap="submitLabCheckout">
+            <view class="lab-product-submit {{labCheckoutBusy ? 'is-disabled' : ''}}" bindtap="submitLabCheckout">
               <text>{{t.labCheckoutSubmitNext}}</text>
             </view>
           </view>

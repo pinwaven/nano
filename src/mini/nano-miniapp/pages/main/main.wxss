@@ -1452,6 +1452,10 @@
   justify-content: center;
 }
 
+.lab-product-submit.is-disabled {
+  opacity: 0.56;
+}
+
 /* ── Cartridge Sim Overlay ── */
 
 .csim-overlay {

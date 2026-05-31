@@ -151,10 +151,10 @@ const T = {
     labCheckoutAddress: '联系地址',
     labCheckoutSelected: '已选',
     labCheckoutTotal: '合计',
-    labCheckoutSubmitNext: '下一步下单',
+    labCheckoutSubmitNext: '提交订单',
     labCheckoutNeedGoods: '请先选择检测项目',
     labCheckoutNeedAddress: '请先添加联系地址',
-    labCheckoutReady: '订单创建将在下一阶段接入',
+    labCheckoutReady: '订单已创建，请继续支付',
     toolHealthAdvice: '健康管理',
     toolUploadImage: '上传图片',
     imageUploading: '正在上传图片…',
@@ -328,10 +328,10 @@ const T = {
     labCheckoutAddress: 'Contact Address',
     labCheckoutSelected: 'Selected',
     labCheckoutTotal: 'Total',
-    labCheckoutSubmitNext: 'Next',
+    labCheckoutSubmitNext: 'Submit Order',
     labCheckoutNeedGoods: 'Choose at least one test',
     labCheckoutNeedAddress: 'Add a contact address first',
-    labCheckoutReady: 'Order creation will be connected in the next stage',
+    labCheckoutReady: 'Order created. Continue to payment.',
     toolHealthAdvice: 'Health Advice',
     toolUploadImage: 'Upload Image',
     imageUploading: 'Uploading image…',
@@ -1746,7 +1746,8 @@ Page({
   },
 
   async submitLabCheckout() {
-    const { t, user, selectedLabProductIds, selectedStoreAddress, selectedLabService, selectedLabProducts } = this.data
+    const { t, user, selectedLabProductIds, selectedStoreAddress, selectedLabService, selectedLabProducts, labCheckoutBusy } = this.data
+    if (labCheckoutBusy) return
     if (selectedLabProductIds.length === 0) {
       wx.showToast({ title: t.labCheckoutNeedGoods, icon: 'none' })
       return
@@ -1766,12 +1767,28 @@ Page({
       })
       return
     }
-    wx.setStorageSync('nano_pending_lab_checkout', {
-      lab_name: selectedLabService?.lab_name,
-      goods: selectedLabProducts.map(p => ({ sku: p.sku, name: p.name, price_cny: p.priceCny, price_usd: p.priceUsd })),
-      address_id: address.id,
-    })
-    wx.showToast({ title: t.labCheckoutReady, icon: 'none' })
+    this.setData({ labCheckoutBusy: true })
+    try {
+      const res = await this._req(`${BASE}/api/lab-orders/checkout`, 'POST', {
+        openid: user.user_id,
+        lab_name: selectedLabService?.lab_name,
+        goods: selectedLabProducts.map(p => ({ sku: p.sku, quantity: 1 })),
+        address_id: address.id,
+      })
+      wx.setStorageSync('nano_pending_lab_checkout', {
+        order_id: res.data?.order?.id,
+        lab_name: selectedLabService?.lab_name,
+        goods: selectedLabProducts.map(p => ({ sku: p.sku, name: p.name, price_cny: p.priceCny, price_usd: p.priceUsd })),
+        address_id: address.id,
+      })
+      wx.showToast({ title: t.labCheckoutReady, icon: 'none' })
+      this.setData({ labProductSheetOpen: false, storeSubTab: 'orders' })
+      await this._loadStoreOrders(user, this.data.lang)
+    } catch (e) {
+      wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
+    } finally {
+      this.setData({ labCheckoutBusy: false })
+    }
   },
 
   async handleSend() {
