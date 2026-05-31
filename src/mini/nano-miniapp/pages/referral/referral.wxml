@@ -10,132 +10,29 @@
     <text class="header-title">{{t.title}}</text>
   </view>
 
-  <!-- Loading -->
-  <view wx:if="{{loading}}" class="center-msg">
-    <text class="dim-text">{{t.loading}}</text>
+  <!-- Referral Code Card -->
+  <view class="card">
+    <text class="card-label">{{t.yourCode}}</text>
+    <view class="code-row">
+      <text class="code-value">{{referralCode}}</text>
+    </view>
+    <view class="btn-row">
+      <view class="btn btn-outline" bindtap="copyCode">
+        <text>{{t.copyCode}}</text>
+      </view>
+      <button class="btn btn-primary" open-type="share">
+        <text>{{t.shareCard}}</text>
+      </button>
+    </view>
   </view>
 
-  <!-- Error -->
-  <view wx:elif="{{error}}" class="center-msg">
-    <text class="error-text">{{error}}</text>
+  <!-- How it works -->
+  <view class="card how-card">
+    <text class="card-label">{{t.howTitle}}</text>
+    <view class="how-row"><text class="how-num">1</text><text class="how-text">{{t.how1}}</text></view>
+    <view class="how-row"><text class="how-num">2</text><text class="how-text">{{t.how2}}</text></view>
+    <view class="how-row"><text class="how-num">3</text><text class="how-text">{{t.how3}}</text></view>
   </view>
 
-  <!-- Content -->
-  <scroll-view wx:else scroll-y class="referral-content">
-
-    <!-- Referral Code Card -->
-    <view class="card">
-      <text class="card-label">{{t.yourCode}}</text>
-      <view class="code-row">
-        <text class="code-value">{{referralCode}}</text>
-      </view>
-      <view class="btn-row">
-        <view class="btn btn-outline" bindtap="copyCode">
-          <text>{{t.copyCode}}</text>
-        </view>
-        <button class="btn btn-primary" open-type="share">
-          <text>{{t.shareCard}}</text>
-        </button>
-      </view>
-    </view>
-
-    <!-- Stats -->
-    <view class="stats-row">
-      <view class="stat-item">
-        <text class="stat-num">{{totalReferred}}</text>
-        <text class="stat-label">{{t.totalReferred}}</text>
-      </view>
-      <view class="stat-divider"></view>
-      <view class="stat-item">
-        <text class="stat-num">{{t.cnyUnit}}{{totalEarned}}</text>
-        <text class="stat-label">{{t.totalEarned}}</text>
-      </view>
-    </view>
-
-    <!-- Credit Balance Card -->
-    <view class="card credit-card">
-      <view class="credit-row">
-        <view class="credit-info">
-          <text class="card-label">{{t.creditBalance}}</text>
-          <text class="credit-balance">{{creditBalance}} <text class="credit-currency">pts</text></text>
-          <text class="credit-hint">≈ {{creditCurrency}} {{(creditBalance / creditExchangeRate).toFixed(2)}}</text>
-        </view>
-        <view class="btn btn-primary credit-withdraw-btn" bindtap="openWithdrawForm">
-          <text>{{t.withdraw}}</text>
-        </view>
-      </view>
-    </view>
-
-    <!-- Withdrawal Form Overlay -->
-    <view wx:if="{{showWithdrawForm}}" class="withdraw-overlay" catchtap="closeWithdrawForm">
-      <view class="withdraw-modal" catchtap="{{ '' }}">
-        <text class="withdraw-modal-title">{{t.withdrawTitle}}</text>
-        <view class="form-field">
-          <text class="form-label">{{t.withdrawCredits}}</text>
-          <input class="form-input" type="digit" value="{{withdrawCreditsInput}}"
-            bindinput="onWithdrawCreditsInput" placeholder="0" />
-        </view>
-        <view class="form-field">
-          <text class="form-label">{{t.withdrawAccount}}</text>
-          <input class="form-input" value="{{withdrawAccountInput}}"
-            bindinput="onWithdrawAccountInput" placeholder="WeChat / 手机号" />
-        </view>
-        <view class="withdraw-btns">
-          <view class="btn btn-outline" bindtap="closeWithdrawForm">
-            <text>{{t.withdrawCancel}}</text>
-          </view>
-          <view class="btn btn-primary" bindtap="submitWithdraw">
-            <text>{{withdrawSubmitting ? '…' : t.withdrawSubmit}}</text>
-          </view>
-        </view>
-      </view>
-    </view>
-
-    <!-- Withdrawal History -->
-    <view class="section-title">{{t.withdrawHistory}}</view>
-    <view wx:if="{{withdrawals.length === 0}}" class="empty-state">
-      <text class="dim-text">{{t.noWithdrawals}}</text>
-    </view>
-    <view wx:for="{{withdrawals}}" wx:key="id" class="wd-card">
-      <view class="wd-row">
-        <text class="wd-credits">{{item.credits_amount}} pts</text>
-        <text class="wd-arrow">→</text>
-        <text class="wd-cash">{{item.currency_amount}} {{item.currency}}</text>
-        <view class="wd-badge wd-status-{{item.status}}">
-          <text>{{item.status === 'pending' ? t.wdPending : item.status === 'approved' ? t.wdApproved : item.status === 'rejected' ? t.wdRejected : t.wdCompleted}}</text>
-        </view>
-      </view>
-      <text class="wd-date">{{item._dateFmt}} · {{item.payment_account}}</text>
-    </view>
-
-    <!-- How it works -->
-    <view class="card how-card">
-      <text class="card-label">{{t.howTitle}}</text>
-      <view class="how-row"><text class="how-num">1</text><text class="how-text">{{t.how1}}</text></view>
-      <view class="how-row"><text class="how-num">2</text><text class="how-text">{{t.how2}}</text></view>
-      <view class="how-row"><text class="how-num">3</text><text class="how-text">{{t.how3}}</text></view>
-    </view>
-
-    <!-- Friends List -->
-    <view class="section-title">{{t.friendList}}</view>
-
-    <view wx:if="{{referrals.length === 0}}" class="empty-state">
-      <text class="dim-text">{{t.noFriends}}</text>
-    </view>
-
-    <view wx:for="{{referrals}}" wx:key="user_id" class="friend-card">
-      <view class="friend-avatar">
-        <text class="avatar-letter">{{item._avatarLetter}}</text>
-      </view>
-      <view class="friend-info">
-        <text class="friend-name">{{item.nickname || '—'}}</text>
-        <text class="friend-meta">{{t.joined}}: {{item._joinedFmt}}</text>
-      </view>
-      <view wx:if="{{item.commission_earned > 0}}" class="friend-commission">
-        <text class="commission-amt">+{{t.cnyUnit}}{{item.commission_earned}}</text>
-      </view>
-    </view>
-
-    <view class="bottom-safe"></view>
-  </scroll-view>
+  <view class="bottom-safe"></view>
 </view>

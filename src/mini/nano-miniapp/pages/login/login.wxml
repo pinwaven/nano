@@ -13,6 +13,17 @@
     <text class="status-text">正在登录…</text>
   </view>
 
+  <!-- Code entry for users without an invite link -->
+  <view wx:elif="{{step === 'code'}}" class="login-card">
+    <text class="login-card-label">输入邀请码</text>
+    <text class="login-card-hint">请输入好友分享的6位邀请码</text>
+    <input class="code-input" value="{{codeInput}}" bindinput="onCodeInput"
+      placeholder="6位邀请码" maxlength="6" type="number" />
+    <view class="login-btn {{codeLoading ? 'disabled' : ''}}" bindtap="submitCode">
+      <text>{{codeLoading ? '验证中…' : '确认加入'}}</text>
+    </view>
+  </view>
+
   <!-- Phone binding for new invite-code users -->
   <view wx:elif="{{step === 'phone'}}" class="login-card">
     <text class="login-card-label">最后一步</text>

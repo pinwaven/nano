@@ -7,6 +7,8 @@ Page({
     loading: true,
     error: '',
     phoneLoading: false,
+    codeInput: '',
+    codeLoading: false,
     pendingAvatar: '',
     channel: null,
   },
@@ -41,10 +43,7 @@ Page({
       const res = await this._callWxLogin(code, this._inviteCode)
 
       if (res.data?.guest) {
-        app.globalData.user = { guest: true, user_id: res.data.openid, nickname: null, language: 'zh' }
-        app.globalData.channel = null
-        app.globalData.coach = null
-        wx.reLaunch({ url: '/pages/main/main' })
+        this.setData({ step: 'code', loading: false })
         return
       }
 
@@ -144,6 +143,31 @@ Page({
 
   retry() {
     this.wxLogin()
+  },
+
+  onCodeInput(e) {
+    this.setData({ codeInput: e.detail.value })
+  },
+
+  async submitCode() {
+    const code = this.data.codeInput.trim()
+    if (!code) return
+    this.setData({ codeLoading: true })
+    try {
+      const { code: wxCode } = await this._getCode()
+      this._inviteCode = code
+      const res = await this._callWxLogin(wxCode, code)
+      if (!res.data?.success) throw new Error(res.data?.error || '邀请码无效')
+      if (res.data.new_user) {
+        this._pendingLogin = res.data
+        this.setData({ step: 'phone', codeLoading: false, channel: res.data.channel || this.data.channel })
+        return
+      }
+      this._finishLogin(res.data)
+    } catch (e) {
+      wx.showToast({ title: e.message || '邀请码无效', icon: 'none' })
+      this.setData({ codeLoading: false })
+    }
   },
 
   _finishLogin(data) {

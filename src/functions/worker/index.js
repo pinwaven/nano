@@ -7,6 +7,15 @@ const crypto = require('crypto');
 
 const generateUserId = () => crypto.randomBytes(4).toString('hex');
 
+async function generateReferralCode() {
+    for (let i = 0; i < 10; i++) {
+        const code = String(100000 + (parseInt(crypto.randomBytes(3).toString('hex'), 16) % 900000));
+        const { rows } = await pool.query('SELECT 1 FROM users WHERE referral_code = $1', [code]);
+        if (rows.length === 0) return code;
+    }
+    throw new Error('Failed to generate unique referral code');
+}
+
 function signChannelAdminToken({ sub, cid, tabs, perms, cms }) {
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + 86400;
@@ -4757,7 +4766,8 @@ async function handleWxLogin(body) {
     // Look up existing user — return with channel info and roles
     const existing = await pool.query(
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
+                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
+                u.referred_by_user_id, b.bio_age,
                 cu.nickname AS coach_name,
                 c.name AS channel_name, c.logo_url AS channel_logo_url,
                 c.config->'sub_age_display_names' AS channel_sub_age_names
@@ -4777,7 +4787,7 @@ async function handleWxLogin(body) {
     if (existing.rows.length > 0) {
         let existingRow = existing.rows[0];
 
-        // Existing user with no channel + invite code → assign channel from invite
+        // Existing user with no channel + invite code → assign channel from invite or referral
         if (!existingRow.channel_id && invite_code) {
             const invRes = await pool.query(
                 `SELECT id, channel_id, created_by, max_uses, use_count FROM invitations
@@ -4807,7 +4817,8 @@ async function handleWxLogin(body) {
                     // Re-fetch with updated channel info
                     const refreshed = await pool.query(
                         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
+                                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
+                                u.referral_code, u.referred_by_user_id, b.bio_age,
                                 cu.nickname AS coach_name,
                                 c.name AS channel_name, c.logo_url AS channel_logo_url,
                                 c.config->'sub_age_display_names' AS channel_sub_age_names
@@ -4823,6 +4834,26 @@ async function handleWxLogin(body) {
                         [existingRow.user_id]
                     );
                     if (refreshed.rows.length > 0) existingRow = refreshed.rows[0];
+                }
+            } else {
+                // invite_code not a coach invite — try as user referral_code
+                const refByCode = await pool.query(
+                    'SELECT user_id, channel_id FROM users WHERE referral_code = $1 LIMIT 1',
+                    [invite_code]
+                );
+                if (refByCode.rows.length > 0) {
+                    const referrer = refByCode.rows[0];
+                    if (!existingRow.referred_by_user_id) {
+                        await pool.query(
+                            'UPDATE users SET referred_by_user_id = $1 WHERE user_id = $2 AND referred_by_user_id IS NULL',
+                            [referrer.user_id, existingRow.user_id]
+                        );
+                        existingRow.referred_by_user_id = referrer.user_id;
+                    }
+                    if (referrer.channel_id) {
+                        await pool.query('UPDATE users SET channel_id = $1 WHERE user_id = $2', [referrer.channel_id, existingRow.user_id]);
+                        existingRow.channel_id = referrer.channel_id;
+                    }
                 }
             }
         }
@@ -4908,9 +4939,6 @@ async function handleWxLogin(body) {
              WHERE code = $1 AND is_active = TRUE AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1`,
             [invite_code.toUpperCase()]
         );
-        if (invRes.rows.length === 0) {
-            return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
-        }
         if (invRes.rows.length > 0) {
             inviteRecord = invRes.rows[0];
             channelId = inviteRecord.channel_id;
@@ -4919,10 +4947,22 @@ async function handleWxLogin(body) {
                 const coachByUser = await pool.query('SELECT id FROM coaches WHERE user_id = $1 LIMIT 1', [inviteRecord.created_by]);
                 if (coachByUser.rows.length > 0) resolvedCoachId = coachByUser.rows[0].id;
             }
-            // Option B: fallback — if channel has exactly one coach, auto-assign them
+            // Fallback: if channel has exactly one coach, auto-assign them
             if (!resolvedCoachId && channelId) {
                 const channelCoaches = await pool.query('SELECT c.id FROM coaches c JOIN users u ON c.user_id = u.user_id WHERE u.channel_id = $1', [channelId]);
                 if (channelCoaches.rows.length === 1) resolvedCoachId = channelCoaches.rows[0].id;
+            }
+        } else {
+            // Not a coach invite — try as user referral_code
+            const refByCode = await pool.query(
+                'SELECT user_id, channel_id FROM users WHERE referral_code = $1 LIMIT 1',
+                [invite_code]
+            );
+            if (refByCode.rows.length > 0) {
+                referralUserId = refByCode.rows[0].user_id;
+                if (!channelId) channelId = refByCode.rows[0].channel_id;
+            } else {
+                return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
             }
         }
     }
@@ -4937,11 +4977,12 @@ async function handleWxLogin(body) {
     }
 
     const newUserId = generateUserId();
+    const newReferralCode = await generateReferralCode();
     const created = await pool.query(
-        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, phone)
-         VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5, $6, $7)
-         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, coach_id, channel_id, roles, created_at, bio_data`,
-        [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, resolvedPhone]
+        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, referral_code, phone)
+         VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5, $6, $7, $8)
+         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
+        [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, resolvedPhone]
     );
 
     if (inviteRecord) {
@@ -5009,6 +5050,9 @@ async function handleGetMyReferrals(query) {
     const { user_id } = query;
     if (!user_id) return { success: false, error: 'user_id is required' };
     try {
+        const userRes = await pool.query('SELECT referral_code FROM users WHERE user_id = $1', [user_id]);
+        const referral_code = userRes.rows[0]?.referral_code || user_id;
+
         const { rows } = await pool.query(`
             SELECT u.user_id, u.nickname, u.avatar_url, u.created_at AS joined_at,
                    COALESCE(SUM(rc.amount_cny), 0) AS commission_earned
@@ -5023,7 +5067,7 @@ async function handleGetMyReferrals(query) {
         const totalCommission = rows.reduce((sum, r) => sum + parseFloat(r.commission_earned), 0);
         return {
             success: true,
-            referral_code: user_id,
+            referral_code,
             total_referred: rows.length,
             total_commission_earned: Number(totalCommission.toFixed(2)),
             referrals: rows.map(r => ({
