@@ -322,11 +322,41 @@ async function handleGetOrders() {
         const result = await pool.query(
             `SELECT o.id, o.user_id, o.item_id, o.item_key, o.quantity,
                     o.price_cny, o.price_usd, o.status, o.created_at,
+                    o.order_type, o.total_amount_cny, o.total_amount_usd, o.source,
+                    o.shipping_contact, o.tracking_number, o.shipped_at, o.delivered_at,
+                    p.status AS payment_status, p.id AS payment_order_id, p.provider AS payment_provider,
                     u.nickname, u.external_id,
-                    s.name_en, s.name_zh
+                    s.name_en, s.name_zh,
+                    COALESCE(tx.transactions, '[]'::jsonb) AS transactions
              FROM orders o
              LEFT JOIN users u ON o.user_id = u.user_id
              LEFT JOIN store_items s ON o.item_id = s.id
+             LEFT JOIN LATERAL (
+                 SELECT po.id, po.status, po.provider
+                 FROM payment_orders po
+                 WHERE po.business_order_id = o.id
+                 ORDER BY po.created_at DESC
+                 LIMIT 1
+             ) p ON TRUE
+             LEFT JOIN LATERAL (
+                 SELECT jsonb_agg(
+                     jsonb_build_object(
+                         'id', t.id,
+                         'source', t.source,
+                         'lab_name', t.lab_name,
+                         'sku', t.sku,
+                         'name_zh', t.name_zh,
+                         'name_en', t.name_en,
+                         'quantity', t.quantity,
+                         'unit_amount_cny', t.unit_amount_cny,
+                         'total_amount_cny', t.total_amount_cny,
+                         'status', t.status
+                     )
+                     ORDER BY t.created_at ASC
+                 ) AS transactions
+                 FROM transactions t
+                 WHERE t.order_id = o.id
+             ) tx ON TRUE
              ORDER BY o.created_at DESC
              LIMIT 200`
         );
@@ -342,9 +372,35 @@ async function handleGetMyOrders(openid) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
             `SELECT o.id, o.item_key, o.quantity, o.price_cny, o.price_usd, o.status, o.created_at,
-                    s.name_en, s.name_zh, s.unit_en, s.unit_zh
+                    o.order_type, o.total_amount_cny, o.total_amount_usd, o.source,
+                    o.tracking_number, o.shipped_at, o.delivered_at,
+                    p.status AS payment_status,
+                    s.name_en, s.name_zh, s.unit_en, s.unit_zh,
+                    COALESCE(tx.transactions, '[]'::jsonb) AS transactions
              FROM orders o
              LEFT JOIN store_items s ON o.item_id = s.id
+             LEFT JOIN LATERAL (
+                 SELECT po.status
+                 FROM payment_orders po
+                 WHERE po.business_order_id = o.id
+                 ORDER BY po.created_at DESC
+                 LIMIT 1
+             ) p ON TRUE
+             LEFT JOIN LATERAL (
+                 SELECT jsonb_agg(
+                     jsonb_build_object(
+                         'sku', t.sku,
+                         'name_zh', t.name_zh,
+                         'name_en', t.name_en,
+                         'quantity', t.quantity,
+                         'total_amount_cny', t.total_amount_cny,
+                         'status', t.status
+                     )
+                     ORDER BY t.created_at ASC
+                 ) AS transactions
+                 FROM transactions t
+                 WHERE t.order_id = o.id
+             ) tx ON TRUE
              WHERE o.user_id = $1
              ORDER BY o.created_at DESC`,
             [openid]
@@ -1288,11 +1344,27 @@ async function handleDeleteChannelInventory(id, adminCtx) {
 }
 
 async function handlePutOrder(orderId, body) {
-    const { status } = body;
+    const { status, tracking_number } = body;
     if (!status) return { success: false, error: 'status is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, orderId]);
+        const trackingNumber = tracking_number == null ? null : String(tracking_number).trim();
+        await pool.query(
+            `UPDATE orders
+             SET status = $1,
+                 tracking_number = COALESCE(NULLIF($2, ''), tracking_number),
+                 shipped_at = CASE WHEN $1 = 'shipped' THEN COALESCE(shipped_at, NOW()) ELSE shipped_at END,
+                 delivered_at = CASE WHEN $1 = 'delivered' THEN COALESCE(delivered_at, NOW()) ELSE delivered_at END
+             WHERE id = $3`,
+            [status, trackingNumber, orderId]
+        );
+        await pool.query(
+            `UPDATE transactions
+             SET status = $1,
+                 updated_at = NOW()
+             WHERE order_id = $2`,
+            [status, orderId]
+        );
         if (status === 'delivered') {
             await recordOrderCommissions(orderId);
         }

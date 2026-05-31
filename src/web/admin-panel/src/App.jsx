@@ -214,9 +214,10 @@ const T = {
     store: {
       itemsTab: 'Items', ordersTab: 'Orders',
       priceCny: 'CNY (¥)', priceUsd: 'USD ($)', tag: 'Tag', active: 'Active',
-      qty: 'Qty', status: 'Status', orderedAt: 'Ordered', yes: 'Yes', no: 'No',
+      qty: 'Qty', status: 'Status', payment: 'Payment', tracking: 'Tracking', orderedAt: 'Ordered', yes: 'Yes', no: 'No',
       pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', cancelled: 'Cancelled',
+      paid: 'Paid', created: 'Created', failed: 'Failed', addTracking: 'Add tracking number',
       image: 'Image', uploadImage: 'Click to upload image (PNG / JPG)',
       uploading: 'Uploading…', uploadFailed: 'Image upload failed', removeImage: 'Remove image',
     },
@@ -567,9 +568,10 @@ const T = {
     store: {
       itemsTab: '商品', ordersTab: '订单',
       priceCny: '售价 (CNY)', priceUsd: '售价 (USD)', tag: '标签', active: '上架',
-      qty: '数量', status: '状态', orderedAt: '下单时间', yes: '是', no: '否',
+      qty: '数量', status: '状态', payment: '支付', tracking: '快递单号', orderedAt: '下单时间', yes: '是', no: '否',
       pending: '待处理', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', cancelled: '已取消',
+      paid: '已支付', created: '已创建', failed: '失败', addTracking: '填写快递单号',
       image: '图片', uploadImage: '点击上传图片（PNG / JPG）',
       uploading: '上传中…', uploadFailed: '图片上传失败', removeImage: '移除图片',
     },
@@ -3534,7 +3536,33 @@ function OrderStatusSelect({ orderId, status, onSave }) {
   );
 }
 
-function StoreTab({ storeItems, orders, onRefresh }) {
+function OrderTrackingAction({ order, onRefresh, isSuperadmin }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState(false);
+  const canShip = isSuperadmin && order.payment_status === 'paid' && order.status !== 'shipped' && order.status !== 'delivered';
+  const ship = async () => {
+    const current = order.tracking_number || '';
+    const tracking = window.prompt(t.store.addTracking, current);
+    if (!tracking) return;
+    setBusy(true);
+    try {
+      await axios.put(`/api/orders/${order.id}`, { status: 'shipped', tracking_number: tracking.trim() });
+      onRefresh();
+    } catch {
+      /* silent */
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="row-actions">
+      <span className="mono muted">{order.tracking_number || '—'}</span>
+      {canShip && <button className="icon-btn" title={t.store.addTracking} onClick={ship} disabled={busy}><Package size={14} /></button>}
+    </div>
+  );
+}
+
+function StoreTab({ storeItems, orders, onRefresh, isSuperadmin }) {
   const { t } = useLang();
   const [subTab, setSubTab] = useState('items');
   const [modal, setModal] = useState(null);
@@ -3630,20 +3658,24 @@ function StoreTab({ storeItems, orders, onRefresh }) {
                 <th>{t.table.nameEn}</th>
                 <th>{t.store.qty}</th>
                 <th>{t.store.priceCny}</th>
+                <th>{t.store.payment}</th>
                 <th>{t.store.status}</th>
+                <th>{t.store.tracking}</th>
                 <th>{t.store.orderedAt}</th>
               </tr>
             </thead>
             <tbody>
-              {orders.length === 0 && <tr><td colSpan={7} className="empty-row">{t.empty.orders}</td></tr>}
+              {orders.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.orders}</td></tr>}
               {orders.map(o => (
                 <tr key={o.id}>
                   <td><span className="mono muted">{o.id.slice(0, 8)}…</span></td>
                   <td>{fmt(o.nickname || o.user_id)}</td>
-                  <td className="bold">{fmt(o.name_en)}</td>
+                  <td className="bold">{fmt(o.order_type === 'lab' && Array.isArray(o.transactions) && o.transactions.length ? o.transactions.map(tx => tx.name_en || tx.sku).join(', ') : o.name_en)}</td>
                   <td>{o.quantity}</td>
-                  <td>¥{o.price_cny}</td>
+                  <td>¥{o.total_amount_cny != null ? (Number(o.total_amount_cny) / 100).toFixed(2) : o.price_cny}</td>
+                  <td><Badge color={o.payment_status === 'paid' ? '#10b981' : '#94a3b8'}>{t.store[o.payment_status] || o.payment_status || '—'}</Badge></td>
                   <td><OrderStatusSelect orderId={o.id} status={o.status} onSave={onRefresh} /></td>
+                  <td><OrderTrackingAction order={o} onRefresh={onRefresh} isSuperadmin={isSuperadmin} /></td>
                   <td className="muted">{fmtDate(o.created_at)}</td>
                 </tr>
               ))}
@@ -9062,7 +9094,7 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'users'    && <UsersTab    users={data.users} coaches={data.coaches} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'dots'     && <DotsTab     dots={data.dots} onRefresh={fetchData} />}
-          {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} />}
+          {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} isSuperadmin={isSuperadmin} />}
           {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} />}
           {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} />}
           {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}

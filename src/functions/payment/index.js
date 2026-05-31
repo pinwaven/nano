@@ -689,6 +689,13 @@ async function handlePaymentCallback(provider, headers, rawBody) {
                  WHERE id = $1`,
                 [updated.rows[0].business_order_id]
             );
+            await db.query(
+                `UPDATE transactions
+                 SET status = 'paid',
+                     updated_at = NOW()
+                 WHERE order_id = $1`,
+                [updated.rows[0].business_order_id]
+            );
         }
     }
 

@@ -287,6 +287,49 @@ describe('payment API', () => {
     assert.ok(queries.find(q => q.sql.includes("status = 'paid'")));
   });
 
+  test('POST /payment/callbacks/wecom/payment marks linked transactions paid', async () => {
+    const queries = [];
+    installDbMock(async (sql, params) => {
+      queries.push({ sql, params });
+      if (sql.includes('FROM payment_providers')) {
+        return { rows: [{ id: 'provider-1', provider: 'wecom', merchant_id: 'mch-1', config: {}, secret_ref: 'WECOM_PAY' }] };
+      }
+      if (sql.includes('INSERT INTO payment_callback_events')) {
+        return { rows: [{ id: 'evt-1' }] };
+      }
+      if (sql.includes('UPDATE payment_orders') && sql.includes("status = 'paid'")) {
+        return { rows: [{ id: 'pay-1', business_order_id: 'order-1', provider: 'wecom', status: 'paid' }] };
+      }
+      if (sql.includes('UPDATE orders')) return { rows: [] };
+      if (sql.includes('UPDATE transactions')) return { rows: [] };
+      return { rows: [] };
+    });
+
+    const payment = require('../src/functions/payment');
+    payment.__private.setAdapterFactory(() => ({
+      async verifyPaymentCallback() {
+        return {
+          event_id: 'provider-event-2',
+          provider_trade_no: 'wx-prepay-2',
+          local_order_id: 'pay-1',
+          status: 'paid',
+          paid_at: '2026-05-26T12:01:33+08:00',
+          raw: { transaction_id: 'wx-tx-2' },
+        };
+      },
+      paymentCallbackResponse() {
+        return { code: 'SUCCESS', message: 'OK' };
+      },
+    }));
+
+    const response = await payment.handler(event('POST', '/payment/callbacks/wecom/payment', { id: 'provider-event-2' }));
+
+    assert.equal(response.statusCode, 200);
+    const transactionUpdate = queries.find(q => q.sql.includes('UPDATE transactions') && q.sql.includes("status = 'paid'"));
+    assert.ok(transactionUpdate);
+    assert.deepEqual(transactionUpdate.params, ['order-1']);
+  });
+
   test('POST /payment/refunds creates a WeCom refund request', async () => {
     installDbMock(async (sql, params) => {
       if (sql.includes('FROM payment_orders') && sql.includes('FOR UPDATE')) {

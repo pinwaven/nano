@@ -155,6 +155,8 @@ const T = {
     labCheckoutNeedGoods: '请先选择检测项目',
     labCheckoutNeedAddress: '请先添加联系地址',
     labCheckoutReady: '订单已创建，请继续支付',
+    labCheckoutPaid: '支付已完成',
+    labCheckoutPayError: '支付未完成，请稍后在订单中继续',
     toolHealthAdvice: '健康管理',
     toolUploadImage: '上传图片',
     imageUploading: '正在上传图片…',
@@ -332,6 +334,8 @@ const T = {
     labCheckoutNeedGoods: 'Choose at least one test',
     labCheckoutNeedAddress: 'Add a contact address first',
     labCheckoutReady: 'Order created. Continue to payment.',
+    labCheckoutPaid: 'Payment completed',
+    labCheckoutPayError: 'Payment was not completed. Continue later from orders.',
     toolHealthAdvice: 'Health Advice',
     toolUploadImage: 'Upload Image',
     imageUploading: 'Uploading image…',
@@ -687,11 +691,17 @@ function mapStoreOrders(rawOrders, lang) {
   return rawOrders.map(o => ({
     id: o.id,
     shortId: o.id.slice(0, 8),
-    name: lang === 'zh' ? (o.name_zh || o.item_key) : (o.name_en || o.item_key),
+    name: o.order_type === 'lab' && Array.isArray(o.transactions) && o.transactions.length
+      ? o.transactions.map(tx => lang === 'zh' ? tx.name_zh : tx.name_en).filter(Boolean).join('、')
+      : (lang === 'zh' ? (o.name_zh || o.item_key) : (o.name_en || o.item_key)),
     unit: lang === 'zh' ? o.unit_zh : o.unit_en,
     quantity: o.quantity,
-    price: lang === 'zh' ? `¥${o.price_cny}` : `$${o.price_usd}`,
+    price: o.total_amount_cny != null
+      ? `¥${(Number(o.total_amount_cny) / 100).toFixed(2)}`
+      : (lang === 'zh' ? `¥${o.price_cny}` : `$${o.price_usd}`),
     status: o.status,
+    paymentStatus: o.payment_status || null,
+    trackingNumber: o.tracking_number || null,
     createdAt: new Date(o.created_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US'),
   }))
 }
@@ -1775,13 +1785,17 @@ Page({
         goods: selectedLabProducts.map(p => ({ sku: p.sku, quantity: 1 })),
         address_id: address.id,
       })
+      const order = res.data?.order || {}
       wx.setStorageSync('nano_pending_lab_checkout', {
-        order_id: res.data?.order?.id,
+        order_id: order.id,
         lab_name: selectedLabService?.lab_name,
         goods: selectedLabProducts.map(p => ({ sku: p.sku, name: p.name, price_cny: p.priceCny, price_usd: p.priceUsd })),
         address_id: address.id,
       })
       wx.showToast({ title: t.labCheckoutReady, icon: 'none' })
+      if (order.id && order.total_amount_cny) {
+        await this._createLabPayment(order, selectedLabService, selectedLabProducts)
+      }
       this.setData({ labProductSheetOpen: false, storeSubTab: 'orders' })
       await this._loadStoreOrders(user, this.data.lang)
     } catch (e) {
@@ -1789,6 +1803,46 @@ Page({
     } finally {
       this.setData({ labCheckoutBusy: false })
     }
+  },
+
+  async _createLabPayment(order, service, products) {
+    const { t, user } = this.data
+    try {
+      const subject = service?.label || products.map(p => p.name).join('、') || 'Lab checkout'
+      const payRes = await this._req(`${BASE}/payment/orders`, 'POST', {
+        business_order_id: order.id,
+        user_id: user.user_id,
+        provider: 'wechat',
+        scene: 'mini_program',
+        currency: 'CNY',
+        amount_minor: Number(order.total_amount_cny),
+        subject,
+        description: products.map(p => p.name).join('、'),
+        openid: user.external_id || user.openid || user.user_id,
+        idempotency_key: `lab-${order.id}`,
+      })
+      const payload = payRes.data?.data?.payment_payload || payRes.data?.payment_payload
+      if (payload && payload.type === 'mini_program' && payload.paySign) {
+        await this._requestPayment(payload)
+        wx.showToast({ title: t.labCheckoutPaid, icon: 'success' })
+      }
+    } catch (e) {
+      wx.showToast({ title: t.labCheckoutPayError, icon: 'none', duration: 2500 })
+    }
+  },
+
+  _requestPayment(payload) {
+    return new Promise((resolve, reject) => {
+      wx.requestPayment({
+        timeStamp: payload.timeStamp || payload.timestamp,
+        nonceStr: payload.nonceStr || payload.nonce_str,
+        package: payload.package,
+        signType: payload.signType || payload.sign_type || 'RSA',
+        paySign: payload.paySign || payload.pay_sign,
+        success: resolve,
+        fail: reject,
+      })
+    })
   },
 
   async handleSend() {

@@ -177,3 +177,38 @@
   - `node tests/worker-addresses.test.js`
   - `node tests/lab-order.test.js`
 - Next pending confirmation: Stage 6 payment and admin fulfillment.
+
+## 2026-05-31 Stage 6 Payment And Admin Fulfillment
+
+- Connected lab checkout to the existing payment API:
+  - Mini-program lab checkout now calls `POST /payment/orders` after worker creates the order.
+  - Uses the lab order id as `business_order_id`, CNY minor-unit total as `amount_minor`, and a stable idempotency key.
+  - If the provider returns a mini-program payment payload with signing fields, the mini-program calls `wx.requestPayment`.
+- Synchronized paid status:
+  - Payment callback still marks `orders.status = 'paid'`.
+  - Payment callback now also marks linked `transactions.status = 'paid'`.
+- Added fulfillment schema:
+  - `src/schemas/migration_order_fulfillment.sql` adds `orders.tracking_number`, `shipped_at`, and `delivered_at`.
+- Expanded worker order APIs:
+  - `GET /api/orders` now returns order type, totals, shipping contact, tracking fields, latest payment status, and transaction lines for admin fulfillment.
+  - `GET /api/my-orders` now returns lab transaction summaries and payment/tracking status for mini-program order display.
+  - `PUT /api/orders/:id` accepts `tracking_number`, marks shipped/delivered timestamps, and syncs transaction status.
+- Updated admin panel Store orders:
+  - Displays lab product names, CNY totals, payment status, order status, and tracking number.
+  - Superadmin can enter a tracking number to mark a paid order as shipped.
+  - Non-superadmin Store users can see the paid order data but do not get the shipment action.
+- Added test coverage:
+  - `tests/payment.test.js` covers payment callback transaction sync.
+  - `tests/worker-order-fulfillment.test.js` covers admin order fields and ship-with-tracking updates.
+- Verification:
+  - `node --check src/functions/payment/index.js`
+  - `node --check src/functions/worker/index.js`
+  - `node --check src/mini/nano-miniapp/pages/main/main.js`
+  - `node tests/payment.test.js`
+  - `node tests/worker-order-fulfillment.test.js`
+  - `node tests/worker-lab-checkout.test.js`
+  - `node tests/worker-addresses.test.js`
+  - `node tests/lab-order.test.js`
+  - `npm --prefix src/web/admin-panel run build`
+  - `git diff --check`
+- Next pending confirmation: Stage 7 Aliyun express integration.
