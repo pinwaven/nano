@@ -139,6 +139,7 @@ const T = {
     addressAddNow: '去添加',
     toolFormulaDots: '营养定制',
     toolTestChip: '检测服务',
+    kinoTestOption: 'Kino检测',
     labServicesTitle: '第三方检测服务',
     labServicesLoading: '正在加载检测服务…',
     labServicesEmpty: '暂无可预约的检测服务',
@@ -315,6 +316,7 @@ const T = {
     addressAddNow: 'Add now',
     toolFormulaDots: 'Formulate Dots',
     toolTestChip: 'Use Kino Chip',
+    kinoTestOption: 'Kino Test',
     labServicesTitle: 'Lab Services',
     labServicesLoading: 'Loading lab services...',
     labServicesEmpty: 'No lab services available',
@@ -1584,9 +1586,7 @@ Page({
       setTyping: (v) => this.setData({ typing: v }),
     }
     if (action === 'test_chip') {
-      this._addMsg('ai', t.kinoScanPrompt)
-      this.setData({ kinoScanPending: true })
-      this._loadLabServices(true)
+      this._loadLabServices(true, true)
     } else if (action === 'formula_dots') {
       toolActions.runFormulaDs(user.user_id, t, ctx)
     } else if (action === 'health_advice') {
@@ -1665,16 +1665,36 @@ Page({
     })
   },
 
-  async _loadLabServices(visible = false) {
+  _startKinoTestFlow() {
+    const { t } = this.data
+    this._addMsg('ai', t.kinoScanPrompt)
+    this.setData({ kinoScanPending: true, labServicesVisible: false, labProductSheetOpen: false })
+  },
+
+  async _loadLabServices(visible = false, fallbackToKino = false) {
     const { lang } = this.data
     this.setData({ labServicesLoading: true, labServicesVisible: visible || this.data.labServicesVisible })
     try {
       const res = await this._req(`${BASE}/lab/services`)
       const services = mapLabServices(res.data?.services || [], lang)
-      this.setData({ labServices: services, labServicesLoading: false })
+      if (visible && fallbackToKino && services.length === 0) {
+        this.setData({ labServices: [], labServicesLoading: false, labServicesVisible: false })
+        this._startKinoTestFlow()
+        return
+      }
+      this.setData({
+        labServices: services,
+        labServicesLoading: false,
+        labServicesVisible: services.length > 0 && (visible || this.data.labServicesVisible),
+      })
     } catch (e) {
-      this.setData({ labServices: [], labServicesLoading: false })
+      this.setData({ labServices: [], labServicesLoading: false, labServicesVisible: false })
+      if (visible && fallbackToKino) this._startKinoTestFlow()
     }
+  },
+
+  handleKinoServiceTap() {
+    this._startKinoTestFlow()
   },
 
   async _loadLabProducts(labName) {

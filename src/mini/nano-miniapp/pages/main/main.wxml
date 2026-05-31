@@ -243,6 +243,10 @@
         <view wx:elif="{{labServices.length === 0}}" class="lab-services-state">{{t.labServicesEmpty}}</view>
         <scroll-view wx:else class="lab-services-scroll" scroll-x="true">
           <view class="lab-services-list">
+            <view class="lab-service-chip lab-service-kino" bindtap="handleKinoServiceTap">
+              <text class="lab-service-name">{{t.kinoTestOption}}</text>
+              <text class="lab-service-meta">{{t.kinoScanBtn}}</text>
+            </view>
             <view wx:for="{{labServices}}" wx:key="id" class="lab-service-chip" bindtap="handleLabServiceTap" data-lab="{{item.lab_name}}">
               <text class="lab-service-name">{{item.label}}</text>
               <text class="lab-service-meta">{{item.productText}}</text>
