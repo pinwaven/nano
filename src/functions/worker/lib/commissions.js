@@ -7,18 +7,48 @@ function getProductType(itemKey) {
     return 'subscription';
 }
 
+// Walk up the channel tree to find the effective commission_config.
+// Root channels always use their own config.
+// Sub-channels use their own config only if can_customize_rewards=true; otherwise inherit from parent.
+// Returns { config, source: 'own'|'inherited'|'global', sourceChannelId, sourceChannelName }
+async function getEffectiveCommissionConfig(channelId) {
+    const { rows } = await pool.query(`
+        WITH RECURSIVE chain AS (
+            SELECT id, parent_channel_id, commission_config, can_customize_rewards, name, 0 AS depth
+            FROM channels WHERE id = $1
+            UNION ALL
+            SELECT c.id, c.parent_channel_id, c.commission_config, c.can_customize_rewards, c.name, chain.depth + 1
+            FROM channels c JOIN chain ON c.id = chain.parent_channel_id
+            WHERE chain.depth < 10
+        )
+        SELECT * FROM chain ORDER BY depth ASC
+    `, [channelId]);
+
+    for (const row of rows) {
+        const isRoot = row.parent_channel_id == null;
+        const canUseOwn = isRoot || row.can_customize_rewards;
+        if (canUseOwn && row.commission_config != null) {
+            return {
+                config: row.commission_config,
+                source: row.id === channelId ? 'own' : 'inherited',
+                sourceChannelId: row.id,
+                sourceChannelName: row.name,
+            };
+        }
+        // Root with no config → fall through to global
+        if (isRoot) break;
+    }
+    return { config: null, source: 'global', sourceChannelId: null, sourceChannelName: null };
+}
+
 async function getRate(role, productType, channelId) {
     if (channelId) {
-        const { rows } = await pool.query(
-            'SELECT commission_config FROM channels WHERE id = $1',
-            [channelId]
-        );
-        const cfg = rows[0]?.commission_config;
-        if (cfg) {
+        const { config } = await getEffectiveCommissionConfig(channelId);
+        if (config) {
             const flatKey = `${role}_${productType}_flat`;
             const pctKey  = `${role}_${productType}_pct`;
-            if (cfg[flatKey] != null) return { flat_rate_cny: Number(cfg[flatKey]), percentage: null };
-            if (cfg[pctKey]  != null) return { flat_rate_cny: null, percentage: Number(cfg[pctKey]) };
+            if (config[flatKey] != null) return { flat_rate_cny: Number(config[flatKey]), percentage: null };
+            if (config[pctKey]  != null) return { flat_rate_cny: null, percentage: Number(config[pctKey]) };
         }
     }
     const { rows } = await pool.query(
@@ -85,7 +115,6 @@ async function recordOrderCommissions(orderId) {
                 `, [channelId, order.coach_user_id, order.user_id, orderId,
                     productType, order.item_key, order.quantity, chAmount]);
                 if (chRes.rows[0]?.id) {
-                    // Credit the channel's admin user — look up via channel config
                     const chAdminRes = await pool.query(
                         `SELECT config->>'admin_user_id' AS admin_user_id FROM channels WHERE id = $1`, [channelId]);
                     const adminUserId = chAdminRes.rows[0]?.admin_user_id;
@@ -120,9 +149,28 @@ async function recordUserReferralCommission(orderId) {
 
         let rate = 5; // default 5%
         if (order.channel_id) {
-            const chanRes = await pool.query('SELECT config FROM channels WHERE id = $1', [order.channel_id]);
-            const cfg = chanRes.rows[0]?.config;
-            if (cfg?.referral_commission_rate != null) rate = Number(cfg.referral_commission_rate);
+            // Walk up the channel tree to find the effective referral_commission_rate
+            const chanRes = await pool.query(`
+                WITH RECURSIVE chain AS (
+                    SELECT id, parent_channel_id, config, can_customize_rewards, 0 AS depth
+                    FROM channels WHERE id = $1
+                    UNION ALL
+                    SELECT c.id, c.parent_channel_id, c.config, c.can_customize_rewards, chain.depth + 1
+                    FROM channels c JOIN chain ON c.id = chain.parent_channel_id
+                    WHERE chain.depth < 10
+                )
+                SELECT * FROM chain ORDER BY depth ASC
+            `, [order.channel_id]);
+
+            for (const row of chanRes.rows) {
+                const isRoot = row.parent_channel_id == null;
+                const canUseOwn = isRoot || row.can_customize_rewards;
+                if (canUseOwn && row.config?.referral_commission_rate != null) {
+                    rate = Number(row.config.referral_commission_rate);
+                    break;
+                }
+                if (isRoot) break;
+            }
         }
 
         const amount = Number((order.price_cny * rate / 100).toFixed(2));
@@ -147,4 +195,4 @@ async function recordUserReferralCommission(orderId) {
     }
 }
 
-module.exports = { recordOrderCommissions, recordUserReferralCommission };
+module.exports = { recordOrderCommissions, recordUserReferralCommission, getEffectiveCommissionConfig };

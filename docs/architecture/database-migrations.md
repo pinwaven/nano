@@ -20,7 +20,7 @@ Files are applied in alphabetical order by filename.
 
 ```bash
 # Check what is pending (no changes made)
-npm run migrate:status        # dev
+npm run migrate:status:dev     # dev
 npm run migrate:status:prod   # prod
 
 # Apply pending migrations

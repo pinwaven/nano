@@ -3868,7 +3868,7 @@ async function handleGetChannels(adminCtx) {
                     WHERE s.depth < 20
                 )
                 SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at,
-                       c.parent_channel_id, c.can_manage_subchannels,
+                       c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards,
                        st.depth,
                        COUNT(DISTINCT u.user_id) AS user_count,
                        COUNT(DISTINCT p.id) AS coach_count,
@@ -3887,7 +3887,7 @@ async function handleGetChannels(adminCtx) {
             return { success: true, channels: result.rows };
         }
         const result = await pool.query(`
-            SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, c.parent_channel_id, c.can_manage_subchannels,
+            SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards,
                    COUNT(DISTINCT u.user_id) AS user_count,
                    COUNT(DISTINCT p.id) AS coach_count,
                    COUNT(DISTINCT kd.id) AS kino_device_count,
@@ -4037,6 +4037,130 @@ async function handlePutChannelSubAgeLabels(channelId, body, adminCtx) {
             `UPDATE channels SET config = jsonb_set(COALESCE(config, '{}'), '{sub_age_display_names}', $1::jsonb) WHERE id = $2`,
             [JSON.stringify(sub_age_display_names), channelId]
         );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetChannelRewardsConfig(channelId, adminCtx) {
+    if (adminCtx?.role === 'channel') {
+        const targetId = parseInt(channelId);
+        if (targetId !== adminCtx.channelId) {
+            const owns = await verifySubchannelOwnership(channelId, adminCtx);
+            if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+        }
+    }
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { getEffectiveCommissionConfig } = require('./lib/commissions');
+        const { config, source, sourceChannelId, sourceChannelName } = await getEffectiveCommissionConfig(parseInt(channelId));
+
+        // Also walk up for referral_commission_rate, credit_exchange_rate, currency
+        const { rows } = await pool.query(`
+            WITH RECURSIVE chain AS (
+                SELECT id, parent_channel_id, config, can_customize_rewards, 0 AS depth
+                FROM channels WHERE id = $1
+                UNION ALL
+                SELECT c.id, c.parent_channel_id, c.config, c.can_customize_rewards, chain.depth + 1
+                FROM channels c JOIN chain ON c.id = chain.parent_channel_id
+                WHERE chain.depth < 10
+            )
+            SELECT * FROM chain ORDER BY depth ASC
+        `, [channelId]);
+
+        const ownRow = rows[0];
+        let referral_commission_rate = 5;
+        let credit_exchange_rate = 1.0;
+        let currency = 'CNY';
+        for (const row of rows) {
+            const isRoot = row.parent_channel_id == null;
+            const canUseOwn = isRoot || row.can_customize_rewards;
+            if (canUseOwn) {
+                if (row.config?.referral_commission_rate != null) referral_commission_rate = Number(row.config.referral_commission_rate);
+                if (row.config?.credit_exchange_rate != null) credit_exchange_rate = parseFloat(row.config.credit_exchange_rate);
+                if (row.config?.currency) currency = row.config.currency;
+                break;
+            }
+            if (isRoot) break;
+        }
+
+        return {
+            success: true,
+            commission_config: config,
+            source,
+            source_channel_id: sourceChannelId,
+            source_channel_name: sourceChannelName,
+            can_customize_rewards: ownRow?.can_customize_rewards ?? false,
+            referral_commission_rate,
+            credit_exchange_rate,
+            currency,
+        };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutChannelRewardsConfig(channelId, body, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const cid = parseInt(channelId);
+
+        // Check permission: superadmin always ok; channel admin must own it AND either be root or have can_customize_rewards
+        if (adminCtx?.role === 'channel') {
+            if (cid !== adminCtx.channelId) {
+                const owns = await verifySubchannelOwnership(channelId, adminCtx);
+                if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+            }
+            // Sub-channel (has parent) requires can_customize_rewards
+            const { rows } = await pool.query(
+                'SELECT parent_channel_id, can_customize_rewards FROM channels WHERE id = $1', [cid]
+            );
+            const ch = rows[0];
+            if (ch?.parent_channel_id != null && !ch?.can_customize_rewards) {
+                return { statusCode: 403, success: false, error: 'Custom rewards not permitted for this channel' };
+            }
+        }
+
+        const { commission_config, referral_commission_rate } = body || {};
+        if (commission_config !== undefined) {
+            await pool.query(
+                'UPDATE channels SET commission_config = $1 WHERE id = $2',
+                [commission_config ? JSON.stringify(commission_config) : null, cid]
+            );
+        }
+        if (referral_commission_rate !== undefined) {
+            await pool.query(
+                `UPDATE channels SET config = jsonb_set(COALESCE(config, '{}'), '{referral_commission_rate}', $1::jsonb) WHERE id = $2`,
+                [JSON.stringify(referral_commission_rate), cid]
+            );
+        }
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutChannelRewardsPermission(channelId, body, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const cid = parseInt(channelId);
+
+        if (adminCtx?.role === 'channel') {
+            // Only the parent channel's admin (with canManageSubchannels) can grant this
+            if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+            const { rows } = await pool.query('SELECT parent_channel_id FROM channels WHERE id = $1', [cid]);
+            const parentId = rows[0]?.parent_channel_id;
+            if (!parentId) return { statusCode: 403, success: false, error: 'Cannot grant rewards permission to a root channel' };
+            // Verify the target's parent is within this admin's subtree
+            const owns = await verifySubchannelOwnership(parentId, adminCtx);
+            if (!owns && parentId !== adminCtx.channelId) return { statusCode: 403, success: false, error: 'Forbidden' };
+        }
+
+        const { can_customize_rewards } = body || {};
+        if (typeof can_customize_rewards !== 'boolean')
+            return { statusCode: 400, success: false, error: 'can_customize_rewards must be a boolean' };
+        await pool.query('UPDATE channels SET can_customize_rewards = $1 WHERE id = $2', [can_customize_rewards, cid]);
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -8624,6 +8748,9 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetPartnerPayouts(query);
             } else if (path.includes('/partners')) {
                 result = await handleGetPartners(query, adminCtx);
+            } else if (path.match(/\/channels\/(\d+)\/rewards-config$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/rewards-config$/)[1];
+                result = await handleGetChannelRewardsConfig(channelId, adminCtx);
             } else if (path.includes('/channels')) {
                 result = await handleGetChannels(adminCtx);
             } else if (path.includes('/academy/course-progress')) {
@@ -8925,6 +9052,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/channels\/(\d+)\/admin-tabs$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/admin-tabs$/)[1];
                 result = await handlePutChannelAdminTabs(channelId, parsedBody, adminCtx);
+            } else if (path.match(/\/channels\/(\d+)\/rewards-config$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/rewards-config$/)[1];
+                result = await handlePutChannelRewardsConfig(channelId, parsedBody, adminCtx);
+            } else if (path.match(/\/channels\/(\d+)\/rewards-permission$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/rewards-permission$/)[1];
+                result = await handlePutChannelRewardsPermission(channelId, parsedBody, adminCtx);
             } else if (path.match(/\/channels\/(\d+)\/manage-subchannels$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/manage-subchannels$/)[1];
                 result = await handlePutChannelManageSubchannels(channelId, parsedBody, adminCtx);

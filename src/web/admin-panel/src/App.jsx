@@ -12,6 +12,7 @@ import {
   Bug, AlertCircle, Image as ImageIcon,
   ClipboardList, ChevronUp, Send, Eye,
   BarChart2, Award, Archive, Box, Target, Filter, MessageSquare, FlaskConical, Shield,
+  LayoutDashboard,
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
@@ -124,7 +125,7 @@ function LoginScreen({ onLogin }) {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'CRM', lab: 'Lab', events: 'Events' },
+    nav: { dashboard: 'Dashboard', users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'CRM', lab: 'Lab', events: 'Events' },
     adminAccounts: { title: 'Admin Accounts', add: 'Add Admin', changePassword: 'Change Password', confirmDelete: 'Delete this admin account?', newPassword: 'New Password', usernameLabel: 'Username', passwordLabel: 'Password', count: (n) => `${n} account${n !== 1 ? 's' : ''}` },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
@@ -551,7 +552,7 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'CRM', lab: '检验中心', events: '线下活动' },
+    nav: { dashboard: '数据概览', users: '用户管理', coaches: 'COACH', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'CRM', lab: '检验中心', events: '线下活动' },
     adminAccounts: { title: '管理员账号', add: '添加管理员', changePassword: '修改密码', confirmDelete: '确认删除此管理员账号？', newPassword: '新密码', usernameLabel: '用户名', passwordLabel: '密码', count: (n) => `${n} 个账号` },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
@@ -8131,7 +8132,7 @@ function SubchannelsTab_UNUSED({ subchannels, adminAccounts, invitations, sessio
   );
 }
 
-function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchannels, onClose, onSave }) {
+function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchannels, subchannels, onClose, onSave }) {
   const { t } = useLang();
   const [activeTab, setActiveTab] = useState('general');
 
@@ -8287,14 +8288,82 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
     catch (e) { setDeleteError(e.response?.data?.error || 'Delete failed'); setDeleting(false); }
   };
 
+  // ── Rewards tab ───────────────────────────────────────────────────────────────
+  const [rewardsData, setRewardsData] = useState(null);
+  const [rewardsLoading, setRewardsLoading] = useState(false);
+  const [rewardsError, setRewardsError] = useState('');
+  const [rewardsSaving, setRewardsSaving] = useState(false);
+  const PRODUCT_TYPES = ['chip', 'dot', 'subscription'];
+  const RATE_ROLES = ['coach', 'channel'];
+
+  const emptyRatesForm = () => Object.fromEntries(
+    PRODUCT_TYPES.flatMap(pt => RATE_ROLES.flatMap(role => [
+      [`${role}_${pt}_flat`, ''],
+      [`${role}_${pt}_pct`, ''],
+    ]))
+  );
+
+  const [ratesForm, setRatesForm] = useState(emptyRatesForm);
+  const [referralRate, setReferralRate] = useState('');
+
+  const loadRewards = async () => {
+    setRewardsLoading(true); setRewardsError('');
+    try {
+      const r = await axios.get(`/api/channels/${channel.id}/rewards-config`);
+      setRewardsData(r.data);
+      const cfg = r.data.commission_config || {};
+      const form = emptyRatesForm();
+      Object.keys(form).forEach(k => { if (cfg[k] != null) form[k] = String(cfg[k]); });
+      setRatesForm(form);
+      setReferralRate(r.data.referral_commission_rate != null ? String(r.data.referral_commission_rate) : '');
+    } catch (e) { setRewardsError(e.response?.data?.error || 'Failed to load'); }
+    finally { setRewardsLoading(false); }
+  };
+
+  useEffect(() => { if (activeTab === 'rewards') loadRewards(); }, [activeTab, channel.id]);
+
+  const isRoot = !channel.parent_channel_id;
+  const canEditRates = isSuperadmin || isRoot || channel.can_customize_rewards;
+
+  const saveRates = async () => {
+    setRewardsSaving(true); setRewardsError('');
+    try {
+      const commission_config = {};
+      Object.entries(ratesForm).forEach(([k, v]) => {
+        if (v !== '') commission_config[k] = Number(v);
+      });
+      await axios.put(`/api/channels/${channel.id}/rewards-config`, {
+        commission_config: Object.keys(commission_config).length ? commission_config : null,
+        referral_commission_rate: referralRate !== '' ? Number(referralRate) : undefined,
+      });
+      await loadRewards();
+    } catch (e) { setRewardsError(e.response?.data?.error || 'Save failed'); }
+    finally { setRewardsSaving(false); }
+  };
+
+  const resetRates = async () => {
+    if (!window.confirm('Clear custom rates and revert to inherited rates?')) return;
+    setRewardsSaving(true); setRewardsError('');
+    try {
+      await axios.put(`/api/channels/${channel.id}/rewards-config`, { commission_config: null });
+      await loadRewards();
+    } catch (e) { setRewardsError(e.response?.data?.error || 'Reset failed'); }
+    finally { setRewardsSaving(false); }
+  };
+
+  const toggleSubchRewardsPermission = async (subch) => {
+    try {
+      await axios.put(`/api/channels/${subch.id}/rewards-permission`, { can_customize_rewards: !subch.can_customize_rewards });
+      onSave();
+    } catch (e) { alert(e.response?.data?.error || 'Failed'); }
+  };
+
   // ── Tab list ──────────────────────────────────────────────────────────────────
-  const isRootChannel = !channel.parent_channel_id;
   const configTabs = [
     { id: 'general', label: 'General' },
-    // Root channels always have full access — feature flags only apply to sub-channels
-    ...(!isRootChannel ? [{ id: 'admin-tabs', label: 'Channel Features' }] : []),
     { id: 'admins', label: 'Admins' },
     { id: 'invites', label: 'Invites' },
+    { id: 'rewards', label: 'Rewards' },
     ...(isSuperadmin ? [{ id: 'sub-age', label: 'Sub-age Labels' }] : []),
     { id: 'danger', label: 'Danger', danger: true },
   ];
@@ -8520,6 +8589,147 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
             </>
           )}
 
+          {activeTab === 'rewards' && (
+            <div>
+              {rewardsLoading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : (
+                <>
+                  {/* Source badge */}
+                  {rewardsData && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20,
+                        background: rewardsData.source === 'own' ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.15)',
+                        color: rewardsData.source === 'own' ? '#10b981' : '#94a3b8' }}>
+                        {rewardsData.source === 'own' ? 'Own rates'
+                          : rewardsData.source === 'inherited' ? `Inherited from ${rewardsData.source_channel_name}`
+                          : 'Global defaults'}
+                      </span>
+                      {!canEditRates && (
+                        <span style={{ fontSize: 12, color: '#64748b' }}>Contact your parent channel admin to enable custom rates</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Commission rates table */}
+                  <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
+                    Commission rates — enter either a flat amount (¥) or a percentage, not both. Leave blank to inherit.
+                  </p>
+                  <div style={{ overflowX: 'auto', marginBottom: 16 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', color: '#94a3b8', fontWeight: 500, fontSize: 12 }}>Product</th>
+                          <th style={{ textAlign: 'center', padding: '6px 8px', color: '#94a3b8', fontWeight: 500, fontSize: 12 }} colSpan={2}>Coach commission</th>
+                          <th style={{ textAlign: 'center', padding: '6px 8px', color: '#94a3b8', fontWeight: 500, fontSize: 12 }} colSpan={2}>Channel commission</th>
+                        </tr>
+                        <tr>
+                          <th />
+                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>Flat (¥)</th>
+                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>Percent (%)</th>
+                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>Flat (¥)</th>
+                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>Percent (%)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {PRODUCT_TYPES.map(pt => (
+                          <tr key={pt} style={{ borderTop: '1px solid var(--border)' }}>
+                            <td style={{ padding: '6px 8px', fontWeight: 600, color: '#e2e8f0', textTransform: 'capitalize' }}>{pt}</td>
+                            {RATE_ROLES.map(role => (
+                              <>
+                                <td key={`${role}_${pt}_flat`} style={{ padding: '4px 6px' }}>
+                                  <input
+                                    type="number" min="0" step="0.01"
+                                    className="form-input"
+                                    style={{ width: 80, textAlign: 'center' }}
+                                    placeholder="—"
+                                    value={ratesForm[`${role}_${pt}_flat`]}
+                                    onChange={e => setRatesForm(f => ({ ...f, [`${role}_${pt}_flat`]: e.target.value }))}
+                                    disabled={!canEditRates}
+                                  />
+                                </td>
+                                <td key={`${role}_${pt}_pct`} style={{ padding: '4px 6px' }}>
+                                  <input
+                                    type="number" min="0" max="100" step="0.1"
+                                    className="form-input"
+                                    style={{ width: 80, textAlign: 'center' }}
+                                    placeholder="—"
+                                    value={ratesForm[`${role}_${pt}_pct`]}
+                                    onChange={e => setRatesForm(f => ({ ...f, [`${role}_${pt}_pct`]: e.target.value }))}
+                                    disabled={!canEditRates}
+                                  />
+                                </td>
+                              </>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Referral rate */}
+                  <label className="form-field" style={{ maxWidth: 220 }}>
+                    <span style={{ fontSize: 12 }}>Referral commission (%)</span>
+                    <input
+                      type="number" min="0" max="100" step="0.1"
+                      className="form-input"
+                      placeholder="5"
+                      value={referralRate}
+                      onChange={e => setReferralRate(e.target.value)}
+                      disabled={!canEditRates}
+                    />
+                  </label>
+
+                  {rewardsError && <p className="form-error" style={{ marginTop: 8 }}>{rewardsError}</p>}
+
+                  {canEditRates && (
+                    <div className="modal-footer" style={{ marginTop: 16 }}>
+                      {!isRoot && (
+                        <button className="btn-secondary" onClick={resetRates} disabled={rewardsSaving} style={{ color: '#f87171' }}>
+                          Reset to inherited
+                        </button>
+                      )}
+                      <button className="btn-secondary" onClick={onClose}>Cancel</button>
+                      <button className="btn-primary" onClick={saveRates} disabled={rewardsSaving}>
+                        <Check size={14} />{rewardsSaving ? 'Saving…' : 'Save rates'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Sub-channel rewards permissions */}
+                  {(isSuperadmin || canGrantSubch) && subchannels?.length > 0 && (
+                    <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Sub-channel custom rewards</div>
+                      <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>
+                        Allow sub-channels to define their own commission rates instead of inheriting from this channel.
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {subchannels.map(subch => (
+                          <div key={subch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                            <span style={{ fontSize: 13, color: '#e2e8f0' }}>{subch.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => toggleSubchRewardsPermission(subch)}
+                              style={{
+                                width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
+                                background: subch.can_customize_rewards ? '#6366f1' : '#334155',
+                                transition: 'background 0.2s', position: 'relative',
+                              }}
+                              title={subch.can_customize_rewards ? 'Revoke custom rewards' : 'Allow custom rewards'}
+                            >
+                              <span style={{
+                                position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                                transition: 'left 0.2s', left: subch.can_customize_rewards ? 23 : 3,
+                              }} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {activeTab === 'danger' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               {hasSubchannels ? (
@@ -8643,6 +8853,7 @@ function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
                 type: 'config', channel: c,
                 hasSubchannels: !!(childrenOf[c.id]?.length),
                 canGrantSubch: isSuperadmin || (session?.canManageSubchannels && c.id !== parseInt(session?.channelId)),
+                subchannels: childrenOf[c.id] || [],
               })}><Settings2 size={13} /></button>
             </div>
           </td>
@@ -8697,7 +8908,7 @@ function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
       </div>
 
       {modal?.type === 'add'    && <ChannelModal channel={null} channels={channels} isSuperadmin={isSuperadmin} parentChannel={modal.parentChannel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'config' && <ChannelConfigModal channel={modal.channel} isSuperadmin={isSuperadmin} canGrantSubch={modal.canGrantSubch} hasSubchannels={modal.hasSubchannels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'config' && <ChannelConfigModal channel={modal.channel} isSuperadmin={isSuperadmin} canGrantSubch={modal.canGrantSubch} hasSubchannels={modal.hasSubchannels} subchannels={modal.subchannels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
     </>
   );
 }
@@ -12731,6 +12942,218 @@ function EventsTab({ channels, session, isSuperadmin, onRefresh }) {
   );
 }
 
+function DashboardTab({ users, coaches, devices, batches, orders, session, isSuperadmin }) {
+  const { t } = useLang();
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    const isChannel = session?.role === 'channel';
+    const cid = session?.channelId;
+    const url = isChannel
+      ? `/api/channel-users/${cid}?include_subchannels=true`
+      : '/api/users?limit=1&offset=0';
+    axios.get(url)
+      .then(r => { if (r.data.success) setStats(r.data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [session]);
+
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '80px 0' }}>
+      <span style={{ width: 16, height: 16, border: '2px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
+      <span style={{ color: 'var(--muted)' }}>{t.topbar.loading}</span>
+    </div>
+  );
+
+  const total        = stats?.total       || 0;
+  const tested       = stats?.tested      || 0;
+  const avgBioAge    = stats?.avgBioAge   || null;
+  const bioAgeDelta  = stats?.bioAgeDelta ?? null;
+  const maleCount    = stats?.maleCount   || 0;
+  const femaleCount  = stats?.femaleCount || 0;
+  const coachTotal   = stats?.coachTotal  || (coaches?.length || 0);
+  const newCoaches7d = stats?.newCoaches7d || 0;
+  const scansTotal   = stats?.scansTotal  || 0;
+  const scans7d      = stats?.scans7d     || 0;
+  const scans14d     = stats?.scans14d    || 0;
+  const scans30d     = stats?.scans30d    || 0;
+  const newUsers7d   = stats?.newUsers7d  || 0;
+
+  const activeDevices  = (devices || []).filter(d => d.status === 'active').length;
+  const totalDevices   = (devices || []).length;
+  const availableChips = (batches || []).reduce((s, b) => s + parseInt(b.available || 0), 0);
+  const totalChips     = (batches || []).reduce((s, b) => s + parseInt(b.quantity  || 0), 0);
+
+  const isChannel = session?.role === 'channel';
+  const recentUsers  = isChannel
+    ? (stats?.users || []).slice(0, 5)
+    : [...(users || [])].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
+  const recentOrders = [...(orders || [])].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
+
+  const scanData = [
+    { period: t.stats.days7,  scans: scans7d   },
+    { period: t.stats.days14, scans: scans14d  },
+    { period: t.stats.days30, scans: scans30d  },
+    { period: 'Total',        scans: scansTotal },
+  ];
+
+  const genderData = [
+    { name: t.stats.male,   value: maleCount,           fill: '#3b82f6' },
+    { name: t.stats.female, value: femaleCount,          fill: '#ec4899' },
+  ];
+  const testData = [
+    { name: t.stats.tested,   value: tested,                      fill: '#10b981' },
+    { name: t.modal?.untested || 'Untested', value: Math.max(0, total - tested), fill: '#e2e8f0' },
+  ];
+
+  const deltaStr = bioAgeDelta != null
+    ? `${bioAgeDelta > 0 ? '+' : ''}${Number(bioAgeDelta).toFixed(1)}y`
+    : null;
+
+  const orderStatusColor = (s) => s === 'fulfilled' ? '#10b981' : s === 'pending' ? '#f59e0b' : '#64748b';
+
+  return (
+    <>
+      {/* Row 1: KPI Cards */}
+      <div className="dashboard-kpi-grid">
+        <RichStatCard icon={Users} label={t.stats.totalUsers} value={total} color="#3b82f6"
+          subs={[{ label: t.stats.tested, value: `${tested}/${total}`, highlight: tested > 0 }]} />
+        <RichStatCard icon={Activity} label={t.stats.avgBioAge} value={avgBioAge != null ? Number(avgBioAge).toFixed(1) : '—'} color="#8b5cf6"
+          subs={deltaStr ? [{ label: bioAgeDelta > 0 ? t.stats.aboveChrono : t.stats.belowChrono, value: deltaStr, highlight: true }] : []} />
+        <RichStatCard icon={UserCog} label={t.stats.totalCoaches} value={coachTotal} color="#10b981"
+          subs={[{ label: t.stats.new7d, value: `+${newCoaches7d}`, highlight: newCoaches7d > 0 }]} />
+        <RichStatCard icon={TrendingUp} label={t.stats.totalTests} value={scansTotal} color="#f59e0b"
+          subs={[{ label: t.stats.days7, value: `+${scans7d}`, highlight: scans7d > 0 }]} />
+      </div>
+
+      {/* Row 2: Charts */}
+      <div className="dashboard-charts-row">
+        <div className="card dashboard-chart-card">
+          <div className="dashboard-card-title">Scan Activity</div>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={scanData} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="period" tick={{ fontSize: 11, fill: '#64748b' }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} width={36} />
+              <Tooltip contentStyle={{ fontSize: 12 }} />
+              <Bar dataKey="scans" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="card dashboard-chart-card">
+          <div className="dashboard-card-title">User Breakdown</div>
+          <div className="dashboard-pie-grid">
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginBottom: 4 }}>Gender</div>
+              {maleCount + femaleCount > 0 ? (
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart>
+                    <Pie data={genderData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} innerRadius={28}>
+                      {genderData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : <div className="dashboard-empty-chart">—</div>}
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginBottom: 4 }}>Tested</div>
+              {total > 0 ? (
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart>
+                    <Pie data={testData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} innerRadius={28}>
+                      {testData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : <div className="dashboard-empty-chart">—</div>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Row 3: Kino Hardware (superadmin only) */}
+      {isSuperadmin && (
+        <div className="dashboard-hw-row">
+          <div className="dashboard-hw-card">
+            <Cpu size={20} style={{ color: '#6366f1', flexShrink: 0 }} />
+            <div>
+              <div className="dashboard-hw-value">{activeDevices} / {totalDevices}</div>
+              <div className="dashboard-hw-label">{t.stats.activeDevices} / {t.stats.totalDevices}</div>
+            </div>
+          </div>
+          <div className="dashboard-hw-card">
+            <Layers size={20} style={{ color: '#10b981', flexShrink: 0 }} />
+            <div>
+              <div className="dashboard-hw-value">{availableChips.toLocaleString()} / {totalChips.toLocaleString()}</div>
+              <div className="dashboard-hw-label">Available Chips / Total Chips</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Row 4: Quick Tables */}
+      <div className="dashboard-tables-row">
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="table-toolbar" style={{ padding: '10px 16px' }}>
+            <span className="table-count">Recent Users</span>
+          </div>
+          <table className="data-table">
+            <thead><tr>
+              <th>{t.table.nickname}</th>
+              <th>{t.table.bioAge}</th>
+              <th>{t.table.joined}</th>
+            </tr></thead>
+            <tbody>
+              {recentUsers.length === 0
+                ? <tr><td colSpan={3} className="empty-row">—</td></tr>
+                : recentUsers.map(u => (
+                  <tr key={u.user_id}>
+                    <td>{u.nickname || u.user_id}</td>
+                    <td>{u.bio_age ? Number(u.bio_age).toFixed(1) : '—'}</td>
+                    <td>{fmtDate(u.created_at)}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="table-toolbar" style={{ padding: '10px 16px' }}>
+            <span className="table-count">Recent Orders</span>
+          </div>
+          <table className="data-table">
+            <thead><tr>
+              <th>{t.table.nickname}</th>
+              <th>{t.table.status}</th>
+              <th>{t.table.joined}</th>
+            </tr></thead>
+            <tbody>
+              {recentOrders.length === 0
+                ? <tr><td colSpan={3} className="empty-row">—</td></tr>
+                : recentOrders.map(o => (
+                  <tr key={o.id}>
+                    <td>{o.nickname || o.user_id}</td>
+                    <td><span style={{ color: orderStatusColor(o.status), fontWeight: 600, fontSize: 12 }}>{o.status}</span></td>
+                    <td>{fmtDate(o.created_at)}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function AdminPanel({ session, onLogout }) {
   const [lang, setLang] = useState('zh');
   const t = T[lang];
@@ -12795,6 +13218,7 @@ function AdminPanel({ session, onLogout }) {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const NAV = [
+    { id: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
     { id: 'users',    label: t.nav.users,    icon: Users       },
     { id: 'coaches',  label: t.nav.coaches,  icon: UserCog     },
     { id: 'dots',     label: t.nav.dots,     icon: Droplets    },
@@ -12821,6 +13245,7 @@ function AdminPanel({ session, onLogout }) {
   const visibleNAV = isSuperadmin
     ? NAV
     : NAV.filter(n => {
+        if (n.id === 'dashboard') return true;
         if (n.disabled) return false;
         if (SUPERADMIN_ONLY.has(n.id)) return false;
         if (n.id === 'channels') return isCmsAdmin;
@@ -12828,7 +13253,7 @@ function AdminPanel({ session, onLogout }) {
         return (session?.allowedTabs || []).includes(n.id);
       });
 
-  const defaultTab = isSuperadmin ? 'users' : ((session?.allowedTabs || [])[0] || '');
+  const defaultTab = 'dashboard';
   const [tab, setTab] = useState(defaultTab);
 
   return (
@@ -12873,6 +13298,7 @@ function AdminPanel({ session, onLogout }) {
           </button>
         </header>
         <div className="content">
+          {tab === 'dashboard' && <DashboardTab users={data.users} coaches={data.coaches} devices={data.kinoDevices} batches={data.chipBatches} orders={data.orders} session={session} isSuperadmin={isSuperadmin} />}
           {tab === 'users'    && <UsersTab    users={data.users} coaches={data.coaches} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
           {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
           {tab === 'dots'     && <DotsTab     dots={data.dots} onRefresh={fetchData} />}

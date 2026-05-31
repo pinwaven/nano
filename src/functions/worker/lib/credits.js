@@ -1,11 +1,29 @@
 const { pool } = require('./db');
 
+const CHANNEL_INHERITANCE_CTE = `
+    WITH RECURSIVE chain AS (
+        SELECT id, parent_channel_id, config, can_customize_rewards, 0 AS depth
+        FROM channels WHERE id = $1
+        UNION ALL
+        SELECT c.id, c.parent_channel_id, c.config, c.can_customize_rewards, chain.depth + 1
+        FROM channels c JOIN chain ON c.id = chain.parent_channel_id
+        WHERE chain.depth < 10
+    )
+    SELECT * FROM chain ORDER BY depth ASC
+`;
+
 async function getChannelExchangeRate(channelId) {
     if (!channelId || !pool) return 1.0;
     try {
-        const { rows } = await pool.query('SELECT config FROM channels WHERE id = $1', [channelId]);
-        const rate = rows[0]?.config?.credit_exchange_rate;
-        return rate != null ? parseFloat(rate) : 1.0;
+        const { rows } = await pool.query(CHANNEL_INHERITANCE_CTE, [channelId]);
+        for (const row of rows) {
+            const isRoot = row.parent_channel_id == null;
+            const canUseOwn = isRoot || row.can_customize_rewards;
+            const rate = row.config?.credit_exchange_rate;
+            if (canUseOwn && rate != null) return parseFloat(rate);
+            if (isRoot) break;
+        }
+        return 1.0;
     } catch {
         return 1.0;
     }
@@ -14,8 +32,15 @@ async function getChannelExchangeRate(channelId) {
 async function getChannelCurrency(channelId) {
     if (!channelId || !pool) return 'CNY';
     try {
-        const { rows } = await pool.query('SELECT config FROM channels WHERE id = $1', [channelId]);
-        return rows[0]?.config?.currency || 'CNY';
+        const { rows } = await pool.query(CHANNEL_INHERITANCE_CTE, [channelId]);
+        for (const row of rows) {
+            const isRoot = row.parent_channel_id == null;
+            const canUseOwn = isRoot || row.can_customize_rewards;
+            const currency = row.config?.currency;
+            if (canUseOwn && currency) return currency;
+            if (isRoot) break;
+        }
+        return 'CNY';
     } catch {
         return 'CNY';
     }

@@ -94,7 +94,24 @@ Global default rates. One row per `(role, product_type)` combination.
 
 ### `channels.commission_config`
 
-JSONB column added to the existing `channels` table. `null` means use global defaults.
+JSONB column added to the existing `channels` table. `null` means use global defaults or inherit from parent channel.
+
+### `channels.can_customize_rewards`
+
+Boolean column added to the `channels` table (`DEFAULT FALSE`). If `TRUE`, a sub-channel can define its own commission overrides or referral rates. If `FALSE`, the sub-channel recursively inherits rewards settings from its parent channel.
+
+### Sub-channel Rewards Inheritance & Configuration Hierarchy
+
+When calculating commission rates, referral commission rates, or credit system configurations (exchange rates, currency) for a channel, the system uses a **recursive hierarchy lookup**:
+1. **Root Channels** (where `parent_channel_id IS NULL`) always use their own overrides from `commission_config` or `config` fields. If no override exists, they fall back to global platform defaults.
+2. **Sub-channels** (where `parent_channel_id IS NOT NULL`) inherit settings from their parent channel in the recursive tree **unless** they have `can_customize_rewards = TRUE`. If customization is permitted, their own overrides are evaluated first.
+3. The recursive lookup walks up to a maximum depth of 10 levels.
+
+This applies to:
+- Commission configuration (`commission_config` overrides)
+- Referral commission rate (`config.referral_commission_rate`)
+- Credit exchange rate (`config.credit_exchange_rate`)
+- Channel currency (`config.currency`)
 
 ### `coach_commissions`
 
@@ -193,6 +210,14 @@ All endpoints require a valid `Authorization: Bearer <token>` header.
 |---|---|---|---|
 | `GET` | `/api/channel-commissions` | `channel_id`, `status` | List commission records |
 | `GET` | `/api/channel-rewards-summary` | `channel_id` | Channel summary: this month, per-coach breakdown, pending payouts |
+
+### Channel Rewards Configuration
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/channels/:id/rewards-config` | Fetch effective rewards configuration for a channel. Recursively walks the channel tree and returns: `commission_config`, `source` (own/inherited/global), `source_channel_id`, `source_channel_name`, `can_customize_rewards`, `referral_commission_rate`, `credit_exchange_rate`, `currency`. |
+| `PUT` | `/api/channels/:id/rewards-config` | Update a channel's rewards overrides. Body: optional `commission_config` (JSON) and `referral_commission_rate` (number). Restricted to superadmins or channel admins who either own a root channel or have been granted `can_customize_rewards` permission. |
+| `PUT` | `/api/channels/:id/rewards-permission` | Grant/revoke sub-channel rewards customization permission. Body: `{ can_customize_rewards: boolean }`. Restricted to superadmins or parent channel admins with sub-channel management permissions. |
 
 ### Payouts
 

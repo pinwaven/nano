@@ -23,6 +23,9 @@ class BiomarkerEstimator {
     this.biometrics = { ...biometrics };
     this.tags = tags.map(normalizeTag).filter(t => TAG_REGISTRY[t]);
     this.referenceData = {};
+    // persistentRand: weekly-stable, models the user's true biological state (~80% of variance).
+    // rand: per-scan, models measurement-to-measurement variation (~20% of variance).
+    // Two scans same day share persistentRand → similar results. Weeks apart differ on both.
     this.persistentRand = options.persistentSeed ? mulberry32(hashSeed(options.persistentSeed)) : Math.random;
     this.rand = options.seed ? mulberry32(hashSeed(options.seed)) : Math.random;
   }
