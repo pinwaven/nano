@@ -419,7 +419,8 @@ const T = {
       noImages: 'No images',
     },
     academy: {
-      coursesTab: 'Courses', libraryTab: 'Library', progressTab: 'Progress',
+      coursesTab: 'Courses', libraryTab: 'Library', certificationsTab: 'Certifications',
+      pathsTab: 'Learning Paths', progressTab: 'Progress & Leaderboard',
       uploadCourse: 'Upload Course', editCourse: 'Edit Course', deleteCourse: 'Delete Course',
       uploadDoc: 'Upload Document', deleteDoc: 'Delete Document',
       title: 'Title *', description: 'Description', status: 'Status', videoFile: 'Video File', mdFile: 'Markdown File',
@@ -440,9 +441,25 @@ const T = {
       lessons: 'Lessons', lessonCount: (n) => `${n} lesson${n !== 1 ? 's' : ''}`,
       noLessons: 'No lessons yet — add the first lesson.',
       deleteLessonWarning: (t) => `Delete lesson "${t}"? The video file will also be removed.`,
-      totalLessons: 'Total Lessons', coachesCompleted: 'Coaches Done', completionRate: 'Completion %',
+      totalLessons: 'Lessons', coachesCompleted: 'Coaches Done', completionRate: 'Completion %',
       noProgress: 'No progress data yet',
       expandLessons: 'Manage Lessons', collapseLessons: 'Collapse',
+      level: 'Level', credits: 'Credits', creditsOnCompletion: 'Credits on Completion',
+      prerequisite: 'Prerequisite Course', contentType: 'Content Type',
+      minWatchSeconds: 'Min Watch Time (sec)',
+      textContent: 'Lesson Text Content', interactiveContext: 'Background Reading / Context',
+      newCert: 'New Certification', editCert: 'Edit Certification',
+      countCerts: (n) => `${n} certification${n !== 1 ? 's' : ''}`,
+      noCerts: 'No certifications yet',
+      tier: 'Tier', requiredCourses: 'Required Courses (all must be completed)',
+      minCredits: 'Min Credits Required', active: 'Active',
+      newPath: 'New Path', editPath: 'Edit Path',
+      countPaths: (n) => `${n} learning path${n !== 1 ? 's' : ''}`,
+      noPaths: 'No learning paths yet',
+      pathCoursesLabel: 'Courses in Path (ordered)', allCoursesAdded: 'All courses added', clickToAddCourses: 'Click to add courses:',
+      courseProgress: 'Course Progress', coachesStarted: 'Coaches Started',
+      avgQuizScore: 'Avg Quiz Score', creditsAwarded: 'Credits Awarded',
+      leaderboard: '🏆 Leaderboard', noData: 'No data yet',
     },
     reports: {
       title: 'AI Reports',
@@ -846,7 +863,8 @@ const T = {
       uplineTier: '上线 →', newTier: '新合伙人 ↓', saveRules: '保存规则', saving: '保存中…',
     },
     academy: {
-      coursesTab: '课程', libraryTab: '文库', progressTab: '完成进度',
+      coursesTab: '课程', libraryTab: '文库', certificationsTab: '证书管理',
+      pathsTab: '学习路径', progressTab: '进度与排行',
       uploadCourse: '上传课程', editCourse: '编辑课程', deleteCourse: '删除课程',
       uploadDoc: '上传文档', deleteDoc: '删除文档',
       title: '标题 *', description: '描述', status: '状态', videoFile: '视频文件', mdFile: 'Markdown 文件',
@@ -867,9 +885,25 @@ const T = {
       lessons: '课节', lessonCount: (n) => `${n} 节`,
       noLessons: '暂无课节，添加第一节。',
       deleteLessonWarning: (t) => `确认删除课节"${t}"？视频也将从存储中移除。`,
-      totalLessons: '课节总数', coachesCompleted: '已完成 Coach', completionRate: '完成率 %',
+      totalLessons: '课节数', coachesCompleted: '已完成 Coach', completionRate: '完成率 %',
       noProgress: '暂无进度数据',
       expandLessons: '管理课节', collapseLessons: '收起',
+      level: '等级', credits: '学分', creditsOnCompletion: '完成奖励学分',
+      prerequisite: '先修课程', contentType: '内容类型',
+      minWatchSeconds: '最短观看时长（秒）',
+      textContent: '课节文字内容', interactiveContext: '背景阅读 / 情境',
+      newCert: '新建证书', editCert: '编辑证书',
+      countCerts: (n) => `共 ${n} 个证书`,
+      noCerts: '暂无证书',
+      tier: '等级', requiredCourses: '必修课程（全部完成才可获证）',
+      minCredits: '最低学分要求', active: '启用',
+      newPath: '新建路径', editPath: '编辑路径',
+      countPaths: (n) => `共 ${n} 条路径`,
+      noPaths: '暂无学习路径',
+      pathCoursesLabel: '路径内课程（有序）', allCoursesAdded: '所有课程已添加', clickToAddCourses: '点击添加课程：',
+      courseProgress: '课程进度', coachesStarted: '已学习 Coach',
+      avgQuizScore: '平均测验分数', creditsAwarded: '已发放学分',
+      leaderboard: '🏆 排行榜', noData: '暂无数据',
     },
     reports: {
       title: 'AI 数据报表',
@@ -5914,7 +5948,7 @@ function fmtBytes(bytes) {
 
 // ── Academy modals ────────────────────────────────────────────────────────────
 
-function CourseModal({ course, onClose, onSave }) {
+function CourseModal({ course, courses = [], onClose, onSave }) {
   const { t } = useLang();
   const ta = t.academy;
   const isEdit = !!course?.id;
@@ -5922,6 +5956,9 @@ function CourseModal({ course, onClose, onSave }) {
     title: course?.title || '',
     description: course?.description || '',
     status: course?.status || 'draft',
+    level: course?.level || 'foundation',
+    credit_value: course?.credit_value ?? 10,
+    prerequisite_course_id: course?.prerequisite_course_id || '',
   });
   const [file, setFile] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -5942,16 +5979,24 @@ function CourseModal({ course, onClose, onSave }) {
         await uploadToOSS(url, file, setProgress);
         oss_key = key;
       }
+      const payload = {
+        ...form,
+        oss_key,
+        credit_value: parseInt(form.credit_value) || 10,
+        prerequisite_course_id: form.prerequisite_course_id ? parseInt(form.prerequisite_course_id) : null,
+      };
       if (isEdit) {
-        await axios.put(`/api/academy/courses/${course.id}`, { ...form, oss_key });
+        await axios.put(`/api/academy/courses/${course.id}`, payload);
       } else {
-        await axios.post('/api/academy/courses', { ...form, oss_key });
+        await axios.post('/api/academy/courses', payload);
       }
       onSave();
     } catch (err) {
       setError(err.response?.data?.error || err.message || ta.uploadFailed);
     } finally { setBusy(false); }
   };
+
+  const LEVELS = ['foundation', 'intermediate', 'advanced', 'expert'];
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -5980,8 +6025,33 @@ function CourseModal({ course, onClose, onSave }) {
                 <ChevronDown size={11} className="select-chevron" />
               </div>
             </label>
+            <label className="form-field">
+              <span>{ta.level}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.level} onChange={e => set('level', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  {LEVELS.map(lv => <option key={lv} value={lv}>{lv.charAt(0).toUpperCase() + lv.slice(1)}</option>)}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{ta.creditsOnCompletion}</span>
+              <input type="number" min={0} value={form.credit_value} onChange={e => set('credit_value', e.target.value)} />
+            </label>
+            <label className="form-field">
+              <span>{ta.prerequisite}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.prerequisite_course_id} onChange={e => set('prerequisite_course_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">— None —</option>
+                  {courses.filter(c => c.id !== course?.id).map(c => (
+                    <option key={c.id} value={c.id}>{c.title}</option>
+                  ))}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
             <div className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span className="form-label-text">{ta.videoFile}</span>
+              <span className="form-label-text">{ta.videoFile} (Course Overview, optional)</span>
               <label className="upload-zone">
                 <input type="file" accept="video/*" style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
                 <Upload size={18} style={{ marginBottom: 6, color: 'var(--muted)' }} />
@@ -6217,6 +6287,10 @@ function LessonModal({ lesson, courseId, onClose, onSave }) {
     title: lesson?.title || '',
     description: lesson?.description || '',
     sort_order: lesson?.sort_order ?? 0,
+    content_type: lesson?.content_type || 'video',
+    text_content: lesson?.text_content || '',
+    credit_value: lesson?.credit_value ?? 5,
+    min_watch_seconds: lesson?.min_watch_seconds || '',
   });
   const [file, setFile] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -6237,10 +6311,16 @@ function LessonModal({ lesson, courseId, onClose, onSave }) {
         await uploadToOSS(url, file, setProgress);
         oss_key = key;
       }
+      const payload = {
+        ...form,
+        oss_key,
+        credit_value: parseInt(form.credit_value) || 5,
+        min_watch_seconds: form.min_watch_seconds ? parseInt(form.min_watch_seconds) : null,
+      };
       if (isEdit) {
-        await axios.put(`/api/academy/lessons/${lesson.id}`, { ...form, oss_key });
+        await axios.put(`/api/academy/lessons/${lesson.id}`, payload);
       } else {
-        await axios.post('/api/academy/lessons', { ...form, oss_key, course_id: courseId });
+        await axios.post('/api/academy/lessons', { ...payload, course_id: courseId });
       }
       onSave();
     } catch (err) {
@@ -6248,9 +6328,15 @@ function LessonModal({ lesson, courseId, onClose, onSave }) {
     } finally { setBusy(false); }
   };
 
+  const CONTENT_TYPES = [
+    { value: 'video', label: 'Video', icon: '🎬' },
+    { value: 'text', label: 'Text', icon: '📄' },
+    { value: 'interactive', label: 'Interactive (Case Study)', icon: '🧩' },
+  ];
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 640 }}>
         <div className="modal-header">
           <span>{isEdit ? ta.editLesson : ta.addLesson}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
@@ -6266,24 +6352,69 @@ function LessonModal({ lesson, courseId, onClose, onSave }) {
               <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={2} style={{ resize: 'vertical' }} />
             </label>
             <label className="form-field">
+              <span>{ta.contentType}</span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {CONTENT_TYPES.map(ct => (
+                  <button key={ct.value} type="button"
+                    onClick={() => set('content_type', ct.value)}
+                    style={{
+                      padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                      border: form.content_type === ct.value ? '2px solid #6366f1' : '1px solid #e2e8f0',
+                      background: form.content_type === ct.value ? '#eef2ff' : 'transparent',
+                      color: form.content_type === ct.value ? '#6366f1' : 'inherit',
+                    }}>
+                    {ct.icon} {ct.label}
+                  </button>
+                ))}
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{ta.credits}</span>
+              <input type="number" min={0} value={form.credit_value} onChange={e => set('credit_value', e.target.value)} />
+            </label>
+            <label className="form-field">
               <span>Sort Order</span>
               <input type="number" min={0} value={form.sort_order} onChange={e => set('sort_order', parseInt(e.target.value) || 0)} />
             </label>
-            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span className="form-label-text">{ta.videoFile}</span>
-              <label className="upload-zone">
-                <input type="file" accept="video/*" style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
-                <Upload size={18} style={{ marginBottom: 6, color: 'var(--muted)' }} />
-                <span className="upload-zone-hint">
-                  {file ? file.name : (lesson?.oss_key ? ta.replaceVideo : ta.selectVideo)}
-                </span>
-              </label>
-              {busy && (
-                <div className="upload-progress">
-                  <div className="upload-progress-bar" style={{ width: `${progress}%` }} />
+
+            {form.content_type === 'video' && (
+              <>
+                <label className="form-field">
+                  <span>{ta.minWatchSeconds}</span>
+                  <input type="number" min={0} value={form.min_watch_seconds} onChange={e => set('min_watch_seconds', e.target.value)} placeholder="Optional" />
+                </label>
+                <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                  <span className="form-label-text">{ta.videoFile}</span>
+                  <label className="upload-zone">
+                    <input type="file" accept="video/*" style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
+                    <Upload size={18} style={{ marginBottom: 6, color: 'var(--muted)' }} />
+                    <span className="upload-zone-hint">
+                      {file ? file.name : (lesson?.oss_key ? ta.replaceVideo : ta.selectVideo)}
+                    </span>
+                  </label>
+                  {busy && (
+                    <div className="upload-progress">
+                      <div className="upload-progress-bar" style={{ width: `${progress}%` }} />
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
+
+            {(form.content_type === 'text' || form.content_type === 'interactive') && (
+              <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                <span>{form.content_type === 'interactive' ? ta.interactiveContext : ta.textContent}</span>
+                <textarea
+                  value={form.text_content}
+                  onChange={e => set('text_content', e.target.value)}
+                  rows={10}
+                  style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13 }}
+                  placeholder={form.content_type === 'interactive'
+                    ? 'Provide background reading coaches should study before the case study scenario...'
+                    : 'Write the lesson content here. Markdown is supported in the mini-app.'}
+                />
+              </label>
+            )}
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
@@ -6327,7 +6458,404 @@ function DeleteLessonConfirm({ lesson, onClose, onConfirm }) {
   );
 }
 
+// ── Quiz editor ───────────────────────────────────────────────────────────────
+
+function QuizEditorSection({ lessonId }) {
+  const [questions, setQuestions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get(`/api/academy/lessons/${lessonId}`);
+      setQuestions(res.data.quiz_questions || []);
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, [lessonId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleDelete = async (qId) => {
+    try { await axios.delete(`/api/academy/lesson-quizzes/${qId}`); load(); } catch { /* silent */ }
+  };
+
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed #e2e8f0' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
+          Quiz Questions ({loading ? '…' : questions.length})
+        </span>
+        <button className="btn-primary" style={{ fontSize: 11, padding: '3px 8px' }}
+          onClick={() => setModal({ type: 'add' })}>
+          <Plus size={11} /> Add Question
+        </button>
+      </div>
+      {questions.map((q, i) => (
+        <div key={q.id} style={{ background: '#f8fafc', borderRadius: 6, padding: '8px 10px', marginBottom: 6, fontSize: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              {q.scenario && <div style={{ color: '#64748b', marginBottom: 4, fontStyle: 'italic' }}>📋 {q.scenario.slice(0, 100)}{q.scenario.length > 100 ? '…' : ''}</div>}
+              <div style={{ fontWeight: 600 }}>Q{i + 1}: {q.question}</div>
+              <div style={{ marginTop: 4, color: '#475569' }}>
+                {(q.options || []).map((o, oi) => (
+                  <span key={oi} style={{ marginRight: 12, color: o.is_correct ? '#10b981' : 'inherit' }}>
+                    {o.is_correct ? '✓ ' : ''}{o.text}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button className="icon-btn" onClick={() => setModal({ type: 'edit', question: q })}><Pencil size={11} /></button>
+              <button className="icon-btn danger" onClick={() => handleDelete(q.id)}><Trash2 size={11} /></button>
+            </div>
+          </div>
+        </div>
+      ))}
+      {modal && (
+        <QuizQuestionModal
+          lessonId={lessonId}
+          question={modal.question || null}
+          onClose={() => setModal(null)}
+          onSave={() => { setModal(null); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function QuizQuestionModal({ lessonId, question, onClose, onSave }) {
+  const isEdit = !!question?.id;
+  const emptyOpt = () => ({ text: '', is_correct: false, explanation: '' });
+  const [form, setForm] = useState({
+    scenario: question?.scenario || '',
+    question: question?.question || '',
+    credit_value: question?.credit_value ?? 5,
+    sort_order: question?.sort_order ?? 0,
+  });
+  const [options, setOptions] = useState(
+    question?.options?.length ? question.options.map(o => ({ ...o })) : [emptyOpt(), emptyOpt(), emptyOpt(), emptyOpt()]
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const setOpt = (i, k, v) => setOptions(opts => opts.map((o, idx) => idx === i ? { ...o, [k]: v } : o));
+  const setCorrect = (i) => setOptions(opts => opts.map((o, idx) => ({ ...o, is_correct: idx === i })));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.question.trim()) { setError('Question is required'); return; }
+    if (!options.some(o => o.is_correct)) { setError('Mark one option as correct'); return; }
+    setBusy(true); setError('');
+    try {
+      const payload = { ...form, lesson_id: lessonId, options, credit_value: parseInt(form.credit_value) || 5 };
+      if (isEdit) await axios.put(`/api/academy/lesson-quizzes/${question.id}`, payload);
+      else await axios.post('/api/academy/lesson-quizzes', payload);
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || err.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 680 }}>
+        <div className="modal-header">
+          <span>{isEdit ? 'Edit Quiz Question' : 'Add Quiz Question'}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>Case Study Scenario (optional context)</span>
+              <textarea value={form.scenario} onChange={e => setForm(f => ({ ...f, scenario: e.target.value }))}
+                rows={3} style={{ resize: 'vertical' }} placeholder="A coach's client reports feeling fatigued despite good sleep. Their GDF-15 is 890 pg/mL…" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>Question *</span>
+              <textarea value={form.question} onChange={e => setForm(f => ({ ...f, question: e.target.value }))}
+                rows={2} style={{ resize: 'vertical' }} placeholder="Based on this profile, which supplement should be prioritized?" />
+            </label>
+            <label className="form-field">
+              <span>Credits for Correct Answer</span>
+              <input type="number" min={0} value={form.credit_value} onChange={e => setForm(f => ({ ...f, credit_value: e.target.value }))} />
+            </label>
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: '#475569' }}>Answer Options (mark the correct one)</div>
+            {options.map((o, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 10 }}>
+                <input type="radio" name="correct" checked={o.is_correct} onChange={() => setCorrect(i)}
+                  style={{ marginTop: 6, flexShrink: 0, accentColor: '#10b981' }} />
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <input value={o.text} onChange={e => setOpt(i, 'text', e.target.value)}
+                    placeholder={`Option ${String.fromCharCode(65 + i)}`}
+                    style={{ fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid #e2e8f0', background: 'var(--input-bg, white)' }} />
+                  {o.is_correct && (
+                    <input value={o.explanation} onChange={e => setOpt(i, 'explanation', e.target.value)}
+                      placeholder="Explanation shown after coach answers (optional)"
+                      style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid #e2e8f0', background: '#f0fdf4', color: '#15803d' }} />
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? 'Saving…' : 'Save Question'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Certification modals ──────────────────────────────────────────────────────
+
+function CertificationModal({ cert, courses = [], onClose, onSave }) {
+  const { t } = useLang();
+  const ta = t.academy;
+  const isEdit = !!cert?.id;
+  const [form, setForm] = useState({
+    title: cert?.title || '',
+    description: cert?.description || '',
+    tier: cert?.tier || 'bronze',
+    min_credits: cert?.min_credits ?? 0,
+    badge_image_url: cert?.badge_image_url || '',
+    is_active: cert?.is_active !== false,
+  });
+  const [selectedCourseIds, setSelectedCourseIds] = useState(cert?.required_course_ids || []);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const toggleCourse = (id) => setSelectedCourseIds(ids =>
+    ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]
+  );
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.title.trim()) { setError(ta.titleRequired); return; }
+    setBusy(true); setError('');
+    try {
+      const payload = { ...form, required_course_ids: selectedCourseIds, min_credits: parseInt(form.min_credits) || 0 };
+      if (isEdit) await axios.put(`/api/academy/certifications/${cert.id}`, payload);
+      else await axios.post('/api/academy/certifications', payload);
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || err.message); }
+    finally { setBusy(false); }
+  };
+
+  const TIERS = ['bronze', 'silver', 'gold', 'platinum'];
+  const TIER_COLORS = { bronze: '#cd7f32', silver: '#94a3b8', gold: '#f59e0b', platinum: '#8b5cf6' };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 600 }}>
+        <div className="modal-header">
+          <span>{isEdit ? ta.editCert : ta.newCert}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.title}</span>
+              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Certified Longevity Coach" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.description}</span>
+              <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} style={{ resize: 'vertical' }} />
+            </label>
+            <label className="form-field">
+              <span>{ta.tier}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.tier} onChange={e => setForm(f => ({ ...f, tier: e.target.value }))} className="inline-select" style={{ width: '100%' }}>
+                  {TIERS.map(tier => <option key={tier} value={tier} style={{ color: TIER_COLORS[tier] }}>{tier.charAt(0).toUpperCase() + tier.slice(1)}</option>)}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{ta.minCredits}</span>
+              <input type="number" min={0} value={form.min_credits} onChange={e => setForm(f => ({ ...f, min_credits: e.target.value }))} />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>Badge Image URL (optional)</span>
+              <input value={form.badge_image_url} onChange={e => setForm(f => ({ ...f, badge_image_url: e.target.value }))} placeholder="https://…" />
+            </label>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span className="form-label-text">{ta.requiredCourses}</span>
+              <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 6, padding: 8 }}>
+                {courses.length === 0 && <p className="muted" style={{ fontSize: 12, margin: 0 }}>{ta.noCourses}</p>}
+                {courses.map(c => (
+                  <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer', fontSize: 13 }}>
+                    <input type="checkbox" checked={selectedCourseIds.includes(c.id)}
+                      onChange={() => toggleCourse(c.id)} style={{ accentColor: '#6366f1' }} />
+                    <span>{c.title}</span>
+                    <Badge color="#94a3b8" style={{ fontSize: 10 }}>{c.level}</Badge>
+                  </label>
+                ))}
+              </div>
+            </div>
+            {isEdit && (
+              <label className="form-field" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
+                <span>{ta.active}</span>
+              </label>
+            )}
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? ta.uploading : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Learning path modals ──────────────────────────────────────────────────────
+
+function LearningPathModal({ path, courses = [], onClose, onSave }) {
+  const { t } = useLang();
+  const ta = t.academy;
+  const isEdit = !!path?.id;
+  const [form, setForm] = useState({
+    title: path?.title || '',
+    description: path?.description || '',
+    tier: path?.tier || 'foundation',
+    sort_order: path?.sort_order ?? 0,
+    is_active: path?.is_active !== false,
+  });
+  const [orderedCourseIds, setOrderedCourseIds] = useState(
+    path?.courses?.map(c => c.course_id) || []
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const toggleCourse = (id) => setOrderedCourseIds(ids =>
+    ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]
+  );
+  const moveUp = (i) => setOrderedCourseIds(ids => {
+    if (i === 0) return ids;
+    const next = [...ids]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; return next;
+  });
+  const moveDown = (i) => setOrderedCourseIds(ids => {
+    if (i >= ids.length - 1) return ids;
+    const next = [...ids]; [next[i], next[i + 1]] = [next[i + 1], next[i]]; return next;
+  });
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.title.trim()) { setError(ta.titleRequired); return; }
+    setBusy(true); setError('');
+    try {
+      const payload = { ...form, sort_order: parseInt(form.sort_order) || 0, course_ids: orderedCourseIds };
+      if (isEdit) await axios.put(`/api/academy/learning-paths/${path.id}`, payload);
+      else await axios.post('/api/academy/learning-paths', payload);
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || err.message); }
+    finally { setBusy(false); }
+  };
+
+  const LEVELS = ['foundation', 'intermediate', 'advanced', 'expert'];
+  const courseMap = Object.fromEntries(courses.map(c => [c.id, c]));
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 620 }}>
+        <div className="modal-header">
+          <span>{isEdit ? ta.editPath : ta.newPath}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.title}</span>
+              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Foundation Track" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.description}</span>
+              <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} style={{ resize: 'vertical' }} />
+            </label>
+            <label className="form-field">
+              <span>{ta.tier}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.tier} onChange={e => setForm(f => ({ ...f, tier: e.target.value }))} className="inline-select" style={{ width: '100%' }}>
+                  {LEVELS.map(lv => <option key={lv} value={lv}>{lv.charAt(0).toUpperCase() + lv.slice(1)}</option>)}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{t.modal.sortOrder}</span>
+              <input type="number" min={0} value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))} />
+            </label>
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: '#475569' }}>{ta.pathCoursesLabel}</div>
+            {orderedCourseIds.length > 0 && (
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 6, marginBottom: 8, overflow: 'hidden' }}>
+                {orderedCourseIds.map((cid, i) => {
+                  const c = courseMap[cid];
+                  return c ? (
+                    <div key={cid} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: i < orderedCourseIds.length - 1 ? '1px solid #f1f5f9' : 'none', background: 'white', fontSize: 13 }}>
+                      <span style={{ color: '#94a3b8', minWidth: 20, fontSize: 11 }}>{i + 1}.</span>
+                      <span style={{ flex: 1 }}>{c.title}</span>
+                      <Badge color="#94a3b8" style={{ fontSize: 10 }}>{c.level}</Badge>
+                      <button type="button" className="icon-btn" onClick={() => moveUp(i)} disabled={i === 0}><ChevronUp size={12} /></button>
+                      <button type="button" className="icon-btn" onClick={() => moveDown(i)} disabled={i === orderedCourseIds.length - 1}><ChevronDown size={12} /></button>
+                      <button type="button" className="icon-btn danger" onClick={() => toggleCourse(cid)}><X size={11} /></button>
+                    </div>
+                  ) : null;
+                })}
+              </div>
+            )}
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 8, maxHeight: 180, overflowY: 'auto' }}>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>{ta.clickToAddCourses}</div>
+              {courses.filter(c => !orderedCourseIds.includes(c.id)).map(c => (
+                <button key={c.id} type="button" onClick={() => toggleCourse(c.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left', padding: '4px 6px', borderRadius: 4, fontSize: 13, cursor: 'pointer', border: 'none', background: 'transparent', color: 'inherit' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <Plus size={11} style={{ color: '#6366f1' }} />
+                  <span style={{ flex: 1 }}>{c.title}</span>
+                  <Badge color="#94a3b8" style={{ fontSize: 10 }}>{c.level}</Badge>
+                </button>
+              ))}
+              {courses.filter(c => !orderedCourseIds.includes(c.id)).length === 0 && (
+                <p className="muted" style={{ fontSize: 12, margin: 0 }}>{ta.allCoursesAdded}</p>
+              )}
+            </div>
+          </div>
+
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? t.modal.saving : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── Academy tab ───────────────────────────────────────────────────────────────
+
+const TIER_COLORS_AC = { foundation: '#94a3b8', intermediate: '#3b82f6', advanced: '#8b5cf6', expert: '#f59e0b' };
+const CERT_TIER_COLORS = { bronze: '#cd7f32', silver: '#94a3b8', gold: '#f59e0b', platinum: '#8b5cf6' };
+
+function TierBadge({ credits }) {
+  const tier = credits >= 700 ? 'expert' : credits >= 300 ? 'advanced' : credits >= 100 ? 'intermediate' : 'foundation';
+  return <Badge color={TIER_COLORS_AC[tier]}>{tier.charAt(0).toUpperCase() + tier.slice(1)}</Badge>;
+}
 
 function AcademyTab() {
   const { t } = useLang();
@@ -6336,23 +6864,33 @@ function AcademyTab() {
   const [courses, setCourses] = useState([]);
   const [library, setLibrary] = useState([]);
   const [progress, setProgress] = useState([]);
+  const [certifications, setCertifications] = useState([]);
+  const [paths, setPaths] = useState([]);
+  const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(null);
   const [expandedCourse, setExpandedCourse] = useState(null);
+  const [expandedLesson, setExpandedLesson] = useState(null);
   const [lessonMap, setLessonMap] = useState({});
   const [lessonLoading, setLessonLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [cRes, lRes, pRes] = await Promise.allSettled([
+      const [cRes, lRes, pRes, certRes, pathRes, lbRes] = await Promise.allSettled([
         axios.get('/api/academy/courses'),
         axios.get('/api/academy/library'),
         axios.get('/api/academy/course-progress'),
+        axios.get('/api/academy/certifications'),
+        axios.get('/api/academy/learning-paths'),
+        axios.get('/api/academy/leaderboard'),
       ]);
       setCourses(cRes.status === 'fulfilled' ? (cRes.value.data.courses || []) : []);
       setLibrary(lRes.status === 'fulfilled' ? (lRes.value.data.items || []) : []);
       setProgress(pRes.status === 'fulfilled' ? (pRes.value.data.progress || []) : []);
+      setCertifications(certRes.status === 'fulfilled' ? (certRes.value.data.certifications || []) : []);
+      setPaths(pathRes.status === 'fulfilled' ? (pathRes.value.data.paths || []) : []);
+      setLeaderboard(lbRes.status === 'fulfilled' ? (lbRes.value.data.leaderboard || []) : []);
     } catch (err) { console.error('Academy fetch error:', err); }
     finally { setLoading(false); }
   }, []);
@@ -6371,32 +6909,26 @@ function AcademyTab() {
   }, []);
 
   const toggleExpand = (courseId) => {
-    if (expandedCourse === courseId) {
-      setExpandedCourse(null);
-    } else {
-      setExpandedCourse(courseId);
-      if (!lessonMap[courseId]) loadLessons(courseId);
-    }
+    if (expandedCourse === courseId) { setExpandedCourse(null); setExpandedLesson(null); }
+    else { setExpandedCourse(courseId); setExpandedLesson(null); if (!lessonMap[courseId]) loadLessons(courseId); }
   };
 
-  const refreshLessons = (courseId) => {
-    loadLessons(courseId);
-    fetchData();
-  };
+  const refreshLessons = (courseId) => { loadLessons(courseId); fetchData(); };
 
   const publishedCount = courses.filter(c => c.status === 'published').length;
   const totalLessons = courses.reduce((s, c) => s + (c.lesson_count || 0), 0);
-
   const openVideo = (course) => setModal({ type: 'play-video', course });
   const openDoc = (item) => setModal({ type: 'view-doc', item });
+
+  const CONTENT_TYPE_ICON = { video: '🎬', text: '📄', interactive: '🧩' };
 
   return (
     <>
       <div className="stat-row">
-        <StatCard icon={GraduationCap} label={ta.totalCourses}  value={courses.length}   color="#6366f1" />
-        <StatCard icon={Video}          label={ta.published}     value={publishedCount}   color="#10b981" />
-        <StatCard icon={FileText}       label={ta.totalDocs}     value={library.length}   color="#3b82f6" />
-        <StatCard icon={BookOpen}       label={ta.totalLessons}  value={totalLessons}     color="#f59e0b" />
+        <StatCard icon={GraduationCap} label={ta.totalCourses}    value={courses.length}        color="#6366f1" />
+        <StatCard icon={Video}          label={ta.published}       value={publishedCount}        color="#10b981" />
+        <StatCard icon={Award}          label="Certifications"     value={certifications.length} color="#f59e0b" />
+        <StatCard icon={BookOpen}       label={ta.totalLessons}    value={totalLessons}          color="#3b82f6" />
       </div>
 
       <div className="subtab-row">
@@ -6406,8 +6938,14 @@ function AcademyTab() {
         <button className={`subtab-btn${subTab === 'library' ? ' active' : ''}`} onClick={() => setSubTab('library')}>
           <FileText size={13} />{ta.libraryTab}
         </button>
+        <button className={`subtab-btn${subTab === 'certifications' ? ' active' : ''}`} onClick={() => setSubTab('certifications')}>
+          <Award size={13} />{ta.certificationsTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'paths' ? ' active' : ''}`} onClick={() => setSubTab('paths')}>
+          <Target size={13} />{ta.pathsTab}
+        </button>
         <button className={`subtab-btn${subTab === 'progress' ? ' active' : ''}`} onClick={() => setSubTab('progress')}>
-          <GraduationCap size={13} />{ta.progressTab}
+          <TrendingUp size={13} />{ta.progressTab}
         </button>
       </div>
 
@@ -6424,31 +6962,34 @@ function AcademyTab() {
               <tr>
                 <th>ID</th>
                 <th>{ta.title.replace(' *', '')}</th>
+                <th>{ta.level}</th>
+                <th>{ta.credits}</th>
                 <th>{ta.status}</th>
                 <th>{ta.lessons}</th>
-                <th>{t.table.joined}</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {!loading && courses.length === 0 && (
-                <tr><td colSpan={6} className="empty-row">{ta.noCourses}</td></tr>
+                <tr><td colSpan={7} className="empty-row">{ta.noCourses}</td></tr>
               )}
               {courses.map(c => (
-                <>
-                  <tr key={c.id}>
+                <React.Fragment key={c.id}>
+                  <tr>
                     <td className="muted mono">{c.id}</td>
                     <td>
                       <div className="bold">{c.title}</div>
                       {c.description && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{c.description.slice(0, 80)}{c.description.length > 80 ? '…' : ''}</div>}
+                      {c.prerequisite_title && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Prereq: {c.prerequisite_title}</div>}
                     </td>
+                    <td><Badge color={TIER_COLORS_AC[c.level] || '#94a3b8'}>{c.level}</Badge></td>
+                    <td className="muted">{c.credit_value} cr</td>
                     <td>
                       <Badge color={c.status === 'published' ? '#10b981' : '#94a3b8'}>
                         {c.status === 'published' ? ta.published : ta.draft}
                       </Badge>
                     </td>
                     <td className="muted">{ta.lessonCount(c.lesson_count || 0)}</td>
-                    <td className="muted">{fmtDate(c.created_at)}</td>
                     <td>
                       <div className="row-actions">
                         <button className="icon-btn" title={expandedCourse === c.id ? ta.collapseLessons : ta.expandLessons} onClick={() => toggleExpand(c.id)}>
@@ -6470,13 +7011,13 @@ function AcademyTab() {
                   </tr>
                   {expandedCourse === c.id && (
                     <tr key={`${c.id}-lessons`}>
-                      <td colSpan={6} style={{ padding: 0, background: 'var(--bg)' }}>
+                      <td colSpan={7} style={{ padding: 0, background: 'var(--bg)' }}>
                         <div style={{ padding: '12px 20px 16px 40px', borderLeft: '3px solid #6366f1' }}>
                           <div className="table-toolbar" style={{ marginBottom: 8 }}>
                             <span className="table-count">{ta.lessons} — {ta.lessonCount((lessonMap[c.id] || []).length)}</span>
                             <button className="btn-primary" style={{ fontSize: 12, padding: '4px 10px' }}
                               onClick={() => setModal({ type: 'add-lesson', courseId: c.id })}>
-                              <Upload size={12} />{ta.addLesson}
+                              <Plus size={12} />{ta.addLesson}
                             </button>
                           </div>
                           {lessonLoading && !lessonMap[c.id] && <p className="muted" style={{ fontSize: 12 }}>Loading…</p>}
@@ -6489,35 +7030,52 @@ function AcademyTab() {
                                 <tr>
                                   <th>#</th>
                                   <th>{ta.title.replace(' *', '')}</th>
-                                  <th>{ta.hasVideo}</th>
+                                  <th>{ta.contentType}</th>
+                                  <th>{ta.credits}</th>
+                                  <th>Quiz</th>
                                   <th></th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {(lessonMap[c.id] || []).map((l, idx) => (
-                                  <tr key={l.id}>
-                                    <td className="muted mono">{idx + 1}</td>
-                                    <td>
-                                      <div className="bold">{l.title}</div>
-                                      {l.description && <div className="muted" style={{ fontSize: 11 }}>{l.description.slice(0, 60)}{l.description.length > 60 ? '…' : ''}</div>}
-                                    </td>
-                                    <td>{l.oss_key ? <Badge color="#6366f1">✓</Badge> : '—'}</td>
-                                    <td>
-                                      <div className="row-actions">
-                                        {l.oss_key && (
-                                          <button className="icon-btn" title={ta.viewVideo} onClick={() => setModal({ type: 'play-video', course: { ...l, title: `${c.title} — ${l.title}` } })}>
-                                            <Play size={12} />
+                                  <React.Fragment key={l.id}>
+                                    <tr>
+                                      <td className="muted mono">{idx + 1}</td>
+                                      <td>
+                                        <div className="bold">{l.title}</div>
+                                        {l.description && <div className="muted" style={{ fontSize: 11 }}>{l.description.slice(0, 60)}{l.description.length > 60 ? '…' : ''}</div>}
+                                      </td>
+                                      <td><span title={l.content_type}>{CONTENT_TYPE_ICON[l.content_type] || '🎬'} {l.content_type}</span></td>
+                                      <td className="muted">{l.credit_value} cr</td>
+                                      <td>{l.has_quiz ? <Badge color="#10b981">✓ Quiz</Badge> : <span className="muted">—</span>}</td>
+                                      <td>
+                                        <div className="row-actions">
+                                          <button className="icon-btn" title="Edit Quiz Questions"
+                                            onClick={() => setExpandedLesson(expandedLesson === l.id ? null : l.id)}>
+                                            <ClipboardList size={11} />
                                           </button>
-                                        )}
-                                        <button className="icon-btn" title={ta.editLesson} onClick={() => setModal({ type: 'edit-lesson', lesson: l, courseId: c.id })}>
-                                          <Pencil size={12} />
-                                        </button>
-                                        <button className="icon-btn danger" title={ta.deleteLesson} onClick={() => setModal({ type: 'delete-lesson', lesson: l, courseId: c.id })}>
-                                          <Trash2 size={12} />
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
+                                          {l.oss_key && (
+                                            <button className="icon-btn" title={ta.viewVideo} onClick={() => setModal({ type: 'play-video', course: { ...l, title: `${c.title} — ${l.title}` } })}>
+                                              <Play size={12} />
+                                            </button>
+                                          )}
+                                          <button className="icon-btn" title={ta.editLesson} onClick={() => setModal({ type: 'edit-lesson', lesson: l, courseId: c.id })}>
+                                            <Pencil size={12} />
+                                          </button>
+                                          <button className="icon-btn danger" title={ta.deleteLesson} onClick={() => setModal({ type: 'delete-lesson', lesson: l, courseId: c.id })}>
+                                            <Trash2 size={12} />
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                    {expandedLesson === l.id && (
+                                      <tr key={`${l.id}-quiz`}>
+                                        <td colSpan={6} style={{ padding: '0 0 0 24px', background: '#f8fafc' }}>
+                                          <QuizEditorSection lessonId={l.id} />
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </React.Fragment>
                                 ))}
                               </tbody>
                             </table>
@@ -6526,7 +7084,7 @@ function AcademyTab() {
                       </td>
                     </tr>
                   )}
-                </>
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -6578,52 +7136,160 @@ function AcademyTab() {
         </div>
       )}
 
-      {subTab === 'progress' && (
+      {subTab === 'certifications' && (
         <div className="card">
           <div className="table-toolbar">
-            <span className="table-count">{ta.progressTab}</span>
+            <span className="table-count">{ta.countCerts(certifications.length)}</span>
+            <button className="btn-primary" onClick={() => setModal({ type: 'add-cert' })}>
+              <Plus size={14} />{ta.newCert}
+            </button>
           </div>
           <table className="data-table">
             <thead>
               <tr>
                 <th>{ta.title.replace(' *', '')}</th>
-                <th>{ta.totalLessons}</th>
-                <th>{ta.coachesCompleted}</th>
-                <th>{ta.completionRate}</th>
+                <th>{ta.tier}</th>
+                <th>{ta.requiredCourses.split(' (')[0]}</th>
+                <th>{ta.minCredits.replace(' Required', '')}</th>
+                <th>{ta.active}</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {!loading && progress.length === 0 && (
-                <tr><td colSpan={4} className="empty-row">{ta.noProgress}</td></tr>
+              {certifications.length === 0 && (
+                <tr><td colSpan={6} className="empty-row">{ta.noCerts}</td></tr>
               )}
-              {progress.map(p => {
-                const rate = p.total_lessons > 0
-                  ? Math.round((p.total_completions / p.total_lessons) * 100)
-                  : 0;
-                return (
-                  <tr key={p.course_id}>
-                    <td className="bold">{p.title}</td>
-                    <td className="muted">{p.total_lessons}</td>
-                    <td className="muted">{p.coaches_completed}</td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ flex: 1, height: 6, background: '#e2e8f0', borderRadius: 3 }}>
-                          <div style={{ width: `${rate}%`, height: '100%', background: '#10b981', borderRadius: 3 }} />
-                        </div>
-                        <span className="muted" style={{ fontSize: 12, minWidth: 32 }}>{rate}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {certifications.map(cert => (
+                <tr key={cert.id}>
+                  <td>
+                    <div className="bold">{cert.title}</div>
+                    {cert.description && <div className="muted" style={{ fontSize: 12 }}>{cert.description.slice(0, 80)}</div>}
+                  </td>
+                  <td><Badge color={CERT_TIER_COLORS[cert.tier] || '#94a3b8'}>{cert.tier}</Badge></td>
+                  <td className="muted">{ta.countCourses((cert.required_course_ids || []).length)}</td>
+                  <td className="muted">{cert.min_credits}</td>
+                  <td>{cert.is_active ? <Badge color="#10b981">{ta.active}</Badge> : <Badge color="#94a3b8">—</Badge>}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" onClick={() => setModal({ type: 'edit-cert', cert })}><Pencil size={14} /></button>
+                      <button className="icon-btn danger" onClick={async () => {
+                        if (!confirm(`Delete "${cert.title}"?`)) return;
+                        try { await axios.delete(`/api/academy/certifications/${cert.id}`); fetchData(); } catch { /* silent */ }
+                      }}><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
 
+      {subTab === 'paths' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{ta.countPaths(paths.length)}</span>
+            <button className="btn-primary" onClick={() => setModal({ type: 'add-path' })}>
+              <Plus size={14} />{ta.newPath}
+            </button>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{ta.title.replace(' *', '')}</th>
+                <th>{ta.tier}</th>
+                <th>{ta.lessons}</th>
+                <th>{ta.active}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {paths.length === 0 && (
+                <tr><td colSpan={5} className="empty-row">{ta.noPaths}</td></tr>
+              )}
+              {paths.map(p => (
+                <tr key={p.id}>
+                  <td>
+                    <div className="bold">{p.title}</div>
+                    {p.description && <div className="muted" style={{ fontSize: 12 }}>{p.description.slice(0, 80)}</div>}
+                  </td>
+                  <td><Badge color={TIER_COLORS_AC[p.tier] || '#94a3b8'}>{p.tier}</Badge></td>
+                  <td className="muted">{ta.countCourses((p.courses || []).length)}</td>
+                  <td>{p.is_active ? <Badge color="#10b981">{ta.active}</Badge> : <Badge color="#94a3b8">—</Badge>}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" onClick={() => setModal({ type: 'edit-path', path: p })}><Pencil size={14} /></button>
+                      <button className="icon-btn danger" onClick={async () => {
+                        if (!confirm(`Delete path "${p.title}"?`)) return;
+                        try { await axios.delete(`/api/academy/learning-paths/${p.id}`); fetchData(); } catch { /* silent */ }
+                      }}><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {subTab === 'progress' && (
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div className="card" style={{ flex: '1 1 500px' }}>
+            <div className="table-toolbar"><span className="table-count">{ta.courseProgress}</span></div>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>{ta.title.replace(' *', '')}</th>
+                  <th>{ta.level}</th>
+                  <th>{ta.totalLessons}</th>
+                  <th>{ta.coachesStarted}</th>
+                  <th>{ta.avgQuizScore}</th>
+                  <th>{ta.creditsAwarded}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!loading && progress.length === 0 && (
+                  <tr><td colSpan={6} className="empty-row">{ta.noProgress}</td></tr>
+                )}
+                {progress.map(p => (
+                  <tr key={p.course_id}>
+                    <td className="bold">{p.title}</td>
+                    <td><Badge color={TIER_COLORS_AC[p.level] || '#94a3b8'}>{p.level}</Badge></td>
+                    <td className="muted">{p.total_lessons}</td>
+                    <td className="muted">{p.coaches_started}</td>
+                    <td className="muted">{p.avg_quiz_score ? `${p.avg_quiz_score}%` : '—'}</td>
+                    <td className="muted">{p.total_credits_awarded || 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="card" style={{ flex: '0 0 300px' }}>
+            <div className="table-toolbar"><span className="table-count">{ta.leaderboard}</span></div>
+            {leaderboard.length === 0 && <p className="muted" style={{ padding: '12px 16px', fontSize: 13 }}>{ta.noData}</p>}
+            {leaderboard.map((coach, i) => (
+              <div key={coach.coach_user_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderBottom: '1px solid #f1f5f9' }}>
+                <span style={{ fontWeight: 700, color: i < 3 ? ['#f59e0b', '#94a3b8', '#cd7f32'][i] : '#cbd5e1', minWidth: 20, fontSize: 13 }}>
+                  {i + 1}
+                </span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{coach.name || coach.coach_user_id.slice(0, 12)}</div>
+                  <TierBadge credits={coach.total_credits} />
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#6366f1' }}>{coach.total_credits} cr</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>{coach.completed_lessons} lessons</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {modal?.type === 'play-video'    && <VideoPlayerModal course={modal.course} onClose={() => setModal(null)} />}
-      {modal?.type === 'add-course'    && <CourseModal course={null}        onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit-course'   && <CourseModal course={modal.course} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add-course'    && <CourseModal course={null} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit-course'   && <CourseModal course={modal.course} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete-course' && <DeleteCourseConfirm course={modal.course} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
       {modal?.type === 'view-doc'      && <MarkdownViewerModal item={modal.item} onClose={() => setModal(null)} />}
       {modal?.type === 'add-doc'       && <LibraryModal onClose={() => setModal(null)} onSave={closeAndRefresh} />}
@@ -6631,13 +7297,17 @@ function AcademyTab() {
       {modal?.type === 'add-lesson'    && <LessonModal lesson={null} courseId={modal.courseId} onClose={() => setModal(null)} onSave={() => { setModal(null); refreshLessons(modal.courseId); }} />}
       {modal?.type === 'edit-lesson'   && <LessonModal lesson={modal.lesson} courseId={modal.courseId} onClose={() => setModal(null)} onSave={() => { setModal(null); refreshLessons(modal.courseId); }} />}
       {modal?.type === 'delete-lesson' && <DeleteLessonConfirm lesson={modal.lesson} onClose={() => setModal(null)} onConfirm={() => { setModal(null); refreshLessons(modal.courseId); }} />}
+      {modal?.type === 'add-cert'      && <CertificationModal cert={null} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit-cert'     && <CertificationModal cert={modal.cert} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add-path'      && <LearningPathModal path={null} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit-path'     && <LearningPathModal path={modal.path} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
     </>
   );
 }
 
 // ── Rewards tab ───────────────────────────────────────────────────────────────
 
-function PartnersTab({ users = [] }) {
+function PartnersTab({ users = [], session }) {
   const { t } = useLang();
   const p = t.partners;
   const [subTab, setSubTab] = useState('partners');
@@ -6645,6 +7315,7 @@ function PartnersTab({ users = [] }) {
   const [commissions, setCommissions] = useState([]);
   const [payouts, setPayouts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [tierCfg, setTierCfg] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [generatePeriod, setGeneratePeriod] = useState(() => {
     const n = new Date();
@@ -6669,20 +7340,25 @@ function PartnersTab({ users = [] }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [pRes, cRes, pyRes, cfgRes] = await Promise.all([
+      const requests = [
         axios.get('/api/partners'),
         axios.get('/api/partner-commissions'),
         axios.get('/api/partner-payouts'),
         axios.get('/api/partner-commission-config'),
-      ]);
+      ];
+      if (session?.channelId) {
+        requests.push(axios.get(`/api/channels/${session.channelId}/partner-tiers-config`));
+      }
+      const [pRes, cRes, pyRes, cfgRes, tcRes] = await Promise.all(requests);
       setPartners(pRes.data.partners || []);
       setCommissions(cRes.data.commissions || []);
       setPayouts(pyRes.data.payouts || []);
       setConfig(cfgRes.data.config || null);
+      if (tcRes) setTierCfg(tcRes.data.partner_tiers_config || null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [session?.channelId]);
 
   function setReferralRate(upline, newTier, val) {
     setConfig(c => ({
@@ -6716,8 +7392,8 @@ function PartnersTab({ users = [] }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const tierLabel = (tier) => ({ light_entrepreneur: p.tierLight, leader_partner: p.tierLeader, operations_center: p.tierOps }[tier] || tier);
-  const tierColor = (tier) => ({ light_entrepreneur: '#0ea5e9', leader_partner: '#8b5cf6', operations_center: '#f59e0b' }[tier] || '#64748b');
+  const tierLabel = (tier) => tierCfg?.[tier]?.label || ({ light_entrepreneur: p.tierLight, leader_partner: p.tierLeader, operations_center: p.tierOps }[tier] || tier);
+  const tierColor = (tier) => tierCfg?.[tier]?.color || ({ light_entrepreneur: '#0ea5e9', leader_partner: '#8b5cf6', operations_center: '#f59e0b' }[tier] || '#64748b');
   const statusColor = (s) => ({ active: '#16a34a', pending: '#f59e0b', inactive: '#94a3b8', draft: '#64748b', approved: '#2563eb', transferred: '#16a34a' }[s] || '#64748b');
   const statusLabel = (s) => ({ active: p.statusActive, pending: p.statusPending, inactive: p.statusInactive, draft: p.draft, approved: p.approved, transferred: p.transferred }[s] || s);
   const sourceLabel = (s) => ({ referral: p.typeReferral, sales: p.typeSales, team_primary: p.typeTeamPrimary, team_secondary: p.typeTeamSecondary, wholesale_margin: p.typeWholesale }[s] || s);
@@ -8320,10 +8996,70 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
     finally { setRewardsLoading(false); }
   };
 
-  useEffect(() => { if (activeTab === 'rewards') loadRewards(); }, [activeTab, channel.id]);
+  useEffect(() => {
+    if (activeTab === 'rewards') loadRewards();
+    if (activeTab === 'partner-tiers') loadTierCfg();
+  }, [activeTab, channel.id]);
 
   const isRoot = !channel.parent_channel_id;
   const canEditRates = isSuperadmin || isRoot || channel.can_customize_rewards;
+
+  // ── Partner Tiers tab ─────────────────────────────────────────────────────────
+  const TIER_KEYS = ['light_entrepreneur', 'leader_partner', 'operations_center'];
+  const TIER_DEFAULTS = {
+    light_entrepreneur: { label: 'Light Entrepreneur', label_zh: '轻创业者',  entry_fee: 9800,   color: '#0ea5e9', description: '' },
+    leader_partner:     { label: 'Leader Partner',     label_zh: '领导合伙人', entry_fee: 49800,  color: '#8b5cf6', description: '' },
+    operations_center:  { label: 'Operations Center',  label_zh: '运营中心',   entry_fee: 300000, color: '#f59e0b', description: '' },
+  };
+  const [tierCfgData, setTierCfgData] = useState(null);
+  const [tierCfgForm, setTierCfgForm] = useState(null);
+  const [tierCfgLoading, setTierCfgLoading] = useState(false);
+  const [tierCfgSaving, setTierCfgSaving] = useState(false);
+  const [tierCfgError, setTierCfgError] = useState('');
+  const [tierCfgMsg, setTierCfgMsg] = useState('');
+
+  const canEditTierCfg = isSuperadmin || isRoot || channel.can_customize_partner_tiers;
+
+  const loadTierCfg = async () => {
+    setTierCfgLoading(true); setTierCfgError('');
+    try {
+      const r = await axios.get(`/api/channels/${channel.id}/partner-tiers-config`);
+      setTierCfgData(r.data);
+      const effective = r.data.partner_tiers_config || {};
+      const merged = {};
+      TIER_KEYS.forEach(k => { merged[k] = { ...TIER_DEFAULTS[k], ...(effective[k] || {}) }; });
+      setTierCfgForm(merged);
+    } catch (e) { setTierCfgError(e.response?.data?.error || 'Failed to load'); }
+    finally { setTierCfgLoading(false); }
+  };
+
+  const saveTierCfg = async () => {
+    setTierCfgSaving(true); setTierCfgError(''); setTierCfgMsg('');
+    try {
+      await axios.put(`/api/channels/${channel.id}/partner-tiers-config`, { partner_tiers_config: tierCfgForm });
+      setTierCfgMsg('Tier config saved');
+      setTimeout(() => setTierCfgMsg(''), 3000);
+      await loadTierCfg();
+    } catch (e) { setTierCfgError(e.response?.data?.error || 'Save failed'); }
+    finally { setTierCfgSaving(false); }
+  };
+
+  const resetTierCfg = async () => {
+    if (!window.confirm('Clear custom tier config and revert to inherited?')) return;
+    setTierCfgSaving(true); setTierCfgError('');
+    try {
+      await axios.put(`/api/channels/${channel.id}/partner-tiers-config`, { partner_tiers_config: null });
+      await loadTierCfg();
+    } catch (e) { setTierCfgError(e.response?.data?.error || 'Reset failed'); }
+    finally { setTierCfgSaving(false); }
+  };
+
+  const toggleSubchTierPermission = async (subch) => {
+    try {
+      await axios.put(`/api/channels/${subch.id}/partner-tiers-permission`, { can_customize_partner_tiers: !subch.can_customize_partner_tiers });
+      onSave();
+    } catch (e) { alert(e.response?.data?.error || 'Failed'); }
+  };
 
   const saveRates = async () => {
     setRewardsSaving(true); setRewardsError('');
@@ -8364,6 +9100,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
     { id: 'admins', label: 'Admins' },
     { id: 'invites', label: 'Invites' },
     { id: 'rewards', label: 'Rewards' },
+    { id: 'partner-tiers', label: 'Partner Tiers' },
     ...(isSuperadmin ? [{ id: 'sub-age', label: 'Sub-age Labels' }] : []),
     { id: 'danger', label: 'Danger', danger: true },
   ];
@@ -8718,6 +9455,125 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                               <span style={{
                                 position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
                                 transition: 'left 0.2s', left: subch.can_customize_rewards ? 23 : 3,
+                              }} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'partner-tiers' && (
+            <div>
+              {tierCfgLoading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : (
+                <>
+                  {tierCfgData && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                      <span style={{
+                        fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20,
+                        background: tierCfgData.source === 'own' ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.15)',
+                        color: tierCfgData.source === 'own' ? '#10b981' : '#94a3b8',
+                      }}>
+                        {tierCfgData.source === 'own' ? 'Own tier config'
+                          : tierCfgData.source === 'inherited' ? `Inherited from ${tierCfgData.source_channel_name}`
+                          : 'Global defaults'}
+                      </span>
+                      {!canEditTierCfg && (
+                        <span style={{ fontSize: 12, color: '#64748b' }}>Contact your parent channel admin to enable custom tier config</span>
+                      )}
+                    </div>
+                  )}
+
+                  {tierCfgForm && TIER_KEYS.map(tk => {
+                    const row = tierCfgForm[tk] || {};
+                    const setField = (field, val) =>
+                      setTierCfgForm(f => ({ ...f, [tk]: { ...f[tk], [field]: val } }));
+                    return (
+                      <div key={tk} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '14px 16px', marginBottom: 12, background: 'rgba(255,255,255,0.02)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                          <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, background: row.color || '#64748b', border: '1px solid rgba(255,255,255,0.2)', display: 'inline-block' }} />
+                          <span style={{ fontWeight: 600, fontSize: 13, color: '#e2e8f0' }}>{row.label || tk}</span>
+                          <code style={{ fontSize: 10, color: '#64748b', marginLeft: 'auto' }}>{tk}</code>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                          <label className="form-field">
+                            <span style={{ fontSize: 12 }}>Display Name (EN)</span>
+                            <input className="form-input" value={row.label || ''} onChange={e => setField('label', e.target.value)} disabled={!canEditTierCfg} />
+                          </label>
+                          <label className="form-field">
+                            <span style={{ fontSize: 12 }}>Display Name (ZH)</span>
+                            <input className="form-input" value={row.label_zh || ''} onChange={e => setField('label_zh', e.target.value)} disabled={!canEditTierCfg} />
+                          </label>
+                          <label className="form-field">
+                            <span style={{ fontSize: 12 }}>Entry Fee (¥)</span>
+                            <input className="form-input" type="number" min="0" step="100"
+                              value={row.entry_fee ?? ''}
+                              onChange={e => setField('entry_fee', e.target.value === '' ? '' : Number(e.target.value))}
+                              disabled={!canEditTierCfg} />
+                          </label>
+                          <label className="form-field">
+                            <span style={{ fontSize: 12 }}>Color</span>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <input type="color" value={row.color || '#64748b'}
+                                onChange={e => setField('color', e.target.value)}
+                                disabled={!canEditTierCfg}
+                                style={{ width: 36, height: 32, padding: 2, borderRadius: 4, border: '1px solid var(--border)', cursor: canEditTierCfg ? 'pointer' : 'default' }} />
+                              <input className="form-input" value={row.color || ''} onChange={e => setField('color', e.target.value)} disabled={!canEditTierCfg} placeholder="#0ea5e9" style={{ flex: 1 }} />
+                            </div>
+                          </label>
+                          <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                            <span style={{ fontSize: 12 }}>Description</span>
+                            <input className="form-input" value={row.description || ''} onChange={e => setField('description', e.target.value)} disabled={!canEditTierCfg} placeholder="Optional" />
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {tierCfgError && <p className="form-error" style={{ marginTop: 8 }}>{tierCfgError}</p>}
+
+                  {canEditTierCfg && (
+                    <div className="modal-footer" style={{ marginTop: 16 }}>
+                      {tierCfgMsg && <span style={{ fontSize: 13, color: '#16a34a', marginRight: 'auto' }}>{tierCfgMsg}</span>}
+                      {!isRoot && (
+                        <button className="btn-secondary" onClick={resetTierCfg} disabled={tierCfgSaving} style={{ color: '#f87171' }}>
+                          Reset to inherited
+                        </button>
+                      )}
+                      <button className="btn-secondary" onClick={onClose}>Cancel</button>
+                      <button className="btn-primary" onClick={saveTierCfg} disabled={tierCfgSaving}>
+                        <Check size={14} />{tierCfgSaving ? 'Saving…' : 'Save tier config'}
+                      </button>
+                    </div>
+                  )}
+
+                  {(isSuperadmin || canGrantSubch) && subchannels?.length > 0 && (
+                    <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Sub-channel tier config</div>
+                      <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>
+                        Allow sub-channels to define their own partner tier labels and entry fees instead of inheriting from this channel.
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {subchannels.map(subch => (
+                          <div key={subch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                            <span style={{ fontSize: 13, color: '#e2e8f0' }}>{subch.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => toggleSubchTierPermission(subch)}
+                              style={{
+                                width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
+                                background: subch.can_customize_partner_tiers ? '#6366f1' : '#334155',
+                                transition: 'background 0.2s', position: 'relative',
+                              }}
+                              title={subch.can_customize_partner_tiers ? 'Revoke custom tier config' : 'Allow custom tier config'}
+                            >
+                              <span style={{
+                                position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                                transition: 'left 0.2s', left: subch.can_customize_partner_tiers ? 23 : 3,
                               }} />
                             </button>
                           </div>
@@ -13309,7 +14165,7 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} coaches={data.coaches} session={session} onRefresh={fetchData} />}
           {tab === 'rewards'   && <RewardsTab />}
-          {tab === 'partners'  && <PartnersTab users={data.users} />}
+          {tab === 'partners'  && <PartnersTab users={data.users} session={session} />}
           {tab === 'academy'   && <AcademyTab />}
           {tab === 'questionnaires' && <QuestionnairesTab channels={data.channels} users={data.users} coaches={data.coaches} />}
           {tab === 'health-plans'   && <HealthPlansTab dots={data.dots} healthPlanTemplates={data.healthPlanTemplates || []} onRefresh={fetchData} />}

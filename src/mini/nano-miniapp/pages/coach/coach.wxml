@@ -182,9 +182,42 @@
       <text class="loading-text">{{t.loading}}</text>
     </view>
 
-    <!-- LIST VIEW: courses + library -->
+    <!-- LIST VIEW: dashboard + paths + courses + library + certs -->
     <block wx:elif="{{trainingView === 'list'}}">
-      <view class="training-section-header">
+
+      <!-- Credit Dashboard -->
+      <view wx:if="{{trainingDashboard}}" class="training-dashboard">
+        <view class="training-dashboard-credits">
+          <text class="training-dashboard-credits-num">{{trainingDashboard.total_credits}}</text>
+          <text class="training-dashboard-credits-label">{{lang === 'zh' ? '学分' : 'Credits'}}</text>
+        </view>
+        <view class="training-dashboard-stats">
+          <view class="training-dashboard-tier">
+            <text class="training-dashboard-tier-label">{{trainingDashboard.tier}}</text>
+          </view>
+          <text class="training-dashboard-stat">✅ {{trainingDashboard.completed_lessons}} {{lang === 'zh' ? '课' : 'lessons'}}</text>
+          <text class="training-dashboard-stat">🏅 {{trainingDashboard.certifications_count}} {{lang === 'zh' ? '证书' : 'certs'}}</text>
+        </view>
+      </view>
+
+      <!-- Learning Paths -->
+      <view wx:if="{{trainingPaths.length > 0}}" class="training-section-header" style="margin-top: 24rpx;">
+        <text class="training-section-title">{{lang === 'zh' ? '学习路径' : 'Learning Paths'}}</text>
+      </view>
+      <view wx:for="{{trainingPaths}}" wx:key="id" class="training-path-card" bindtap="trainingOpenCourse" data-course="{{item}}">
+        <view class="training-path-header">
+          <text class="training-path-title">{{item.title}}</text>
+          <text class="training-path-tier">{{item.tier}}</text>
+        </view>
+        <view wx:if="{{item.description}}" class="training-path-desc"><text>{{item.description}}</text></view>
+        <view class="training-path-progress-bar">
+          <view class="training-path-progress-fill" style="width: {{item._total > 0 ? (item._done / item._total * 100) : 0}}%;" />
+        </view>
+        <text class="training-path-progress-label">{{item._done}}/{{item._total}} {{lang === 'zh' ? '课程' : 'courses'}}</text>
+      </view>
+
+      <!-- Courses -->
+      <view class="training-section-header" style="margin-top: 28rpx;">
         <text class="training-section-title">{{t.training.courses}}</text>
       </view>
       <view wx:if="{{trainingCourses.length === 0}}" class="empty-state">
@@ -201,10 +234,27 @@
           <view class="training-course-meta">
             <text class="training-course-title">{{item.title}}</text>
             <text wx:if="{{item.description}}" class="training-course-desc">{{item.description}}</text>
+            <view class="training-course-meta-row">
+              <text class="training-course-level">{{item.level}}</text>
+              <text class="training-course-credits">+{{item.credit_value}} {{lang === 'zh' ? '学分' : 'cr'}}</text>
+            </view>
           </view>
         </view>
       </view>
 
+      <!-- Certifications earned -->
+      <view wx:if="{{trainingCertifications.length > 0}}" class="training-section-header" style="margin-top: 28rpx;">
+        <text class="training-section-title">{{lang === 'zh' ? '我的证书' : 'My Certifications'}}</text>
+      </view>
+      <view wx:for="{{trainingCertifications}}" wx:key="id" class="training-cert-card">
+        <text class="training-cert-icon">🏅</text>
+        <view class="training-cert-info">
+          <text class="training-cert-title">{{item.title}}</text>
+          <text class="training-cert-tier">{{item.tier}}</text>
+        </view>
+      </view>
+
+      <!-- Library -->
       <view class="training-section-header" style="margin-top: 28rpx;">
         <text class="training-section-title">{{t.training.library}}</text>
       </view>
@@ -226,6 +276,10 @@
       <view class="training-course-header">
         <text class="training-course-header-title">{{trainingCurrentCourse.title}}</text>
         <text wx:if="{{trainingCurrentCourse.description}}" class="training-course-header-desc">{{trainingCurrentCourse.description}}</text>
+        <view class="training-course-meta-row" style="margin-top: 8rpx;">
+          <text class="training-course-level">{{trainingCurrentCourse.level}}</text>
+          <text class="training-course-credits">+{{trainingCurrentCourse.credit_value}} {{lang === 'zh' ? '学分' : 'cr'}}</text>
+        </view>
       </view>
       <view wx:if="{{trainingLessons.length === 0}}" class="empty-state" style="margin-top: 40rpx;">
         <text class="empty-text">{{t.training.noLessons}}</text>
@@ -237,7 +291,11 @@
         <view class="training-lesson-info">
           <text class="training-lesson-title">{{item.title}}</text>
           <text wx:if="{{item.description}}" class="training-lesson-desc">{{item.description}}</text>
-          <text wx:if="{{!item.oss_key}}" class="training-lesson-no-video">{{lang === 'zh' ? '暂无视频' : 'No video'}}</text>
+          <view class="training-lesson-meta-row">
+            <text class="training-lesson-type-badge">{{item.content_type === 'video' ? '🎬' : item.content_type === 'text' ? '📄' : '🧩'}}</text>
+            <text class="training-lesson-credits-label">+{{item.credit_value}} {{lang === 'zh' ? '学分' : 'cr'}}</text>
+            <text wx:if="{{item.has_quiz}}" class="training-lesson-quiz-badge">📝 {{lang === 'zh' ? '含测验' : 'Quiz'}}</text>
+          </view>
         </view>
         <view wx:if="{{trainingCompletedIds.indexOf(item.id) !== -1}}" class="training-lesson-done">
           <text class="training-lesson-done-text">✓</text>
@@ -246,25 +304,76 @@
       </view>
     </block>
 
-    <!-- VIDEO PLAYER VIEW -->
+    <!-- PLAYER VIEW (video / text / interactive) -->
     <block wx:elif="{{trainingView === 'player'}}">
       <view class="training-back-row" bindtap="trainingBackToLessons">
         <text class="training-back-text">{{t.training.backToLessons}}</text>
       </view>
-      <view class="training-video-container">
-        <video wx:if="{{trainingVideoUrl}}" class="training-video" src="{{trainingVideoUrl}}"
-          controls show-fullscreen-btn enable-progress-gesture object-fit="contain" />
-        <view wx:else class="training-video-loading">
-          <text class="training-video-loading-text">{{t.loading}}</text>
+
+      <!-- Video mode -->
+      <block wx:if="{{trainingCurrentLesson.content_type === 'video' || !trainingCurrentLesson.content_type}}">
+        <view class="training-video-container">
+          <video wx:if="{{trainingVideoUrl}}" class="training-video" src="{{trainingVideoUrl}}"
+            controls show-fullscreen-btn enable-progress-gesture object-fit="contain" />
+          <view wx:else class="training-video-loading">
+            <text class="training-video-loading-text">{{t.loading}}</text>
+          </view>
         </view>
-      </view>
+      </block>
+
+      <!-- Text / Interactive mode -->
+      <block wx:elif="{{trainingCurrentLesson.content_type === 'text' || trainingCurrentLesson.content_type === 'interactive'}}">
+        <view class="training-text-content">
+          <text class="training-text-body">{{trainingTextContent || t.loading}}</text>
+        </view>
+      </block>
+
+      <!-- Lesson info -->
       <view class="training-lesson-detail">
         <text class="training-lesson-detail-title">{{trainingCurrentLesson.title}}</text>
         <text wx:if="{{trainingCurrentLesson.description}}" class="training-lesson-detail-desc">{{trainingCurrentLesson.description}}</text>
+
+        <!-- Quiz section -->
+        <view wx:if="{{trainingQuizQuestions.length > 0}}" class="training-quiz-section">
+          <text class="training-quiz-title">{{lang === 'zh' ? '📝 课后测验' : '📝 Quiz'}}</text>
+
+          <!-- Result shown after submit -->
+          <view wx:if="{{trainingQuizResult}}" class="training-quiz-result {{trainingQuizResult.passed ? 'training-quiz-passed' : 'training-quiz-failed'}}">
+            <text class="training-quiz-result-score">{{trainingQuizResult.score}}%</text>
+            <text class="training-quiz-result-label">{{trainingQuizResult.passed ? (lang === 'zh' ? '通过！' : 'Passed!') : (lang === 'zh' ? '未通过，请重试' : 'Not passed, try again')}}</text>
+            <text wx:if="{{trainingQuizResult.credits_earned > 0}}" class="training-quiz-result-credits">+{{trainingQuizResult.credits_earned}} {{lang === 'zh' ? '学分' : 'credits'}}</text>
+          </view>
+
+          <!-- Questions (shown if no result yet or failed) -->
+          <block wx:if="{{!trainingQuizResult || !trainingQuizResult.passed}}">
+            <view wx:for="{{trainingQuizQuestions}}" wx:key="id" class="training-quiz-question">
+              <text wx:if="{{item.scenario}}" class="training-quiz-scenario">{{item.scenario}}</text>
+              <text class="training-quiz-q-text">{{index + 1}}. {{item.question}}</text>
+              <view wx:for="{{item.options}}" wx:for-item="opt" wx:for-index="oi" wx:key="oi"
+                class="training-quiz-option {{trainingQuizAnswers[item.id] === oi ? 'training-quiz-option-selected' : ''}}"
+                bindtap="trainingSelectAnswer" data-question-id="{{item.id}}" data-option-index="{{oi}}">
+                <view class="training-quiz-option-radio {{trainingQuizAnswers[item.id] === oi ? 'training-quiz-option-radio-checked' : ''}}" />
+                <text class="training-quiz-option-text">{{opt.text}}</text>
+              </view>
+            </view>
+            <view class="training-quiz-submit-btn {{trainingQuizSubmitting ? 'training-mark-btn-busy' : ''}}" bindtap="trainingSubmitQuiz">
+              <text class="training-mark-btn-text">{{trainingQuizSubmitting ? t.loading : (lang === 'zh' ? '提交答案' : 'Submit Answers')}}</text>
+            </view>
+          </block>
+        </view>
+
+        <!-- Mark complete / completed badge -->
         <view wx:if="{{trainingCompletedIds.indexOf(trainingCurrentLesson.id) !== -1}}" class="training-completed-badge">
           <text class="training-completed-badge-text">{{t.training.markedComplete}}</text>
         </view>
-        <view wx:else class="training-mark-btn {{trainingMarkingComplete ? 'training-mark-btn-busy' : ''}}" bindtap="trainingMarkComplete">
+        <view wx:elif="{{trainingQuizQuestions.length === 0}}"
+          class="training-mark-btn {{trainingMarkingComplete ? 'training-mark-btn-busy' : ''}}"
+          bindtap="trainingMarkComplete">
+          <text class="training-mark-btn-text">{{trainingMarkingComplete ? t.loading : t.training.markComplete}}</text>
+        </view>
+        <view wx:elif="{{trainingQuizResult && trainingQuizResult.passed}}"
+          class="training-mark-btn {{trainingMarkingComplete ? 'training-mark-btn-busy' : ''}}"
+          bindtap="trainingMarkComplete">
           <text class="training-mark-btn-text">{{trainingMarkingComplete ? t.loading : t.training.markComplete}}</text>
         </view>
       </view>

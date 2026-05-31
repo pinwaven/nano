@@ -10,6 +10,47 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 - **Coaches tab shows stale channel after user reassignment** — `coaches.channel_id` was a redundant copy of `users.channel_id` that was never synced when a user's channel changed. Finished the rationalization started by `migration_rationalize_coaches`: dropped the column and updated all queries to derive channel via `JOIN coaches → users → channels`. Migration: `src/schemas/migration_coaches_drop_channel_id.sql`. The Coach modal's channel selector has been removed.
 
 ### Added
+- **Channel-scoped partner tier customization** — root channels and permitted sub-channels can override partner tier display names, entry fees, colors, and descriptions on a per-channel basis; unpermitted sub-channels inherit from their parent.
+  - **DB migration** `src/schemas/migration_partner_tiers_config.sql`: adds `can_customize_partner_tiers BOOLEAN` (permission flag, default false) and `partner_tiers_config JSONB` (null = inherit) on `channels`.
+  - **Backend** `src/functions/worker/index.js`: `GET/PUT /api/channels/:id/partner-tiers-config` (walk parent chain, read/write tier config), `PUT /api/channels/:id/partner-tiers-permission` (parent admin grants flag to child).
+  - **Web Admin Panel** `src/web/admin-panel/src/App.jsx`: new **Partner Tiers** tab in `ChannelConfigModal` with per-tier card editor (label EN/ZH, entry fee, color, description), source-inheritance badge, and sub-channel permission toggles. `PartnersTab` now fetches the effective tier config for the current channel and uses live labels/colors.
+- **Academy System Overhaul** — upgraded the academy from a flat video library into a full continuous-learning platform for coaches with credits, tiers, quizzes, certifications, and learning paths.
+  - **DB migration** `src/schemas/migration_academy_overhaul.sql` (migration #79):
+    - Extended `academy_courses` with `credit_value`, `level` (foundation/intermediate/advanced/expert), `prerequisite_course_id`, `thumbnail_oss_key`.
+    - Extended `academy_lessons` with `content_type` (video/text/interactive), `text_content`, `credit_value`, `min_watch_seconds`.
+    - Extended `academy_coach_progress` with `credits_earned`, `quiz_best_score`, `time_spent_seconds`.
+    - New `academy_lesson_quizzes` — per-lesson quiz questions with scenario text, JSONB options, and per-question credit values.
+    - New `academy_quiz_attempts` — per-coach attempt record with answers, 0–100 score, pass/fail status.
+    - New `academy_credit_ledger` — append-only event log separate from the monetary `credit_ledger` (reasons: `lesson_complete / quiz_pass / cert_earned / bonus`).
+    - New `academy_certifications` — admin-managed cert definitions with required course list, min credits, and tier (bronze/silver/gold/platinum).
+    - New `academy_coach_certifications` — certs earned by coaches (unique per coach+cert).
+    - New `academy_learning_paths` and `academy_learning_path_courses` — curated ordered course sequences by tier.
+  - **Backend** `src/functions/worker/index.js`:
+    - Modified `GET /academy/courses`, `POST/PUT /academy/courses`, `GET /academy/lessons`, `POST/PUT /academy/lessons` to accept/return the new fields.
+    - Modified `POST /academy/progress` to award lesson credits (first completion only) and auto-check certification eligibility via `_checkAndAwardCertifications()`.
+    - New `GET /academy/lessons/:id` — lesson detail with quiz questions.
+    - New `POST /academy/quiz-attempts` — scores submitted answers, awards credits on first pass, returns `{score, passed, credits_earned, correct_answers[]}`.
+    - New `GET/POST/PUT/DELETE /academy/lesson-quizzes` — admin CRUD for quiz questions.
+    - New `GET/POST/PUT/DELETE /academy/certifications` — admin CRUD for certification definitions.
+    - New `GET/POST/PUT/DELETE /academy/learning-paths` — admin CRUD for learning paths with ordered course assignment.
+    - New `GET /academy/coach-dashboard` — aggregated stats (credits, tier, lessons, quizzes, certs).
+    - New `GET /academy/coach-credits` — credit total, tier, ledger history.
+    - New `GET /academy/coach-certifications` — coach's earned certifications.
+    - New `GET /academy/leaderboard` — top 20 coaches by total credits.
+  - **Web Admin Panel** `src/web/admin-panel/src/App.jsx` — AcademyTab expanded from 3 to 5 subtabs:
+    - **Courses**: course form adds level, credit_value, prerequisite dropdown; lesson form adds content_type toggle (Video/Text/Interactive), text editor, credit_value, min_watch_seconds; inline `QuizEditorSection` per lesson for managing quiz questions.
+    - **Certifications** (new): CRUD table + modal for certification definitions — tier badge, required courses checklist, min credits.
+    - **Paths** (new): CRUD table + modal for learning paths — ordered course list with up/down reordering.
+    - **Progress** (enhanced): adds credits_earned and quiz_best_score columns; side panel shows top-20 leaderboard with tier badges.
+    - Full bilingual (EN/ZH) localization via existing `useLang()` hook.
+  - **Coach Mini-App** `src/mini/nano-miniapp/pages/coach/`:
+    - Credit dashboard card at top of Training tab (total credits, tier badge, lesson/quiz/cert counts).
+    - Learning paths section with per-path progress bars.
+    - Lesson player: content_type routing (video → presigned OSS; text/interactive → scrollable text); quiz panel with scenario, question list, submit, score + explanations.
+    - Mark-complete button gated on quiz pass (if quiz exists).
+    - Certifications grid: earned badge cards + locked (grayed) not-yet-earned certs.
+  - **Docs** `docs/architecture/academy-system.md` — full architecture reference.
+
 - **Credit system for commissions** — all commission earnings (referral, coach, channel) now flow into a per-user credit ledger. Users can exchange credits for cash via a withdrawal request processed by a superadmin.
   - **DB migration** `src/schemas/migration_credit_system.sql`:
     - `credit_ledger` — append-only ledger; one row per earn or debit event; balance = `SUM(amount)` per user.

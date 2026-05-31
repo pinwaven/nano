@@ -54,8 +54,31 @@ The token is configured via the `API_BEARER_TOKEN` environment variable on the `
 | `DELETE` | `/kone-apk-releases/:id` | Kone Upgrade | Delete inactive release |
 | `GET` | `/store-items` | E-commerce | List store items |
 | `GET` | `/my-orders` | E-commerce | User's order history |
-| `GET` | `/academy/courses` | Academy | List courses |
+| `GET` | `/academy/courses` | Academy | List courses (level, credits, prerequisite) |
+| `GET` | `/academy/lessons` | Academy | List lessons for a course (content_type, has_quiz) |
+| `GET` | `/academy/lessons/:id` | Academy | Lesson detail + quiz questions |
 | `GET` | `/academy/library` | Academy | List library items |
+| `GET` | `/academy/certifications` | Academy | List certification definitions |
+| `GET` | `/academy/learning-paths` | Academy | Learning paths with ordered courses |
+| `GET` | `/academy/leaderboard` | Academy | Top 20 coaches by total credits |
+| `GET` | `/academy/coach-dashboard` | Academy | Coach stats: credits, tier, lessons, quizzes, certs |
+| `GET` | `/academy/coach-credits` | Academy | Coach credit total, tier, ledger history |
+| `GET` | `/academy/coach-certifications` | Academy | Coach's earned certifications |
+| `POST` | `/academy/courses` | Academy | Create course |
+| `POST` | `/academy/lessons` | Academy | Create lesson |
+| `POST` | `/academy/progress` | Academy | Mark lesson complete (awards credits, checks certs) |
+| `POST` | `/academy/quiz-attempts` | Academy | Submit quiz answers → score + credits |
+| `POST` | `/academy/lesson-quizzes` | Academy | Create quiz question (admin) |
+| `POST` | `/academy/certifications` | Academy | Create certification definition (admin) |
+| `POST` | `/academy/learning-paths` | Academy | Create learning path (admin) |
+| `PUT` | `/academy/courses/:id` | Academy | Update course |
+| `PUT` | `/academy/lessons/:id` | Academy | Update lesson |
+| `PUT` | `/academy/lesson-quizzes/:id` | Academy | Update quiz question (admin) |
+| `PUT` | `/academy/certifications/:id` | Academy | Update certification (admin) |
+| `PUT` | `/academy/learning-paths/:id` | Academy | Update path + reorder courses (admin) |
+| `DELETE` | `/academy/lesson-quizzes/:id` | Academy | Delete quiz question (admin) |
+| `DELETE` | `/academy/certifications/:id` | Academy | Delete certification (admin) |
+| `DELETE` | `/academy/learning-paths/:id` | Academy | Delete learning path (admin) |
 | `POST` | `/biomarkers` | Core | Ingest Kino chip data |
 | `POST` | `/chat` | Core | Send a chat message (AI reply) |
 | `POST` | `/kino-result` | Kino | Finalize chip scan |
@@ -329,14 +352,55 @@ Finalizes a scan flow. Marks the chip as `used` and persists the final `bio_age`
 
 ## 5. Academy (Knowledge Base)
 
+See `docs/architecture/academy-system.md` for full schema and logic documentation.
+
 ### GET /academy/courses
-Lists all educational courses (video/text).
+Lists all courses with `level`, `credit_value`, `prerequisite_course_id`, and `lesson_count`.
+
+### GET /academy/lessons?course_id=X
+Lists lessons for a course. Returns `content_type`, `credit_value`, and `has_quiz` boolean.
+
+### GET /academy/lessons/:id
+Returns full lesson detail including the array of quiz questions for that lesson.
 
 ### GET /academy/library
 Lists downloadable PDFs and research papers.
 
+### GET /academy/certifications
+Lists all active certification definitions.
+
+### GET /academy/learning-paths
+Returns active learning paths with their ordered courses nested.
+
+### GET /academy/leaderboard
+Top 20 coaches ranked by total credits from `academy_credit_ledger`.
+
+### GET /academy/coach-dashboard?coach_user_id=X
+Aggregated coach stats: `total_credits`, `tier`, `completed_lessons`, `passed_quizzes`, `certifications_count`.
+
+### GET /academy/coach-credits?coach_user_id=X
+Coach's credit total, computed tier, and last 50 ledger entries.
+
+### GET /academy/coach-certifications?coach_user_id=X
+All certifications earned by the coach with cert details.
+
 ### POST /academy/courses
-(Admin) Upload new course metadata and link to OSS key.
+(Admin) Create a course. Body: `{ title, description, level, credit_value, prerequisite_course_id, thumbnail_oss_key }`.
+
+### POST /academy/lessons
+(Admin) Create a lesson. Body: `{ course_id, title, oss_key, content_type, text_content, credit_value, min_watch_seconds }`.
+
+### POST /academy/progress
+Mark a lesson complete for a coach. Awards `credit_value` credits on first completion and triggers certification eligibility check.
+**Body:** `{ coach_user_id, lesson_id, time_spent_seconds? }`
+
+### POST /academy/quiz-attempts
+Submit quiz answers. Scores answers, awards credits on first pass, updates `quiz_best_score`.
+**Body:** `{ coach_user_id, lesson_id, answers: {question_id: option_index} }`
+**Returns:** `{ score, passed, credits_earned, correct_answers[] }`
+
+### POST/PUT/DELETE /academy/lesson-quizzes, /academy/certifications, /academy/learning-paths
+(Admin) CRUD for quiz questions, certification definitions, and learning paths. See architecture doc for field details.
 
 ---
 
