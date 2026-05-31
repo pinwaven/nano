@@ -14187,12 +14187,12 @@ function AdminPanel({ session, onLogout }) {
 
   const NAV = [
     { id: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
+    { id: 'channels',  label: t.nav.channels,   icon: Building2   },
     { id: 'users',    label: t.nav.users,    icon: Users       },
     { id: 'coaches',  label: t.nav.coaches,  icon: UserCog     },
     { id: 'dots',     label: t.nav.dots,     icon: Droplets    },
     { id: 'store',     label: t.nav.store,      icon: ShoppingBag },
     { id: 'inventory', label: t.nav.inventory,  icon: Archive     },
-    { id: 'channels',  label: t.nav.channels,   icon: Building2   },
     { id: 'kino',     label: t.nav.kino,     icon: Cpu         },
     { id: 'chips',    label: t.nav.chips,    icon: Layers      },
     { id: 'invites',  label: t.nav.invites,  icon: Tag         },
