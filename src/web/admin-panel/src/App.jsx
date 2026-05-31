@@ -248,6 +248,69 @@ const T = {
       countReleases: (n) => `${n} release${n !== 1 ? 's' : ''}`,
     },
     dotType: { isolate: 'Isolate', blend: 'Blend' },
+    channels: {
+      // ChannelTab table / stat cards
+      colPersona: 'Persona', colUsers: 'Users', colCoaches: 'Coaches',
+      colDevices: 'Devices (active)', colScans: 'Scans', colActions: 'Actions',
+      statKinoDevices: 'Kino Devices', statTotalScans: 'Total Scans',
+      titleAddSubchannel: 'Add sub-channel', titleSettings: 'Settings',
+      // ChannelModal
+      parentChannel: 'Parent Channel', parentChannelOptional: 'Parent Channel (optional)',
+      parentChannelNone: 'None (top-level channel)',
+      // ChannelConfigModal — header & tab labels
+      configTitle: (name) => `Settings — ${name}`,
+      tabGeneral: 'General', tabAdmins: 'Admins', tabInvites: 'Invites',
+      tabRewards: 'Rewards', tabPartnerTiers: 'Partner Tiers',
+      tabSubAge: 'Sub-age Labels', tabDanger: 'Danger',
+      // General tab
+      subchannelMgmt: 'Sub-channel Management',
+      subchannelMgmtHint: "Allow this channel's admin to create and manage sub-channels",
+      // Admin Tabs tab
+      adminTabsHint: 'Select which features are enabled for this channel. Channel admins always have full access to all enabled features — this is not a permission limit.',
+      // Admins tab
+      colUsername: 'Username', colCreated: 'Created',
+      noAdmins: 'No admins yet', addAdminHint: 'Add admin account',
+      usernamePlaceholder: 'Username', passwordPlaceholder: 'Password',
+      adding: 'Adding…', add: 'Add', confirmDeleteAdmin: 'Delete this admin account?',
+      // Invites tab
+      newInvite: 'New Invite', creating: 'Creating…', loading: 'Loading…',
+      colCode: 'Code', colUses: 'Uses', colActive: 'Active', noInvites: 'No invites yet',
+      active: 'Active', inactive: 'Inactive', copyLink: 'Copy link', deactivate: 'Deactivate',
+      // Sub-age tab
+      subAgeHint: 'Override display names per dimension. Leave blank to use defaults.',
+      colDimension: 'Dimension', colZh: 'Chinese (zh)', colEn: 'English (en)',
+      // Rewards tab
+      rewardsSrcOwn: 'Own rates',
+      rewardsSrcInherited: (name) => `Inherited from ${name}`,
+      rewardsSrcGlobal: 'Global defaults',
+      rewardsNoPermission: 'Contact your parent channel admin to enable custom rates',
+      rewardsRatesHint: 'Commission rates — enter either a flat amount (¥) or a percentage, not both. Leave blank to inherit.',
+      rewardsProduct: 'Product', rewardsCoachComm: 'Coach commission', rewardsChannelComm: 'Channel commission',
+      rewardsFlat: 'Flat (¥)', rewardsPct: 'Percent (%)', rewardsReferral: 'Referral commission (%)',
+      rewardsReset: 'Reset to inherited', rewardsSave: 'Save rates',
+      rewardsSubchTitle: 'Sub-channel custom rewards',
+      rewardsSubchHint: 'Allow sub-channels to define their own commission rates instead of inheriting from this channel.',
+      rewardsRevoke: 'Revoke custom rewards', rewardsAllow: 'Allow custom rewards',
+      // Partner Tiers tab
+      tierSrcOwn: 'Own tier config',
+      tierSrcInherited: (name) => `Inherited from ${name}`,
+      tierSrcGlobal: 'Global defaults',
+      tierNoPermission: 'Contact your parent channel admin to enable custom tier config',
+      tierLabelEn: 'Display Name (EN)', tierLabelZh: 'Display Name (ZH)',
+      tierEntryFee: 'Entry Fee (¥)', tierColor: 'Color', tierDescription: 'Description',
+      tierSaved: 'Tier config saved', tierReset: 'Reset to inherited', tierSave: 'Save tier config',
+      tierSubchTitle: 'Sub-channel tier config',
+      tierSubchHint: 'Allow sub-channels to define their own partner tier labels and entry fees instead of inheriting from this channel.',
+      tierRevoke: 'Revoke custom tier config', tierAllow: 'Allow custom tier config',
+      // Danger tab
+      dangerBlockedTitle: 'Cannot delete this channel',
+      dangerBlockedHint: 'This channel has sub-channels. Remove all sub-channels before deleting it.',
+      dangerDeleteTitle: 'Delete channel',
+      dangerDeleteHintPre: 'This action is permanent. All users, coaches, and data associated with ',
+      dangerDeleteHintPost: ' will be unlinked. Type the channel name to confirm.',
+      dangerDeletePlaceholder: (name) => `Type "${name}" to confirm`,
+      dangerDeleteBtn: 'Delete channel',
+    },
     store: {
       itemsTab: 'Items', ordersTab: 'Orders',
       priceCny: 'CNY (¥)', priceUsd: 'USD ($)', tag: 'Tag', active: 'Active',
@@ -738,6 +801,58 @@ const T = {
       countReleases: (n) => `共 ${n} 个版本`,
     },
     dotType: { isolate: '单体', blend: '复合' },
+    channels: {
+      colPersona: '人格', colUsers: '用户', colCoaches: 'Coach',
+      colDevices: '设备（在线）', colScans: '扫描数', colActions: '操作',
+      statKinoDevices: 'Kino 设备', statTotalScans: '总扫描数',
+      titleAddSubchannel: '添加子渠道', titleSettings: '设置',
+      parentChannel: '上级渠道', parentChannelOptional: '上级渠道（可选）',
+      parentChannelNone: '无（顶级渠道）',
+      configTitle: (name) => `设置 — ${name}`,
+      tabGeneral: '基本信息', tabAdmins: '管理员', tabInvites: '邀请码',
+      tabRewards: '奖励设置', tabPartnerTiers: '合伙人级别',
+      tabSubAge: '年龄维度标签', tabDanger: '危险操作',
+      subchannelMgmt: '子渠道管理',
+      subchannelMgmtHint: '允许该渠道的管理员创建和管理子渠道',
+      adminTabsHint: '选择此渠道开启的功能模块。渠道管理员对所有已开启模块拥有完整权限——这不是权限限制，而是功能开关。',
+      colUsername: '用户名', colCreated: '创建时间',
+      noAdmins: '暂无管理员', addAdminHint: '添加管理员账号',
+      usernamePlaceholder: '用户名', passwordPlaceholder: '密码',
+      adding: '添加中…', add: '添加', confirmDeleteAdmin: '确认删除此管理员账号？',
+      newInvite: '新建邀请码', creating: '创建中…', loading: '加载中…',
+      colCode: '邀请码', colUses: '使用次数', colActive: '状态', noInvites: '暂无邀请码',
+      active: '有效', inactive: '已停用', copyLink: '复制链接', deactivate: '停用',
+      subAgeHint: '覆盖各维度显示名称，留空则使用默认值。',
+      colDimension: '维度', colZh: '中文 (zh)', colEn: '英文 (en)',
+      rewardsSrcOwn: '自定义费率',
+      rewardsSrcInherited: (name) => `继承自 ${name}`,
+      rewardsSrcGlobal: '全局默认',
+      rewardsNoPermission: '请联系上级渠道管理员开启自定义费率',
+      rewardsRatesHint: '佣金费率——填入固定金额（¥）或百分比，二选一，留空则继承。',
+      rewardsProduct: '产品', rewardsCoachComm: 'Coach 佣金', rewardsChannelComm: '渠道佣金',
+      rewardsFlat: '固定（¥）', rewardsPct: '百分比（%）', rewardsReferral: '推荐佣金（%）',
+      rewardsReset: '重置为继承', rewardsSave: '保存费率',
+      rewardsSubchTitle: '子渠道自定义奖励',
+      rewardsSubchHint: '允许子渠道定义自己的佣金费率，而不是继承此渠道的设置。',
+      rewardsRevoke: '撤销自定义奖励', rewardsAllow: '允许自定义奖励',
+      tierSrcOwn: '自定义级别配置',
+      tierSrcInherited: (name) => `继承自 ${name}`,
+      tierSrcGlobal: '全局默认',
+      tierNoPermission: '请联系上级渠道管理员开启自定义级别配置',
+      tierLabelEn: '显示名称（英）', tierLabelZh: '显示名称（中）',
+      tierEntryFee: '入伙费（¥）', tierColor: '颜色', tierDescription: '描述',
+      tierSaved: '级别配置已保存', tierReset: '重置为继承', tierSave: '保存级别配置',
+      tierSubchTitle: '子渠道级别配置',
+      tierSubchHint: '允许子渠道自定义合伙人级别名称和入伙费，而不是继承此渠道的设置。',
+      tierRevoke: '撤销自定义级别配置', tierAllow: '允许自定义级别配置',
+      dangerBlockedTitle: '无法删除此渠道',
+      dangerBlockedHint: '该渠道存在子渠道，请先删除所有子渠道后再操作。',
+      dangerDeleteTitle: '删除渠道',
+      dangerDeleteHintPre: '此操作不可撤销。与 ',
+      dangerDeleteHintPost: ' 相关的所有用户、Coach 及数据将失去渠道关联。输入渠道名称以确认。',
+      dangerDeletePlaceholder: (name) => `输入"${name}"确认`,
+      dangerDeleteBtn: '删除渠道',
+    },
     store: {
       itemsTab: '商品', ordersTab: '订单',
       priceCny: '售价 (CNY)', priceUsd: '售价 (USD)', tag: '标签', active: '上架',
@@ -8216,6 +8331,7 @@ const EMPTY_CHANNEL = { key_name: '', name: '', logo_url: '', persona_type: 'nan
 
 function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose, onSave }) {
   const { t } = useLang();
+  const ch = t.channels;
   const isEdit = !!channel?.id;
   const [form, setForm] = useState(isEdit
     ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '', parent_channel_id: channel.parent_channel_id || '', persona_type: channel.config?.persona_type ?? 'nano', credit_exchange_rate: channel.config?.credit_exchange_rate ?? '1.0', currency: channel.config?.currency ?? 'CNY' }
@@ -8276,7 +8392,7 @@ function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose,
             </label>
             {!isEdit && parentChannel && (
               <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-                <span>Parent Channel</span>
+                <span>{ch.parentChannel}</span>
                 <div style={{ padding: '6px 10px', borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', fontSize: 13, color: '#94a3b8' }}>
                   {parentChannel.name}
                 </div>
@@ -8284,9 +8400,9 @@ function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose,
             )}
             {!isEdit && !parentChannel && isSuperadmin && (channels || []).length > 0 && (
               <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-                <span>Parent Channel (optional)</span>
+                <span>{ch.parentChannelOptional}</span>
                 <select value={form.parent_channel_id} onChange={e => set('parent_channel_id', e.target.value)}>
-                  <option value="">None (top-level channel)</option>
+                  <option value="">{ch.parentChannelNone}</option>
                   {(channels || []).map(c => {
                     const depth = c.depth != null ? c.depth : 0;
                     const indent = '   '.repeat(depth);
@@ -8810,6 +8926,7 @@ function SubchannelsTab_UNUSED({ subchannels, adminAccounts, invitations, sessio
 
 function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchannels, subchannels, onClose, onSave }) {
   const { t } = useLang();
+  const ch = t.channels;
   const [activeTab, setActiveTab] = useState('general');
 
   // ── General ──────────────────────────────────────────────────────────────────
@@ -8921,7 +9038,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
   };
 
   const delAdmin = async (id) => {
-    if (!window.confirm('Delete this admin account?')) return;
+    if (!window.confirm(ch.confirmDeleteAdmin)) return;
     try {
       await axios.delete(`/api/admin-accounts/${id}`);
       setAdmins(prev => prev.filter(a => a.id !== id));
@@ -9037,7 +9154,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
     setTierCfgSaving(true); setTierCfgError(''); setTierCfgMsg('');
     try {
       await axios.put(`/api/channels/${channel.id}/partner-tiers-config`, { partner_tiers_config: tierCfgForm });
-      setTierCfgMsg('Tier config saved');
+      setTierCfgMsg(ch.tierSaved);
       setTimeout(() => setTierCfgMsg(''), 3000);
       await loadTierCfg();
     } catch (e) { setTierCfgError(e.response?.data?.error || 'Save failed'); }
@@ -9096,20 +9213,20 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
 
   // ── Tab list ──────────────────────────────────────────────────────────────────
   const configTabs = [
-    { id: 'general', label: 'General' },
-    { id: 'admins', label: 'Admins' },
-    { id: 'invites', label: 'Invites' },
-    { id: 'rewards', label: 'Rewards' },
-    { id: 'partner-tiers', label: 'Partner Tiers' },
-    ...(isSuperadmin ? [{ id: 'sub-age', label: 'Sub-age Labels' }] : []),
-    { id: 'danger', label: 'Danger', danger: true },
+    { id: 'general', label: ch.tabGeneral },
+    { id: 'admins', label: ch.tabAdmins },
+    { id: 'invites', label: ch.tabInvites },
+    { id: 'rewards', label: ch.tabRewards },
+    { id: 'partner-tiers', label: ch.tabPartnerTiers },
+    ...(isSuperadmin ? [{ id: 'sub-age', label: ch.tabSubAge }] : []),
+    { id: 'danger', label: ch.tabDanger, danger: true },
   ];
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span>Settings — {channel.name}</span>
+          <span>{ch.configTitle(channel.name)}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="modal-body">
@@ -9177,8 +9294,8 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
               {canGrantSubch && (
                 <div className="form-field" style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderTop: '1px solid var(--border)' }}>
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>Sub-channel Management</div>
-                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>Allow this channel's admin to create and manage sub-channels</div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{ch.subchannelMgmt}</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{ch.subchannelMgmtHint}</div>
                   </div>
                   <button
                     type="button"
@@ -9209,7 +9326,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
 
           {activeTab === 'admin-tabs' && (
             <>
-              <p style={{ marginBottom: 12, color: '#94a3b8', fontSize: 13 }}>Select which features are enabled for this channel. Channel admins always have full access to all enabled features — this is not a permission limit.</p>
+              <p style={{ marginBottom: 12, color: '#94a3b8', fontSize: 13 }}>{ch.adminTabsHint}</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {CONFIGURABLE_TABS.map(tab => (
                   <label key={tab.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#EEF2FF', fontSize: 14 }}>
@@ -9220,9 +9337,9 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
               </div>
               {tabsError && <p className="form-error" style={{ marginTop: 8 }}>{tabsError}</p>}
               <div className="modal-footer">
-                <button className="btn-secondary" onClick={onClose}>Cancel</button>
+                <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
                 <button className="btn-primary" onClick={saveTabs} disabled={tabsBusy}>
-                  <Check size={14} />{tabsBusy ? 'Saving…' : 'Save'}
+                  <Check size={14} />{tabsBusy ? t.modal.saving : t.modal.save}
                 </button>
               </div>
             </>
@@ -9230,12 +9347,12 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
 
           {activeTab === 'admins' && (
             <>
-              {adminsLoading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : (
+              {adminsLoading ? <p style={{ color: '#94a3b8' }}>{ch.loading}</p> : (
                 <>
                   <table className="data-table" style={{ marginBottom: 16 }}>
-                    <thead><tr><th>Username</th><th>Created</th><th></th></tr></thead>
+                    <thead><tr><th>{ch.colUsername}</th><th>{ch.colCreated}</th><th></th></tr></thead>
                     <tbody>
-                      {admins.length === 0 && <tr><td colSpan={3} className="empty-row">No admins yet</td></tr>}
+                      {admins.length === 0 && <tr><td colSpan={3} className="empty-row">{ch.noAdmins}</td></tr>}
                       {admins.map(a => (
                         <tr key={a.id}>
                           <td><strong>{a.username}</strong></td>
@@ -9245,12 +9362,12 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                       ))}
                     </tbody>
                   </table>
-                  <p style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>Add admin account</p>
+                  <p style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>{ch.addAdminHint}</p>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <input className="form-input" placeholder="Username" value={adminForm.username} onChange={e => setAdminForm(f => ({ ...f, username: e.target.value }))} style={{ flex: 1, minWidth: 120 }} />
-                    <input className="form-input" type="password" placeholder="Password" value={adminForm.password} onChange={e => setAdminForm(f => ({ ...f, password: e.target.value }))} style={{ flex: 1, minWidth: 120 }} />
+                    <input className="form-input" placeholder={ch.usernamePlaceholder} value={adminForm.username} onChange={e => setAdminForm(f => ({ ...f, username: e.target.value }))} style={{ flex: 1, minWidth: 120 }} />
+                    <input className="form-input" type="password" placeholder={ch.passwordPlaceholder} value={adminForm.password} onChange={e => setAdminForm(f => ({ ...f, password: e.target.value }))} style={{ flex: 1, minWidth: 120 }} />
                     <button className="btn-primary" onClick={addAdmin} disabled={adminSaving || !adminForm.username || !adminForm.password}>
-                      {adminSaving ? 'Adding…' : <><Plus size={14} />Add</>}
+                      {adminSaving ? ch.adding : <><Plus size={14} />{ch.add}</>}
                     </button>
                   </div>
                   {adminErr && <p className="form-error" style={{ marginTop: 8 }}>{adminErr}</p>}
@@ -9263,24 +9380,24 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
             <>
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
                 <button className="btn-primary" onClick={createInvite} disabled={inviteCreating}>
-                  <Plus size={14} />{inviteCreating ? 'Creating…' : 'New Invite'}
+                  <Plus size={14} />{inviteCreating ? ch.creating : ch.newInvite}
                 </button>
               </div>
-              {invitesLoading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : (
+              {invitesLoading ? <p style={{ color: '#94a3b8' }}>{ch.loading}</p> : (
                 <table className="data-table">
-                  <thead><tr><th>Code</th><th>Uses</th><th>Active</th><th>Created</th><th></th></tr></thead>
+                  <thead><tr><th>{ch.colCode}</th><th>{ch.colUses}</th><th>{ch.colActive}</th><th>{t.table.joined}</th><th></th></tr></thead>
                   <tbody>
-                    {invites.length === 0 && <tr><td colSpan={5} className="empty-row">No invites yet</td></tr>}
+                    {invites.length === 0 && <tr><td colSpan={5} className="empty-row">{ch.noInvites}</td></tr>}
                     {invites.map(inv => (
                       <tr key={inv.id}>
                         <td><code className="code-tag">{inv.code}</code></td>
                         <td>{inv.use_count}{inv.max_uses ? ` / ${inv.max_uses}` : ''}</td>
-                        <td><Badge color={inv.is_active ? '#10b981' : '#64748b'}>{inv.is_active ? 'Active' : 'Inactive'}</Badge></td>
+                        <td><Badge color={inv.is_active ? '#10b981' : '#64748b'}>{inv.is_active ? ch.active : ch.inactive}</Badge></td>
                         <td className="muted">{fmtDate(inv.created_at)}</td>
                         <td>
                           <div className="row-actions">
-                            <button className="icon-btn" title="Copy link" onClick={() => navigator.clipboard?.writeText(`pages/login/login?invite=${inv.code}`)}><Copy size={14} /></button>
-                            {inv.is_active && <button className="icon-btn danger" title="Deactivate" onClick={() => deactivateInvite(inv.id)}><Trash2 size={14} /></button>}
+                            <button className="icon-btn" title={ch.copyLink} onClick={() => navigator.clipboard?.writeText(`pages/login/login?invite=${inv.code}`)}><Copy size={14} /></button>
+                            {inv.is_active && <button className="icon-btn danger" title={ch.deactivate} onClick={() => deactivateInvite(inv.id)}><Trash2 size={14} /></button>}
                           </div>
                         </td>
                       </tr>
@@ -9293,13 +9410,13 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
 
           {activeTab === 'sub-age' && isSuperadmin && (
             <>
-              <p style={{ marginBottom: 12, color: '#94a3b8', fontSize: 13 }}>Override display names per dimension. Leave blank to use defaults.</p>
+              <p style={{ marginBottom: 12, color: '#94a3b8', fontSize: 13 }}>{ch.subAgeHint}</p>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left', padding: '4px 8px', color: '#94a3b8', fontSize: 12 }}>Dimension</th>
-                    <th style={{ textAlign: 'left', padding: '4px 8px', color: '#94a3b8', fontSize: 12 }}>Chinese (zh)</th>
-                    <th style={{ textAlign: 'left', padding: '4px 8px', color: '#94a3b8', fontSize: 12 }}>English (en)</th>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', color: '#94a3b8', fontSize: 12 }}>{ch.colDimension}</th>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', color: '#94a3b8', fontSize: 12 }}>{ch.colZh}</th>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', color: '#94a3b8', fontSize: 12 }}>{ch.colEn}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -9318,9 +9435,9 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
               </table>
               {labelsError && <p className="form-error" style={{ marginTop: 8 }}>{labelsError}</p>}
               <div className="modal-footer">
-                <button className="btn-secondary" onClick={onClose}>Cancel</button>
+                <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
                 <button className="btn-primary" onClick={saveLabels} disabled={labelsBusy}>
-                  <Check size={14} />{labelsBusy ? 'Saving…' : 'Save'}
+                  <Check size={14} />{labelsBusy ? t.modal.saving : t.modal.save}
                 </button>
               </div>
             </>
@@ -9328,7 +9445,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
 
           {activeTab === 'rewards' && (
             <div>
-              {rewardsLoading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : (
+              {rewardsLoading ? <p style={{ color: '#94a3b8' }}>{ch.loading}</p> : (
                 <>
                   {/* Source badge */}
                   {rewardsData && (
@@ -9336,34 +9453,32 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                       <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20,
                         background: rewardsData.source === 'own' ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.15)',
                         color: rewardsData.source === 'own' ? '#10b981' : '#94a3b8' }}>
-                        {rewardsData.source === 'own' ? 'Own rates'
-                          : rewardsData.source === 'inherited' ? `Inherited from ${rewardsData.source_channel_name}`
-                          : 'Global defaults'}
+                        {rewardsData.source === 'own' ? ch.rewardsSrcOwn
+                          : rewardsData.source === 'inherited' ? ch.rewardsSrcInherited(rewardsData.source_channel_name)
+                          : ch.rewardsSrcGlobal}
                       </span>
                       {!canEditRates && (
-                        <span style={{ fontSize: 12, color: '#64748b' }}>Contact your parent channel admin to enable custom rates</span>
+                        <span style={{ fontSize: 12, color: '#64748b' }}>{ch.rewardsNoPermission}</span>
                       )}
                     </div>
                   )}
 
                   {/* Commission rates table */}
-                  <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
-                    Commission rates — enter either a flat amount (¥) or a percentage, not both. Leave blank to inherit.
-                  </p>
+                  <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>{ch.rewardsRatesHint}</p>
                   <div style={{ overflowX: 'auto', marginBottom: 16 }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
                         <tr>
-                          <th style={{ textAlign: 'left', padding: '6px 8px', color: '#94a3b8', fontWeight: 500, fontSize: 12 }}>Product</th>
-                          <th style={{ textAlign: 'center', padding: '6px 8px', color: '#94a3b8', fontWeight: 500, fontSize: 12 }} colSpan={2}>Coach commission</th>
-                          <th style={{ textAlign: 'center', padding: '6px 8px', color: '#94a3b8', fontWeight: 500, fontSize: 12 }} colSpan={2}>Channel commission</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', color: '#94a3b8', fontWeight: 500, fontSize: 12 }}>{ch.rewardsProduct}</th>
+                          <th style={{ textAlign: 'center', padding: '6px 8px', color: '#94a3b8', fontWeight: 500, fontSize: 12 }} colSpan={2}>{ch.rewardsCoachComm}</th>
+                          <th style={{ textAlign: 'center', padding: '6px 8px', color: '#94a3b8', fontWeight: 500, fontSize: 12 }} colSpan={2}>{ch.rewardsChannelComm}</th>
                         </tr>
                         <tr>
                           <th />
-                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>Flat (¥)</th>
-                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>Percent (%)</th>
-                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>Flat (¥)</th>
-                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>Percent (%)</th>
+                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>{ch.rewardsFlat}</th>
+                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>{ch.rewardsPct}</th>
+                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>{ch.rewardsFlat}</th>
+                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>{ch.rewardsPct}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -9404,7 +9519,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
 
                   {/* Referral rate */}
                   <label className="form-field" style={{ maxWidth: 220 }}>
-                    <span style={{ fontSize: 12 }}>Referral commission (%)</span>
+                    <span style={{ fontSize: 12 }}>{ch.rewardsReferral}</span>
                     <input
                       type="number" min="0" max="100" step="0.1"
                       className="form-input"
@@ -9421,12 +9536,12 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                     <div className="modal-footer" style={{ marginTop: 16 }}>
                       {!isRoot && (
                         <button className="btn-secondary" onClick={resetRates} disabled={rewardsSaving} style={{ color: '#f87171' }}>
-                          Reset to inherited
+                          {ch.rewardsReset}
                         </button>
                       )}
-                      <button className="btn-secondary" onClick={onClose}>Cancel</button>
+                      <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
                       <button className="btn-primary" onClick={saveRates} disabled={rewardsSaving}>
-                        <Check size={14} />{rewardsSaving ? 'Saving…' : 'Save rates'}
+                        <Check size={14} />{rewardsSaving ? t.modal.saving : ch.rewardsSave}
                       </button>
                     </div>
                   )}
@@ -9434,10 +9549,8 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                   {/* Sub-channel rewards permissions */}
                   {(isSuperadmin || canGrantSubch) && subchannels?.length > 0 && (
                     <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Sub-channel custom rewards</div>
-                      <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>
-                        Allow sub-channels to define their own commission rates instead of inheriting from this channel.
-                      </p>
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>{ch.rewardsSubchTitle}</div>
+                      <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>{ch.rewardsSubchHint}</p>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {subchannels.map(subch => (
                           <div key={subch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
@@ -9450,7 +9563,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                                 background: subch.can_customize_rewards ? '#6366f1' : '#334155',
                                 transition: 'background 0.2s', position: 'relative',
                               }}
-                              title={subch.can_customize_rewards ? 'Revoke custom rewards' : 'Allow custom rewards'}
+                              title={subch.can_customize_rewards ? ch.rewardsRevoke : ch.rewardsAllow}
                             >
                               <span style={{
                                 position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
@@ -9469,7 +9582,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
 
           {activeTab === 'partner-tiers' && (
             <div>
-              {tierCfgLoading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : (
+              {tierCfgLoading ? <p style={{ color: '#94a3b8' }}>{ch.loading}</p> : (
                 <>
                   {tierCfgData && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
@@ -9478,12 +9591,12 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                         background: tierCfgData.source === 'own' ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.15)',
                         color: tierCfgData.source === 'own' ? '#10b981' : '#94a3b8',
                       }}>
-                        {tierCfgData.source === 'own' ? 'Own tier config'
-                          : tierCfgData.source === 'inherited' ? `Inherited from ${tierCfgData.source_channel_name}`
-                          : 'Global defaults'}
+                        {tierCfgData.source === 'own' ? ch.tierSrcOwn
+                          : tierCfgData.source === 'inherited' ? ch.tierSrcInherited(tierCfgData.source_channel_name)
+                          : ch.tierSrcGlobal}
                       </span>
                       {!canEditTierCfg && (
-                        <span style={{ fontSize: 12, color: '#64748b' }}>Contact your parent channel admin to enable custom tier config</span>
+                        <span style={{ fontSize: 12, color: '#64748b' }}>{ch.tierNoPermission}</span>
                       )}
                     </div>
                   )}
@@ -9501,22 +9614,22 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                           <label className="form-field">
-                            <span style={{ fontSize: 12 }}>Display Name (EN)</span>
+                            <span style={{ fontSize: 12 }}>{ch.tierLabelEn}</span>
                             <input className="form-input" value={row.label || ''} onChange={e => setField('label', e.target.value)} disabled={!canEditTierCfg} />
                           </label>
                           <label className="form-field">
-                            <span style={{ fontSize: 12 }}>Display Name (ZH)</span>
+                            <span style={{ fontSize: 12 }}>{ch.tierLabelZh}</span>
                             <input className="form-input" value={row.label_zh || ''} onChange={e => setField('label_zh', e.target.value)} disabled={!canEditTierCfg} />
                           </label>
                           <label className="form-field">
-                            <span style={{ fontSize: 12 }}>Entry Fee (¥)</span>
+                            <span style={{ fontSize: 12 }}>{ch.tierEntryFee}</span>
                             <input className="form-input" type="number" min="0" step="100"
                               value={row.entry_fee ?? ''}
                               onChange={e => setField('entry_fee', e.target.value === '' ? '' : Number(e.target.value))}
                               disabled={!canEditTierCfg} />
                           </label>
                           <label className="form-field">
-                            <span style={{ fontSize: 12 }}>Color</span>
+                            <span style={{ fontSize: 12 }}>{ch.tierColor}</span>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                               <input type="color" value={row.color || '#64748b'}
                                 onChange={e => setField('color', e.target.value)}
@@ -9526,7 +9639,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                             </div>
                           </label>
                           <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-                            <span style={{ fontSize: 12 }}>Description</span>
+                            <span style={{ fontSize: 12 }}>{ch.tierDescription}</span>
                             <input className="form-input" value={row.description || ''} onChange={e => setField('description', e.target.value)} disabled={!canEditTierCfg} placeholder="Optional" />
                           </label>
                         </div>
@@ -9541,22 +9654,20 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                       {tierCfgMsg && <span style={{ fontSize: 13, color: '#16a34a', marginRight: 'auto' }}>{tierCfgMsg}</span>}
                       {!isRoot && (
                         <button className="btn-secondary" onClick={resetTierCfg} disabled={tierCfgSaving} style={{ color: '#f87171' }}>
-                          Reset to inherited
+                          {ch.tierReset}
                         </button>
                       )}
-                      <button className="btn-secondary" onClick={onClose}>Cancel</button>
+                      <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
                       <button className="btn-primary" onClick={saveTierCfg} disabled={tierCfgSaving}>
-                        <Check size={14} />{tierCfgSaving ? 'Saving…' : 'Save tier config'}
+                        <Check size={14} />{tierCfgSaving ? t.modal.saving : ch.tierSave}
                       </button>
                     </div>
                   )}
 
                   {(isSuperadmin || canGrantSubch) && subchannels?.length > 0 && (
                     <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Sub-channel tier config</div>
-                      <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>
-                        Allow sub-channels to define their own partner tier labels and entry fees instead of inheriting from this channel.
-                      </p>
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>{ch.tierSubchTitle}</div>
+                      <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>{ch.tierSubchHint}</p>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {subchannels.map(subch => (
                           <div key={subch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
@@ -9569,7 +9680,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                                 background: subch.can_customize_partner_tiers ? '#6366f1' : '#334155',
                                 transition: 'background 0.2s', position: 'relative',
                               }}
-                              title={subch.can_customize_partner_tiers ? 'Revoke custom tier config' : 'Allow custom tier config'}
+                              title={subch.can_customize_partner_tiers ? ch.tierRevoke : ch.tierAllow}
                             >
                               <span style={{
                                 position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
@@ -9590,18 +9701,18 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               {hasSubchannels ? (
                 <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '14px 16px' }}>
-                  <div style={{ fontWeight: 600, color: '#f87171', marginBottom: 6 }}>Cannot delete this channel</div>
-                  <div style={{ fontSize: 13, color: '#94a3b8' }}>This channel has sub-channels. Remove all sub-channels before deleting it.</div>
+                  <div style={{ fontWeight: 600, color: '#f87171', marginBottom: 6 }}>{ch.dangerBlockedTitle}</div>
+                  <div style={{ fontSize: 13, color: '#94a3b8' }}>{ch.dangerBlockedHint}</div>
                 </div>
               ) : (
                 <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '14px 16px' }}>
-                  <div style={{ fontWeight: 600, color: '#f87171', marginBottom: 6 }}>Delete channel</div>
+                  <div style={{ fontWeight: 600, color: '#f87171', marginBottom: 6 }}>{ch.dangerDeleteTitle}</div>
                   <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 14 }}>
-                    This action is permanent. All users, coaches, and data associated with <strong style={{ color: '#e2e8f0' }}>{channel.name}</strong> will be unlinked. Type the channel name to confirm.
+                    {ch.dangerDeleteHintPre}<strong style={{ color: '#e2e8f0' }}>{channel.name}</strong>{ch.dangerDeleteHintPost}
                   </div>
                   <input
                     className="form-input"
-                    placeholder={`Type "${channel.name}" to confirm`}
+                    placeholder={ch.dangerDeletePlaceholder(channel.name)}
                     value={deleteConfirm}
                     onChange={e => setDeleteConfirm(e.target.value)}
                     style={{ marginBottom: 12 }}
@@ -9613,7 +9724,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                     onClick={doDelete}
                     disabled={deleteConfirm !== channel.name || deleting}
                   >
-                    <Trash2 size={14} />{deleting ? 'Deleting…' : 'Delete channel'}
+                    <Trash2 size={14} />{deleting ? t.modal.deleting : ch.dangerDeleteBtn}
                   </button>
                 </div>
               )}
@@ -9627,6 +9738,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
 
 function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
   const { t } = useLang();
+  const ch = t.channels;
   const [modal, setModal] = useState(null);
   const [expanded, setExpanded] = useState(() => new Set(channels.map(c => c.id)));
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
@@ -9704,8 +9816,8 @@ function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
           <td className="muted" style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.created_at)}</td>
           <td>
             <div className="row-actions">
-              <button className="icon-btn" title="Add sub-channel" onClick={() => setModal({ type: 'add', parentChannel: c })}><Plus size={13} /></button>
-              <button className="icon-btn" title="Settings" onClick={() => setModal({
+              <button className="icon-btn" title={ch.titleAddSubchannel} onClick={() => setModal({ type: 'add', parentChannel: c })}><Plus size={13} /></button>
+              <button className="icon-btn" title={ch.titleSettings} onClick={() => setModal({
                 type: 'config', channel: c,
                 hasSubchannels: !!(childrenOf[c.id]?.length),
                 canGrantSubch: isSuperadmin || (session?.canManageSubchannels && c.id !== parseInt(session?.channelId)),
@@ -9723,9 +9835,9 @@ function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
     <>
       <div className="stat-row">
         <StatCard icon={Building2} label={t.stats.totalChannels} value={channels.length} color="#6366f1" />
-        <StatCard icon={Users} label="Total Users" value={totalUsers} color="#3b82f6" />
-        <StatCard icon={Cpu} label="Kino Devices" value={totalDevices} color="#f59e0b" />
-        <StatCard icon={Activity} label="Total Scans" value={totalScans} color="#8b5cf6" />
+        <StatCard icon={Users} label={t.stats.totalUsers} value={totalUsers} color="#3b82f6" />
+        <StatCard icon={Cpu} label={ch.statKinoDevices} value={totalDevices} color="#f59e0b" />
+        <StatCard icon={Activity} label={ch.statTotalScans} value={totalScans} color="#8b5cf6" />
       </div>
 
       <div className="card">
@@ -9744,16 +9856,16 @@ function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
           <table className="data-table">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Key</th>
-                <th>Persona</th>
-                <th>Users</th>
-                <th>Coaches</th>
-                <th>Devices (active)</th>
-                <th>Scans</th>
-                <th>Joined</th>
-                <th>Actions</th>
+                <th>{t.table.id}</th>
+                <th>{t.table.name}</th>
+                <th>{t.table.key}</th>
+                <th>{ch.colPersona}</th>
+                <th>{ch.colUsers}</th>
+                <th>{ch.colCoaches}</th>
+                <th>{ch.colDevices}</th>
+                <th>{ch.colScans}</th>
+                <th>{t.table.joined}</th>
+                <th>{ch.colActions}</th>
               </tr>
             </thead>
             <tbody>
