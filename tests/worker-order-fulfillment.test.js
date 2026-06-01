@@ -79,7 +79,7 @@ describe('worker order fulfillment API', () => {
     assert.equal(response.data.orders[0].order_type, 'lab');
   });
 
-  test('PUT /orders/:id ships an order with tracking number and syncs transaction status', async () => {
+  test('PUT /orders/:id ships an order with tracking number only and syncs transaction status', async () => {
     const queries = [];
     installDbMock({
       async query(sql, params) {
@@ -92,6 +92,7 @@ describe('worker order fulfillment API', () => {
           assert.deepEqual(params, ['shipped', 'order-1']);
           return { rows: [] };
         }
+        assert.doesNotMatch(sql, /express_shipments/);
         throw new Error(`unexpected query: ${sql}`);
       },
     });
@@ -104,5 +105,6 @@ describe('worker order fulfillment API', () => {
     assert.equal(response.statusCode, 200);
     assert.equal(response.data.success, true);
     assert.ok(queries.find(q => q.sql.includes('tracking_number')));
+    assert.equal(queries.length, 2);
   });
 });

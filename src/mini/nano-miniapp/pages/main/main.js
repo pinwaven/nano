@@ -227,7 +227,7 @@ const T = {
     guestDotsCta: '激活账户后，获取您的专属营养方案',
     guestMenuSignUp: '注册账户',
     orderStatus: {
-      pending: '待处理', confirmed: '已确认', shipped: '已发货',
+      pending: '待处理', paid: '已支付', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', cancelled: '已取消',
     },
   },
@@ -406,7 +406,7 @@ const T = {
     guestDotsCta: 'Activate your account to get your personalized nutrition plan',
     guestMenuSignUp: 'Sign Up',
     orderStatus: {
-      pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
+      pending: 'Pending', paid: 'Paid', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', cancelled: 'Cancelled',
     },
   }

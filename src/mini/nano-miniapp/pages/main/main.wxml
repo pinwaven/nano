@@ -854,6 +854,7 @@
               <text class="order-price">{{item.price}}</text>
               <text class="order-meta"> · {{item.unit}} · ×{{item.quantity}}</text>
             </view>
+            <text wx:if="{{item.trackingNumber}}" class="order-date">{{item.trackingNumber}}</text>
             <text class="order-date">{{item.createdAt}}</text>
           </view>
           <view style="height: 32px;"></view>

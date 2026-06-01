@@ -1104,6 +1104,7 @@
 .order-status-shipped   { background: rgba(139,92,246,0.15); color: #a78bfa; }
 .order-status-delivered { background: rgba(16,185,129,0.15); color: #34d399; }
 .order-status-cancelled { background: rgba(100,116,139,0.12); color: #94a3b8; }
+.order-status-paid      { background: rgba(16,185,129,0.15); color: #34d399; }
 
 .order-card-mid {
   display: flex;

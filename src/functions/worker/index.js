@@ -7169,7 +7169,8 @@ exports.handler = async (req, resp, context) => {
     let event = req;
 
     if (Buffer.isBuffer(req)) {
-        try { event = JSON.parse(req.toString()); } catch (e) {}
+        const text = req.toString();
+        try { event = JSON.parse(text); } catch (e) {}
     }
 
     // EventBridge CloudEvent detection — route before HTTP processing

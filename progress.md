@@ -212,3 +212,21 @@
   - `npm --prefix src/web/admin-panel run build`
   - `git diff --check`
 - Next pending confirmation: Stage 7 Aliyun express integration.
+
+## 2026-05-31 Stage 7 Express Scope Deferred
+
+- User changed the scope: remove express callback handling and active express service calls for now.
+- Kept only the existing admin fulfillment behavior from Stage 6:
+  - `superadmin` can still enter `tracking_number` while marking the order as `shipped`.
+  - Worker updates `orders.tracking_number`, `orders.shipped_at`, and linked `transactions.status`.
+  - Mini-program order cards show the tracking number only.
+- Removed/deferred:
+  - Aliyun express adapter.
+  - Express webhook route.
+  - Express polling route and timer invocation path.
+  - Active subscription/query calls when saving a tracking number.
+  - Express shipment schema and express status fields in order APIs/UI.
+  - Aliyun express environment variables from deploy config.
+- Updated test coverage:
+  - `tests/worker-order-fulfillment.test.js` now asserts shipping with `tracking_number` does not create an express shipment or call an external express service.
+- Next pending confirmation: continue to Stage 8 receipt confirmation and lab order flow after this scope change is confirmed/committed.
