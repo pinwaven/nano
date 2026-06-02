@@ -389,6 +389,8 @@ async function handleGetMyOrders(openid) {
              LEFT JOIN LATERAL (
                  SELECT jsonb_agg(
                      jsonb_build_object(
+                         'source', t.source,
+                         'lab_name', t.lab_name,
                          'sku', t.sku,
                          'name_zh', t.name_zh,
                          'name_en', t.name_en,
@@ -1338,6 +1340,77 @@ async function handleDeleteChannelInventory(id, adminCtx) {
             await pool.query('DELETE FROM channel_inventory_items WHERE id=$1', [id]);
         }
         return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleConfirmReceipt(orderId, body = {}) {
+    const openid = body.openid || body.user_id;
+    if (!openid) return { success: false, error: 'openid is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `UPDATE orders
+             SET status = 'delivered',
+                 delivered_at = COALESCE(delivered_at, NOW())
+             WHERE id = $1 AND user_id = $2 AND status = 'shipped'
+             RETURNING id, user_id, status`,
+            [orderId, openid]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Order not found or not shippable', statusCode: 404 };
+        await pool.query(
+            `UPDATE transactions
+             SET status = 'delivered',
+                 updated_at = NOW()
+             WHERE order_id = $1`,
+            [orderId]
+        );
+        return { success: true, order: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleLabOrderSync(orderId, body = {}) {
+    const openid = body.openid || body.user_id;
+    const labName = String(body.lab_name || '').trim();
+    const barcode = String(body.barcode || '').trim();
+    if (!openid || !labName || !barcode) {
+        return { success: false, error: 'openid, lab_name and barcode are required', statusCode: 400 };
+    }
+    const transactionMetadata = {
+        lab_order_id: body.lab_order_id || body.order_id || null,
+        external_order_id: body.external_order_id || null,
+        barcode,
+        empty_stomach: body.empty_stomach === true,
+    };
+    const orderMetadata = {
+        lab_order: {
+            ...transactionMetadata,
+            lab_name: labName,
+        },
+    };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `UPDATE orders
+             SET status = 'testing',
+                 metadata = metadata || $3::jsonb
+             WHERE id = $1 AND user_id = $2 AND order_type = 'lab' AND status IN ('delivered', 'testing')
+             RETURNING id, user_id, status`,
+            [orderId, openid, JSON.stringify(orderMetadata)]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Order not found or not ready for lab order', statusCode: 404 };
+        await pool.query(
+            `UPDATE transactions
+             SET status = 'testing',
+                 metadata = metadata || $2::jsonb,
+                 updated_at = NOW()
+             WHERE order_id = $1`,
+            [orderId, JSON.stringify(transactionMetadata)]
+        );
+        return { success: true, order: result.rows[0] };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -7474,6 +7547,12 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostChannelInventory(parsedBody, adminCtx);
             } else if (path === '/addresses') {
                 result = await handlePostAddress(parsedBody);
+            } else if (path.match(/^\/orders\/([^/]+)\/confirm-receipt$/)) {
+                const orderId = path.match(/^\/orders\/([^/]+)\/confirm-receipt$/)[1];
+                result = await handleConfirmReceipt(orderId, parsedBody);
+            } else if (path.match(/^\/orders\/([^/]+)\/lab-order-sync$/)) {
+                const orderId = path.match(/^\/orders\/([^/]+)\/lab-order-sync$/)[1];
+                result = await handleLabOrderSync(orderId, parsedBody);
             } else if (path === '/lab-orders/checkout') {
                 result = await handlePostLabCheckout(parsedBody);
             } else if (path.includes('/store-items')) {

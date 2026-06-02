@@ -856,6 +856,14 @@
             </view>
             <text wx:if="{{item.trackingNumber}}" class="order-date">{{item.trackingNumber}}</text>
             <text class="order-date">{{item.createdAt}}</text>
+            <view wx:if="{{item.canConfirmReceipt || item.canStartLabTest}}" class="order-actions">
+              <view wx:if="{{item.canConfirmReceipt}}" class="order-action-btn" bindtap="handleConfirmReceipt" data-order="{{item}}">
+                <text>{{t.orderConfirmReceipt}}</text>
+              </view>
+              <view wx:if="{{item.canStartLabTest}}" class="order-action-btn order-action-primary" bindtap="handleStartLabOrder" data-order="{{item}}">
+                <text>{{t.orderStartLabTest}}</text>
+              </view>
+            </view>
           </view>
           <view style="height: 32px;"></view>
         </view>

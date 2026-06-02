@@ -1,6 +1,9 @@
 node_modules/
 .env
+.env.*
 .DS_Store
+*.swp
+.antigravitycli/
 .s/
 dist/
 certs/

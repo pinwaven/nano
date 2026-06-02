@@ -230,3 +230,24 @@
 - Updated test coverage:
   - `tests/worker-order-fulfillment.test.js` now asserts shipping with `tracking_number` does not create an express shipment or call an external express service.
 - Next pending confirmation: continue to Stage 8 receipt confirmation and lab order flow after this scope change is confirmed/committed.
+
+## 2026-06-01 Stage 8 Receipt Confirmation And Lab Order Flow
+
+- Added worker user-order lifecycle APIs:
+  - `POST /api/orders/:id/confirm-receipt` lets the owning user mark a shipped order as `delivered` and syncs linked `transactions`.
+  - `POST /api/orders/:id/lab-order-sync` records lab order metadata, barcode, and fasting status, then moves the lab order and linked `transactions` to `testing`.
+  - `GET /api/my-orders` now includes transaction `lab_name` and `source` so the mini-program can start the correct lab flow from an order.
+- Updated mini-program order flow:
+  - Shipped orders show `确认收货`.
+  - Delivered lab orders show `开始检测`.
+  - The detection start flow scans the lab barcode, asks fasting status, confirms sampling, calls `POST /lab/order` with `user_id`, `lab_name`, goods, barcode, and fasting status, then syncs worker order status.
+  - Added `testing` order status labels and styling.
+- Added test coverage:
+  - `tests/worker-order-fulfillment.test.js` covers user receipt confirmation ownership/status constraints and lab order metadata/status synchronization.
+- Verification:
+  - `node --check src/functions/worker/index.js`
+  - `node --check src/mini/nano-miniapp/pages/main/main.js`
+  - `node tests/worker-order-fulfillment.test.js`
+  - `node tests/worker-lab-checkout.test.js`
+  - `node tests/lab-order.test.js`
+- Next pending confirmation: review and commit Stage 8, or continue with the next requested refinement.

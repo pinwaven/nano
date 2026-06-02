@@ -157,6 +157,19 @@ const T = {
     labCheckoutReady: '订单已创建，请继续支付',
     labCheckoutPaid: '支付已完成',
     labCheckoutPayError: '支付未完成，请稍后在订单中继续',
+    orderConfirmReceipt: '确认收货',
+    orderStartLabTest: '开始检测',
+    orderReceiptDone: '已确认收货',
+    labTestScanCode: '请扫描检测条码',
+    labTestEmptyTitle: '是否空腹？',
+    labTestEmptyMsg: '请选择本次取样状态。',
+    labTestEmptyYes: '空腹',
+    labTestEmptyNo: '非空腹',
+    labTestSampleTitle: '取样',
+    labTestSampleMsg: '请完成取样后继续提交检测订单。',
+    labTestSampleDone: '已取样',
+    labTestOrderDone: '检测订单已提交',
+    labTestOrderError: '检测订单提交失败，请重试',
     toolHealthAdvice: '健康管理',
     toolUploadImage: '上传图片',
     imageUploading: '正在上传图片…',
@@ -228,7 +241,7 @@ const T = {
     guestMenuSignUp: '注册账户',
     orderStatus: {
       pending: '待处理', paid: '已支付', confirmed: '已确认', shipped: '已发货',
-      delivered: '已送达', cancelled: '已取消',
+      delivered: '已送达', testing: '检测中', cancelled: '已取消',
     },
   },
   en: {
@@ -336,6 +349,19 @@ const T = {
     labCheckoutReady: 'Order created. Continue to payment.',
     labCheckoutPaid: 'Payment completed',
     labCheckoutPayError: 'Payment was not completed. Continue later from orders.',
+    orderConfirmReceipt: 'Confirm Receipt',
+    orderStartLabTest: 'Start Test',
+    orderReceiptDone: 'Receipt confirmed',
+    labTestScanCode: 'Scan the lab barcode',
+    labTestEmptyTitle: 'Fasting?',
+    labTestEmptyMsg: 'Choose the sample state for this test.',
+    labTestEmptyYes: 'Fasting',
+    labTestEmptyNo: 'Not fasting',
+    labTestSampleTitle: 'Sample',
+    labTestSampleMsg: 'Complete sampling before submitting the lab order.',
+    labTestSampleDone: 'Sampled',
+    labTestOrderDone: 'Lab order submitted',
+    labTestOrderError: 'Lab order failed. Please try again.',
     toolHealthAdvice: 'Health Advice',
     toolUploadImage: 'Upload Image',
     imageUploading: 'Uploading image…',
@@ -407,7 +433,7 @@ const T = {
     guestMenuSignUp: 'Sign Up',
     orderStatus: {
       pending: 'Pending', paid: 'Paid', confirmed: 'Confirmed', shipped: 'Shipped',
-      delivered: 'Delivered', cancelled: 'Cancelled',
+      delivered: 'Delivered', testing: 'Testing', cancelled: 'Cancelled',
     },
   }
 }
@@ -701,6 +727,13 @@ function mapStoreOrders(rawOrders, lang) {
       : (lang === 'zh' ? `¥${o.price_cny}` : `$${o.price_usd}`),
     status: o.status,
     paymentStatus: o.payment_status || null,
+    orderType: o.order_type || 'store',
+    labName: o.order_type === 'lab'
+      ? ((Array.isArray(o.transactions) && o.transactions[0] && o.transactions[0].lab_name) || String(o.item_key || '').replace(/^lab:/, ''))
+      : null,
+    goods: Array.isArray(o.transactions) ? o.transactions.map(tx => tx.sku).filter(Boolean) : [],
+    canConfirmReceipt: o.status === 'shipped',
+    canStartLabTest: o.order_type === 'lab' && o.status === 'delivered',
     trackingNumber: o.tracking_number || null,
     createdAt: new Date(o.created_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US'),
   }))
@@ -794,6 +827,7 @@ Page({
     selectedLabProducts: [],
     labCheckoutTotalText: '¥0.00',
     labCheckoutBusy: false,
+    orderActionBusyId: null,
 
     // Kino Simulator passcode
     kinoPassOpen: false,
@@ -1845,6 +1879,45 @@ Page({
     })
   },
 
+  _scanCode() {
+    return new Promise((resolve, reject) => {
+      wx.scanCode({
+        onlyFromCamera: true,
+        success: (res) => resolve(res.result),
+        fail: reject,
+      })
+    })
+  },
+
+  _chooseLabEmptyStomach() {
+    const { t } = this.data
+    return new Promise((resolve) => {
+      wx.showModal({
+        title: t.labTestEmptyTitle,
+        content: t.labTestEmptyMsg,
+        confirmText: t.labTestEmptyYes,
+        cancelText: t.labTestEmptyNo,
+        confirmColor: '#6375EC',
+        success: (res) => resolve(res.confirm === true),
+        fail: () => resolve(false),
+      })
+    })
+  },
+
+  _confirmLabSample() {
+    const { t } = this.data
+    return new Promise((resolve) => {
+      wx.showModal({
+        title: t.labTestSampleTitle,
+        content: t.labTestSampleMsg,
+        confirmText: t.labTestSampleDone,
+        confirmColor: '#6375EC',
+        success: (res) => resolve(res.confirm === true),
+        fail: () => resolve(false),
+      })
+    })
+  },
+
   async handleSend() {
     const { chatInput, typing, obStep } = this.data
     const text = chatInput.trim()
@@ -2223,6 +2296,67 @@ Page({
       },
       fail: () => {},
     })
+  },
+
+  async handleConfirmReceipt(e) {
+    const { user, lang, t, orderActionBusyId } = this.data
+    const order = e.currentTarget.dataset.order
+    if (!order || orderActionBusyId) return
+    this.setData({ orderActionBusyId: order.id })
+    try {
+      await this._req(`${BASE}/api/orders/${order.id}/confirm-receipt`, 'POST', {
+        openid: user.user_id,
+      })
+      wx.showToast({ title: t.orderReceiptDone, icon: 'success' })
+      await this._loadStoreOrders(user, lang)
+    } catch (err) {
+      wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
+    } finally {
+      this.setData({ orderActionBusyId: null })
+    }
+  },
+
+  async handleStartLabOrder(e) {
+    const { user, lang, t, orderActionBusyId } = this.data
+    const order = e.currentTarget.dataset.order
+    if (!order || orderActionBusyId) return
+    if (!order.labName || !order.goods || order.goods.length === 0) {
+      wx.showToast({ title: t.labTestOrderError, icon: 'none', duration: 2500 })
+      return
+    }
+    try {
+      wx.showToast({ title: t.labTestScanCode, icon: 'none' })
+      const barcode = await this._scanCode()
+      if (!barcode) return
+      const emptyStomach = await this._chooseLabEmptyStomach()
+      const sampled = await this._confirmLabSample()
+      if (!sampled) return
+      this.setData({ orderActionBusyId: order.id })
+      const labRes = await this._req(`${BASE}/lab/order`, 'POST', {
+        user_id: user.user_id,
+        lab_name: order.labName,
+        payload: {
+          goods: order.goods,
+          barcode,
+          empty_stomach: emptyStomach,
+        },
+      })
+      const labOrder = labRes.data?.order || {}
+      await this._req(`${BASE}/api/orders/${order.id}/lab-order-sync`, 'POST', {
+        openid: user.user_id,
+        lab_name: order.labName,
+        lab_order_id: labOrder.id,
+        external_order_id: labOrder.external_order_id,
+        barcode,
+        empty_stomach: emptyStomach,
+      })
+      wx.showToast({ title: t.labTestOrderDone, icon: 'success' })
+      await this._loadStoreOrders(user, lang)
+    } catch (err) {
+      wx.showToast({ title: t.labTestOrderError, icon: 'none', duration: 2500 })
+    } finally {
+      this.setData({ orderActionBusyId: null })
+    }
   },
 
   handleBuyItem(e) {

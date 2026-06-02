@@ -278,7 +278,6 @@ The function deploys as `nano-lab-dev` / `nano-lab-prod`. It runs in the same VP
 | Variable | Description |
 |---|---|
 | `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS` | PolarDB connection |
-| `LAB_WEBHOOK_SECRET` | Default HMAC secret (per-provider secrets stored in DB) |
 | `EVENTBRIDGE_ENDPOINT` | Aliyun EventBridge endpoint URL |
 | `EVENTBRIDGE_TOPIC` | EventBridge topic/bus name |
 

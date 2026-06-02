@@ -107,4 +107,87 @@ describe('worker order fulfillment API', () => {
     assert.ok(queries.find(q => q.sql.includes('tracking_number')));
     assert.equal(queries.length, 2);
   });
+
+  test('POST /orders/:id/confirm-receipt marks only the user order delivered', async () => {
+    const queries = [];
+    installDbMock({
+      async query(sql, params) {
+        queries.push({ sql, params });
+        if (sql.includes('UPDATE orders')) {
+          assert.match(sql, /status = 'delivered'/);
+          assert.match(sql, /user_id = \$2/);
+          assert.match(sql, /status = 'shipped'/);
+          assert.deepEqual(params, ['order-1', 'u1']);
+          return { rows: [{ id: 'order-1', user_id: 'u1', status: 'delivered' }] };
+        }
+        if (sql.includes('UPDATE transactions')) {
+          assert.deepEqual(params, ['order-1']);
+          return { rows: [] };
+        }
+        throw new Error(`unexpected query: ${sql}`);
+      },
+    });
+
+    const response = await request('POST', '/orders/order-1/confirm-receipt', {
+      openid: 'u1',
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.data.success, true);
+    assert.equal(response.data.order.status, 'delivered');
+    assert.equal(queries.length, 2);
+  });
+
+  test('POST /orders/:id/lab-order-sync records lab order metadata and testing status', async () => {
+    const queries = [];
+    installDbMock({
+      async query(sql, params) {
+        queries.push({ sql, params });
+        if (sql.includes('UPDATE orders')) {
+          assert.match(sql, /metadata = metadata \|\| \$3::jsonb/);
+          assert.match(sql, /status IN \('delivered', 'testing'\)/);
+          assert.equal(params[0], 'order-1');
+          assert.equal(params[1], 'u1');
+          assert.deepEqual(JSON.parse(params[2]), {
+            lab_order: {
+              lab_order_id: 7,
+              external_order_id: 'QCS-1001',
+              lab_name: 'qcs',
+              barcode: '287002730175',
+              empty_stomach: true,
+            },
+          });
+          return { rows: [{ id: 'order-1', user_id: 'u1', status: 'testing' }] };
+        }
+        if (sql.includes('UPDATE transactions')) {
+          assert.match(sql, /metadata = metadata \|\| \$2::jsonb/);
+          assert.deepEqual(params, [
+            'order-1',
+            JSON.stringify({
+              lab_order_id: 7,
+              external_order_id: 'QCS-1001',
+              barcode: '287002730175',
+              empty_stomach: true,
+            }),
+          ]);
+          return { rows: [] };
+        }
+        throw new Error(`unexpected query: ${sql}`);
+      },
+    });
+
+    const response = await request('POST', '/orders/order-1/lab-order-sync', {
+      openid: 'u1',
+      lab_name: 'qcs',
+      lab_order_id: 7,
+      external_order_id: 'QCS-1001',
+      barcode: '287002730175',
+      empty_stomach: true,
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.data.success, true);
+    assert.equal(response.data.order.status, 'testing');
+    assert.equal(queries.length, 2);
+  });
 });

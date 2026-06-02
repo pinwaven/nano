@@ -9,7 +9,7 @@
 - [x] **Stage 5: Worker order and transaction creation** — Add worker order creation that inserts `orders` as the summary record and `transactions` as purchase detail records linked to the order, including a source field for later status updates.
 - [x] **Stage 6: Payment and admin fulfillment** — Call the payment interface, update paid statuses, show paid orders to `superadmin` and `admin` in `admin_panel`, and allow `superadmin` to add tracking numbers, ship, and update status.
 - [ ] **Stage 7: Aliyun express integration** — Deferred. For now keep only the admin tracking-number entry; Aliyun express callbacks, scheduled polling, active subscription/query, and logistics status synchronization are not enabled.
-- [ ] **Stage 8: Receipt confirmation and lab order flow** — Let users confirm receipt, then start detection from the mini-program order by scanning barcode, sampling, selecting fasting status, calling the lab order API with barcode, `user_id`, `lab_name`, goods, and fasting status, then synchronizing `transactions` and `orders` statuses.
+- [x] **Stage 8: Receipt confirmation and lab order flow** — Let users confirm receipt, then start detection from the mini-program order by scanning barcode, sampling, selecting fasting status, calling the lab order API with barcode, `user_id`, `lab_name`, goods, and fasting status, then synchronizing `transactions` and `orders` statuses.
 
 ## Security
 
