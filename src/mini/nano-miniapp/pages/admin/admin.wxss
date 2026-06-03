@@ -57,18 +57,23 @@
 }
 
 /* ── Tab bar ── */
-.adm-tabs {
-  display: flex;
+.adm-tabs-scroll {
   background: #0D2035;
   border-bottom: 1rpx solid #162E4A;
   flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.adm-tabs {
+  display: inline-flex;
+  min-width: 100%;
 }
 
 .adm-tab {
-  flex: 1;
+  min-width: 110rpx;
   text-align: center;
-  padding: 20rpx 0 16rpx;
-  font-size: 28rpx;
+  padding: 20rpx 20rpx 16rpx;
+  font-size: 26rpx;
   font-weight: 500;
   color: #7A9ABF;
   position: relative;
@@ -787,3 +792,58 @@
 }
 
 .adm-add-btn-busy { opacity: 0.6; }
+
+/* ── Dashboard grid ── */
+.adm-dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20rpx;
+  margin-bottom: 24rpx;
+}
+
+.adm-dash-card {
+  background: #0D2035;
+  border: 1rpx solid #162E4A;
+  border-radius: 20rpx;
+  padding: 32rpx 24rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.adm-dash-card-accent {
+  border-color: rgba(99, 117, 236, 0.5);
+  background: rgba(99, 117, 236, 0.08);
+}
+
+.adm-dash-val {
+  font-size: 52rpx;
+  font-weight: 700;
+  color: #E8F4FF;
+  line-height: 1.1;
+}
+
+.adm-dash-val-accent { color: #A0B4FF; }
+
+.adm-dash-key {
+  font-size: 22rpx;
+  color: #4A6A8A;
+}
+
+/* ── Partner tier badge ── */
+.adm-tier-badge {
+  padding: 6rpx 16rpx;
+  border-radius: 32rpx;
+  font-size: 22rpx;
+  font-weight: 600;
+  flex-shrink: 0;
+  text-transform: capitalize;
+}
+
+.adm-tier-bronze  { background: rgba(205,127,50,0.2);  color: #CD7F32; }
+.adm-tier-silver  { background: rgba(156,163,175,0.2); color: #9CA3AF; }
+.adm-tier-gold    { background: rgba(234,179,8,0.2);   color: #EAB308; }
+.adm-tier-platinum { background: rgba(139,92,246,0.2); color: #8B5CF6; }
+
+/* ── Partner avatar ── */
+.adm-avatar-partner { background: #f97316; }
