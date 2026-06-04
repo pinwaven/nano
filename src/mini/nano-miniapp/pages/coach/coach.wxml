@@ -25,10 +25,44 @@
 
   <!-- Client List -->
   <view wx:elif="{{tab === 'clients'}}" class="client-list">
-    <view wx:if="{{clients.length === 0}}" class="empty-state">
-      <text class="empty-text">{{t.noClients}}</text>
+    <!-- Search bar -->
+    <view class="clients-search-wrap">
+      <view class="clients-search-bar">
+        <text class="search-icon-txt">🔍</text>
+        <input class="clients-search-input"
+               placeholder="{{t.searchPlaceholder}}"
+               value="{{clientSearch}}"
+               bindinput="onClientSearchInput"
+               confirm-type="search" />
+        <view wx:if="{{clientSearch}}" class="search-clear-btn" catchtap="clearClientSearch">
+          <text class="search-clear-icon">✕</text>
+        </view>
+      </view>
     </view>
-    <view wx:for="{{clients}}" wx:key="user_id" class="client-card">
+    <!-- Stage filter chips -->
+    <scroll-view wx:if="{{clientFilterStages.length > 0}}" scroll-x class="stage-filter-scroll">
+      <view class="stage-filter-inner">
+        <view class="stage-chip {{clientStageFilter === '' ? 'stage-chip-active' : ''}}" catchtap="setStageFilter" data-stage="">
+          <text class="stage-chip-text">{{t.filterAll}}</text>
+        </view>
+        <view wx:for="{{clientFilterStages}}" wx:key="stage"
+              class="stage-chip {{clientStageFilter === item.stage ? 'stage-chip-colored' : ''}}"
+              style="{{clientStageFilter === item.stage ? 'border-color:' + item.color + '; background:' + item.color + '22;' : ''}}"
+              catchtap="setStageFilter" data-stage="{{item.stage}}">
+          <text class="stage-chip-text" style="{{clientStageFilter === item.stage ? 'color:' + item.color + ';' : ''}}">{{item.label}}</text>
+          <text class="stage-chip-count">{{item.count}}</text>
+        </view>
+      </view>
+    </scroll-view>
+    <!-- Result count when filtering is active -->
+    <view wx:if="{{clientSearch || clientStageFilter}}" class="search-result-row">
+      <text class="search-result-txt">{{filteredClients.length}} / {{clients.length}}</text>
+    </view>
+
+    <view wx:if="{{filteredClients.length === 0}}" class="empty-state">
+      <text class="empty-text">{{clients.length === 0 ? t.noClients : t.noMatchClients}}</text>
+    </view>
+    <view wx:for="{{filteredClients}}" wx:key="user_id" class="client-card">
       <!-- Top row: avatar + name/ages + delta badge -->
       <view class="client-row" bindtap="openClientDetail" data-client="{{item}}" data-tab="health">
         <view class="client-avatar" style="{{item.avatar_url ? '' : 'background: #1E3A5F;'}}">

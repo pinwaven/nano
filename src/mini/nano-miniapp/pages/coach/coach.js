@@ -18,6 +18,9 @@ const T = {
     superadminMenu: '超管面板',
     logout: '退出',
     noClients: '暂无分配的客户',
+    searchPlaceholder: '搜索客户姓名…',
+    filterAll: '全部',
+    noMatchClients: '无匹配客户',
     bioAge: '生理年龄', chronoAge: '实际年龄',
     lastScan: '上次检测',
     older: '岁↑', younger: '岁↓',
@@ -155,6 +158,9 @@ const T = {
     superadminMenu: 'Super Admin',
     logout: 'Logout',
     noClients: 'No clients assigned yet',
+    searchPlaceholder: 'Search by name…',
+    filterAll: 'All',
+    noMatchClients: 'No matching clients',
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
     lastScan: 'Last scan',
     older: 'yrs↑', younger: 'yrs↓',
@@ -343,6 +349,10 @@ Page({
     isAdmin: false,
     isSuperadmin: false,
     clients: [],
+    filteredClients: [],
+    clientSearch: '',
+    clientStageFilter: '',
+    clientFilterStages: [],
     invites: [],
     // Client detail sheet
     detailOpen: false,
@@ -527,7 +537,9 @@ Page({
           _crmTags: crmTags,
         }
       })
-      this.setData({ clients, invites: invitesRes.data?.invitations || [] })
+      const clientFilterStages = this._buildFilterStages(clients)
+      this.setData({ clients, invites: invitesRes.data?.invitations || [], clientFilterStages })
+      this._filterClients()
     } catch (e) {
       wx.showToast({ title: T[this.data.lang].networkError, icon: 'none' })
     } finally {
@@ -564,7 +576,8 @@ Page({
   toggleLang() {
     const lang = this.data.lang === 'zh' ? 'en' : 'zh'
     app.globalData.lang = lang
-    this.setData({ lang, t: T[lang], menuOpen: false, chatToolList: toolActions.getToolList(T[lang]) })
+    const clientFilterStages = this._buildFilterStages(this.data.clients)
+    this.setData({ lang, t: T[lang], menuOpen: false, chatToolList: toolActions.getToolList(T[lang]), clientFilterStages })
   },
 
   async toggleTheme() {
@@ -1448,6 +1461,50 @@ Page({
     } finally {
       this.setData({ kpiLoading: false })
     }
+  },
+
+  // ── Client search & filter ───────────────────────────────────────────────────
+
+  _buildFilterStages(clients) {
+    const lang = this.data.lang
+    const t = T[lang]
+    const stageOrder = ['lead', 'onboarding', 'active', 'at_risk', 'churned', 'graduated']
+    const stageColorMap = { lead: '#f59e0b', onboarding: '#6375EC', active: '#10b981', at_risk: '#ef4444', churned: '#6b7280', graduated: '#0ea5e9' }
+    const counts = {}
+    for (const c of clients) {
+      const s = c.crm_stage || 'lead'
+      counts[s] = (counts[s] || 0) + 1
+    }
+    return stageOrder
+      .filter(s => counts[s] > 0)
+      .map(s => ({ stage: s, label: t.crmStages[s] || s, color: stageColorMap[s] || '#6b7280', count: counts[s] }))
+  },
+
+  _filterClients() {
+    const { clients, clientSearch, clientStageFilter } = this.data
+    const q = (clientSearch || '').trim().toLowerCase()
+    const filtered = clients.filter(c => {
+      if (clientStageFilter && (c.crm_stage || 'lead') !== clientStageFilter) return false
+      if (q && !(c.nickname || '').toLowerCase().includes(q)) return false
+      return true
+    })
+    this.setData({ filteredClients: filtered })
+  },
+
+  onClientSearchInput(e) {
+    this.setData({ clientSearch: e.detail.value })
+    this._filterClients()
+  },
+
+  clearClientSearch() {
+    this.setData({ clientSearch: '' })
+    this._filterClients()
+  },
+
+  setStageFilter(e) {
+    const stage = e.currentTarget.dataset.stage
+    this.setData({ clientStageFilter: stage })
+    this._filterClients()
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
