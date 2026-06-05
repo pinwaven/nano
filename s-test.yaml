@@ -4,15 +4,15 @@ access: default
 
 vars:
   region: cn-shanghai
-  logProject: nano-ai-logs
-  logStore: nano-ai-logstore
+  logProject: nano-ai-logs-test
+  logStore: nano-ai-logstore-test
 
 resources:
   dispatcher:
     component: fc3
     props:
       region: ${vars.region}
-      functionName: nano-dispatcher
+      functionName: nano-dispatcher-test
       runtime: nodejs20
       handler: index.handler
       memorySize: 128
@@ -30,7 +30,7 @@ resources:
         vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
       environmentVariables:
         DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
-        DB_NAME: "nano_db"
+        DB_NAME: "nano_db_test"
         DB_USER: "nano_admin"
         DB_PASS: ${env(DB_PASS)}
         DB_SSL: "false"
@@ -50,7 +50,7 @@ resources:
     component: fc3
     props:
       region: ${vars.region}
-      functionName: nano-worker
+      functionName: nano-worker-test
       runtime: nodejs20
       handler: index.handler
       memorySize: 512
@@ -68,7 +68,7 @@ resources:
         vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
       environmentVariables:
         DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
-        DB_NAME: "nano_db"
+        DB_NAME: "nano_db_test"
         DB_USER: "nano_admin"
         DB_PASS: ${env(DB_PASS)}
         DB_SSL: "false"
@@ -103,7 +103,7 @@ resources:
     component: fc3
     props:
       region: ${vars.region}
-      functionName: nano-agent
+      functionName: nano-agent-test
       runtime: nodejs20
       handler: index.handler
       memorySize: 256
@@ -121,7 +121,7 @@ resources:
         vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
       environmentVariables:
         DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
-        DB_NAME: "nano_db"
+        DB_NAME: "nano_db_test"
         DB_USER: "nano_admin"
         DB_PASS: ${env(DB_PASS)}
         DB_SSL: "false"
@@ -145,7 +145,7 @@ resources:
     component: fc3
     props:
       region: ${vars.region}
-      functionName: nano-lab
+      functionName: nano-lab-test
       runtime: nodejs20
       handler: index.handler
       memorySize: 512
@@ -163,7 +163,7 @@ resources:
         vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
       environmentVariables:
         DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
-        DB_NAME: "nano_db_prod"
+        DB_NAME: "nano_db_test"
         DB_USER: "nano_admin"
         DB_PASS: ${env(DB_PASS)}
         DB_SSL: "false"
@@ -186,7 +186,7 @@ resources:
     component: fc3
     props:
       region: ${vars.region}
-      functionName: nano-kino
+      functionName: nano-kino-test
       runtime: nodejs20
       handler: index.handler
       memorySize: 256
@@ -204,7 +204,7 @@ resources:
         vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
       environmentVariables:
         DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
-        DB_NAME: "nano_db"
+        DB_NAME: "nano_db_test"
         DB_USER: "nano_admin"
         DB_PASS: ${env(DB_PASS)}
         DB_SSL: "false"
@@ -224,7 +224,7 @@ resources:
     component: fc3
     props:
       region: ${vars.region}
-      functionName: nano-admin-panel
+      functionName: nano-admin-panel-test
       runtime: nodejs20
       handler: index.handler
       memorySize: 128
@@ -241,7 +241,7 @@ resources:
         vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
         vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
       environmentVariables:
-        WORKER_URL: "https://nano-worker-napllanrqp.cn-shanghai-vpc.fcapp.run"
+        WORKER_URL: "https://nano-test.fros.cc/api"
         TZ: "Asia/Shanghai"
       triggers:
         - triggerName: http-admin
@@ -250,40 +250,11 @@ resources:
             authType: anonymous
             methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 
-  user-app:
-    component: fc3
-    props:
-      region: ${vars.region}
-      functionName: nano-user-app
-      runtime: nodejs20
-      handler: index.handler
-      memorySize: 128
-      timeout: 30
-      code: ./src/functions/user-app
-      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
-      logConfig:
-        project: ${vars.logProject}
-        logstore: ${vars.logStore}
-        enableRequestMetrics: true
-        enableInstanceMetrics: true
-      vpcConfig:
-        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
-        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
-        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
-      environmentVariables:
-        TZ: "Asia/Shanghai"
-      triggers:
-        - triggerName: http-user-app
-          triggerType: http
-          triggerConfig:
-            authType: anonymous
-            methods: ["GET", "OPTIONS"]
-
   nano-domain:
     component: fc3-domain
     props:
       region: ${vars.region}
-      domainName: nano.fros.cc
+      domainName: nano-test.fros.cc
       protocol: HTTP,HTTPS
       certConfig:
         certName: nano-custom-cert
@@ -292,30 +263,26 @@ resources:
       routeConfig:
         routes:
           - path: /api/*
-            functionName: nano-worker
+            functionName: nano-worker-test
           - path: /api
-            functionName: nano-worker
-          - path: /app/*
-            functionName: nano-user-app
-          - path: /app
-            functionName: nano-user-app
+            functionName: nano-worker-test
           - path: /admin/api/*
-            functionName: nano-admin-panel
+            functionName: nano-admin-panel-test
           - path: /admin/*
-            functionName: nano-admin-panel
+            functionName: nano-admin-panel-test
           - path: /admin
-            functionName: nano-admin-panel
+            functionName: nano-admin-panel-test
           - path: /worker
-            functionName: nano-worker
+            functionName: nano-worker-test
           - path: /agent/*
-            functionName: nano-agent
+            functionName: nano-agent-test
           - path: /agent
-            functionName: nano-agent
+            functionName: nano-agent-test
           - path: /kino/*
-            functionName: nano-kino
+            functionName: nano-kino-test
           - path: /kino
-            functionName: nano-kino
+            functionName: nano-kino-test
           - path: /lab/*
-            functionName: nano-lab
+            functionName: nano-lab-test
           - path: /lab
-            functionName: nano-lab
+            functionName: nano-lab-test

@@ -182,6 +182,44 @@ resources:
             cronExpression: "0 0 */4 * * *"
             enable: true
 
+  kino:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-kino-dev
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 256
+      timeout: 60
+      code: ./src/functions/kino
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
+        DB_NAME: "nano_db_dev"
+        DB_USER: "nano_admin"
+        DB_PASS: ${env(DB_PASS)}
+        DB_SSL: "false"
+        TZ: "Asia/Shanghai"
+        API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        KINO_ACTIVATION_TOKEN: ${env(KINO_ACTIVATION_TOKEN)}
+        KINO_ROOT_TOKEN_ENCRYPTION_KEY: ${env(KINO_ROOT_TOKEN_ENCRYPTION_KEY)}
+        KINO_COMM_TOKEN_TTL_DAYS: "7"
+      triggers:
+        - triggerName: kino-http
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+
   admin-panel:
     component: fc3
     props:
@@ -240,6 +278,10 @@ resources:
             functionName: nano-agent-dev
           - path: /agent
             functionName: nano-agent-dev
+          - path: /kino/*
+            functionName: nano-kino-dev
+          - path: /kino
+            functionName: nano-kino-dev
           - path: /lab/*
             functionName: nano-lab-dev
           - path: /lab

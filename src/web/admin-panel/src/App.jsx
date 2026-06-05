@@ -44,6 +44,44 @@ function hasPermission(session, perm) {
   return (session.allowedTabs || []).includes(perm.split(':')[0]);
 }
 
+const KINO_MACHINE_PAGE_LIMIT = 10;
+
+function normalizeKinoMachine(machine = {}) {
+  return {
+    ...machine,
+    serial_number: machine.serial_number || machine.machine_no || '',
+    name: machine.name || machine.machine_name || '',
+    last_used_at: machine.last_used_at || machine.last_seen_at || null,
+    test_count: machine.test_count ?? machine.tests ?? 0,
+  };
+}
+
+function normalizeKinoMachinesPayload(payload = {}) {
+  const machines = payload.machines || payload.devices || [];
+  const pagination = payload.pagination || {};
+  const total = Number(pagination.total ?? payload.total ?? machines.length);
+  const limit = Number(pagination.limit ?? KINO_MACHINE_PAGE_LIMIT);
+  const totalPages = Number(pagination.total_pages ?? Math.max(1, Math.ceil(total / limit)));
+
+  return {
+    devices: machines.map(normalizeKinoMachine),
+    pagination: {
+      page: Number(pagination.page ?? payload.page ?? 1),
+      limit,
+      total,
+      total_pages: totalPages,
+    },
+  };
+}
+
+function buildKinoMachinesUrl({ page = 1, q = '' } = {}) {
+  const params = new URLSearchParams();
+  params.set('page', String(Math.max(1, page)));
+  params.set('limit', String(KINO_MACHINE_PAGE_LIMIT));
+  if (q.trim()) params.set('q', q.trim());
+  return `/kino/kino-machines?${params.toString()}`;
+}
+
 function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -158,8 +196,10 @@ const T = {
     count: (n) => `${n} users`,
     searchUsers: 'Search by name, ID, email, phone, channel…',
     searchCoaches: 'Search by name, ID, email, phone, channel…',
+    searchKino: 'Search serial number or name…',
+    pagination: { page: 'Page', of: 'of', total: 'total' },
     addUser: 'Add User',
-    addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item', addChannel: 'Add Channel', addInvite: 'Create Invite', addDevice: 'Register Device',
+    addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item', addChannel: 'Add Channel', addInvite: 'Create Invite', addDevice: 'Add Device',
     countCoach: (n) => `${n} Coaches`,
     countDot: (n) => `${n} dots`,
     countItem: (n) => `${n} items`,
@@ -228,11 +268,12 @@ const T = {
       inviteType: 'Type', inviteTypeCoach: 'Coach', inviteTypeChannel: 'Channel', inviteTypeAdmin: 'Admin',
       inviteMaxUses: 'Max Uses', inviteMaxUsesPlaceholder: 'Blank = unlimited',
       inviteChannel: 'Channel *',
-      addDevice: 'Register Kino Device', editDevice: 'Edit Kino Device', deleteDevice: 'Remove Device',
+      addDevice: 'Add Kino Device', editDevice: 'Edit Kino Device', deleteDevice: 'Remove Device',
       deleteDeviceWarning: (sn) => `Remove Kino device "${sn}"? Historical biomarker links will be preserved but the device will no longer be tracked.`,
+      machineModel: 'Model', quantity: 'Quantity *', quantityRequired: 'Quantity must be at least 1',
       serialNumber: 'Serial Number *', serialNumberPlaceholder: 'e.g. KNO-2024-0001',
       deviceName: 'Display Name', deviceNamePlaceholder: 'e.g. Clinic Unit A',
-      deviceStatus: 'Status', statusActive: 'Active', statusInactive: 'Inactive', statusMaintenance: 'Maintenance',
+      deviceStatus: 'Status', statusActive: 'Active', statusInactive: 'Not Activated', statusMaintenance: 'Maintenance',
       deviceNotes: 'Notes', deviceNotesPlaceholder: 'Optional notes…',
       assignedCoachDevice: 'Assigned Coach', assignedChannelDevice: 'Assigned Channel',
       uploadApk: 'Upload New APK', apkVersion: 'Version *', apkVersionPlaceholder: 'e.g. 1.2.3',
@@ -665,6 +706,8 @@ const T = {
     count: (n) => `共 ${n} 位用户`,
     searchUsers: '搜索姓名、ID、邮箱、电话、渠道…',
     searchCoaches: '搜索姓名、ID、邮箱、电话、渠道…',
+    searchKino: '搜索序列号或名称…',
+    pagination: { page: '第', of: '页 / 共', total: '条' },
     addBatch: '新建批次', countBatch: (n) => `共 ${n} 批次`,
     chips: {
       prefix: '前缀 *', prefixHint: '自动转大写，例如 KNC12345678 或 MVNS0725122201',
@@ -712,7 +755,7 @@ const T = {
       noImages: '暂无图片',
     },
     addUser: '添加用户',
-    addCoach: '添加 Coach', addDot: '添加原粒', addItem: '添加商品', addChannel: '添加渠道', addInvite: '创建邀请码', addDevice: '注册设备',
+    addCoach: '添加 Coach', addDot: '添加原粒', addItem: '添加商品', addChannel: '添加渠道', addInvite: '创建邀请码', addDevice: '添加设备',
     countCoach: (n) => `共 ${n} 位 Coach`,
     countDot: (n) => `共 ${n} 个原粒`,
     countItem: (n) => `共 ${n} 件商品`,
@@ -781,11 +824,12 @@ const T = {
       inviteType: '类型', inviteTypeCoach: 'Coach', inviteTypeChannel: '渠道', inviteTypeAdmin: '管理员',
       inviteMaxUses: '使用上限', inviteMaxUsesPlaceholder: '留空 = 不限次数',
       inviteChannel: '渠道 *',
-      addDevice: '注册 Kino 设备', editDevice: '编辑 Kino 设备', deleteDevice: '移除设备',
+      addDevice: '添加 Kino 设备', editDevice: '编辑 Kino 设备', deleteDevice: '移除设备',
       deleteDeviceWarning: (sn) => `确认移除 Kino 设备"${sn}"？历史生物标志物关联将保留，但设备将不再被追踪。`,
+      machineModel: '型号', quantity: '数量 *', quantityRequired: '数量必须大于等于 1',
       serialNumber: '序列号 *', serialNumberPlaceholder: '例如 KNO-2024-0001',
       deviceName: '显示名称', deviceNamePlaceholder: '例如 诊所 A 机',
-      deviceStatus: '状态', statusActive: '运行中', statusInactive: '停用', statusMaintenance: '维护中',
+      deviceStatus: '状态', statusActive: '运行中', statusInactive: '未激活', statusMaintenance: '维护中',
       deviceNotes: '备注', deviceNotesPlaceholder: '可选备注…',
       assignedCoachDevice: '负责 Coach', assignedChannelDevice: '所属渠道',
       uploadApk: '上传新版本 APK', apkVersion: '版本号 *', apkVersionPlaceholder: '例如 1.2.3',
@@ -2722,7 +2766,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
     const cid = session?.channelId;
     const isChannel = session?.role === 'channel';
     const baseUrl = isChannel ? `/api/channel-users/${cid}` : '/api/users';
-    
+
     const params = {
       limit: offset + 50,
       offset: 0,
@@ -2730,7 +2774,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
       sort_field: sortField,
       sort_dir: sortDir,
     };
-    
+
     if (isChannel) {
       if (includeSubchannels) {
         params.include_subchannels = 'true';
@@ -2941,26 +2985,26 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
           </tbody>
         </table>
         {loadedUsers.length < total && (
-          <div 
+          <div
             ref={loaderRef}
-            style={{ 
-              display: 'flex', 
-              justifyContent: 'center', 
-              padding: '24px 0', 
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              padding: '24px 0',
               borderTop: '1px solid var(--border)',
-              alignItems: 'center' 
+              alignItems: 'center'
             }}
           >
             {tabLoading ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ 
-                  width: 14, 
-                  height: 14, 
-                  border: '2px solid var(--border)', 
-                  borderTopColor: 'var(--primary)', 
-                  borderRadius: '50%', 
-                  display: 'inline-block', 
-                  animation: 'spin 1s linear infinite' 
+                <span style={{
+                  width: 14,
+                  height: 14,
+                  border: '2px solid var(--border)',
+                  borderTopColor: 'var(--primary)',
+                  borderRadius: '50%',
+                  display: 'inline-block',
+                  animation: 'spin 1s linear infinite'
                 }} />
                 <span style={{ fontSize: '13px', color: 'var(--muted)' }}>
                   {isZh ? '正在加载更多用户...' : 'Loading more users...'}
@@ -5388,9 +5432,9 @@ function OrderStatusSelect({ orderId, status, onSave }) {
       return;
     }
     setBusy(true);
-    try { 
-      await axios.put(`/api/orders/${orderId}`, { status: val }); 
-      onSave(); 
+    try {
+      await axios.put(`/api/orders/${orderId}`, { status: val });
+      onSave();
     }
     catch { /* silent */ } finally { setBusy(false); }
   };
@@ -5420,7 +5464,7 @@ function OrderStatusSelect({ orderId, status, onSave }) {
   };
 
   const color = { pending: '#f59e0b', confirmed: '#3b82f6', shipped: '#8b5cf6', delivered: '#10b981', cancelled: '#94a3b8' }[status] || '#94a3b8';
-  
+
   return (
     <div className="select-wrap">
       <select value={status} onChange={handleChange} disabled={busy} className="inline-select" style={{ color }}>
@@ -5807,7 +5851,7 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
       {modal?.type === 'add'    && <StoreItemModal item={null} skus={skus} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit'   && <StoreItemModal item={modal.item} skus={skus} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteStoreItemConfirm item={modal.item} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
-      
+
       {modal?.type === 'add-sku'    && <SkuModal sku={null}       onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit-sku'   && <SkuModal sku={modal.sku}  onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete-sku' && <DeleteSkuConfirm sku={modal.sku} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
@@ -9884,7 +9928,7 @@ function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
 // ── Kino tab ──────────────────────────────────────────────────────────────────
 
 const DEVICE_STATUSES = ['active', 'inactive', 'maintenance'];
-const EMPTY_DEVICE = { serial_number: '', name: '', coach_id: '', channel_id: '', status: 'active', notes: '' };
+const EMPTY_DEVICE = { model: 'KNA1', quantity: 1, serial_number: '', name: '', coach_id: '', channel_id: '', status: 'active', notes: '' };
 
 function KinoModal({ device, coaches, channels, onClose, onSave }) {
   const { t } = useLang();
@@ -9903,18 +9947,24 @@ function KinoModal({ device, coaches, channels, onClose, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.serial_number.trim()) { setError(t.modal.serialNumber.replace(' *', '') + ' is required'); return; }
+    const quantity = parseInt(form.quantity, 10);
+    if (isEdit && !form.serial_number.trim()) { setError(t.modal.serialNumber.replace(' *', '') + ' is required'); return; }
+    if (!isEdit && (!Number.isInteger(quantity) || quantity < 1)) { setError(t.modal.quantityRequired); return; }
     setBusy(true); setError('');
     try {
-      const payload = {
-        ...form,
-        serial_number: form.serial_number.trim().toUpperCase(),
-        coach_id:   form.coach_id   !== '' ? parseInt(form.coach_id)   : null,
-        channel_id: form.channel_id !== '' ? parseInt(form.channel_id) : null,
-      };
       let res;
-      if (isEdit) res = await axios.put(`/api/kino-devices/${device.id}`, payload);
-      else        res = await axios.post('/api/kino-devices', payload);
+      if (isEdit) {
+        const machineNo = form.serial_number.trim().toUpperCase();
+        const payload = {
+          ...form,
+          serial_number: machineNo,
+          coach_id:   form.coach_id   !== '' ? parseInt(form.coach_id)   : null,
+          channel_id: form.channel_id !== '' ? parseInt(form.channel_id) : null,
+        };
+        res = await axios.put(`/kino/kino-machines/${machineNo}`, payload);
+      } else {
+        res = await axios.post('/kino/kino-machines/batch', { model: form.model, quantity: parseInt(form.quantity, 10) });
+      }
       if (res.data?.success === false) { setError(res.data.error || t.modal.saveFailed); return; }
       onSave();
     } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
@@ -9932,49 +9982,70 @@ function KinoModal({ device, coaches, channels, onClose, onSave }) {
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
           <div className="form-grid">
-            <label className="form-field">
-              <span>{t.modal.serialNumber}</span>
-              <input value={form.serial_number} onChange={e => set('serial_number', e.target.value)} disabled={isEdit} placeholder={t.modal.serialNumberPlaceholder} style={{ fontFamily: 'monospace' }} />
-            </label>
-            <label className="form-field">
-              <span>{t.modal.deviceName}</span>
-              <input value={form.name} onChange={e => set('name', e.target.value)} placeholder={t.modal.deviceNamePlaceholder} />
-            </label>
-            <label className="form-field">
-              <span>{t.modal.deviceStatus}</span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.status} onChange={e => set('status', e.target.value)} className="inline-select" style={{ width: '100%', color: statusColor[form.status] }}>
-                  <option value="active">{t.modal.statusActive}</option>
-                  <option value="inactive">{t.modal.statusInactive}</option>
-                  <option value="maintenance">{t.modal.statusMaintenance}</option>
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
-            <label className="form-field">
-              <span>{t.modal.assignedCoachDevice}</span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.coach_id} onChange={e => set('coach_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  <option value="">{t.modal.unassigned}</option>
-                  {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.modal.assignedChannelDevice}</span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  <option value="">{t.modal.channelUnassigned}</option>
-                  {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.modal.deviceNotes}</span>
-              <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder={t.modal.deviceNotesPlaceholder} />
-            </label>
+            {!isEdit ? (
+              <>
+                <label className="form-field">
+                  <span>{t.modal.machineModel}</span>
+                  <div className="select-wrap" style={{ width: '100%' }}>
+                    <select value={form.model} onChange={e => set('model', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                      <option value="KNA1">KNA1</option>
+                      <option value="KNA2">KNA2</option>
+                    </select>
+                    <ChevronDown size={11} className="select-chevron" />
+                  </div>
+                </label>
+                <label className="form-field">
+                  <span>{t.modal.quantity}</span>
+                  <input type="number" min="1" step="1" value={form.quantity} onChange={e => set('quantity', e.target.value)} />
+                </label>
+              </>
+            ) : (
+              <>
+                <label className="form-field">
+                  <span>{t.modal.serialNumber}</span>
+                  <input value={form.serial_number} onChange={e => set('serial_number', e.target.value)} disabled={isEdit} placeholder={t.modal.serialNumberPlaceholder} style={{ fontFamily: 'monospace' }} />
+                </label>
+                <label className="form-field">
+                  <span>{t.modal.deviceName}</span>
+                  <input value={form.name} onChange={e => set('name', e.target.value)} placeholder={t.modal.deviceNamePlaceholder} />
+                </label>
+                <label className="form-field">
+                  <span>{t.modal.deviceStatus}</span>
+                  <div className="select-wrap" style={{ width: '100%' }}>
+                    <select value={form.status} onChange={e => set('status', e.target.value)} className="inline-select" style={{ width: '100%', color: statusColor[form.status] }}>
+                      <option value="active">{t.modal.statusActive}</option>
+                      <option value="inactive">{t.modal.statusInactive}</option>
+                      <option value="maintenance">{t.modal.statusMaintenance}</option>
+                    </select>
+                    <ChevronDown size={11} className="select-chevron" />
+                  </div>
+                </label>
+                <label className="form-field">
+                  <span>{t.modal.assignedCoachDevice}</span>
+                  <div className="select-wrap" style={{ width: '100%' }}>
+                    <select value={form.coach_id} onChange={e => set('coach_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                      <option value="">{t.modal.unassigned}</option>
+                      {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <ChevronDown size={11} className="select-chevron" />
+                  </div>
+                </label>
+                <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                  <span>{t.modal.assignedChannelDevice}</span>
+                  <div className="select-wrap" style={{ width: '100%' }}>
+                    <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                      <option value="">{t.modal.channelUnassigned}</option>
+                      {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <ChevronDown size={11} className="select-chevron" />
+                  </div>
+                </label>
+                <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                  <span>{t.modal.deviceNotes}</span>
+                  <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder={t.modal.deviceNotesPlaceholder} />
+                </label>
+              </>
+            )}
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
@@ -10098,13 +10169,50 @@ function KoneApkUploadModal({ onClose, onSave }) {
   );
 }
 
-function KinoTab({ devices, coaches, channels, releases = [], onRefresh }) {
+function KinoTab({ devices, machinePagination, coaches, channels, releases = [], onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
-  const closeAndRefresh = () => { setModal(null); onRefresh(); };
+  const [listDevices, setListDevices] = useState((devices || []).map(normalizeKinoMachine));
+  const [pagination, setPagination] = useState(machinePagination || { page: 1, limit: KINO_MACHINE_PAGE_LIMIT, total: (devices || []).length, total_pages: 1 });
+  const [page, setPage] = useState(machinePagination?.page || 1);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [listLoading, setListLoading] = useState(false);
+  const [listError, setListError] = useState('');
 
-  const activeCount = devices.filter(d => d.status === 'active').length;
-  const totalTests  = devices.reduce((s, d) => s + (d.test_count || 0), 0);
+  const loadMachines = useCallback(async () => {
+    setListLoading(true);
+    setListError('');
+    try {
+      const res = await axios.get(buildKinoMachinesUrl({ page, q: searchQuery }));
+      const normalized = normalizeKinoMachinesPayload(res.data || {});
+      setListDevices(normalized.devices);
+      setPagination(normalized.pagination);
+    } catch (err) {
+      setListError(err.response?.data?.error || t.modal.saveFailed);
+    } finally {
+      setListLoading(false);
+    }
+  }, [page, searchQuery, t.modal.saveFailed]);
+
+  useEffect(() => {
+    setListDevices((devices || []).map(normalizeKinoMachine));
+    if (machinePagination) {
+      setPagination(machinePagination);
+      setPage(Number(machinePagination.page ?? 1));
+    }
+  }, [devices, machinePagination]);
+
+  useEffect(() => {
+    loadMachines();
+  }, [loadMachines]);
+
+  const closeAndRefresh = () => { setModal(null); loadMachines(); onRefresh(); };
+
+  const totalPages = Math.max(1, Number(pagination.total_pages || 1));
+  const totalDevices = Number(pagination.total ?? listDevices.length);
+  const activeCount = listDevices.filter(d => d.status === 'active').length;
+  const totalTests  = listDevices.reduce((s, d) => s + (d.test_count || 0), 0);
   const activeRelease = releases.find(r => r.is_active);
 
   const statusColor = { active: '#10b981', inactive: '#94a3b8', maintenance: '#f59e0b' };
@@ -10124,17 +10232,33 @@ function KinoTab({ devices, coaches, channels, releases = [], onRefresh }) {
   return (
     <>
       <div className="stat-row">
-        <StatCard icon={Cpu} label={t.stats.totalDevices}  value={devices.length} color="#6366f1" />
+        <StatCard icon={Cpu} label={t.stats.totalDevices}  value={totalDevices} color="#6366f1" />
         <StatCard icon={Cpu} label={t.stats.activeDevices} value={activeCount}     color="#10b981" />
         <StatCard icon={Activity} label={t.stats.totalTests}   value={totalTests}     color="#3b82f6" />
       </div>
       <div className="card">
         <div className="table-toolbar">
-          <span className="table-count">{t.countDevice(devices.length)}</span>
-          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-            <Plus size={14} />{t.addDevice}
-          </button>
+          <span className="table-count">{t.countDevice(totalDevices)}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <form onSubmit={(e) => { e.preventDefault(); setPage(1); setSearchQuery(searchInput); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                className="toolbar-search"
+                value={searchInput}
+                onChange={e => setSearchInput(e.target.value)}
+                placeholder={t.searchKino}
+              />
+              {searchInput && (
+                <button type="button" className="icon-btn" onClick={() => { setSearchInput(''); setSearchQuery(''); setPage(1); }}>
+                  <X size={14} />
+                </button>
+              )}
+            </form>
+            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+              <Plus size={14} />{t.addDevice}
+            </button>
+          </div>
         </div>
+        {listError && <div className="form-error" style={{ margin: '10px 16px 0' }}>{listError}</div>}
         <table className="data-table">
           <thead>
             <tr>
@@ -10150,8 +10274,8 @@ function KinoTab({ devices, coaches, channels, releases = [], onRefresh }) {
             </tr>
           </thead>
           <tbody>
-            {devices.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.kino}</td></tr>}
-            {devices.map(d => (
+            {listDevices.length === 0 && <tr><td colSpan={9} className="empty-row">{listLoading ? t.topbar.loading : t.empty.kino}</td></tr>}
+            {listDevices.map(d => (
               <tr key={d.id}>
                 <td>
                   <div className="avatar-cell">
@@ -10182,6 +10306,19 @@ function KinoTab({ devices, coaches, channels, releases = [], onRefresh }) {
             ))}
           </tbody>
         </table>
+        <div className="table-toolbar" style={{ borderTop: '1px solid var(--border)', borderBottom: 0 }}>
+          <span className="table-count">
+            {t.pagination.page} {pagination.page || page} {t.pagination.of} {totalPages} · {totalDevices} {t.pagination.total}
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button className="icon-btn" disabled={listLoading || page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>
+              <ChevronLeft size={14} />
+            </button>
+            <button className="icon-btn" disabled={listLoading || page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="card" style={{ marginTop: 20 }}>
@@ -14131,7 +14268,7 @@ function AdminPanel({ session, onLogout }) {
   const isCmsAdmin = session?.role === 'channel' && session?.canManageSubchannels;
   const SUPERADMIN_ONLY = new Set([]);
 
-  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [], skus: [], inventoryStock: [] });
+  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], kinoMachinePagination: null, chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [], skus: [], inventoryStock: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -14150,7 +14287,7 @@ function AdminPanel({ session, onLogout }) {
         axios.get(isChannel ? `/api/orders?channel_id=${cid}` : '/api/orders'),
         (isChannel && !isCmsAdmin && !canManageOwnAdmins) ? Promise.resolve({ data: {} }) : axios.get('/api/channels'),
         axios.get(isChannel ? `/api/invitations?channel_id=${cid}` : '/api/invitations'),
-        axios.get('/api/kino-devices'),
+        axios.get('/kino/kino-machines?page=1&limit=10'),
         axios.get('/api/kino-chip-batches'),
         axios.get('/api/kino-chip-models'),
         axios.get('/api/tickets'),
@@ -14160,6 +14297,7 @@ function AdminPanel({ session, onLogout }) {
         axios.get('/api/skus'),
         axios.get('/api/inventory-stock'),
       ]);
+      const kinoMachines = normalizeKinoMachinesPayload(ok(kinoRes));
       setData({
         users:               ok(uRes).users              || [],
         dots:                ok(dRes).dots               || [],
@@ -14168,7 +14306,8 @@ function AdminPanel({ session, onLogout }) {
         orders:              ok(oRes).orders             || [],
         channels:            ok(chRes).channels          || [],
         invitations:         ok(invRes).invitations      || [],
-        kinoDevices:         ok(kinoRes).devices         || [],
+        kinoDevices:         kinoMachines.devices,
+        kinoMachinePagination: kinoMachines.pagination,
         chipBatches:         ok(cbRes).batches           || [],
         chipModels:          ok(cmRes).models            || [],
         tickets:             ok(tkRes).tickets           || [],
@@ -14273,7 +14412,7 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} channels={data.channels} skus={data.skus || []} inventoryStock={data.inventoryStock || []} session={session} onRefresh={fetchData} />}
           {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} skus={data.skus || []} />}
           {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} session={session} />}
-          {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
+          {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} machinePagination={data.kinoMachinePagination} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
           {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} coaches={data.coaches} session={session} onRefresh={fetchData} />}
           {tab === 'rewards'   && <RewardsTab />}
