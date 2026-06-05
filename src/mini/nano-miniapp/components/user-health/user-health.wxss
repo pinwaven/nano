@@ -1844,3 +1844,251 @@
   color: rgba(166, 196, 229, 0.35);
   display: block;
 }
+
+/* ═══ Wearable Device ═══ */
+
+.wd-inner {
+  margin-bottom: 24rpx;
+}
+
+.wd-empty-card {
+  display: flex;
+  align-items: center;
+  background: rgba(15, 37, 64, 0.4);
+  border: 1rpx solid rgba(99, 117, 236, 0.18);
+  border-radius: 24rpx;
+  padding: 28rpx 24rpx;
+  gap: 20rpx;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.wd-empty-card:active { opacity: 0.7; }
+
+.wd-ring-icon {
+  font-size: 48rpx;
+  color: rgba(99, 117, 236, 0.7);
+  flex-shrink: 0;
+}
+
+.wd-empty-text-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.wd-bind-label {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+}
+
+.wd-bind-sub {
+  font-size: 20rpx;
+  color: rgba(166, 196, 229, 0.5);
+}
+
+.wd-chevron {
+  font-size: 36rpx;
+  color: rgba(99, 117, 236, 0.5);
+  flex-shrink: 0;
+}
+
+.wd-card {
+  background: rgba(15, 37, 64, 0.5);
+  border: 1rpx solid rgba(99, 117, 236, 0.18);
+  border-radius: 24rpx;
+  padding: 28rpx 24rpx;
+}
+
+.wd-card-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+}
+
+.wd-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.wd-device-name {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+}
+
+.wd-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.wd-dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: rgba(166, 196, 229, 0.3);
+  flex-shrink: 0;
+}
+
+.wd-dot-on {
+  background: #10b981;
+  box-shadow: 0 0 6rpx #10b981;
+  animation: wd-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes wd-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.wd-status-text {
+  font-size: 20rpx;
+  color: rgba(166, 196, 229, 0.55);
+}
+
+.wd-battery-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4rpx;
+}
+
+.wd-battery-pct {
+  font-size: 30rpx;
+  font-weight: 800;
+  color: #10b981;
+}
+
+.wd-battery-lbl {
+  font-size: 18rpx;
+  color: rgba(166, 196, 229, 0.4);
+}
+
+.wd-actions {
+  display: flex;
+  gap: 16rpx;
+}
+
+.wd-btn {
+  flex: 1;
+  padding: 16rpx 0;
+  text-align: center;
+  font-size: 22rpx;
+  font-weight: 600;
+  color: #EEF2FF;
+  background: rgba(99, 117, 236, 0.18);
+  border: 1rpx solid rgba(99, 117, 236, 0.3);
+  border-radius: 14rpx;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.wd-btn:active { opacity: 0.6; }
+
+.wd-btn-muted {
+  color: rgba(166, 196, 229, 0.5);
+  background: rgba(15, 37, 64, 0.3);
+  border-color: rgba(99, 117, 236, 0.12);
+}
+
+.wd-btn-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ── Ring sync summary card ── */
+
+.ring-summary-card {
+  background: rgba(15, 37, 64, 0.35);
+  border: 1rpx solid rgba(99, 117, 236, 0.14);
+  border-radius: 20rpx;
+  padding: 24rpx 20rpx 18rpx;
+  margin-bottom: 20rpx;
+}
+
+.ring-sum-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx 0;
+  margin-bottom: 14rpx;
+}
+
+.ring-sum-item {
+  flex: 0 0 33.33%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5rpx;
+  padding: 0 4rpx;
+}
+
+.ring-sum-val-row {
+  display: flex;
+  align-items: baseline;
+  gap: 3rpx;
+}
+
+.ring-sum-val {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+  line-height: 1;
+}
+
+.ring-sum-unit {
+  font-size: 17rpx;
+  color: rgba(166, 196, 229, 0.55);
+}
+
+.ring-sum-sub {
+  font-size: 19rpx;
+  color: rgba(166, 196, 229, 0.45);
+}
+
+.ring-sum-bar {
+  width: 100%;
+  height: 6rpx;
+  background: rgba(99, 117, 236, 0.12);
+  border-radius: 3rpx;
+  margin-top: 6rpx;
+  overflow: hidden;
+}
+
+.ring-sum-bar-fill {
+  height: 100%;
+  border-radius: 3rpx;
+  transition: width 0.4s ease;
+}
+
+.ring-steps-fill { background: #0ea5e9; }
+.ring-hr-fill    { background: #f97316; }
+
+.ring-sleep-segs {
+  display: flex;
+  flex-direction: row;
+  background: rgba(99, 117, 236, 0.08);
+}
+
+.ring-sum-bar-seg { height: 100%; }
+.ring-deep-seg    { background: #6375EC; }
+.ring-rem-seg     { background: #a855f7; }
+.ring-light-seg   { background: #0ea5e9; }
+.ring-awake-seg   { background: rgba(166, 196, 229, 0.18); }
+
+.ring-sum-stress-label {
+  font-size: 17rpx;
+  font-weight: 600;
+  margin-top: 2rpx;
+}
+
+.ring-sum-footer {
+  display: block;
+  font-size: 18rpx;
+  color: rgba(166, 196, 229, 0.3);
+  text-align: right;
+}

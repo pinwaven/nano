@@ -11,6 +11,7 @@
     </view>
     <view class="header-divider"></view>
     <text class="header-user">{{isGuest ? t.guestHeaderName : (user.nickname || 'User')}}</text>
+    <text wx:if="{{version}}" class="header-version">v{{version}}</text>
   </view>
 
   <!-- ── Logo menu ── -->
@@ -432,7 +433,6 @@
         <text class="guest-lock-text">{{t.guestLockMsg}}</text>
       </view>
 
-      <!-- Loading -->
       <view wx:elif="{{plansLoading}}" class="plans-loading">
         <text class="loading-dots">···</text>
       </view>
@@ -639,7 +639,6 @@
           </view>
         </scroll-view>
 
-        <!-- Progress sub-tab -->
         <scroll-view wx:elif="{{planSubTab === 'progress'}}" scroll-y class="overlay-scroll">
           <view class="plan-detail-section">
             <text class="plan-detail-label">{{t.plansAdherence}}</text>
@@ -654,7 +653,6 @@
           </view>
         </scroll-view>
 
-        <!-- Activities sub-tab (offline events) -->
         <scroll-view wx:elif="{{planSubTab === 'activities'}}" scroll-y class="overlay-scroll">
           <view wx:if="{{eventsLoading}}" class="panel-center" style="padding:60rpx 0">
             <text class="empty-text">{{t.eventsLoading}}</text>
@@ -696,7 +694,6 @@
           </view>
         </scroll-view>
 
-        <!-- Guidance sub-tab -->
         <scroll-view wx:elif="{{planSubTab === 'guidance'}}" scroll-y class="overlay-scroll">
           <view class="plan-detail-section">
             <text class="plan-detail-value">{{lang === 'zh' ? (planDetailData.desc_zh || planDetailData.goal_zh) : (planDetailData.desc_en || planDetailData.goal_en)}}</text>
@@ -772,7 +769,6 @@
         <view class="pulse-dot"></view>
       </view>
 
-      <!-- Products subtab -->
       <scroll-view wx:elif="{{storeSubTab === 'products' && storeItems.length > 0}}" class="store-scroll" scroll-y="true" refresher-enabled="{{true}}" refresher-triggered="{{storeRefreshing}}" bindrefresherrefresh="onStoreRefresh">
         <view class="store-list">
           <view wx:for="{{storeItems}}" wx:key="id" class="store-card">

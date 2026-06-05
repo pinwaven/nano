@@ -6738,23 +6738,25 @@ async function handlePostHealthEventsSync(body) {
         if (!userResult.rows.length) return { success: false, error: 'User not found', statusCode: 404 };
         const user_id = userResult.rows[0].user_id;
 
-        let inserted = 0;
+        let synced = 0;
+        let skipped = 0;
         for (const ev of events) {
-            if (!ev.category || !VALID_CATEGORIES.has(ev.category) || !ev.source || !ev.data_date || !ev.data || !ev.recorded_at) continue;
+            if (!ev.category || !VALID_CATEGORIES.has(ev.category) || !ev.source || !ev.data_date || !ev.data || !ev.recorded_at) { skipped++; continue; }
             const r = await pool.query(`
                 INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING
+                ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL
+                DO UPDATE SET data = EXCLUDED.data, recorded_at = EXCLUDED.recorded_at
                 RETURNING id
             `, [user_id, ev.source, ev.category, ev.data_date, ev.recorded_at, JSON.stringify(ev.data), ev.external_id || null]);
-            if (r.rows.length > 0) inserted++;
+            if (r.rows.length > 0) synced++;
         }
 
-        if (inserted > 0) {
+        if (synced > 0) {
             await updateHealthTwin(user_id, pool);
         }
 
-        return { success: true, inserted, skipped: events.length - inserted };
+        return { success: true, synced, skipped };
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostHealthEventsSync failed', error: err.message }));
         return { success: false, error: err.message, statusCode: 500 };

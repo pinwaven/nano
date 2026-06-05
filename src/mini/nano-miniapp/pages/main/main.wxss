@@ -70,6 +70,16 @@
   min-width: 0;
 }
 
+.header-version {
+  font-size: 18rpx;
+  color: rgba(99, 117, 236, 0.7);
+  background: rgba(99, 117, 236, 0.12);
+  border: 1rpx solid rgba(99, 117, 236, 0.25);
+  border-radius: 8rpx;
+  padding: 4rpx 10rpx;
+  flex-shrink: 0;
+}
+
 .header-logo-btn {
   display: flex;
   align-items: center;

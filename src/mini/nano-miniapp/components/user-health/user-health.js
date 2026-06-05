@@ -134,7 +134,7 @@ const T = {
     healthScoreGrades: { optimal: '优秀', good: '良好', fair: '一般', low: '偏低' },
     dtRecovery: '恢复力', dtCardio: '心血管', dtActivity: '活动量', dtBodyDomain: '体态',
     dtVitals: '生命体征',
-    dtMonitoring: '健康监测',
+    dtMonitoring: '实时健康数据',
     dtLabPanel: '化验快照', dtLabAbnormal: '项异常', dtLabAllNormal: '所有指标正常',
     healthReports: '检测报告',
     noReports: '暂无检测报告。',
@@ -154,6 +154,27 @@ const T = {
     rptRecommendations: '建议方案',
     rptFollowUp: '随访计划',
     noHealthSignals: '暂无健康信号',
+    wearableDevice: '可穿戴设备',
+    bindSmartRing: '绑定智能戒指',
+    bindSmartRingSub: '支持 Colmi 系列蓝牙戒指',
+    wearableConnected: '已连接',
+    wearableDisconnected: '未连接',
+    wearableBattery: '电量',
+    wearableSyncNow: '立即同步',
+    wearableUnbind: '解绑',
+    wearableScanning: '正在搜索...',
+    wearableNoDevices: '未找到设备，请确认戒指已开机',
+    wearableConnecting: '正在同步...',
+    wearableConnectFail: '连接失败，请重试',
+    wearableSyncFail: '同步失败',
+    ringSteps: '今日步数',
+    ringSleep: '昨夜睡眠',
+    ringHr: '最低心率',
+    ringHrv: 'HRV',
+    ringStress: '压力',
+    ringStressLevels: ['放松', '正常', '中等', '偏高'],
+    wearableMeasuringHrv: '测量 HRV...',
+    wearableMeasuringStress: '测量压力...',
   },
   en: {
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -210,7 +231,7 @@ const T = {
     healthScoreGrades: { optimal: 'Optimal', good: 'Good', fair: 'Fair', low: 'Low' },
     dtRecovery: 'Recovery', dtCardio: 'Cardio', dtActivity: 'Activity', dtBodyDomain: 'Body',
     dtVitals: 'Vitals',
-    dtMonitoring: 'Health Monitoring',
+    dtMonitoring: 'Real-time Health Data',
     dtLabPanel: 'Lab Snapshot', dtLabAbnormal: 'abnormal', dtLabAllNormal: 'All markers normal',
     healthReports: 'Lab Reports',
     noReports: 'No lab reports yet.',
@@ -230,7 +251,89 @@ const T = {
     rptRecommendations: 'Recommendations',
     rptFollowUp: 'Follow-up',
     noHealthSignals: 'No signals yet',
+    wearableDevice: 'Wearable Device',
+    bindSmartRing: 'Bind Smart Ring',
+    bindSmartRingSub: 'Supports Colmi Bluetooth rings',
+    wearableConnected: 'Connected',
+    wearableDisconnected: 'Disconnected',
+    wearableBattery: 'Battery',
+    wearableSyncNow: 'Sync Now',
+    wearableUnbind: 'Unbind',
+    wearableScanning: 'Scanning...',
+    wearableNoDevices: 'No devices found. Make sure the ring is powered on.',
+    wearableConnecting: 'Syncing...',
+    wearableConnectFail: 'Connection failed. Please try again.',
+    wearableSyncFail: 'Sync failed',
+    ringSteps: "Today's Steps",
+    ringSleep: 'Last Night',
+    ringHr: 'Min HR',
+    ringHrv: 'HRV',
+    ringStress: 'Stress',
+    ringStressLevels: ['Relaxed', 'Normal', 'Moderate', 'High'],
+    wearableMeasuringHrv: 'Measuring HRV...',
+    wearableMeasuringStress: 'Measuring stress...',
   },
+}
+
+function _buildRingDisplayData(raw, isZh) {
+  const d = new Date(raw.syncedAt)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  const syncLabel = isZh ? `已同步 ${hh}:${mm}` : `Synced ${hh}:${mm}`
+
+  let sleepStr = null, sleepDeepPct = 0, sleepLightPct = 0, sleepRemPct = 0, sleepAwakePct = 0
+  if (raw.sleepMinutes != null && raw.sleepMinutes > 0) {
+    const h = Math.floor(raw.sleepMinutes / 60)
+    const m = raw.sleepMinutes % 60
+    sleepStr = isZh ? `${h}时${m}分` : `${h}h ${m}m`
+    const total = raw.sleepMinutes
+    sleepDeepPct  = Math.round((raw.sleepDeep  || 0) / total * 100)
+    sleepRemPct   = Math.round((raw.sleepRem   || 0) / total * 100)
+    sleepLightPct = Math.round((raw.sleepLight || 0) / total * 100)
+    sleepAwakePct = Math.max(0, 100 - sleepDeepPct - sleepRemPct - sleepLightPct)
+  }
+
+  let stepsStr = null, stepsPct = 0
+  if (raw.steps != null) {
+    const s = raw.steps
+    stepsStr = s >= 10000 ? `${(s / 1000).toFixed(1)}k`
+      : s >= 1000 ? `${Math.floor(s / 1000)},${String(s % 1000).padStart(3, '0')}`
+      : String(s)
+    stepsPct = Math.min(100, Math.round(s / 10000 * 100))
+  }
+
+  // HRV color by quality zone (ms)
+  let hrvColor = '#A6C4E5'
+  if (raw.hrv != null) {
+    if (raw.hrv >= 80)      hrvColor = '#0ea5e9'
+    else if (raw.hrv >= 50) hrvColor = '#10b981'
+    else if (raw.hrv >= 30) hrvColor = '#f97316'
+    else                    hrvColor = '#ef4444'
+  }
+  const hrvPct = raw.hrv != null ? Math.min(100, Math.max(2, Math.round((raw.hrv - 20) / 80 * 100))) : 0
+
+  // Stress color + label (0-100 scale)
+  let stressLabel = null, stressColor = '#A6C4E5'
+  if (raw.stress != null) {
+    const levels = isZh
+      ? ['放松', '正常', '中等', '偏高']
+      : ['Relaxed', 'Normal', 'Moderate', 'High']
+    const colors = ['#10b981', '#6375EC', '#f97316', '#ef4444']
+    const idx = raw.stress <= 25 ? 0 : raw.stress <= 50 ? 1 : raw.stress <= 75 ? 2 : 3
+    stressLabel = levels[idx]
+    stressColor = colors[idx]
+  }
+
+  return {
+    ...raw,
+    sleepStr, sleepDeepPct, sleepLightPct, sleepRemPct, sleepAwakePct,
+    stepsStr, stepsPct,
+    syncLabel,
+    hasHrv:    raw.hrv    != null,
+    hasStress: raw.stress != null,
+    hrvColor, hrvPct,
+    stressLabel, stressColor,
+  }
 }
 
 function chronoAge(birthDate) {
@@ -450,6 +553,13 @@ Component({
     healthDomains: [],
     vitalGauges: [],
     twinBodyBar: null,
+    // Wearable device (Colmi ring)
+    wearableId: '',
+    wearableName: '',
+    wearableConnected: false,
+    wearableBattery: 0,
+    wearableBusy: false,
+    ringData: null,
   },
 
   observers: {
@@ -479,6 +589,7 @@ Component({
         this.setData({ avatarLetter: letter })
       }
       if (this.properties.userId) this._loadHealth()
+      this._loadWearableFromStorage()
     },
   },
 
@@ -1213,6 +1324,207 @@ Component({
 
     onCloseReport() {
       this.setData({ activeReport: null, activeReportEvents: [], activeReportDiag: [], activeReportAdvice: [], activeReportDoctorNotes: null })
+    },
+
+    // --- Wearable (Smart Ring) ---
+
+    _loadWearableFromStorage() {
+      try {
+        const saved = wx.getStorageSync('wearable_device')
+        if (saved && saved.deviceId) {
+          this.setData({ wearableId: saved.deviceId, wearableName: saved.name || 'Colmi Ring', wearableConnected: false })
+        }
+        const rawRing = wx.getStorageSync('wearable_ring_data')
+        if (rawRing && rawRing.syncedAt) {
+          const lang = this.properties.lang || 'zh'
+          const isZh = lang !== 'en'
+          const ringData = _buildRingDisplayData(rawRing, isZh)
+          const virtualTwin = {
+            avg_daily_steps: rawRing.steps,
+            avg_sleep_hours: rawRing.sleepMinutes != null ? rawRing.sleepMinutes / 60 : null,
+            avg_resting_hr:  rawRing.restingHr,
+            avg_hrv_ms:      rawRing.hrv,
+            avg_spo2: null, latest_bmi: null, trend_data: {},
+          }
+          const visuals = this._buildTwinVisuals(virtualTwin, T[isZh ? 'zh' : 'en'], isZh)
+          this.setData({
+            ringData,
+            hasTwinData: visuals.vitalGauges.length > 0,
+            twinLoading: false,
+            ...visuals,
+          })
+        }
+      } catch (_) {}
+    },
+
+    async handleBindWearable() {
+      if (this.data.wearableBusy) return
+      const t = this.data.t
+      this.setData({ wearableBusy: true })
+      try {
+        const ColmiRing = require('../../utils/wearable/colmi/index.js')
+        const { BLEManager } = require('../../utils/wearable/ble-manager.js')
+        const { COLMI_NAME_PREFIXES } = require('../../utils/wearable/colmi/protocol.js')
+
+        // Open BLE adapter — this prompts the user to enable Bluetooth if off
+        const mgr = new BLEManager()
+        await mgr.openAdapter()
+
+        // Scan with live updates every second so the user sees progress
+        const found = new Map()
+        wx.showLoading({ title: t.wearableScanning, mask: false })
+
+        await new Promise((resolve) => {
+          wx.onBluetoothDeviceFound((res) => {
+            for (const d of res.devices) {
+              if (!d.name) continue
+              if (!COLMI_NAME_PREFIXES.some((p) => d.name.startsWith(p))) continue
+              found.set(d.deviceId, { deviceId: d.deviceId, name: d.name, rssi: d.RSSI })
+            }
+          })
+          wx.startBluetoothDevicesDiscovery({
+            allowDuplicatesKey: false,
+            success: () => setTimeout(() => {
+              wx.stopBluetoothDevicesDiscovery({})
+              wx.offBluetoothDeviceFound()
+              resolve()
+            }, 6000),
+            fail: () => resolve(),
+          })
+        })
+
+        wx.hideLoading()
+        const devices = Array.from(found.values())
+
+        if (!devices.length) {
+          wx.showToast({ title: t.wearableNoDevices, icon: 'none', duration: 3000 })
+          this.setData({ wearableBusy: false })
+          return
+        }
+
+        // Show device picker (action sheet)
+        const chosen = await new Promise((resolve, reject) => {
+          wx.showActionSheet({
+            itemList: devices.map((d) => `${d.name}  (RSSI ${d.rssi})`),
+            success: (res) => resolve(devices[res.tapIndex]),
+            fail: reject,
+          })
+        })
+
+        wx.showLoading({ title: t.wearableConnecting, mask: true })
+        const ring = new ColmiRing()
+        await ring.connect(chosen.deviceId)
+        const battery = await ring.getBattery()
+        await ring.disconnect()
+        wx.hideLoading()
+
+        const saved = { deviceId: chosen.deviceId, name: chosen.name }
+        wx.setStorageSync('wearable_device', saved)
+        this.setData({
+          wearableId: chosen.deviceId,
+          wearableName: chosen.name,
+          wearableConnected: true,
+          wearableBattery: battery.level,
+          wearableBusy: false,
+        })
+      } catch (e) {
+        wx.hideLoading()
+        wx.showToast({ title: t.wearableConnectFail, icon: 'none', duration: 2500 })
+        this.setData({ wearableBusy: false })
+      }
+    },
+
+    async handleSyncWearable() {
+      if (this.data.wearableBusy || !this.data.wearableId) return
+      const t = this.data.t
+      const lang = this.properties.lang || 'zh'
+      const isZh = lang !== 'en'
+      this.setData({ wearableBusy: true })
+      const ColmiRing = require('../../utils/wearable/colmi/index.js')
+      const ring = new ColmiRing()
+      try {
+        wx.showLoading({ title: t.wearableConnecting, mask: true })
+        await ring.connect(this.data.wearableId)
+
+        const battery   = await ring.getBattery()
+        const steps     = await ring.getSteps().catch(() => null)
+        const sleep     = await ring.getSleep().catch(() => null)
+        const hrLog     = await ring.getHeartRateLog().catch(() => null)
+
+        wx.showLoading({ title: t.wearableMeasuringHrv, mask: true })
+        const hrv     = await ring.getRealtime('hrv', 45000).catch(() => null)
+        wx.showLoading({ title: t.wearableMeasuringStress, mask: true })
+        const stress  = await ring.getRealtime('pressure', 30000).catch(() => null)
+
+        await ring.disconnect()
+        wx.hideLoading()
+
+        // Minimum non-zero HR reading = resting proxy
+        const hrValues  = (hrLog || []).filter(r => r.value > 0).map(r => r.value)
+        const restingHr = hrValues.length ? Math.min(...hrValues) : null
+
+        const raw = {
+          steps:        steps?.steps        ?? null,
+          calories:     steps?.calories     ?? null,
+          distance:     steps?.distance     ?? null,
+          sleepMinutes: (sleep?.totalMinutes > 0) ? sleep.totalMinutes : null,
+          sleepDeep:    sleep?.deep         ?? null,
+          sleepLight:   sleep?.light        ?? null,
+          sleepRem:     sleep?.rem          ?? null,
+          sleepAwake:   sleep?.awake        ?? null,
+          restingHr,
+          hrv:    hrv    ?? null,
+          stress: stress ?? null,
+          syncedAt: Date.now(),
+        }
+        wx.setStorageSync('wearable_ring_data', raw)
+
+        const { syncWearableData } = require('../../utils/wearable/sync.js')
+        syncWearableData(this.properties.userId, { source: 'smart_ring', ...raw }).catch(() => {})
+
+        const ringData = _buildRingDisplayData(raw, isZh)
+
+        // Build vital gauges from ring data
+        const virtualTwin = {
+          avg_daily_steps: raw.steps,
+          avg_sleep_hours: raw.sleepMinutes != null ? raw.sleepMinutes / 60 : null,
+          avg_resting_hr:  raw.restingHr,
+          avg_hrv_ms:      raw.hrv,
+          avg_spo2: null, latest_bmi: null, trend_data: {},
+        }
+        const visuals = this._buildTwinVisuals(virtualTwin, T[isZh ? 'zh' : 'en'], isZh)
+
+        this.setData({
+          wearableConnected: true,
+          wearableBattery: battery.level,
+          wearableBusy: false,
+          ringData,
+          hasTwinData: visuals.vitalGauges.length > 0,
+          twinLoading: false,
+          ...visuals,
+        })
+        this._loadHealthTwin().catch(() => {})
+      } catch (e) {
+        wx.hideLoading()
+        wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
+        this.setData({ wearableConnected: false, wearableBusy: false })
+      }
+    },
+
+    handleUnbindWearable() {
+      const t = this.data.t
+      wx.showModal({
+        title: t.wearableUnbind,
+        content: this.data.wearableName,
+        confirmColor: '#ef4444',
+        success: (res) => {
+          if (res.confirm) {
+            wx.removeStorageSync('wearable_device')
+            wx.removeStorageSync('wearable_ring_data')
+            this.setData({ wearableId: '', wearableName: '', wearableConnected: false, wearableBattery: 0, ringData: null })
+          }
+        },
+      })
     },
 
     noop() {},

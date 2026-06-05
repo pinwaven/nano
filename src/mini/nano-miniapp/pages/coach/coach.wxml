@@ -23,7 +23,6 @@
     <text class="loading-text">{{t.loading}}</text>
   </view>
 
-  <!-- Client List -->
   <view wx:elif="{{tab === 'clients'}}" class="client-list">
     <!-- Search bar -->
     <view class="clients-search-wrap">
@@ -115,7 +114,6 @@
     </view>
   </view>
 
-  <!-- Invites Tab -->
   <view wx:elif="{{tab === 'invites'}}" class="client-list">
     <view class="invite-generate-btn" bindtap="generateInvite">
       <text class="invite-generate-text">+ {{t.invite.generate}}</text>
@@ -142,7 +140,6 @@
     </view>
   </view>
 
-  <!-- Earnings Tab -->
   <view wx:elif="{{tab === 'earnings'}}" class="client-list">
     <view wx:if="{{earningsLoading}}" class="loading-row">
       <text class="loading-text">{{t.loading}}</text>
@@ -178,7 +175,6 @@
     </block>
   </view>
 
-  <!-- Questionnaires Tab -->
   <view wx:elif="{{tab === 'questionnaires'}}" class="client-list">
     <view wx:if="{{questionnairesLoading}}" class="loading-row">
       <text class="loading-text">{{t.loading}}</text>
@@ -208,7 +204,6 @@
     </view>
   </view>
 
-  <!-- Training Tab -->
   <view wx:elif="{{tab === 'training'}}" class="training-tab">
 
     <!-- Loading -->
@@ -216,7 +211,6 @@
       <text class="loading-text">{{t.loading}}</text>
     </view>
 
-    <!-- LIST VIEW: dashboard + paths + courses + library + certs -->
     <block wx:elif="{{trainingView === 'list'}}">
 
       <!-- Credit Dashboard -->
@@ -302,7 +296,6 @@
       </view>
     </block>
 
-    <!-- LESSONS VIEW -->
     <block wx:elif="{{trainingView === 'lessons'}}">
       <view class="training-back-row" bindtap="trainingBackToList">
         <text class="training-back-text">{{t.training.backToCourses}}</text>
@@ -338,7 +331,6 @@
       </view>
     </block>
 
-    <!-- PLAYER VIEW (video / text / interactive) -->
     <block wx:elif="{{trainingView === 'player'}}">
       <view class="training-back-row" bindtap="trainingBackToLessons">
         <text class="training-back-text">{{t.training.backToLessons}}</text>
@@ -355,7 +347,6 @@
         </view>
       </block>
 
-      <!-- Text / Interactive mode -->
       <block wx:elif="{{trainingCurrentLesson.content_type === 'text' || trainingCurrentLesson.content_type === 'interactive'}}">
         <view class="training-text-content">
           <text class="training-text-body">{{trainingTextContent || t.loading}}</text>
@@ -413,7 +404,6 @@
       </view>
     </block>
 
-    <!-- LIBRARY VIEWER -->
     <block wx:elif="{{trainingView === 'library-viewer'}}">
       <view class="training-back-row" bindtap="trainingBackToList">
         <text class="training-back-text">{{t.training.backToCourses}}</text>
@@ -428,7 +418,6 @@
 
   </view>
 
-  <!-- CRM Tab -->
   <view wx:elif="{{tab === 'crm'}}" class="crm-tab">
     <view wx:if="{{crmLoading}}" class="panel-center">
       <text class="loading-text">{{t.loading}}</text>

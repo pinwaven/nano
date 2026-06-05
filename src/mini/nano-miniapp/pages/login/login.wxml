@@ -13,7 +13,6 @@
     <text class="status-text">正在登录…</text>
   </view>
 
-  <!-- Code entry for users without an invite link -->
   <view wx:elif="{{step === 'code'}}" class="login-card">
     <text class="login-card-label">输入邀请码</text>
     <text class="login-card-hint">请输入好友分享的6位邀请码</text>
@@ -24,7 +23,6 @@
     </view>
   </view>
 
-  <!-- Phone binding for new invite-code users -->
   <view wx:elif="{{step === 'phone'}}" class="login-card">
     <text class="login-card-label">最后一步</text>
 
@@ -48,7 +46,6 @@
     ><text>📱 授权手机号</text></button>
   </view>
 
-  <!-- Error -->
   <view wx:elif="{{step === 'error'}}" class="status-wrap">
     <text class="error-text">{{error}}</text>
     <view class="retry-btn" bindtap="retry">

@@ -1,5 +1,5 @@
 const app = getApp()
-const { BASE } = require('../../utils/config.js')
+const { BASE, VERSION, IS_DEV } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
@@ -684,6 +684,7 @@ Page({
     lang: 'zh',
     t: T.zh,
     tab: 'chat',
+    version: IS_DEV ? VERSION : '',
 
     // Chat
     messages: [],
@@ -888,7 +889,9 @@ Page({
 
   async onPullDownRefresh() {
     const { tab, user, lang } = this.data
-    if (tab === 'store') {
+    if (tab === 'health') {
+      this.selectComponent('#health-comp')?.refresh()
+    } else if (tab === 'store') {
       this.setData({ storeLoading: true })
       await this._loadStore(user, lang)
     }

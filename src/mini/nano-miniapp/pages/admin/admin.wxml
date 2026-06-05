@@ -48,7 +48,6 @@
     <view class="adm-pulse"></view>
   </view>
 
-  <!-- ════ DASHBOARD TAB ════ -->
   <scroll-view wx:elif="{{tab === 'dashboard'}}" class="adm-scroll" scroll-y="true">
     <view class="adm-inner">
       <view class="adm-dash-grid">
@@ -73,7 +72,6 @@
     </view>
   </scroll-view>
 
-  <!-- ════ USERS TAB ════ -->
   <scroll-view wx:elif="{{tab === 'users'}}" class="adm-scroll" scroll-y="true">
     <view class="adm-inner">
 
@@ -129,7 +127,6 @@
     </view>
   </scroll-view>
 
-  <!-- ════ COACHES TAB ════ -->
   <scroll-view wx:elif="{{tab === 'coaches'}}" class="adm-scroll" scroll-y="true">
     <view class="adm-inner">
 
@@ -178,7 +175,6 @@
     </view>
   </scroll-view>
 
-  <!-- ════ STORE TAB ════ -->
   <scroll-view wx:elif="{{tab === 'store'}}" class="adm-scroll" scroll-y="true">
     <view class="adm-inner">
 
@@ -235,7 +231,6 @@
         </view>
       </block>
 
-      <!-- Orders -->
       <block wx:elif="{{storeSubTab === 'orders'}}">
         <view wx:if="{{orders.length === 0}}" class="adm-empty">
           <text>{{t.empty.orders}}</text>
@@ -262,7 +257,6 @@
     </view>
   </scroll-view>
 
-  <!-- ════ INVITES TAB ════ -->
   <scroll-view wx:elif="{{tab === 'invites'}}" class="adm-scroll" scroll-y="true">
     <view class="adm-inner">
 
@@ -294,7 +288,6 @@
     </view>
   </scroll-view>
 
-  <!-- ════ REWARDS TAB ════ -->
   <scroll-view wx:elif="{{tab === 'rewards'}}" class="adm-scroll" scroll-y="true">
     <view class="adm-inner">
 
@@ -373,7 +366,6 @@
     </view>
   </scroll-view>
 
-  <!-- ════ PARTNERS TAB ════ -->
   <scroll-view wx:elif="{{tab === 'partners'}}" class="adm-scroll" scroll-y="true">
     <view class="adm-inner">
 
@@ -423,7 +415,6 @@
         </view>
       </block>
 
-      <!-- Payouts -->
       <block wx:elif="{{partnerSubTab === 'payouts'}}">
         <view class="adm-add-btn {{partnerPayoutsGenerating ? 'adm-add-btn-busy' : ''}}" bindtap="generatePartnerPayouts">
           <text>{{partnerPayoutsGenerating ? t.partners.generating : t.partners.generatePayouts}}</text>
@@ -589,7 +580,6 @@
             <input class="adm-field-input" value="{{form.email}}" bindinput="onFormInput" data-key="email" placeholder-class="adm-ph" />
           </block>
 
-          <!-- ── COACH FORM ── -->
           <block wx:elif="{{modalType === 'coach'}}">
             <text class="adm-field-label">{{t.coach.selectUser}}</text>
             <picker range="{{coachUserPickerOptions}}" value="{{coachUserPickerIdx}}" bindchange="onPickerCoachUser">
@@ -600,7 +590,6 @@
             </picker>
           </block>
 
-          <!-- ── STORE ITEM FORM ── -->
           <block wx:elif="{{modalType === 'item'}}">
             <text class="adm-field-label">{{t.store.key}} *</text>
             <input class="adm-field-input" value="{{form.key_name}}" bindinput="onFormInput" data-key="key_name" placeholder="e.g. kino_chip_starter" placeholder-class="adm-ph" />
@@ -665,7 +654,6 @@
             <input class="adm-field-input" value="{{form.sort_order}}" bindinput="onFormInput" data-key="sort_order" type="number" placeholder="0" placeholder-class="adm-ph" />
           </block>
 
-          <!-- ── PARTNER FORM ── -->
           <block wx:elif="{{modalType === 'partner'}}">
             <text class="adm-field-label">{{t.partners.selectUser}}</text>
             <picker range="{{partnerUserPickerOptions}}" value="{{partnerUserPickerIdx}}" bindchange="onPickerPartnerUser">
