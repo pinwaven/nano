@@ -210,8 +210,8 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
-        KINO_ACTIVATION_TOKEN: ${env(KINO_ACTIVATION_TOKEN)}
-        KINO_ROOT_TOKEN_ENCRYPTION_KEY: ${env(KINO_ROOT_TOKEN_ENCRYPTION_KEY)}
+        KINO_ACTIVATION_TOKEN: "JND7MAED2wd4QUG7rMlG3_YpU0B_lqOjVM_LFsFzcdA"
+        KINO_ROOT_TOKEN_ENCRYPTION_KEY: "935eb5474873526ee812addf266aa69266c704e5d16e6d67cae83e0b79a6f155"
         KINO_COMM_TOKEN_TTL_DAYS: "7"
       triggers:
         - triggerName: kino-http
