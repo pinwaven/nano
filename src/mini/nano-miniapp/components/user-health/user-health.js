@@ -156,7 +156,6 @@ const T = {
     noHealthSignals: '暂无健康信号',
     wearableDevice: '可穿戴设备',
     bindSmartRing: '绑定智能戒指',
-    bindSmartRingSub: '支持 Colmi 系列蓝牙戒指',
     wearableConnected: '已连接',
     wearableDisconnected: '未连接',
     wearableBattery: '电量',
@@ -175,6 +174,7 @@ const T = {
     ringStressLevels: ['放松', '正常', '中等', '偏高'],
     wearableMeasuringHrv: '测量 HRV...',
     wearableMeasuringStress: '测量压力...',
+    wearableMeasuringBg: '正在测量 HRV、压力和血氧... (约3分钟)',
   },
   en: {
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -253,7 +253,6 @@ const T = {
     noHealthSignals: 'No signals yet',
     wearableDevice: 'Wearable Device',
     bindSmartRing: 'Bind Smart Ring',
-    bindSmartRingSub: 'Supports Colmi Bluetooth rings',
     wearableConnected: 'Connected',
     wearableDisconnected: 'Disconnected',
     wearableBattery: 'Battery',
@@ -272,6 +271,7 @@ const T = {
     ringStressLevels: ['Relaxed', 'Normal', 'Moderate', 'High'],
     wearableMeasuringHrv: 'Measuring HRV...',
     wearableMeasuringStress: 'Measuring stress...',
+    wearableMeasuringBg: 'Measuring HRV, Stress & SpO₂... (~3 min)',
   },
 }
 
@@ -324,15 +324,27 @@ function _buildRingDisplayData(raw, isZh) {
     stressColor = colors[idx]
   }
 
+  // SpO2 color
+  let spo2Color = '#A6C4E5'
+  if (raw.spo2 != null) {
+    spo2Color = raw.spo2 >= 98 ? '#0ea5e9' : raw.spo2 >= 95 ? '#10b981' : raw.spo2 >= 90 ? '#f97316' : '#ef4444'
+  }
+  const spo2Pct = raw.spo2 != null ? Math.min(100, Math.max(2, Math.round((raw.spo2 - 90) / 10 * 100))) : 0
+
   return {
     ...raw,
     sleepStr, sleepDeepPct, sleepLightPct, sleepRemPct, sleepAwakePct,
     stepsStr, stepsPct,
     syncLabel,
-    hasHrv:    raw.hrv    != null,
-    hasStress: raw.stress != null,
+    hasSteps:  raw.steps       != null,
+    hasSleep:  raw.sleepMinutes != null && raw.sleepMinutes > 0,
+    hasHr:     raw.restingHr   != null,
+    hasHrv:    raw.hrv         != null,
+    hasStress: raw.stress      != null,
+    hasSpo2:   raw.spo2        != null,
     hrvColor, hrvPct,
     stressLabel, stressColor,
+    spo2Color, spo2Pct,
   }
 }
 
@@ -559,6 +571,7 @@ Component({
     wearableConnected: false,
     wearableBattery: 0,
     wearableBusy: false,
+    ringMeasuring: false,
     ringData: null,
   },
 
@@ -1058,8 +1071,6 @@ Component({
           lastDate: cov[key] ? cov[key].substring(5) : null,
         }))
 
-        const visuals = this._buildTwinVisuals(twin, t, isZh)
-
         // Build lab panel from latest_lab_data
         const { labPanel, labPanelDate, labPanelAbnormal } = _buildLabPanel(twin, lang)
 
@@ -1069,9 +1080,15 @@ Component({
           label: isZh ? tag.labelZh : tag.labelEn,
         }))
 
+        // Only use server twin for gauge visuals when no ring data exists.
+        // If ring data is present it already populated the gauges with today's readings —
+        // overwriting them with server 7-day averages would show stale/mock data.
+        const ringData = this.data.ringData
+        const serverVisuals = ringData ? {} : this._buildTwinVisuals(twin, t, isZh)
+
         this.setData({
           twinLoading: false,
-          hasTwinData: metrics.length > 0 || twinBody != null || labPanel.length > 0,
+          hasTwinData: !ringData ? (metrics.length > 0 || twinBody != null || labPanel.length > 0) : this.data.hasTwinData,
           twinMetrics: metrics,
           twinBody,
           twinCoverage,
@@ -1079,7 +1096,7 @@ Component({
           labPanelDate,
           labPanelAbnormal,
           healthTags,
-          ...visuals,
+          ...serverVisuals,
         })
       } catch (e) {
         this.setData({ hasTwinData: false, twinLoading: false })
@@ -1344,7 +1361,8 @@ Component({
             avg_sleep_hours: rawRing.sleepMinutes != null ? rawRing.sleepMinutes / 60 : null,
             avg_resting_hr:  rawRing.restingHr,
             avg_hrv_ms:      rawRing.hrv,
-            avg_spo2: null, latest_bmi: null, trend_data: {},
+            avg_spo2:        rawRing.spo2 ?? null,
+            latest_bmi: null, trend_data: {},
           }
           const visuals = this._buildTwinVisuals(virtualTwin, T[isZh ? 'zh' : 'en'], isZh)
           this.setData({
@@ -1413,7 +1431,7 @@ Component({
 
         wx.showLoading({ title: t.wearableConnecting, mask: true })
         const ring = new ColmiRing()
-        await ring.connect(chosen.deviceId)
+        await ring.connect(chosen.deviceId, { syncTime: true })
         const battery = await ring.getBattery()
         await ring.disconnect()
         wx.hideLoading()
@@ -1439,76 +1457,84 @@ Component({
       const t = this.data.t
       const lang = this.properties.lang || 'zh'
       const isZh = lang !== 'en'
-      this.setData({ wearableBusy: true })
+      this.setData({ wearableBusy: true, ringMeasuring: false })
       const ColmiRing = require('../../utils/wearable/colmi/index.js')
       const ring = new ColmiRing()
+
+      // ── Phase 1: connect + read stored data (few seconds, blocking modal) ──
+      let battery, steps, sleep, hrLog
       try {
         wx.showLoading({ title: t.wearableConnecting, mask: true })
         await ring.connect(this.data.wearableId)
-
-        const battery   = await ring.getBattery()
-        const steps     = await ring.getSteps().catch(() => null)
-        const sleep     = await ring.getSleep().catch(() => null)
-        const hrLog     = await ring.getHeartRateLog().catch(() => null)
-
-        wx.showLoading({ title: t.wearableMeasuringHrv, mask: true })
-        const hrv     = await ring.getRealtime('hrv', 45000).catch(() => null)
-        wx.showLoading({ title: t.wearableMeasuringStress, mask: true })
-        const stress  = await ring.getRealtime('pressure', 30000).catch(() => null)
-
-        await ring.disconnect()
+        battery = await ring.getBattery()
+        steps   = await ring.getSteps().catch(() => null)
+        sleep   = await ring.getSleep().catch(() => null)
+        hrLog   = await ring.getHeartRateLog().catch(() => null)
         wx.hideLoading()
-
-        // Minimum non-zero HR reading = resting proxy
-        const hrValues  = (hrLog || []).filter(r => r.value > 0).map(r => r.value)
-        const restingHr = hrValues.length ? Math.min(...hrValues) : null
-
-        const raw = {
-          steps:        steps?.steps        ?? null,
-          calories:     steps?.calories     ?? null,
-          distance:     steps?.distance     ?? null,
-          sleepMinutes: (sleep?.totalMinutes > 0) ? sleep.totalMinutes : null,
-          sleepDeep:    sleep?.deep         ?? null,
-          sleepLight:   sleep?.light        ?? null,
-          sleepRem:     sleep?.rem          ?? null,
-          sleepAwake:   sleep?.awake        ?? null,
-          restingHr,
-          hrv:    hrv    ?? null,
-          stress: stress ?? null,
-          syncedAt: Date.now(),
-        }
-        wx.setStorageSync('wearable_ring_data', raw)
-
-        const { syncWearableData } = require('../../utils/wearable/sync.js')
-        syncWearableData(this.properties.userId, { source: 'smart_ring', ...raw }).catch(() => {})
-
-        const ringData = _buildRingDisplayData(raw, isZh)
-
-        // Build vital gauges from ring data
-        const virtualTwin = {
-          avg_daily_steps: raw.steps,
-          avg_sleep_hours: raw.sleepMinutes != null ? raw.sleepMinutes / 60 : null,
-          avg_resting_hr:  raw.restingHr,
-          avg_hrv_ms:      raw.hrv,
-          avg_spo2: null, latest_bmi: null, trend_data: {},
-        }
-        const visuals = this._buildTwinVisuals(virtualTwin, T[isZh ? 'zh' : 'en'], isZh)
-
-        this.setData({
-          wearableConnected: true,
-          wearableBattery: battery.level,
-          wearableBusy: false,
-          ringData,
-          hasTwinData: visuals.vitalGauges.length > 0,
-          twinLoading: false,
-          ...visuals,
-        })
-        this._loadHealthTwin().catch(() => {})
       } catch (e) {
         wx.hideLoading()
+        await ring.disconnect().catch(() => {})
         wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
         this.setData({ wearableConnected: false, wearableBusy: false })
+        return
       }
+
+      // Commit phase-1 data immediately so the user sees results now
+      const hrValues  = (hrLog || []).filter(r => r.value > 0).map(r => r.value)
+      const restingHr = hrValues.length ? Math.min(...hrValues) : null
+      const rawPhase1 = {
+        steps:        steps?.steps     ?? null,
+        calories:     steps?.calories  ?? null,
+        distance:     steps?.distance  ?? null,
+        sleepMinutes: (sleep?.totalMinutes > 0) ? sleep.totalMinutes : null,
+        sleepDeep:    sleep?.deep      ?? null,
+        sleepLight:   sleep?.light     ?? null,
+        sleepRem:     sleep?.rem       ?? null,
+        sleepAwake:   sleep?.awake     ?? null,
+        restingHr,
+        hrv: null, stress: null, spo2: null,
+        syncedAt: Date.now(),
+      }
+      this._commitRingData(rawPhase1, battery.level, isZh, true)
+
+      // ── Phase 2: HRV + stress + SpO2 (background — no blocking modal) ──
+      this.setData({ wearableBusy: false, ringMeasuring: true })
+      try {
+        const hrv    = await ring.getRealtime('hrv',     110000).catch(() => null)
+        const stress = await ring.getRealtime('pressure', 30000).catch(() => null)
+        const spo2   = await ring.getRealtime('spo2',     60000).catch(() => null)
+        await ring.disconnect()
+        const raw = { ...rawPhase1, hrv: hrv ?? null, stress: stress ?? null, spo2: spo2 ?? null, syncedAt: Date.now() }
+        this._commitRingData(raw, battery.level, isZh, false)
+      } catch (e) {
+        await ring.disconnect().catch(() => {})
+      } finally {
+        this.setData({ ringMeasuring: false })
+      }
+    },
+
+    _commitRingData(raw, batteryLevel, isZh, isPartial) {
+      wx.setStorageSync('wearable_ring_data', raw)
+      const { syncWearableData } = require('../../utils/wearable/sync.js')
+      syncWearableData(this.properties.userId, { source: 'smart_ring', ...raw }).catch(() => {})
+      const ringData = _buildRingDisplayData(raw, isZh)
+      const virtualTwin = {
+        avg_daily_steps: raw.steps,
+        avg_sleep_hours: raw.sleepMinutes != null ? raw.sleepMinutes / 60 : null,
+        avg_resting_hr:  raw.restingHr,
+        avg_hrv_ms:      raw.hrv,
+        avg_spo2:        raw.spo2 ?? null,
+        latest_bmi: null, trend_data: {},
+      }
+      const visuals = this._buildTwinVisuals(virtualTwin, T[isZh ? 'zh' : 'en'], isZh)
+      this.setData({
+        wearableConnected: true,
+        wearableBattery: batteryLevel,
+        ringData,
+        hasTwinData: visuals.vitalGauges.length > 0,
+        twinLoading: false,
+        ...visuals,
+      })
     },
 
     handleUnbindWearable() {

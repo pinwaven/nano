@@ -8,4 +8,5 @@ dist/
 certs/
 temp/
 backup/
+backups/
 .antigravitycli/*.json

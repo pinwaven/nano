@@ -1,0 +1,22 @@
+{
+  "name": "colmi-ring-tool",
+  "version": "0.1.0",
+  "description": "CLI tool for troubleshooting Colmi smart rings (R10 and R02 series) over BLE on macOS",
+  "main": "src/client.js",
+  "bin": {
+    "colmi_r02_client": "./bin/cli.js",
+    "colmi_r02_util": "./bin/util.js"
+  },
+  "scripts": {
+    "client": "node bin/cli.js",
+    "util": "node bin/util.js"
+  },
+  "dependencies": {
+    "@abandonware/noble": "^1.9.2-20",
+    "better-sqlite3": "^11.0.0",
+    "commander": "^12.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

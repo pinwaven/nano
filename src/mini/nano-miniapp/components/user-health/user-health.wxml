@@ -273,7 +273,6 @@
             <view class="wd-ring-icon">◉</view>
             <view class="wd-empty-text-wrap">
               <text class="wd-bind-label">{{t.bindSmartRing}}</text>
-              <text class="wd-bind-sub">{{t.bindSmartRingSub}}</text>
             </view>
             <text class="wd-chevron">›</text>
           </view>
@@ -299,56 +298,82 @@
                 <text>{{t.wearableUnbind}}</text>
               </view>
             </view>
+            <view wx:if="{{ringMeasuring}}" class="wd-measuring-row">
+              <view class="wd-measuring-dot"></view>
+              <text class="wd-measuring-txt">{{t.wearableMeasuringBg}}</text>
+            </view>
           </view>
         </view>
 
         <!-- Ring sync summary (shown after first sync) -->
         <view wx:if="{{wearableId && ringData}}" class="ring-summary-card">
           <view class="ring-sum-metrics">
-            <view wx:if="{{ringData.stepsStr}}" class="ring-sum-item">
-              <text class="ring-sum-val">{{ringData.stepsStr}}</text>
+            <view class="ring-sum-item">
+              <view wx:if="{{ringData.hasSteps}}" class="ring-sum-val-row">
+                <text class="ring-sum-val">{{ringData.stepsStr}}</text>
+              </view>
+              <text wx:else class="ring-sum-na">—</text>
               <text class="ring-sum-sub">{{t.ringSteps}}</text>
-              <view class="ring-sum-bar">
+              <view wx:if="{{ringData.hasSteps}}" class="ring-sum-bar">
                 <view class="ring-sum-bar-fill ring-steps-fill" style="width: {{ringData.stepsPct}}%;"></view>
               </view>
             </view>
-            <view wx:if="{{ringData.sleepStr}}" class="ring-sum-item">
-              <text class="ring-sum-val">{{ringData.sleepStr}}</text>
+            <view class="ring-sum-item">
+              <view wx:if="{{ringData.hasSleep}}" class="ring-sum-val-row">
+                <text class="ring-sum-val">{{ringData.sleepStr}}</text>
+              </view>
+              <text wx:else class="ring-sum-na">—</text>
               <text class="ring-sum-sub">{{t.ringSleep}}</text>
-              <view class="ring-sum-bar ring-sleep-segs">
+              <view wx:if="{{ringData.hasSleep}}" class="ring-sum-bar ring-sleep-segs">
                 <view class="ring-sum-bar-seg ring-deep-seg" style="width: {{ringData.sleepDeepPct}}%;"></view>
                 <view class="ring-sum-bar-seg ring-rem-seg" style="width: {{ringData.sleepRemPct}}%;"></view>
                 <view class="ring-sum-bar-seg ring-light-seg" style="width: {{ringData.sleepLightPct}}%;"></view>
                 <view class="ring-sum-bar-seg ring-awake-seg" style="width: {{ringData.sleepAwakePct}}%;"></view>
               </view>
             </view>
-            <view wx:if="{{ringData.restingHr}}" class="ring-sum-item">
-              <view class="ring-sum-val-row">
+            <view class="ring-sum-item">
+              <view wx:if="{{ringData.hasHr}}" class="ring-sum-val-row">
                 <text class="ring-sum-val">{{ringData.restingHr}}</text>
                 <text class="ring-sum-unit">bpm</text>
               </view>
+              <text wx:else class="ring-sum-na">—</text>
               <text class="ring-sum-sub">{{t.ringHr}}</text>
-              <view class="ring-sum-bar">
+              <view wx:if="{{ringData.hasHr}}" class="ring-sum-bar">
                 <view class="ring-sum-bar-fill ring-hr-fill" style="width: {{ringData.restingHr < 65 ? 90 : ringData.restingHr < 80 ? 65 : 40}}%;"></view>
               </view>
             </view>
-            <view wx:if="{{ringData.hasHrv}}" class="ring-sum-item">
-              <view class="ring-sum-val-row">
+            <view class="ring-sum-item">
+              <view wx:if="{{ringData.hasHrv}}" class="ring-sum-val-row">
                 <text class="ring-sum-val" style="color: {{ringData.hrvColor}}">{{ringData.hrv}}</text>
                 <text class="ring-sum-unit">ms</text>
               </view>
+              <text wx:else class="ring-sum-na">—</text>
               <text class="ring-sum-sub">{{t.ringHrv}}</text>
-              <view class="ring-sum-bar">
+              <view wx:if="{{ringData.hasHrv}}" class="ring-sum-bar">
                 <view class="ring-sum-bar-fill" style="width: {{ringData.hrvPct}}%; background: {{ringData.hrvColor}};"></view>
               </view>
             </view>
-            <view wx:if="{{ringData.hasStress}}" class="ring-sum-item">
-              <text class="ring-sum-val" style="color: {{ringData.stressColor}}">{{ringData.stress}}</text>
+            <view class="ring-sum-item">
+              <view wx:if="{{ringData.hasStress}}" class="ring-sum-val-row">
+                <text class="ring-sum-val" style="color: {{ringData.stressColor}}">{{ringData.stress}}</text>
+              </view>
+              <text wx:else class="ring-sum-na">—</text>
               <text class="ring-sum-sub">{{t.ringStress}}</text>
-              <view class="ring-sum-bar">
+              <view wx:if="{{ringData.hasStress}}" class="ring-sum-bar">
                 <view class="ring-sum-bar-fill" style="width: {{ringData.stress}}%; background: {{ringData.stressColor}};"></view>
               </view>
-              <text class="ring-sum-stress-label" style="color: {{ringData.stressColor}}">{{ringData.stressLabel}}</text>
+              <text wx:if="{{ringData.hasStress}}" class="ring-sum-stress-label" style="color: {{ringData.stressColor}}">{{ringData.stressLabel}}</text>
+            </view>
+            <view class="ring-sum-item">
+              <view wx:if="{{ringData.hasSpo2}}" class="ring-sum-val-row">
+                <text class="ring-sum-val" style="color: {{ringData.spo2Color}}">{{ringData.spo2}}</text>
+                <text class="ring-sum-unit">%</text>
+              </view>
+              <text wx:else class="ring-sum-na">—</text>
+              <text class="ring-sum-sub">SpO₂</text>
+              <view wx:if="{{ringData.hasSpo2}}" class="ring-sum-bar">
+                <view class="ring-sum-bar-fill" style="width: {{ringData.spo2Pct}}%; background: {{ringData.spo2Color}};"></view>
+              </view>
             </view>
           </view>
           <text class="ring-sum-footer">{{ringData.syncLabel}}</text>

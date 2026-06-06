@@ -55,6 +55,7 @@ const CHANNEL_ADMIN_FULL_PERMS = [
     'health-plans:read',
     'reports:read',
     'tickets:read',
+    'events:read','events:write','events:delete',
     'admin-accounts:read','admin-accounts:write',
 ];
 
@@ -76,6 +77,7 @@ const LEGACY_TAB_EXPANSION = {
     kino:             ['kino:read'],
     chips:            ['chips:read'],
     dots:             ['dots:read'],
+    events:           ['events:read','events:write','events:delete'],
     'admin-accounts': ['admin-accounts:read','admin-accounts:write'],
     subchannels:      [],
 };
@@ -174,7 +176,21 @@ async function handleGetUsers(channelId, query = {}) {
         const limit = Math.min(parseInt(query.limit) || 50, 200);
         const offset = parseInt(query.offset) || 0;
         const search = (query.q || '').trim();
-        const channelName = query.channel_name || '';
+        const filterChannelId = query.filter_channel_id ? parseInt(query.filter_channel_id) : null;
+
+        // Expand the selected channel to include its entire subtree
+        let filterChannelIds = null;
+        if (!channelId && filterChannelId) {
+            const treeRes = await pool.query(
+                `WITH RECURSIVE subtree AS (
+                    SELECT id FROM channels WHERE id = $1
+                    UNION ALL
+                    SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
+                ) SELECT id FROM subtree`,
+                [filterChannelId]
+            );
+            filterChannelIds = treeRes.rows.map(r => r.id);
+        }
 
         const sortFieldMap = {
             user_id: 'u.user_id', nickname: 'u.nickname', channel_name: 'c.name',
@@ -190,8 +206,8 @@ async function handleGetUsers(channelId, query = {}) {
 
         if (channelId) {
             conditions.push(`u.channel_id = $${params.push(channelId)}`);
-        } else if (channelName) {
-            conditions.push(`c.name = $${params.push(channelName)}`);
+        } else if (filterChannelIds) {
+            conditions.push(`u.channel_id = ANY($${params.push(filterChannelIds)})`);
         }
 
         if (search) {
@@ -206,6 +222,10 @@ async function handleGetUsers(channelId, query = {}) {
         const sql = `
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
                     u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
+                    u.referred_by_user_id, u.invited_by_invitation_id,
+                    ru.nickname as referrer_nickname,
+                    inv.code as invite_code,
+                    inv_cu.nickname as inviter_nickname,
                     b.bio_age, b.data as bio_data,
                     cu.nickname as coach_name,
                     c.name as channel_name, c.logo_url as channel_logo_url,
@@ -218,6 +238,9 @@ async function handleGetUsers(channelId, query = {}) {
             LEFT JOIN coaches p ON u.coach_id = p.id
             LEFT JOIN users cu ON p.user_id = cu.user_id
             LEFT JOIN channels c ON u.channel_id = c.id
+            LEFT JOIN users ru ON ru.user_id = u.referred_by_user_id
+            LEFT JOIN invitations inv ON inv.id = u.invited_by_invitation_id
+            LEFT JOIN users inv_cu ON inv_cu.user_id = inv.created_by
             LEFT JOIN (
                 SELECT DISTINCT ON (user_id) user_id, bio_age, data
                 FROM biomarkers
@@ -231,23 +254,19 @@ async function handleGetUsers(channelId, query = {}) {
         // Stats queries — channel-scoped but no search filter and no pagination
         const sParams = [];
         const sConditions = ['1=1'];
-        let statsChannelsJoin = '';
         if (channelId) {
             sConditions.push(`u.channel_id = $${sParams.push(channelId)}`);
-        } else if (channelName) {
-            statsChannelsJoin = 'LEFT JOIN channels c ON u.channel_id = c.id';
-            sConditions.push(`c.name = $${sParams.push(channelName)}`);
+        } else if (filterChannelIds) {
+            sConditions.push(`u.channel_id = ANY($${sParams.push(filterChannelIds)})`);
         }
         const sWhere = sConditions.join(' AND ');
 
         const csParams = [];
         const csConditions = ['1=1'];
-        let coachChannelsJoin = '';
         if (channelId) {
             csConditions.push(`u.channel_id = $${csParams.push(channelId)}`);
-        } else if (channelName) {
-            coachChannelsJoin = 'LEFT JOIN channels c ON u.channel_id = c.id';
-            csConditions.push(`c.name = $${csParams.push(channelName)}`);
+        } else if (filterChannelIds) {
+            csConditions.push(`u.channel_id = ANY($${csParams.push(filterChannelIds)})`);
         }
         const csWhere = csConditions.join(' AND ');
 
@@ -258,7 +277,7 @@ async function handleGetUsers(channelId, query = {}) {
                     COUNT(*) FILTER (WHERE u.gender = 'male') AS male_count,
                     COUNT(*) FILTER (WHERE u.gender = 'female') AS female_count,
                     COUNT(*) FILTER (WHERE u.created_at >= NOW() - INTERVAL '7 days') AS new_users_7d
-                FROM users u ${statsChannelsJoin} WHERE ${sWhere}
+                FROM users u WHERE ${sWhere}
             `, sParams),
             pool.query(`
                 SELECT
@@ -268,7 +287,7 @@ async function handleGetUsers(channelId, query = {}) {
                     COUNT(*) AS total_coaches
                 FROM coaches p
                 JOIN users u ON p.user_id = u.user_id
-                ${coachChannelsJoin} WHERE ${csWhere}
+                WHERE ${csWhere}
             `, csParams),
             pool.query(`
                 SELECT
@@ -278,7 +297,7 @@ async function handleGetUsers(channelId, query = {}) {
                     COUNT(*) AS scans_total
                 FROM biomarkers b
                 JOIN users u ON u.user_id = b.user_id
-                ${statsChannelsJoin} WHERE ${sWhere}
+                WHERE ${sWhere}
             `, sParams),
             pool.query(`
                 SELECT ROUND(AVG(b.bio_age - EXTRACT(YEAR FROM AGE(u.birth_date))::numeric)::numeric, 1)::text AS bio_age_delta
@@ -287,7 +306,6 @@ async function handleGetUsers(channelId, query = {}) {
                     SELECT DISTINCT ON (user_id) user_id, bio_age
                     FROM biomarkers ORDER BY user_id, tested_at DESC
                 ) b ON u.user_id = b.user_id
-                ${statsChannelsJoin}
                 WHERE u.birth_date IS NOT NULL AND b.bio_age IS NOT NULL AND ${sWhere}
             `, sParams),
         ]);
@@ -331,8 +349,17 @@ async function handleGetUser(user_id) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const res = await pool.query(
-            `SELECT user_id, nickname, avatar_url, phone, email, language, gender, birth_date, roles, coach_id, channel_id, created_at
-             FROM users WHERE user_id=$1`,
+            `SELECT u.user_id, u.nickname, u.avatar_url, u.phone, u.email, u.language, u.gender,
+                    u.birth_date, u.roles, u.coach_id, u.channel_id, u.created_at,
+                    u.referred_by_user_id, u.invited_by_invitation_id,
+                    ru.nickname as referrer_nickname,
+                    inv.code as invite_code,
+                    inv_cu.nickname as inviter_nickname
+             FROM users u
+             LEFT JOIN users ru ON ru.user_id = u.referred_by_user_id
+             LEFT JOIN invitations inv ON inv.id = u.invited_by_invitation_id
+             LEFT JOIN users inv_cu ON inv_cu.user_id = inv.created_by
+             WHERE u.user_id=$1`,
             [user_id]
         );
         if (!res.rows.length) return { success: false, error: 'User not found' };
@@ -1322,6 +1349,83 @@ async function handleGetPartnerTree(partnerId) {
         }));
 
         return { success: true, partner: root[0], tree };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetChannelReferralNetwork(channelId) {
+    if (!channelId) return { success: false, error: 'channel_id is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query(
+            `WITH RECURSIVE subtree AS (
+                SELECT id FROM channels WHERE id = $1
+                UNION ALL
+                SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
+            )
+            SELECT u.user_id, u.nickname, u.avatar_url, u.referral_code,
+                    u.referred_by_user_id,
+                    inv.created_by        AS invited_by_user_id,
+                    inv_u.nickname        AS inviter_nickname,
+                    inv_u.avatar_url      AS inviter_avatar_url,
+                    co.user_id            AS coach_user_id,
+                    co_u.nickname         AS coach_nickname,
+                    co_u.avatar_url       AS coach_avatar_url
+             FROM users u
+             LEFT JOIN invitations inv  ON inv.id  = u.invited_by_invitation_id
+             LEFT JOIN users inv_u      ON inv_u.user_id = inv.created_by
+             LEFT JOIN coaches co       ON co.id   = u.coach_id
+             LEFT JOIN users co_u       ON co_u.user_id = co.user_id
+             WHERE u.channel_id IN (SELECT id FROM subtree)`,
+            [channelId]
+        );
+        const channelUserIds = new Set(rows.map(r => r.user_id));
+        const nodesMap = new Map();
+        for (const r of rows) {
+            nodesMap.set(r.user_id, {
+                id: r.user_id,
+                nickname: r.nickname || null,
+                avatar_url: r.avatar_url || null,
+                referral_code: r.referral_code || null,
+                _isExternal: false,
+            });
+        }
+
+        const addExternalNode = (userId, nickname, avatarUrl) => {
+            if (!nodesMap.has(userId)) {
+                nodesMap.set(userId, {
+                    id: userId,
+                    nickname: nickname || null,
+                    avatar_url: avatarUrl || null,
+                    referral_code: null,
+                    _isExternal: true,
+                });
+            }
+        };
+
+        const linkKey = (src, tgt, type) => `${src}→${tgt}:${type}`;
+        const linksSeen = new Set();
+        const links = [];
+        const addLink = (src, tgt, type) => {
+            const k = linkKey(src, tgt, type);
+            if (!linksSeen.has(k)) { linksSeen.add(k); links.push({ source: src, target: tgt, type }); }
+        };
+
+        for (const r of rows) {
+            if (r.referred_by_user_id && channelUserIds.has(r.referred_by_user_id)) {
+                addLink(r.referred_by_user_id, r.user_id, 'referral');
+            }
+            if (r.invited_by_user_id && r.invited_by_user_id !== r.referred_by_user_id) {
+                addExternalNode(r.invited_by_user_id, r.inviter_nickname, r.inviter_avatar_url);
+                addLink(r.invited_by_user_id, r.user_id, 'invitation');
+            }
+            if (r.coach_user_id && r.coach_user_id !== r.invited_by_user_id && r.coach_user_id !== r.referred_by_user_id) {
+                addExternalNode(r.coach_user_id, r.coach_nickname, r.coach_avatar_url);
+                addLink(r.coach_user_id, r.user_id, 'coach');
+            }
+        }
+        return { success: true, nodes: [...nodesMap.values()], links };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -4992,6 +5096,10 @@ async function handleWxLogin(body) {
             );
             if (coachRes.rows.length > 0) coach = coachRes.rows[0];
         }
+        // Profile incomplete — phone not bound yet; re-show the signup screen
+        if (!user.phone) {
+            return { success: true, new_user: true, user, channel, coach };
+        }
         return { success: true, user, channel, coach };
     }
 
@@ -5134,22 +5242,37 @@ async function handleValidateInvite(body) {
     const { invite_code } = body;
     if (!invite_code) return { success: false, error: 'invite_code is required' };
 
+    // Try coach/admin invitation code first
     const invRes = await pool.query(
         `SELECT id, channel_id FROM invitations
          WHERE code = $1 AND is_active = TRUE AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1`,
         [invite_code.toUpperCase()]
     );
-    if (invRes.rows.length === 0) {
-        return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
+    if (invRes.rows.length > 0) {
+        const channelId = invRes.rows[0].channel_id;
+        let channel = null;
+        if (channelId) {
+            const chanRes = await pool.query('SELECT name, logo_url FROM channels WHERE id = $1', [channelId]);
+            if (chanRes.rows.length > 0) channel = { name: chanRes.rows[0].name, logo_url: chanRes.rows[0].logo_url };
+        }
+        return { success: true, channel };
     }
 
-    const channelId = invRes.rows[0].channel_id;
-    let channel = null;
-    if (channelId) {
-        const chanRes = await pool.query('SELECT name, logo_url FROM channels WHERE id = $1', [channelId]);
-        if (chanRes.rows.length > 0) channel = { name: chanRes.rows[0].name, logo_url: chanRes.rows[0].logo_url };
+    // Fall back to user referral code
+    const refRes = await pool.query(
+        `SELECT u.user_id, u.channel_id, c.name AS channel_name, c.logo_url AS channel_logo_url
+         FROM users u
+         LEFT JOIN channels c ON c.id = u.channel_id
+         WHERE u.referral_code = $1 LIMIT 1`,
+        [invite_code]
+    );
+    if (refRes.rows.length > 0) {
+        const row = refRes.rows[0];
+        const channel = row.channel_name ? { name: row.channel_name, logo_url: row.channel_logo_url } : null;
+        return { success: true, channel };
     }
-    return { success: true, channel };
+
+    return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
 }
 
 async function saveChatMessage(user_id, role, content, image_url = null, persona_type = 'nano') {
@@ -5168,7 +5291,11 @@ async function handleGetMyReferrals(query) {
     if (!user_id) return { success: false, error: 'user_id is required' };
     try {
         const userRes = await pool.query('SELECT referral_code FROM users WHERE user_id = $1', [user_id]);
-        const referral_code = userRes.rows[0]?.referral_code || user_id;
+        let referral_code = userRes.rows[0]?.referral_code;
+        if (!referral_code) {
+            referral_code = await generateReferralCode();
+            await pool.query('UPDATE users SET referral_code = $1 WHERE user_id = $2', [referral_code, user_id]);
+        }
 
         const { rows } = await pool.query(`
             SELECT u.user_id, u.nickname, u.avatar_url, u.created_at AS joined_at,
@@ -9384,6 +9511,9 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetInvitations(invQuery);
             } else if (path.includes('/partner-commission-config')) {
                 result = await handleGetPartnerCommissionConfig();
+            } else if (path.includes('/channel-referral-network')) {
+                const cid = adminCtx.role === 'superadmin' ? query.channel_id : adminCtx.channelId;
+                result = requirePermission(adminCtx, 'users:read') || await handleGetChannelReferralNetwork(cid);
             } else if (path.match(/\/partner-tree\/(\d+)/)) {
                 result = await handleGetPartnerTree(path.match(/\/partner-tree\/(\d+)/)[1]);
             } else if (path.match(/\/partners\/(\d+)/)) {
@@ -9509,9 +9639,9 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetMyEventSignups(query);
             } else if (path.match(/\/events\/(\d+)\/signups/)) {
                 const evId = path.match(/\/events\/(\d+)\/signups/)[1];
-                result = await handleGetEventSignups(evId);
+                result = requirePermission(adminCtx, 'events:read') || await handleGetEventSignups(evId);
             } else if (path.includes('/events')) {
-                result = await handleGetEvents(query, adminCtx);
+                result = requirePermission(adminCtx, 'events:read') || await handleGetEvents(query, adminCtx);
             } else {
                 result = { success: false, error: `Unknown GET route: ${path}` };
             }
@@ -9692,7 +9822,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/event-signups')) {
                 result = await handlePostEventSignup(parsedBody);
             } else if (path.includes('/events')) {
-                result = await handlePostEvent(parsedBody, adminCtx);
+                result = requirePermission(adminCtx, 'events:write') || await handlePostEvent(parsedBody, adminCtx);
             } else {
                 result = await handlePostChat(parsedBody);
             }
@@ -9844,7 +9974,7 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePutLabProvider(pid, parsedBody);
             } else if (path.match(/\/events\/(\d+)/)) {
                 const evId = path.match(/\/events\/(\d+)/)[1];
-                result = await handlePutEvent(evId, parsedBody);
+                result = requirePermission(adminCtx, 'events:write') || await handlePutEvent(evId, parsedBody);
             } else {
                 result = { success: false, error: `Unknown PUT route: ${path}` };
             }
@@ -9958,10 +10088,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handleDeleteLabUserMapping(mid);
             } else if (path.match(/\/event-signups\/(\d+)/)) {
                 const evId = path.match(/\/event-signups\/(\d+)/)[1];
-                result = await handleDeleteEventSignup(evId, query.user_id);
+                result = requirePermission(adminCtx, 'events:write') || await handleDeleteEventSignup(evId, query.user_id);
             } else if (path.match(/\/events\/(\d+)/)) {
                 const evId = path.match(/\/events\/(\d+)/)[1];
-                result = await handleDeleteEvent(evId);
+                result = requirePermission(adminCtx, 'events:delete') || await handleDeleteEvent(evId);
             } else {
                 result = { success: false, error: `Unknown DELETE route: ${path}` };
             }

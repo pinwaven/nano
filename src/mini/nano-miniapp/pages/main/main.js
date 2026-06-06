@@ -1442,7 +1442,6 @@ Page({
       setTimeout(() => {
         this._addMsg('ai', t.phonePromptMsg)
         this._addActionMsg('bind_phone', t.phonePromptBtn)
-        this._addActionMsg('maybe_later', t.phoneMaybeLater)
       }, 800)
     }
     this._startPolling(user)
@@ -1558,8 +1557,6 @@ Page({
       this.setData({ tab: 'dots', dotsLoading: true, cartridgesLoading: true })
       this._loadDots(user, lang)
       this._loadCartridges(user, lang)
-    } else if (action === 'maybe_later') {
-      this._removePhonePrompt()
     }
   },
 

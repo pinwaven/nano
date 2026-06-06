@@ -10,12 +10,12 @@ function byteToBcd(b) {
 function setTimePacket(target) {
   const d = new Date(target)
   const data = [
-    byteToBcd(d.getUTCFullYear() % 100),
-    byteToBcd(d.getUTCMonth() + 1),
-    byteToBcd(d.getUTCDate()),
-    byteToBcd(d.getUTCHours()),
-    byteToBcd(d.getUTCMinutes()),
-    byteToBcd(d.getUTCSeconds()),
+    byteToBcd(d.getFullYear() % 100),
+    byteToBcd(d.getMonth() + 1),
+    byteToBcd(d.getDate()),
+    byteToBcd(d.getHours()),
+    byteToBcd(d.getMinutes()),
+    byteToBcd(d.getSeconds()),
     1, // English
   ]
   return makePacket(CMD_SET_TIME, data)

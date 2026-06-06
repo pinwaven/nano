@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
+import ForceGraph2D from 'react-force-graph-2d';
 import DigitalBodyFigure from './DigitalBodyFigure.jsx';
 import axios from 'axios';
 import { marked } from 'marked';
@@ -656,6 +657,13 @@ const T = {
       userRole: 'User',
       aiRole: 'AI',
       coachRole: 'Coach',
+      referredBy: 'Referred By',
+      invitedBy: 'Invited By',
+      networkTab: 'Network',
+      networkEmpty: 'No referral relationships found in this channel.',
+      networkLegendReferral: 'Referred via code',
+      networkLegendInvite: 'Invited by coach',
+      networkLegendRoot: 'Root (no referrer)',
       reportIdHeader: (id, name, date) => `Report #${id} — ${name} — ${date}`,
       loadingReportDetail: 'Loading report…',
       vitalSigns: 'Vital Signs',
@@ -1155,6 +1163,13 @@ const T = {
       userRole: '用户',
       aiRole: 'AI 顾问',
       coachRole: 'Coach',
+      referredBy: '推荐人',
+      invitedBy: '邀请人',
+      networkTab: '推荐网络',
+      networkEmpty: '该渠道暂无推荐关系。',
+      networkLegendReferral: '推荐码邀请',
+      networkLegendInvite: 'Coach 邀请码',
+      networkLegendRoot: '根节点（无邀请人）',
       reportIdHeader: (id, name, date) => `报告 #${id} — ${name} — ${date}`,
       loadingReportDetail: '加载报告详情中…',
       vitalSigns: '生命体征',
@@ -2181,6 +2196,10 @@ function UserDetailModal({ user, onClose }) {
                     <span className="drawer-info-val">{user.language === 'zh' ? t.modal.langZh : user.language === 'en' ? t.modal.langEn : (user.language || '—').toUpperCase()}</span>
                     <span className="drawer-info-key">{t.table.assignedCoach}</span>
                     <span className="drawer-info-val">{fmt(user.coach_name)}</span>
+                    <span className="drawer-info-key">{t.userDetail.referredBy}</span>
+                    <span className="drawer-info-val">{user.referred_by_user_id ? (user.referrer_nickname || user.referred_by_user_id) : '—'}</span>
+                    <span className="drawer-info-key">{t.userDetail.invitedBy}</span>
+                    <span className="drawer-info-val">{user.invited_by_invitation_id ? `${user.inviter_nickname || '—'} (${user.invite_code})` : '—'}</span>
                     <span className="drawer-info-key">{t.table.joined}</span>
                     <span className="drawer-info-val">{fmtDate(user.created_at)}</span>
                     <span className="drawer-info-key">{t.modal.phone}</span>
@@ -2619,8 +2638,141 @@ function UserDetailModal({ user, onClose }) {
 
 // ── Users tab ─────────────────────────────────────────────────────────────────
 
+function ReferralNetworkTab({ channels, session }) {
+  const { t, lang } = useLang();
+  const isZh = lang === 'zh';
+  const isSuperadmin = session?.role === 'superadmin';
+  const [channelId, setChannelId] = useState(isSuperadmin ? (channels[0]?.id || '') : session?.channelId || '');
+  const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+  const [loading, setLoading] = useState(false);
+  const [detailUser, setDetailUser] = useState(null);
+  const containerRef = useRef(null);
+  const [width, setWidth] = useState(900);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => setWidth(entries[0].contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!channelId) return;
+    setLoading(true);
+    axios.get(`/api/channel-referral-network?channel_id=${channelId}`)
+      .then(r => {
+        if (!r.data.success) return;
+        const targetSet = new Set((r.data.links || []).map(l => l.target));
+        const sourceSet = new Set((r.data.links || []).map(l => l.source));
+        setGraphData({
+          nodes: (r.data.nodes || []).map(n => ({
+            ...n,
+            _isRoot: !targetSet.has(n.id),
+            _hasOutgoing: sourceSet.has(n.id),
+          })),
+          links: r.data.links || [],
+        });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [channelId]);
+
+  const hasLinks = graphData.links.length > 0;
+  const Dot = ({ color, round }) => (
+    <span style={{
+      display: 'inline-block', width: 12, height: 12, verticalAlign: 'middle',
+      background: color, borderRadius: round ? '50%' : 3, marginRight: 5,
+    }} />
+  );
+
+  return (
+    <div ref={containerRef} style={{ padding: '12px 16px 24px' }}>
+      {isSuperadmin && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <label style={{ fontSize: 13, color: 'var(--muted)' }}>Channel</label>
+          <select value={channelId} onChange={e => setChannelId(e.target.value)}
+            style={{ fontSize: 13, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)' }}>
+            <option value="">Select channel…</option>
+            {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+      )}
+
+      {loading && (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
+          <span style={{ width: 18, height: 18, border: '2px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
+        </div>
+      )}
+
+      {!loading && channelId && !hasLinks && (
+        <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)', fontSize: 14 }}>
+          {t.userDetail.networkEmpty}
+        </div>
+      )}
+
+      {!loading && hasLinks && (
+        <>
+          <div style={{ borderRadius: 8, overflow: 'hidden', background: 'var(--card)', border: '1px solid var(--border)' }}>
+            <ForceGraph2D
+              graphData={graphData}
+              width={width - 32}
+              height={600}
+              backgroundColor="transparent"
+              nodeLabel={n => `${n.nickname || n.id}${n.referral_code ? ` · ${n.referral_code}` : ''}`}
+              linkColor={l => l.type === 'referral' ? '#10b981' : l.type === 'invitation' ? '#8b5cf6' : '#f97316'}
+              linkWidth={1.5}
+              linkDirectionalArrowLength={6}
+              linkDirectionalArrowRelPos={1}
+              onNodeClick={node => setDetailUser(node)}
+              nodeCanvasObject={(node, ctx, globalScale) => {
+                const isExt = node._isExternal;
+                const r = isExt ? 6 : node._isRoot ? 8 : 5;
+                const color = isExt ? '#ef4444' : node._isRoot ? '#f59e0b' : node._hasOutgoing ? '#6366f1' : '#64748b';
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
+                ctx.fillStyle = color;
+                ctx.fill();
+                if (isExt) {
+                  ctx.strokeStyle = '#fff';
+                  ctx.lineWidth = 1.5;
+                  ctx.stroke();
+                }
+                const label = (node.nickname || node.id || '').slice(0, 12);
+                const fontSize = Math.max(11 / globalScale, 2);
+                ctx.font = `${isExt ? 'bold ' : ''}${fontSize}px Sans-Serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillStyle = isExt ? 'rgba(239,68,68,0.9)' : 'rgba(148,163,184,0.9)';
+                ctx.fillText(label, node.x, node.y + r + 2);
+              }}
+              nodePointerAreaPaint={(node, color, ctx) => {
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, node._isExternal ? 6 : (node._isRoot ? 8 : 5), 0, 2 * Math.PI, false);
+                ctx.fill();
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 20, marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
+            <span><Dot color="#10b981" />{t.userDetail.networkLegendReferral}</span>
+            <span><Dot color="#8b5cf6" />{t.userDetail.networkLegendInvite}</span>
+            <span><Dot color="#f59e0b" round />{t.userDetail.networkLegendRoot}</span>
+            <span><Dot color="#6366f1" round />{isZh ? '有推荐下级' : 'Has referrals'}</span>
+            <span><Dot color="#f97316" />{isZh ? '分配教练' : 'Assigned coach'}</span>
+            <span><Dot color="#ef4444" round />{isZh ? '外部教练节点' : 'External coach node'}</span>
+          </div>
+        </>
+      )}
+
+      {detailUser && <UserDetailModal user={detailUser} onClose={() => setDetailUser(null)} />}
+    </div>
+  );
+}
+
 function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  const [subTab, setSubTab] = useState('list');
   const [modal, setModal] = useState(null);
   const [detailUser, setDetailUser] = useState(null);
   const [loadedUsers, setLoadedUsers] = useState([]);
@@ -2682,7 +2834,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
       }
     } else {
       if (channelFilter) {
-        params.channel_name = channelFilter;
+        params.filter_channel_id = channelFilter;
       }
     }
 
@@ -2781,7 +2933,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
       }
     } else {
       if (channelFilter) {
-        params.channel_name = channelFilter;
+        params.filter_channel_id = channelFilter;
       }
     }
 
@@ -2863,7 +3015,18 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
         } />
       </div>
       <div className="card">
-        <div className="table-toolbar">
+        <div className="subtab-row">
+          <button className={`subtab-btn${subTab === 'list' ? ' active' : ''}`} onClick={() => setSubTab('list')}>
+            <Users size={13} />{lang === 'zh' ? '用户列表' : 'List'}
+          </button>
+          <button className={`subtab-btn${subTab === 'network' ? ' active' : ''}`} onClick={() => setSubTab('network')}>
+            <Activity size={13} />{t.userDetail.networkTab}
+          </button>
+        </div>
+
+        {subTab === 'network' && <ReferralNetworkTab channels={channels} session={session} />}
+
+        {subTab === 'list' && <><div className="table-toolbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span className="table-count">
               {(searchQuery || channelFilter || includeSubchannels)
@@ -2893,11 +3056,11 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
         {channels.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
             {channels.map(c => {
-              const active = channelFilter === c.name;
+              const active = channelFilter === c.id;
               return (
                 <button
                   key={c.id}
-                  onClick={() => setChannelFilter(active ? '' : c.name)}
+                  onClick={() => setChannelFilter(active ? '' : c.id)}
                   style={{
                     padding: '3px 10px', borderRadius: 99, fontSize: 12, cursor: 'pointer',
                     border: `1px solid ${active ? '#6366f1' : 'var(--border)'}`,
@@ -3017,6 +3180,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
             )}
           </div>
         )}
+      </>}
       </div>
       {modal?.type === 'add'    && <UserModal user={null}       coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit'   && <UserModal user={modal.user} coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}

@@ -56,12 +56,13 @@ class ColmiRing extends WearableDevice {
     }
   }
 
-  async connect(deviceId) {
+  async connect(deviceId, { syncTime = false } = {}) {
     this._deviceId = deviceId
     await this._ble.openAdapter()
     await this._ble.connect(deviceId, NOTIFY_MAP)
-    // Sync ring clock on connect
-    try { await this.setTime(new Date()) } catch (_) {}
+    if (syncTime) {
+      try { await this.setTime(new Date()) } catch (_) {}
+    }
   }
 
   async disconnect() {
@@ -155,47 +156,38 @@ class ColmiRing extends WearableDevice {
     }
   }
 
-  // timeoutMs: total measurement budget (HRV needs ~45 s, stress ~30 s).
+  // timeoutMs: total measurement budget (HRV ~45 s, stress ~30 s, SpO2 ~20 s).
   // Resolves with the first non-zero value or null on timeout/error.
-  // Sends a CONTINUE packet every 5 s so the ring doesn't abort the measurement.
+  // The R10 does not need periodic CONTINUE pings — sending them resets the measurement.
   async getRealtime(type, timeoutMs = 30000) {
     const readingCode = REAL_TIME_MAPPING[type]
     if (!readingCode) throw new Error(`Unknown realtime reading type: ${type}`)
     const startPkt    = getStartPacket(readingCode)
-    const continuePkt = getContinuePacket(readingCode)
     const stopPkt     = getStopPacket(readingCode)
     const expectedCmd = CMD_START_REAL_TIME & 0x7f
 
-    let continueTimer = null
     const result = await new Promise((resolve) => {
       const end = setTimeout(() => {
-        clearInterval(continueTimer)
         this._ble.onNotify(this._uartTxCharUUID, null)
         resolve(null)
       }, timeoutMs)
 
-      // Keep the measurement session alive on rings that require periodic pings
-      continueTimer = setInterval(() => {
-        this._ble.write(this._deviceId, UART_SERVICE_UUID, this._uartRxCharUUID, continuePkt).catch(() => {})
-      }, 5000)
-
       this._ble.onNotify(this._uartTxCharUUID, (data) => {
         if (data.length < 16 || (data[0] & 0x7f) !== expectedCmd) return
-        // data[2] = 0 → complete; any other value (1=started, 2=measuring…) → still running
+        if (data[1] !== readingCode) return  // ignore packets for other reading types
+        // data[2] = 0 → reading ready; non-zero = measuring in progress or error
         if (data[2] !== 0) return
         const value = data[3]
         if (value !== 0) {
           clearTimeout(end)
-          clearInterval(continueTimer)
           this._ble.onNotify(this._uartTxCharUUID, null)
           resolve(value)
         }
-        // value === 0 and status === 0: ring confirmed complete but no reading yet — keep waiting
       })
 
       // Register handler FIRST, then send START so no early responses are missed
       this._ble.write(this._deviceId, UART_SERVICE_UUID, this._uartRxCharUUID, startPkt)
-        .catch((err) => { clearTimeout(end); clearInterval(continueTimer); this._ble.onNotify(this._uartTxCharUUID, null); resolve(null) })
+        .catch(() => { clearTimeout(end); this._ble.onNotify(this._uartTxCharUUID, null); resolve(null) })
     })
 
     await this._ble.write(this._deviceId, UART_SERVICE_UUID, this._uartRxCharUUID, stopPkt).catch(() => {})

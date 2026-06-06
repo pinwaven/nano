@@ -1180,10 +1180,6 @@
           <text>{{guestInviteBusy ? t.guestActivating : t.guestContinueBtn}}</text>
         </view>
 
-        <!-- Quit -->
-        <view class="guest-sheet-skip" bindtap="cancelGuestSignup">
-          <text>{{t.guestCancelSignup}}</text>
-        </view>
       </block>
 
       <block wx:else>

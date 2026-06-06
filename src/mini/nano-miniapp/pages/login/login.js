@@ -43,7 +43,8 @@ Page({
       const res = await this._callWxLogin(code, this._inviteCode)
 
       if (res.data?.guest) {
-        this.setData({ step: 'code', loading: false })
+        app.globalData.user = { guest: true }
+        wx.reLaunch({ url: '/pages/main/main' })
         return
       }
 

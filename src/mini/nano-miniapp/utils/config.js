@@ -15,7 +15,7 @@ switch (envVersion) {
 
 // Bump this before each preview upload so you can confirm the newest build is on device.
 // Format: MMDD-N (month+day, build number that day)
-const VERSION = '0605-2';
+const VERSION = '0606-6';
 const IS_DEV = envVersion === 'develop' || envVersion === 'trial';
 
 module.exports = { BASE, VERSION, IS_DEV };

@@ -16,6 +16,7 @@
  * @property {number|null} restingHr - bpm
  * @property {number|null} hrv       - ms (RMSSD)
  * @property {number|null} stress    - 0–100
+ * @property {number|null} spo2      - % (SpO2 blood oxygen)
  * @property {number}      syncedAt  - Date.now()
  */
 
@@ -69,7 +70,7 @@ function syncWearableData(openid, snapshot) {
     })
   }
 
-  const hasVitals = snapshot.restingHr != null || snapshot.hrv != null || snapshot.stress != null
+  const hasVitals = snapshot.restingHr != null || snapshot.hrv != null || snapshot.stress != null || snapshot.spo2 != null
   if (hasVitals) {
     events.push({
       category: 'vitals',
@@ -81,6 +82,7 @@ function syncWearableData(openid, snapshot) {
         resting_hr: snapshot.restingHr ?? null,
         hrv_ms:     snapshot.hrv       ?? null,
         stress:     snapshot.stress    ?? null,
+        spo2:       snapshot.spo2      ?? null,
       },
     })
   }

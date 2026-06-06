@@ -87,15 +87,17 @@ iOS returns BLE UUIDs in uppercase hyphenated format (e.g. `6E40FFF0-B5A3-F393-E
 ### Realtime measurement protocol
 
 ```
-Miniapp → START packet (CMD=105, type, action=1)
-Ring    → ACK packet    (data[2]=1: "measuring started") — ignore, keep waiting
-Ring    → CONTINUE packets every few seconds while measuring
-Miniapp → CONTINUE packet every 5 s (keeps session alive)
-Ring    → RESULT packet  (data[2]=0: "complete", data[3]=value)
-Miniapp → STOP packet    (CMD=106)
+Miniapp → START packet (CMD=0x69, data=[type, 1])
+Ring    → many packets (data[2]=0, data[3]=0) while measuring — ignore zeros
+Ring    → final packet  (data[2]=0, data[3]=result_value) when done
+Miniapp → STOP packet   (CMD=0x6A, data=[type, 0, 0])
 ```
 
-The key invariant: `data[2] !== 0` means still in progress — do not resolve early.
+Response filter: accept packets where `(data[0] & 0x7f) === 0x69`, `data[1] === readingCode`, `data[2] === 0`, `data[3] !== 0`.
+
+**HRV is special**: type=10 streams individual RR intervals in `data[6:7]` (16-bit LE, ms) during measurement. The final RMSSD score appears in `data[3]` of the last packet only (~90-105 s total). All other types complete in ≤30 s.
+
+The R10 does NOT require periodic CONTINUE packets — sending them resets the measurement.
 
 ### Scanning
 
@@ -114,8 +116,9 @@ The key invariant: `data[2] !== 0` means still in progress — do not resolve ea
   distance,               // metres
   sleepMinutes, sleepDeep, sleepLight, sleepRem, sleepAwake,
   restingHr,              // bpm
-  hrv,                    // ms
+  hrv,                    // ms (RMSSD)
   stress,                 // 0–100
+  spo2,                   // % blood oxygen
   syncedAt,               // Date.now()
 }
 ```
@@ -126,7 +129,7 @@ The key invariant: `data[2] !== 0` means still in progress — do not resolve ea
 |---|---|---|---|
 | steps, calories, distance | `activity` | today UTC | `smart_ring_activity_YYYY-MM-DD` |
 | sleep* | `sleep` | yesterday UTC | `smart_ring_sleep_YYYY-MM-DD` |
-| restingHr, hrv, stress | `vitals` | today UTC | `smart_ring_vitals_YYYY-MM-DD` |
+| restingHr, hrv, stress, spo2 | `vitals` | today UTC | `smart_ring_vitals_YYYY-MM-DD` |
 
 Sleep is mapped to yesterday because it is overnight data. The `external_id` pattern gives one row per source per category per day; re-syncing the same day updates (`DO UPDATE`) the existing row rather than inserting a duplicate.
 
