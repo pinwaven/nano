@@ -175,6 +175,10 @@ const T = {
     wearableMeasuringHrv: '测量 HRV...',
     wearableMeasuringStress: '测量压力...',
     wearableMeasuringBg: '正在测量 HRV、压力和血氧... (约3分钟)',
+    ringStepsChart: '步数分布',
+    ringHrChart: '心率分布',
+    ringSleepChart: '睡眠分期',
+    ringDeep: '深睡', ringRem: 'REM', ringLight: '浅睡', ringAwake: '清醒',
   },
   en: {
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -272,6 +276,10 @@ const T = {
     wearableMeasuringHrv: 'Measuring HRV...',
     wearableMeasuringStress: 'Measuring stress...',
     wearableMeasuringBg: 'Measuring HRV, Stress & SpO₂... (~3 min)',
+    ringStepsChart: 'Steps by Hour',
+    ringHrChart: 'Heart Rate by Hour',
+    ringSleepChart: 'Sleep Stages',
+    ringDeep: 'Deep', ringRem: 'REM', ringLight: 'Light', ringAwake: 'Awake',
   },
 }
 
@@ -331,6 +339,58 @@ function _buildRingDisplayData(raw, isZh) {
   }
   const spo2Pct = raw.spo2 != null ? Math.min(100, Math.max(2, Math.round((raw.spo2 - 90) / 10 * 100))) : 0
 
+  // ── Slot charts ──
+  const CHART_H = 72  // rpx height of bar chart area
+
+  // Steps: aggregate 15-min slots → 24 hourly bars
+  let stepsBars = null
+  if (raw.stepSlots && raw.stepSlots.length > 0) {
+    const hrSteps = new Array(24).fill(0)
+    for (const s of raw.stepSlots) {
+      hrSteps[new Date(s.t).getHours()] += s.steps
+    }
+    const maxS = Math.max(...hrSteps, 1)
+    stepsBars = hrSteps.map((steps, h) => ({
+      h: h % 6 === 0 ? String(h) : '',
+      heightRpx: Math.round(steps / maxS * CHART_H),
+      active: steps > 0,
+    }))
+  }
+
+  // HR: aggregate 5-min slots → 24 hourly avg bars
+  let hrBars = null
+  if (raw.hrSlots && raw.hrSlots.length > 0) {
+    const hrMap = {}
+    for (const r of raw.hrSlots) {
+      const h = new Date(r.t).getHours()
+      if (!hrMap[h]) hrMap[h] = []
+      hrMap[h].push(r.bpm)
+    }
+    hrBars = new Array(24).fill(0).map((_, h) => {
+      const arr = hrMap[h]
+      if (!arr) return { h: h % 6 === 0 ? String(h) : '', heightRpx: 3, color: 'rgba(99,117,236,0.08)', bpm: 0 }
+      const bpm = Math.round(arr.reduce((a, b) => a + b, 0) / arr.length)
+      const color = bpm < 60 ? '#0ea5e9' : bpm < 75 ? '#10b981' : bpm < 90 ? '#f97316' : '#ef4444'
+      const heightRpx = Math.round(Math.max(6, Math.min(CHART_H, (bpm - 40) / 80 * CHART_H)))
+      return { h: h % 6 === 0 ? String(h) : '', heightRpx, color, bpm }
+    })
+  }
+
+  // Sleep: consecutive stage segments as % widths
+  let sleepSegs = null, sleepTimeRange = null
+  if (raw.sleepSlots && raw.sleepSlots.length > 0) {
+    const totalMin = raw.sleepSlots.reduce((s, p) => s + p.min, 0)
+    const segColors = { deep: '#6375EC', rem: '#a855f7', light: '#0ea5e9', awake: 'rgba(166,196,229,0.18)' }
+    sleepSegs = raw.sleepSlots.map(p => ({
+      widthPct: Math.round(p.min / totalMin * 100),
+      color: segColors[p.type] || '#6375EC',
+    }))
+    if (raw.sleepStart != null && raw.sleepEnd != null) {
+      const fmtMins = (m) => { const a = ((m % 1440) + 1440) % 1440; return `${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}` }
+      sleepTimeRange = `${fmtMins(raw.sleepStart)} → ${fmtMins(raw.sleepEnd)}`
+    }
+  }
+
   return {
     ...raw,
     sleepStr, sleepDeepPct, sleepLightPct, sleepRemPct, sleepAwakePct,
@@ -345,6 +405,8 @@ function _buildRingDisplayData(raw, isZh) {
     hrvColor, hrvPct,
     stressLabel, stressColor,
     spo2Color, spo2Pct,
+    stepsBars, hrBars, sleepSegs, sleepTimeRange,
+    hasSlotCharts: !!(stepsBars || hrBars || sleepSegs),
   }
 }
 
@@ -1480,17 +1542,22 @@ Component({
       }
 
       // Commit phase-1 data immediately so the user sees results now
-      const hrValues  = (hrLog || []).filter(r => r.value > 0).map(r => r.value)
-      const restingHr = hrValues.length ? Math.min(...hrValues) : null
+      const hrEntries = (hrLog || []).filter(r => r.value > 0)
+      const restingHr = hrEntries.length ? Math.min(...hrEntries.map(r => r.value)) : null
       const rawPhase1 = {
         steps:        steps?.steps     ?? null,
         calories:     steps?.calories  ?? null,
         distance:     steps?.distance  ?? null,
+        stepSlots:    steps?.slots     ?? null,
         sleepMinutes: (sleep?.totalMinutes > 0) ? sleep.totalMinutes : null,
         sleepDeep:    sleep?.deep      ?? null,
         sleepLight:   sleep?.light     ?? null,
         sleepRem:     sleep?.rem       ?? null,
         sleepAwake:   sleep?.awake     ?? null,
+        sleepStart:   sleep?.sleepStart ?? null,
+        sleepEnd:     sleep?.sleepEnd   ?? null,
+        sleepSlots:   sleep?.periods?.map(p => ({ type: p.typeName, min: p.minutes })) ?? null,
+        hrSlots:      hrEntries.map(r => ({ t: r.timestamp.toISOString(), bpm: r.value })),
         restingHr,
         hrv: null, stress: null, spo2: null,
         syncedAt: Date.now(),
@@ -1516,7 +1583,8 @@ Component({
     _commitRingData(raw, batteryLevel, isZh, isPartial) {
       wx.setStorageSync('wearable_ring_data', raw)
       const { syncWearableData } = require('../../utils/wearable/sync.js')
-      syncWearableData(this.properties.userId, { source: 'smart_ring', ...raw }).catch(() => {})
+      const app = getApp()
+      syncWearableData(this.properties.userId, { source: 'smart_ring', ...raw }, app?.globalData?.apiToken).catch(() => {})
       const ringData = _buildRingDisplayData(raw, isZh)
       const virtualTwin = {
         avg_daily_steps: raw.steps,

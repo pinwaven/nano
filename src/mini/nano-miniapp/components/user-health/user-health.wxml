@@ -379,6 +379,69 @@
           <text class="ring-sum-footer">{{ringData.syncLabel}}</text>
         </view>
 
+        <!-- Slot detail charts (steps / HR / sleep) -->
+        <view wx:if="{{wearableId && ringData && ringData.hasSlotCharts}}" class="ring-detail-card">
+
+          <!-- Steps hourly bar chart -->
+          <view wx:if="{{ringData.stepsBars}}" class="ring-chart-block">
+            <text class="ring-chart-label">{{t.ringStepsChart}}</text>
+            <view class="ring-chart-bars">
+              <view wx:for="{{ringData.stepsBars}}" wx:key="index" class="ring-chart-col">
+                <view class="ring-chart-bar {{item.active ? '' : 'ring-chart-bar-empty'}}"
+                      style="height:{{item.heightRpx > 0 ? item.heightRpx : 3}}rpx; background:{{item.active ? '#0ea5e9' : 'rgba(99,117,236,0.1)'}};">
+                </view>
+                <text class="ring-chart-hlabel">{{item.h}}</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- HR hourly bar chart -->
+          <view wx:if="{{ringData.hrBars}}" class="ring-chart-block">
+            <text class="ring-chart-label">{{t.ringHrChart}}</text>
+            <view class="ring-chart-bars">
+              <view wx:for="{{ringData.hrBars}}" wx:key="index" class="ring-chart-col">
+                <view class="ring-chart-bar"
+                      style="height:{{item.heightRpx}}rpx; background:{{item.color}};">
+                </view>
+                <text class="ring-chart-hlabel">{{item.h}}</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- Sleep stage timeline -->
+          <view wx:if="{{ringData.sleepSegs}}" class="ring-chart-block">
+            <view class="ring-chart-header">
+              <text class="ring-chart-label">{{t.ringSleepChart}}</text>
+              <text wx:if="{{ringData.sleepTimeRange}}" class="ring-chart-time">{{ringData.sleepTimeRange}}</text>
+            </view>
+            <view class="ring-sleep-timeline">
+              <view wx:for="{{ringData.sleepSegs}}" wx:key="index"
+                    class="ring-sleep-tl-seg"
+                    style="width:{{item.widthPct}}%; background:{{item.color}};">
+              </view>
+            </view>
+            <view class="ring-sleep-legend">
+              <view class="ring-sleep-leg-item">
+                <view class="ring-sleep-leg-dot" style="background:#6375EC;"></view>
+                <text class="ring-sleep-leg-txt">{{t.ringDeep}}</text>
+              </view>
+              <view class="ring-sleep-leg-item">
+                <view class="ring-sleep-leg-dot" style="background:#a855f7;"></view>
+                <text class="ring-sleep-leg-txt">{{t.ringRem}}</text>
+              </view>
+              <view class="ring-sleep-leg-item">
+                <view class="ring-sleep-leg-dot" style="background:#0ea5e9;"></view>
+                <text class="ring-sleep-leg-txt">{{t.ringLight}}</text>
+              </view>
+              <view class="ring-sleep-leg-item">
+                <view class="ring-sleep-leg-dot" style="background:rgba(166,196,229,0.4);"></view>
+                <text class="ring-sleep-leg-txt">{{t.ringAwake}}</text>
+              </view>
+            </view>
+          </view>
+
+        </view>
+
         <block wx:if="{{hasTwinData}}">
 
           <!-- Health Score Card -->

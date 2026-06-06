@@ -102,12 +102,16 @@ class ColmiRing extends WearableDevice {
     const days = Math.round((refMs - targetMs) / (24 * 60 * 60 * 1000))
     const parser = new SportDetailParser()
     const result = await this._collectUARTMulti(readStepsPacket(days), (p) => parser.parse(p))
-    if (!result || result.constructor.name === 'NoData') return { steps: 0, calories: 0, distance: 0 }
+    if (!result || result.constructor.name === 'NoData') return { steps: 0, calories: 0, distance: 0, slots: [] }
     const details = Array.isArray(result) ? result : [result]
-    return details.reduce(
+    const totals = details.reduce(
       (acc, d) => ({ steps: acc.steps + d.steps, calories: acc.calories + d.calories, distance: acc.distance + d.distance }),
       { steps: 0, calories: 0, distance: 0 },
     )
+    const slots = details
+      .filter(d => d.steps > 0)
+      .map(d => ({ t: d.timestamp.toISOString(), steps: d.steps, cal: d.calories, dist: d.distance }))
+    return { ...totals, slots }
   }
 
   async getSleep() {
@@ -142,7 +146,7 @@ class ColmiRing extends WearableDevice {
     })
 
     if (!result || result instanceof SleepNoData) {
-      return { totalMinutes: 0, deep: 0, light: 0, rem: 0, awake: 0, periods: [] }
+      return { totalMinutes: 0, deep: 0, light: 0, rem: 0, awake: 0, periods: [], sleepStart: null, sleepEnd: null }
     }
     // Return most recent night (daysAgo === 0)
     const latest = Array.isArray(result) ? (result.find((d) => d.daysAgo === 0) || result[0]) : result
@@ -153,6 +157,8 @@ class ColmiRing extends WearableDevice {
       rem:   latest.remMinutes,
       awake: latest.awakeMinutes,
       periods: latest.periods,
+      sleepStart: latest.sleepStart,
+      sleepEnd:   latest.sleepEnd,
     }
   }
 

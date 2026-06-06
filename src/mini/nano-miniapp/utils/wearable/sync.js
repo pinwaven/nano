@@ -8,11 +8,16 @@
  * @property {number|null} steps
  * @property {number|null} calories
  * @property {number|null} distance  - metres
+ * @property {Array|null}  stepSlots - [{t, steps, cal, dist}] per 15-min window
  * @property {number|null} sleepMinutes
  * @property {number|null} sleepDeep
  * @property {number|null} sleepLight
  * @property {number|null} sleepRem
  * @property {number|null} sleepAwake
+ * @property {number|null} sleepStart - minutes after midnight (sleep onset)
+ * @property {number|null} sleepEnd   - minutes after midnight (wake time)
+ * @property {Array|null}  sleepSlots - [{type, min}] consecutive sleep stage periods
+ * @property {Array|null}  hrSlots    - [{t, bpm}] per 5-min interval
  * @property {number|null} restingHr - bpm
  * @property {number|null} hrv       - ms (RMSSD)
  * @property {number|null} stress    - 0–100
@@ -28,8 +33,9 @@ const { BASE } = require('../config.js')
  *
  * @param {string} openid
  * @param {WearableSnapshot} snapshot
+ * @param {string} [apiToken]
  */
-function syncWearableData(openid, snapshot) {
+function syncWearableData(openid, snapshot, apiToken) {
   const now = new Date(snapshot.syncedAt)
   const todayDate  = _utcDateStr(now, 0)
   const sleepDate  = _utcDateStr(now, -1)   // sleep is overnight — belongs to the previous date
@@ -49,6 +55,7 @@ function syncWearableData(openid, snapshot) {
         steps:      snapshot.steps      ?? null,
         calories:   snapshot.calories   ?? null,
         distance_m: snapshot.distance   ?? null,
+        ...(snapshot.stepSlots?.length ? { slots: snapshot.stepSlots } : {}),
       },
     })
   }
@@ -66,6 +73,9 @@ function syncWearableData(openid, snapshot) {
         light_minutes:    snapshot.sleepLight  ?? null,
         rem_minutes:      snapshot.sleepRem    ?? null,
         awake_minutes:    snapshot.sleepAwake  ?? null,
+        sleep_start_min:  snapshot.sleepStart  ?? null,
+        sleep_end_min:    snapshot.sleepEnd    ?? null,
+        ...(snapshot.sleepSlots?.length ? { slots: snapshot.sleepSlots } : {}),
       },
     })
   }
@@ -83,6 +93,7 @@ function syncWearableData(openid, snapshot) {
         hrv_ms:     snapshot.hrv       ?? null,
         stress:     snapshot.stress    ?? null,
         spo2:       snapshot.spo2      ?? null,
+        ...(snapshot.hrSlots?.length ? { hr_slots: snapshot.hrSlots } : {}),
       },
     })
   }
@@ -93,7 +104,7 @@ function syncWearableData(openid, snapshot) {
     wx.request({
       url: `${BASE}/api/health-events/sync`,
       method: 'POST',
-      header: { 'Content-Type': 'application/json' },
+      header: { 'Content-Type': 'application/json', ...(apiToken ? { Authorization: `Bearer ${apiToken}` } : {}) },
       data: { openid, events },
       success: (res) => resolve(res.data),
       fail: (err) => resolve({ success: false, error: err.errMsg }),
