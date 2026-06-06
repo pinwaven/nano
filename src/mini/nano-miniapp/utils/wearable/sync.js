@@ -80,20 +80,35 @@ function syncWearableData(openid, snapshot, apiToken) {
     })
   }
 
-  const hasVitals = snapshot.restingHr != null || snapshot.hrv != null || snapshot.stress != null || snapshot.spo2 != null
-  if (hasVitals) {
+  // Daily vitals: resting HR + full-day HR log (upsert per day — derived from complete HR log)
+  if (snapshot.restingHr != null || snapshot.hrSlots?.length) {
     events.push({
       category: 'vitals',
       source: src,
       data_date: todayDate,
       recorded_at: recordedAt,
-      external_id: `${src}_vitals_${todayDate}`,
+      external_id: `${src}_resting_hr_${todayDate}`,
       data: {
         resting_hr: snapshot.restingHr ?? null,
-        hrv_ms:     snapshot.hrv       ?? null,
-        stress:     snapshot.stress    ?? null,
-        spo2:       snapshot.spo2      ?? null,
         ...(snapshot.hrSlots?.length ? { hr_slots: snapshot.hrSlots } : {}),
+      },
+    })
+  }
+
+  // Per-measurement: HRV / stress / SpO₂ — each sync gets its own row (timestamp external_id)
+  const hasRealtime = snapshot.hrv != null || snapshot.stress != null || snapshot.spo2 != null
+  if (hasRealtime) {
+    const ts = new Date(snapshot.syncedAt).toISOString().replace(/[:.]/g, '')
+    events.push({
+      category: 'vitals',
+      source: src,
+      data_date: todayDate,
+      recorded_at: recordedAt,
+      external_id: `${src}_realtime_${ts}`,
+      data: {
+        hrv_ms: snapshot.hrv    ?? null,
+        stress: snapshot.stress ?? null,
+        spo2:   snapshot.spo2   ?? null,
       },
     })
   }

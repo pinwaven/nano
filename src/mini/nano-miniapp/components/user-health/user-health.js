@@ -410,6 +410,26 @@ function _buildRingDisplayData(raw, isZh) {
   }
 }
 
+function _getRealtimeReadings(syncedAt) {
+  try {
+    const todayStr = new Date(syncedAt || Date.now()).toISOString().slice(0, 10)
+    const stored = wx.getStorageSync('wearable_realtime_today')
+    if (!stored || stored.date !== todayStr) return []
+    return stored.readings || []
+  } catch (_) { return [] }
+}
+
+function _fmtRealtimeReadings(readings) {
+  return readings.map(r => {
+    const d = new Date(r.t)
+    const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    const hrvColor  = r.hrv    == null ? null : r.hrv >= 80 ? '#0ea5e9' : r.hrv >= 50 ? '#10b981' : r.hrv >= 30 ? '#f97316' : '#ef4444'
+    const spo2Color = r.spo2   == null ? null : r.spo2 >= 98 ? '#0ea5e9' : r.spo2 >= 95 ? '#10b981' : r.spo2 >= 90 ? '#f97316' : '#ef4444'
+    const stressColor = r.stress == null ? null : r.stress <= 25 ? '#10b981' : r.stress <= 50 ? '#6375EC' : r.stress <= 75 ? '#f97316' : '#ef4444'
+    return { time, hrv: r.hrv, stress: r.stress, spo2: r.spo2, hrvColor, spo2Color, stressColor }
+  })
+}
+
 function chronoAge(birthDate) {
   if (!birthDate) return null
   return Math.floor((Date.now() - new Date(birthDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25))
@@ -1417,7 +1437,8 @@ Component({
         if (rawRing && rawRing.syncedAt) {
           const lang = this.properties.lang || 'zh'
           const isZh = lang !== 'en'
-          const ringData = _buildRingDisplayData(rawRing, isZh)
+          const realtimeReadings = _fmtRealtimeReadings(_getRealtimeReadings(rawRing.syncedAt))
+          const ringData = { ..._buildRingDisplayData(rawRing, isZh), realtimeReadings, hasRealtimeReadings: realtimeReadings.length > 0 }
           const virtualTwin = {
             avg_daily_steps: rawRing.steps,
             avg_sleep_hours: rawRing.sleepMinutes != null ? rawRing.sleepMinutes / 60 : null,
@@ -1585,7 +1606,18 @@ Component({
       const { syncWearableData } = require('../../utils/wearable/sync.js')
       const app = getApp()
       syncWearableData(this.properties.userId, { source: 'smart_ring', ...raw }, app?.globalData?.apiToken).catch(() => {})
-      const ringData = _buildRingDisplayData(raw, isZh)
+
+      // Accumulate today's realtime (Phase 2) readings in local storage
+      if (!isPartial && (raw.hrv != null || raw.stress != null || raw.spo2 != null)) {
+        const todayStr = new Date(raw.syncedAt).toISOString().slice(0, 10)
+        let stored = wx.getStorageSync('wearable_realtime_today') || { date: todayStr, readings: [] }
+        if (stored.date !== todayStr) stored = { date: todayStr, readings: [] }
+        stored.readings.push({ t: raw.syncedAt, hrv: raw.hrv, stress: raw.stress, spo2: raw.spo2 })
+        wx.setStorageSync('wearable_realtime_today', stored)
+      }
+
+      const realtimeReadings = _fmtRealtimeReadings(_getRealtimeReadings(raw.syncedAt))
+      const ringData = { ..._buildRingDisplayData(raw, isZh), realtimeReadings, hasRealtimeReadings: realtimeReadings.length > 0 }
       const virtualTwin = {
         avg_daily_steps: raw.steps,
         avg_sleep_hours: raw.sleepMinutes != null ? raw.sleepMinutes / 60 : null,

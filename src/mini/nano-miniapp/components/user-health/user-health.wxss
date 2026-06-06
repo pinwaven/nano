@@ -2201,6 +2201,56 @@
   min-height: 16rpx;
 }
 
+/* Realtime readings list */
+
+.ring-readings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+}
+
+.ring-reading-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 14rpx 16rpx;
+  background: rgba(99, 117, 236, 0.05);
+  border-radius: 14rpx;
+}
+
+.ring-reading-time {
+  font-size: 22rpx;
+  font-weight: 700;
+  color: rgba(166, 196, 229, 0.45);
+  width: 72rpx;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring-reading-metrics {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  flex: 1;
+}
+
+.ring-reading-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 5rpx;
+}
+
+.ring-reading-val {
+  font-size: 28rpx;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.ring-reading-unit {
+  font-size: 17rpx;
+  color: rgba(166, 196, 229, 0.35);
+}
+
 /* Sleep timeline */
 .ring-sleep-timeline {
   height: 24rpx;

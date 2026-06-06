@@ -408,6 +408,30 @@
             </view>
           </view>
 
+          <!-- Realtime readings history (HRV / Stress / SpO₂) -->
+          <view wx:if="{{ringData.hasRealtimeReadings}}" class="ring-chart-block">
+            <text class="ring-chart-label">{{t.ringHrv}} · {{t.ringStress}} · SpO₂</text>
+            <view class="ring-readings-list">
+              <view wx:for="{{ringData.realtimeReadings}}" wx:key="index" class="ring-reading-row">
+                <text class="ring-reading-time">{{item.time}}</text>
+                <view class="ring-reading-metrics">
+                  <view wx:if="{{item.hrv != null}}" class="ring-reading-metric">
+                    <text class="ring-reading-val" style="color:{{item.hrvColor}}">{{item.hrv}}</text>
+                    <text class="ring-reading-unit">ms HRV</text>
+                  </view>
+                  <view wx:if="{{item.stress != null}}" class="ring-reading-metric">
+                    <text class="ring-reading-val" style="color:{{item.stressColor}}">{{item.stress}}</text>
+                    <text class="ring-reading-unit">stress</text>
+                  </view>
+                  <view wx:if="{{item.spo2 != null}}" class="ring-reading-metric">
+                    <text class="ring-reading-val" style="color:{{item.spo2Color}}">{{item.spo2}}</text>
+                    <text class="ring-reading-unit">% SpO₂</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+          </view>
+
           <!-- Sleep stage timeline -->
           <view wx:if="{{ringData.sleepSegs}}" class="ring-chart-block">
             <view class="ring-chart-header">
