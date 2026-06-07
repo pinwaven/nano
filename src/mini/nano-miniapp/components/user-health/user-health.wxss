@@ -1985,6 +1985,24 @@
   color: rgba(166, 196, 229, 0.45);
 }
 
+.ht-lab-snapshot-wrap {
+  margin-bottom: 24rpx;
+  padding-bottom: 24rpx;
+  border-bottom: 1rpx solid rgba(99, 117, 236, 0.1);
+}
+.ht-lab-snapshot-header {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-bottom: 16rpx;
+}
+.ht-lab-snapshot-title {
+  font-size: 20rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+  color: rgba(166, 196, 229, 0.45);
+}
+
 .ht-lab-date {
   font-size: 22rpx;
   color: rgba(166, 196, 229, 0.45);

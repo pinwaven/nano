@@ -6635,7 +6635,7 @@ async function handlePostHealthAdvice(body) {
         const bioageProfile = latestBio?.data?.bioage_profile || null;
         const estimatedBm = latestBio?.data?.estimated || {};
         const actualBm = latestBio?.data?.actual || {};
-        const biomarkers = { ...estimatedBm, ...actualBm };
+        const biomarkers = estimatedBm;
         const subAges = bioageProfile?.SubAges || {};
         const bioAge = bioageProfile?.BioAge ?? null;
         const age = calculateAge(user.birth_date);
