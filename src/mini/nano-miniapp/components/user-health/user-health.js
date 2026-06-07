@@ -761,7 +761,7 @@ Component({
           const alpha = !sa ? 0.2 : score >= 60 ? 0.16 : score >= 35 ? 0.22 : 0.35
           const n = parseInt(color.slice(1), 16)
           const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-          subAgeZ[key] = { color, fill: `rgba(${r},${g},${b},${alpha})`, glow: score < 35 ? 14 : 6, pulse: !!sa && score < 35 }
+          subAgeZ[key] = { color, fill: `rgba(${r},${g},${b},${alpha})`, glow: score < 35 ? 14 : 6, pulse: !!sa }
         }
 
         const newData = {
