@@ -231,49 +231,6 @@
         </view>
       </view>
 
-      <!-- Latest Biomarkers -->
-      <view class="health-section">
-        <text class="section-title">{{t.latestBm}}</text>
-        <view wx:if="{{hasBm}}" class="bm-list">
-          <view wx:for="{{bmList}}" wx:key="key" class="bm-row">
-            <view class="bm-dot" style="background: {{item.color}}"></view>
-            <text class="bm-label">{{item.label}}</text>
-            <text class="bm-val" style="color: {{item.color}}">{{item.value !== null ? item.value : '—'}}</text>
-            <text class="bm-unit">{{item.unit}}</text>
-          </view>
-        </view>
-        <text wx:else class="health-empty">{{t.noBmData}}</text>
-      </view>
-
-      <!-- Trends -->
-      <view class="health-section">
-        <view class="section-title-row">
-          <text class="section-title">{{t.trends}}</text>
-          <view wx:if="{{recordCount > 0}}" class="section-badge">
-            <text>{{recordCount}} {{t.tests}}</text>
-          </view>
-        </view>
-        <view wx:if="{{recordCount > 0}}" class="trend-grid">
-          <view wx:for="{{trendList}}" wx:key="key" class="trend-card">
-            <text class="trend-label">{{item.label}}</text>
-            <view class="trend-val-row">
-              <text class="trend-val" style="color: {{item.color}}">{{item.lastVal !== null ? item.lastVal : '—'}}</text>
-              <text class="trend-unit">{{item.unit}}</text>
-            </view>
-            <view wx:if="{{item.sparkBars.length > 1}}" class="spark-row">
-              <view
-                wx:for="{{item.sparkBars}}"
-                wx:for-item="bar"
-                wx:key="index"
-                class="spark-bar {{bar.empty ? 'spark-bar-empty' : ''}}"
-                style="height: {{bar.h}}rpx; background: {{bar.color}};"
-              ></view>
-            </view>
-          </view>
-        </view>
-        <text wx:else class="health-empty">{{t.noHistory}}</text>
-      </view>
-
       <!-- Health Monitoring -->
       <view class="health-section">
         <text class="section-title">{{t.dtMonitoring}}</text>
@@ -290,23 +247,25 @@
           <view wx:else class="wd-card">
             <view class="wd-card-row">
               <view class="wd-info">
-                <text class="wd-device-name">{{wearableName}}</text>
-                <view class="wd-status-row">
+                <view class="wd-name-row">
                   <view class="wd-dot{{wearableConnected ? ' wd-dot-on' : ''}}"></view>
-                  <text class="wd-status-text">{{wearableConnected ? t.wearableConnected : t.wearableDisconnected}}</text>
+                  <text class="wd-device-name">{{wearableName}}</text>
+                  <text wx:if="{{wearableBattery > 0}}" class="wd-battery-inline">{{wearableBattery}}%</text>
+                </view>
+                <text class="wd-status-text">{{wearableConnected ? t.wearableConnected : t.wearableDisconnected}}</text>
+              </view>
+              <view class="wd-card-actions">
+                <view class="wd-sync-btn {{wearableBusy ? 'wd-btn-disabled' : ''}}" bindtap="handleSyncWearable">
+                  <text class="wd-sync-btn-text">{{t.wearableSyncNow}}</text>
+                </view>
+                <view class="wd-gear-btn {{ringSettingsOpen ? 'wd-gear-btn-active' : ''}}" catchtap="toggleRingSettings">
+                  <text class="wd-gear-glyph">⚙</text>
                 </view>
               </view>
-              <view wx:if="{{wearableBattery > 0}}" class="wd-battery-wrap">
-                <text class="wd-battery-pct">{{wearableBattery}}%</text>
-                <text class="wd-battery-lbl">{{t.wearableBattery}}</text>
-              </view>
             </view>
-            <view class="wd-actions">
-              <view class="wd-btn{{wearableBusy ? ' wd-btn-disabled' : ''}}" bindtap="handleSyncWearable">
-                <text>{{t.wearableSyncNow}}</text>
-              </view>
-              <view class="wd-btn wd-btn-muted" bindtap="handleUnbindWearable">
-                <text>{{t.wearableUnbind}}</text>
+            <view wx:if="{{ringSettingsOpen}}" class="wd-settings-panel">
+              <view class="wd-unbind-btn" bindtap="handleUnbindWearable">
+                <text class="wd-unbind-txt">{{t.wearableUnbind}}</text>
               </view>
             </view>
             <view wx:if="{{ringMeasuring}}" class="wd-measuring-row">
@@ -580,6 +539,49 @@
 
         </block>
         <text wx:elif="{{!twinLoading}}" class="health-empty">{{t.noTwinData}}</text>
+      </view>
+
+      <!-- Latest Biomarkers -->
+      <view class="health-section">
+        <text class="section-title">{{t.latestBm}}</text>
+        <view wx:if="{{hasBm}}" class="bm-list">
+          <view wx:for="{{bmList}}" wx:key="key" class="bm-row">
+            <view class="bm-dot" style="background: {{item.color}}"></view>
+            <text class="bm-label">{{item.label}}</text>
+            <text class="bm-val" style="color: {{item.color}}">{{item.value !== null ? item.value : '—'}}</text>
+            <text class="bm-unit">{{item.unit}}</text>
+          </view>
+        </view>
+        <text wx:else class="health-empty">{{t.noBmData}}</text>
+      </view>
+
+      <!-- Trends -->
+      <view class="health-section">
+        <view class="section-title-row">
+          <text class="section-title">{{t.trends}}</text>
+          <view wx:if="{{recordCount > 0}}" class="section-badge">
+            <text>{{recordCount}} {{t.tests}}</text>
+          </view>
+        </view>
+        <view wx:if="{{recordCount > 0}}" class="trend-grid">
+          <view wx:for="{{trendList}}" wx:key="key" class="trend-card">
+            <text class="trend-label">{{item.label}}</text>
+            <view class="trend-val-row">
+              <text class="trend-val" style="color: {{item.color}}">{{item.lastVal !== null ? item.lastVal : '—'}}</text>
+              <text class="trend-unit">{{item.unit}}</text>
+            </view>
+            <view wx:if="{{item.sparkBars.length > 1}}" class="spark-row">
+              <view
+                wx:for="{{item.sparkBars}}"
+                wx:for-item="bar"
+                wx:key="index"
+                class="spark-bar {{bar.empty ? 'spark-bar-empty' : ''}}"
+                style="height: {{bar.h}}rpx; background: {{bar.color}};"
+              ></view>
+            </view>
+          </view>
+        </view>
+        <text wx:else class="health-empty">{{t.noHistory}}</text>
       </view>
 
       <!-- Health Reports -->

@@ -662,6 +662,7 @@ Component({
     wearableBattery: 0,
     wearableBusy: false,
     ringMeasuring: false,
+    ringSettingsOpen: false,
     ringData: null,
   },
 
@@ -1841,7 +1842,12 @@ Component({
       })
     },
 
+    toggleRingSettings() {
+      this.setData({ ringSettingsOpen: !this.data.ringSettingsOpen })
+    },
+
     handleUnbindWearable() {
+      this.setData({ ringSettingsOpen: false })
       const t = this.data.t
       wx.showModal({
         title: t.wearableUnbind,
