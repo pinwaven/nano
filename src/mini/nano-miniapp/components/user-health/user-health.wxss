@@ -1396,9 +1396,8 @@
   opacity: 0.75;
 }
 
-/* BioAge expanded chip — canvas fills the whole area */
+/* BioAge expanded chip — border/glow drawn on canvas, not CSS (canvas is native layer) */
 .dt-bioage-open {
-  border: 1.5rpx solid rgba(99, 117, 236, 0.55);
   border-radius: 22rpx;
   box-shadow: 0 0 40rpx rgba(99, 117, 236, 0.35);
 }
