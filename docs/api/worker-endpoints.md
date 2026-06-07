@@ -54,8 +54,31 @@ The token is configured via the `API_BEARER_TOKEN` environment variable on the `
 | `DELETE` | `/kone-apk-releases/:id` | Kone Upgrade | Delete inactive release |
 | `GET` | `/store-items` | E-commerce | List store items |
 | `GET` | `/my-orders` | E-commerce | User's order history |
-| `GET` | `/academy/courses` | Academy | List courses |
+| `GET` | `/academy/courses` | Academy | List courses (level, credits, prerequisite) |
+| `GET` | `/academy/lessons` | Academy | List lessons for a course (content_type, has_quiz) |
+| `GET` | `/academy/lessons/:id` | Academy | Lesson detail + quiz questions |
 | `GET` | `/academy/library` | Academy | List library items |
+| `GET` | `/academy/certifications` | Academy | List certification definitions |
+| `GET` | `/academy/learning-paths` | Academy | Learning paths with ordered courses |
+| `GET` | `/academy/leaderboard` | Academy | Top 20 coaches by total credits |
+| `GET` | `/academy/coach-dashboard` | Academy | Coach stats: credits, tier, lessons, quizzes, certs |
+| `GET` | `/academy/coach-credits` | Academy | Coach credit total, tier, ledger history |
+| `GET` | `/academy/coach-certifications` | Academy | Coach's earned certifications |
+| `POST` | `/academy/courses` | Academy | Create course |
+| `POST` | `/academy/lessons` | Academy | Create lesson |
+| `POST` | `/academy/progress` | Academy | Mark lesson complete (awards credits, checks certs) |
+| `POST` | `/academy/quiz-attempts` | Academy | Submit quiz answers → score + credits |
+| `POST` | `/academy/lesson-quizzes` | Academy | Create quiz question (admin) |
+| `POST` | `/academy/certifications` | Academy | Create certification definition (admin) |
+| `POST` | `/academy/learning-paths` | Academy | Create learning path (admin) |
+| `PUT` | `/academy/courses/:id` | Academy | Update course |
+| `PUT` | `/academy/lessons/:id` | Academy | Update lesson |
+| `PUT` | `/academy/lesson-quizzes/:id` | Academy | Update quiz question (admin) |
+| `PUT` | `/academy/certifications/:id` | Academy | Update certification (admin) |
+| `PUT` | `/academy/learning-paths/:id` | Academy | Update path + reorder courses (admin) |
+| `DELETE` | `/academy/lesson-quizzes/:id` | Academy | Delete quiz question (admin) |
+| `DELETE` | `/academy/certifications/:id` | Academy | Delete certification (admin) |
+| `DELETE` | `/academy/learning-paths/:id` | Academy | Delete learning path (admin) |
 | `POST` | `/biomarkers` | Core | Ingest Kino chip data |
 | `POST` | `/chat` | Core | Send a chat message (AI reply) |
 | `POST` | `/kino-result` | Kino | Finalize chip scan |
@@ -93,6 +116,23 @@ The token is configured via the `API_BEARER_TOKEN` environment variable on the `
 | `POST` | `/health-plans/:id/checkin` | Health Plans | Daily check-in (idempotent upsert) |
 | `POST` | `/health-plans/:id/milestone` | Health Plans | Record milestone biomarker snapshot |
 | `GET` | `/coach-client-plans` | Health Plans | All active plans for a coach's clients |
+| `GET` | `/coach-groups` | Coach Groups | List groups in channel (`?channel_id=X`) |
+| `POST` | `/coach-groups` | Coach Groups | Create a new coach group |
+| `PUT` | `/coach-groups/:id` | Coach Groups | Update coach group name/description/type |
+| `DELETE` | `/coach-groups/:id` | Coach Groups | Delete coach group |
+| `GET` | `/coach-group-kpis` | Coach Groups | Fetch aggregated performance KPIs for group |
+| `GET` | `/channels/:id/rewards-config` | Rewards | Fetch effective rewards overrides and settings |
+| `PUT` | `/channels/:id/rewards-config` | Rewards | Update channel rewards overrides |
+| `PUT` | `/channels/:id/rewards-permission` | Rewards | Grant/revoke sub-channel rewards customization |
+| `POST` | `/health-events` | Digital Twin | Single event ingestion (sleep, activity, manual, etc.) |
+| `POST` | `/health-events/sync` | Digital Twin | Batch event ingestion (wearable sync, max 500) |
+| `GET` | `/health-events` | Digital Twin | Query event log for user |
+| `GET` | `/health-twin` | Digital Twin | Fetch complete user twin summary row |
+| `POST` | `/health-reports` | Lab Integration | Ingest lab/health report (JSON/FHIR Bundle) |
+| `GET` | `/health-reports` | Lab Integration | List health reports by user |
+| `GET` | `/health-reports/:id` | Lab Integration | Retrieve report and linked events |
+| `POST` | `/health-events/fhir` | Lab Integration | Ingest a FHIR resource directly |
+| `POST` | `/lab/webhook/:labName` | Lab Integration | Webhook push target for external lab provider |
 
 ---
 
@@ -312,14 +352,55 @@ Finalizes a scan flow. Marks the chip as `used` and persists the final `bio_age`
 
 ## 5. Academy (Knowledge Base)
 
+See `docs/architecture/academy-system.md` for full schema and logic documentation.
+
 ### GET /academy/courses
-Lists all educational courses (video/text).
+Lists all courses with `level`, `credit_value`, `prerequisite_course_id`, and `lesson_count`.
+
+### GET /academy/lessons?course_id=X
+Lists lessons for a course. Returns `content_type`, `credit_value`, and `has_quiz` boolean.
+
+### GET /academy/lessons/:id
+Returns full lesson detail including the array of quiz questions for that lesson.
 
 ### GET /academy/library
 Lists downloadable PDFs and research papers.
 
+### GET /academy/certifications
+Lists all active certification definitions.
+
+### GET /academy/learning-paths
+Returns active learning paths with their ordered courses nested.
+
+### GET /academy/leaderboard
+Top 20 coaches ranked by total credits from `academy_credit_ledger`.
+
+### GET /academy/coach-dashboard?coach_user_id=X
+Aggregated coach stats: `total_credits`, `tier`, `completed_lessons`, `passed_quizzes`, `certifications_count`.
+
+### GET /academy/coach-credits?coach_user_id=X
+Coach's credit total, computed tier, and last 50 ledger entries.
+
+### GET /academy/coach-certifications?coach_user_id=X
+All certifications earned by the coach with cert details.
+
 ### POST /academy/courses
-(Admin) Upload new course metadata and link to OSS key.
+(Admin) Create a course. Body: `{ title, description, level, credit_value, prerequisite_course_id, thumbnail_oss_key }`.
+
+### POST /academy/lessons
+(Admin) Create a lesson. Body: `{ course_id, title, oss_key, content_type, text_content, credit_value, min_watch_seconds }`.
+
+### POST /academy/progress
+Mark a lesson complete for a coach. Awards `credit_value` credits on first completion and triggers certification eligibility check.
+**Body:** `{ coach_user_id, lesson_id, time_spent_seconds? }`
+
+### POST /academy/quiz-attempts
+Submit quiz answers. Scores answers, awards credits on first pass, updates `quiz_best_score`.
+**Body:** `{ coach_user_id, lesson_id, answers: {question_id: option_index} }`
+**Returns:** `{ score, passed, credits_earned, correct_answers[] }`
+
+### POST/PUT/DELETE /academy/lesson-quizzes, /academy/certifications, /academy/learning-paths
+(Admin) CRUD for quiz questions, certification definitions, and learning paths. See architecture doc for field details.
 
 ---
 
@@ -402,3 +483,164 @@ Returns all active health plans for every user assigned to the given coach.
 - `POST /generate-coach-payouts`
 - `GET /admin-accounts`
 - `POST /invitations` (Invite codes for new users/coaches)
+
+### GET /channels/:id/rewards-config
+
+Retrieves the effective rewards, commission rates, and exchange rates for a channel. It recursively traverses up the parent channel chain if `can_customize_rewards` is false.
+
+### PUT /channels/:id/rewards-config
+
+Updates a channel's commission config and referral rate overrides.
+**Body:**
+```json
+{
+  "commission_config": {
+    "coach_chip_flat": 20,
+    "coach_dot_pct": 12,
+    "coach_subscription_pct": 18,
+    "channel_chip_flat": 10,
+    "channel_dot_pct": 5,
+    "channel_subscription_pct": 6
+  },
+  "referral_commission_rate": 8
+}
+```
+
+### PUT /channels/:id/rewards-permission
+
+Allows a parent channel admin or superadmin to enable/disable custom rewards for a sub-channel.
+**Body:** `{ "can_customize_rewards": true }`
+
+---
+
+## 8. Coach Groups
+
+Manages clinic, studio, or group entities within a channel for performance snapshot aggregates.
+
+### GET /api/coach-groups?channel_id={id}
+
+Lists all coach groups registered under a channel.
+**Response:**
+```json
+{
+  "success": true,
+  "groups": [
+    {
+      "id": 1,
+      "channel_id": 5,
+      "name": "Shanghai Central Clinic",
+      "description": "Main clinic branch",
+      "type": "clinic",
+      "coach_count": 8
+    }
+  ]
+}
+```
+
+### POST /api/coach-groups
+
+Creates a new coach group under a channel.
+**Body:** `{ "channel_id", "name", "description", "type" }`
+
+### PUT /api/coach-groups/:id
+
+Updates metadata for a coach group.
+**Body:** `{ "name", "description", "type" }`
+
+### DELETE /api/coach-groups/:id
+
+Deletes a coach group. Coaches in this group have their `group_id` set to `NULL` automatically.
+
+### GET /api/coach-group-kpis?group_id={id}&period={YYYY-MM}
+
+Fetches aggregated CRM and performance metrics across all coaches in a group.
+
+---
+
+## 9. Digital Twin (Wearable Ingestion)
+
+Allows time-series wearable and lifestyle metric uploads and queries the synchronized rolling twin.
+
+### POST /health-events
+
+Ingests a single health event (e.g. sleep record, manual activity log, weight).
+**Body:**
+```json
+{
+  "openid": "oXxx...",
+  "category": "sleep",
+  "source": "apple_health",
+  "data_date": "2026-05-30",
+  "recorded_at": "2026-05-30T07:00:00Z",
+  "data": {
+    "duration_minutes": 460,
+    "sleep_score": 82,
+    "hrv_avg_ms": 58,
+    "resting_hr": 55
+  },
+  "external_id": "ah-sleep-102938"
+}
+```
+
+### POST /health-events/sync
+
+Batch ingests wearable data (up to 500 records). Automatically handles deduplication via `external_id`.
+**Body:** `{ "openid", "events": [...] }`
+
+### GET /health-events?openid={openid}&category={category}&limit=30
+
+Queries the time-series event log for a user.
+
+### GET /health-twin?openid={openid}
+
+Retrieves the aggregated, rolling 7-day average health twin row for the user.
+**Response:**
+```json
+{
+  "success": true,
+  "twin": {
+    "user_id": "oXxx...",
+    "avg_hrv_ms": 57.5,
+    "avg_resting_hr": 56.2,
+    "avg_sleep_hours": 7.4,
+    "avg_sleep_score": 80.5,
+    "avg_daily_steps": 8500,
+    "latest_weight_kg": 72.5,
+    "trend_data": {
+      "hrv_trend": "improving",
+      "sleep_trend": "stable"
+    },
+    "data_coverage": {
+      "sleep": "2026-05-30",
+      "vitals": "2026-05-30"
+    }
+  }
+}
+```
+
+---
+
+## 10. External Lab Integration (`nano-lab`)
+
+Ingests clinical panel results via push webhook or FHIR models, triggering BioAge recalibration.
+
+### POST /lab/webhook/:labName
+
+Pushed directly by third-party laboratories. Normalizes variables using regional adapters.
+
+### POST /health-reports
+
+Stores raw observations or FHIR R4 Bundle reports.
+
+### GET /health-reports?openid={openid}
+
+Lists all lab-imported or uploaded health reports for a user.
+
+### GET /health-reports/:id
+
+Fetches a specific report with all its parsed observation measurements and values.
+
+### POST /health-events/fhir
+
+Directly ingests clinical records in FHIR R4 JSON format.
+

@@ -5,7 +5,8 @@
     "pages/address/address",
     "pages/admin/admin",
     "pages/coach/coach",
-    "pages/superadmin/superadmin"
+    "pages/superadmin/superadmin",
+    "pages/referral/referral"
   ],
   "window": {
     "backgroundTextStyle": "light",
@@ -16,5 +17,6 @@
     "navigationStyle": "custom"
   },
   "style": "v2",
-  "sitemapLocation": "sitemap.json"
+  "sitemapLocation": "sitemap.json",
+  "requiredPrivateInfos": ["chooseAddress"]
 }

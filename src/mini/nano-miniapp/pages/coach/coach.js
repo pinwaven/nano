@@ -18,6 +18,9 @@ const T = {
     superadminMenu: '超管面板',
     logout: '退出',
     noClients: '暂无分配的客户',
+    searchPlaceholder: '搜索客户姓名…',
+    filterAll: '全部',
+    noMatchClients: '无匹配客户',
     bioAge: '生理年龄', chronoAge: '实际年龄',
     lastScan: '上次检测',
     older: '岁↑', younger: '岁↓',
@@ -155,6 +158,9 @@ const T = {
     superadminMenu: 'Super Admin',
     logout: 'Logout',
     noClients: 'No clients assigned yet',
+    searchPlaceholder: 'Search by name…',
+    filterAll: 'All',
+    noMatchClients: 'No matching clients',
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
     lastScan: 'Last scan',
     older: 'yrs↑', younger: 'yrs↓',
@@ -343,6 +349,10 @@ Page({
     isAdmin: false,
     isSuperadmin: false,
     clients: [],
+    filteredClients: [],
+    clientSearch: '',
+    clientStageFilter: '',
+    clientFilterStages: [],
     invites: [],
     // Client detail sheet
     detailOpen: false,
@@ -398,6 +408,14 @@ Page({
     trainingCurrentLibraryItem: null,
     trainingLoading: false,
     trainingMarkingComplete: false,
+    trainingDashboard: null,
+    trainingPaths: [],
+    trainingCertifications: [],
+    trainingQuizQuestions: [],
+    trainingQuizAnswers: {},
+    trainingQuizResult: null,
+    trainingQuizSubmitting: false,
+    trainingTextContent: '',
     // CRM: Notes tab (inside client detail)
     clientNotes: [],
     clientNotesLoading: false,
@@ -519,7 +537,9 @@ Page({
           _crmTags: crmTags,
         }
       })
-      this.setData({ clients, invites: invitesRes.data?.invitations || [] })
+      const clientFilterStages = this._buildFilterStages(clients)
+      this.setData({ clients, invites: invitesRes.data?.invitations || [], clientFilterStages })
+      this._filterClients()
     } catch (e) {
       wx.showToast({ title: T[this.data.lang].networkError, icon: 'none' })
     } finally {
@@ -556,7 +576,8 @@ Page({
   toggleLang() {
     const lang = this.data.lang === 'zh' ? 'en' : 'zh'
     app.globalData.lang = lang
-    this.setData({ lang, t: T[lang], menuOpen: false, chatToolList: toolActions.getToolList(T[lang]) })
+    const clientFilterStages = this._buildFilterStages(this.data.clients)
+    this.setData({ lang, t: T[lang], menuOpen: false, chatToolList: toolActions.getToolList(T[lang]), clientFilterStages })
   },
 
   async toggleTheme() {
@@ -1066,10 +1087,13 @@ Page({
     if (!coachUserId) return
     this.setData({ trainingLoading: true })
     try {
-      const [cRes, lRes, pRes] = await Promise.allSettled([
+      const [cRes, lRes, pRes, dashRes, pathRes, certRes] = await Promise.allSettled([
         this._req(`${BASE}/api/academy/courses`),
         this._req(`${BASE}/api/academy/library`),
         this._req(`${BASE}/api/academy/progress?coach_user_id=${coachUserId}`),
+        this._req(`${BASE}/api/academy/coach-dashboard?coach_user_id=${coachUserId}`),
+        this._req(`${BASE}/api/academy/learning-paths`),
+        this._req(`${BASE}/api/academy/coach-certifications?coach_user_id=${coachUserId}`),
       ])
       const tl = (T[this.data.lang] || T.zh).training
       const rawCourses = (cRes.status === 'fulfilled' && cRes.value.data && cRes.value.data.courses) ? cRes.value.data.courses : []
@@ -1079,7 +1103,30 @@ Page({
       const library = (lRes.status === 'fulfilled' && lRes.value.data && lRes.value.data.items) ? lRes.value.data.items : []
       const progressRows = (pRes.status === 'fulfilled' && pRes.value.data && pRes.value.data.progress) ? pRes.value.data.progress : []
       const completedIds = progressRows.map(p => p.lesson_id)
-      this.setData({ trainingCourses: courses, trainingLibrary: library, trainingCompletedIds: completedIds })
+      const dashboard = (dashRes.status === 'fulfilled' && dashRes.value.data) ? dashRes.value.data : null
+      const paths = (pathRes.status === 'fulfilled' && pathRes.value.data && pathRes.value.data.paths) ? pathRes.value.data.paths : []
+      const certifications = (certRes.status === 'fulfilled' && certRes.value.data && certRes.value.data.certifications) ? certRes.value.data.certifications : []
+
+      const completedCourseIdSet = new Set()
+      for (const row of progressRows) {
+        const found = rawCourses.find(c => (c.lessons || []).some(l => l.id === row.lesson_id))
+        if (found) completedCourseIdSet.add(found.id)
+      }
+
+      const enrichedPaths = paths.map(p => {
+        const total = (p.courses || []).length
+        const done = (p.courses || []).filter(c => completedIds.length > 0).length
+        return { ...p, _total: total, _done: done }
+      })
+
+      this.setData({
+        trainingCourses: courses,
+        trainingLibrary: library,
+        trainingCompletedIds: completedIds,
+        trainingDashboard: dashboard,
+        trainingPaths: enrichedPaths,
+        trainingCertifications: certifications,
+      })
     } catch (e) {
       wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
     } finally {
@@ -1101,28 +1148,93 @@ Page({
 
   async trainingOpenLesson(e) {
     const lesson = e.currentTarget.dataset.lesson
-    if (!lesson.oss_key) return
-    this.setData({ trainingCurrentLesson: lesson, trainingVideoUrl: '', trainingView: 'player' })
+    this.setData({
+      trainingCurrentLesson: lesson,
+      trainingVideoUrl: '',
+      trainingTextContent: '',
+      trainingQuizQuestions: [],
+      trainingQuizAnswers: {},
+      trainingQuizResult: null,
+      trainingView: 'player',
+    })
     try {
-      const res = await this._req(`${BASE}/api/oss/presign?action=get&key=${encodeURIComponent(lesson.oss_key)}`)
-      const url = res.data && res.data.url ? res.data.url : ''
-      this.setData({ trainingVideoUrl: url })
+      const detailRes = await this._req(`${BASE}/api/academy/lessons/${lesson.id}`)
+      const detail = detailRes.data || {}
+      const quizQuestions = detail.quiz_questions || []
+
+      if (lesson.content_type === 'text' || lesson.content_type === 'interactive') {
+        this.setData({ trainingTextContent: detail.lesson && detail.lesson.text_content ? detail.lesson.text_content : '', trainingQuizQuestions: quizQuestions })
+        return
+      }
+
+      if (lesson.oss_key) {
+        const presignRes = await this._req(`${BASE}/api/oss/presign?action=get&key=${encodeURIComponent(lesson.oss_key)}`)
+        const url = presignRes.data && presignRes.data.url ? presignRes.data.url : ''
+        this.setData({ trainingVideoUrl: url, trainingQuizQuestions: quizQuestions })
+      }
     } catch (e) {
       wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
     }
   },
 
-  async trainingMarkComplete() {
+  trainingSelectAnswer(e) {
+    const { questionId, optionIndex } = e.currentTarget.dataset
+    const answers = { ...this.data.trainingQuizAnswers, [questionId]: optionIndex }
+    this.setData({ trainingQuizAnswers: answers })
+  },
+
+  async trainingSubmitQuiz() {
     const lesson = this.data.trainingCurrentLesson
     if (!lesson) return
     const coachUserId = this._coachUserId
+    const answers = this.data.trainingQuizAnswers
+    if (Object.keys(answers).length === 0) {
+      wx.showToast({ title: '请先回答问题', icon: 'none' })
+      return
+    }
+    this.setData({ trainingQuizSubmitting: true })
+    try {
+      const res = await this._req(`${BASE}/api/academy/quiz-attempts`, 'POST', {
+        coach_user_id: coachUserId,
+        lesson_id: lesson.id,
+        answers,
+      })
+      const result = res.data || {}
+      this.setData({ trainingQuizResult: result })
+      if (result.passed) {
+        await this._doMarkComplete(lesson.id)
+        this._loadTraining()
+      }
+    } catch (e) {
+      wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
+    } finally {
+      this.setData({ trainingQuizSubmitting: false })
+    }
+  },
+
+  async _doMarkComplete(lessonId) {
+    const coachUserId = this._coachUserId
+    if (this.data.trainingCompletedIds.includes(lessonId)) return
+    try {
+      await this._req(`${BASE}/api/academy/progress`, 'POST', { coach_user_id: coachUserId, lesson_id: lessonId })
+      const completedIds = [...this.data.trainingCompletedIds, lessonId]
+      this.setData({ trainingCompletedIds: completedIds })
+    } catch (e) { /* silent */ }
+  },
+
+  async trainingMarkComplete() {
+    const lesson = this.data.trainingCurrentLesson
+    if (!lesson) return
+    if (lesson.has_quiz && this.data.trainingQuizQuestions.length > 0 && !this.data.trainingQuizResult?.passed) {
+      wx.showToast({ title: '请先完成测验', icon: 'none' })
+      return
+    }
     if (this.data.trainingCompletedIds.includes(lesson.id)) return
     this.setData({ trainingMarkingComplete: true })
     try {
-      await this._req(`${BASE}/api/academy/progress`, 'POST', { coach_user_id: coachUserId, lesson_id: lesson.id })
-      const completedIds = [...this.data.trainingCompletedIds, lesson.id]
-      this.setData({ trainingCompletedIds: completedIds })
+      await this._doMarkComplete(lesson.id)
       wx.showToast({ title: this.data.t.training.markedComplete, icon: 'success' })
+      this._loadTraining()
     } catch (e) {
       wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
     } finally {
@@ -1143,11 +1255,11 @@ Page({
   },
 
   trainingBackToList() {
-    this.setData({ trainingView: 'list', trainingCurrentCourse: null, trainingCurrentLesson: null, trainingVideoUrl: '' })
+    this.setData({ trainingView: 'list', trainingCurrentCourse: null, trainingCurrentLesson: null, trainingVideoUrl: '', trainingQuizQuestions: [], trainingQuizResult: null })
   },
 
   trainingBackToLessons() {
-    this.setData({ trainingView: 'lessons', trainingCurrentLesson: null, trainingVideoUrl: '', trainingCurrentLibraryItem: null, trainingLibraryContent: '' })
+    this.setData({ trainingView: 'lessons', trainingCurrentLesson: null, trainingVideoUrl: '', trainingCurrentLibraryItem: null, trainingLibraryContent: '', trainingQuizQuestions: [], trainingQuizResult: null })
   },
 
   // ─── CRM: Notes ────────────────────────────────────────────────────────────
@@ -1349,6 +1461,50 @@ Page({
     } finally {
       this.setData({ kpiLoading: false })
     }
+  },
+
+  // ── Client search & filter ───────────────────────────────────────────────────
+
+  _buildFilterStages(clients) {
+    const lang = this.data.lang
+    const t = T[lang]
+    const stageOrder = ['lead', 'onboarding', 'active', 'at_risk', 'churned', 'graduated']
+    const stageColorMap = { lead: '#f59e0b', onboarding: '#6375EC', active: '#10b981', at_risk: '#ef4444', churned: '#6b7280', graduated: '#0ea5e9' }
+    const counts = {}
+    for (const c of clients) {
+      const s = c.crm_stage || 'lead'
+      counts[s] = (counts[s] || 0) + 1
+    }
+    return stageOrder
+      .filter(s => counts[s] > 0)
+      .map(s => ({ stage: s, label: t.crmStages[s] || s, color: stageColorMap[s] || '#6b7280', count: counts[s] }))
+  },
+
+  _filterClients() {
+    const { clients, clientSearch, clientStageFilter } = this.data
+    const q = (clientSearch || '').trim().toLowerCase()
+    const filtered = clients.filter(c => {
+      if (clientStageFilter && (c.crm_stage || 'lead') !== clientStageFilter) return false
+      if (q && !(c.nickname || '').toLowerCase().includes(q)) return false
+      return true
+    })
+    this.setData({ filteredClients: filtered })
+  },
+
+  onClientSearchInput(e) {
+    this.setData({ clientSearch: e.detail.value })
+    this._filterClients()
+  },
+
+  clearClientSearch() {
+    this.setData({ clientSearch: '' })
+    this._filterClients()
+  },
+
+  setStageFilter(e) {
+    const stage = e.currentTarget.dataset.stage
+    this.setData({ clientStageFilter: stage })
+    this._filterClients()
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

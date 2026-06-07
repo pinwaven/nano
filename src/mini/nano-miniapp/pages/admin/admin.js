@@ -4,7 +4,7 @@ const { BASE } = require('../../utils/config.js')
 const T = {
   zh: {
     title: 'Nano 管理',
-    tabs: { users: '用户', coaches: '教练', store: '商城', invites: '邀请', rewards: '奖励' },
+    tabs: { dashboard: '概览', users: '用户', coaches: '教练', store: '商城', invites: '邀请', rewards: '奖励', partners: '合伙人' },
     refresh: '刷新', loading: '加载中…', back: '返回',
     add: '添加', edit: '编辑', delete: '删除', save: '保存', cancel: '取消',
     saving: '保存中…', deleting: '删除中…',
@@ -42,6 +42,8 @@ const T = {
       priceUsd: '售价 USD', tag: '标签', isActive: '上架', unit: '单位 (英)', unitZh: '单位 (中)',
       descEn: '描述 (英)', descZh: '描述 (中)', sortOrder: '排序',
       noTag: '无标签', bestseller: '热销', value: '超值', yes: '是', no: '否',
+      showInStore: '显示在商城', showInStoreOn: '显示', showInStoreOff: '不显示',
+      sku: 'SKU *', skuPlaceholder: '请先选择 SKU',
       addTitle: '添加商品', editTitle: '编辑商品',
       deleteWarning: '确认删除此商品？此操作不可撤销。',
       orderId: '订单 ID', customer: '用户', item: '商品', qty: '数量', price: '金额', status: '状态', date: '日期',
@@ -70,11 +72,30 @@ const T = {
       approve: '审批通过', markTransferred: '标记已转账',
       draft: '待审批', approved: '已审批', transferred: '已转账',
       generatePayouts: '生成 Coach 结算单', generating: '生成中…', noBreakdown: '暂无数据', noPayouts: '暂无结算单',
+      referrals: '推荐记录', noReferrals: '暂无推荐记录', referrer: '推荐人', referee: '被推荐人', commission: '佣金',
+    },
+    dashboard: {
+      totalUsers: '总用户', totalCoaches: '教练数', newUsers7d: '近7日新增', ordersMonth: '本月订单',
+    },
+    partners: {
+      partnersTab: '合伙人', payoutsTab: '结算单',
+      selectUser: '选择用户 *', tier: '等级', status: '状态', notes: '备注',
+      totalCommissions: '累计佣金',
+      addTitle: '添加合伙人', editTitle: '编辑合伙人',
+      deleteWarning: '确认删除此合伙人？',
+      noPartners: '暂无合伙人', noPayouts: '暂无结算单',
+      tierOptions: ['Bronze', 'Silver', 'Gold', 'Platinum'],
+      tierValues: ['bronze', 'silver', 'gold', 'platinum'],
+      statusOptions: ['激活', '停用'],
+      statusValues: ['active', 'inactive'],
+      generatePayouts: '生成合伙人结算单', generating: '生成中…',
+      approve: '审批通过', markTransferred: '标记已转账',
+      draft: '待审批', approved: '已审批', transferred: '已转账',
     },
   },
   en: {
     title: 'Nano Admin',
-    tabs: { users: 'Users', coaches: 'Coaches', store: 'Store', invites: 'Invites', rewards: 'Rewards' },
+    tabs: { dashboard: 'Overview', users: 'Users', coaches: 'Coaches', store: 'Store', invites: 'Invites', rewards: 'Rewards', partners: 'Partners' },
     refresh: 'Refresh', loading: 'Loading…', back: 'Back',
     add: 'Add', edit: 'Edit', delete: 'Delete', save: 'Save', cancel: 'Cancel',
     saving: 'Saving…', deleting: 'Deleting…',
@@ -112,6 +133,8 @@ const T = {
       priceUsd: 'Price USD', tag: 'Tag', isActive: 'Active', unit: 'Unit (EN)', unitZh: 'Unit (ZH)',
       descEn: 'Desc (EN)', descZh: 'Desc (ZH)', sortOrder: 'Sort',
       noTag: 'No tag', bestseller: 'Best Seller', value: 'Value Pack', yes: 'Yes', no: 'No',
+      showInStore: 'Show in Store', showInStoreOn: 'Visible', showInStoreOff: 'Hidden',
+      sku: 'SKU *', skuPlaceholder: 'Select a SKU first',
       addTitle: 'Add Item', editTitle: 'Edit Item',
       deleteWarning: 'Delete this item? This cannot be undone.',
       orderId: 'Order ID', customer: 'Customer', item: 'Item', qty: 'Qty', price: 'Price', status: 'Status', date: 'Date',
@@ -140,6 +163,25 @@ const T = {
       approve: 'Approve', markTransferred: 'Mark Transferred',
       draft: 'Pending Approval', approved: 'Approved', transferred: 'Transferred',
       generatePayouts: 'Generate Coach Payouts', generating: 'Generating…', noBreakdown: 'No data', noPayouts: 'No payouts',
+      referrals: 'Referrals', noReferrals: 'No referrals', referrer: 'Referrer', referee: 'Referred', commission: 'Commission',
+    },
+    dashboard: {
+      totalUsers: 'Total Users', totalCoaches: 'Coaches', newUsers7d: 'New (7d)', ordersMonth: 'Orders (MTD)',
+    },
+    partners: {
+      partnersTab: 'Partners', payoutsTab: 'Payouts',
+      selectUser: 'Select User *', tier: 'Tier', status: 'Status', notes: 'Notes',
+      totalCommissions: 'Total Commissions',
+      addTitle: 'Add Partner', editTitle: 'Edit Partner',
+      deleteWarning: 'Delete this partner?',
+      noPartners: 'No partners', noPayouts: 'No payouts',
+      tierOptions: ['Bronze', 'Silver', 'Gold', 'Platinum'],
+      tierValues: ['bronze', 'silver', 'gold', 'platinum'],
+      statusOptions: ['Active', 'Inactive'],
+      statusValues: ['active', 'inactive'],
+      generatePayouts: 'Generate Partner Payouts', generating: 'Generating…',
+      approve: 'Approve', markTransferred: 'Mark Transferred',
+      draft: 'Pending', approved: 'Approved', transferred: 'Transferred',
     },
   },
 }
@@ -175,12 +217,15 @@ Page({
   data: {
     lang: 'zh',
     t: T.zh,
-    tab: 'users',
+    tab: 'dashboard',
     loading: false,
     statusBarHeight: 0,
 
     users: [], coaches: [], storeItems: [], orders: [], invites: [],
     storeSubTab: 'items',
+
+    // Dashboard
+    dashStats: { totalUsers: 0, totalCoaches: 0, newUsers7d: 0, ordersMonth: 0 },
 
     // Rewards tab
     rewardsLoading: false,
@@ -188,6 +233,15 @@ Page({
     rewardsCoachBreakdown: [],
     rewardsPendingPayouts: [],
     rewardsGenerating: false,
+    referralCommissions: [],
+    referralsLoading: false,
+
+    // Partners tab
+    partners: [],
+    partnerPayouts: [],
+    partnerSubTab: 'partners',
+    partnersLoaded: false,
+    partnerPayoutsGenerating: false,
 
     // User detail overlay
     detailOpen: false,
@@ -216,7 +270,7 @@ Page({
       // store item
       name_en: '', name_zh: '', desc_en: '', desc_zh: '',
       unit_en: '', unit_zh: '', price_cny: '', price_usd: '',
-      tag: '', sort_order: 0, active: true,
+      tag: '', sort_order: 0, active: true, sku_id: '',
     },
     editTargetId: null,
 
@@ -227,11 +281,23 @@ Page({
     formCoachIdx: 0,
     formTagIdx: 0,
     formActiveIdx: 0,
+    formShowInStoreIdx: 0,
+    formSkuIdx: 0,
+    skus: [],
+    skuPickerOptions: [],
+    skuPickerValues: [],
     coachPickerOptions: [],
     coachPickerValues: [],
     coachUserPickerOptions: [],
     coachUserPickerValues: [],
     coachUserPickerIdx: 0,
+
+    // Partner pickers
+    partnerUserPickerOptions: [],
+    partnerUserPickerValues: [],
+    partnerUserPickerIdx: -1,
+    formPartnerTierIdx: 0,
+    formPartnerStatusIdx: 0,
   },
 
   _channelId: null,
@@ -258,12 +324,13 @@ Page({
     this.setData({ loading: true })
     try {
       const cid = this._channelId
-      const [uRes, cRes, sRes, oRes, iRes] = await Promise.all([
+      const [uRes, cRes, sRes, oRes, iRes, skuRes] = await Promise.all([
         cid ? this._req(`${BASE}/api/channel-users/${cid}`) : this._req(`${BASE}/api/users`),
         cid ? this._req(`${BASE}/api/channel-coaches/${cid}`) : this._req(`${BASE}/api/coach-list`),
-        this._req(`${BASE}/api/store-items?all=true`),
-        this._req(`${BASE}/api/orders`),
+        cid ? this._req(`${BASE}/api/channel-inventory?channel_id=${cid}`) : this._req(`${BASE}/api/store-items?all=true`),
+        cid ? this._req(`${BASE}/api/orders?channel_id=${cid}`) : this._req(`${BASE}/api/orders`),
         cid ? this._req(`${BASE}/api/invitations?channel_id=${cid}`) : this._req(`${BASE}/api/invitations`),
+        this._req(`${BASE}/api/skus`),
       ])
       const lang = this.data.lang
       const users = (uRes.data?.users || []).map(u => ({
@@ -274,12 +341,27 @@ Page({
         _avatar: (u.nickname || 'U')[0].toUpperCase(),
       }))
       const coaches = cRes.data?.coaches || []
+      const skus = skuRes.data?.skus || []
+      const rawOrders = oRes.data?.orders || []
+      const now = new Date()
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const thisMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const dashStats = {
+        totalUsers: users.length,
+        totalCoaches: coaches.length,
+        newUsers7d: users.filter(u => u.created_at && new Date(u.created_at) >= sevenDaysAgo).length,
+        ordersMonth: rawOrders.filter(o => (o.created_at || '').startsWith(thisMonthStr)).length,
+      }
       this.setData({
         users,
         coaches,
+        skus,
+        dashStats,
+        skuPickerOptions: skus.map(s => `${s.sku_code} - ${s.name_zh || s.name_en}`),
+        skuPickerValues: skus.map(s => s.id),
         invites: iRes.data?.invitations || [],
         storeItems: sRes.data?.items || [],
-        orders: (oRes.data?.orders || []).map(o => ({
+        orders: rawOrders.map(o => ({
           ...o,
           _shortId: (o.id || '').slice(0, 8),
           _dateFmt: fmtDate(o.created_at, lang),
@@ -294,7 +376,8 @@ Page({
 
   handleRefresh() {
     this._loadAll()
-    if (this.data.tab === 'rewards') this._loadRewards()
+    if (this.data.tab === 'rewards') { this._loadRewards(); this._loadReferrals() }
+    if (this.data.tab === 'partners') this._loadPartners()
   },
 
   handleBack() { wx.navigateBack() },
@@ -304,8 +387,14 @@ Page({
   switchTab(e) {
     const tab = e.currentTarget.dataset.tab
     this.setData({ tab })
-    if (tab === 'rewards' && this.data.rewardsThisMonth === null) this._loadRewards()
+    if (tab === 'rewards') {
+      if (this.data.rewardsThisMonth === null) this._loadRewards()
+      if (!this.data.referralCommissions.length) this._loadReferrals()
+    }
+    if (tab === 'partners' && !this.data.partnersLoaded) this._loadPartners()
   },
+
+  switchPartnerSubTab(e) { this.setData({ partnerSubTab: e.currentTarget.dataset.tab }) },
 
   switchStoreTab(e) { this.setData({ storeSubTab: e.currentTarget.dataset.tab }) },
 
@@ -409,24 +498,71 @@ Page({
     this.setData({ coachUserPickerIdx: idx, 'form.user_id': coachUserPickerValues[idx] || '' })
   },
 
+  openAddPartner() {
+    const { lang, users } = this.data
+    const t = T[lang]
+    const userOptions = users.map(u => (u.nickname || u.user_id) + ' (' + u.user_id + ')')
+    const userValues = users.map(u => u.user_id)
+    this.setData({
+      modalOpen: true, modalType: 'partner', modalMode: 'add', modalTitle: t.partners.addTitle, modalError: '', editTargetId: null,
+      form: { user_id: '', notes: '' },
+      partnerUserPickerOptions: userOptions,
+      partnerUserPickerValues: userValues,
+      partnerUserPickerIdx: -1,
+      formPartnerTierIdx: 0,
+      formPartnerStatusIdx: 0,
+    })
+  },
+
+  openEditPartner(e) {
+    const p = e.currentTarget.dataset.partner
+    const { lang, users } = this.data
+    const t = T[lang]
+    const userOptions = users.map(u => (u.nickname || u.user_id) + ' (' + u.user_id + ')')
+    const userValues = users.map(u => u.user_id)
+    const tierIdx = Math.max(0, t.partners.tierValues.indexOf(p.tier || 'bronze'))
+    const statusIdx = Math.max(0, t.partners.statusValues.indexOf(p.status || 'active'))
+    const userIdx = userValues.indexOf(p.user_id || '')
+    this.setData({
+      modalOpen: true, modalType: 'partner', modalMode: 'edit', modalTitle: t.partners.editTitle, modalError: '', editTargetId: p.id,
+      form: { user_id: p.user_id || '', notes: p.notes || '' },
+      partnerUserPickerOptions: userOptions,
+      partnerUserPickerValues: userValues,
+      partnerUserPickerIdx: userIdx >= 0 ? userIdx : 0,
+      formPartnerTierIdx: tierIdx,
+      formPartnerStatusIdx: statusIdx,
+    })
+  },
+
+  onPickerPartnerUser(e) {
+    const idx = parseInt(e.detail.value)
+    this.setData({ partnerUserPickerIdx: idx, 'form.user_id': this.data.partnerUserPickerValues[idx] || '' })
+  },
+  onPickerPartnerTier(e) { this.setData({ formPartnerTierIdx: parseInt(e.detail.value) }) },
+  onPickerPartnerStatus(e) { this.setData({ formPartnerStatusIdx: parseInt(e.detail.value) }) },
+
   openAddItem() {
     this.setData({
       modalOpen: true, modalType: 'item', modalMode: 'add', modalTitle: T[this.data.lang].store.addTitle, modalError: '', editTargetId: null,
-      form: { key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '', unit_en: '', unit_zh: '', price_cny: '', price_usd: '', tag: '', sort_order: 0, active: true },
-      formTagIdx: 0, formActiveIdx: 0,
+      form: { key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '', unit_en: '', unit_zh: '', price_cny: '', price_usd: '', tag: '', sort_order: 0, active: true, show_in_store: false, sku_id: '' },
+      formTagIdx: 0, formActiveIdx: 0, formShowInStoreIdx: 1, formSkuIdx: 0,
     })
   },
 
   openEditItem(e) {
     const item = e.currentTarget.dataset.item
-    const { lang } = this.data
+    const { lang, skuPickerValues } = this.data
     const tagIdx = T[lang].tagValues.indexOf(item.tag || '')
     const activeIdx = T[lang].activeValues.indexOf(item.active !== false)
+    const showInStore = item.show_in_store === true
+    const skuIdx = item.sku_id ? Math.max(0, skuPickerValues.indexOf(item.sku_id)) : 0
     this.setData({
       modalOpen: true, modalType: 'item', modalMode: 'edit', modalTitle: T[lang].store.editTitle, modalError: '', editTargetId: item.id,
-      form: { key_name: item.key_name || '', name_en: item.name_en || '', name_zh: item.name_zh || '', desc_en: item.desc_en || '', desc_zh: item.desc_zh || '', unit_en: item.unit_en || '', unit_zh: item.unit_zh || '', price_cny: String(item.price_cny ?? ''), price_usd: String(item.price_usd ?? ''), tag: item.tag || '', sort_order: item.sort_order ?? 0, active: item.active !== false },
+      form: { key_name: item.key_name || '', name_en: item.name_en || '', name_zh: item.name_zh || '', desc_en: item.desc_en || '', desc_zh: item.desc_zh || '', unit_en: item.unit_en || '', unit_zh: item.unit_zh || '', price_cny: String(item.price_cny ?? ''), price_usd: String(item.price_usd ?? ''), tag: item.tag || '', sort_order: item.sort_order ?? 0, active: item.active !== false, show_in_store: showInStore, sku_id: item.sku_id || '' },
       formTagIdx: tagIdx >= 0 ? tagIdx : 0,
       formActiveIdx: activeIdx >= 0 ? activeIdx : 0,
+      formShowInStoreIdx: showInStore ? 0 : 1,
+      formSkuIdx: skuIdx,
     })
   },
 
@@ -480,6 +616,16 @@ Page({
     this.setData({ formActiveIdx: idx, 'form.active': T[lang].activeValues[idx] })
   },
 
+  onPickerShowInStore(e) {
+    const idx = Number(e.detail.value)
+    this.setData({ formShowInStoreIdx: idx, 'form.show_in_store': idx === 0 })
+  },
+
+  onPickerSku(e) {
+    const idx = Number(e.detail.value)
+    this.setData({ formSkuIdx: idx, 'form.sku_id': this.data.skuPickerValues[idx] || '' })
+  },
+
   // ── Save ──────────────────────────────────────────────────────────────────────
 
   async handleSave() {
@@ -502,10 +648,29 @@ Page({
         const coachPayload = { user_id: form.user_id, channel_id: this._channelId }
         if (modalMode === 'add') await this._req(`${BASE}/api/coaches`, 'POST', coachPayload)
         else await this._req(`${BASE}/api/coaches/${editTargetId}`, 'PUT', coachPayload)
+      } else if (modalType === 'partner') {
+        if (!form.user_id) { this.setData({ modalError: t.error.required, modalBusy: false }); return }
+        const tier = t.partners.tierValues[this.data.formPartnerTierIdx]
+        const status = t.partners.statusValues[this.data.formPartnerStatusIdx]
+        if (modalMode === 'add') {
+          await this._req(`${BASE}/api/partners`, 'POST', { user_id: form.user_id, tier, status, notes: form.notes, channel_id: this._channelId })
+        } else {
+          await this._req(`${BASE}/api/partners/${editTargetId}`, 'PUT', { tier, status, notes: form.notes })
+        }
+        this.setData({ modalOpen: false, modalBusy: false })
+        await this._loadPartners()
+        return
       } else if (modalType === 'item') {
         if (!form.key_name.trim() || !form.name_en.trim()) { this.setData({ modalError: t.error.required, modalBusy: false }); return }
-        if (modalMode === 'add') await this._req(`${BASE}/api/store-items`, 'POST', form)
-        else await this._req(`${BASE}/api/store-items/${editTargetId}`, 'PUT', form)
+        if (!form.sku_id) { this.setData({ modalError: t.store.sku + ': ' + t.error.required, modalBusy: false }); return }
+        const cid = this._channelId
+        if (cid) {
+          if (modalMode === 'add') await this._req(`${BASE}/api/channel-inventory`, 'POST', { ...form, channel_id: cid })
+          else await this._req(`${BASE}/api/channel-inventory/${editTargetId}`, 'PUT', form)
+        } else {
+          if (modalMode === 'add') await this._req(`${BASE}/api/store-items`, 'POST', form)
+          else await this._req(`${BASE}/api/store-items/${editTargetId}`, 'PUT', form)
+        }
       }
       this.setData({ modalOpen: false, modalBusy: false })
       this._loadAll()
@@ -572,7 +737,8 @@ Page({
       success: async (res) => {
         if (!res.confirm) return
         try {
-          await this._req(`${BASE}/api/store-items/${item.id}`, 'DELETE')
+          const endpoint = this._channelId ? 'channel-inventory' : 'store-items'
+          await this._req(`${BASE}/api/${endpoint}/${item.id}`, 'DELETE')
           this._loadAll()
         } catch (e) { wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' }) }
       },
@@ -587,10 +753,46 @@ Page({
       itemList: t.orderStatuses,
       success: async (res) => {
         const newStatus = t.orderStatusValues[res.tapIndex]
-        try {
-          await this._req(`${BASE}/api/orders/${order.id}`, 'PUT', { status: newStatus })
-          this._loadAll()
-        } catch (e) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
+        if (newStatus === 'shipped') {
+          wx.showModal({
+            title: lang === 'zh' ? '输入发货物流单号' : 'Enter Tracking Info',
+            placeholderText: lang === 'zh' ? '格式: 顺丰速运 123456789' : 'e.g. SF Express 123456789',
+            editable: true,
+            success: async (modalRes) => {
+              if (!modalRes.confirm) return;
+              const content = (modalRes.content || '').trim();
+              if (!content) {
+                wx.showToast({ title: lang === 'zh' ? '快递单号不能为空' : 'Tracking number required', icon: 'none' });
+                return;
+              }
+              let carrier = lang === 'zh' ? '顺丰速运' : 'SF Express';
+              let tracking = content;
+              if (content.includes(' ')) {
+                const parts = content.split(' ');
+                carrier = parts[0];
+                tracking = parts.slice(1).join(' ');
+              }
+              try {
+                wx.showLoading({ title: 'Updating...' })
+                await this._req(`${BASE}/api/orders/${order.id}`, 'PUT', {
+                  status: newStatus,
+                  shipping_carrier: carrier,
+                  tracking_number: tracking
+                })
+                wx.hideLoading()
+                this._loadAll()
+              } catch (e) {
+                wx.hideLoading()
+                wx.showToast({ title: t.error.networkError, icon: 'none' })
+              }
+            }
+          })
+        } else {
+          try {
+            await this._req(`${BASE}/api/orders/${order.id}`, 'PUT', { status: newStatus })
+            this._loadAll()
+          } catch (e) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
+        }
       },
     })
   },
@@ -685,6 +887,51 @@ Page({
     }
   },
 
+  async _loadPartners() {
+    const cid = this._channelId
+    if (!cid) return
+    try {
+      const [pRes, pyRes] = await Promise.all([
+        this._req(`${BASE}/api/partners?channel_id=${cid}`),
+        this._req(`${BASE}/api/partner-payouts?channel_id=${cid}`),
+      ])
+      this.setData({
+        partners: (pRes.data?.partners || []).map(p => ({
+          ...p,
+          _totalFmt: `¥${Number(p.total_commissions || 0).toFixed(2)}`,
+          _avatar: (p.name || 'P')[0].toUpperCase(),
+        })),
+        partnerPayouts: (pyRes.data?.payouts || []).map(p => ({
+          ...p,
+          _amountFmt: `¥${Number(p.total_cny || 0).toFixed(2)}`,
+        })),
+        partnersLoaded: true,
+      })
+    } catch {
+      wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' })
+    }
+  },
+
+  async _loadReferrals() {
+    const cid = this._channelId
+    if (!cid) return
+    this.setData({ referralsLoading: true })
+    try {
+      const res = await this._req(`${BASE}/api/referral-commissions?channel_id=${cid}`)
+      const lang = this.data.lang
+      this.setData({
+        referralCommissions: (res.data?.commissions || []).map(r => ({
+          ...r,
+          _commissionFmt: `¥${Number(r.commission_cny || 0).toFixed(2)}`,
+          _dateFmt: fmtDate(r.created_at, lang),
+        })),
+        referralsLoading: false,
+      })
+    } catch {
+      this.setData({ referralsLoading: false })
+    }
+  },
+
   async generateCoachPayouts() {
     const cid = this._channelId
     if (!cid) return
@@ -706,6 +953,53 @@ Page({
     try {
       await this._req(`${BASE}/api/coach-payouts/${payoutId}`, 'PUT', { status, approved_by: app.globalData.user?.user_id })
       await this._loadRewards()
+    } catch {
+      wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' })
+    }
+  },
+
+  // ── Partners ──────────────────────────────────────────────────────────────────
+
+  handleDeletePartner(e) {
+    const partner = e.currentTarget.dataset.partner
+    const { lang } = this.data
+    const t = T[lang]
+    wx.showModal({
+      title: t.partners.deleteWarning,
+      content: partner.name || '',
+      confirmColor: '#ef4444',
+      confirmText: t.delete,
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/partners/${partner.id}`, 'DELETE')
+          this._loadPartners()
+        } catch { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
+      },
+    })
+  },
+
+  async generatePartnerPayouts() {
+    const cid = this._channelId
+    if (!cid) return
+    const now = new Date()
+    const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    this.setData({ partnerPayoutsGenerating: true })
+    try {
+      await this._req(`${BASE}/api/generate-partner-payouts`, 'POST', { channel_id: cid, period })
+      await this._loadPartners()
+    } catch {
+      wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' })
+    } finally {
+      this.setData({ partnerPayoutsGenerating: false })
+    }
+  },
+
+  async updatePartnerPayout(e) {
+    const { payoutId, status } = e.currentTarget.dataset
+    try {
+      await this._req(`${BASE}/api/partner-payouts/${payoutId}`, 'PUT', { status, approved_by: app.globalData.user?.user_id })
+      await this._loadPartners()
     } catch {
       wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' })
     }

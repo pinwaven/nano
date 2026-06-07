@@ -1,15 +1,25 @@
 const { pool } = require('./lib/db');
-const { recordOrderCommissions } = require('./lib/commissions');
+const { recordOrderCommissions, recordUserReferralCommission } = require('./lib/commissions');
+const { getUserBalance, getLedgerHistory, debitUser, getChannelExchangeRate, getChannelCurrency } = require('./lib/credits');
 const { recordReferralCommission, generatePartnerPayouts } = require('./lib/partnerCommissions');
 const ossLib = require('./lib/oss');
 const crypto = require('crypto');
 
 const generateUserId = () => crypto.randomBytes(4).toString('hex');
 
-function signChannelAdminToken({ sub, cid, tabs }) {
+async function generateReferralCode() {
+    for (let i = 0; i < 10; i++) {
+        const code = String(100000 + (parseInt(crypto.randomBytes(3).toString('hex'), 16) % 900000));
+        const { rows } = await pool.query('SELECT 1 FROM users WHERE referral_code = $1', [code]);
+        if (rows.length === 0) return code;
+    }
+    throw new Error('Failed to generate unique referral code');
+}
+
+function signChannelAdminToken({ sub, cid, tabs, perms, cms }) {
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + 86400;
-    const payload = Buffer.from(JSON.stringify({ sub, cid, tabs, iat, exp })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({ sub, cid, tabs, perms: perms ?? tabs, cms: cms ?? false, iat, exp })).toString('base64url');
     const sig = crypto.createHmac('sha256', process.env.API_BEARER_TOKEN)
                       .update(`ch.${payload}`).digest('hex');
     return `ch.${payload}.${sig}`;
@@ -27,6 +37,72 @@ function verifyChannelAdminToken(token) {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
     if (data.exp < Math.floor(Date.now() / 1000)) return null;
     return data;
+}
+
+// All permissions a root channel admin holds (hardcoded — no manual config needed).
+// Does not include superadmin-only features (global channels, dots, chips hardware, etc.).
+const CHANNEL_ADMIN_FULL_PERMS = [
+    'users:read','users:write','users:delete',
+    'coaches:read','coaches:write','coaches:delete',
+    'store:read','store:write','store:delete',
+    'orders:read','orders:write',
+    'invites:read','invites:write','invites:delete',
+    'inventory:read','inventory:write',
+    'rewards:read','rewards:write','rewards:delete',
+    'partners:read','partners:write','partners:delete',
+    'academy:read','academy:write',
+    'questionnaires:read',
+    'health-plans:read',
+    'reports:read',
+    'tickets:read',
+    'events:read','events:write','events:delete',
+    'admin-accounts:read','admin-accounts:write',
+];
+
+// Maps legacy tab names to resource:action strings for backward compat.
+const LEGACY_TAB_EXPANSION = {
+    users:            ['users:read','users:write','users:delete'],
+    coaches:          ['coaches:read','coaches:write','coaches:delete'],
+    store:            ['store:read','store:write','store:delete','orders:read','orders:write'],
+    invites:          ['invites:read','invites:write','invites:delete'],
+    inventory:        ['inventory:read','inventory:write'],
+    rewards:          ['rewards:read','rewards:write','rewards:delete'],
+    partners:         ['partners:read','partners:write','partners:delete'],
+    academy:          ['academy:read','academy:write'],
+    questionnaires:   ['questionnaires:read'],
+    'health-plans':   ['health-plans:read'],
+    reports:          ['reports:read'],
+    tickets:          ['tickets:read'],
+    lab:              ['lab:read','lab:write'],
+    kino:             ['kino:read'],
+    chips:            ['chips:read'],
+    dots:             ['dots:read'],
+    events:           ['events:read','events:write','events:delete'],
+    'admin-accounts': ['admin-accounts:read','admin-accounts:write'],
+    subchannels:      [],
+};
+
+function expandPermissions(perms) {
+    if (!Array.isArray(perms)) return [];
+    const result = new Set();
+    for (const p of perms) {
+        if (p.includes(':')) { result.add(p); }
+        else { for (const e of (LEGACY_TAB_EXPANSION[p] || [])) result.add(e); }
+    }
+    return [...result];
+}
+
+function requirePermission(adminCtx, permission) {
+    if (adminCtx.role === 'superadmin') return null;
+    if (!adminCtx.perms || !adminCtx.perms.includes(permission))
+        return { statusCode: 403, success: false, error: `Permission denied: requires '${permission}'` };
+    return null;
+}
+
+// Shim — all existing requireAdminTab call sites work unchanged.
+function requireAdminTab(adminCtx, tab) {
+    if (adminCtx.role === 'superadmin') return null;
+    return requirePermission(adminCtx, `${tab}:write`);
 }
 
 // WeChat access_token cache (module-level, survives container reuse)
@@ -50,54 +126,220 @@ const { BioAgeCalculator } = require('./lib/bioage/BioAgeCalculator');
 const { runWorkflow: runFirstReportWorkflow } = require('./lib/reports/workflow');
 const OpenAI = require('openai');
 const intentClassifierTemplate = require('./prompts/chat/intentClassifier');
-const chatPrompts = {
-    casual_chat:        require('./prompts/chat/casual'),
-    biomarker_question: require('./prompts/chat/biomarker'),
-    nutrition_question: require('./prompts/chat/nutrition'),
-    longevity_science:  require('./prompts/chat/science'),
-    record_action:      require('./prompts/chat/record'),
-    set_reminder:       require('./prompts/chat/reminder'),
-    emotional_support:  require('./prompts/chat/emotional'),
+const nanoPrompts = {
+    casual_chat:        require('./prompts/nano/chat/casual'),
+    biomarker_question: require('./prompts/nano/chat/biomarker'),
+    nutrition_question: require('./prompts/nano/chat/nutrition'),
+    longevity_science:  require('./prompts/nano/chat/science'),
+    record_action:      require('./prompts/nano/chat/record'),
+    set_reminder:       require('./prompts/nano/chat/reminder'),
+    emotional_support:  require('./prompts/nano/chat/emotional'),
 };
-const systemNutritionTemplate = require('./prompts/systemNutrition');
-const systemHealthAdviceTemplate = require('./prompts/systemHealthAdvice');
+const vivaPrompts = {
+    casual_chat:        require('./prompts/viva/chat/casual'),
+    biomarker_question: require('./prompts/viva/chat/biomarker'),
+    nutrition_question: require('./prompts/viva/chat/nutrition'),
+    longevity_science:  require('./prompts/viva/chat/science'),
+    record_action:      require('./prompts/viva/chat/record'),
+    set_reminder:       require('./prompts/viva/chat/reminder'),
+    emotional_support:  require('./prompts/viva/chat/emotional'),
+};
+const systemNutritionTemplate = require('./prompts/nano/systemNutrition');
+const vivaSystemNutritionTemplate = require('./prompts/viva/systemNutrition');
+const systemHealthAdviceTemplate = require('./prompts/nano/systemHealthAdvice');
 const strings = require('./prompts/strings');
 const systemAdminReportTemplate = require('./prompts/systemAdminReport');
-const systemHealthReportTemplate = require('./prompts/systemHealthReport');
+const systemHealthReportTemplate = require('./prompts/nano/systemHealthReport');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
 });
 
-async function handleGetUsers(channelId) {
+async function handleGetUsers(channelId, query = {}) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+        // Lightweight query used by other tabs that just need a user list for dropdowns
+        if (query.minimal === 'true') {
+            const params = [];
+            const channelFilter = channelId ? `AND u.channel_id = $${params.push(channelId)}` : '';
+            const res = await pool.query(
+                `SELECT u.user_id, u.nickname, u.coach_id, u.channel_id
+                 FROM users u WHERE 1=1 ${channelFilter}
+                 ORDER BY u.created_at DESC`,
+                params
+            );
+            return { success: true, users: res.rows };
+        }
+
+        const limit = Math.min(parseInt(query.limit) || 50, 200);
+        const offset = parseInt(query.offset) || 0;
+        const search = (query.q || '').trim();
+        const filterChannelId = query.filter_channel_id ? parseInt(query.filter_channel_id) : null;
+
+        // Expand the selected channel to include its entire subtree
+        let filterChannelIds = null;
+        if (!channelId && filterChannelId) {
+            const treeRes = await pool.query(
+                `WITH RECURSIVE subtree AS (
+                    SELECT id FROM channels WHERE id = $1
+                    UNION ALL
+                    SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
+                ) SELECT id FROM subtree`,
+                [filterChannelId]
+            );
+            filterChannelIds = treeRes.rows.map(r => r.id);
+        }
+
+        const sortFieldMap = {
+            user_id: 'u.user_id', nickname: 'u.nickname', channel_name: 'c.name',
+            birth_date: 'u.birth_date', chrono_age: 'u.birth_date',
+            bio_age: 'b.bio_age', created_at: 'u.created_at',
+        };
+        const sortCol = sortFieldMap[query.sort_field] || 'u.created_at';
+        let sortDir = query.sort_dir === 'asc' ? 'ASC' : 'DESC';
+        if (query.sort_field === 'chrono_age') sortDir = sortDir === 'ASC' ? 'DESC' : 'ASC';
+
         const params = [];
-        const channelFilter = channelId ? `AND u.channel_id = $${params.push(channelId)}` : '';
-        const query = `
+        const conditions = ['1=1'];
+
+        if (channelId) {
+            conditions.push(`u.channel_id = $${params.push(channelId)}`);
+        } else if (filterChannelIds) {
+            conditions.push(`u.channel_id = ANY($${params.push(filterChannelIds)})`);
+        }
+
+        if (search) {
+            const idx = params.push(`%${search}%`);
+            conditions.push(`(u.nickname ILIKE $${idx} OR u.phone ILIKE $${idx} OR u.email ILIKE $${idx} OR u.user_id::TEXT ILIKE $${idx})`);
+        }
+
+        const where = conditions.join(' AND ');
+        const limitIdx = params.push(limit);
+        const offsetIdx = params.push(offset);
+
+        const sql = `
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
                     u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
+                    u.referred_by_user_id, u.invited_by_invitation_id,
+                    ru.nickname as referrer_nickname,
+                    inv.code as invite_code,
+                    inv_cu.nickname as inviter_nickname,
                     b.bio_age, b.data as bio_data,
                     cu.nickname as coach_name,
                     c.name as channel_name, c.logo_url as channel_logo_url,
                     (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report,
-                    (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan
+                    (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan,
+                    COUNT(*) OVER() AS _total,
+                    COUNT(b.bio_age) OVER() AS _tested,
+                    AVG(b.bio_age) OVER() AS _avg_bio_age
             FROM users u
             LEFT JOIN coaches p ON u.coach_id = p.id
             LEFT JOIN users cu ON p.user_id = cu.user_id
             LEFT JOIN channels c ON u.channel_id = c.id
+            LEFT JOIN users ru ON ru.user_id = u.referred_by_user_id
+            LEFT JOIN invitations inv ON inv.id = u.invited_by_invitation_id
+            LEFT JOIN users inv_cu ON inv_cu.user_id = inv.created_by
             LEFT JOIN (
                 SELECT DISTINCT ON (user_id) user_id, bio_age, data
                 FROM biomarkers
                 ORDER BY user_id, tested_at DESC
             ) b ON u.user_id = b.user_id
-            WHERE 1=1 ${channelFilter}
-            ORDER BY u.created_at DESC;
+            WHERE ${where}
+            ORDER BY ${sortCol} ${sortDir} NULLS LAST
+            LIMIT $${limitIdx} OFFSET $${offsetIdx}
         `;
-        const result = await pool.query(query, params);
-        const users = result.rows.map(u => ({ ...u, chrono_age: calculateAge(u.birth_date) }));
-        return { success: true, users };
+
+        // Stats queries — channel-scoped but no search filter and no pagination
+        const sParams = [];
+        const sConditions = ['1=1'];
+        if (channelId) {
+            sConditions.push(`u.channel_id = $${sParams.push(channelId)}`);
+        } else if (filterChannelIds) {
+            sConditions.push(`u.channel_id = ANY($${sParams.push(filterChannelIds)})`);
+        }
+        const sWhere = sConditions.join(' AND ');
+
+        const csParams = [];
+        const csConditions = ['1=1'];
+        if (channelId) {
+            csConditions.push(`u.channel_id = $${csParams.push(channelId)}`);
+        } else if (filterChannelIds) {
+            csConditions.push(`u.channel_id = ANY($${csParams.push(filterChannelIds)})`);
+        }
+        const csWhere = csConditions.join(' AND ');
+
+        const [mainResult, userStatsResult, coachStatsResult, scanStatsResult, bioAgeDeltaResult] = await Promise.all([
+            pool.query(sql, params),
+            pool.query(`
+                SELECT
+                    COUNT(*) FILTER (WHERE u.gender = 'male') AS male_count,
+                    COUNT(*) FILTER (WHERE u.gender = 'female') AS female_count,
+                    COUNT(*) FILTER (WHERE u.created_at >= NOW() - INTERVAL '7 days') AS new_users_7d
+                FROM users u WHERE ${sWhere}
+            `, sParams),
+            pool.query(`
+                SELECT
+                    COUNT(*) FILTER (WHERE u.gender = 'male') AS male_coach_count,
+                    COUNT(*) FILTER (WHERE u.gender = 'female') AS female_coach_count,
+                    COUNT(*) FILTER (WHERE p.created_at >= NOW() - INTERVAL '7 days') AS new_coaches_7d,
+                    COUNT(*) AS total_coaches
+                FROM coaches p
+                JOIN users u ON p.user_id = u.user_id
+                WHERE ${csWhere}
+            `, csParams),
+            pool.query(`
+                SELECT
+                    COUNT(*) FILTER (WHERE b.tested_at >= NOW() - INTERVAL '7 days') AS scans_7d,
+                    COUNT(*) FILTER (WHERE b.tested_at >= NOW() - INTERVAL '14 days') AS scans_14d,
+                    COUNT(*) FILTER (WHERE b.tested_at >= NOW() - INTERVAL '30 days') AS scans_30d,
+                    COUNT(*) AS scans_total
+                FROM biomarkers b
+                JOIN users u ON u.user_id = b.user_id
+                WHERE ${sWhere}
+            `, sParams),
+            pool.query(`
+                SELECT ROUND(AVG(b.bio_age - EXTRACT(YEAR FROM AGE(u.birth_date))::numeric)::numeric, 1)::text AS bio_age_delta
+                FROM users u
+                JOIN (
+                    SELECT DISTINCT ON (user_id) user_id, bio_age
+                    FROM biomarkers ORDER BY user_id, tested_at DESC
+                ) b ON u.user_id = b.user_id
+                WHERE u.birth_date IS NOT NULL AND b.bio_age IS NOT NULL AND ${sWhere}
+            `, sParams),
+        ]);
+
+        const rows = mainResult.rows;
+        const total = rows.length > 0 ? parseInt(rows[0]._total) : 0;
+        const tested = rows.length > 0 ? parseInt(rows[0]._tested) : 0;
+        const rawAvg = rows.length > 0 ? rows[0]._avg_bio_age : null;
+        const avgBioAge = rawAvg != null ? parseFloat(rawAvg).toFixed(1) : '—';
+
+        const userStats = userStatsResult.rows[0] || {};
+        const coachStats = coachStatsResult.rows[0] || {};
+        const scanStats = scanStatsResult.rows[0] || {};
+        const bioAgeDeltaRow = bioAgeDeltaResult.rows[0] || {};
+
+        const users = rows.map(({ _total, _tested, _avg_bio_age, ...u }) => ({
+            ...u, chrono_age: calculateAge(u.birth_date),
+        }));
+
+        return {
+            success: true, users, total, tested, avgBioAge,
+            maleCount: parseInt(userStats.male_count) || 0,
+            femaleCount: parseInt(userStats.female_count) || 0,
+            newUsers7d: parseInt(userStats.new_users_7d) || 0,
+            maleCoachCount: parseInt(coachStats.male_coach_count) || 0,
+            femaleCoachCount: parseInt(coachStats.female_coach_count) || 0,
+            newCoaches7d: parseInt(coachStats.new_coaches_7d) || 0,
+            coachTotal: parseInt(coachStats.total_coaches) || 0,
+            scansTotal: parseInt(scanStats.scans_total) || 0,
+            scans7d: parseInt(scanStats.scans_7d) || 0,
+            scans14d: parseInt(scanStats.scans_14d) || 0,
+            scans30d: parseInt(scanStats.scans_30d) || 0,
+            bioAgeDelta: bioAgeDeltaRow.bio_age_delta || null,
+        };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -107,8 +349,17 @@ async function handleGetUser(user_id) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const res = await pool.query(
-            `SELECT user_id, nickname, avatar_url, phone, email, language, gender, birth_date, roles, coach_id, channel_id, created_at
-             FROM users WHERE user_id=$1`,
+            `SELECT u.user_id, u.nickname, u.avatar_url, u.phone, u.email, u.language, u.gender,
+                    u.birth_date, u.roles, u.coach_id, u.channel_id, u.created_at,
+                    u.referred_by_user_id, u.invited_by_invitation_id,
+                    ru.nickname as referrer_nickname,
+                    inv.code as invite_code,
+                    inv_cu.nickname as inviter_nickname
+             FROM users u
+             LEFT JOIN users ru ON ru.user_id = u.referred_by_user_id
+             LEFT JOIN invitations inv ON inv.id = u.invited_by_invitation_id
+             LEFT JOIN users inv_cu ON inv_cu.user_id = inv.created_by
+             WHERE u.user_id=$1`,
             [user_id]
         );
         if (!res.rows.length) return { success: false, error: 'User not found' };
@@ -297,18 +548,38 @@ async function handlePostDispense(body) {
     } catch (err) {
         return { success: false, error: err.message };
     }
-}
-
-async function handleGetStoreItems(query = {}) {
+}async function handleGetStoreItems(query = {}) {
+    if (!pool) return { success: false, error: 'Database pool not initialized' };
     try {
-        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (query.openid) {
+            const userRes = await pool.query(
+                'SELECT channel_id FROM users WHERE user_id = $1',
+                [query.openid]
+            );
+            const channelId = userRes.rows[0]?.channel_id;
+            if (!channelId) return { success: true, items: [] };
+            const result = await pool.query(
+                `SELECT ci.id, ci.key_name, ci.name_zh, ci.name_en, ci.desc_zh, ci.desc_en,
+                        ci.unit_zh, ci.unit_en, ci.price_cny, ci.price_usd, ci.tag, ci.sort_order,
+                        ci.active, ci.image_url, ci.item_type, ci.sku_id,
+                        COALESCE(ist.quantity, ci.stock_quantity) AS stock_quantity
+                 FROM channel_inventory_items ci
+                 LEFT JOIN inventory_stock ist ON ci.sku_id = ist.sku_id AND ist.location_type = 'channel' AND ist.channel_id = $1
+                 WHERE ci.channel_id = $1 AND ci.show_in_store = TRUE AND ci.active = TRUE
+                 ORDER BY ci.sort_order ASC, ci.created_at ASC`,
+                [channelId]
+            );
+            return { success: true, items: result.rows };
+        }
         const showAll = query.all === 'true';
         const result = await pool.query(
-            `SELECT id, key_name, name_zh, name_en, desc_zh, desc_en,
-                    unit_zh, unit_en, price_cny, price_usd, tag, sort_order, active, image_url
-             FROM store_items
-             ${showAll ? '' : 'WHERE active = TRUE'}
-             ORDER BY sort_order ASC, created_at ASC`
+            `SELECT s.id, s.key_name, s.name_zh, s.name_en, s.desc_zh, s.desc_en,
+                    s.unit_zh, s.unit_en, s.price_cny, s.price_usd, s.tag, s.sort_order, s.active, s.image_url, s.sku_id,
+                    COALESCE(ist.quantity, 0) AS stock_quantity
+             FROM store_items s
+             LEFT JOIN inventory_stock ist ON s.sku_id = ist.sku_id AND ist.location_type = 'warehouse' AND ist.warehouse_name = 'shanghai-central'
+             ${showAll ? '' : 'WHERE s.active = TRUE'}
+             ORDER BY s.sort_order ASC, s.created_at ASC`
         );
         return { success: true, items: result.rows };
     } catch (err) {
@@ -316,49 +587,31 @@ async function handleGetStoreItems(query = {}) {
     }
 }
 
-async function handleGetOrders() {
+async function handleGetOrders(query = {}, adminCtx) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.channelId : (query.channel_id || null);
+        const params = [];
+        const channelFilter = channelId ? `AND o.channel_id = \$${params.push(channelId)}` : '';
         const result = await pool.query(
-            `SELECT o.id, o.user_id, o.item_id, o.item_key, o.quantity,
-                    o.price_cny, o.price_usd, o.status, o.created_at,
-                    o.order_type, o.total_amount_cny, o.total_amount_usd, o.source,
-                    o.shipping_contact, o.tracking_number, o.shipped_at, o.delivered_at,
-                    p.status AS payment_status, p.id AS payment_order_id, p.provider AS payment_provider,
+            `SELECT o.id, o.user_id, o.item_id, o.channel_inventory_item_id, o.item_key,
+                    o.quantity, o.price_cny, o.price_usd, o.status, o.created_at, o.channel_id,
+                    o.shipping_name, o.shipping_phone, o.shipping_address, o.shipping_carrier, o.tracking_number,
+                    o.shipped_at, o.delivered_at, o.payment_status, o.payment_method, o.fulfillment_notes, o.fulfilled_assets,
                     u.nickname, u.external_id,
-                    s.name_en, s.name_zh,
-                    COALESCE(tx.transactions, '[]'::jsonb) AS transactions
+                    COALESCE(ci.name_en, s.name_en, sk.name_en, o.item_key) AS name_en,
+                    COALESCE(ci.name_zh, s.name_zh, sk.name_zh, o.item_key) AS name_zh,
+                    COALESCE(ci.unit_en, s.unit_en, sk.unit_en, 'times') AS unit_en,
+                    COALESCE(ci.unit_zh, s.unit_zh, sk.unit_zh, '次') AS unit_zh
              FROM orders o
              LEFT JOIN users u ON o.user_id = u.user_id
              LEFT JOIN store_items s ON o.item_id = s.id
-             LEFT JOIN LATERAL (
-                 SELECT po.id, po.status, po.provider
-                 FROM payment_orders po
-                 WHERE po.business_order_id = o.id
-                 ORDER BY po.created_at DESC
-                 LIMIT 1
-             ) p ON TRUE
-             LEFT JOIN LATERAL (
-                 SELECT jsonb_agg(
-                     jsonb_build_object(
-                         'id', t.id,
-                         'source', t.source,
-                         'lab_name', t.lab_name,
-                         'sku', t.sku,
-                         'name_zh', t.name_zh,
-                         'name_en', t.name_en,
-                         'quantity', t.quantity,
-                         'unit_amount_cny', t.unit_amount_cny,
-                         'total_amount_cny', t.total_amount_cny,
-                         'status', t.status
-                     )
-                     ORDER BY t.created_at ASC
-                 ) AS transactions
-                 FROM transactions t
-                 WHERE t.order_id = o.id
-             ) tx ON TRUE
+             LEFT JOIN channel_inventory_items ci ON o.channel_inventory_item_id = ci.id
+             LEFT JOIN skus sk ON o.sku_id = sk.id
+             WHERE TRUE ${channelFilter}
              ORDER BY o.created_at DESC
-             LIMIT 200`
+             LIMIT 500`,
+            params
         );
         return { success: true, orders: result.rows };
     } catch (err) {
@@ -372,37 +625,16 @@ async function handleGetMyOrders(openid) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
             `SELECT o.id, o.item_key, o.quantity, o.price_cny, o.price_usd, o.status, o.created_at,
-                    o.order_type, o.total_amount_cny, o.total_amount_usd, o.source,
-                    o.tracking_number, o.shipped_at, o.delivered_at,
-                    p.status AS payment_status,
-                    s.name_en, s.name_zh, s.unit_en, s.unit_zh,
-                    COALESCE(tx.transactions, '[]'::jsonb) AS transactions
+                    o.shipping_name, o.shipping_phone, o.shipping_address, o.shipping_carrier, o.tracking_number,
+                    o.shipped_at, o.delivered_at, o.payment_status, o.payment_method, o.fulfillment_notes, o.fulfilled_assets,
+                    COALESCE(ci.name_zh, s.name_zh, sk.name_zh, o.item_key) AS name_zh,
+                    COALESCE(ci.name_en, s.name_en, sk.name_en, o.item_key) AS name_en,
+                    COALESCE(ci.unit_zh, s.unit_zh, sk.unit_zh, '次') AS unit_zh,
+                    COALESCE(ci.unit_en, s.unit_en, sk.unit_en, 'times') AS unit_en
              FROM orders o
              LEFT JOIN store_items s ON o.item_id = s.id
-             LEFT JOIN LATERAL (
-                 SELECT po.status
-                 FROM payment_orders po
-                 WHERE po.business_order_id = o.id
-                 ORDER BY po.created_at DESC
-                 LIMIT 1
-             ) p ON TRUE
-             LEFT JOIN LATERAL (
-                 SELECT jsonb_agg(
-                     jsonb_build_object(
-                         'source', t.source,
-                         'lab_name', t.lab_name,
-                         'sku', t.sku,
-                         'name_zh', t.name_zh,
-                         'name_en', t.name_en,
-                         'quantity', t.quantity,
-                         'total_amount_cny', t.total_amount_cny,
-                         'status', t.status
-                     )
-                     ORDER BY t.created_at ASC
-                 ) AS transactions
-                 FROM transactions t
-                 WHERE t.order_id = o.id
-             ) tx ON TRUE
+             LEFT JOIN channel_inventory_items ci ON o.channel_inventory_item_id = ci.id
+             LEFT JOIN skus sk ON o.sku_id = sk.id
              WHERE o.user_id = $1
              ORDER BY o.created_at DESC`,
             [openid]
@@ -413,6 +645,160 @@ async function handleGetMyOrders(openid) {
     }
 }
 
+async function handlePostStoreItem(body) {
+    const { key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url, sku_id } = body;
+    if (!key_name) return { success: false, error: 'key_name is required', statusCode: 400 };
+    if (!name_en)  return { success: false, error: 'name_en is required', statusCode: 400 };
+    if (!sku_id)   return { success: false, error: 'sku_id is required — create the SKU first', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `INSERT INTO store_items (key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url, sku_id)
+             VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12, \$13, \$14) RETURNING id`,
+            [key_name, name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
+             parseFloat(price_cny) || 0, parseFloat(price_usd) || 0,
+             tag || null, parseInt(sort_order) || 0, active !== false, image_url || null, sku_id]
+        );
+        return { success: true, id: result.rows[0].id };
+    } catch (err) {
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handlePutStoreItem(itemId, body) {
+    const { name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url, sku_id } = body;
+    if (!sku_id) return { success: false, error: 'sku_id is required — create the SKU first', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query(
+            `UPDATE store_items SET name_en=\$1, name_zh=\$2, desc_en=\$3, desc_zh=\$4,
+             unit_en=\$5, unit_zh=\$6, price_cny=\$7, price_usd=\$8, tag=\$9, sort_order=\$10, active=\$11,
+             image_url=\$12, sku_id=\$13
+             WHERE id=\$14`,
+            [name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
+             parseFloat(price_cny), parseFloat(price_usd),
+             tag || null, parseInt(sort_order) || 0, active !== false,
+             image_url || null, sku_id, itemId]
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ── SKU & Stock handlers ──────────────────────────────────────────────────────
+async function handleGetSkus() {
+    if (!pool) return { success: false, error: 'Database pool not initialized' };
+    try {
+        const { rows } = await pool.query('SELECT * FROM skus ORDER BY sku_code ASC');
+        return { success: true, skus: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostSku(body) {
+    const { sku_code, name_zh, name_en, desc_zh, desc_en, item_type, unit_zh, unit_en } = body;
+    if (!sku_code) return { success: false, error: 'sku_code is required', statusCode: 400 };
+    if (!name_zh || !name_en) return { success: false, error: 'name_zh and name_en are required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `INSERT INTO skus (sku_code, name_zh, name_en, desc_zh, desc_en, item_type, unit_zh, unit_en)
+             VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8) RETURNING *`,
+            [sku_code, name_zh, name_en, desc_zh || null, desc_en || null, item_type || 'physical', unit_zh || '个', unit_en || 'pcs']
+        );
+        return { success: true, sku: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handlePutSku(id, body) {
+    const { sku_code, name_zh, name_en, desc_zh, desc_en, item_type, unit_zh, unit_en } = body;
+    if (!sku_code) return { success: false, error: 'sku_code is required', statusCode: 400 };
+    if (!name_zh || !name_en) return { success: false, error: 'name_zh and name_en are required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `UPDATE skus SET sku_code=\$1, name_zh=\$2, name_en=\$3, desc_zh=\$4, desc_en=\$5, item_type=\$6, unit_zh=\$7, unit_en=\$8
+             WHERE id=\$9 RETURNING *`,
+            [sku_code, name_zh, name_en, desc_zh || null, desc_en || null, item_type || 'physical', unit_zh || '个', unit_en || 'pcs', id]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'SKU not found', statusCode: 404 };
+        return { success: true, sku: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteSku(id) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('DELETE FROM skus WHERE id = \$1', [id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetInventoryStock(query) {
+    if (!pool) return { success: false, error: 'Database pool not initialized' };
+    try {
+        const { rows } = await pool.query(
+            `SELECT i.*, s.sku_code, s.name_zh AS sku_name_zh, s.name_en AS sku_name_en, c.name AS channel_name
+             FROM inventory_stock i
+             JOIN skus s ON i.sku_id = s.id
+             LEFT JOIN channels c ON i.channel_id = c.id
+             ORDER BY s.sku_code ASC, i.location_type ASC`
+        );
+        return { success: true, inventory: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostInventoryStock(body) {
+    const { sku_id, location_type, channel_id, warehouse_name, quantity, low_stock_threshold } = body;
+    if (!sku_id) return { success: false, error: 'sku_id is required', statusCode: 400 };
+    if (!location_type) return { success: false, error: 'location_type is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        let existing;
+        if (location_type === 'channel') {
+            existing = await pool.query(
+                'SELECT id FROM inventory_stock WHERE sku_id = \$1 AND location_type = \$2 AND channel_id = \$3',
+                [sku_id, location_type, channel_id]
+            );
+        } else {
+            existing = await pool.query(
+                'SELECT id FROM inventory_stock WHERE sku_id = \$1 AND location_type = \$2 AND warehouse_name = \$3',
+                [sku_id, location_type, warehouse_name]
+            );
+        }
+
+        if (existing.rows.length > 0) {
+            const updateRes = await pool.query(
+                `UPDATE inventory_stock
+                 SET quantity = \$1, low_stock_threshold = \$2, updated_at = NOW()
+                 WHERE id = \$3 RETURNING *`,
+                [quantity != null ? quantity : null, low_stock_threshold != null ? low_stock_threshold : 0, existing.rows[0].id]
+            );
+            return { success: true, stock: updateRes.rows[0] };
+        } else {
+            const insertRes = await pool.query(
+                `INSERT INTO inventory_stock (sku_id, location_type, channel_id, warehouse_name, quantity, low_stock_threshold, updated_at)
+                 VALUES (\$1, \$2, \$3, \$4, \$5, \$6, NOW()) RETURNING *`,
+                [sku_id, location_type, location_type === 'channel' ? channel_id : null, location_type === 'warehouse' ? warehouse_name : null, quantity != null ? quantity : null, low_stock_threshold != null ? low_stock_threshold : 0]
+            );
+            return { success: true, stock: insertRes.rows[0] };
+        }
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// Address handlers
 function normalizeAddressBody(body = {}) {
     return {
         openid: body.openid || body.user_id,
@@ -551,45 +937,6 @@ async function handleDeleteAddress(addressId, body = {}, query = {}) {
             [openid, addressId]
         );
         if (result.rowCount === 0) return { success: false, error: 'Address not found', statusCode: 404 };
-        return { success: true };
-    } catch (err) {
-        return { success: false, error: err.message };
-    }
-}
-
-async function handlePostStoreItem(body) {
-    const { key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url } = body;
-    if (!key_name) return { success: false, error: 'key_name is required', statusCode: 400 };
-    if (!name_en)  return { success: false, error: 'name_en is required', statusCode: 400 };
-    try {
-        if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const result = await pool.query(
-            `INSERT INTO store_items (key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
-            [key_name, name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
-             parseFloat(price_cny) || 0, parseFloat(price_usd) || 0,
-             tag || null, parseInt(sort_order) || 0, active !== false, image_url || null]
-        );
-        return { success: true, id: result.rows[0].id };
-    } catch (err) {
-        return { success: false, error: err.detail || err.message };
-    }
-}
-
-async function handlePutStoreItem(itemId, body) {
-    const { name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url } = body;
-    try {
-        if (!pool) return { success: false, error: 'Database pool not initialized' };
-        await pool.query(
-            `UPDATE store_items SET name_en=$1, name_zh=$2, desc_en=$3, desc_zh=$4,
-             unit_en=$5, unit_zh=$6, price_cny=$7, price_usd=$8, tag=$9, sort_order=$10, active=$11,
-             image_url=$12
-             WHERE id=$13`,
-            [name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
-             parseFloat(price_cny), parseFloat(price_usd),
-             tag || null, parseInt(sort_order) || 0, active !== false,
-             image_url || null, itemId]
-        );
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -1152,6 +1499,83 @@ async function handleGetPartnerTree(partnerId) {
     }
 }
 
+async function handleGetChannelReferralNetwork(channelId) {
+    if (!channelId) return { success: false, error: 'channel_id is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query(
+            `WITH RECURSIVE subtree AS (
+                SELECT id FROM channels WHERE id = $1
+                UNION ALL
+                SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
+            )
+            SELECT u.user_id, u.nickname, u.avatar_url, u.referral_code,
+                    u.referred_by_user_id,
+                    inv.created_by        AS invited_by_user_id,
+                    inv_u.nickname        AS inviter_nickname,
+                    inv_u.avatar_url      AS inviter_avatar_url,
+                    co.user_id            AS coach_user_id,
+                    co_u.nickname         AS coach_nickname,
+                    co_u.avatar_url       AS coach_avatar_url
+             FROM users u
+             LEFT JOIN invitations inv  ON inv.id  = u.invited_by_invitation_id
+             LEFT JOIN users inv_u      ON inv_u.user_id = inv.created_by
+             LEFT JOIN coaches co       ON co.id   = u.coach_id
+             LEFT JOIN users co_u       ON co_u.user_id = co.user_id
+             WHERE u.channel_id IN (SELECT id FROM subtree)`,
+            [channelId]
+        );
+        const channelUserIds = new Set(rows.map(r => r.user_id));
+        const nodesMap = new Map();
+        for (const r of rows) {
+            nodesMap.set(r.user_id, {
+                id: r.user_id,
+                nickname: r.nickname || null,
+                avatar_url: r.avatar_url || null,
+                referral_code: r.referral_code || null,
+                _isExternal: false,
+            });
+        }
+
+        const addExternalNode = (userId, nickname, avatarUrl) => {
+            if (!nodesMap.has(userId)) {
+                nodesMap.set(userId, {
+                    id: userId,
+                    nickname: nickname || null,
+                    avatar_url: avatarUrl || null,
+                    referral_code: null,
+                    _isExternal: true,
+                });
+            }
+        };
+
+        const linkKey = (src, tgt, type) => `${src}→${tgt}:${type}`;
+        const linksSeen = new Set();
+        const links = [];
+        const addLink = (src, tgt, type) => {
+            const k = linkKey(src, tgt, type);
+            if (!linksSeen.has(k)) { linksSeen.add(k); links.push({ source: src, target: tgt, type }); }
+        };
+
+        for (const r of rows) {
+            if (r.referred_by_user_id && channelUserIds.has(r.referred_by_user_id)) {
+                addLink(r.referred_by_user_id, r.user_id, 'referral');
+            }
+            if (r.invited_by_user_id && r.invited_by_user_id !== r.referred_by_user_id) {
+                addExternalNode(r.invited_by_user_id, r.inviter_nickname, r.inviter_avatar_url);
+                addLink(r.invited_by_user_id, r.user_id, 'invitation');
+            }
+            if (r.coach_user_id && r.coach_user_id !== r.invited_by_user_id && r.coach_user_id !== r.referred_by_user_id) {
+                addExternalNode(r.coach_user_id, r.coach_nickname, r.coach_avatar_url);
+                addLink(r.coach_user_id, r.user_id, 'coach');
+            }
+        }
+        return { success: true, nodes: [...nodesMap.values()], links };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleGetPartnerCommissionConfig() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -1262,10 +1686,15 @@ async function handleDeleteStoreItem(itemId) {
 async function handleGetChannelInventory(query, adminCtx) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const channelId = adminCtx?.role === 'channel' ? adminCtx.cid : query.channel_id;
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.channelId : query.channel_id;
         if (!channelId) return { success: false, error: 'channel_id required', statusCode: 400 };
         const { rows } = await pool.query(
-            'SELECT * FROM channel_inventory_items WHERE channel_id = $1 ORDER BY sort_order, created_at',
+            `SELECT ci.*,
+                    COALESCE(ist.quantity, ci.stock_quantity) AS stock_quantity
+             FROM channel_inventory_items ci
+             LEFT JOIN inventory_stock ist ON ci.sku_id = ist.sku_id AND ist.location_type = 'channel' AND ist.channel_id = $1
+             WHERE ci.channel_id = $1
+             ORDER BY ci.sort_order, ci.created_at`,
             [channelId]
         );
         return { success: true, items: rows };
@@ -1277,15 +1706,16 @@ async function handleGetChannelInventory(query, adminCtx) {
 async function handlePostChannelInventory(body, adminCtx) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const channelId = adminCtx?.role === 'channel' ? adminCtx.cid : body.channel_id;
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.channelId : body.channel_id;
         if (!channelId) return { success: false, error: 'channel_id required', statusCode: 400 };
         if (!body.key_name) return { success: false, error: 'key_name required', statusCode: 400 };
         if (!body.name_en) return { success: false, error: 'name_en required', statusCode: 400 };
+        if (!body.sku_id)  return { success: false, error: 'sku_id required — create the SKU first', statusCode: 400 };
         const { rows } = await pool.query(
             `INSERT INTO channel_inventory_items
               (channel_id, key_name, name_zh, name_en, desc_zh, desc_en, item_type,
-               unit_zh, unit_en, price_cny, price_usd, stock_quantity, tag, sort_order, active, image_url, metadata)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+               unit_zh, unit_en, price_cny, price_usd, stock_quantity, tag, sort_order, active, image_url, metadata, store_item_id, show_in_store, sku_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
              RETURNING *`,
             [channelId, body.key_name, body.name_zh || '', body.name_en,
              body.desc_zh || '', body.desc_en || '', body.item_type || 'physical',
@@ -1294,7 +1724,9 @@ async function handlePostChannelInventory(body, adminCtx) {
              body.price_usd != null ? body.price_usd : null,
              body.stock_quantity != null ? body.stock_quantity : null,
              body.tag || '', body.sort_order || 0, body.active !== false,
-             body.image_url || '', body.metadata || null]
+             body.image_url || '', body.metadata || null, body.store_item_id || null,
+             body.show_in_store === true || body.show_in_store === 'true',
+             body.sku_id || null]
         );
         return { success: true, item: rows[0] };
     } catch (err) {
@@ -1303,9 +1735,10 @@ async function handlePostChannelInventory(body, adminCtx) {
 }
 
 async function handlePutChannelInventory(id, body, adminCtx) {
+    if (!body.sku_id) return { success: false, error: 'sku_id required — create the SKU first', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const channelId = adminCtx?.role === 'channel' ? adminCtx.cid : null;
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.channelId : null;
         const params = [
             body.name_zh || '', body.name_en || '', body.desc_zh || '', body.desc_en || '',
             body.item_type || 'physical', body.unit_zh || '', body.unit_en || '',
@@ -1313,14 +1746,17 @@ async function handlePutChannelInventory(id, body, adminCtx) {
             body.price_usd != null ? body.price_usd : null,
             body.stock_quantity != null ? body.stock_quantity : null,
             body.tag || '', body.sort_order || 0, body.active !== false,
-            body.image_url || '', body.metadata || null, id,
+            body.image_url || '', body.metadata || null,
+            body.show_in_store === true || body.show_in_store === 'true',
+            body.sku_id || null,
+            id,
         ];
         let sql = `UPDATE channel_inventory_items
              SET name_zh=$1, name_en=$2, desc_zh=$3, desc_en=$4, item_type=$5,
                  unit_zh=$6, unit_en=$7, price_cny=$8, price_usd=$9, stock_quantity=$10,
-                 tag=$11, sort_order=$12, active=$13, image_url=$14, metadata=$15
-             WHERE id=$16`;
-        if (channelId) { sql += ' AND channel_id=$17'; params.push(channelId); }
+                 tag=$11, sort_order=$12, active=$13, image_url=$14, metadata=$15, show_in_store=$16, sku_id=$17
+             WHERE id=$18`;
+        if (channelId) { sql += ' AND channel_id=$19'; params.push(channelId); }
         sql += ' RETURNING *';
         const { rows } = await pool.query(sql, params);
         if (!rows.length) return { success: false, error: 'Not found', statusCode: 404 };
@@ -1333,7 +1769,7 @@ async function handlePutChannelInventory(id, body, adminCtx) {
 async function handleDeleteChannelInventory(id, adminCtx) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const channelId = adminCtx?.role === 'channel' ? adminCtx.cid : null;
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.channelId : null;
         if (channelId) {
             await pool.query('DELETE FROM channel_inventory_items WHERE id=$1 AND channel_id=$2', [id, channelId]);
         } else {
@@ -1416,30 +1852,93 @@ async function handleLabOrderSync(orderId, body = {}) {
     }
 }
 
-async function handlePutOrder(orderId, body) {
-    const { status, tracking_number } = body;
-    if (!status) return { success: false, error: 'status is required', statusCode: 400 };
+async function handlePutOrder(orderId, body, adminCtx) {
+    const { status, shipping_carrier, tracking_number, fulfillment_notes, fulfilled_assets, payment_status } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const trackingNumber = tracking_number == null ? null : String(tracking_number).trim();
-        await pool.query(
-            `UPDATE orders
-             SET status = $1,
-                 tracking_number = COALESCE(NULLIF($2, ''), tracking_number),
-                 shipped_at = CASE WHEN $1 = 'shipped' THEN COALESCE(shipped_at, NOW()) ELSE shipped_at END,
-                 delivered_at = CASE WHEN $1 = 'delivered' THEN COALESCE(delivered_at, NOW()) ELSE delivered_at END
-             WHERE id = $3`,
-            [status, trackingNumber, orderId]
+
+        // Get current order state
+        const orderCheck = await pool.query(
+            `SELECT status, sku_id, quantity, channel_id, payment_status FROM orders WHERE id = $1`,
+            [orderId]
         );
-        await pool.query(
-            `UPDATE transactions
-             SET status = $1,
-                 updated_at = NOW()
-             WHERE order_id = $2`,
-            [status, orderId]
-        );
-        if (status === 'delivered') {
+        if (orderCheck.rows.length === 0) return { success: false, error: 'Order not found', statusCode: 404 };
+        const oldOrder = orderCheck.rows[0];
+
+        // SKU-Based Stock Reclaim on Cancellation — restore to same priority location
+        if (status === 'cancelled' && oldOrder.status !== 'cancelled') {
+            if (oldOrder.sku_id) {
+                const restoreTarget = await pool.query(
+                    `SELECT id FROM inventory_stock
+                     WHERE sku_id = $1 AND (
+                         (location_type = 'channel' AND channel_id = $2) OR
+                         (location_type = 'warehouse' AND warehouse_name = 'shanghai-central')
+                     ) AND quantity IS NOT NULL
+                     ORDER BY (location_type = 'channel') DESC
+                     LIMIT 1`,
+                    [oldOrder.sku_id, oldOrder.channel_id]
+                );
+                if (restoreTarget.rows.length > 0) {
+                    await pool.query(
+                        `UPDATE inventory_stock
+                         SET quantity = quantity + $1, updated_at = NOW()
+                         WHERE id = $2`,
+                        [oldOrder.quantity, restoreTarget.rows[0].id]
+                    );
+                }
+            }
+        }
+
+        const updates = [];
+        const params = [orderId];
+
+        if (status) {
+            updates.push(`status = $${updates.length + 2}`);
+            params.push(status);
+        }
+        if (shipping_carrier !== undefined) {
+            updates.push(`shipping_carrier = $${updates.length + 2}`);
+            params.push(shipping_carrier);
+        }
+        if (tracking_number !== undefined) {
+            updates.push(`tracking_number = $${updates.length + 2}`);
+            params.push(tracking_number);
+        }
+        if (fulfillment_notes !== undefined) {
+            updates.push(`fulfillment_notes = $${updates.length + 2}`);
+            params.push(fulfillment_notes);
+        }
+        if (fulfilled_assets !== undefined) {
+            updates.push(`fulfilled_assets = $${updates.length + 2}`);
+            params.push(JSON.stringify(fulfilled_assets));
+        }
+        if (payment_status !== undefined) {
+            updates.push(`payment_status = $${updates.length + 2}`);
+            params.push(payment_status);
+            if (payment_status === 'paid' && oldOrder.payment_status !== 'paid') {
+                updates.push(`paid_at = NOW()`);
+            }
+        }
+
+        if (status === 'shipped' && oldOrder.status !== 'shipped') {
+            updates.push(`shipped_at = NOW()`);
+        }
+        if (status === 'delivered' && oldOrder.status !== 'delivered') {
+            updates.push(`delivered_at = NOW()`);
+        }
+
+        if (updates.length === 0) return { success: false, error: 'No fields to update', statusCode: 400 };
+
+        const channelFilter = adminCtx?.role === 'channel'
+            ? `AND channel_id = $${params.push(adminCtx.channelId)}` : '';
+
+        const sql = `UPDATE orders SET ${updates.join(', ')} WHERE id = $1 ${channelFilter} RETURNING id`;
+        const result = await pool.query(sql, params);
+        if (result.rows.length === 0) return { success: false, error: 'Order not found or access denied', statusCode: 404 };
+
+        if (status === 'delivered' && oldOrder.status !== 'delivered') {
             await recordOrderCommissions(orderId);
+            await recordUserReferralCommission(orderId);
         }
         return { success: true };
     } catch (err) {
@@ -1448,41 +1947,100 @@ async function handlePutOrder(orderId, body) {
 }
 
 async function handlePostOrder(body) {
-    const { openid, item_id, quantity = 1, address_id } = body;
-    if (!openid || !item_id) return { success: false, error: 'openid and item_id are required', statusCode: 400 };
+    const {
+        openid,
+        item_id,
+        channel_inventory_item_id,
+        quantity = 1,
+        shipping_name,
+        shipping_phone,
+        shipping_address,
+        payment_method = 'wechat_pay',
+        payment_status = 'paid',
+        payment_id,
+        fulfillment_notes
+    } = body;
+    if (!openid) return { success: false, error: 'openid is required', statusCode: 400 };
+    if (!item_id && !channel_inventory_item_id) return { success: false, error: 'item_id or channel_inventory_item_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const itemResult = await pool.query(
-            'SELECT id, key_name, price_cny, price_usd FROM store_items WHERE id = $1 AND active = TRUE',
-            [item_id]
-        );
-        if (itemResult.rows.length === 0) return { success: false, error: 'Item not found', statusCode: 404 };
-        const item = itemResult.rows[0];
-        let address = null;
-        if (address_id) {
-            const addressResult = await pool.query(
-                `SELECT id, contact_name, phone, province, city, district, address_line1, postal_code
-                 FROM user_addresses
-                 WHERE user_id = $1 AND id = $2`,
-                [openid, address_id]
+
+        let sku_id = null;
+        let channel_id = null;
+        let item_key = '';
+        let price_cny = 0;
+        let price_usd = 0;
+
+        if (channel_inventory_item_id) {
+            const itemResult = await pool.query(
+                `SELECT id, key_name, price_cny, price_usd, channel_id, sku_id
+                 FROM channel_inventory_items WHERE id = $1 AND active = TRUE`,
+                [channel_inventory_item_id]
             );
-            if (addressResult.rows.length === 0) return { success: false, error: 'Address not found', statusCode: 404 };
-            address = addressResult.rows[0];
+            if (itemResult.rows.length === 0) return { success: false, error: 'Item not found', statusCode: 404 };
+            const item = itemResult.rows[0];
+            sku_id = item.sku_id;
+            channel_id = item.channel_id;
+            item_key = item.key_name;
+            price_cny = item.price_cny || 0;
+            price_usd = item.price_usd || 0;
+        } else {
+            const itemResult = await pool.query(
+                'SELECT id, key_name, price_cny, price_usd, sku_id FROM store_items WHERE id = $1 AND active = TRUE',
+                [item_id]
+            );
+            if (itemResult.rows.length === 0) return { success: false, error: 'Item not found', statusCode: 404 };
+            const item = itemResult.rows[0];
+            sku_id = item.sku_id;
+            item_key = item.key_name;
+            price_cny = item.price_cny || 0;
+            price_usd = item.price_usd || 0;
         }
+
+        // SKU-Based Stock Check — channel stock takes priority over warehouse
+        if (sku_id) {
+            const stockResult = await pool.query(
+                `SELECT id, quantity FROM inventory_stock
+                 WHERE sku_id = $1 AND (
+                     (location_type = 'channel' AND channel_id = $2) OR
+                     (location_type = 'warehouse' AND warehouse_name = 'shanghai-central')
+                 )
+                 ORDER BY (location_type = 'channel') DESC
+                 LIMIT 1`,
+                [sku_id, channel_id || null]
+            );
+            if (stockResult.rows.length > 0) {
+                const stock = stockResult.rows[0];
+                if (stock.quantity !== null) {
+                    if (stock.quantity < quantity) {
+                        return { success: false, error: 'Insufficient stock', statusCode: 400 };
+                    }
+                    // Decrement only the one location selected above (by primary key)
+                    await pool.query(
+                        `UPDATE inventory_stock
+                         SET quantity = quantity - $1, updated_at = NOW()
+                         WHERE id = $2 AND quantity >= $1`,
+                        [quantity, stock.id]
+                    );
+                }
+            }
+        }
+
+        const paid_at = payment_status === 'paid' ? 'NOW()' : null;
+
         const result = await pool.query(
-            `INSERT INTO orders
-               (user_id, item_id, item_key, quantity, price_cny, price_usd, status, address_id, shipping_contact)
-             VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8::jsonb)
+            `INSERT INTO orders (
+                user_id, item_id, channel_inventory_item_id, item_key, quantity, price_cny, price_usd, status, channel_id, sku_id,
+                shipping_name, shipping_phone, shipping_address, payment_method, payment_status, payment_id, fulfillment_notes, paid_at
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11, $12, $13, $14, $15, $16, ${paid_at ? 'NOW()' : 'NULL'})
              RETURNING id`,
             [
                 openid,
-                item.id,
-                item.key_name,
-                quantity,
-                item.price_cny,
-                item.price_usd,
-                address ? address.id : null,
-                JSON.stringify(address || {}),
+                channel_inventory_item_id ? null : item_id,
+                channel_inventory_item_id ? channel_inventory_item_id : null,
+                item_key, quantity, price_cny, price_usd, channel_id, sku_id,
+                shipping_name, shipping_phone, shipping_address, payment_method, payment_status, payment_id, fulfillment_notes
             ]
         );
         return { success: true, order_id: result.rows[0].id };
@@ -1491,21 +2049,111 @@ async function handlePostOrder(body) {
     }
 }
 
-function normalizeLabCheckout(body = {}) {
-    const openid = body.openid || body.user_id;
-    const labName = String(body.lab_name || '').trim();
-    const addressId = body.address_id == null ? null : Number(body.address_id);
-    const goodsInput = Array.isArray(body.goods) ? body.goods : [];
-    const seen = new Set();
-    const goods = [];
-    for (const entry of goodsInput) {
-        const sku = String(entry && entry.sku || '').trim();
-        if (!sku || seen.has(sku)) continue;
-        const quantity = Math.max(1, parseInt(entry.quantity, 10) || 1);
-        seen.add(sku);
-        goods.push({ sku, quantity });
+async function handlePostOrderBatch(body) {
+    const {
+        openid,
+        items,
+        shipping_name,
+        shipping_phone,
+        shipping_address,
+        payment_method = 'wechat_pay',
+        payment_status = 'paid',
+    } = body;
+    if (!openid) return { success: false, error: 'openid is required', statusCode: 400 };
+    if (!Array.isArray(items) || items.length === 0)
+        return { success: false, error: 'items array is required', statusCode: 400 };
+    if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const order_ids = [];
+
+        for (const entry of items) {
+            const { channel_inventory_item_id, item_id, quantity = 1 } = entry;
+            if (!item_id && !channel_inventory_item_id)
+                throw Object.assign(new Error('Each item requires item_id or channel_inventory_item_id'), { statusCode: 400 });
+
+            let sku_id = null, channel_id = null, item_key = '', price_cny = 0, price_usd = 0;
+
+            if (channel_inventory_item_id) {
+                const r = await client.query(
+                    `SELECT id, key_name, price_cny, price_usd, channel_id, sku_id
+                     FROM channel_inventory_items WHERE id = $1 AND active = TRUE`,
+                    [channel_inventory_item_id]
+                );
+                if (r.rows.length === 0) throw Object.assign(new Error('Item not found'), { statusCode: 404 });
+                sku_id = r.rows[0].sku_id;
+                channel_id = r.rows[0].channel_id;
+                item_key = r.rows[0].key_name;
+                price_cny = r.rows[0].price_cny || 0;
+                price_usd = r.rows[0].price_usd || 0;
+            } else {
+                const r = await client.query(
+                    'SELECT id, key_name, price_cny, price_usd, sku_id FROM store_items WHERE id = $1 AND active = TRUE',
+                    [item_id]
+                );
+                if (r.rows.length === 0) throw Object.assign(new Error('Item not found'), { statusCode: 404 });
+                sku_id = r.rows[0].sku_id;
+                item_key = r.rows[0].key_name;
+                price_cny = r.rows[0].price_cny || 0;
+                price_usd = r.rows[0].price_usd || 0;
+            }
+
+            if (sku_id) {
+                const stockResult = await client.query(
+                    `SELECT id, quantity FROM inventory_stock
+                     WHERE sku_id = $1 AND (
+                         (location_type = 'channel' AND channel_id = $2) OR
+                         (location_type = 'warehouse' AND warehouse_name = 'shanghai-central')
+                     )
+                     ORDER BY (location_type = 'channel') DESC
+                     LIMIT 1`,
+                    [sku_id, channel_id || null]
+                );
+                if (stockResult.rows.length > 0) {
+                    const stock = stockResult.rows[0];
+                    if (stock.quantity !== null) {
+                        if (stock.quantity < quantity)
+                            throw Object.assign(new Error('Insufficient stock'), { statusCode: 400 });
+                        await client.query(
+                            `UPDATE inventory_stock SET quantity = quantity - $1, updated_at = NOW()
+                             WHERE id = $2 AND quantity >= $1`,
+                            [quantity, stock.id]
+                        );
+                    }
+                }
+            }
+
+            const inserted = await client.query(
+                `INSERT INTO orders (
+                    user_id, item_id, channel_inventory_item_id, item_key, quantity, price_cny, price_usd,
+                    status, channel_id, sku_id, shipping_name, shipping_phone, shipping_address,
+                    payment_method, payment_status, paid_at
+                 )
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11, $12, $13, $14, ${payment_status === 'paid' ? 'NOW()' : 'NULL'})
+                 RETURNING id`,
+                [
+                    openid,
+                    channel_inventory_item_id ? null : item_id,
+                    channel_inventory_item_id || null,
+                    item_key, quantity, price_cny, price_usd,
+                    channel_id, sku_id,
+                    shipping_name, shipping_phone, shipping_address,
+                    payment_method, payment_status,
+                ]
+            );
+            order_ids.push(inserted.rows[0].id);
+        }
+
+        await client.query('COMMIT');
+        return { success: true, order_ids };
+    } catch (err) {
+        await client.query('ROLLBACK');
+        return { success: false, error: err.message, statusCode: err.statusCode || 500 };
+    } finally {
+        client.release();
     }
-    return { openid, labName, addressId, goods };
 }
 
 async function handlePostLabCheckout(body) {
@@ -1810,6 +2458,14 @@ async function handlePostFormulaDots(body) {
         const biomarkers = data.biomarkers || data.estimated || data.actual || {};
         const bioageProfile = data.bioage_profile || {};
 
+        let personaType = 'nano';
+        if (user.channel_id) {
+            try {
+                const chResult = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
+                personaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
+            } catch (_) {}
+        }
+
         const startDate = getNowShanghai().toISODate();
         const lang = user.language || 'zh';
 
@@ -1824,7 +2480,8 @@ async function handlePostFormulaDots(body) {
         };
         const llmClient = getLlmClient();
         const model = process.env.MODEL || 'qwen3.6-plus';
-        const prompt = systemNutritionTemplate(nutritionContext);
+        const nutritionTemplate = personaType === 'viva' ? vivaSystemNutritionTemplate : systemNutritionTemplate;
+        const prompt = nutritionTemplate(nutritionContext);
         console.log(JSON.stringify({ level: 'INFO', msg: 'Formula DOTS Context', data: nutritionContext }));
 
         const completion = await llmClient.chat.completions.create({
@@ -1945,18 +2602,20 @@ async function handleGetCoachList(channelId) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const params = [];
-        const channelFilter = channelId ? `WHERE p.channel_id = $${params.push(channelId)}` : '';
+        const channelFilter = channelId ? `WHERE u.channel_id = $${params.push(channelId)}` : '';
         const query = `
-            SELECT p.id, p.channel_id, p.user_id, p.created_at,
+            SELECT p.id, u.channel_id, p.user_id, p.created_at,
                    u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
                    COUNT(assigned.user_id) AS user_count,
-                   c.name AS channel_name
+                   c.name AS channel_name,
+                   p.group_id, cg.name AS group_name
             FROM coaches p
             JOIN users u ON p.user_id = u.user_id
             LEFT JOIN users assigned ON p.id = assigned.coach_id
-            LEFT JOIN channels c ON p.channel_id = c.id
+            LEFT JOIN channels c ON u.channel_id = c.id
+            LEFT JOIN coach_groups cg ON cg.id = p.group_id
             ${channelFilter}
-            GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language, c.name;
+            GROUP BY p.id, u.channel_id, u.nickname, u.email, u.phone, u.avatar_url, u.language, c.name, p.group_id, cg.name;
         `;
         const result = await pool.query(query, params);
         return { success: true, coaches: result.rows };
@@ -1965,44 +2624,130 @@ async function handleGetCoachList(channelId) {
     }
 }
 
-async function handleGetChannelUsers(channelId) {
+async function handleGetChannelUsers(channelId, includeSubchannels = false) {
     if (!channelId) return { success: false, error: 'channelId is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const result = await pool.query(
-            `SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
-                    u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
-                    b.bio_age, cu.nickname AS coach_name
-             FROM users u
-             LEFT JOIN coaches p ON u.coach_id = p.id
-             LEFT JOIN users cu ON p.user_id = cu.user_id
-             LEFT JOIN (
-                 SELECT DISTINCT ON (user_id) user_id, bio_age
-                 FROM biomarkers ORDER BY user_id, tested_at DESC
-             ) b ON u.user_id = b.user_id
-             WHERE u.channel_id = $1
-             ORDER BY u.created_at DESC`,
-            [channelId]
-        );
-        return { success: true, users: result.rows };
+
+        const channelFilter = includeSubchannels
+            ? `JOIN (WITH RECURSIVE subtree AS (
+                    SELECT id FROM channels WHERE id = $1
+                    UNION ALL
+                    SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
+                ) SELECT id FROM subtree) st ON u.channel_id = st.id`
+            : 'JOIN (SELECT $1::int AS id) st ON u.channel_id = st.id';
+
+        const result = await pool.query(`
+            SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
+                   u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
+                   b.bio_age, cu.nickname AS coach_name, ch.name AS channel_name
+            FROM users u
+            ${channelFilter}
+            LEFT JOIN channels ch ON ch.id = u.channel_id
+            LEFT JOIN coaches p ON u.coach_id = p.id
+            LEFT JOIN users cu ON p.user_id = cu.user_id
+            LEFT JOIN (
+                SELECT DISTINCT ON (user_id) user_id, bio_age
+                FROM biomarkers ORDER BY user_id, tested_at DESC
+            ) b ON u.user_id = b.user_id
+            ORDER BY u.created_at DESC
+        `, [channelId]);
+
+        const rows = result.rows.map(u => ({ ...u, chrono_age: calculateAge(u.birth_date) }));
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const testedRows = rows.filter(r => r.bio_age != null);
+        const avgBioAgeVal = testedRows.length > 0
+            ? (testedRows.reduce((s, r) => s + parseFloat(r.bio_age), 0) / testedRows.length).toFixed(1)
+            : null;
+
+        const subtreeCte = `WITH RECURSIVE subtree AS (SELECT id FROM channels WHERE id = $1 UNION ALL SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id)`;
+        const channelUserIds = rows.map(r => r.user_id);
+
+        const [coachRes, scanRes] = await Promise.all([
+            pool.query(
+                includeSubchannels
+                    ? `${subtreeCte} SELECT u.gender, p.created_at FROM coaches p JOIN users u ON p.user_id = u.user_id JOIN subtree st ON u.channel_id = st.id`
+                    : `SELECT u.gender, p.created_at FROM coaches p JOIN users u ON p.user_id = u.user_id WHERE u.channel_id = $1`,
+                [channelId]
+            ),
+            channelUserIds.length > 0
+                ? pool.query(
+                    `SELECT COUNT(*) FILTER (WHERE tested_at >= NOW() - INTERVAL '7 days') AS s7,
+                            COUNT(*) FILTER (WHERE tested_at >= NOW() - INTERVAL '14 days') AS s14,
+                            COUNT(*) FILTER (WHERE tested_at >= NOW() - INTERVAL '30 days') AS s30,
+                            COUNT(*) AS total
+                     FROM biomarkers WHERE user_id = ANY($1)`,
+                    [channelUserIds]
+                )
+                : Promise.resolve({ rows: [{ s7: 0, s14: 0, s30: 0, total: 0 }] }),
+        ]);
+
+        const coaches = coachRes.rows;
+        const scanRow = scanRes.rows[0] || {};
+
+        return {
+            success: true,
+            users: rows,
+            total: rows.length,
+            tested: testedRows.length,
+            avgBioAge: avgBioAgeVal ?? '—',
+            maleCount: rows.filter(r => r.gender === 'male').length,
+            femaleCount: rows.filter(r => r.gender === 'female').length,
+            newUsers7d: rows.filter(r => new Date(r.created_at) >= sevenDaysAgo).length,
+            coachTotal: coaches.length,
+            maleCoachCount: coaches.filter(c => c.gender === 'male').length,
+            femaleCoachCount: coaches.filter(c => c.gender === 'female').length,
+            newCoaches7d: coaches.filter(c => new Date(c.created_at) >= sevenDaysAgo).length,
+            scansTotal: parseInt(scanRow.total) || 0,
+            scans7d: parseInt(scanRow.s7) || 0,
+            scans14d: parseInt(scanRow.s14) || 0,
+            scans30d: parseInt(scanRow.s30) || 0,
+        };
     } catch (err) {
         return { success: false, error: err.message };
     }
 }
 
-async function handleGetChannelCoaches(channelId) {
+async function handleGetChannelCoaches(channelId, includeSubchannels = false) {
     if (!channelId) return { success: false, error: 'channelId is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (includeSubchannels) {
+            const result = await pool.query(`
+                WITH RECURSIVE subtree AS (
+                    SELECT id FROM channels WHERE id = $1
+                    UNION ALL
+                    SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
+                )
+                SELECT p.id, u.channel_id, p.user_id, p.created_at,
+                       u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
+                       COUNT(assigned.user_id) AS user_count,
+                       ch.name AS channel_name,
+                       p.group_id, cg.name AS group_name
+                FROM coaches p
+                JOIN users u ON p.user_id = u.user_id
+                JOIN subtree st ON u.channel_id = st.id
+                LEFT JOIN channels ch ON ch.id = u.channel_id
+                LEFT JOIN users assigned ON p.id = assigned.coach_id
+                LEFT JOIN coach_groups cg ON cg.id = p.group_id
+                GROUP BY p.id, u.channel_id, u.nickname, u.email, u.phone, u.avatar_url, u.language, ch.name, p.group_id, cg.name
+                ORDER BY p.created_at DESC
+            `, [channelId]);
+            return { success: true, coaches: result.rows };
+        }
         const result = await pool.query(
-            `SELECT p.id, p.channel_id, p.user_id, p.created_at,
+            `SELECT p.id, u.channel_id, p.user_id, p.created_at,
                     u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
-                    COUNT(assigned.user_id) AS user_count
+                    COUNT(assigned.user_id) AS user_count,
+                    ch.name AS channel_name,
+                    p.group_id, cg.name AS group_name
              FROM coaches p
              JOIN users u ON p.user_id = u.user_id
+             LEFT JOIN channels ch ON ch.id = u.channel_id
              LEFT JOIN users assigned ON p.id = assigned.coach_id
-             WHERE p.channel_id = $1
-             GROUP BY p.id, u.nickname, u.email, u.phone, u.avatar_url, u.language
+             LEFT JOIN coach_groups cg ON cg.id = p.group_id
+             WHERE u.channel_id = $1
+             GROUP BY p.id, u.channel_id, u.nickname, u.email, u.phone, u.avatar_url, u.language, ch.name, p.group_id, cg.name
              ORDER BY p.created_at DESC`,
             [channelId]
         );
@@ -2018,7 +2763,7 @@ async function handleGetCoachUsers(coachId, query = {}) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const params = [coachId];
         const extraConds = [];
-        if (query.stage) { extraConds.push(`cps.stage = $${params.length + 1}`); params.push(query.stage); }
+        if (query.stage) { extraConds.push(`COALESCE(cps.stage, 'lead') = $${params.length + 1}`); params.push(query.stage); }
         if (query.tag_id) { extraConds.push(`cta.tag_id = $${params.length + 1}`); params.push(query.tag_id); }
         const whereCond = extraConds.length ? `AND ${extraConds.join(' AND ')}` : '';
         const result = await pool.query(
@@ -2027,7 +2772,7 @@ async function handleGetCoachUsers(coachId, query = {}) {
                     b.bio_age, b.data AS bio_data, b.tested_at AS last_scan_at,
                     m.last_msg_at,
                     lm.last_user_msg, lm.last_user_msg_at,
-                    cps.stage AS crm_stage,
+                    COALESCE(cps.stage, 'lead') AS crm_stage,
                     ARRAY_AGG(DISTINCT ct.name ORDER BY ct.name) FILTER (WHERE ct.name IS NOT NULL) AS crm_tags,
                     ARRAY_AGG(DISTINCT jsonb_build_object('id', ct.id, 'name', ct.name, 'color_hex', ct.color_hex))
                         FILTER (WHERE ct.id IS NOT NULL) AS crm_tag_objects
@@ -2053,7 +2798,7 @@ async function handleGetCoachUsers(coachId, query = {}) {
              LEFT JOIN client_tag_assignments cta ON cta.user_id = u.user_id AND cta.coach_id = $1
              LEFT JOIN client_tags ct ON ct.id = cta.tag_id
              WHERE u.coach_id = $1 ${whereCond}
-             GROUP BY u.user_id, b.bio_age, b.data, b.tested_at, m.last_msg_at, lm.last_user_msg, lm.last_user_msg_at, cps.stage
+             GROUP BY u.user_id, b.bio_age, b.data, b.tested_at, m.last_msg_at, lm.last_user_msg, lm.last_user_msg_at, COALESCE(cps.stage, 'lead')
              ORDER BY COALESCE(m.last_msg_at, b.tested_at, u.created_at) DESC`,
             params
         );
@@ -2229,21 +2974,29 @@ async function handleGetClientPipeline(coachId) {
     if (!coachId) return { success: false, error: 'coach_id is required', statusCode: 400 };
     try {
         const r = await pool.query(
-            `SELECT cps.user_id, cps.stage, cps.stage_changed_at, cps.note,
+            `SELECT u.user_id, COALESCE(cps.stage, 'lead') AS crm_stage, cps.stage_changed_at, cps.note,
                     u.nickname, u.avatar_url,
-                    b.bio_age, b.tested_at AS last_scan_at
-             FROM client_pipeline_stages cps
-             JOIN users u ON u.user_id = cps.user_id
+                    EXTRACT(YEAR FROM AGE(u.birth_date))::integer AS chrono_age,
+                    b.bio_age AS latest_bio_age, b.tested_at AS last_scan_at,
+                    COALESCE(
+                        (SELECT array_agg(ct.name ORDER BY ct.name)
+                         FROM client_tag_assignments cta
+                         JOIN client_tags ct ON ct.id = cta.tag_id
+                         WHERE cta.user_id = u.user_id AND cta.coach_id = $1),
+                        '{}'::text[]
+                    ) AS crm_tags
+             FROM users u
+             LEFT JOIN client_pipeline_stages cps ON cps.user_id = u.user_id AND cps.coach_id = $1
              LEFT JOIN (
                  SELECT DISTINCT ON (user_id) user_id, bio_age, tested_at
                  FROM biomarkers WHERE test_type = 'kino_chip'
                  ORDER BY user_id, tested_at DESC
-             ) b ON b.user_id = cps.user_id
-             WHERE cps.coach_id = $1
-             ORDER BY cps.stage_changed_at DESC`,
+             ) b ON b.user_id = u.user_id
+             WHERE u.coach_id = $1
+             ORDER BY COALESCE(cps.stage_changed_at, u.created_at) DESC`,
             [coachId]
         );
-        return { success: true, pipeline: r.rows };
+        return { success: true, clients: r.rows };
     } catch (err) { return { success: false, error: err.message }; }
 }
 
@@ -2466,7 +3219,7 @@ async function resolveBulkRecipients(coachId, filter) {
     const conditions = [`u.coach_id = (SELECT id FROM coaches WHERE id = $1)`];
     const params = [coachId];
     if (filter.stage && filter.stage.length) {
-        conditions.push(`cps.stage = ANY($${params.length + 1}::text[])`);
+        conditions.push(`COALESCE(cps.stage, 'lead') = ANY($${params.length + 1}::text[])`);
         params.push(filter.stage);
     }
     if (filter.tag_ids && filter.tag_ids.length) {
@@ -2680,6 +3433,141 @@ async function handleGetUpcomingAppointments(coachId) {
     } catch (err) { return { success: false, error: err.message }; }
 }
 
+// ── Events (线下活动) ──────────────────────────────────────────────────────────
+
+async function handleGetEvents(query, adminCtx) {
+    const { channel_id, user_id } = query;
+    if (!channel_id) return { success: false, error: 'channel_id is required', statusCode: 400 };
+    try {
+        const r = await pool.query(
+            `SELECT e.id, e.title, e.description, e.location, e.scheduled_at, e.end_at,
+                    e.capacity, e.status, e.created_at,
+                    (SELECT COUNT(*) FROM event_signups es WHERE es.event_id = e.id AND es.status = 'confirmed') AS signup_count,
+                    ${user_id ? `EXISTS(SELECT 1 FROM event_signups es2 WHERE es2.event_id = e.id AND es2.user_id = $2 AND es2.status = 'confirmed')` : 'FALSE'} AS signed_up
+             FROM events e
+             WHERE e.channel_id = $1
+               AND e.status != 'cancelled'
+               AND e.scheduled_at > NOW() - INTERVAL '2 hours'
+             ORDER BY e.scheduled_at ASC`,
+            user_id ? [channel_id, user_id] : [channel_id]
+        );
+        return { success: true, events: r.rows };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+async function handlePostEvent(body, adminCtx) {
+    const { title, description, location, scheduled_at, end_at, capacity, channel_id } = body;
+    if (!title || !scheduled_at) return { success: false, error: 'title and scheduled_at are required', statusCode: 400 };
+    const cid = adminCtx?.channelId || channel_id;
+    if (!cid) return { success: false, error: 'channel_id is required', statusCode: 400 };
+    const created_by = adminCtx?.sub || null;
+    try {
+        const r = await pool.query(
+            `INSERT INTO events (channel_id, title, description, location, scheduled_at, end_at, capacity, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING id, title, scheduled_at, status`,
+            [cid, title, description || null, location || null, scheduled_at, end_at || null, capacity || null, created_by]
+        );
+        return { success: true, event: r.rows[0] };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+async function handlePutEvent(id, body) {
+    const { title, description, location, scheduled_at, end_at, capacity, status } = body;
+    try {
+        const r = await pool.query(
+            `UPDATE events
+             SET title = COALESCE($2, title),
+                 description = COALESCE($3, description),
+                 location = COALESCE($4, location),
+                 scheduled_at = COALESCE($5, scheduled_at),
+                 end_at = COALESCE($6, end_at),
+                 capacity = COALESCE($7, capacity),
+                 status = COALESCE($8, status),
+                 updated_at = NOW()
+             WHERE id = $1
+             RETURNING id, title, scheduled_at, status`,
+            [id, title || null, description || null, location || null, scheduled_at || null, end_at || null, capacity || null, status || null]
+        );
+        if (!r.rows.length) return { success: false, error: 'Event not found', statusCode: 404 };
+        return { success: true, event: r.rows[0] };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+async function handleDeleteEvent(id) {
+    try {
+        await pool.query(`UPDATE events SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [id]);
+        return { success: true };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+async function handleGetEventSignups(eventId) {
+    try {
+        const r = await pool.query(
+            `SELECT es.id, es.user_id, es.signed_up_at, es.status,
+                    u.nickname, u.avatar_url, u.phone
+             FROM event_signups es
+             JOIN users u ON u.user_id = es.user_id
+             WHERE es.event_id = $1 AND es.status = 'confirmed'
+             ORDER BY es.signed_up_at ASC`,
+            [eventId]
+        );
+        return { success: true, signups: r.rows };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+async function handlePostEventSignup(body) {
+    const { event_id, user_id } = body;
+    if (!event_id || !user_id) return { success: false, error: 'event_id and user_id are required', statusCode: 400 };
+    try {
+        const evt = await pool.query(`SELECT capacity, status FROM events WHERE id = $1`, [event_id]);
+        if (!evt.rows.length) return { success: false, error: 'Event not found', statusCode: 404 };
+        if (evt.rows[0].status === 'cancelled') return { success: false, error: 'Event is cancelled', statusCode: 400 };
+        if (evt.rows[0].capacity !== null) {
+            const cnt = await pool.query(
+                `SELECT COUNT(*) AS cnt FROM event_signups WHERE event_id = $1 AND status = 'confirmed'`, [event_id]
+            );
+            if (parseInt(cnt.rows[0].cnt, 10) >= evt.rows[0].capacity) {
+                return { success: false, error: 'Event is full', statusCode: 409 };
+            }
+        }
+        await pool.query(
+            `INSERT INTO event_signups (event_id, user_id) VALUES ($1, $2)
+             ON CONFLICT (event_id, user_id) DO UPDATE SET status = 'confirmed', signed_up_at = NOW()`,
+            [event_id, user_id]
+        );
+        return { success: true };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+async function handleDeleteEventSignup(eventId, userId) {
+    if (!eventId || !userId) return { success: false, error: 'event_id and user_id are required', statusCode: 400 };
+    try {
+        await pool.query(
+            `UPDATE event_signups SET status = 'cancelled' WHERE event_id = $1 AND user_id = $2`,
+            [eventId, userId]
+        );
+        return { success: true };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+async function handleGetMyEventSignups(query) {
+    const { user_id } = query;
+    if (!user_id) return { success: false, error: 'user_id is required', statusCode: 400 };
+    try {
+        const r = await pool.query(
+            `SELECT e.id, e.title, e.location, e.scheduled_at, e.end_at, e.status AS event_status,
+                    es.signed_up_at, es.status
+             FROM event_signups es
+             JOIN events e ON e.id = es.event_id
+             WHERE es.user_id = $1 AND es.status = 'confirmed'
+             ORDER BY e.scheduled_at ASC`,
+            [user_id]
+        );
+        return { success: true, signups: r.rows };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
 // ── Phase 3: Goals ────────────────────────────────────────────────────────────
 
 async function handleGetClientGoals(query) {
@@ -2816,31 +3704,46 @@ async function handlePatchNpsSurvey(id, body) {
     } catch (err) { return { success: false, error: err.message }; }
 }
 
-async function handleGetNpsSurveys(query) {
-    const { coach_id, period } = query;
-    if (!coach_id) return { success: false, error: 'coach_id is required', statusCode: 400 };
+async function handleGetNpsSurveys(query, adminCtx = {}) {
+    const { coach_id, period, start, end } = query;
     try {
-        const conditions = ['n.coach_id = $1'];
-        const params = [coach_id];
-        if (period) {
-            conditions.push(`TO_CHAR(n.sent_at, 'YYYY-MM') = $${params.length + 1}`);
-            params.push(period);
+        const conditions = [];
+        const params = [];
+
+        if (coach_id) {
+            conditions.push(`n.coach_id = $${params.push(coach_id)}`);
+        } else {
+            // Channel-wide view — scope to the admin's channel
+            const channelId = adminCtx.channelId;
+            if (channelId) {
+                conditions.push(`c.channel_id = $${params.push(channelId)}`);
+            }
         }
+
+        if (start) conditions.push(`n.sent_at >= $${params.push(start)}`);
+        if (end)   conditions.push(`n.sent_at <  $${params.push(end + ' 23:59:59')}`);
+        if (period && !start && !end) {
+            conditions.push(`TO_CHAR(n.sent_at, 'YYYY-MM') = $${params.push(period)}`);
+        }
+
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
         const r = await pool.query(
-            `SELECT n.id, n.user_id, n.survey_type, n.score, n.feedback_text,
+            `SELECT n.id, n.coach_id, n.user_id, n.survey_type, n.score, n.feedback_text,
                     n.sent_at, n.responded_at, n.status,
                     u.nickname, u.avatar_url
              FROM client_nps_surveys n
              JOIN users u ON u.user_id = n.user_id
-             WHERE ${conditions.join(' AND ')}
-             ORDER BY n.sent_at DESC`,
+             JOIN coaches c ON c.id = n.coach_id
+             ${where}
+             ORDER BY n.sent_at DESC
+             LIMIT 500`,
             params
         );
         const surveys = r.rows;
         const responded = surveys.filter(s => s.status === 'responded' && s.score !== null);
         const avg_score = responded.length ? (responded.reduce((a, s) => a + s.score, 0) / responded.length).toFixed(2) : null;
-        const promoters = responded.filter(s => s.score >= 9).length;
-        const passives = responded.filter(s => s.score >= 7 && s.score < 9).length;
+        const promoters  = responded.filter(s => s.score >= 9).length;
+        const passives   = responded.filter(s => s.score >= 7 && s.score < 9).length;
         const detractors = responded.filter(s => s.score < 7).length;
         return { success: true, surveys, aggregate: { avg_score: avg_score ? parseFloat(avg_score) : null, promoters, passives, detractors, total: responded.length } };
     } catch (err) { return { success: false, error: err.message }; }
@@ -2862,7 +3765,14 @@ async function handleGetCoachKpis(query) {
             if (snap.rows.length) return { success: true, kpis: snap.rows[0], source: 'snapshot' };
         }
         const [pipeline, scans, plans, msgs, appts, nps, commissions] = await Promise.all([
-            pool.query(`SELECT stage, COUNT(*) AS cnt FROM client_pipeline_stages WHERE coach_id = $1 GROUP BY stage`, [coach_id]),
+            pool.query(
+                `SELECT COALESCE(cps.stage, 'lead') AS stage, COUNT(u.user_id) AS cnt
+                 FROM users u
+                 LEFT JOIN client_pipeline_stages cps ON cps.user_id = u.user_id AND cps.coach_id = $1
+                 WHERE u.coach_id = $1
+                 GROUP BY COALESCE(cps.stage, 'lead')`,
+                [coach_id]
+            ),
             pool.query(`SELECT COUNT(*) AS cnt FROM biomarkers b JOIN users u ON u.user_id = b.user_id WHERE u.coach_id = (SELECT id FROM coaches WHERE id = $1) AND b.test_type = 'kino_chip' AND TO_CHAR(b.tested_at, 'YYYY-MM') = $2`, [coach_id, targetPeriod]),
             pool.query(`SELECT COUNT(*) AS cnt FROM health_plans WHERE coach_id = $1 AND TO_CHAR(created_at, 'YYYY-MM') = $2`, [coach_id, targetPeriod]),
             pool.query(`SELECT COUNT(*) AS cnt FROM client_activity_log WHERE coach_id = $1 AND activity_type = 'message_sent' AND TO_CHAR(occurred_at, 'YYYY-MM') = $2`, [coach_id, targetPeriod]),
@@ -3030,7 +3940,6 @@ async function handlePostFollowUpRulesEvaluate() {
                 const r = await pool.query(
                     `SELECT DISTINCT u.user_id
                      FROM users u
-                     JOIN client_pipeline_stages cps ON cps.user_id = u.user_id AND cps.coach_id = $1
                      JOIN (
                          SELECT user_id, bio_age, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY tested_at DESC) AS rn
                          FROM biomarkers WHERE test_type = 'kino_chip'
@@ -3039,7 +3948,7 @@ async function handlePostFollowUpRulesEvaluate() {
                          SELECT user_id, bio_age, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY tested_at DESC) AS rn
                          FROM biomarkers WHERE test_type = 'kino_chip'
                      ) prev ON prev.user_id = u.user_id AND prev.rn = 2
-                     WHERE latest.bio_age > prev.bio_age + 2`,
+                     WHERE u.coach_id = $1 AND latest.bio_age > prev.bio_age + 2`,
                     [coach_id]
                 );
                 targetUsers = r.rows;
@@ -3131,13 +4040,13 @@ async function handlePostAssignCoach(body) {
 }
 
 async function handlePostCoaches(body) {
-    const { channel_id, user_id } = body;
+    const { user_id, group_id } = body;
     if (!user_id) return { success: false, error: 'user_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            'INSERT INTO coaches (user_id, channel_id) VALUES ($1, $2) RETURNING id',
-            [user_id, channel_id || null]
+            'INSERT INTO coaches (user_id, group_id) VALUES ($1, $2) RETURNING id',
+            [user_id, group_id || null]
         );
         await pool.query(
             `UPDATE users SET roles = array_append(roles, 'coach') WHERE user_id = $1 AND NOT ('coach' = ANY(roles))`,
@@ -3150,15 +4059,15 @@ async function handlePostCoaches(body) {
 }
 
 async function handlePutCoach(coachId, body) {
-    const { channel_id, user_id } = body;
+    const { user_id, group_id } = body;
     if (!user_id) return { success: false, error: 'user_id is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const oldResult = await pool.query('SELECT user_id FROM coaches WHERE id = $1', [coachId]);
         const oldUserId = oldResult.rows[0]?.user_id;
         await pool.query(
-            'UPDATE coaches SET user_id=$1, channel_id=$2 WHERE id=$3',
-            [user_id, channel_id || null, coachId]
+            'UPDATE coaches SET user_id=$1, group_id=$2 WHERE id=$3',
+            [user_id, group_id || null, coachId]
         );
         await pool.query(
             `UPDATE users SET roles = array_append(roles, 'coach') WHERE user_id = $1 AND NOT ('coach' = ANY(roles))`,
@@ -3200,6 +4109,158 @@ async function handleDeleteCoach(coachId) {
     } catch (err) {
         return { success: false, error: err.message };
     }
+}
+
+// ── Coach Groups ──────────────────────────────────────────────────────────────
+
+async function handleGetCoachGroups(query, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const channelId = adminCtx?.channelId || query.channel_id;
+        if (!channelId) return { success: false, error: 'channel_id is required', statusCode: 400 };
+        const result = await pool.query(
+            `SELECT cg.id, cg.channel_id, cg.name, cg.description, cg.type, cg.created_at,
+                    COUNT(DISTINCT c.id) AS coach_count
+             FROM coach_groups cg
+             LEFT JOIN coaches c ON c.group_id = cg.id
+             WHERE cg.channel_id = $1
+             GROUP BY cg.id
+             ORDER BY cg.name`,
+            [channelId]
+        );
+        return { success: true, groups: result.rows };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+async function handlePostCoachGroup(body, adminCtx) {
+    const { name, description, type } = body;
+    const channelId = adminCtx?.channelId || body.channel_id;
+    if (!channelId) return { success: false, error: 'channel_id is required', statusCode: 400 };
+    if (!name) return { success: false, error: 'name is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            'INSERT INTO coach_groups (channel_id, name, description, type) VALUES ($1, $2, $3, $4) RETURNING *',
+            [channelId, name, description || null, type || null]
+        );
+        return { success: true, group: result.rows[0] };
+    } catch (err) {
+        if (err.code === '23505') return { success: false, error: 'A group with that name already exists in this channel', statusCode: 409 };
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutCoachGroup(groupId, body, adminCtx) {
+    const { name, description, type } = body;
+    if (!name) return { success: false, error: 'name is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (adminCtx?.channelId) {
+            const check = await pool.query('SELECT channel_id FROM coach_groups WHERE id = $1', [groupId]);
+            if (!check.rows.length) return { success: false, error: 'Group not found', statusCode: 404 };
+            if (parseInt(check.rows[0].channel_id) !== parseInt(adminCtx.channelId)) return { success: false, error: 'Forbidden', statusCode: 403 };
+        }
+        const result = await pool.query(
+            'UPDATE coach_groups SET name=$1, description=$2, type=$3 WHERE id=$4 RETURNING *',
+            [name, description || null, type || null, groupId]
+        );
+        if (!result.rows.length) return { success: false, error: 'Group not found', statusCode: 404 };
+        return { success: true, group: result.rows[0] };
+    } catch (err) {
+        if (err.code === '23505') return { success: false, error: 'A group with that name already exists in this channel', statusCode: 409 };
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteCoachGroup(groupId, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (adminCtx?.channelId) {
+            const check = await pool.query('SELECT channel_id FROM coach_groups WHERE id = $1', [groupId]);
+            if (!check.rows.length) return { success: false, error: 'Group not found', statusCode: 404 };
+            if (parseInt(check.rows[0].channel_id) !== parseInt(adminCtx.channelId)) return { success: false, error: 'Forbidden', statusCode: 403 };
+        }
+        await pool.query('DELETE FROM coach_groups WHERE id = $1', [groupId]);
+        return { success: true };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+async function handleGetCoachGroupKpis(query) {
+    const { group_id, period } = query;
+    if (!group_id) return { success: false, error: 'group_id is required', statusCode: 400 };
+    const targetPeriod = period || new Date().toISOString().slice(0, 7);
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const groupRow = await pool.query('SELECT id, name, type FROM coach_groups WHERE id = $1', [group_id]);
+        if (!groupRow.rows.length) return { success: false, error: 'Group not found', statusCode: 404 };
+
+        const isCurrentMonth = targetPeriod === new Date().toISOString().slice(0, 7);
+        if (!isCurrentMonth) {
+            const snap = await pool.query(
+                `SELECT
+                    SUM(cps.total_clients)::int      AS total_clients,
+                    SUM(cps.active_clients)::int     AS active_clients,
+                    SUM(cps.at_risk_count)::int      AS at_risk_count,
+                    SUM(cps.scans_facilitated)::int  AS scans_facilitated,
+                    SUM(cps.plans_assigned)::int     AS plans_assigned,
+                    SUM(cps.messages_sent)::int      AS messages_sent,
+                    SUM(cps.appointments_held)::int  AS appointments_held,
+                    SUM(cps.commission_cny)          AS commission_cny,
+                    SUM(cps.nps_response_count)::int AS nps_response_count,
+                    CASE WHEN SUM(cps.nps_response_count) > 0
+                         THEN SUM(cps.avg_nps_score * cps.nps_response_count) / SUM(cps.nps_response_count)
+                         ELSE NULL END                AS avg_nps_score,
+                    COUNT(cps.coach_id)::int          AS coach_count
+                 FROM coach_performance_snapshots cps
+                 JOIN coaches c ON c.id = cps.coach_id
+                 WHERE c.group_id = $1 AND cps.period = $2`,
+                [group_id, targetPeriod]
+            );
+            if (snap.rows.length && snap.rows[0].coach_count > 0) {
+                return { success: true, kpis: { ...snap.rows[0], group_id: parseInt(group_id), period: targetPeriod }, group: groupRow.rows[0], source: 'snapshot' };
+            }
+        }
+
+        const coachIds = await pool.query('SELECT id FROM coaches WHERE group_id = $1', [group_id]);
+        if (!coachIds.rows.length) {
+            return { success: true, kpis: { group_id: parseInt(group_id), period: targetPeriod, total_clients: 0, active_clients: 0, at_risk_count: 0, scans_facilitated: 0, plans_assigned: 0, messages_sent: 0, appointments_held: 0, avg_nps_score: null, nps_response_count: 0, commission_cny: 0, coach_count: 0 }, group: groupRow.rows[0], source: 'live' };
+        }
+        const ids = coachIds.rows.map(r => r.id);
+        const [pipeline, scans, plans, msgs, appts, nps, commissions] = await Promise.all([
+            pool.query(
+                `SELECT COALESCE(cps.stage, 'lead') AS stage, COUNT(u.user_id) AS cnt
+                 FROM users u
+                 LEFT JOIN client_pipeline_stages cps ON cps.user_id = u.user_id AND cps.coach_id = u.coach_id
+                 WHERE u.coach_id = ANY($1)
+                 GROUP BY COALESCE(cps.stage, 'lead')`,
+                [ids]
+            ),
+            pool.query(`SELECT COUNT(*) AS cnt FROM biomarkers b JOIN users u ON u.user_id = b.user_id WHERE u.coach_id = ANY($1) AND b.test_type = 'kino_chip' AND TO_CHAR(b.tested_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
+            pool.query(`SELECT COUNT(*) AS cnt FROM health_plans WHERE coach_id = ANY($1) AND TO_CHAR(created_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
+            pool.query(`SELECT COUNT(*) AS cnt FROM client_activity_log WHERE coach_id = ANY($1) AND activity_type = 'message_sent' AND TO_CHAR(occurred_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
+            pool.query(`SELECT COUNT(*) AS cnt FROM appointments WHERE coach_id = ANY($1) AND status = 'completed' AND TO_CHAR(scheduled_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
+            pool.query(`SELECT AVG(score) AS avg_score, COUNT(*) AS cnt FROM client_nps_surveys WHERE coach_id = ANY($1) AND status = 'responded' AND TO_CHAR(sent_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
+            pool.query(`SELECT COALESCE(SUM(amount_cny), 0) AS total FROM coach_commissions WHERE coach_id = ANY($1) AND TO_CHAR(created_at, 'YYYY-MM') = $2`, [ids, targetPeriod]),
+        ]);
+        const stageMap = {};
+        for (const row of pipeline.rows) stageMap[row.stage] = parseInt(row.cnt, 10);
+        const kpis = {
+            group_id: parseInt(group_id),
+            period: targetPeriod,
+            total_clients: Object.values(stageMap).reduce((a, b) => a + b, 0),
+            active_clients: stageMap['active'] || 0,
+            at_risk_count: stageMap['at_risk'] || 0,
+            scans_facilitated: parseInt(scans.rows[0].cnt, 10),
+            plans_assigned: parseInt(plans.rows[0].cnt, 10),
+            messages_sent: parseInt(msgs.rows[0].cnt, 10),
+            appointments_held: parseInt(appts.rows[0].cnt, 10),
+            avg_nps_score: nps.rows[0].avg_score ? parseFloat(parseFloat(nps.rows[0].avg_score).toFixed(2)) : null,
+            nps_response_count: parseInt(nps.rows[0].cnt, 10),
+            commission_cny: parseFloat(commissions.rows[0].total),
+            coach_count: ids.length,
+        };
+        return { success: true, kpis, group: groupRow.rows[0], source: 'live' };
+    } catch (err) { return { success: false, error: err.message }; }
 }
 
 async function handlePostDots(body) {
@@ -3257,16 +4318,65 @@ async function handleDeleteDot(dotId) {
     }
 }
 
-async function handleGetChannels() {
+async function verifySubchannelOwnership(channelId, adminCtx) {
+    if (adminCtx?.role !== 'channel') return true;
+    if (!adminCtx.canManageSubchannels) return false;
+    const r = await pool.query(`
+        WITH RECURSIVE subtree AS (
+            SELECT id, 0 AS depth FROM channels WHERE id = $2
+            UNION ALL
+            SELECT c.id, s.depth + 1 FROM channels c
+            JOIN subtree s ON c.parent_channel_id = s.id
+            WHERE s.depth < 20
+        )
+        SELECT 1 FROM subtree WHERE id = $1 AND id != $2
+    `, [channelId, adminCtx.channelId]);
+    return r.rows.length > 0;
+}
+
+async function handleGetChannels(adminCtx) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (adminCtx?.role === 'channel' && adminCtx.canManageSubchannels) {
+            const result = await pool.query(`
+                WITH RECURSIVE subtree AS (
+                    SELECT id, 1 AS depth FROM channels WHERE id = $1
+                    UNION ALL
+                    SELECT c.id, s.depth + 1 FROM channels c
+                    JOIN subtree s ON c.parent_channel_id = s.id
+                    WHERE s.depth < 20
+                )
+                SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at,
+                       c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers,
+                       st.depth,
+                       COUNT(DISTINCT u.user_id) AS user_count,
+                       COUNT(DISTINCT p.id) AS coach_count,
+                       COUNT(DISTINCT kd.id) AS kino_device_count,
+                       COUNT(DISTINCT CASE WHEN kd.status = 'active' THEN kd.id END) AS kino_active_count,
+                       COUNT(DISTINCT b.id) AS scan_count
+                FROM subtree st
+                JOIN channels c ON c.id = st.id
+                LEFT JOIN users u ON u.channel_id = c.id
+                LEFT JOIN coaches p ON p.user_id = u.user_id
+                LEFT JOIN kino_devices kd ON kd.channel_id = c.id
+                LEFT JOIN biomarkers b ON b.kino_device_id = kd.id
+                GROUP BY c.id, st.depth
+                ORDER BY st.depth, c.id
+            `, [adminCtx.channelId]);
+            return { success: true, channels: result.rows };
+        }
         const result = await pool.query(`
-            SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at,
+            SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers,
                    COUNT(DISTINCT u.user_id) AS user_count,
-                   COUNT(DISTINCT p.id) AS coach_count
+                   COUNT(DISTINCT p.id) AS coach_count,
+                   COUNT(DISTINCT kd.id) AS kino_device_count,
+                   COUNT(DISTINCT CASE WHEN kd.status = 'active' THEN kd.id END) AS kino_active_count,
+                   COUNT(DISTINCT b.id) AS scan_count
             FROM channels c
             LEFT JOIN users u ON u.channel_id = c.id
-            LEFT JOIN coaches p ON p.channel_id = c.id
+            LEFT JOIN coaches p ON p.user_id = u.user_id
+            LEFT JOIN kino_devices kd ON kd.channel_id = c.id
+            LEFT JOIN biomarkers b ON b.kino_device_id = kd.id
             GROUP BY c.id
             ORDER BY c.id
         `);
@@ -3277,15 +4387,29 @@ async function handleGetChannels() {
 }
 
 async function handlePostChannel(body, adminCtx) {
-    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
-    const { key_name, name, logo_url } = body;
+    const isCmsAdmin = adminCtx?.role === 'channel' && adminCtx?.canManageSubchannels;
+    if (adminCtx?.role === 'channel' && !isCmsAdmin) return { statusCode: 403, success: false, error: 'Forbidden' };
+    const { key_name, name, logo_url, parent_channel_id } = body;
     if (!key_name) return { success: false, error: 'key_name is required', statusCode: 400 };
     if (!name)     return { success: false, error: 'name is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        let parentChannelId = null;
+        if (isCmsAdmin) {
+            const reqParent = parent_channel_id ? parseInt(parent_channel_id) : adminCtx.channelId;
+            if (reqParent === adminCtx.channelId) {
+                parentChannelId = adminCtx.channelId;
+            } else {
+                const owns = await verifySubchannelOwnership(reqParent, adminCtx);
+                if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+                parentChannelId = reqParent;
+            }
+        } else if (parent_channel_id) {
+            parentChannelId = parseInt(parent_channel_id);
+        }
         const result = await pool.query(
-            `INSERT INTO channels (key_name, name, logo_url) VALUES ($1, $2, $3) RETURNING id`,
-            [key_name, name, logo_url || null]
+            `INSERT INTO channels (key_name, name, logo_url, parent_channel_id) VALUES ($1, $2, $3, $4) RETURNING id`,
+            [key_name, name, logo_url || null, parentChannelId]
         );
         return { success: true, id: result.rows[0].id };
     } catch (err) {
@@ -3294,8 +4418,12 @@ async function handlePostChannel(body, adminCtx) {
 }
 
 async function handlePutChannel(channelId, body, adminCtx) {
-    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
-    const { name, logo_url, commission_config } = body;
+    if (adminCtx?.role === 'channel') {
+        if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const owns = await verifySubchannelOwnership(channelId, adminCtx);
+        if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+    }
+    const { name, logo_url, commission_config, persona_type, credit_exchange_rate, currency } = body;
     if (!name) return { success: false, error: 'name is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -3303,6 +4431,16 @@ async function handlePutChannel(channelId, body, adminCtx) {
             `UPDATE channels SET name=$1, logo_url=$2, commission_config=$3 WHERE id=$4`,
             [name, logo_url || null, commission_config ? JSON.stringify(commission_config) : null, channelId]
         );
+        const configPatch = {};
+        if (persona_type !== undefined) configPatch.persona_type = persona_type;
+        if (credit_exchange_rate !== undefined) configPatch.credit_exchange_rate = parseFloat(credit_exchange_rate) || 1.0;
+        if (currency !== undefined) configPatch.currency = currency;
+        if (Object.keys(configPatch).length > 0) {
+            await pool.query(
+                `UPDATE channels SET config = config || $1 WHERE id = $2`,
+                [JSON.stringify(configPatch), channelId]
+            );
+        }
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -3310,9 +4448,15 @@ async function handlePutChannel(channelId, body, adminCtx) {
 }
 
 async function handleDeleteChannel(channelId, adminCtx) {
-    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
+    if (adminCtx?.role === 'channel') {
+        if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const owns = await verifySubchannelOwnership(channelId, adminCtx);
+        if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+    }
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const subcheck = await pool.query('SELECT 1 FROM channels WHERE parent_channel_id = $1 LIMIT 1', [channelId]);
+        if (subcheck.rows.length > 0) return { statusCode: 400, success: false, error: 'Cannot delete a channel that has sub-channels. Remove all sub-channels first.' };
         await pool.query('DELETE FROM channels WHERE id = $1', [channelId]);
         return { success: true };
     } catch (err) {
@@ -3320,8 +4464,29 @@ async function handleDeleteChannel(channelId, adminCtx) {
     }
 }
 
+async function handlePutChannelManageSubchannels(channelId, body, adminCtx) {
+    if (adminCtx?.role === 'channel') {
+        if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const owns = await verifySubchannelOwnership(channelId, adminCtx);
+        if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+    }
+    const { can_manage_subchannels } = body || {};
+    if (typeof can_manage_subchannels !== 'boolean') return { statusCode: 400, success: false, error: 'can_manage_subchannels must be a boolean' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('UPDATE channels SET can_manage_subchannels = $1 WHERE id = $2', [can_manage_subchannels, channelId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handlePutChannelAdminTabs(channelId, body, adminCtx) {
-    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
+    if (adminCtx?.role === 'channel') {
+        if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const owns = await verifySubchannelOwnership(channelId, adminCtx);
+        if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+    }
     const { tabs } = body || {};
     if (!Array.isArray(tabs)) return { statusCode: 400, success: false, error: 'tabs must be an array' };
     try {
@@ -3337,7 +4502,11 @@ async function handlePutChannelAdminTabs(channelId, body, adminCtx) {
 }
 
 async function handlePutChannelSubAgeLabels(channelId, body, adminCtx) {
-    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
+    if (adminCtx?.role === 'channel') {
+        if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const owns = await verifySubchannelOwnership(channelId, adminCtx);
+        if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+    }
     const { sub_age_display_names } = body || {};
     if (!sub_age_display_names || typeof sub_age_display_names !== 'object')
         return { statusCode: 400, success: false, error: 'sub_age_display_names must be an object' };
@@ -3347,6 +4516,247 @@ async function handlePutChannelSubAgeLabels(channelId, body, adminCtx) {
             `UPDATE channels SET config = jsonb_set(COALESCE(config, '{}'), '{sub_age_display_names}', $1::jsonb) WHERE id = $2`,
             [JSON.stringify(sub_age_display_names), channelId]
         );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetChannelRewardsConfig(channelId, adminCtx) {
+    if (adminCtx?.role === 'channel') {
+        const targetId = parseInt(channelId);
+        if (targetId !== adminCtx.channelId) {
+            const owns = await verifySubchannelOwnership(channelId, adminCtx);
+            if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+        }
+    }
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { getEffectiveCommissionConfig } = require('./lib/commissions');
+        const { config, source, sourceChannelId, sourceChannelName } = await getEffectiveCommissionConfig(parseInt(channelId));
+
+        // Also walk up for referral_commission_rate, credit_exchange_rate, currency
+        const { rows } = await pool.query(`
+            WITH RECURSIVE chain AS (
+                SELECT id, parent_channel_id, config, can_customize_rewards, 0 AS depth
+                FROM channels WHERE id = $1
+                UNION ALL
+                SELECT c.id, c.parent_channel_id, c.config, c.can_customize_rewards, chain.depth + 1
+                FROM channels c JOIN chain ON c.id = chain.parent_channel_id
+                WHERE chain.depth < 10
+            )
+            SELECT * FROM chain ORDER BY depth ASC
+        `, [channelId]);
+
+        const ownRow = rows[0];
+        let referral_commission_rate = 5;
+        let credit_exchange_rate = 1.0;
+        let currency = 'CNY';
+        for (const row of rows) {
+            const isRoot = row.parent_channel_id == null;
+            const canUseOwn = isRoot || row.can_customize_rewards;
+            if (canUseOwn) {
+                if (row.config?.referral_commission_rate != null) referral_commission_rate = Number(row.config.referral_commission_rate);
+                if (row.config?.credit_exchange_rate != null) credit_exchange_rate = parseFloat(row.config.credit_exchange_rate);
+                if (row.config?.currency) currency = row.config.currency;
+                break;
+            }
+            if (isRoot) break;
+        }
+
+        return {
+            success: true,
+            commission_config: config,
+            source,
+            source_channel_id: sourceChannelId,
+            source_channel_name: sourceChannelName,
+            can_customize_rewards: ownRow?.can_customize_rewards ?? false,
+            referral_commission_rate,
+            credit_exchange_rate,
+            currency,
+        };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutChannelRewardsConfig(channelId, body, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const cid = parseInt(channelId);
+
+        // Check permission: superadmin always ok; channel admin must own it AND either be root or have can_customize_rewards
+        if (adminCtx?.role === 'channel') {
+            if (cid !== adminCtx.channelId) {
+                const owns = await verifySubchannelOwnership(channelId, adminCtx);
+                if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+            }
+            // Sub-channel (has parent) requires can_customize_rewards
+            const { rows } = await pool.query(
+                'SELECT parent_channel_id, can_customize_rewards FROM channels WHERE id = $1', [cid]
+            );
+            const ch = rows[0];
+            if (ch?.parent_channel_id != null && !ch?.can_customize_rewards) {
+                return { statusCode: 403, success: false, error: 'Custom rewards not permitted for this channel' };
+            }
+        }
+
+        const { commission_config, referral_commission_rate } = body || {};
+        if (commission_config !== undefined) {
+            await pool.query(
+                'UPDATE channels SET commission_config = $1 WHERE id = $2',
+                [commission_config ? JSON.stringify(commission_config) : null, cid]
+            );
+        }
+        if (referral_commission_rate !== undefined) {
+            await pool.query(
+                `UPDATE channels SET config = jsonb_set(COALESCE(config, '{}'), '{referral_commission_rate}', $1::jsonb) WHERE id = $2`,
+                [JSON.stringify(referral_commission_rate), cid]
+            );
+        }
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutChannelRewardsPermission(channelId, body, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const cid = parseInt(channelId);
+
+        if (adminCtx?.role === 'channel') {
+            // Only the parent channel's admin (with canManageSubchannels) can grant this
+            if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+            const { rows } = await pool.query('SELECT parent_channel_id FROM channels WHERE id = $1', [cid]);
+            const parentId = rows[0]?.parent_channel_id;
+            if (!parentId) return { statusCode: 403, success: false, error: 'Cannot grant rewards permission to a root channel' };
+            // Verify the target's parent is within this admin's subtree
+            const owns = await verifySubchannelOwnership(parentId, adminCtx);
+            if (!owns && parentId !== adminCtx.channelId) return { statusCode: 403, success: false, error: 'Forbidden' };
+        }
+
+        const { can_customize_rewards } = body || {};
+        if (typeof can_customize_rewards !== 'boolean')
+            return { statusCode: 400, success: false, error: 'can_customize_rewards must be a boolean' };
+        await pool.query('UPDATE channels SET can_customize_rewards = $1 WHERE id = $2', [can_customize_rewards, cid]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetChannelPartnerTiersConfig(channelId, adminCtx) {
+    if (adminCtx?.role === 'channel') {
+        const targetId = parseInt(channelId);
+        if (targetId !== adminCtx.channelId) {
+            const owns = await verifySubchannelOwnership(channelId, adminCtx);
+            if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+        }
+    }
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const cid = parseInt(channelId);
+        const { rows } = await pool.query(`
+            WITH RECURSIVE chain AS (
+                SELECT id, parent_channel_id, name, partner_tiers_config, can_customize_partner_tiers, 0 AS depth
+                FROM channels WHERE id = $1
+                UNION ALL
+                SELECT c.id, c.parent_channel_id, c.name, c.partner_tiers_config, c.can_customize_partner_tiers, chain.depth + 1
+                FROM channels c JOIN chain ON c.id = chain.parent_channel_id
+                WHERE chain.depth < 10
+            )
+            SELECT * FROM chain ORDER BY depth ASC
+        `, [cid]);
+
+        const ownRow = rows[0];
+        let effectiveConfig = null;
+        let source = 'global';
+        let sourceChannelId = null;
+        let sourceChannelName = null;
+
+        for (const row of rows) {
+            const isRoot = row.parent_channel_id == null;
+            const canUseOwn = isRoot || row.can_customize_partner_tiers;
+            if (canUseOwn && row.partner_tiers_config != null) {
+                effectiveConfig = row.partner_tiers_config;
+                source = row.id === cid ? 'own' : 'inherited';
+                sourceChannelId = row.id;
+                sourceChannelName = row.name;
+                break;
+            }
+            if (isRoot) break;
+        }
+
+        return {
+            success: true,
+            partner_tiers_config: effectiveConfig,
+            source,
+            source_channel_id: sourceChannelId,
+            source_channel_name: sourceChannelName,
+            can_customize_partner_tiers: ownRow?.can_customize_partner_tiers ?? false,
+        };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutChannelPartnerTiersConfig(channelId, body, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const cid = parseInt(channelId);
+
+        if (adminCtx?.role === 'channel') {
+            if (cid !== adminCtx.channelId) {
+                const owns = await verifySubchannelOwnership(channelId, adminCtx);
+                if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+            }
+            const { rows } = await pool.query(
+                'SELECT parent_channel_id, can_customize_partner_tiers FROM channels WHERE id = $1', [cid]
+            );
+            const ch = rows[0];
+            if (ch?.parent_channel_id != null && !ch?.can_customize_partner_tiers) {
+                return { statusCode: 403, success: false, error: 'Custom partner tier config not permitted for this channel' };
+            }
+        }
+
+        const { partner_tiers_config } = body || {};
+        const VALID_TIER_KEYS = ['light_entrepreneur', 'leader_partner', 'operations_center'];
+        if (partner_tiers_config != null) {
+            for (const key of Object.keys(partner_tiers_config)) {
+                if (!VALID_TIER_KEYS.includes(key)) {
+                    return { statusCode: 400, success: false, error: `Invalid tier key: ${key}` };
+                }
+            }
+        }
+        await pool.query(
+            'UPDATE channels SET partner_tiers_config = $1 WHERE id = $2',
+            [partner_tiers_config != null ? JSON.stringify(partner_tiers_config) : null, cid]
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutChannelPartnerTiersPermission(channelId, body, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const cid = parseInt(channelId);
+
+        if (adminCtx?.role === 'channel') {
+            if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+            const { rows } = await pool.query('SELECT parent_channel_id FROM channels WHERE id = $1', [cid]);
+            const parentId = rows[0]?.parent_channel_id;
+            if (!parentId) return { statusCode: 403, success: false, error: 'Cannot grant partner tier permission to a root channel' };
+            const owns = await verifySubchannelOwnership(parentId, adminCtx);
+            if (!owns && parentId !== adminCtx.channelId) return { statusCode: 403, success: false, error: 'Forbidden' };
+        }
+
+        const { can_customize_partner_tiers } = body || {};
+        if (typeof can_customize_partner_tiers !== 'boolean')
+            return { statusCode: 400, success: false, error: 'can_customize_partner_tiers must be a boolean' };
+        await pool.query('UPDATE channels SET can_customize_partner_tiers = $1 WHERE id = $2', [can_customize_partner_tiers, cid]);
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -3400,10 +4810,10 @@ async function handlePutUser(user_id, body) {
         if (roles) {
             if (roles.includes('coach')) {
                 await pool.query(
-                    `INSERT INTO coaches (user_id, channel_id)
-                     SELECT $1, COALESCE($2, u.channel_id) FROM users u WHERE u.user_id = $1
+                    `INSERT INTO coaches (user_id)
+                     SELECT $1 FROM users WHERE user_id = $1
                      AND NOT EXISTS (SELECT 1 FROM coaches WHERE user_id = $1)`,
-                    [user_id, channel_id || null]
+                    [user_id]
                 );
             } else {
                 // Block removal if coach still has assigned users
@@ -3425,15 +4835,36 @@ async function handlePutUser(user_id, body) {
 }
 
 async function handleGetAdminAccounts(adminCtx) {
-    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
+    const isChannel = adminCtx?.role === 'channel';
+    const canManageOwn = isChannel && !requirePermission(adminCtx, 'admin-accounts:read');
+    const canManageSubs = isChannel && adminCtx.canManageSubchannels;
+    if (isChannel && !canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const result = await pool.query(
-            `SELECT a.id, a.username, a.created_at, a.channel_id, c.name AS channel_name
-             FROM admin_accounts a
-             LEFT JOIN channels c ON a.channel_id = c.id
-             ORDER BY a.created_at ASC`
-        );
+        const cols = `a.id, a.username, a.created_at, a.channel_id, a.is_channel_admin, a.role_id, a.permissions_override, a.permissions, r.name AS role_name, r.label AS role_label, c.name AS channel_name`;
+        let result;
+        if (isChannel) {
+            if (canManageOwn && canManageSubs) {
+                result = await pool.query(
+                    `SELECT ${cols} FROM admin_accounts a LEFT JOIN admin_channel_roles r ON r.id = a.role_id JOIN channels c ON a.channel_id = c.id WHERE a.channel_id = $1 OR c.parent_channel_id = $1 ORDER BY a.created_at ASC`,
+                    [adminCtx.channelId]
+                );
+            } else if (canManageOwn) {
+                result = await pool.query(
+                    `SELECT ${cols} FROM admin_accounts a LEFT JOIN admin_channel_roles r ON r.id = a.role_id JOIN channels c ON a.channel_id = c.id WHERE a.channel_id = $1 ORDER BY a.created_at ASC`,
+                    [adminCtx.channelId]
+                );
+            } else {
+                result = await pool.query(
+                    `SELECT ${cols} FROM admin_accounts a LEFT JOIN admin_channel_roles r ON r.id = a.role_id JOIN channels c ON a.channel_id = c.id WHERE c.parent_channel_id = $1 ORDER BY a.created_at ASC`,
+                    [adminCtx.channelId]
+                );
+            }
+        } else {
+            result = await pool.query(
+                `SELECT ${cols} FROM admin_accounts a LEFT JOIN admin_channel_roles r ON r.id = a.role_id LEFT JOIN channels c ON a.channel_id = c.id ORDER BY a.created_at ASC`
+            );
+        }
         return { success: true, accounts: result.rows };
     } catch (err) {
         return { success: false, error: err.message };
@@ -3441,17 +4872,50 @@ async function handleGetAdminAccounts(adminCtx) {
 }
 
 async function handlePostAdminAccount(body, adminCtx) {
-    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
-    const { username, password, channel_id } = body || {};
+    const isChannel = adminCtx?.role === 'channel';
+    const canManageOwn = isChannel && !requirePermission(adminCtx, 'admin-accounts:write');
+    const canManageSubs = isChannel && adminCtx.canManageSubchannels;
+    if (isChannel && !canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
+    const { username, password, channel_id, role_id, permissions_override, is_channel_admin } = body || {};
     if (!username || !password) return { statusCode: 400, success: false, error: 'Username and password required' };
+    // Only superadmin can create channel admin accounts
+    const makeChannelAdmin = !isChannel && !!is_channel_admin && !!channel_id;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (isChannel) {
+            const targetCid = channel_id ? parseInt(channel_id) : null;
+            if (targetCid === null) return { statusCode: 403, success: false, error: 'Forbidden' };
+            if (targetCid === adminCtx.channelId) {
+                if (!canManageOwn) return { statusCode: 403, success: false, error: 'Forbidden' };
+            } else {
+                if (!canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
+                const owns = await verifySubchannelOwnership(targetCid, adminCtx);
+                if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+            }
+        }
+        // For channel admins, auto-assign the global 'channel_admin' role for proper display
+        let sanitizedRoleId = role_id ? parseInt(role_id) : null;
+        if (makeChannelAdmin) {
+            const caRole = await pool.query(`SELECT id FROM admin_channel_roles WHERE channel_id IS NULL AND name = 'channel_admin'`);
+            if (caRole.rows[0]) sanitizedRoleId = caRole.rows[0].id;
+        } else if (sanitizedRoleId && isChannel) {
+            const roleCheck = await pool.query('SELECT channel_id FROM admin_channel_roles WHERE id = $1', [sanitizedRoleId]);
+            const roleCid = roleCheck.rows[0]?.channel_id;
+            if (roleCid !== null && roleCid !== adminCtx.channelId) sanitizedRoleId = null;
+        }
+        // Sanitize overrides: only perms the actor holds and within CHANNEL_ADMIN_FULL_PERMS ceiling
+        const actorPerms = isChannel ? (adminCtx.perms || []) : null;
+        const sanitizedOverrides = makeChannelAdmin ? [] : Array.isArray(permissions_override)
+            ? permissions_override.filter(p => CHANNEL_ADMIN_FULL_PERMS.includes(p) && (!actorPerms || actorPerms.includes(p)))
+            : [];
         const { scryptSync, randomBytes } = require('crypto');
         const salt = randomBytes(16).toString('hex');
         const hash = scryptSync(password, salt, 64).toString('hex');
         const result = await pool.query(
-            'INSERT INTO admin_accounts (username, password_hash, channel_id) VALUES ($1, $2, $3) RETURNING id, username, created_at, channel_id',
-            [username, `${salt}:${hash}`, channel_id || null]
+            `INSERT INTO admin_accounts (username, password_hash, channel_id, is_channel_admin, role_id, permissions_override)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id, username, created_at, channel_id, is_channel_admin, role_id, permissions_override`,
+            [username, `${salt}:${hash}`, channel_id || null, makeChannelAdmin, sanitizedRoleId, sanitizedOverrides]
         );
         return { success: true, account: result.rows[0] };
     } catch (err) {
@@ -3461,15 +4925,50 @@ async function handlePostAdminAccount(body, adminCtx) {
 }
 
 async function handlePutAdminAccount(id, body, adminCtx) {
-    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
-    const { password } = body || {};
-    if (!password) return { statusCode: 400, success: false, error: 'Password required' };
+    if (adminCtx?.role === 'channel') {
+        const canManageOwn = !requirePermission(adminCtx, 'admin-accounts:write');
+        const canManageSubs = adminCtx.canManageSubchannels;
+        if (!canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const acct = await pool.query('SELECT channel_id FROM admin_accounts WHERE id = $1', [id]);
+        if (acct.rows.length === 0) return { statusCode: 404, success: false, error: 'Not found' };
+        const targetCid = parseInt(acct.rows[0].channel_id);
+        if (targetCid === adminCtx.channelId) {
+            if (!canManageOwn) return { statusCode: 403, success: false, error: 'Forbidden' };
+        } else {
+            if (!canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
+            const owns = await verifySubchannelOwnership(targetCid, adminCtx);
+            if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+        }
+    }
+    const { password, role_id, permissions_override } = body || {};
+    if (!password && role_id === undefined && permissions_override === undefined) return { statusCode: 400, success: false, error: 'Nothing to update' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const { scryptSync, randomBytes } = require('crypto');
-        const salt = randomBytes(16).toString('hex');
-        const hash = scryptSync(password, salt, 64).toString('hex');
-        await pool.query('UPDATE admin_accounts SET password_hash = $1 WHERE id = $2', [`${salt}:${hash}`, id]);
+        if (password) {
+            const { scryptSync, randomBytes } = require('crypto');
+            const salt = randomBytes(16).toString('hex');
+            const hash = scryptSync(password, salt, 64).toString('hex');
+            await pool.query('UPDATE admin_accounts SET password_hash = $1 WHERE id = $2', [`${salt}:${hash}`, id]);
+        }
+        if (role_id !== undefined) {
+            const isChannel = adminCtx?.role === 'channel';
+            let sanitizedRoleId = role_id ? parseInt(role_id) : null;
+            if (sanitizedRoleId && isChannel) {
+                const roleCheck = await pool.query('SELECT channel_id FROM admin_channel_roles WHERE id = $1', [sanitizedRoleId]);
+                const roleCid = roleCheck.rows[0]?.channel_id;
+                if (roleCid !== null && roleCid !== adminCtx.channelId) sanitizedRoleId = null;
+            }
+            await pool.query('UPDATE admin_accounts SET role_id = $1 WHERE id = $2', [sanitizedRoleId, id]);
+        }
+        if (permissions_override !== undefined) {
+            const isChannel = adminCtx?.role === 'channel';
+            const actorPerms = isChannel ? (adminCtx.perms || []) : null;
+            const sanitized = Array.isArray(permissions_override)
+                ? permissions_override.filter(p => CHANNEL_ADMIN_FULL_PERMS.includes(p) && (!actorPerms || actorPerms.includes(p)))
+                : [];
+            await pool.query('UPDATE admin_accounts SET permissions_override = $1 WHERE id = $2', [sanitized, id]);
+        }
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -3477,7 +4976,23 @@ async function handlePutAdminAccount(id, body, adminCtx) {
 }
 
 async function handleDeleteAdminAccount(id, adminCtx) {
-    if (adminCtx?.role === 'channel') return { statusCode: 403, success: false, error: 'Forbidden' };
+    if (adminCtx?.role === 'channel') {
+        const canManageOwn = !requirePermission(adminCtx, 'admin-accounts:write');
+        const canManageSubs = adminCtx.canManageSubchannels;
+        if (!canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
+        if (adminCtx.accountId && parseInt(id) === adminCtx.accountId) return { statusCode: 400, success: false, error: 'Cannot delete your own account' };
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const acct = await pool.query('SELECT channel_id FROM admin_accounts WHERE id = $1', [id]);
+        if (acct.rows.length === 0) return { statusCode: 404, success: false, error: 'Not found' };
+        const targetCid = parseInt(acct.rows[0].channel_id);
+        if (targetCid === adminCtx.channelId) {
+            if (!canManageOwn) return { statusCode: 403, success: false, error: 'Forbidden' };
+        } else {
+            if (!canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
+            const owns = await verifySubchannelOwnership(targetCid, adminCtx);
+            if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+        }
+    }
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const remaining = await pool.query('SELECT COUNT(*) FROM admin_accounts');
@@ -3489,12 +5004,118 @@ async function handleDeleteAdminAccount(id, adminCtx) {
     }
 }
 
+async function handleGetAdminChannelRoles(adminCtx) {
+    const isChannel = adminCtx?.role === 'channel';
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const cid = isChannel ? adminCtx.channelId : null;
+        const result = await pool.query(
+            `SELECT * FROM admin_channel_roles WHERE channel_id IS NULL OR channel_id = $1 ORDER BY channel_id NULLS FIRST, name`,
+            [cid]
+        );
+        return { success: true, roles: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAdminChannelRole(body, adminCtx) {
+    const isChannel = adminCtx?.role === 'channel';
+    if (isChannel) {
+        const check = requirePermission(adminCtx, 'admin-accounts:write');
+        if (check) return check;
+    }
+    const { name, label, permissions } = body || {};
+    if (!name || !label) return { statusCode: 400, success: false, error: 'name and label required' };
+    const cid = isChannel ? adminCtx.channelId : null;
+    // Channel admins can only set perms within CHANNEL_ADMIN_FULL_PERMS and their own perms
+    const actorPerms = isChannel ? (adminCtx.perms || []) : null;
+    const safePerms = Array.isArray(permissions)
+        ? permissions.filter(p => CHANNEL_ADMIN_FULL_PERMS.includes(p) && (!actorPerms || actorPerms.includes(p)))
+        : [];
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        // Channel roles cannot shadow global role names
+        if (cid !== null) {
+            const conflict = await pool.query('SELECT id FROM admin_channel_roles WHERE channel_id IS NULL AND name = $1', [name]);
+            if (conflict.rows.length > 0) return { statusCode: 409, success: false, error: 'Name conflicts with a global role' };
+        }
+        const result = await pool.query(
+            `INSERT INTO admin_channel_roles (channel_id, name, label, permissions) VALUES ($1, $2, $3, $4) RETURNING *`,
+            [cid, name, label, safePerms]
+        );
+        return { success: true, role: result.rows[0] };
+    } catch (err) {
+        if (err.code === '23505') return { statusCode: 409, success: false, error: 'Role name already exists for this channel' };
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutAdminChannelRole(id, body, adminCtx) {
+    const isChannel = adminCtx?.role === 'channel';
+    if (isChannel) {
+        const check = requirePermission(adminCtx, 'admin-accounts:write');
+        if (check) return check;
+    }
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const existing = await pool.query('SELECT channel_id FROM admin_channel_roles WHERE id = $1', [id]);
+        if (!existing.rows[0]) return { statusCode: 404, success: false, error: 'Not found' };
+        if (existing.rows[0].channel_id === null) return { statusCode: 403, success: false, error: 'Global roles cannot be modified' };
+        if (isChannel && existing.rows[0].channel_id !== adminCtx.channelId) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const { label, permissions } = body || {};
+        const updates = [];
+        const params = [];
+        if (label) { params.push(label); updates.push(`label = $${params.length}`); }
+        if (Array.isArray(permissions)) {
+            const actorPerms = isChannel ? (adminCtx.perms || []) : null;
+            const safePerms = permissions.filter(p => CHANNEL_ADMIN_FULL_PERMS.includes(p) && (!actorPerms || actorPerms.includes(p)));
+            params.push(safePerms); updates.push(`permissions = $${params.length}`);
+        }
+        if (!updates.length) return { statusCode: 400, success: false, error: 'Nothing to update' };
+        params.push(id);
+        await pool.query(`UPDATE admin_channel_roles SET ${updates.join(',')} WHERE id = $${params.length}`, params);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteAdminChannelRole(id, adminCtx) {
+    const isChannel = adminCtx?.role === 'channel';
+    if (isChannel) {
+        const check = requirePermission(adminCtx, 'admin-accounts:write');
+        if (check) return check;
+    }
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const existing = await pool.query('SELECT channel_id FROM admin_channel_roles WHERE id = $1', [id]);
+        if (!existing.rows[0]) return { statusCode: 404, success: false, error: 'Not found' };
+        if (existing.rows[0].channel_id === null) return { statusCode: 403, success: false, error: 'Global roles cannot be deleted' };
+        if (isChannel && existing.rows[0].channel_id !== adminCtx.channelId) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const inUse = await pool.query('SELECT COUNT(*) FROM admin_accounts WHERE role_id = $1', [id]);
+        if (parseInt(inUse.rows[0].count) > 0) return { statusCode: 400, success: false, error: 'Role is assigned to one or more accounts' };
+        await pool.query('DELETE FROM admin_channel_roles WHERE id = $1', [id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleAdminLogin(body) {
     const { username, password } = body || {};
     if (!username || !password) return { statusCode: 400, success: false, error: 'Missing credentials' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const result = await pool.query('SELECT id, password_hash, channel_id FROM admin_accounts WHERE username = $1', [username]);
+        const result = await pool.query(`
+            SELECT a.id, a.password_hash, a.channel_id,
+                   a.is_channel_admin, a.permissions_override,
+                   a.permissions AS legacy_perms,
+                   r.permissions AS role_permissions
+            FROM admin_accounts a
+            LEFT JOIN admin_channel_roles r ON r.id = a.role_id
+            WHERE a.username = $1
+        `, [username]);
         if (result.rows.length === 0) {
             await new Promise(r => setTimeout(r, 200));
             return { statusCode: 401, success: false, error: 'Invalid credentials' };
@@ -3510,11 +5131,37 @@ async function handleAdminLogin(body) {
             return { success: true, token: process.env.API_BEARER_TOKEN, role: 'superadmin', channel_id: null, allowed_tabs: null };
         }
 
-        const chRes = await pool.query(`SELECT name, config->'admin_tabs' AS admin_tabs FROM channels WHERE id = $1`, [row.channel_id]);
+        const chRes = await pool.query(`SELECT name, logo_url, config->'admin_tabs' AS admin_tabs, can_manage_subchannels FROM channels WHERE id = $1`, [row.channel_id]);
         const channelRow = chRes.rows[0] || {};
-        const allowedTabs = Array.isArray(channelRow.admin_tabs) ? channelRow.admin_tabs : [];
-        const token = signChannelAdminToken({ sub: row.id, cid: row.channel_id, tabs: allowedTabs });
-        return { success: true, token, role: 'channel', channel_id: row.channel_id, channel_name: channelRow.name || '', allowed_tabs: allowedTabs };
+        // admin_tabs on a channel are feature flags ("is store enabled?"), not permission ceilings
+        const channelFeatureTabs = Array.isArray(channelRow.admin_tabs) ? channelRow.admin_tabs : [];
+        const channelActivePerms = channelFeatureTabs.length > 0 ? expandPermissions(channelFeatureTabs) : null;
+
+        // Permission resolution — three cases in priority order:
+        let resolvedPerms;
+        if (row.is_channel_admin) {
+            // Root channel admin: always gets full hardcoded rights — feature flags don't restrict access
+            resolvedPerms = CHANNEL_ADMIN_FULL_PERMS;
+        } else if (Array.isArray(row.role_permissions) && row.role_permissions.length > 0) {
+            // Staff account with assigned role + optional per-account overrides
+            const combined = [...new Set([...row.role_permissions, ...(row.permissions_override || [])])];
+            // Staff can never exceed channel admin ceiling
+            resolvedPerms = combined.filter(p => CHANNEL_ADMIN_FULL_PERMS.includes(p));
+        } else {
+            // Legacy fallback: old permissions column (tab names or resource:action strings)
+            const legacyExpanded = expandPermissions(Array.isArray(row.legacy_perms) ? row.legacy_perms : []);
+            resolvedPerms = legacyExpanded.length > 0
+                ? legacyExpanded.filter(p => CHANNEL_ADMIN_FULL_PERMS.includes(p))
+                : (channelActivePerms || CHANNEL_ADMIN_FULL_PERMS);
+        }
+
+        // Derive tab names from resolved perms for nav visibility (existing behavior preserved)
+        const tabs = [...new Set(resolvedPerms.map(p => p.split(':')[0]))];
+        const cms = channelRow.can_manage_subchannels ?? false;
+        const token = signChannelAdminToken({ sub: row.id, cid: row.channel_id, tabs, perms: resolvedPerms, cms });
+        return { success: true, token, role: 'channel', channel_id: row.channel_id,
+                 channel_name: channelRow.name || '', channel_logo: channelRow.logo_url || '',
+                 allowed_tabs: tabs, allowed_perms: resolvedPerms, can_manage_subchannels: cms };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -3575,9 +5222,13 @@ async function handleGetInvitations(query) {
     }
 }
 
-async function handlePostInvitation(body) {
+async function handlePostInvitation(body, adminCtx) {
     const { created_by, channel_id, type = 'coach', max_uses = null } = body;
     if (!channel_id) return { success: false, error: 'channel_id is required', statusCode: 400 };
+    if (adminCtx?.role === 'channel' && adminCtx.canManageSubchannels && parseInt(channel_id) !== adminCtx.channelId) {
+        const owns = await verifySubchannelOwnership(channel_id, adminCtx);
+        if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+    }
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         let code, attempts = 0;
@@ -3661,7 +5312,7 @@ async function handleBindPhone(user_id, code, app_id = null) {
 
 async function handleWxLogin(body) {
     console.log(JSON.stringify({ level: 'INFO', msg: 'wx-login-body', body_keys: Object.keys(body || {}), phone: body?.phone, phone_code: body?.phone_code }));
-    const { code, coach_id, invite_code, app_id, phone_code, phone } = body;
+    const { code, coach_id, invite_code, ref, app_id, phone_code, phone } = body;
     if (!code) return { success: false, error: 'code is required' };
 
     const credMap = {};
@@ -3702,7 +5353,8 @@ async function handleWxLogin(body) {
     // Look up existing user — return with channel info and roles
     const existing = await pool.query(
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
+                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
+                u.referred_by_user_id, b.bio_age,
                 cu.nickname AS coach_name,
                 c.name AS channel_name, c.logo_url AS channel_logo_url,
                 c.config->'sub_age_display_names' AS channel_sub_age_names
@@ -3722,7 +5374,7 @@ async function handleWxLogin(body) {
     if (existing.rows.length > 0) {
         let existingRow = existing.rows[0];
 
-        // Existing user with no channel + invite code → assign channel from invite
+        // Existing user with no channel + invite code → assign channel from invite or referral
         if (!existingRow.channel_id && invite_code) {
             const invRes = await pool.query(
                 `SELECT id, channel_id, created_by, max_uses, use_count FROM invitations
@@ -3733,7 +5385,7 @@ async function handleWxLogin(body) {
                 const inviteRecord = invRes.rows[0];
                 let newChannelId = inviteRecord.channel_id;
                 if (!newChannelId && inviteRecord.created_by) {
-                    const coachByUser = await pool.query('SELECT channel_id FROM coaches WHERE user_id = $1 LIMIT 1', [inviteRecord.created_by]);
+                    const coachByUser = await pool.query('SELECT u.channel_id FROM coaches c JOIN users u ON c.user_id = u.user_id WHERE c.user_id = $1 LIMIT 1', [inviteRecord.created_by]);
                     if (coachByUser.rows.length > 0) newChannelId = coachByUser.rows[0].channel_id;
                 }
                 if (newChannelId) {
@@ -3752,7 +5404,8 @@ async function handleWxLogin(body) {
                     // Re-fetch with updated channel info
                     const refreshed = await pool.query(
                         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
+                                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
+                                u.referral_code, u.referred_by_user_id, b.bio_age,
                                 cu.nickname AS coach_name,
                                 c.name AS channel_name, c.logo_url AS channel_logo_url,
                                 c.config->'sub_age_display_names' AS channel_sub_age_names
@@ -3769,6 +5422,26 @@ async function handleWxLogin(body) {
                     );
                     if (refreshed.rows.length > 0) existingRow = refreshed.rows[0];
                 }
+            } else {
+                // invite_code not a coach invite — try as user referral_code
+                const refByCode = await pool.query(
+                    'SELECT user_id, channel_id FROM users WHERE referral_code = $1 LIMIT 1',
+                    [invite_code]
+                );
+                if (refByCode.rows.length > 0) {
+                    const referrer = refByCode.rows[0];
+                    if (!existingRow.referred_by_user_id) {
+                        await pool.query(
+                            'UPDATE users SET referred_by_user_id = $1 WHERE user_id = $2 AND referred_by_user_id IS NULL',
+                            [referrer.user_id, existingRow.user_id]
+                        );
+                        existingRow.referred_by_user_id = referrer.user_id;
+                    }
+                    if (referrer.channel_id) {
+                        await pool.query('UPDATE users SET channel_id = $1 WHERE user_id = $2', [referrer.channel_id, existingRow.user_id]);
+                        existingRow.channel_id = referrer.channel_id;
+                    }
+                }
             }
         }
 
@@ -3784,10 +5457,14 @@ async function handleWxLogin(body) {
         let coach = null;
         if (user.roles && user.roles.includes('coach')) {
             const coachRes = await pool.query(
-                `SELECT id, channel_id, user_id FROM coaches WHERE user_id = $1 LIMIT 1`,
+                `SELECT c.id, u2.channel_id, c.user_id FROM coaches c JOIN users u2 ON c.user_id = u2.user_id WHERE c.user_id = $1 LIMIT 1`,
                 [user.user_id]
             );
             if (coachRes.rows.length > 0) coach = coachRes.rows[0];
+        }
+        // Profile incomplete — phone not bound yet; re-show the signup screen
+        if (!user.phone) {
+            return { success: true, new_user: true, user, channel, coach };
         }
         return { success: true, user, channel, coach };
     }
@@ -3820,22 +5497,32 @@ async function handleWxLogin(body) {
                 : null;
             let coach = null;
             if (user.roles && user.roles.includes('coach')) {
-                const coachRes = await pool.query('SELECT id, channel_id, user_id FROM coaches WHERE user_id = $1 LIMIT 1', [user.user_id]);
+                const coachRes = await pool.query('SELECT c.id, u2.channel_id, c.user_id FROM coaches c JOIN users u2 ON c.user_id = u2.user_id WHERE c.user_id = $1 LIMIT 1', [user.user_id]);
                 if (coachRes.rows.length > 0) coach = coachRes.rows[0];
             }
             return { success: true, user, channel, coach };
         }
     }
 
-    // New user — no invite code, allow guest browsing
-    if (!invite_code && !coach_id) {
+    // New user — no invite code, coach, or referral link → allow guest browsing
+    if (!invite_code && !coach_id && !ref) {
         return { success: true, guest: true, openid };
     }
 
-    // New user — determine channel from invite code, coach invite, or default to nanovate
+    // New user — determine channel from invite code, coach invite, referral, or default to nanovate
     let channelId = null;
     let resolvedCoachId = coach_id ? parseInt(coach_id) : null;
     let inviteRecord = null;
+    let referralUserId = null;
+
+    // Resolve referral — validate the referring user and inherit their channel if no other source
+    if (ref) {
+        const refRes = await pool.query('SELECT user_id, channel_id FROM users WHERE user_id = $1 LIMIT 1', [ref]);
+        if (refRes.rows.length > 0) {
+            referralUserId = ref;
+            if (!invite_code && !coach_id) channelId = refRes.rows[0].channel_id;
+        }
+    }
 
     if (invite_code) {
         const invRes = await pool.query(
@@ -3843,9 +5530,6 @@ async function handleWxLogin(body) {
              WHERE code = $1 AND is_active = TRUE AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1`,
             [invite_code.toUpperCase()]
         );
-        if (invRes.rows.length === 0) {
-            return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
-        }
         if (invRes.rows.length > 0) {
             inviteRecord = invRes.rows[0];
             channelId = inviteRecord.channel_id;
@@ -3854,16 +5538,28 @@ async function handleWxLogin(body) {
                 const coachByUser = await pool.query('SELECT id FROM coaches WHERE user_id = $1 LIMIT 1', [inviteRecord.created_by]);
                 if (coachByUser.rows.length > 0) resolvedCoachId = coachByUser.rows[0].id;
             }
-            // Option B: fallback — if channel has exactly one coach, auto-assign them
+            // Fallback: if channel has exactly one coach, auto-assign them
             if (!resolvedCoachId && channelId) {
-                const channelCoaches = await pool.query('SELECT id FROM coaches WHERE channel_id = $1', [channelId]);
+                const channelCoaches = await pool.query('SELECT c.id FROM coaches c JOIN users u ON c.user_id = u.user_id WHERE u.channel_id = $1', [channelId]);
                 if (channelCoaches.rows.length === 1) resolvedCoachId = channelCoaches.rows[0].id;
+            }
+        } else {
+            // Not a coach invite — try as user referral_code
+            const refByCode = await pool.query(
+                'SELECT user_id, channel_id FROM users WHERE referral_code = $1 LIMIT 1',
+                [invite_code]
+            );
+            if (refByCode.rows.length > 0) {
+                referralUserId = refByCode.rows[0].user_id;
+                if (!channelId) channelId = refByCode.rows[0].channel_id;
+            } else {
+                return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
             }
         }
     }
 
     if (!channelId && resolvedCoachId) {
-        const coachRes = await pool.query('SELECT channel_id FROM coaches WHERE id = $1', [resolvedCoachId]);
+        const coachRes = await pool.query('SELECT u.channel_id FROM coaches c JOIN users u ON c.user_id = u.user_id WHERE c.id = $1', [resolvedCoachId]);
         if (coachRes.rows.length > 0) channelId = coachRes.rows[0].channel_id;
     }
     if (!channelId) {
@@ -3872,11 +5568,12 @@ async function handleWxLogin(body) {
     }
 
     const newUserId = generateUserId();
+    const newReferralCode = await generateReferralCode();
     const created = await pool.query(
-        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, phone)
-         VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5, $6)
-         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, coach_id, channel_id, roles, created_at, bio_data`,
-        [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, resolvedPhone]
+        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, referral_code, phone)
+         VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5, $6, $7, $8)
+         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
+        [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, resolvedPhone]
     );
 
     if (inviteRecord) {
@@ -3911,32 +5608,211 @@ async function handleValidateInvite(body) {
     const { invite_code } = body;
     if (!invite_code) return { success: false, error: 'invite_code is required' };
 
+    // Try coach/admin invitation code first
     const invRes = await pool.query(
         `SELECT id, channel_id FROM invitations
          WHERE code = $1 AND is_active = TRUE AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1`,
         [invite_code.toUpperCase()]
     );
-    if (invRes.rows.length === 0) {
-        return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
+    if (invRes.rows.length > 0) {
+        const channelId = invRes.rows[0].channel_id;
+        let channel = null;
+        if (channelId) {
+            const chanRes = await pool.query('SELECT name, logo_url FROM channels WHERE id = $1', [channelId]);
+            if (chanRes.rows.length > 0) channel = { name: chanRes.rows[0].name, logo_url: chanRes.rows[0].logo_url };
+        }
+        return { success: true, channel };
     }
 
-    const channelId = invRes.rows[0].channel_id;
-    let channel = null;
-    if (channelId) {
-        const chanRes = await pool.query('SELECT name, logo_url FROM channels WHERE id = $1', [channelId]);
-        if (chanRes.rows.length > 0) channel = { name: chanRes.rows[0].name, logo_url: chanRes.rows[0].logo_url };
+    // Fall back to user referral code
+    const refRes = await pool.query(
+        `SELECT u.user_id, u.channel_id, c.name AS channel_name, c.logo_url AS channel_logo_url
+         FROM users u
+         LEFT JOIN channels c ON c.id = u.channel_id
+         WHERE u.referral_code = $1 LIMIT 1`,
+        [invite_code]
+    );
+    if (refRes.rows.length > 0) {
+        const row = refRes.rows[0];
+        const channel = row.channel_name ? { name: row.channel_name, logo_url: row.channel_logo_url } : null;
+        return { success: true, channel };
     }
-    return { success: true, channel };
+
+    return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
 }
 
-async function saveChatMessage(user_id, role, content, image_url = null) {
+async function saveChatMessage(user_id, role, content, image_url = null, persona_type = 'nano') {
     try {
         await pool.query(
-            'INSERT INTO chat_messages (user_id, role, content, image_url) VALUES ($1, $2, $3, $4)',
-            [user_id, role, content, image_url]
+            'INSERT INTO chat_messages (user_id, role, content, image_url, persona_type) VALUES ($1, $2, $3, $4, $5)',
+            [user_id, role, content, image_url, persona_type]
         );
     } catch (err) {
         console.error('Failed to save chat message:', err);
+    }
+}
+
+async function handleGetMyReferrals(query) {
+    const { user_id } = query;
+    if (!user_id) return { success: false, error: 'user_id is required' };
+    try {
+        const userRes = await pool.query('SELECT referral_code FROM users WHERE user_id = $1', [user_id]);
+        let referral_code = userRes.rows[0]?.referral_code;
+        if (!referral_code) {
+            referral_code = await generateReferralCode();
+            await pool.query('UPDATE users SET referral_code = $1 WHERE user_id = $2', [referral_code, user_id]);
+        }
+
+        const { rows } = await pool.query(`
+            SELECT u.user_id, u.nickname, u.avatar_url, u.created_at AS joined_at,
+                   COALESCE(SUM(rc.amount_cny), 0) AS commission_earned
+            FROM users u
+            LEFT JOIN referral_commissions rc
+                   ON rc.referee_user_id = u.user_id AND rc.referrer_user_id = $1
+            WHERE u.referred_by_user_id = $1
+            GROUP BY u.user_id, u.nickname, u.avatar_url, u.created_at
+            ORDER BY u.created_at DESC
+        `, [user_id]);
+
+        const totalCommission = rows.reduce((sum, r) => sum + parseFloat(r.commission_earned), 0);
+        return {
+            success: true,
+            referral_code,
+            total_referred: rows.length,
+            total_commission_earned: Number(totalCommission.toFixed(2)),
+            referrals: rows.map(r => ({
+                user_id: r.user_id,
+                nickname: r.nickname || null,
+                avatar_url: r.avatar_url || null,
+                joined_at: r.joined_at,
+                commission_earned: Number(parseFloat(r.commission_earned).toFixed(2)),
+            })),
+        };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetCreditBalance(query) {
+    const { user_id, openid } = query;
+    const uid = user_id || openid;
+    if (!uid) return { success: false, error: 'user_id is required', statusCode: 400 };
+    try {
+        const userRes = await pool.query('SELECT channel_id FROM users WHERE user_id = $1', [uid]);
+        if (!userRes.rows[0]) return { success: false, error: 'User not found', statusCode: 404 };
+        const channelId = userRes.rows[0].channel_id;
+        const [balance, exchangeRate, currency] = await Promise.all([
+            getUserBalance(uid),
+            getChannelExchangeRate(channelId),
+            getChannelCurrency(channelId),
+        ]);
+        return { success: true, balance, exchange_rate: exchangeRate, currency };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetCreditHistory(query) {
+    const { user_id, openid, limit, offset } = query;
+    const uid = user_id || openid;
+    if (!uid) return { success: false, error: 'user_id is required', statusCode: 400 };
+    try {
+        const rows = await getLedgerHistory(uid, parseInt(limit || 50), parseInt(offset || 0));
+        return { success: true, history: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostCreditWithdraw(body) {
+    const { user_id, openid, credits_amount, payment_method, payment_account } = body;
+    const uid = user_id || openid;
+    if (!uid) return { success: false, error: 'user_id is required', statusCode: 400 };
+    if (!credits_amount || parseFloat(credits_amount) <= 0) return { success: false, error: 'credits_amount must be positive', statusCode: 400 };
+    try {
+        const userRes = await pool.query('SELECT channel_id FROM users WHERE user_id = $1', [uid]);
+        if (!userRes.rows[0]) return { success: false, error: 'User not found', statusCode: 404 };
+        const channelId = userRes.rows[0].channel_id;
+        const [balance, exchangeRate, currency] = await Promise.all([
+            getUserBalance(uid),
+            getChannelExchangeRate(channelId),
+            getChannelCurrency(channelId),
+        ]);
+        const credits = parseFloat(parseFloat(credits_amount).toFixed(2));
+        if (credits > balance) return { success: false, error: 'Insufficient credit balance', statusCode: 400 };
+        const currencyAmount = parseFloat((credits / exchangeRate).toFixed(2));
+        const { rows } = await pool.query(
+            `INSERT INTO credit_withdrawals
+                (user_id, credits_amount, currency_amount, exchange_rate, currency, payment_method, payment_account)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+            [uid, credits, currencyAmount, exchangeRate, currency,
+             payment_method || 'wechat_pay', payment_account || null]
+        );
+        return { success: true, withdrawal_id: rows[0].id, credits_amount: credits, currency_amount: currencyAmount, currency };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetUserWithdrawals(query) {
+    const { user_id, openid } = query;
+    const uid = user_id || openid;
+    if (!uid) return { success: false, error: 'user_id is required', statusCode: 400 };
+    try {
+        const { rows } = await pool.query(
+            `SELECT * FROM credit_withdrawals WHERE user_id = $1 ORDER BY requested_at DESC LIMIT 50`,
+            [uid]
+        );
+        return { success: true, withdrawals: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetAdminWithdrawals(query) {
+    const { status } = query;
+    try {
+        const params = [];
+        let where = '';
+        if (status) { params.push(status); where = `WHERE cw.status = $1`; }
+        const { rows } = await pool.query(
+            `SELECT cw.*, u.nickname, u.avatar_url
+             FROM credit_withdrawals cw
+             JOIN users u ON u.user_id = cw.user_id
+             ${where}
+             ORDER BY cw.requested_at DESC
+             LIMIT 200`,
+            params
+        );
+        return { success: true, withdrawals: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutAdminWithdrawal(withdrawalId, body, adminCtx) {
+    const { status, admin_note } = body;
+    const allowed = ['approved', 'rejected', 'completed'];
+    if (!allowed.includes(status)) return { success: false, error: `status must be one of: ${allowed.join(', ')}`, statusCode: 400 };
+    try {
+        const { rows } = await pool.query(
+            `SELECT * FROM credit_withdrawals WHERE id = $1`, [withdrawalId]
+        );
+        const wd = rows[0];
+        if (!wd) return { success: false, error: 'Withdrawal not found', statusCode: 404 };
+        if (wd.status !== 'pending') return { success: false, error: `Cannot update a withdrawal with status: ${wd.status}`, statusCode: 400 };
+        await pool.query(
+            `UPDATE credit_withdrawals SET status=$1, admin_note=$2, processed_at=NOW(), processed_by=$3 WHERE id=$4`,
+            [status, admin_note || null, adminCtx?.userId || null, withdrawalId]
+        );
+        // On approval: debit the user's credit ledger to lock the credits
+        if (status === 'approved') {
+            await debitUser(wd.user_id, parseFloat(wd.credits_amount), 'withdrawal',
+                wd.id, 'credit_withdrawals', `Withdrawal approved: ${wd.currency_amount} ${wd.currency}`);
+        }
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
     }
 }
 
@@ -3978,7 +5854,7 @@ async function resolveOrUpsertUser(body) {
     // If openid matches an existing user_id (admin-created or simulator users), use it directly.
     // Otherwise fall back to the external_id upsert (production WeChat flow).
     const byUserId = await pool.query(
-        'SELECT user_id, birth_date, bio_data, nickname, language, phone, email FROM users WHERE user_id = $1',
+        'SELECT user_id, birth_date, bio_data, nickname, language, phone, email, channel_id FROM users WHERE user_id = $1',
         [openid]
     );
     if (byUserId.rows.length > 0) return byUserId.rows[0];
@@ -3996,7 +5872,7 @@ async function resolveOrUpsertUser(body) {
             language = COALESCE(EXCLUDED.language, users.language),
             bio_data = users.bio_data || EXCLUDED.bio_data,
             updated_at = CURRENT_TIMESTAMP
-        RETURNING user_id, birth_date, bio_data, nickname, language, phone, email;
+        RETURNING user_id, birth_date, bio_data, nickname, language, phone, email, channel_id;
     `;
     const userResult = await pool.query(userQuery, [
         generateUserId(), openid, nickname, phone || null, email || null,
@@ -4185,6 +6061,21 @@ async function handlePostChat(body) {
     const user = await resolveOrUpsertUser(body);
     const user_id = user.user_id;
 
+    // Resolve persona from channel config (defaults to 'nano')
+    let personaType = 'nano';
+    let channelSubAgeNames = null;
+    if (user.channel_id) {
+        try {
+            const chRes = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
+            const chConfig = chRes.rows[0]?.config || {};
+            personaType = chConfig.persona_type ?? 'nano';
+            channelSubAgeNames = chConfig.sub_age_display_names || null;
+        } catch (err) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'Failed to fetch channel persona, defaulting to nano', error: err.message }));
+        }
+    }
+    console.log(JSON.stringify({ level: 'INFO', msg: 'Persona resolved', user_id: user.user_id, channel_id: user.channel_id, personaType }));
+
     if (message) {
         // Intent-routed chat message handling
         try {
@@ -4219,7 +6110,7 @@ async function handlePostChat(body) {
             }
             if (required_data.includes('dots')) {
                 fetches.dots = pool.query(
-                    `SELECT id, key_name, name, name_zh, description, is_isolate FROM dots ORDER BY id ASC`
+                    `SELECT id, key_name, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh FROM dots ORDER BY id ASC`
                 );
             }
             if (required_data.includes('plan')) {
@@ -4304,27 +6195,29 @@ async function handlePostChat(body) {
                     checkin_count: parseInt(p.checkin_count || 0, 10),
                     milestones_done: parseInt(p.milestones_done || 0, 10),
                 })),
+                sub_age_display_names: channelSubAgeNames,
             };
 
-            const promptBuilder = chatPrompts[intent] || chatPrompts.casual_chat;
+            const activePrompts = personaType === 'viva' ? vivaPrompts : nanoPrompts;
+            const promptBuilder = activePrompts[intent] || activePrompts.casual_chat;
             const systemPrompt = promptBuilder(llmContext);
 
             // Save the incoming user message to the conversation log
             await pool.query(
-                'INSERT INTO chat_messages (user_id, role, content) VALUES ($1, $2, $3)',
-                [user_id, 'user', message]
+                'INSERT INTO chat_messages (user_id, role, content, persona_type) VALUES ($1, $2, $3, $4)',
+                [user_id, 'user', message, personaType]
             );
 
-            // Fetch recent conversation history (oldest-first for the LLM)
+            // Fetch recent conversation history scoped to the current persona
             const historyLimit = parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10);
             const historyResult = await pool.query(
                 `SELECT role, content FROM (
                     SELECT role, content, created_at FROM chat_messages
-                    WHERE user_id = $1
+                    WHERE user_id = $1 AND persona_type = $3
                     ORDER BY created_at DESC
                     LIMIT $2
                 ) sub ORDER BY created_at ASC`,
-                [user_id, historyLimit]
+                [user_id, historyLimit, personaType]
             );
 
             // Normalize roles ('ai' → 'assistant') and collapse consecutive same-role turns
@@ -4444,7 +6337,7 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                             : `✅ Weight recorded: **${weightKg} kg**`;
                     }
 
-                    await saveChatMessage(user_id, 'ai', simpleReply);
+                    await saveChatMessage(user_id, 'ai', simpleReply, null, personaType);
                     await pool.query(
                         'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
                         [user_id, 'chat_reply', simpleReply, 'pending']
@@ -4472,7 +6365,7 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                 .trim();
 
             // Save assistant reply to the conversation log
-            await saveChatMessage(user_id, 'ai', reply);
+            await saveChatMessage(user_id, 'ai', reply, null, personaType);
 
             // Save reply as a notification (existing delivery mechanism for frontend poll)
             await pool.query(
@@ -5338,23 +7231,25 @@ async function handlePostHealthEventsSync(body) {
         if (!userResult.rows.length) return { success: false, error: 'User not found', statusCode: 404 };
         const user_id = userResult.rows[0].user_id;
 
-        let inserted = 0;
+        let synced = 0;
+        let skipped = 0;
         for (const ev of events) {
-            if (!ev.category || !VALID_CATEGORIES.has(ev.category) || !ev.source || !ev.data_date || !ev.data || !ev.recorded_at) continue;
+            if (!ev.category || !VALID_CATEGORIES.has(ev.category) || !ev.source || !ev.data_date || !ev.data || !ev.recorded_at) { skipped++; continue; }
             const r = await pool.query(`
                 INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING
+                ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL
+                DO UPDATE SET data = EXCLUDED.data, recorded_at = EXCLUDED.recorded_at
                 RETURNING id
             `, [user_id, ev.source, ev.category, ev.data_date, ev.recorded_at, JSON.stringify(ev.data), ev.external_id || null]);
-            if (r.rows.length > 0) inserted++;
+            if (r.rows.length > 0) synced++;
         }
 
-        if (inserted > 0) {
+        if (synced > 0) {
             await updateHealthTwin(user_id, pool);
         }
 
-        return { success: true, inserted, skipped: events.length - inserted };
+        return { success: true, synced, skipped };
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostHealthEventsSync failed', error: err.message }));
         return { success: false, error: err.message, statusCode: 500 };
@@ -5406,23 +7301,85 @@ async function handleGetHealthEvents(query) {
     }
 }
 
+function _buildHealthTagsBackend(twin, bm, conditionKeys) {
+    const tags = [];
+    const order = { alert: 0, warn: 1, good: 2 };
+
+    if (bm) {
+        if (bm.hsCRP > 3)            tags.push({ labelEn: 'High Inflammation',  labelZh: '炎症偏高',      severity: 'alert', color: '#ef4444' });
+        else if (bm.hsCRP > 1)       tags.push({ labelEn: 'Mild Inflammation',   labelZh: '轻微炎症',      severity: 'warn',  color: '#f97316' });
+        if (bm.IL6 > 6)              tags.push({ labelEn: 'Elevated IL-6',       labelZh: 'IL-6 升高',    severity: 'alert', color: '#ef4444' });
+        if (bm.GDF15 > 1500)         tags.push({ labelEn: 'Accelerated Aging',   labelZh: '衰老加速',      severity: 'alert', color: '#ef4444' });
+        else if (bm.GDF15 > 750)     tags.push({ labelEn: 'Elevated GDF-15',     labelZh: 'GDF-15 升高',  severity: 'warn',  color: '#f97316' });
+        if (bm.GA > 20)              tags.push({ labelEn: 'Metabolic Risk',       labelZh: '代谢功能异常',  severity: 'alert', color: '#ef4444' });
+        else if (bm.GA > 15)         tags.push({ labelEn: 'Elevated GA',          labelZh: '糖化白蛋白偏高', severity: 'warn',  color: '#f97316' });
+        if (bm.CystatinC > 1.2)      tags.push({ labelEn: 'Vascular Stress',     labelZh: '血管压力',      severity: 'alert', color: '#ef4444' });
+        else if (bm.CystatinC > 0.9) tags.push({ labelEn: 'Elevated Cystatin C', labelZh: '胱抑素C偏高',  severity: 'warn',  color: '#f97316' });
+        if (bm.CD38 > 2)             tags.push({ labelEn: 'High CD38',            labelZh: 'CD38 升高',    severity: 'warn',  color: '#f97316' });
+    }
+
+    if (twin) {
+        if (twin.avg_sleep_hours != null) {
+            if (twin.avg_sleep_hours < 6)        tags.push({ labelEn: 'Sleep Deficit',    labelZh: '睡眠严重不足', severity: 'alert', color: '#ef4444' });
+            else if (twin.avg_sleep_hours < 7)   tags.push({ labelEn: 'Low Sleep',         labelZh: '睡眠不足',    severity: 'warn',  color: '#f97316' });
+            else if (twin.avg_sleep_hours <= 9)  tags.push({ labelEn: 'Good Sleep',        labelZh: '睡眠良好',    severity: 'good',  color: '#10b981' });
+        }
+        if (twin.avg_hrv_ms != null) {
+            if (twin.avg_hrv_ms < 30)            tags.push({ labelEn: 'Low HRV',           labelZh: 'HRV 偏低',   severity: 'alert', color: '#ef4444' });
+            else if (twin.avg_hrv_ms >= 80)      tags.push({ labelEn: 'Strong Recovery',   labelZh: '恢复力强',    severity: 'good',  color: '#10b981' });
+        }
+        if (twin.avg_resting_hr != null) {
+            if (twin.avg_resting_hr > 90)        tags.push({ labelEn: 'Elevated HR',       labelZh: '心率过快',    severity: 'alert', color: '#ef4444' });
+            else if (twin.avg_resting_hr > 75)   tags.push({ labelEn: 'High Resting HR',   labelZh: '静息心率偏高', severity: 'warn',  color: '#f97316' });
+        }
+        if (twin.avg_daily_steps != null) {
+            if (twin.avg_daily_steps < 5000)     tags.push({ labelEn: 'Low Activity',      labelZh: '活动量不足',   severity: 'warn',  color: '#f97316' });
+            else if (twin.avg_daily_steps >= 10000) tags.push({ labelEn: 'Active',          labelZh: '活动达标',    severity: 'good',  color: '#10b981' });
+        }
+    }
+
+    const condTagMap = {
+        blood_sugar_high:    { en: 'High Blood Sugar',    zh: '血糖高' },
+        blood_pressure_high: { en: 'High Blood Pressure', zh: '血压高' },
+        blood_lipids_high:   { en: 'High Blood Lipids',   zh: '血脂高' },
+        cholesterol_high:    { en: 'High Cholesterol',    zh: '胆固醇高' },
+        heart_issues:        { en: 'Heart Issues',        zh: '心脏问题' },
+        kidney_disease:      { en: 'Kidney Disease',      zh: '肾病' },
+    };
+    for (const key of (conditionKeys || [])) {
+        const m = condTagMap[key];
+        if (m) tags.push({ labelEn: m.en, labelZh: m.zh, severity: 'warn', color: '#f97316' });
+    }
+
+    tags.sort((a, b) => order[a.severity] - order[b.severity]);
+    return tags.slice(0, 7);
+}
+
 async function handleGetHealthTwin(openid) {
     if (!openid) return { success: false, error: 'openid required', statusCode: 400 };
 
     try {
         const userResult = await pool.query(
-            `SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
+            `SELECT user_id, bio_data FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
             [openid]
         );
         if (!userResult.rows.length) return { success: false, error: 'User not found', statusCode: 404 };
-        const user_id = userResult.rows[0].user_id;
+        const { user_id, bio_data } = userResult.rows[0];
 
-        const result = await pool.query(
-            `SELECT * FROM health_twin WHERE user_id = $1`,
-            [user_id]
-        );
+        const [twinResult, bmResult] = await Promise.all([
+            pool.query(`SELECT * FROM health_twin WHERE user_id = $1`, [user_id]),
+            pool.query(
+                `SELECT data FROM biomarkers WHERE user_id = $1 AND test_type = 'kino_chip' AND (data->'estimated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
+                [user_id]
+            ),
+        ]);
 
-        return { success: true, twin: result.rows[0] || null };
+        const twin = twinResult.rows[0] || null;
+        const latestBm = bmResult.rows[0]?.data?.estimated || null;
+        const conditionKeys = bio_data?.health_conditions || [];
+        const tags = _buildHealthTagsBackend(twin, latestBm, conditionKeys);
+
+        return { success: true, twin: twin ? { ...twin, tags } : null };
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetHealthTwin failed', error: err.message }));
         return { success: false, error: err.message, statusCode: 500 };
@@ -5434,10 +7391,13 @@ async function handleGetHealthTwin(openid) {
 async function handleGetAcademyCourses() {
     try {
         const result = await pool.query(`
-            SELECT c.*, COUNT(l.id)::int AS lesson_count
+            SELECT c.*,
+                   COUNT(DISTINCT l.id)::int AS lesson_count,
+                   pc.title AS prerequisite_title
             FROM academy_courses c
             LEFT JOIN academy_lessons l ON l.course_id = c.id
-            GROUP BY c.id
+            LEFT JOIN academy_courses pc ON pc.id = c.prerequisite_course_id
+            GROUP BY c.id, pc.title
             ORDER BY c.sort_order ASC, c.created_at DESC`);
         return { success: true, courses: result.rows };
     } catch (err) {
@@ -5447,11 +7407,15 @@ async function handleGetAcademyCourses() {
 
 async function handlePostAcademyCourse(body) {
     try {
-        const { title, description, oss_key, status, sort_order } = body;
+        const { title, description, oss_key, status, sort_order, credit_value, level, prerequisite_course_id, thumbnail_oss_key } = body;
         if (!title) return { success: false, error: 'Title is required' };
         const result = await pool.query(
-            'INSERT INTO academy_courses (title, description, oss_key, status, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-            [title, description || null, oss_key || null, status || 'draft', sort_order || 0]
+            `INSERT INTO academy_courses
+               (title, description, oss_key, status, sort_order, credit_value, level, prerequisite_course_id, thumbnail_oss_key)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+            [title, description || null, oss_key || null, status || 'draft', sort_order || 0,
+             credit_value != null ? credit_value : 10, level || 'foundation',
+             prerequisite_course_id || null, thumbnail_oss_key || null]
         );
         return { success: true, course: result.rows[0] };
     } catch (err) {
@@ -5461,17 +7425,30 @@ async function handlePostAcademyCourse(body) {
 
 async function handlePutAcademyCourse(id, body) {
     try {
-        const { title, description, oss_key, status, sort_order } = body;
+        const { title, description, oss_key, status, sort_order, credit_value, level, thumbnail_oss_key } = body;
+        const prereqId = Object.prototype.hasOwnProperty.call(body, 'prerequisite_course_id')
+            ? (body.prerequisite_course_id || null)
+            : undefined;
         const result = await pool.query(
             `UPDATE academy_courses SET
-                title       = COALESCE($1, title),
-                description = COALESCE($2, description),
-                oss_key     = COALESCE($3, oss_key),
-                status      = COALESCE($4, status),
-                sort_order  = COALESCE($5, sort_order),
-                updated_at  = NOW()
-             WHERE id = $6 RETURNING *`,
-            [title || null, description || null, oss_key || null, status || null, sort_order != null ? sort_order : null, id]
+                title                   = COALESCE($1, title),
+                description             = COALESCE($2, description),
+                oss_key                 = COALESCE($3, oss_key),
+                status                  = COALESCE($4, status),
+                sort_order              = COALESCE($5, sort_order),
+                credit_value            = COALESCE($6, credit_value),
+                level                   = COALESCE($7, level),
+                prerequisite_course_id  = CASE WHEN $8::boolean THEN $9::int ELSE prerequisite_course_id END,
+                thumbnail_oss_key       = COALESCE($10, thumbnail_oss_key),
+                updated_at              = NOW()
+             WHERE id = $11 RETURNING *`,
+            [title || null, description || null, oss_key || null, status || null,
+             sort_order != null ? sort_order : null,
+             credit_value != null ? credit_value : null,
+             level || null,
+             prereqId !== undefined,
+             prereqId,
+             thumbnail_oss_key || null, id]
         );
         if (result.rows.length === 0) return { success: false, error: 'Not found' };
         return { success: true, course: result.rows[0] };
@@ -5549,7 +7526,11 @@ async function handleGetAcademyLessons(courseId) {
     try {
         if (!courseId) return { success: false, error: 'course_id is required' };
         const result = await pool.query(
-            'SELECT * FROM academy_lessons WHERE course_id = $1 ORDER BY sort_order ASC, created_at ASC',
+            `SELECT l.*,
+                    (SELECT COUNT(*) FROM academy_lesson_quizzes q WHERE q.lesson_id = l.id)::int > 0 AS has_quiz
+             FROM academy_lessons l
+             WHERE l.course_id = $1
+             ORDER BY l.sort_order ASC, l.created_at ASC`,
             [courseId]
         );
         return { success: true, lessons: result.rows };
@@ -5560,11 +7541,15 @@ async function handleGetAcademyLessons(courseId) {
 
 async function handlePostAcademyLesson(body) {
     try {
-        const { course_id, title, description, oss_key, sort_order } = body;
+        const { course_id, title, description, oss_key, sort_order, content_type, text_content, credit_value, min_watch_seconds } = body;
         if (!course_id || !title) return { success: false, error: 'course_id and title are required' };
         const result = await pool.query(
-            'INSERT INTO academy_lessons (course_id, title, description, oss_key, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-            [course_id, title, description || null, oss_key || null, sort_order || 0]
+            `INSERT INTO academy_lessons
+               (course_id, title, description, oss_key, sort_order, content_type, text_content, credit_value, min_watch_seconds)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+            [course_id, title, description || null, oss_key || null, sort_order || 0,
+             content_type || 'video', text_content || null,
+             credit_value != null ? credit_value : 5, min_watch_seconds || null]
         );
         return { success: true, lesson: result.rows[0] };
     } catch (err) {
@@ -5574,15 +7559,23 @@ async function handlePostAcademyLesson(body) {
 
 async function handlePutAcademyLesson(id, body) {
     try {
-        const { title, description, oss_key, sort_order } = body;
+        const { title, description, oss_key, sort_order, content_type, text_content, credit_value, min_watch_seconds } = body;
         const result = await pool.query(
             `UPDATE academy_lessons SET
-                title       = COALESCE($1, title),
-                description = COALESCE($2, description),
-                oss_key     = COALESCE($3, oss_key),
-                sort_order  = COALESCE($4, sort_order)
-             WHERE id = $5 RETURNING *`,
-            [title || null, description || null, oss_key || null, sort_order != null ? sort_order : null, id]
+                title             = COALESCE($1, title),
+                description       = COALESCE($2, description),
+                oss_key           = COALESCE($3, oss_key),
+                sort_order        = COALESCE($4, sort_order),
+                content_type      = COALESCE($5, content_type),
+                text_content      = COALESCE($6, text_content),
+                credit_value      = COALESCE($7, credit_value),
+                min_watch_seconds = COALESCE($8, min_watch_seconds)
+             WHERE id = $9 RETURNING *`,
+            [title || null, description || null, oss_key || null,
+             sort_order != null ? sort_order : null,
+             content_type || null, text_content || null,
+             credit_value != null ? credit_value : null,
+             min_watch_seconds != null ? min_watch_seconds : null, id]
         );
         if (result.rows.length === 0) return { success: false, error: 'Not found' };
         return { success: true, lesson: result.rows[0] };
@@ -5610,7 +7603,8 @@ async function handleGetAcademyProgress(coachUserId) {
     try {
         if (!coachUserId) return { success: false, error: 'coach_user_id is required' };
         const result = await pool.query(
-            'SELECT lesson_id, completed_at FROM academy_coach_progress WHERE coach_user_id = $1',
+            `SELECT lesson_id, completed_at, credits_earned, quiz_best_score, time_spent_seconds
+             FROM academy_coach_progress WHERE coach_user_id = $1`,
             [coachUserId]
         );
         return { success: true, progress: result.rows };
@@ -5621,15 +7615,85 @@ async function handleGetAcademyProgress(coachUserId) {
 
 async function handlePostAcademyProgress(body) {
     try {
-        const { coach_user_id, lesson_id } = body;
+        const { coach_user_id, lesson_id, time_spent_seconds } = body;
         if (!coach_user_id || !lesson_id) return { success: false, error: 'coach_user_id and lesson_id are required' };
-        await pool.query(
-            'INSERT INTO academy_coach_progress (coach_user_id, lesson_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+
+        const existing = await pool.query(
+            'SELECT id FROM academy_coach_progress WHERE coach_user_id = $1 AND lesson_id = $2',
             [coach_user_id, lesson_id]
         );
-        return { success: true };
+        if (existing.rows.length > 0) {
+            if (time_spent_seconds != null) {
+                await pool.query(
+                    'UPDATE academy_coach_progress SET time_spent_seconds = $1 WHERE coach_user_id = $2 AND lesson_id = $3',
+                    [time_spent_seconds, coach_user_id, lesson_id]
+                );
+            }
+            return { success: true, already_completed: true, credits_earned: 0 };
+        }
+
+        const lessonRes = await pool.query('SELECT credit_value FROM academy_lessons WHERE id = $1', [lesson_id]);
+        const lessonCredit = lessonRes.rows.length > 0 ? (lessonRes.rows[0].credit_value || 5) : 5;
+
+        await pool.query(
+            `INSERT INTO academy_coach_progress (coach_user_id, lesson_id, credits_earned, time_spent_seconds)
+             VALUES ($1, $2, $3, $4)`,
+            [coach_user_id, lesson_id, lessonCredit, time_spent_seconds || 0]
+        );
+        await pool.query(
+            `INSERT INTO academy_credit_ledger (coach_user_id, amount, reason, ref_type, ref_id)
+             VALUES ($1, $2, 'lesson_complete', 'lesson', $3)`,
+            [coach_user_id, lessonCredit, lesson_id]
+        );
+
+        await _checkAndAwardCertifications(coach_user_id);
+
+        return { success: true, credits_earned: lessonCredit };
     } catch (err) {
         return { success: false, error: err.message };
+    }
+}
+
+async function _checkAndAwardCertifications(coachUserId) {
+    try {
+        const certs = await pool.query(
+            `SELECT id, required_course_ids, min_credits FROM academy_certifications
+             WHERE is_active = TRUE
+               AND id NOT IN (SELECT certification_id FROM academy_coach_certifications WHERE coach_user_id = $1)`,
+            [coachUserId]
+        );
+        if (certs.rows.length === 0) return;
+
+        const totalCreditsRes = await pool.query(
+            'SELECT COALESCE(SUM(amount),0)::int AS total FROM academy_credit_ledger WHERE coach_user_id = $1',
+            [coachUserId]
+        );
+        const totalCredits = totalCreditsRes.rows[0].total;
+
+        const completedRes = await pool.query(
+            `SELECT DISTINCT l.course_id FROM academy_coach_progress p
+             JOIN academy_lessons l ON l.id = p.lesson_id
+             WHERE p.coach_user_id = $1`,
+            [coachUserId]
+        );
+        const completedCourseIds = new Set(completedRes.rows.map(r => r.course_id));
+
+        for (const cert of certs.rows) {
+            const reqIds = cert.required_course_ids || [];
+            if (cert.min_credits > 0 && totalCredits < cert.min_credits) continue;
+            if (reqIds.length > 0 && !reqIds.every(id => completedCourseIds.has(id))) continue;
+            await pool.query(
+                'INSERT INTO academy_coach_certifications (coach_user_id, certification_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                [coachUserId, cert.id]
+            );
+            await pool.query(
+                `INSERT INTO academy_credit_ledger (coach_user_id, amount, reason, ref_type, ref_id)
+                 VALUES ($1, 50, 'cert_earned', 'certification', $2)`,
+                [coachUserId, cert.id]
+            );
+        }
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'cert check failed', error: err.message }));
     }
 }
 
@@ -5666,6 +7730,382 @@ async function handleGetAcademyLibraryContent(id) {
     }
 }
 
+// ── Academy — new handlers ────────────────────────────────────────────────────
+
+function _getTier(totalCredits) {
+    if (totalCredits >= 700) return 'expert';
+    if (totalCredits >= 300) return 'advanced';
+    if (totalCredits >= 100) return 'intermediate';
+    return 'foundation';
+}
+
+async function handleGetAcademyLessonById(lessonId) {
+    try {
+        const lessonRes = await pool.query('SELECT * FROM academy_lessons WHERE id = $1', [lessonId]);
+        if (lessonRes.rows.length === 0) return { success: false, error: 'Not found', statusCode: 404 };
+        const quizRes = await pool.query(
+            'SELECT * FROM academy_lesson_quizzes WHERE lesson_id = $1 ORDER BY sort_order ASC, id ASC',
+            [lessonId]
+        );
+        return { success: true, lesson: lessonRes.rows[0], quiz_questions: quizRes.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostQuizAttempt(body) {
+    try {
+        const { coach_user_id, lesson_id, answers } = body;
+        if (!coach_user_id || !lesson_id || !answers) return { success: false, error: 'coach_user_id, lesson_id, answers are required' };
+
+        const quizRes = await pool.query(
+            'SELECT * FROM academy_lesson_quizzes WHERE lesson_id = $1 ORDER BY sort_order ASC, id ASC',
+            [lesson_id]
+        );
+        if (quizRes.rows.length === 0) return { success: false, error: 'No quiz questions for this lesson' };
+
+        let correct = 0;
+        const correctAnswers = [];
+        for (const q of quizRes.rows) {
+            const opts = q.options;
+            const correctIdx = opts.findIndex(o => o.is_correct);
+            const submitted = answers[String(q.id)];
+            const isCorrect = submitted === correctIdx;
+            if (isCorrect) correct++;
+            correctAnswers.push({ question_id: q.id, correct_index: correctIdx, explanation: opts[correctIdx]?.explanation || null, is_correct: isCorrect });
+        }
+
+        const score = Math.round((correct / quizRes.rows.length) * 100);
+        const passed = score >= 70;
+
+        const firstPassRes = await pool.query(
+            'SELECT id FROM academy_quiz_attempts WHERE coach_user_id = $1 AND lesson_id = $2 AND passed = TRUE',
+            [coach_user_id, lesson_id]
+        );
+        const isFirstPass = firstPassRes.rows.length === 0;
+
+        let creditsEarned = 0;
+        if (passed && isFirstPass) {
+            creditsEarned = quizRes.rows.reduce((sum, q) => sum + (q.credit_value || 5), 0);
+            await pool.query(
+                `INSERT INTO academy_credit_ledger (coach_user_id, amount, reason, ref_type, ref_id)
+                 VALUES ($1, $2, 'quiz_pass', 'lesson', $3)`,
+                [coach_user_id, creditsEarned, lesson_id]
+            );
+        }
+
+        await pool.query(
+            `INSERT INTO academy_quiz_attempts (coach_user_id, lesson_id, answers, score, passed, credits_earned)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [coach_user_id, lesson_id, JSON.stringify(answers), score, passed, creditsEarned]
+        );
+
+        await pool.query(
+            `UPDATE academy_coach_progress SET quiz_best_score = GREATEST(COALESCE(quiz_best_score, 0), $1)
+             WHERE coach_user_id = $2 AND lesson_id = $3`,
+            [score, coach_user_id, lesson_id]
+        );
+
+        if (passed && isFirstPass) await _checkAndAwardCertifications(coach_user_id);
+
+        return { success: true, score, passed, credits_earned: creditsEarned, correct_answers: correctAnswers };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetCoachCredits(coachUserId) {
+    try {
+        if (!coachUserId) return { success: false, error: 'coach_user_id is required' };
+        const totalRes = await pool.query(
+            'SELECT COALESCE(SUM(amount),0)::int AS total FROM academy_credit_ledger WHERE coach_user_id = $1',
+            [coachUserId]
+        );
+        const total = totalRes.rows[0].total;
+        const histRes = await pool.query(
+            'SELECT * FROM academy_credit_ledger WHERE coach_user_id = $1 ORDER BY created_at DESC LIMIT 50',
+            [coachUserId]
+        );
+        return { success: true, total, tier: _getTier(total), history: histRes.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetCoachDashboard(coachUserId) {
+    try {
+        if (!coachUserId) return { success: false, error: 'coach_user_id is required' };
+        const [creditsRes, lessonsRes, quizzesRes, certsRes] = await Promise.all([
+            pool.query('SELECT COALESCE(SUM(amount),0)::int AS total FROM academy_credit_ledger WHERE coach_user_id = $1', [coachUserId]),
+            pool.query('SELECT COUNT(*)::int AS cnt FROM academy_coach_progress WHERE coach_user_id = $1', [coachUserId]),
+            pool.query('SELECT COUNT(*)::int AS cnt FROM academy_quiz_attempts WHERE coach_user_id = $1 AND passed = TRUE', [coachUserId]),
+            pool.query('SELECT COUNT(*)::int AS cnt FROM academy_coach_certifications WHERE coach_user_id = $1', [coachUserId]),
+        ]);
+        const total = creditsRes.rows[0].total;
+        return {
+            success: true,
+            total_credits: total,
+            tier: _getTier(total),
+            completed_lessons: lessonsRes.rows[0].cnt,
+            passed_quizzes: quizzesRes.rows[0].cnt,
+            certifications_count: certsRes.rows[0].cnt,
+        };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetAcademyLeaderboard() {
+    try {
+        const result = await pool.query(`
+            SELECT l.coach_user_id,
+                   u.name,
+                   COALESCE(SUM(l.amount),0)::int AS total_credits,
+                   COUNT(DISTINCT p.lesson_id)::int AS completed_lessons
+            FROM academy_credit_ledger l
+            LEFT JOIN users u ON u.user_id = l.coach_user_id
+            LEFT JOIN academy_coach_progress p ON p.coach_user_id = l.coach_user_id
+            GROUP BY l.coach_user_id, u.name
+            ORDER BY total_credits DESC
+            LIMIT 20`);
+        return { success: true, leaderboard: result.rows.map(r => ({ ...r, tier: _getTier(r.total_credits) })) };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetAcademyCertifications() {
+    try {
+        const result = await pool.query('SELECT * FROM academy_certifications ORDER BY tier ASC, created_at ASC');
+        return { success: true, certifications: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAcademyCertification(body) {
+    try {
+        const { title, description, required_course_ids, min_credits, tier, badge_image_url } = body;
+        if (!title) return { success: false, error: 'Title is required' };
+        const result = await pool.query(
+            `INSERT INTO academy_certifications (title, description, required_course_ids, min_credits, tier, badge_image_url)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+            [title, description || null, required_course_ids || [], min_credits || 0, tier || 'bronze', badge_image_url || null]
+        );
+        return { success: true, certification: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutAcademyCertification(id, body) {
+    try {
+        const { title, description, required_course_ids, min_credits, tier, badge_image_url, is_active } = body;
+        const result = await pool.query(
+            `UPDATE academy_certifications SET
+                title               = COALESCE($1, title),
+                description         = COALESCE($2, description),
+                required_course_ids = COALESCE($3, required_course_ids),
+                min_credits         = COALESCE($4, min_credits),
+                tier                = COALESCE($5, tier),
+                badge_image_url     = COALESCE($6, badge_image_url),
+                is_active           = COALESCE($7, is_active)
+             WHERE id = $8 RETURNING *`,
+            [title || null, description || null,
+             required_course_ids ? required_course_ids : null,
+             min_credits != null ? min_credits : null,
+             tier || null, badge_image_url || null,
+             is_active != null ? is_active : null, id]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Not found' };
+        return { success: true, certification: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteAcademyCertification(id) {
+    try {
+        await pool.query('DELETE FROM academy_certifications WHERE id = $1', [id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetCoachCertifications(coachUserId) {
+    try {
+        if (!coachUserId) return { success: false, error: 'coach_user_id is required' };
+        const result = await pool.query(
+            `SELECT cc.*, c.title, c.description, c.tier, c.badge_image_url, c.required_course_ids, c.min_credits
+             FROM academy_coach_certifications cc
+             JOIN academy_certifications c ON c.id = cc.certification_id
+             WHERE cc.coach_user_id = $1
+             ORDER BY cc.earned_at DESC`,
+            [coachUserId]
+        );
+        return { success: true, certifications: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetAcademyLearningPaths() {
+    try {
+        const pathsRes = await pool.query(
+            'SELECT * FROM academy_learning_paths WHERE is_active = TRUE ORDER BY sort_order ASC, created_at ASC'
+        );
+        const coursesRes = await pool.query(
+            `SELECT lpc.path_id, lpc.course_id, lpc.sort_order, c.title, c.level, c.credit_value
+             FROM academy_learning_path_courses lpc
+             JOIN academy_courses c ON c.id = lpc.course_id
+             ORDER BY lpc.path_id, lpc.sort_order ASC`
+        );
+        const coursesByPath = {};
+        for (const row of coursesRes.rows) {
+            if (!coursesByPath[row.path_id]) coursesByPath[row.path_id] = [];
+            coursesByPath[row.path_id].push(row);
+        }
+        const paths = pathsRes.rows.map(p => ({ ...p, courses: coursesByPath[p.id] || [] }));
+        return { success: true, paths };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAcademyLearningPath(body) {
+    try {
+        const { title, description, tier, sort_order, course_ids } = body;
+        if (!title) return { success: false, error: 'Title is required' };
+        const pathRes = await pool.query(
+            'INSERT INTO academy_learning_paths (title, description, tier, sort_order) VALUES ($1, $2, $3, $4) RETURNING *',
+            [title, description || null, tier || 'foundation', sort_order || 0]
+        );
+        const path = pathRes.rows[0];
+        if (Array.isArray(course_ids) && course_ids.length > 0) {
+            for (let i = 0; i < course_ids.length; i++) {
+                await pool.query(
+                    'INSERT INTO academy_learning_path_courses (path_id, course_id, sort_order) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+                    [path.id, course_ids[i], i]
+                );
+            }
+        }
+        return { success: true, path };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutAcademyLearningPath(id, body) {
+    try {
+        const { title, description, tier, sort_order, is_active, course_ids } = body;
+        const result = await pool.query(
+            `UPDATE academy_learning_paths SET
+                title      = COALESCE($1, title),
+                description= COALESCE($2, description),
+                tier       = COALESCE($3, tier),
+                sort_order = COALESCE($4, sort_order),
+                is_active  = COALESCE($5, is_active)
+             WHERE id = $6 RETURNING *`,
+            [title || null, description || null, tier || null,
+             sort_order != null ? sort_order : null,
+             is_active != null ? is_active : null, id]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Not found' };
+        if (Array.isArray(course_ids)) {
+            await pool.query('DELETE FROM academy_learning_path_courses WHERE path_id = $1', [id]);
+            for (let i = 0; i < course_ids.length; i++) {
+                await pool.query(
+                    'INSERT INTO academy_learning_path_courses (path_id, course_id, sort_order) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+                    [id, course_ids[i], i]
+                );
+            }
+        }
+        return { success: true, path: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteAcademyLearningPath(id) {
+    try {
+        await pool.query('DELETE FROM academy_learning_paths WHERE id = $1', [id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAcademyQuizQuestion(body) {
+    try {
+        const { lesson_id, scenario, question, options, sort_order, credit_value } = body;
+        if (!lesson_id || !question || !options) return { success: false, error: 'lesson_id, question, options are required' };
+        const result = await pool.query(
+            `INSERT INTO academy_lesson_quizzes (lesson_id, scenario, question, options, sort_order, credit_value)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+            [lesson_id, scenario || null, question, JSON.stringify(options), sort_order || 0, credit_value || 5]
+        );
+        return { success: true, question: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutAcademyQuizQuestion(id, body) {
+    try {
+        const { scenario, question, options, sort_order, credit_value } = body;
+        const result = await pool.query(
+            `UPDATE academy_lesson_quizzes SET
+                scenario     = COALESCE($1, scenario),
+                question     = COALESCE($2, question),
+                options      = COALESCE($3, options),
+                sort_order   = COALESCE($4, sort_order),
+                credit_value = COALESCE($5, credit_value)
+             WHERE id = $6 RETURNING *`,
+            [scenario || null, question || null,
+             options ? JSON.stringify(options) : null,
+             sort_order != null ? sort_order : null,
+             credit_value != null ? credit_value : null, id]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Not found' };
+        return { success: true, question: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteAcademyQuizQuestion(id) {
+    try {
+        await pool.query('DELETE FROM academy_lesson_quizzes WHERE id = $1', [id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetAcademyCourseProgressAll() {
+    try {
+        const result = await pool.query(`
+            SELECT
+                c.id AS course_id,
+                c.title,
+                c.level,
+                c.credit_value AS course_credit_value,
+                COUNT(DISTINCT l.id)::int AS total_lessons,
+                COUNT(DISTINCT p.coach_user_id)::int AS coaches_started,
+                SUM(p.credits_earned)::int AS total_credits_awarded,
+                AVG(p.quiz_best_score)::numeric(5,1) AS avg_quiz_score
+            FROM academy_courses c
+            LEFT JOIN academy_lessons l ON l.course_id = c.id
+            LEFT JOIN academy_coach_progress p ON p.lesson_id = l.id
+            GROUP BY c.id, c.title, c.level, c.credit_value
+            ORDER BY c.sort_order ASC, c.created_at DESC`);
+        return { success: true, progress: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 // ── Tickets ───────────────────────────────────────────────────────────────────
 
 const TICKET_STATUSES   = new Set(['open', 'in_progress', 'resolved', 'closed']);
@@ -5677,8 +8117,9 @@ async function handleGetTickets(channelId) {
             const result = await pool.query(
                 `SELECT t.id, t.title, t.description, t.status, t.priority, t.images, t.reporter, t.created_at, t.updated_at
                  FROM tickets t
-                 JOIN users u ON u.external_id = t.reporter
-                 WHERE u.channel_id = $1
+                 LEFT JOIN users u ON u.external_id = t.reporter
+                 WHERE t.channel_id = $1
+                    OR (t.channel_id IS NULL AND u.channel_id = $1)
                  ORDER BY CASE t.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'resolved' THEN 2 ELSE 3 END, t.created_at DESC`,
                 [channelId]
             );
@@ -5717,15 +8158,16 @@ function normalizeTicketInput(body) {
     return out;
 }
 
-async function handlePostTicket(body) {
+async function handlePostTicket(body, adminCtx = {}) {
     try {
         const t = normalizeTicketInput(body || {});
         if (!t.title) return { success: false, error: 'title is required' };
+        const channelId = adminCtx.channelId || null;
         const result = await pool.query(
-            `INSERT INTO tickets (title, description, status, priority, images, reporter)
-             VALUES ($1, $2, COALESCE($3, 'open'), COALESCE($4, 'normal'), COALESCE($5, ARRAY[]::TEXT[]), $6)
+            `INSERT INTO tickets (title, description, status, priority, images, reporter, channel_id)
+             VALUES ($1, $2, COALESCE($3, 'open'), COALESCE($4, 'normal'), COALESCE($5, ARRAY[]::TEXT[]), $6, $7)
              RETURNING *`,
-            [t.title, t.description || null, t.status, t.priority, t.images || null, t.reporter || null]
+            [t.title, t.description || null, t.status, t.priority, t.images || null, t.reporter || null, channelId]
         );
         return { success: true, ticket: result.rows[0] };
     } catch (err) {
@@ -6913,7 +9355,7 @@ async function handleGetHealthReports(query) {
     try {
         const { openid, user_id } = query;
         if (!openid && !user_id) return { statusCode: 400, success: false, error: 'openid or user_id required' };
-        const uid = user_id || (await pool.query('SELECT user_id FROM users WHERE external_id = $1 LIMIT 1', [openid])).rows[0]?.user_id;
+        const uid = user_id || (await pool.query('SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid])).rows[0]?.user_id;
         if (!uid) return { statusCode: 404, success: false, error: 'User not found' };
         const result = await pool.query(
             `SELECT id, report_date, source, institution, report_type, status, created_at
@@ -7242,8 +9684,7 @@ exports.handler = async (req, resp, context) => {
     let event = req;
 
     if (Buffer.isBuffer(req)) {
-        const text = req.toString();
-        try { event = JSON.parse(text); } catch (e) {}
+        try { event = JSON.parse(req.toString()); } catch (e) {}
     }
 
     // EventBridge CloudEvent detection — route before HTTP processing
@@ -7299,7 +9740,7 @@ exports.handler = async (req, resp, context) => {
         return optionsPayload;
     }
 
-    const adminCtx = { role: 'superadmin', channelId: null, accountId: null };
+    const adminCtx = { role: 'superadmin', channelId: null, accountId: null, canManageSubchannels: false };
     const expectedBearer = process.env.API_BEARER_TOKEN;
     if (expectedBearer && rawPath && path !== '/admin/login') {
         const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
@@ -7316,6 +9757,11 @@ exports.handler = async (req, resp, context) => {
             adminCtx.role = 'channel';
             adminCtx.channelId = payload.cid;
             adminCtx.accountId = payload.sub;
+            adminCtx.canManageSubchannels = payload.cms ?? false;
+            adminCtx.tabs = payload.tabs ?? [];
+            adminCtx.perms = Array.isArray(payload.perms)
+                ? payload.perms
+                : expandPermissions(payload.tabs ?? []);
         } else {
             const unauthorizedPayload = { isBase64Encoded: false, statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized' }) };
             if (isStandardHttp) { resp.setStatusCode(401); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Unauthorized' })); return; }
@@ -7400,25 +9846,42 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetChannelInventory(query, adminCtx);
             } else if (path === '/addresses') {
                 result = await handleGetAddresses(query.openid || query.user_id);
+            } else if (path.includes('/skus')) {
+                result = await handleGetSkus();
+            } else if (path.includes('/inventory-stock')) {
+                result = await handleGetInventoryStock(query);
             } else if (path.includes('/store-items')) {
                 result = await handleGetStoreItems(query);
             } else if (path.includes('/my-orders')) {
                 result = await handleGetMyOrders(query.openid);
             } else if (path.includes('/orders')) {
-                result = await handleGetOrders();
+                result = await handleGetOrders(query, adminCtx);
             } else if (path.includes('/coach-list')) {
                 result = await handleGetCoachList(adminCtx.channelId);
             } else if (path.match(/\/channel-users\/(\d+)/)) {
-                result = await handleGetChannelUsers(path.match(/\/channel-users\/(\d+)/)[1]);
+                result = await handleGetChannelUsers(path.match(/\/channel-users\/(\d+)/)[1], query.include_subchannels === 'true');
             } else if (path.match(/\/channel-coaches\/(\d+)/)) {
-                result = await handleGetChannelCoaches(path.match(/\/channel-coaches\/(\d+)/)[1]);
+                result = await handleGetChannelCoaches(path.match(/\/channel-coaches\/(\d+)/)[1], query.include_subchannels === 'true');
             } else if (path.match(/\/coach-users\/(\d+)/)) {
                 result = await handleGetCoachUsers(path.match(/\/coach-users\/(\d+)/)[1], query);
+            } else if (path.includes('/my-referrals')) {
+                result = await handleGetMyReferrals(query);
+            } else if (path === '/credits/balance') {
+                result = await handleGetCreditBalance(query);
+            } else if (path === '/credits/history') {
+                result = await handleGetCreditHistory(query);
+            } else if (path === '/credits/withdrawals') {
+                result = await handleGetUserWithdrawals(query);
+            } else if (path === '/admin/credit-withdrawals') {
+                result = await handleGetAdminWithdrawals(query);
             } else if (path.includes('/invitations')) {
                 const invQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
                 result = await handleGetInvitations(invQuery);
             } else if (path.includes('/partner-commission-config')) {
                 result = await handleGetPartnerCommissionConfig();
+            } else if (path.includes('/channel-referral-network')) {
+                const cid = adminCtx.role === 'superadmin' ? query.channel_id : adminCtx.channelId;
+                result = requirePermission(adminCtx, 'users:read') || await handleGetChannelReferralNetwork(cid);
             } else if (path.match(/\/partner-tree\/(\d+)/)) {
                 result = await handleGetPartnerTree(path.match(/\/partner-tree\/(\d+)/)[1]);
             } else if (path.match(/\/partners\/(\d+)/)) {
@@ -7429,10 +9892,16 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetPartnerPayouts(query);
             } else if (path.includes('/partners')) {
                 result = await handleGetPartners(query, adminCtx);
+            } else if (path.match(/\/channels\/(\d+)\/rewards-config$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/rewards-config$/)[1];
+                result = await handleGetChannelRewardsConfig(channelId, adminCtx);
+            } else if (path.match(/\/channels\/(\d+)\/partner-tiers-config$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/partner-tiers-config$/)[1];
+                result = await handleGetChannelPartnerTiersConfig(channelId, adminCtx);
             } else if (path.includes('/channels')) {
-                result = await handleGetChannels();
+                result = await handleGetChannels(adminCtx);
             } else if (path.includes('/academy/course-progress')) {
-                result = await handleGetAcademyCourseProgress();
+                result = await handleGetAcademyCourseProgressAll();
             } else if (path.includes('/academy/courses')) {
                 result = await handleGetAcademyCourses();
             } else if (path.match(/\/academy\/library\/(\d+)\/content/)) {
@@ -7440,17 +9909,32 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetAcademyLibraryContent(libId);
             } else if (path.includes('/academy/library')) {
                 result = await handleGetAcademyLibrary();
+            } else if (path.match(/\/academy\/lessons\/(\d+)$/)) {
+                const lessonId = path.match(/\/academy\/lessons\/(\d+)$/)[1];
+                result = await handleGetAcademyLessonById(lessonId);
             } else if (path.includes('/academy/lessons')) {
                 result = await handleGetAcademyLessons(query.course_id);
             } else if (path.includes('/academy/progress')) {
                 result = await handleGetAcademyProgress(query.coach_user_id);
+            } else if (path.includes('/academy/leaderboard')) {
+                result = await handleGetAcademyLeaderboard();
+            } else if (path.includes('/academy/coach-dashboard')) {
+                result = await handleGetCoachDashboard(query.coach_user_id);
+            } else if (path.includes('/academy/coach-credits')) {
+                result = await handleGetCoachCredits(query.coach_user_id);
+            } else if (path.includes('/academy/coach-certifications')) {
+                result = await handleGetCoachCertifications(query.coach_user_id);
+            } else if (path.includes('/academy/certifications')) {
+                result = await handleGetAcademyCertifications();
+            } else if (path.includes('/academy/learning-paths')) {
+                result = await handleGetAcademyLearningPaths();
             } else if (path.includes('/oss/presign')) {
                 result = await handleGetOssPresign(query);
             } else if (path.match(/\/users\/([^/]+)/)) {
                 const userId = path.match(/\/users\/([^/]+)/)[1];
                 result = await handleGetUser(userId);
             } else if (path.includes('/users') || path === '/' || path === '') {
-                result = await handleGetUsers(adminCtx.channelId);
+                result = await handleGetUsers(adminCtx.channelId, query);
             } else if (path.includes('/commission-settings')) {
                 result = await handleGetCommissionSettings();
             } else if (path.includes('/coach-commissions')) {
@@ -7469,6 +9953,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetSavedReports();
             } else if (path === '/admin-accounts') {
                 result = await handleGetAdminAccounts(adminCtx);
+            } else if (path === '/admin-channel-roles') {
+                result = await handleGetAdminChannelRoles(adminCtx);
             } else if (path === '/tickets' || path.includes('/tickets')) {
                 result = await handleGetTickets(adminCtx.channelId);
             } else if (path.includes('/pending-questionnaires')) {
@@ -7508,11 +9994,22 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/client-goals')) {
                 result = await handleGetClientGoals(query);
             } else if (path.includes('/nps-surveys')) {
-                result = await handleGetNpsSurveys(query);
+                result = await handleGetNpsSurveys(query, adminCtx);
+            } else if (path.includes('/coach-group-kpis')) {
+                result = await handleGetCoachGroupKpis(query);
+            } else if (path.includes('/coach-groups')) {
+                result = await handleGetCoachGroups(query, adminCtx);
             } else if (path.includes('/coach-kpis')) {
                 result = await handleGetCoachKpis(query);
             } else if (path.includes('/follow-up-rules')) {
                 result = await handleGetFollowUpRules(query.coach_id);
+            } else if (path.includes('/my-event-signups')) {
+                result = await handleGetMyEventSignups(query);
+            } else if (path.match(/\/events\/(\d+)\/signups/)) {
+                const evId = path.match(/\/events\/(\d+)\/signups/)[1];
+                result = requirePermission(adminCtx, 'events:read') || await handleGetEventSignups(evId);
+            } else if (path.includes('/events')) {
+                result = requirePermission(adminCtx, 'events:read') || await handleGetEvents(query, adminCtx);
             } else {
                 result = { success: false, error: `Unknown GET route: ${path}` };
             }
@@ -7521,6 +10018,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleAdminLogin(parsedBody);
             } else if (path === '/admin-accounts') {
                 result = await handlePostAdminAccount(parsedBody, adminCtx);
+            } else if (path === '/admin-channel-roles') {
+                result = await handlePostAdminChannelRole(parsedBody, adminCtx);
             } else if (path === '/validate-invite') {
                 result = await handleValidateInvite(parsedBody);
             } else if (path === '/wx-login') {
@@ -7538,13 +10037,27 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/assign-coach')) {
                 result = await handlePostAssignCoach(parsedBody);
             } else if (path.includes('/invitations')) {
-                result = await handlePostInvitation(parsedBody);
+                result = requireAdminTab(adminCtx, 'invites') || await handlePostInvitation(parsedBody, adminCtx);
             } else if (path.includes('/channels')) {
                 result = await handlePostChannel(parsedBody, adminCtx);
+            } else if (path.includes('/coach-groups')) {
+                result = await handlePostCoachGroup(parsedBody, adminCtx);
             } else if (path.includes('/coaches')) {
-                result = await handlePostCoaches(parsedBody);
+                result = requireAdminTab(adminCtx, 'coaches') || await handlePostCoaches(parsedBody);
             } else if (path.includes('/channel-inventory')) {
-                result = await handlePostChannelInventory(parsedBody, adminCtx);
+                result = requireAdminTab(adminCtx, 'store') || await handlePostChannelInventory(parsedBody, adminCtx);
+            } else if (path.includes('/skus')) {
+                result = await handlePostSku(parsedBody);
+            } else if (path.includes('/inventory-stock')) {
+                result = await handlePostInventoryStock(parsedBody);
+            } else if (path.includes('/store-items')) {
+                result = await handlePostStoreItem(parsedBody);
+            } else if (path === '/orders/batch') {
+                result = await handlePostOrderBatch(parsedBody);
+            } else if (path.includes('/orders')) {
+                result = await handlePostOrder(parsedBody);
+            } else if (path.includes('/dots')) {
+                result = await handlePostDots(parsedBody);
             } else if (path === '/addresses') {
                 result = await handlePostAddress(parsedBody);
             } else if (path.match(/^\/orders\/([^/]+)\/confirm-receipt$/)) {
@@ -7555,14 +10068,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleLabOrderSync(orderId, parsedBody);
             } else if (path === '/lab-orders/checkout') {
                 result = await handlePostLabCheckout(parsedBody);
-            } else if (path.includes('/store-items')) {
-                result = await handlePostStoreItem(parsedBody);
-            } else if (path.includes('/orders')) {
-                result = await handlePostOrder(parsedBody);
-            } else if (path.includes('/dots')) {
-                result = await handlePostDots(parsedBody);
             } else if (path === '/users') {
-                result = await handlePostUsers(parsedBody);
+                result = requireAdminTab(adminCtx, 'users') || await handlePostUsers(parsedBody);
             } else if (path.includes('/kone-apk-releases')) {
                 result = await handlePostKoneApkRelease(parsedBody);
             } else if (path.includes('/kino-chip-batches')) {
@@ -7615,6 +10122,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostAnalyzeImage(parsedBody);
             } else if (path === '/biomarkers') {
                 result = await handlePostBiomarkers(parsedBody);
+            } else if (path === '/credits/withdraw') {
+                result = await handlePostCreditWithdraw(parsedBody);
             } else if (path.includes('/generate-coach-payouts')) {
                 result = await handlePostGenerateCoachPayouts(parsedBody);
             } else if (path.includes('/generate-channel-payouts')) {
@@ -7633,8 +10142,16 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostAcademyLesson(parsedBody);
             } else if (path === '/academy/progress') {
                 result = await handlePostAcademyProgress(parsedBody);
+            } else if (path === '/academy/quiz-attempts') {
+                result = await handlePostQuizAttempt(parsedBody);
+            } else if (path === '/academy/lesson-quizzes') {
+                result = await handlePostAcademyQuizQuestion(parsedBody);
+            } else if (path === '/academy/certifications') {
+                result = await handlePostAcademyCertification(parsedBody);
+            } else if (path === '/academy/learning-paths') {
+                result = await handlePostAcademyLearningPath(parsedBody);
             } else if (path === '/tickets') {
-                result = await handlePostTicket(parsedBody);
+                result = await handlePostTicket(parsedBody, adminCtx);
             } else if (path.match(/\/questionnaires\/(\d+)\/questions/)) {
                 const qid = path.match(/\/questionnaires\/(\d+)\/questions/)[1];
                 result = await handlePostQuestionnaireQuestion(qid, parsedBody);
@@ -7680,6 +10197,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostFollowUpRulesEvaluate();
             } else if (path.includes('/follow-up-rules')) {
                 result = await handlePostFollowUpRule(parsedBody);
+            } else if (path.includes('/event-signups')) {
+                result = await handlePostEventSignup(parsedBody);
+            } else if (path.includes('/events')) {
+                result = requirePermission(adminCtx, 'events:write') || await handlePostEvent(parsedBody, adminCtx);
             } else {
                 result = await handlePostChat(parsedBody);
             }
@@ -7698,10 +10219,13 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePutKinoDevice(deviceId, parsedBody);
             } else if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
-                result = await handlePutUser(user_id, parsedBody);
+                result = requireAdminTab(adminCtx, 'users') || await handlePutUser(user_id, parsedBody);
+            } else if (path.match(/\/coach-groups\/(\d+)/)) {
+                const groupId = path.match(/\/coach-groups\/(\d+)/)[1];
+                result = await handlePutCoachGroup(groupId, parsedBody, adminCtx);
             } else if (path.includes('/coaches/')) {
                 const coachId = path.split('/coaches/')[1];
-                result = await handlePutCoach(coachId, parsedBody);
+                result = requireAdminTab(adminCtx, 'coaches') || await handlePutCoach(coachId, parsedBody);
             } else if (path.match(/\/channels\/(\d+)\/sub-age-labels$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/sub-age-labels$/)[1];
                 result = await handlePutChannelSubAgeLabels(channelId, parsedBody, adminCtx);
@@ -7711,6 +10235,21 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/^\/addresses\/(\d+)$/)) {
                 const addressId = path.match(/^\/addresses\/(\d+)$/)[1];
                 result = await handlePutAddress(addressId, parsedBody);
+            } else if (path.match(/\/channels\/(\d+)\/rewards-config$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/rewards-config$/)[1];
+                result = await handlePutChannelRewardsConfig(channelId, parsedBody, adminCtx);
+            } else if (path.match(/\/channels\/(\d+)\/rewards-permission$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/rewards-permission$/)[1];
+                result = await handlePutChannelRewardsPermission(channelId, parsedBody, adminCtx);
+            } else if (path.match(/\/channels\/(\d+)\/partner-tiers-config$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/partner-tiers-config$/)[1];
+                result = await handlePutChannelPartnerTiersConfig(channelId, parsedBody, adminCtx);
+            } else if (path.match(/\/channels\/(\d+)\/partner-tiers-permission$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/partner-tiers-permission$/)[1];
+                result = await handlePutChannelPartnerTiersPermission(channelId, parsedBody, adminCtx);
+            } else if (path.match(/\/channels\/(\d+)\/manage-subchannels$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/manage-subchannels$/)[1];
+                result = await handlePutChannelManageSubchannels(channelId, parsedBody, adminCtx);
             } else if (path.includes('/channels/')) {
                 const channelId = path.split('/channels/')[1];
                 result = await handlePutChannel(channelId, parsedBody, adminCtx);
@@ -7719,13 +10258,19 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePutDot(dotId, parsedBody);
             } else if (path.includes('/channel-inventory/')) {
                 const invId = path.split('/channel-inventory/')[1];
-                result = await handlePutChannelInventory(invId, parsedBody, adminCtx);
+                result = requireAdminTab(adminCtx, 'store') || await handlePutChannelInventory(invId, parsedBody, adminCtx);
+            } else if (path.includes('/skus/')) {
+                const skuId = path.split('/skus/')[1];
+                result = await handlePutSku(skuId, parsedBody);
             } else if (path.includes('/store-items/')) {
                 const itemId = path.split('/store-items/')[1];
                 result = await handlePutStoreItem(itemId, parsedBody);
             } else if (path.includes('/orders/')) {
                 const orderId = path.split('/orders/')[1];
-                result = await handlePutOrder(orderId, parsedBody);
+                result = requireAdminTab(adminCtx, 'store') || await handlePutOrder(orderId, parsedBody, adminCtx);
+            } else if (path.match(/\/admin\/credit-withdrawals\/([a-f0-9-]+)/i)) {
+                const wdId = path.match(/\/admin\/credit-withdrawals\/([a-f0-9-]+)/i)[1];
+                result = await handlePutAdminWithdrawal(wdId, parsedBody, adminCtx);
             } else if (path.includes('/commission-settings/')) {
                 const settingId = path.split('/commission-settings/')[1];
                 result = await handlePutCommissionSetting(settingId, parsedBody);
@@ -7752,12 +10297,24 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/academy/library/')) {
                 const libId = path.split('/academy/library/')[1];
                 result = await handlePutAcademyLibraryItem(libId, parsedBody);
+            } else if (path.match(/\/academy\/lesson-quizzes\/(\d+)/)) {
+                const qId = path.match(/\/academy\/lesson-quizzes\/(\d+)/)[1];
+                result = await handlePutAcademyQuizQuestion(qId, parsedBody);
+            } else if (path.match(/\/academy\/certifications\/(\d+)/)) {
+                const certId = path.match(/\/academy\/certifications\/(\d+)/)[1];
+                result = await handlePutAcademyCertification(certId, parsedBody);
+            } else if (path.match(/\/academy\/learning-paths\/(\d+)/)) {
+                const pathId = path.match(/\/academy\/learning-paths\/(\d+)/)[1];
+                result = await handlePutAcademyLearningPath(pathId, parsedBody);
             } else if (path.match(/\/admin\/saved-reports\/(\d+)/)) {
                 const rId = path.match(/\/admin\/saved-reports\/(\d+)/)[1];
                 result = await handlePutSavedReport(rId, parsedBody);
             } else if (path.includes('/admin-accounts/')) {
                 const accountId = path.split('/admin-accounts/')[1];
                 result = await handlePutAdminAccount(accountId, parsedBody, adminCtx);
+            } else if (path.match(/\/admin-channel-roles\/(\d+)/)) {
+                const roleId = path.match(/\/admin-channel-roles\/(\d+)/)[1];
+                result = await handlePutAdminChannelRole(roleId, parsedBody, adminCtx);
             } else if (path.match(/\/tickets\/(\d+)/)) {
                 const ticketId = path.match(/\/tickets\/(\d+)/)[1];
                 result = await handlePutTicket(ticketId, parsedBody);
@@ -7796,6 +10353,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/lab-providers\/(\d+)/)) {
                 const pid = path.match(/\/lab-providers\/(\d+)/)[1];
                 result = await handlePutLabProvider(pid, parsedBody);
+            } else if (path.match(/\/events\/(\d+)/)) {
+                const evId = path.match(/\/events\/(\d+)/)[1];
+                result = requirePermission(adminCtx, 'events:write') || await handlePutEvent(evId, parsedBody);
             } else {
                 result = { success: false, error: `Unknown PUT route: ${path}` };
             }
@@ -7814,10 +10374,13 @@ exports.handler = async (req, resp, context) => {
                 result = await handleDeleteKinoDevice(deviceId);
             } else if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
-                result = await handleDeleteUser(user_id);
+                result = requirePermission(adminCtx, 'users:delete') || await handleDeleteUser(user_id);
+            } else if (path.match(/\/coach-groups\/(\d+)/)) {
+                const groupId = path.match(/\/coach-groups\/(\d+)/)[1];
+                result = await handleDeleteCoachGroup(groupId, adminCtx);
             } else if (path.includes('/coaches/')) {
                 const coachId = path.split('/coaches/')[1];
-                result = await handleDeleteCoach(coachId);
+                result = requirePermission(adminCtx, 'coaches:delete') || await handleDeleteCoach(coachId);
             } else if (path.includes('/channels/')) {
                 const channelId = path.split('/channels/')[1];
                 result = await handleDeleteChannel(channelId, adminCtx);
@@ -7829,10 +10392,13 @@ exports.handler = async (req, resp, context) => {
                 result = await handleDeleteDot(dotId);
             } else if (path.includes('/invitations/')) {
                 const inviteId = path.split('/invitations/')[1];
-                result = await handleDeleteInvitation(inviteId);
+                result = requirePermission(adminCtx, 'invites:delete') || await handleDeleteInvitation(inviteId);
             } else if (path.includes('/channel-inventory/')) {
                 const invId = path.split('/channel-inventory/')[1];
-                result = await handleDeleteChannelInventory(invId, adminCtx);
+                result = requirePermission(adminCtx, 'store:delete') || await handleDeleteChannelInventory(invId, adminCtx);
+            } else if (path.includes('/skus/')) {
+                const skuId = path.split('/skus/')[1];
+                result = await handleDeleteSku(skuId);
             } else if (path.includes('/store-items/')) {
                 const itemId = path.split('/store-items/')[1];
                 result = await handleDeleteStoreItem(itemId);
@@ -7845,12 +10411,24 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/academy/library/')) {
                 const libId = path.split('/academy/library/')[1];
                 result = await handleDeleteAcademyLibraryItem(libId);
+            } else if (path.match(/\/academy\/lesson-quizzes\/(\d+)/)) {
+                const qId = path.match(/\/academy\/lesson-quizzes\/(\d+)/)[1];
+                result = await handleDeleteAcademyQuizQuestion(qId);
+            } else if (path.match(/\/academy\/certifications\/(\d+)/)) {
+                const certId = path.match(/\/academy\/certifications\/(\d+)/)[1];
+                result = await handleDeleteAcademyCertification(certId);
+            } else if (path.match(/\/academy\/learning-paths\/(\d+)/)) {
+                const pathId = path.match(/\/academy\/learning-paths\/(\d+)/)[1];
+                result = await handleDeleteAcademyLearningPath(pathId);
             } else if (path.match(/\/admin\/saved-reports\/(\d+)/)) {
                 const rId = path.match(/\/admin\/saved-reports\/(\d+)/)[1];
                 result = await handleDeleteSavedReport(rId);
             } else if (path.includes('/admin-accounts/')) {
                 const accountId = path.split('/admin-accounts/')[1];
                 result = await handleDeleteAdminAccount(accountId, adminCtx);
+            } else if (path.match(/\/admin-channel-roles\/(\d+)/)) {
+                const roleId = path.match(/\/admin-channel-roles\/(\d+)/)[1];
+                result = await handleDeleteAdminChannelRole(roleId, adminCtx);
             } else if (path.match(/\/tickets\/(\d+)/)) {
                 const ticketId = path.match(/\/tickets\/(\d+)/)[1];
                 result = await handleDeleteTicket(ticketId);
@@ -7892,6 +10470,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/^\/addresses\/(\d+)$/)) {
                 const addressId = path.match(/^\/addresses\/(\d+)$/)[1];
                 result = await handleDeleteAddress(addressId, parsedBody, query);
+            } else if (path.match(/\/event-signups\/(\d+)/)) {
+                const evId = path.match(/\/event-signups\/(\d+)/)[1];
+                result = requirePermission(adminCtx, 'events:write') || await handleDeleteEventSignup(evId, query.user_id);
+            } else if (path.match(/\/events\/(\d+)/)) {
+                const evId = path.match(/\/events\/(\d+)/)[1];
+                result = requirePermission(adminCtx, 'events:delete') || await handleDeleteEvent(evId);
             } else {
                 result = { success: false, error: `Unknown DELETE route: ${path}` };
             }

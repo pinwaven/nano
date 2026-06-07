@@ -11,11 +11,17 @@
     </view>
     <view class="header-divider"></view>
     <text class="header-user">{{isGuest ? t.guestHeaderName : (user.nickname || 'User')}}</text>
+    <text wx:if="{{version}}" class="header-version">v{{version}}</text>
   </view>
 
   <!-- ── Logo menu ── -->
   <view wx:if="{{menuOpen}}" class="menu-mask" bindtap="closeMenu">
     <view class="menu-dropdown" catchtap="noop" style="top: {{menuTop}}px;">
+      <view wx:if="{{!isGuest && creditBalance > 0}}" class="menu-credit-row" bindtap="openReferral">
+        <text class="menu-credit-label">{{lang === 'zh' ? '积分余额' : 'Credits'}}</text>
+        <text class="menu-credit-value">{{creditBalance}} pts</text>
+      </view>
+      <view wx:if="{{!isGuest && creditBalance > 0}}" class="menu-divider"></view>
       <view wx:if="{{isCoach}}" class="menu-item" bindtap="openCoach">
         <text class="menu-item-icon">👨‍⚕️</text>
         <text class="menu-item-label">{{t.coachMenu}}</text>
@@ -29,6 +35,11 @@
       <view wx:if="{{isSuperadmin}}" class="menu-item" bindtap="openSuperadmin">
         <text class="menu-item-icon">🌐</text>
         <text class="menu-item-label">{{t.superadminMenu}}</text>
+      </view>
+      <view wx:if="{{!isGuest}}" class="menu-divider"></view>
+      <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openReferral">
+        <text class="menu-item-icon">★</text>
+        <text class="menu-item-label">{{t.referralMenu}}</text>
       </view>
       <view wx:if="{{!isGuest}}" class="menu-divider"></view>
       <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openKinoSim">
@@ -784,6 +795,9 @@
         <view class="store-address-manage" bindtap="openAddressManager">
           <text>{{t.addressManage}}</text>
         </view>
+        <view wx:if="{{cartCount > 0}}" class="store-cart-icon" bindtap="handleOpenCart">
+          <text class="store-cart-badge">{{cartCount}}</text>
+        </view>
       </view>
 
       <!-- Subtab toggle -->
@@ -796,16 +810,6 @@
         </view>
       </view>
 
-      <view wx:if="{{!storeLoading && storeSubTab === 'products'}}" class="checkout-address" bindtap="chooseStoreAddress">
-        <view class="checkout-address-main">
-          <text class="checkout-address-label">{{t.addressDefault}}</text>
-          <text wx:if="{{selectedStoreAddress}}" class="checkout-address-text">{{selectedStoreAddress.summary}}</text>
-          <text wx:if="{{selectedStoreAddress}}" class="checkout-address-detail">{{selectedStoreAddress.detail}}</text>
-          <text wx:else class="checkout-address-empty">{{t.addressNone}}</text>
-        </view>
-        <text class="checkout-address-arrow">›</text>
-      </view>
-
       <!-- Loading -->
       <view wx:if="{{storeLoading}}" class="center-wrap">
         <view class="pulse-dot"></view>
@@ -813,8 +817,7 @@
         <view class="pulse-dot"></view>
       </view>
 
-      <!-- Products subtab -->
-      <scroll-view wx:elif="{{storeSubTab === 'products' && storeItems.length > 0}}" class="store-scroll" scroll-y="true">
+      <scroll-view wx:elif="{{storeSubTab === 'products' && storeItems.length > 0}}" class="store-scroll" scroll-y="true" refresher-enabled="{{true}}" refresher-triggered="{{storeRefreshing}}" bindrefresherrefresh="onStoreRefresh">
         <view class="store-list">
           <view wx:for="{{storeItems}}" wx:key="id" class="store-card">
             <view wx:if="{{item.tagLabel}}" class="store-tag">
@@ -827,12 +830,17 @@
                 <text class="store-price">{{item.price}}</text>
                 <text class="store-unit">/ {{item.unit}}</text>
               </view>
-              <view class="store-buy-btn" bindtap="handleBuyItem" data-item="{{item}}">
-                <text class="store-buy-label">{{t.storeBuy}}</text>
+              <view wx:if="{{!cartMap[item.id]}}" class="store-buy-btn" bindtap="handleAddToCart" data-item="{{item}}">
+                <text class="store-buy-label">{{t.storeAddToCart}}</text>
+              </view>
+              <view wx:else class="cart-stepper">
+                <view class="stepper-btn" bindtap="handleCartQtyChange" data-id="{{item.id}}" data-delta="{{-1}}"><text class="stepper-sym">－</text></view>
+                <text class="stepper-qty">{{cartMap[item.id]}}</text>
+                <view class="stepper-btn" bindtap="handleCartQtyChange" data-id="{{item.id}}" data-delta="{{1}}"><text class="stepper-sym">＋</text></view>
               </view>
             </view>
           </view>
-          <view style="height: 32px;"></view>
+          <view style="height: {{cartCount > 0 ? '140rpx' : '32rpx'}};"></view>
         </view>
       </scroll-view>
 
@@ -840,8 +848,19 @@
         <text>{{t.storeEmpty}}</text>
       </view>
 
+      <!-- Cart bottom bar -->
+      <view wx:if="{{cartCount > 0 && storeSubTab === 'products' && !storeLoading}}" class="cart-bar" bindtap="handleOpenCart">
+        <text class="cart-bar-label">{{t.storeCartTotal}} · {{cartCount}}{{t.storeCartItems}}</text>
+        <view class="cart-bar-right">
+          <text class="cart-bar-total">{{cartTotal}}</text>
+          <view class="cart-bar-btn" catchtap="handleCheckout">
+            <text class="cart-bar-btn-text">{{t.storeCartCheckout}}</text>
+          </view>
+        </view>
+      </view>
+
       <!-- Orders subtab -->
-      <scroll-view wx:elif="{{storeSubTab === 'orders' && storeOrders.length > 0}}" class="store-scroll" scroll-y="true">
+      <scroll-view wx:if="{{!storeLoading && storeSubTab === 'orders' && storeOrders.length > 0}}" class="store-scroll" scroll-y="true" refresher-enabled="{{true}}" refresher-triggered="{{storeRefreshing}}" bindrefresherrefresh="onStoreRefresh">
         <view class="store-list">
           <view wx:for="{{storeOrders}}" wx:key="id" class="order-card">
             <view class="order-card-top">
@@ -854,8 +873,34 @@
               <text class="order-price">{{item.price}}</text>
               <text class="order-meta"> · {{item.unit}} · ×{{item.quantity}}</text>
             </view>
-            <text wx:if="{{item.trackingNumber}}" class="order-date">{{item.trackingNumber}}</text>
-            <text class="order-date">{{item.createdAt}}</text>
+            <view class="order-date-row">
+              <text class="order-date">{{item.createdAt}}</text>
+            </view>
+            
+            <!-- Delivery Details -->
+            <view wx:if="{{item.shippingName}}" class="order-delivery-info">
+              <view class="delivery-row">
+                <text class="delivery-label">{{lang === 'zh' ? '收货人' : 'Recipient'}}</text>
+                <text class="delivery-val">{{item.shippingName}} ({{item.shippingPhone}})</text>
+              </view>
+              <view class="delivery-row">
+                <text class="delivery-label">{{lang === 'zh' ? '收货地址' : 'Address'}}</text>
+                <text class="delivery-val">{{item.shippingAddress}}</text>
+              </view>
+              
+              <!-- Courier Tracking Details -->
+              <view wx:if="{{item.trackingNumber}}" class="delivery-row tracking-section">
+                <text class="delivery-label">{{lang === 'zh' ? '快递单号' : 'Tracking'}}</text>
+                <view class="tracking-val-wrap">
+                  <text class="delivery-val bold">{{item.shippingCarrier}} {{item.trackingNumber}}</text>
+                  <view class="copy-badge" bindtap="handleCopyTracking" data-tracking="{{item.trackingNumber}}">
+                    <text>{{lang === 'zh' ? '复制' : 'Copy'}}</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+            
+            <!-- Actions Section -->
             <view wx:if="{{item.canConfirmReceipt || item.canStartLabTest}}" class="order-actions">
               <view wx:if="{{item.canConfirmReceipt}}" class="order-action-btn" bindtap="handleConfirmReceipt" data-order="{{item}}">
                 <text>{{t.orderConfirmReceipt}}</text>
@@ -864,13 +909,50 @@
                 <text>{{t.orderStartLabTest}}</text>
               </view>
             </view>
+            <view wx:if="{{item.status === 'pending'}}" class="order-actions">
+              <view class="cancel-order-btn" bindtap="handleCancelOrder" data-id="{{item.id}}">
+                <text>{{lang === 'zh' ? '取消订单' : 'Cancel Order'}}</text>
+              </view>
+            </view>
           </view>
           <view style="height: 32px;"></view>
         </view>
       </scroll-view>
 
-      <view wx:elif="{{storeSubTab === 'orders'}}" class="dots-empty">
+      <view wx:if="{{!storeLoading && storeSubTab === 'orders' && storeOrders.length === 0}}" class="dots-empty">
         <text>{{t.noOrders}}</text>
+      </view>
+
+      <!-- Cart modal -->
+      <view wx:if="{{cartOpen}}" class="cart-overlay" catchtap="handleCloseCart">
+        <view class="cart-sheet" catchtap="">
+          <view class="cart-sheet-header">
+            <text class="cart-sheet-title">{{t.storeCart}}</text>
+            <view class="cart-close-btn" bindtap="handleCloseCart"><text class="cart-close-sym">✕</text></view>
+          </view>
+          <scroll-view class="cart-sheet-scroll" scroll-y="true">
+            <view wx:if="{{cart.length === 0}}" class="cart-empty-row">
+              <text class="cart-empty-text">{{t.storeCartEmpty}}</text>
+            </view>
+            <view wx:for="{{cart}}" wx:key="id" class="cart-item-row">
+              <view class="cart-item-info">
+                <text class="cart-item-name">{{item.name}}</text>
+                <text class="cart-item-price">{{item.price}} / {{item.unit}}</text>
+              </view>
+              <view class="cart-stepper cart-stepper-sm">
+                <view class="stepper-btn" bindtap="handleCartQtyChange" data-id="{{item.id}}" data-delta="{{-1}}"><text class="stepper-sym">－</text></view>
+                <text class="stepper-qty">{{item.quantity}}</text>
+                <view class="stepper-btn" bindtap="handleCartQtyChange" data-id="{{item.id}}" data-delta="{{1}}"><text class="stepper-sym">＋</text></view>
+              </view>
+            </view>
+          </scroll-view>
+          <view class="cart-sheet-footer">
+            <text class="cart-total-text">{{t.storeCartTotal}}  {{cartTotal}}</text>
+            <view wx:if="{{cart.length > 0}}" class="cart-checkout-btn" bindtap="handleCheckout">
+              <text class="cart-checkout-text">{{t.storeCartCheckout}}</text>
+            </view>
+          </view>
+        </view>
       </view>
 
     </view>
@@ -1154,10 +1236,10 @@
           <text>{{guestInviteBusy ? t.guestActivating : t.guestContinueBtn}}</text>
         </view>
 
-        <!-- Quit -->
+        <!-- Quit >
         <view class="guest-sheet-skip" bindtap="cancelGuestSignup">
           <text>{{t.guestCancelSignup}}</text>
-        </view>
+        </view -->
       </block>
 
       <block wx:else>

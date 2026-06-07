@@ -15,8 +15,8 @@
  */
 
 const OpenAI = require('openai');
-const systemReport = require('../../prompts/systemReport');
-const systemNutrition = require('../../prompts/systemNutrition');
+const systemReport = require('../../prompts/nano/systemReport');
+const systemNutrition = require('../../prompts/nano/systemNutrition');
 
 // Lazy-init: client is created on first use so tests can mock before instantiation
 let _client = null;

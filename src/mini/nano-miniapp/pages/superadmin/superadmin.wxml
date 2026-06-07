@@ -26,7 +26,6 @@
     <text class="loading-text">{{t.loading}}</text>
   </view>
 
-  <!-- ════ Channels Tab ════ -->
   <view wx:elif="{{tab === 'channels'}}" class="tab-content">
     <view class="add-row">
       <view class="add-btn" bindtap="openAddChannel">
@@ -57,7 +56,6 @@
     </view>
   </view>
 
-  <!-- ════ Users Tab ════ -->
   <view wx:elif="{{tab === 'users'}}" class="tab-content">
     <view wx:if="{{users.length === 0}}" class="empty-state">
       <text class="empty-text">{{t.empty.users}}</text>
@@ -81,7 +79,6 @@
     </view>
   </view>
 
-  <!-- ════ Coaches Tab ════ -->
   <view wx:elif="{{tab === 'coaches'}}" class="tab-content">
     <view wx:if="{{coaches.length === 0}}" class="empty-state">
       <text class="empty-text">{{t.empty.coaches}}</text>
@@ -97,7 +94,6 @@
     </view>
   </view>
 
-  <!-- ════ Dots Tab ════ -->
   <view wx:elif="{{tab === 'dots'}}" class="tab-content">
     <view class="add-row">
       <view class="add-btn" bindtap="openAddDot">
@@ -137,7 +133,6 @@
     </view>
   </view>
 
-  <!-- ════ Invites Tab ════ -->
   <view wx:elif="{{tab === 'invites'}}" class="tab-content">
     <view wx:if="{{invites.length === 0}}" class="empty-state">
       <text class="empty-text">{{t.empty.invites}}</text>

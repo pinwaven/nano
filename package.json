@@ -38,7 +38,9 @@
     "migrate:baseline:prod": "node scripts/migrate.js --env prod --baseline",
     "test": "echo \"Error: no test specified\" && exit 1",
     "import:academy-library": "node scripts/import-academy-library.js",
-    "import:academy-library:prod": "node scripts/import-academy-library.js --env prod"
+    "import:academy-library:prod": "node scripts/import-academy-library.js --env prod",
+    "backup:dev": "./tools/backup-dev-db.sh",
+    "backup:prod": "./tools/backup-prod-db.sh"
   },
   "dependencies": {
     "@alicloud/eventbridge": "^1.3.2",

@@ -23,11 +23,15 @@ roles TEXT[] DEFAULT '{user}'
 CREATE INDEX idx_users_roles ON users USING GIN(roles);
 
 -- coaches table — links a coach record to a WeChat identity
-user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL;
+-- channel is NOT stored here; always derived from users.channel_id
+user_id TEXT NOT NULL UNIQUE REFERENCES users(user_id);
+group_id INTEGER REFERENCES coach_groups(id) ON DELETE SET NULL;
 CREATE INDEX idx_coaches_user_id ON coaches(user_id);
 ```
 
-Migration: `src/schemas/migration_add_roles.sql`
+A coach's channel is always `users.channel_id` for the linked `user_id`. The `coaches` table has no `channel_id` column — it was dropped in `migration_coaches_drop_channel_id.sql` to eliminate a sync bug where changing a user's channel left the coach record pointing at the old channel.
+
+Migrations: `src/schemas/migration_add_roles.sql`, `src/schemas/migration_coaches_drop_channel_id.sql`
 
 Superadmin seed (Pin + echo):
 ```sql
@@ -98,8 +102,8 @@ if (!roles.includes('superadmin')) { … }
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/channel-users/:id` | All users in a channel |
-| `GET` | `/channel-coaches/:id` | All coaches in a channel |
+| `GET` | `/channel-coaches/:id` | All coaches in a channel (resolved via `users.channel_id`) |
 | `GET` | `/coach-users/:id` | Clients assigned to a specific coach |
 | `PUT` | `/users/:id` | Accepts optional `roles` array to update roles |
-| `POST` | `/coaches` | Accepts `user_id`; auto-grants `coach` role |
-| `PUT` | `/coaches/:id` | Accepts `user_id`; syncs `coach` role on old/new linked user |
+| `POST` | `/coaches` | Accepts `user_id`, optional `group_id`; auto-grants `coach` role |
+| `PUT` | `/coaches/:id` | Accepts `user_id`, optional `group_id`; syncs `coach` role on old/new linked user |

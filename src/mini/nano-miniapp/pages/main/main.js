@@ -1,5 +1,5 @@
 const app = getApp()
-const { BASE } = require('../../utils/config.js')
+const { BASE, VERSION, IS_DEV } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
@@ -131,6 +131,11 @@ const T = {
     storeEmpty: '暂无商品。',
     storeSubProducts: '商品', storeSubOrders: '我的订单',
     noOrders: '暂无订单记录。',
+    storeAddToCart: '加入', storeCart: '购物车',
+    storeCartCheckout: '结算', storeCartTotal: '合计',
+    storeCartItems: '件商品', storeCartEmpty: '购物车是空的',
+    toolFormulaDots: '营养定制',
+    toolTestChip: '检测服务',
     addressManage: '地址管理',
     addressNone: '请先添加联系地址',
     addressDefault: '默认地址',
@@ -188,6 +193,7 @@ const T = {
     coachMenu: '教练面板',
     superadminMenu: '超管面板',
     kinoSimMenu: 'Kino 模拟器',
+    referralMenu: '邀请好友',
     kinoSimPassTitle: '输入密码',
     kinoSimPassError: '密码错误',
     kinoSimTitle: 'KINO 模拟器',
@@ -239,6 +245,9 @@ const T = {
     guestChatCtaBtn: '立即加入',
     guestDotsCta: '激活账户后，获取您的专属营养方案',
     guestMenuSignUp: '注册账户',
+    eventsTitle: '线下活动', eventsSignUp: '立即报名', eventsSignedUp: '已报名',
+    eventsCancel: '取消报名', eventsFull: '已满', eventsEmpty: '暂无线下活动',
+    eventsLocation: '地点', eventsCapacity: '名额', eventsLoading: '加载中…',
     orderStatus: {
       pending: '待处理', paid: '已支付', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', testing: '检测中', cancelled: '已取消',
@@ -323,6 +332,11 @@ const T = {
     storeEmpty: 'No products available.',
     storeSubProducts: 'Products', storeSubOrders: 'My Orders',
     noOrders: 'No orders yet.',
+    storeAddToCart: 'Add', storeCart: 'Cart',
+    storeCartCheckout: 'Checkout', storeCartTotal: 'Total',
+    storeCartItems: ' items', storeCartEmpty: 'Cart is empty',
+    toolFormulaDots: 'Formulate Dots',
+    toolTestChip: 'Use Kino Chip',
     addressManage: 'Addresses',
     addressNone: 'Add a contact address first',
     addressDefault: 'Default address',
@@ -380,6 +394,7 @@ const T = {
     coachMenu: 'Coach Panel',
     superadminMenu: 'Super Admin',
     kinoSimMenu: 'Kino Simulator',
+    referralMenu: 'Invite Friends',
     kinoSimPassTitle: 'Enter Passcode',
     kinoSimPassError: 'Incorrect passcode',
     kinoSimTitle: 'KINO SIMULATOR',
@@ -431,6 +446,9 @@ const T = {
     guestChatCtaBtn: 'Join Now',
     guestDotsCta: 'Activate your account to get your personalized nutrition plan',
     guestMenuSignUp: 'Sign Up',
+    eventsTitle: 'Events', eventsSignUp: 'Sign Up', eventsSignedUp: 'Registered',
+    eventsCancel: 'Cancel Registration', eventsFull: 'Full', eventsEmpty: 'No events available',
+    eventsLocation: 'Location', eventsCapacity: 'Spots', eventsLoading: 'Loading…',
     orderStatus: {
       pending: 'Pending', paid: 'Paid', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', testing: 'Testing', cancelled: 'Cancelled',
@@ -709,6 +727,7 @@ function mapStoreItems(rawItems, lang) {
     desc: lang === 'zh' ? item.desc_zh : item.desc_en,
     unit: lang === 'zh' ? item.unit_zh : item.unit_en,
     price: lang === 'zh' ? `¥${item.price_cny}` : `$${item.price_usd}`,
+    rawPrice: lang === 'zh' ? (item.price_cny || 0) : (item.price_usd || 0),
     tagLabel: tagLabel(item.tag),
   }))
 }
@@ -722,9 +741,7 @@ function mapStoreOrders(rawOrders, lang) {
       : (lang === 'zh' ? (o.name_zh || o.item_key) : (o.name_en || o.item_key)),
     unit: lang === 'zh' ? o.unit_zh : o.unit_en,
     quantity: o.quantity,
-    price: o.total_amount_cny != null
-      ? `¥${(Number(o.total_amount_cny) / 100).toFixed(2)}`
-      : (lang === 'zh' ? `¥${o.price_cny}` : `$${o.price_usd}`),
+    price: lang === 'zh' ? `¥${o.price_cny}` : `$${o.price_usd}`,
     status: o.status,
     paymentStatus: o.payment_status || null,
     orderType: o.order_type || 'store',
@@ -736,6 +753,15 @@ function mapStoreOrders(rawOrders, lang) {
     canStartLabTest: o.order_type === 'lab' && o.status === 'delivered',
     trackingNumber: o.tracking_number || null,
     createdAt: new Date(o.created_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US'),
+    shippingName: o.shipping_name || '',
+    shippingPhone: o.shipping_phone || '',
+    shippingAddress: o.shipping_address || '',
+    shippingCarrier: o.shipping_carrier || '',
+    trackingNumber: o.tracking_number || '',
+    paymentStatus: o.payment_status || 'paid',
+    paymentMethod: o.payment_method || 'wechat_pay',
+    shippedAt: o.shipped_at ? new Date(o.shipped_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US') : '',
+    deliveredAt: o.delivered_at ? new Date(o.delivered_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US') : '',
   }))
 }
 
@@ -808,6 +834,7 @@ Page({
     lang: 'zh',
     t: T.zh,
     tab: 'chat',
+    version: IS_DEV ? VERSION : '',
 
     // Chat
     messages: [],
@@ -881,6 +908,8 @@ Page({
     isAdmin: false,
     isSuperadmin: false,
     isGuest: false,
+    creditBalance: 0,
+    creditCurrency: 'CNY',
 
     // Guest join sheet
     guestSheetOpen: false,
@@ -916,12 +945,18 @@ Page({
 
     // Store
     storeLoading: true,
+    storeRefreshing: false,
     storeItems: [],
     storeOrders: [],
     storeAddresses: [],
     selectedStoreAddressId: null,
     selectedStoreAddress: null,
     storeSubTab: 'products',
+    cart: [],
+    cartMap: {},
+    cartCount: 0,
+    cartTotal: '',
+    cartOpen: false,
     // Plans tab
     plansLoading: true,
     activePlans: [],
@@ -930,6 +965,9 @@ Page({
     planDetailData: null,
     planSubTab: 'overview',
     planBrowseOpen: false,
+    events: [],
+    mySignupEventIds: [],
+    eventsLoading: false,
     planCheckinBusy: false,
     planTaskBusy: false,
     planWeightOpen: false,
@@ -990,6 +1028,7 @@ Page({
     this._loadCartridges(user, lang)
     this._loadStore(user, lang)
     this._loadLabServices(false)
+    this._loadCreditBalance(user)
   },
 
   onShow() {
@@ -998,6 +1037,7 @@ Page({
       this._req(`${BASE}/api/heartbeat`, 'POST', { user_id: user.user_id }).catch(() => {})
       this.selectComponent('#health-comp')?.refresh()
       this._startPolling(user)
+      this._loadCreditBalance(user)
       // Check for questionnaires assigned while the user was away
       if (obStep === 'done') this._checkForPendingQuestionnaire()
       this._loadAddresses(user)
@@ -1019,6 +1059,24 @@ Page({
   onUnload() {
     this._stopPolling()
     this._stopKinoSlide()
+  },
+
+  async onPullDownRefresh() {
+    const { tab, user, lang } = this.data
+    if (tab === 'health') {
+      this.selectComponent('#health-comp')?.refresh()
+    } else if (tab === 'store') {
+      this.setData({ storeLoading: true })
+      await this._loadStore(user, lang)
+    }
+    wx.stopPullDownRefresh()
+  },
+
+  async onStoreRefresh() {
+    const { user, lang } = this.data
+    this.setData({ storeRefreshing: true })
+    await this._loadStore(user, lang)
+    this.setData({ storeRefreshing: false })
   },
 
   // ── Tab navigation ──────────────────────────────────────────────────────────
@@ -1088,6 +1146,11 @@ Page({
     if (dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
       wx.navigateTo({ url: '/pages/coach/coach', animationType: 'slide-in-right', animationDuration: 280 })
     }
+  },
+
+  openReferral() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/referral/referral' })
   },
 
   openAdmin() {
@@ -1553,7 +1616,7 @@ Page({
       setTimeout(() => {
         this._addMsg('ai', t.phonePromptMsg)
         this._addActionMsg('bind_phone', t.phonePromptBtn)
-        this._addActionMsg('maybe_later', t.phoneMaybeLater)
+        // this._addActionMsg('maybe_later', t.phoneMaybeLater)
       }, 800)
     }
     this._startPolling(user)
@@ -1631,6 +1694,8 @@ Page({
     }
     if (action === 'test_chip') {
       this._loadLabServices(true, true)
+      this._addMsg('ai', t.kinoScanPrompt)
+      this.setData({ kinoScanPending: true })
     } else if (action === 'formula_dots') {
       toolActions.runFormulaDs(user.user_id, t, ctx)
     } else if (action === 'health_advice') {
@@ -2240,7 +2305,8 @@ Page({
 
   async _loadStore(user, lang) {
     try {
-      const res = await this._req(`${BASE}/api/store-items`)
+      const openid = user?.user_id ? `?openid=${encodeURIComponent(user.user_id)}` : ''
+      const res = await this._req(`${BASE}/api/store-items${openid}`)
       const raw = res.data?.items || []
       this._rawStoreItems = raw
       this.setData({ storeLoading: false, storeItems: mapStoreItems(raw, lang) })
@@ -2262,6 +2328,17 @@ Page({
         selectedStoreAddressId: defaultAddress ? defaultAddress.id : null,
         selectedStoreAddress: defaultAddress,
       })
+    } catch (e) {}
+  },
+
+
+  async _loadCreditBalance(user) {
+    if (!user?.user_id) return
+    try {
+      const res = await this._req(`${BASE}/api/credits/balance?user_id=${encodeURIComponent(user.user_id)}`)
+      if (res.data?.success) {
+        this.setData({ creditBalance: res.data.balance || 0, creditCurrency: res.data.currency || 'CNY' })
+      }
     } catch (e) {}
   },
 
@@ -2362,30 +2439,10 @@ Page({
   handleBuyItem(e) {
     if (this.data.isGuest) { this.openGuestSheet(); return }
     const item = e.currentTarget.dataset.item
-    this._confirmBuyItem(item)
-  },
-
-  async _confirmBuyItem(item) {
     const { t, user, lang } = this.data
-    await this._loadAddresses(user)
-    const address = this.data.storeAddresses.find(a => a.id === this.data.selectedStoreAddressId)
-    if (!address) {
-      wx.showModal({
-        title: t.addressMissingTitle,
-        content: t.addressMissingMsg,
-        confirmText: t.addressAddNow,
-        confirmColor: '#6375EC',
-        success: (res) => {
-          if (!res.confirm) return
-          wx.setStorageSync('nano_pending_checkout_item', item)
-          wx.navigateTo({ url: '/pages/address/address?mode=checkout' })
-        }
-      })
-      return
-    }
     wx.showModal({
       title: t.storeConfirmTitle,
-      content: `${item.name}\n${item.price}  ·  ${item.unit}\n${address.summary}\n${address.detail}`,
+      content: `${item.name}\n${item.price}  ·  ${item.unit}`,
       confirmText: t.storeBuy,
       confirmColor: '#6375EC',
       success: async (res) => {
@@ -2395,7 +2452,6 @@ Page({
             openid: user.user_id,
             item_id: item.id,
             quantity: 1,
-            address_id: address.id,
           })
           wx.showToast({ title: t.storeOrderSent, icon: 'none', duration: 3000 })
           await this._loadStoreOrders(user, lang)
@@ -2403,6 +2459,135 @@ Page({
         } catch (e) {
           wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
         }
+      }
+    })
+  },
+
+  _syncCart(cart) {
+    const { lang } = this.data
+    const cartMap = {}
+    let total = 0, count = 0
+    for (const entry of cart) {
+      cartMap[entry.id] = entry.quantity
+      total += entry.rawPrice * entry.quantity
+      count += entry.quantity
+    }
+    const cartTotal = lang === 'zh' ? `¥${total}` : `$${(total / 7.2).toFixed(0)}`
+    this.setData({ cart, cartMap, cartCount: count, cartTotal })
+  },
+
+  handleAddToCart(e) {
+    if (this.data.isGuest) { this.openGuestSheet(); return }
+    const item = e.currentTarget.dataset.item
+    const cart = [...this.data.cart]
+    const existing = cart.find(x => x.id === item.id)
+    if (existing) {
+      existing.quantity += 1
+    } else {
+      cart.push({ ...item, quantity: 1 })
+    }
+    this._syncCart(cart)
+  },
+
+  handleCartQtyChange(e) {
+    const { id, delta } = e.currentTarget.dataset
+    const cart = [...this.data.cart]
+    const idx = cart.findIndex(x => x.id === id)
+    if (idx === -1) return
+    cart[idx] = { ...cart[idx], quantity: cart[idx].quantity + delta }
+    if (cart[idx].quantity <= 0) cart.splice(idx, 1)
+    this._syncCart(cart)
+  },
+
+  handleOpenCart() {
+    this.setData({ cartOpen: true })
+  },
+
+  handleCloseCart() {
+    this.setData({ cartOpen: false })
+  },
+
+  handleCheckout() {
+    if (this.data.isGuest) { this.openGuestSheet(); return }
+    const { t, user, lang, cart } = this.data
+    if (cart.length === 0) return
+    const items = cart.map(x => ({ channel_inventory_item_id: x.id, quantity: x.quantity }))
+    const _submitBatchOrder = async (shipping_name, shipping_phone, shipping_address) => {
+      try {
+        wx.showLoading({ title: t.storeOrderSent || 'Processing...' })
+        await this._req(`${BASE}/api/orders/batch`, 'POST', {
+          openid: user.user_id,
+          items,
+          shipping_name,
+          shipping_phone,
+          shipping_address,
+          payment_method: 'wechat_pay',
+          payment_status: 'paid'
+        })
+        wx.hideLoading()
+        wx.showToast({ title: t.storeOrderSent || 'Order Sent', icon: 'success', duration: 2500 })
+        this._syncCart([])
+        this.setData({ cartOpen: false })
+        await this._loadStoreOrders(user, lang)
+        this.setData({ storeSubTab: 'orders' })
+      } catch (err) {
+        wx.hideLoading()
+        wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
+      }
+    }
+    wx.chooseAddress({
+      success: async (addrRes) => {
+        const address = `${addrRes.provinceName}${addrRes.cityName}${addrRes.countyName}${addrRes.detailInfo}`
+        await _submitBatchOrder(addrRes.userName, addrRes.telNumber, address)
+      },
+      fail: () => {
+        wx.showModal({
+          title: lang === 'zh' ? '确认模拟地址' : 'Verify Mock Address',
+          content: lang === 'zh' ? '无法获取微信收货地址，是否使用模拟地址进行下单测试？' : 'Cannot fetch address, proceed with mock testing address?',
+          confirmText: lang === 'zh' ? '确认下单' : 'Confirm',
+          success: async (mockRes) => {
+            if (!mockRes.confirm) return
+            await _submitBatchOrder(
+              user.nickname || 'Tester',
+              '13800138000',
+              lang === 'zh' ? '上海市浦东新区张江高科技园区' : 'Pudong New Area, Shanghai'
+            )
+          }
+        })
+      }
+    })
+  },
+
+  async handleCancelOrder(e) {
+    const orderId = e.currentTarget.dataset.id
+    const { t, user, lang } = this.data
+    wx.showModal({
+      title: lang === 'zh' ? '取消订单' : 'Cancel Order',
+      content: lang === 'zh' ? '您确定要取消此订单吗？' : 'Are you sure you want to cancel this order?',
+      confirmColor: '#ef4444',
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/orders/${orderId}`, 'PUT', { status: 'cancelled' })
+          wx.showToast({ title: lang === 'zh' ? '订单已取消' : 'Order cancelled', icon: 'success' })
+          await this._loadStoreOrders(user, lang)
+        } catch (err) {
+          wx.showToast({ title: t.errServer, icon: 'none' })
+        }
+      }
+    })
+  },
+
+  handleCopyTracking(e) {
+    const tracking = e.currentTarget.dataset.tracking
+    const { lang } = this.data
+    wx.setClipboardData({
+      data: tracking,
+      success: () => {
+        wx.showToast({
+          title: lang === 'zh' ? '单号已复制' : 'Tracking copied',
+          icon: 'success'
+        })
       }
     })
   },
@@ -2511,7 +2696,9 @@ Page({
   },
 
   switchPlanSubTab(e) {
-    this.setData({ planSubTab: e.currentTarget.dataset.tab })
+    const tab = e.currentTarget.dataset.tab
+    this.setData({ planSubTab: tab })
+    if (tab === 'activities') this.loadEvents()
   },
 
   async openPlanDetail(e) {
@@ -2774,6 +2961,62 @@ Page({
         }
       },
     })
+  },
+
+  // ── Events (线下活动) ──────────────────────────────────────────────────────
+
+  async loadEvents() {
+    const { user } = this.data
+    if (!user?.channel_id) return
+    this.setData({ eventsLoading: true })
+    try {
+      const res = await this._req(`${BASE}/api/events?channel_id=${encodeURIComponent(user.channel_id)}&user_id=${encodeURIComponent(user.user_id)}`)
+      const raw = res.data?.events || []
+      const now = Date.now()
+      const events = raw.map(ev => {
+        const d = new Date(ev.scheduled_at)
+        const signupCount = parseInt(ev.signup_count, 10) || 0
+        const remaining = ev.capacity ? Math.max(0, ev.capacity - signupCount) : null
+        return {
+          ...ev,
+          scheduled_at_display: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`,
+          remaining,
+          is_full: ev.capacity !== null && remaining === 0,
+        }
+      })
+      const mySignupEventIds = events.filter(ev => ev.signed_up).map(ev => ev.id)
+      this.setData({ events, mySignupEventIds, eventsLoading: false })
+    } catch {
+      this.setData({ eventsLoading: false })
+    }
+  },
+
+  async handleEventSignUp(e) {
+    const { user, t, mySignupEventIds } = this.data
+    const eventId = e.currentTarget.dataset.eventId
+    try {
+      const res = await this._req(`${BASE}/api/event-signups`, 'POST', { event_id: eventId, user_id: user.user_id })
+      if (res.data?.success) {
+        this.setData({ mySignupEventIds: [...mySignupEventIds, eventId] })
+        wx.showToast({ title: t.eventsSignedUp, icon: 'success' })
+      } else {
+        wx.showToast({ title: res.data?.error || 'Error', icon: 'none' })
+      }
+    } catch {
+      wx.showToast({ title: t.errServer, icon: 'none' })
+    }
+  },
+
+  async handleEventCancelSignup(e) {
+    const { user, t, mySignupEventIds } = this.data
+    const eventId = e.currentTarget.dataset.eventId
+    try {
+      await this._req(`${BASE}/api/event-signups/${eventId}?user_id=${encodeURIComponent(user.user_id)}`, 'DELETE')
+      this.setData({ mySignupEventIds: mySignupEventIds.filter(id => id !== eventId) })
+      wx.showToast({ title: t.eventsCancel, icon: 'none' })
+    } catch {
+      wx.showToast({ title: t.errServer, icon: 'none' })
+    }
   },
 
   // ── Guest join sheet ────────────────────────────────────────────────────────

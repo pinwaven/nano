@@ -12,7 +12,8 @@ App({
       const user = wx.getStorageSync('nano_user')
       const channel = wx.getStorageSync('nano_channel')
       const coach = wx.getStorageSync('nano_coach')
-      if (user) {
+      // Only restore session if the profile is complete (phone bound)
+      if (user && user.phone) {
         this.globalData.user = user
         this.globalData.channel = channel || null
         this.globalData.coach = coach || null

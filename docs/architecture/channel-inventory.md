@@ -206,10 +206,11 @@ Upload the file to `url` via PUT, then store `get_url` as `image_url` on the ite
 
 ---
 
-## Extending the System
+## Central SKU Registry & Orders Fulfillment
 
-**Adding order support**: Create a `channel_inventory_orders` table that references `channel_inventory_items.id` (similar to `orders` → `store_items`). The API handlers and admin panel can then follow the same pattern as the existing Store tab.
+The catalog inventory has been upgraded to a standardized **SKU Registry & Multi-Location Stock Tracking System**:
+* **Central SKU Association**: Stores are no longer coupled to simple, isolated numbers. Both `store_items` and `channel_inventory_items` support a nullable `sku_id` field referencing a standardized entry in the `skus` product registry.
+* **Location-Scoped Inventory**: Stock counts reside in the `inventory_stock` table, mapped by `sku_id` and location (either `channel_id` or central warehouse `shanghai-central`).
+* **Complete Order Flow**: The platform includes a production-grade checkout and fulfillment system in the WeChat Mini Program client and Web Admin Panels. Pending checkouts check stocks, and cancellation triggers auto-restock transactions.
 
-**Auto-decrementing stock**: On order confirmation, decrement `stock_quantity` with an `UPDATE ... WHERE stock_quantity IS NOT NULL AND stock_quantity > 0`.
-
-**Virtual item fulfilment**: Use the `metadata` JSONB column to store fulfilment details (e.g. appointment booking URLs, access codes, external system IDs).
+For full architectural details, schemas, and endpoints, please refer to the dedicated [Orders & SKU Fulfillment System](file:///Users/pin/waven/nano/docs/architecture/orders-fulfillment.md) document.

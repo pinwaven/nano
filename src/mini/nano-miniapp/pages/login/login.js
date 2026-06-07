@@ -7,18 +7,25 @@ Page({
     loading: true,
     error: '',
     phoneLoading: false,
+    codeInput: '',
+    codeLoading: false,
     pendingAvatar: '',
     channel: null,
   },
 
   _coachId: null,
   _inviteCode: null,
+  _refCode: null,
   _pendingLogin: null,
   _pendingAvatarPath: '',
 
   onLoad(options) {
     if (options.coach_id) this._coachId = options.coach_id
     if (options.invite) this._inviteCode = options.invite
+    if (options.ref) {
+      this._refCode = options.ref
+      wx.setStorageSync('nano_ref', options.ref)
+    }
     // If already have a valid session and no invite/coach params, go straight to main
     if (app.globalData.user && !options.invite && !options.coach_id) {
       wx.reLaunch({ url: '/pages/main/main' })
@@ -36,9 +43,7 @@ Page({
       const res = await this._callWxLogin(code, this._inviteCode)
 
       if (res.data?.guest) {
-        app.globalData.user = { guest: true, user_id: res.data.openid, nickname: null, language: 'zh' }
-        app.globalData.channel = null
-        app.globalData.coach = null
+        app.globalData.user = { guest: true }
         wx.reLaunch({ url: '/pages/main/main' })
         return
       }
@@ -141,6 +146,31 @@ Page({
     this.wxLogin()
   },
 
+  onCodeInput(e) {
+    this.setData({ codeInput: e.detail.value })
+  },
+
+  async submitCode() {
+    const code = this.data.codeInput.trim()
+    if (!code) return
+    this.setData({ codeLoading: true })
+    try {
+      const { code: wxCode } = await this._getCode()
+      this._inviteCode = code
+      const res = await this._callWxLogin(wxCode, code)
+      if (!res.data?.success) throw new Error(res.data?.error || '邀请码无效')
+      if (res.data.new_user) {
+        this._pendingLogin = res.data
+        this.setData({ step: 'phone', codeLoading: false, channel: res.data.channel || this.data.channel })
+        return
+      }
+      this._finishLogin(res.data)
+    } catch (e) {
+      wx.showToast({ title: e.message || '邀请码无效', icon: 'none' })
+      this.setData({ codeLoading: false })
+    }
+  },
+
   _finishLogin(data) {
     const user = data.user
     const channel = data.channel || null
@@ -183,13 +213,18 @@ Page({
     const data = { code, app_id: appId }
     if (this._coachId) data.coach_id = this._coachId
     if (inviteCode) data.invite_code = inviteCode
+    const ref = this._refCode || wx.getStorageSync('nano_ref')
+    if (ref) data.ref = ref
     return new Promise((resolve, reject) => {
       wx.request({
         url: `${BASE}/api/wx-login`,
         method: 'POST',
         header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
         data,
-        success: resolve,
+        success: (res) => {
+          wx.removeStorageSync('nano_ref')
+          resolve(res)
+        },
         fail: reject,
       })
     })

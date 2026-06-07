@@ -1,6 +1,7 @@
 node_modules/
 .env
 .env.*
+!.env.*.example
 .DS_Store
 *.swp
 .antigravitycli/
@@ -8,4 +9,7 @@ node_modules/
 dist/
 certs/
 temp/
+backup/
+backups/
+.antigravitycli/*.json
 ./miniprogram-upload-private.key

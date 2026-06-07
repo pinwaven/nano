@@ -15,23 +15,31 @@
   </view>
 
   <!-- ── Tab bar ── -->
-  <view class="adm-tabs">
-    <view class="adm-tab {{tab === 'users' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="users">
-      <text>{{t.tabs.users}}</text>
+  <scroll-view class="adm-tabs-scroll" scroll-x="true" show-scrollbar="false">
+    <view class="adm-tabs">
+      <view class="adm-tab {{tab === 'dashboard' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="dashboard">
+        <text>{{t.tabs.dashboard}}</text>
+      </view>
+      <view class="adm-tab {{tab === 'users' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="users">
+        <text>{{t.tabs.users}}</text>
+      </view>
+      <view class="adm-tab {{tab === 'coaches' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="coaches">
+        <text>{{t.tabs.coaches}}</text>
+      </view>
+      <view class="adm-tab {{tab === 'store' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="store">
+        <text>{{t.tabs.store}}</text>
+      </view>
+      <view class="adm-tab {{tab === 'invites' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="invites">
+        <text>{{t.tabs.invites}}</text>
+      </view>
+      <view class="adm-tab {{tab === 'rewards' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="rewards">
+        <text>{{t.tabs.rewards}}</text>
+      </view>
+      <view class="adm-tab {{tab === 'partners' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="partners">
+        <text>{{t.tabs.partners}}</text>
+      </view>
     </view>
-    <view class="adm-tab {{tab === 'coaches' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="coaches">
-      <text>{{t.tabs.coaches}}</text>
-    </view>
-    <view class="adm-tab {{tab === 'store' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="store">
-      <text>{{t.tabs.store}}</text>
-    </view>
-    <view class="adm-tab {{tab === 'invites' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="invites">
-      <text>{{t.tabs.invites}}</text>
-    </view>
-    <view class="adm-tab {{tab === 'rewards' ? 'adm-tab-active' : ''}}" bindtap="switchTab" data-tab="rewards">
-      <text>{{t.tabs.rewards}}</text>
-    </view>
-  </view>
+  </scroll-view>
 
   <!-- ── Loading ── -->
   <view wx:if="{{loading}}" class="adm-loading">
@@ -40,7 +48,30 @@
     <view class="adm-pulse"></view>
   </view>
 
-  <!-- ════ USERS TAB ════ -->
+  <scroll-view wx:elif="{{tab === 'dashboard'}}" class="adm-scroll" scroll-y="true">
+    <view class="adm-inner">
+      <view class="adm-dash-grid">
+        <view class="adm-dash-card">
+          <text class="adm-dash-val">{{dashStats.totalUsers}}</text>
+          <text class="adm-dash-key">{{t.dashboard.totalUsers}}</text>
+        </view>
+        <view class="adm-dash-card">
+          <text class="adm-dash-val">{{dashStats.totalCoaches}}</text>
+          <text class="adm-dash-key">{{t.dashboard.totalCoaches}}</text>
+        </view>
+        <view class="adm-dash-card adm-dash-card-accent">
+          <text class="adm-dash-val adm-dash-val-accent">{{dashStats.newUsers7d}}</text>
+          <text class="adm-dash-key">{{t.dashboard.newUsers7d}}</text>
+        </view>
+        <view class="adm-dash-card">
+          <text class="adm-dash-val">{{dashStats.ordersMonth}}</text>
+          <text class="adm-dash-key">{{t.dashboard.ordersMonth}}</text>
+        </view>
+      </view>
+      <view style="height: 48rpx;"></view>
+    </view>
+  </scroll-view>
+
   <scroll-view wx:elif="{{tab === 'users'}}" class="adm-scroll" scroll-y="true">
     <view class="adm-inner">
 
@@ -96,7 +127,6 @@
     </view>
   </scroll-view>
 
-  <!-- ════ COACHES TAB ════ -->
   <scroll-view wx:elif="{{tab === 'coaches'}}" class="adm-scroll" scroll-y="true">
     <view class="adm-inner">
 
@@ -145,7 +175,6 @@
     </view>
   </scroll-view>
 
-  <!-- ════ STORE TAB ════ -->
   <scroll-view wx:elif="{{tab === 'store'}}" class="adm-scroll" scroll-y="true">
     <view class="adm-inner">
 
@@ -182,6 +211,9 @@
             <view class="adm-active-badge {{item.active !== false ? 'adm-active-on' : 'adm-active-off'}}">
               <text>{{item.active !== false ? t.store.yes : t.store.no}}</text>
             </view>
+            <view wx:if="{{item.show_in_store}}" class="adm-active-badge adm-active-on" style="margin-left: 4rpx; font-size: 20rpx;">
+              <text>{{t.store.showInStoreOn}}</text>
+            </view>
           </view>
           <view class="adm-price-row">
             <text class="adm-price">¥{{item.price_cny}}</text>
@@ -199,7 +231,6 @@
         </view>
       </block>
 
-      <!-- Orders -->
       <block wx:elif="{{storeSubTab === 'orders'}}">
         <view wx:if="{{orders.length === 0}}" class="adm-empty">
           <text>{{t.empty.orders}}</text>
@@ -207,7 +238,7 @@
         <view wx:for="{{orders}}" wx:key="id" class="adm-card adm-order-card" bindtap="handleUpdateOrderStatus" data-order="{{item}}">
           <view class="adm-card-top">
             <view class="adm-card-info">
-              <text class="adm-card-title">{{item.item_name || item._shortId}}</text>
+              <text class="adm-card-title">{{(lang === 'zh' ? item.name_zh : item.name_en) || item._shortId}}</text>
               <text class="adm-card-sub">{{t.store.orderId}}: {{item._shortId}}…</text>
             </view>
             <view class="adm-order-status adm-order-{{item.status}}">
@@ -226,7 +257,6 @@
     </view>
   </scroll-view>
 
-  <!-- ════ INVITES TAB ════ -->
   <scroll-view wx:elif="{{tab === 'invites'}}" class="adm-scroll" scroll-y="true">
     <view class="adm-inner">
 
@@ -258,7 +288,6 @@
     </view>
   </scroll-view>
 
-  <!-- ════ REWARDS TAB ════ -->
   <scroll-view wx:elif="{{tab === 'rewards'}}" class="adm-scroll" scroll-y="true">
     <view class="adm-inner">
 
@@ -311,6 +340,109 @@
           </view>
         </view>
 
+        <!-- Referrals -->
+        <text class="adm-section-label" style="margin-top: 24rpx;">{{t.rewards.referrals}}</text>
+        <view wx:if="{{referralsLoading}}" class="adm-empty" style="margin-top: 8rpx;"><text>{{t.loading}}</text></view>
+        <view wx:elif="{{referralCommissions.length === 0}}" class="adm-empty" style="margin-top: 8rpx;">
+          <text>{{t.rewards.noReferrals}}</text>
+        </view>
+        <view wx:else>
+          <view wx:for="{{referralCommissions}}" wx:key="id" class="adm-card">
+            <view class="adm-card-top">
+              <view class="adm-card-info">
+                <text class="adm-card-title">{{item.referrer_name || item.referrer_id || '—'}} → {{item.referee_name || item.referee_id || '—'}}</text>
+                <text class="adm-card-sub">{{item._commissionFmt}} · {{item._dateFmt}}</text>
+              </view>
+              <view class="adm-order-status adm-order-{{item.status || 'pending'}}">
+                <text>{{item.status || 'pending'}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+
+      </block>
+
+      <view style="height: 48rpx;"></view>
+    </view>
+  </scroll-view>
+
+  <scroll-view wx:elif="{{tab === 'partners'}}" class="adm-scroll" scroll-y="true">
+    <view class="adm-inner">
+
+      <!-- Sub-tabs -->
+      <view class="adm-subtab-row">
+        <view class="adm-subtab {{partnerSubTab === 'partners' ? 'adm-subtab-active' : ''}}" bindtap="switchPartnerSubTab" data-tab="partners">
+          <text>{{t.partners.partnersTab}}</text>
+        </view>
+        <view class="adm-subtab {{partnerSubTab === 'payouts' ? 'adm-subtab-active' : ''}}" bindtap="switchPartnerSubTab" data-tab="payouts">
+          <text>{{t.partners.payoutsTab}}</text>
+        </view>
+      </view>
+
+      <!-- Partners list -->
+      <block wx:if="{{partnerSubTab === 'partners'}}">
+        <view class="adm-add-btn" bindtap="openAddPartner">
+          <text>+ {{t.add}} {{t.tabs.partners}}</text>
+        </view>
+        <view wx:if="{{partners.length === 0}}" class="adm-empty">
+          <text>{{t.partners.noPartners}}</text>
+        </view>
+        <view wx:for="{{partners}}" wx:key="id" class="adm-card">
+          <view class="adm-card-top">
+            <view class="adm-avatar adm-avatar-partner">
+              <text class="adm-avatar-letter">{{item._avatar}}</text>
+            </view>
+            <view class="adm-card-info">
+              <text class="adm-card-title">{{item.name || item.user_id}}</text>
+              <text class="adm-card-sub">{{item._totalFmt}}</text>
+            </view>
+            <view class="adm-tier-badge adm-tier-{{item.tier || 'bronze'}}">
+              <text>{{item.tier || 'bronze'}}</text>
+            </view>
+          </view>
+          <view class="adm-card-meta">
+            <text class="adm-meta-item">{{t.partners.status}}: {{item.status || 'active'}}</text>
+            <text wx:if="{{item.notes}}" class="adm-meta-item">{{item.notes}}</text>
+          </view>
+          <view class="adm-card-actions" catchtap="noop">
+            <view class="adm-action-btn adm-action-edit" catchtap="openEditPartner" data-partner="{{item}}">
+              <text>{{t.edit}}</text>
+            </view>
+            <view class="adm-action-btn adm-action-del" catchtap="handleDeletePartner" data-partner="{{item}}">
+              <text>{{t.delete}}</text>
+            </view>
+          </view>
+        </view>
+      </block>
+
+      <block wx:elif="{{partnerSubTab === 'payouts'}}">
+        <view class="adm-add-btn {{partnerPayoutsGenerating ? 'adm-add-btn-busy' : ''}}" bindtap="generatePartnerPayouts">
+          <text>{{partnerPayoutsGenerating ? t.partners.generating : t.partners.generatePayouts}}</text>
+        </view>
+        <view wx:if="{{partnerPayouts.length === 0}}" class="adm-empty">
+          <text>{{t.partners.noPayouts}}</text>
+        </view>
+        <view wx:for="{{partnerPayouts}}" wx:key="id" class="adm-card">
+          <view class="adm-card-top">
+            <view class="adm-card-info">
+              <text class="adm-card-title">{{item.partner_name || item.partner_id}}</text>
+              <text class="adm-card-sub">{{t.rewards.period}}: {{item.period}} · {{item._amountFmt}}</text>
+            </view>
+            <view class="adm-order-status adm-order-{{item.status}}">
+              <text>{{item.status}}</text>
+            </view>
+          </view>
+          <view wx:if="{{item.status === 'draft'}}" class="adm-card-actions" catchtap="noop">
+            <view class="adm-action-btn adm-action-edit" catchtap="updatePartnerPayout" data-payout-id="{{item.id}}" data-status="approved">
+              <text>{{t.partners.approve}}</text>
+            </view>
+          </view>
+          <view wx:elif="{{item.status === 'approved'}}" class="adm-card-actions" catchtap="noop">
+            <view class="adm-action-btn adm-action-edit" catchtap="updatePartnerPayout" data-payout-id="{{item.id}}" data-status="transferred">
+              <text>{{t.partners.markTransferred}}</text>
+            </view>
+          </view>
+        </view>
       </block>
 
       <view style="height: 48rpx;"></view>
@@ -448,7 +580,6 @@
             <input class="adm-field-input" value="{{form.email}}" bindinput="onFormInput" data-key="email" placeholder-class="adm-ph" />
           </block>
 
-          <!-- ── COACH FORM ── -->
           <block wx:elif="{{modalType === 'coach'}}">
             <text class="adm-field-label">{{t.coach.selectUser}}</text>
             <picker range="{{coachUserPickerOptions}}" value="{{coachUserPickerIdx}}" bindchange="onPickerCoachUser">
@@ -459,7 +590,6 @@
             </picker>
           </block>
 
-          <!-- ── STORE ITEM FORM ── -->
           <block wx:elif="{{modalType === 'item'}}">
             <text class="adm-field-label">{{t.store.key}} *</text>
             <input class="adm-field-input" value="{{form.key_name}}" bindinput="onFormInput" data-key="key_name" placeholder="e.g. kino_chip_starter" placeholder-class="adm-ph" />
@@ -504,8 +634,53 @@
               </view>
             </picker>
 
+            <text class="adm-field-label">{{t.store.sku}}</text>
+            <picker range="{{skuPickerOptions}}" value="{{formSkuIdx}}" bindchange="onPickerSku" disabled="{{skuPickerOptions.length === 0}}">
+              <view class="adm-field-picker {{!form.sku_id ? 'adm-picker-error' : ''}}">
+                <text>{{form.sku_id ? skuPickerOptions[formSkuIdx] : t.store.skuPlaceholder}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
+            <text class="adm-field-label">{{t.store.showInStore}}</text>
+            <picker range="{{[t.store.showInStoreOn, t.store.showInStoreOff]}}" value="{{formShowInStoreIdx}}" bindchange="onPickerShowInStore">
+              <view class="adm-field-picker">
+                <text>{{formShowInStoreIdx === 0 ? t.store.showInStoreOn : t.store.showInStoreOff}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
             <text class="adm-field-label">{{t.store.sortOrder}}</text>
             <input class="adm-field-input" value="{{form.sort_order}}" bindinput="onFormInput" data-key="sort_order" type="number" placeholder="0" placeholder-class="adm-ph" />
+          </block>
+
+          <block wx:elif="{{modalType === 'partner'}}">
+            <text class="adm-field-label">{{t.partners.selectUser}}</text>
+            <picker range="{{partnerUserPickerOptions}}" value="{{partnerUserPickerIdx}}" bindchange="onPickerPartnerUser">
+              <view class="adm-field-picker">
+                <text>{{partnerUserPickerIdx >= 0 ? partnerUserPickerOptions[partnerUserPickerIdx] : '—'}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
+            <text class="adm-field-label">{{t.partners.tier}}</text>
+            <picker range="{{t.partners.tierOptions}}" value="{{formPartnerTierIdx}}" bindchange="onPickerPartnerTier">
+              <view class="adm-field-picker">
+                <text>{{t.partners.tierOptions[formPartnerTierIdx]}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
+            <text class="adm-field-label">{{t.partners.status}}</text>
+            <picker range="{{t.partners.statusOptions}}" value="{{formPartnerStatusIdx}}" bindchange="onPickerPartnerStatus">
+              <view class="adm-field-picker">
+                <text>{{t.partners.statusOptions[formPartnerStatusIdx]}}</text>
+                <text class="adm-picker-arrow">›</text>
+              </view>
+            </picker>
+
+            <text class="adm-field-label">{{t.partners.notes}}</text>
+            <textarea class="adm-field-textarea" value="{{form.notes}}" bindinput="onFormInput" data-key="notes" placeholder-class="adm-ph" auto-height />
           </block>
 
           <!-- Error -->
