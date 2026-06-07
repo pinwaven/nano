@@ -87,7 +87,9 @@ function parseSleepResponse(data) {
     while (periodIdx + 1 < periodEnd && periodIdx + 1 < data.length) {
       const type = data[periodIdx];
       const minutes = data[periodIdx + 1];
-      if (type !== SleepType.NO_DATA && type !== SleepType.ERROR) {
+      if (type === SleepType.NO_DATA) {
+        periods.push(new SleepPeriod(SleepType.AWAKE, minutes));
+      } else if (type !== SleepType.ERROR) {
         periods.push(new SleepPeriod(type, minutes));
       }
       periodIdx += 2;

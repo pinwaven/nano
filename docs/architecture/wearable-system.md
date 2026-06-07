@@ -140,6 +140,100 @@ Sleep is mapped to yesterday because it is overnight data. The `external_id` pat
 3. Register in `createWearable()` in `utils/wearable/index.js`
 4. Call `syncWearableData(openid, { source: '<brand>', ...snapshot })` — no backend changes needed
 
+## Sleep parser — known protocol behaviour
+
+### NODATA periods map to AWAKE
+
+The ring emits `SleepType.NO_DATA (0)` when it cannot classify a sleep stage — typically when the user is lying awake and still, or when the PPG sensor loses contact. These periods are encoded in the raw packet exactly like any other stage (`type=0, minutes=N`) but were historically discarded by earlier parsers.
+
+**Both parsers now map `NODATA → AWAKE` instead of discarding:**
+- `src/mini/nano-miniapp/utils/wearable/colmi/parsers/sleep.js`
+- `tools/colmi-ring/src/sleep.js`
+
+**Why this matters:** A real capture showed a `NODATA, 178` entry (178 min) between two sleep blocks — a 03:36–06:34 awake window that was completely invisible before the fix. Discarding it made `totalMinutes` inconsistent with the `sleepStart`/`sleepEnd` window stored in the packet.
+
+### Sleep anchor timestamps
+
+The ring stores `sleepStart` and major transition events (wake onset, sleep end) as **absolute timestamps** (minutes after midnight). Stage durations are fitted within those anchors. This is why two rings worn simultaneously agree on sleep-start and awake-onset to the minute even when individual stage classifications differ.
+
+---
+
+## OEM readiness
+
+This section documents what is fully implemented, what gaps remain, and what to negotiate in an OEM deal with Colmi (or a compatible ODM).
+
+### Fully implemented — carries over to any Colmi-compatible OEM ring
+
+| Feature | Miniapp | CLI tool |
+|---|---|---|
+| BLE scan (name-prefix filter) | ✓ | ✓ |
+| Connect / disconnect | ✓ | ✓ |
+| Clock sync (set-time + capability flags) | ✓ | ✓ |
+| Battery level + charging state | ✓ | ✓ |
+| Heart rate log (historical, 5-min slots, multi-packet) | ✓ | ✓ |
+| Heart rate log settings (interval, enable/disable) | — | ✓ |
+| Steps (daily total + 15-min slots, BCD dates, new calorie protocol) | ✓ | ✓ |
+| Sleep (all nights, stage parsing, NODATA→AWAKE fix) | ✓ | ✓ |
+| Real-time heart rate | ✓ | ✓ |
+| Real-time SpO2 | ✓ | ✓ |
+| Real-time HRV (RMSSD, ~90 s measurement) | ✓ | ✓ |
+| Real-time stress / pressure (0–100) | ✓ | ✓ |
+| Real-time blood pressure | ✓ | ✓ |
+| Real-time blood sugar | ✓ | ✓ |
+| Real-time ECG | ✓ | ✓ |
+| Real-time fatigue | ✓ | ✓ |
+| Full sync to SQLite (for debugging / data export) | — | ✓ |
+| Raw packet capture + debug mode | — | ✓ |
+| Reboot | — | ✓ |
+| Server sync (WearableSnapshot → /api/health-events/sync) | ✓ | — |
+| Brand-agnostic adapter pattern (WearableDevice + createWearable) | ✓ | — |
+
+### Not yet implemented
+
+| Feature | Notes |
+|---|---|
+| Historical stress log (command 55) | Only real-time; ring stores a daily log but parser not built |
+| Historical HRV log (command 57) | Only real-time; same situation |
+| Historical SpO2 log (Big Data ID 42) | Protocol documented in `bigdata.md`; parser not built |
+| Temperature (if device supports) | `mSupportTemperature` flag exists in `parseSetTimePacket`; no parser |
+| Continuous overnight SpO2 | Requires dual PPG (green + red/IR) — current R02/R10 do not support |
+| Sleep apnea detection | Depends on overnight SpO2; not possible on current hardware |
+| Second-hand device firmware version | Neither ring exposes the GATT Device Info service (0x180A) |
+
+### Architecture strengths for OEM transition
+
+The miniapp BLE layer is already brand-agnostic:
+
+- **`WearableDevice` base class** — adding a new brand means implementing one class with defined method signatures. The rest of the miniapp is unaffected.
+- **`createWearable(brand)` factory** — callers never import Colmi directly; switching hardware = add one entry to the factory.
+- **`syncWearableData`** — normalised `WearableSnapshot` is brand-neutral; no backend changes needed when adding a new ring brand.
+- **Modular parsers** — each protocol feature is an isolated file. Updating for a new firmware version or different OEM variant = edit one parser, not the whole adapter.
+
+### What to negotiate in an OEM deal
+
+1. **Written BLE protocol documentation** — the current implementation is reverse-engineered from packet captures. At production scale, undocumented protocol changes in firmware updates can silently break data collection. A documented protocol is a contract.
+
+2. **Firmware version stability** — the R02 and R10 differ significantly in sleep algorithm behaviour (R02 detected REM throughout; R10 classified the same periods as Light). Firmware updates can change this without notice. Pin the firmware version or require change notification.
+
+3. **Dual PPG (green + red/IR)** — required for continuous overnight SpO2 and sleep apnea detection. Specify this as a hardware requirement, not an optional feature.
+
+4. **White-label firmware** — remove Colmi branding from the ring's own UI (step count display, notification text, etc.) so the device presents as a Waven product.
+
+5. **Protocol access for new models** — if the OEM releases new hardware (e.g. R20), protocol documentation for new commands should be covered in the agreement before the device ships.
+
+6. **`COLMI_NAME_PREFIXES` in `protocol.js`** — the scan filter currently lists known Colmi advertisement name prefixes. Under OEM, the ring will advertise under a custom name (e.g. `WAVEN R1`). Update this list before shipping.
+
+### Adding a second ring brand
+
+If evaluating RingConn or another ODM in parallel:
+
+1. Reverse-engineer (or obtain) BLE protocol documentation
+2. Create `utils/wearable/ringconn/index.js` extending `WearableDevice`
+3. Add `'ringconn'` to `createWearable()` in `utils/wearable/index.js`
+4. No backend, sync, or UI changes required
+
+---
+
 ## UI — `user-health` component
 
 The wearable section lives inside the **Real-time Health Data** block of the Health tab (`user-health.wxml`).

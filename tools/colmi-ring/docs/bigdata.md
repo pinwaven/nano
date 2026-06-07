@@ -67,9 +67,14 @@ enum SleepType : uint8_t {
     ERROR = 1,
     LIGHT = 2,
     DEEP = 3,
+    REM   = 4,
     AWAKE = 5,
 }
 ```
+
+**Note on `NODATA` (0):** The ring emits `NODATA` periods when it loses signal or cannot classify a sleep stage — typically when the user is awake and still (e.g. lying in bed not yet asleep, or awake in the middle of the night). In practice these periods should be treated as **AWAKE**: the ring records the elapsed time but cannot assign a sleep stage. Parsers must map `NODATA → AWAKE` rather than discarding these periods; dropping them causes the stage timeline to not account for significant awake windows and makes `totalMinutes` inconsistent with the `sleepStart`/`sleepEnd` window.
+
+Example from a real R02 capture: a `NODATA, 178` entry (178 minutes) appeared between two sleep blocks, matching a 03:36–06:34 awake gap that would otherwise be invisible.
 
 ## Blood Oxygen
 
