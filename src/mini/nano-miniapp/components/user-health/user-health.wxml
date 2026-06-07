@@ -117,6 +117,40 @@
             <text class="dt-htag-label">{{t.noHealthSignals}}</text>
           </view>
         </view>
+
+        <!-- Metric strip: weight / BMI / steps / HRV / stress -->
+        <view class="dt-metrics-strip">
+          <view class="dt-metric">
+            <view class="dt-metric-val-row">
+              <text class="dt-metric-val">{{rawWeight != null ? rawWeight : '—'}}</text>
+              <text wx:if="{{rawWeight != null}}" class="dt-metric-unit">kg</text>
+            </view>
+            <text class="dt-metric-label">{{t.weight}}</text>
+          </view>
+          <view class="dt-metric-divider"></view>
+          <view class="dt-metric">
+            <text class="dt-metric-val">{{rawBmi != null ? rawBmi : '—'}}</text>
+            <text class="dt-metric-label">BMI</text>
+          </view>
+          <view class="dt-metric-divider"></view>
+          <view class="dt-metric">
+            <text class="dt-metric-val">{{ringData && ringData.hasSteps ? ringData.stepsStr : '—'}}</text>
+            <text class="dt-metric-label">{{t.ringSteps}}</text>
+          </view>
+          <view class="dt-metric-divider"></view>
+          <view class="dt-metric">
+            <view class="dt-metric-val-row">
+              <text class="dt-metric-val" style="{{ringData && ringData.hasHrv ? 'color:' + ringData.hrvColor : ''}}">{{ringData && ringData.hasHrv ? ringData.hrv : '—'}}</text>
+              <text wx:if="{{ringData && ringData.hasHrv}}" class="dt-metric-unit">ms</text>
+            </view>
+            <text class="dt-metric-label">{{t.ringHrv}}</text>
+          </view>
+          <view class="dt-metric-divider"></view>
+          <view class="dt-metric">
+            <text class="dt-metric-val" style="{{ringData && ringData.hasStress ? 'color:' + ringData.stressColor : ''}}">{{ringData && ringData.hasStress ? ringData.stress : '—'}}</text>
+            <text class="dt-metric-label">{{t.ringStress}}</text>
+          </view>
+        </view>
       </view>
 
       <!-- Profile (self & coach mode) -->

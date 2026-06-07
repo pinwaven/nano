@@ -617,6 +617,7 @@ Component({
     avatarLetter: 'U',
     rawHeight: null,
     rawWeight: null,
+    rawBmi: null,
     editing: false,
     editSaving: false,
     editOtherSelected: false,
@@ -844,6 +845,7 @@ Component({
             hasConditionsData: condKeys !== null,
             rawHeight: heightVal,
             rawWeight: weightVal,
+            rawBmi: bmiVal,
           })
         }
 
@@ -1253,6 +1255,7 @@ Component({
           avatarLetter: (nickname || 'U').slice(-1).toUpperCase(),
           rawHeight: hVal,
           rawWeight: wVal,
+          rawBmi: (hVal && wVal) ? Number((wVal / Math.pow(hVal / 100, 2)).toFixed(1)) : null,
         })
         this.triggerEvent('profileUpdated', updatedUser)
         wx.showToast({ title: t.saveOk, icon: 'success', duration: 1500 })

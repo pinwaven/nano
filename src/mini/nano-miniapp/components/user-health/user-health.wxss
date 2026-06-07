@@ -1429,6 +1429,52 @@
 }
 
 /* Tags strip */
+.dt-metrics-strip {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin-top: 16rpx;
+  padding: 18rpx 8rpx 4rpx;
+  border-top: 1rpx solid rgba(99, 117, 236, 0.15);
+}
+.dt-metric {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+}
+.dt-metric-val-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 3rpx;
+}
+.dt-metric-val {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: rgba(214, 230, 255, 0.92);
+  line-height: 1.1;
+}
+.dt-metric-unit {
+  font-size: 20rpx;
+  color: rgba(166, 196, 229, 0.5);
+  margin-left: 2rpx;
+  align-self: flex-end;
+  margin-bottom: 4rpx;
+}
+.dt-metric-label {
+  font-size: 20rpx;
+  color: rgba(166, 196, 229, 0.45);
+  letter-spacing: 0.02em;
+}
+.dt-metric-divider {
+  width: 1rpx;
+  height: 44rpx;
+  background: rgba(99, 117, 236, 0.18);
+  flex-shrink: 0;
+}
+
 .dt-tags-strip {
   display: flex;
   flex-direction: row;
