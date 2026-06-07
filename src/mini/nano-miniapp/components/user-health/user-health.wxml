@@ -84,7 +84,7 @@
                   style="width:{{bioAgeChartW}}px;height:200px;"></canvas>
               </view>
             </view>
-            <view wx:for="{{subAgeList}}" wx:key="key" class="dt-sa-row">
+            <view wx:for="{{subAgeList}}" wx:key="key" wx:if="{{!bioAgeTrendOpen}}" class="dt-sa-row">
               <view class="dt-sa-accent {{subAgeZ[item.key].pulse ? 'dt-fig-pulse' : ''}}"
                 style="background:{{item.color}};box-shadow:0 0 6rpx {{item.color}};"></view>
               <view class="dt-sa-info">

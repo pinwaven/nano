@@ -1326,6 +1326,7 @@
 .dt-age-chips {
   display: flex;
   gap: 14rpx;
+  margin-bottom: 18rpx;
 }
 
 .dt-age-chips .bio-chip-primary,
@@ -1397,10 +1398,9 @@
 
 /* BioAge expanded chip — canvas fills the whole area */
 .dt-bioage-open {
-  border: 1.5rpx solid rgba(99, 117, 236, 0.45);
+  border: 1.5rpx solid rgba(99, 117, 236, 0.55);
   border-radius: 22rpx;
-  overflow: hidden;
-  box-shadow: 0 0 40rpx rgba(99, 117, 236, 0.18);
+  box-shadow: 0 0 40rpx rgba(99, 117, 236, 0.35);
 }
 
 .dt-bioage-chart-title {
@@ -1414,7 +1414,7 @@
 .dt-bioage-canvas {
   display: block;
   background: #0a1228;
-  border-radius: 10rpx;
+  border-radius: 20rpx;
 }
 
 /* Tags strip */

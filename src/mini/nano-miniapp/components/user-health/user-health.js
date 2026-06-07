@@ -912,11 +912,6 @@ Component({
       ctx.setFillStyle('rgba(166,196,229,0.45)')
       ctx.fillText((t.chronoAge || 'Chrono Age').toUpperCase(), W - 14, 52)
 
-      // Trend label (centre)
-      ctx.setTextAlign('center')
-      ctx.setFontSize(9)
-      ctx.setFillStyle('rgba(166,196,229,0.3)')
-      ctx.fillText((t.bioAgeTrend || 'BioAge Trend').toUpperCase(), W / 2, 52)
 
       // Separator
       ctx.beginPath()
@@ -925,7 +920,29 @@ Component({
       ctx.moveTo(0, headerH); ctx.lineTo(W, headerH)
       ctx.stroke()
 
-      if (bioAgeHistory.length < 2) { ctx.draw(); return }
+      // Rounded-rect border drawn on canvas (CSS border is hidden under native canvas layer)
+      const cr = 11
+      const drawGlowBorder = () => {
+        const rrPath = (inset, r) => {
+          const x = inset, y = inset, w = W - inset * 2, h = H - inset * 2
+          ctx.beginPath()
+          ctx.moveTo(x + r, y)
+          ctx.lineTo(x + w - r, y)
+          ctx.arc(x + w - r, y + r, r, -Math.PI / 2, 0)
+          ctx.lineTo(x + w, y + h - r)
+          ctx.arc(x + w - r, y + h - r, r, 0, Math.PI / 2)
+          ctx.lineTo(x + r, y + h)
+          ctx.arc(x + r, y + h - r, r, Math.PI / 2, Math.PI)
+          ctx.lineTo(x, y + r)
+          ctx.arc(x + r, y + r, r, Math.PI, 3 * Math.PI / 2)
+          ctx.closePath()
+        }
+        rrPath(4, cr - 3); ctx.setStrokeStyle('rgba(99,117,236,0.10)'); ctx.setLineWidth(10); ctx.stroke()
+        rrPath(2, cr - 1); ctx.setStrokeStyle('rgba(99,117,236,0.22)'); ctx.setLineWidth(5);  ctx.stroke()
+        rrPath(1, cr);     ctx.setStrokeStyle('rgba(99,117,236,0.60)'); ctx.setLineWidth(1.5); ctx.stroke()
+      }
+
+      if (bioAgeHistory.length < 2) { drawGlowBorder(); ctx.draw(); return }
 
       const bioAges = bioAgeHistory.map(r => r.bioAge)
       const allVals = [...bioAges]
@@ -993,6 +1010,7 @@ Component({
       ctx.fillText(maxV, pL - 4, pT + 9)
       ctx.fillText(minV, pL - 4, pT + plotH + 4)
 
+      drawGlowBorder()
       ctx.draw()
     },
 
