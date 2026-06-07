@@ -92,7 +92,7 @@ const T = {
     noBmData: '暂无生物标志物数据。', noHistory: '暂无检测记录。',
     guestHealthCta: '激活账户后，查看您的健康数据与生物年龄',
     guestJoinBtn: '激活账户',
-    editProfile: '编辑资料', save: '保存', cancel: '取消',
+    editProfile: '编辑资料', changeAvatar: '换头像', save: '保存', cancel: '取消',
     name: '姓名', otherPlaceholder: '请说明', saveOk: '已保存', saveFail: '保存失败',
     genderMap: { male: '男', female: '女' },
     langMap: { zh: '中文', en: 'English' },
@@ -194,7 +194,7 @@ const T = {
     noBmData: 'No biomarker data available yet.', noHistory: 'No test history yet.',
     guestHealthCta: 'Activate your account to view your health data and Bio Age',
     guestJoinBtn: 'Activate Account',
-    editProfile: 'Edit Profile', save: 'Save', cancel: 'Cancel',
+    editProfile: 'Edit Profile', changeAvatar: 'Photo', save: 'Save', cancel: 'Cancel',
     name: 'Name', otherPlaceholder: 'Please specify', saveOk: 'Saved', saveFail: 'Save failed',
     genderMap: { male: 'Male', female: 'Female' },
     langMap: { zh: 'Chinese', en: 'English' },
@@ -615,6 +615,7 @@ Component({
     hasConditionsData: false,
     avatarUpdating: false,
     avatarLetter: 'U',
+    avatarPillsVisible: false,
     rawHeight: null,
     rawWeight: null,
     rawBmi: null,
@@ -1085,6 +1086,21 @@ Component({
           setTimeout(() => this._drawBioAgeChart(), 50)
         }
       })
+    },
+
+    onAvatarTap() {
+      if (this._avatarPillTimer) clearTimeout(this._avatarPillTimer)
+      this.setData({ avatarPillsVisible: true })
+      this._avatarPillTimer = setTimeout(() => {
+        this.setData({ avatarPillsVisible: false })
+        this._avatarPillTimer = null
+      }, 5000)
+    },
+
+    onEditProfilePill() {
+      if (this._avatarPillTimer) { clearTimeout(this._avatarPillTimer); this._avatarPillTimer = null }
+      this.setData({ avatarPillsVisible: false })
+      this.startEdit()
     },
 
     onZoneTap(e) {
