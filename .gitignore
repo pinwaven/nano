@@ -8,3 +8,4 @@ node_modules/
 dist/
 certs/
 temp/
+./miniprogram-upload-private.key
