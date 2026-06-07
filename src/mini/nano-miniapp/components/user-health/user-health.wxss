@@ -1396,6 +1396,18 @@
   opacity: 0.75;
 }
 
+@keyframes dt-sa-flash-anim {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.1; }
+}
+.dt-sa-row-flash .dt-sa-bar-fill {
+  animation: dt-sa-flash-anim 0.42s ease-in-out 3;
+  opacity: 1;
+}
+.dt-sa-row-flash .dt-sa-accent {
+  animation: dt-sa-flash-anim 0.42s ease-in-out 3;
+}
+
 /* BioAge expanded chip — border/glow drawn on canvas, not CSS (canvas is native layer) */
 .dt-bioage-open {
   border-radius: 22rpx;

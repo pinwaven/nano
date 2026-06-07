@@ -610,6 +610,7 @@ Component({
     bioAgeHistory: [],
     bioAgeChartW: 0,
     bioAgeTrendOpen: false,
+    flashSubAge: '',
     healthConditionsList: [],
     hasConditionsData: false,
     avatarUpdating: false,
@@ -1082,6 +1083,13 @@ Component({
           setTimeout(() => this._drawBioAgeChart(), 50)
         }
       })
+    },
+
+    onZoneTap(e) {
+      const key = e.currentTarget.dataset.key
+      if (!key || this.data.bioAgeTrendOpen) return
+      this.setData({ flashSubAge: key })
+      setTimeout(() => this.setData({ flashSubAge: '' }), 1400)
     },
 
     closeBioAgeTrend() {

@@ -41,26 +41,33 @@
           <view class="dt-fig-col">
             <view class="dt-body-fig">
               <view class="dt-fig-head {{subAgeZ.ResilienceAge.pulse ? 'dt-fig-pulse' : ''}}"
-                style="background:{{subAgeZ.ResilienceAge.fill}};box-shadow:0 0 {{subAgeZ.ResilienceAge.glow}}rpx {{subAgeZ.ResilienceAge.color}};border-color:{{subAgeZ.ResilienceAge.color}}88;"></view>
+                style="background:{{subAgeZ.ResilienceAge.fill}};box-shadow:0 0 {{subAgeZ.ResilienceAge.glow}}rpx {{subAgeZ.ResilienceAge.color}};border-color:{{subAgeZ.ResilienceAge.color}}88;"
+                catchtap="onZoneTap" data-key="ResilienceAge"></view>
               <view class="dt-fig-neck" style="background:{{subAgeZ.ResilienceAge.fill}};"></view>
               <view class="dt-fig-mid-row">
                 <view class="dt-fig-arm {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
-                  style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
+                  style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"
+                  catchtap="onZoneTap" data-key="MicroVascularAge"></view>
                 <view class="dt-fig-chest {{subAgeZ.CellularAge.pulse ? 'dt-fig-pulse' : ''}}"
-                  style="background:{{subAgeZ.CellularAge.fill}};box-shadow:0 0 {{subAgeZ.CellularAge.glow}}rpx {{subAgeZ.CellularAge.color}};border-color:{{subAgeZ.CellularAge.color}}88;">
+                  style="background:{{subAgeZ.CellularAge.fill}};box-shadow:0 0 {{subAgeZ.CellularAge.glow}}rpx {{subAgeZ.CellularAge.color}};border-color:{{subAgeZ.CellularAge.color}}88;"
+                  catchtap="onZoneTap" data-key="CellularAge">
                   <view class="dt-fig-heart" style="background:{{subAgeZ.CellularAge.color}};box-shadow:0 0 8rpx {{subAgeZ.CellularAge.color}};"></view>
                 </view>
                 <view class="dt-fig-arm {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
-                  style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
+                  style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"
+                  catchtap="onZoneTap" data-key="MicroVascularAge"></view>
               </view>
               <view class="dt-fig-abdomen {{subAgeZ.MetabolicAge.pulse ? 'dt-fig-pulse' : ''}}"
-                style="background:{{subAgeZ.MetabolicAge.fill}};box-shadow:0 0 {{subAgeZ.MetabolicAge.glow}}rpx {{subAgeZ.MetabolicAge.color}};border-color:{{subAgeZ.MetabolicAge.color}}88;"></view>
+                style="background:{{subAgeZ.MetabolicAge.fill}};box-shadow:0 0 {{subAgeZ.MetabolicAge.glow}}rpx {{subAgeZ.MetabolicAge.color}};border-color:{{subAgeZ.MetabolicAge.color}}88;"
+                catchtap="onZoneTap" data-key="MetabolicAge"></view>
               <view class="dt-fig-hips" style="background:{{subAgeZ.MetabolicAge.fill}};"></view>
               <view class="dt-fig-leg-row">
                 <view class="dt-fig-leg {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
-                  style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
+                  style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"
+                  catchtap="onZoneTap" data-key="MicroVascularAge"></view>
                 <view class="dt-fig-leg {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
-                  style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
+                  style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"
+                  catchtap="onZoneTap" data-key="MicroVascularAge"></view>
               </view>
             </view>
           </view>
@@ -84,7 +91,7 @@
                   style="width:{{bioAgeChartW}}px;height:200px;"></canvas>
               </view>
             </view>
-            <view wx:for="{{subAgeList}}" wx:key="key" wx:if="{{!bioAgeTrendOpen}}" class="dt-sa-row">
+            <view wx:for="{{subAgeList}}" wx:key="key" wx:if="{{!bioAgeTrendOpen}}" class="dt-sa-row {{flashSubAge === item.key ? 'dt-sa-row-flash' : ''}}">
               <view class="dt-sa-accent {{subAgeZ[item.key].pulse ? 'dt-fig-pulse' : ''}}"
                 style="background:{{item.color}};box-shadow:0 0 6rpx {{item.color}};"></view>
               <view class="dt-sa-info">
