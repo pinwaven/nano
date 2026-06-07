@@ -32,82 +32,82 @@
           <view wx:if="{{avatarUpdating}}" class="health-avatar-ring"></view>
         </view>
 
-        <view wx:if="{{bAge || cAge}}" class="bio-row">
-          <view class="bio-chip bio-chip-dim">
-            <text class="bio-num bio-num-chrono">{{cAge || '—'}}</text>
-            <text class="bio-unit">{{t.chronoAge}}</text>
-          </view>
-          <view class="bio-chip bio-chip-primary">
-            <text class="bio-num bio-num-primary" style="color: {{bAgeColor}}">{{bAge || '—'}}</text>
-            <text class="bio-unit">{{t.bioAge}}</text>
-          </view>
-        </view>
-
-        <!-- Bio-age comparison bars -->
-        <view wx:if="{{subAgeList.length > 0}}" class="bio-bars">
-          <view wx:for="{{subAgeList}}" wx:key="key" class="bio-bar-item">
-            <view class="bio-bar-header">
-              <text class="bio-bar-label">{{item.label}}</text>
-              <text class="bio-bar-val" style="color: {{item.color}}">{{item.value}}</text>
-            </view>
-            <view class="bio-bar-track">
-              <view class="bio-bar-fill" style="width: {{item.score}}%; background: {{item.color}};"></view>
-              <view class="bio-bar-ref"></view>
-            </view>
-          </view>
-        </view>
-
-        <!-- Sub-age detail cards -->
-        <view wx:if="{{subAgeList.length > 0}}" class="sub-age-grid">
-          <view wx:for="{{subAgeList}}" wx:key="key" class="sub-age-card">
-            <text class="sub-age-val" style="color: {{item.color}}">{{item.value}}</text>
-            <text class="sub-age-label">{{item.label}}</text>
-          </view>
-        </view>
       </view>
 
-      <!-- Digital Twin Body Figure -->
-      <view wx:if="{{subAgeList.length > 0}}" class="health-section dt-section">
-        <view class="section-title-row">
-          <text class="section-title">{{t.digitalTwin}}</text>
-        </view>
-        <view class="dt-canvas-wrap">
-          <!-- CSS body figure — 4 anatomical zones mapped to sub-ages -->
-          <view class="dt-body-fig">
-            <view class="dt-fig-head {{subAgeZ.ResilienceAge.pulse ? 'dt-fig-pulse' : ''}}"
-              style="background:{{subAgeZ.ResilienceAge.fill}};box-shadow:0 0 {{subAgeZ.ResilienceAge.glow}}rpx {{subAgeZ.ResilienceAge.color}};border-color:{{subAgeZ.ResilienceAge.color}}88;"></view>
-            <view class="dt-fig-neck" style="background:{{subAgeZ.ResilienceAge.fill}};"></view>
-            <view class="dt-fig-mid-row">
-              <view class="dt-fig-arm {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
-                style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
-              <view class="dt-fig-chest {{subAgeZ.CellularAge.pulse ? 'dt-fig-pulse' : ''}}"
-                style="background:{{subAgeZ.CellularAge.fill}};box-shadow:0 0 {{subAgeZ.CellularAge.glow}}rpx {{subAgeZ.CellularAge.color}};border-color:{{subAgeZ.CellularAge.color}}88;">
-                <view class="dt-fig-heart" style="background:{{subAgeZ.CellularAge.color}};box-shadow:0 0 8rpx {{subAgeZ.CellularAge.color}};"></view>
+      <!-- Digital Twin Hero Card -->
+      <view wx:if="{{subAgeList.length > 0}}" class="dt-hero-card" bindtap="closeBioAgeTrend">
+        <view class="dt-body-row">
+          <!-- Left: enlarged body figure -->
+          <view class="dt-fig-col">
+            <view class="dt-body-fig">
+              <view class="dt-fig-head {{subAgeZ.ResilienceAge.pulse ? 'dt-fig-pulse' : ''}}"
+                style="background:{{subAgeZ.ResilienceAge.fill}};box-shadow:0 0 {{subAgeZ.ResilienceAge.glow}}rpx {{subAgeZ.ResilienceAge.color}};border-color:{{subAgeZ.ResilienceAge.color}}88;"></view>
+              <view class="dt-fig-neck" style="background:{{subAgeZ.ResilienceAge.fill}};"></view>
+              <view class="dt-fig-mid-row">
+                <view class="dt-fig-arm {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
+                  style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
+                <view class="dt-fig-chest {{subAgeZ.CellularAge.pulse ? 'dt-fig-pulse' : ''}}"
+                  style="background:{{subAgeZ.CellularAge.fill}};box-shadow:0 0 {{subAgeZ.CellularAge.glow}}rpx {{subAgeZ.CellularAge.color}};border-color:{{subAgeZ.CellularAge.color}}88;">
+                  <view class="dt-fig-heart" style="background:{{subAgeZ.CellularAge.color}};box-shadow:0 0 8rpx {{subAgeZ.CellularAge.color}};"></view>
+                </view>
+                <view class="dt-fig-arm {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
+                  style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
               </view>
-              <view class="dt-fig-arm {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
-                style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
-            </view>
-            <view class="dt-fig-abdomen {{subAgeZ.MetabolicAge.pulse ? 'dt-fig-pulse' : ''}}"
-              style="background:{{subAgeZ.MetabolicAge.fill}};box-shadow:0 0 {{subAgeZ.MetabolicAge.glow}}rpx {{subAgeZ.MetabolicAge.color}};border-color:{{subAgeZ.MetabolicAge.color}}88;"></view>
-            <view class="dt-fig-hips" style="background:{{subAgeZ.MetabolicAge.fill}};"></view>
-            <view class="dt-fig-leg-row">
-              <view class="dt-fig-leg {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
-                style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
-              <view class="dt-fig-leg {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
-                style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
+              <view class="dt-fig-abdomen {{subAgeZ.MetabolicAge.pulse ? 'dt-fig-pulse' : ''}}"
+                style="background:{{subAgeZ.MetabolicAge.fill}};box-shadow:0 0 {{subAgeZ.MetabolicAge.glow}}rpx {{subAgeZ.MetabolicAge.color}};border-color:{{subAgeZ.MetabolicAge.color}}88;"></view>
+              <view class="dt-fig-hips" style="background:{{subAgeZ.MetabolicAge.fill}};"></view>
+              <view class="dt-fig-leg-row">
+                <view class="dt-fig-leg {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
+                  style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
+                <view class="dt-fig-leg {{subAgeZ.MicroVascularAge.pulse ? 'dt-fig-pulse' : ''}}"
+                  style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"></view>
+              </view>
             </view>
           </view>
-          <!-- Health tags -->
-          <view class="dt-health-tags">
-            <view wx:for="{{healthTags}}" wx:key="index"
-                  class="dt-htag"
-                  style="border-color:{{item.color}}55;color:{{item.color}};">
-              <view class="dt-htag-dot" style="background:{{item.color}};"></view>
-              <text class="dt-htag-label">{{item.label}}</text>
+          <!-- Right: BioAge + sub-ages -->
+          <view class="dt-sa-col">
+            <view wx:if="{{bAge || cAge}}">
+              <!-- Collapsed: side-by-side chips, tap BioAge to expand -->
+              <view wx:if="{{!bioAgeTrendOpen}}" class="dt-age-chips">
+                <view class="bio-chip bio-chip-dim">
+                  <text class="bio-num bio-num-chrono">{{cAge || '—'}}</text>
+                  <text class="bio-unit">{{t.chronoAge}}</text>
+                </view>
+                <view class="bio-chip bio-chip-primary" catchtap="toggleBioAgeTrend">
+                  <text class="bio-num bio-num-primary" style="color:{{bAgeColor}}">{{bAge || '—'}}</text>
+                  <text class="bio-unit">{{t.bioAge}}</text>
+                </view>
+              </view>
+              <!-- Expanded: canvas fills the entire chip -->
+              <view wx:if="{{bioAgeTrendOpen}}" class="dt-bioage-open" catchtap="toggleBioAgeTrend">
+                <canvas canvas-id="dt-bioage-chart" class="dt-bioage-canvas"
+                  style="width:{{bioAgeChartW}}px;height:200px;"></canvas>
+              </view>
             </view>
-            <view wx:if="{{healthTags.length === 0}}" class="dt-htag dt-htag-empty">
-              <text class="dt-htag-label">{{t.noHealthSignals}}</text>
+            <view wx:for="{{subAgeList}}" wx:key="key" class="dt-sa-row">
+              <view class="dt-sa-accent {{subAgeZ[item.key].pulse ? 'dt-fig-pulse' : ''}}"
+                style="background:{{item.color}};box-shadow:0 0 6rpx {{item.color}};"></view>
+              <view class="dt-sa-info">
+                <view class="dt-sa-top">
+                  <text class="dt-sa-label">{{item.label}}</text>
+                  <text class="dt-sa-val" style="color:{{item.color}}">{{item.value}}</text>
+                </view>
+                <view class="dt-sa-bar">
+                  <view class="dt-sa-bar-fill" style="width:{{item.score}}%;background:{{item.color}};"></view>
+                </view>
+              </view>
             </view>
+          </view>
+        </view>
+        <!-- Tags strip -->
+        <view class="dt-tags-strip">
+          <view wx:for="{{healthTags}}" wx:key="index" class="dt-htag"
+                style="border-color:{{item.color}}55;color:{{item.color}};">
+            <view class="dt-htag-dot" style="background:{{item.color}};"></view>
+            <text class="dt-htag-label">{{item.label}}</text>
+          </view>
+          <view wx:if="{{healthTags.length === 0}}" class="dt-htag dt-htag-empty">
+            <text class="dt-htag-label">{{t.noHealthSignals}}</text>
           </view>
         </view>
       </view>

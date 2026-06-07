@@ -154,6 +154,7 @@ const T = {
     rptRecommendations: '建议方案',
     rptFollowUp: '随访计划',
     noHealthSignals: '暂无健康信号',
+    bioAgeTrend: '生理年龄趋势',
     wearableDevice: '可穿戴设备',
     bindSmartRing: '绑定智能戒指',
     wearableConnected: '已连接',
@@ -255,6 +256,7 @@ const T = {
     rptRecommendations: 'Recommendations',
     rptFollowUp: 'Follow-up',
     noHealthSignals: 'No signals yet',
+    bioAgeTrend: 'BioAge Trend',
     wearableDevice: 'Wearable Device',
     bindSmartRing: 'Bind Smart Ring',
     wearableConnected: 'Connected',
@@ -605,6 +607,9 @@ Component({
     weightHistory: [],
     weightChartOpen: false,
     weightChartW: 300,
+    bioAgeHistory: [],
+    bioAgeChartW: 0,
+    bioAgeTrendOpen: false,
     healthConditionsList: [],
     hasConditionsData: false,
     avatarUpdating: false,
@@ -748,6 +753,22 @@ Component({
             })
           : []
 
+        const _baDateMap = new Map()
+        kinoRecords.forEach(r => {
+          if (r.bio_age != null) {
+            const d = (r.tested_at || '').substring(0, 10)
+            _baDateMap.set(d, r)
+          }
+        })
+        const bioAgeHistory = [..._baDateMap.values()]
+          .sort((a, b) => (a.tested_at < b.tested_at ? -1 : 1))
+          .map(r => ({
+            date: (r.tested_at || '').substring(0, 10),
+            bioAge: Number(r.bio_age),
+            chronoAge: r.data?.bioage_profile?.ChronoAge ?? null,
+          }))
+        const bioAgeChartW = Math.round(wx.getSystemInfoSync().windowWidth * 330 / 750)
+
         const rawBioAge = latestAnalyzed?.bio_age ?? (kinoRecords.length > 0 ? kinoRecords[kinoRecords.length - 1]?.bio_age : null) ?? user?.bio_age
         const bAge = rawBioAge ? Number(rawBioAge).toFixed(1) : null
 
@@ -771,6 +792,7 @@ Component({
           bAgeColor: bioAgeColor(rawBioAge, cAge),
           recordCount: kinoRecords.length,
           hasBm: latestBm !== null,
+          bioAgeHistory, bioAgeChartW,
         }
 
         if ((mode === 'self' || mode === 'coach') && user) {
@@ -860,6 +882,120 @@ Component({
 
 
 
+    _drawBioAgeChart() {
+      const { bioAgeHistory, bioAgeChartW, bAge, cAge, bAgeColor, t } = this.data
+      if (!bioAgeChartW) return
+      const W = bioAgeChartW, H = 200
+      const headerH = 62
+      const pL = 28, pR = 10, pT = headerH + 12, pB = 24
+      const plotW = W - pL - pR, plotH = H - pT - pB
+
+      const ctx = wx.createCanvasContext('dt-bioage-chart', this)
+      ctx.clearRect(0, 0, W, H)
+      ctx.setFillStyle('#0a1228')
+      ctx.fillRect(0, 0, W, H)
+
+      // ── Header: BioAge (left) + ChronoAge (right) ──
+      ctx.setTextAlign('left')
+      ctx.setFontSize(30)
+      ctx.setFillStyle(bAgeColor || '#6375EC')
+      ctx.fillText(bAge || '—', 14, 34)
+      ctx.setFontSize(10)
+      ctx.setFillStyle('rgba(166,196,229,0.55)')
+      ctx.fillText((t.bioAge || 'Bio Age').toUpperCase(), 14, 52)
+
+      ctx.setTextAlign('right')
+      ctx.setFontSize(22)
+      ctx.setFillStyle('rgba(166,196,229,0.75)')
+      ctx.fillText(cAge || '—', W - 14, 32)
+      ctx.setFontSize(10)
+      ctx.setFillStyle('rgba(166,196,229,0.45)')
+      ctx.fillText((t.chronoAge || 'Chrono Age').toUpperCase(), W - 14, 52)
+
+      // Trend label (centre)
+      ctx.setTextAlign('center')
+      ctx.setFontSize(9)
+      ctx.setFillStyle('rgba(166,196,229,0.3)')
+      ctx.fillText((t.bioAgeTrend || 'BioAge Trend').toUpperCase(), W / 2, 52)
+
+      // Separator
+      ctx.beginPath()
+      ctx.setStrokeStyle('rgba(99,117,236,0.18)')
+      ctx.setLineWidth(0.5)
+      ctx.moveTo(0, headerH); ctx.lineTo(W, headerH)
+      ctx.stroke()
+
+      if (bioAgeHistory.length < 2) { ctx.draw(); return }
+
+      const bioAges = bioAgeHistory.map(r => r.bioAge)
+      const allVals = [...bioAges]
+      bioAgeHistory.forEach(r => { if (r.chronoAge != null) allVals.push(r.chronoAge) })
+      const minV = Math.floor(Math.min(...allVals)) - 2
+      const maxV = Math.ceil(Math.max(...allVals)) + 2
+      const range = maxV - minV || 1
+
+      const toX = i => pL + (i / Math.max(bioAgeHistory.length - 1, 1)) * plotW
+      const toY = v => pT + ((maxV - v) / range) * plotH
+      const pts = bioAgeHistory.map((r, i) => ({ x: toX(i), y: toY(r.bioAge) }))
+
+      // Filled area
+      ctx.beginPath()
+      ctx.setFillStyle('rgba(99,117,236,0.22)')
+      ctx.moveTo(pts[0].x, pT + plotH)
+      pts.forEach(p => ctx.lineTo(p.x, p.y))
+      ctx.lineTo(pts[pts.length - 1].x, pT + plotH)
+      ctx.closePath(); ctx.fill()
+
+      // ChronoAge dashed reference
+      const cPts = bioAgeHistory.map((r, i) => r.chronoAge != null ? { x: toX(i), y: toY(r.chronoAge) } : null).filter(Boolean)
+      for (let i = 0; i < cPts.length - 1; i++) {
+        const x1 = cPts[i].x, y1 = cPts[i].y, x2 = cPts[i + 1].x, y2 = cPts[i + 1].y
+        const len = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        let d = 0
+        while (d < len) {
+          const t1 = d / len, t2 = Math.min((d + 3) / len, 1)
+          ctx.beginPath()
+          ctx.setStrokeStyle('rgba(166,196,229,0.28)')
+          ctx.setLineWidth(1)
+          ctx.moveTo(x1 + t1 * (x2 - x1), y1 + t1 * (y2 - y1))
+          ctx.lineTo(x1 + t2 * (x2 - x1), y1 + t2 * (y2 - y1))
+          ctx.stroke()
+          d += 6
+        }
+      }
+
+      // BioAge line
+      ctx.beginPath()
+      ctx.setStrokeStyle('#6375EC')
+      ctx.setLineWidth(2)
+      ctx.moveTo(pts[0].x, pts[0].y)
+      pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
+      ctx.stroke()
+
+      // Dots
+      ctx.setFillStyle('#6375EC')
+      ctx.setStrokeStyle('rgba(10,15,30,0.9)')
+      ctx.setLineWidth(1.5)
+      pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke() })
+
+      // X-axis labels
+      const step = Math.max(1, Math.floor(bioAgeHistory.length / 4))
+      ctx.setFontSize(9)
+      ctx.setFillStyle('rgba(166,196,229,0.45)')
+      ctx.setTextAlign('center')
+      bioAgeHistory.forEach((r, i) => {
+        if (i % step === 0 || i === bioAgeHistory.length - 1)
+          ctx.fillText(r.date.substring(5), pts[i].x, H - pB + 14)
+      })
+
+      // Y-axis labels
+      ctx.setTextAlign('right')
+      ctx.fillText(maxV, pL - 4, pT + 9)
+      ctx.fillText(minV, pL - 4, pT + plotH + 4)
+
+      ctx.draw()
+    },
+
     _drawWeightFullChart() {
       const { weightHistory, weightChartW } = this.data
       if (weightHistory.length < 1) return
@@ -914,6 +1050,29 @@ Component({
       ctx.setLineWidth(1)
       ctx.beginPath(); ctx.moveTo(pL, pT); ctx.lineTo(pL, pT + plotH); ctx.lineTo(pL + plotW, pT + plotH); ctx.stroke()
       ctx.draw()
+    },
+
+    toggleBioAgeTrend() {
+      const open = !this.data.bioAgeTrendOpen
+      if (!open) {
+        const ctx = wx.createCanvasContext('dt-bioage-chart', this)
+        ctx.clearRect(0, 0, 9999, 9999)
+        ctx.draw()
+      }
+      this.setData({ bioAgeTrendOpen: open }, () => {
+        if (open && this.data.bioAgeHistory.length > 1) {
+          setTimeout(() => this._drawBioAgeChart(), 50)
+        }
+      })
+    },
+
+    closeBioAgeTrend() {
+      if (this.data.bioAgeTrendOpen) {
+        const ctx = wx.createCanvasContext('dt-bioage-chart', this)
+        ctx.clearRect(0, 0, 9999, 9999)
+        ctx.draw()
+        this.setData({ bioAgeTrendOpen: false })
+      }
     },
 
     toggleProfile() {
