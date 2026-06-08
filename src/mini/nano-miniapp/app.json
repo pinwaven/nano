@@ -17,5 +17,10 @@
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",
-  "requiredPrivateInfos": ["chooseAddress"]
+  "requiredPrivateInfos": ["chooseAddress"],
+  "permission": {
+    "scope.bluetooth": {
+      "desc": "用于连接您的健康戒指，读取健康数据"
+    }
+  }
 }

@@ -7,6 +7,7 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 ## [Unreleased]
 
 ### Fixed
+- **Health report shows wrong biomarker value inconsistent with BioAge** — `handlePostHealthAdvice` merged `data.actual` over `data.estimated` when building the biomarker object passed to the LLM prompt. Because `BiomarkerEstimator` only accepts hsCRP values ≥ 0.2 mg/L, a submitted value of 0.14 was rejected and replaced with an age-based estimate (1.02) for the BioAge calculation — but `data.actual.hsCRP = 0.14` still survived the merge and reached the LLM. The report then narrated "hsCRP = 0.14 mg/L, excellent health" while the stored ResilienceAge was computed with 1.02, contradicting the text. Fix: use `data.estimated` directly (already contains the actual value when it is valid, and the validated estimate when it is not). `src/functions/worker/index.js` `handlePostHealthAdvice`.
 - **Coaches tab shows stale channel after user reassignment** — `coaches.channel_id` was a redundant copy of `users.channel_id` that was never synced when a user's channel changed. Finished the rationalization started by `migration_rationalize_coaches`: dropped the column and updated all queries to derive channel via `JOIN coaches → users → channels`. Migration: `src/schemas/migration_coaches_drop_channel_id.sql`. The Coach modal's channel selector has been removed.
 
 ### Added

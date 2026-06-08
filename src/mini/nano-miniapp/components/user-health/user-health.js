@@ -1752,6 +1752,9 @@ Component({
       // ── Phase 1: connect + read stored data (few seconds, blocking modal) ──
       let battery, steps, sleep, hrLog
       try {
+        await new Promise((resolve, reject) =>
+          wx.authorize({ scope: 'scope.bluetooth', success: resolve, fail: reject })
+        )
         wx.showLoading({ title: t.wearableConnecting, mask: true })
         await ring.connect(this.data.wearableId)
         battery = await ring.getBattery()
