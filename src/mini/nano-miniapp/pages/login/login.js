@@ -1,5 +1,5 @@
 const app = getApp()
-const { BASE } = require('../../utils/config.js')
+const { BASE, CHANNEL_SLUG, CHANNEL_DISPLAY } = require('../../utils/config.js')
 
 Page({
   data: {
@@ -32,7 +32,7 @@ Page({
       return
     }
     const storedChannel = wx.getStorageSync('nano_channel')
-    if (storedChannel) this.setData({ channel: storedChannel })
+    this.setData({ channel: storedChannel || CHANNEL_DISPLAY || null })
     this.wxLogin()
   },
 
@@ -213,6 +213,7 @@ Page({
     const data = { code, app_id: appId }
     if (this._coachId) data.coach_id = this._coachId
     if (inviteCode) data.invite_code = inviteCode
+    if (!inviteCode && CHANNEL_SLUG) data.channel_slug = CHANNEL_SLUG
     const ref = this._refCode || wx.getStorageSync('nano_ref')
     if (ref) data.ref = ref
     return new Promise((resolve, reject) => {

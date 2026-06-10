@@ -4946,7 +4946,7 @@ async function handleBindPhone(user_id, code, app_id = null) {
 
 async function handleWxLogin(body) {
     console.log(JSON.stringify({ level: 'INFO', msg: 'wx-login-body', body_keys: Object.keys(body || {}), phone: body?.phone, phone_code: body?.phone_code }));
-    const { code, coach_id, invite_code, ref, app_id, phone_code, phone } = body;
+    const { code, coach_id, invite_code, ref, app_id, phone_code, phone, channel_slug } = body;
     if (!code) return { success: false, error: 'code is required' };
 
     const credMap = {};
@@ -4954,6 +4954,8 @@ async function handleWxLogin(body) {
         credMap[process.env.WX_APPID] = process.env.WX_SECRET;
     if (process.env.WX_APPID_NANOVATE && process.env.WX_SECRET_NANOVATE)
         credMap[process.env.WX_APPID_NANOVATE] = process.env.WX_SECRET_NANOVATE;
+    if (process.env.WX_APPID_AEVIVA && process.env.WX_SECRET_AEVIVA)
+        credMap[process.env.WX_APPID_AEVIVA] = process.env.WX_SECRET_AEVIVA;
 
     const appid  = (app_id && credMap[app_id]) ? app_id : process.env.WX_APPID;
     const secret = credMap[appid];
@@ -5079,6 +5081,22 @@ async function handleWxLogin(body) {
             }
         }
 
+        // channel_slug fallback: brand-level default when no invite/referral resolved a channel
+        if (!existingRow.channel_id && channel_slug) {
+            const slugRes = await pool.query(
+                `SELECT id, name, logo_url, config->'sub_age_display_names' AS sub_age_names FROM channels WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+                [channel_slug]
+            );
+            if (slugRes.rows.length > 0) {
+                const ch = slugRes.rows[0];
+                await pool.query('UPDATE users SET channel_id = $1 WHERE user_id = $2', [ch.id, existingRow.user_id]);
+                existingRow.channel_id = ch.id;
+                existingRow.channel_name = ch.name;
+                existingRow.channel_logo_url = ch.logo_url;
+                existingRow.channel_sub_age_names = ch.sub_age_names;
+            }
+        }
+
         if (resolvedPhone && !existingRow.phone) {
             await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [resolvedPhone, existingRow.user_id]);
             existingRow.phone = resolvedPhone;
@@ -5138,8 +5156,8 @@ async function handleWxLogin(body) {
         }
     }
 
-    // New user — no invite code, coach, or referral link → allow guest browsing
-    if (!invite_code && !coach_id && !ref) {
+    // New user — no invite code, coach, referral, or branded channel → allow guest browsing
+    if (!invite_code && !coach_id && !ref && !channel_slug) {
         return { success: true, guest: true, openid };
     }
 
@@ -5197,8 +5215,16 @@ async function handleWxLogin(body) {
         if (coachRes.rows.length > 0) channelId = coachRes.rows[0].channel_id;
     }
     if (!channelId) {
-        const defaultCh = await pool.query("SELECT id FROM channels WHERE key_name = 'nanovate' LIMIT 1");
-        channelId = defaultCh.rows[0]?.id || null;
+        if (channel_slug) {
+            const slugRes = await pool.query(
+                `SELECT id FROM channels WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+                [channel_slug]
+            );
+            if (slugRes.rows.length > 0) channelId = slugRes.rows[0].id;
+        } else {
+            const defaultCh = await pool.query("SELECT id FROM channels WHERE key_name = 'nanovate' LIMIT 1");
+            channelId = defaultCh.rows[0]?.id || null;
+        }
     }
 
     const newUserId = generateUserId();

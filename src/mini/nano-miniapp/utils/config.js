@@ -18,4 +18,17 @@ switch (envVersion) {
 const VERSION = '0607-3';
 const IS_DEV = envVersion === 'develop' || envVersion === 'trial';
 
-module.exports = { BASE, VERSION, IS_DEV };
+// Maps appid → channel config for brand-specific miniprograms.
+// New users are auto-assigned to the channel; the logo/name show on the login screen immediately.
+const APPID_TO_CHANNEL = {
+  'wxd19a1403c4fea89d': {
+    slug: 'aeviva',
+    name: 'AEVIVA',
+    logo: 'https://waven-nano.oss-cn-shanghai.aliyuncs.com/channels/logo/0d0321b89b5c9e25.png?OSSAccessKeyId=LTAI5t6bJNW5XQyeiNr2MUp4&Expires=2094125079&Signature=xWrxY1%2F4uMjlPIKPzNYD95sjnAc%3D',
+  },
+};
+const _channelCfg = APPID_TO_CHANNEL[accountInfo.miniProgram.appId] || null;
+const CHANNEL_SLUG = _channelCfg ? _channelCfg.slug : null;
+const CHANNEL_DISPLAY = _channelCfg ? { logo_url: _channelCfg.logo, name: _channelCfg.name } : null;
+
+module.exports = { BASE, VERSION, IS_DEV, CHANNEL_SLUG, CHANNEL_DISPLAY };
