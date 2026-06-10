@@ -53,7 +53,8 @@ const CART_SETS = [
 
 const T = {
   zh: {
-    tabChat: '对话', tabHealth: '健康', tabDots: '原粒', tabPlans: '方案', tabStore: '补给',
+    tabChat: '对话', tabHealth: '健康', tabDots: '原粒', tabPlans: '方案', tabStore: '补给', tabAcademy: '学院',
+    loading: '加载中…',
     plansTitle: '健康方案',
     plansEmpty: '暂无进行中的健康方案',
     plansBrowse: '加入方案',
@@ -213,9 +214,22 @@ const T = {
       pending: '待处理', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', cancelled: '已取消',
     },
+    training: {
+      courses: '课程', library: '参考资料',
+      noTraining: '暂无已发布的课程',
+      noLibrary: '暂无参考资料',
+      noLessons: '本课程暂无课节',
+      lessonCount: (n) => `${n} 节`,
+      markComplete: '标记为已完成',
+      markedComplete: '已完成 ✓',
+      backToCourses: '← 课程列表',
+      backToLessons: '← 课节列表',
+      loadError: '加载失败，请重试',
+    },
   },
   en: {
-    tabChat: 'Chat', tabHealth: 'Health', tabDots: 'Dots', tabPlans: 'Plans', tabStore: 'Store',
+    tabChat: 'Chat', tabHealth: 'Health', tabDots: 'Dots', tabPlans: 'Plans', tabStore: 'Store', tabAcademy: 'Academy',
+    loading: 'Loading…',
     plansTitle: 'Health Plans',
     plansEmpty: 'No active health plans',
     plansBrowse: 'Browse Plans',
@@ -374,6 +388,18 @@ const T = {
     orderStatus: {
       pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', cancelled: 'Cancelled',
+    },
+    training: {
+      courses: 'Courses', library: 'Library',
+      noTraining: 'No published courses yet',
+      noLibrary: 'No reference materials yet',
+      noLessons: 'No lessons in this course yet',
+      lessonCount: (n) => `${n} lesson${n === 1 ? '' : 's'}`,
+      markComplete: 'Mark as Complete',
+      markedComplete: 'Completed ✓',
+      backToCourses: '← Courses',
+      backToLessons: '← Lessons',
+      loadError: 'Failed to load, please retry',
     },
   }
 }
@@ -814,6 +840,29 @@ Page({
     planQuestionsPlanId: null,
     upcomingReminders: [],
     remindersLoading: false,
+
+    // Academy tab
+    trainingCourses: [],
+    trainingLibrary: [],
+    trainingCompletedIds: [],
+    trainingLessons: [],
+    trainingView: 'list',
+    trainingCurrentCourse: null,
+    trainingCurrentLesson: null,
+    trainingVideoUrl: '',
+    trainingTextContent: '',
+    trainingLibraryContent: '',
+    trainingCurrentLibraryItem: null,
+    trainingLoading: false,
+    trainingMarkingComplete: false,
+    trainingDashboard: null,
+    trainingPaths: [],
+    trainingCertifications: [],
+    trainingQuizQuestions: [],
+    trainingQuizAnswers: {},
+    trainingQuizResult: null,
+    trainingQuizReview: [],
+    trainingQuizSubmitting: false,
   },
 
   _pollingTimer: null,
@@ -919,6 +968,9 @@ Page({
       this.setData({ plansLoading: true, remindersLoading: true })
       this._loadPlans(this.data.user, this.data.lang)
       this._loadReminders(this.data.user)
+    }
+    if (tab === 'academy' && this.data.trainingCourses.length === 0) {
+      this._loadAcademy()
     }
   },
 
@@ -2769,6 +2821,181 @@ Page({
     return new Promise((resolve, reject) => {
       wx.login({ success: resolve, fail: reject })
     })
+  },
+
+  // ── Academy tab ─────────────────────────────────────────────────────────────
+
+  async _loadAcademy() {
+    const userId = this.data.user?.user_id
+    if (!userId) return
+    this.setData({ trainingLoading: true })
+    try {
+      const [cRes, lRes, pRes, dashRes, pathRes, certRes] = await Promise.allSettled([
+        this._req(`${BASE}/api/academy/courses`),
+        this._req(`${BASE}/api/academy/library`),
+        this._req(`${BASE}/api/academy/progress?user_id=${userId}`),
+        this._req(`${BASE}/api/academy/coach-dashboard?user_id=${userId}`),
+        this._req(`${BASE}/api/academy/learning-paths`),
+        this._req(`${BASE}/api/academy/coach-certifications?user_id=${userId}`),
+      ])
+      const tl = (T[this.data.lang] || T.zh).training
+      const rawCourses = (cRes.status === 'fulfilled' && cRes.value.data?.courses) ? cRes.value.data.courses : []
+      const publishedCourses = rawCourses.filter(c => c.status === 'published')
+      const library = (lRes.status === 'fulfilled' && lRes.value.data?.items) ? lRes.value.data.items : []
+      const progressRows = (pRes.status === 'fulfilled' && pRes.value.data?.progress) ? pRes.value.data.progress : []
+      const completedIds = progressRows.map(p => p.lesson_id)
+
+      // Build per-course completion count (requires course_id on progress rows)
+      const completedByCourse = {}
+      for (const p of progressRows) {
+        if (p.course_id) {
+          completedByCourse[p.course_id] = (completedByCourse[p.course_id] || 0) + 1
+        }
+      }
+      // A course is fully completed when all its lessons are done
+      const completedCourseIds = new Set(
+        publishedCourses
+          .filter(c => c.lesson_count > 0 && (completedByCourse[c.id] || 0) >= c.lesson_count)
+          .map(c => c.id)
+      )
+
+      const courses = publishedCourses.map(c => ({
+        ...c,
+        _lessonCountLabel: tl.lessonCount(c.lesson_count || 0),
+        _locked: c.prerequisite_course_id ? !completedCourseIds.has(c.prerequisite_course_id) : false,
+      }))
+
+      const dashboard = (dashRes.status === 'fulfilled' && dashRes.value.data) ? dashRes.value.data : null
+      const paths = (pathRes.status === 'fulfilled' && pathRes.value.data?.paths) ? pathRes.value.data.paths : []
+      const certifications = (certRes.status === 'fulfilled' && certRes.value.data?.certifications) ? certRes.value.data.certifications : []
+      const enrichedPaths = paths.map(p => {
+        const total = (p.courses || []).length
+        const done = (p.courses || []).filter(c => completedCourseIds.has(c.course_id)).length
+        return { ...p, _total: total, _done: done }
+      })
+      this.setData({ trainingCourses: courses, trainingLibrary: library, trainingCompletedIds: completedIds, trainingDashboard: dashboard, trainingPaths: enrichedPaths, trainingCertifications: certifications })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
+    } finally {
+      this.setData({ trainingLoading: false })
+    }
+  },
+
+  async trainingOpenCourse(e) {
+    const course = e.currentTarget.dataset.course
+    if (course._locked) {
+      const prereq = course.prerequisite_title || (this.data.lang === 'zh' ? '前置课程' : 'prerequisite course')
+      wx.showToast({ title: this.data.lang === 'zh' ? `请先完成：${prereq}` : `Complete first: ${prereq}`, icon: 'none', duration: 2500 })
+      return
+    }
+    this.setData({ trainingCurrentCourse: course, trainingLessons: [], trainingView: 'lessons' })
+    try {
+      const res = await this._req(`${BASE}/api/academy/lessons?course_id=${course.id}`)
+      this.setData({ trainingLessons: res.data?.lessons || [] })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
+    }
+  },
+
+  async trainingOpenLesson(e) {
+    const lesson = e.currentTarget.dataset.lesson
+    this.setData({ trainingCurrentLesson: lesson, trainingVideoUrl: '', trainingTextContent: '', trainingQuizQuestions: [], trainingQuizAnswers: {}, trainingQuizResult: null, trainingQuizReview: [], trainingView: 'player' })
+    try {
+      const detailRes = await this._req(`${BASE}/api/academy/lessons/${lesson.id}`)
+      const detail = detailRes.data || {}
+      const quizQuestions = detail.quiz_questions || []
+      if (lesson.content_type === 'text' || lesson.content_type === 'interactive') {
+        this.setData({ trainingTextContent: detail.lesson?.text_content || '', trainingQuizQuestions: quizQuestions })
+        return
+      }
+      if (lesson.oss_key) {
+        const presignRes = await this._req(`${BASE}/api/oss/presign?action=get&key=${encodeURIComponent(lesson.oss_key)}`)
+        this.setData({ trainingVideoUrl: presignRes.data?.url || '', trainingQuizQuestions: quizQuestions })
+      }
+    } catch (e) {
+      wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
+    }
+  },
+
+  trainingSelectAnswer(e) {
+    const { questionId, optionIndex } = e.currentTarget.dataset
+    this.setData({ trainingQuizAnswers: { ...this.data.trainingQuizAnswers, [questionId]: optionIndex } })
+  },
+
+  async trainingSubmitQuiz() {
+    const lesson = this.data.trainingCurrentLesson
+    if (!lesson) return
+    const userId = this.data.user?.user_id
+    const answers = this.data.trainingQuizAnswers
+    if (Object.keys(answers).length === 0) { wx.showToast({ title: '请先回答问题', icon: 'none' }); return }
+    this.setData({ trainingQuizSubmitting: true })
+    try {
+      const res = await this._req(`${BASE}/api/academy/quiz-attempts`, 'POST', { user_id: userId, lesson_id: lesson.id, answers })
+      const result = res.data || {}
+      const trainingQuizReview = (this.data.trainingQuizQuestions || []).map(q => {
+        const ca = (result.correct_answers || []).find(x => x.question_id === q.id)
+        return {
+          question: q.question,
+          user_answer: ca ? (q.options[answers[String(q.id)]]?.text || '—') : '—',
+          correct_answer: ca ? (q.options[ca.correct_index]?.text || '') : '',
+          explanation: ca?.explanation || '',
+          is_correct: ca?.is_correct || false,
+        }
+      })
+      this.setData({ trainingQuizResult: result, trainingQuizReview })
+      if (result.passed) { await this._doMarkComplete(lesson.id); this._loadAcademy() }
+    } catch (e) {
+      wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
+    } finally {
+      this.setData({ trainingQuizSubmitting: false })
+    }
+  },
+
+  async _doMarkComplete(lessonId) {
+    const userId = this.data.user?.user_id
+    if (this.data.trainingCompletedIds.includes(lessonId)) return
+    try {
+      await this._req(`${BASE}/api/academy/progress`, 'POST', { user_id: userId, lesson_id: lessonId })
+      this.setData({ trainingCompletedIds: [...this.data.trainingCompletedIds, lessonId] })
+    } catch (e) { /* silent */ }
+  },
+
+  async trainingMarkComplete() {
+    const lesson = this.data.trainingCurrentLesson
+    if (!lesson) return
+    if (lesson.has_quiz && this.data.trainingQuizQuestions.length > 0 && !this.data.trainingQuizResult?.passed) {
+      wx.showToast({ title: '请先完成测验', icon: 'none' }); return
+    }
+    if (this.data.trainingCompletedIds.includes(lesson.id)) return
+    this.setData({ trainingMarkingComplete: true })
+    try {
+      await this._doMarkComplete(lesson.id)
+      wx.showToast({ title: this.data.t.training.markedComplete, icon: 'success' })
+      this._loadAcademy()
+    } catch (e) {
+      wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
+    } finally {
+      this.setData({ trainingMarkingComplete: false })
+    }
+  },
+
+  async trainingOpenLibraryItem(e) {
+    const item = e.currentTarget.dataset.item
+    this.setData({ trainingCurrentLibraryItem: item, trainingLibraryContent: '', trainingView: 'library-viewer' })
+    try {
+      const res = await this._req(`${BASE}/api/academy/library/${item.id}/content`)
+      this.setData({ trainingLibraryContent: res.data || '' })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.training.loadError, icon: 'none' })
+    }
+  },
+
+  trainingBackToList() {
+    this.setData({ trainingView: 'list', trainingCurrentCourse: null, trainingCurrentLesson: null, trainingVideoUrl: '', trainingQuizQuestions: [], trainingQuizAnswers: {}, trainingQuizResult: null, trainingQuizReview: [] })
+  },
+
+  trainingBackToLessons() {
+    this.setData({ trainingView: 'lessons', trainingCurrentLesson: null, trainingVideoUrl: '', trainingCurrentLibraryItem: null, trainingLibraryContent: '', trainingQuizQuestions: [], trainingQuizAnswers: {}, trainingQuizResult: null, trainingQuizReview: [] })
   },
 
   // ── HTTP helper ─────────────────────────────────────────────────────────────

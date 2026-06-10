@@ -384,6 +384,10 @@ const T = {
       unlimitedStock: 'Unlimited stock', lowStockThreshold: 'Low Stock Warning Threshold',
       saveAdjustments: 'Save Adjustments', pleaseSelectChannel: 'Please select a target channel',
       pleaseEnterWarehouse: 'Please enter warehouse name', stockFailed: 'Stock adjustment failed',
+      warehousesTab: 'Warehouses', warehousesLabel: 'warehouse', warehousesLabelPlural: 'warehouses',
+      noWarehouses: 'No warehouses configured yet. Use the SKUs tab to add warehouse stock.',
+      addStock: 'Add Stock', totalUnitsLabel: 'Total Units', stockHealth: 'Health',
+      pleaseSelectSku: 'Please select a SKU', selectSkuLabel: 'Select SKU',
     },
     inventory: {
       selectChannel: 'Select a channel to manage its inventory',
@@ -936,6 +940,10 @@ const T = {
       unlimitedStock: '无限库存', lowStockThreshold: '低库存预警阈值',
       saveAdjustments: '保存调整', pleaseSelectChannel: '请选择目标渠道',
       pleaseEnterWarehouse: '请输入仓库名称', stockFailed: '库存调整失败',
+      warehousesTab: '仓库管理', warehousesLabel: '个仓库', warehousesLabelPlural: '个仓库',
+      noWarehouses: '暂无仓库配置。请在 SKU 标签页中添加仓库库存。',
+      addStock: '补充库存', totalUnitsLabel: '总库存量', stockHealth: '状态',
+      pleaseSelectSku: '请选择 SKU', selectSkuLabel: '选择 SKU',
     },
     inventory: {
       selectChannel: '请选择渠道以管理库存',
@@ -5746,7 +5754,11 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
   const [orderChannelFilter, setOrderChannelFilter] = useState('');
   const [modal, setModal] = useState(null);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
+  const [expandedWarehouse, setExpandedWarehouse] = useState(null);
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  const warehouseStocks = inventoryStock.filter(s => s.location_type === 'warehouse');
+  const warehouseNames = [...new Set(warehouseStocks.map(s => s.warehouse_name).filter(Boolean))].sort();
 
   const activeCount  = storeItems.filter(i => i.active).length;
   const filteredOrders = orderChannelFilter
@@ -5769,6 +5781,9 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
         </button>
         <button className={`subtab-btn${subTab === 'skus' ? ' active' : ''}`} onClick={() => setSubTab('skus')}>
           <Layers size={13} />SKUs & Stock
+        </button>
+        <button className={`subtab-btn${subTab === 'warehouses' ? ' active' : ''}`} onClick={() => setSubTab('warehouses')}>
+          <Building2 size={13} />{t.store.warehousesTab}
         </button>
         <button className={`subtab-btn${subTab === 'orders' ? ' active' : ''}`} onClick={() => setSubTab('orders')}>
           <Package size={13} />{t.store.ordersTab}
@@ -5913,6 +5928,116 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
         </div>
       )}
 
+      {subTab === 'warehouses' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">
+              {warehouseNames.length} {warehouseNames.length === 1 ? t.store.warehousesLabel : t.store.warehousesLabelPlural}
+            </span>
+            <button className="btn-primary" onClick={() => setModal({ type: 'add-warehouse-stock', warehouseName: '' })}>
+              <Plus size={14} />{t.store.addStock}
+            </button>
+          </div>
+          {warehouseNames.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '48px 0', color: '#64748b' }}>
+              <Building2 size={36} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.3 }} />
+              <p style={{ fontSize: 14 }}>{t.store.noWarehouses}</p>
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>{t.store.warehouseName}</th>
+                  <th>SKUs</th>
+                  <th>{t.store.totalUnitsLabel}</th>
+                  <th>{t.store.stockHealth}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {warehouseNames.map(wName => {
+                  const wStocks = warehouseStocks.filter(s => s.warehouse_name === wName);
+                  const isExpanded = expandedWarehouse === wName;
+                  const hasUnlimited = wStocks.some(s => s.quantity === null);
+                  const totalUnits = wStocks.reduce((sum, s) => sum + (s.quantity ?? 0), 0);
+                  const lowItems = wStocks.filter(s => s.quantity !== null && s.quantity <= (s.low_stock_threshold ?? 0));
+                  return (
+                    <React.Fragment key={wName}>
+                      <tr onClick={() => setExpandedWarehouse(isExpanded ? null : wName)} style={{ cursor: 'pointer' }}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {isExpanded ? <ChevronUp size={14} style={{ color: '#6366f1', flexShrink: 0 }} /> : <ChevronDown size={14} style={{ color: '#6366f1', flexShrink: 0 }} />}
+                            <Building2 size={14} style={{ color: '#6366f1', flexShrink: 0 }} />
+                            <strong style={{ color: '#e2e8f0' }}>{wName}</strong>
+                          </div>
+                        </td>
+                        <td className="muted">{wStocks.length}</td>
+                        <td className="bold" style={{ color: '#10b981' }}>{hasUnlimited ? '∞' : totalUnits.toLocaleString()}</td>
+                        <td>
+                          {lowItems.length > 0
+                            ? <span style={{ color: '#ef4444', fontWeight: 600, fontSize: 12 }}>⚠️ {lowItems.length} LOW</span>
+                            : <Badge color="#10b981">OK</Badge>
+                          }
+                        </td>
+                        <td>
+                          <button
+                            className="btn-secondary"
+                            style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }}
+                            onClick={e => { e.stopPropagation(); setModal({ type: 'add-warehouse-stock', warehouseName: wName }); }}
+                          >
+                            <Plus size={11} />{t.store.addStock}
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && wStocks.map(st => {
+                        const sku = skus.find(s => s.id === st.sku_id);
+                        const isLow = st.quantity !== null && st.quantity <= (st.low_stock_threshold ?? 0);
+                        return (
+                          <tr key={st.id} style={{ background: 'rgba(99, 117, 236, 0.03)' }}>
+                            <td style={{ paddingLeft: 44 }}>
+                              <code className="code-tag" style={{ marginRight: 8 }}>{sku?.sku_code || `sku:${st.sku_id}`}</code>
+                              <span className="muted" style={{ fontSize: 12 }}>{sku?.name_zh || sku?.name_en || ''}</span>
+                            </td>
+                            <td>
+                              <Badge color={sku?.item_type === 'physical' ? '#6366f1' : '#10b981'}>
+                                {sku?.item_type === 'physical' ? t.store.physical : t.store.virtual}
+                              </Badge>
+                            </td>
+                            <td>
+                              <span className="bold" style={{ color: isLow ? '#ef4444' : '#10b981' }}>
+                                {st.quantity === null ? '∞' : `${st.quantity} ${t.store.left}`}
+                              </span>
+                            </td>
+                            <td>
+                              {isLow
+                                ? <span style={{ color: '#ef4444', fontWeight: 600, fontSize: 12 }}>⚠️ LOW</span>
+                                : st.low_stock_threshold > 0
+                                  ? <span className="muted" style={{ fontSize: 11 }}>threshold: {st.low_stock_threshold}</span>
+                                  : null
+                              }
+                            </td>
+                            <td>
+                              <button
+                                className="btn-secondary"
+                                style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }}
+                                onClick={() => sku && setModal({ type: 'adjust-stock', sku })}
+                                disabled={!sku}
+                              >
+                                {t.store.adjustStock}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
       {subTab === 'orders' && (
         <div className="card">
           <div className="table-toolbar">
@@ -6019,7 +6144,8 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
       {modal?.type === 'add-sku'    && <SkuModal sku={null}       onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit-sku'   && <SkuModal sku={modal.sku}  onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete-sku' && <DeleteSkuConfirm sku={modal.sku} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
-      {modal?.type === 'adjust-stock' && <StockAdjustModal sku={modal.sku} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'adjust-stock' && <StockAdjustModal sku={modal.sku} skus={skus} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add-warehouse-stock' && <StockAdjustModal sku={null} skus={skus} defaultLocationType="warehouse" defaultWarehouseName={modal.warehouseName || ''} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
     </>
   );
 }
@@ -6146,11 +6272,13 @@ function DeleteSkuConfirm({ sku, onClose, onConfirm }) {
   );
 }
 
-function StockAdjustModal({ sku, channels = [], onClose, onSave }) {
+function StockAdjustModal({ sku: skuProp = null, skus = [], defaultLocationType = 'warehouse', defaultWarehouseName = '', channels = [], onClose, onSave }) {
   const { t } = useLang();
-  const [locationType, setLocationType] = useState('warehouse'); // 'warehouse' | 'channel'
+  const [selectedSkuId, setSelectedSkuId] = useState(skuProp?.id ? String(skuProp.id) : '');
+  const sku = skuProp || skus.find(s => String(s.id) === selectedSkuId) || null;
+  const [locationType, setLocationType] = useState(defaultLocationType);
   const [channelId, setChannelId] = useState('');
-  const [warehouseName, setWarehouseName] = useState('shanghai-central');
+  const [warehouseName, setWarehouseName] = useState(defaultWarehouseName || 'shanghai-central');
   const [quantity, setQuantity] = useState('');
   const [lowStockThreshold, setLowStockThreshold] = useState(5);
   const [busy, setBusy] = useState(false);
@@ -6158,6 +6286,7 @@ function StockAdjustModal({ sku, channels = [], onClose, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!sku) { setError(t.store.pleaseSelectSku); return; }
     if (locationType === 'channel' && !channelId) { setError(t.store.pleaseSelectChannel); return; }
     if (locationType === 'warehouse' && !warehouseName.trim()) { setError(t.store.pleaseEnterWarehouse); return; }
     setBusy(true); setError('');
@@ -6186,7 +6315,19 @@ function StockAdjustModal({ sku, channels = [], onClose, onSave }) {
         <form onSubmit={handleSubmit} className="modal-body">
           <div style={{ marginBottom: 16 }}>
             <span style={{ fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 600 }}>{t.store.targetSku}</span>
-            <div className="bold" style={{ fontSize: 16, color: 'var(--primary)', marginTop: 4 }}>{sku.sku_code} - {sku.name_zh || sku.name_en}</div>
+            {skuProp ? (
+              <div className="bold" style={{ fontSize: 16, color: 'var(--primary)', marginTop: 4 }}>{skuProp.sku_code} - {skuProp.name_zh || skuProp.name_en}</div>
+            ) : (
+              <div className="select-wrap" style={{ width: '100%', marginTop: 6 }}>
+                <select value={selectedSkuId} onChange={e => setSelectedSkuId(e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">{t.store.selectSkuLabel}</option>
+                  {skus.map(s => (
+                    <option key={s.id} value={String(s.id)}>{s.sku_code} — {s.name_zh || s.name_en}</option>
+                  ))}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            )}
           </div>
           <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
             <label className="form-field">

@@ -7259,13 +7259,16 @@ async function handleDeleteAcademyLesson(id) {
 
 // ── Academy Progress handlers ─────────────────────────────────────────────────
 
-async function handleGetAcademyProgress(coachUserId) {
+async function handleGetAcademyProgress(userId) {
     try {
-        if (!coachUserId) return { success: false, error: 'coach_user_id is required' };
+        if (!userId) return { success: false, error: 'user_id is required' };
         const result = await pool.query(
-            `SELECT lesson_id, completed_at, credits_earned, quiz_best_score, time_spent_seconds
-             FROM academy_coach_progress WHERE coach_user_id = $1`,
-            [coachUserId]
+            `SELECT p.lesson_id, p.completed_at, p.credits_earned, p.quiz_best_score, p.time_spent_seconds,
+                    l.course_id
+             FROM academy_coach_progress p
+             LEFT JOIN academy_lessons l ON l.id = p.lesson_id
+             WHERE p.user_id = $1`,
+            [userId]
         );
         return { success: true, progress: result.rows };
     } catch (err) {
@@ -7275,18 +7278,18 @@ async function handleGetAcademyProgress(coachUserId) {
 
 async function handlePostAcademyProgress(body) {
     try {
-        const { coach_user_id, lesson_id, time_spent_seconds } = body;
-        if (!coach_user_id || !lesson_id) return { success: false, error: 'coach_user_id and lesson_id are required' };
+        const { user_id, lesson_id, time_spent_seconds } = body;
+        if (!user_id || !lesson_id) return { success: false, error: 'user_id and lesson_id are required' };
 
         const existing = await pool.query(
-            'SELECT id FROM academy_coach_progress WHERE coach_user_id = $1 AND lesson_id = $2',
-            [coach_user_id, lesson_id]
+            'SELECT id FROM academy_coach_progress WHERE user_id = $1 AND lesson_id = $2',
+            [user_id, lesson_id]
         );
         if (existing.rows.length > 0) {
             if (time_spent_seconds != null) {
                 await pool.query(
-                    'UPDATE academy_coach_progress SET time_spent_seconds = $1 WHERE coach_user_id = $2 AND lesson_id = $3',
-                    [time_spent_seconds, coach_user_id, lesson_id]
+                    'UPDATE academy_coach_progress SET time_spent_seconds = $1 WHERE user_id = $2 AND lesson_id = $3',
+                    [time_spent_seconds, user_id, lesson_id]
                 );
             }
             return { success: true, already_completed: true, credits_earned: 0 };
@@ -7296,17 +7299,17 @@ async function handlePostAcademyProgress(body) {
         const lessonCredit = lessonRes.rows.length > 0 ? (lessonRes.rows[0].credit_value || 5) : 5;
 
         await pool.query(
-            `INSERT INTO academy_coach_progress (coach_user_id, lesson_id, credits_earned, time_spent_seconds)
+            `INSERT INTO academy_coach_progress (user_id, lesson_id, credits_earned, time_spent_seconds)
              VALUES ($1, $2, $3, $4)`,
-            [coach_user_id, lesson_id, lessonCredit, time_spent_seconds || 0]
+            [user_id, lesson_id, lessonCredit, time_spent_seconds || 0]
         );
         await pool.query(
-            `INSERT INTO academy_credit_ledger (coach_user_id, amount, reason, ref_type, ref_id)
+            `INSERT INTO academy_credit_ledger (user_id, amount, reason, ref_type, ref_id)
              VALUES ($1, $2, 'lesson_complete', 'lesson', $3)`,
-            [coach_user_id, lessonCredit, lesson_id]
+            [user_id, lessonCredit, lesson_id]
         );
 
-        await _checkAndAwardCertifications(coach_user_id);
+        await _checkAndAwardCertifications(user_id);
 
         return { success: true, credits_earned: lessonCredit };
     } catch (err) {
@@ -7314,27 +7317,27 @@ async function handlePostAcademyProgress(body) {
     }
 }
 
-async function _checkAndAwardCertifications(coachUserId) {
+async function _checkAndAwardCertifications(userId) {
     try {
         const certs = await pool.query(
             `SELECT id, required_course_ids, min_credits FROM academy_certifications
              WHERE is_active = TRUE
-               AND id NOT IN (SELECT certification_id FROM academy_coach_certifications WHERE coach_user_id = $1)`,
-            [coachUserId]
+               AND id NOT IN (SELECT certification_id FROM academy_coach_certifications WHERE user_id = $1)`,
+            [userId]
         );
         if (certs.rows.length === 0) return;
 
         const totalCreditsRes = await pool.query(
-            'SELECT COALESCE(SUM(amount),0)::int AS total FROM academy_credit_ledger WHERE coach_user_id = $1',
-            [coachUserId]
+            'SELECT COALESCE(SUM(amount),0)::int AS total FROM academy_credit_ledger WHERE user_id = $1',
+            [userId]
         );
         const totalCredits = totalCreditsRes.rows[0].total;
 
         const completedRes = await pool.query(
             `SELECT DISTINCT l.course_id FROM academy_coach_progress p
              JOIN academy_lessons l ON l.id = p.lesson_id
-             WHERE p.coach_user_id = $1`,
-            [coachUserId]
+             WHERE p.user_id = $1`,
+            [userId]
         );
         const completedCourseIds = new Set(completedRes.rows.map(r => r.course_id));
 
@@ -7343,13 +7346,13 @@ async function _checkAndAwardCertifications(coachUserId) {
             if (cert.min_credits > 0 && totalCredits < cert.min_credits) continue;
             if (reqIds.length > 0 && !reqIds.every(id => completedCourseIds.has(id))) continue;
             await pool.query(
-                'INSERT INTO academy_coach_certifications (coach_user_id, certification_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-                [coachUserId, cert.id]
+                'INSERT INTO academy_coach_certifications (user_id, certification_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                [userId, cert.id]
             );
             await pool.query(
-                `INSERT INTO academy_credit_ledger (coach_user_id, amount, reason, ref_type, ref_id)
+                `INSERT INTO academy_credit_ledger (user_id, amount, reason, ref_type, ref_id)
                  VALUES ($1, 50, 'cert_earned', 'certification', $2)`,
-                [coachUserId, cert.id]
+                [userId, cert.id]
             );
         }
     } catch (err) {
@@ -7364,7 +7367,7 @@ async function handleGetAcademyCourseProgress() {
                 c.id AS course_id,
                 c.title,
                 COUNT(DISTINCT l.id)::int AS total_lessons,
-                COUNT(DISTINCT p.coach_user_id)::int AS coaches_completed,
+                COUNT(DISTINCT p.user_id)::int AS coaches_completed,
                 COUNT(DISTINCT p.lesson_id)::int AS total_completions
             FROM academy_courses c
             LEFT JOIN academy_lessons l ON l.course_id = c.id
@@ -7415,8 +7418,8 @@ async function handleGetAcademyLessonById(lessonId) {
 
 async function handlePostQuizAttempt(body) {
     try {
-        const { coach_user_id, lesson_id, answers } = body;
-        if (!coach_user_id || !lesson_id || !answers) return { success: false, error: 'coach_user_id, lesson_id, answers are required' };
+        const { user_id, lesson_id, answers } = body;
+        if (!user_id || !lesson_id || !answers) return { success: false, error: 'user_id, lesson_id, answers are required' };
 
         const quizRes = await pool.query(
             'SELECT * FROM academy_lesson_quizzes WHERE lesson_id = $1 ORDER BY sort_order ASC, id ASC',
@@ -7439,8 +7442,8 @@ async function handlePostQuizAttempt(body) {
         const passed = score >= 70;
 
         const firstPassRes = await pool.query(
-            'SELECT id FROM academy_quiz_attempts WHERE coach_user_id = $1 AND lesson_id = $2 AND passed = TRUE',
-            [coach_user_id, lesson_id]
+            'SELECT id FROM academy_quiz_attempts WHERE user_id = $1 AND lesson_id = $2 AND passed = TRUE',
+            [user_id, lesson_id]
         );
         const isFirstPass = firstPassRes.rows.length === 0;
 
@@ -7448,25 +7451,25 @@ async function handlePostQuizAttempt(body) {
         if (passed && isFirstPass) {
             creditsEarned = quizRes.rows.reduce((sum, q) => sum + (q.credit_value || 5), 0);
             await pool.query(
-                `INSERT INTO academy_credit_ledger (coach_user_id, amount, reason, ref_type, ref_id)
+                `INSERT INTO academy_credit_ledger (user_id, amount, reason, ref_type, ref_id)
                  VALUES ($1, $2, 'quiz_pass', 'lesson', $3)`,
-                [coach_user_id, creditsEarned, lesson_id]
+                [user_id, creditsEarned, lesson_id]
             );
         }
 
         await pool.query(
-            `INSERT INTO academy_quiz_attempts (coach_user_id, lesson_id, answers, score, passed, credits_earned)
+            `INSERT INTO academy_quiz_attempts (user_id, lesson_id, answers, score, passed, credits_earned)
              VALUES ($1, $2, $3, $4, $5, $6)`,
-            [coach_user_id, lesson_id, JSON.stringify(answers), score, passed, creditsEarned]
+            [user_id, lesson_id, JSON.stringify(answers), score, passed, creditsEarned]
         );
 
         await pool.query(
             `UPDATE academy_coach_progress SET quiz_best_score = GREATEST(COALESCE(quiz_best_score, 0), $1)
-             WHERE coach_user_id = $2 AND lesson_id = $3`,
-            [score, coach_user_id, lesson_id]
+             WHERE user_id = $2 AND lesson_id = $3`,
+            [score, user_id, lesson_id]
         );
 
-        if (passed && isFirstPass) await _checkAndAwardCertifications(coach_user_id);
+        if (passed && isFirstPass) await _checkAndAwardCertifications(user_id);
 
         return { success: true, score, passed, credits_earned: creditsEarned, correct_answers: correctAnswers };
     } catch (err) {
@@ -7474,17 +7477,17 @@ async function handlePostQuizAttempt(body) {
     }
 }
 
-async function handleGetCoachCredits(coachUserId) {
+async function handleGetCoachCredits(userId) {
     try {
-        if (!coachUserId) return { success: false, error: 'coach_user_id is required' };
+        if (!userId) return { success: false, error: 'user_id is required' };
         const totalRes = await pool.query(
-            'SELECT COALESCE(SUM(amount),0)::int AS total FROM academy_credit_ledger WHERE coach_user_id = $1',
-            [coachUserId]
+            'SELECT COALESCE(SUM(amount),0)::int AS total FROM academy_credit_ledger WHERE user_id = $1',
+            [userId]
         );
         const total = totalRes.rows[0].total;
         const histRes = await pool.query(
-            'SELECT * FROM academy_credit_ledger WHERE coach_user_id = $1 ORDER BY created_at DESC LIMIT 50',
-            [coachUserId]
+            'SELECT * FROM academy_credit_ledger WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
+            [userId]
         );
         return { success: true, total, tier: _getTier(total), history: histRes.rows };
     } catch (err) {
@@ -7492,14 +7495,14 @@ async function handleGetCoachCredits(coachUserId) {
     }
 }
 
-async function handleGetCoachDashboard(coachUserId) {
+async function handleGetCoachDashboard(userId) {
     try {
-        if (!coachUserId) return { success: false, error: 'coach_user_id is required' };
+        if (!userId) return { success: false, error: 'user_id is required' };
         const [creditsRes, lessonsRes, quizzesRes, certsRes] = await Promise.all([
-            pool.query('SELECT COALESCE(SUM(amount),0)::int AS total FROM academy_credit_ledger WHERE coach_user_id = $1', [coachUserId]),
-            pool.query('SELECT COUNT(*)::int AS cnt FROM academy_coach_progress WHERE coach_user_id = $1', [coachUserId]),
-            pool.query('SELECT COUNT(*)::int AS cnt FROM academy_quiz_attempts WHERE coach_user_id = $1 AND passed = TRUE', [coachUserId]),
-            pool.query('SELECT COUNT(*)::int AS cnt FROM academy_coach_certifications WHERE coach_user_id = $1', [coachUserId]),
+            pool.query('SELECT COALESCE(SUM(amount),0)::int AS total FROM academy_credit_ledger WHERE user_id = $1', [userId]),
+            pool.query('SELECT COUNT(*)::int AS cnt FROM academy_coach_progress WHERE user_id = $1', [userId]),
+            pool.query('SELECT COUNT(*)::int AS cnt FROM academy_quiz_attempts WHERE user_id = $1 AND passed = TRUE', [userId]),
+            pool.query('SELECT COUNT(*)::int AS cnt FROM academy_coach_certifications WHERE user_id = $1', [userId]),
         ]);
         const total = creditsRes.rows[0].total;
         return {
@@ -7518,14 +7521,14 @@ async function handleGetCoachDashboard(coachUserId) {
 async function handleGetAcademyLeaderboard() {
     try {
         const result = await pool.query(`
-            SELECT l.coach_user_id,
+            SELECT l.user_id,
                    u.name,
                    COALESCE(SUM(l.amount),0)::int AS total_credits,
                    COUNT(DISTINCT p.lesson_id)::int AS completed_lessons
             FROM academy_credit_ledger l
-            LEFT JOIN users u ON u.user_id = l.coach_user_id
-            LEFT JOIN academy_coach_progress p ON p.coach_user_id = l.coach_user_id
-            GROUP BY l.coach_user_id, u.name
+            LEFT JOIN users u ON u.user_id = l.user_id
+            LEFT JOIN academy_coach_progress p ON p.user_id = l.user_id
+            GROUP BY l.user_id, u.name
             ORDER BY total_credits DESC
             LIMIT 20`);
         return { success: true, leaderboard: result.rows.map(r => ({ ...r, tier: _getTier(r.total_credits) })) };
@@ -7593,16 +7596,16 @@ async function handleDeleteAcademyCertification(id) {
     }
 }
 
-async function handleGetCoachCertifications(coachUserId) {
+async function handleGetCoachCertifications(userId) {
     try {
-        if (!coachUserId) return { success: false, error: 'coach_user_id is required' };
+        if (!userId) return { success: false, error: 'user_id is required' };
         const result = await pool.query(
             `SELECT cc.*, c.title, c.description, c.tier, c.badge_image_url, c.required_course_ids, c.min_credits
              FROM academy_coach_certifications cc
              JOIN academy_certifications c ON c.id = cc.certification_id
-             WHERE cc.coach_user_id = $1
+             WHERE cc.user_id = $1
              ORDER BY cc.earned_at DESC`,
-            [coachUserId]
+            [userId]
         );
         return { success: true, certifications: result.rows };
     } catch (err) {
@@ -9573,15 +9576,15 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/academy/lessons')) {
                 result = await handleGetAcademyLessons(query.course_id);
             } else if (path.includes('/academy/progress')) {
-                result = await handleGetAcademyProgress(query.coach_user_id);
+                result = await handleGetAcademyProgress(query.user_id);
             } else if (path.includes('/academy/leaderboard')) {
                 result = await handleGetAcademyLeaderboard();
             } else if (path.includes('/academy/coach-dashboard')) {
-                result = await handleGetCoachDashboard(query.coach_user_id);
+                result = await handleGetCoachDashboard(query.user_id);
             } else if (path.includes('/academy/coach-credits')) {
-                result = await handleGetCoachCredits(query.coach_user_id);
+                result = await handleGetCoachCredits(query.user_id);
             } else if (path.includes('/academy/coach-certifications')) {
-                result = await handleGetCoachCertifications(query.coach_user_id);
+                result = await handleGetCoachCertifications(query.user_id);
             } else if (path.includes('/academy/certifications')) {
                 result = await handleGetAcademyCertifications();
             } else if (path.includes('/academy/learning-paths')) {
