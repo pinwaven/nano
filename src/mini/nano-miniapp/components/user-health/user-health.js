@@ -172,6 +172,8 @@ const T = {
     ringHr: '最低心率',
     ringHrv: 'HRV',
     ringStress: '压力',
+    metricBp: '血压',
+    metricGlucose: '血糖',
     ringStressLevels: ['放松', '正常', '中等', '偏高'],
     wearableMeasuringHrv: '测量 HRV...',
     wearableMeasuringStress: '测量压力...',
@@ -274,6 +276,8 @@ const T = {
     ringHr: 'Min HR',
     ringHrv: 'HRV',
     ringStress: 'Stress',
+    metricBp: 'Blood Pressure',
+    metricGlucose: 'Blood Glucose',
     ringStressLevels: ['Relaxed', 'Normal', 'Moderate', 'High'],
     wearableMeasuringHrv: 'Measuring HRV...',
     wearableMeasuringStress: 'Measuring stress...',
@@ -619,6 +623,14 @@ Component({
     stressHistory: [],
     stressChartOpen: false,
     stressChartW: 300,
+    bpHistory: [],
+    bpChartOpen: false,
+    bpChartW: 300,
+    latestBp: null,
+    glucoseHistory: [],
+    glucoseChartOpen: false,
+    glucoseChartW: 300,
+    latestGlucose: null,
     bioAgeHistory: [],
     bioAgeChartW: 0,
     bioAgeTrendOpen: false,
@@ -1161,7 +1173,8 @@ Component({
         const res = await this._req(`${BASE}/api/health-events?openid=${encodeURIComponent(userId)}&limit=60`)
         const events = res.data?.events || []
         const seenSteps = new Set(), seenHrv = new Set(), seenStress = new Set()
-        const stepsHistory = [], hrvHistory = [], stressHistory = []
+        const seenBp = new Set(), seenGlucose = new Set()
+        const stepsHistory = [], hrvHistory = [], stressHistory = [], bpHistory = [], glucoseHistory = []
         for (const ev of events) {
           const date = (ev.data_date || '').substring(0, 10)
           if (!date) continue
@@ -1175,12 +1188,25 @@ Component({
             if (!seenStress.has(date) && d?.stress != null) {
               stressHistory.push({ date, stress: d.stress }); seenStress.add(date)
             }
+            if (!seenBp.has(date) && d?.bp_systolic != null && d?.bp_diastolic != null) {
+              bpHistory.push({ date, systolic: d.bp_systolic, diastolic: d.bp_diastolic, pulse: d.bp_pulse || null })
+              seenBp.add(date)
+            }
+            if (!seenGlucose.has(date) && d?.glucose_mmol != null) {
+              glucoseHistory.push({ date, glucose: d.glucose_mmol }); seenGlucose.add(date)
+            }
           }
         }
+        const bpHistoryRev = bpHistory.reverse()
+        const glucoseHistoryRev = glucoseHistory.reverse()
         this.setData({
-          stepsHistory:  stepsHistory.reverse(),
-          hrvHistory:    hrvHistory.reverse(),
-          stressHistory: stressHistory.reverse(),
+          stepsHistory:   stepsHistory.reverse(),
+          hrvHistory:     hrvHistory.reverse(),
+          stressHistory:  stressHistory.reverse(),
+          bpHistory:      bpHistoryRev,
+          latestBp:       bpHistoryRev.length ? bpHistoryRev[bpHistoryRev.length - 1] : null,
+          glucoseHistory: glucoseHistoryRev,
+          latestGlucose:  glucoseHistoryRev.length ? glucoseHistoryRev[glucoseHistoryRev.length - 1] : null,
         })
       } catch (e) { /* non-critical */ }
     },
@@ -1261,6 +1287,62 @@ Component({
       })
     },
     closeStressChart() { this.setData({ stressChartOpen: false }) },
+
+    openBpChart() {
+      const W = wx.getSystemInfoSync().windowWidth - 72
+      this.setData({ bpChartOpen: true, bpChartW: W }, () => { this._drawBpChart(W) })
+    },
+    closeBpChart() { this.setData({ bpChartOpen: false }) },
+
+    _drawBpChart(W) {
+      const { bpHistory } = this.data
+      if (bpHistory.length < 1) return
+      const H = 200, pL = 44, pR = 16, pT = 20, pB = 44
+      const plotW = W - pL - pR, plotH = H - pT - pB
+      const allVals = bpHistory.flatMap(r => [r.systolic, r.diastolic])
+      const minV = Math.floor(Math.min(...allVals)) - 5
+      const maxV = Math.ceil(Math.max(...allVals)) + 5
+      const range = maxV - minV || 1
+      const toX = i => pL + (i / Math.max(bpHistory.length - 1, 1)) * plotW
+      const toY = v => pT + ((maxV - v) / range) * plotH
+      const sysPts  = bpHistory.map((r, i) => ({ x: toX(i), y: toY(r.systolic) }))
+      const diaPts  = bpHistory.map((r, i) => ({ x: toX(i), y: toY(r.diastolic) }))
+      const ctx = wx.createCanvasContext('uh-bp-chart', this)
+      ctx.clearRect(0, 0, W, H)
+      for (let i = 0; i <= 4; i++) {
+        const y = pT + (i / 4) * plotH
+        const val = maxV - (i / 4) * range
+        ctx.setStrokeStyle('rgba(99,117,236,0.12)'); ctx.setLineWidth(0.5)
+        ctx.beginPath(); ctx.moveTo(pL, y); ctx.lineTo(pL + plotW, y); ctx.stroke()
+        ctx.setFillStyle('rgba(166,196,229,0.45)'); ctx.setFontSize(10)
+        ctx.fillText(Math.round(val), 0, y + 4)
+      }
+      const drawLine = (pts, color) => {
+        ctx.beginPath(); ctx.setStrokeStyle(color); ctx.setLineWidth(2)
+        ctx.moveTo(pts[0].x, pts[0].y); pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y)); ctx.stroke()
+        ctx.setFillStyle('#EEF2FF'); ctx.setStrokeStyle(color); ctx.setLineWidth(1.5)
+        pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke() })
+      }
+      drawLine(sysPts, '#ef4444')
+      drawLine(diaPts, '#6375EC')
+      ctx.setFontSize(10); ctx.setFillStyle('rgba(166,196,229,0.5)')
+      const labelStep = Math.max(1, Math.floor(bpHistory.length / 5))
+      bpHistory.forEach((r, i) => {
+        if (i % labelStep === 0 || i === bpHistory.length - 1)
+          ctx.fillText(r.date.substring(5), sysPts[i].x - 14, H - pB + 16)
+      })
+      ctx.setStrokeStyle('rgba(99,117,236,0.3)'); ctx.setLineWidth(1)
+      ctx.beginPath(); ctx.moveTo(pL, pT); ctx.lineTo(pL, pT + plotH); ctx.lineTo(pL + plotW, pT + plotH); ctx.stroke()
+      ctx.draw()
+    },
+
+    openGlucoseChart() {
+      const W = wx.getSystemInfoSync().windowWidth - 72
+      this.setData({ glucoseChartOpen: true, glucoseChartW: W }, () => {
+        this._drawGenericChart('uh-glucose-chart', this.data.glucoseHistory, 'glucose', 'mmol/L', '#a855f7')
+      })
+    },
+    closeGlucoseChart() { this.setData({ glucoseChartOpen: false }) },
 
     onChooseAvatar(e) {
       const avatarUrl = e.detail?.avatarUrl

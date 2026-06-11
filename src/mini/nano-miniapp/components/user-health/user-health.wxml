@@ -239,6 +239,31 @@
             <text wx:if="{{stressHistory.length > 1}}" class="dt-metric-trend-hint">›</text>
           </view>
         </view>
+
+        <!-- BP / Glucose row — only shown when photo data is available -->
+        <view wx:if="{{latestBp || latestGlucose}}" class="dt-metrics-strip dt-metrics-strip-secondary">
+          <view wx:if="{{latestBp}}"
+                class="dt-metric {{bpHistory.length > 1 ? 'dt-metric-tappable' : ''}}"
+                bindtap="{{bpHistory.length > 1 ? 'openBpChart' : ''}}">
+            <view class="dt-metric-val-row">
+              <text class="dt-metric-val">{{latestBp.systolic}}/{{latestBp.diastolic}}</text>
+              <text class="dt-metric-unit">mmHg</text>
+            </view>
+            <text class="dt-metric-label">{{t.metricBp}}</text>
+            <text wx:if="{{bpHistory.length > 1}}" class="dt-metric-trend-hint">›</text>
+          </view>
+          <view wx:if="{{latestBp && latestGlucose}}" class="dt-metric-divider"></view>
+          <view wx:if="{{latestGlucose}}"
+                class="dt-metric {{glucoseHistory.length > 1 ? 'dt-metric-tappable' : ''}}"
+                bindtap="{{glucoseHistory.length > 1 ? 'openGlucoseChart' : ''}}">
+            <view class="dt-metric-val-row">
+              <text class="dt-metric-val">{{latestGlucose.glucose}}</text>
+              <text class="dt-metric-unit">mmol/L</text>
+            </view>
+            <text class="dt-metric-label">{{t.metricGlucose}}</text>
+            <text wx:if="{{glucoseHistory.length > 1}}" class="dt-metric-trend-hint">›</text>
+          </view>
+        </view>
       </view>
 
       <!-- Health Monitoring -->
@@ -732,6 +757,34 @@
         <view class="wchart-close" bindtap="closeStressChart"><text>✕</text></view>
       </view>
       <canvas canvas-id="uh-stress-chart" class="weight-chart-full" style="width:{{stressChartW}}px;height:200px;"></canvas>
+    </view>
+  </view>
+
+  <!-- Blood Pressure Chart Modal -->
+  <view wx:if="{{bpChartOpen}}" class="wchart-overlay" bindtap="closeBpChart">
+    <view class="wchart-sheet" catchtap="noop">
+      <view class="wchart-handle"></view>
+      <view class="wchart-header">
+        <text class="wchart-title">{{t.metricBp}}</text>
+        <view class="wchart-close" bindtap="closeBpChart"><text>✕</text></view>
+      </view>
+      <view class="bp-chart-legend">
+        <view class="bp-legend-item"><view class="bp-legend-dot bp-legend-sys"></view><text class="bp-legend-label">SYS</text></view>
+        <view class="bp-legend-item"><view class="bp-legend-dot bp-legend-dia"></view><text class="bp-legend-label">DIA</text></view>
+      </view>
+      <canvas canvas-id="uh-bp-chart" class="weight-chart-full" style="width:{{bpChartW}}px;height:200px;"></canvas>
+    </view>
+  </view>
+
+  <!-- Blood Glucose Chart Modal -->
+  <view wx:if="{{glucoseChartOpen}}" class="wchart-overlay" bindtap="closeGlucoseChart">
+    <view class="wchart-sheet" catchtap="noop">
+      <view class="wchart-handle"></view>
+      <view class="wchart-header">
+        <text class="wchart-title">{{t.metricGlucose}}</text>
+        <view class="wchart-close" bindtap="closeGlucoseChart"><text>✕</text></view>
+      </view>
+      <canvas canvas-id="uh-glucose-chart" class="weight-chart-full" style="width:{{glucoseChartW}}px;height:200px;"></canvas>
     </view>
   </view>
 

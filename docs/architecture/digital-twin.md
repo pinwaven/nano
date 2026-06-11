@@ -49,19 +49,27 @@ Every event belongs to one of five categories. The `data` JSONB column shape is 
 }
 ```
 
-### `vitals` (daily wearable summary)
+### `vitals`
 
+Multiple rows per day are allowed — each measurement source writes its own row with a distinct `external_id`. The `data` shape varies by source:
+
+**Wearable ring sync** (`source: smart_ring`) — two rows per day:
 ```json
-{
-  "resting_hr": 62,
-  "hrv_sdnn_ms": 48,
-  "spo2": 97.5,
-  "skin_temp_celsius": 36.8,
-  "steps": 8432,
-  "active_calories": 320,
-  "total_calories": 1890
-}
+{ "resting_hr": 62, "hr_slots": [...] }
 ```
+```json
+{ "hrv_ms": 54, "stress": 38, "spo2": 97.5 }
+```
+
+**Photo-captured readings** (`source: manual_photo`) — one row per photo, timestamp-keyed `external_id` so multiple readings per day accumulate:
+```json
+{ "bp_systolic": 118, "bp_diastolic": 76, "bp_pulse": 72 }
+```
+```json
+{ "glucose_mmol": 5.2, "glucose_context": "fasting" }
+```
+
+See [Photo-Based Health Tracking](photo-health-tracking.md) for the full flow.
 
 ### `lab_result` (annual blood panel / physical exam)
 
@@ -95,6 +103,7 @@ Every event belongs to one of five categories. The `data` JSONB column shape is 
 | `garmin` | Garmin Connect API |
 | `fitbit` | Fitbit API |
 | `manual` | User-entered from the miniapp |
+| `manual_photo` | AI-extracted from a device photo (scale, BP monitor, glucose meter) |
 | `annual_lab` | Coach- or admin-uploaded lab result |
 | `hospital` | Imported from a hospital record |
 

@@ -5068,8 +5068,15 @@ async function handleResolvePhone(code, app_id = null) {
     }
 }
 
-async function handleBindPhone(user_id, code, app_id = null) {
+async function handleBindPhone(user_id, code, app_id = null, rawPhone = null) {
     try {
+        // Raw-phone mode: Flutter app sends phone directly (no WeChat phone code available)
+        if (!code && rawPhone) {
+            if (!/^1\d{10}$/.test(rawPhone)) return { success: false, error: 'Invalid phone number' };
+            if (!user_id) return { success: false, error: 'user_id is required' };
+            await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [rawPhone, user_id]);
+            return { success: true, phone: rawPhone };
+        }
         if (!code) return { success: false, error: 'code is required' };
         const credMap = {};
         if (process.env.WX_APPID && process.env.WX_SECRET)
@@ -5118,6 +5125,9 @@ async function handleWxLogin(body) {
     if (wxData.errcode) return { success: false, error: `WeChat: ${wxData.errmsg} (${wxData.errcode})` };
 
     const openid = wxData.openid;
+    // unionid is present when the miniapp is bound to the WeChat Open Platform
+    // account — it bridges miniapp and mobile-app identities (see /wx-app-login).
+    const unionid = wxData.unionid || null;
 
     // Use pre-resolved phone (already verified by /resolve-phone), or resolve from code if provided
     console.log(JSON.stringify({ level: 'INFO', msg: 'wx-login-phone', phone_present: !!phone, phone_code_present: !!phone_code, phone_val: phone }));
@@ -5159,6 +5169,11 @@ async function handleWxLogin(body) {
 
     if (existing.rows.length > 0) {
         let existingRow = existing.rows[0];
+
+        // Backfill unionid so the mobile app can match this account later
+        if (unionid) {
+            await pool.query('UPDATE users SET wx_unionid = COALESCE(wx_unionid, $1) WHERE user_id = $2', [unionid, existingRow.user_id]);
+        }
 
         // Existing user with no channel + invite code → assign channel from invite or referral
         if (!existingRow.channel_id && invite_code) {
@@ -5292,7 +5307,7 @@ async function handleWxLogin(body) {
         );
         if (phoneMatch.rows.length > 0) {
             const row = phoneMatch.rows[0];
-            await pool.query('UPDATE users SET external_id = $1 WHERE user_id = $2', [openid, row.user_id]);
+            await pool.query('UPDATE users SET external_id = $1, wx_unionid = COALESCE(wx_unionid, $2) WHERE user_id = $3', [openid, unionid, row.user_id]);
             const { channel_name, channel_logo_url, channel_sub_age_names, ...user } = row;
             const channel = channel_name
                 ? { name: channel_name, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null }
@@ -5380,10 +5395,184 @@ async function handleWxLogin(body) {
     const newUserId = generateUserId();
     const newReferralCode = await generateReferralCode();
     const created = await pool.query(
-        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, referral_code, phone)
-         VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5, $6, $7, $8)
+        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, referral_code, phone, wx_unionid)
+         VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5, $6, $7, $8, $9)
          RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
-        [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, resolvedPhone]
+        [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, resolvedPhone, unionid]
+    );
+
+    if (inviteRecord) {
+        await pool.query(
+            `UPDATE invitations SET use_count = use_count + 1 WHERE id = $1
+             AND (max_uses IS NULL OR use_count < max_uses)`,
+            [inviteRecord.id]
+        );
+        await pool.query(
+            'INSERT INTO invitation_uses (invitation_id, user_id, user_id_snapshot) VALUES ($1, $2, $2) ON CONFLICT (invitation_id, user_id_snapshot) DO NOTHING',
+            [inviteRecord.id, newUserId]
+        );
+    }
+
+    let channel = null;
+    if (channelId) {
+        const chanRes = await pool.query(
+            `SELECT name, logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
+            [channelId]
+        );
+        if (chanRes.rows.length > 0) channel = {
+            name: chanRes.rows[0].name,
+            logo_url: chanRes.rows[0].logo_url,
+            sub_age_display_names: chanRes.rows[0].sub_age_display_names || null,
+        };
+    }
+
+    return { success: true, new_user: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel };
+}
+
+// WeChat Open Platform (mobile app / fluwx) login. Unlike the miniapp's
+// jscode2session, the OAuth code is exchanged via sns/oauth2/access_token and
+// yields a DIFFERENT openid (stored in users.wx_app_openid). Cross-client
+// account matching: wx_app_openid → wx_unionid → phone.
+async function handleWxAppLogin(body) {
+    const { code, coach_id, invite_code, ref, phone, channel_slug } = body;
+    if (!code) return { success: false, error: 'code is required' };
+
+    const appid  = process.env.WX_APP_APPID;
+    const secret = process.env.WX_APP_SECRET;
+    if (!appid || !secret) return { success: false, error: 'WX_APP_APPID / WX_APP_SECRET not configured' };
+
+    const wxRes = await fetch(
+        `https://api.weixin.qq.com/sns/oauth2/access_token?appid=${appid}&secret=${secret}&code=${code}&grant_type=authorization_code`
+    );
+    const wxData = await wxRes.json();
+    if (wxData.errcode) return { success: false, error: `WeChat: ${wxData.errmsg} (${wxData.errcode})` };
+
+    const appOpenid = wxData.openid;
+    const unionid   = wxData.unionid || null;
+
+    const bundleSelect = `
+        SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
+               u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
+               u.referred_by_user_id, b.bio_age,
+               cu.nickname AS coach_name,
+               c.name AS channel_name, c.logo_url AS channel_logo_url,
+               c.config->'sub_age_display_names' AS channel_sub_age_names
+        FROM users u
+        LEFT JOIN coaches p ON u.coach_id = p.id
+        LEFT JOIN users cu ON p.user_id = cu.user_id
+        LEFT JOIN channels c ON u.channel_id = c.id
+        LEFT JOIN (
+            SELECT DISTINCT ON (user_id) user_id, bio_age
+            FROM biomarkers ORDER BY user_id, tested_at DESC
+        ) b ON u.user_id = b.user_id`;
+
+    const shapeResult = async (row) => {
+        const { channel_name, channel_logo_url, channel_sub_age_names, ...user } = row;
+        const channel = channel_name
+            ? { name: channel_name, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null }
+            : null;
+        let coach = null;
+        if (user.roles && user.roles.includes('coach')) {
+            const coachRes = await pool.query(
+                'SELECT c.id, u2.channel_id, c.user_id FROM coaches c JOIN users u2 ON c.user_id = u2.user_id WHERE c.user_id = $1 LIMIT 1',
+                [user.user_id]
+            );
+            if (coachRes.rows.length > 0) coach = coachRes.rows[0];
+        }
+        // Profile incomplete — phone not bound yet; the app shows the phone form
+        if (!user.phone) return { success: true, new_user: true, user, channel, coach };
+        return { success: true, user, channel, coach };
+    };
+
+    // Match precedence: app openid → unionid → phone (mirrors the miniapp's
+    // phone-relink pattern in handleWxLogin)
+    let existing = await pool.query(`${bundleSelect} WHERE u.wx_app_openid = $1 LIMIT 1`, [appOpenid]);
+    if (existing.rows.length === 0 && unionid) {
+        existing = await pool.query(`${bundleSelect} WHERE u.wx_unionid = $1 LIMIT 1`, [unionid]);
+    }
+    if (existing.rows.length === 0 && phone) {
+        existing = await pool.query(`${bundleSelect} WHERE u.phone = $1 LIMIT 1`, [phone]);
+    }
+    if (existing.rows.length > 0) {
+        const row = existing.rows[0];
+        await pool.query(
+            'UPDATE users SET wx_app_openid = $1, wx_unionid = COALESCE(wx_unionid, $2) WHERE user_id = $3',
+            [appOpenid, unionid, row.user_id]
+        );
+        return shapeResult(row);
+    }
+
+    // New user — no invite code, coach, referral, or branded channel → allow guest browsing
+    if (!invite_code && !coach_id && !ref && !channel_slug) {
+        return { success: true, guest: true, openid: appOpenid };
+    }
+
+    // New user — resolve channel/coach/referral the same way as handleWxLogin
+    let channelId = null;
+    let resolvedCoachId = coach_id ? parseInt(coach_id) : null;
+    let inviteRecord = null;
+    let referralUserId = null;
+
+    if (ref) {
+        const refRes = await pool.query('SELECT user_id, channel_id FROM users WHERE user_id = $1 LIMIT 1', [ref]);
+        if (refRes.rows.length > 0) {
+            referralUserId = ref;
+            if (!invite_code && !coach_id) channelId = refRes.rows[0].channel_id;
+        }
+    }
+
+    if (invite_code) {
+        const invRes = await pool.query(
+            `SELECT id, channel_id, created_by, max_uses, use_count FROM invitations
+             WHERE code = $1 AND is_active = TRUE AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1`,
+            [invite_code.toUpperCase()]
+        );
+        if (invRes.rows.length > 0) {
+            inviteRecord = invRes.rows[0];
+            channelId = inviteRecord.channel_id;
+            if (inviteRecord.created_by && !resolvedCoachId) {
+                const coachByUser = await pool.query('SELECT id FROM coaches WHERE user_id = $1 LIMIT 1', [inviteRecord.created_by]);
+                if (coachByUser.rows.length > 0) resolvedCoachId = coachByUser.rows[0].id;
+            }
+            if (!resolvedCoachId && channelId) {
+                const channelCoaches = await pool.query('SELECT c.id FROM coaches c JOIN users u ON c.user_id = u.user_id WHERE u.channel_id = $1', [channelId]);
+                if (channelCoaches.rows.length === 1) resolvedCoachId = channelCoaches.rows[0].id;
+            }
+        } else {
+            const refByCode = await pool.query(
+                'SELECT user_id, channel_id FROM users WHERE referral_code = $1 LIMIT 1',
+                [invite_code]
+            );
+            if (refByCode.rows.length > 0) {
+                referralUserId = refByCode.rows[0].user_id;
+                if (!channelId) channelId = refByCode.rows[0].channel_id;
+            } else {
+                return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
+            }
+        }
+    }
+
+    if (!channelId && resolvedCoachId) {
+        const coachRes = await pool.query('SELECT u.channel_id FROM coaches c JOIN users u ON c.user_id = u.user_id WHERE c.id = $1', [resolvedCoachId]);
+        if (coachRes.rows.length > 0) channelId = coachRes.rows[0].channel_id;
+    }
+    if (!channelId) {
+        if (channel_slug) {
+            const slugRes = await pool.query('SELECT id FROM channels WHERE LOWER(name) = LOWER($1) LIMIT 1', [channel_slug]);
+            if (slugRes.rows.length > 0) channelId = slugRes.rows[0].id;
+        } else {
+            const defaultCh = await pool.query("SELECT id FROM channels WHERE key_name = 'nanovate' LIMIT 1");
+            channelId = defaultCh.rows[0]?.id || null;
+        }
+    }
+
+    const newUserId = generateUserId();
+    const newReferralCode = await generateReferralCode();
+    const created = await pool.query(
+        `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, referral_code, phone, wx_app_openid, wx_unionid)
+         VALUES ($1, NULL, 'wechat_app', 'zh', $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
+        [newUserId, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, phone || null, appOpenid, unionid]
     );
 
     if (inviteRecord) {
@@ -6887,6 +7076,43 @@ async function handlePostHealthAdvice(body) {
     }
 }
 
+function buildBpNarrative(isZh, sys, dia, pulse) {
+    const pulseStr = pulse ? (isZh ? `，脉搏 ${pulse} 次/分` : `, pulse ${pulse} bpm`) : '';
+    const cat = sys > 180 || dia > 120
+        ? (isZh ? ['危急', '请立即就医，高血压危象需要紧急处理。', '#ef4444'] : ['Crisis', 'Seek emergency care immediately — hypertensive crisis requires urgent attention.', '#ef4444'])
+        : sys >= 140 || dia >= 90
+        ? (isZh ? ['高血压 II 级', '血压明显偏高，建议尽快咨询医生。', '#ef4444'] : ['Stage 2 Hypertension', 'Significantly elevated — consult your doctor promptly.', '#ef4444'])
+        : sys >= 130 || dia >= 80
+        ? (isZh ? ['高血压 I 级', '血压偏高，建议改善生活方式并定期监测。', '#f97316'] : ['Stage 1 Hypertension', 'Elevated — lifestyle changes and regular monitoring are recommended.', '#f97316'])
+        : sys >= 120 && dia < 80
+        ? (isZh ? ['血压偏高', '收缩压轻度偏高，注意减少钠摄入、保持运动。', '#f97316'] : ['Elevated', 'Slightly high systolic — reduce sodium intake and stay active.', '#f97316'])
+        : (isZh ? ['正常', '血压处于健康范围，继续保持良好生活习惯。', '#10b981'] : ['Normal', 'Blood pressure is in a healthy range — keep up the good habits.', '#10b981']);
+    if (isZh) {
+        return `已记录血压：**${sys}/${dia} mmHg**${pulseStr}\n\n**${cat[0]}** — ${cat[1]}`;
+    }
+    return `Recorded blood pressure: **${sys}/${dia} mmHg**${pulseStr}\n\n**${cat[0]}** — ${cat[1]}`;
+}
+
+function buildGlucoseNarrative(isZh, glucoseMmol, context) {
+    const display = glucoseMmol.toFixed(1);
+    const isFasting = context === 'fasting';
+    const threshold = isFasting ? { normal: 5.6, pre: 7.0 } : { normal: 7.8, pre: 11.1 };
+    const contextStr = isZh
+        ? (isFasting ? '（空腹）' : context === 'postmeal' ? '（餐后）' : '')
+        : (isFasting ? ' (fasting)' : context === 'postmeal' ? ' (post-meal)' : '');
+    const cat = glucoseMmol >= threshold.pre
+        ? (isZh ? ['偏高', '血糖明显偏高，建议咨询医生并复查。'] : ['High', 'Significantly elevated — consult your doctor and recheck.'])
+        : glucoseMmol >= threshold.normal
+        ? (isZh ? ['轻度偏高', '血糖略高于正常范围，注意饮食控制。'] : ['Slightly elevated', 'Just above normal — watch your diet and carbohydrate intake.'])
+        : glucoseMmol < 3.9
+        ? (isZh ? ['偏低', '血糖偏低，如有头晕不适请及时补充糖分。'] : ['Low', 'Below normal — if you feel dizzy or unwell, consume some sugar promptly.'])
+        : (isZh ? ['正常', '血糖处于正常范围。'] : ['Normal', 'Blood glucose is within the normal range.']);
+    if (isZh) {
+        return `已记录血糖：**${display} mmol/L**${contextStr}\n\n**${cat[0]}** — ${cat[1]}`;
+    }
+    return `Recorded blood glucose: **${display} mmol/L**${contextStr}\n\n**${cat[0]}** — ${cat[1]}`;
+}
+
 function buildWeightNarrative(isZh, weightKg, historicalAvg, isPlausible) {
     if (isZh) {
         const base = `已识别并记录您的体重：**${weightKg} kg**。`;
@@ -6964,6 +7190,8 @@ async function handlePostAnalyzeImage(body) {
 
         let contentType = 'health_photo';
         let scaleUnit = 'kg';
+        let bpSystolic = null, bpDiastolic = null, bpPulse = null;
+        let glucoseValue = null, glucoseUnit = 'mmol/L', glucoseContext = null;
         if (jsonMatch) {
             try {
                 const parsed = JSON.parse(jsonMatch[1]);
@@ -6974,6 +7202,12 @@ async function handlePostAnalyzeImage(body) {
                 bodyWeightKg = parsed.body_weight_kg || null;
                 scaleUnit = parsed.scale_unit || 'kg';
                 bmi = parsed.bmi || null;
+                bpSystolic = parsed.bp_systolic || null;
+                bpDiastolic = parsed.bp_diastolic || null;
+                bpPulse = parsed.bp_pulse || null;
+                glucoseValue = parsed.glucose_value || null;
+                glucoseUnit = parsed.glucose_unit || 'mmol/L';
+                glucoseContext = parsed.glucose_context || null;
             } catch (e) {
                 console.log(JSON.stringify({ level: 'WARN', msg: 'Failed to parse image analysis JSON', error: e.message }));
             }
@@ -6982,6 +7216,9 @@ async function handlePostAnalyzeImage(body) {
         if (contentType === 'scale_reading' && bodyWeightKg && scaleUnit === 'lb') {
             bodyWeightKg = Math.round(bodyWeightKg * 0.453592 * 10) / 10;
         }
+        if (contentType === 'glucose_reading' && glucoseValue && glucoseUnit === 'mg/dL') {
+            glucoseValue = Math.round(glucoseValue / 18.02 * 10) / 10;
+        }
 
         let narrative = rawReply.replace(/```json[\s\S]*?```\s*/, '').trim();
 
@@ -6989,6 +7226,8 @@ async function handlePostAnalyzeImage(body) {
                        : contentType === 'health_report' ? 'health_checkup_report'
                        : contentType === 'waven_dots' ? 'waven_dots'
                        : contentType === 'scale_reading' ? 'body_composition'
+                       : contentType === 'bp_reading' ? 'bp_reading'
+                       : contentType === 'glucose_reading' ? 'glucose_reading'
                        : 'health_photo';
         const testedAt = reportDate ? new Date(reportDate) : new Date();
         const data = { oss_key, content_type: contentType, extracted, abnormal_items: abnormalItems, report_date: reportDate, ai_analysis: narrative };
@@ -7037,6 +7276,22 @@ async function handlePostAnalyzeImage(body) {
                 `UPDATE users SET bio_data = bio_data || $1::jsonb WHERE user_id = $2`,
                 [JSON.stringify({ weight_kg: bodyWeightKg, ...(bmi ? { bmi } : {}) }), user_id]
             );
+        } else if (contentType === 'bp_reading' && bpSystolic && bpDiastolic) {
+            const ts = new Date().toISOString().replace(/[:.]/g, '');
+            await pool.query(
+                `INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id)
+                 VALUES ($1, 'manual_photo', 'vitals', CURRENT_DATE, NOW(), $2, $3)`,
+                [user_id, JSON.stringify({ bp_systolic: bpSystolic, bp_diastolic: bpDiastolic, bp_pulse: bpPulse }), `photo_bp_${ts}`]
+            );
+            narrative = buildBpNarrative(isZh, bpSystolic, bpDiastolic, bpPulse);
+        } else if (contentType === 'glucose_reading' && glucoseValue) {
+            const ts = new Date().toISOString().replace(/[:.]/g, '');
+            await pool.query(
+                `INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id)
+                 VALUES ($1, 'manual_photo', 'vitals', CURRENT_DATE, NOW(), $2, $3)`,
+                [user_id, JSON.stringify({ glucose_mmol: glucoseValue, glucose_context: glucoseContext }), `photo_glucose_${ts}`]
+            );
+            narrative = buildGlucoseNarrative(isZh, glucoseValue, glucoseContext);
         }
 
         const userTrigger = isZh ? '（图片）' : '(image)';
@@ -9901,14 +10156,16 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostAdminChannelRole(parsedBody, adminCtx);
             } else if (path === '/validate-invite') {
                 result = await handleValidateInvite(parsedBody);
+            } else if (path === '/wx-app-login') {
+                result = await handleWxAppLogin(parsedBody);
             } else if (path === '/wx-login') {
                 result = await handleWxLogin(parsedBody);
             } else if (path === '/resolve-phone') {
                 const { code, app_id } = parsedBody;
                 result = await handleResolvePhone(code, app_id);
             } else if (path === '/bind-phone') {
-                const { user_id, code, app_id } = parsedBody;
-                result = await handleBindPhone(user_id, code, app_id);
+                const { user_id, code, app_id, phone: rawPhone } = parsedBody;
+                result = await handleBindPhone(user_id, code, app_id, rawPhone);
             } else if (path.includes('/reminders')) {
                 result = await handlePostReminder(parsedBody);
             } else if (path.includes('/coach-instruction')) {

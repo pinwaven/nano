@@ -27,12 +27,20 @@ module.exports = (context) => {
 - 识别屏幕或表盘上显示的体重数值和单位（kg 或 lb）
 - 若为 lb，直接填入显示数值并将 scale_unit 设为 "lb"，系统会自动转换
 
+**类型 F — 血压仪（电子血压计或腕式血压计显示屏）**
+- 识别收缩压（SYS/高压）、舒张压（DIA/低压）和脉搏（PR/PUL）数值
+- 单位为 mmHg
+
+**类型 G — 血糖仪（指尖血糖仪、连续血糖监测仪显示屏）**
+- 识别血糖数值和单位（mmol/L 或 mg/dL）
+- 若屏幕显示 mg/dL，直接填入原始数值并将 glucose_unit 设为 "mg/dL"，系统会自动转换
+
 ---
 
 **首先**，输出一个 JSON 代码块（用 \`\`\`json 和 \`\`\` 包裹）。对于类型 A 填入检测数据；对于类型 B/C，\`extracted\` 留空对象即可：
 \`\`\`json
 {
-  "content_type": "health_report 或 health_photo 或 food_photo 或 waven_dots 或 scale_reading",
+  "content_type": "health_report 或 health_photo 或 food_photo 或 waven_dots 或 scale_reading 或 bp_reading 或 glucose_reading",
   "report_date": "YYYY-MM-DD 或 null",
   "extracted": {
     "<检测项英文key>": { "value": <数值>, "unit": "<单位>", "ref_range": "<参考范围>", "flag": "normal|high|low" }
@@ -40,7 +48,12 @@ module.exports = (context) => {
   "abnormal_items": ["异常项描述1"],
   "body_weight_kg": <体重数值或 null>,
   "scale_unit": "kg 或 lb 或 null",
-  "bmi": <BMI数值或 null>
+  "bmi": <BMI数值或 null>,
+  "bp_systolic": <收缩压数值或 null>,
+  "bp_diastolic": <舒张压数值或 null>,
+  "bp_pulse": <脉搏数值或 null>,
+  "glucose_value": <血糖数值或 null>,
+  "glucose_unit": "mmol/L 或 mg/dL 或 null"
 }
 \`\`\`
 
@@ -72,12 +85,20 @@ module.exports = (context) => {
 - Read the exact number displayed on the screen or dial; identify the unit (kg or lb)
 - If the unit is lb, record the raw displayed value and set scale_unit to "lb" — the system will convert it
 
+**Type F — Blood pressure monitor** (electronic arm or wrist BP cuff display)
+- Read systolic (SYS / upper number), diastolic (DIA / lower number), and pulse (PR / PUL) values
+- Unit is always mmHg
+
+**Type G — Blood glucose meter** (fingerstick glucometer or CGM display)
+- Read the glucose value and unit (mmol/L or mg/dL)
+- If the display shows mg/dL, record the raw value and set glucose_unit to "mg/dL" — the system will convert it
+
 ---
 
 **First**, output a JSON code block (wrapped in \`\`\`json and \`\`\`). For Type A, fill in the extracted test data; for Type B/C, leave \`extracted\` as an empty object:
 \`\`\`json
 {
-  "content_type": "health_report or health_photo or food_photo or waven_dots or scale_reading",
+  "content_type": "health_report or health_photo or food_photo or waven_dots or scale_reading or bp_reading or glucose_reading",
   "report_date": "YYYY-MM-DD or null",
   "extracted": {
     "<test_key>": { "value": <number>, "unit": "<str>", "ref_range": "<str>", "flag": "normal|high|low" }
@@ -85,7 +106,12 @@ module.exports = (context) => {
   "abnormal_items": ["description of abnormal item"],
   "body_weight_kg": <number or null>,
   "scale_unit": "kg or lb or null",
-  "bmi": <number or null>
+  "bmi": <number or null>,
+  "bp_systolic": <number or null>,
+  "bp_diastolic": <number or null>,
+  "bp_pulse": <number or null>,
+  "glucose_value": <number or null>,
+  "glucose_unit": "mmol/L or mg/dL or null"
 }
 \`\`\`
 
