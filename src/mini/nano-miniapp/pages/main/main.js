@@ -129,6 +129,7 @@ const T = {
     storeOrderSent: '订单已提交！我们的健康教练将尽快与您联系。',
     storeConfirmTitle: '确认订单',
     storeBestseller: '热销', storeValue: '超值',
+    storePartnerPrice: '合伙人价',
     storeEmpty: '暂无商品。',
     storeSubProducts: '商品', storeSubOrders: '我的订单',
     noOrders: '暂无订单记录。',
@@ -304,6 +305,7 @@ const T = {
     storeOrderSent: 'Order placed! Our health advisor will reach out shortly.',
     storeConfirmTitle: 'Confirm Order',
     storeBestseller: 'Best Seller', storeValue: 'Value Pack',
+    storePartnerPrice: 'Partner Price',
     storeEmpty: 'No products available.',
     storeSubProducts: 'Products', storeSubOrders: 'My Orders',
     noOrders: 'No orders yet.',
@@ -660,6 +662,16 @@ function mapStructuredSchedules(schedules, dotsMap, lang) {
   })
 }
 
+// Constrains <img> tags in HTML descriptions so pictures fit the store card width
+function prepDescHtml(html) {
+  return html.replace(/<img\b([^>]*?)\/?>/gi, (m, attrs) => {
+    if (/style\s*=/i.test(attrs)) {
+      return `<img${attrs.replace(/style\s*=\s*"([^"]*)"/i, 'style="max-width:100%;height:auto;$1"')}>`
+    }
+    return `<img style="max-width:100%;height:auto;display:block;"${attrs ? ' ' + attrs : ''}>`
+  })
+}
+
 function mapStoreItems(rawItems, lang) {
   const t = T[lang]
   const tagLabel = (tag) => {
@@ -668,16 +680,24 @@ function mapStoreItems(rawItems, lang) {
     if (tag === 'value') return t.storeValue
     return null
   }
-  return rawItems.map(item => ({
-    id: item.id,
-    key: item.key_name,
-    name: lang === 'zh' ? item.name_zh : item.name_en,
-    desc: lang === 'zh' ? item.desc_zh : item.desc_en,
-    unit: lang === 'zh' ? item.unit_zh : item.unit_en,
-    price: lang === 'zh' ? `¥${item.price_cny}` : `$${item.price_usd}`,
-    rawPrice: lang === 'zh' ? (item.price_cny || 0) : (item.price_usd || 0),
-    tagLabel: tagLabel(item.tag),
-  }))
+  return rawItems.map(item => {
+    const partnerRaw = lang === 'zh' ? item.partner_price_cny : item.partner_price_usd
+    const hasPartnerPrice = partnerRaw != null
+    const desc = (lang === 'zh' ? item.desc_zh : item.desc_en) || ''
+    const descIsHtml = /<[a-z][^>]*>/i.test(desc)
+    return {
+      id: item.id,
+      key: item.key_name,
+      name: lang === 'zh' ? item.name_zh : item.name_en,
+      desc: descIsHtml ? prepDescHtml(desc) : desc,
+      descIsHtml,
+      unit: lang === 'zh' ? item.unit_zh : item.unit_en,
+      price: lang === 'zh' ? `¥${item.price_cny}` : `$${item.price_usd}`,
+      partnerPrice: hasPartnerPrice ? (lang === 'zh' ? `¥${partnerRaw}` : `$${partnerRaw}`) : '',
+      rawPrice: hasPartnerPrice ? partnerRaw : (lang === 'zh' ? (item.price_cny || 0) : (item.price_usd || 0)),
+      tagLabel: tagLabel(item.tag),
+    }
+  })
 }
 
 function mapStoreOrders(rawOrders, lang) {

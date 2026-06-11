@@ -776,9 +776,18 @@
               <text class="store-tag-text">{{item.tagLabel}}</text>
             </view>
             <text class="store-card-name">{{item.name}}</text>
-            <text class="store-card-desc">{{item.desc}}</text>
+            <rich-text wx:if="{{item.descIsHtml}}" class="store-card-desc store-card-desc-rich" nodes="{{item.desc}}"></rich-text>
+            <text wx:else class="store-card-desc">{{item.desc}}</text>
             <view class="store-card-footer">
-              <view class="store-price-wrap">
+              <view wx:if="{{item.partnerPrice}}" class="store-price-wrap store-price-wrap-partner">
+                <view class="store-partner-row">
+                  <view class="store-partner-badge"><text class="store-partner-badge-text">{{t.storePartnerPrice}}</text></view>
+                  <text class="store-price store-price-partner">{{item.partnerPrice}}</text>
+                  <text class="store-unit">/ {{item.unit}}</text>
+                </view>
+                <text class="store-price-regular">{{item.price}}</text>
+              </view>
+              <view wx:else class="store-price-wrap">
                 <text class="store-price">{{item.price}}</text>
                 <text class="store-unit">/ {{item.unit}}</text>
               </view>
@@ -881,7 +890,7 @@
             <view wx:for="{{cart}}" wx:key="id" class="cart-item-row">
               <view class="cart-item-info">
                 <text class="cart-item-name">{{item.name}}</text>
-                <text class="cart-item-price">{{item.price}} / {{item.unit}}</text>
+                <text class="cart-item-price">{{item.partnerPrice || item.price}} / {{item.unit}}</text>
               </view>
               <view class="cart-stepper cart-stepper-sm">
                 <view class="stepper-btn" bindtap="handleCartQtyChange" data-id="{{item.id}}" data-delta="{{-1}}"><text class="stepper-sym">－</text></view>

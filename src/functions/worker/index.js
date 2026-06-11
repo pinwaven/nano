@@ -1,7 +1,7 @@
 const { pool } = require('./lib/db');
 const { recordOrderCommissions, recordUserReferralCommission } = require('./lib/commissions');
 const { getUserBalance, getLedgerHistory, debitUser, getChannelExchangeRate, getChannelCurrency } = require('./lib/credits');
-const { recordReferralCommission, generatePartnerPayouts } = require('./lib/partnerCommissions');
+const { recordReferralCommission, generatePartnerPayouts, getPartnerProductDiscount, applyPartnerDiscount } = require('./lib/partnerCommissions');
 const ossLib = require('./lib/oss');
 const crypto = require('crypto');
 
@@ -345,6 +345,134 @@ async function handleGetUsers(channelId, query = {}) {
     }
 }
 
+// ── Admin dashboard stats (time series + distributions) ─────────────────────
+// Read-only aggregates for the admin panel Dashboard tab. Channel admins are
+// scoped to their own channel via adminCtx.channelId; superadmins see all.
+async function handleGetDashboardStats(query, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const channelId = adminCtx?.role === 'channel' ? adminCtx.channelId : (query.channel_id || null);
+
+        // Expand channelId to its full descendant subtree so channel admins see
+        // data from child channels and their children recursively.
+        let channelIds = null;
+        if (channelId) {
+            const treeRes = await pool.query(
+                `WITH RECURSIVE subtree AS (
+                    SELECT id FROM channels WHERE id = $1
+                    UNION ALL
+                    SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
+                ) SELECT id FROM subtree`,
+                [channelId]
+            );
+            channelIds = treeRes.rows.map(r => r.id);
+        }
+
+        const uParams = [];
+        const uFilter = channelIds ? `AND u.channel_id = ANY($${uParams.push(channelIds)})` : '';
+        const oParams = [];
+        const oFilter = channelIds ? `AND o.channel_id = ANY($${oParams.push(channelIds)})` : '';
+
+        const [signups, scans, ordersDaily, deltaHist, subAgeAvgs, channelTop, revenue, tickets, recentUsers] = await Promise.all([
+            pool.query(
+                `SELECT TO_CHAR(u.created_at::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+                 FROM users u
+                 WHERE u.created_at >= NOW() - INTERVAL '30 days' ${uFilter}
+                 GROUP BY 1 ORDER BY 1`, uParams),
+            pool.query(
+                `SELECT TO_CHAR(b.tested_at::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+                 FROM biomarkers b
+                 JOIN users u ON u.user_id = b.user_id
+                 WHERE b.tested_at >= NOW() - INTERVAL '30 days' ${uFilter}
+                 GROUP BY 1 ORDER BY 1`, uParams),
+            pool.query(
+                `SELECT TO_CHAR(o.created_at::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count,
+                        COALESCE(SUM(o.price_cny * o.quantity), 0)::numeric AS revenue_cny
+                 FROM orders o
+                 WHERE o.created_at >= NOW() - INTERVAL '30 days' ${oFilter}
+                 GROUP BY 1 ORDER BY 1`, oParams),
+            pool.query(
+                `WITH latest AS (
+                    SELECT DISTINCT ON (user_id) user_id, bio_age
+                    FROM biomarkers ORDER BY user_id, tested_at DESC
+                 )
+                 SELECT CASE
+                          WHEN x.d < -5 THEN 'lt_m5'
+                          WHEN x.d < -2 THEN 'm5_m2'
+                          WHEN x.d < 0  THEN 'm2_0'
+                          WHEN x.d < 2  THEN '0_2'
+                          WHEN x.d < 5  THEN '2_5'
+                          ELSE 'gt_5'
+                        END AS bucket,
+                        COUNT(*)::int AS count
+                 FROM (
+                    SELECT (l.bio_age - EXTRACT(YEAR FROM AGE(u.birth_date)))::numeric AS d
+                    FROM latest l
+                    JOIN users u ON u.user_id = l.user_id
+                    WHERE u.birth_date IS NOT NULL AND l.bio_age IS NOT NULL ${uFilter}
+                 ) x
+                 GROUP BY 1`, uParams),
+            pool.query(
+                `WITH latest AS (
+                    SELECT DISTINCT ON (user_id) user_id, data
+                    FROM biomarkers ORDER BY user_id, tested_at DESC
+                 )
+                 SELECT
+                    ROUND(AVG((l.data->'bioage_profile'->'SubAges'->>'CellularAge')::numeric), 1)::text      AS cellular,
+                    ROUND(AVG((l.data->'bioage_profile'->'SubAges'->>'MetabolicAge')::numeric), 1)::text     AS metabolic,
+                    ROUND(AVG((l.data->'bioage_profile'->'SubAges'->>'MicroVascularAge')::numeric), 1)::text AS microvascular,
+                    ROUND(AVG((l.data->'bioage_profile'->'SubAges'->>'ResilienceAge')::numeric), 1)::text    AS resilience,
+                    ROUND(AVG((l.data->'bioage_profile'->>'ChronoAge')::numeric), 1)::text                   AS chrono
+                 FROM latest l
+                 JOIN users u ON u.user_id = l.user_id
+                 WHERE TRUE ${uFilter}`, uParams),
+            channelIds
+                ? Promise.resolve({ rows: [] })
+                : pool.query(
+                    `SELECT c.name, COUNT(u.user_id)::int AS user_count
+                     FROM channels c
+                     JOIN users u ON u.channel_id = c.id
+                     GROUP BY c.id, c.name
+                     ORDER BY user_count DESC LIMIT 8`),
+            pool.query(
+                `SELECT COALESCE(SUM(o.price_cny * o.quantity) FILTER (WHERE o.created_at >= NOW() - INTERVAL '30 days'), 0)::numeric AS revenue_30d,
+                        COALESCE(SUM(o.price_cny * o.quantity), 0)::numeric AS revenue_total,
+                        COUNT(*)::int AS orders_total,
+                        (COUNT(*) FILTER (WHERE o.status = 'pending'))::int AS orders_pending
+                 FROM orders o WHERE TRUE ${oFilter}`, oParams),
+            channelIds
+                ? pool.query(
+                    `SELECT (COUNT(*) FILTER (WHERE t.status IN ('open', 'in_progress')))::int AS open
+                     FROM tickets t
+                     LEFT JOIN users u ON u.external_id = t.reporter
+                     WHERE t.channel_id = ANY($1) OR (t.channel_id IS NULL AND u.channel_id = ANY($1))`, [channelIds])
+                : pool.query(
+                    `SELECT (COUNT(*) FILTER (WHERE status IN ('open', 'in_progress')))::int AS open FROM tickets`),
+            pool.query(
+                `SELECT u.user_id, u.nickname, u.avatar_url, u.created_at, c.name AS channel_name, b.bio_age
+                 FROM users u
+                 LEFT JOIN channels c ON c.id = u.channel_id
+                 LEFT JOIN (
+                    SELECT DISTINCT ON (user_id) user_id, bio_age
+                    FROM biomarkers ORDER BY user_id, tested_at DESC
+                 ) b ON b.user_id = u.user_id
+                 WHERE TRUE ${uFilter}
+                 ORDER BY u.created_at DESC LIMIT 6`, uParams),
+        ]);
+
+        return {
+            success: true,
+            daily: { signups: signups.rows, scans: scans.rows, orders: ordersDaily.rows },
+            delta_histogram: deltaHist.rows,
+            sub_age_avgs: subAgeAvgs.rows[0] || {},
+            channel_top: channelTop.rows,
+            revenue: revenue.rows[0] || {},
+            attention: { open_tickets: parseInt(tickets.rows[0]?.open) || 0 },
+            recent_users: recentUsers.rows,
+        };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
 async function handleGetUser(user_id) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -569,6 +697,15 @@ async function handlePostDispense(body) {
                  ORDER BY ci.sort_order ASC, ci.created_at ASC`,
                 [channelId]
             );
+            const discount = await getPartnerProductDiscount(query.openid);
+            if (discount) {
+                const items = result.rows.map(it => ({
+                    ...it,
+                    partner_price_cny: applyPartnerDiscount(it.price_cny, discount.rate),
+                    partner_price_usd: applyPartnerDiscount(it.price_usd, discount.rate),
+                }));
+                return { success: true, items, partner: { tier: discount.tier, discount_rate: discount.rate } };
+            }
             return { success: true, items: result.rows };
         }
         const showAll = query.all === 'true';
@@ -1781,6 +1918,13 @@ async function handlePostOrder(body) {
             price_usd = item.price_usd || 0;
         }
 
+        // Active partners buy at their tier's discounted price (matches store display)
+        const partnerDiscount = await getPartnerProductDiscount(openid);
+        if (partnerDiscount) {
+            price_cny = applyPartnerDiscount(price_cny, partnerDiscount.rate);
+            price_usd = applyPartnerDiscount(price_usd, partnerDiscount.rate);
+        }
+
         // SKU-Based Stock Check — channel stock takes priority over warehouse
         if (sku_id) {
             const stockResult = await pool.query(
@@ -1852,6 +1996,7 @@ async function handlePostOrderBatch(body) {
     try {
         await client.query('BEGIN');
         const order_ids = [];
+        const partnerDiscount = await getPartnerProductDiscount(openid);
 
         for (const entry of items) {
             const { channel_inventory_item_id, item_id, quantity = 1 } = entry;
@@ -1882,6 +2027,11 @@ async function handlePostOrderBatch(body) {
                 item_key = r.rows[0].key_name;
                 price_cny = r.rows[0].price_cny || 0;
                 price_usd = r.rows[0].price_usd || 0;
+            }
+
+            if (partnerDiscount) {
+                price_cny = applyPartnerDiscount(price_cny, partnerDiscount.rate);
+                price_usd = applyPartnerDiscount(price_usd, partnerDiscount.rate);
             }
 
             if (sku_id) {
@@ -6737,6 +6887,34 @@ async function handlePostHealthAdvice(body) {
     }
 }
 
+function buildWeightNarrative(isZh, weightKg, historicalAvg, isPlausible) {
+    if (isZh) {
+        const base = `已识别并记录您的体重：**${weightKg} kg**。`;
+        if (!isPlausible) {
+            const avgStr = historicalAvg ? `（近期平均 ${historicalAvg.toFixed(1)} kg）` : '';
+            return base + `\n\n⚠️ 此数值与历史记录差异较大${avgStr}，请确认秤的单位或读数是否正确。`;
+        }
+        if (historicalAvg) {
+            const delta = (weightKg - historicalAvg).toFixed(1);
+            const trend = weightKg > historicalAvg ? `↑ ${delta} kg` : `↓ ${Math.abs(delta)} kg`;
+            return base + `\n\n与近期平均相比：${trend}。`;
+        }
+        return base + '\n\n这是您的第一条体重记录，已保存。';
+    } else {
+        const base = `Recorded your weight: **${weightKg} kg**.`;
+        if (!isPlausible) {
+            const avgStr = historicalAvg ? ` (recent avg: ${historicalAvg.toFixed(1)} kg)` : '';
+            return base + `\n\n⚠️ This is very different from your recent records${avgStr} — please double-check the unit or reading.`;
+        }
+        if (historicalAvg) {
+            const delta = (weightKg - historicalAvg).toFixed(1);
+            const trend = weightKg > historicalAvg ? `↑ ${delta} kg` : `↓ ${Math.abs(delta)} kg`;
+            return base + `\n\nVs. recent average: ${trend}.`;
+        }
+        return base + '\n\nThis is your first weight record — saved.';
+    }
+}
+
 async function handlePostAnalyzeImage(body) {
     const { openid, oss_key, filename, get_url } = body;
     if (!openid) return { success: false, error: 'openid required', statusCode: 400 };
@@ -6785,6 +6963,7 @@ async function handlePostAnalyzeImage(body) {
         let bmi = null;
 
         let contentType = 'health_photo';
+        let scaleUnit = 'kg';
         if (jsonMatch) {
             try {
                 const parsed = JSON.parse(jsonMatch[1]);
@@ -6793,17 +6972,23 @@ async function handlePostAnalyzeImage(body) {
                 abnormalItems = parsed.abnormal_items || [];
                 reportDate = parsed.report_date || null;
                 bodyWeightKg = parsed.body_weight_kg || null;
+                scaleUnit = parsed.scale_unit || 'kg';
                 bmi = parsed.bmi || null;
             } catch (e) {
                 console.log(JSON.stringify({ level: 'WARN', msg: 'Failed to parse image analysis JSON', error: e.message }));
             }
         }
 
-        const narrative = rawReply.replace(/```json[\s\S]*?```\s*/, '').trim();
+        if (contentType === 'scale_reading' && bodyWeightKg && scaleUnit === 'lb') {
+            bodyWeightKg = Math.round(bodyWeightKg * 0.453592 * 10) / 10;
+        }
+
+        let narrative = rawReply.replace(/```json[\s\S]*?```\s*/, '').trim();
 
         const testType = contentType === 'food_photo' ? 'food_photo'
                        : contentType === 'health_report' ? 'health_checkup_report'
                        : contentType === 'waven_dots' ? 'waven_dots'
+                       : contentType === 'scale_reading' ? 'body_composition'
                        : 'health_photo';
         const testedAt = reportDate ? new Date(reportDate) : new Date();
         const data = { oss_key, content_type: contentType, extracted, abnormal_items: abnormalItems, report_date: reportDate, ai_analysis: narrative };
@@ -6816,7 +7001,38 @@ async function handlePostAnalyzeImage(body) {
         );
         const biomarker_id = insertResult.rows[0].id;
 
-        if (bodyWeightKg) {
+        if (contentType === 'scale_reading' && bodyWeightKg) {
+            const historyRes = await pool.query(
+                `SELECT data FROM biomarkers
+                 WHERE user_id = $1 AND test_type = 'body_composition'
+                   AND id != $2
+                 ORDER BY tested_at DESC LIMIT 5`,
+                [user_id, biomarker_id]
+            );
+            const recentWeights = historyRes.rows
+                .map(r => {
+                    const d = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+                    return d?.actual?.weight ?? null;
+                })
+                .filter(w => w !== null);
+            const historicalAvg = recentWeights.length
+                ? recentWeights.reduce((a, b) => a + b, 0) / recentWeights.length
+                : null;
+            const isPlausible = historicalAvg === null
+                ? bodyWeightKg >= 20 && bodyWeightKg <= 300
+                : Math.abs(bodyWeightKg - historicalAvg) <= 20;
+
+            await pool.query(
+                `UPDATE biomarkers SET data = data || $1::jsonb WHERE id = $2`,
+                [JSON.stringify({ actual: { weight: bodyWeightKg }, weight_kg: bodyWeightKg }), biomarker_id]
+            );
+            await pool.query(
+                `UPDATE users SET bio_data = bio_data || $1::jsonb WHERE user_id = $2`,
+                [JSON.stringify({ weight_kg: bodyWeightKg }), user_id]
+            );
+
+            narrative = buildWeightNarrative(isZh, bodyWeightKg, historicalAvg, isPlausible);
+        } else if (bodyWeightKg) {
             await pool.query(
                 `UPDATE users SET bio_data = bio_data || $1::jsonb WHERE user_id = $2`,
                 [JSON.stringify({ weight_kg: bodyWeightKg, ...(bmi ? { bmi } : {}) }), user_id]
@@ -9610,6 +9826,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetChannelPayouts(query);
             } else if (path.includes('/channel-rewards-summary')) {
                 result = await handleGetChannelRewardsSummary(query.channel_id);
+            } else if (path === '/admin/dashboard-stats') {
+                result = await handleGetDashboardStats(query, adminCtx);
             } else if (path === '/admin/saved-reports') {
                 result = await handleGetSavedReports();
             } else if (path === '/admin-accounts') {

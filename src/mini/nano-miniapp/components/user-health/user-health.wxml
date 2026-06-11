@@ -198,35 +198,45 @@
 
         <!-- Metric strip: weight / BMI / steps / HRV / stress -->
         <view class="dt-metrics-strip">
-          <view class="dt-metric">
+          <view class="dt-metric {{weightHistory.length > 1 ? 'dt-metric-tappable' : ''}}"
+                bindtap="{{weightHistory.length > 1 ? 'openWeightChart' : ''}}">
             <view class="dt-metric-val-row">
               <text class="dt-metric-val">{{rawWeight != null ? rawWeight : '—'}}</text>
               <text wx:if="{{rawWeight != null}}" class="dt-metric-unit">kg</text>
             </view>
             <text class="dt-metric-label">{{t.weight}}</text>
+            <text wx:if="{{weightHistory.length > 1}}" class="dt-metric-trend-hint">›</text>
           </view>
           <view class="dt-metric-divider"></view>
-          <view class="dt-metric">
+          <view class="dt-metric {{bmiHistory.length > 1 ? 'dt-metric-tappable' : ''}}"
+                bindtap="{{bmiHistory.length > 1 ? 'openBmiChart' : ''}}">
             <text class="dt-metric-val">{{rawBmi != null ? rawBmi : '—'}}</text>
             <text class="dt-metric-label">BMI</text>
+            <text wx:if="{{bmiHistory.length > 1}}" class="dt-metric-trend-hint">›</text>
           </view>
           <view class="dt-metric-divider"></view>
-          <view class="dt-metric">
+          <view class="dt-metric {{stepsHistory.length > 1 ? 'dt-metric-tappable' : ''}}"
+                bindtap="{{stepsHistory.length > 1 ? 'openStepsChart' : ''}}">
             <text class="dt-metric-val">{{ringData && ringData.hasSteps ? ringData.stepsStr : '—'}}</text>
             <text class="dt-metric-label">{{t.ringSteps}}</text>
+            <text wx:if="{{stepsHistory.length > 1}}" class="dt-metric-trend-hint">›</text>
           </view>
           <view class="dt-metric-divider"></view>
-          <view class="dt-metric">
+          <view class="dt-metric {{hrvHistory.length > 1 ? 'dt-metric-tappable' : ''}}"
+                bindtap="{{hrvHistory.length > 1 ? 'openHrvChart' : ''}}">
             <view class="dt-metric-val-row">
               <text class="dt-metric-val" style="{{ringData && ringData.hasHrv ? 'color:' + ringData.hrvColor : ''}}">{{ringData && ringData.hasHrv ? ringData.hrv : '—'}}</text>
               <text wx:if="{{ringData && ringData.hasHrv}}" class="dt-metric-unit">ms</text>
             </view>
             <text class="dt-metric-label">{{t.ringHrv}}</text>
+            <text wx:if="{{hrvHistory.length > 1}}" class="dt-metric-trend-hint">›</text>
           </view>
           <view class="dt-metric-divider"></view>
-          <view class="dt-metric">
+          <view class="dt-metric {{stressHistory.length > 1 ? 'dt-metric-tappable' : ''}}"
+                bindtap="{{stressHistory.length > 1 ? 'openStressChart' : ''}}">
             <text class="dt-metric-val" style="{{ringData && ringData.hasStress ? 'color:' + ringData.stressColor : ''}}">{{ringData && ringData.hasStress ? ringData.stress : '—'}}</text>
             <text class="dt-metric-label">{{t.ringStress}}</text>
+            <text wx:if="{{stressHistory.length > 1}}" class="dt-metric-trend-hint">›</text>
           </view>
         </view>
       </view>
@@ -674,6 +684,54 @@
         <view class="wchart-close" bindtap="closeWeightChart"><text>✕</text></view>
       </view>
       <canvas canvas-id="uh-weight-chart-full" class="weight-chart-full" style="width:{{weightChartW}}px;height:200px;"></canvas>
+    </view>
+  </view>
+
+  <!-- BMI Chart Modal -->
+  <view wx:if="{{bmiChartOpen}}" class="wchart-overlay" bindtap="closeBmiChart">
+    <view class="wchart-sheet" catchtap="noop">
+      <view class="wchart-handle"></view>
+      <view class="wchart-header">
+        <text class="wchart-title">BMI</text>
+        <view class="wchart-close" bindtap="closeBmiChart"><text>✕</text></view>
+      </view>
+      <canvas canvas-id="uh-bmi-chart" class="weight-chart-full" style="width:{{bmiChartW}}px;height:200px;"></canvas>
+    </view>
+  </view>
+
+  <!-- Steps Chart Modal -->
+  <view wx:if="{{stepsChartOpen}}" class="wchart-overlay" bindtap="closeStepsChart">
+    <view class="wchart-sheet" catchtap="noop">
+      <view class="wchart-handle"></view>
+      <view class="wchart-header">
+        <text class="wchart-title">{{t.ringSteps}}</text>
+        <view class="wchart-close" bindtap="closeStepsChart"><text>✕</text></view>
+      </view>
+      <canvas canvas-id="uh-steps-chart" class="weight-chart-full" style="width:{{stepsChartW}}px;height:200px;"></canvas>
+    </view>
+  </view>
+
+  <!-- HRV Chart Modal -->
+  <view wx:if="{{hrvChartOpen}}" class="wchart-overlay" bindtap="closeHrvChart">
+    <view class="wchart-sheet" catchtap="noop">
+      <view class="wchart-handle"></view>
+      <view class="wchart-header">
+        <text class="wchart-title">HRV</text>
+        <view class="wchart-close" bindtap="closeHrvChart"><text>✕</text></view>
+      </view>
+      <canvas canvas-id="uh-hrv-chart" class="weight-chart-full" style="width:{{hrvChartW}}px;height:200px;"></canvas>
+    </view>
+  </view>
+
+  <!-- Stress Chart Modal -->
+  <view wx:if="{{stressChartOpen}}" class="wchart-overlay" bindtap="closeStressChart">
+    <view class="wchart-sheet" catchtap="noop">
+      <view class="wchart-handle"></view>
+      <view class="wchart-header">
+        <text class="wchart-title">{{t.ringStress}}</text>
+        <view class="wchart-close" bindtap="closeStressChart"><text>✕</text></view>
+      </view>
+      <canvas canvas-id="uh-stress-chart" class="weight-chart-full" style="width:{{stressChartW}}px;height:200px;"></canvas>
     </view>
   </view>
 

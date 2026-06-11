@@ -33,6 +33,33 @@ const REFERRAL_RATES         = DEFAULT_CONFIG.referral_rates;
 const PRODUCT_DISCOUNT_RATES = DEFAULT_CONFIG.product_discount_rates;
 const TRAINING_DISCOUNT_RATES = DEFAULT_CONFIG.training_discount_rates;
 
+// Returns { tier, rate } for the user's active partner record (best rate if multiple), or null.
+async function getPartnerProductDiscount(userId) {
+    if (!pool || !userId) return null;
+    try {
+        const { rows } = await pool.query(
+            `SELECT tier FROM partners WHERE user_id = $1 AND status = 'active'`,
+            [userId]
+        );
+        if (rows.length === 0) return null;
+        const cfg = await getCommissionConfig();
+        let best = null;
+        for (const { tier } of rows) {
+            const rate = Number(cfg.product_discount_rates?.[tier] || 0);
+            if (rate > 0 && rate < 1 && (!best || rate > best.rate)) best = { tier, rate };
+        }
+        return best;
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'getPartnerProductDiscount failed', data: { error: err.message } }));
+        return null;
+    }
+}
+
+function applyPartnerDiscount(price, rate) {
+    if (price == null || !rate) return price;
+    return Number((Number(price) * (1 - rate)).toFixed(2));
+}
+
 async function recordReferralCommission(uplinePartner, newPartner) {
     if (!pool) return;
     const cfg = await getCommissionConfig();
@@ -148,4 +175,4 @@ async function generatePartnerPayouts(period, channelId) {
     return { generated: created };
 }
 
-module.exports = { REFERRAL_RATES, PRODUCT_DISCOUNT_RATES, TRAINING_DISCOUNT_RATES, getCommissionConfig, recordReferralCommission, recordSalesCommission, generatePartnerPayouts };
+module.exports = { REFERRAL_RATES, PRODUCT_DISCOUNT_RATES, TRAINING_DISCOUNT_RATES, getCommissionConfig, getPartnerProductDiscount, applyPartnerDiscount, recordReferralCommission, recordSalesCommission, generatePartnerPayouts };

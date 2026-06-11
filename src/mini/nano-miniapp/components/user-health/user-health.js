@@ -607,6 +607,18 @@ Component({
     weightHistory: [],
     weightChartOpen: false,
     weightChartW: 300,
+    bmiHistory: [],
+    bmiChartOpen: false,
+    bmiChartW: 300,
+    stepsHistory: [],
+    stepsChartOpen: false,
+    stepsChartW: 300,
+    hrvHistory: [],
+    hrvChartOpen: false,
+    hrvChartW: 300,
+    stressHistory: [],
+    stressChartOpen: false,
+    stressChartW: 300,
     bioAgeHistory: [],
     bioAgeChartW: 0,
     bioAgeTrendOpen: false,
@@ -711,6 +723,7 @@ Component({
       this.setData({ bioLoading: true })
       this._loadHealthTwin()
       this._loadHealthReports()
+      this._loadMetricHistory()
       try {
         const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(userId)}`)
         const records = res.data?.records || []
@@ -814,6 +827,13 @@ Component({
             ? (weightVal / Math.pow(heightVal / 100, 2)).toFixed(1)
             : null
 
+          const bmiHistory = (heightVal != null && heightVal > 0)
+            ? weightHistory.map(r => ({
+                date: r.date,
+                bmi: parseFloat((r.weight / Math.pow(heightVal / 100, 2)).toFixed(1)),
+              }))
+            : []
+
           const profileInfoVisible = [
             { label: t.weight, val: weightVal != null ? `${weightVal} ${t.bsKg}` : '—', hasSparkline: true },
             { label: t.bmi,    val: bmiVal != null ? bmiVal : '—' },
@@ -842,6 +862,7 @@ Component({
 
           Object.assign(newData, {
             weightHistory,
+            bmiHistory,
             profileInfoVisible, profileInfoExtra,
             healthConditionsList,
             hasConditionsData: condKeys !== null,
@@ -1132,6 +1153,114 @@ Component({
     closeWeightChart() {
       this.setData({ weightChartOpen: false })
     },
+
+    async _loadMetricHistory() {
+      const { userId } = this.properties
+      if (!userId) return
+      try {
+        const res = await this._req(`${BASE}/api/health-events?openid=${encodeURIComponent(userId)}&limit=60`)
+        const events = res.data?.events || []
+        const seenSteps = new Set(), seenHrv = new Set(), seenStress = new Set()
+        const stepsHistory = [], hrvHistory = [], stressHistory = []
+        for (const ev of events) {
+          const date = (ev.data_date || '').substring(0, 10)
+          if (!date) continue
+          const d = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data
+          if (ev.category === 'activity' && !seenSteps.has(date) && d?.steps != null) {
+            stepsHistory.push({ date, steps: d.steps }); seenSteps.add(date)
+          } else if (ev.category === 'vitals') {
+            if (!seenHrv.has(date) && d?.hrv_ms != null) {
+              hrvHistory.push({ date, hrv: d.hrv_ms }); seenHrv.add(date)
+            }
+            if (!seenStress.has(date) && d?.stress != null) {
+              stressHistory.push({ date, stress: d.stress }); seenStress.add(date)
+            }
+          }
+        }
+        this.setData({
+          stepsHistory:  stepsHistory.reverse(),
+          hrvHistory:    hrvHistory.reverse(),
+          stressHistory: stressHistory.reverse(),
+        })
+      } catch (e) { /* non-critical */ }
+    },
+
+    _drawGenericChart(canvasId, history, valKey, unit, color) {
+      const W = wx.getSystemInfoSync().windowWidth - 72
+      const H = 200, pL = 44, pR = 16, pT = 20, pB = 44
+      const plotW = W - pL - pR, plotH = H - pT - pB
+      const vals = history.map(r => r[valKey])
+      const minV = Math.floor(Math.min(...vals))
+      const maxV = Math.ceil(Math.max(...vals))
+      const range = maxV - minV || 1
+      const toX = i => pL + (i / Math.max(history.length - 1, 1)) * plotW
+      const toY = v => pT + ((maxV - v) / range) * plotH
+      const pts = history.map((r, i) => ({ x: toX(i), y: toY(r[valKey]) }))
+      const ctx = wx.createCanvasContext(canvasId, this)
+      ctx.clearRect(0, 0, W, H)
+      const hex = parseInt(color.replace('#', ''), 16)
+      const [cr, cg, cb] = [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255]
+      for (let i = 0; i <= 4; i++) {
+        const y = pT + (i / 4) * plotH
+        const val = maxV - (i / 4) * range
+        ctx.setStrokeStyle('rgba(99,117,236,0.12)'); ctx.setLineWidth(0.5)
+        ctx.beginPath(); ctx.moveTo(pL, y); ctx.lineTo(pL + plotW, y); ctx.stroke()
+        ctx.setFillStyle('rgba(166,196,229,0.45)'); ctx.setFontSize(10)
+        ctx.fillText(Number.isInteger(val) ? val : val.toFixed(1), 0, y + 4)
+      }
+      ctx.beginPath(); ctx.setFillStyle(`rgba(${cr},${cg},${cb},0.1)`)
+      ctx.moveTo(pts[0].x, pT + plotH)
+      pts.forEach(p => ctx.lineTo(p.x, p.y))
+      ctx.lineTo(pts[pts.length - 1].x, pT + plotH)
+      ctx.closePath(); ctx.fill()
+      ctx.beginPath(); ctx.setStrokeStyle(color); ctx.setLineWidth(2)
+      ctx.moveTo(pts[0].x, pts[0].y)
+      pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
+      ctx.stroke()
+      const labelStep = Math.max(1, Math.floor(history.length / 5))
+      ctx.setFontSize(10); ctx.setFillStyle('rgba(166,196,229,0.5)')
+      history.forEach((r, i) => {
+        if (i % labelStep === 0 || i === history.length - 1)
+          ctx.fillText(r.date.substring(5), pts[i].x - 14, H - pB + 16)
+      })
+      ctx.setFillStyle('#EEF2FF'); ctx.setStrokeStyle(color); ctx.setLineWidth(1.5)
+      pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke() })
+      ctx.setStrokeStyle('rgba(99,117,236,0.3)'); ctx.setLineWidth(1)
+      ctx.beginPath(); ctx.moveTo(pL, pT); ctx.lineTo(pL, pT + plotH); ctx.lineTo(pL + plotW, pT + plotH); ctx.stroke()
+      ctx.draw()
+    },
+
+    openBmiChart() {
+      const W = wx.getSystemInfoSync().windowWidth - 72
+      this.setData({ bmiChartOpen: true, bmiChartW: W }, () => {
+        this._drawGenericChart('uh-bmi-chart', this.data.bmiHistory, 'bmi', '', '#6375EC')
+      })
+    },
+    closeBmiChart() { this.setData({ bmiChartOpen: false }) },
+
+    openStepsChart() {
+      const W = wx.getSystemInfoSync().windowWidth - 72
+      this.setData({ stepsChartOpen: true, stepsChartW: W }, () => {
+        this._drawGenericChart('uh-steps-chart', this.data.stepsHistory, 'steps', '', '#0ea5e9')
+      })
+    },
+    closeStepsChart() { this.setData({ stepsChartOpen: false }) },
+
+    openHrvChart() {
+      const W = wx.getSystemInfoSync().windowWidth - 72
+      this.setData({ hrvChartOpen: true, hrvChartW: W }, () => {
+        this._drawGenericChart('uh-hrv-chart', this.data.hrvHistory, 'hrv', 'ms', '#10b981')
+      })
+    },
+    closeHrvChart() { this.setData({ hrvChartOpen: false }) },
+
+    openStressChart() {
+      const W = wx.getSystemInfoSync().windowWidth - 72
+      this.setData({ stressChartOpen: true, stressChartW: W }, () => {
+        this._drawGenericChart('uh-stress-chart', this.data.stressHistory, 'stress', '', '#f97316')
+      })
+    },
+    closeStressChart() { this.setData({ stressChartOpen: false }) },
 
     onChooseAvatar(e) {
       const avatarUrl = e.detail?.avatarUrl

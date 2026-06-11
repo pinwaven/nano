@@ -1504,6 +1504,14 @@
   color: rgba(166, 196, 229, 0.45);
   letter-spacing: 0.02em;
 }
+.dt-metric-tappable {
+  position: relative;
+}
+.dt-metric-trend-hint {
+  font-size: 18rpx;
+  color: rgba(99, 117, 236, 0.55);
+  line-height: 1;
+}
 .dt-metric-divider {
   width: 1rpx;
   height: 44rpx;

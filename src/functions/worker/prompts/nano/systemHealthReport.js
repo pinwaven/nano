@@ -23,18 +23,23 @@ module.exports = (context) => {
 **类型 D — DOTS 原粒（彩色圆柱形营养微粒，直径约4mm，高约4mm）**
 - 用轻松、对话式的语气回应，1-2句话，鼓励用户在坚持服用
 
+**类型 E — 体重秤（显示体重数字的电子秤或机械秤）**
+- 识别屏幕或表盘上显示的体重数值和单位（kg 或 lb）
+- 若为 lb，直接填入显示数值并将 scale_unit 设为 "lb"，系统会自动转换
+
 ---
 
 **首先**，输出一个 JSON 代码块（用 \`\`\`json 和 \`\`\` 包裹）。对于类型 A 填入检测数据；对于类型 B/C，\`extracted\` 留空对象即可：
 \`\`\`json
 {
-  "content_type": "health_report 或 health_photo 或 food_photo 或 waven_dots",
+  "content_type": "health_report 或 health_photo 或 food_photo 或 waven_dots 或 scale_reading",
   "report_date": "YYYY-MM-DD 或 null",
   "extracted": {
     "<检测项英文key>": { "value": <数值>, "unit": "<单位>", "ref_range": "<参考范围>", "flag": "normal|high|low" }
   },
   "abnormal_items": ["异常项描述1"],
   "body_weight_kg": <体重数值或 null>,
+  "scale_unit": "kg 或 lb 或 null",
   "bmi": <BMI数值或 null>
 }
 \`\`\`
@@ -63,18 +68,23 @@ module.exports = (context) => {
 **Type D — DOTS** (small colorful cylinder-shaped nutrition pellets, ~4 mm diameter × 4 mm tall)
 - Reply casually in 1–2 sentences, encouraging the user for staying consistent with their DOTS
 
+**Type E — Weight scale** (a digital or analog scale showing a numeric weight reading)
+- Read the exact number displayed on the screen or dial; identify the unit (kg or lb)
+- If the unit is lb, record the raw displayed value and set scale_unit to "lb" — the system will convert it
+
 ---
 
 **First**, output a JSON code block (wrapped in \`\`\`json and \`\`\`). For Type A, fill in the extracted test data; for Type B/C, leave \`extracted\` as an empty object:
 \`\`\`json
 {
-  "content_type": "health_report or health_photo or food_photo or waven_dots",
+  "content_type": "health_report or health_photo or food_photo or waven_dots or scale_reading",
   "report_date": "YYYY-MM-DD or null",
   "extracted": {
     "<test_key>": { "value": <number>, "unit": "<str>", "ref_range": "<str>", "flag": "normal|high|low" }
   },
   "abnormal_items": ["description of abnormal item"],
   "body_weight_kg": <number or null>,
+  "scale_unit": "kg or lb or null",
   "bmi": <number or null>
 }
 \`\`\`

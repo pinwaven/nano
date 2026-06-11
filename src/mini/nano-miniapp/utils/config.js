@@ -15,7 +15,7 @@ switch (envVersion) {
 
 // Bump this before each preview upload so you can confirm the newest build is on device.
 // Format: MMDD-N (month+day, build number that day)
-const VERSION = '0607-3';
+const VERSION = '0611-2';
 const IS_DEV = envVersion === 'develop' || envVersion === 'trial';
 
 // Maps appid → channel config for brand-specific miniprograms.
