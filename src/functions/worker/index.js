@@ -798,6 +798,151 @@ async function handlePostInventoryStock(body) {
     }
 }
 
+// Address handlers
+function normalizeAddressBody(body = {}) {
+    return {
+        openid: body.openid || body.user_id,
+        contact_name: String(body.contact_name || '').trim(),
+        phone: String(body.phone || '').trim(),
+        province: String(body.province || '').trim(),
+        city: String(body.city || '').trim(),
+        district: String(body.district || '').trim(),
+        address_line1: String(body.address_line1 || body.address || '').trim(),
+        postal_code: body.postal_code == null ? '' : String(body.postal_code).trim(),
+        is_default: body.is_default === true,
+    };
+}
+
+function validateAddressPayload(address, requireOpenid = true) {
+    const missing = [];
+    if (requireOpenid && !address.openid) missing.push('openid');
+    for (const key of ['contact_name', 'phone', 'province', 'city', 'address_line1']) {
+        if (!address[key]) missing.push(key);
+    }
+    if (missing.length) {
+        return { success: false, error: `${missing.join(', ')} required`, statusCode: 400 };
+    }
+    return null;
+}
+
+async function clearDefaultAddress(userId) {
+    await pool.query('UPDATE user_addresses SET is_default = FALSE WHERE user_id = $1', [userId]);
+}
+
+async function handleGetAddresses(openid) {
+    if (!openid) return { success: false, error: 'openid is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `SELECT id, user_id, contact_name, phone, province, city, district,
+                    address_line1, postal_code, is_default, created_at, updated_at
+             FROM user_addresses
+             WHERE user_id = $1
+             ORDER BY is_default DESC, updated_at DESC`,
+            [openid]
+        );
+        return { success: true, addresses: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAddress(body) {
+    const address = normalizeAddressBody(body);
+    const invalid = validateAddressPayload(address);
+    if (invalid) return invalid;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('BEGIN');
+        if (address.is_default) await clearDefaultAddress(address.openid);
+        const result = await pool.query(
+            `INSERT INTO user_addresses
+               (user_id, contact_name, phone, province, city, district, address_line1, postal_code, is_default)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             RETURNING id, user_id, contact_name, phone, province, city, district,
+                       address_line1, postal_code, is_default, created_at, updated_at`,
+            [
+                address.openid,
+                address.contact_name,
+                address.phone,
+                address.province,
+                address.city,
+                address.district,
+                address.address_line1,
+                address.postal_code,
+                address.is_default,
+            ]
+        );
+        await pool.query('COMMIT');
+        return { success: true, address: result.rows[0] };
+    } catch (err) {
+        try { await pool.query('ROLLBACK'); } catch (rollbackErr) {}
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handlePutAddress(addressId, body) {
+    const address = normalizeAddressBody(body);
+    const invalid = validateAddressPayload(address);
+    if (invalid) return invalid;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('BEGIN');
+        if (address.is_default) await clearDefaultAddress(address.openid);
+        const result = await pool.query(
+            `UPDATE user_addresses
+             SET contact_name = $1,
+                 phone = $2,
+                 province = $3,
+                 city = $4,
+                 district = $5,
+                 address_line1 = $6,
+                 postal_code = $7,
+                 is_default = $8
+             WHERE user_id = $9 AND id = $10
+             RETURNING id, user_id, contact_name, phone, province, city, district,
+                       address_line1, postal_code, is_default, created_at, updated_at`,
+            [
+                address.contact_name,
+                address.phone,
+                address.province,
+                address.city,
+                address.district,
+                address.address_line1,
+                address.postal_code,
+                address.is_default,
+                address.openid,
+                addressId,
+            ]
+        );
+        if (result.rows.length === 0) {
+            await pool.query('ROLLBACK');
+            return { success: false, error: 'Address not found', statusCode: 404 };
+        }
+        await pool.query('COMMIT');
+        return { success: true, address: result.rows[0] };
+    } catch (err) {
+        try { await pool.query('ROLLBACK'); } catch (rollbackErr) {}
+        return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handleDeleteAddress(addressId, body = {}, query = {}) {
+    const openid = body.openid || body.user_id || query.openid || query.user_id;
+    if (!openid) return { success: false, error: 'openid is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            'DELETE FROM user_addresses WHERE user_id = $1 AND id = $2',
+            [openid, addressId]
+        );
+        if (result.rowCount === 0) return { success: false, error: 'Address not found', statusCode: 404 };
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 // ── Commission & Rewards handlers ─────────────────────────────────────────────
 
 async function handleGetCommissionSettings() {
@@ -1636,6 +1781,77 @@ async function handleDeleteChannelInventory(id, adminCtx) {
     }
 }
 
+async function handleConfirmReceipt(orderId, body = {}) {
+    const openid = body.openid || body.user_id;
+    if (!openid) return { success: false, error: 'openid is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `UPDATE orders
+             SET status = 'delivered',
+                 delivered_at = COALESCE(delivered_at, NOW())
+             WHERE id = $1 AND user_id = $2 AND status = 'shipped'
+             RETURNING id, user_id, status`,
+            [orderId, openid]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Order not found or not shippable', statusCode: 404 };
+        await pool.query(
+            `UPDATE transactions
+             SET status = 'delivered',
+                 updated_at = NOW()
+             WHERE order_id = $1`,
+            [orderId]
+        );
+        return { success: true, order: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleLabOrderSync(orderId, body = {}) {
+    const openid = body.openid || body.user_id;
+    const labName = String(body.lab_name || '').trim();
+    const barcode = String(body.barcode || '').trim();
+    if (!openid || !labName || !barcode) {
+        return { success: false, error: 'openid, lab_name and barcode are required', statusCode: 400 };
+    }
+    const transactionMetadata = {
+        lab_order_id: body.lab_order_id || body.order_id || null,
+        external_order_id: body.external_order_id || null,
+        barcode,
+        empty_stomach: body.empty_stomach === true,
+    };
+    const orderMetadata = {
+        lab_order: {
+            ...transactionMetadata,
+            lab_name: labName,
+        },
+    };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const result = await pool.query(
+            `UPDATE orders
+             SET status = 'testing',
+                 metadata = metadata || $3::jsonb
+             WHERE id = $1 AND user_id = $2 AND order_type = 'lab' AND status IN ('delivered', 'testing')
+             RETURNING id, user_id, status`,
+            [orderId, openid, JSON.stringify(orderMetadata)]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Order not found or not ready for lab order', statusCode: 404 };
+        await pool.query(
+            `UPDATE transactions
+             SET status = 'testing',
+                 metadata = metadata || $2::jsonb,
+                 updated_at = NOW()
+             WHERE order_id = $1`,
+            [orderId, JSON.stringify(transactionMetadata)]
+        );
+        return { success: true, order: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handlePutOrder(orderId, body, adminCtx) {
     const { status, shipping_carrier, tracking_number, fulfillment_notes, fulfilled_assets, payment_status } = body;
     try {
@@ -1935,6 +2151,156 @@ async function handlePostOrderBatch(body) {
     } catch (err) {
         await client.query('ROLLBACK');
         return { success: false, error: err.message, statusCode: err.statusCode || 500 };
+    } finally {
+        client.release();
+    }
+}
+
+async function handlePostLabCheckout(body) {
+    const { openid, labName, addressId, goods } = normalizeLabCheckout(body);
+    if (!openid || !labName || !addressId) {
+        return { success: false, error: 'openid, lab_name and address_id are required', statusCode: 400 };
+    }
+    if (goods.length === 0) {
+        return { success: false, error: 'goods must include at least one sku', statusCode: 400 };
+    }
+    if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const addressResult = await client.query(
+            `SELECT id, contact_name, phone, province, city, district, address_line1, postal_code
+             FROM user_addresses
+             WHERE user_id = $1 AND id = $2`,
+            [openid, addressId]
+        );
+        if (addressResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return { success: false, error: 'Address not found', statusCode: 404 };
+        }
+        const address = addressResult.rows[0];
+
+        const skus = goods.map(g => g.sku);
+        const quantityBySku = new Map(goods.map(g => [g.sku, g.quantity]));
+        const productResult = await client.query(
+            `SELECT id, lab_name, sku, name_zh, name_en, unit_zh, unit_en, price_cny, price_usd
+             FROM lab_products
+             WHERE lab_name = $1 AND sku = ANY($2::text[]) AND active = TRUE
+             ORDER BY array_position($2::text[], sku)`,
+            [labName, skus]
+        );
+        if (productResult.rows.length !== goods.length) {
+            await client.query('ROLLBACK');
+            return { success: false, error: 'One or more lab products are not available', statusCode: 404 };
+        }
+
+        const lines = productResult.rows.map(product => {
+            const quantity = quantityBySku.get(product.sku) || 1;
+            const unitCny = Number(product.price_cny || 0);
+            const unitUsd = product.price_usd == null ? null : Number(product.price_usd);
+            return {
+                ...product,
+                quantity,
+                total_amount_cny: unitCny * quantity,
+                total_amount_usd: unitUsd == null ? null : unitUsd * quantity,
+            };
+        });
+        const totalCny = lines.reduce((sum, line) => sum + line.total_amount_cny, 0);
+        const totalUsd = lines.some(line => line.total_amount_usd == null)
+            ? null
+            : lines.reduce((sum, line) => sum + line.total_amount_usd, 0);
+        const totalQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
+        const source = 'lab_checkout';
+
+        const orderResult = await client.query(
+            `INSERT INTO orders
+               (user_id, item_id, item_key, quantity, price_cny, price_usd, order_type, status,
+                address_id, shipping_contact, total_amount_cny, total_amount_usd, source, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14::jsonb)
+             RETURNING id`,
+            [
+                openid,
+                null,
+                `lab:${labName}`,
+                totalQuantity,
+                totalCny / 100,
+                totalUsd == null ? null : totalUsd / 100,
+                'lab',
+                'pending',
+                address.id,
+                JSON.stringify(address),
+                totalCny,
+                totalUsd,
+                source,
+                JSON.stringify({ lab_name: labName, goods: skus }),
+            ]
+        );
+        const orderId = orderResult.rows[0].id;
+
+        await client.query(
+            `INSERT INTO transactions
+               (order_id, user_id, source, lab_name, sku, quantity, item_ref,
+                name_zh, name_en, unit_zh, unit_en, unit_amount_cny, total_amount_cny,
+                unit_amount_usd, total_amount_usd, status, metadata)
+             SELECT $1, $2, $3, $4, sku, quantity, item_ref,
+                    name_zh, name_en, unit_zh, unit_en, unit_amount_cny, total_amount_cny,
+                    unit_amount_usd, total_amount_usd, 'pending', metadata
+             FROM unnest(
+                    $5::text[], $6::int[], $7::text[], $8::text[], $9::text[],
+                    $10::text[], $11::text[], $12::int[], $13::int[], $14::int[], $15::int[], $16::jsonb[]
+                  ) AS line(sku, quantity, item_ref, name_zh, name_en, unit_zh, unit_en,
+                            unit_amount_cny, total_amount_cny, unit_amount_usd, total_amount_usd, metadata)`,
+            [
+                orderId,
+                openid,
+                source,
+                labName,
+                lines.map(line => line.sku),
+                lines.map(line => line.quantity),
+                lines.map(line => String(line.id)),
+                lines.map(line => line.name_zh),
+                lines.map(line => line.name_en),
+                lines.map(line => line.unit_zh || ''),
+                lines.map(line => line.unit_en || ''),
+                lines.map(line => Number(line.price_cny || 0)),
+                lines.map(line => line.total_amount_cny),
+                lines.map(line => line.price_usd == null ? null : Number(line.price_usd)),
+                lines.map(line => line.total_amount_usd),
+                lines.map(line => JSON.stringify({ lab_product_id: line.id })),
+            ]
+        );
+
+        await client.query('COMMIT');
+        return {
+            success: true,
+            order: {
+                id: orderId,
+                user_id: openid,
+                lab_name: labName,
+                quantity: totalQuantity,
+                total_amount_cny: totalCny,
+                total_amount_usd: totalUsd,
+                status: 'pending',
+            },
+            transactions: lines.map(line => ({
+                source,
+                lab_name: labName,
+                sku: line.sku,
+                quantity: line.quantity,
+                name_zh: line.name_zh,
+                name_en: line.name_en,
+                unit_amount_cny: Number(line.price_cny || 0),
+                total_amount_cny: line.total_amount_cny,
+                unit_amount_usd: line.price_usd == null ? null : Number(line.price_usd),
+                total_amount_usd: line.total_amount_usd,
+                status: 'pending',
+            })),
+        };
+    } catch (err) {
+        try { await client.query('ROLLBACK'); } catch (rollbackErr) {}
+        return { success: false, error: err.detail || err.message };
     } finally {
         client.release();
     }
@@ -6635,7 +7001,7 @@ async function handlePostHealthAdvice(body) {
         const bioageProfile = latestBio?.data?.bioage_profile || null;
         const estimatedBm = latestBio?.data?.estimated || {};
         const actualBm = latestBio?.data?.actual || {};
-        const biomarkers = estimatedBm;
+        const biomarkers = { ...estimatedBm, ...actualBm };
         const subAges = bioageProfile?.SubAges || {};
         const bioAge = bioageProfile?.BioAge ?? null;
         const age = calculateAge(user.birth_date);
@@ -9478,6 +9844,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetDotsInventory();
             } else if (path.includes('/channel-inventory')) {
                 result = await handleGetChannelInventory(query, adminCtx);
+            } else if (path === '/addresses') {
+                result = await handleGetAddresses(query.openid || query.user_id);
             } else if (path.includes('/skus')) {
                 result = await handleGetSkus();
             } else if (path.includes('/inventory-stock')) {
@@ -9690,6 +10058,16 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostOrder(parsedBody);
             } else if (path.includes('/dots')) {
                 result = await handlePostDots(parsedBody);
+            } else if (path === '/addresses') {
+                result = await handlePostAddress(parsedBody);
+            } else if (path.match(/^\/orders\/([^/]+)\/confirm-receipt$/)) {
+                const orderId = path.match(/^\/orders\/([^/]+)\/confirm-receipt$/)[1];
+                result = await handleConfirmReceipt(orderId, parsedBody);
+            } else if (path.match(/^\/orders\/([^/]+)\/lab-order-sync$/)) {
+                const orderId = path.match(/^\/orders\/([^/]+)\/lab-order-sync$/)[1];
+                result = await handleLabOrderSync(orderId, parsedBody);
+            } else if (path === '/lab-orders/checkout') {
+                result = await handlePostLabCheckout(parsedBody);
             } else if (path === '/users') {
                 result = requireAdminTab(adminCtx, 'users') || await handlePostUsers(parsedBody);
             } else if (path.includes('/kone-apk-releases')) {
@@ -9854,6 +10232,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/channels\/(\d+)\/admin-tabs$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/admin-tabs$/)[1];
                 result = await handlePutChannelAdminTabs(channelId, parsedBody, adminCtx);
+            } else if (path.match(/^\/addresses\/(\d+)$/)) {
+                const addressId = path.match(/^\/addresses\/(\d+)$/)[1];
+                result = await handlePutAddress(addressId, parsedBody);
             } else if (path.match(/\/channels\/(\d+)\/rewards-config$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/rewards-config$/)[1];
                 result = await handlePutChannelRewardsConfig(channelId, parsedBody, adminCtx);
@@ -10086,6 +10467,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/lab-user-mappings\/(\d+)/)) {
                 const mid = path.match(/\/lab-user-mappings\/(\d+)/)[1];
                 result = await handleDeleteLabUserMapping(mid);
+            } else if (path.match(/^\/addresses\/(\d+)$/)) {
+                const addressId = path.match(/^\/addresses\/(\d+)$/)[1];
+                result = await handleDeleteAddress(addressId, parsedBody, query);
             } else if (path.match(/\/event-signups\/(\d+)/)) {
                 const evId = path.match(/\/event-signups\/(\d+)/)[1];
                 result = requirePermission(adminCtx, 'events:write') || await handleDeleteEventSignup(evId, query.user_id);

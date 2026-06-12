@@ -136,6 +136,45 @@ const T = {
     storeCartItems: '件商品', storeCartEmpty: '购物车是空的',
     toolFormulaDots: '营养定制',
     toolTestChip: '检测服务',
+    addressManage: '地址管理',
+    addressNone: '请先添加联系地址',
+    addressDefault: '默认地址',
+    addressMissingTitle: '需要联系地址',
+    addressMissingMsg: '添加地址后可继续下单。',
+    addressAddNow: '去添加',
+    toolFormulaDots: '营养定制',
+    toolTestChip: '检测服务',
+    kinoTestOption: 'Kino检测',
+    labServicesTitle: '第三方检测服务',
+    labServicesLoading: '正在加载检测服务…',
+    labServicesEmpty: '暂无可预约的检测服务',
+    labServiceProducts: '项可选项目',
+    labServiceNext: '选择项目将在下一步开放',
+    labProductsLoading: '正在加载项目…',
+    labProductsEmpty: '暂无可预约项目',
+    labCheckoutTitle: '选择检测项目',
+    labCheckoutAddress: '联系地址',
+    labCheckoutSelected: '已选',
+    labCheckoutTotal: '合计',
+    labCheckoutSubmitNext: '提交订单',
+    labCheckoutNeedGoods: '请先选择检测项目',
+    labCheckoutNeedAddress: '请先添加联系地址',
+    labCheckoutReady: '订单已创建，请继续支付',
+    labCheckoutPaid: '支付已完成',
+    labCheckoutPayError: '支付未完成，请稍后在订单中继续',
+    orderConfirmReceipt: '确认收货',
+    orderStartLabTest: '开始检测',
+    orderReceiptDone: '已确认收货',
+    labTestScanCode: '请扫描检测条码',
+    labTestEmptyTitle: '是否空腹？',
+    labTestEmptyMsg: '请选择本次取样状态。',
+    labTestEmptyYes: '空腹',
+    labTestEmptyNo: '非空腹',
+    labTestSampleTitle: '取样',
+    labTestSampleMsg: '请完成取样后继续提交检测订单。',
+    labTestSampleDone: '已取样',
+    labTestOrderDone: '检测订单已提交',
+    labTestOrderError: '检测订单提交失败，请重试',
     toolHealthAdvice: '健康管理',
     toolUploadImage: '上传图片',
     imageUploading: '正在上传图片…',
@@ -210,8 +249,8 @@ const T = {
     eventsCancel: '取消报名', eventsFull: '已满', eventsEmpty: '暂无线下活动',
     eventsLocation: '地点', eventsCapacity: '名额', eventsLoading: '加载中…',
     orderStatus: {
-      pending: '待处理', confirmed: '已确认', shipped: '已发货',
-      delivered: '已送达', cancelled: '已取消',
+      pending: '待处理', paid: '已支付', confirmed: '已确认', shipped: '已发货',
+      delivered: '已送达', testing: '检测中', cancelled: '已取消',
     },
   },
   en: {
@@ -298,6 +337,45 @@ const T = {
     storeCartItems: ' items', storeCartEmpty: 'Cart is empty',
     toolFormulaDots: 'Formulate Dots',
     toolTestChip: 'Use Kino Chip',
+    addressManage: 'Addresses',
+    addressNone: 'Add a contact address first',
+    addressDefault: 'Default address',
+    addressMissingTitle: 'Address needed',
+    addressMissingMsg: 'Add an address to continue checkout.',
+    addressAddNow: 'Add now',
+    toolFormulaDots: 'Formulate Dots',
+    toolTestChip: 'Use Kino Chip',
+    kinoTestOption: 'Kino Test',
+    labServicesTitle: 'Lab Services',
+    labServicesLoading: 'Loading lab services...',
+    labServicesEmpty: 'No lab services available',
+    labServiceProducts: 'available tests',
+    labServiceNext: 'Product selection opens next',
+    labProductsLoading: 'Loading tests...',
+    labProductsEmpty: 'No tests available',
+    labCheckoutTitle: 'Choose Lab Tests',
+    labCheckoutAddress: 'Contact Address',
+    labCheckoutSelected: 'Selected',
+    labCheckoutTotal: 'Total',
+    labCheckoutSubmitNext: 'Submit Order',
+    labCheckoutNeedGoods: 'Choose at least one test',
+    labCheckoutNeedAddress: 'Add a contact address first',
+    labCheckoutReady: 'Order created. Continue to payment.',
+    labCheckoutPaid: 'Payment completed',
+    labCheckoutPayError: 'Payment was not completed. Continue later from orders.',
+    orderConfirmReceipt: 'Confirm Receipt',
+    orderStartLabTest: 'Start Test',
+    orderReceiptDone: 'Receipt confirmed',
+    labTestScanCode: 'Scan the lab barcode',
+    labTestEmptyTitle: 'Fasting?',
+    labTestEmptyMsg: 'Choose the sample state for this test.',
+    labTestEmptyYes: 'Fasting',
+    labTestEmptyNo: 'Not fasting',
+    labTestSampleTitle: 'Sample',
+    labTestSampleMsg: 'Complete sampling before submitting the lab order.',
+    labTestSampleDone: 'Sampled',
+    labTestOrderDone: 'Lab order submitted',
+    labTestOrderError: 'Lab order failed. Please try again.',
     toolHealthAdvice: 'Health Advice',
     toolUploadImage: 'Upload Image',
     imageUploading: 'Uploading image…',
@@ -372,8 +450,8 @@ const T = {
     eventsCancel: 'Cancel Registration', eventsFull: 'Full', eventsEmpty: 'No events available',
     eventsLocation: 'Location', eventsCapacity: 'Spots', eventsLoading: 'Loading…',
     orderStatus: {
-      pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
-      delivered: 'Delivered', cancelled: 'Cancelled',
+      pending: 'Pending', paid: 'Paid', confirmed: 'Confirmed', shipped: 'Shipped',
+      delivered: 'Delivered', testing: 'Testing', cancelled: 'Cancelled',
     },
   }
 }
@@ -658,11 +736,22 @@ function mapStoreOrders(rawOrders, lang) {
   return rawOrders.map(o => ({
     id: o.id,
     shortId: o.id.slice(0, 8),
-    name: lang === 'zh' ? (o.name_zh || o.item_key) : (o.name_en || o.item_key),
+    name: o.order_type === 'lab' && Array.isArray(o.transactions) && o.transactions.length
+      ? o.transactions.map(tx => lang === 'zh' ? tx.name_zh : tx.name_en).filter(Boolean).join('、')
+      : (lang === 'zh' ? (o.name_zh || o.item_key) : (o.name_en || o.item_key)),
     unit: lang === 'zh' ? o.unit_zh : o.unit_en,
     quantity: o.quantity,
     price: lang === 'zh' ? `¥${o.price_cny}` : `$${o.price_usd}`,
     status: o.status,
+    paymentStatus: o.payment_status || null,
+    orderType: o.order_type || 'store',
+    labName: o.order_type === 'lab'
+      ? ((Array.isArray(o.transactions) && o.transactions[0] && o.transactions[0].lab_name) || String(o.item_key || '').replace(/^lab:/, ''))
+      : null,
+    goods: Array.isArray(o.transactions) ? o.transactions.map(tx => tx.sku).filter(Boolean) : [],
+    canConfirmReceipt: o.status === 'shipped',
+    canStartLabTest: o.order_type === 'lab' && o.status === 'delivered',
+    trackingNumber: o.tracking_number || null,
     createdAt: new Date(o.created_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US'),
     shippingName: o.shipping_name || '',
     shippingPhone: o.shipping_phone || '',
@@ -674,6 +763,67 @@ function mapStoreOrders(rawOrders, lang) {
     shippedAt: o.shipped_at ? new Date(o.shipped_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US') : '',
     deliveredAt: o.delivered_at ? new Date(o.delivered_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US') : '',
   }))
+}
+
+function mapAddresses(rawAddresses) {
+  return rawAddresses.map(a => ({
+    ...a,
+    summary: `${a.contact_name} ${a.phone}`,
+    detail: `${a.province || ''} ${a.city || ''} ${a.district || ''} ${a.address_line1 || ''}`.replace(/\s+/g, ' ').trim(),
+  }))
+}
+
+function mapLabServices(rawServices, lang) {
+  return rawServices.map(s => ({
+    id: s.id,
+    lab_name: s.lab_name,
+    label: s.label || s.lab_name,
+    productCount: Number(s.product_count || 0),
+    productText: lang === 'zh'
+      ? `${Number(s.product_count || 0)}项可选项目`
+      : `${Number(s.product_count || 0)} available tests`,
+  }))
+}
+
+function formatLabPrice(product, lang) {
+  const cny = product.price_cny != null ? product.price_cny : product.priceCny
+  const cents = Number(cny || 0)
+  const amount = cents / 100
+  return `¥${amount.toFixed(2)}`
+}
+
+function mapLabProducts(rawProducts, lang, selectedIds = []) {
+  const selected = new Set(selectedIds.map(id => String(id)))
+  return rawProducts.map(p => {
+    const name = lang === 'zh' ? (p.name_zh || p.name_en || p.name || p.sku) : (p.name_en || p.name_zh || p.name || p.sku)
+    const desc = lang === 'zh' ? (p.desc_zh || p.desc_en || p.desc || '') : (p.desc_en || p.desc_zh || p.desc || '')
+    const unit = lang === 'zh' ? (p.unit_zh || p.unit_en || p.unit || '') : (p.unit_en || p.unit_zh || p.unit || '')
+    return {
+      id: p.id,
+      lab_name: p.lab_name,
+      sku: p.sku,
+      upc: p.upc,
+      name,
+      desc,
+      unit,
+      priceCny: Number(p.price_cny != null ? p.price_cny : (p.priceCny || 0)),
+      priceUsd: Number(p.price_usd != null ? p.price_usd : (p.priceUsd || 0)),
+      priceText: formatLabPrice(p, lang),
+      selected: selected.has(String(p.id)),
+    }
+  })
+}
+
+function buildLabCheckoutState(products, selectedIds, lang) {
+  const selected = new Set(selectedIds.map(id => String(id)))
+  const selectedProducts = products.filter(p => selected.has(String(p.id)))
+  const totalCents = selectedProducts.reduce((sum, p) => {
+    return sum + Number(p.priceCny || 0)
+  }, 0)
+  return {
+    selectedLabProducts: selectedProducts,
+    labCheckoutTotalText: `¥${(totalCents / 100).toFixed(2)}`,
+  }
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -693,6 +843,18 @@ Page({
     toolboxOpen: false,
     toolList: [],
     kinoScanPending: false,
+    labServicesVisible: false,
+    labServicesLoading: false,
+    labServices: [],
+    labProductSheetOpen: false,
+    labProductLoading: false,
+    selectedLabService: null,
+    labProducts: [],
+    selectedLabProductIds: [],
+    selectedLabProducts: [],
+    labCheckoutTotalText: '¥0.00',
+    labCheckoutBusy: false,
+    orderActionBusyId: null,
 
     // Kino Simulator passcode
     kinoPassOpen: false,
@@ -786,6 +948,9 @@ Page({
     storeRefreshing: false,
     storeItems: [],
     storeOrders: [],
+    storeAddresses: [],
+    selectedStoreAddressId: null,
+    selectedStoreAddress: null,
     storeSubTab: 'products',
     cart: [],
     cartMap: {},
@@ -862,6 +1027,7 @@ Page({
     this._loadDots(user, lang)
     this._loadCartridges(user, lang)
     this._loadStore(user, lang)
+    this._loadLabServices(false)
     this._loadCreditBalance(user)
   },
 
@@ -874,6 +1040,14 @@ Page({
       this._loadCreditBalance(user)
       // Check for questionnaires assigned while the user was away
       if (obStep === 'done') this._checkForPendingQuestionnaire()
+      this._loadAddresses(user)
+      const pendingItem = wx.getStorageSync('nano_pending_checkout_item')
+      const addressReady = wx.getStorageSync('nano_checkout_address_ready')
+      if (pendingItem && addressReady === '1') {
+        wx.removeStorageSync('nano_checkout_address_ready')
+        wx.removeStorageSync('nano_pending_checkout_item')
+        setTimeout(() => this._confirmBuyItem(pendingItem), 250)
+      }
     }
   },
 
@@ -1442,6 +1616,7 @@ Page({
       setTimeout(() => {
         this._addMsg('ai', t.phonePromptMsg)
         this._addActionMsg('bind_phone', t.phonePromptBtn)
+        // this._addActionMsg('maybe_later', t.phoneMaybeLater)
       }, 800)
     }
     this._startPolling(user)
@@ -1518,6 +1693,7 @@ Page({
       setTyping: (v) => this.setData({ typing: v }),
     }
     if (action === 'test_chip') {
+      this._loadLabServices(true, true)
       this._addMsg('ai', t.kinoScanPrompt)
       this.setData({ kinoScanPending: true })
     } else if (action === 'formula_dots') {
@@ -1557,6 +1733,8 @@ Page({
       this.setData({ tab: 'dots', dotsLoading: true, cartridgesLoading: true })
       this._loadDots(user, lang)
       this._loadCartridges(user, lang)
+    } else if (action === 'maybe_later') {
+      this._removePhonePrompt()
     }
   },
 
@@ -1583,7 +1761,7 @@ Page({
   },
 
   cancelKinoScan() {
-    this.setData({ kinoScanPending: false })
+    this.setData({ kinoScanPending: false, labServicesVisible: false, labProductSheetOpen: false })
   },
 
   handleKinoScan() {
@@ -1593,6 +1771,215 @@ Page({
       addMsg: (role, content, persist) => this._addMsg(role, content, persist),
       req: (url, method, data) => this._req(url, method, data),
       setTyping: (v) => this.setData({ typing: v }),
+    })
+  },
+
+  _startKinoTestFlow() {
+    const { t } = this.data
+    this._addMsg('ai', t.kinoScanPrompt)
+    this.setData({ kinoScanPending: true, labServicesVisible: false, labProductSheetOpen: false })
+  },
+
+  async _loadLabServices(visible = false, fallbackToKino = false) {
+    const { lang } = this.data
+    this.setData({ labServicesLoading: true, labServicesVisible: visible || this.data.labServicesVisible })
+    try {
+      const res = await this._req(`${BASE}/lab/services`)
+      const services = mapLabServices(res.data?.services || [], lang)
+      if (visible && fallbackToKino && services.length === 0) {
+        this.setData({ labServices: [], labServicesLoading: false, labServicesVisible: false })
+        this._startKinoTestFlow()
+        return
+      }
+      this.setData({
+        labServices: services,
+        labServicesLoading: false,
+        labServicesVisible: services.length > 0 && (visible || this.data.labServicesVisible),
+      })
+    } catch (e) {
+      this.setData({ labServices: [], labServicesLoading: false, labServicesVisible: false })
+      if (visible && fallbackToKino) this._startKinoTestFlow()
+    }
+  },
+
+  handleKinoServiceTap() {
+    this._startKinoTestFlow()
+  },
+
+  async _loadLabProducts(labName) {
+    const { lang } = this.data
+    this.setData({ labProductLoading: true, labProducts: [], selectedLabProductIds: [], selectedLabProducts: [] })
+    try {
+      const res = await this._req(`${BASE}/lab/products?lab_name=${encodeURIComponent(labName)}`)
+      const products = mapLabProducts(res.data?.products || [], lang)
+      const checkoutState = buildLabCheckoutState(products, [], lang)
+      this.setData({ labProducts: products, labProductLoading: false, ...checkoutState })
+    } catch (e) {
+      this.setData({ labProducts: [], labProductLoading: false })
+    }
+  },
+
+  async handleLabServiceTap(e) {
+    if (this.data.isGuest) { this.openGuestSheet(); return }
+    const labName = e.currentTarget.dataset.lab
+    const service = this.data.labServices.find(s => s.lab_name === labName)
+    if (!service) return
+    this.setData({
+      selectedLabService: service,
+      labProductSheetOpen: true,
+      selectedLabProductIds: [],
+      selectedLabProducts: [],
+      labCheckoutTotalText: '¥0.00',
+    })
+    await Promise.all([
+      this._loadLabProducts(labName),
+      this._loadAddresses(this.data.user),
+    ])
+  },
+
+  closeLabProductSheet() {
+    this.setData({ labProductSheetOpen: false })
+  },
+
+  noop() {},
+
+  toggleLabProduct(e) {
+    const id = String(e.currentTarget.dataset.id)
+    const selected = new Set(this.data.selectedLabProductIds.map(v => String(v)))
+    if (selected.has(id)) selected.delete(id)
+    else selected.add(id)
+    const selectedLabProductIds = Array.from(selected)
+    const labProducts = mapLabProducts(this.data.labProducts, this.data.lang, selectedLabProductIds)
+    const checkoutState = buildLabCheckoutState(labProducts, selectedLabProductIds, this.data.lang)
+    this.setData({ selectedLabProductIds, labProducts, ...checkoutState })
+  },
+
+  async submitLabCheckout() {
+    const { t, user, selectedLabProductIds, selectedStoreAddress, selectedLabService, selectedLabProducts, labCheckoutBusy } = this.data
+    if (labCheckoutBusy) return
+    if (selectedLabProductIds.length === 0) {
+      wx.showToast({ title: t.labCheckoutNeedGoods, icon: 'none' })
+      return
+    }
+    await this._loadAddresses(user)
+    const address = this.data.selectedStoreAddress || selectedStoreAddress
+    if (!address) {
+      wx.showModal({
+        title: t.addressMissingTitle,
+        content: t.labCheckoutNeedAddress,
+        confirmText: t.addressAddNow,
+        confirmColor: '#6375EC',
+        success: (res) => {
+          if (!res.confirm) return
+          wx.navigateTo({ url: '/pages/address/address?mode=checkout' })
+        }
+      })
+      return
+    }
+    this.setData({ labCheckoutBusy: true })
+    try {
+      const res = await this._req(`${BASE}/api/lab-orders/checkout`, 'POST', {
+        openid: user.user_id,
+        lab_name: selectedLabService?.lab_name,
+        goods: selectedLabProducts.map(p => ({ sku: p.sku, quantity: 1 })),
+        address_id: address.id,
+      })
+      const order = res.data?.order || {}
+      wx.setStorageSync('nano_pending_lab_checkout', {
+        order_id: order.id,
+        lab_name: selectedLabService?.lab_name,
+        goods: selectedLabProducts.map(p => ({ sku: p.sku, name: p.name, price_cny: p.priceCny, price_usd: p.priceUsd })),
+        address_id: address.id,
+      })
+      wx.showToast({ title: t.labCheckoutReady, icon: 'none' })
+      if (order.id && order.total_amount_cny) {
+        await this._createLabPayment(order, selectedLabService, selectedLabProducts)
+      }
+      this.setData({ labProductSheetOpen: false, storeSubTab: 'orders' })
+      await this._loadStoreOrders(user, this.data.lang)
+    } catch (e) {
+      wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
+    } finally {
+      this.setData({ labCheckoutBusy: false })
+    }
+  },
+
+  async _createLabPayment(order, service, products) {
+    const { t, user } = this.data
+    try {
+      const subject = service?.label || products.map(p => p.name).join('、') || 'Lab checkout'
+      const payRes = await this._req(`${BASE}/payment/orders`, 'POST', {
+        business_order_id: order.id,
+        user_id: user.user_id,
+        provider: 'wechat',
+        scene: 'mini_program',
+        currency: 'CNY',
+        amount_minor: Number(order.total_amount_cny),
+        subject,
+        description: products.map(p => p.name).join('、'),
+        openid: user.external_id || user.openid || user.user_id,
+        idempotency_key: `lab-${order.id}`,
+      })
+      const payload = payRes.data?.data?.payment_payload || payRes.data?.payment_payload
+      if (payload && payload.type === 'mini_program' && payload.paySign) {
+        await this._requestPayment(payload)
+        wx.showToast({ title: t.labCheckoutPaid, icon: 'success' })
+      }
+    } catch (e) {
+      wx.showToast({ title: t.labCheckoutPayError, icon: 'none', duration: 2500 })
+    }
+  },
+
+  _requestPayment(payload) {
+    return new Promise((resolve, reject) => {
+      wx.requestPayment({
+        timeStamp: payload.timeStamp || payload.timestamp,
+        nonceStr: payload.nonceStr || payload.nonce_str,
+        package: payload.package,
+        signType: payload.signType || payload.sign_type || 'RSA',
+        paySign: payload.paySign || payload.pay_sign,
+        success: resolve,
+        fail: reject,
+      })
+    })
+  },
+
+  _scanCode() {
+    return new Promise((resolve, reject) => {
+      wx.scanCode({
+        onlyFromCamera: true,
+        success: (res) => resolve(res.result),
+        fail: reject,
+      })
+    })
+  },
+
+  _chooseLabEmptyStomach() {
+    const { t } = this.data
+    return new Promise((resolve) => {
+      wx.showModal({
+        title: t.labTestEmptyTitle,
+        content: t.labTestEmptyMsg,
+        confirmText: t.labTestEmptyYes,
+        cancelText: t.labTestEmptyNo,
+        confirmColor: '#6375EC',
+        success: (res) => resolve(res.confirm === true),
+        fail: () => resolve(false),
+      })
+    })
+  },
+
+  _confirmLabSample() {
+    const { t } = this.data
+    return new Promise((resolve) => {
+      wx.showModal({
+        title: t.labTestSampleTitle,
+        content: t.labTestSampleMsg,
+        confirmText: t.labTestSampleDone,
+        confirmColor: '#6375EC',
+        success: (res) => resolve(res.confirm === true),
+        fail: () => resolve(false),
+      })
     })
   },
 
@@ -1926,8 +2313,24 @@ Page({
     } catch (e) {
       this.setData({ storeLoading: false })
     }
+    await this._loadAddresses(user)
     await this._loadStoreOrders(user, lang)
   },
+
+  async _loadAddresses(user) {
+    try {
+      const res = await this._req(`${BASE}/api/addresses?openid=${encodeURIComponent(user.user_id)}`)
+      const addresses = mapAddresses(res.data?.addresses || [])
+      const selected = addresses.find(a => a.id === this.data.selectedStoreAddressId)
+      const defaultAddress = selected || addresses.find(a => a.is_default) || addresses[0] || null
+      this.setData({
+        storeAddresses: addresses,
+        selectedStoreAddressId: defaultAddress ? defaultAddress.id : null,
+        selectedStoreAddress: defaultAddress,
+      })
+    } catch (e) {}
+  },
+
 
   async _loadCreditBalance(user) {
     if (!user?.user_id) return
@@ -1950,6 +2353,114 @@ Page({
 
   switchStoreTab(e) {
     this.setData({ storeSubTab: e.currentTarget.dataset.tab })
+  },
+
+  openAddressManager() {
+    wx.navigateTo({ url: '/pages/address/address' })
+  },
+
+  chooseStoreAddress() {
+    const { storeAddresses } = this.data
+    if (storeAddresses.length === 0) {
+      wx.navigateTo({ url: '/pages/address/address?mode=checkout' })
+      return
+    }
+    wx.showActionSheet({
+      itemList: storeAddresses.map(a => `${a.contact_name} ${a.phone}`),
+      success: (res) => {
+        const address = storeAddresses[res.tapIndex]
+        if (address) this.setData({ selectedStoreAddressId: address.id, selectedStoreAddress: address })
+      },
+      fail: () => {},
+    })
+  },
+
+  async handleConfirmReceipt(e) {
+    const { user, lang, t, orderActionBusyId } = this.data
+    const order = e.currentTarget.dataset.order
+    if (!order || orderActionBusyId) return
+    this.setData({ orderActionBusyId: order.id })
+    try {
+      await this._req(`${BASE}/api/orders/${order.id}/confirm-receipt`, 'POST', {
+        openid: user.user_id,
+      })
+      wx.showToast({ title: t.orderReceiptDone, icon: 'success' })
+      await this._loadStoreOrders(user, lang)
+    } catch (err) {
+      wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
+    } finally {
+      this.setData({ orderActionBusyId: null })
+    }
+  },
+
+  async handleStartLabOrder(e) {
+    const { user, lang, t, orderActionBusyId } = this.data
+    const order = e.currentTarget.dataset.order
+    if (!order || orderActionBusyId) return
+    if (!order.labName || !order.goods || order.goods.length === 0) {
+      wx.showToast({ title: t.labTestOrderError, icon: 'none', duration: 2500 })
+      return
+    }
+    try {
+      wx.showToast({ title: t.labTestScanCode, icon: 'none' })
+      const barcode = await this._scanCode()
+      if (!barcode) return
+      const emptyStomach = await this._chooseLabEmptyStomach()
+      const sampled = await this._confirmLabSample()
+      if (!sampled) return
+      this.setData({ orderActionBusyId: order.id })
+      const labRes = await this._req(`${BASE}/lab/order`, 'POST', {
+        user_id: user.user_id,
+        lab_name: order.labName,
+        payload: {
+          goods: order.goods,
+          barcode,
+          empty_stomach: emptyStomach,
+        },
+      })
+      const labOrder = labRes.data?.order || {}
+      await this._req(`${BASE}/api/orders/${order.id}/lab-order-sync`, 'POST', {
+        openid: user.user_id,
+        lab_name: order.labName,
+        lab_order_id: labOrder.id,
+        external_order_id: labOrder.external_order_id,
+        barcode,
+        empty_stomach: emptyStomach,
+      })
+      wx.showToast({ title: t.labTestOrderDone, icon: 'success' })
+      await this._loadStoreOrders(user, lang)
+    } catch (err) {
+      wx.showToast({ title: t.labTestOrderError, icon: 'none', duration: 2500 })
+    } finally {
+      this.setData({ orderActionBusyId: null })
+    }
+  },
+
+  handleBuyItem(e) {
+    if (this.data.isGuest) { this.openGuestSheet(); return }
+    const item = e.currentTarget.dataset.item
+    const { t, user, lang } = this.data
+    wx.showModal({
+      title: t.storeConfirmTitle,
+      content: `${item.name}\n${item.price}  ·  ${item.unit}`,
+      confirmText: t.storeBuy,
+      confirmColor: '#6375EC',
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/orders`, 'POST', {
+            openid: user.user_id,
+            item_id: item.id,
+            quantity: 1,
+          })
+          wx.showToast({ title: t.storeOrderSent, icon: 'none', duration: 3000 })
+          await this._loadStoreOrders(user, lang)
+          this.setData({ storeSubTab: 'orders' })
+        } catch (e) {
+          wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
+        }
+      }
+    })
   },
 
   _syncCart(cart) {

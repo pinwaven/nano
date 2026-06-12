@@ -1,10 +1,3 @@
-/**
- * Database client for nano-lab.
- *
- * The Pool is created at module scope (outside the FC handler) so that warm
- * container reuse in FC 3.0 can share a single connection pool across
- * invocations, avoiding repeated TCP+SSL handshakes on each request.
- */
 'use strict';
 
 const { Pool } = require('pg');
@@ -13,10 +6,9 @@ let pool;
 
 try {
     if (process.env.DATABASE_URL) {
-        const connectionString = process.env.DATABASE_URL;
-        const isLocal = (connectionString || '').includes('localhost');
+        const isLocal = process.env.DATABASE_URL.includes('localhost');
         pool = new Pool({
-            connectionString,
+            connectionString: process.env.DATABASE_URL,
             ssl: isLocal || process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
         });
     } else if (process.env.DB_HOST) {
@@ -29,14 +21,14 @@ try {
             ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
         });
     } else {
-        console.warn(JSON.stringify({ level: 'WARN', msg: '[DB] No database configuration found' }));
+        console.warn(JSON.stringify({ level: 'WARN', msg: '[payment DB] No database configuration found' }));
     }
 } catch (err) {
-    console.error(JSON.stringify({ level: 'ERROR', msg: '[DB] Initialization error', error: err.message }));
+    console.error(JSON.stringify({ level: 'ERROR', msg: '[payment DB] Initialization error', error: err.message }));
 }
 
 module.exports = {
-    query: (text, params) => {
+    query(text, params) {
         if (!pool) throw new Error('Database pool not initialized');
         return pool.query(text, params);
     },

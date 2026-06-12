@@ -4,39 +4,53 @@
  * Usage:
  *   node scripts/migrate.js             # run pending migrations against DATABASE_URL (dev)
  *   node scripts/migrate.js --env prod  # run pending migrations against DATABASE_URL_PROD
+ *   node scripts/migrate.js --env test  # run pending migrations against DATABASE_URL_TEST (.env + .env.test)
  *   node scripts/migrate.js --baseline  # mark all files as applied WITHOUT running them (first-time prod setup)
  *   node scripts/migrate.js --env prod --baseline
  *   node scripts/migrate.js --status    # show applied vs pending (dry-run)
  */
 
-require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
+const dotenv = require('dotenv');
 const { Pool } = require('pg');
-
-const args = process.argv.slice(2);
-const envTarget = args.includes('--env') ? args[args.indexOf('--env') + 1] : 'dev';
-const isBaseline = args.includes('--baseline');
-const isStatus = args.includes('--status');
-
-const connString = envTarget === 'prod'
-    ? process.env.DATABASE_URL_PROD
-    : process.env.DATABASE_URL;
-
-if (!connString) {
-    console.error(`[migrate] ERROR: ${envTarget === 'prod' ? 'DATABASE_URL_PROD' : 'DATABASE_URL'} is not set in .env`);
-    process.exit(1);
-}
-
-const pool = new Pool({
-    connectionString: connString,
-    ssl: false,
-});
 
 const MIGRATION_DIRS = [
     path.join(__dirname, '../src/schemas'),
     path.join(__dirname, '../temp'),
 ];
+
+function resolveMigrationConfig(args = process.argv.slice(2), options = {}) {
+    const env = options.env || process.env;
+    const cwd = options.cwd || process.cwd();
+    const dotenvConfig = options.dotenvConfig || dotenv.config;
+    const envTarget = args.includes('--env') ? args[args.indexOf('--env') + 1] : 'dev';
+
+    dotenvConfig({ path: path.join(cwd, '.env') });
+    if (envTarget === 'test') {
+        // Test DB runs inherit shared settings from .env, then allow .env.test
+        // to override DATABASE_URL_TEST and other test-only values.
+        dotenvConfig({ path: path.join(cwd, '.env.test'), override: true });
+    }
+
+    const connectionEnvVar = {
+        dev: 'DATABASE_URL',
+        prod: 'DATABASE_URL_PROD',
+        test: 'DATABASE_URL_TEST',
+    }[envTarget];
+
+    if (!connectionEnvVar) {
+        throw new Error(`Unsupported env target: ${envTarget}`);
+    }
+
+    return {
+        envTarget,
+        isBaseline: args.includes('--baseline'),
+        isStatus: args.includes('--status'),
+        connectionEnvVar,
+        connString: env[connectionEnvVar],
+    };
+}
 
 function collectMigrationFiles() {
     const files = [];
@@ -67,7 +81,18 @@ async function getApplied(client) {
     return new Set(rows.map(r => r.filename));
 }
 
-async function run() {
+async function run(config = resolveMigrationConfig()) {
+    const { envTarget, isBaseline, isStatus, connectionEnvVar, connString } = config;
+    if (!connString) {
+        console.error(`[migrate] ERROR: ${connectionEnvVar} is not set in ${envTarget === 'test' ? '.env or .env.test' : '.env'}`);
+        process.exit(1);
+    }
+
+    const pool = new Pool({
+        connectionString: connString,
+        ssl: false,
+    });
+
     const client = await pool.connect();
     try {
         await ensureTable(client);
@@ -127,7 +152,15 @@ async function run() {
     }
 }
 
-run().catch(err => {
-    console.error('[migrate] Unexpected error:', err.message);
-    process.exitCode = 1;
-});
+if (require.main === module) {
+    run().catch(err => {
+        console.error('[migrate] Unexpected error:', err.message);
+        process.exitCode = 1;
+    });
+}
+
+module.exports = {
+    resolveMigrationConfig,
+    collectMigrationFiles,
+    run,
+};

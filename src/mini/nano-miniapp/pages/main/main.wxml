@@ -245,6 +245,79 @@
         <view class="kino-scan-close" bindtap="cancelKinoScan">✕</view>
       </view>
 
+      <view wx:if="{{labServicesVisible}}" class="ob-bar lab-services-bar">
+        <view class="lab-services-head">
+          <text class="lab-services-title">{{t.labServicesTitle}}</text>
+          <view class="kino-scan-close" bindtap="cancelKinoScan">✕</view>
+        </view>
+        <view wx:if="{{labServicesLoading}}" class="lab-services-state">{{t.labServicesLoading}}</view>
+        <view wx:elif="{{labServices.length === 0}}" class="lab-services-state">{{t.labServicesEmpty}}</view>
+        <scroll-view wx:else class="lab-services-scroll" scroll-x="true">
+          <view class="lab-services-list">
+            <view class="lab-service-chip lab-service-kino" bindtap="handleKinoServiceTap">
+              <text class="lab-service-name">{{t.kinoTestOption}}</text>
+              <text class="lab-service-meta">{{t.kinoScanBtn}}</text>
+            </view>
+            <view wx:for="{{labServices}}" wx:key="id" class="lab-service-chip" bindtap="handleLabServiceTap" data-lab="{{item.lab_name}}">
+              <text class="lab-service-name">{{item.label}}</text>
+              <text class="lab-service-meta">{{item.productText}}</text>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+
+      <view wx:if="{{labProductSheetOpen}}" class="lab-product-overlay" bindtap="closeLabProductSheet">
+        <view class="lab-product-sheet" catchtap="noop">
+          <view class="lab-product-head">
+            <view>
+              <text class="lab-product-title">{{t.labCheckoutTitle}}</text>
+              <text class="lab-product-subtitle">{{selectedLabService.label}}</text>
+            </view>
+            <view class="lab-product-close" bindtap="closeLabProductSheet">✕</view>
+          </view>
+
+          <view wx:if="{{labProductLoading}}" class="lab-product-state">{{t.labProductsLoading}}</view>
+          <view wx:elif="{{labProducts.length === 0}}" class="lab-product-state">{{t.labProductsEmpty}}</view>
+          <scroll-view wx:else class="lab-product-list" scroll-y="true">
+            <view
+              wx:for="{{labProducts}}"
+              wx:key="id"
+              class="lab-product-item {{item.selected ? 'is-selected' : ''}}"
+              bindtap="toggleLabProduct"
+              data-id="{{item.id}}"
+            >
+              <view class="lab-product-check">{{item.selected ? '✓' : ''}}</view>
+              <view class="lab-product-main">
+                <text class="lab-product-name">{{item.name}}</text>
+                <text wx:if="{{item.desc}}" class="lab-product-desc">{{item.desc}}</text>
+                <text wx:if="{{item.sku}}" class="lab-product-sku">{{item.sku}}{{item.unit ? ' · ' + item.unit : ''}}</text>
+              </view>
+              <text class="lab-product-price">{{item.priceText}}</text>
+            </view>
+          </scroll-view>
+
+          <view class="lab-checkout-address" bindtap="chooseStoreAddress">
+            <view class="lab-checkout-address-main">
+              <text class="lab-checkout-address-label">{{t.labCheckoutAddress}}</text>
+              <text wx:if="{{selectedStoreAddress}}" class="lab-checkout-address-text">{{selectedStoreAddress.summary}}</text>
+              <text wx:if="{{selectedStoreAddress}}" class="lab-checkout-address-detail">{{selectedStoreAddress.detail}}</text>
+              <text wx:else class="lab-checkout-address-empty">{{t.addressNone}}</text>
+            </view>
+            <text class="lab-checkout-address-arrow">›</text>
+          </view>
+
+          <view class="lab-product-footer">
+            <view class="lab-product-total">
+              <text class="lab-product-total-label">{{t.labCheckoutSelected}} {{selectedLabProducts.length}}</text>
+              <text class="lab-product-total-price">{{t.labCheckoutTotal}} {{labCheckoutTotalText}}</text>
+            </view>
+            <view class="lab-product-submit {{labCheckoutBusy ? 'is-disabled' : ''}}" bindtap="submitLabCheckout">
+              <text>{{t.labCheckoutSubmitNext}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
       <!-- Guest CTA bar -->
       <view wx:if="{{isGuest}}" class="guest-cta-bar" bindtap="openGuestSheet">
         <text class="guest-cta-text">{{t.guestChatCtaText}}</text>
@@ -433,6 +506,7 @@
         <text class="guest-lock-text">{{t.guestLockMsg}}</text>
       </view>
 
+      <!-- Loading -->
       <view wx:elif="{{plansLoading}}" class="plans-loading">
         <text class="loading-dots">···</text>
       </view>
@@ -639,6 +713,7 @@
           </view>
         </scroll-view>
 
+        <!-- Progress sub-tab -->
         <scroll-view wx:elif="{{planSubTab === 'progress'}}" scroll-y class="overlay-scroll">
           <view class="plan-detail-section">
             <text class="plan-detail-label">{{t.plansAdherence}}</text>
@@ -653,47 +728,17 @@
           </view>
         </scroll-view>
 
+        <!-- Activities sub-tab -->
         <scroll-view wx:elif="{{planSubTab === 'activities'}}" scroll-y class="overlay-scroll">
-          <view wx:if="{{eventsLoading}}" class="panel-center" style="padding:60rpx 0">
-            <text class="empty-text">{{t.eventsLoading}}</text>
+          <view class="panel-center" style="padding: 60rpx 0;">
+            <text class="empty-text">{{lang === 'zh' ? '每日完成 Kino 检测和原粒计划可积累打卡记录。' : 'Complete daily Kino scans and Dots routines to build check-in records.'}}</text>
           </view>
-          <view wx:elif="{{events.length === 0}}" class="panel-center" style="padding:60rpx 0">
-            <text class="empty-text">{{t.eventsEmpty}}</text>
-          </view>
-          <view wx:else class="events-list">
-            <view wx:for="{{events}}" wx:key="id" class="event-card">
-              <view class="event-card-header">
-                <text class="event-title">{{item.title}}</text>
-                <view wx:if="{{mySignupEventIds.indexOf(item.id) > -1}}" class="event-badge-signed">
-                  <text>{{t.eventsSignedUp}}</text>
-                </view>
-              </view>
-              <text class="event-meta">📅 {{item.scheduled_at_display}}</text>
-              <text wx:if="{{item.location}}" class="event-meta">📍 {{item.location}}</text>
-              <text wx:if="{{item.description}}" class="event-desc">{{item.description}}</text>
-              <text wx:if="{{item.capacity}}" class="event-meta">{{t.eventsCapacity}}: {{item.remaining}}/{{item.capacity}}</text>
-              <view class="event-card-actions">
-                <view wx:if="{{mySignupEventIds.indexOf(item.id) > -1}}"
-                      class="event-btn event-btn-cancel"
-                      catchtap="handleEventCancelSignup"
-                      data-event-id="{{item.id}}">
-                  <text>{{t.eventsCancel}}</text>
-                </view>
-                <view wx:elif="{{item.is_full}}"
-                      class="event-btn event-btn-disabled">
-                  <text>{{t.eventsFull}}</text>
-                </view>
-                <view wx:else
-                      class="event-btn event-btn-signup"
-                      catchtap="handleEventSignUp"
-                      data-event-id="{{item.id}}">
-                  <text>{{t.eventsSignUp}}</text>
-                </view>
-              </view>
-            </view>
+          <view class="plan-checkin-btn" catchtap="handlePlanCheckin" data-plan-id="{{planDetailData.id}}">
+            <text class="plan-checkin-text">{{planDetailData.checkedInToday ? t.plansCheckinDone : t.plansCheckin}}</text>
           </view>
         </scroll-view>
 
+        <!-- Guidance sub-tab -->
         <scroll-view wx:elif="{{planSubTab === 'guidance'}}" scroll-y class="overlay-scroll">
           <view class="plan-detail-section">
             <text class="plan-detail-value">{{lang === 'zh' ? (planDetailData.desc_zh || planDetailData.goal_zh) : (planDetailData.desc_en || planDetailData.goal_en)}}</text>
@@ -747,6 +792,9 @@
 
       <view class="store-header">
         <text class="store-title">{{t.storeTitle}}</text>
+        <view class="store-address-manage" bindtap="openAddressManager">
+          <text>{{t.addressManage}}</text>
+        </view>
         <view wx:if="{{cartCount > 0}}" class="store-cart-icon" bindtap="handleOpenCart">
           <text class="store-cart-badge">{{cartCount}}</text>
         </view>
@@ -853,6 +901,14 @@
             </view>
             
             <!-- Actions Section -->
+            <view wx:if="{{item.canConfirmReceipt || item.canStartLabTest}}" class="order-actions">
+              <view wx:if="{{item.canConfirmReceipt}}" class="order-action-btn" bindtap="handleConfirmReceipt" data-order="{{item}}">
+                <text>{{t.orderConfirmReceipt}}</text>
+              </view>
+              <view wx:if="{{item.canStartLabTest}}" class="order-action-btn order-action-primary" bindtap="handleStartLabOrder" data-order="{{item}}">
+                <text>{{t.orderStartLabTest}}</text>
+              </view>
+            </view>
             <view wx:if="{{item.status === 'pending'}}" class="order-actions">
               <view class="cancel-order-btn" bindtap="handleCancelOrder" data-id="{{item.id}}">
                 <text>{{lang === 'zh' ? '取消订单' : 'Cancel Order'}}</text>
@@ -1180,6 +1236,10 @@
           <text>{{guestInviteBusy ? t.guestActivating : t.guestContinueBtn}}</text>
         </view>
 
+        <!-- Quit >
+        <view class="guest-sheet-skip" bindtap="cancelGuestSignup">
+          <text>{{t.guestCancelSignup}}</text>
+        </view -->
       </block>
 
       <block wx:else>

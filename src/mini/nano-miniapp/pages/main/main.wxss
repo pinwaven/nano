@@ -924,6 +924,59 @@
   color: rgba(166, 196, 229, 0.4);
 }
 
+.store-address-manage {
+  padding: 10rpx 18rpx;
+  border-radius: 18rpx;
+  border: 1rpx solid rgba(99, 117, 236, 0.28);
+  color: rgba(166, 196, 229, 0.72);
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.checkout-address {
+  margin: 0 28rpx 20rpx;
+  padding: 22rpx 24rpx;
+  background: rgba(15, 37, 64, 0.86);
+  border: 1rpx solid rgba(99, 117, 236, 0.18);
+  border-radius: 22rpx;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  flex-shrink: 0;
+}
+
+.checkout-address-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.checkout-address-label {
+  color: rgba(166, 196, 229, 0.45);
+  font-size: 20rpx;
+  font-weight: 700;
+}
+
+.checkout-address-text {
+  color: #EEF2FF;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.checkout-address-detail,
+.checkout-address-empty {
+  color: rgba(166, 196, 229, 0.58);
+  font-size: 23rpx;
+  line-height: 1.35;
+}
+
+.checkout-address-arrow {
+  color: rgba(166, 196, 229, 0.5);
+  font-size: 42rpx;
+}
+
 .store-scroll {
   flex: 1;
   height: 0;
@@ -1080,7 +1133,9 @@
 .order-status-confirmed { background: rgba(59,130,246,0.15); color: #60a5fa; }
 .order-status-shipped   { background: rgba(139,92,246,0.15); color: #a78bfa; }
 .order-status-delivered { background: rgba(16,185,129,0.15); color: #34d399; }
+.order-status-testing   { background: rgba(20,184,166,0.16); color: #2dd4bf; }
 .order-status-cancelled { background: rgba(100,116,139,0.12); color: #94a3b8; }
+.order-status-paid      { background: rgba(16,185,129,0.15); color: #34d399; }
 
 .order-card-mid {
   display: flex;
@@ -1166,6 +1221,25 @@
   display: flex;
   justify-content: flex-end;
   margin-top: 12rpx;
+}
+
+.order-action-btn {
+  min-height: 56rpx;
+  padding: 0 24rpx;
+  border-radius: 28rpx;
+  border: 1rpx solid rgba(99, 117, 236, 0.36);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+  font-weight: 700;
+  color: #A6C4E5;
+}
+
+.order-action-primary {
+  background: #6375EC;
+  border-color: #6375EC;
+  color: #fff;
 }
 
 .cancel-order-btn {
@@ -1412,6 +1486,7 @@
   color: #fff;
 }
 
+
 /* ── Kino chip scan ── */
 
 .kino-scan-bar {
@@ -1455,6 +1530,290 @@
 .kino-scan-label {
   font-size: 30rpx;
   font-weight: 600;
+}
+
+.lab-services-bar {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 20rpx 24rpx 22rpx;
+  gap: 16rpx;
+}
+
+.lab-services-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lab-services-head .kino-scan-close {
+  position: static;
+  transform: none;
+}
+
+.lab-services-title {
+  font-size: 24rpx;
+  font-weight: 800;
+  color: rgba(238, 242, 255, 0.86);
+}
+
+.lab-services-state {
+  font-size: 23rpx;
+  color: rgba(166, 196, 229, 0.58);
+}
+
+.lab-services-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.lab-services-list {
+  display: flex;
+  gap: 16rpx;
+}
+
+.lab-service-chip {
+  width: 260rpx;
+  min-height: 112rpx;
+  box-sizing: border-box;
+  padding: 20rpx;
+  border-radius: 18rpx;
+  border: 1rpx solid rgba(99, 117, 236, 0.24);
+  background: rgba(99, 117, 236, 0.08);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8rpx;
+}
+
+.lab-service-name {
+  font-size: 26rpx;
+  font-weight: 800;
+  color: #EEF2FF;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lab-service-meta {
+  font-size: 22rpx;
+  color: rgba(166, 196, 229, 0.56);
+}
+
+.lab-product-overlay {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 1200;
+  background: rgba(5, 10, 24, 0.56);
+  display: flex;
+  align-items: flex-end;
+}
+
+.lab-product-sheet {
+  width: 100%;
+  max-height: 86vh;
+  box-sizing: border-box;
+  padding: 28rpx 28rpx calc(28rpx + env(safe-area-inset-bottom));
+  border-radius: 28rpx 28rpx 0 0;
+  border: 1rpx solid rgba(99, 117, 236, 0.24);
+  background: #111827;
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.lab-product-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.lab-product-title {
+  display: block;
+  font-size: 32rpx;
+  font-weight: 800;
+  color: #EEF2FF;
+}
+
+.lab-product-subtitle {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 23rpx;
+  color: rgba(166, 196, 229, 0.58);
+}
+
+.lab-product-close {
+  width: 56rpx;
+  height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 32rpx;
+}
+
+.lab-product-state {
+  min-height: 240rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24rpx;
+  color: rgba(166, 196, 229, 0.62);
+}
+
+.lab-product-list {
+  max-height: 46vh;
+}
+
+.lab-product-item {
+  min-height: 132rpx;
+  box-sizing: border-box;
+  padding: 22rpx 20rpx;
+  margin-bottom: 16rpx;
+  border: 1rpx solid rgba(166, 196, 229, 0.16);
+  border-radius: 18rpx;
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+}
+
+.lab-product-item.is-selected {
+  border-color: rgba(99, 117, 236, 0.72);
+  background: rgba(99, 117, 236, 0.14);
+}
+
+.lab-product-check {
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  border: 2rpx solid rgba(166, 196, 229, 0.42);
+  color: #fff;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24rpx;
+  font-weight: 800;
+  flex: none;
+}
+
+.lab-product-item.is-selected .lab-product-check {
+  border-color: #6375EC;
+  background: #6375EC;
+}
+
+.lab-product-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.lab-product-name {
+  font-size: 27rpx;
+  font-weight: 800;
+  color: #EEF2FF;
+  line-height: 1.35;
+}
+
+.lab-product-desc,
+.lab-product-sku {
+  font-size: 22rpx;
+  line-height: 1.35;
+  color: rgba(166, 196, 229, 0.58);
+}
+
+.lab-product-price {
+  flex: none;
+  font-size: 26rpx;
+  font-weight: 800;
+  color: #F4D7A1;
+}
+
+.lab-checkout-address {
+  min-height: 104rpx;
+  padding: 20rpx;
+  border-radius: 18rpx;
+  border: 1rpx solid rgba(166, 196, 229, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.lab-checkout-address-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.lab-checkout-address-label {
+  font-size: 21rpx;
+  color: rgba(166, 196, 229, 0.48);
+}
+
+.lab-checkout-address-text {
+  font-size: 25rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+}
+
+.lab-checkout-address-detail,
+.lab-checkout-address-empty,
+.lab-checkout-address-arrow {
+  font-size: 22rpx;
+  color: rgba(166, 196, 229, 0.58);
+}
+
+.lab-product-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.lab-product-total {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.lab-product-total-label {
+  font-size: 22rpx;
+  color: rgba(166, 196, 229, 0.58);
+}
+
+.lab-product-total-price {
+  font-size: 30rpx;
+  font-weight: 900;
+  color: #EEF2FF;
+}
+
+.lab-product-submit {
+  min-width: 208rpx;
+  height: 84rpx;
+  padding: 0 28rpx;
+  border-radius: 42rpx;
+  background: #6375EC;
+  color: #fff;
+  font-size: 27rpx;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lab-product-submit.is-disabled {
+  opacity: 0.56;
 }
 
 /* ── Cartridge Sim Overlay ── */
@@ -2293,6 +2652,14 @@
   background: var(--bg-input);
   border-top-color: var(--navy-border);
 }
+.theme-light .lab-services-title,
+.theme-light .lab-service-name { color: var(--text); }
+.theme-light .lab-services-state,
+.theme-light .lab-service-meta { color: var(--text-muted); }
+.theme-light .lab-service-chip {
+  background: rgba(201, 149, 106, 0.08);
+  border-color: rgba(201, 149, 106, 0.24);
+}
 
 .theme-light .pulse-dot           { background: var(--blue); }
 .theme-light .typing-dot          { background: var(--blue); }
@@ -2320,6 +2687,13 @@
 
 /* ── Store tab ── */
 .theme-light .store-title         { color: var(--text-muted); }
+.theme-light .store-address-manage { border-color: rgba(201, 149, 106, 0.24); color: var(--text-muted); }
+.theme-light .checkout-address   { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .checkout-address-text { color: var(--text); }
+.theme-light .checkout-address-label,
+.theme-light .checkout-address-detail,
+.theme-light .checkout-address-empty,
+.theme-light .checkout-address-arrow { color: var(--text-muted); }
 .theme-light .store-subtab-btn    { border-color: rgba(201, 149, 106, 0.3); background: rgba(201, 149, 106, 0.06); color: var(--text-muted); }
 .theme-light .store-card          { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.18); }
 .theme-light .store-card-name     { color: var(--text); }

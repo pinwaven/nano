@@ -1,6 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
-import ForceGraph2D from 'react-force-graph-2d';
-import DigitalBodyFigure from './DigitalBodyFigure.jsx';
+import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import axios from 'axios';
 import { marked } from 'marked';
 import wavenLogo from '../../shared/assets/waven-logo-icon.png';
@@ -12,8 +10,7 @@ import {
   GraduationCap, Video, FileText, Upload, ExternalLink, Play, BookOpen,
   Bug, AlertCircle, Image as ImageIcon,
   ClipboardList, ChevronUp, Send, Eye,
-  BarChart2, Award, Archive, Box, Target, Filter, MessageSquare, FlaskConical, Shield,
-  LayoutDashboard,
+  BarChart2, Award, Archive, Box, Target, Filter, MessageSquare, FlaskConical,
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
@@ -25,63 +22,6 @@ axios.interceptors.request.use((config) => {
   if (token) config.headers['Authorization'] = `Bearer ${token}`
   return config
 })
-
-// ── Permission constants ───────────────────────────────────────────────────────
-const PERMS = {
-  USERS_READ: 'users:read', USERS_WRITE: 'users:write', USERS_DELETE: 'users:delete',
-  COACHES_READ: 'coaches:read', COACHES_WRITE: 'coaches:write', COACHES_DELETE: 'coaches:delete',
-  STORE_READ: 'store:read', STORE_WRITE: 'store:write', STORE_DELETE: 'store:delete',
-  ORDERS_READ: 'orders:read', ORDERS_WRITE: 'orders:write',
-  INVITES_READ: 'invites:read', INVITES_WRITE: 'invites:write', INVITES_DELETE: 'invites:delete',
-  INVENTORY_READ: 'inventory:read', INVENTORY_WRITE: 'inventory:write',
-  ADMIN_ACCTS_READ: 'admin-accounts:read', ADMIN_ACCTS_WRITE: 'admin-accounts:write',
-};
-
-// Superadmin always passes. Falls back to tab-name check when allowedPerms absent (compat for old tokens).
-function hasPermission(session, perm) {
-  if (!session || session.role !== 'channel') return true;
-  if (Array.isArray(session.allowedPerms) && session.allowedPerms.length > 0)
-    return session.allowedPerms.includes(perm);
-  return (session.allowedTabs || []).includes(perm.split(':')[0]);
-}
-
-const KINO_MACHINE_PAGE_LIMIT = 10;
-
-function normalizeKinoMachine(machine = {}) {
-  return {
-    ...machine,
-    serial_number: machine.serial_number || machine.machine_no || '',
-    name: machine.name || machine.machine_name || '',
-    last_used_at: machine.last_used_at || machine.last_seen_at || null,
-    test_count: machine.test_count ?? machine.tests ?? 0,
-  };
-}
-
-function normalizeKinoMachinesPayload(payload = {}) {
-  const machines = payload.machines || payload.devices || [];
-  const pagination = payload.pagination || {};
-  const total = Number(pagination.total ?? payload.total ?? machines.length);
-  const limit = Number(pagination.limit ?? KINO_MACHINE_PAGE_LIMIT);
-  const totalPages = Number(pagination.total_pages ?? Math.max(1, Math.ceil(total / limit)));
-
-  return {
-    devices: machines.map(normalizeKinoMachine),
-    pagination: {
-      page: Number(pagination.page ?? payload.page ?? 1),
-      limit,
-      total,
-      total_pages: totalPages,
-    },
-  };
-}
-
-function buildKinoMachinesUrl({ page = 1, q = '' } = {}) {
-  const params = new URLSearchParams();
-  params.set('page', String(Math.max(1, page)));
-  params.set('limit', String(KINO_MACHINE_PAGE_LIMIT));
-  if (q.trim()) params.set('q', q.trim());
-  return `/kino/kino-machines?${params.toString()}`;
-}
 
 function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState('')
@@ -100,11 +40,7 @@ function LoginScreen({ onLogin }) {
         sessionStorage.setItem('nano_admin_user', username)
         sessionStorage.setItem('nano_admin_role', res.data.role || 'superadmin')
         sessionStorage.setItem('nano_admin_channel_id', res.data.channel_id ?? '')
-        sessionStorage.setItem('nano_admin_channel_name', res.data.channel_name || '')
-        sessionStorage.setItem('nano_admin_channel_logo', res.data.channel_logo || '')
         sessionStorage.setItem('nano_admin_tabs', JSON.stringify(res.data.allowed_tabs || []))
-        sessionStorage.setItem('nano_admin_perms', JSON.stringify(res.data.allowed_perms || []))
-        sessionStorage.setItem('nano_admin_cms', res.data.can_manage_subchannels ? '1' : '')
         onLogin(res.data.token)
       } else {
         setError('Login failed')
@@ -164,16 +100,13 @@ function LoginScreen({ onLogin }) {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { dashboard: 'Dashboard', users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'CRM', lab: 'Lab', events: 'Events' },
+    nav: { users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'Coach CRM', lab: 'Lab' },
     adminAccounts: { title: 'Admin Accounts', add: 'Add Admin', changePassword: 'Change Password', confirmDelete: 'Delete this admin account?', newPassword: 'New Password', usernameLabel: 'Username', passwordLabel: 'Password', count: (n) => `${n} account${n !== 1 ? 's' : ''}` },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
     stats: {
       totalUsers: 'Total Users', tested: 'Tested', avgBioAge: 'Avg Bio Age',
       coaches: 'Coaches', totalCoaches: 'Total Coaches',
-      male: 'M', female: 'F', new7d: '+7d',
-      days7: '7d', days14: '14d', days30: '30d',
-      aboveChrono: 'above age', belowChrono: 'below age',
       assignedUsers: 'Assigned Users', unassignedUsers: 'Unassigned Users',
       totalDots: 'Total Dots', isolates: 'Isolates', blends: 'Blends',
       totalItems: 'Items', activeItems: 'Active', totalOrders: 'Orders', pendingOrders: 'Pending',
@@ -196,11 +129,8 @@ const T = {
     empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found', invites: 'No invitations found', kino: 'No Kino devices registered', chipBatches: 'No chip batches created', chipModels: 'No chip models defined', tickets: 'No tickets yet' },
     count: (n) => `${n} users`,
     searchUsers: 'Search by name, ID, email, phone, channel…',
-    searchCoaches: 'Search by name, ID, email, phone, channel…',
-    searchKino: 'Search serial number or name…',
-    pagination: { page: 'Page', of: 'of', total: 'total' },
     addUser: 'Add User',
-    addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item', addChannel: 'Add Channel', addInvite: 'Create Invite', addDevice: 'Add Device',
+    addCoach: 'Add Coach', addDot: 'Add Dot', addItem: 'Add Item', addChannel: 'Add Channel', addInvite: 'Create Invite', addDevice: 'Register Device',
     countCoach: (n) => `${n} Coaches`,
     countDot: (n) => `${n} dots`,
     countItem: (n) => `${n} items`,
@@ -253,15 +183,7 @@ const T = {
       deleteChannelWarning: (name) => `Delete channel "${name}"? Coaches and users in this channel will be unassigned.`,
       channelKeyName: 'Key Name *', channelName: 'Display Name *', channelLogoUrl: 'Logo',
       uploadChannelLogo: 'Click to upload logo (PNG / JPG)', uploadChannelLogoFailed: 'Logo upload failed', removeChannelLogo: 'Remove logo',
-      channelPersonaType: 'AI Persona', channelPersonaNano: 'Nano (default)', channelPersonaViva: 'Viva (Aeviva)',
-      channelExchangeRate: 'Credit Exchange Rate', channelExchangeRateHint: 'Credits per 1 unit of currency (default 1.0)',
-      channelCurrency: 'Currency', channelCurrencyHint: 'ISO code, e.g. CNY, USD',
       channel: 'Channel', channelUnassigned: 'No channel',
-      coachGroup: 'Group', coachGroupUnassigned: 'No group',
-      addCoachGroup: 'Add Group', editCoachGroup: 'Edit Group', deleteCoachGroup: 'Delete Group',
-      deleteCoachGroupWarning: (name) => `Delete group "${name}"? Coaches will be ungrouped.`,
-      coachGroupName: 'Group Name *', coachGroupDescription: 'Description', coachGroupType: 'Type',
-      coachGroupTypePlaceholder: 'e.g. clinic, studio, nutrition',
       roles: 'Roles', roleUser: 'User', roleCoach: 'Coach', roleAdmin: 'Channel Admin', roleSuperadmin: 'Superadmin',
       selectUser: 'User *', selectUserPlaceholder: 'Search by nickname or user_id…', userRequired: 'User is required',
       addInvite: 'Create Invite', deactivateInvite: 'Deactivate',
@@ -269,12 +191,11 @@ const T = {
       inviteType: 'Type', inviteTypeCoach: 'Coach', inviteTypeChannel: 'Channel', inviteTypeAdmin: 'Admin',
       inviteMaxUses: 'Max Uses', inviteMaxUsesPlaceholder: 'Blank = unlimited',
       inviteChannel: 'Channel *',
-      addDevice: 'Add Kino Device', editDevice: 'Edit Kino Device', deleteDevice: 'Remove Device',
+      addDevice: 'Register Kino Device', editDevice: 'Edit Kino Device', deleteDevice: 'Remove Device',
       deleteDeviceWarning: (sn) => `Remove Kino device "${sn}"? Historical biomarker links will be preserved but the device will no longer be tracked.`,
-      machineModel: 'Model', quantity: 'Quantity *', quantityRequired: 'Quantity must be at least 1',
       serialNumber: 'Serial Number *', serialNumberPlaceholder: 'e.g. KNO-2024-0001',
       deviceName: 'Display Name', deviceNamePlaceholder: 'e.g. Clinic Unit A',
-      deviceStatus: 'Status', statusActive: 'Active', statusInactive: 'Not Activated', statusMaintenance: 'Maintenance',
+      deviceStatus: 'Status', statusActive: 'Active', statusInactive: 'Inactive', statusMaintenance: 'Maintenance',
       deviceNotes: 'Notes', deviceNotesPlaceholder: 'Optional notes…',
       assignedCoachDevice: 'Assigned Coach', assignedChannelDevice: 'Assigned Channel',
       uploadApk: 'Upload New APK', apkVersion: 'Version *', apkVersionPlaceholder: 'e.g. 1.2.3',
@@ -290,130 +211,23 @@ const T = {
       countReleases: (n) => `${n} release${n !== 1 ? 's' : ''}`,
     },
     dotType: { isolate: 'Isolate', blend: 'Blend' },
-    channels: {
-      // ChannelTab table / stat cards
-      colPersona: 'Persona', colUsers: 'Users', colCoaches: 'Coaches',
-      colDevices: 'Devices (active)', colScans: 'Scans', colActions: 'Actions',
-      statKinoDevices: 'Kino Devices', statTotalScans: 'Total Scans',
-      titleAddSubchannel: 'Add sub-channel', titleSettings: 'Settings',
-      // ChannelModal
-      parentChannel: 'Parent Channel', parentChannelOptional: 'Parent Channel (optional)',
-      parentChannelNone: 'None (top-level channel)',
-      // ChannelConfigModal — header & tab labels
-      configTitle: (name) => `Settings — ${name}`,
-      tabGeneral: 'General', tabAdmins: 'Admins', tabInvites: 'Invites',
-      tabRewards: 'Rewards', tabPartnerTiers: 'Partner Tiers',
-      tabSubAge: 'Sub-age Labels', tabDanger: 'Danger',
-      // General tab
-      subchannelMgmt: 'Sub-channel Management',
-      subchannelMgmtHint: "Allow this channel's admin to create and manage sub-channels",
-      // Admin Tabs tab
-      adminTabsHint: 'Select which features are enabled for this channel. Channel admins always have full access to all enabled features — this is not a permission limit.',
-      // Admins tab
-      colUsername: 'Username', colCreated: 'Created',
-      noAdmins: 'No admins yet', addAdminHint: 'Add admin account',
-      usernamePlaceholder: 'Username', passwordPlaceholder: 'Password',
-      adding: 'Adding…', add: 'Add', confirmDeleteAdmin: 'Delete this admin account?',
-      // Invites tab
-      newInvite: 'New Invite', creating: 'Creating…', loading: 'Loading…',
-      colCode: 'Code', colUses: 'Uses', colActive: 'Active', noInvites: 'No invites yet',
-      active: 'Active', inactive: 'Inactive', copyLink: 'Copy link', deactivate: 'Deactivate',
-      // Sub-age tab
-      subAgeHint: 'Override display names per dimension. Leave blank to use defaults.',
-      colDimension: 'Dimension', colZh: 'Chinese (zh)', colEn: 'English (en)',
-      // Rewards tab
-      rewardsSrcOwn: 'Own rates',
-      rewardsSrcInherited: (name) => `Inherited from ${name}`,
-      rewardsSrcGlobal: 'Global defaults',
-      rewardsNoPermission: 'Contact your parent channel admin to enable custom rates',
-      rewardsRatesHint: 'Commission rates — enter either a flat amount (¥) or a percentage, not both. Leave blank to inherit.',
-      rewardsProduct: 'Product', rewardsCoachComm: 'Coach commission', rewardsChannelComm: 'Channel commission',
-      rewardsFlat: 'Flat (¥)', rewardsPct: 'Percent (%)', rewardsReferral: 'Referral commission (%)',
-      rewardsReset: 'Reset to inherited', rewardsSave: 'Save rates',
-      rewardsSubchTitle: 'Sub-channel custom rewards',
-      rewardsSubchHint: 'Allow sub-channels to define their own commission rates instead of inheriting from this channel.',
-      rewardsRevoke: 'Revoke custom rewards', rewardsAllow: 'Allow custom rewards',
-      // Partner Tiers tab
-      tierSrcOwn: 'Own tier config',
-      tierSrcInherited: (name) => `Inherited from ${name}`,
-      tierSrcGlobal: 'Global defaults',
-      tierNoPermission: 'Contact your parent channel admin to enable custom tier config',
-      tierLabelEn: 'Display Name (EN)', tierLabelZh: 'Display Name (ZH)',
-      tierEntryFee: 'Entry Fee (¥)', tierColor: 'Color', tierDescription: 'Description',
-      tierSaved: 'Tier config saved', tierReset: 'Reset to inherited', tierSave: 'Save tier config',
-      tierSubchTitle: 'Sub-channel tier config',
-      tierSubchHint: 'Allow sub-channels to define their own partner tier labels and entry fees instead of inheriting from this channel.',
-      tierRevoke: 'Revoke custom tier config', tierAllow: 'Allow custom tier config',
-      // Danger tab
-      dangerBlockedTitle: 'Cannot delete this channel',
-      dangerBlockedHint: 'This channel has sub-channels. Remove all sub-channels before deleting it.',
-      dangerDeleteTitle: 'Delete channel',
-      dangerDeleteHintPre: 'This action is permanent. All users, coaches, and data associated with ',
-      dangerDeleteHintPost: ' will be unlinked. Type the channel name to confirm.',
-      dangerDeletePlaceholder: (name) => `Type "${name}" to confirm`,
-      dangerDeleteBtn: 'Delete channel',
-    },
     store: {
       itemsTab: 'Items', ordersTab: 'Orders',
       priceCny: 'CNY (¥)', priceUsd: 'USD ($)', tag: 'Tag', active: 'Active',
-      qty: 'Qty', status: 'Status', orderedAt: 'Ordered', yes: 'Yes', no: 'No',
+      qty: 'Qty', status: 'Status', payment: 'Payment', tracking: 'Tracking', orderedAt: 'Ordered', yes: 'Yes', no: 'No',
       pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', cancelled: 'Cancelled',
+      paid: 'Paid', created: 'Created', failed: 'Failed', addTracking: 'Add tracking number',
       image: 'Image', uploadImage: 'Click to upload image (PNG / JPG)',
       uploading: 'Uploading…', uploadFailed: 'Image upload failed', removeImage: 'Remove image',
-      skusRegistered: 'SKUs registered', addSku: 'Add SKU', noSkus: 'No SKUs registered yet',
-      skuCode: 'SKU Code', unit: 'Unit', locationStocks: 'Location Stocks',
-      noStocksConfigured: 'No stocks configured',
-      warehouse: 'Warehouse', channel: 'Channel', left: 'left',
-      adjustStock: 'Adjust Stock', editSku: 'Edit SKU', deleteSku: 'Delete SKU',
-      skuCodeRequired: 'SKU Code is required', skuNamesRequired: 'Both English and Chinese names are required',
-      editSkuTitle: 'Edit SKU definition', createSkuTitle: 'Create new SKU definition',
-      skuCodeLabel: 'SKU Code (Immutable Identifier)', itemType: 'Item Type',
-      physical: 'Physical Asset', virtual: 'Virtual Service / Item',
-      descEn: 'Description (EN)', descZh: 'Description (ZH)',
-      unitEn: 'Unit (EN)', unitZh: 'Unit (ZH)',
-      deleteSkuTitle: 'Delete SKU Registry Entry?',
-      deleteSkuWarning: (code) => `WARNING: Are you sure you want to delete SKU "${code}"?`,
-      deleteSkuNote: 'This registry item will be permanently removed. Any storefront listing linking to this SKU will lose its inventory association.',
-      deleteSkuFailed: 'Delete failed. Check if listings reference this SKU.',
-      confirmDelete: 'Confirm Delete', deleting: 'Deleting…',
-      adjustStockTitle: 'Adjust Inventory Stock', targetSku: 'Target SKU',
-      locationType: 'Location Type', centralWarehouse: 'Central Warehouse', clinicChannel: 'Clinic Channel Stock',
-      selectChannel: 'Select Clinic Channel', chooseChannel: '-- Choose Channel --',
-      warehouseName: 'Warehouse Name', quantityLabel: 'Quantity (Leave blank for Unlimited/Digital)',
-      unlimitedStock: 'Unlimited stock', lowStockThreshold: 'Low Stock Warning Threshold',
-      saveAdjustments: 'Save Adjustments', pleaseSelectChannel: 'Please select a target channel',
-      pleaseEnterWarehouse: 'Please enter warehouse name', stockFailed: 'Stock adjustment failed',
     },
     inventory: {
       selectChannel: 'Select a channel to manage its inventory',
-      selectChannelOption: '— Select Channel —',
       addItem: 'Add Item', editItem: 'Edit Item', deleteItem: 'Delete Item',
       noItems: 'No inventory items yet', noChannel: 'No channels available',
       physical: 'Physical', virtual: 'Virtual',
       itemType: 'Item Type', stock: 'Stock', stockUnlimited: 'Unlimited',
       totalItems: 'Total Items', activeItems: 'Active', physicalItems: 'Physical', virtualItems: 'Virtual',
-      totalOrders: 'Total Orders', pendingOrders: 'Pending Orders',
-      itemsTab: 'Items', ordersTab: 'Orders',
-      importFromStore: 'Import from Store',
-      itemName: 'Name', source: 'Source', inStore: 'In Store', user: 'User', date: 'Date',
-      sourceStore: 'Store', sourceCustom: 'Custom',
-      stockLow: 'Low', stockOut: 'Out',
-      inStoreLive: 'Live', inStoreHidden: 'Hidden',
-      showInStore: 'Show in Store', showInStoreLive: 'Live — visible in miniapp store',
-      revenueLabel: (v) => `Revenue (delivered): ¥${v}`,
-      shippingAddress: 'Shipping Address',
-      recipientName: 'Name', recipientPhone: 'Phone', recipientAddress: 'Address',
-      noShippingAddress: 'No shipping address provided (virtual item/service)',
-      paymentFulfillment: 'Payment & Fulfillment',
-      paymentMethod: 'Payment Method', paymentStatus: 'Payment Status',
-      carrier: 'Carrier', trackingNo: 'Tracking #', shippedAt: 'Shipped at',
-      orderNotes: 'Notes', assets: 'Assets',
-      skuBinding: 'SKU Binding', selectSku: '— Select a SKU —',
-      skuRequired: 'SKU is required — create the SKU first in the SKUs & Stock tab',
-      linkedToStore: 'Linked to global store',
-      tagBestseller: 'Bestseller', tagValue: 'Value', tagNew: 'New',
-      noStoreItems: 'No store items found.', alreadyAdded: 'Already added',
       keyName: 'Key Name', nameEn: 'Name (EN)', nameZh: 'Name (ZH)',
       descEn: 'Description (EN)', descZh: 'Description (ZH)',
       unitEn: 'Unit (EN)', unitZh: 'Unit (ZH)',
@@ -440,14 +254,6 @@ const T = {
       noSettings: 'No settings found', noPayouts: 'No payouts', noCommissions: 'No commissions',
       generate: 'Generate', generating: 'Generating…', saved: 'Saved', saveFailed: 'Save failed',
       totalPayouts: 'Channel Payouts', pendingPayouts: 'Pending', totalCommissions: 'Coach Commissions', totalEarned: 'Total Commissions',
-      withdrawalsTab: 'Credit Withdrawals',
-      withdrawalUser: 'User', withdrawalCredits: 'Credits', withdrawalCash: 'Cash Value', withdrawalCurrency: 'Currency',
-      withdrawalMethod: 'Method', withdrawalAccount: 'Account', withdrawalStatus: 'Status', withdrawalDate: 'Requested',
-      withdrawalNote: 'Admin Note', approve: 'Approve', reject: 'Reject', markCompleted: 'Mark Completed',
-      noWithdrawals: 'No withdrawal requests', filterAll: 'All', filterPending: 'Pending',
-      filterApproved: 'Approved', filterRejected: 'Rejected', filterCompleted: 'Completed',
-      totalWithdrawals: 'Withdrawals', pendingWithdrawals: 'Pending',
-      pending: 'Pending', rejected: 'Rejected', completed: 'Completed',
     },
     partners: {
       addPartner: 'Add Partner', editPartner: 'Edit Partner', deactivatePartner: 'Deactivate',
@@ -506,7 +312,7 @@ const T = {
       biomarkersRequired: 'At least one biomarker key is required',
     },
     tickets: {
-      addTicket: 'New Ticket', editTicket: 'Edit Ticket', deleteTicket: 'Delete Ticket', viewTicket: 'Ticket Details',
+      addTicket: 'New Ticket', editTicket: 'Edit Ticket', deleteTicket: 'Delete Ticket',
       deleteWarning: (title) => `Delete ticket "${title}"? Attached images will also be removed.`,
       title: 'Title *', titlePlaceholder: 'Brief summary',
       description: 'Description', descriptionPlaceholder: 'Steps to reproduce, expected vs actual, …',
@@ -524,8 +330,7 @@ const T = {
       noImages: 'No images',
     },
     academy: {
-      coursesTab: 'Courses', libraryTab: 'Library', certificationsTab: 'Certifications',
-      pathsTab: 'Learning Paths', progressTab: 'Progress & Leaderboard',
+      coursesTab: 'Courses', libraryTab: 'Library', progressTab: 'Progress',
       uploadCourse: 'Upload Course', editCourse: 'Edit Course', deleteCourse: 'Delete Course',
       uploadDoc: 'Upload Document', deleteDoc: 'Delete Document',
       title: 'Title *', description: 'Description', status: 'Status', videoFile: 'Video File', mdFile: 'Markdown File',
@@ -546,25 +351,9 @@ const T = {
       lessons: 'Lessons', lessonCount: (n) => `${n} lesson${n !== 1 ? 's' : ''}`,
       noLessons: 'No lessons yet — add the first lesson.',
       deleteLessonWarning: (t) => `Delete lesson "${t}"? The video file will also be removed.`,
-      totalLessons: 'Lessons', coachesCompleted: 'Coaches Done', completionRate: 'Completion %',
+      totalLessons: 'Total Lessons', coachesCompleted: 'Coaches Done', completionRate: 'Completion %',
       noProgress: 'No progress data yet',
       expandLessons: 'Manage Lessons', collapseLessons: 'Collapse',
-      level: 'Level', credits: 'Credits', creditsOnCompletion: 'Credits on Completion',
-      prerequisite: 'Prerequisite Course', contentType: 'Content Type',
-      minWatchSeconds: 'Min Watch Time (sec)',
-      textContent: 'Lesson Text Content', interactiveContext: 'Background Reading / Context',
-      newCert: 'New Certification', editCert: 'Edit Certification',
-      countCerts: (n) => `${n} certification${n !== 1 ? 's' : ''}`,
-      noCerts: 'No certifications yet',
-      tier: 'Tier', requiredCourses: 'Required Courses (all must be completed)',
-      minCredits: 'Min Credits Required', active: 'Active',
-      newPath: 'New Path', editPath: 'Edit Path',
-      countPaths: (n) => `${n} learning path${n !== 1 ? 's' : ''}`,
-      noPaths: 'No learning paths yet',
-      pathCoursesLabel: 'Courses in Path (ordered)', allCoursesAdded: 'All courses added', clickToAddCourses: 'Click to add courses:',
-      courseProgress: 'Course Progress', coachesStarted: 'Coaches Started',
-      avgQuizScore: 'Avg Quiz Score', creditsAwarded: 'Credits Awarded',
-      leaderboard: '🏆 Leaderboard', noData: 'No data yet',
     },
     reports: {
       title: 'AI Reports',
@@ -588,12 +377,8 @@ const T = {
       ],
     },
     coachCrm: {
-      subPipeline: 'Pipeline', subCampaigns: 'Campaigns', subPerformance: 'Performance', subNps: 'NPS', subGroups: 'Groups',
+      subPipeline: 'Pipeline', subCampaigns: 'Campaigns', subPerformance: 'Performance', subNps: 'NPS',
       selectCoach: '— Select Coach —',
-      selectGroup: '— Select Group —',
-      noGroups: 'No groups defined. Add groups in the Coaches tab.',
-      groupPerfTitle: (name, p) => `${name} — ${p}`,
-      colCoachCount: 'Coaches',
       selectCoachPrompt: 'Select a coach to view their client pipeline.',
       selectCoachCampaignsPrompt: 'Select a coach to view their campaigns.',
       loading: 'Loading…',
@@ -620,77 +405,16 @@ const T = {
       colUser: 'User', colType: 'Type', colScore: 'Score', colFeedback: 'Feedback', colRespondedAt: 'Responded At',
       countResponses: (n) => `${n} response${n !== 1 ? 's' : ''}`,
     },
-    userDetail: {
-      tabHealth: 'Health',
-      tabPlans: 'Plans',
-      tabChat: 'Chat',
-      profile: 'Profile',
-      externalApp: 'External App',
-      externalId: 'External ID',
-      height: 'Height',
-      weight: 'Weight',
-      healthConditions: 'Health Conditions',
-      loadingHealth: 'Loading health data…',
-      chronoAge: 'Chrono Age',
-      bioAge: 'Bio Age',
-      testsCount: (n) => `${n} Kino test${n !== 1 ? 's' : ''}`,
-      subAges: 'Sub-Ages',
-      latestBiomarkers: 'Latest Biomarkers',
-      noBiomarker: 'No biomarker data yet.',
-      biomarkerTrends: (n) => `Biomarker Trends (${n} test${n !== 1 ? 's' : ''})`,
-      healthReports: 'Health Reports & Lab Results',
-      loadingReports: 'Loading reports…',
-      noReports: 'No health reports available.',
-      labApiTag: 'Lab API',
-      manualTag: 'Manual',
-      fhirTag: 'FHIR',
-      labPanelTag: 'Lab Panel',
-      annualCheckupTag: 'Annual Checkup',
-      loadingPlans: 'Loading plans…',
-      noPlans: 'No active health plans.',
-      primaryPlan: 'Primary',
-      secondaryPlan: 'Secondary',
-      checkins: (n) => `${n} check-in${n !== 1 ? 's' : ''}`,
-      weeks: (n) => `${n} week${n !== 1 ? 's' : ''}`,
-      loadingChat: 'Loading messages…',
-      noChat: 'No messages yet.',
-      userRole: 'User',
-      aiRole: 'AI',
-      coachRole: 'Coach',
-      referredBy: 'Referred By',
-      invitedBy: 'Invited By',
-      networkTab: 'Network',
-      networkEmpty: 'No referral relationships found in this channel.',
-      networkLegendReferral: 'Referred via code',
-      networkLegendInvite: 'Invited by coach',
-      networkLegendRoot: 'Root (no referrer)',
-      reportIdHeader: (id, name, date) => `Report #${id} — ${name} — ${date}`,
-      loadingReportDetail: 'Loading report…',
-      vitalSigns: 'Vital Signs',
-      diagnoses: 'Diagnoses / Findings',
-      clinicalSummary: 'Clinical Summary',
-      recommendations: 'Recommendations',
-      followUp: 'Follow-up',
-      diagnostics: 'Diagnostics',
-      doctorAdvice: "Doctor's Advice",
-      labObservations: 'Lab Observations',
-      coreBiomarker: 'CORE',
-      noObservations: 'No observations linked to this report.',
-      close: 'Close',
-    },
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { dashboard: '数据概览', users: '用户管理', coaches: 'COACH', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'CRM', lab: '检验中心', events: '线下活动' },
+    nav: { users: '用户管理', coaches: 'Coach', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'Coach CRM', lab: '检验中心' },
     adminAccounts: { title: '管理员账号', add: '添加管理员', changePassword: '修改密码', confirmDelete: '确认删除此管理员账号？', newPassword: '新密码', usernameLabel: '用户名', passwordLabel: '密码', count: (n) => `${n} 个账号` },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
     stats: {
       totalUsers: '总用户数', tested: '已检测', avgBioAge: '平均生理年龄',
       coaches: 'Coach 数', totalCoaches: 'Coach 总数',
-      male: '男', female: '女', new7d: '近7天',
-      days7: '7天', days14: '14天', days30: '30天',
-      aboveChrono: '高于实际', belowChrono: '低于实际',
       assignedUsers: '已分配用户', unassignedUsers: '未分配用户',
       totalDots: '原粒总数', isolates: '单体', blends: '复合',
       totalItems: '商品总数', activeItems: '上架中', totalOrders: '订单总数', pendingOrders: '待处理',
@@ -713,9 +437,6 @@ const T = {
     empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道', invites: '暂无邀请码', kino: '暂无 Kino 设备', chipBatches: '暂无芯片批次', chipModels: '暂无芯片型号', tickets: '暂无工单' },
     count: (n) => `共 ${n} 位用户`,
     searchUsers: '搜索姓名、ID、邮箱、电话、渠道…',
-    searchCoaches: '搜索姓名、ID、邮箱、电话、渠道…',
-    searchKino: '搜索序列号或名称…',
-    pagination: { page: '第', of: '页 / 共', total: '条' },
     addBatch: '新建批次', countBatch: (n) => `共 ${n} 批次`,
     chips: {
       prefix: '前缀 *', prefixHint: '自动转大写，例如 KNC12345678 或 MVNS0725122201',
@@ -745,7 +466,7 @@ const T = {
       biomarkersRequired: '至少需要一个生物标志物代码',
     },
     tickets: {
-      addTicket: '新建工单', editTicket: '编辑工单', deleteTicket: '删除工单', viewTicket: '工单详情',
+      addTicket: '新建工单', editTicket: '编辑工单', deleteTicket: '删除工单',
       deleteWarning: (title) => `确认删除工单"${title}"？相关图片也将被移除。`,
       title: '标题 *', titlePlaceholder: '简短描述',
       description: '详情', descriptionPlaceholder: '复现步骤、预期与实际现象等',
@@ -763,7 +484,7 @@ const T = {
       noImages: '暂无图片',
     },
     addUser: '添加用户',
-    addCoach: '添加 Coach', addDot: '添加原粒', addItem: '添加商品', addChannel: '添加渠道', addInvite: '创建邀请码', addDevice: '添加设备',
+    addCoach: '添加 Coach', addDot: '添加原粒', addItem: '添加商品', addChannel: '添加渠道', addInvite: '创建邀请码', addDevice: '注册设备',
     countCoach: (n) => `共 ${n} 位 Coach`,
     countDot: (n) => `共 ${n} 个原粒`,
     countItem: (n) => `共 ${n} 件商品`,
@@ -816,15 +537,7 @@ const T = {
       deleteChannelWarning: (name) => `确认删除渠道"${name}"？该渠道下的 Coach 和用户将失去渠道关联。`,
       channelKeyName: '标识 *', channelName: '显示名称 *', channelLogoUrl: 'Logo',
       uploadChannelLogo: '点击上传 Logo（PNG / JPG）', uploadChannelLogoFailed: 'Logo 上传失败', removeChannelLogo: '移除 Logo',
-      channelPersonaType: 'AI 人格', channelPersonaNano: 'Nano（默认）', channelPersonaViva: 'Viva（Aeviva）',
-      channelExchangeRate: '积分汇率', channelExchangeRateHint: '每单位货币对应的积分数（默认 1.0）',
-      channelCurrency: '货币', channelCurrencyHint: 'ISO 代码，如 CNY、USD',
       channel: '渠道', channelUnassigned: '无渠道',
-      coachGroup: '所属团队', coachGroupUnassigned: '无团队',
-      addCoachGroup: '添加团队', editCoachGroup: '编辑团队', deleteCoachGroup: '删除团队',
-      deleteCoachGroupWarning: (name) => `删除团队"${name}"？其下 Coach 将变为无团队状态。`,
-      coachGroupName: '团队名称 *', coachGroupDescription: '备注说明', coachGroupType: '类型',
-      coachGroupTypePlaceholder: '如：诊所、工作室、营养门店',
       roles: '角色', roleUser: '用户', roleCoach: '教练', roleAdmin: '渠道管理员', roleSuperadmin: '超级管理员',
       selectUser: '用户 *', selectUserPlaceholder: '按昵称或 user_id 搜索…', userRequired: '用户为必填项',
       addInvite: '创建邀请码', deactivateInvite: '停用',
@@ -832,12 +545,11 @@ const T = {
       inviteType: '类型', inviteTypeCoach: 'Coach', inviteTypeChannel: '渠道', inviteTypeAdmin: '管理员',
       inviteMaxUses: '使用上限', inviteMaxUsesPlaceholder: '留空 = 不限次数',
       inviteChannel: '渠道 *',
-      addDevice: '添加 Kino 设备', editDevice: '编辑 Kino 设备', deleteDevice: '移除设备',
+      addDevice: '注册 Kino 设备', editDevice: '编辑 Kino 设备', deleteDevice: '移除设备',
       deleteDeviceWarning: (sn) => `确认移除 Kino 设备"${sn}"？历史生物标志物关联将保留，但设备将不再被追踪。`,
-      machineModel: '型号', quantity: '数量 *', quantityRequired: '数量必须大于等于 1',
       serialNumber: '序列号 *', serialNumberPlaceholder: '例如 KNO-2024-0001',
       deviceName: '显示名称', deviceNamePlaceholder: '例如 诊所 A 机',
-      deviceStatus: '状态', statusActive: '运行中', statusInactive: '未激活', statusMaintenance: '维护中',
+      deviceStatus: '状态', statusActive: '运行中', statusInactive: '停用', statusMaintenance: '维护中',
       deviceNotes: '备注', deviceNotesPlaceholder: '可选备注…',
       assignedCoachDevice: '负责 Coach', assignedChannelDevice: '所属渠道',
       uploadApk: '上传新版本 APK', apkVersion: '版本号 *', apkVersionPlaceholder: '例如 1.2.3',
@@ -853,119 +565,23 @@ const T = {
       countReleases: (n) => `共 ${n} 个版本`,
     },
     dotType: { isolate: '单体', blend: '复合' },
-    channels: {
-      colPersona: '人格', colUsers: '用户', colCoaches: 'Coach',
-      colDevices: '设备（在线）', colScans: '扫描数', colActions: '操作',
-      statKinoDevices: 'Kino 设备', statTotalScans: '总扫描数',
-      titleAddSubchannel: '添加子渠道', titleSettings: '设置',
-      parentChannel: '上级渠道', parentChannelOptional: '上级渠道（可选）',
-      parentChannelNone: '无（顶级渠道）',
-      configTitle: (name) => `设置 — ${name}`,
-      tabGeneral: '基本信息', tabAdmins: '管理员', tabInvites: '邀请码',
-      tabRewards: '奖励设置', tabPartnerTiers: '合伙人级别',
-      tabSubAge: '年龄维度标签', tabDanger: '危险操作',
-      subchannelMgmt: '子渠道管理',
-      subchannelMgmtHint: '允许该渠道的管理员创建和管理子渠道',
-      adminTabsHint: '选择此渠道开启的功能模块。渠道管理员对所有已开启模块拥有完整权限——这不是权限限制，而是功能开关。',
-      colUsername: '用户名', colCreated: '创建时间',
-      noAdmins: '暂无管理员', addAdminHint: '添加管理员账号',
-      usernamePlaceholder: '用户名', passwordPlaceholder: '密码',
-      adding: '添加中…', add: '添加', confirmDeleteAdmin: '确认删除此管理员账号？',
-      newInvite: '新建邀请码', creating: '创建中…', loading: '加载中…',
-      colCode: '邀请码', colUses: '使用次数', colActive: '状态', noInvites: '暂无邀请码',
-      active: '有效', inactive: '已停用', copyLink: '复制链接', deactivate: '停用',
-      subAgeHint: '覆盖各维度显示名称，留空则使用默认值。',
-      colDimension: '维度', colZh: '中文 (zh)', colEn: '英文 (en)',
-      rewardsSrcOwn: '自定义费率',
-      rewardsSrcInherited: (name) => `继承自 ${name}`,
-      rewardsSrcGlobal: '全局默认',
-      rewardsNoPermission: '请联系上级渠道管理员开启自定义费率',
-      rewardsRatesHint: '佣金费率——填入固定金额（¥）或百分比，二选一，留空则继承。',
-      rewardsProduct: '产品', rewardsCoachComm: 'Coach 佣金', rewardsChannelComm: '渠道佣金',
-      rewardsFlat: '固定（¥）', rewardsPct: '百分比（%）', rewardsReferral: '推荐佣金（%）',
-      rewardsReset: '重置为继承', rewardsSave: '保存费率',
-      rewardsSubchTitle: '子渠道自定义奖励',
-      rewardsSubchHint: '允许子渠道定义自己的佣金费率，而不是继承此渠道的设置。',
-      rewardsRevoke: '撤销自定义奖励', rewardsAllow: '允许自定义奖励',
-      tierSrcOwn: '自定义级别配置',
-      tierSrcInherited: (name) => `继承自 ${name}`,
-      tierSrcGlobal: '全局默认',
-      tierNoPermission: '请联系上级渠道管理员开启自定义级别配置',
-      tierLabelEn: '显示名称（英）', tierLabelZh: '显示名称（中）',
-      tierEntryFee: '入伙费（¥）', tierColor: '颜色', tierDescription: '描述',
-      tierSaved: '级别配置已保存', tierReset: '重置为继承', tierSave: '保存级别配置',
-      tierSubchTitle: '子渠道级别配置',
-      tierSubchHint: '允许子渠道自定义合伙人级别名称和入伙费，而不是继承此渠道的设置。',
-      tierRevoke: '撤销自定义级别配置', tierAllow: '允许自定义级别配置',
-      dangerBlockedTitle: '无法删除此渠道',
-      dangerBlockedHint: '该渠道存在子渠道，请先删除所有子渠道后再操作。',
-      dangerDeleteTitle: '删除渠道',
-      dangerDeleteHintPre: '此操作不可撤销。与 ',
-      dangerDeleteHintPost: ' 相关的所有用户、Coach 及数据将失去渠道关联。输入渠道名称以确认。',
-      dangerDeletePlaceholder: (name) => `输入"${name}"确认`,
-      dangerDeleteBtn: '删除渠道',
-    },
     store: {
       itemsTab: '商品', ordersTab: '订单',
       priceCny: '售价 (CNY)', priceUsd: '售价 (USD)', tag: '标签', active: '上架',
-      qty: '数量', status: '状态', orderedAt: '下单时间', yes: '是', no: '否',
+      qty: '数量', status: '状态', payment: '支付', tracking: '快递单号', orderedAt: '下单时间', yes: '是', no: '否',
       pending: '待处理', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', cancelled: '已取消',
+      paid: '已支付', created: '已创建', failed: '失败', addTracking: '填写快递单号',
       image: '图片', uploadImage: '点击上传图片（PNG / JPG）',
       uploading: '上传中…', uploadFailed: '图片上传失败', removeImage: '移除图片',
-      skusRegistered: '个 SKU 已注册', addSku: '新增 SKU', noSkus: '暂无 SKU',
-      skuCode: 'SKU 编码', unit: '单位', locationStocks: '库存位置',
-      noStocksConfigured: '暂无库存配置',
-      warehouse: '仓库', channel: '渠道', left: '剩余',
-      adjustStock: '调整库存', editSku: '编辑 SKU', deleteSku: '删除 SKU',
-      skuCodeRequired: 'SKU 编码不能为空', skuNamesRequired: '中英文名称均为必填项',
-      editSkuTitle: '编辑 SKU 定义', createSkuTitle: '新建 SKU 定义',
-      skuCodeLabel: 'SKU 编码（唯一标识符）', itemType: '商品类型',
-      physical: '实体商品', virtual: '虚拟服务 / 商品',
-      descEn: '英文描述', descZh: '中文描述',
-      unitEn: '英文单位', unitZh: '中文单位',
-      deleteSkuTitle: '删除 SKU 注册项？',
-      deleteSkuWarning: (code) => `警告：确认要删除 SKU "${code}" 吗？`,
-      deleteSkuNote: '该 SKU 注册项将被永久删除。已关联此 SKU 的商品将失去库存绑定。',
-      deleteSkuFailed: '删除失败，请检查是否有商品正在引用此 SKU。',
-      confirmDelete: '确认删除', deleting: '删除中…',
-      adjustStockTitle: '调整库存', targetSku: '目标 SKU',
-      locationType: '库存位置类型', centralWarehouse: '中央仓库', clinicChannel: '诊所渠道库存',
-      selectChannel: '选择诊所渠道', chooseChannel: '-- 请选择渠道 --',
-      warehouseName: '仓库名称', quantityLabel: '数量（留空表示无限/虚拟商品）',
-      unlimitedStock: '无限库存', lowStockThreshold: '低库存预警阈值',
-      saveAdjustments: '保存调整', pleaseSelectChannel: '请选择目标渠道',
-      pleaseEnterWarehouse: '请输入仓库名称', stockFailed: '库存调整失败',
     },
     inventory: {
       selectChannel: '请选择渠道以管理库存',
-      selectChannelOption: '— 请选择渠道 —',
       addItem: '添加商品', editItem: '编辑商品', deleteItem: '删除商品',
       noItems: '暂无库存商品', noChannel: '暂无渠道',
       physical: '实体商品', virtual: '虚拟商品',
       itemType: '商品类型', stock: '库存', stockUnlimited: '不限',
       totalItems: '商品总数', activeItems: '上架中', physicalItems: '实体商品', virtualItems: '虚拟商品',
-      totalOrders: '订单总数', pendingOrders: '待处理订单',
-      itemsTab: '商品', ordersTab: '订单',
-      importFromStore: '从商城导入',
-      itemName: '商品名', source: '来源', inStore: '上架状态', user: '用户', date: '日期',
-      sourceStore: '商城商品', sourceCustom: '自定义',
-      stockLow: '库存低', stockOut: '已售罄',
-      inStoreLive: '已上架', inStoreHidden: '已隐藏',
-      showInStore: '商城上架', showInStoreLive: '已上架 — 在小程序商城中可见',
-      revenueLabel: (v) => `已交付营收：¥${v}`,
-      shippingAddress: '收货信息',
-      recipientName: '收货人', recipientPhone: '电话', recipientAddress: '地址',
-      noShippingAddress: '暂无收货地址（虚拟商品/服务）',
-      paymentFulfillment: '支付与履约',
-      paymentMethod: '支付方式', paymentStatus: '支付状态',
-      carrier: '快递公司', trackingNo: '快递单号', shippedAt: '发货时间',
-      orderNotes: '备注', assets: '资产',
-      skuBinding: 'SKU 绑定', selectSku: '— 请选择 SKU —',
-      skuRequired: 'SKU 为必填项 — 请先在 SKU 与库存标签页中创建 SKU',
-      linkedToStore: '已关联全局商城',
-      tagBestseller: '热销', tagValue: '超值', tagNew: '新品',
-      noStoreItems: '暂无商城商品。', alreadyAdded: '已添加',
       keyName: '唯一标识', nameEn: '名称（英文）', nameZh: '名称（中文）',
       descEn: '描述（英文）', descZh: '描述（中文）',
       unitEn: '单位（英文）', unitZh: '单位（中文）',
@@ -992,14 +608,6 @@ const T = {
       noSettings: '暂无设置', noPayouts: '暂无结算单', noCommissions: '暂无佣金记录',
       generate: '生成', generating: '生成中…', saved: '已保存', saveFailed: '保存失败',
       totalPayouts: '渠道结算', pendingPayouts: '待审批', totalCommissions: 'Coach 佣金', totalEarned: '佣金总额',
-      withdrawalsTab: '积分提现',
-      withdrawalUser: '用户', withdrawalCredits: '积分', withdrawalCash: '现金金额', withdrawalCurrency: '币种',
-      withdrawalMethod: '支付方式', withdrawalAccount: '账号', withdrawalStatus: '状态', withdrawalDate: '申请时间',
-      withdrawalNote: '备注', approve: '审批通过', reject: '拒绝', markCompleted: '标记完成',
-      noWithdrawals: '暂无提现申请', filterAll: '全部', filterPending: '待审批',
-      filterApproved: '已审批', filterRejected: '已拒绝', filterCompleted: '已完成',
-      totalWithdrawals: '提现申请', pendingWithdrawals: '待审批',
-      pending: '待审批', rejected: '已拒绝', completed: '已完成',
     },
     partners: {
       addPartner: '新增合伙人', editPartner: '编辑合伙人', deactivatePartner: '停用',
@@ -1030,8 +638,7 @@ const T = {
       uplineTier: '上线 →', newTier: '新合伙人 ↓', saveRules: '保存规则', saving: '保存中…',
     },
     academy: {
-      coursesTab: '课程', libraryTab: '文库', certificationsTab: '证书管理',
-      pathsTab: '学习路径', progressTab: '进度与排行',
+      coursesTab: '课程', libraryTab: '文库', progressTab: '完成进度',
       uploadCourse: '上传课程', editCourse: '编辑课程', deleteCourse: '删除课程',
       uploadDoc: '上传文档', deleteDoc: '删除文档',
       title: '标题 *', description: '描述', status: '状态', videoFile: '视频文件', mdFile: 'Markdown 文件',
@@ -1052,25 +659,9 @@ const T = {
       lessons: '课节', lessonCount: (n) => `${n} 节`,
       noLessons: '暂无课节，添加第一节。',
       deleteLessonWarning: (t) => `确认删除课节"${t}"？视频也将从存储中移除。`,
-      totalLessons: '课节数', coachesCompleted: '已完成 Coach', completionRate: '完成率 %',
+      totalLessons: '课节总数', coachesCompleted: '已完成 Coach', completionRate: '完成率 %',
       noProgress: '暂无进度数据',
       expandLessons: '管理课节', collapseLessons: '收起',
-      level: '等级', credits: '学分', creditsOnCompletion: '完成奖励学分',
-      prerequisite: '先修课程', contentType: '内容类型',
-      minWatchSeconds: '最短观看时长（秒）',
-      textContent: '课节文字内容', interactiveContext: '背景阅读 / 情境',
-      newCert: '新建证书', editCert: '编辑证书',
-      countCerts: (n) => `共 ${n} 个证书`,
-      noCerts: '暂无证书',
-      tier: '等级', requiredCourses: '必修课程（全部完成才可获证）',
-      minCredits: '最低学分要求', active: '启用',
-      newPath: '新建路径', editPath: '编辑路径',
-      countPaths: (n) => `共 ${n} 条路径`,
-      noPaths: '暂无学习路径',
-      pathCoursesLabel: '路径内课程（有序）', allCoursesAdded: '所有课程已添加', clickToAddCourses: '点击添加课程：',
-      courseProgress: '课程进度', coachesStarted: '已学习 Coach',
-      avgQuizScore: '平均测验分数', creditsAwarded: '已发放学分',
-      leaderboard: '🏆 排行榜', noData: '暂无数据',
     },
     reports: {
       title: 'AI 数据报表',
@@ -1094,12 +685,8 @@ const T = {
       ],
     },
     coachCrm: {
-      subPipeline: '客户漏斗', subCampaigns: '群发消息', subPerformance: '绩效分析', subNps: 'NPS', subGroups: '团队分组',
+      subPipeline: '客户漏斗', subCampaigns: '群发消息', subPerformance: '绩效分析', subNps: 'NPS',
       selectCoach: '— 选择 Coach —',
-      selectGroup: '— 选择团队 —',
-      noGroups: '暂无团队分组，请在 Coach 页面添加。',
-      groupPerfTitle: (name, p) => `${name} — ${p}`,
-      colCoachCount: 'Coach 数',
       selectCoachPrompt: '请选择 Coach 以查看其客户漏斗。',
       selectCoachCampaignsPrompt: '请选择 Coach 以查看其群发记录。',
       loading: '加载中…',
@@ -1125,64 +712,6 @@ const T = {
       promoters: '推荐者 (≥9)', passives: '中立者 (7–8)', detractors: '批评者 (≤6)', npsScore: 'NPS 分数',
       colUser: '用户', colType: '类型', colScore: '评分', colFeedback: '反馈', colRespondedAt: '回复时间',
       countResponses: (n) => `共 ${n} 条回复`,
-    },
-    userDetail: {
-      tabHealth: '健康数据',
-      tabPlans: '方案记录',
-      tabChat: '咨询沟通',
-      profile: '个人档案',
-      externalApp: '外部应用',
-      externalId: '外部 ID',
-      height: '身高',
-      weight: '体重',
-      healthConditions: '健康状况/需求',
-      loadingHealth: '加载健康数据中…',
-      chronoAge: '实际年龄',
-      bioAge: '生理年龄',
-      testsCount: (n) => `共 ${n} 次 Kino 检测`,
-      subAges: '各维度生物年龄',
-      latestBiomarkers: '最新生物标志物',
-      noBiomarker: '暂无生物标志物数据。',
-      biomarkerTrends: (n) => `生物标志物趋势 (共 ${n} 次检测)`,
-      healthReports: '体检报告与化验单',
-      loadingReports: '加载报告中…',
-      noReports: '暂无健康报告数据。',
-      labApiTag: '化验中心',
-      manualTag: '手动',
-      fhirTag: 'FHIR',
-      labPanelTag: '化验单',
-      annualCheckupTag: '年度体检',
-      loadingPlans: '加载方案中…',
-      noPlans: '暂无生效中的健康方案。',
-      primaryPlan: '主方案',
-      secondaryPlan: '副方案',
-      checkins: (n) => `已打卡 ${n} 次`,
-      weeks: (n) => `${n} 周`,
-      loadingChat: '加载消息中…',
-      noChat: '暂无沟通记录。',
-      userRole: '用户',
-      aiRole: 'AI 顾问',
-      coachRole: 'Coach',
-      referredBy: '推荐人',
-      invitedBy: '邀请人',
-      networkTab: '推荐网络',
-      networkEmpty: '该渠道暂无推荐关系。',
-      networkLegendReferral: '推荐码邀请',
-      networkLegendInvite: 'Coach 邀请码',
-      networkLegendRoot: '根节点（无邀请人）',
-      reportIdHeader: (id, name, date) => `报告 #${id} — ${name} — ${date}`,
-      loadingReportDetail: '加载报告详情中…',
-      vitalSigns: '生命体征',
-      diagnoses: '临床诊断 / 异常发现',
-      clinicalSummary: '临床小结',
-      recommendations: '改善建议',
-      followUp: '随访复查',
-      diagnostics: '辅助检查',
-      doctorAdvice: '医嘱建议',
-      labObservations: '化验指标明细',
-      coreBiomarker: '核心',
-      noObservations: '此报告暂无关联的化验指标。',
-      close: '关闭',
     },
   },
 };
@@ -1212,35 +741,6 @@ function StatCard({ icon: Icon, label, value, color = '#3b82f6' }) {
       <div>
         <div className="stat-value">{value}</div>
         <div className="stat-label">{label}</div>
-      </div>
-    </div>
-  );
-}
-
-function RichStatCard({ icon: Icon, label, value, color = '#3b82f6', subs = [] }) {
-  return (
-    <div className="stat-card" style={{ alignItems: 'flex-start', paddingTop: 14, paddingBottom: 14 }}>
-      <div className="stat-icon" style={{ background: color + '1a', color, marginTop: 2 }}>
-        <Icon size={20} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="stat-value">{value}</div>
-        <div className="stat-label">{label}</div>
-        {subs.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-            {subs.map((s, i) => (
-              <span key={i} style={{
-                fontSize: 11, whiteSpace: 'nowrap', borderRadius: 4, padding: '1px 6px',
-                background: s.highlight ? color + '15' : '#f1f5f9',
-                color: s.highlight ? color : '#64748b',
-                border: `1px solid ${s.highlight ? color + '30' : '#e2e8f0'}`,
-                fontWeight: s.highlight ? 600 : 400,
-              }}>
-                {s.label} {s.value}
-              </span>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1458,13 +958,13 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
 
 // ── Coach modal ───────────────────────────────────────────────────────────────
 
-const EMPTY_COACH = { user_id: '', group_id: '' };
+const EMPTY_COACH = { user_id: '', channel_id: '' };
 
-function CoachModal({ coach, users, channels, groups, onClose, onSave }) {
+function CoachModal({ coach, users, channels, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!coach?.id;
   const [form, setForm] = useState(isEdit
-    ? { user_id: coach.user_id || '', group_id: coach.group_id ?? '' }
+    ? { user_id: coach.user_id || '', channel_id: coach.channel_id ?? '' }
     : { ...EMPTY_COACH });
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1484,7 +984,7 @@ function CoachModal({ coach, users, channels, groups, onClose, onSave }) {
     if (!form.user_id.trim()) { setError(t.modal.userRequired); return; }
     setBusy(true); setError('');
     try {
-      const payload = { user_id: form.user_id, group_id: form.group_id === '' ? null : parseInt(form.group_id) };
+      const payload = { user_id: form.user_id, channel_id: form.channel_id === '' ? null : parseInt(form.channel_id) };
       if (isEdit) await axios.put(`/api/coaches/${coach.id}`, payload);
       else await axios.post('/api/coaches', payload);
       onSave();
@@ -1536,18 +1036,16 @@ function CoachModal({ coach, users, channels, groups, onClose, onSave }) {
                 </>
               )}
             </div>
-            {groups && groups.length > 0 && (
-              <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-                <span>{t.modal.coachGroup}</span>
-                <div className="select-wrap" style={{ width: '100%' }}>
-                  <select value={form.group_id} onChange={e => set('group_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                    <option value="">{t.modal.coachGroupUnassigned}</option>
-                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                  </select>
-                  <ChevronDown size={11} className="select-chevron" />
-                </div>
-              </label>
-            )}
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.channel}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">{t.modal.channelUnassigned}</option>
+                  {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
@@ -1580,99 +1078,6 @@ function DeleteCoachConfirm({ coach, onClose, onConfirm }) {
         <div className="modal-body">
           <p style={{ marginBottom: 20, color: '#475569' }}>
             {t.modal.deleteCoachWarning(<strong>{coach.name}</strong>)}
-          </p>
-          <div className="modal-footer">
-            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
-            <button className="btn-danger" onClick={handleDelete} disabled={busy}>
-              <Trash2 size={14} />{busy ? t.modal.deleting : t.modal.delete}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Coach group modals ────────────────────────────────────────────────────────
-
-function CoachGroupModal({ group, channelId, onClose, onSave }) {
-  const { t } = useLang();
-  const isEdit = !!group?.id;
-  const [form, setForm] = useState({
-    name: group?.name || '',
-    description: group?.description || '',
-    type: group?.type || '',
-  });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.name.trim()) { setError(t.modal.coachGroupName.replace(' *', '') + ' is required'); return; }
-    setBusy(true); setError('');
-    try {
-      const payload = { name: form.name.trim(), description: form.description.trim() || null, type: form.type.trim() || null, channel_id: channelId };
-      if (isEdit) await axios.put(`/api/coach-groups/${group.id}`, payload);
-      else await axios.post('/api/coach-groups', payload);
-      onSave();
-    } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>{isEdit ? t.modal.editCoachGroup : t.modal.addCoachGroup}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="modal-body">
-          <div className="form-grid">
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.modal.coachGroupName}</span>
-              <input value={form.name} onChange={e => set('name', e.target.value)} placeholder={t.modal.coachGroupName.replace(' *', '')} autoFocus />
-            </label>
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.modal.coachGroupType}</span>
-              <input value={form.type} onChange={e => set('type', e.target.value)} placeholder={t.modal.coachGroupTypePlaceholder} />
-            </label>
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.modal.coachGroupDescription}</span>
-              <input value={form.description} onChange={e => set('description', e.target.value)} placeholder={t.modal.coachGroupDescription} />
-            </label>
-          </div>
-          {error && <div className="form-error">{error}</div>}
-          <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
-            <button type="submit" className="btn-primary" disabled={busy}>
-              <Check size={14} />{busy ? t.modal.saving : t.modal.save}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function DeleteCoachGroupConfirm({ group, onClose, onConfirm }) {
-  const { t } = useLang();
-  const [busy, setBusy] = useState(false);
-  const handleDelete = async () => {
-    setBusy(true);
-    try { await axios.delete(`/api/coach-groups/${group.id}`); onConfirm(); }
-    catch { /* silent */ } finally { setBusy(false); }
-  };
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>{t.modal.deleteCoachGroup}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="modal-body">
-          <p style={{ marginBottom: 20, color: '#475569' }}>
-            {t.modal.deleteCoachGroupWarning(<strong>{group.name}</strong>)}
           </p>
           <div className="modal-footer">
             <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
@@ -1996,87 +1401,26 @@ const CONDITION_LABELS = {
   other:               'Other',
 };
 
-const CONDITION_LABELS_ZH = {
-  blood_sugar_high:    '高血糖',
-  blood_pressure_high: '高血压',
-  blood_lipids_high:   '高血脂',
-  cholesterol_high:    '高胆固醇',
-  heart_issues:        '心血管问题',
-  gout_uric_acid:      '痛风 / 高尿酸',
-  kidney_disease:      '肾脏疾病',
-  sleep_deficiency:    '睡眠不足',
-  other:               '其他',
-};
-
-const subAgeMetaZh = {
-  ResilienceAge: '抗压年龄',
-  CellularAge: '细胞年龄',
-  MetabolicAge: '代谢年龄',
-  MicroVascularAge: '微血管年龄',
-};
-
-const bmLabelsZh = {
-  hsCRP: '超敏 C 反应蛋白',
-  GDF15: '生长分化因子-15',
-  IL6: '白介素-6',
-  GA: '糖化白蛋白',
-  CystatinC: '胱抑素 C',
-  CD38: 'CD38 表达量',
-};
-
 function UserDetailModal({ user, onClose }) {
-  const { t, lang } = useLang();
-  const isZh = lang === 'zh';
+  const { t } = useLang();
   const [tab, setTab]                     = useState('health');
   const [records, setRecords]             = useState([]);
   const [bmLoading, setBmLoading]         = useState(true);
-  const [twinData, setTwinData]           = useState(null);
   const [plans, setPlans]                 = useState(null);
   const [plansLoading, setPlansLoading]   = useState(false);
   const [messages, setMessages]           = useState(null);
   const [chatLoading, setChatLoading]     = useState(false);
-
-  const [healthReports, setHealthReports]               = useState([]);
-  const [healthReportsLoading, setHealthReportsLoading] = useState(false);
-  const [selectedReport, setSelectedReport]             = useState(null);
-  const [reportDetail, setReportDetail]                 = useState(null);
-  const [reportDetailLoading, setReportDetailLoading]   = useState(false);
 
   const openid = user?.user_id || user?.id;
 
   useEffect(() => {
     if (!openid) return;
     setBmLoading(true);
-    setTwinData(null);
-    setHealthReportsLoading(true);
-
     axios.get(`/api/biomarkers?openid=${encodeURIComponent(openid)}`)
       .then(r => setRecords(r.data.records || []))
       .catch(() => setRecords([]))
       .finally(() => setBmLoading(false));
-    axios.get(`/api/health-twin?openid=${encodeURIComponent(openid)}`)
-      .then(r => setTwinData(r.data.twin || null))
-      .catch(() => setTwinData(null));
-    axios.get(`/api/health-reports?openid=${encodeURIComponent(openid)}`)
-      .then(r => setHealthReports(r.data.reports || []))
-      .catch(() => setHealthReports([]))
-      .finally(() => setHealthReportsLoading(false));
   }, [openid]);
-
-  const openReportDetail = async (rep) => {
-    setSelectedReport(rep);
-    setReportDetailLoading(true);
-    setReportDetail({ report: rep, events: [] });
-    try {
-      const r = await axios.get(`/api/health-reports/${rep.id}`);
-      setReportDetail(r.data);
-    } catch (err) {
-      console.error(err);
-      setReportDetail(d => ({ ...d, events: [] }));
-    } finally {
-      setReportDetailLoading(false);
-    }
-  };
 
   const switchTab = (next) => {
     setTab(next);
@@ -2116,8 +1460,7 @@ function UserDetailModal({ user, onClose }) {
         const score = v != null && cAge != null
           ? Math.max(5, Math.min(95, Math.round((cAge + 15 - v) / 30 * 100)))
           : 50;
-        const translatedLabel = isZh ? (subAgeMetaZh[key] || label) : label;
-        return { key, label: translatedLabel, color, value: v != null ? v.toFixed(1) : '—', score };
+        return { key, label, color, value: v != null ? v.toFixed(1) : '—', score };
       })
     : [];
 
@@ -2125,9 +1468,9 @@ function UserDetailModal({ user, onClose }) {
     .map(r => r.data?.estimated?.[key]).filter(v => v != null);
 
   const TABS = [
-    { id: 'health', label: t.userDetail.tabHealth },
-    { id: 'plans',  label: t.userDetail.tabPlans  },
-    { id: 'chat',   label: t.userDetail.tabChat   },
+    { id: 'health', label: 'Health' },
+    { id: 'plans',  label: 'Plans'  },
+    { id: 'chat',   label: 'Chat'   },
   ];
 
   return (
@@ -2167,39 +1510,27 @@ function UserDetailModal({ user, onClose }) {
           {tab === 'health' && (
             <div className="udm-health">
 
-              {/* Left: digital twin + profile + conditions */}
+              {/* Left: profile + conditions */}
               <div className="udm-col-left">
-                <DigitalBodyFigure subAges={subAgeList} bioAge={rawBioAge} chronoAge={cAge} isZh={isZh} />
-                {twinData?.tags?.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
-                    {twinData.tags.map((tag, i) => (
-                      <Badge key={i} color={tag.color}>{isZh ? (tag.labelZh || tag.labelEn) : tag.labelEn}</Badge>
-                    ))}
-                  </div>
-                )}
                 <div className="udm-section">
-                  <div className="udm-section-title">{t.userDetail.profile}</div>
+                  <div className="udm-section-title">Profile</div>
                   <div className="drawer-info-grid">
-                    <span className="drawer-info-key">{t.userDetail.externalApp}</span>
+                    <span className="drawer-info-key">External App</span>
                     <span className="drawer-info-val">{fmt(user.external_app)}</span>
-                    <span className="drawer-info-key">{t.userDetail.externalId}</span>
+                    <span className="drawer-info-key">External ID</span>
                     <span className="drawer-info-val mono">{fmt(user.external_id)}</span>
                     <span className="drawer-info-key">{t.table.gender}</span>
-                    <span className="drawer-info-val">{fmt(user.gender === 'male' ? t.modal.male : user.gender === 'female' ? t.modal.female : user.gender)}</span>
+                    <span className="drawer-info-val">{fmt(user.gender)}</span>
                     <span className="drawer-info-key">{t.table.birthDate}</span>
                     <span className="drawer-info-val">{fmtDate(user.birth_date)}</span>
-                    <span className="drawer-info-key">{t.userDetail.height}</span>
+                    <span className="drawer-info-key">Height</span>
                     <span className="drawer-info-val">{bioData.height != null ? `${bioData.height} cm` : '—'}</span>
-                    <span className="drawer-info-key">{t.userDetail.weight}</span>
+                    <span className="drawer-info-key">Weight</span>
                     <span className="drawer-info-val">{bioData.weight != null ? `${bioData.weight} kg` : '—'}</span>
                     <span className="drawer-info-key">{t.table.language}</span>
-                    <span className="drawer-info-val">{user.language === 'zh' ? t.modal.langZh : user.language === 'en' ? t.modal.langEn : (user.language || '—').toUpperCase()}</span>
+                    <span className="drawer-info-val">{(user.language || '—').toUpperCase()}</span>
                     <span className="drawer-info-key">{t.table.assignedCoach}</span>
                     <span className="drawer-info-val">{fmt(user.coach_name)}</span>
-                    <span className="drawer-info-key">{t.userDetail.referredBy}</span>
-                    <span className="drawer-info-val">{user.referred_by_user_id ? (user.referrer_nickname || user.referred_by_user_id) : '—'}</span>
-                    <span className="drawer-info-key">{t.userDetail.invitedBy}</span>
-                    <span className="drawer-info-val">{user.invited_by_invitation_id ? `${user.inviter_nickname || '—'} (${user.invite_code})` : '—'}</span>
                     <span className="drawer-info-key">{t.table.joined}</span>
                     <span className="drawer-info-val">{fmtDate(user.created_at)}</span>
                     <span className="drawer-info-key">{t.modal.phone}</span>
@@ -2209,15 +1540,9 @@ function UserDetailModal({ user, onClose }) {
                     <span className="drawer-info-key">{t.table.roles}</span>
                     <span className="drawer-info-val">
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {(user.roles || ['user']).map(r => {
-                          const translatedRole = r === 'superadmin' ? t.modal.roleSuperadmin
-                            : r === 'admin' ? t.modal.roleAdmin
-                            : r === 'coach' ? t.modal.roleCoach
-                            : t.modal.roleUser;
-                          return (
-                            <Badge key={r} color={r === 'superadmin' ? '#dc2626' : r === 'admin' ? '#f59e0b' : r === 'coach' ? '#8b5cf6' : '#64748b'}>{translatedRole}</Badge>
-                          );
-                        })}
+                        {(user.roles || ['user']).map(r => (
+                          <Badge key={r} color={r === 'superadmin' ? '#dc2626' : r === 'admin' ? '#f59e0b' : r === 'coach' ? '#8b5cf6' : '#64748b'}>{r}</Badge>
+                        ))}
                       </div>
                     </span>
                   </div>
@@ -2225,14 +1550,11 @@ function UserDetailModal({ user, onClose }) {
 
                 {conditions.length > 0 && (
                   <div className="udm-section">
-                    <div className="udm-section-title">{t.userDetail.healthConditions}</div>
+                    <div className="udm-section-title">Health Conditions</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                      {conditions.map(c => {
-                        const label = isZh ? (CONDITION_LABELS_ZH[c] || c) : (CONDITION_LABELS[c] || c);
-                        return (
-                          <Badge key={c} color="#6366f1">{label}</Badge>
-                        );
-                      })}
+                      {conditions.map(c => (
+                        <Badge key={c} color="#6366f1">{CONDITION_LABELS[c] || c}</Badge>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -2241,30 +1563,30 @@ function UserDetailModal({ user, onClose }) {
               {/* Right: bio ages + biomarkers + trends */}
               <div className="udm-col-right">
                 {bmLoading ? (
-                  <div className="drawer-empty" style={{ padding: '24px 0' }}>{t.userDetail.loadingHealth}</div>
+                  <div className="drawer-empty" style={{ padding: '24px 0' }}>Loading health data…</div>
                 ) : (
                   <>
                     <div className="udm-section">
                       <div className="udm-bioage-row">
                         <div className="udm-age-chip">
                           <div className="udm-age-val">{cAge ?? '—'}</div>
-                          <div className="udm-age-label">{t.userDetail.chronoAge}</div>
+                          <div className="udm-age-label">Chrono Age</div>
                         </div>
                         <div className="udm-age-chip udm-age-chip-primary">
                           <div className="udm-age-val udm-bio-val" style={{ color: bAgeClr }}>
                             {rawBioAge ? Number(rawBioAge).toFixed(1) : '—'}
                           </div>
-                          <div className="udm-age-label">{t.userDetail.bioAge}</div>
+                          <div className="udm-age-label">Bio Age</div>
                         </div>
                         <span className="drawer-empty" style={{ padding: 0 }}>
-                          {t.userDetail.testsCount(kinoRecs.length)}
+                          {kinoRecs.length} Kino test{kinoRecs.length !== 1 ? 's' : ''}
                         </span>
                       </div>
                     </div>
 
                     {subAgeList.length > 0 && (
                       <div className="udm-section">
-                        <div className="udm-section-title">{t.userDetail.subAges}</div>
+                        <div className="udm-section-title">Sub-Ages</div>
                         <div className="udm-subages">
                           {subAgeList.map(({ key, label, color, value, score }) => (
                             <div key={key} className="udm-subage-row">
@@ -2280,38 +1602,34 @@ function UserDetailModal({ user, onClose }) {
                     )}
 
                     <div className="udm-section">
-                      <div className="udm-section-title">{t.userDetail.latestBiomarkers}</div>
+                      <div className="udm-section-title">Latest Biomarkers</div>
                       {latestBm ? (
                         <div className="bm-table">
-                          {BM_META.map(({ key, label, unit, color }) => {
-                            const translatedLabel = isZh ? (bmLabelsZh[key] || label) : label;
-                            return (
-                              <div key={key} className="bm-table-row">
-                                <span className="bm-table-label">{translatedLabel}</span>
-                                <span className="bm-table-val" style={{ color }}>{latestBm[key] ?? '—'}</span>
-                                <span className="bm-table-unit">{unit}</span>
-                              </div>
-                            );
-                          })}
+                          {BM_META.map(({ key, label, unit, color }) => (
+                            <div key={key} className="bm-table-row">
+                              <span className="bm-table-label">{label}</span>
+                              <span className="bm-table-val" style={{ color }}>{latestBm[key] ?? '—'}</span>
+                              <span className="bm-table-unit">{unit}</span>
+                            </div>
+                          ))}
                         </div>
                       ) : (
-                        <div className="drawer-empty">{t.userDetail.noBiomarker}</div>
+                        <div className="drawer-empty">No biomarker data yet.</div>
                       )}
                     </div>
 
                     {kinoRecs.length > 0 && (
                       <div className="udm-section">
                         <div className="udm-section-title">
-                          {t.userDetail.biomarkerTrends(kinoRecs.length)}
+                          Biomarker Trends ({kinoRecs.length} test{kinoRecs.length !== 1 ? 's' : ''})
                         </div>
                         <div className="trend-grid">
                           {BM_META.map(({ key, label, unit, color }) => {
                             const vals = trendFor(key);
                             const last = vals[vals.length - 1];
-                            const translatedLabel = isZh ? (bmLabelsZh[key] || label) : label;
                             return (
                               <div key={key} className="trend-card">
-                                <div className="trend-label">{translatedLabel}</div>
+                                <div className="trend-label">{label}</div>
                                 <div className="trend-val" style={{ color }}>
                                   {last != null ? last : '—'}<span className="trend-unit">{unit}</span>
                                 </div>
@@ -2322,80 +1640,6 @@ function UserDetailModal({ user, onClose }) {
                         </div>
                       </div>
                     )}
-
-                    {/* ── Health Reports ── */}
-                    <div className="udm-section" style={{ marginTop: 22 }}>
-                      <div className="udm-section-title">{t.userDetail.healthReports}</div>
-                      {healthReportsLoading ? (
-                        <div className="drawer-empty">{t.userDetail.loadingReports}</div>
-                      ) : healthReports.length > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          {healthReports.map(rep => {
-                            const sourceColor = { lab_api: '#6366f1', manual_upload: '#10b981', fhir_import: '#f59e0b' }[rep.source] || '#94a3b8';
-                            const reportTypeColor = { lab_panel: '#3b82f6', annual_checkup: '#10b981' }[rep.report_type] || '#8b5cf6';
-                            return (
-                              <div
-                                key={rep.id}
-                                className="report-list-item"
-                                onClick={() => openReportDetail(rep)}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                  <div style={{
-                                    width: 32,
-                                    height: 32,
-                                    borderRadius: 6,
-                                    background: `${reportTypeColor}15`,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: reportTypeColor
-                                  }}>
-                                    <FileText size={16} />
-                                  </div>
-                                  <div>
-                                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
-                                      {rep.institution || (isZh ? '未知机构' : 'Unknown Institution')}
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                                      <span style={{ fontSize: 11, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                        <Calendar size={11} /> {rep.report_date}
-                                      </span>
-                                      <span style={{
-                                        fontSize: 10,
-                                        fontWeight: 700,
-                                        color: sourceColor,
-                                        background: `${sourceColor}10`,
-                                        padding: '1px 6px',
-                                        borderRadius: 4,
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.04em'
-                                      }}>
-                                        {rep.source === 'lab_api' ? t.userDetail.labApiTag : rep.source === 'manual_upload' ? t.userDetail.manualTag : t.userDetail.fhirTag}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    color: reportTypeColor,
-                                    background: `${reportTypeColor}10`,
-                                    padding: '2px 8px',
-                                    borderRadius: 12,
-                                  }}>
-                                    {rep.report_type === 'lab_panel' ? t.userDetail.labPanelTag : rep.report_type === 'annual_checkup' ? t.userDetail.annualCheckupTag : rep.report_type}
-                                  </span>
-                                  <ChevronRight size={16} style={{ color: 'var(--muted)' }} />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="drawer-empty">{t.userDetail.noReports}</div>
-                      )}
-                    </div>
                   </>
                 )}
               </div>
@@ -2404,233 +1648,67 @@ function UserDetailModal({ user, onClose }) {
 
           {/* ── PLANS ── */}
           {tab === 'plans' && (
-            <div className="udm-plans-fill">
-              {plansLoading ? (
-                <div className="drawer-empty">{t.userDetail.loadingPlans}</div>
-              ) : !plans || plans.length === 0 ? (
-                <div className="drawer-empty">{t.userDetail.noPlans}</div>
-              ) : (
-                <div className="udm-plans-grid">
-                  {plans.map(p => (
-                    <div key={p.id} className="udm-plan-card">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                        <Badge color={p.plan_type === 'primary' ? '#3b82f6' : '#8b5cf6'}>
-                          {p.plan_type === 'primary' ? t.userDetail.primaryPlan : t.userDetail.secondaryPlan}
-                        </Badge>
-                      </div>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: '#1e293b', marginBottom: 4 }}>
-                        {isZh ? (p.name_zh || p.custom_name_zh || p.name_en || p.custom_name_en) : (p.name_en || p.custom_name_en || p.name_zh || p.custom_name_zh || '—')}
-                      </div>
-                      {(isZh ? (p.custom_goal_zh || p.custom_goal_en) : (p.custom_goal_en || p.custom_goal_zh)) && (
-                        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8, lineHeight: 1.5 }}>
-                          {isZh ? (p.custom_goal_zh || p.custom_goal_en) : (p.custom_goal_en || p.custom_goal_zh)}
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#94a3b8' }}>
-                        <span>{t.userDetail.checkins(p.checkin_count ?? 0)}</span>
-                        {p.duration_weeks && <span>{t.userDetail.weeks(p.duration_weeks)}</span>}
-                      </div>
+            plansLoading ? (
+              <div className="drawer-empty">Loading plans…</div>
+            ) : !plans || plans.length === 0 ? (
+              <div className="drawer-empty">No active health plans.</div>
+            ) : (
+              <div className="udm-plans-grid">
+                {plans.map(p => (
+                  <div key={p.id} className="udm-plan-card">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <Badge color={p.plan_type === 'primary' ? '#3b82f6' : '#8b5cf6'}>
+                        {p.plan_type === 'primary' ? 'Primary' : 'Secondary'}
+                      </Badge>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#1e293b', marginBottom: 4 }}>
+                      {p.name_zh || p.name_en || p.custom_name_zh || p.custom_name_en || '—'}
+                    </div>
+                    {(p.custom_goal_zh || p.custom_goal_en) && (
+                      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8, lineHeight: 1.5 }}>
+                        {p.custom_goal_zh || p.custom_goal_en}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#94a3b8' }}>
+                      <span>{p.checkin_count ?? 0} check-ins</span>
+                      {p.duration_weeks && <span>{p.duration_weeks} weeks</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           )}
 
           {/* ── CHAT ── */}
           {tab === 'chat' && (
-            <div className="udm-chat-fill">
-              {chatLoading ? (
-                <div className="drawer-empty">{t.userDetail.loadingChat}</div>
-              ) : !messages || messages.length === 0 ? (
-                <div className="drawer-empty">{t.userDetail.noChat}</div>
-              ) : (
-                <div className="udm-chat-list">
-                  {messages.map((msg, i) => (
-                    <div key={msg.id || i} className={`udm-msg udm-msg-${msg.role}`}>
-                      <div className="udm-msg-meta">
-                        <span className="udm-msg-role">
-                          {msg.role === 'user' ? t.userDetail.userRole : msg.role === 'ai' ? t.userDetail.aiRole : t.userDetail.coachRole}
-                        </span>
-                        <span className="udm-msg-time">
-                          {msg.created_at ? new Date(msg.created_at).toLocaleString(isZh ? 'zh-CN' : 'en-US') : ''}
-                        </span>
-                      </div>
-                      {msg.imageUrl
-                        ? <img src={msg.imageUrl} alt="attachment"
-                            style={{ maxWidth: 300, borderRadius: 8, marginTop: 4, display: 'block' }} />
-                        : <div className="udm-msg-content">{msg.content}</div>
-                      }
+            chatLoading ? (
+              <div className="drawer-empty">Loading messages…</div>
+            ) : !messages || messages.length === 0 ? (
+              <div className="drawer-empty">No messages yet.</div>
+            ) : (
+              <div className="udm-chat-list">
+                {messages.map((msg, i) => (
+                  <div key={msg.id || i} className={`udm-msg udm-msg-${msg.role}`}>
+                    <div className="udm-msg-meta">
+                      <span className="udm-msg-role">
+                        {msg.role === 'user' ? 'User' : msg.role === 'ai' ? 'AI' : 'Coach'}
+                      </span>
+                      <span className="udm-msg-time">
+                        {msg.created_at ? new Date(msg.created_at).toLocaleString() : ''}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                    {msg.imageUrl
+                      ? <img src={msg.imageUrl} alt="attachment"
+                          style={{ maxWidth: 300, borderRadius: 8, marginTop: 4, display: 'block' }} />
+                      : <div className="udm-msg-content">{msg.content}</div>
+                    }
+                  </div>
+                ))}
+              </div>
+            )
           )}
 
         </div>
-
-        {/* Detail Modal Overlay */}
-        {selectedReport && reportDetail && (
-          <div className="modal-overlay" style={{ zIndex: 110 }} onClick={() => setSelectedReport(null)}>
-            <div className="modal" style={{ maxWidth: 720, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-              <div className="modal-header">
-                <span>{t.userDetail.reportIdHeader(reportDetail.report.id, reportDetail.report.nickname || user.nickname || 'User', reportDetail.report.report_date)}</span>
-                <button className="icon-btn" onClick={() => setSelectedReport(null)}><X size={16} /></button>
-              </div>
-              <div style={{ overflowY: 'auto', padding: '16px 24px', flex: 1 }}>
-                {reportDetailLoading && <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>{t.userDetail.loadingReportDetail}</div>}
-
-                {/* ── Doctor Notes Section ── */}
-                {!reportDetailLoading && reportDetail.report?.raw_data?.doctor_notes && (() => {
-                  const dn = reportDetail.report.raw_data.doctor_notes;
-                  return (
-                    <div style={{ marginBottom: 20 }}>
-                      {/* Attending physician */}
-                      {dn.physician && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                          <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>👨‍⚕️</div>
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: 14 }}>{isZh ? (dn.physician_zh || dn.physician) : dn.physician}</div>
-                            <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                              {isZh ? (dn.department_zh || dn.department) : dn.department} · {reportDetail.report.institution || (isZh ? '未知机构' : 'Unknown Institution')}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Vital signs summary */}
-                      {dn.vital_summary && (
-                        <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.18)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-                          <div style={{ fontSize: 11, color: '#6366f1', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.userDetail.vitalSigns}</div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px' }}>
-                            {Object.entries(dn.vital_summary).map(([k, v]) => (
-                              <span key={k} style={{ fontSize: 12 }}>
-                                <span style={{ color: '#94a3b8' }}>{k.replace(/_/g,' ')}: </span>
-                                <span style={{ fontWeight: 600 }}>{v}</span>
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Diagnoses */}
-                      {dn.diagnoses?.length > 0 && (
-                        <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-                          <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.userDetail.diagnoses}</div>
-                          <ul style={{ margin: 0, paddingLeft: 16 }}>
-                            {dn.diagnoses.map((d, i) => (
-                              <li key={i} style={{ fontSize: 13, color: '#e2e8f0', marginBottom: 3 }}>{d}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {/* Clinical narrative */}
-                      {dn.clinical_summary && (
-                        <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-                          <div style={{ fontSize: 11, color: '#10b981', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.userDetail.clinicalSummary}</div>
-                          <p style={{ margin: 0, fontSize: 13, color: '#cbd5e1', lineHeight: 1.65 }}>{dn.clinical_summary}</p>
-                        </div>
-                      )}
-
-                      {/* Recommendations */}
-                      {dn.recommendations?.length > 0 && (
-                        <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-                          <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.userDetail.recommendations}</div>
-                          <ul style={{ margin: 0, paddingLeft: 16 }}>
-                            {dn.recommendations.map((r, i) => (
-                              <li key={i} style={{ fontSize: 13, color: '#e2e8f0', marginBottom: 3 }}>{r}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {/* Follow-up */}
-                      {dn.follow_up && (
-                        <div style={{ fontSize: 12, color: '#94a3b8', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10, marginTop: 6 }}>
-                          <span style={{ color: '#6366f1', fontWeight: 600 }}>{t.userDetail.followUp}: </span>{dn.follow_up}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* ── Older diagnostics/doctor_advice format ── */}
-                {!reportDetailLoading && !reportDetail.report?.raw_data?.doctor_notes && (
-                  <>
-                    {reportDetail.report?.raw_data?.diagnostics?.length > 0 && (
-                      <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.userDetail.diagnostics}</div>
-                        <ul style={{ margin: 0, paddingLeft: 16 }}>
-                          {reportDetail.report.raw_data.diagnostics.map((d, i) => (
-                            <li key={i} style={{ fontSize: 13, color: '#e2e8f0', marginBottom: 3 }}>{d}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {reportDetail.report?.raw_data?.doctor_advice?.length > 0 && (
-                      <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.userDetail.doctorAdvice}</div>
-                        <ul style={{ margin: 0, paddingLeft: 16 }}>
-                          {reportDetail.report.raw_data.doctor_advice.map((a, i) => (
-                            <li key={i} style={{ fontSize: 13, color: '#e2e8f0', marginBottom: 3 }}>{a}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* ── Biomarker Observations Table ── */}
-                {!reportDetailLoading && (reportDetail.events || []).length > 0 && (
-                  <>
-                    <div style={{ fontSize: 11, color: '#6366f1', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{t.userDetail.labObservations}</div>
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>{isZh ? '化验项目' : 'Biomarker'}</th>
-                          <th>LOINC</th>
-                          <th>{isZh ? '测定值' : 'Value'}</th>
-                          <th>{isZh ? '单位' : 'Unit'}</th>
-                          <th>{isZh ? '关联维度' : 'Dimension'}</th>
-                          <th>{isZh ? '检测日期' : 'Date'}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(reportDetail.events || []).map(ev => {
-                          const obsName = isZh ? (bmLabelsZh[ev.data?.key_name] || ev.data?.key_name) : ev.data?.key_name;
-                          const obsDimension = isZh ? (subAgeMetaZh[ev.data?.nano_dimension] || ev.data?.nano_dimension) : ev.data?.nano_dimension;
-                          return (
-                            <tr key={ev.id}>
-                              <td style={{ fontWeight: ev.data?.is_kino_core ? 600 : 400, color: ev.data?.is_kino_core ? '#a5b4fc' : undefined }}>
-                                {obsName || '—'}
-                                {ev.data?.is_kino_core && <span style={{ marginLeft: 4, fontSize: 10, color: '#6366f1', fontWeight: 700 }}>{t.userDetail.coreBiomarker}</span>}
-                              </td>
-                              <td style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>{ev.data?.loinc_code || '—'}</td>
-                              <td style={{ fontWeight: 600 }}>{ev.data?.value}</td>
-                              <td style={{ color: '#94a3b8', fontSize: 12 }}>{ev.data?.unit}</td>
-                              <td style={{ fontSize: 11, color: '#64748b' }}>{obsDimension || '—'}</td>
-                              <td style={{ fontSize: 11, color: '#94a3b8' }}>{ev.data_date}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </>
-                )}
-                {!reportDetailLoading && (reportDetail.events || []).length === 0 && !reportDetail.report?.raw_data?.doctor_notes && !reportDetail.report?.raw_data?.diagnostics && !reportDetail.report?.raw_data?.doctor_advice && (
-                  <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>{t.userDetail.noObservations}</div>
-                )}
-              </div>
-              <div className="modal-footer">
-                <button className="btn-secondary" onClick={() => setSelectedReport(null)}>{t.userDetail.close}</button>
-              </div>
-            </div>
-          </div>
-        )}
-
       </div>
     </div>
   );
@@ -2638,626 +1716,30 @@ function UserDetailModal({ user, onClose }) {
 
 // ── Users tab ─────────────────────────────────────────────────────────────────
 
-function ReferralNetworkTab({ channels, session }) {
-  const { t, lang } = useLang();
-  const isZh = lang === 'zh';
-  const isSuperadmin = session?.role === 'superadmin';
-  const [channelId, setChannelId] = useState(isSuperadmin ? (channels[0]?.id || '') : session?.channelId || '');
-  const [graphData, setGraphData] = useState({ nodes: [], links: [] });
-  const [loading, setLoading] = useState(false);
-  const [detailUser, setDetailUser] = useState(null);
-  const containerRef = useRef(null);
-  const [width, setWidth] = useState(900);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(entries => setWidth(entries[0].contentRect.width));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!channelId) return;
-    setLoading(true);
-    axios.get(`/api/channel-referral-network?channel_id=${channelId}`)
-      .then(r => {
-        if (!r.data.success) return;
-        const targetSet = new Set((r.data.links || []).map(l => l.target));
-        const sourceSet = new Set((r.data.links || []).map(l => l.source));
-        setGraphData({
-          nodes: (r.data.nodes || []).map(n => ({
-            ...n,
-            _isRoot: !targetSet.has(n.id),
-            _hasOutgoing: sourceSet.has(n.id),
-          })),
-          links: r.data.links || [],
-        });
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [channelId]);
-
-  const hasLinks = graphData.links.length > 0;
-  const Dot = ({ color, round }) => (
-    <span style={{
-      display: 'inline-block', width: 12, height: 12, verticalAlign: 'middle',
-      background: color, borderRadius: round ? '50%' : 3, marginRight: 5,
-    }} />
-  );
-
-  return (
-    <div ref={containerRef} style={{ padding: '12px 16px 24px' }}>
-      {isSuperadmin && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <label style={{ fontSize: 13, color: 'var(--muted)' }}>Channel</label>
-          <select value={channelId} onChange={e => setChannelId(e.target.value)}
-            style={{ fontSize: 13, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)' }}>
-            <option value="">Select channel…</option>
-            {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-      )}
-
-      {loading && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-          <span style={{ width: 18, height: 18, border: '2px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
-        </div>
-      )}
-
-      {!loading && channelId && !hasLinks && (
-        <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)', fontSize: 14 }}>
-          {t.userDetail.networkEmpty}
-        </div>
-      )}
-
-      {!loading && hasLinks && (
-        <>
-          <div style={{ borderRadius: 8, overflow: 'hidden', background: 'var(--card)', border: '1px solid var(--border)' }}>
-            <ForceGraph2D
-              graphData={graphData}
-              width={width - 32}
-              height={600}
-              backgroundColor="transparent"
-              nodeLabel={n => `${n.nickname || n.id}${n.referral_code ? ` · ${n.referral_code}` : ''}`}
-              linkColor={l => l.type === 'referral' ? '#10b981' : l.type === 'invitation' ? '#8b5cf6' : '#f97316'}
-              linkWidth={1.5}
-              linkDirectionalArrowLength={6}
-              linkDirectionalArrowRelPos={1}
-              onNodeClick={node => setDetailUser(node)}
-              nodeCanvasObject={(node, ctx, globalScale) => {
-                const isExt = node._isExternal;
-                const r = isExt ? 6 : node._isRoot ? 8 : 5;
-                const color = isExt ? '#ef4444' : node._isRoot ? '#f59e0b' : node._hasOutgoing ? '#6366f1' : '#64748b';
-                ctx.beginPath();
-                ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
-                ctx.fillStyle = color;
-                ctx.fill();
-                if (isExt) {
-                  ctx.strokeStyle = '#fff';
-                  ctx.lineWidth = 1.5;
-                  ctx.stroke();
-                }
-                const label = (node.nickname || node.id || '').slice(0, 12);
-                const fontSize = Math.max(11 / globalScale, 2);
-                ctx.font = `${isExt ? 'bold ' : ''}${fontSize}px Sans-Serif`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-                ctx.fillStyle = isExt ? 'rgba(239,68,68,0.9)' : 'rgba(148,163,184,0.9)';
-                ctx.fillText(label, node.x, node.y + r + 2);
-              }}
-              nodePointerAreaPaint={(node, color, ctx) => {
-                ctx.fillStyle = color;
-                ctx.beginPath();
-                ctx.arc(node.x, node.y, node._isExternal ? 6 : (node._isRoot ? 8 : 5), 0, 2 * Math.PI, false);
-                ctx.fill();
-              }}
-            />
-          </div>
-          <div style={{ display: 'flex', gap: 20, marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
-            <span><Dot color="#10b981" />{t.userDetail.networkLegendReferral}</span>
-            <span><Dot color="#8b5cf6" />{t.userDetail.networkLegendInvite}</span>
-            <span><Dot color="#f59e0b" round />{t.userDetail.networkLegendRoot}</span>
-            <span><Dot color="#6366f1" round />{isZh ? '有推荐下级' : 'Has referrals'}</span>
-            <span><Dot color="#f97316" />{isZh ? '分配教练' : 'Assigned coach'}</span>
-            <span><Dot color="#ef4444" round />{isZh ? '外部教练节点' : 'External coach node'}</span>
-          </div>
-        </>
-      )}
-
-      {detailUser && <UserDetailModal user={detailUser} onClose={() => setDetailUser(null)} />}
-    </div>
-  );
-}
-
-function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) {
-  const { t, lang } = useLang();
-  const [subTab, setSubTab] = useState('list');
-  const [modal, setModal] = useState(null);
-  const [detailUser, setDetailUser] = useState(null);
-  const [loadedUsers, setLoadedUsers] = useState([]);
-  const [offset, setOffset] = useState(0);
-  const [total, setTotal] = useState(0);
-  const [tested, setTested] = useState(0);
-  const [avgBioAge, setAvgBioAge] = useState('—');
-  const [maleCount, setMaleCount] = useState(0);
-  const [femaleCount, setFemaleCount] = useState(0);
-  const [newUsers7d, setNewUsers7d] = useState(0);
-  const [maleCoachCount, setMaleCoachCount] = useState(0);
-  const [femaleCoachCount, setFemaleCoachCount] = useState(0);
-  const [newCoaches7d, setNewCoaches7d] = useState(0);
-  const [coachTotal, setCoachTotal] = useState(0);
-  const [scansTotal, setScansTotal] = useState(0);
-  const [scans7d, setScans7d] = useState(0);
-  const [scans14d, setScans14d] = useState(0);
-  const [scans30d, setScans30d] = useState(0);
-  const [bioAgeDelta, setBioAgeDelta] = useState(null);
-  const [tabLoading, setTabLoading] = useState(false);
-  const [searchInput, setSearchInput] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [channelFilter, setChannelFilter] = useState('');
-  const [sortField, setSortField] = useState('created_at');
-  const [sortDir, setSortDir] = useState('desc');
-  const [includeSubchannels, setIncludeSubchannels] = useState(true);
-
-  const loaderRef = React.useRef(null);
-  const abortRef = React.useRef(null);
-
-  // Debounce search input
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setSearchQuery(searchInput);
-    }, 300);
-    return () => clearTimeout(handler);
-  }, [searchInput]);
-
-  const loadUsers = useCallback((currentOffset, append = false) => {
-    if (abortRef.current) abortRef.current.abort();
-    abortRef.current = new AbortController();
-
-    setTabLoading(true);
-    const cid = session?.channelId;
-    const isChannel = session?.role === 'channel';
-    const baseUrl = isChannel ? `/api/channel-users/${cid}` : '/api/users';
-
-    const params = {
-      limit: 50,
-      offset: currentOffset,
-      q: searchQuery.trim(),
-      sort_field: sortField,
-      sort_dir: sortDir,
-    };
-
-    if (isChannel) {
-      if (includeSubchannels) {
-        params.include_subchannels = 'true';
-      }
-    } else {
-      if (channelFilter) {
-        params.filter_channel_id = channelFilter;
-      }
-    }
-
-    axios.get(baseUrl, { params, signal: abortRef.current.signal })
-      .then(res => {
-        if (res.data.success) {
-          const fetchedUsers = res.data.users || [];
-          setLoadedUsers(prev => append ? [...prev, ...fetchedUsers] : fetchedUsers);
-          setTotal(res.data.total || 0);
-          setTested(res.data.tested || 0);
-          setAvgBioAge(res.data.avgBioAge || '—');
-          if (!append) {
-            setMaleCount(res.data.maleCount || 0);
-            setFemaleCount(res.data.femaleCount || 0);
-            setNewUsers7d(res.data.newUsers7d || 0);
-            setMaleCoachCount(res.data.maleCoachCount || 0);
-            setFemaleCoachCount(res.data.femaleCoachCount || 0);
-            setNewCoaches7d(res.data.newCoaches7d || 0);
-            setCoachTotal(res.data.coachTotal || 0);
-            setScansTotal(res.data.scansTotal || 0);
-            setScans7d(res.data.scans7d || 0);
-            setScans14d(res.data.scans14d || 0);
-            setScans30d(res.data.scans30d || 0);
-            setBioAgeDelta(res.data.bioAgeDelta || null);
-          }
-        }
-      })
-      .catch(err => {
-        if (axios.isCancel(err)) return;
-        console.error('Failed to load users:', err);
-      })
-      .finally(() => {
-        setTabLoading(false);
-      });
-  }, [session, searchQuery, sortField, sortDir, includeSubchannels, channelFilter]);
-
-  // Reload when filters/sorting changes
-  useEffect(() => {
-    setOffset(0);
-    loadUsers(0, false);
-  }, [searchQuery, channelFilter, sortField, sortDir, includeSubchannels, loadUsers]);
-
-  // Load more pagination helper
-  const handleLoadMore = useCallback(() => {
-    if (tabLoading || loadedUsers.length >= total) return;
-    const nextOffset = offset + 50;
-    setOffset(nextOffset);
-    loadUsers(nextOffset, true);
-  }, [offset, tabLoading, loadedUsers.length, total, loadUsers]);
-
-  // Infinite scroll trigger using IntersectionObserver
-  useEffect(() => {
-    if (loadedUsers.length >= total || tabLoading) return;
-
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        handleLoadMore();
-      }
-    }, {
-      root: null,
-      rootMargin: '150px',
-      threshold: 0.1,
-    });
-
-    const currentLoader = loaderRef.current;
-    if (currentLoader) {
-      observer.observe(currentLoader);
-    }
-
-    return () => {
-      if (currentLoader) {
-        observer.unobserve(currentLoader);
-      }
-    };
-  }, [loadedUsers.length, total, tabLoading, handleLoadMore]);
-
-  // Refresh current view in-place (preserves pagination scroll)
-  const refreshCurrentView = useCallback(() => {
-    onRefresh();
-    setTabLoading(true);
-    const cid = session?.channelId;
-    const isChannel = session?.role === 'channel';
-    const baseUrl = isChannel ? `/api/channel-users/${cid}` : '/api/users';
-
-    const params = {
-      limit: offset + 50,
-      offset: 0,
-      q: searchQuery.trim(),
-      sort_field: sortField,
-      sort_dir: sortDir,
-    };
-
-    if (isChannel) {
-      if (includeSubchannels) {
-        params.include_subchannels = 'true';
-      }
-    } else {
-      if (channelFilter) {
-        params.filter_channel_id = channelFilter;
-      }
-    }
-
-    axios.get(baseUrl, { params })
-      .then(res => {
-        if (res.data.success) {
-          setLoadedUsers(res.data.users || []);
-          setTotal(res.data.total || 0);
-          setTested(res.data.tested || 0);
-          setAvgBioAge(res.data.avgBioAge || '—');
-          setMaleCount(res.data.maleCount || 0);
-          setFemaleCount(res.data.femaleCount || 0);
-          setNewUsers7d(res.data.newUsers7d || 0);
-          setMaleCoachCount(res.data.maleCoachCount || 0);
-          setFemaleCoachCount(res.data.femaleCoachCount || 0);
-          setNewCoaches7d(res.data.newCoaches7d || 0);
-          setCoachTotal(res.data.coachTotal || 0);
-          setScansTotal(res.data.scansTotal || 0);
-          setScans7d(res.data.scans7d || 0);
-          setScans14d(res.data.scans14d || 0);
-          setScans30d(res.data.scans30d || 0);
-          setBioAgeDelta(res.data.bioAgeDelta || null);
-        }
-      })
-      .catch(err => {
-        console.error('Failed to refresh users:', err);
-      })
-      .finally(() => {
-        setTabLoading(false);
-      });
-  }, [session, searchQuery, sortField, sortDir, includeSubchannels, channelFilter, offset, onRefresh]);
-
-  const closeAndRefresh = () => {
-    setModal(null);
-    refreshCurrentView();
-  };
-
-  const toggleSort = (field) => {
-    if (sortField === field) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDir('asc');
-    }
-  };
-
-  const SortIcon = ({ field }) => (
-    <span style={{ marginLeft: 4, opacity: sortField === field ? 1 : 0.3, color: sortField === field ? 'var(--primary)' : 'inherit' }}>
-      {sortField === field ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
-    </span>
-  );
-
-  const isZh = t.count(1).includes('共');
-
-  return (
-    <>
-      <div className="stat-row">
-        <RichStatCard icon={Users} label={t.stats.totalUsers} value={total} color="#3b82f6" subs={[
-          { label: t.stats.male, value: maleCount },
-          { label: t.stats.female, value: femaleCount },
-          { label: t.stats.new7d, value: newUsers7d, highlight: true },
-        ]} />
-        <RichStatCard icon={UserCog} label={t.stats.coaches} value={coachTotal || coaches.length} color="#10b981" subs={[
-          { label: t.stats.male, value: maleCoachCount },
-          { label: t.stats.female, value: femaleCoachCount },
-          { label: t.stats.new7d, value: newCoaches7d, highlight: true },
-        ]} />
-        <RichStatCard icon={Activity} label={t.stats.tested} value={scansTotal || tested} color="#8b5cf6" subs={[
-          { label: t.stats.days7, value: scans7d },
-          { label: t.stats.days14, value: scans14d },
-          { label: t.stats.days30, value: scans30d },
-        ]} />
-        <RichStatCard icon={Calendar} label={t.stats.avgBioAge} value={avgBioAge} color="#f59e0b" subs={
-          bioAgeDelta != null ? [{
-            label: parseFloat(bioAgeDelta) >= 0 ? t.stats.aboveChrono : t.stats.belowChrono,
-            value: `${Math.abs(parseFloat(bioAgeDelta)).toFixed(1)}${isZh ? '岁' : 'y'}`,
-            highlight: Math.abs(parseFloat(bioAgeDelta)) > 2,
-          }] : []
-        } />
-      </div>
-      <div className="card">
-        <div className="subtab-row">
-          <button className={`subtab-btn${subTab === 'list' ? ' active' : ''}`} onClick={() => setSubTab('list')}>
-            <Users size={13} />{lang === 'zh' ? '用户列表' : 'List'}
-          </button>
-          <button className={`subtab-btn${subTab === 'network' ? ' active' : ''}`} onClick={() => setSubTab('network')}>
-            <Activity size={13} />{t.userDetail.networkTab}
-          </button>
-        </div>
-
-        {subTab === 'network' && <ReferralNetworkTab channels={channels} session={session} />}
-
-        {subTab === 'list' && <><div className="table-toolbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className="table-count">
-              {(searchQuery || channelFilter || includeSubchannels)
-                ? (isZh ? `已加载 ${loadedUsers.length} / 共 ${total} 个用户` : `Loaded ${loadedUsers.length} / ${total} users`)
-                : t.count(total)}
-            </span>
-            <input
-              className="toolbar-search"
-              type="text"
-              placeholder={t.searchUsers}
-              value={searchInput}
-              onChange={e => setSearchInput(e.target.value)}
-            />
-            {isCmsAdmin && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                <input type="checkbox" checked={includeSubchannels} onChange={e => setIncludeSubchannels(e.target.checked)} />
-                Include sub-channels
-              </label>
-            )}
-          </div>
-          {hasPermission(session, PERMS.USERS_WRITE) && (
-            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-              <Plus size={14} />{t.addUser}
-            </button>
-          )}
-        </div>
-        {channels.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
-            {channels.map(c => {
-              const active = channelFilter === c.id;
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => setChannelFilter(active ? '' : c.id)}
-                  style={{
-                    padding: '3px 10px', borderRadius: 99, fontSize: 12, cursor: 'pointer',
-                    border: `1px solid ${active ? '#6366f1' : 'var(--border)'}`,
-                    background: active ? '#6366f1' : 'transparent',
-                    color: active ? '#fff' : 'var(--muted)',
-                    fontWeight: active ? 600 : 400,
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {c.name}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th className="sortable-th" onClick={() => toggleSort('user_id')}>{t.table.id}<SortIcon field="user_id" /></th>
-              <th className="sortable-th" onClick={() => toggleSort('nickname')}>{t.table.nickname}<SortIcon field="nickname" /></th>
-              <th className="sortable-th" onClick={() => toggleSort('channel_name')}>{t.table.channel}<SortIcon field="channel_name" /></th>
-              <th>{t.table.roles}</th>
-              <th>{t.table.gender}</th>
-              <th className="sortable-th" onClick={() => toggleSort('birth_date')}>{t.table.birthDate}<SortIcon field="birth_date" /></th>
-              <th>{t.table.language}</th>
-              <th className="sortable-th" onClick={() => toggleSort('chrono_age')}>{t.table.chronoAge}<SortIcon field="chrono_age" /></th>
-              <th className="sortable-th" onClick={() => toggleSort('bio_age')}>{t.table.bioAge}<SortIcon field="bio_age" /></th>
-              <th>{t.table.assignedCoach}</th>
-              <th className="sortable-th" onClick={() => toggleSort('created_at')}>{t.table.joined}<SortIcon field="created_at" /></th>
-              <th>{t.modal.phone}</th><th>{t.modal.email}</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {loadedUsers.length === 0 && (
-              <tr>
-                <td colSpan={14} className="empty-row">
-                  {tabLoading ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '20px 0' }}>
-                      <span style={{ width: 14, height: 14, border: '2px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
-                      <span>{isZh ? '正在加载用户数据...' : 'Loading user data...'}</span>
-                    </div>
-                  ) : t.empty.users}
-                </td>
-              </tr>
-            )}
-            {loadedUsers.map(u => (
-              <tr key={u.user_id} className="clickable-row" onClick={() => setDetailUser(u)}>
-                <td className="muted">{u.user_id}</td>
-                <td>
-                  <div className="avatar-cell">
-                    {u.avatar_url
-                      ? <img src={u.avatar_url} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                      : <div className="avatar" style={{ background: '#3b82f620', color: '#3b82f6' }}>{(u.nickname || 'U')[0].toUpperCase()}</div>
-                    }
-                    <span className="bold">{fmt(u.nickname)}</span>
-                  </div>
-                </td>
-                <td>{u.channel_name ? <Badge color="#6366f1">{u.channel_name}</Badge> : '—'}</td>
-                <td>
-                  <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                    {(u.roles || ['user']).map(r => (
-                      <Badge key={r} color={r === 'superadmin' ? '#dc2626' : r === 'admin' ? '#f59e0b' : r === 'coach' ? '#8b5cf6' : '#64748b'}>{r}</Badge>
-                    ))}
-                  </div>
-                </td>
-                <td>{fmt(u.gender)}</td>
-                <td className="muted">{fmtDate(u.birth_date)}</td>
-                <td><Badge color={u.language === 'zh' ? '#16a34a' : '#2563eb'}>{(u.language || 'zh').toUpperCase()}</Badge></td>
-                <td className="muted">{fmt(u.chrono_age)}</td>
-                <td style={{ fontWeight: 700, color: bioAgeColor(u.bio_age, u.chrono_age) }}>{fmt(u.bio_age)}</td>
-                <td onClick={e => e.stopPropagation()}>
-                  <CoachSelect userId={u.user_id} currentCoachId={u.coach_id} coaches={coaches} onAssign={refreshCurrentView} />
-                </td>
-                <td className="muted">{fmtDate(u.created_at)}</td>
-                <td className="muted">{fmt(u.phone)}</td>
-                <td className="muted">{fmt(u.email)}</td>
-                <td onClick={e => e.stopPropagation()}>
-                  <div className="row-actions">
-                    {hasPermission(session, PERMS.USERS_WRITE) && <button className="icon-btn" title={t.modal.editUser} onClick={() => setModal({ type: 'edit', user: u })}><Pencil size={14} /></button>}
-                    {hasPermission(session, PERMS.USERS_DELETE) && <button className="icon-btn danger" title={t.modal.deleteUser} onClick={() => setModal({ type: 'delete', user: u })}><Trash2 size={14} /></button>}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {loadedUsers.length < total && (
-          <div
-            ref={loaderRef}
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              padding: '24px 0',
-              borderTop: '1px solid var(--border)',
-              alignItems: 'center'
-            }}
-          >
-            {tabLoading ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{
-                  width: 14,
-                  height: 14,
-                  border: '2px solid var(--border)',
-                  borderTopColor: 'var(--primary)',
-                  borderRadius: '50%',
-                  display: 'inline-block',
-                  animation: 'spin 1s linear infinite'
-                }} />
-                <span style={{ fontSize: '13px', color: 'var(--muted)' }}>
-                  {isZh ? '正在加载更多用户...' : 'Loading more users...'}
-                </span>
-              </div>
-            ) : (
-              <span style={{ fontSize: '13px', color: 'var(--muted)', opacity: 0.5 }}>
-                {isZh ? '向下滚动自动加载' : 'Scroll down to load more'}
-              </span>
-            )}
-          </div>
-        )}
-      </>}
-      </div>
-      {modal?.type === 'add'    && <UserModal user={null}       coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <UserModal user={modal.user} coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'delete' && <DeleteConfirm user={modal.user} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
-      {detailUser && <UserDetailModal user={detailUser} onClose={() => setDetailUser(null)} />}
-    </>
-  );
-}
-
-// ── Coach tab ─────────────────────────────────────────────────────────────────
-
-function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) {
+function UsersTab({ users, coaches, channels, onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
+  const [detailUser, setDetailUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [channelFilter, setChannelFilter] = useState('');
-  const [groupFilter, setGroupFilter] = useState('');
   const [sortField, setSortField] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
-  const [includeSubchannels, setIncludeSubchannels] = useState(true);
-  const [subCoaches, setSubCoaches] = useState(null);
-  const [groups, setGroups] = useState([]);
-  const [groupModal, setGroupModal] = useState(null);
+
+  const tested = users.filter(u => u.bio_age).length;
+  const avgBioAge = tested
+    ? (users.filter(u => u.bio_age).reduce((s, u) => s + Number(u.bio_age), 0) / tested).toFixed(1)
+    : '—';
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
 
-  const displayCoaches = includeSubchannels && subCoaches !== null ? subCoaches : coaches;
-
-  const fetchGroups = () => {
-    const cid = session?.channelId;
-    if (!cid) return;
-    axios.get(`/api/coach-groups?channel_id=${cid}`)
-      .then(r => setGroups(r.data.groups || []))
-      .catch(() => {});
-  };
-
-  useEffect(() => { fetchGroups(); }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!includeSubchannels) { setSubCoaches(null); return; }
-    const cid = session?.channelId;
-    if (!cid) return;
-    axios.get(`/api/channel-coaches/${cid}?include_subchannels=true`)
-      .then(r => setSubCoaches(r.data.coaches || []))
-      .catch(() => setSubCoaches(null));
-  }, [includeSubchannels, session]);
-
   const q = searchQuery.trim().toLowerCase();
-  const channelFilterSet = (() => {
-    if (!channelFilter) return null;
-    if (!includeSubchannels) return new Set([channelFilter]);
-    const root = channels.find(c => c.name === channelFilter);
-    if (!root) return new Set([channelFilter]);
-    const ids = new Set([root.id]);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const c of channels) {
-        if (!ids.has(c.id) && ids.has(c.parent_channel_id)) { ids.add(c.id); changed = true; }
-      }
-    }
-    return new Set(channels.filter(c => ids.has(c.id)).map(c => c.name));
-  })();
-  const byChannel = channelFilterSet
-    ? displayCoaches.filter(p => channelFilterSet.has(p.channel_name || ''))
-    : displayCoaches;
-  const byGroup = groupFilter
-    ? byChannel.filter(p => String(p.group_id) === String(groupFilter))
-    : byChannel;
   const filtered = q
-    ? byGroup.filter(p =>
-        (p.name || '').toLowerCase().includes(q) ||
-        (p.id || '').toString().includes(q) ||
-        (p.email || '').toLowerCase().includes(q) ||
-        (p.phone || '').toLowerCase().includes(q) ||
-        (p.channel_name || '').toLowerCase().includes(q)
+    ? users.filter(u =>
+        (u.nickname || '').toLowerCase().includes(q) ||
+        (u.user_id || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q) ||
+        (u.phone || '').toLowerCase().includes(q) ||
+        (u.channel_name || '').toLowerCase().includes(q)
       )
-    : byGroup;
+    : users;
 
   const sorted = [...filtered].sort((a, b) => {
     let av = a[sortField] ?? '', bv = b[sortField] ?? '';
@@ -3284,96 +1766,124 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
   return (
     <>
       <div className="stat-row">
-        <StatCard icon={UserCog} label={t.stats.totalCoaches}    value={displayCoaches.length}                  color="#10b981" />
+        <StatCard icon={Users}    label={t.stats.totalUsers} value={users.length} color="#3b82f6" />
+        <StatCard icon={Activity} label={t.stats.tested}     value={tested}       color="#8b5cf6" />
+        <StatCard icon={Calendar} label={t.stats.avgBioAge}  value={avgBioAge}    color="#f59e0b" />
+        <StatCard icon={UserCog}  label={t.stats.coaches}    value={coaches.length} color="#10b981" />
+      </div>
+      <div className="card">
+        <div className="table-toolbar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="table-count">{q ? `${sorted.length} / ${users.length}` : t.count(users.length)}</span>
+            <input
+              className="toolbar-search"
+              type="text"
+              placeholder={t.searchUsers}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{t.addUser}
+          </button>
+        </div>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="sortable-th" onClick={() => toggleSort('user_id')}>{t.table.id}<SortIcon field="user_id" /></th>
+              <th className="sortable-th" onClick={() => toggleSort('nickname')}>{t.table.nickname}<SortIcon field="nickname" /></th>
+              <th className="sortable-th" onClick={() => toggleSort('channel_name')}>{t.table.channel}<SortIcon field="channel_name" /></th>
+              <th>{t.table.roles}</th>
+              <th>{t.table.gender}</th>
+              <th className="sortable-th" onClick={() => toggleSort('birth_date')}>{t.table.birthDate}<SortIcon field="birth_date" /></th>
+              <th>{t.table.language}</th>
+              <th className="sortable-th" onClick={() => toggleSort('chrono_age')}>{t.table.chronoAge}<SortIcon field="chrono_age" /></th>
+              <th className="sortable-th" onClick={() => toggleSort('bio_age')}>{t.table.bioAge}<SortIcon field="bio_age" /></th>
+              <th>{t.table.assignedCoach}</th>
+              <th className="sortable-th" onClick={() => toggleSort('created_at')}>{t.table.joined}<SortIcon field="created_at" /></th>
+              <th>{t.modal.phone}</th><th>{t.modal.email}</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.length === 0 && <tr><td colSpan={14} className="empty-row">{t.empty.users}</td></tr>}
+            {sorted.map(u => (
+              <tr key={u.user_id} className="clickable-row" onClick={() => setDetailUser(u)}>
+                <td className="muted">{u.user_id}</td>
+                <td>
+                  <div className="avatar-cell">
+                    {u.avatar_url
+                      ? <img src={u.avatar_url} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                      : <div className="avatar" style={{ background: '#3b82f620', color: '#3b82f6' }}>{(u.nickname || 'U')[0].toUpperCase()}</div>
+                    }
+                    <span className="bold">{fmt(u.nickname)}</span>
+                  </div>
+                </td>
+                <td>{u.channel_name ? <Badge color="#6366f1">{u.channel_name}</Badge> : '—'}</td>
+                <td>
+                  <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                    {(u.roles || ['user']).map(r => (
+                      <Badge key={r} color={r === 'superadmin' ? '#dc2626' : r === 'admin' ? '#f59e0b' : r === 'coach' ? '#8b5cf6' : '#64748b'}>{r}</Badge>
+                    ))}
+                  </div>
+                </td>
+                <td>{fmt(u.gender)}</td>
+                <td className="muted">{fmtDate(u.birth_date)}</td>
+                <td><Badge color={u.language === 'zh' ? '#16a34a' : '#2563eb'}>{(u.language || 'zh').toUpperCase()}</Badge></td>
+                <td className="muted">{fmt(u.chrono_age)}</td>
+                <td style={{ fontWeight: 700, color: bioAgeColor(u.bio_age, u.chrono_age) }}>{fmt(u.bio_age)}</td>
+                <td onClick={e => e.stopPropagation()}>
+                  <CoachSelect userId={u.user_id} currentCoachId={u.coach_id} coaches={coaches} onAssign={onRefresh} />
+                </td>
+                <td className="muted">{fmtDate(u.created_at)}</td>
+                <td className="muted">{fmt(u.phone)}</td>
+                <td className="muted">{fmt(u.email)}</td>
+                <td onClick={e => e.stopPropagation()}>
+                  <div className="row-actions">
+                    <button className="icon-btn" title={t.modal.editUser} onClick={() => setModal({ type: 'edit', user: u })}><Pencil size={14} /></button>
+                    <button className="icon-btn danger" title={t.modal.deleteUser} onClick={() => setModal({ type: 'delete', user: u })}><Trash2 size={14} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {modal?.type === 'add'    && <UserModal user={null}       coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <UserModal user={modal.user} coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete' && <DeleteConfirm user={modal.user} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {detailUser && <UserDetailModal user={detailUser} onClose={() => setDetailUser(null)} />}
+    </>
+  );
+}
+
+// ── Coach tab ─────────────────────────────────────────────────────────────────
+
+function CoachTab({ coaches, users, channels, onRefresh }) {
+  const { t } = useLang();
+  const [modal, setModal] = useState(null);
+  const closeAndRefresh = () => { setModal(null); onRefresh(); };
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={UserCog} label={t.stats.totalCoaches}    value={coaches.length}                         color="#10b981" />
         <StatCard icon={Users}   label={t.stats.assignedUsers}   value={users.filter(u => u.coach_id).length}  color="#3b82f6" />
         <StatCard icon={Users}   label={t.stats.unassignedUsers} value={users.filter(u => !u.coach_id).length} color="#f59e0b" />
       </div>
       <div className="card">
         <div className="table-toolbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className="table-count">{(q || channelFilter) ? `${sorted.length} / ${displayCoaches.length}` : t.countCoach(displayCoaches.length)}</span>
-            <input
-              className="toolbar-search"
-              type="text"
-              placeholder={t.searchCoaches}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
-            {isCmsAdmin && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                <input type="checkbox" checked={includeSubchannels} onChange={e => setIncludeSubchannels(e.target.checked)} />
-                Include sub-channels
-              </label>
-            )}
-          </div>
-          {hasPermission(session, PERMS.COACHES_WRITE) && (
-            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-              <Plus size={14} />{t.addCoach}
-            </button>
-          )}
+          <span className="table-count">{t.countCoach(coaches.length)}</span>
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{t.addCoach}
+          </button>
         </div>
-        {channels.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
-            {channels.map(c => {
-              const active = channelFilter === c.name;
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => setChannelFilter(active ? '' : c.name)}
-                  style={{
-                    padding: '3px 10px', borderRadius: 99, fontSize: 12, cursor: 'pointer',
-                    border: `1px solid ${active ? '#6366f1' : 'var(--border)'}`,
-                    background: active ? '#6366f1' : 'transparent',
-                    color: active ? '#fff' : 'var(--muted)',
-                    fontWeight: active ? 600 : 400,
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {c.name}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        {groups.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 16px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
-            <button onClick={() => setGroupFilter('')} style={{ padding: '2px 9px', borderRadius: 99, fontSize: 11, cursor: 'pointer', border: `1px solid ${groupFilter === '' ? '#8b5cf6' : 'var(--border)'}`, background: groupFilter === '' ? '#8b5cf6' : 'transparent', color: groupFilter === '' ? '#fff' : 'var(--muted)', fontWeight: groupFilter === '' ? 600 : 400 }}>All Groups</button>
-            {groups.map(g => {
-              const active = String(groupFilter) === String(g.id);
-              return (
-                <button key={g.id} onClick={() => setGroupFilter(active ? '' : g.id)} style={{ padding: '2px 9px', borderRadius: 99, fontSize: 11, cursor: 'pointer', border: `1px solid ${active ? '#8b5cf6' : 'var(--border)'}`, background: active ? '#8b5cf6' : 'transparent', color: active ? '#fff' : 'var(--muted)', fontWeight: active ? 600 : 400, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {g.name}
-                  <span style={{ background: active ? 'rgba(255,255,255,0.25)' : '#e9d5ff', color: active ? '#fff' : '#7c3aed', borderRadius: 99, padding: '0 5px', fontSize: 10 }}>{g.coach_count || 0}</span>
-                </button>
-              );
-            })}
-            <button onClick={() => setGroupModal({ type: 'add-group' })} style={{ marginLeft: 4, padding: '2px 9px', borderRadius: 99, fontSize: 11, cursor: 'pointer', border: '1px dashed #c4b5fd', background: 'transparent', color: '#8b5cf6' }}>+ {t.modal.addCoachGroup}</button>
-          </div>
-        )}
-        {groups.length === 0 && session?.channelId && (
-          <div style={{ padding: '6px 16px', borderBottom: '1px solid var(--border)' }}>
-            <button onClick={() => setGroupModal({ type: 'add-group' })} style={{ padding: '2px 9px', borderRadius: 99, fontSize: 11, cursor: 'pointer', border: '1px dashed #c4b5fd', background: 'transparent', color: '#8b5cf6' }}>+ {t.modal.addCoachGroup}</button>
-          </div>
-        )}
         <table className="data-table">
           <thead>
-            <tr>
-              <th className="sortable-th" onClick={() => toggleSort('id')}>{t.table.id}<SortIcon field="id" /></th>
-              <th className="sortable-th" onClick={() => toggleSort('name')}>{t.table.name}<SortIcon field="name" /></th>
-              <th className="sortable-th" onClick={() => toggleSort('channel_name')}>{t.table.channel}<SortIcon field="channel_name" /></th>
-              <th className="sortable-th" onClick={() => toggleSort('group_name')}>{t.modal.coachGroup}<SortIcon field="group_name" /></th>
-              <th>{t.table.linkedUser}</th>
-              <th>{t.table.email}</th>
-              <th>{t.table.phone}</th>
-              <th>{t.table.language}</th>
-              <th className="sortable-th" onClick={() => toggleSort('user_count')}>{t.table.customers}<SortIcon field="user_count" /></th>
-              <th className="sortable-th" onClick={() => toggleSort('created_at')}>{t.table.joined}<SortIcon field="created_at" /></th>
-              <th></th>
-            </tr>
+            <tr><th>{t.table.id}</th><th>{t.table.name}</th><th>{t.table.channel}</th><th>{t.table.linkedUser}</th><th>{t.table.email}</th><th>{t.table.phone}</th><th>{t.table.language}</th><th>{t.table.customers}</th><th>{t.table.joined}</th><th></th></tr>
           </thead>
           <tbody>
-            {sorted.length === 0 && <tr><td colSpan={11} className="empty-row">{t.empty.coaches}</td></tr>}
-            {sorted.map(p => (
+            {coaches.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.coaches}</td></tr>}
+            {coaches.map(p => (
               <tr key={p.id}>
                 <td className="muted">{p.id}</td>
                 <td>
@@ -3383,7 +1893,6 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
                   </div>
                 </td>
                 <td>{p.channel_name ? <Badge color="#6366f1">{p.channel_name}</Badge> : '—'}</td>
-                <td>{p.group_name ? <Badge color="#8b5cf6">{p.group_name}</Badge> : <span className="muted">—</span>}</td>
                 <td className="muted mono" style={{ fontSize: 11 }}>{p.user_id ? p.user_id : '—'}</td>
                 <td className="muted">{fmt(p.email)}</td>
                 <td className="muted">{fmt(p.phone)}</td>
@@ -3392,8 +1901,8 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
                 <td className="muted">{fmtDate(p.created_at)}</td>
                 <td>
                   <div className="row-actions">
-                    {hasPermission(session, PERMS.COACHES_WRITE) && <button className="icon-btn" title={t.modal.editCoach} onClick={() => setModal({ type: 'edit', coach: p })}><Pencil size={14} /></button>}
-                    {hasPermission(session, PERMS.COACHES_DELETE) && <button className="icon-btn danger" title={t.modal.deleteCoach} onClick={() => setModal({ type: 'delete', coach: p })}><Trash2 size={14} /></button>}
+                    <button className="icon-btn" title={t.modal.editCoach} onClick={() => setModal({ type: 'edit', coach: p })}><Pencil size={14} /></button>
+                    <button className="icon-btn danger" title={t.modal.deleteCoach} onClick={() => setModal({ type: 'delete', coach: p })}><Trash2 size={14} /></button>
                   </div>
                 </td>
               </tr>
@@ -3401,48 +1910,9 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
           </tbody>
         </table>
       </div>
-
-      {/* Group management panel */}
-      {groups.length > 0 && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <div className="table-toolbar">
-            <span className="table-count">{groups.length} {groups.length === 1 ? 'group' : 'groups'}</span>
-            <button className="btn-primary" onClick={() => setGroupModal({ type: 'add-group' })}><Plus size={14} />{t.modal.addCoachGroup}</button>
-          </div>
-          <table className="data-table">
-            <thead><tr>
-              <th>{t.modal.coachGroupName.replace(' *', '')}</th>
-              <th>{t.modal.coachGroupType}</th>
-              <th>{t.modal.coachGroupDescription}</th>
-              <th>{t.coachCrm?.colCoachCount || 'Coaches'}</th>
-              <th></th>
-            </tr></thead>
-            <tbody>
-              {groups.map(g => (
-                <tr key={g.id}>
-                  <td style={{ fontWeight: 600 }}><Badge color="#8b5cf6">{g.name}</Badge></td>
-                  <td className="muted" style={{ fontSize: 12 }}>{g.type || '—'}</td>
-                  <td className="muted" style={{ fontSize: 12 }}>{g.description || '—'}</td>
-                  <td><Badge color="#6366f1">{g.coach_count || 0}</Badge></td>
-                  <td>
-                    <div className="row-actions">
-                      <button className="icon-btn" title={t.modal.editCoachGroup} onClick={() => setGroupModal({ type: 'edit-group', group: g })}><Pencil size={14} /></button>
-                      <button className="icon-btn danger" title={t.modal.deleteCoachGroup} onClick={() => setGroupModal({ type: 'delete-group', group: g })}><Trash2 size={14} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {modal?.type === 'add'    && <CoachModal coach={null}        users={users} channels={channels} groups={groups} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <CoachModal coach={modal.coach} users={users} channels={channels} groups={groups} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add'    && <CoachModal coach={null}        users={users} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <CoachModal coach={modal.coach} users={users} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteCoachConfirm coach={modal.coach} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
-      {groupModal?.type === 'add-group'    && <CoachGroupModal group={null} channelId={session?.channelId} onClose={() => setGroupModal(null)} onSave={() => { setGroupModal(null); fetchGroups(); }} />}
-      {groupModal?.type === 'edit-group'   && <CoachGroupModal group={groupModal.group} channelId={session?.channelId} onClose={() => setGroupModal(null)} onSave={() => { setGroupModal(null); fetchGroups(); }} />}
-      {groupModal?.type === 'delete-group' && <DeleteCoachGroupConfirm group={groupModal.group} onClose={() => setGroupModal(null)} onConfirm={() => { setGroupModal(null); setGroupFilter(''); fetchGroups(); }} />}
     </>
   );
 }
@@ -3834,113 +2304,33 @@ function LabReportsPanel({ users }) {
 
       {detail && (
         <div className="modal-overlay" onClick={() => setDetail(null)}>
-          <div className="modal" style={{ maxWidth: 720, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+          <div className="modal" style={{ maxWidth: 640, maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <span>Report #{detail.report.id} — {detail.report.nickname || detail.report?.user_id} — {detail.report.report_date}</span>
               <button className="icon-btn" onClick={() => setDetail(null)}><X size={16} /></button>
             </div>
             <div style={{ overflowY: 'auto', padding: '16px 24px', flex: 1 }}>
-              {detailLoading && <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>Loading report…</div>}
-
-              {/* ── Doctor Notes Section ── */}
-              {!detailLoading && detail.report?.raw_data?.doctor_notes && (() => {
-                const dn = detail.report.raw_data.doctor_notes;
-                return (
-                  <div style={{ marginBottom: 20 }}>
-                    {/* Attending physician */}
-                    {dn.physician && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                        <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>👨‍⚕️</div>
-                        <div>
-                          <div style={{ fontWeight: 600, fontSize: 14 }}>{dn.physician}</div>
-                          <div style={{ fontSize: 11, color: '#94a3b8' }}>{dn.department} · {detail.report.institution}</div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Vital signs summary */}
-                    {dn.vital_summary && (
-                      <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.18)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, color: '#6366f1', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Vital Signs</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px' }}>
-                          {Object.entries(dn.vital_summary).map(([k, v]) => (
-                            <span key={k} style={{ fontSize: 12 }}>
-                              <span style={{ color: '#94a3b8' }}>{k.replace(/_/g,' ')}: </span>
-                              <span style={{ fontWeight: 600 }}>{v}</span>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Diagnoses */}
-                    {dn.diagnoses?.length > 0 && (
-                      <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Diagnoses / Findings</div>
-                        <ul style={{ margin: 0, paddingLeft: 16 }}>
-                          {dn.diagnoses.map((d, i) => (
-                            <li key={i} style={{ fontSize: 13, color: '#e2e8f0', marginBottom: 3 }}>{d}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/* Clinical narrative */}
-                    {dn.clinical_summary && (
-                      <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, color: '#10b981', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Clinical Summary</div>
-                        <p style={{ margin: 0, fontSize: 13, color: '#cbd5e1', lineHeight: 1.65 }}>{dn.clinical_summary}</p>
-                      </div>
-                    )}
-
-                    {/* Recommendations */}
-                    {dn.recommendations?.length > 0 && (
-                      <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Recommendations</div>
-                        <ul style={{ margin: 0, paddingLeft: 16 }}>
-                          {dn.recommendations.map((r, i) => (
-                            <li key={i} style={{ fontSize: 13, color: '#e2e8f0', marginBottom: 3 }}>{r}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/* Follow-up */}
-                    {dn.follow_up && (
-                      <div style={{ fontSize: 12, color: '#94a3b8', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10, marginTop: 6 }}>
-                        <span style={{ color: '#6366f1', fontWeight: 600 }}>Follow-up: </span>{dn.follow_up}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* ── Biomarker Observations Table ── */}
+              {detailLoading && <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>Loading observations…</div>}
+              {!detailLoading && (detail.events || []).length === 0 && <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>No observations linked to this report.</div>}
               {!detailLoading && (detail.events || []).length > 0 && (
-                <>
-                  <div style={{ fontSize: 11, color: '#6366f1', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Lab Observations</div>
-                  <table className="data-table">
-                    <thead><tr><th>Biomarker</th><th>LOINC</th><th>Value</th><th>Unit</th><th>Dimension</th><th>Date</th></tr></thead>
-                    <tbody>
-                      {(detail.events || []).map(ev => (
-                        <tr key={ev.id}>
-                          <td style={{ fontWeight: ev.data?.is_kino_core ? 600 : 400, color: ev.data?.is_kino_core ? '#a5b4fc' : undefined }}>
-                            {ev.data?.key_name || '—'}
-                            {ev.data?.is_kino_core && <span style={{ marginLeft: 4, fontSize: 10, color: '#6366f1', fontWeight: 700 }}>CORE</span>}
-                          </td>
-                          <td style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>{ev.data?.loinc_code || '—'}</td>
-                          <td style={{ fontWeight: 600 }}>{ev.data?.value}</td>
-                          <td style={{ color: '#94a3b8', fontSize: 12 }}>{ev.data?.unit}</td>
-                          <td style={{ fontSize: 11, color: '#64748b' }}>{ev.data?.nano_dimension || '—'}</td>
-                          <td style={{ fontSize: 11, color: '#94a3b8' }}>{ev.data_date}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
-              )}
-              {!detailLoading && (detail.events || []).length === 0 && !detail.report?.raw_data?.doctor_notes && (
-                <div style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>No observations linked to this report.</div>
+                <table className="data-table">
+                  <thead><tr><th>Biomarker</th><th>LOINC</th><th>Value</th><th>Unit</th><th>Dimension</th><th>Date</th></tr></thead>
+                  <tbody>
+                    {(detail.events || []).map(ev => (
+                      <tr key={ev.id}>
+                        <td style={{ fontWeight: ev.data?.is_kino_core ? 600 : 400, color: ev.data?.is_kino_core ? '#a5b4fc' : undefined }}>
+                          {ev.data?.key_name || '—'}
+                          {ev.data?.is_kino_core && <span style={{ marginLeft: 4, fontSize: 10, color: '#6366f1', fontWeight: 700 }}>CORE</span>}
+                        </td>
+                        <td style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>{ev.data?.loinc_code || '—'}</td>
+                        <td style={{ fontWeight: 600 }}>{ev.data?.value}</td>
+                        <td style={{ color: '#94a3b8', fontSize: 12 }}>{ev.data?.unit}</td>
+                        <td style={{ fontSize: 11, color: '#64748b' }}>{ev.data?.nano_dimension || '—'}</td>
+                        <td style={{ fontSize: 11, color: '#94a3b8' }}>{ev.data_date}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
             <div className="modal-footer">
@@ -3973,20 +2363,10 @@ function CoachCRMTab({ coaches, users }) {
   });
   const [kpiRows, setKpiRows] = useState([]);
   const [kpiLoading, setKpiLoading] = useState(false);
-  const [groups, setGroups] = useState([]);
-  const [selectedGroupId, setSelectedGroupId] = useState('');
-  const [groupKpis, setGroupKpis] = useState(null);
-  const [groupKpiLoading, setGroupKpiLoading] = useState(false);
   const [npsRows, setNpsRows] = useState([]);
   const [npsLoading, setNpsLoading] = useState(false);
-  const [npsStart, setNpsStart] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-  });
-  const [npsEnd, setNpsEnd] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  });
+  const [npsStart, setNpsStart] = useState('');
+  const [npsEnd, setNpsEnd] = useState('');
   const [campaignModal, setCampaignModal] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ title: '', content: '', stage: '' });
   const [sending, setSending] = useState(null);
@@ -4016,7 +2396,7 @@ function CoachCRMTab({ coaches, users }) {
     try {
       const rows = await Promise.all(
         coaches.map(c => axios.get(`/api/coach-kpis?coach_id=${c.id}&period=${period}`)
-          .then(r => ({ ...(r.data.kpis || {}), coach_id: c.id, coach_name: c.name }))
+          .then(r => ({ ...r.data, coach_id: c.id, coach_name: c.name }))
           .catch(() => ({ coach_id: c.id, coach_name: c.name })))
       );
       setKpiRows(rows);
@@ -4036,54 +2416,12 @@ function CoachCRMTab({ coaches, users }) {
     finally { setNpsLoading(false); }
   }, [npsStart, npsEnd]);
 
-  const loadGroupKPIs = useCallback(async () => {
-    if (!selectedGroupId) return;
-    setGroupKpiLoading(true);
-    try {
-      const r = await axios.get(`/api/coach-group-kpis?group_id=${selectedGroupId}&period=${period}`);
-      setGroupKpis(r.data.kpis || null);
-    } catch (e) { console.error(e); }
-    finally { setGroupKpiLoading(false); }
-  }, [selectedGroupId, period]);
-
-  useEffect(() => {
-    const channelIds = [...new Set(coaches.map(c => c.channel_id).filter(Boolean))];
-    if (!channelIds.length) return;
-    Promise.all(
-      channelIds.map(cid =>
-        axios.get(`/api/coach-groups?channel_id=${cid}`)
-          .then(r => r.data.groups || [])
-          .catch(() => [])
-      )
-    ).then(results => setGroups(results.flat()));
-  }, [coaches]);
-
-  // Auto-select the top-performing coach (most clients) on first load
-  useEffect(() => {
-    if (coaches.length && !selectedCoachId) {
-      const top = [...coaches].sort((a, b) => (parseInt(b.user_count) || 0) - (parseInt(a.user_count) || 0))[0];
-      if (top) setSelectedCoachId(String(top.id));
-    }
-  }, [coaches, selectedCoachId]);
-
-  // Auto-select the largest group on first load
-  useEffect(() => {
-    if (groups.length && !selectedGroupId) {
-      const top = [...groups].sort((a, b) => (parseInt(b.coach_count) || 0) - (parseInt(a.coach_count) || 0))[0];
-      if (top) setSelectedGroupId(String(top.id));
-    }
-  }, [groups, selectedGroupId]);
-
   useEffect(() => {
     if (sub === 'pipeline' && selectedCoachId) loadPipeline(selectedCoachId);
     if (sub === 'campaigns' && selectedCoachId) loadCampaigns(selectedCoachId);
     if (sub === 'performance') loadKPIs();
     if (sub === 'nps') loadNPS();
-    if (sub === 'groups' && selectedGroupId) {
-      loadGroupKPIs();
-      loadKPIs();
-    }
-  }, [sub, selectedCoachId, loadPipeline, loadCampaigns, loadKPIs, loadNPS, loadGroupKPIs, selectedGroupId]);
+  }, [sub, selectedCoachId, loadPipeline, loadCampaigns, loadKPIs, loadNPS]);
 
   const handleCoachChange = (e) => {
     const id = e.target.value;
@@ -4136,7 +2474,6 @@ function CoachCRMTab({ coaches, users }) {
     { id: 'campaigns',   label: tc.subCampaigns },
     { id: 'performance', label: tc.subPerformance },
     { id: 'nps',         label: tc.subNps },
-    { id: 'groups',      label: tc.subGroups },
   ];
 
   return (
@@ -4409,98 +2746,6 @@ function CoachCRMTab({ coaches, users }) {
         </div>
       )}
 
-      {/* ── Groups sub-tab ── */}
-      {sub === 'groups' && (
-        <div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-            <Filter size={14} style={{ color: '#64748b' }} />
-            <select value={selectedGroupId} onChange={e => { setSelectedGroupId(e.target.value); setGroupKpis(null); }}
-              style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}>
-              <option value="">{tc.selectGroup}</option>
-              {groups.map(g => <option key={g.id} value={g.id}>{g.name}{g.type ? ` (${g.type})` : ''}</option>)}
-            </select>
-            <input type="month" value={period} onChange={e => setPeriod(e.target.value)}
-              style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }} />
-            <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={loadGroupKPIs}>{tc.load}</button>
-          </div>
-
-          {groups.length === 0 ? (
-            <p style={{ color: '#94a3b8', fontSize: 13 }}>{tc.noGroups}</p>
-          ) : !selectedGroupId ? (
-            <p style={{ color: '#94a3b8', fontSize: 13 }}>{tc.selectGroup}</p>
-          ) : groupKpiLoading ? (
-            <p style={{ color: '#94a3b8', fontSize: 13 }}>{tc.loading}</p>
-          ) : groupKpis ? (
-            <>
-              <div className="stat-row" style={{ marginBottom: 16 }}>
-                <StatCard icon={Users}   label={tc.colTotalClients} value={groupKpis.total_clients ?? 0}  color="#3b82f6" />
-                <StatCard icon={Users}   label={tc.colActive}       value={groupKpis.active_clients ?? 0} color="#10b981" />
-                <StatCard icon={Users}   label={tc.colAtRisk}       value={groupKpis.at_risk_count ?? 0}  color="#ef4444" />
-                <StatCard icon={UserCog} label={tc.colCoachCount}   value={groupKpis.coach_count ?? 0}    color="#8b5cf6" />
-              </div>
-              <div className="card" style={{ marginBottom: 12 }}>
-                <div className="card-title">{tc.groupPerfTitle(groups.find(g => String(g.id) === String(selectedGroupId))?.name || '', period)}</div>
-                <table className="data-table">
-                  <thead><tr>
-                    <th>{tc.colScans}</th>
-                    <th>{tc.colPlansAssigned}</th>
-                    <th>{tc.colMessages}</th>
-                    <th>{tc.colApptsHeld}</th>
-                    <th>{tc.colAvgNps}</th>
-                    <th>{tc.colCommission}</th>
-                  </tr></thead>
-                  <tbody>
-                    <tr>
-                      <td>{groupKpis.scans_facilitated ?? '—'}</td>
-                      <td>{groupKpis.plans_assigned ?? '—'}</td>
-                      <td>{groupKpis.messages_sent ?? '—'}</td>
-                      <td>{groupKpis.appointments_held ?? '—'}</td>
-                      <td style={{ color: groupKpis.avg_nps_score >= 8 ? '#10b981' : groupKpis.avg_nps_score < 6 ? '#ef4444' : undefined }}>
-                        {groupKpis.avg_nps_score != null ? parseFloat(groupKpis.avg_nps_score).toFixed(1) : '—'}
-                      </td>
-                      <td style={{ fontWeight: 600 }}>
-                        {groupKpis.commission_cny != null ? `¥${parseFloat(groupKpis.commission_cny).toLocaleString()}` : '—'}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              {/* Per-coach breakdown */}
-              {coaches.filter(c => String(c.group_id) === String(selectedGroupId)).length > 0 && (
-                <div className="card">
-                  <div className="card-title">{tc.colCoach} — {tc.colTotalClients}</div>
-                  <table className="data-table">
-                    <thead><tr>
-                      <th>{tc.colCoach}</th>
-                      <th>{tc.colTotalClients}</th>
-                      <th>{tc.colActive}</th>
-                      <th>{tc.colScans}</th>
-                      <th>{tc.colAvgNps}</th>
-                      <th>{tc.colCommission}</th>
-                    </tr></thead>
-                    <tbody>
-                      {coaches.filter(c => String(c.group_id) === String(selectedGroupId)).map(c => {
-                        const r = kpiRows.find(k => k.coach_id === c.id) || {};
-                        return (
-                          <tr key={c.id}>
-                            <td style={{ fontWeight: 500 }}>{c.name}</td>
-                            <td>{r.kpis?.total_clients ?? r.total_clients ?? '—'}</td>
-                            <td>{r.kpis?.active_clients ?? r.active_clients ?? '—'}</td>
-                            <td>{r.kpis?.scans_facilitated ?? r.scans_facilitated ?? '—'}</td>
-                            <td>{(r.kpis?.avg_nps_score ?? r.avg_nps_score) != null ? parseFloat(r.kpis?.avg_nps_score ?? r.avg_nps_score).toFixed(1) : '—'}</td>
-                            <td>{(r.kpis?.commission_cny ?? r.commission_cny) != null ? `¥${parseFloat(r.kpis?.commission_cny ?? r.commission_cny).toLocaleString()}` : '—'}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
-          ) : null}
-        </div>
-      )}
-
       {/* ── NPS sub-tab ── */}
       {sub === 'nps' && (
         <div>
@@ -4670,10 +2915,10 @@ const EMPTY_INV_ITEM = {
   key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '',
   item_type: 'physical', unit_en: '', unit_zh: '',
   price_cny: '', price_usd: '', stock_quantity: '',
-  tag: '', sort_order: 0, active: true, image_url: '', store_item_id: null, show_in_store: false, sku_id: '',
+  tag: '', sort_order: 0, active: true, image_url: '',
 };
 
-function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave }) {
+function ChannelInventoryItemModal({ item, channelId, onClose, onSave }) {
   const { t } = useLang();
   const ti = t.inventory;
   const isEdit = !!item?.id;
@@ -4684,21 +2929,8 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
         price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '',
         stock_quantity: item.stock_quantity ?? '',
         tag: item.tag || '', sort_order: item.sort_order ?? 0,
-        active: item.active !== false, image_url: item.image_url || '',
-        store_item_id: item.store_item_id || null,
-        show_in_store: item.show_in_store === true,
-        sku_id: item.sku_id || '' }
-    : item
-      ? { key_name: item.key_name || '', name_en: item.name_en || '', name_zh: item.name_zh || '',
-          desc_en: item.desc_en || '', desc_zh: item.desc_zh || '',
-          item_type: item.item_type || 'physical', unit_en: item.unit_en || '', unit_zh: item.unit_zh || '',
-          price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '',
-          stock_quantity: '',
-          tag: item.tag || '', sort_order: item.sort_order ?? 0,
-          active: true, image_url: item.image_url || '',
-          store_item_id: item.store_item_id || null, show_in_store: false,
-          sku_id: item.sku_id || '' }
-      : { ...EMPTY_INV_ITEM });
+        active: item.active !== false, image_url: item.image_url || '' }
+    : { ...EMPTY_INV_ITEM });
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -4727,7 +2959,6 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
     e.preventDefault();
     if (!form.key_name.trim()) { setError(ti.keyRequired); return; }
     if (!form.name_en.trim()) { setError(ti.nameRequired); return; }
-    if (!form.sku_id) { setError(ti.skuRequired); return; }
     setBusy(true); setError('');
     const payload = {
       ...form,
@@ -4735,9 +2966,7 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
       price_cny: form.price_cny !== '' ? form.price_cny : null,
       price_usd: form.price_usd !== '' ? form.price_usd : null,
       stock_quantity: form.stock_quantity !== '' ? parseInt(form.stock_quantity, 10) : null,
-      sku_id: form.sku_id,
     };
-    if (isEdit) delete payload.store_item_id;
     try {
       if (isEdit) await axios.put(`/api/channel-inventory/${item.id}`, payload);
       else await axios.post('/api/channel-inventory', payload);
@@ -4750,14 +2979,7 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {isEdit ? ti.editItem : ti.addItem}
-            {form.store_item_id && (
-              <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: 'rgba(99,102,241,0.15)', color: '#818cf8', fontWeight: 500 }}>
-                {ti.linkedToStore}
-              </span>
-            )}
-          </span>
+          <span>{isEdit ? ti.editItem : ti.addItem}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
@@ -4772,18 +2994,6 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
                 <select value={form.item_type} onChange={e => set('item_type', e.target.value)} className="inline-select" style={{ width: '100%' }}>
                   <option value="physical">{ti.physical}</option>
                   <option value="virtual">{ti.virtual}</option>
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
-            <label className="form-field">
-              <span>{ti.skuBinding} <span style={{ color: '#ef4444' }}>*</span></span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.sku_id || ''} onChange={e => set('sku_id', e.target.value)} className="inline-select" style={{ width: '100%', borderColor: !form.sku_id ? '#ef4444' : undefined }}>
-                  <option value="">{ti.selectSku}</option>
-                  {skus.map(s => (
-                    <option key={s.id} value={s.id}>{s.sku_code} - {s.name_zh || s.name_en}</option>
-                  ))}
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -4829,9 +3039,9 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
               <div className="select-wrap" style={{ width: '100%' }}>
                 <select value={form.tag} onChange={e => set('tag', e.target.value)} className="inline-select" style={{ width: '100%' }}>
                   <option value="">—</option>
-                  <option value="bestseller">{ti.tagBestseller}</option>
-                  <option value="value">{ti.tagValue}</option>
-                  <option value="new">{ti.tagNew}</option>
+                  <option value="bestseller">Bestseller</option>
+                  <option value="value">Value</option>
+                  <option value="new">New</option>
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -4846,16 +3056,6 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
                 <select value={form.active ? 'true' : 'false'} onChange={e => set('active', e.target.value === 'true')} className="inline-select" style={{ width: '100%' }}>
                   <option value="true">{ti.yes}</option>
                   <option value="false">{ti.no}</option>
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
-            <label className="form-field">
-              <span>{ti.showInStore}</span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.show_in_store ? 'true' : 'false'} onChange={e => set('show_in_store', e.target.value === 'true')} className="inline-select" style={{ width: '100%' }}>
-                  <option value="false">{ti.inStoreHidden}</option>
-                  <option value="true">{ti.showInStoreLive}</option>
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -4892,9 +3092,9 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose} disabled={uploading}>{t.modal.cancel}</button>
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={uploading}>Cancel</button>
             <button type="submit" className="btn-primary" disabled={busy || uploading}>
-              <Check size={14} />{busy ? t.modal.saving : t.modal.save}
+              <Check size={14} />{busy ? 'Saving…' : 'Save'}
             </button>
           </div>
         </form>
@@ -4925,9 +3125,9 @@ function DeleteInventoryItemConfirm({ item, onClose, onConfirm }) {
             {warningParts[0]}<strong>{warningParts[1]}</strong>{warningParts[2]}
           </p>
           <div className="modal-footer">
-            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-secondary" onClick={onClose}>Cancel</button>
             <button className="btn-danger" onClick={handleDelete} disabled={busy}>
-              <Trash2 size={14} />{busy ? t.modal.deleting : t.modal.delete}
+              <Trash2 size={14} />{busy ? 'Deleting…' : 'Delete'}
             </button>
           </div>
         </div>
@@ -4936,128 +3136,35 @@ function DeleteInventoryItemConfirm({ item, onClose, onConfirm }) {
   );
 }
 
-function ImportFromStoreModal({ existingItems, onClose, onSelect }) {
-  const { t } = useLang();
-  const ti = t.inventory;
-  const [storeItems, setStoreItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    axios.get('/api/store-items?all=true')
-      .then(r => setStoreItems(r.data.items || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  const importedIds = new Set(existingItems.map(i => i.store_item_id).filter(Boolean));
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>{ti.importFromStore}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="modal-body">
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>{t.topbar.loading}</div>
-          ) : storeItems.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>{ti.noStoreItems}</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {storeItems.map(si => {
-                const alreadyAdded = importedIds.has(si.id);
-                return (
-                  <button
-                    key={si.id}
-                    type="button"
-                    onClick={() => !alreadyAdded && onSelect(si)}
-                    disabled={alreadyAdded}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(99,117,236,0.2)',
-                      background: alreadyAdded ? 'rgba(30,41,59,0.3)' : 'rgba(30,41,59,0.6)',
-                      cursor: alreadyAdded ? 'default' : 'pointer',
-                      opacity: alreadyAdded ? 0.5 : 1,
-                      textAlign: 'left', width: '100%',
-                      transition: 'background 0.15s',
-                    }}
-                  >
-                    {si.image_url
-                      ? <img src={si.image_url} alt="" style={{ width: 44, height: 44, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
-                      : <div style={{ width: 44, height: 44, borderRadius: 6, background: 'rgba(99,117,236,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          <ShoppingBag size={18} style={{ color: '#6366f1', opacity: 0.6 }} />
-                        </div>
-                    }
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: 13 }}>{si.name_en}</div>
-                      {si.name_zh && <div style={{ fontSize: 11, color: '#94a3b8' }}>{si.name_zh}</div>}
-                      <div style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace' }}>{si.key_name}</div>
-                    </div>
-                    <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                      {si.price_cny != null && <div style={{ fontSize: 13, color: '#e2e8f0' }}>¥{Number(si.price_cny).toFixed(2)}</div>}
-                      {alreadyAdded && (
-                        <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: 'rgba(16,185,129,0.15)', color: '#34d399' }}>
-                          {ti.alreadyAdded}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        <div className="modal-footer" style={{ padding: '16px 20px', borderTop: '1px solid var(--border)' }}>
-          <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
+function InventoryTab({ channels, session, isSuperadmin }) {
   const { t } = useLang();
   const ti = t.inventory;
   const [selectedChannelId, setSelectedChannelId] = useState(
     isSuperadmin ? '' : (session?.channelId || '')
   );
-  const [subTab, setSubTab] = useState('items');
   const [items, setItems] = useState([]);
-  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(null);
-  const [expandedOrderId, setExpandedOrderId] = useState(null);
-
-  useEffect(() => {
-    if (isSuperadmin && !selectedChannelId && channels.length) {
-      setSelectedChannelId(String(channels[0].id));
-    }
-  }, [isSuperadmin, channels, selectedChannelId]);
 
   const fetchItems = useCallback(async (cid) => {
     if (!cid) return;
     setLoading(true);
     try {
-      const [itemsRes, ordersRes] = await Promise.allSettled([
-        axios.get(`/api/channel-inventory?channel_id=${cid}`),
-        axios.get(`/api/orders?channel_id=${cid}`),
-      ]);
-      setItems(itemsRes.status === 'fulfilled' ? (itemsRes.value.data.items || []) : []);
-      setOrders(ordersRes.status === 'fulfilled' ? (ordersRes.value.data.orders || []) : []);
-    } catch { setItems([]); setOrders([]); }
+      const res = await axios.get(`/api/channel-inventory?channel_id=${cid}`);
+      setItems(res.data.items || []);
+    } catch { setItems([]); }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchItems(selectedChannelId); }, [selectedChannelId, fetchItems]);
+  useEffect(() => {
+    fetchItems(selectedChannelId);
+  }, [selectedChannelId, fetchItems]);
 
   const closeAndRefresh = () => { setModal(null); fetchItems(selectedChannelId); };
 
   const activeCount   = items.filter(i => i.active).length;
   const physicalCount = items.filter(i => i.item_type === 'physical').length;
   const virtualCount  = items.filter(i => i.item_type === 'virtual').length;
-  const pendingOrders = orders.filter(o => o.status === 'pending').length;
-  const revenue       = orders.filter(o => o.status === 'delivered').reduce((s, o) => s + Number(o.price_cny) * o.quantity, 0);
 
   const selectedChannel = channels.find(c => String(c.id) === String(selectedChannelId));
 
@@ -5069,11 +3176,11 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
           <div className="select-wrap">
             <select
               value={selectedChannelId}
-              onChange={e => { setSelectedChannelId(e.target.value); setItems([]); setOrders([]); }}
+              onChange={e => { setSelectedChannelId(e.target.value); setItems([]); }}
               className="inline-select"
               style={{ minWidth: 200 }}
             >
-              <option value="">{ti.selectChannelOption}</option>
+              <option value="">— Select Channel —</option>
               {channels.map(c => (
                 <option key={c.id} value={c.id}>{c.name || c.key_name}</option>
               ))}
@@ -5096,212 +3203,83 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
       ) : (
         <>
           <div className="stat-row">
-            <StatCard icon={Box}        label={ti.totalItems}    value={items.length}   color="#6366f1" />
-            <StatCard icon={Box}        label={ti.activeItems}   value={activeCount}    color="#10b981" />
-            <StatCard icon={Package}    label={ti.totalOrders}   value={orders.length}  color="#3b82f6" />
-            <StatCard icon={ShoppingBag} label={ti.pendingOrders} value={pendingOrders} color="#f59e0b" />
+            <StatCard icon={Box}     label={ti.totalItems}    value={items.length}   color="#6366f1" />
+            <StatCard icon={Box}     label={ti.activeItems}   value={activeCount}    color="#10b981" />
+            <StatCard icon={Package} label={ti.physicalItems} value={physicalCount}  color="#3b82f6" />
+            <StatCard icon={Archive} label={ti.virtualItems}  value={virtualCount}   color="#8b5cf6" />
           </div>
 
-          <div className="subtab-row">
-            <button className={`subtab-btn${subTab === 'items' ? ' active' : ''}`} onClick={() => setSubTab('items')}>
-              <Box size={13} />{ti.itemsTab}
-            </button>
-            <button className={`subtab-btn${subTab === 'orders' ? ' active' : ''}`} onClick={() => setSubTab('orders')}>
-              <Package size={13} />{ti.ordersTab} {pendingOrders > 0 && <span style={{ background: '#f59e0b', color: '#000', borderRadius: 10, padding: '1px 6px', fontSize: 11, marginLeft: 4 }}>{pendingOrders}</span>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+              <Plus size={13} />{ti.addItem}
             </button>
           </div>
 
-          {subTab === 'items' && (
-            <>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
-                <button className="btn-secondary" onClick={() => setModal({ type: 'import-from-store' })}>
-                  <ShoppingBag size={13} />{ti.importFromStore}
-                </button>
-                <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-                  <Plus size={13} />{ti.addItem}
-                </button>
-              </div>
-
-              {loading ? (
-                <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>{t.topbar.loading}</div>
-              ) : items.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>
-                  <Box size={32} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.4 }} />
-                  <p>{ti.noItems}</p>
-                </div>
-              ) : (
-                <div className="table-wrap">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: 56 }}></th>
-                        <th>{ti.itemName}</th>
-                        <th>{ti.itemType}</th>
-                        <th>{ti.source}</th>
-                        <th>{ti.priceCny}</th>
-                        <th>{ti.stock}</th>
-                        <th>{ti.active}</th>
-                        <th>{ti.inStore}</th>
-                        <th style={{ width: 80 }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map(item => (
-                        <tr key={item.id}>
-                          <td>
-                            {item.image_url
-                              ? <img src={item.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover' }} />
-                              : <div style={{ width: 40, height: 40, borderRadius: 6, background: 'rgba(99,117,236,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Box size={16} style={{ color: '#6366f1', opacity: 0.5 }} /></div>
-                            }
-                          </td>
-                          <td>
-                            <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: 13 }}>{item.name_zh || item.name_en || item.key_name}</div>
-                            {item.name_zh && item.name_en && <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.name_en}</div>}
-                            <div style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace' }}>{item.key_name}</div>
-                          </td>
-                          <td>
-                            <Badge color={item.item_type === 'virtual' ? '#8b5cf6' : '#3b82f6'}>
-                              {item.item_type === 'virtual' ? ti.virtual : ti.physical}
-                            </Badge>
-                          </td>
-                          <td>
-                            <Badge color={item.store_item_id ? '#6366f1' : '#475569'}>
-                              {item.store_item_id ? ti.sourceStore : ti.sourceCustom}
-                            </Badge>
-                          </td>
-                          <td>
-                            {item.price_cny != null ? `¥${Number(item.price_cny).toFixed(2)}` : '—'}
-                          </td>
-                          <td>
-                            {item.stock_quantity != null ? (
-                              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                {item.stock_quantity}
-                                {item.stock_quantity > 0 && item.stock_quantity < 10 && (
-                                  <Badge color="#f59e0b">{ti.stockLow}</Badge>
-                                )}
-                                {item.stock_quantity === 0 && (
-                                  <Badge color="#ef4444">{ti.stockOut}</Badge>
-                                )}
-                              </span>
-                            ) : (
-                              <span style={{ color: '#64748b' }}>{ti.stockUnlimited}</span>
-                            )}
-                          </td>
-                          <td>
-                            <Badge color={item.active ? '#10b981' : '#64748b'}>
-                              {item.active ? ti.yes : ti.no}
-                            </Badge>
-                          </td>
-                          <td>
-                            <Badge color={item.show_in_store ? '#10b981' : '#475569'}>
-                              {item.show_in_store ? ti.inStoreLive : ti.inStoreHidden}
-                            </Badge>
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              <button className="icon-btn" title={ti.editItem} onClick={() => setModal({ type: 'edit', item })}>
-                                <Pencil size={14} />
-                              </button>
-                              <button className="icon-btn" title={ti.deleteItem} style={{ color: '#f87171' }} onClick={() => setModal({ type: 'delete', item })}>
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
-          )}
-
-          {subTab === 'orders' && (
-            <div className="card">
-              <div className="table-toolbar">
-                <span className="table-count">{t.countOrder(orders.length)}</span>
-                <span style={{ fontSize: 12, color: '#94a3b8' }}>
-                  {ti.revenueLabel(revenue.toFixed(2))}
-                </span>
-              </div>
-              {loading ? (
-                <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>{t.topbar.loading}</div>
-              ) : orders.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>
-                  <Package size={32} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.4 }} />
-                  <p>{t.empty.orders}</p>
-                </div>
-              ) : (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>{t.table.id}</th>
-                      <th>{ti.user}</th>
-                      <th>{ti.itemName}</th>
-                      <th>{t.store.qty}</th>
-                      <th>{ti.priceCny}</th>
-                      <th>{t.store.status}</th>
-                      <th>{ti.date}</th>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>Loading…</div>
+          ) : items.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>
+              <Box size={32} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.4 }} />
+              <p>{ti.noItems}</p>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 56 }}></th>
+                    <th>Name</th>
+                    <th>{ti.itemType}</th>
+                    <th>{ti.priceCny}</th>
+                    <th>{ti.stock}</th>
+                    <th>{ti.active}</th>
+                    <th style={{ width: 80 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map(item => (
+                    <tr key={item.id}>
+                      <td>
+                        {item.image_url
+                          ? <img src={item.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover' }} />
+                          : <div style={{ width: 40, height: 40, borderRadius: 6, background: 'rgba(99,117,236,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Box size={16} style={{ color: '#6366f1', opacity: 0.5 }} /></div>
+                        }
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: '#EEF2FF', fontSize: 13 }}>{item.name_en || item.key_name}</div>
+                        {item.name_zh && <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.name_zh}</div>}
+                        <div style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace' }}>{item.key_name}</div>
+                      </td>
+                      <td>
+                        <Badge color={item.item_type === 'virtual' ? '#8b5cf6' : '#3b82f6'}>
+                          {item.item_type === 'virtual' ? ti.virtual : ti.physical}
+                        </Badge>
+                      </td>
+                      <td style={{ color: '#EEF2FF' }}>
+                        {item.price_cny != null ? `¥${Number(item.price_cny).toFixed(2)}` : '—'}
+                      </td>
+                      <td style={{ color: '#EEF2FF' }}>
+                        {item.stock_quantity != null ? item.stock_quantity : <span style={{ color: '#64748b' }}>{ti.stockUnlimited}</span>}
+                      </td>
+                      <td>
+                        <Badge color={item.active ? '#10b981' : '#64748b'}>
+                          {item.active ? ti.yes : ti.no}
+                        </Badge>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="icon-btn" title="Edit" onClick={() => setModal({ type: 'edit', item })}>
+                            <Pencil size={14} />
+                          </button>
+                          <button className="icon-btn" title="Delete" style={{ color: '#f87171' }} onClick={() => setModal({ type: 'delete', item })}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {orders.map(o => {
-                      const isExpanded = expandedOrderId === o.id;
-                      return (
-                        <React.Fragment key={o.id}>
-                          <tr onClick={() => setExpandedOrderId(isExpanded ? null : o.id)} style={{ cursor: 'pointer' }}>
-                            <td><span className="mono muted">{o.id.slice(0, 8)}…</span></td>
-                            <td>{fmt(o.nickname || o.user_id)}</td>
-                            <td className="bold">{fmt(o.name_zh || o.name_en)}</td>
-                            <td>{o.quantity}</td>
-                            <td>¥{o.price_cny}</td>
-                            <td onClick={(e) => e.stopPropagation()}><OrderStatusSelect orderId={o.id} status={o.status} onSave={() => fetchItems(selectedChannelId)} /></td>
-                            <td className="muted">{fmtDate(o.created_at)}</td>
-                          </tr>
-                          {isExpanded && (
-                            <tr>
-                              <td colSpan={7} style={{ background: 'rgba(99, 117, 236, 0.03)', padding: '16px 24px' }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', fontSize: '13px', color: '#64748b' }}>
-                                  <div>
-                                    <h4 style={{ color: '#0f172a', marginBottom: '8px', fontWeight: 600 }}>{ti.shippingAddress}</h4>
-                                    {o.shipping_name ? (
-                                      <div>
-                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.recipientName}:</strong> {o.shipping_name}</p>
-                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.recipientPhone}:</strong> {o.shipping_phone}</p>
-                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.recipientAddress}:</strong> {o.shipping_address}</p>
-                                      </div>
-                                    ) : (
-                                      <p style={{ fontStyle: 'italic', margin: '4px 0' }}>{ti.noShippingAddress}</p>
-                                    )}
-                                  </div>
-                                  <div>
-                                    <h4 style={{ color: '#0f172a', marginBottom: '8px', fontWeight: 600 }}>{ti.paymentFulfillment}</h4>
-                                    <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.paymentMethod}:</strong> {o.payment_method || 'WeChat Pay'}</p>
-                                    <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.paymentStatus}:</strong> <span style={{ color: o.payment_status === 'paid' ? '#10b981' : '#f59e0b', fontWeight: 600 }}>{o.payment_status || 'paid'}</span></p>
-                                    {o.tracking_number && (
-                                      <div style={{ marginTop: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
-                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.carrier}:</strong> {o.shipping_carrier}</p>
-                                        <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>{ti.trackingNo}:</strong> <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', color: '#6375EC' }}>{o.tracking_number}</code></p>
-                                        {o.shipped_at && <p style={{ margin: '4px 0', fontSize: '11px', color: '#94a3b8' }}>{ti.shippedAt}: {fmtDate(o.shipped_at)}</p>}
-                                      </div>
-                                    )}
-                                    {o.fulfillment_notes && (
-                                      <p style={{ margin: '8px 0 4px', fontStyle: 'italic', fontSize: '12px' }}><strong style={{ color: '#334155', fontStyle: 'normal' }}>{ti.orderNotes}:</strong> {o.fulfillment_notes}</p>
-                                    )}
-                                    {o.fulfilled_assets && (
-                                      <p style={{ margin: '4px 0', fontSize: '12px' }}><strong style={{ color: '#334155' }}>{ti.assets}:</strong> {o.fulfilled_assets.join(', ')}</p>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </>
@@ -5309,9 +3287,8 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
 
       {modal?.type === 'add' && (
         <ChannelInventoryItemModal
-          item={modal.prefill || null}
+          item={null}
           channelId={selectedChannelId}
-          skus={skus}
           onClose={() => setModal(null)}
           onSave={closeAndRefresh}
         />
@@ -5320,7 +3297,6 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
         <ChannelInventoryItemModal
           item={modal.item}
           channelId={selectedChannelId}
-          skus={skus}
           onClose={() => setModal(null)}
           onSave={closeAndRefresh}
         />
@@ -5332,32 +3308,6 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
           onConfirm={closeAndRefresh}
         />
       )}
-      {modal?.type === 'import-from-store' && (
-        <ImportFromStoreModal
-          existingItems={items}
-          onClose={() => setModal(null)}
-          onSelect={si => setModal({
-            type: 'add',
-            prefill: {
-              key_name: si.key_name,
-              name_en: si.name_en,
-              name_zh: si.name_zh,
-              desc_en: si.desc_en,
-              desc_zh: si.desc_zh,
-              item_type: 'physical',
-              unit_en: si.unit_en,
-              unit_zh: si.unit_zh,
-              price_cny: si.price_cny ?? '',
-              price_usd: si.price_usd ?? '',
-              image_url: si.image_url || '',
-              tag: si.tag || '',
-              sort_order: si.sort_order ?? 0,
-              store_item_id: si.id,
-              sku_id: si.sku_id || '',
-            },
-          })}
-        />
-      )}
     </>
   );
 }
@@ -5367,10 +3317,10 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
 const EMPTY_ITEM = {
   key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '',
   unit_en: '', unit_zh: '', price_cny: '', price_usd: '',
-  tag: '', sort_order: 0, active: true, image_url: '', sku_id: '',
+  tag: '', sort_order: 0, active: true, image_url: '',
 };
 
-function StoreItemModal({ item, skus = [], onClose, onSave }) {
+function StoreItemModal({ item, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!item?.id;
   const [form, setForm] = useState(isEdit
@@ -5379,7 +3329,7 @@ function StoreItemModal({ item, skus = [], onClose, onSave }) {
         unit_en: item.unit_en || '', unit_zh: item.unit_zh || '',
         price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '',
         tag: item.tag || '', sort_order: item.sort_order ?? 0, active: item.active !== false,
-        image_url: item.image_url || '', sku_id: item.sku_id || '' }
+        image_url: item.image_url || '' }
     : { ...EMPTY_ITEM });
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -5409,7 +3359,6 @@ function StoreItemModal({ item, skus = [], onClose, onSave }) {
     e.preventDefault();
     if (!form.key_name.trim()) { setError(t.modal.keyRequired); return; }
     if (!form.name_en.trim())  { setError(t.modal.nameRequired); return; }
-    if (!form.sku_id) { setError(t.store.skuRequired); return; }
     setBusy(true); setError('');
     try {
       if (isEdit) await axios.put(`/api/store-items/${item.id}`, form);
@@ -5439,18 +3388,6 @@ function StoreItemModal({ item, skus = [], onClose, onSave }) {
                   <option value="">{t.modal.noTag}</option>
                   <option value="bestseller">{t.modal.tagBestseller}</option>
                   <option value="value">{t.modal.tagValue}</option>
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
-            <label className="form-field">
-              <span>{t.store.skuBinding} <span style={{ color: '#ef4444' }}>*</span></span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.sku_id || ''} onChange={e => set('sku_id', e.target.value)} className="inline-select" style={{ width: '100%', borderColor: !form.sku_id ? '#ef4444' : undefined }}>
-                  <option value="">{t.store.selectSku}</option>
-                  {skus.map(s => (
-                    <option key={s.id} value={s.id}>{s.sku_code} - {s.name_zh || s.name_en}</option>
-                  ))}
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -5583,175 +3520,55 @@ const ORDER_STATUSES = ['pending', 'confirmed', 'shipped', 'delivered', 'cancell
 function OrderStatusSelect({ orderId, status, onSave }) {
   const { t } = useLang();
   const [busy, setBusy] = useState(false);
-  const [showFulfillModal, setShowFulfillModal] = useState(false);
-  const [carrier, setCarrier] = useState('SF Express (顺丰速运)');
-  const [tracking, setTracking] = useState('');
-  const [notes, setNotes] = useState('');
-  const [assets, setAssets] = useState('');
-
   const handleChange = async (e) => {
-    const val = e.target.value;
-    if (val === 'shipped') {
-      setShowFulfillModal(true);
-      return;
-    }
     setBusy(true);
-    try {
-      await axios.put(`/api/orders/${orderId}`, { status: val });
-      onSave();
-    }
+    try { await axios.put(`/api/orders/${orderId}`, { status: e.target.value }); onSave(); }
     catch { /* silent */ } finally { setBusy(false); }
   };
-
-  const handleShipSubmit = async (e) => {
-    e.preventDefault();
-    if (!tracking.trim()) {
-      alert('Tracking number is required');
-      return;
-    }
-    setBusy(true);
-    try {
-      await axios.put(`/api/orders/${orderId}`, {
-        status: 'shipped',
-        shipping_carrier: carrier,
-        tracking_number: tracking.trim(),
-        fulfillment_notes: notes.trim() || null,
-        fulfilled_assets: assets.trim() ? assets.split(',').map(s => s.trim()) : null
-      });
-      setShowFulfillModal(false);
-      onSave();
-    } catch {
-      alert('Failed to update shipment details');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const color = { pending: '#f59e0b', confirmed: '#3b82f6', shipped: '#8b5cf6', delivered: '#10b981', cancelled: '#94a3b8' }[status] || '#94a3b8';
-
   return (
     <div className="select-wrap">
       <select value={status} onChange={handleChange} disabled={busy} className="inline-select" style={{ color }}>
         {ORDER_STATUSES.map(s => <option key={s} value={s}>{t.store[s]}</option>)}
       </select>
       <ChevronDown size={11} className="select-chevron" />
-
-      {showFulfillModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(8px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 99999, color: '#1e293b'
-        }}>
-          <div style={{
-            background: '#ffffff', width: '420px', borderRadius: '16px',
-            padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
-            border: '1px solid rgba(226, 232, 240, 0.8)'
-          }}>
-            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '16px' }}>Fulfill & Ship Order</h3>
-            <form onSubmit={handleShipSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Shipping Carrier *</label>
-                <input
-                  type="text"
-                  value={carrier}
-                  onChange={(e) => setCarrier(e.target.value)}
-                  placeholder="e.g. SF Express (顺丰速运)"
-                  style={{
-                    padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1',
-                    fontSize: '13px', outline: 'none'
-                  }}
-                  required
-                />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Tracking Number *</label>
-                <input
-                  type="text"
-                  value={tracking}
-                  onChange={(e) => setTracking(e.target.value)}
-                  placeholder="Enter courier barcode/tracking number"
-                  style={{
-                    padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1',
-                    fontSize: '13px', outline: 'none'
-                  }}
-                  required
-                />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Physical Asset Codes (Optional)</label>
-                <input
-                  type="text"
-                  value={assets}
-                  onChange={(e) => setAssets(e.target.value)}
-                  placeholder="e.g., KNC12345678-0001 (comma separated)"
-                  style={{
-                    padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1',
-                    fontSize: '13px', outline: 'none'
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Fulfillment Notes (Optional)</label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Add any internal shipping notes..."
-                  style={{
-                    padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1',
-                    fontSize: '13px', outline: 'none', minHeight: '60px', resize: 'vertical'
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowFulfillModal(false)}
-                  disabled={busy}
-                  style={{
-                    padding: '8px 16px', borderRadius: '8px', border: '1px solid #cbd5e1',
-                    background: '#f8fafc', color: '#475569', fontSize: '13px', fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={busy}
-                  style={{
-                    padding: '8px 16px', borderRadius: '8px', border: 'none',
-                    background: '#6375EC', color: '#ffffff', fontSize: '13px', fontWeight: 600,
-                    cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(99, 117, 236, 0.2)'
-                  }}
-                >
-                  {busy ? 'Processing...' : 'Confirm Shipment'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = [], session, onRefresh }) {
+function OrderTrackingAction({ order, onRefresh, isSuperadmin }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState(false);
+  const canShip = isSuperadmin && order.payment_status === 'paid' && order.status !== 'shipped' && order.status !== 'delivered';
+  const ship = async () => {
+    const current = order.tracking_number || '';
+    const tracking = window.prompt(t.store.addTracking, current);
+    if (!tracking) return;
+    setBusy(true);
+    try {
+      await axios.put(`/api/orders/${order.id}`, { status: 'shipped', tracking_number: tracking.trim() });
+      onRefresh();
+    } catch {
+      /* silent */
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="row-actions">
+      <span className="mono muted">{order.tracking_number || '—'}</span>
+      {canShip && <button className="icon-btn" title={t.store.addTracking} onClick={ship} disabled={busy}><Package size={14} /></button>}
+    </div>
+  );
+}
+
+function StoreTab({ storeItems, orders, onRefresh, isSuperadmin }) {
   const { t } = useLang();
   const [subTab, setSubTab] = useState('items');
-  const [orderChannelFilter, setOrderChannelFilter] = useState('');
   const [modal, setModal] = useState(null);
-  const [expandedOrderId, setExpandedOrderId] = useState(null);
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
 
   const activeCount  = storeItems.filter(i => i.active).length;
-  const filteredOrders = orderChannelFilter
-    ? orders.filter(o => String(o.channel_id) === orderChannelFilter)
-    : orders;
   const pendingCount = orders.filter(o => o.status === 'pending').length;
 
   return (
@@ -5767,9 +3584,6 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
         <button className={`subtab-btn${subTab === 'items' ? ' active' : ''}`} onClick={() => setSubTab('items')}>
           <ShoppingBag size={13} />{t.store.itemsTab}
         </button>
-        <button className={`subtab-btn${subTab === 'skus' ? ' active' : ''}`} onClick={() => setSubTab('skus')}>
-          <Layers size={13} />SKUs & Stock
-        </button>
         <button className={`subtab-btn${subTab === 'orders' ? ' active' : ''}`} onClick={() => setSubTab('orders')}>
           <Package size={13} />{t.store.ordersTab}
         </button>
@@ -5779,11 +3593,9 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
         <div className="card">
           <div className="table-toolbar">
             <span className="table-count">{t.countItem(storeItems.length)}</span>
-            {hasPermission(session, PERMS.STORE_WRITE) && (
-              <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-                <Plus size={14} />{t.addItem}
-              </button>
-            )}
+            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+              <Plus size={14} />{t.addItem}
+            </button>
           </div>
           <table className="data-table">
             <thead>
@@ -5792,7 +3604,6 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
                 <th>{t.table.key}</th>
                 <th>{t.table.nameEn}</th>
                 <th>{t.table.nameZh}</th>
-                <th>Linked SKU</th>
                 <th>{t.store.priceCny}</th>
                 <th>{t.store.priceUsd}</th>
                 <th>{t.store.tag}</th>
@@ -5801,113 +3612,34 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
               </tr>
             </thead>
             <tbody>
-              {storeItems.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.store}</td></tr>}
-              {storeItems.map(item => {
-                const linkedSku = skus.find(s => s.id === item.sku_id);
-                return (
-                  <tr key={item.id}>
-                    <td>
-                      {item.image_url
-                        ? <img src={item.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', border: '1px solid rgba(99,117,236,0.25)', display: 'block' }} />
-                        : <div style={{ width: 40, height: 40, borderRadius: 6, background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ImageIcon size={16} style={{ color: '#475569' }} /></div>
-                      }
-                    </td>
-                    <td><code className="code-tag">{item.key_name}</code></td>
-                    <td className="bold">{fmt(item.name_en)}</td>
-                    <td className="muted">{fmt(item.name_zh)}</td>
-                    <td>
-                      {linkedSku ? <code style={{ color: '#818cf8', fontWeight: 600 }}>{linkedSku.sku_code}</code> : <span className="muted" style={{ fontStyle: 'italic', fontSize: 11 }}>No SKU (Unlimited)</span>}
-                    </td>
-                    <td>¥{item.price_cny}</td>
-                    <td className="muted">${item.price_usd}</td>
-                    <td>{item.tag ? <Badge color="#6366f1">{item.tag}</Badge> : '—'}</td>
-                    <td>
-                      <Badge color={item.active ? '#10b981' : '#94a3b8'}>
-                        {item.active ? t.store.yes : t.store.no}
-                      </Badge>
-                    </td>
-                    <td>
-                      <div className="row-actions">
-                        {hasPermission(session, PERMS.STORE_WRITE) && <button className="icon-btn" title={t.modal.editItem} onClick={() => setModal({ type: 'edit', item })}><Pencil size={14} /></button>}
-                        {hasPermission(session, PERMS.STORE_DELETE) && <button className="icon-btn danger" title={t.modal.deleteItem} onClick={() => setModal({ type: 'delete', item })}><Trash2 size={14} /></button>}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {subTab === 'skus' && (
-        <div className="card">
-          <div className="table-toolbar">
-            <span className="table-count">{skus.length} {t.store.skusRegistered}</span>
-            <button className="btn-primary" onClick={() => setModal({ type: 'add-sku' })}>
-              <Plus size={14} />{t.store.addSku}
-            </button>
-          </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>{t.store.skuCode}</th>
-                <th>{t.table.nameEn}</th>
-                <th>{t.table.nameZh}</th>
-                <th>{t.table.type}</th>
-                <th>{t.store.unit}</th>
-                <th>{t.store.locationStocks}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {skus.length === 0 && <tr><td colSpan={7} className="empty-row">{t.store.noSkus}</td></tr>}
-              {skus.map(sku => {
-                const stocks = inventoryStock.filter(st => st.sku_id === sku.id);
-                return (
-                  <tr key={sku.id}>
-                    <td><code className="code-tag">{sku.sku_code}</code></td>
-                    <td className="bold">{sku.name_en}</td>
-                    <td className="muted">{sku.name_zh}</td>
-                    <td>
-                      <Badge color={sku.item_type === 'physical' ? '#6366f1' : '#10b981'}>
-                        {sku.item_type === 'physical' ? t.store.physical : t.store.virtual}
-                      </Badge>
-                    </td>
-                    <td>{sku.unit_zh} / {sku.unit_en}</td>
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {stocks.length === 0 ? <span className="muted" style={{ fontSize: 11 }}>— {t.store.noStocksConfigured}</span> : null}
-                        {stocks.map(st => {
-                          const ch = channels?.find(c => String(c.id) === String(st.channel_id));
-                          return (
-                            <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
-                              <span style={{ padding: '1px 5px', borderRadius: 4, background: st.location_type === 'warehouse' ? '#334155' : 'rgba(99,102,241,0.15)', color: st.location_type === 'warehouse' ? '#e2e8f0' : '#818cf8', fontWeight: 500 }}>
-                                {st.location_type === 'warehouse' ? `${t.store.warehouse}: ${st.warehouse_name}` : `${t.store.channel}: ${ch?.name || st.channel_id}`}
-                              </span>
-                              <span className="bold" style={{ color: (st.quantity ?? 0) <= (st.low_stock_threshold ?? 0) ? '#ef4444' : '#10b981' }}>
-                                {st.quantity === null ? '∞' : `${st.quantity} ${t.store.left}`}
-                              </span>
-                              {(st.quantity !== null && (st.quantity <= (st.low_stock_threshold ?? 0))) && (
-                                <span style={{ color: '#ef4444', fontWeight: 600 }}>⚠️ LOW</span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
-                        <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }} onClick={() => setModal({ type: 'adjust-stock', sku })}>
-                          {t.store.adjustStock}
-                        </button>
-                        <button className="icon-btn" title={t.store.editSku} onClick={() => setModal({ type: 'edit-sku', sku })}><Pencil size={14} /></button>
-                        <button className="icon-btn danger" title={t.store.deleteSku} onClick={() => setModal({ type: 'delete-sku', sku })}><Trash2 size={14} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {storeItems.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.store}</td></tr>}
+              {storeItems.map(item => (
+                <tr key={item.id}>
+                  <td>
+                    {item.image_url
+                      ? <img src={item.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', border: '1px solid rgba(99,117,236,0.25)', display: 'block' }} />
+                      : <div style={{ width: 40, height: 40, borderRadius: 6, background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ImageIcon size={16} style={{ color: '#475569' }} /></div>
+                    }
+                  </td>
+                  <td><code className="code-tag">{item.key_name}</code></td>
+                  <td className="bold">{fmt(item.name_en)}</td>
+                  <td className="muted">{fmt(item.name_zh)}</td>
+                  <td>¥{item.price_cny}</td>
+                  <td className="muted">${item.price_usd}</td>
+                  <td>{item.tag ? <Badge color="#6366f1">{item.tag}</Badge> : '—'}</td>
+                  <td>
+                    <Badge color={item.active ? '#10b981' : '#94a3b8'}>
+                      {item.active ? t.store.yes : t.store.no}
+                    </Badge>
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" title={t.modal.editItem} onClick={() => setModal({ type: 'edit', item })}><Pencil size={14} /></button>
+                      <button className="icon-btn danger" title={t.modal.deleteItem} onClick={() => setModal({ type: 'delete', item })}><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -5916,23 +3648,7 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
       {subTab === 'orders' && (
         <div className="card">
           <div className="table-toolbar">
-            <span className="table-count">{t.countOrder(filteredOrders.length)}</span>
-            {channels && channels.length > 0 && (
-              <div className="select-wrap" style={{ marginLeft: 'auto' }}>
-                <select
-                  value={orderChannelFilter}
-                  onChange={e => setOrderChannelFilter(e.target.value)}
-                  className="inline-select"
-                  style={{ minWidth: 160 }}
-                >
-                  <option value="">All Channels</option>
-                  {channels.map(c => (
-                    <option key={c.id} value={String(c.id)}>{c.name || c.key_name}</option>
-                  ))}
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            )}
+            <span className="table-count">{t.countOrder(orders.length)}</span>
           </div>
           <table className="data-table">
             <thead>
@@ -5942,304 +3658,36 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
                 <th>{t.table.nameEn}</th>
                 <th>{t.store.qty}</th>
                 <th>{t.store.priceCny}</th>
-                <th>Channel</th>
+                <th>{t.store.payment}</th>
                 <th>{t.store.status}</th>
+                <th>{t.store.tracking}</th>
                 <th>{t.store.orderedAt}</th>
               </tr>
             </thead>
             <tbody>
-              {filteredOrders.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.orders}</td></tr>}
-              {filteredOrders.map(o => {
-                const ch = channels?.find(c => String(c.id) === String(o.channel_id));
-                const isExpanded = expandedOrderId === o.id;
-                return (
-                  <React.Fragment key={o.id}>
-                    <tr onClick={() => setExpandedOrderId(isExpanded ? null : o.id)} style={{ cursor: 'pointer' }}>
-                      <td><span className="mono muted">{o.id.slice(0, 8)}…</span></td>
-                      <td>{fmt(o.nickname || o.user_id)}</td>
-                      <td className="bold">{fmt(o.name_zh || o.name_en)}</td>
-                      <td>{o.quantity}</td>
-                      <td>¥{o.price_cny}</td>
-                      <td>
-                        {ch ? <Badge color="#6366f1">{ch.name || ch.key_name}</Badge> : <span className="muted">—</span>}
-                      </td>
-                      <td onClick={(e) => e.stopPropagation()}><OrderStatusSelect orderId={o.id} status={o.status} onSave={onRefresh} /></td>
-                      <td className="muted">{fmtDate(o.created_at)}</td>
-                    </tr>
-                    {isExpanded && (
-                      <tr>
-                        <td colSpan={8} style={{ background: 'rgba(99, 117, 236, 0.03)', padding: '16px 24px' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', fontSize: '13px', color: '#64748b' }}>
-                            <div>
-                              <h4 style={{ color: '#0f172a', marginBottom: '8px', fontWeight: 600 }}>Shipping Address</h4>
-                              {o.shipping_name ? (
-                                <div>
-                                  <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Name:</strong> {o.shipping_name}</p>
-                                  <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Phone:</strong> {o.shipping_phone}</p>
-                                  <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Address:</strong> {o.shipping_address}</p>
-                                </div>
-                              ) : (
-                                <p style={{ fontStyle: 'italic', margin: '4px 0' }}>No shipping address provided (virtual item/service)</p>
-                              )}
-                            </div>
-                            <div>
-                              <h4 style={{ color: '#0f172a', marginBottom: '8px', fontWeight: 600 }}>Payment & Fulfillment</h4>
-                              <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Payment Method:</strong> {o.payment_method || 'WeChat Pay'}</p>
-                              <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Payment Status:</strong> <span style={{ color: o.payment_status === 'paid' ? '#10b981' : '#f59e0b', fontWeight: 600 }}>{o.payment_status || 'paid'}</span></p>
-                              {o.tracking_number && (
-                                <div style={{ marginTop: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
-                                  <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Carrier:</strong> {o.shipping_carrier}</p>
-                                  <p style={{ margin: '4px 0' }}><strong style={{ color: '#334155' }}>Tracking #:</strong> <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', color: '#6375EC' }}>{o.tracking_number}</code></p>
-                                  {o.shipped_at && <p style={{ margin: '4px 0', fontSize: '11px', color: '#94a3b8' }}>Shipped at: {fmtDate(o.shipped_at)}</p>}
-                                </div>
-                              )}
-                              {o.fulfillment_notes && (
-                                <p style={{ margin: '8px 0 4px', fontStyle: 'italic', fontSize: '12px' }}><strong style={{ color: '#334155', fontStyle: 'normal' }}>Notes:</strong> {o.fulfillment_notes}</p>
-                              )}
-                              {o.fulfilled_assets && (
-                                <p style={{ margin: '4px 0', fontSize: '12px' }}><strong style={{ color: '#334155' }}>Assets:</strong> {o.fulfilled_assets.join(', ')}</p>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
+              {orders.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.orders}</td></tr>}
+              {orders.map(o => (
+                <tr key={o.id}>
+                  <td><span className="mono muted">{o.id.slice(0, 8)}…</span></td>
+                  <td>{fmt(o.nickname || o.user_id)}</td>
+                  <td className="bold">{fmt(o.order_type === 'lab' && Array.isArray(o.transactions) && o.transactions.length ? o.transactions.map(tx => tx.name_en || tx.sku).join(', ') : o.name_en)}</td>
+                  <td>{o.quantity}</td>
+                  <td>¥{o.total_amount_cny != null ? (Number(o.total_amount_cny) / 100).toFixed(2) : o.price_cny}</td>
+                  <td><Badge color={o.payment_status === 'paid' ? '#10b981' : '#94a3b8'}>{t.store[o.payment_status] || o.payment_status || '—'}</Badge></td>
+                  <td><OrderStatusSelect orderId={o.id} status={o.status} onSave={onRefresh} /></td>
+                  <td><OrderTrackingAction order={o} onRefresh={onRefresh} isSuperadmin={isSuperadmin} /></td>
+                  <td className="muted">{fmtDate(o.created_at)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
 
-      {modal?.type === 'add'    && <StoreItemModal item={null} skus={skus} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <StoreItemModal item={modal.item} skus={skus} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add'    && <StoreItemModal item={null}       onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'   && <StoreItemModal item={modal.item} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteStoreItemConfirm item={modal.item} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
-
-      {modal?.type === 'add-sku'    && <SkuModal sku={null}       onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit-sku'   && <SkuModal sku={modal.sku}  onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'delete-sku' && <DeleteSkuConfirm sku={modal.sku} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
-      {modal?.type === 'adjust-stock' && <StockAdjustModal sku={modal.sku} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
     </>
-  );
-}
-
-function SkuModal({ sku, onClose, onSave }) {
-  const { t } = useLang();
-  const isEdit = !!sku?.id;
-  const [form, setForm] = useState(isEdit
-    ? { sku_code: sku.sku_code, name_zh: sku.name_zh || '', name_en: sku.name_en || '',
-        desc_zh: sku.desc_zh || '', desc_en: sku.desc_en || '',
-        item_type: sku.item_type || 'physical', unit_zh: sku.unit_zh || '个', unit_en: sku.unit_en || 'pcs' }
-    : { sku_code: '', name_zh: '', name_en: '', desc_zh: '', desc_en: '', item_type: 'physical', unit_zh: '个', unit_en: 'pcs' });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.sku_code.trim()) { setError(t.store.skuCodeRequired); return; }
-    if (!form.name_en.trim() || !form.name_zh.trim()) { setError(t.store.skuNamesRequired); return; }
-    setBusy(true); setError('');
-    try {
-      if (isEdit) await axios.put(`/api/skus/\${sku.id}`, form);
-      else        await axios.post('/api/skus', form);
-      onSave();
-    } catch (err) { setError(err.response?.data?.error || t.saveFailed); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>{isEdit ? t.store.editSkuTitle : t.store.createSkuTitle}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="modal-body">
-          <div className="form-grid">
-            <label className="form-field">
-              <span>{t.store.skuCodeLabel}</span>
-              <input value={form.sku_code} onChange={e => set('sku_code', e.target.value)} disabled={isEdit} placeholder="e.g. KINO-CHIP-V2" />
-            </label>
-            <label className="form-field">
-              <span>{t.store.itemType}</span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.item_type} onChange={e => set('item_type', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  <option value="physical">{t.store.physical}</option>
-                  <option value="virtual">{t.store.virtual}</option>
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
-            <label className="form-field">
-              <span>{t.table.nameEn}</span>
-              <input value={form.name_en} onChange={e => set('name_en', e.target.value)} placeholder="e.g. Kino Biomarker Test Chip" />
-            </label>
-            <label className="form-field">
-              <span>{t.table.nameZh}</span>
-              <input value={form.name_zh} onChange={e => set('name_zh', e.target.value)} placeholder="例如 Kino 生物标志物检测芯片" />
-            </label>
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.store.descEn}</span>
-              <input value={form.desc_en} onChange={e => set('desc_en', e.target.value)} placeholder="Central description of physical or virtual asset" />
-            </label>
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.store.descZh}</span>
-              <input value={form.desc_zh} onChange={e => set('desc_zh', e.target.value)} placeholder="统一中文描述" />
-            </label>
-            <label className="form-field">
-              <span>{t.store.unitEn}</span>
-              <input value={form.unit_en} onChange={e => set('unit_en', e.target.value)} placeholder="e.g. pcs, chip, box" />
-            </label>
-            <label className="form-field">
-              <span>{t.store.unitZh}</span>
-              <input value={form.unit_zh} onChange={e => set('unit_zh', e.target.value)} placeholder="例如 个, 片, 盒" />
-            </label>
-          </div>
-          {error && <div className="form-error">{error}</div>}
-          <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
-            <button type="submit" className="btn-primary" disabled={busy}>
-              <Check size={14} />{busy ? t.modal.saving : t.modal.save}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function DeleteSkuConfirm({ sku, onClose, onConfirm }) {
-  const { t } = useLang();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const handleDelete = async () => {
-    setBusy(true); setError('');
-    try {
-      await axios.delete(`/api/skus/\${sku.id}`);
-      onConfirm();
-    } catch (err) {
-      setError(err.response?.data?.error || t.store.deleteSkuFailed);
-    } finally { setBusy(false); }
-  };
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>{t.store.deleteSkuTitle}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="modal-body">
-          <p style={{ color: '#ef4444', fontWeight: 600 }}>{t.store.deleteSkuWarning(sku.sku_code)}</p>
-          <p className="muted" style={{ marginTop: 8, fontSize: 13 }}>{t.store.deleteSkuNote}</p>
-          {error && <div className="form-error" style={{ marginTop: 12 }}>{error}</div>}
-        </div>
-        <div className="modal-footer">
-          <button className="btn-secondary" onClick={onClose} disabled={busy}>{t.modal.cancel}</button>
-          <button className="btn-primary danger" onClick={handleDelete} disabled={busy}>
-            {busy ? t.store.deleting : t.store.confirmDelete}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StockAdjustModal({ sku, channels = [], onClose, onSave }) {
-  const { t } = useLang();
-  const [locationType, setLocationType] = useState('warehouse'); // 'warehouse' | 'channel'
-  const [channelId, setChannelId] = useState('');
-  const [warehouseName, setWarehouseName] = useState('shanghai-central');
-  const [quantity, setQuantity] = useState('');
-  const [lowStockThreshold, setLowStockThreshold] = useState(5);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (locationType === 'channel' && !channelId) { setError(t.store.pleaseSelectChannel); return; }
-    if (locationType === 'warehouse' && !warehouseName.trim()) { setError(t.store.pleaseEnterWarehouse); return; }
-    setBusy(true); setError('');
-    try {
-      const payload = {
-        sku_id: sku.id,
-        location_type: locationType,
-        channel_id: locationType === 'channel' ? parseInt(channelId, 10) : null,
-        warehouse_name: locationType === 'warehouse' ? warehouseName : null,
-        quantity: quantity !== '' ? parseInt(quantity, 10) : null, // null represents unlimited
-        low_stock_threshold: parseInt(lowStockThreshold, 10) || 0,
-      };
-      await axios.post('/api/inventory-stock', payload);
-      onSave();
-    } catch (err) { setError(err.response?.data?.error || t.store.stockFailed); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>{t.store.adjustStockTitle}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="modal-body">
-          <div style={{ marginBottom: 16 }}>
-            <span style={{ fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 600 }}>{t.store.targetSku}</span>
-            <div className="bold" style={{ fontSize: 16, color: 'var(--primary)', marginTop: 4 }}>{sku.sku_code} - {sku.name_zh || sku.name_en}</div>
-          </div>
-          <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
-            <label className="form-field">
-              <span>{t.store.locationType}</span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={locationType} onChange={e => setLocationType(e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  <option value="warehouse">{t.store.centralWarehouse}</option>
-                  <option value="channel">{t.store.clinicChannel}</option>
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
-
-            {locationType === 'channel' ? (
-              <label className="form-field">
-                <span>{t.store.selectChannel}</span>
-                <div className="select-wrap" style={{ width: '100%' }}>
-                  <select value={channelId} onChange={e => setChannelId(e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                    <option value="">{t.store.chooseChannel}</option>
-                    {channels.map(c => (
-                      <option key={c.id} value={c.id}>{c.name || c.key_name}</option>
-                    ))}
-                  </select>
-                  <ChevronDown size={11} className="select-chevron" />
-                </div>
-              </label>
-            ) : (
-              <label className="form-field">
-                <span>{t.store.warehouseName}</span>
-                <input value={warehouseName} onChange={e => setWarehouseName(e.target.value)} placeholder="shanghai-central" />
-              </label>
-            )}
-
-            <label className="form-field">
-              <span>{t.store.quantityLabel}</span>
-              <input type="number" min="0" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder={t.store.unlimitedStock} />
-            </label>
-
-            <label className="form-field">
-              <span>{t.store.lowStockThreshold}</span>
-              <input type="number" min="0" value={lowStockThreshold} onChange={e => setLowStockThreshold(e.target.value)} />
-            </label>
-          </div>
-          {error && <div className="form-error" style={{ marginTop: 12 }}>{error}</div>}
-          <div className="modal-footer" style={{ marginTop: 20 }}>
-            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
-            <button type="submit" className="btn-primary" disabled={busy}>
-              <Check size={14} />{busy ? t.modal.saving : t.store.saveAdjustments}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
   );
 }
 
@@ -6271,7 +3719,7 @@ function fmtBytes(bytes) {
 
 // ── Academy modals ────────────────────────────────────────────────────────────
 
-function CourseModal({ course, courses = [], onClose, onSave }) {
+function CourseModal({ course, onClose, onSave }) {
   const { t } = useLang();
   const ta = t.academy;
   const isEdit = !!course?.id;
@@ -6279,9 +3727,6 @@ function CourseModal({ course, courses = [], onClose, onSave }) {
     title: course?.title || '',
     description: course?.description || '',
     status: course?.status || 'draft',
-    level: course?.level || 'foundation',
-    credit_value: course?.credit_value ?? 10,
-    prerequisite_course_id: course?.prerequisite_course_id || '',
   });
   const [file, setFile] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -6302,24 +3747,16 @@ function CourseModal({ course, courses = [], onClose, onSave }) {
         await uploadToOSS(url, file, setProgress);
         oss_key = key;
       }
-      const payload = {
-        ...form,
-        oss_key,
-        credit_value: parseInt(form.credit_value) || 10,
-        prerequisite_course_id: form.prerequisite_course_id ? parseInt(form.prerequisite_course_id) : null,
-      };
       if (isEdit) {
-        await axios.put(`/api/academy/courses/${course.id}`, payload);
+        await axios.put(`/api/academy/courses/${course.id}`, { ...form, oss_key });
       } else {
-        await axios.post('/api/academy/courses', payload);
+        await axios.post('/api/academy/courses', { ...form, oss_key });
       }
       onSave();
     } catch (err) {
       setError(err.response?.data?.error || err.message || ta.uploadFailed);
     } finally { setBusy(false); }
   };
-
-  const LEVELS = ['foundation', 'intermediate', 'advanced', 'expert'];
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -6348,33 +3785,8 @@ function CourseModal({ course, courses = [], onClose, onSave }) {
                 <ChevronDown size={11} className="select-chevron" />
               </div>
             </label>
-            <label className="form-field">
-              <span>{ta.level}</span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.level} onChange={e => set('level', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  {LEVELS.map(lv => <option key={lv} value={lv}>{lv.charAt(0).toUpperCase() + lv.slice(1)}</option>)}
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
-            <label className="form-field">
-              <span>{ta.creditsOnCompletion}</span>
-              <input type="number" min={0} value={form.credit_value} onChange={e => set('credit_value', e.target.value)} />
-            </label>
-            <label className="form-field">
-              <span>{ta.prerequisite}</span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.prerequisite_course_id} onChange={e => set('prerequisite_course_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  <option value="">— None —</option>
-                  {courses.filter(c => c.id !== course?.id).map(c => (
-                    <option key={c.id} value={c.id}>{c.title}</option>
-                  ))}
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
             <div className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span className="form-label-text">{ta.videoFile} (Course Overview, optional)</span>
+              <span className="form-label-text">{ta.videoFile}</span>
               <label className="upload-zone">
                 <input type="file" accept="video/*" style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
                 <Upload size={18} style={{ marginBottom: 6, color: 'var(--muted)' }} />
@@ -6610,10 +4022,6 @@ function LessonModal({ lesson, courseId, onClose, onSave }) {
     title: lesson?.title || '',
     description: lesson?.description || '',
     sort_order: lesson?.sort_order ?? 0,
-    content_type: lesson?.content_type || 'video',
-    text_content: lesson?.text_content || '',
-    credit_value: lesson?.credit_value ?? 5,
-    min_watch_seconds: lesson?.min_watch_seconds || '',
   });
   const [file, setFile] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -6634,16 +4042,10 @@ function LessonModal({ lesson, courseId, onClose, onSave }) {
         await uploadToOSS(url, file, setProgress);
         oss_key = key;
       }
-      const payload = {
-        ...form,
-        oss_key,
-        credit_value: parseInt(form.credit_value) || 5,
-        min_watch_seconds: form.min_watch_seconds ? parseInt(form.min_watch_seconds) : null,
-      };
       if (isEdit) {
-        await axios.put(`/api/academy/lessons/${lesson.id}`, payload);
+        await axios.put(`/api/academy/lessons/${lesson.id}`, { ...form, oss_key });
       } else {
-        await axios.post('/api/academy/lessons', { ...payload, course_id: courseId });
+        await axios.post('/api/academy/lessons', { ...form, oss_key, course_id: courseId });
       }
       onSave();
     } catch (err) {
@@ -6651,15 +4053,9 @@ function LessonModal({ lesson, courseId, onClose, onSave }) {
     } finally { setBusy(false); }
   };
 
-  const CONTENT_TYPES = [
-    { value: 'video', label: 'Video', icon: '🎬' },
-    { value: 'text', label: 'Text', icon: '📄' },
-    { value: 'interactive', label: 'Interactive (Case Study)', icon: '🧩' },
-  ];
-
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 640 }}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <span>{isEdit ? ta.editLesson : ta.addLesson}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
@@ -6675,69 +4071,24 @@ function LessonModal({ lesson, courseId, onClose, onSave }) {
               <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={2} style={{ resize: 'vertical' }} />
             </label>
             <label className="form-field">
-              <span>{ta.contentType}</span>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {CONTENT_TYPES.map(ct => (
-                  <button key={ct.value} type="button"
-                    onClick={() => set('content_type', ct.value)}
-                    style={{
-                      padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-                      border: form.content_type === ct.value ? '2px solid #6366f1' : '1px solid #e2e8f0',
-                      background: form.content_type === ct.value ? '#eef2ff' : 'transparent',
-                      color: form.content_type === ct.value ? '#6366f1' : 'inherit',
-                    }}>
-                    {ct.icon} {ct.label}
-                  </button>
-                ))}
-              </div>
-            </label>
-            <label className="form-field">
-              <span>{ta.credits}</span>
-              <input type="number" min={0} value={form.credit_value} onChange={e => set('credit_value', e.target.value)} />
-            </label>
-            <label className="form-field">
               <span>Sort Order</span>
               <input type="number" min={0} value={form.sort_order} onChange={e => set('sort_order', parseInt(e.target.value) || 0)} />
             </label>
-
-            {form.content_type === 'video' && (
-              <>
-                <label className="form-field">
-                  <span>{ta.minWatchSeconds}</span>
-                  <input type="number" min={0} value={form.min_watch_seconds} onChange={e => set('min_watch_seconds', e.target.value)} placeholder="Optional" />
-                </label>
-                <div className="form-field" style={{ gridColumn: '1 / -1' }}>
-                  <span className="form-label-text">{ta.videoFile}</span>
-                  <label className="upload-zone">
-                    <input type="file" accept="video/*" style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
-                    <Upload size={18} style={{ marginBottom: 6, color: 'var(--muted)' }} />
-                    <span className="upload-zone-hint">
-                      {file ? file.name : (lesson?.oss_key ? ta.replaceVideo : ta.selectVideo)}
-                    </span>
-                  </label>
-                  {busy && (
-                    <div className="upload-progress">
-                      <div className="upload-progress-bar" style={{ width: `${progress}%` }} />
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {(form.content_type === 'text' || form.content_type === 'interactive') && (
-              <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-                <span>{form.content_type === 'interactive' ? ta.interactiveContext : ta.textContent}</span>
-                <textarea
-                  value={form.text_content}
-                  onChange={e => set('text_content', e.target.value)}
-                  rows={10}
-                  style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13 }}
-                  placeholder={form.content_type === 'interactive'
-                    ? 'Provide background reading coaches should study before the case study scenario...'
-                    : 'Write the lesson content here. Markdown is supported in the mini-app.'}
-                />
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span className="form-label-text">{ta.videoFile}</span>
+              <label className="upload-zone">
+                <input type="file" accept="video/*" style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
+                <Upload size={18} style={{ marginBottom: 6, color: 'var(--muted)' }} />
+                <span className="upload-zone-hint">
+                  {file ? file.name : (lesson?.oss_key ? ta.replaceVideo : ta.selectVideo)}
+                </span>
               </label>
-            )}
+              {busy && (
+                <div className="upload-progress">
+                  <div className="upload-progress-bar" style={{ width: `${progress}%` }} />
+                </div>
+              )}
+            </div>
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
@@ -6781,404 +4132,7 @@ function DeleteLessonConfirm({ lesson, onClose, onConfirm }) {
   );
 }
 
-// ── Quiz editor ───────────────────────────────────────────────────────────────
-
-function QuizEditorSection({ lessonId }) {
-  const [questions, setQuestions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await axios.get(`/api/academy/lessons/${lessonId}`);
-      setQuestions(res.data.quiz_questions || []);
-    } catch { /* silent */ }
-    finally { setLoading(false); }
-  }, [lessonId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const handleDelete = async (qId) => {
-    try { await axios.delete(`/api/academy/lesson-quizzes/${qId}`); load(); } catch { /* silent */ }
-  };
-
-  return (
-    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed #e2e8f0' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
-          Quiz Questions ({loading ? '…' : questions.length})
-        </span>
-        <button className="btn-primary" style={{ fontSize: 11, padding: '3px 8px' }}
-          onClick={() => setModal({ type: 'add' })}>
-          <Plus size={11} /> Add Question
-        </button>
-      </div>
-      {questions.map((q, i) => (
-        <div key={q.id} style={{ background: '#f8fafc', borderRadius: 6, padding: '8px 10px', marginBottom: 6, fontSize: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-            <div style={{ flex: 1 }}>
-              {q.scenario && <div style={{ color: '#64748b', marginBottom: 4, fontStyle: 'italic' }}>📋 {q.scenario.slice(0, 100)}{q.scenario.length > 100 ? '…' : ''}</div>}
-              <div style={{ fontWeight: 600 }}>Q{i + 1}: {q.question}</div>
-              <div style={{ marginTop: 4, color: '#475569' }}>
-                {(q.options || []).map((o, oi) => (
-                  <span key={oi} style={{ marginRight: 12, color: o.is_correct ? '#10b981' : 'inherit' }}>
-                    {o.is_correct ? '✓ ' : ''}{o.text}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button className="icon-btn" onClick={() => setModal({ type: 'edit', question: q })}><Pencil size={11} /></button>
-              <button className="icon-btn danger" onClick={() => handleDelete(q.id)}><Trash2 size={11} /></button>
-            </div>
-          </div>
-        </div>
-      ))}
-      {modal && (
-        <QuizQuestionModal
-          lessonId={lessonId}
-          question={modal.question || null}
-          onClose={() => setModal(null)}
-          onSave={() => { setModal(null); load(); }}
-        />
-      )}
-    </div>
-  );
-}
-
-function QuizQuestionModal({ lessonId, question, onClose, onSave }) {
-  const isEdit = !!question?.id;
-  const emptyOpt = () => ({ text: '', is_correct: false, explanation: '' });
-  const [form, setForm] = useState({
-    scenario: question?.scenario || '',
-    question: question?.question || '',
-    credit_value: question?.credit_value ?? 5,
-    sort_order: question?.sort_order ?? 0,
-  });
-  const [options, setOptions] = useState(
-    question?.options?.length ? question.options.map(o => ({ ...o })) : [emptyOpt(), emptyOpt(), emptyOpt(), emptyOpt()]
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  const setOpt = (i, k, v) => setOptions(opts => opts.map((o, idx) => idx === i ? { ...o, [k]: v } : o));
-  const setCorrect = (i) => setOptions(opts => opts.map((o, idx) => ({ ...o, is_correct: idx === i })));
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.question.trim()) { setError('Question is required'); return; }
-    if (!options.some(o => o.is_correct)) { setError('Mark one option as correct'); return; }
-    setBusy(true); setError('');
-    try {
-      const payload = { ...form, lesson_id: lessonId, options, credit_value: parseInt(form.credit_value) || 5 };
-      if (isEdit) await axios.put(`/api/academy/lesson-quizzes/${question.id}`, payload);
-      else await axios.post('/api/academy/lesson-quizzes', payload);
-      onSave();
-    } catch (err) { setError(err.response?.data?.error || err.message); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 680 }}>
-        <div className="modal-header">
-          <span>{isEdit ? 'Edit Quiz Question' : 'Add Quiz Question'}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="modal-body">
-          <div className="form-grid">
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>Case Study Scenario (optional context)</span>
-              <textarea value={form.scenario} onChange={e => setForm(f => ({ ...f, scenario: e.target.value }))}
-                rows={3} style={{ resize: 'vertical' }} placeholder="A coach's client reports feeling fatigued despite good sleep. Their GDF-15 is 890 pg/mL…" />
-            </label>
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>Question *</span>
-              <textarea value={form.question} onChange={e => setForm(f => ({ ...f, question: e.target.value }))}
-                rows={2} style={{ resize: 'vertical' }} placeholder="Based on this profile, which supplement should be prioritized?" />
-            </label>
-            <label className="form-field">
-              <span>Credits for Correct Answer</span>
-              <input type="number" min={0} value={form.credit_value} onChange={e => setForm(f => ({ ...f, credit_value: e.target.value }))} />
-            </label>
-          </div>
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: '#475569' }}>Answer Options (mark the correct one)</div>
-            {options.map((o, i) => (
-              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 10 }}>
-                <input type="radio" name="correct" checked={o.is_correct} onChange={() => setCorrect(i)}
-                  style={{ marginTop: 6, flexShrink: 0, accentColor: '#10b981' }} />
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <input value={o.text} onChange={e => setOpt(i, 'text', e.target.value)}
-                    placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                    style={{ fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid #e2e8f0', background: 'var(--input-bg, white)' }} />
-                  {o.is_correct && (
-                    <input value={o.explanation} onChange={e => setOpt(i, 'explanation', e.target.value)}
-                      placeholder="Explanation shown after coach answers (optional)"
-                      style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid #e2e8f0', background: '#f0fdf4', color: '#15803d' }} />
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-          {error && <div className="form-error">{error}</div>}
-          <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
-            <button type="submit" className="btn-primary" disabled={busy}>
-              <Check size={14} />{busy ? 'Saving…' : 'Save Question'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ── Certification modals ──────────────────────────────────────────────────────
-
-function CertificationModal({ cert, courses = [], onClose, onSave }) {
-  const { t } = useLang();
-  const ta = t.academy;
-  const isEdit = !!cert?.id;
-  const [form, setForm] = useState({
-    title: cert?.title || '',
-    description: cert?.description || '',
-    tier: cert?.tier || 'bronze',
-    min_credits: cert?.min_credits ?? 0,
-    badge_image_url: cert?.badge_image_url || '',
-    is_active: cert?.is_active !== false,
-  });
-  const [selectedCourseIds, setSelectedCourseIds] = useState(cert?.required_course_ids || []);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  const toggleCourse = (id) => setSelectedCourseIds(ids =>
-    ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]
-  );
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.title.trim()) { setError(ta.titleRequired); return; }
-    setBusy(true); setError('');
-    try {
-      const payload = { ...form, required_course_ids: selectedCourseIds, min_credits: parseInt(form.min_credits) || 0 };
-      if (isEdit) await axios.put(`/api/academy/certifications/${cert.id}`, payload);
-      else await axios.post('/api/academy/certifications', payload);
-      onSave();
-    } catch (err) { setError(err.response?.data?.error || err.message); }
-    finally { setBusy(false); }
-  };
-
-  const TIERS = ['bronze', 'silver', 'gold', 'platinum'];
-  const TIER_COLORS = { bronze: '#cd7f32', silver: '#94a3b8', gold: '#f59e0b', platinum: '#8b5cf6' };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 600 }}>
-        <div className="modal-header">
-          <span>{isEdit ? ta.editCert : ta.newCert}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="modal-body">
-          <div className="form-grid">
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{ta.title}</span>
-              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Certified Longevity Coach" />
-            </label>
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{ta.description}</span>
-              <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} style={{ resize: 'vertical' }} />
-            </label>
-            <label className="form-field">
-              <span>{ta.tier}</span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.tier} onChange={e => setForm(f => ({ ...f, tier: e.target.value }))} className="inline-select" style={{ width: '100%' }}>
-                  {TIERS.map(tier => <option key={tier} value={tier} style={{ color: TIER_COLORS[tier] }}>{tier.charAt(0).toUpperCase() + tier.slice(1)}</option>)}
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
-            <label className="form-field">
-              <span>{ta.minCredits}</span>
-              <input type="number" min={0} value={form.min_credits} onChange={e => setForm(f => ({ ...f, min_credits: e.target.value }))} />
-            </label>
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>Badge Image URL (optional)</span>
-              <input value={form.badge_image_url} onChange={e => setForm(f => ({ ...f, badge_image_url: e.target.value }))} placeholder="https://…" />
-            </label>
-            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span className="form-label-text">{ta.requiredCourses}</span>
-              <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 6, padding: 8 }}>
-                {courses.length === 0 && <p className="muted" style={{ fontSize: 12, margin: 0 }}>{ta.noCourses}</p>}
-                {courses.map(c => (
-                  <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer', fontSize: 13 }}>
-                    <input type="checkbox" checked={selectedCourseIds.includes(c.id)}
-                      onChange={() => toggleCourse(c.id)} style={{ accentColor: '#6366f1' }} />
-                    <span>{c.title}</span>
-                    <Badge color="#94a3b8" style={{ fontSize: 10 }}>{c.level}</Badge>
-                  </label>
-                ))}
-              </div>
-            </div>
-            {isEdit && (
-              <label className="form-field" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
-                <span>{ta.active}</span>
-              </label>
-            )}
-          </div>
-          {error && <div className="form-error">{error}</div>}
-          <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>{t.modal.cancel}</button>
-            <button type="submit" className="btn-primary" disabled={busy}>
-              <Check size={14} />{busy ? ta.uploading : t.modal.save}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ── Learning path modals ──────────────────────────────────────────────────────
-
-function LearningPathModal({ path, courses = [], onClose, onSave }) {
-  const { t } = useLang();
-  const ta = t.academy;
-  const isEdit = !!path?.id;
-  const [form, setForm] = useState({
-    title: path?.title || '',
-    description: path?.description || '',
-    tier: path?.tier || 'foundation',
-    sort_order: path?.sort_order ?? 0,
-    is_active: path?.is_active !== false,
-  });
-  const [orderedCourseIds, setOrderedCourseIds] = useState(
-    path?.courses?.map(c => c.course_id) || []
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  const toggleCourse = (id) => setOrderedCourseIds(ids =>
-    ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]
-  );
-  const moveUp = (i) => setOrderedCourseIds(ids => {
-    if (i === 0) return ids;
-    const next = [...ids]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; return next;
-  });
-  const moveDown = (i) => setOrderedCourseIds(ids => {
-    if (i >= ids.length - 1) return ids;
-    const next = [...ids]; [next[i], next[i + 1]] = [next[i + 1], next[i]]; return next;
-  });
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.title.trim()) { setError(ta.titleRequired); return; }
-    setBusy(true); setError('');
-    try {
-      const payload = { ...form, sort_order: parseInt(form.sort_order) || 0, course_ids: orderedCourseIds };
-      if (isEdit) await axios.put(`/api/academy/learning-paths/${path.id}`, payload);
-      else await axios.post('/api/academy/learning-paths', payload);
-      onSave();
-    } catch (err) { setError(err.response?.data?.error || err.message); }
-    finally { setBusy(false); }
-  };
-
-  const LEVELS = ['foundation', 'intermediate', 'advanced', 'expert'];
-  const courseMap = Object.fromEntries(courses.map(c => [c.id, c]));
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 620 }}>
-        <div className="modal-header">
-          <span>{isEdit ? ta.editPath : ta.newPath}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="modal-body">
-          <div className="form-grid">
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{ta.title}</span>
-              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Foundation Track" />
-            </label>
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{ta.description}</span>
-              <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} style={{ resize: 'vertical' }} />
-            </label>
-            <label className="form-field">
-              <span>{ta.tier}</span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.tier} onChange={e => setForm(f => ({ ...f, tier: e.target.value }))} className="inline-select" style={{ width: '100%' }}>
-                  {LEVELS.map(lv => <option key={lv} value={lv}>{lv.charAt(0).toUpperCase() + lv.slice(1)}</option>)}
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
-            <label className="form-field">
-              <span>{t.modal.sortOrder}</span>
-              <input type="number" min={0} value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))} />
-            </label>
-          </div>
-
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: '#475569' }}>{ta.pathCoursesLabel}</div>
-            {orderedCourseIds.length > 0 && (
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: 6, marginBottom: 8, overflow: 'hidden' }}>
-                {orderedCourseIds.map((cid, i) => {
-                  const c = courseMap[cid];
-                  return c ? (
-                    <div key={cid} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: i < orderedCourseIds.length - 1 ? '1px solid #f1f5f9' : 'none', background: 'white', fontSize: 13 }}>
-                      <span style={{ color: '#94a3b8', minWidth: 20, fontSize: 11 }}>{i + 1}.</span>
-                      <span style={{ flex: 1 }}>{c.title}</span>
-                      <Badge color="#94a3b8" style={{ fontSize: 10 }}>{c.level}</Badge>
-                      <button type="button" className="icon-btn" onClick={() => moveUp(i)} disabled={i === 0}><ChevronUp size={12} /></button>
-                      <button type="button" className="icon-btn" onClick={() => moveDown(i)} disabled={i === orderedCourseIds.length - 1}><ChevronDown size={12} /></button>
-                      <button type="button" className="icon-btn danger" onClick={() => toggleCourse(cid)}><X size={11} /></button>
-                    </div>
-                  ) : null;
-                })}
-              </div>
-            )}
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 8, maxHeight: 180, overflowY: 'auto' }}>
-              <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>{ta.clickToAddCourses}</div>
-              {courses.filter(c => !orderedCourseIds.includes(c.id)).map(c => (
-                <button key={c.id} type="button" onClick={() => toggleCourse(c.id)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left', padding: '4px 6px', borderRadius: 4, fontSize: 13, cursor: 'pointer', border: 'none', background: 'transparent', color: 'inherit' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <Plus size={11} style={{ color: '#6366f1' }} />
-                  <span style={{ flex: 1 }}>{c.title}</span>
-                  <Badge color="#94a3b8" style={{ fontSize: 10 }}>{c.level}</Badge>
-                </button>
-              ))}
-              {courses.filter(c => !orderedCourseIds.includes(c.id)).length === 0 && (
-                <p className="muted" style={{ fontSize: 12, margin: 0 }}>{ta.allCoursesAdded}</p>
-              )}
-            </div>
-          </div>
-
-          {error && <div className="form-error">{error}</div>}
-          <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>{t.modal.cancel}</button>
-            <button type="submit" className="btn-primary" disabled={busy}>
-              <Check size={14} />{busy ? t.modal.saving : t.modal.save}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 // ── Academy tab ───────────────────────────────────────────────────────────────
-
-const TIER_COLORS_AC = { foundation: '#94a3b8', intermediate: '#3b82f6', advanced: '#8b5cf6', expert: '#f59e0b' };
-const CERT_TIER_COLORS = { bronze: '#cd7f32', silver: '#94a3b8', gold: '#f59e0b', platinum: '#8b5cf6' };
-
-function TierBadge({ credits }) {
-  const tier = credits >= 700 ? 'expert' : credits >= 300 ? 'advanced' : credits >= 100 ? 'intermediate' : 'foundation';
-  return <Badge color={TIER_COLORS_AC[tier]}>{tier.charAt(0).toUpperCase() + tier.slice(1)}</Badge>;
-}
 
 function AcademyTab() {
   const { t } = useLang();
@@ -7187,33 +4141,23 @@ function AcademyTab() {
   const [courses, setCourses] = useState([]);
   const [library, setLibrary] = useState([]);
   const [progress, setProgress] = useState([]);
-  const [certifications, setCertifications] = useState([]);
-  const [paths, setPaths] = useState([]);
-  const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(null);
   const [expandedCourse, setExpandedCourse] = useState(null);
-  const [expandedLesson, setExpandedLesson] = useState(null);
   const [lessonMap, setLessonMap] = useState({});
   const [lessonLoading, setLessonLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [cRes, lRes, pRes, certRes, pathRes, lbRes] = await Promise.allSettled([
+      const [cRes, lRes, pRes] = await Promise.allSettled([
         axios.get('/api/academy/courses'),
         axios.get('/api/academy/library'),
         axios.get('/api/academy/course-progress'),
-        axios.get('/api/academy/certifications'),
-        axios.get('/api/academy/learning-paths'),
-        axios.get('/api/academy/leaderboard'),
       ]);
       setCourses(cRes.status === 'fulfilled' ? (cRes.value.data.courses || []) : []);
       setLibrary(lRes.status === 'fulfilled' ? (lRes.value.data.items || []) : []);
       setProgress(pRes.status === 'fulfilled' ? (pRes.value.data.progress || []) : []);
-      setCertifications(certRes.status === 'fulfilled' ? (certRes.value.data.certifications || []) : []);
-      setPaths(pathRes.status === 'fulfilled' ? (pathRes.value.data.paths || []) : []);
-      setLeaderboard(lbRes.status === 'fulfilled' ? (lbRes.value.data.leaderboard || []) : []);
     } catch (err) { console.error('Academy fetch error:', err); }
     finally { setLoading(false); }
   }, []);
@@ -7232,26 +4176,32 @@ function AcademyTab() {
   }, []);
 
   const toggleExpand = (courseId) => {
-    if (expandedCourse === courseId) { setExpandedCourse(null); setExpandedLesson(null); }
-    else { setExpandedCourse(courseId); setExpandedLesson(null); if (!lessonMap[courseId]) loadLessons(courseId); }
+    if (expandedCourse === courseId) {
+      setExpandedCourse(null);
+    } else {
+      setExpandedCourse(courseId);
+      if (!lessonMap[courseId]) loadLessons(courseId);
+    }
   };
 
-  const refreshLessons = (courseId) => { loadLessons(courseId); fetchData(); };
+  const refreshLessons = (courseId) => {
+    loadLessons(courseId);
+    fetchData();
+  };
 
   const publishedCount = courses.filter(c => c.status === 'published').length;
   const totalLessons = courses.reduce((s, c) => s + (c.lesson_count || 0), 0);
+
   const openVideo = (course) => setModal({ type: 'play-video', course });
   const openDoc = (item) => setModal({ type: 'view-doc', item });
-
-  const CONTENT_TYPE_ICON = { video: '🎬', text: '📄', interactive: '🧩' };
 
   return (
     <>
       <div className="stat-row">
-        <StatCard icon={GraduationCap} label={ta.totalCourses}    value={courses.length}        color="#6366f1" />
-        <StatCard icon={Video}          label={ta.published}       value={publishedCount}        color="#10b981" />
-        <StatCard icon={Award}          label="Certifications"     value={certifications.length} color="#f59e0b" />
-        <StatCard icon={BookOpen}       label={ta.totalLessons}    value={totalLessons}          color="#3b82f6" />
+        <StatCard icon={GraduationCap} label={ta.totalCourses}  value={courses.length}   color="#6366f1" />
+        <StatCard icon={Video}          label={ta.published}     value={publishedCount}   color="#10b981" />
+        <StatCard icon={FileText}       label={ta.totalDocs}     value={library.length}   color="#3b82f6" />
+        <StatCard icon={BookOpen}       label={ta.totalLessons}  value={totalLessons}     color="#f59e0b" />
       </div>
 
       <div className="subtab-row">
@@ -7261,14 +4211,8 @@ function AcademyTab() {
         <button className={`subtab-btn${subTab === 'library' ? ' active' : ''}`} onClick={() => setSubTab('library')}>
           <FileText size={13} />{ta.libraryTab}
         </button>
-        <button className={`subtab-btn${subTab === 'certifications' ? ' active' : ''}`} onClick={() => setSubTab('certifications')}>
-          <Award size={13} />{ta.certificationsTab}
-        </button>
-        <button className={`subtab-btn${subTab === 'paths' ? ' active' : ''}`} onClick={() => setSubTab('paths')}>
-          <Target size={13} />{ta.pathsTab}
-        </button>
         <button className={`subtab-btn${subTab === 'progress' ? ' active' : ''}`} onClick={() => setSubTab('progress')}>
-          <TrendingUp size={13} />{ta.progressTab}
+          <GraduationCap size={13} />{ta.progressTab}
         </button>
       </div>
 
@@ -7285,34 +4229,31 @@ function AcademyTab() {
               <tr>
                 <th>ID</th>
                 <th>{ta.title.replace(' *', '')}</th>
-                <th>{ta.level}</th>
-                <th>{ta.credits}</th>
                 <th>{ta.status}</th>
                 <th>{ta.lessons}</th>
+                <th>{t.table.joined}</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {!loading && courses.length === 0 && (
-                <tr><td colSpan={7} className="empty-row">{ta.noCourses}</td></tr>
+                <tr><td colSpan={6} className="empty-row">{ta.noCourses}</td></tr>
               )}
               {courses.map(c => (
-                <React.Fragment key={c.id}>
-                  <tr>
+                <>
+                  <tr key={c.id}>
                     <td className="muted mono">{c.id}</td>
                     <td>
                       <div className="bold">{c.title}</div>
                       {c.description && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{c.description.slice(0, 80)}{c.description.length > 80 ? '…' : ''}</div>}
-                      {c.prerequisite_title && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Prereq: {c.prerequisite_title}</div>}
                     </td>
-                    <td><Badge color={TIER_COLORS_AC[c.level] || '#94a3b8'}>{c.level}</Badge></td>
-                    <td className="muted">{c.credit_value} cr</td>
                     <td>
                       <Badge color={c.status === 'published' ? '#10b981' : '#94a3b8'}>
                         {c.status === 'published' ? ta.published : ta.draft}
                       </Badge>
                     </td>
                     <td className="muted">{ta.lessonCount(c.lesson_count || 0)}</td>
+                    <td className="muted">{fmtDate(c.created_at)}</td>
                     <td>
                       <div className="row-actions">
                         <button className="icon-btn" title={expandedCourse === c.id ? ta.collapseLessons : ta.expandLessons} onClick={() => toggleExpand(c.id)}>
@@ -7334,13 +4275,13 @@ function AcademyTab() {
                   </tr>
                   {expandedCourse === c.id && (
                     <tr key={`${c.id}-lessons`}>
-                      <td colSpan={7} style={{ padding: 0, background: 'var(--bg)' }}>
+                      <td colSpan={6} style={{ padding: 0, background: 'var(--bg)' }}>
                         <div style={{ padding: '12px 20px 16px 40px', borderLeft: '3px solid #6366f1' }}>
                           <div className="table-toolbar" style={{ marginBottom: 8 }}>
                             <span className="table-count">{ta.lessons} — {ta.lessonCount((lessonMap[c.id] || []).length)}</span>
                             <button className="btn-primary" style={{ fontSize: 12, padding: '4px 10px' }}
                               onClick={() => setModal({ type: 'add-lesson', courseId: c.id })}>
-                              <Plus size={12} />{ta.addLesson}
+                              <Upload size={12} />{ta.addLesson}
                             </button>
                           </div>
                           {lessonLoading && !lessonMap[c.id] && <p className="muted" style={{ fontSize: 12 }}>Loading…</p>}
@@ -7353,52 +4294,35 @@ function AcademyTab() {
                                 <tr>
                                   <th>#</th>
                                   <th>{ta.title.replace(' *', '')}</th>
-                                  <th>{ta.contentType}</th>
-                                  <th>{ta.credits}</th>
-                                  <th>Quiz</th>
+                                  <th>{ta.hasVideo}</th>
                                   <th></th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {(lessonMap[c.id] || []).map((l, idx) => (
-                                  <React.Fragment key={l.id}>
-                                    <tr>
-                                      <td className="muted mono">{idx + 1}</td>
-                                      <td>
-                                        <div className="bold">{l.title}</div>
-                                        {l.description && <div className="muted" style={{ fontSize: 11 }}>{l.description.slice(0, 60)}{l.description.length > 60 ? '…' : ''}</div>}
-                                      </td>
-                                      <td><span title={l.content_type}>{CONTENT_TYPE_ICON[l.content_type] || '🎬'} {l.content_type}</span></td>
-                                      <td className="muted">{l.credit_value} cr</td>
-                                      <td>{l.has_quiz ? <Badge color="#10b981">✓ Quiz</Badge> : <span className="muted">—</span>}</td>
-                                      <td>
-                                        <div className="row-actions">
-                                          <button className="icon-btn" title="Edit Quiz Questions"
-                                            onClick={() => setExpandedLesson(expandedLesson === l.id ? null : l.id)}>
-                                            <ClipboardList size={11} />
+                                  <tr key={l.id}>
+                                    <td className="muted mono">{idx + 1}</td>
+                                    <td>
+                                      <div className="bold">{l.title}</div>
+                                      {l.description && <div className="muted" style={{ fontSize: 11 }}>{l.description.slice(0, 60)}{l.description.length > 60 ? '…' : ''}</div>}
+                                    </td>
+                                    <td>{l.oss_key ? <Badge color="#6366f1">✓</Badge> : '—'}</td>
+                                    <td>
+                                      <div className="row-actions">
+                                        {l.oss_key && (
+                                          <button className="icon-btn" title={ta.viewVideo} onClick={() => setModal({ type: 'play-video', course: { ...l, title: `${c.title} — ${l.title}` } })}>
+                                            <Play size={12} />
                                           </button>
-                                          {l.oss_key && (
-                                            <button className="icon-btn" title={ta.viewVideo} onClick={() => setModal({ type: 'play-video', course: { ...l, title: `${c.title} — ${l.title}` } })}>
-                                              <Play size={12} />
-                                            </button>
-                                          )}
-                                          <button className="icon-btn" title={ta.editLesson} onClick={() => setModal({ type: 'edit-lesson', lesson: l, courseId: c.id })}>
-                                            <Pencil size={12} />
-                                          </button>
-                                          <button className="icon-btn danger" title={ta.deleteLesson} onClick={() => setModal({ type: 'delete-lesson', lesson: l, courseId: c.id })}>
-                                            <Trash2 size={12} />
-                                          </button>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                    {expandedLesson === l.id && (
-                                      <tr key={`${l.id}-quiz`}>
-                                        <td colSpan={6} style={{ padding: '0 0 0 24px', background: '#f8fafc' }}>
-                                          <QuizEditorSection lessonId={l.id} />
-                                        </td>
-                                      </tr>
-                                    )}
-                                  </React.Fragment>
+                                        )}
+                                        <button className="icon-btn" title={ta.editLesson} onClick={() => setModal({ type: 'edit-lesson', lesson: l, courseId: c.id })}>
+                                          <Pencil size={12} />
+                                        </button>
+                                        <button className="icon-btn danger" title={ta.deleteLesson} onClick={() => setModal({ type: 'delete-lesson', lesson: l, courseId: c.id })}>
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
                                 ))}
                               </tbody>
                             </table>
@@ -7407,7 +4331,7 @@ function AcademyTab() {
                       </td>
                     </tr>
                   )}
-                </React.Fragment>
+                </>
               ))}
             </tbody>
           </table>
@@ -7459,160 +4383,52 @@ function AcademyTab() {
         </div>
       )}
 
-      {subTab === 'certifications' && (
-        <div className="card">
-          <div className="table-toolbar">
-            <span className="table-count">{ta.countCerts(certifications.length)}</span>
-            <button className="btn-primary" onClick={() => setModal({ type: 'add-cert' })}>
-              <Plus size={14} />{ta.newCert}
-            </button>
-          </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>{ta.title.replace(' *', '')}</th>
-                <th>{ta.tier}</th>
-                <th>{ta.requiredCourses.split(' (')[0]}</th>
-                <th>{ta.minCredits.replace(' Required', '')}</th>
-                <th>{ta.active}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {certifications.length === 0 && (
-                <tr><td colSpan={6} className="empty-row">{ta.noCerts}</td></tr>
-              )}
-              {certifications.map(cert => (
-                <tr key={cert.id}>
-                  <td>
-                    <div className="bold">{cert.title}</div>
-                    {cert.description && <div className="muted" style={{ fontSize: 12 }}>{cert.description.slice(0, 80)}</div>}
-                  </td>
-                  <td><Badge color={CERT_TIER_COLORS[cert.tier] || '#94a3b8'}>{cert.tier}</Badge></td>
-                  <td className="muted">{ta.countCourses((cert.required_course_ids || []).length)}</td>
-                  <td className="muted">{cert.min_credits}</td>
-                  <td>{cert.is_active ? <Badge color="#10b981">{ta.active}</Badge> : <Badge color="#94a3b8">—</Badge>}</td>
-                  <td>
-                    <div className="row-actions">
-                      <button className="icon-btn" onClick={() => setModal({ type: 'edit-cert', cert })}><Pencil size={14} /></button>
-                      <button className="icon-btn danger" onClick={async () => {
-                        if (!confirm(`Delete "${cert.title}"?`)) return;
-                        try { await axios.delete(`/api/academy/certifications/${cert.id}`); fetchData(); } catch { /* silent */ }
-                      }}><Trash2 size={14} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {subTab === 'paths' && (
-        <div className="card">
-          <div className="table-toolbar">
-            <span className="table-count">{ta.countPaths(paths.length)}</span>
-            <button className="btn-primary" onClick={() => setModal({ type: 'add-path' })}>
-              <Plus size={14} />{ta.newPath}
-            </button>
-          </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>{ta.title.replace(' *', '')}</th>
-                <th>{ta.tier}</th>
-                <th>{ta.lessons}</th>
-                <th>{ta.active}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {paths.length === 0 && (
-                <tr><td colSpan={5} className="empty-row">{ta.noPaths}</td></tr>
-              )}
-              {paths.map(p => (
-                <tr key={p.id}>
-                  <td>
-                    <div className="bold">{p.title}</div>
-                    {p.description && <div className="muted" style={{ fontSize: 12 }}>{p.description.slice(0, 80)}</div>}
-                  </td>
-                  <td><Badge color={TIER_COLORS_AC[p.tier] || '#94a3b8'}>{p.tier}</Badge></td>
-                  <td className="muted">{ta.countCourses((p.courses || []).length)}</td>
-                  <td>{p.is_active ? <Badge color="#10b981">{ta.active}</Badge> : <Badge color="#94a3b8">—</Badge>}</td>
-                  <td>
-                    <div className="row-actions">
-                      <button className="icon-btn" onClick={() => setModal({ type: 'edit-path', path: p })}><Pencil size={14} /></button>
-                      <button className="icon-btn danger" onClick={async () => {
-                        if (!confirm(`Delete path "${p.title}"?`)) return;
-                        try { await axios.delete(`/api/academy/learning-paths/${p.id}`); fetchData(); } catch { /* silent */ }
-                      }}><Trash2 size={14} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
       {subTab === 'progress' && (
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-          <div className="card" style={{ flex: '1 1 500px' }}>
-            <div className="table-toolbar"><span className="table-count">{ta.courseProgress}</span></div>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>{ta.title.replace(' *', '')}</th>
-                  <th>{ta.level}</th>
-                  <th>{ta.totalLessons}</th>
-                  <th>{ta.coachesStarted}</th>
-                  <th>{ta.avgQuizScore}</th>
-                  <th>{ta.creditsAwarded}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {!loading && progress.length === 0 && (
-                  <tr><td colSpan={6} className="empty-row">{ta.noProgress}</td></tr>
-                )}
-                {progress.map(p => (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{ta.progressTab}</span>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{ta.title.replace(' *', '')}</th>
+                <th>{ta.totalLessons}</th>
+                <th>{ta.coachesCompleted}</th>
+                <th>{ta.completionRate}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {!loading && progress.length === 0 && (
+                <tr><td colSpan={4} className="empty-row">{ta.noProgress}</td></tr>
+              )}
+              {progress.map(p => {
+                const rate = p.total_lessons > 0
+                  ? Math.round((p.total_completions / p.total_lessons) * 100)
+                  : 0;
+                return (
                   <tr key={p.course_id}>
                     <td className="bold">{p.title}</td>
-                    <td><Badge color={TIER_COLORS_AC[p.level] || '#94a3b8'}>{p.level}</Badge></td>
                     <td className="muted">{p.total_lessons}</td>
-                    <td className="muted">{p.coaches_started}</td>
-                    <td className="muted">{p.avg_quiz_score ? `${p.avg_quiz_score}%` : '—'}</td>
-                    <td className="muted">{p.total_credits_awarded || 0}</td>
+                    <td className="muted">{p.coaches_completed}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ flex: 1, height: 6, background: '#e2e8f0', borderRadius: 3 }}>
+                          <div style={{ width: `${rate}%`, height: '100%', background: '#10b981', borderRadius: 3 }} />
+                        </div>
+                        <span className="muted" style={{ fontSize: 12, minWidth: 32 }}>{rate}%</span>
+                      </div>
+                    </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="card" style={{ flex: '0 0 300px' }}>
-            <div className="table-toolbar"><span className="table-count">{ta.leaderboard}</span></div>
-            {leaderboard.length === 0 && <p className="muted" style={{ padding: '12px 16px', fontSize: 13 }}>{ta.noData}</p>}
-            {leaderboard.map((coach, i) => (
-              <div key={coach.coach_user_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderBottom: '1px solid #f1f5f9' }}>
-                <span style={{ fontWeight: 700, color: i < 3 ? ['#f59e0b', '#94a3b8', '#cd7f32'][i] : '#cbd5e1', minWidth: 20, fontSize: 13 }}>
-                  {i + 1}
-                </span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{coach.name || coach.coach_user_id.slice(0, 12)}</div>
-                  <TierBadge credits={coach.total_credits} />
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#6366f1' }}>{coach.total_credits} cr</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>{coach.completed_lessons} lessons</div>
-                </div>
-              </div>
-            ))}
-          </div>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
       {modal?.type === 'play-video'    && <VideoPlayerModal course={modal.course} onClose={() => setModal(null)} />}
-      {modal?.type === 'add-course'    && <CourseModal course={null} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit-course'   && <CourseModal course={modal.course} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add-course'    && <CourseModal course={null}        onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit-course'   && <CourseModal course={modal.course} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete-course' && <DeleteCourseConfirm course={modal.course} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
       {modal?.type === 'view-doc'      && <MarkdownViewerModal item={modal.item} onClose={() => setModal(null)} />}
       {modal?.type === 'add-doc'       && <LibraryModal onClose={() => setModal(null)} onSave={closeAndRefresh} />}
@@ -7620,17 +4436,13 @@ function AcademyTab() {
       {modal?.type === 'add-lesson'    && <LessonModal lesson={null} courseId={modal.courseId} onClose={() => setModal(null)} onSave={() => { setModal(null); refreshLessons(modal.courseId); }} />}
       {modal?.type === 'edit-lesson'   && <LessonModal lesson={modal.lesson} courseId={modal.courseId} onClose={() => setModal(null)} onSave={() => { setModal(null); refreshLessons(modal.courseId); }} />}
       {modal?.type === 'delete-lesson' && <DeleteLessonConfirm lesson={modal.lesson} onClose={() => setModal(null)} onConfirm={() => { setModal(null); refreshLessons(modal.courseId); }} />}
-      {modal?.type === 'add-cert'      && <CertificationModal cert={null} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit-cert'     && <CertificationModal cert={modal.cert} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'add-path'      && <LearningPathModal path={null} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit-path'     && <LearningPathModal path={modal.path} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
     </>
   );
 }
 
 // ── Rewards tab ───────────────────────────────────────────────────────────────
 
-function PartnersTab({ users = [], session }) {
+function PartnersTab() {
   const { t } = useLang();
   const p = t.partners;
   const [subTab, setSubTab] = useState('partners');
@@ -7638,7 +4450,6 @@ function PartnersTab({ users = [], session }) {
   const [commissions, setCommissions] = useState([]);
   const [payouts, setPayouts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [tierCfg, setTierCfg] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [generatePeriod, setGeneratePeriod] = useState(() => {
     const n = new Date();
@@ -7649,7 +4460,6 @@ function PartnersTab({ users = [], session }) {
   const [showForm, setShowForm] = useState(false);
   const [formBusy, setFormBusy] = useState(false);
   const [formError, setFormError] = useState('');
-  const [userSearch, setUserSearch] = useState('');
   const [commForm, setCommForm] = useState({});
   const [showCommForm, setShowCommForm] = useState(false);
   const [commBusy, setCommBusy] = useState(false);
@@ -7663,25 +4473,20 @@ function PartnersTab({ users = [], session }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const requests = [
+      const [pRes, cRes, pyRes, cfgRes] = await Promise.all([
         axios.get('/api/partners'),
         axios.get('/api/partner-commissions'),
         axios.get('/api/partner-payouts'),
         axios.get('/api/partner-commission-config'),
-      ];
-      if (session?.channelId) {
-        requests.push(axios.get(`/api/channels/${session.channelId}/partner-tiers-config`));
-      }
-      const [pRes, cRes, pyRes, cfgRes, tcRes] = await Promise.all(requests);
+      ]);
       setPartners(pRes.data.partners || []);
       setCommissions(cRes.data.commissions || []);
       setPayouts(pyRes.data.payouts || []);
       setConfig(cfgRes.data.config || null);
-      if (tcRes) setTierCfg(tcRes.data.partner_tiers_config || null);
     } finally {
       setLoading(false);
     }
-  }, [session?.channelId]);
+  }, []);
 
   function setReferralRate(upline, newTier, val) {
     setConfig(c => ({
@@ -7715,17 +4520,16 @@ function PartnersTab({ users = [], session }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const tierLabel = (tier) => tierCfg?.[tier]?.label || ({ light_entrepreneur: p.tierLight, leader_partner: p.tierLeader, operations_center: p.tierOps }[tier] || tier);
-  const tierColor = (tier) => tierCfg?.[tier]?.color || ({ light_entrepreneur: '#0ea5e9', leader_partner: '#8b5cf6', operations_center: '#f59e0b' }[tier] || '#64748b');
+  const tierLabel = (tier) => ({ light_entrepreneur: p.tierLight, leader_partner: p.tierLeader, operations_center: p.tierOps }[tier] || tier);
+  const tierColor = (tier) => ({ light_entrepreneur: '#0ea5e9', leader_partner: '#8b5cf6', operations_center: '#f59e0b' }[tier] || '#64748b');
   const statusColor = (s) => ({ active: '#16a34a', pending: '#f59e0b', inactive: '#94a3b8', draft: '#64748b', approved: '#2563eb', transferred: '#16a34a' }[s] || '#64748b');
   const statusLabel = (s) => ({ active: p.statusActive, pending: p.statusPending, inactive: p.statusInactive, draft: p.draft, approved: p.approved, transferred: p.transferred }[s] || s);
   const sourceLabel = (s) => ({ referral: p.typeReferral, sales: p.typeSales, team_primary: p.typeTeamPrimary, team_secondary: p.typeTeamSecondary, wholesale_margin: p.typeWholesale }[s] || s);
 
-  function openAdd() { setEditing(null); setForm({ status: 'active' }); setFormError(''); setUserSearch(''); setShowForm(true); }
+  function openAdd() { setEditing(null); setForm({ status: 'active' }); setFormError(''); setShowForm(true); }
   function openEdit(partner) { setEditing(partner); setForm({ ...partner }); setFormError(''); setShowForm(true); }
 
   async function savePartner() {
-    if (!editing && !form.user_id) { setFormError('A linked user is required'); return; }
     if (!form.real_name) { setFormError(p.realNameRequired); return; }
     if (!form.phone)     { setFormError(p.phoneRequired);    return; }
     if (!form.tier)      { setFormError(p.tierRequired);     return; }
@@ -8041,55 +4845,6 @@ function PartnersTab({ users = [], session }) {
             <form onSubmit={e => { e.preventDefault(); savePartner(); }}>
               <div className="modal-body" style={{ maxHeight: '62vh', overflowY: 'auto' }}>
                 <div className="form-grid">
-                  {!editing && (() => {
-                    const selectedUser = users.find(u => u.user_id === form.user_id) || null;
-                    const filteredUsers = userSearch.trim().length > 0
-                      ? users.filter(u => {
-                          const q = userSearch.toLowerCase();
-                          return (u.nickname || '').toLowerCase().includes(q) || (u.user_id || '').toLowerCase().includes(q);
-                        }).slice(0, 8)
-                      : [];
-                    return (
-                      <div className="form-field" style={{ gridColumn: '1 / -1', position: 'relative' }}>
-                        <span>Linked User *</span>
-                        {selectedUser ? (
-                          <div className="coach-user-selected">
-                            <div className="avatar" style={{ background: '#6366f120', color: '#6366f1', width: 28, height: 28, fontSize: 13, flexShrink: 0 }}>{(selectedUser.nickname || 'U')[0].toUpperCase()}</div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontWeight: 600 }}>{selectedUser.nickname || '—'}</div>
-                              <div style={{ fontSize: 11, color: '#64748b' }}>{selectedUser.user_id}</div>
-                            </div>
-                            <button type="button" className="icon-btn" onClick={() => { setForm(f => ({ ...f, user_id: null, real_name: '' })); setUserSearch(''); }}><X size={14} /></button>
-                          </div>
-                        ) : (
-                          <>
-                            <input
-                              value={userSearch}
-                              onChange={e => setUserSearch(e.target.value)}
-                              placeholder="Search by nickname or user ID…"
-                              autoComplete="off"
-                            />
-                            {filteredUsers.length > 0 && (
-                              <div className="coach-user-dropdown">
-                                {filteredUsers.map(u => (
-                                  <div key={u.user_id} className="coach-user-option" onClick={() => {
-                                    setForm(f => ({ ...f, user_id: u.user_id, real_name: f.real_name || u.nickname || '' }));
-                                    setUserSearch('');
-                                  }}>
-                                    <div className="avatar" style={{ background: '#6366f120', color: '#6366f1', width: 24, height: 24, fontSize: 11, flexShrink: 0 }}>{(u.nickname || 'U')[0].toUpperCase()}</div>
-                                    <div>
-                                      <div style={{ fontWeight: 500 }}>{u.nickname || '—'}</div>
-                                      <div style={{ fontSize: 11, color: '#64748b' }}>{u.user_id}</div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    );
-                  })()}
                   <label className="form-field">
                     <span>{p.realName}</span>
                     <input value={form.real_name || ''} onChange={e => setForm(f => ({ ...f, real_name: e.target.value }))} />
@@ -8213,8 +4968,6 @@ function RewardsTab() {
   const [settings, setSettings] = useState([]);
   const [channelPayouts, setChannelPayouts] = useState([]);
   const [coachCommissions, setCoachCommissions] = useState([]);
-  const [withdrawals, setWithdrawals] = useState([]);
-  const [wdFilter, setWdFilter] = useState('pending');
   const [loading, setLoading] = useState(false);
   const [generatePeriod, setGeneratePeriod] = useState(() => {
     const n = new Date();
@@ -8225,16 +4978,14 @@ function RewardsTab() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [sRes, cpRes, ccRes, wdRes] = await Promise.all([
+      const [sRes, cpRes, ccRes] = await Promise.all([
         axios.get('/api/commission-settings'),
         axios.get('/api/channel-payouts'),
         axios.get('/api/coach-commissions'),
-        axios.get('/api/admin/credit-withdrawals'),
       ]);
       setSettings(sRes.data.settings || []);
       setChannelPayouts(cpRes.data.payouts || []);
       setCoachCommissions(ccRes.data.commissions || []);
-      setWithdrawals(wdRes.data.withdrawals || []);
     } finally {
       setLoading(false);
     }
@@ -8274,32 +5025,20 @@ function RewardsTab() {
     }
   }
 
-  async function updateWithdrawal(id, status) {
-    try {
-      await axios.put(`/api/admin/credit-withdrawals/${id}`, { status });
-      setWithdrawals(prev => prev.map(w => w.id === id ? { ...w, status } : w));
-    } catch {
-      alert(r.saveFailed);
-    }
-  }
-
   const productLabel = (pt) => ({ chip: r.chip, dot: r.dot, subscription: r.subscription }[pt] || pt);
   const statusLabel  = (s)  => ({ draft: r.draft, approved: r.approved, transferred: r.transferred }[s] || s);
   const statusBadgeColor = (s) => ({ draft: '#64748b', approved: '#2563eb', transferred: '#16a34a' }[s] || '#64748b');
 
   const pendingPayouts = channelPayouts.filter(p => p.status === 'draft').length;
   const totalCommissionsAmount = coachCommissions.reduce((sum, c) => sum + Number(c.amount_cny || 0), 0);
-  const pendingWithdrawals = withdrawals.filter(w => w.status === 'pending').length;
-  const filteredWithdrawals = wdFilter === 'all' ? withdrawals : withdrawals.filter(w => w.status === wdFilter);
 
   return (
     <>
       <div className="stat-row">
-        <StatCard icon={TrendingUp} label={r.totalPayouts}       value={channelPayouts.length}           color="#6366f1" />
-        <StatCard icon={TrendingUp} label={r.pendingPayouts}     value={pendingPayouts}                  color="#f59e0b" />
-        <StatCard icon={Coins}      label={r.totalCommissions}   value={coachCommissions.length}         color="#3b82f6" />
-        <StatCard icon={Coins}      label={r.totalWithdrawals}   value={withdrawals.length}              color="#8b5cf6" />
-        <StatCard icon={Coins}      label={r.pendingWithdrawals} value={pendingWithdrawals}              color="#ef4444" />
+        <StatCard icon={TrendingUp} label={r.totalPayouts}     value={channelPayouts.length}                           color="#6366f1" />
+        <StatCard icon={TrendingUp} label={r.pendingPayouts}   value={pendingPayouts}                                  color="#f59e0b" />
+        <StatCard icon={Coins}      label={r.totalCommissions} value={coachCommissions.length}                         color="#3b82f6" />
+        <StatCard icon={Coins}      label={r.totalEarned}      value={`¥${totalCommissionsAmount.toFixed(0)}`}         color="#10b981" />
       </div>
 
       <div className="subtab-row">
@@ -8311,9 +5050,6 @@ function RewardsTab() {
         </button>
         <button className={`subtab-btn${subTab === 'coach-commissions' ? ' active' : ''}`} onClick={() => setSubTab('coach-commissions')}>
           <Coins size={13} /> {r.coachCommissionsTab}
-        </button>
-        <button className={`subtab-btn${subTab === 'withdrawals' ? ' active' : ''}`} onClick={() => setSubTab('withdrawals')}>
-          <Coins size={13} /> {r.withdrawalsTab}
         </button>
       </div>
 
@@ -8434,78 +5170,6 @@ function RewardsTab() {
           </table>
         </div>
       )}
-
-      {!loading && subTab === 'withdrawals' && (
-        <div className="card">
-          <div className="table-toolbar">
-            <div style={{ display: 'flex', gap: 6 }}>
-              {['all', 'pending', 'approved', 'rejected', 'completed'].map(f => (
-                <button key={f} className={`subtab-btn${wdFilter === f ? ' active' : ''}`}
-                  style={{ fontSize: 11, padding: '3px 10px' }}
-                  onClick={() => setWdFilter(f)}>
-                  {r[`filter${f.charAt(0).toUpperCase() + f.slice(1)}`]}
-                </button>
-              ))}
-            </div>
-            <span className="table-count">{filteredWithdrawals.length}</span>
-          </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>{r.withdrawalUser}</th>
-                <th>{r.withdrawalCredits}</th>
-                <th>{r.withdrawalCash}</th>
-                <th>{r.withdrawalMethod}</th>
-                <th>{r.withdrawalAccount}</th>
-                <th>{r.withdrawalStatus}</th>
-                <th>{r.withdrawalDate}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredWithdrawals.length === 0 && (
-                <tr><td colSpan={8} className="empty-row">{r.noWithdrawals}</td></tr>
-              )}
-              {filteredWithdrawals.map(w => {
-                const wdStatusColor = { pending: '#f59e0b', approved: '#2563eb', rejected: '#ef4444', completed: '#16a34a' }[w.status] || '#64748b';
-                return (
-                  <tr key={w.id}>
-                    <td>
-                      <div className="bold" style={{ fontSize: 12 }}>{w.nickname || w.user_id}</div>
-                      <div className="muted" style={{ fontSize: 10, fontFamily: 'monospace' }}>{w.user_id}</div>
-                    </td>
-                    <td className="bold">{Number(w.credits_amount).toFixed(2)} pts</td>
-                    <td className="bold">{Number(w.currency_amount).toFixed(2)} {w.currency}</td>
-                    <td className="muted">{w.payment_method}</td>
-                    <td className="muted" style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {w.payment_account || '—'}
-                    </td>
-                    <td><Badge color={wdStatusColor}>{r[w.status] || w.status}</Badge></td>
-                    <td className="muted">{fmtDate(w.requested_at)}</td>
-                    <td>
-                      {w.status === 'pending' && (
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="icon-btn" title={r.approve} onClick={() => updateWithdrawal(w.id, 'approved')}>
-                            <Check size={13} />
-                          </button>
-                          <button className="icon-btn danger" title={r.reject} onClick={() => updateWithdrawal(w.id, 'rejected')}>
-                            <X size={13} />
-                          </button>
-                        </div>
-                      )}
-                      {w.status === 'approved' && (
-                        <button className="icon-btn" title={r.markCompleted} onClick={() => updateWithdrawal(w.id, 'completed')}>
-                          <ChevronRight size={13} />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
     </>
   );
 }
@@ -8535,15 +5199,14 @@ function SimulatorsTab() {
 
 // ── Channel components ────────────────────────────────────────────────────────
 
-const EMPTY_CHANNEL = { key_name: '', name: '', logo_url: '', persona_type: 'nano', credit_exchange_rate: '1.0', currency: 'CNY' };
+const EMPTY_CHANNEL = { key_name: '', name: '', logo_url: '' };
 
-function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose, onSave }) {
+function ChannelModal({ channel, onClose, onSave }) {
   const { t } = useLang();
-  const ch = t.channels;
   const isEdit = !!channel?.id;
   const [form, setForm] = useState(isEdit
-    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '', parent_channel_id: channel.parent_channel_id || '', persona_type: channel.config?.persona_type ?? 'nano', credit_exchange_rate: channel.config?.credit_exchange_rate ?? '1.0', currency: channel.config?.currency ?? 'CNY' }
-    : { ...EMPTY_CHANNEL, parent_channel_id: parentChannel?.id || '', persona_type: parentChannel?.config?.persona_type ?? 'nano' });
+    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '' }
+    : { ...EMPTY_CHANNEL });
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -8575,7 +5238,7 @@ function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose,
     setBusy(true); setError('');
     try {
       if (isEdit) await axios.put(`/api/channels/${channel.id}`, form);
-      else        await axios.post('/api/channels', { ...form, parent_channel_id: form.parent_channel_id || undefined });
+      else        await axios.post('/api/channels', form);
       onSave();
     } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
     finally { setBusy(false); }
@@ -8597,45 +5260,6 @@ function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose,
             <label className="form-field">
               <span>{t.modal.channelName}</span>
               <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Nanovate" />
-            </label>
-            {!isEdit && parentChannel && (
-              <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-                <span>{ch.parentChannel}</span>
-                <div style={{ padding: '6px 10px', borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', fontSize: 13, color: '#94a3b8' }}>
-                  {parentChannel.name}
-                </div>
-              </label>
-            )}
-            {!isEdit && !parentChannel && isSuperadmin && (channels || []).length > 0 && (
-              <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-                <span>{ch.parentChannelOptional}</span>
-                <select value={form.parent_channel_id} onChange={e => set('parent_channel_id', e.target.value)}>
-                  <option value="">{ch.parentChannelNone}</option>
-                  {(channels || []).map(c => {
-                    const depth = c.depth != null ? c.depth : 0;
-                    const indent = '   '.repeat(depth);
-                    return <option key={c.id} value={c.id}>{indent}{c.name}</option>;
-                  })}
-                </select>
-              </label>
-            )}
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.modal.channelPersonaType}</span>
-              <select value={form.persona_type} onChange={e => set('persona_type', e.target.value)}>
-                <option value="nano">{t.modal.channelPersonaNano}</option>
-                <option value="viva">{t.modal.channelPersonaViva}</option>
-              </select>
-            </label>
-            <label className="form-field">
-              <span>{t.modal.channelExchangeRate}</span>
-              <input type="number" step="0.01" min="0.01" value={form.credit_exchange_rate}
-                onChange={e => set('credit_exchange_rate', e.target.value)}
-                placeholder={t.modal.channelExchangeRateHint} />
-            </label>
-            <label className="form-field">
-              <span>{t.modal.channelCurrency}</span>
-              <input value={form.currency} onChange={e => set('currency', e.target.value.toUpperCase())}
-                placeholder={t.modal.channelCurrencyHint} maxLength={10} />
             </label>
             <div className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{t.modal.channelLogoUrl}</span>
@@ -8729,8 +5353,6 @@ const CONFIGURABLE_TABS = [
   { id: 'reports',        label: 'Reports' },
   { id: 'tickets',        label: 'Tickets' },
   { id: 'lab',            label: 'Lab' },
-  { id: 'subchannels',    label: 'Sub-channels (requires grant)' },
-  { id: 'admin-accounts', label: 'Admin Accounts (requires grant)' },
 ];
 
 function ChannelAdminTabsModal({ channel, onClose, onSave }) {
@@ -8862,1229 +5484,69 @@ function ChannelSubAgeLabelsModal({ channel, onClose, onSave }) {
   );
 }
 
-function SubchannelAdminsModal({ subchannel, onClose, onSave }) {
-  const [accounts, setAccounts] = useState([]);
-  const [form, setForm] = useState({ username: '', password: '' });
-  const [err, setErr] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    axios.get('/api/admin-accounts')
-      .then(r => setAccounts((r.data.accounts || []).filter(a => a.channel_id === subchannel.id)))
-      .catch(() => setAccounts([]))
-      .finally(() => setLoading(false));
-  }, [subchannel.id]);
-
-  const addAccount = async () => {
-    if (!form.username || !form.password) return;
-    setSaving(true); setErr('');
-    try {
-      await axios.post('/api/admin-accounts', { username: form.username, password: form.password, channel_id: subchannel.id });
-      setForm({ username: '', password: '' });
-      const r = await axios.get('/api/admin-accounts');
-      setAccounts((r.data.accounts || []).filter(a => a.channel_id === subchannel.id));
-    } catch (e) { setErr(e.response?.data?.error || 'Error'); }
-    finally { setSaving(false); }
-  };
-
-  const delAccount = async (id) => {
-    if (!window.confirm('Delete this admin account?')) return;
-    try {
-      await axios.delete(`/api/admin-accounts/${id}`);
-      setAccounts(prev => prev.filter(a => a.id !== id));
-      onSave();
-    } catch (e) { alert(e.response?.data?.error || 'Error'); }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>Admins — {subchannel.name}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="modal-body">
-          {loading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : (
-            <>
-              <table className="data-table" style={{ marginBottom: 16 }}>
-                <thead><tr><th>Username</th><th>Created</th><th></th></tr></thead>
-                <tbody>
-                  {accounts.length === 0 && <tr><td colSpan={3} className="empty-row">No admins yet</td></tr>}
-                  {accounts.map(a => (
-                    <tr key={a.id}>
-                      <td><strong>{a.username}</strong></td>
-                      <td className="muted">{fmtDate(a.created_at)}</td>
-                      <td><button className="icon-btn danger" onClick={() => delAccount(a.id)}><Trash2 size={14} /></button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>Add admin account</p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <input className="form-input" placeholder="Username" value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} style={{ flex: 1, minWidth: 120 }} />
-                <input className="form-input" type="password" placeholder="Password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} style={{ flex: 1, minWidth: 120 }} />
-                <button className="btn-primary" onClick={addAccount} disabled={saving || !form.username || !form.password}>
-                  {saving ? 'Adding…' : <><Plus size={14} />Add</>}
-                </button>
-              </div>
-              {err && <p className="form-error" style={{ marginTop: 8 }}>{err}</p>}
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SubchannelInvitesModal({ subchannel, onClose }) {
-  const [invitations, setInvitations] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
-
-  const load = () => {
-    setLoading(true);
-    axios.get(`/api/invitations?channel_id=${subchannel.id}`)
-      .then(r => setInvitations(r.data.invitations || []))
-      .catch(() => setInvitations([]))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => { load(); }, [subchannel.id]);
-
-  const create = async () => {
-    setCreating(true);
-    try {
-      await axios.post('/api/invitations', { channel_id: subchannel.id, type: 'channel' });
-      load();
-    } catch { /* silent */ } finally { setCreating(false); }
-  };
-
-  const deactivate = async (id) => {
-    try { await axios.delete(`/api/invitations/${id}`); load(); } catch { /* silent */ }
-  };
-
-  const copy = (code) => {
-    navigator.clipboard?.writeText(`pages/login/login?invite=${code}`);
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>Invites — {subchannel.name}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="modal-body">
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-            <button className="btn-primary" onClick={create} disabled={creating}>
-              <Plus size={14} />{creating ? 'Creating…' : 'New Invite'}
-            </button>
-          </div>
-          {loading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : (
-            <table className="data-table">
-              <thead><tr><th>Code</th><th>Uses</th><th>Active</th><th>Created</th><th></th></tr></thead>
-              <tbody>
-                {invitations.length === 0 && <tr><td colSpan={5} className="empty-row">No invites yet</td></tr>}
-                {invitations.map(inv => (
-                  <tr key={inv.id}>
-                    <td><code className="code-tag">{inv.code}</code></td>
-                    <td>{inv.use_count}{inv.max_uses ? ` / ${inv.max_uses}` : ''}</td>
-                    <td><Badge color={inv.is_active ? '#10b981' : '#64748b'}>{inv.is_active ? 'Active' : 'Inactive'}</Badge></td>
-                    <td className="muted">{fmtDate(inv.created_at)}</td>
-                    <td>
-                      <div className="row-actions">
-                        <button className="icon-btn" title="Copy link" onClick={() => copy(inv.code)}><Copy size={14} /></button>
-                        {inv.is_active && <button className="icon-btn danger" title="Deactivate" onClick={() => deactivate(inv.id)}><Trash2 size={14} /></button>}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SubchannelsTab_UNUSED({ subchannels, adminAccounts, invitations, session, onRefresh }) {
-  const [modal, setModal] = useState(null);
-  const [expanded, setExpanded] = useState(new Set());
-  const [togglingId, setTogglingId] = useState(null);
-  const closeAndRefresh = () => { setModal(null); onRefresh(); };
-
-  const rootId = parseInt(session?.channelId);
-
-  const childrenOf = {};
-  subchannels.forEach(c => {
-    const pid = c.parent_channel_id;
-    if (!childrenOf[pid]) childrenOf[pid] = [];
-    childrenOf[pid].push(c);
-  });
-
-  const toggleExpand = (id) => setExpanded(prev => {
-    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
-  });
-
-  const toggleCms = async (channel) => {
-    setTogglingId(channel.id);
-    try {
-      await axios.put(`/api/channels/${channel.id}/manage-subchannels`, { can_manage_subchannels: !channel.can_manage_subchannels });
-      onRefresh();
-    } catch { } finally { setTogglingId(null); }
-  };
-
-  function renderRows(parentId, indent) {
-    return (childrenOf[parentId] || []).flatMap(c => {
-      const hasChildren = !!(childrenOf[c.id]?.length);
-      const isOpen = expanded.has(c.id);
-      return [
-        <tr key={c.id}>
-          <td className="muted">{c.id}</td>
-          <td>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: indent * 20 }}>
-              {hasChildren ? (
-                <button className="icon-btn" style={{ padding: 0, width: 18, height: 18, flexShrink: 0, fontSize: 11 }} onClick={() => toggleExpand(c.id)}>
-                  {isOpen ? '▾' : '▸'}
-                </button>
-              ) : (
-                <span style={{ display: 'inline-block', width: 18, flexShrink: 0 }} />
-              )}
-              <code className="code-tag">{c.key_name}</code>
-            </span>
-          </td>
-          <td className="bold">{c.name}</td>
-          <td>
-            {c.logo_url
-              ? <img src={c.logo_url} alt="" style={{ width: 32, height: 32, borderRadius: 4, objectFit: 'cover' }} />
-              : <span className="muted">—</span>}
-          </td>
-          <td><Badge color="#3b82f6">{c.user_count || 0}</Badge></td>
-          <td><Badge color="#10b981">{c.coach_count || 0}</Badge></td>
-          <td className="muted">{fmtDate(c.created_at)}</td>
-          <td>
-            <div className="row-actions">
-              {session?.canManageSubchannels && (
-                <button
-                  className="btn-secondary"
-                  style={{ fontSize: 10, padding: '2px 6px', opacity: togglingId === c.id ? 0.5 : 1 }}
-                  onClick={() => toggleCms(c)}
-                  disabled={togglingId === c.id}
-                  title={c.can_manage_subchannels ? 'Revoke sub-channel management' : 'Grant sub-channel management'}
-                >
-                  {c.can_manage_subchannels ? '✓ Sub-ch' : '+ Sub-ch'}
-                </button>
-              )}
-              <button className="icon-btn" title="Edit" onClick={() => setModal({ type: 'edit', channel: c })}><Pencil size={14} /></button>
-              <button className="icon-btn" title="Channel settings" onClick={() => setModal({ type: 'admin-tabs', channel: c })}><Settings2 size={14} /></button>
-              <button className="icon-btn" title="Manage admins" onClick={() => setModal({ type: 'admins', channel: c })}><UserCog size={14} /></button>
-              <button className="icon-btn" title="Manage invites" onClick={() => setModal({ type: 'invites', channel: c })}><Tag size={14} /></button>
-              <button className="icon-btn danger" title="Delete" onClick={() => setModal({ type: 'delete', channel: c })}><Trash2 size={14} /></button>
-            </div>
-          </td>
-        </tr>,
-        ...(isOpen ? renderRows(c.id, indent + 1) : [])
-      ];
-    });
-  }
-
-  return (
-    <>
-      <div className="stat-row">
-        <StatCard icon={Building2} label="Sub-channels" value={subchannels.length} color="#6366f1" />
-        <StatCard icon={Settings2} label="Sub-channel Admins" value={adminAccounts.length} color="#8b5cf6" />
-      </div>
-      <div className="card">
-        <div className="table-toolbar">
-          <span className="table-count">{subchannels.length} sub-channel{subchannels.length !== 1 ? 's' : ''}</span>
-          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-            <Plus size={14} />Add Sub-channel
-          </button>
-        </div>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Key</th>
-              <th>Name</th>
-              <th>Logo</th>
-              <th>Users</th>
-              <th>Coaches</th>
-              <th>Joined</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {subchannels.length === 0 && <tr><td colSpan={8} className="empty-row">No sub-channels yet. Create one to get started.</td></tr>}
-            {renderRows(rootId, 0)}
-          </tbody>
-        </table>
-      </div>
-      {modal?.type === 'add'       && <ChannelModal channel={null}          onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'      && <ChannelModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'delete'    && <DeleteChannelConfirm channel={modal.channel} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
-      {modal?.type === 'admin-tabs' && <ChannelAdminTabsModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'admins'    && <SubchannelAdminsModal subchannel={modal.channel} onClose={() => setModal(null)} onSave={onRefresh} />}
-      {modal?.type === 'invites'   && <SubchannelInvitesModal subchannel={modal.channel} onClose={() => setModal(null)} />}
-    </>
-  );
-}
-
-function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchannels, subchannels, onClose, onSave }) {
+function ChannelTab({ channels, onRefresh, isSuperadmin }) {
   const { t } = useLang();
-  const ch = t.channels;
-  const [activeTab, setActiveTab] = useState('general');
-
-  // ── General ──────────────────────────────────────────────────────────────────
-  const [form, setForm] = useState({
-    key_name: channel.key_name,
-    name: channel.name || '',
-    logo_url: channel.logo_url || '',
-    persona_type: channel.config?.persona_type ?? 'nano',
-    credit_exchange_rate: channel.config?.credit_exchange_rate ?? '1.0',
-    currency: channel.config?.currency ?? 'CNY',
-  });
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [generalBusy, setGeneralBusy] = useState(false);
-  const [generalError, setGeneralError] = useState('');
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  const handleLogoPick = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setUploading(true); setUploadProgress(0); setGeneralError('');
-    try {
-      const presignRes = await axios.get('/api/oss/presign', { params: { type: 'logo', filename: file.name, category: 'channels' } });
-      if (!presignRes.data.success) throw new Error(presignRes.data.error || t.modal.uploadChannelLogoFailed);
-      await uploadToOSS(presignRes.data.url, file, setUploadProgress);
-      set('logo_url', presignRes.data.get_url);
-    } catch (err) { setGeneralError(err.response?.data?.error || err.message || t.modal.uploadChannelLogoFailed); }
-    finally { setUploading(false); }
-  };
-
-  const saveGeneral = async () => {
-    if (!form.name.trim()) { setGeneralError(t.modal.nameRequired); return; }
-    setGeneralBusy(true); setGeneralError('');
-    try { await axios.put(`/api/channels/${channel.id}`, form); onSave(); }
-    catch (err) { setGeneralError(err.response?.data?.error || t.modal.saveFailed); }
-    finally { setGeneralBusy(false); }
-  };
-
-  // Grant sub-channel toggle (in General tab)
-  const [cmsValue, setCmsValue] = useState(channel.can_manage_subchannels ?? false);
-  const [cmsToggling, setCmsToggling] = useState(false);
-  const toggleCms = async () => {
-    setCmsToggling(true);
-    try {
-      await axios.put(`/api/channels/${channel.id}/manage-subchannels`, { can_manage_subchannels: !cmsValue });
-      setCmsValue(v => !v);
-    } catch { } finally { setCmsToggling(false); }
-  };
-
-  // ── Admin Tabs ────────────────────────────────────────────────────────────────
-  const [selectedTabs, setSelectedTabs] = useState(new Set(Array.isArray(channel.config?.admin_tabs) ? channel.config.admin_tabs : []));
-  const [tabsBusy, setTabsBusy] = useState(false);
-  const [tabsError, setTabsError] = useState('');
-  const toggleTab = (id) => setSelectedTabs(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const saveTabs = async () => {
-    setTabsBusy(true); setTabsError('');
-    try { await axios.put(`/api/channels/${channel.id}/admin-tabs`, { tabs: [...selectedTabs] }); onSave(); }
-    catch (err) { setTabsError(err.response?.data?.error || 'Save failed'); }
-    finally { setTabsBusy(false); }
-  };
-
-  // ── Sub-age Labels ────────────────────────────────────────────────────────────
-  const existing = channel.config?.sub_age_display_names || {};
-  const [labels, setLabels] = useState(
-    Object.fromEntries(SUB_AGE_KEYS_CONFIG.map(({ key }) => [key, { zh: existing[key]?.zh || '', en: existing[key]?.en || '' }]))
-  );
-  const [labelsBusy, setLabelsBusy] = useState(false);
-  const [labelsError, setLabelsError] = useState('');
-  const setLabel = (key, lang, val) => setLabels(prev => ({ ...prev, [key]: { ...prev[key], [lang]: val } }));
-  const saveLabels = async () => {
-    setLabelsBusy(true); setLabelsError('');
-    const payload = Object.fromEntries(
-      SUB_AGE_KEYS_CONFIG
-        .filter(({ key }) => labels[key].zh.trim() || labels[key].en.trim())
-        .map(({ key }) => [key, { zh: labels[key].zh.trim(), en: labels[key].en.trim() }])
-    );
-    try { await axios.put(`/api/channels/${channel.id}/sub-age-labels`, { sub_age_display_names: payload }); onSave(); }
-    catch (err) { setLabelsError(err.response?.data?.error || 'Save failed'); }
-    finally { setLabelsBusy(false); }
-  };
-
-  // ── Admins tab ────────────────────────────────────────────────────────────────
-  const [admins, setAdmins] = useState([]);
-  const [adminsLoading, setAdminsLoading] = useState(false);
-  const [adminForm, setAdminForm] = useState({ username: '', password: '' });
-  const [adminErr, setAdminErr] = useState('');
-  const [adminSaving, setAdminSaving] = useState(false);
-
-  useEffect(() => {
-    if (activeTab !== 'admins') return;
-    setAdminsLoading(true);
-    axios.get('/api/admin-accounts')
-      .then(r => setAdmins((r.data.accounts || []).filter(a => a.channel_id === channel.id)))
-      .catch(() => setAdmins([]))
-      .finally(() => setAdminsLoading(false));
-  }, [activeTab, channel.id]);
-
-  const addAdmin = async () => {
-    if (!adminForm.username || !adminForm.password) return;
-    setAdminSaving(true); setAdminErr('');
-    try {
-      await axios.post('/api/admin-accounts', { username: adminForm.username, password: adminForm.password, channel_id: channel.id });
-      setAdminForm({ username: '', password: '' });
-      const r = await axios.get('/api/admin-accounts');
-      setAdmins((r.data.accounts || []).filter(a => a.channel_id === channel.id));
-    } catch (e) { setAdminErr(e.response?.data?.error || 'Error'); }
-    finally { setAdminSaving(false); }
-  };
-
-  const delAdmin = async (id) => {
-    if (!window.confirm(ch.confirmDeleteAdmin)) return;
-    try {
-      await axios.delete(`/api/admin-accounts/${id}`);
-      setAdmins(prev => prev.filter(a => a.id !== id));
-    } catch (e) { alert(e.response?.data?.error || 'Error'); }
-  };
-
-  // ── Invites tab ───────────────────────────────────────────────────────────────
-  const [invites, setInvites] = useState([]);
-  const [invitesLoading, setInvitesLoading] = useState(false);
-  const [inviteCreating, setInviteCreating] = useState(false);
-
-  const loadInvites = () => {
-    setInvitesLoading(true);
-    axios.get(`/api/invitations?channel_id=${channel.id}`)
-      .then(r => setInvites(r.data.invitations || []))
-      .catch(() => setInvites([]))
-      .finally(() => setInvitesLoading(false));
-  };
-
-  useEffect(() => { if (activeTab === 'invites') loadInvites(); }, [activeTab, channel.id]);
-
-  const createInvite = async () => {
-    setInviteCreating(true);
-    try { await axios.post('/api/invitations', { channel_id: channel.id, type: 'channel' }); loadInvites(); }
-    catch { } finally { setInviteCreating(false); }
-  };
-
-  const deactivateInvite = async (id) => {
-    try { await axios.delete(`/api/invitations/${id}`); loadInvites(); } catch { }
-  };
-
-  // ── Danger tab ────────────────────────────────────────────────────────────────
-  const [deleteConfirm, setDeleteConfirm] = useState('');
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState('');
-
-  const doDelete = async () => {
-    setDeleting(true); setDeleteError('');
-    try { await axios.delete(`/api/channels/${channel.id}`); onSave(); }
-    catch (e) { setDeleteError(e.response?.data?.error || 'Delete failed'); setDeleting(false); }
-  };
-
-  // ── Rewards tab ───────────────────────────────────────────────────────────────
-  const [rewardsData, setRewardsData] = useState(null);
-  const [rewardsLoading, setRewardsLoading] = useState(false);
-  const [rewardsError, setRewardsError] = useState('');
-  const [rewardsSaving, setRewardsSaving] = useState(false);
-  const PRODUCT_TYPES = ['chip', 'dot', 'subscription'];
-  const RATE_ROLES = ['coach', 'channel'];
-
-  const emptyRatesForm = () => Object.fromEntries(
-    PRODUCT_TYPES.flatMap(pt => RATE_ROLES.flatMap(role => [
-      [`${role}_${pt}_flat`, ''],
-      [`${role}_${pt}_pct`, ''],
-    ]))
-  );
-
-  const [ratesForm, setRatesForm] = useState(emptyRatesForm);
-  const [referralRate, setReferralRate] = useState('');
-
-  const loadRewards = async () => {
-    setRewardsLoading(true); setRewardsError('');
-    try {
-      const r = await axios.get(`/api/channels/${channel.id}/rewards-config`);
-      setRewardsData(r.data);
-      const cfg = r.data.commission_config || {};
-      const form = emptyRatesForm();
-      Object.keys(form).forEach(k => { if (cfg[k] != null) form[k] = String(cfg[k]); });
-      setRatesForm(form);
-      setReferralRate(r.data.referral_commission_rate != null ? String(r.data.referral_commission_rate) : '');
-    } catch (e) { setRewardsError(e.response?.data?.error || 'Failed to load'); }
-    finally { setRewardsLoading(false); }
-  };
-
-  useEffect(() => {
-    if (activeTab === 'rewards') loadRewards();
-    if (activeTab === 'partner-tiers') loadTierCfg();
-  }, [activeTab, channel.id]);
-
-  const isRoot = !channel.parent_channel_id;
-  const canEditRates = isSuperadmin || isRoot || channel.can_customize_rewards;
-
-  // ── Partner Tiers tab ─────────────────────────────────────────────────────────
-  const TIER_KEYS = ['light_entrepreneur', 'leader_partner', 'operations_center'];
-  const TIER_DEFAULTS = {
-    light_entrepreneur: { label: 'Light Entrepreneur', label_zh: '轻创业者',  entry_fee: 9800,   color: '#0ea5e9', description: '' },
-    leader_partner:     { label: 'Leader Partner',     label_zh: '领导合伙人', entry_fee: 49800,  color: '#8b5cf6', description: '' },
-    operations_center:  { label: 'Operations Center',  label_zh: '运营中心',   entry_fee: 300000, color: '#f59e0b', description: '' },
-  };
-  const [tierCfgData, setTierCfgData] = useState(null);
-  const [tierCfgForm, setTierCfgForm] = useState(null);
-  const [tierCfgLoading, setTierCfgLoading] = useState(false);
-  const [tierCfgSaving, setTierCfgSaving] = useState(false);
-  const [tierCfgError, setTierCfgError] = useState('');
-  const [tierCfgMsg, setTierCfgMsg] = useState('');
-
-  const canEditTierCfg = isSuperadmin || isRoot || channel.can_customize_partner_tiers;
-
-  const loadTierCfg = async () => {
-    setTierCfgLoading(true); setTierCfgError('');
-    try {
-      const r = await axios.get(`/api/channels/${channel.id}/partner-tiers-config`);
-      setTierCfgData(r.data);
-      const effective = r.data.partner_tiers_config || {};
-      const merged = {};
-      TIER_KEYS.forEach(k => { merged[k] = { ...TIER_DEFAULTS[k], ...(effective[k] || {}) }; });
-      setTierCfgForm(merged);
-    } catch (e) { setTierCfgError(e.response?.data?.error || 'Failed to load'); }
-    finally { setTierCfgLoading(false); }
-  };
-
-  const saveTierCfg = async () => {
-    setTierCfgSaving(true); setTierCfgError(''); setTierCfgMsg('');
-    try {
-      await axios.put(`/api/channels/${channel.id}/partner-tiers-config`, { partner_tiers_config: tierCfgForm });
-      setTierCfgMsg(ch.tierSaved);
-      setTimeout(() => setTierCfgMsg(''), 3000);
-      await loadTierCfg();
-    } catch (e) { setTierCfgError(e.response?.data?.error || 'Save failed'); }
-    finally { setTierCfgSaving(false); }
-  };
-
-  const resetTierCfg = async () => {
-    if (!window.confirm('Clear custom tier config and revert to inherited?')) return;
-    setTierCfgSaving(true); setTierCfgError('');
-    try {
-      await axios.put(`/api/channels/${channel.id}/partner-tiers-config`, { partner_tiers_config: null });
-      await loadTierCfg();
-    } catch (e) { setTierCfgError(e.response?.data?.error || 'Reset failed'); }
-    finally { setTierCfgSaving(false); }
-  };
-
-  const toggleSubchTierPermission = async (subch) => {
-    try {
-      await axios.put(`/api/channels/${subch.id}/partner-tiers-permission`, { can_customize_partner_tiers: !subch.can_customize_partner_tiers });
-      onSave();
-    } catch (e) { alert(e.response?.data?.error || 'Failed'); }
-  };
-
-  const saveRates = async () => {
-    setRewardsSaving(true); setRewardsError('');
-    try {
-      const commission_config = {};
-      Object.entries(ratesForm).forEach(([k, v]) => {
-        if (v !== '') commission_config[k] = Number(v);
-      });
-      await axios.put(`/api/channels/${channel.id}/rewards-config`, {
-        commission_config: Object.keys(commission_config).length ? commission_config : null,
-        referral_commission_rate: referralRate !== '' ? Number(referralRate) : undefined,
-      });
-      await loadRewards();
-    } catch (e) { setRewardsError(e.response?.data?.error || 'Save failed'); }
-    finally { setRewardsSaving(false); }
-  };
-
-  const resetRates = async () => {
-    if (!window.confirm('Clear custom rates and revert to inherited rates?')) return;
-    setRewardsSaving(true); setRewardsError('');
-    try {
-      await axios.put(`/api/channels/${channel.id}/rewards-config`, { commission_config: null });
-      await loadRewards();
-    } catch (e) { setRewardsError(e.response?.data?.error || 'Reset failed'); }
-    finally { setRewardsSaving(false); }
-  };
-
-  const toggleSubchRewardsPermission = async (subch) => {
-    try {
-      await axios.put(`/api/channels/${subch.id}/rewards-permission`, { can_customize_rewards: !subch.can_customize_rewards });
-      onSave();
-    } catch (e) { alert(e.response?.data?.error || 'Failed'); }
-  };
-
-  // ── Tab list ──────────────────────────────────────────────────────────────────
-  const configTabs = [
-    { id: 'general', label: ch.tabGeneral },
-    { id: 'admins', label: ch.tabAdmins },
-    { id: 'invites', label: ch.tabInvites },
-    { id: 'rewards', label: ch.tabRewards },
-    { id: 'partner-tiers', label: ch.tabPartnerTiers },
-    ...(isSuperadmin ? [{ id: 'sub-age', label: ch.tabSubAge }] : []),
-    { id: 'danger', label: ch.tabDanger, danger: true },
-  ];
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 640 }} onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>{ch.configTitle(channel.name)}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="modal-body">
-          <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 10, flexWrap: 'wrap' }}>
-            {configTabs.map(ct => (
-              <button key={ct.id} onClick={() => setActiveTab(ct.id)} style={{
-                padding: '4px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13,
-                fontWeight: activeTab === ct.id ? 600 : 400,
-                background: activeTab === ct.id ? (ct.danger ? 'rgba(239,68,68,0.15)' : 'rgba(99,102,241,0.15)') : 'transparent',
-                color: activeTab === ct.id ? (ct.danger ? '#f87171' : '#818cf8') : (ct.danger ? '#f87171' : '#94a3b8'),
-              }}>{ct.label}</button>
-            ))}
-          </div>
-
-          {activeTab === 'general' && (
-            <div className="form-grid">
-              <label className="form-field">
-                <span>{t.modal.channelKeyName}</span>
-                <input value={form.key_name} disabled />
-              </label>
-              <label className="form-field">
-                <span>{t.modal.channelName}</span>
-                <input value={form.name} onChange={e => set('name', e.target.value)} />
-              </label>
-              <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-                <span>{t.modal.channelPersonaType}</span>
-                <select value={form.persona_type} onChange={e => set('persona_type', e.target.value)}>
-                  <option value="nano">{t.modal.channelPersonaNano}</option>
-                  <option value="viva">{t.modal.channelPersonaViva}</option>
-                </select>
-              </label>
-              <label className="form-field">
-                <span>{t.modal.channelExchangeRate}</span>
-                <input type="number" step="0.01" min="0.01" value={form.credit_exchange_rate} onChange={e => set('credit_exchange_rate', e.target.value)} />
-              </label>
-              <label className="form-field">
-                <span>{t.modal.channelCurrency}</span>
-                <input value={form.currency} onChange={e => set('currency', e.target.value.toUpperCase())} maxLength={10} />
-              </label>
-              <div className="form-field" style={{ gridColumn: '1 / -1' }}>
-                <span>{t.modal.channelLogoUrl}</span>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 6 }}>
-                  {form.logo_url && (
-                    <div style={{ position: 'relative', flexShrink: 0 }}>
-                      <img src={form.logo_url} alt="" style={{ width: 80, height: 80, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(99,117,236,0.3)' }} />
-                      <button type="button" className="icon-btn" onClick={() => set('logo_url', '')}
-                        style={{ position: 'absolute', top: -6, right: -6, background: '#0F2540', border: '1px solid rgba(99,117,236,0.4)', borderRadius: '50%', width: 22, height: 22, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <X size={12} />
-                      </button>
-                    </div>
-                  )}
-                  <label className="upload-zone" style={{ flex: 1, minHeight: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: uploading ? 'wait' : 'pointer', flexDirection: 'column', gap: 6 }}>
-                    <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" style={{ display: 'none' }} onChange={handleLogoPick} disabled={uploading} />
-                    {uploading ? (
-                      <>
-                        <span style={{ fontSize: 11, color: '#94a3b8' }}>{t.store.uploading}</span>
-                        <div className="upload-progress" style={{ width: '80%' }}><div className="upload-progress-bar" style={{ width: `${uploadProgress}%` }} /></div>
-                      </>
-                    ) : (
-                      <span className="upload-zone-hint" style={{ textAlign: 'center' }}>{form.logo_url ? '↺ ' : ''}{t.modal.uploadChannelLogo}</span>
-                    )}
-                  </label>
-                </div>
-              </div>
-              {canGrantSubch && (
-                <div className="form-field" style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderTop: '1px solid var(--border)' }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{ch.subchannelMgmt}</div>
-                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{ch.subchannelMgmtHint}</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={toggleCms}
-                    disabled={cmsToggling}
-                    style={{
-                      width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
-                      background: cmsValue ? '#6366f1' : '#334155',
-                      transition: 'background 0.2s', position: 'relative', opacity: cmsToggling ? 0.6 : 1,
-                    }}
-                  >
-                    <span style={{
-                      position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
-                      transition: 'left 0.2s', left: cmsValue ? 23 : 3,
-                    }} />
-                  </button>
-                </div>
-              )}
-              {generalError && <div className="form-error" style={{ gridColumn: '1 / -1' }}>{generalError}</div>}
-              <div className="modal-footer" style={{ gridColumn: '1 / -1' }}>
-                <button className="btn-secondary" onClick={onClose} disabled={uploading}>{t.modal.cancel}</button>
-                <button className="btn-primary" onClick={saveGeneral} disabled={generalBusy || uploading}>
-                  <Check size={14} />{generalBusy ? t.modal.saving : t.modal.save}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'admin-tabs' && (
-            <>
-              <p style={{ marginBottom: 12, color: '#94a3b8', fontSize: 13 }}>{ch.adminTabsHint}</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {CONFIGURABLE_TABS.map(tab => (
-                  <label key={tab.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#EEF2FF', fontSize: 14 }}>
-                    <input type="checkbox" checked={selectedTabs.has(tab.id)} onChange={() => toggleTab(tab.id)} />
-                    {tab.label}
-                  </label>
-                ))}
-              </div>
-              {tabsError && <p className="form-error" style={{ marginTop: 8 }}>{tabsError}</p>}
-              <div className="modal-footer">
-                <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
-                <button className="btn-primary" onClick={saveTabs} disabled={tabsBusy}>
-                  <Check size={14} />{tabsBusy ? t.modal.saving : t.modal.save}
-                </button>
-              </div>
-            </>
-          )}
-
-          {activeTab === 'admins' && (
-            <>
-              {adminsLoading ? <p style={{ color: '#94a3b8' }}>{ch.loading}</p> : (
-                <>
-                  <table className="data-table" style={{ marginBottom: 16 }}>
-                    <thead><tr><th>{ch.colUsername}</th><th>{ch.colCreated}</th><th></th></tr></thead>
-                    <tbody>
-                      {admins.length === 0 && <tr><td colSpan={3} className="empty-row">{ch.noAdmins}</td></tr>}
-                      {admins.map(a => (
-                        <tr key={a.id}>
-                          <td><strong>{a.username}</strong></td>
-                          <td className="muted">{fmtDate(a.created_at)}</td>
-                          <td><button className="icon-btn danger" onClick={() => delAdmin(a.id)}><Trash2 size={14} /></button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <p style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>{ch.addAdminHint}</p>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <input className="form-input" placeholder={ch.usernamePlaceholder} value={adminForm.username} onChange={e => setAdminForm(f => ({ ...f, username: e.target.value }))} style={{ flex: 1, minWidth: 120 }} />
-                    <input className="form-input" type="password" placeholder={ch.passwordPlaceholder} value={adminForm.password} onChange={e => setAdminForm(f => ({ ...f, password: e.target.value }))} style={{ flex: 1, minWidth: 120 }} />
-                    <button className="btn-primary" onClick={addAdmin} disabled={adminSaving || !adminForm.username || !adminForm.password}>
-                      {adminSaving ? ch.adding : <><Plus size={14} />{ch.add}</>}
-                    </button>
-                  </div>
-                  {adminErr && <p className="form-error" style={{ marginTop: 8 }}>{adminErr}</p>}
-                </>
-              )}
-            </>
-          )}
-
-          {activeTab === 'invites' && (
-            <>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-                <button className="btn-primary" onClick={createInvite} disabled={inviteCreating}>
-                  <Plus size={14} />{inviteCreating ? ch.creating : ch.newInvite}
-                </button>
-              </div>
-              {invitesLoading ? <p style={{ color: '#94a3b8' }}>{ch.loading}</p> : (
-                <table className="data-table">
-                  <thead><tr><th>{ch.colCode}</th><th>{ch.colUses}</th><th>{ch.colActive}</th><th>{t.table.joined}</th><th></th></tr></thead>
-                  <tbody>
-                    {invites.length === 0 && <tr><td colSpan={5} className="empty-row">{ch.noInvites}</td></tr>}
-                    {invites.map(inv => (
-                      <tr key={inv.id}>
-                        <td><code className="code-tag">{inv.code}</code></td>
-                        <td>{inv.use_count}{inv.max_uses ? ` / ${inv.max_uses}` : ''}</td>
-                        <td><Badge color={inv.is_active ? '#10b981' : '#64748b'}>{inv.is_active ? ch.active : ch.inactive}</Badge></td>
-                        <td className="muted">{fmtDate(inv.created_at)}</td>
-                        <td>
-                          <div className="row-actions">
-                            <button className="icon-btn" title={ch.copyLink} onClick={() => navigator.clipboard?.writeText(`pages/login/login?invite=${inv.code}`)}><Copy size={14} /></button>
-                            {inv.is_active && <button className="icon-btn danger" title={ch.deactivate} onClick={() => deactivateInvite(inv.id)}><Trash2 size={14} /></button>}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </>
-          )}
-
-          {activeTab === 'sub-age' && isSuperadmin && (
-            <>
-              <p style={{ marginBottom: 12, color: '#94a3b8', fontSize: 13 }}>{ch.subAgeHint}</p>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', padding: '4px 8px', color: '#94a3b8', fontSize: 12 }}>{ch.colDimension}</th>
-                    <th style={{ textAlign: 'left', padding: '4px 8px', color: '#94a3b8', fontSize: 12 }}>{ch.colZh}</th>
-                    <th style={{ textAlign: 'left', padding: '4px 8px', color: '#94a3b8', fontSize: 12 }}>{ch.colEn}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {SUB_AGE_KEYS_CONFIG.map(({ key, defaultZh, defaultEn }) => (
-                    <tr key={key}>
-                      <td style={{ padding: '6px 8px', fontSize: 13, color: '#1e293b', fontWeight: 500, whiteSpace: 'nowrap' }}>{key}</td>
-                      <td style={{ padding: '4px 8px' }}>
-                        <input className="form-input" placeholder={defaultZh} value={labels[key].zh} onChange={e => setLabel(key, 'zh', e.target.value)} />
-                      </td>
-                      <td style={{ padding: '4px 8px' }}>
-                        <input className="form-input" placeholder={defaultEn} value={labels[key].en} onChange={e => setLabel(key, 'en', e.target.value)} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {labelsError && <p className="form-error" style={{ marginTop: 8 }}>{labelsError}</p>}
-              <div className="modal-footer">
-                <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
-                <button className="btn-primary" onClick={saveLabels} disabled={labelsBusy}>
-                  <Check size={14} />{labelsBusy ? t.modal.saving : t.modal.save}
-                </button>
-              </div>
-            </>
-          )}
-
-          {activeTab === 'rewards' && (
-            <div>
-              {rewardsLoading ? <p style={{ color: '#94a3b8' }}>{ch.loading}</p> : (
-                <>
-                  {/* Source badge */}
-                  {rewardsData && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20,
-                        background: rewardsData.source === 'own' ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.15)',
-                        color: rewardsData.source === 'own' ? '#10b981' : '#94a3b8' }}>
-                        {rewardsData.source === 'own' ? ch.rewardsSrcOwn
-                          : rewardsData.source === 'inherited' ? ch.rewardsSrcInherited(rewardsData.source_channel_name)
-                          : ch.rewardsSrcGlobal}
-                      </span>
-                      {!canEditRates && (
-                        <span style={{ fontSize: 12, color: '#64748b' }}>{ch.rewardsNoPermission}</span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Commission rates table */}
-                  <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>{ch.rewardsRatesHint}</p>
-                  <div style={{ overflowX: 'auto', marginBottom: 16 }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                      <thead>
-                        <tr>
-                          <th style={{ textAlign: 'left', padding: '6px 8px', color: '#94a3b8', fontWeight: 500, fontSize: 12 }}>{ch.rewardsProduct}</th>
-                          <th style={{ textAlign: 'center', padding: '6px 8px', color: '#94a3b8', fontWeight: 500, fontSize: 12 }} colSpan={2}>{ch.rewardsCoachComm}</th>
-                          <th style={{ textAlign: 'center', padding: '6px 8px', color: '#94a3b8', fontWeight: 500, fontSize: 12 }} colSpan={2}>{ch.rewardsChannelComm}</th>
-                        </tr>
-                        <tr>
-                          <th />
-                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>{ch.rewardsFlat}</th>
-                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>{ch.rewardsPct}</th>
-                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>{ch.rewardsFlat}</th>
-                          <th style={{ textAlign: 'center', padding: '2px 8px', color: '#64748b', fontWeight: 400, fontSize: 11 }}>{ch.rewardsPct}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {PRODUCT_TYPES.map(pt => (
-                          <tr key={pt} style={{ borderTop: '1px solid var(--border)' }}>
-                            <td style={{ padding: '6px 8px', fontWeight: 600, color: '#e2e8f0', textTransform: 'capitalize' }}>{pt}</td>
-                            {RATE_ROLES.map(role => (
-                              <>
-                                <td key={`${role}_${pt}_flat`} style={{ padding: '4px 6px' }}>
-                                  <input
-                                    type="number" min="0" step="0.01"
-                                    className="form-input"
-                                    style={{ width: 80, textAlign: 'center' }}
-                                    placeholder="—"
-                                    value={ratesForm[`${role}_${pt}_flat`]}
-                                    onChange={e => setRatesForm(f => ({ ...f, [`${role}_${pt}_flat`]: e.target.value }))}
-                                    disabled={!canEditRates}
-                                  />
-                                </td>
-                                <td key={`${role}_${pt}_pct`} style={{ padding: '4px 6px' }}>
-                                  <input
-                                    type="number" min="0" max="100" step="0.1"
-                                    className="form-input"
-                                    style={{ width: 80, textAlign: 'center' }}
-                                    placeholder="—"
-                                    value={ratesForm[`${role}_${pt}_pct`]}
-                                    onChange={e => setRatesForm(f => ({ ...f, [`${role}_${pt}_pct`]: e.target.value }))}
-                                    disabled={!canEditRates}
-                                  />
-                                </td>
-                              </>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Referral rate */}
-                  <label className="form-field" style={{ maxWidth: 220 }}>
-                    <span style={{ fontSize: 12 }}>{ch.rewardsReferral}</span>
-                    <input
-                      type="number" min="0" max="100" step="0.1"
-                      className="form-input"
-                      placeholder="5"
-                      value={referralRate}
-                      onChange={e => setReferralRate(e.target.value)}
-                      disabled={!canEditRates}
-                    />
-                  </label>
-
-                  {rewardsError && <p className="form-error" style={{ marginTop: 8 }}>{rewardsError}</p>}
-
-                  {canEditRates && (
-                    <div className="modal-footer" style={{ marginTop: 16 }}>
-                      {!isRoot && (
-                        <button className="btn-secondary" onClick={resetRates} disabled={rewardsSaving} style={{ color: '#f87171' }}>
-                          {ch.rewardsReset}
-                        </button>
-                      )}
-                      <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
-                      <button className="btn-primary" onClick={saveRates} disabled={rewardsSaving}>
-                        <Check size={14} />{rewardsSaving ? t.modal.saving : ch.rewardsSave}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Sub-channel rewards permissions */}
-                  {(isSuperadmin || canGrantSubch) && subchannels?.length > 0 && (
-                    <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>{ch.rewardsSubchTitle}</div>
-                      <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>{ch.rewardsSubchHint}</p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {subchannels.map(subch => (
-                          <div key={subch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                            <span style={{ fontSize: 13, color: '#e2e8f0' }}>{subch.name}</span>
-                            <button
-                              type="button"
-                              onClick={() => toggleSubchRewardsPermission(subch)}
-                              style={{
-                                width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
-                                background: subch.can_customize_rewards ? '#6366f1' : '#334155',
-                                transition: 'background 0.2s', position: 'relative',
-                              }}
-                              title={subch.can_customize_rewards ? ch.rewardsRevoke : ch.rewardsAllow}
-                            >
-                              <span style={{
-                                position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
-                                transition: 'left 0.2s', left: subch.can_customize_rewards ? 23 : 3,
-                              }} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'partner-tiers' && (
-            <div>
-              {tierCfgLoading ? <p style={{ color: '#94a3b8' }}>{ch.loading}</p> : (
-                <>
-                  {tierCfgData && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                      <span style={{
-                        fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20,
-                        background: tierCfgData.source === 'own' ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.15)',
-                        color: tierCfgData.source === 'own' ? '#10b981' : '#94a3b8',
-                      }}>
-                        {tierCfgData.source === 'own' ? ch.tierSrcOwn
-                          : tierCfgData.source === 'inherited' ? ch.tierSrcInherited(tierCfgData.source_channel_name)
-                          : ch.tierSrcGlobal}
-                      </span>
-                      {!canEditTierCfg && (
-                        <span style={{ fontSize: 12, color: '#64748b' }}>{ch.tierNoPermission}</span>
-                      )}
-                    </div>
-                  )}
-
-                  {tierCfgForm && TIER_KEYS.map(tk => {
-                    const row = tierCfgForm[tk] || {};
-                    const setField = (field, val) =>
-                      setTierCfgForm(f => ({ ...f, [tk]: { ...f[tk], [field]: val } }));
-                    return (
-                      <div key={tk} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '14px 16px', marginBottom: 12, background: 'rgba(255,255,255,0.02)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                          <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, background: row.color || '#64748b', border: '1px solid rgba(255,255,255,0.2)', display: 'inline-block' }} />
-                          <span style={{ fontWeight: 600, fontSize: 13, color: '#e2e8f0' }}>{row.label || tk}</span>
-                          <code style={{ fontSize: 10, color: '#64748b', marginLeft: 'auto' }}>{tk}</code>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                          <label className="form-field">
-                            <span style={{ fontSize: 12 }}>{ch.tierLabelEn}</span>
-                            <input className="form-input" value={row.label || ''} onChange={e => setField('label', e.target.value)} disabled={!canEditTierCfg} />
-                          </label>
-                          <label className="form-field">
-                            <span style={{ fontSize: 12 }}>{ch.tierLabelZh}</span>
-                            <input className="form-input" value={row.label_zh || ''} onChange={e => setField('label_zh', e.target.value)} disabled={!canEditTierCfg} />
-                          </label>
-                          <label className="form-field">
-                            <span style={{ fontSize: 12 }}>{ch.tierEntryFee}</span>
-                            <input className="form-input" type="number" min="0" step="100"
-                              value={row.entry_fee ?? ''}
-                              onChange={e => setField('entry_fee', e.target.value === '' ? '' : Number(e.target.value))}
-                              disabled={!canEditTierCfg} />
-                          </label>
-                          <label className="form-field">
-                            <span style={{ fontSize: 12 }}>{ch.tierColor}</span>
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                              <input type="color" value={row.color || '#64748b'}
-                                onChange={e => setField('color', e.target.value)}
-                                disabled={!canEditTierCfg}
-                                style={{ width: 36, height: 32, padding: 2, borderRadius: 4, border: '1px solid var(--border)', cursor: canEditTierCfg ? 'pointer' : 'default' }} />
-                              <input className="form-input" value={row.color || ''} onChange={e => setField('color', e.target.value)} disabled={!canEditTierCfg} placeholder="#0ea5e9" style={{ flex: 1 }} />
-                            </div>
-                          </label>
-                          <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-                            <span style={{ fontSize: 12 }}>{ch.tierDescription}</span>
-                            <input className="form-input" value={row.description || ''} onChange={e => setField('description', e.target.value)} disabled={!canEditTierCfg} placeholder="Optional" />
-                          </label>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {tierCfgError && <p className="form-error" style={{ marginTop: 8 }}>{tierCfgError}</p>}
-
-                  {canEditTierCfg && (
-                    <div className="modal-footer" style={{ marginTop: 16 }}>
-                      {tierCfgMsg && <span style={{ fontSize: 13, color: '#16a34a', marginRight: 'auto' }}>{tierCfgMsg}</span>}
-                      {!isRoot && (
-                        <button className="btn-secondary" onClick={resetTierCfg} disabled={tierCfgSaving} style={{ color: '#f87171' }}>
-                          {ch.tierReset}
-                        </button>
-                      )}
-                      <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
-                      <button className="btn-primary" onClick={saveTierCfg} disabled={tierCfgSaving}>
-                        <Check size={14} />{tierCfgSaving ? t.modal.saving : ch.tierSave}
-                      </button>
-                    </div>
-                  )}
-
-                  {(isSuperadmin || canGrantSubch) && subchannels?.length > 0 && (
-                    <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>{ch.tierSubchTitle}</div>
-                      <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>{ch.tierSubchHint}</p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {subchannels.map(subch => (
-                          <div key={subch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                            <span style={{ fontSize: 13, color: '#e2e8f0' }}>{subch.name}</span>
-                            <button
-                              type="button"
-                              onClick={() => toggleSubchTierPermission(subch)}
-                              style={{
-                                width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
-                                background: subch.can_customize_partner_tiers ? '#6366f1' : '#334155',
-                                transition: 'background 0.2s', position: 'relative',
-                              }}
-                              title={subch.can_customize_partner_tiers ? ch.tierRevoke : ch.tierAllow}
-                            >
-                              <span style={{
-                                position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
-                                transition: 'left 0.2s', left: subch.can_customize_partner_tiers ? 23 : 3,
-                              }} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'danger' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              {hasSubchannels ? (
-                <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '14px 16px' }}>
-                  <div style={{ fontWeight: 600, color: '#f87171', marginBottom: 6 }}>{ch.dangerBlockedTitle}</div>
-                  <div style={{ fontSize: 13, color: '#94a3b8' }}>{ch.dangerBlockedHint}</div>
-                </div>
-              ) : (
-                <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '14px 16px' }}>
-                  <div style={{ fontWeight: 600, color: '#f87171', marginBottom: 6 }}>{ch.dangerDeleteTitle}</div>
-                  <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 14 }}>
-                    {ch.dangerDeleteHintPre}<strong style={{ color: '#e2e8f0' }}>{channel.name}</strong>{ch.dangerDeleteHintPost}
-                  </div>
-                  <input
-                    className="form-input"
-                    placeholder={ch.dangerDeletePlaceholder(channel.name)}
-                    value={deleteConfirm}
-                    onChange={e => setDeleteConfirm(e.target.value)}
-                    style={{ marginBottom: 12 }}
-                  />
-                  {deleteError && <p className="form-error" style={{ marginBottom: 8 }}>{deleteError}</p>}
-                  <button
-                    className="btn-primary"
-                    style={{ background: '#ef4444', borderColor: '#ef4444' }}
-                    onClick={doDelete}
-                    disabled={deleteConfirm !== channel.name || deleting}
-                  >
-                    <Trash2 size={14} />{deleting ? t.modal.deleting : ch.dangerDeleteBtn}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
-  const { t } = useLang();
-  const ch = t.channels;
   const [modal, setModal] = useState(null);
-  const [expanded, setExpanded] = useState(() => new Set(channels.map(c => c.id)));
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
-
-  const toggleExpand = (id) => setExpanded(prev => {
-    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
-  });
-
-  const channelById = Object.fromEntries(channels.map(c => [c.id, c]));
-
-  const getDepth = (c) => {
-    if (c.depth != null) return c.depth;
-    if (!c.parent_channel_id) return 0;
-    return 1 + getDepth(channelById[c.parent_channel_id] || {});
-  };
-
-  const childrenOf = {};
-  channels.forEach(c => {
-    const pid = c.parent_channel_id ?? 'root';
-    if (!childrenOf[pid]) childrenOf[pid] = [];
-    childrenOf[pid].push(c);
-  });
-
-  // For CMS admin, anchor the tree at their own channel regardless of its real parent
-  let rootKey;
-  if (isSuperadmin) {
-    rootKey = 'root';
-  } else {
-    rootKey = 'cms_root';
-    const ownChannel = channels.find(c => c.id === parseInt(session?.channelId));
-    if (ownChannel) childrenOf['cms_root'] = [ownChannel];
-  }
-  const totalUsers = channels.reduce((s, c) => s + (parseInt(c.user_count) || 0), 0);
-  const totalScans = channels.reduce((s, c) => s + (parseInt(c.scan_count) || 0), 0);
-  const totalDevices = channels.reduce((s, c) => s + (parseInt(c.kino_device_count) || 0), 0);
-
-  function renderRows(parentKey, indent) {
-    return (childrenOf[parentKey] || []).flatMap(c => {
-      const persona = c.config?.persona_type || 'nano';
-      const personaColor = persona === 'viva' ? '#8b5cf6' : '#6366f1';
-      const hasChildren = !!(childrenOf[c.id]?.length);
-      const isOpen = expanded.has(c.id);
-      const userCount = parseInt(c.user_count) || 0;
-      const coachCount = parseInt(c.coach_count) || 0;
-      const deviceCount = parseInt(c.kino_device_count) || 0;
-      const activeDeviceCount = parseInt(c.kino_active_count) || 0;
-      const scanCount = parseInt(c.scan_count) || 0;
-      return [
-        <tr key={c.id}>
-          <td className="muted" style={{ width: 40 }}>{c.id}</td>
-          <td>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: indent * 22 }}>
-              {hasChildren ? (
-                <button className="icon-btn" style={{ padding: 0, width: 18, height: 18, flexShrink: 0, fontSize: 11 }} onClick={() => toggleExpand(c.id)}>
-                  {isOpen ? '▾' : '▸'}
-                </button>
-              ) : (
-                <span style={{ display: 'inline-block', width: 18, flexShrink: 0 }} />
-              )}
-              {c.logo_url
-                ? <img src={c.logo_url} alt="" style={{ width: 24, height: 24, borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
-                : <div style={{ width: 24, height: 24, borderRadius: 4, background: personaColor + '1a', color: personaColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 11, flexShrink: 0 }}>
-                    {(c.name || c.key_name || '?')[0].toUpperCase()}
-                  </div>
-              }
-              <span style={{ fontWeight: 600, fontSize: 13 }}>{fmt(c.name)}</span>
-            </span>
-          </td>
-          <td><code className="code-tag">{c.key_name}</code></td>
-          <td><span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: personaColor + '15', color: personaColor }}>{persona}</span></td>
-          <td><Badge color="#3b82f6">{userCount}</Badge></td>
-          <td><Badge color="#10b981">{coachCount}</Badge></td>
-          <td><Badge color="#f59e0b">{deviceCount}<span style={{ fontWeight: 400, fontSize: 10, color: '#94a3b8' }}> ({activeDeviceCount})</span></Badge></td>
-          <td><Badge color="#8b5cf6">{scanCount}</Badge></td>
-          <td className="muted" style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.created_at)}</td>
-          <td>
-            <div className="row-actions">
-              <button className="icon-btn" title={ch.titleAddSubchannel} onClick={() => setModal({ type: 'add', parentChannel: c })}><Plus size={13} /></button>
-              <button className="icon-btn" title={ch.titleSettings} onClick={() => setModal({
-                type: 'config', channel: c,
-                hasSubchannels: !!(childrenOf[c.id]?.length),
-                canGrantSubch: isSuperadmin || (session?.canManageSubchannels && c.id !== parseInt(session?.channelId)),
-                subchannels: childrenOf[c.id] || [],
-              })}><Settings2 size={13} /></button>
-            </div>
-          </td>
-        </tr>,
-        ...(isOpen ? renderRows(c.id, indent + 1) : [])
-      ];
-    });
-  }
 
   return (
     <>
       <div className="stat-row">
         <StatCard icon={Building2} label={t.stats.totalChannels} value={channels.length} color="#6366f1" />
-        <StatCard icon={Users} label={t.stats.totalUsers} value={totalUsers} color="#3b82f6" />
-        <StatCard icon={Cpu} label={ch.statKinoDevices} value={totalDevices} color="#f59e0b" />
-        <StatCard icon={Activity} label={ch.statTotalScans} value={totalScans} color="#8b5cf6" />
       </div>
-
       <div className="card">
         <div className="table-toolbar">
           <span className="table-count">{t.countChannel(channels.length)}</span>
-          {isSuperadmin && (
-            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-              <Plus size={14} />{t.addChannel}
-            </button>
-          )}
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{t.addChannel}
+          </button>
         </div>
-
-        {channels.length === 0 ? (
-          <div className="empty-row" style={{ padding: 40 }}>{t.empty.channels}</div>
-        ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>{t.table.id}</th>
-                <th>{t.table.name}</th>
-                <th>{t.table.key}</th>
-                <th>{ch.colPersona}</th>
-                <th>{ch.colUsers}</th>
-                <th>{ch.colCoaches}</th>
-                <th>{ch.colDevices}</th>
-                <th>{ch.colScans}</th>
-                <th>{t.table.joined}</th>
-                <th>{ch.colActions}</th>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>{t.table.id}</th>
+              <th>{t.modal.channelKeyName.replace(' *', '')}</th>
+              <th>{t.modal.channelName.replace(' *', '')}</th>
+              <th>{t.modal.channelLogoUrl}</th>
+              <th>{t.table.customers}</th>
+              <th>{t.stats.coaches}</th>
+              <th>{t.table.joined}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {channels.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.channels}</td></tr>}
+            {channels.map(c => (
+              <tr key={c.id}>
+                <td className="muted">{c.id}</td>
+                <td><code className="code-tag">{c.key_name}</code></td>
+                <td className="bold">{fmt(c.name)}</td>
+                <td>
+                  {c.logo_url
+                    ? <img src={c.logo_url} alt="" style={{ width: 32, height: 32, borderRadius: 4, objectFit: 'cover', display: 'block' }} />
+                    : <span className="muted">—</span>}
+                </td>
+                <td><Badge color="#3b82f6">{c.user_count || 0}</Badge></td>
+                <td><Badge color="#10b981">{c.coach_count || 0}</Badge></td>
+                <td className="muted">{fmtDate(c.created_at)}</td>
+                <td>
+                  <div className="row-actions">
+                    <button className="icon-btn" title={t.modal.editChannel} onClick={() => setModal({ type: 'edit', channel: c })}><Pencil size={14} /></button>
+                    {isSuperadmin && <button className="icon-btn" title="Configure admin tabs" onClick={() => setModal({ type: 'admin-tabs', channel: c })}><Settings2 size={14} /></button>}
+                    {isSuperadmin && <button className="icon-btn" title="Sub-age labels" onClick={() => setModal({ type: 'sub-age-labels', channel: c })}><Tag size={14} /></button>}
+                    <button className="icon-btn danger" title={t.modal.deleteChannel} onClick={() => setModal({ type: 'delete', channel: c })}><Trash2 size={14} /></button>
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {renderRows(rootKey, 0)}
-            </tbody>
-          </table>
-        )}
+            ))}
+          </tbody>
+        </table>
       </div>
-
-      {modal?.type === 'add'    && <ChannelModal channel={null} channels={channels} isSuperadmin={isSuperadmin} parentChannel={modal.parentChannel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'config' && <ChannelConfigModal channel={modal.channel} isSuperadmin={isSuperadmin} canGrantSubch={modal.canGrantSubch} hasSubchannels={modal.hasSubchannels} subchannels={modal.subchannels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add'        && <ChannelModal channel={null}          onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'       && <ChannelModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete'     && <DeleteChannelConfirm channel={modal.channel} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {modal?.type === 'admin-tabs'    && <ChannelAdminTabsModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'sub-age-labels' && <ChannelSubAgeLabelsModal channel={modal.channel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
     </>
   );
 }
@@ -10092,7 +5554,7 @@ function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
 // ── Kino tab ──────────────────────────────────────────────────────────────────
 
 const DEVICE_STATUSES = ['active', 'inactive', 'maintenance'];
-const EMPTY_DEVICE = { model: 'KNA1', quantity: 1, serial_number: '', name: '', coach_id: '', channel_id: '', status: 'active', notes: '' };
+const EMPTY_DEVICE = { serial_number: '', name: '', coach_id: '', channel_id: '', status: 'active', notes: '' };
 
 function KinoModal({ device, coaches, channels, onClose, onSave }) {
   const { t } = useLang();
@@ -10111,24 +5573,18 @@ function KinoModal({ device, coaches, channels, onClose, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const quantity = parseInt(form.quantity, 10);
-    if (isEdit && !form.serial_number.trim()) { setError(t.modal.serialNumber.replace(' *', '') + ' is required'); return; }
-    if (!isEdit && (!Number.isInteger(quantity) || quantity < 1)) { setError(t.modal.quantityRequired); return; }
+    if (!form.serial_number.trim()) { setError(t.modal.serialNumber.replace(' *', '') + ' is required'); return; }
     setBusy(true); setError('');
     try {
+      const payload = {
+        ...form,
+        serial_number: form.serial_number.trim().toUpperCase(),
+        coach_id:   form.coach_id   !== '' ? parseInt(form.coach_id)   : null,
+        channel_id: form.channel_id !== '' ? parseInt(form.channel_id) : null,
+      };
       let res;
-      if (isEdit) {
-        const machineNo = form.serial_number.trim().toUpperCase();
-        const payload = {
-          ...form,
-          serial_number: machineNo,
-          coach_id:   form.coach_id   !== '' ? parseInt(form.coach_id)   : null,
-          channel_id: form.channel_id !== '' ? parseInt(form.channel_id) : null,
-        };
-        res = await axios.put(`/kino/kino-machines/${machineNo}`, payload);
-      } else {
-        res = await axios.post('/kino/kino-machines/batch', { model: form.model, quantity: parseInt(form.quantity, 10) });
-      }
+      if (isEdit) res = await axios.put(`/api/kino-devices/${device.id}`, payload);
+      else        res = await axios.post('/api/kino-devices', payload);
       if (res.data?.success === false) { setError(res.data.error || t.modal.saveFailed); return; }
       onSave();
     } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
@@ -10146,70 +5602,49 @@ function KinoModal({ device, coaches, channels, onClose, onSave }) {
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
           <div className="form-grid">
-            {!isEdit ? (
-              <>
-                <label className="form-field">
-                  <span>{t.modal.machineModel}</span>
-                  <div className="select-wrap" style={{ width: '100%' }}>
-                    <select value={form.model} onChange={e => set('model', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                      <option value="KNA1">KNA1</option>
-                      <option value="KNA2">KNA2</option>
-                    </select>
-                    <ChevronDown size={11} className="select-chevron" />
-                  </div>
-                </label>
-                <label className="form-field">
-                  <span>{t.modal.quantity}</span>
-                  <input type="number" min="1" step="1" value={form.quantity} onChange={e => set('quantity', e.target.value)} />
-                </label>
-              </>
-            ) : (
-              <>
-                <label className="form-field">
-                  <span>{t.modal.serialNumber}</span>
-                  <input value={form.serial_number} onChange={e => set('serial_number', e.target.value)} disabled={isEdit} placeholder={t.modal.serialNumberPlaceholder} style={{ fontFamily: 'monospace' }} />
-                </label>
-                <label className="form-field">
-                  <span>{t.modal.deviceName}</span>
-                  <input value={form.name} onChange={e => set('name', e.target.value)} placeholder={t.modal.deviceNamePlaceholder} />
-                </label>
-                <label className="form-field">
-                  <span>{t.modal.deviceStatus}</span>
-                  <div className="select-wrap" style={{ width: '100%' }}>
-                    <select value={form.status} onChange={e => set('status', e.target.value)} className="inline-select" style={{ width: '100%', color: statusColor[form.status] }}>
-                      <option value="active">{t.modal.statusActive}</option>
-                      <option value="inactive">{t.modal.statusInactive}</option>
-                      <option value="maintenance">{t.modal.statusMaintenance}</option>
-                    </select>
-                    <ChevronDown size={11} className="select-chevron" />
-                  </div>
-                </label>
-                <label className="form-field">
-                  <span>{t.modal.assignedCoachDevice}</span>
-                  <div className="select-wrap" style={{ width: '100%' }}>
-                    <select value={form.coach_id} onChange={e => set('coach_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                      <option value="">{t.modal.unassigned}</option>
-                      {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                    <ChevronDown size={11} className="select-chevron" />
-                  </div>
-                </label>
-                <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-                  <span>{t.modal.assignedChannelDevice}</span>
-                  <div className="select-wrap" style={{ width: '100%' }}>
-                    <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                      <option value="">{t.modal.channelUnassigned}</option>
-                      {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                    <ChevronDown size={11} className="select-chevron" />
-                  </div>
-                </label>
-                <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-                  <span>{t.modal.deviceNotes}</span>
-                  <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder={t.modal.deviceNotesPlaceholder} />
-                </label>
-              </>
-            )}
+            <label className="form-field">
+              <span>{t.modal.serialNumber}</span>
+              <input value={form.serial_number} onChange={e => set('serial_number', e.target.value)} disabled={isEdit} placeholder={t.modal.serialNumberPlaceholder} style={{ fontFamily: 'monospace' }} />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.deviceName}</span>
+              <input value={form.name} onChange={e => set('name', e.target.value)} placeholder={t.modal.deviceNamePlaceholder} />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.deviceStatus}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.status} onChange={e => set('status', e.target.value)} className="inline-select" style={{ width: '100%', color: statusColor[form.status] }}>
+                  <option value="active">{t.modal.statusActive}</option>
+                  <option value="inactive">{t.modal.statusInactive}</option>
+                  <option value="maintenance">{t.modal.statusMaintenance}</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{t.modal.assignedCoachDevice}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.coach_id} onChange={e => set('coach_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">{t.modal.unassigned}</option>
+                  {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.assignedChannelDevice}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">{t.modal.channelUnassigned}</option>
+                  {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.deviceNotes}</span>
+              <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder={t.modal.deviceNotesPlaceholder} />
+            </label>
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
@@ -10333,50 +5768,13 @@ function KoneApkUploadModal({ onClose, onSave }) {
   );
 }
 
-function KinoTab({ devices, machinePagination, coaches, channels, releases = [], onRefresh }) {
+function KinoTab({ devices, coaches, channels, releases = [], onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
-  const [listDevices, setListDevices] = useState((devices || []).map(normalizeKinoMachine));
-  const [pagination, setPagination] = useState(machinePagination || { page: 1, limit: KINO_MACHINE_PAGE_LIMIT, total: (devices || []).length, total_pages: 1 });
-  const [page, setPage] = useState(machinePagination?.page || 1);
-  const [searchInput, setSearchInput] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [listLoading, setListLoading] = useState(false);
-  const [listError, setListError] = useState('');
+  const closeAndRefresh = () => { setModal(null); onRefresh(); };
 
-  const loadMachines = useCallback(async () => {
-    setListLoading(true);
-    setListError('');
-    try {
-      const res = await axios.get(buildKinoMachinesUrl({ page, q: searchQuery }));
-      const normalized = normalizeKinoMachinesPayload(res.data || {});
-      setListDevices(normalized.devices);
-      setPagination(normalized.pagination);
-    } catch (err) {
-      setListError(err.response?.data?.error || t.modal.saveFailed);
-    } finally {
-      setListLoading(false);
-    }
-  }, [page, searchQuery, t.modal.saveFailed]);
-
-  useEffect(() => {
-    setListDevices((devices || []).map(normalizeKinoMachine));
-    if (machinePagination) {
-      setPagination(machinePagination);
-      setPage(Number(machinePagination.page ?? 1));
-    }
-  }, [devices, machinePagination]);
-
-  useEffect(() => {
-    loadMachines();
-  }, [loadMachines]);
-
-  const closeAndRefresh = () => { setModal(null); loadMachines(); onRefresh(); };
-
-  const totalPages = Math.max(1, Number(pagination.total_pages || 1));
-  const totalDevices = Number(pagination.total ?? listDevices.length);
-  const activeCount = listDevices.filter(d => d.status === 'active').length;
-  const totalTests  = listDevices.reduce((s, d) => s + (d.test_count || 0), 0);
+  const activeCount = devices.filter(d => d.status === 'active').length;
+  const totalTests  = devices.reduce((s, d) => s + (d.test_count || 0), 0);
   const activeRelease = releases.find(r => r.is_active);
 
   const statusColor = { active: '#10b981', inactive: '#94a3b8', maintenance: '#f59e0b' };
@@ -10396,33 +5794,17 @@ function KinoTab({ devices, machinePagination, coaches, channels, releases = [],
   return (
     <>
       <div className="stat-row">
-        <StatCard icon={Cpu} label={t.stats.totalDevices}  value={totalDevices} color="#6366f1" />
+        <StatCard icon={Cpu} label={t.stats.totalDevices}  value={devices.length} color="#6366f1" />
         <StatCard icon={Cpu} label={t.stats.activeDevices} value={activeCount}     color="#10b981" />
         <StatCard icon={Activity} label={t.stats.totalTests}   value={totalTests}     color="#3b82f6" />
       </div>
       <div className="card">
         <div className="table-toolbar">
-          <span className="table-count">{t.countDevice(totalDevices)}</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <form onSubmit={(e) => { e.preventDefault(); setPage(1); setSearchQuery(searchInput); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input
-                className="toolbar-search"
-                value={searchInput}
-                onChange={e => setSearchInput(e.target.value)}
-                placeholder={t.searchKino}
-              />
-              {searchInput && (
-                <button type="button" className="icon-btn" onClick={() => { setSearchInput(''); setSearchQuery(''); setPage(1); }}>
-                  <X size={14} />
-                </button>
-              )}
-            </form>
-            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-              <Plus size={14} />{t.addDevice}
-            </button>
-          </div>
+          <span className="table-count">{t.countDevice(devices.length)}</span>
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{t.addDevice}
+          </button>
         </div>
-        {listError && <div className="form-error" style={{ margin: '10px 16px 0' }}>{listError}</div>}
         <table className="data-table">
           <thead>
             <tr>
@@ -10438,8 +5820,8 @@ function KinoTab({ devices, machinePagination, coaches, channels, releases = [],
             </tr>
           </thead>
           <tbody>
-            {listDevices.length === 0 && <tr><td colSpan={9} className="empty-row">{listLoading ? t.topbar.loading : t.empty.kino}</td></tr>}
-            {listDevices.map(d => (
+            {devices.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.kino}</td></tr>}
+            {devices.map(d => (
               <tr key={d.id}>
                 <td>
                   <div className="avatar-cell">
@@ -10470,19 +5852,6 @@ function KinoTab({ devices, machinePagination, coaches, channels, releases = [],
             ))}
           </tbody>
         </table>
-        <div className="table-toolbar" style={{ borderTop: '1px solid var(--border)', borderBottom: 0 }}>
-          <span className="table-count">
-            {t.pagination.page} {pagination.page || page} {t.pagination.of} {totalPages} · {totalDevices} {t.pagination.total}
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button className="icon-btn" disabled={listLoading || page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>
-              <ChevronLeft size={14} />
-            </button>
-            <button className="icon-btn" disabled={listLoading || page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
       </div>
 
       <div className="card" style={{ marginTop: 20 }}>
@@ -10672,7 +6041,7 @@ function DeactivateInviteConfirm({ invite, onClose, onConfirm }) {
   );
 }
 
-function InvitesTab({ invitations, channels, coaches, session, onRefresh }) {
+function InvitesTab({ invitations, channels, coaches, onRefresh }) {
   const { t } = useLang();
   const [modal, setModal] = useState(null);
   const [copied, setCopied] = useState(null);
@@ -10698,11 +6067,9 @@ function InvitesTab({ invitations, channels, coaches, session, onRefresh }) {
       <div className="card">
         <div className="table-toolbar">
           <span className="table-count">{t.countInvite(invitations.length)}</span>
-          {hasPermission(session, PERMS.INVITES_WRITE) && (
-            <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-              <Plus size={14} />{t.addInvite}
-            </button>
-          )}
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{t.addInvite}
+          </button>
         </div>
         <table className="data-table">
           <thead>
@@ -10744,7 +6111,7 @@ function InvitesTab({ invitations, channels, coaches, session, onRefresh }) {
                 </td>
                 <td className="muted">{fmtDate(inv.created_at)}</td>
                 <td>
-                  {inv.is_active && hasPermission(session, PERMS.INVITES_DELETE) && (
+                  {inv.is_active && (
                     <button className="icon-btn danger" title={t.modal.deactivateInvite} onClick={() => setModal({ type: 'deactivate', invite: inv })}>
                       <Trash2 size={14} />
                     </button>
@@ -12240,7 +7607,7 @@ function TicketsTab({ tickets, onRefresh }) {
           <tbody>
             {filtered.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.tickets}</td></tr>}
             {filtered.map(ticket => (
-              <tr key={ticket.id} style={{ cursor: 'pointer' }} onClick={() => setModal({ type: 'view', ticket })}>
+              <tr key={ticket.id}>
                 <td style={{ color: '#94a3b8', fontSize: 11 }}>#{ticket.id}</td>
                 <td>
                   <div style={{ fontWeight: 600 }}>{ticket.title}</div>
@@ -12252,7 +7619,7 @@ function TicketsTab({ tickets, onRefresh }) {
                 </td>
                 <td><TicketStatusLabel status={ticket.status} /></td>
                 <td><TicketPriorityLabel priority={ticket.priority} /></td>
-                <td onClick={e => e.stopPropagation()}>
+                <td>
                   {(ticket.images && ticket.images.length > 0) ? (
                     <div style={{ display: 'flex', gap: 4 }}>
                       {ticket.images.slice(0, 3).map(k => (
@@ -12268,7 +7635,7 @@ function TicketsTab({ tickets, onRefresh }) {
                 </td>
                 <td style={{ fontSize: 12 }}>{ticket.reporter || <span style={{ color: '#475569' }}>—</span>}</td>
                 <td style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(ticket.created_at).toLocaleString()}</td>
-                <td onClick={e => e.stopPropagation()}>
+                <td>
                   <div style={{ display: 'flex', gap: 4 }}>
                     <button className="icon-btn" title={tk.editTicket}   onClick={() => setModal({ type: 'edit', ticket })}><Pencil size={14} /></button>
                     <button className="icon-btn" title={tk.deleteTicket} onClick={() => setModal({ type: 'delete', ticket })}><Trash2 size={14} /></button>
@@ -12280,11 +7647,6 @@ function TicketsTab({ tickets, onRefresh }) {
         </table>
       </div>
 
-      {modal?.type === 'view' && (
-        <TicketDetailModal ticket={modal.ticket}
-                           onClose={() => setModal(null)}
-                           onEdit={() => setModal({ type: 'edit', ticket: modal.ticket })} />
-      )}
       {(modal?.type === 'add' || modal?.type === 'edit') && (
         <TicketModal ticket={modal.type === 'edit' ? modal.ticket : null}
                      onClose={() => setModal(null)} onSave={closeAndRefresh} />
@@ -12295,84 +7657,6 @@ function TicketsTab({ tickets, onRefresh }) {
       )}
       {lightbox && <TicketImageLightbox ossKey={lightbox} onClose={() => setLightbox(null)} />}
     </>
-  );
-}
-
-function TicketDetailModal({ ticket, onClose, onEdit }) {
-  const { t } = useContext(LangCtx);
-  const tk = t.tickets;
-  const [lightbox, setLightbox] = useState(null);
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>{tk.viewTicket}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="modal-body">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-            <div>
-              <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{tk.title.replace(' *', '')}</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{ticket.title}</div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-              <div>
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>{tk.status}</div>
-                <TicketStatusLabel status={ticket.status} />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>{tk.priority}</div>
-                <TicketPriorityLabel priority={ticket.priority} />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{tk.reporter}</div>
-                <div style={{ fontSize: 13, color: ticket.reporter ? '#1e293b' : '#94a3b8' }}>{ticket.reporter || '—'}</div>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div>
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>ID</div>
-                <div style={{ fontSize: 13, color: '#475569' }}>#{ticket.id}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Created</div>
-                <div style={{ fontSize: 13, color: '#475569' }}>{new Date(ticket.created_at).toLocaleString()}</div>
-              </div>
-            </div>
-
-            {ticket.description && (
-              <div>
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>{tk.description}</div>
-                <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.65, whiteSpace: 'pre-wrap', background: '#f8fafc', borderRadius: 8, padding: '12px 14px', border: '1px solid #e2e8f0' }}>
-                  {ticket.description}
-                </div>
-              </div>
-            )}
-
-            {ticket.images && ticket.images.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>{tk.images} ({ticket.images.length})</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {ticket.images.map(k => (
-                    <TicketImageThumb key={k} ossKey={k} onClick={() => setLightbox(k)} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="modal-footer">
-            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
-            <button className="btn-primary" onClick={onEdit}><Pencil size={13} style={{ marginRight: 4 }} />{tk.editTicket}</button>
-          </div>
-        </div>
-      </div>
-      {lightbox && <TicketImageLightbox ossKey={lightbox} onClose={() => setLightbox(null)} />}
-    </div>
   );
 }
 
@@ -13080,127 +8364,25 @@ function ReportsTab() {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
-const PERMISSION_GROUPS = [
-  { resource: 'users',         actions: ['read','write','delete'], label: 'Users' },
-  { resource: 'coaches',       actions: ['read','write','delete'], label: 'Coaches' },
-  { resource: 'store',         actions: ['read','write','delete'], label: 'Store' },
-  { resource: 'orders',        actions: ['read','write'],          label: 'Orders' },
-  { resource: 'invites',       actions: ['read','write','delete'], label: 'Invites' },
-  { resource: 'inventory',     actions: ['read','write'],          label: 'Inventory' },
-  { resource: 'rewards',       actions: ['read','write','delete'], label: 'Rewards' },
-  { resource: 'partners',      actions: ['read','write','delete'], label: 'Partners' },
-  { resource: 'academy',       actions: ['read','write'],          label: 'Academy' },
-  { resource: 'questionnaires',actions: ['read'],                  label: 'Questionnaires' },
-  { resource: 'health-plans',  actions: ['read'],                  label: 'Health Plans' },
-  { resource: 'reports',       actions: ['read'],                  label: 'Reports' },
-  { resource: 'tickets',       actions: ['read'],                  label: 'Tickets' },
-  { resource: 'lab',           actions: ['read','write'],          label: 'Lab' },
-  { resource: 'kino',          actions: ['read'],                  label: 'Kino' },
-  { resource: 'chips',         actions: ['read'],                  label: 'Chips' },
-  { resource: 'admin-accounts',actions: ['read','write'],          label: 'Admin Accounts' },
-];
-
-function PermissionGroupsEditor({ available, value, onChange }) {
-  const toggle = (perm) => onChange(value.includes(perm) ? value.filter(p => p !== perm) : [...value, perm]);
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
-      {PERMISSION_GROUPS.filter(g => available.some(p => p.startsWith(g.resource + ':'))).map(g => (
-        <div key={g.resource}>
-          <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{g.label}</div>
-          <div style={{ display: 'flex', gap: 12 }}>
-            {g.actions.map(action => {
-              const perm = `${g.resource}:${action}`;
-              if (!available.includes(perm)) return null;
-              return (
-                <label key={perm} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={value.includes(perm)} onChange={() => toggle(perm)} />
-                  {action}
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
+function AdminAccountsTab({ accounts, channels, onRefresh }) {
   const { t } = useLang();
   const ta = t.adminAccounts;
-  const [channelRoles, setChannelRoles] = useState([]);
-  const [modal, setModal] = useState(null);
-  const [form, setForm]   = useState({ username: '', password: '', channel_id: '', role_id: '', permissions_override: [] });
-  const [roleForm, setRoleForm] = useState({ name: '', label: '', permissions: [] });
+  const [modal, setModal] = useState(null); // { type: 'add' } | { type: 'password', account }
+  const [form, setForm]   = useState({ username: '', password: '', channel_id: '' });
   const [err, setErr]     = useState('');
   const [saving, setSaving] = useState(false);
-  const [subTab, setSubTab] = useState('accounts'); // 'accounts' | 'roles'
 
-  const isChannelAdmin = session?.role === 'channel';
-  const canManageRoles = hasPermission(session, PERMS.ADMIN_ACCTS_WRITE);
-  const myChannelId = session?.channelId ? String(session.channelId) : '';
-
-  const loadRoles = useCallback(() => {
-    axios.get('/api/admin-channel-roles').then(r => setChannelRoles(r.data.roles || []));
-  }, []);
-
-  useEffect(() => { loadRoles(); }, [loadRoles]);
-
-  // Actor's available perms (ceiling for what they can assign)
-  const actorPerms = isChannelAdmin
-    ? (session?.allowedPerms || [])
-    : PERMISSION_GROUPS.flatMap(g => g.actions.map(a => `${g.resource}:${a}`));
-
-  const rolesForChannel = (cid) => {
-    if (!cid) return [];
-    return channelRoles.filter(r => r.channel_id === null || String(r.channel_id) === String(cid));
-  };
-
-  const openAdd = () => {
-    const defaultCid = isChannelAdmin ? myChannelId : '';
-    setForm({ username: '', password: '', channel_id: defaultCid, role_id: '', permissions_override: [], is_channel_admin: false });
-    setErr(''); setModal({ type: 'add' });
-  };
+  const openAdd      = () => { setForm({ username: '', password: '', channel_id: '' }); setErr(''); setModal({ type: 'add' }); };
   const openPassword = (account) => { setForm({ password: '' }); setErr(''); setModal({ type: 'password', account }); };
-  const openRole = (account) => {
-    setForm({ role_id: account.role_id ? String(account.role_id) : '', permissions_override: Array.isArray(account.permissions_override) ? [...account.permissions_override] : [] });
-    setErr(''); setModal({ type: 'role', account });
-  };
-  const openAddRole = () => {
-    setRoleForm({ name: '', label: '', permissions: [] });
-    setErr(''); setModal({ type: 'add-role' });
-  };
-  const openEditRole = (role) => {
-    setRoleForm({ name: role.name, label: role.label, permissions: [...role.permissions] });
-    setErr(''); setModal({ type: 'edit-role', role });
-  };
-  const close = () => setModal(null);
+  const close        = () => setModal(null);
 
   const save = async () => {
     setSaving(true); setErr('');
     try {
       if (modal.type === 'add') {
-        await axios.post('/api/admin-accounts', {
-          username: form.username,
-          password: form.password,
-          channel_id: form.channel_id || null,
-          is_channel_admin: form.is_channel_admin || false,
-          role_id: form.is_channel_admin ? null : (form.role_id ? parseInt(form.role_id) : null),
-          permissions_override: form.is_channel_admin ? [] : form.permissions_override,
-        });
-      } else if (modal.type === 'password') {
+        await axios.post('/api/admin-accounts', { username: form.username, password: form.password, channel_id: form.channel_id || null });
+      } else {
         await axios.put(`/api/admin-accounts/${modal.account.id}`, { password: form.password });
-      } else if (modal.type === 'role') {
-        await axios.put(`/api/admin-accounts/${modal.account.id}`, {
-          role_id: form.role_id ? parseInt(form.role_id) : null,
-          permissions_override: form.permissions_override,
-        });
-      } else if (modal.type === 'add-role') {
-        await axios.post('/api/admin-channel-roles', roleForm);
-        loadRoles();
-      } else if (modal.type === 'edit-role') {
-        await axios.put(`/api/admin-channel-roles/${modal.role.id}`, { label: roleForm.label, permissions: roleForm.permissions });
-        loadRoles();
       }
       close(); onRefresh();
     } catch (e) {
@@ -13214,248 +8396,76 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
     catch (e) { alert(e.response?.data?.error || 'Error'); }
   };
 
-  const delRole = async (role) => {
-    if (!window.confirm(`Delete role "${role.label}"?`)) return;
-    try { await axios.delete(`/api/admin-channel-roles/${role.id}`); loadRoles(); onRefresh(); }
-    catch (e) { alert(e.response?.data?.error || 'Error'); }
-  };
-
-  const selectedRole = modal?.type === 'role' || modal?.type === 'add'
-    ? channelRoles.find(r => String(r.id) === String(form.role_id))
-    : modal?.type === 'add-role' || modal?.type === 'edit-role'
-      ? null
-      : null;
-
-  const overrideAvailable = actorPerms.filter(p => !selectedRole?.permissions.includes(p));
-
-  const myChannelRoles = channelRoles.filter(r => r.channel_id !== null &&
-    (!isChannelAdmin || String(r.channel_id) === myChannelId));
-
   return (
     <>
-      {/* Sub-tab nav */}
-      <div style={{ display: 'flex', gap: 2, padding: '0 16px 0', borderBottom: '1px solid var(--border)', marginBottom: 0 }}>
-        {['accounts', ...(canManageRoles && isChannelAdmin ? ['roles'] : [])].map(st => (
-          <button key={st} onClick={() => setSubTab(st)} style={{
-            padding: '8px 16px', fontSize: 13, fontWeight: subTab === st ? 600 : 400,
-            background: 'transparent', border: 'none', borderBottom: subTab === st ? '2px solid #6366f1' : '2px solid transparent',
-            color: subTab === st ? '#6366f1' : 'var(--muted)', cursor: 'pointer', textTransform: 'capitalize',
-          }}>{st}</button>
-        ))}
-      </div>
-
-      {subTab === 'accounts' && (
-        <div className="card">
-          <div className="table-toolbar">
-            <span className="table-count">{ta.count(accounts.length)}</span>
-            {hasPermission(session, PERMS.ADMIN_ACCTS_WRITE) && (
-              <button className="btn-primary" onClick={openAdd}><Plus size={14} />{ta.add}</button>
-            )}
-          </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>{ta.usernameLabel}</th>
-                <th>Channel</th>
-                <th>Role</th>
-                <th>{t.table.joined}</th>
-                <th></th>
+      <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count">{ta.count(accounts.length)}</span>
+          <button className="btn-primary" onClick={openAdd}><Plus size={14} />{ta.add}</button>
+        </div>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>{ta.usernameLabel}</th>
+              <th>Channel</th>
+              <th>{t.table.joined}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.length === 0 && <tr><td colSpan={4} className="empty-row">No admin accounts</td></tr>}
+            {accounts.map(a => (
+              <tr key={a.id}>
+                <td><strong>{a.username}</strong></td>
+                <td className="muted">{a.channel_name || <span style={{ color: '#475569' }}>Superadmin</span>}</td>
+                <td className="muted">{fmtDate(a.created_at)}</td>
+                <td style={{ display: 'flex', gap: 6 }}>
+                  <button className="icon-btn" title={ta.changePassword} onClick={() => openPassword(a)}>
+                    <Pencil size={14} />
+                  </button>
+                  <button className="icon-btn danger" title="Delete" onClick={() => del(a)}>
+                    <Trash2 size={14} />
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {accounts.length === 0 && <tr><td colSpan={5} className="empty-row">No admin accounts</td></tr>}
-              {accounts.map(a => {
-                const roleLabel = a.role_label || a.role_name || null;
-                const isChAdmin = a.is_channel_admin;
-                return (
-                  <tr key={a.id}>
-                    <td><strong>{a.username}</strong>{isChAdmin && <span style={{ marginLeft: 6, fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#312e81', color: '#a5b4fc' }}>Channel Admin</span>}</td>
-                    <td className="muted">{a.channel_name || <span style={{ color: '#475569' }}>Superadmin</span>}</td>
-                    <td>
-                      {a.channel_id ? (
-                        isChAdmin
-                          ? <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#1e293b', color: '#94a3b8' }}>Full Access (hardcoded)</span>
-                          : roleLabel
-                            ? <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#1e3a5f', color: '#93c5fd' }}>{roleLabel}</span>
-                            : <span className="muted" style={{ fontSize: 11 }}>no role</span>
-                      ) : <span className="muted" style={{ fontSize: 11 }}>all</span>}
-                    </td>
-                    <td className="muted">{fmtDate(a.created_at)}</td>
-                    <td style={{ display: 'flex', gap: 6 }}>
-                      {a.channel_id && !isChAdmin && hasPermission(session, PERMS.ADMIN_ACCTS_WRITE) && (
-                        <button className="icon-btn" title="Edit role & permissions" onClick={() => openRole(a)}>
-                          <Shield size={14} />
-                        </button>
-                      )}
-                      {hasPermission(session, PERMS.ADMIN_ACCTS_WRITE) && (
-                        <button className="icon-btn" title={ta.changePassword} onClick={() => openPassword(a)}>
-                          <Pencil size={14} />
-                        </button>
-                      )}
-                      {a.username !== session?.username && hasPermission(session, PERMS.ADMIN_ACCTS_WRITE) && (
-                        <button className="icon-btn danger" title="Delete" onClick={() => del(a)}>
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {subTab === 'roles' && (
-        <div className="card">
-          <div className="table-toolbar">
-            <span className="table-count">{myChannelRoles.length} custom role{myChannelRoles.length !== 1 ? 's' : ''}</span>
-            <button className="btn-primary" onClick={openAddRole}><Plus size={14} />New Role</button>
-          </div>
-          {/* Global suggestion roles (read-only) */}
-          <div style={{ padding: '8px 16px 4px', fontSize: 12, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Global Suggestions (read-only)</div>
-          <table className="data-table">
-            <thead><tr><th>Name</th><th>Permissions</th><th></th></tr></thead>
-            <tbody>
-              {channelRoles.filter(r => r.channel_id === null).map(r => (
-                <tr key={r.id}>
-                  <td><strong>{r.label}</strong><span style={{ marginLeft: 6, fontSize: 11, color: '#475569' }}>{r.name}</span></td>
-                  <td><div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>{r.permissions.map(p => <span key={p} style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#1e293b', color: '#64748b' }}>{p}</span>)}</div></td>
-                  <td></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {/* Channel's own roles */}
-          <div style={{ padding: '8px 16px 4px', fontSize: 12, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 8 }}>Your Channel Roles</div>
-          <table className="data-table">
-            <thead><tr><th>Name</th><th>Permissions</th><th></th></tr></thead>
-            <tbody>
-              {myChannelRoles.length === 0 && <tr><td colSpan={3} className="empty-row">No custom roles yet</td></tr>}
-              {myChannelRoles.map(r => (
-                <tr key={r.id}>
-                  <td><strong>{r.label}</strong><span style={{ marginLeft: 6, fontSize: 11, color: '#475569' }}>{r.name}</span></td>
-                  <td><div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>{r.permissions.map(p => <span key={p} style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#1e3a5f', color: '#93c5fd' }}>{p}</span>)}</div></td>
-                  <td style={{ display: 'flex', gap: 6 }}>
-                    <button className="icon-btn" title="Edit" onClick={() => openEditRole(r)}><Pencil size={14} /></button>
-                    <button className="icon-btn danger" title="Delete" onClick={() => delRole(r)}><Trash2 size={14} /></button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {modal && (
         <div className="modal-overlay" onClick={close}>
           <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span>{
-                modal.type === 'add' ? ta.add :
-                modal.type === 'role' ? `Role — ${modal.account.username}` :
-                modal.type === 'password' ? ta.changePassword :
-                modal.type === 'add-role' ? 'New Role' :
-                `Edit Role — ${modal.role?.label}`
-              }</span>
+              <span>{modal.type === 'add' ? ta.add : ta.changePassword}</span>
               <button className="icon-btn" onClick={close}><X size={16} /></button>
             </div>
             <div className="modal-body">
-              {/* Add account */}
               {modal.type === 'add' && (
                 <>
                   <label className="form-field">
                     <span>{ta.usernameLabel}</span>
                     <input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} autoFocus />
                   </label>
-                  {isChannelAdmin ? (
-                    <label className="form-field">
-                      <span>Channel</span>
-                      <input value={(channels || []).find(c => String(c.id) === myChannelId)?.name || `Channel ${myChannelId}`} disabled />
-                    </label>
-                  ) : (
-                    <label className="form-field">
-                      <span>Channel</span>
-                      <select value={form.channel_id} onChange={e => setForm(f => ({ ...f, channel_id: e.target.value, role_id: '', permissions_override: [], is_channel_admin: false }))}>
-                        <option value="">Superadmin (all channels)</option>
-                        {(channels || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                    </label>
-                  )}
-                  {/* Channel Admin toggle — superadmin only, only when a channel is selected */}
-                  {!isChannelAdmin && form.channel_id && (
-                    <label className="form-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={!!form.is_channel_admin}
-                        onChange={e => setForm(f => ({ ...f, is_channel_admin: e.target.checked, role_id: '', permissions_override: [] }))} />
-                      <span style={{ margin: 0 }}>Channel Admin <span style={{ fontSize: 11, color: '#94a3b8' }}>(full access to this channel)</span></span>
-                    </label>
-                  )}
-                  {/* Role picker — hidden when creating a channel admin (role is auto-assigned) */}
-                  {form.channel_id && !form.is_channel_admin && (
-                    <label className="form-field">
-                      <span>Role</span>
-                      <select value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value, permissions_override: [] }))}>
-                        <option value="">— no role —</option>
-                        {rolesForChannel(form.channel_id).filter(r => r.name !== 'channel_admin').map(r => <option key={r.id} value={r.id}>{r.label}{r.channel_id === null ? ' (global)' : ''}</option>)}
-                      </select>
-                    </label>
-                  )}
-                  {form.channel_id && !form.is_channel_admin && selectedRole && overrideAvailable.length > 0 && (
-                    <details style={{ marginTop: 8 }}>
-                      <summary style={{ fontSize: 12, color: '#94a3b8', cursor: 'pointer' }}>Additional permissions beyond role</summary>
-                      <PermissionGroupsEditor available={overrideAvailable} value={form.permissions_override} onChange={v => setForm(f => ({ ...f, permissions_override: v }))} />
-                    </details>
-                  )}
-                </>
-              )}
-              {/* Edit role assignment */}
-              {modal.type === 'role' && (
-                <>
                   <label className="form-field">
-                    <span>Role</span>
-                    <select value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value, permissions_override: [] }))}>
-                      <option value="">— no role —</option>
-                      {rolesForChannel(modal.account.channel_id).filter(r => r.name !== 'channel_admin').map(r => <option key={r.id} value={r.id}>{r.label}{r.channel_id === null ? ' (global)' : ''}</option>)}
+                    <span>Channel</span>
+                    <select value={form.channel_id} onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))}>
+                      <option value="">Superadmin (all channels)</option>
+                      {(channels || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </label>
-                  {selectedRole && overrideAvailable.length > 0 && (
-                    <details style={{ marginTop: 8 }}>
-                      <summary style={{ fontSize: 12, color: '#94a3b8', cursor: 'pointer' }}>Additional permissions beyond role</summary>
-                      <PermissionGroupsEditor available={overrideAvailable} value={form.permissions_override} onChange={v => setForm(f => ({ ...f, permissions_override: v }))} />
-                    </details>
-                  )}
                 </>
               )}
-              {/* Change password */}
               {modal.type === 'password' && (
                 <label className="form-field">
                   <span>{ta.usernameLabel}</span>
                   <input value={modal.account.username} disabled />
                 </label>
               )}
-              {/* Add / edit channel role */}
-              {(modal.type === 'add-role' || modal.type === 'edit-role') && (
-                <>
-                  <label className="form-field">
-                    <span>Internal name (slug)</span>
-                    <input value={roleForm.name} disabled={modal.type === 'edit-role'} onChange={e => setRoleForm(f => ({ ...f, name: e.target.value.toLowerCase().replace(/\s+/g, '_') }))} placeholder="e.g. clinic_staff" autoFocus={modal.type === 'add-role'} />
-                  </label>
-                  <label className="form-field">
-                    <span>Display label</span>
-                    <input value={roleForm.label} onChange={e => setRoleForm(f => ({ ...f, label: e.target.value }))} placeholder="e.g. Clinic Staff" />
-                  </label>
-                  <div className="form-field">
-                    <span>Permissions</span>
-                    <PermissionGroupsEditor available={actorPerms} value={roleForm.permissions} onChange={v => setRoleForm(f => ({ ...f, permissions: v }))} />
-                  </div>
-                </>
-              )}
-              {(modal.type === 'add' || modal.type === 'password') && (
-                <label className="form-field">
-                  <span>{modal.type === 'add' ? ta.passwordLabel : ta.newPassword}</span>
-                  <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} autoFocus={modal.type === 'password'} />
-                </label>
-              )}
+              <label className="form-field">
+                <span>{modal.type === 'add' ? ta.passwordLabel : ta.newPassword}</span>
+                <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} autoFocus={modal.type === 'password'} />
+              </label>
               {err && <p className="form-error">{err}</p>}
               <div className="modal-footer">
                 <button className="btn-secondary" onClick={close}>Cancel</button>
@@ -13955,484 +8965,15 @@ function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
   );
 }
 
-function EventCreateModal({ channels, isSuperadmin, channelId, headers, onClose, onSave }) {
-  const { t } = useLang();
-  const [form, setForm] = useState({ title: '', description: '', location: '', scheduled_at: '', end_at: '', capacity: '', channel_id: '' });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    try {
-      const payload = { ...form, capacity: form.capacity ? parseInt(form.capacity, 10) : null };
-      if (!isSuperadmin) payload.channel_id = channelId;
-      await axios.post('/api/events', payload, { headers });
-      onSave();
-    } catch (e) { setError(e.response?.data?.error || e.message); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>{t.nav.events} — {t.modal?.add || 'Create'}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="modal-body">
-          <div className="form-grid">
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.modal?.title || 'Title'} *</span>
-              <input required value={form.title} onChange={e => set('title', e.target.value)} />
-            </label>
-            <label className="form-field">
-              <span>{t.modal?.location || 'Location'}</span>
-              <input value={form.location} onChange={e => set('location', e.target.value)} />
-            </label>
-            <label className="form-field">
-              <span>{t.modal?.capacity || 'Capacity'}</span>
-              <input type="number" min="1" value={form.capacity} onChange={e => set('capacity', e.target.value)} placeholder="—" />
-            </label>
-            <label className="form-field">
-              <span>{t.modal?.startTime || 'Start Time'} *</span>
-              <input type="datetime-local" required value={form.scheduled_at} onChange={e => set('scheduled_at', e.target.value)} />
-            </label>
-            <label className="form-field">
-              <span>{t.modal?.endTime || 'End Time'}</span>
-              <input type="datetime-local" value={form.end_at} onChange={e => set('end_at', e.target.value)} />
-            </label>
-            {isSuperadmin && (
-              <label className="form-field">
-                <span>{t.modal?.channel || 'Channel'}</span>
-                <div className="select-wrap" style={{ width: '100%' }}>
-                  <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                    <option value="">—</option>
-                    {(channels || []).map(ch => <option key={ch.id} value={ch.id}>{ch.name}</option>)}
-                  </select>
-                  <ChevronDown size={11} className="select-chevron" />
-                </div>
-              </label>
-            )}
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.modal?.description || 'Description'}</span>
-              <textarea rows={3} value={form.description} onChange={e => set('description', e.target.value)} style={{ resize: 'vertical' }} />
-            </label>
-          </div>
-          {error && <div className="form-error">{error}</div>}
-          <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal?.cancel || 'Cancel'}</button>
-            <button type="submit" className="btn-primary" disabled={busy}>{busy ? '…' : (t.modal?.save || 'Create')}</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function EventSignupsModal({ event, headers, onClose }) {
-  const { t } = useLang();
-  const [signups, setSignups] = useState(null);
-
-  useEffect(() => {
-    axios.get(`/api/events/${event.id}/signups`, { headers })
-      .then(r => setSignups(r.data?.signups || []))
-      .catch(() => setSignups([]));
-  }, [event.id]);
-
-  const fmtDt = (dt) => dt ? new Date(dt).toLocaleString() : '—';
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 600 }} onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>{event.title}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="modal-body">
-          {signups === null ? (
-            <p className="muted">Loading…</p>
-          ) : signups.length === 0 ? (
-            <p className="muted">{t.modal?.noSignups || 'No signups yet'}</p>
-          ) : (
-            <table className="data-table">
-              <thead><tr>
-                <th>{t.table?.nickname || 'Name'}</th>
-                <th>{t.table?.phone || 'Phone'}</th>
-                <th>{t.table?.joined || 'Signed Up'}</th>
-              </tr></thead>
-              <tbody>
-                {signups.map(s => (
-                  <tr key={s.user_id}>
-                    <td>{fmt(s.nickname)}</td>
-                    <td className="muted">{fmt(s.phone)}</td>
-                    <td className="muted">{fmtDt(s.signed_up_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          <div className="modal-footer">
-            <button className="btn-secondary" onClick={onClose}>{t.modal?.close || 'Close'}</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EventsTab({ channels, session, isSuperadmin, onRefresh }) {
-  const { t } = useLang();
-  const headers = session?.token ? { Authorization: `Bearer ${session.token}` } : {};
-  const channelId = isSuperadmin ? null : session?.channelId;
-
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [modal, setModal] = useState(null);
-
-  const fetchEvents = useCallback(async () => {
-    setLoading(true);
-    try {
-      if (channelId) {
-        const res = await axios.get(`/api/events?channel_id=${channelId}`, { headers });
-        setEvents(res.data?.events || []);
-      } else {
-        const results = await Promise.all(
-          (channels || []).map(ch =>
-            axios.get(`/api/events?channel_id=${ch.id}`, { headers })
-              .catch(() => ({ data: { events: [] } }))
-          )
-        );
-        setEvents(results.flatMap((r, i) =>
-          (r.data?.events || []).map(ev => ({ ...ev, channel_name: channels[i]?.name }))
-        ));
-      }
-    } catch { /* silently fail */ }
-    finally { setLoading(false); }
-  }, [channelId, channels, JSON.stringify(headers)]);
-
-  useEffect(() => { fetchEvents(); }, [fetchEvents]);
-
-  const handleCancel = async (id) => {
-    if (!window.confirm(t.modal?.confirmCancel || 'Cancel this event?')) return;
-    try {
-      await axios.delete(`/api/events/${id}`, { headers });
-      fetchEvents();
-    } catch (e) { alert(e.message); }
-  };
-
-  const activeCount     = events.filter(e => e.status === 'active').length;
-  const totalSignups    = events.reduce((s, e) => s + (parseInt(e.signup_count, 10) || 0), 0);
-  const upcomingCount   = events.filter(e => new Date(e.scheduled_at) > new Date()).length;
-
-  const fmtDt = (dt) => dt ? new Date(dt).toLocaleString() : '—';
-
-  return (
-    <>
-      <div className="stat-row">
-        <StatCard icon={Calendar}  label={t.nav.events}                              value={events.length}  color="#6366f1" />
-        <StatCard icon={Activity}  label={t.stats?.activeEvents  || 'Active'}        value={activeCount}    color="#10b981" />
-        <StatCard icon={Calendar}  label={t.stats?.upcomingEvents || 'Upcoming'}     value={upcomingCount}  color="#f59e0b" />
-        <StatCard icon={Users}     label={t.stats?.totalSignups  || 'Total Signups'} value={totalSignups}   color="#3b82f6" />
-      </div>
-
-      <div className="card">
-        <div className="table-toolbar">
-          <span className="table-count">{events.length} {t.nav.events}</span>
-          <button className="btn-primary" onClick={() => setModal({ type: 'create' })}>
-            <Plus size={14} />{t.modal?.addEvent || 'Create Event'}
-          </button>
-        </div>
-        <table className="data-table">
-          <thead><tr>
-            <th>{t.table?.title || 'Title'}</th>
-            {isSuperadmin && <th>{t.table?.channel || 'Channel'}</th>}
-            <th>{t.table?.startTime || 'Start'}</th>
-            <th>{t.table?.location || 'Location'}</th>
-            <th>{t.table?.capacity || 'Capacity'}</th>
-            <th>{t.table?.signups || 'Signups'}</th>
-            <th>Status</th>
-            <th></th>
-          </tr></thead>
-          <tbody>
-            {loading && <tr><td colSpan={isSuperadmin ? 8 : 7} className="empty-row">Loading…</td></tr>}
-            {!loading && events.length === 0 && (
-              <tr><td colSpan={isSuperadmin ? 8 : 7} className="empty-row">{t.modal?.noEvents || 'No events yet'}</td></tr>
-            )}
-            {events.map(ev => (
-              <tr key={ev.id} style={{ cursor: 'pointer' }} onClick={() => setModal({ type: 'signups', event: ev })}>
-                <td>
-                  <div style={{ fontWeight: 600 }}>{ev.title}</div>
-                  {ev.description && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{ev.description.slice(0, 60)}{ev.description.length > 60 ? '…' : ''}</div>}
-                </td>
-                {isSuperadmin && <td className="muted">{fmt(ev.channel_name)}</td>}
-                <td className="muted">{fmtDt(ev.scheduled_at)}</td>
-                <td className="muted">{fmt(ev.location)}</td>
-                <td className="muted">{ev.capacity ?? '∞'}</td>
-                <td><Badge color="#3b82f6">{ev.signup_count || 0}</Badge></td>
-                <td>
-                  <Badge color={ev.status === 'cancelled' ? '#ef4444' : ev.status === 'completed' ? '#94a3b8' : '#10b981'}>
-                    {ev.status}
-                  </Badge>
-                </td>
-                <td onClick={e => e.stopPropagation()}>
-                  {ev.status === 'active' && (
-                    <button className="icon-btn danger" title={t.modal?.cancelEvent || 'Cancel event'} onClick={() => handleCancel(ev.id)}>
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {modal?.type === 'create' && (
-        <EventCreateModal
-          channels={channels}
-          isSuperadmin={isSuperadmin}
-          channelId={channelId}
-          headers={headers}
-          onClose={() => setModal(null)}
-          onSave={() => { setModal(null); fetchEvents(); }}
-        />
-      )}
-      {modal?.type === 'signups' && (
-        <EventSignupsModal
-          event={modal.event}
-          headers={headers}
-          onClose={() => setModal(null)}
-        />
-      )}
-    </>
-  );
-}
-
-function DashboardTab({ users, coaches, devices, batches, orders, session, isSuperadmin }) {
-  const { t } = useLang();
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    const isChannel = session?.role === 'channel';
-    const cid = session?.channelId;
-    const url = isChannel
-      ? `/api/channel-users/${cid}?include_subchannels=true`
-      : '/api/users?limit=1&offset=0';
-    axios.get(url)
-      .then(r => { if (r.data.success) setStats(r.data); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [session]);
-
-  if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '80px 0' }}>
-      <span style={{ width: 16, height: 16, border: '2px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
-      <span style={{ color: 'var(--muted)' }}>{t.topbar.loading}</span>
-    </div>
-  );
-
-  const total        = stats?.total       || 0;
-  const tested       = stats?.tested      || 0;
-  const avgBioAge    = stats?.avgBioAge   || null;
-  const bioAgeDelta  = stats?.bioAgeDelta ?? null;
-  const maleCount    = stats?.maleCount   || 0;
-  const femaleCount  = stats?.femaleCount || 0;
-  const coachTotal   = stats?.coachTotal  || (coaches?.length || 0);
-  const newCoaches7d = stats?.newCoaches7d || 0;
-  const scansTotal   = stats?.scansTotal  || 0;
-  const scans7d      = stats?.scans7d     || 0;
-  const scans14d     = stats?.scans14d    || 0;
-  const scans30d     = stats?.scans30d    || 0;
-  const newUsers7d   = stats?.newUsers7d  || 0;
-
-  const activeDevices  = (devices || []).filter(d => d.status === 'active').length;
-  const totalDevices   = (devices || []).length;
-  const availableChips = (batches || []).reduce((s, b) => s + parseInt(b.available || 0), 0);
-  const totalChips     = (batches || []).reduce((s, b) => s + parseInt(b.quantity  || 0), 0);
-
-  const isChannel = session?.role === 'channel';
-  const recentUsers  = isChannel
-    ? (stats?.users || []).slice(0, 5)
-    : [...(users || [])].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
-  const recentOrders = [...(orders || [])].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
-
-  const scanData = [
-    { period: t.stats.days7,  scans: scans7d   },
-    { period: t.stats.days14, scans: scans14d  },
-    { period: t.stats.days30, scans: scans30d  },
-    { period: 'Total',        scans: scansTotal },
-  ];
-
-  const genderData = [
-    { name: t.stats.male,   value: maleCount,           fill: '#3b82f6' },
-    { name: t.stats.female, value: femaleCount,          fill: '#ec4899' },
-  ];
-  const testData = [
-    { name: t.stats.tested,   value: tested,                      fill: '#10b981' },
-    { name: t.modal?.untested || 'Untested', value: Math.max(0, total - tested), fill: '#e2e8f0' },
-  ];
-
-  const deltaStr = bioAgeDelta != null
-    ? `${bioAgeDelta > 0 ? '+' : ''}${Number(bioAgeDelta).toFixed(1)}y`
-    : null;
-
-  const orderStatusColor = (s) => s === 'fulfilled' ? '#10b981' : s === 'pending' ? '#f59e0b' : '#64748b';
-
-  return (
-    <>
-      {/* Row 1: KPI Cards */}
-      <div className="dashboard-kpi-grid">
-        <RichStatCard icon={Users} label={t.stats.totalUsers} value={total} color="#3b82f6"
-          subs={[{ label: t.stats.tested, value: `${tested}/${total}`, highlight: tested > 0 }]} />
-        <RichStatCard icon={Activity} label={t.stats.avgBioAge} value={avgBioAge != null ? Number(avgBioAge).toFixed(1) : '—'} color="#8b5cf6"
-          subs={deltaStr ? [{ label: bioAgeDelta > 0 ? t.stats.aboveChrono : t.stats.belowChrono, value: deltaStr, highlight: true }] : []} />
-        <RichStatCard icon={UserCog} label={t.stats.totalCoaches} value={coachTotal} color="#10b981"
-          subs={[{ label: t.stats.new7d, value: `+${newCoaches7d}`, highlight: newCoaches7d > 0 }]} />
-        <RichStatCard icon={TrendingUp} label={t.stats.totalTests} value={scansTotal} color="#f59e0b"
-          subs={[{ label: t.stats.days7, value: `+${scans7d}`, highlight: scans7d > 0 }]} />
-      </div>
-
-      {/* Row 2: Charts */}
-      <div className="dashboard-charts-row">
-        <div className="card dashboard-chart-card">
-          <div className="dashboard-card-title">Scan Activity</div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={scanData} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="period" tick={{ fontSize: 11, fill: '#64748b' }} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} width={36} />
-              <Tooltip contentStyle={{ fontSize: 12 }} />
-              <Bar dataKey="scans" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="card dashboard-chart-card">
-          <div className="dashboard-card-title">User Breakdown</div>
-          <div className="dashboard-pie-grid">
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginBottom: 4 }}>Gender</div>
-              {maleCount + femaleCount > 0 ? (
-                <ResponsiveContainer width="100%" height={180}>
-                  <PieChart>
-                    <Pie data={genderData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} innerRadius={28}>
-                      {genderData.map((e, i) => <Cell key={i} fill={e.fill} />)}
-                    </Pie>
-                    <Tooltip contentStyle={{ fontSize: 12 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : <div className="dashboard-empty-chart">—</div>}
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginBottom: 4 }}>Tested</div>
-              {total > 0 ? (
-                <ResponsiveContainer width="100%" height={180}>
-                  <PieChart>
-                    <Pie data={testData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} innerRadius={28}>
-                      {testData.map((e, i) => <Cell key={i} fill={e.fill} />)}
-                    </Pie>
-                    <Tooltip contentStyle={{ fontSize: 12 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : <div className="dashboard-empty-chart">—</div>}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Row 3: Kino Hardware (superadmin only) */}
-      {isSuperadmin && (
-        <div className="dashboard-hw-row">
-          <div className="dashboard-hw-card">
-            <Cpu size={20} style={{ color: '#6366f1', flexShrink: 0 }} />
-            <div>
-              <div className="dashboard-hw-value">{activeDevices} / {totalDevices}</div>
-              <div className="dashboard-hw-label">{t.stats.activeDevices} / {t.stats.totalDevices}</div>
-            </div>
-          </div>
-          <div className="dashboard-hw-card">
-            <Layers size={20} style={{ color: '#10b981', flexShrink: 0 }} />
-            <div>
-              <div className="dashboard-hw-value">{availableChips.toLocaleString()} / {totalChips.toLocaleString()}</div>
-              <div className="dashboard-hw-label">Available Chips / Total Chips</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Row 4: Quick Tables */}
-      <div className="dashboard-tables-row">
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div className="table-toolbar" style={{ padding: '10px 16px' }}>
-            <span className="table-count">Recent Users</span>
-          </div>
-          <table className="data-table">
-            <thead><tr>
-              <th>{t.table.nickname}</th>
-              <th>{t.table.bioAge}</th>
-              <th>{t.table.joined}</th>
-            </tr></thead>
-            <tbody>
-              {recentUsers.length === 0
-                ? <tr><td colSpan={3} className="empty-row">—</td></tr>
-                : recentUsers.map(u => (
-                  <tr key={u.user_id}>
-                    <td>{u.nickname || u.user_id}</td>
-                    <td>{u.bio_age ? Number(u.bio_age).toFixed(1) : '—'}</td>
-                    <td>{fmtDate(u.created_at)}</td>
-                  </tr>
-                ))
-              }
-            </tbody>
-          </table>
-        </div>
-
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div className="table-toolbar" style={{ padding: '10px 16px' }}>
-            <span className="table-count">Recent Orders</span>
-          </div>
-          <table className="data-table">
-            <thead><tr>
-              <th>{t.table.nickname}</th>
-              <th>{t.table.status}</th>
-              <th>{t.table.joined}</th>
-            </tr></thead>
-            <tbody>
-              {recentOrders.length === 0
-                ? <tr><td colSpan={3} className="empty-row">—</td></tr>
-                : recentOrders.map(o => (
-                  <tr key={o.id}>
-                    <td>{o.nickname || o.user_id}</td>
-                    <td><span style={{ color: orderStatusColor(o.status), fontWeight: 600, fontSize: 12 }}>{o.status}</span></td>
-                    <td>{fmtDate(o.created_at)}</td>
-                  </tr>
-                ))
-              }
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </>
-  );
-}
-
 function AdminPanel({ session, onLogout }) {
-  const [lang, setLang] = useState('zh');
+  const [lang, setLang] = useState('en');
   const t = T[lang];
   const toggleLang = () => setLang(l => l === 'en' ? 'zh' : 'en');
 
   const isSuperadmin = !session || session.role === 'superadmin';
-  const isCmsAdmin = session?.role === 'channel' && session?.canManageSubchannels;
-  const SUPERADMIN_ONLY = new Set([]);
+  const SUPERADMIN_ONLY = new Set(['channels', 'admin-accounts']);
 
-  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], kinoMachinePagination: null, chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [], skus: [], inventoryStock: [] });
+  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -14442,26 +8983,22 @@ function AdminPanel({ session, onLogout }) {
     const cid = session?.channelId;
     const isChannel = session?.role === 'channel';
     try {
-      const canManageOwnAdmins = isChannel && hasPermission(session, PERMS.ADMIN_ACCTS_READ);
-    const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, tkRes, aaRes, hptRes, apkRes, skuRes, stockRes] = await Promise.allSettled([
-        axios.get(isChannel ? `/api/channel-users/${cid}?minimal=true` : '/api/users?minimal=true'),
+      const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, tkRes, aaRes, hptRes, apkRes] = await Promise.allSettled([
+        axios.get(isChannel ? `/api/channel-users/${cid}` : '/api/users'),
         axios.get('/api/dots-inventory'),
-        axios.get(isChannel ? `/api/channel-coaches/${cid}?include_subchannels=true` : '/api/coach-list'),
+        axios.get(isChannel ? `/api/channel-coaches/${cid}` : '/api/coach-list'),
         axios.get('/api/store-items?all=true'),
-        axios.get(isChannel ? `/api/orders?channel_id=${cid}` : '/api/orders'),
-        (isChannel && !isCmsAdmin && !canManageOwnAdmins) ? Promise.resolve({ data: {} }) : axios.get('/api/channels'),
+        axios.get('/api/orders'),
+        isChannel ? Promise.resolve({ data: {} }) : axios.get('/api/channels'),
         axios.get(isChannel ? `/api/invitations?channel_id=${cid}` : '/api/invitations'),
-        axios.get('/kino/kino-machines?page=1&limit=10'),
+        axios.get('/api/kino-devices'),
         axios.get('/api/kino-chip-batches'),
         axios.get('/api/kino-chip-models'),
         axios.get('/api/tickets'),
-        (isChannel && !isCmsAdmin && !canManageOwnAdmins) ? Promise.resolve({ data: {} }) : axios.get('/api/admin-accounts'),
+        isChannel ? Promise.resolve({ data: {} }) : axios.get('/api/admin-accounts'),
         axios.get('/api/health-plan-templates?all=true'),
         axios.get('/api/kone-apk-releases'),
-        axios.get('/api/skus'),
-        axios.get('/api/inventory-stock'),
       ]);
-      const kinoMachines = normalizeKinoMachinesPayload(ok(kinoRes));
       setData({
         users:               ok(uRes).users              || [],
         dots:                ok(dRes).dots               || [],
@@ -14470,16 +9007,13 @@ function AdminPanel({ session, onLogout }) {
         orders:              ok(oRes).orders             || [],
         channels:            ok(chRes).channels          || [],
         invitations:         ok(invRes).invitations      || [],
-        kinoDevices:         kinoMachines.devices,
-        kinoMachinePagination: kinoMachines.pagination,
+        kinoDevices:         ok(kinoRes).devices         || [],
         chipBatches:         ok(cbRes).batches           || [],
         chipModels:          ok(cmRes).models            || [],
         tickets:             ok(tkRes).tickets           || [],
         adminAccounts:       ok(aaRes).accounts          || [],
         healthPlanTemplates: ok(hptRes).templates        || [],
         koneApkReleases:     ok(apkRes).releases         || [],
-        skus:                ok(skuRes).skus             || [],
-        inventoryStock:      ok(stockRes).inventory      || [],
       });
       setLastRefresh(new Date());
     } catch (err) { console.error('Admin fetch error:', err); }
@@ -14489,13 +9023,12 @@ function AdminPanel({ session, onLogout }) {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const NAV = [
-    { id: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
-    { id: 'channels',  label: t.nav.channels,   icon: Building2   },
     { id: 'users',    label: t.nav.users,    icon: Users       },
     { id: 'coaches',  label: t.nav.coaches,  icon: UserCog     },
     { id: 'dots',     label: t.nav.dots,     icon: Droplets    },
     { id: 'store',     label: t.nav.store,      icon: ShoppingBag },
     { id: 'inventory', label: t.nav.inventory,  icon: Archive     },
+    { id: 'channels',  label: t.nav.channels,   icon: Building2   },
     { id: 'kino',     label: t.nav.kino,     icon: Cpu         },
     { id: 'chips',    label: t.nav.chips,    icon: Layers      },
     { id: 'invites',  label: t.nav.invites,  icon: Tag         },
@@ -14504,7 +9037,6 @@ function AdminPanel({ session, onLogout }) {
     { id: 'academy',   label: t.nav.academy,   icon: GraduationCap  },
     { id: 'questionnaires', label: t.nav.questionnaires, icon: ClipboardList },
     { id: 'health-plans',   label: t.nav.healthPlans,    icon: Activity      },
-    { id: 'events',         label: t.nav.events,         icon: Calendar      },
     { id: 'reports',        label: t.nav.reports,        icon: BarChart2     },
     { id: 'tickets',  label: t.nav.tickets,  icon: Bug            },
     { id: 'sims',     label: t.nav.sims,     icon: Layout,      disabled: true },
@@ -14515,27 +9047,17 @@ function AdminPanel({ session, onLogout }) {
 
   const visibleNAV = isSuperadmin
     ? NAV
-    : NAV.filter(n => {
-        if (n.id === 'dashboard') return true;
-        if (n.disabled) return false;
-        if (SUPERADMIN_ONLY.has(n.id)) return false;
-        if (n.id === 'channels') return isCmsAdmin;
-        if (n.id === 'coach-crm') return (session?.allowedTabs || []).includes('coaches');
-        return (session?.allowedTabs || []).includes(n.id);
-      });
+    : NAV.filter(n => !n.disabled && !SUPERADMIN_ONLY.has(n.id) && (session?.allowedTabs || []).includes(n.id));
 
-  const defaultTab = 'dashboard';
+  const defaultTab = isSuperadmin ? 'users' : ((session?.allowedTabs || [])[0] || '');
   const [tab, setTab] = useState(defaultTab);
 
   return (
     <LangCtx.Provider value={{ lang, t, toggleLang }}>
       <aside className="sidebar">
         <div className="sidebar-brand">
-          {!isSuperadmin && session?.channelLogo
-            ? <img src={session.channelLogo} alt={session.channelName} className="brand-logo" style={{ borderRadius: 6, objectFit: 'cover' }} />
-            : <img src={wavenLogo} alt="Waven" className="brand-logo" />
-          }
-          {!isSuperadmin && session?.channelName ? session.channelName : t.brand}
+          <img src={wavenLogo} alt="Waven" className="brand-logo" />
+          {t.brand}
         </div>
         <nav className="sidebar-nav">
           {visibleNAV.map(({ id, label, icon: Icon, disabled }) => (
@@ -14569,26 +9091,24 @@ function AdminPanel({ session, onLogout }) {
           </button>
         </header>
         <div className="content">
-          {tab === 'dashboard' && <DashboardTab users={data.users} coaches={data.coaches} devices={data.kinoDevices} batches={data.chipBatches} orders={data.orders} session={session} isSuperadmin={isSuperadmin} />}
-          {tab === 'users'    && <UsersTab    users={data.users} coaches={data.coaches} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
-          {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
+          {tab === 'users'    && <UsersTab    users={data.users} coaches={data.coaches} channels={data.channels} onRefresh={fetchData} />}
+          {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'dots'     && <DotsTab     dots={data.dots} onRefresh={fetchData} />}
-          {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} channels={data.channels} skus={data.skus || []} inventoryStock={data.inventoryStock || []} session={session} onRefresh={fetchData} />}
-          {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} skus={data.skus || []} />}
-          {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} session={session} />}
-          {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} machinePagination={data.kinoMachinePagination} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
+          {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} onRefresh={fetchData} isSuperadmin={isSuperadmin} />}
+          {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} />}
+          {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} />}
+          {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
           {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
-          {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} coaches={data.coaches} session={session} onRefresh={fetchData} />}
+          {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} coaches={data.coaches} onRefresh={fetchData} />}
           {tab === 'rewards'   && <RewardsTab />}
-          {tab === 'partners'  && <PartnersTab users={data.users} session={session} />}
+          {tab === 'partners'  && <PartnersTab />}
           {tab === 'academy'   && <AcademyTab />}
           {tab === 'questionnaires' && <QuestionnairesTab channels={data.channels} users={data.users} coaches={data.coaches} />}
           {tab === 'health-plans'   && <HealthPlansTab dots={data.dots} healthPlanTemplates={data.healthPlanTemplates || []} onRefresh={fetchData} />}
-          {tab === 'events'         && <EventsTab channels={data.channels} session={session} isSuperadmin={isSuperadmin} onRefresh={fetchData} />}
           {tab === 'reports'        && <ReportsTab />}
           {tab === 'tickets'  && <TicketsTab tickets={data.tickets} onRefresh={fetchData} />}
           {tab === 'sims'     && <SimulatorsTab />}
-          {tab === 'admin-accounts' && <AdminAccountsTab accounts={data.adminAccounts} channels={data.channels} session={session} onRefresh={fetchData} />}
+          {tab === 'admin-accounts' && <AdminAccountsTab accounts={data.adminAccounts} channels={data.channels} onRefresh={fetchData} />}
           {tab === 'coach-crm'     && <CoachCRMTab coaches={data.coaches} users={data.users} />}
           {tab === 'lab'           && <LabTab users={data.users} onRefresh={fetchData} />}
         </div>
@@ -14598,27 +9118,28 @@ function AdminPanel({ session, onLogout }) {
 }
 
 export default function App() {
-  const readSession = (token) => ({
-    token,
-    role: sessionStorage.getItem('nano_admin_role') || 'superadmin',
-    channelId: sessionStorage.getItem('nano_admin_channel_id') || null,
-    channelName: sessionStorage.getItem('nano_admin_channel_name') || '',
-    channelLogo: sessionStorage.getItem('nano_admin_channel_logo') || '',
-    allowedTabs: JSON.parse(sessionStorage.getItem('nano_admin_tabs') || '[]'),
-    allowedPerms: JSON.parse(sessionStorage.getItem('nano_admin_perms') || '[]'),
-    canManageSubchannels: sessionStorage.getItem('nano_admin_cms') === '1',
-    username: sessionStorage.getItem('nano_admin_user') || '',
-  });
-
   const [session, setSession] = useState(() => {
     const token = sessionStorage.getItem('nano_admin_token');
-    return token ? readSession(token) : null;
+    if (!token) return null;
+    return {
+      token,
+      role: sessionStorage.getItem('nano_admin_role') || 'superadmin',
+      channelId: sessionStorage.getItem('nano_admin_channel_id') || null,
+      allowedTabs: JSON.parse(sessionStorage.getItem('nano_admin_tabs') || '[]'),
+    };
   });
 
-  const handleLogin = (token) => setSession(readSession(token));
+  const handleLogin = (token) => {
+    setSession({
+      token,
+      role: sessionStorage.getItem('nano_admin_role') || 'superadmin',
+      channelId: sessionStorage.getItem('nano_admin_channel_id') || null,
+      allowedTabs: JSON.parse(sessionStorage.getItem('nano_admin_tabs') || '[]'),
+    });
+  };
 
   const handleLogout = () => {
-    ['nano_admin_token','nano_admin_user','nano_admin_role','nano_admin_channel_id','nano_admin_channel_name','nano_admin_channel_logo','nano_admin_tabs','nano_admin_perms','nano_admin_cms'].forEach(k => sessionStorage.removeItem(k));
+    ['nano_admin_token','nano_admin_user','nano_admin_role','nano_admin_channel_id','nano_admin_tabs'].forEach(k => sessionStorage.removeItem(k));
     setSession(null);
   };
 

@@ -1,13 +1,35 @@
+/**
+ * nano-lab — FC 3.0 function for third-party clinical lab integration.
+ *
+ * Two data ingestion paths:
+ *   1. Webhook (push): POST /lab/webhook/:labName — vendor calls us when results are ready.
+ *   2. Timer poll (pull): Cron trigger → handlePoll → fetches unfinished lab_orders from vendors.
+ *
+ * Data flow:
+ *   vendor payload → adapter.parseResponse → labNormalizer → health_events + health_reports
+ *   → EventBridge biomarker.lab_complete (if Kino core biomarkers found)
+ *
+ * Additional endpoints:
+ *   POST /lab/order              — create an outbound lab order via adapter
+ *   GET  /lab/providers          — list active lab providers
+ *   GET  /lab/qcs/sample-centers — QCS sample center directory
+ *   GET  /lab/qcs/projects       — QCS project catalog (by barcode suffix)
+ *
+ * @module nano-lab
+ */
 'use strict';
 
 const db = require('./lib/db');
 const { getAdapter } = require('./lib/adapters/index');
 const { matchUser } = require('./lib/userMatcher');
 const { normalizeObservations } = require('./lib/labNormalizer');
+const globalCache = require('./lib/globalCache');
 const crypto = require('crypto');
 const EventBridge = require('@alicloud/eventbridge');
 const OpenApi = require('@alicloud/openapi-client');
 const { v4: uuidv4 } = require('uuid');
+
+let adapterFactory = getAdapter;
 
 // ─── EventBridge publisher ────────────────────────────────────────────────────
 
@@ -64,31 +86,32 @@ async function ingestObservations(userId, labName, observations, reportDate) {
     );
     const reportId = reportRes.rows[0].id;
 
-    // Insert health_event rows (dedup via external_id = loinc_code + date)
+    // Batch INSERT health_event rows (dedup via external_id = loinc_code + date).
+    // Uses unnest() to insert all observations in a single round-trip instead of
+    // N individual INSERT statements, significantly reducing DB latency for large panels.
+    const externalIds = [];
+    const dataDates = [];
+    const dataJsons = [];
     for (const obs of observations) {
-        const externalId = `${obs.loinc_code}::${obs.data_date}`;
-        const dataDate = obs.data_date ? obs.data_date.split('T')[0] : new Date().toISOString().split('T')[0];
-        await db.query(
-            `INSERT INTO health_events
-               (user_id, source, category, data_date, recorded_at, data, report_id, external_id)
-             VALUES ($1, 'lab_api', 'lab_result', $2, NOW(), $3, $4, $5)
-             ON CONFLICT (user_id, source, external_id) DO NOTHING`,
-            [
-                userId,
-                dataDate,
-                JSON.stringify({
-                    key_name:       obs.key_name,
-                    loinc_code:     obs.loinc_code,
-                    value:          obs.value,
-                    unit:           obs.unit,
-                    nano_dimension: obs.nano_dimension,
-                    is_kino_core:   obs.is_kino_core,
-                }),
-                reportId,
-                externalId,
-            ]
-        );
+        externalIds.push(`${obs.loinc_code}::${obs.data_date}`);
+        dataDates.push(obs.data_date ? obs.data_date.split('T')[0] : new Date().toISOString().split('T')[0]);
+        dataJsons.push(JSON.stringify({
+            key_name:       obs.key_name,
+            loinc_code:     obs.loinc_code,
+            value:          obs.value,
+            unit:           obs.unit,
+            nano_dimension: obs.nano_dimension,
+            is_kino_core:   obs.is_kino_core,
+        }));
     }
+    await db.query(
+        `INSERT INTO health_events
+           (user_id, source, category, data_date, recorded_at, data, report_id, external_id)
+         SELECT $1, 'lab_api', 'lab_result', d.data_date::date, NOW(), d.data::jsonb, $2, d.external_id
+         FROM unnest($3::text[], $4::text[], $5::text[]) AS d(external_id, data_date, data)
+         ON CONFLICT (user_id, source, external_id) DO NOTHING`,
+        [userId, reportId, externalIds, dataDates, dataJsons]
+    );
 
     return reportId;
 }
@@ -130,9 +153,35 @@ async function processBatch(labName, labPatientId, rawObservations, fcContext) {
     return hasKinoCore;
 }
 
+/**
+ * Group parsed observations by lab_patient_id and process each patient's batch.
+ * Shared by webhook (push) and poll (pull) flows to avoid duplicating the
+ * "group → processBatch" pattern.
+ */
+async function processObservationsByPatient(observations, labName, fcContext) {
+    const byPatient = {};
+    for (const obs of observations) {
+        const pid = obs.lab_patient_id;
+        if (!byPatient[pid]) byPatient[pid] = [];
+        byPatient[pid].push(obs);
+    }
+    await Promise.all(
+        Object.entries(byPatient).map(([pid, obs]) => processBatch(labName, pid, obs, fcContext))
+    );
+}
+
 // ─── Webhook handler (push flow) ─────────────────────────────────────────────
 
-async function handleWebhook(labName, headers, rawBody, fcContext) {
+async function handleWebhook(labName, headers, rawBody, fcContext, url = '') {
+    console.log(JSON.stringify({
+        level: 'INFO',
+        msg: 'Lab webhook received',
+        labName,
+        url,
+        headers,
+        body: Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || ''),
+    }));
+
     const providerRes = await db.query(
         'SELECT api_base_url, api_key_enc, webhook_secret_enc FROM lab_providers WHERE lab_name = $1 AND is_active = TRUE LIMIT 1',
         [labName]
@@ -142,10 +191,11 @@ async function handleWebhook(labName, headers, rawBody, fcContext) {
     }
     const provider = providerRes.rows[0];
 
-    const adapter = getAdapter(labName);
+    const adapter = adapterFactory(labName);
 
+    // QCS uses lab_providers.api_key_enc as client_id and webhook_secret_enc as client_secret.
     const secret = provider.webhook_secret_enc; // decryption would happen here in production
-    if (secret && !adapter.validateWebhook(headers, rawBody, secret)) {
+    if (secret && !adapter.validateWebhook(headers, rawBody, secret, { url, accessKey: provider.api_key_enc })) {
         return { statusCode: 401, body: JSON.stringify({ error: 'Invalid signature' }) };
     }
 
@@ -155,43 +205,287 @@ async function handleWebhook(labName, headers, rawBody, fcContext) {
     // Notification payload may not include full results — fetch the order
     const orderId = payload.order_id;
     const raw = orderId ? await adapter.fetchOrder(orderId, config) : payload;
-    const observations = adapter.parseResponse(raw);
-
-    // Group by patient ID and process
-    const byPatient = {};
-    for (const obs of observations) {
-        const pid = obs.lab_patient_id;
-        if (!byPatient[pid]) byPatient[pid] = [];
-        byPatient[pid].push(obs);
+    // Update lab_order status from vendor response
+    const externalOrderId = raw?.id || raw?.order_id || raw?.data?.id || raw?.data?.order_id;
+    if (externalOrderId) {
+        await updateLabOrder({ labName, externalOrderId }, raw);
     }
-    await Promise.all(Object.entries(byPatient).map(([pid, obs]) => processBatch(labName, pid, obs, fcContext)));
 
+    // Parse and ingest observations grouped by patient
+    const observations = adapter.parseResponse(raw);
+    await processObservationsByPatient(observations, labName, fcContext);
+
+    if (labName === 'qcs') {
+        return { statusCode: 200, body: JSON.stringify({ status: 0 }) };
+    }
     return { statusCode: 202, body: JSON.stringify({ accepted: true }) };
+}
+
+async function handleCreateOrder(rawBody) {
+    const body = JSON.parse(typeof rawBody === 'string' ? rawBody : rawBody.toString('utf8'));
+    const labName = body.lab_name || 'qcs';
+    if (!body.user_id) return { statusCode: 400, body: JSON.stringify({ error: 'user_id is required' }) };
+    if (!body.payload || typeof body.payload !== 'object' || Array.isArray(body.payload)) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'payload object is required' }) };
+    }
+
+    const provider = await loadProvider(labName);
+    if (!provider) return { statusCode: 404, body: JSON.stringify({ error: `Unknown lab: ${labName}` }) };
+
+    const user = await loadUser(body.user_id);
+    if (!user) return { statusCode: 404, body: JSON.stringify({ error: `Unknown user: ${body.user_id}` }) };
+
+    const adapter = adapterFactory(labName);
+    const config = {
+        api_base_url: provider.api_base_url,
+        api_key: provider.api_key_enc,
+        api_secret: provider.webhook_secret_enc,
+        default_sample_center_id: numberEnv('QCS_DEFAULT_SAMPLE_CENTER_ID'),
+        cache: globalCache,
+    };
+    const createOrder = adapter.create_order || adapter.createOrder;
+    if (!createOrder) return { statusCode: 501, body: JSON.stringify({ error: `Lab order is not supported: ${labName}` }) };
+
+    const result = await createOrder({ user, payload: body.payload, config });
+    const order = await insertLabOrder({
+        lab_name: labName,
+        user_id: body.user_id,
+        api_key: provider.api_key_enc,
+        api_secret: provider.webhook_secret_enc,
+        lab_request: { user_id: body.user_id, payload: body.payload },
+        external_order_id: result.external_order_id,
+        lab_response: result.lab_response,
+        lab_last_result: result.lab_last_result,
+        lab_final_result: result.lab_final_result,
+        status: result.status || '处理中',
+    });
+
+    return { statusCode: 200, body: JSON.stringify({ success: true, order }) };
+}
+
+async function handleListProviders() {
+    const providersRes = await db.query(`
+        SELECT id, lab_name, label, poll_enabled
+        FROM lab_providers
+        WHERE is_active = TRUE
+        ORDER BY id ASC
+    `);
+    return { statusCode: 200, body: JSON.stringify({ success: true, providers: providersRes.rows }) };
+}
+
+async function handleListServices() {
+    const servicesRes = await db.query(`
+        SELECT p.id,
+               p.lab_name,
+               p.label,
+               COUNT(lp.id)::int AS product_count
+        FROM lab_providers p
+        LEFT JOIN lab_products lp
+          ON lp.lab_name = p.lab_name
+         AND lp.active = TRUE
+        WHERE p.is_active = TRUE
+        GROUP BY p.id, p.lab_name, p.label
+        ORDER BY p.id ASC
+    `);
+    return { statusCode: 200, body: JSON.stringify({ success: true, services: servicesRes.rows }) };
+}
+
+async function handleListProducts(query = {}) {
+    const labName = String(query.lab_name || '').trim();
+    if (!labName) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'lab_name is required' }) };
+    }
+
+    const productsRes = await db.query(`
+        SELECT id,
+               lab_name,
+               sku,
+               upc,
+               name_zh,
+               name_en,
+               desc_zh,
+               desc_en,
+               unit_zh,
+               unit_en,
+               extra_data_zh,
+               extra_data_en,
+               price_cny,
+               price_usd,
+               sort_idx
+        FROM lab_products
+        WHERE lab_name = $1
+          AND active = TRUE
+        ORDER BY sort_idx ASC, id ASC
+    `, [labName]);
+
+    return { statusCode: 200, body: JSON.stringify({ success: true, products: productsRes.rows }) };
+}
+
+async function handleQcsSampleCenters() {
+    const labName = 'qcs';
+    const provider = await loadProvider(labName);
+    if (!provider) return { statusCode: 404, body: JSON.stringify({ error: `Unknown lab: ${labName}` }) };
+
+    const adapter = adapterFactory(labName);
+    const listSampleCenters = adapter.list_sample_centers || adapter.listSampleCenters;
+    if (!listSampleCenters) {
+        return { statusCode: 501, body: JSON.stringify({ error: 'QCS sample centers are not supported' }) };
+    }
+
+    const sampleCenters = await listSampleCenters({
+        config: {
+            api_base_url: provider.api_base_url,
+            api_key: provider.api_key_enc,
+            api_secret: provider.webhook_secret_enc,
+            cache: globalCache,
+        },
+    });
+
+    return { statusCode: 200, body: JSON.stringify({ success: true, sample_centers: sampleCenters }) };
+}
+
+async function handleQcsProjects(query = {}) {
+    const adapter = adapterFactory('qcs');
+    const barcode = query.barcode ? String(query.barcode) : '';
+    if (barcode) {
+        const projectsByBarcode = adapter.projects_by_barcode || adapter.projectsByBarcode;
+        if (!projectsByBarcode) {
+            return { statusCode: 501, body: JSON.stringify({ error: 'QCS barcode projects are not supported' }) };
+        }
+        return {
+            statusCode: 200,
+            body: JSON.stringify({
+                success: true,
+                barcode,
+                suffix: barcode.slice(-2),
+                projects: projectsByBarcode(barcode),
+            }),
+        };
+    }
+
+    const allProjectsByBarcodeSuffix = adapter.all_projects_by_barcode_suffix || adapter.allProjectsByBarcodeSuffix;
+    if (!allProjectsByBarcodeSuffix) {
+        return { statusCode: 501, body: JSON.stringify({ error: 'QCS project list is not supported' }) };
+    }
+    return {
+        statusCode: 200,
+        body: JSON.stringify({
+            success: true,
+            projects_by_barcode_suffix: allProjectsByBarcodeSuffix(),
+        }),
+    };
+}
+
+async function loadProvider(labName) {
+    const providerRes = await db.query(
+        'SELECT api_base_url, api_key_enc, webhook_secret_enc FROM lab_providers WHERE lab_name = $1 AND is_active = TRUE LIMIT 1',
+        [labName]
+    );
+    return providerRes.rows[0] || null;
+}
+
+async function loadUser(userId) {
+    const userRes = await db.query(
+        'SELECT user_id, external_id, nickname, phone, email, gender, birth_date FROM users WHERE user_id = $1 LIMIT 1',
+        [userId]
+    );
+    return userRes.rows[0] || null;
+}
+
+function numberEnv(name) {
+    const value = process.env[name];
+    if (value === undefined || value === '') return undefined;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : undefined;
+}
+
+async function insertLabOrder(order) {
+    const res = await db.query(`
+        INSERT INTO lab_orders (
+            lab_name, user_id, api_key, api_secret, lab_request, external_order_id,
+            lab_response, lab_last_result, lab_final_result, status, last_polled_at
+        )
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, NOW())
+        RETURNING *
+    `, [
+        order.lab_name,
+        order.user_id,
+        order.api_key,
+        order.api_secret,
+        order.lab_request,
+        order.external_order_id,
+        order.lab_response,
+        order.lab_last_result,
+        order.lab_final_result,
+        order.status,
+    ]);
+    return res.rows[0];
+}
+
+/**
+ * Update a lab_order row with the latest vendor response.
+ * Unified handler for both webhook (push) and poll (pull) flows.
+ *
+ * @param {object} match - Row identifier: { id } for poll, { labName, externalOrderId } for webhook
+ * @param {object} raw   - Raw vendor response payload
+ */
+async function updateLabOrder(match, raw) {
+    const status = mapLabStatus(raw?.progress || raw?.data?.progress);
+    const finalResult = status === '已完成' ? raw : null;
+
+    // Poll identifies rows by primary key; webhook identifies by lab_name + vendor order id
+    const useId = Boolean(match.id);
+    const res = await db.query(`
+        UPDATE lab_orders
+        SET status = $3,
+            lab_last_result = $4::jsonb,
+            lab_final_result = COALESCE($5::jsonb, lab_final_result),
+            updated_at = NOW(),
+            last_polled_at = NOW()
+        WHERE ${useId ? 'id = $1 AND external_order_id = $2' : 'lab_name = $1 AND external_order_id = $2'}
+        RETURNING *
+    `, [
+        useId ? match.id : match.labName,
+        match.externalOrderId,
+        status,
+        raw,
+        finalResult,
+    ]);
+    return res.rows[0] || null;
+}
+
+function mapLabStatus(progress) {
+    return String(progress || '').toLowerCase() === 'complete' ? '已完成' : '处理中';
 }
 
 // ─── Timer handler (pull flow) ───────────────────────────────────────────────
 
 async function handlePoll(fcContext) {
     const providersRes = await db.query(
-        'SELECT id, lab_name, api_base_url, api_key_enc, last_polled_at FROM lab_providers WHERE poll_enabled = TRUE AND is_active = TRUE'
+        'SELECT id, lab_name, api_base_url, api_key_enc, webhook_secret_enc, last_polled_at FROM lab_providers WHERE poll_enabled = TRUE AND is_active = TRUE'
     );
 
+    // Poll is provider-scoped first because credentials, base URL and adapter
+    // behavior are all provider-specific. Within each provider we then operate
+    // on individual lab_orders rows so one bad vendor order cannot block the
+    // rest of the provider's queue.
     for (const provider of providersRes.rows) {
         try {
-            const adapter = getAdapter(provider.lab_name);
-            const config  = { api_base_url: provider.api_base_url, api_key: provider.api_key_enc };
-            const since   = provider.last_polled_at ? new Date(provider.last_polled_at) : null;
+            const adapter = adapterFactory(provider.lab_name);
+            const config  = {
+                api_base_url: provider.api_base_url,
+                api_key: provider.api_key_enc,
+                api_secret: provider.webhook_secret_enc,
+                cache: globalCache,
+            };
 
-            const rawResults = await adapter.fetchNewResults(since, config);
-            const observations = adapter.parseResponse(rawResults);
+            // Compensation must run before normal polling. Some vendors create
+            // a primary order first and fail on later sample/detail calls; those
+            // rows are persisted with needs_cancel=true and must be cancelled
+            // through the adapter to avoid dangling external orders.
+            await cancelFailedLabOrders(provider, adapter, config);
 
-            const byPatient = {};
-            for (const obs of observations) {
-                const pid = obs.lab_patient_id;
-                if (!byPatient[pid]) byPatient[pid] = [];
-                byPatient[pid].push(obs);
-            }
-            await Promise.all(Object.entries(byPatient).map(([pid, obs]) => processBatch(provider.lab_name, pid, obs, fcContext)));
+            const polledCount = await pollUnfinishedLabOrders(provider, adapter, config, fcContext);
 
             await db.query('UPDATE lab_providers SET last_polled_at = NOW() WHERE id = $1', [provider.id]);
 
@@ -199,7 +493,7 @@ async function handlePoll(fcContext) {
                 level: 'INFO',
                 msg: 'Lab poll completed',
                 labName: provider.lab_name,
-                resultCount: observations.length,
+                orderCount: polledCount,
             }));
         } catch (err) {
             console.error(JSON.stringify({ level: 'ERROR', msg: 'Lab poll failed', labName: provider.lab_name, error: err.message }));
@@ -207,28 +501,270 @@ async function handlePoll(fcContext) {
     }
 }
 
+async function pollUnfinishedLabOrders(provider, adapter, config, fcContext) {
+    const fetchOrder = adapter.fetchOrder;
+    if (!fetchOrder) {
+        console.warn(JSON.stringify({
+            level: 'WARN',
+            msg: 'Lab adapter does not support per-order polling',
+            labName: provider.lab_name,
+        }));
+        return 0;
+    }
+
+    // Only normal unfinished orders are selected here. Orders that need vendor
+    // cancellation are handled by cancelFailedLabOrders before this query, and
+    // already-cancelled rows are excluded so polling never reopens a closed loop.
+    const ordersRes = await db.query(`
+        SELECT id, lab_name, user_id, external_order_id, lab_last_result
+        FROM lab_orders
+        WHERE lab_name = $1
+          AND status <> '已完成'
+          AND external_order_id IS NOT NULL
+          AND COALESCE(lab_last_result->>'needs_cancel', 'false') <> 'true'
+          AND COALESCE(lab_last_result->>'cancel_completed', 'false') <> 'true'
+        ORDER BY COALESCE(last_polled_at, created_at) ASC
+        LIMIT 100
+    `, [provider.lab_name]);
+
+    let polledCount = 0;
+    for (const order of ordersRes.rows) {
+        try {
+            // Fetch and update one order at a time. This keeps failures scoped
+            // to a single vendor order and gives every row its own last_polled_at.
+            const raw = await fetchOrder(order.external_order_id, config);
+            await updateLabOrder({ id: order.id, externalOrderId: order.external_order_id }, raw);
+
+            // Result ingestion flows through the adapter normalizer so
+            // vendor payload details remain isolated inside the adapter.
+            const observations = adapter.parseResponse ? adapter.parseResponse(raw) : [];
+            await processObservationsByPatient(observations, provider.lab_name, fcContext);
+            polledCount += 1;
+        } catch (err) {
+            console.error(JSON.stringify({
+                level: 'ERROR',
+                msg: 'Lab order poll failed',
+                labName: provider.lab_name,
+                orderId: order.id,
+                externalOrderId: order.external_order_id,
+                error: err.message,
+            }));
+            await db.query(`
+                UPDATE lab_orders
+                SET lab_last_result = COALESCE(lab_last_result, '{}'::jsonb) || $2::jsonb,
+                    updated_at = NOW(),
+                    last_polled_at = NOW()
+                WHERE id = $1
+            `, [
+                order.id,
+                {
+                    poll_error: {
+                        message: err.message,
+                        status: err.response?.status || null,
+                        body: err.response?.data || null,
+                    },
+                },
+            ]);
+        }
+    }
+    return polledCount;
+}
+
+// updateLabOrder (above) now handles both webhook and poll update flows.
+
+async function cancelFailedLabOrders(provider, adapter, config) {
+    const cancelOrder = adapter.cancel_order || adapter.cancelOrder;
+    if (!cancelOrder) return;
+
+    // These rows are partial external orders: Nano has a vendor order id, but a
+    // later required vendor step failed. They should not be polled as normal lab
+    // work; the only valid next step is adapter.cancelOrder.
+    const pendingRes = await db.query(`
+        SELECT id, lab_name, external_order_id, lab_last_result
+        FROM lab_orders
+        WHERE lab_name = $1
+          AND status = '待处理'
+          AND external_order_id IS NOT NULL
+          AND lab_last_result->>'needs_cancel' = 'true'
+        ORDER BY updated_at ASC
+        LIMIT 50
+    `, [provider.lab_name]);
+
+    for (const order of pendingRes.rows) {
+        try {
+            const cancelResult = await cancelOrder({ externalOrderId: order.external_order_id, config });
+            await db.query(`
+                UPDATE lab_orders
+                SET status = '已完成',
+                    lab_final_result = $2::jsonb,
+                    lab_last_result = COALESCE(lab_last_result, '{}'::jsonb) || $3::jsonb,
+                    updated_at = NOW(),
+                    last_polled_at = NOW()
+                WHERE id = $1
+                RETURNING *
+            `, [
+                order.id,
+                { cancelled: true, response: cancelResult },
+                {
+                    needs_cancel: false,
+                    cancel_attempted: true,
+                    cancel_completed: true,
+                    cancel_error: null,
+                },
+            ]);
+        } catch (err) {
+            console.error(JSON.stringify({
+                level: 'ERROR',
+                msg: 'QCS partial order cancellation failed',
+                labName: provider.lab_name,
+                orderId: order.id,
+                externalOrderId: order.external_order_id,
+                error: err.message,
+            }));
+            await db.query(`
+                UPDATE lab_orders
+                SET lab_last_result = COALESCE(lab_last_result, '{}'::jsonb) || $2::jsonb,
+                    updated_at = NOW(),
+                    last_polled_at = NOW()
+                WHERE id = $1
+            `, [
+                order.id,
+                {
+                    cancel_attempted: true,
+                    cancel_completed: false,
+                    cancel_error: {
+                        message: err.message,
+                        status: err.response?.status || null,
+                        body: err.response?.data || null,
+                    },
+                },
+            ]);
+        }
+    }
+}
+
+function buildRequestUrl(req) {
+    const path = req.rawPath || '';
+    if (req.rawQueryString) return `${path}?${req.rawQueryString}`;
+    const query = req.queryParameters || {};
+    const search = new URLSearchParams(query).toString();
+    return search ? `${path}?${search}` : path;
+}
+
+/**
+ * Decode the FC 3.0 event object from the raw request.
+ *
+ * FC 3.0 delivers HTTP trigger events as pre-parsed objects, but timer trigger
+ * events arrive as raw Buffers (often empty). This function normalizes both
+ * cases into a plain JS object. Empty or unparseable bodies are tagged as
+ * timer events via the __timerEvent sentinel.
+ */
+function decodeFcEvent(req) {
+    if (!Buffer.isBuffer(req)) return req || {};
+
+    const text = req.toString('utf8');
+    if (!text.trim()) return { __timerEvent: true };
+
+    try {
+        return JSON.parse(text);
+    } catch (err) {
+        return { __timerEvent: true, payload: text };
+    }
+}
+
+/**
+ * Detect whether the event originated from a timer (cron) trigger.
+ *
+ * Timer events lack the rawPath and requestContext.http fields that HTTP
+ * trigger events always carry. This distinction drives the top-level routing:
+ * timer → handlePoll (pull flow), HTTP → route-based handlers (push flow).
+ */
+function isTimerEvent(event) {
+    return Boolean(
+        event?.__timerEvent
+        || (event && !event.rawPath && !event.requestContext?.http)
+    );
+}
+
 // ─── FC 3.0 Handler ───────────────────────────────────────────────────────────
 
 exports.handler = async (req, resp, context) => {
     try {
-        // Timer trigger: req is a Buffer containing the trigger payload
-        if (Buffer.isBuffer(req)) {
+        const event = decodeFcEvent(req);
+
+        // Timer trigger payloads do not include the HTTP rawPath/requestContext.http shape.
+        if (isTimerEvent(event)) {
             await handlePoll(context);
             return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true }), isBase64Encoded: false };
         }
 
         // HTTP trigger
-        const path   = req.rawPath || '';
-        const method = req.requestContext?.http?.method || 'POST';
+        const path   = event.rawPath || '';
+        const method = event.requestContext?.http?.method || 'POST';
 
-        let rawBody = req.body || '';
-        if (req.isBase64Encoded && rawBody) rawBody = Buffer.from(rawBody, 'base64').toString('utf8');
+        let rawBody = event.body || '';
+        if (event.isBase64Encoded && rawBody) rawBody = Buffer.from(rawBody, 'base64').toString('utf8');
 
         // POST /lab/webhook/:labName
         const webhookMatch = path.match(/^\/lab\/webhook\/([^/]+)$/);
+        console.log(JSON.stringify({ level: 'INFO', msg: 'new lab req', method, path, webhookMatch, event }));
+        if (method === 'GET' && path === '/lab/providers') {
+            const result = await handleListProviders();
+            return {
+                statusCode: result.statusCode,
+                headers: { 'Content-Type': 'application/json' },
+                body: result.body,
+                isBase64Encoded: false,
+            };
+        }
+        if (method === 'GET' && path === '/lab/services') {
+            const result = await handleListServices();
+            return {
+                statusCode: result.statusCode,
+                headers: { 'Content-Type': 'application/json' },
+                body: result.body,
+                isBase64Encoded: false,
+            };
+        }
+        if (method === 'GET' && path === '/lab/products') {
+            const result = await handleListProducts(event.queryParameters || {});
+            return {
+                statusCode: result.statusCode,
+                headers: { 'Content-Type': 'application/json' },
+                body: result.body,
+                isBase64Encoded: false,
+            };
+        }
+        if (method === 'GET' && path === '/lab/qcs/sample-centers') {
+            const result = await handleQcsSampleCenters();
+            return {
+                statusCode: result.statusCode,
+                headers: { 'Content-Type': 'application/json' },
+                body: result.body,
+                isBase64Encoded: false,
+            };
+        }
+        if (method === 'GET' && path === '/lab/qcs/projects') {
+            const result = await handleQcsProjects(event.queryParameters || {});
+            return {
+                statusCode: result.statusCode,
+                headers: { 'Content-Type': 'application/json' },
+                body: result.body,
+                isBase64Encoded: false,
+            };
+        }
+        if (method === 'POST' && path === '/lab/order') {
+            const result = await handleCreateOrder(rawBody);
+            return {
+                statusCode: result.statusCode,
+                headers: { 'Content-Type': 'application/json' },
+                body: result.body,
+                isBase64Encoded: false,
+            };
+        }
         if (method === 'POST' && webhookMatch) {
             const labName = webhookMatch[1];
-            const result  = await handleWebhook(labName, req.headers || {}, rawBody, context);
+            const result  = await handleWebhook(labName, event.headers || {}, rawBody, context, buildRequestUrl(event));
             return {
                 statusCode: result.statusCode,
                 headers: { 'Content-Type': 'application/json' },
@@ -252,4 +788,20 @@ exports.handler = async (req, resp, context) => {
             isBase64Encoded: false,
         };
     }
+};
+
+module.exports.__private = {
+    decodeFcEvent,
+    isTimerEvent,
+    buildRequestUrl,
+    setAdapterFactory(factory) {
+        adapterFactory = factory || getAdapter;
+    },
+    handleListProviders,
+    handleListProducts,
+    handleCreateOrder,
+    handleQcsSampleCenters,
+    handleQcsProjects,
+    handlePoll,
+    updateLabOrder,
 };
