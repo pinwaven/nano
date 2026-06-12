@@ -101,3 +101,4 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 | Orders & SKU Fulfillment | [orders-fulfillment.md](orders-fulfillment.md) |
 | Partner System | [partner-system.md](partner-system.md) |
 | Lab Integration | [lab-integration.md](lab-integration.md) |
+| WeChat Multiterminal | [wechat-multiterminal.md](wechat-multiterminal.md) |
