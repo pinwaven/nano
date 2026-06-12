@@ -38,11 +38,13 @@ class ColmiRing extends WearableDevice {
     super()
     this._ble = new BLEManager()
     this._deviceId = null
+    this._deviceName = ''
     this._uartRxCharUUID = UART_RX_CHAR_UUID
     this._uartTxCharUUID = UART_TX_CHAR_UUID
     this._bigDataRxCharUUID = BIG_DATA_RX_CHAR_UUID
     this._bigDataTxCharUUID = BIG_DATA_TX_CHAR_UUID
     this._hasBigData = false
+    this._r20CachedStress = null  // captured from 73-12 burst at start of any R20 measurement
   }
 
   // Scan for Colmi rings nearby. Returns [{ deviceId, name, rssi }].
@@ -56,8 +58,9 @@ class ColmiRing extends WearableDevice {
     }
   }
 
-  async connect(deviceId, { syncTime = false } = {}) {
+  async connect(deviceId, { syncTime = false, name = '' } = {}) {
     this._deviceId = deviceId
+    this._deviceName = name
     await this._ble.openAdapter()
     await this._ble.connect(deviceId, NOTIFY_MAP)
     if (syncTime) {
@@ -164,8 +167,14 @@ class ColmiRing extends WearableDevice {
 
   // timeoutMs: total measurement budget (HRV ~45 s, stress ~30 s, SpO2 ~20 s).
   // Resolves with the first non-zero value or null on timeout/error.
-  // The R10 does not need periodic CONTINUE pings — sending them resets the measurement.
+  // No CONTINUE pings are sent on this path — R10 and R20 both reset/break when they receive them.
+  // R02 completes without them. R20 SpO2 is handled separately in _getR20Spo2() which has its own pings.
   async getRealtime(type, timeoutMs = 30000) {
+    if (this._deviceName.startsWith('R20')) {
+      if (type === 'spo2')     return this._getR20Spo2(timeoutMs)
+      if (type === 'pressure') return this._getR20Stress()
+    }
+
     const readingCode = REAL_TIME_MAPPING[type]
     if (!readingCode) throw new Error(`Unknown realtime reading type: ${type}`)
     const startPkt    = getStartPacket(readingCode)
@@ -173,10 +182,12 @@ class ColmiRing extends WearableDevice {
     const expectedCmd = CMD_START_REAL_TIME & 0x7f
 
     const result = await new Promise((resolve) => {
-      const end = setTimeout(() => {
+      const cleanup = (value) => {
         this._ble.onNotify(this._uartTxCharUUID, null)
-        resolve(null)
-      }, timeoutMs)
+        resolve(value)
+      }
+
+      const end = setTimeout(() => cleanup(null), timeoutMs)
 
       this._ble.onNotify(this._uartTxCharUUID, (data) => {
         if (data.length < 16 || (data[0] & 0x7f) !== expectedCmd) return
@@ -186,14 +197,109 @@ class ColmiRing extends WearableDevice {
         const value = data[3]
         if (value !== 0) {
           clearTimeout(end)
-          this._ble.onNotify(this._uartTxCharUUID, null)
-          resolve(value)
+          cleanup(value)
         }
       })
 
       // Register handler FIRST, then send START so no early responses are missed
       this._ble.write(this._deviceId, UART_SERVICE_UUID, this._uartRxCharUUID, startPkt)
-        .catch(() => { clearTimeout(end); this._ble.onNotify(this._uartTxCharUUID, null); resolve(null) })
+        .catch(() => { clearTimeout(end); cleanup(null) })
+    })
+
+    await this._ble.write(this._deviceId, UART_SERVICE_UUID, this._uartRxCharUUID, stopPkt).catch(() => {})
+    return result
+  }
+
+  // R20 SpO2: trigger a health-check (type 5) measurement and wait for the 0x73 result packet.
+  // The ring streams raw PPG samples via 69-05 packets while measuring, then fires a single
+  // 73-0c-<spo2>-00... packet (~18-25 s after START). Confirmed by live BLE capture on R20_EA3B.
+  // Also captures any 73-12 stress/BP cache dump that may appear at the start of the session.
+  async _getR20Spo2(timeoutMs) {
+    const HEALTH_CHECK      = 5
+    const CMD_HEALTH_RESULT = 0x73
+    const SPO2_KIND         = 0x0c
+    const STRESS_KIND       = 0x12
+    const startPkt    = getStartPacket(HEALTH_CHECK)
+    const continuePkt = getContinuePacket(HEALTH_CHECK)
+    const stopPkt     = getStopPacket(HEALTH_CHECK)
+
+    this._r20CachedStress = null  // reset before new measurement
+
+    const result = await new Promise((resolve) => {
+      let pingInterval = null
+
+      const cleanup = (value) => {
+        if (pingInterval) { clearInterval(pingInterval); pingInterval = null }
+        this._ble.onNotify(this._uartTxCharUUID, null)
+        resolve(value)
+      }
+
+      const end = setTimeout(() => cleanup(null), timeoutMs)
+
+      this._ble.onNotify(this._uartTxCharUUID, (data) => {
+        if (data.length < 3) return
+        const cmd = data[0] & 0x7f
+        if (cmd !== CMD_HEALTH_RESULT) return
+        if (data[1] === STRESS_KIND && data.length >= 5 && data[4] !== 0) {
+          // 73-12 cached stress/BP dump — save it for _getR20Stress() to consume
+          this._r20CachedStress = data[4]
+        }
+        if (data[1] === SPO2_KIND && data[2] !== 0) {
+          clearTimeout(end)
+          cleanup(data[2])
+        }
+      })
+
+      this._ble.write(this._deviceId, UART_SERVICE_UUID, this._uartRxCharUUID, startPkt)
+        .then(() => {
+          pingInterval = setInterval(() => {
+            this._ble.write(this._deviceId, UART_SERVICE_UUID, this._uartRxCharUUID, continuePkt).catch(() => {})
+          }, 2000)
+        })
+        .catch(() => { clearTimeout(end); cleanup(null) })
+    })
+
+    await this._ble.write(this._deviceId, UART_SERVICE_UUID, this._uartRxCharUUID, stopPkt).catch(() => {})
+    return result
+  }
+
+  // R20 stress: returns cached stress data from _r20CachedStress if captured during _getR20Spo2().
+  // The ring dumps 73-12 packets at the start of any measurement when it has stored BP/stress readings.
+  // If no cached data was captured, falls back to a fresh pressure START and waits up to 5 s.
+  async _getR20Stress() {
+    if (this._r20CachedStress != null) {
+      const val = this._r20CachedStress
+      this._r20CachedStress = null
+      return val
+    }
+
+    const readingCode = REAL_TIME_MAPPING['pressure']
+    const startPkt = getStartPacket(readingCode)
+    const stopPkt  = getStopPacket(readingCode)
+    const CMD_STRESS_RESULT = 0x73
+    const STRESS_KIND       = 0x12
+
+    const result = await new Promise((resolve) => {
+      const cleanup = (value) => {
+        this._ble.onNotify(this._uartTxCharUUID, null)
+        resolve(value)
+      }
+
+      const end = setTimeout(() => cleanup(null), 5000)
+
+      this._ble.onNotify(this._uartTxCharUUID, (data) => {
+        if (data.length < 5) return
+        if ((data[0] & 0x7f) === CMD_STRESS_RESULT && data[1] === STRESS_KIND) {
+          const val = data[4]
+          if (val !== 0) {
+            clearTimeout(end)
+            cleanup(val)
+          }
+        }
+      })
+
+      this._ble.write(this._deviceId, UART_SERVICE_UUID, this._uartRxCharUUID, startPkt)
+        .catch(() => { clearTimeout(end); cleanup(null) })
     })
 
     await this._ble.write(this._deviceId, UART_SERVICE_UUID, this._uartRxCharUUID, stopPkt).catch(() => {})

@@ -1967,7 +1967,7 @@ Component({
           wx.authorize({ scope: 'scope.bluetooth', success: resolve, fail: reject })
         )
         wx.showLoading({ title: t.wearableConnecting, mask: true })
-        await ring.connect(this.data.wearableId)
+        await ring.connect(this.data.wearableId, { name: this.data.wearableName || '' })
         battery = await ring.getBattery()
         steps   = await ring.getSteps().catch(() => null)
         sleep   = await ring.getSleep().catch(() => null)
@@ -2007,9 +2007,9 @@ Component({
       // ── Phase 2: HRV + stress + SpO2 (background — no blocking modal) ──
       this.setData({ wearableBusy: false, ringMeasuring: true })
       try {
-        const hrv    = await ring.getRealtime('hrv',     110000).catch(() => null)
-        const stress = await ring.getRealtime('pressure', 30000).catch(() => null)
-        const spo2   = await ring.getRealtime('spo2',     60000).catch(() => null)
+        const spo2   = await ring.getRealtime('spo2',      60000).catch(() => null)
+        const stress = await ring.getRealtime('pressure',  30000).catch(() => null)
+        const hrv    = await ring.getRealtime('hrv',      110000).catch(() => null)
         await ring.disconnect()
         const raw = { ...rawPhase1, hrv: hrv ?? null, stress: stress ?? null, spo2: spo2 ?? null, syncedAt: Date.now() }
         this._commitRingData(raw, battery.level, isZh, false)

@@ -47,7 +47,7 @@ const REAL_TIME_MAPPING = {
 
 // Known Colmi ring advertisement name prefixes used for scanning
 const COLMI_NAME_PREFIXES = [
-  'R01', 'R02', 'R03', 'R04', 'R05', 'R06', 'R07', 'R09', 'R10',
+  'R01', 'R02', 'R03', 'R04', 'R05', 'R06', 'R07', 'R09', 'R10', 'R20',
   'COLMI', 'VK-5098', 'MERLIN', 'Hello Ring', 'RING1',
   'boAtring', 'TR-R02', 'SE', 'EVOLVEO', 'GL-SR2',
   'Blaupunkt', 'KSIX RING',
