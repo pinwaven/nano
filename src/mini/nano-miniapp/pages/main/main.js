@@ -909,8 +909,8 @@ Page({
     const capsule = wx.getMenuButtonBoundingClientRect()
     const capsuleRightPad = windowWidth - (capsule.left || windowWidth - 96) + 8
     const menuTop = statusBarHeight + 44
-    const lang = app.globalData.lang || (user.language === 'en' ? 'en' : 'zh')
     const channel = app.globalData.channel || null
+    const lang = app.globalData.lang || (user.language === 'en' ? 'en' : (channel?.locale === 'en' ? 'en' : 'zh'))
     const isGuest = !!user.guest
     const roles = user.roles || (isGuest ? [] : ['user'])
     const isCoach = roles.includes('coach')
@@ -2818,11 +2818,12 @@ Page({
     app.globalData.user = user
     app.globalData.channel = channel
     app.globalData.coach = coach
-    app.globalData.lang = user.language === 'en' ? 'en' : 'zh'
+    const channelLocale = channel?.locale || 'zh'
+    app.globalData.lang = user.language === 'en' ? 'en' : (channelLocale === 'en' ? 'en' : 'zh')
     wx.setStorageSync('nano_user', user)
     wx.setStorageSync('nano_channel', channel)
     wx.setStorageSync('nano_coach', coach)
-    const lang = user.language === 'en' ? 'en' : 'zh'
+    const lang = user.language === 'en' ? 'en' : (channelLocale === 'en' ? 'en' : 'zh')
     const roles = user.roles || ['user']
     const isCoach = roles.includes('coach')
     const isAdmin = roles.includes('admin') || roles.includes('superadmin')

@@ -138,7 +138,9 @@ Multiterminal applications compiled with the Donut framework support **built-in 
 ### How Updates Work
 1. **Resource vs. Shell Separation**:
    * **Resource Package (Hot-updatable)**: Contains the JS logic, WXML layouts, WXSS styles, and local assets. Uploading a new version from Weixin DevTools immediately publishes it to the Donut cloud. The native apps download and run it without a native rebuild.
-   * **Native Shell (Requires App Store update)**: Contains the native binary compilation, permissions (`AndroidManifest.xml` / `Info.plist`), native SDK versions, and Native Plugins. Changes to these require exporting a new `.apk`/`.ipa` and publishing to the app stores.
+   * **Native Shell (Requires App Store update)**: Contains the native binary compilation, permissions (`AndroidManifest.xml` / `Info.plist`), native SDK versions, and **Native Plugins**. Changes to these require exporting a new `.apk`/`.ipa` and publishing to the app stores.
+   * > [!IMPORTANT]
+   * > **Native Plugins cannot be hot-updated**. Because plugins contain compiled binary code (Java/Kotlin classes, JARs, or AARs on Android; Swift/Objective-C frameworks on iOS), they are compiled directly into the executable binary shell. Any modification to a third-party SDK or custom native plugin logic requires building a new version of the app and resubmitting it to the App Store or Google Play.
 
 2. **OTA Update Lifecycle**:
    * **Asynchronous Check (Silent/Default)**: When a cold start occurs (the application is opened from a terminated state), the Donut runtime checks in the background for a newer resource package version.

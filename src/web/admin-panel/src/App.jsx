@@ -119,6 +119,7 @@ function LoginScreen({ onLogin, sessionExpired }) {
         sessionStorage.setItem('nano_admin_tabs', JSON.stringify(res.data.allowed_tabs || []))
         sessionStorage.setItem('nano_admin_perms', JSON.stringify(res.data.allowed_perms || []))
         sessionStorage.setItem('nano_admin_cms', res.data.can_manage_subchannels ? '1' : '')
+        sessionStorage.setItem('nano_admin_can_customize_store', res.data.can_customize_store ? '1' : '')
         onLogin(res.data.token)
       } else {
         setError('Login failed')
@@ -270,6 +271,7 @@ const T = {
       channelKeyName: 'Key Name *', channelName: 'Display Name *', channelLogoUrl: 'Logo',
       uploadChannelLogo: 'Click to upload logo (PNG / JPG)', uploadChannelLogoFailed: 'Logo upload failed', removeChannelLogo: 'Remove logo',
       channelPersonaType: 'AI Persona', channelPersonaNano: 'Nano (default)', channelPersonaViva: 'Viva (Aeviva)',
+      channelLocale: 'Primary Language', channelLocaleZh: 'Chinese (中文)', channelLocaleEn: 'English',
       channelExchangeRate: 'Credit Exchange Rate', channelExchangeRateHint: 'Credits per 1 unit of currency (default 1.0)',
       channelCurrency: 'Currency', channelCurrencyHint: 'ISO code, e.g. CNY, USD',
       channel: 'Channel', channelUnassigned: 'No channel',
@@ -360,6 +362,15 @@ const T = {
       tierSubchTitle: 'Sub-channel tier config',
       tierSubchHint: 'Allow sub-channels to define their own partner tier labels and entry fees instead of inheriting from this channel.',
       tierRevoke: 'Revoke custom tier config', tierAllow: 'Allow custom tier config',
+      // Store tab
+      tabStore: 'Store',
+      storePermEnabled: 'Custom inventory items enabled',
+      storePermDisabled: 'Custom inventory items disabled',
+      storePermHint: 'This channel can add custom items to its inventory (not limited to the global catalog).',
+      storePermDisabledHint: 'This channel can only add items from the global catalog. Enable to allow custom items.',
+      storeSubchTitle: 'Sub-channel store customization',
+      storeSubchHint: 'Allow sub-channels to add and manage their own store items independently.',
+      storeRevoke: 'Revoke store access', storeAllow: 'Allow store access',
       // Danger tab
       dangerBlockedTitle: 'Cannot delete this channel',
       dangerBlockedHint: 'This channel has sub-channels. Remove all sub-channels before deleting it.',
@@ -414,7 +425,7 @@ const T = {
       itemType: 'Item Type', stock: 'Stock', stockUnlimited: 'Unlimited',
       totalItems: 'Total Items', activeItems: 'Active', physicalItems: 'Physical', virtualItems: 'Virtual',
       totalOrders: 'Total Orders', pendingOrders: 'Pending Orders',
-      itemsTab: 'Items', ordersTab: 'Orders',
+      itemsTab: 'Items', ordersTab: 'Orders', skusTab: 'SKUs & Stock',
       importFromStore: 'Import from Store',
       itemName: 'Name', source: 'Source', inStore: 'In Store', user: 'User', date: 'Date',
       sourceStore: 'Store', sourceCustom: 'Custom',
@@ -895,6 +906,7 @@ const T = {
       channelKeyName: '标识 *', channelName: '显示名称 *', channelLogoUrl: 'Logo',
       uploadChannelLogo: '点击上传 Logo（PNG / JPG）', uploadChannelLogoFailed: 'Logo 上传失败', removeChannelLogo: '移除 Logo',
       channelPersonaType: 'AI 人格', channelPersonaNano: 'Nano（默认）', channelPersonaViva: 'Viva（Aeviva）',
+      channelLocale: '主要语言', channelLocaleZh: '中文', channelLocaleEn: '英文',
       channelExchangeRate: '积分汇率', channelExchangeRateHint: '每单位货币对应的积分数（默认 1.0）',
       channelCurrency: '货币', channelCurrencyHint: 'ISO 代码，如 CNY、USD',
       channel: '渠道', channelUnassigned: '无渠道',
@@ -975,6 +987,14 @@ const T = {
       tierSubchTitle: '子渠道级别配置',
       tierSubchHint: '允许子渠道自定义合伙人级别名称和入伙费，而不是继承此渠道的设置。',
       tierRevoke: '撤销自定义级别配置', tierAllow: '允许自定义级别配置',
+      tabStore: '商城',
+      storePermEnabled: '自定义库存商品已开启',
+      storePermDisabled: '自定义库存商品未开启',
+      storePermHint: '此渠道可在库存中新增自定义商品，不限于全局商品目录。',
+      storePermDisabledHint: '此渠道只能从全局商品目录导入商品，开启后可新增自定义商品。',
+      storeSubchTitle: '子渠道自定义库存',
+      storeSubchHint: '允许子渠道新增不在全局商品目录中的自定义库存商品。',
+      storeRevoke: '撤销商城权限', storeAllow: '开启商城权限',
       dangerBlockedTitle: '无法删除此渠道',
       dangerBlockedHint: '该渠道存在子渠道，请先删除所有子渠道后再操作。',
       dangerDeleteTitle: '删除渠道',
@@ -1028,7 +1048,7 @@ const T = {
       itemType: '商品类型', stock: '库存', stockUnlimited: '不限',
       totalItems: '商品总数', activeItems: '上架中', physicalItems: '实体商品', virtualItems: '虚拟商品',
       totalOrders: '订单总数', pendingOrders: '待处理订单',
-      itemsTab: '商品', ordersTab: '订单',
+      itemsTab: '商品', ordersTab: '订单', skusTab: 'SKU 与库存',
       importFromStore: '从商城导入',
       itemName: '商品名', source: '来源', inStore: '上架状态', user: '用户', date: '日期',
       sourceStore: '商城商品', sourceCustom: '自定义',
@@ -5913,7 +5933,7 @@ function ImportFromStoreModal({ existingItems, onClose, onSelect }) {
   );
 }
 
-function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
+function InventoryTab({ channels, session, isSuperadmin }) {
   const { t } = useLang();
   const ti = t.inventory;
   const [selectedChannelId, setSelectedChannelId] = useState(
@@ -5922,6 +5942,8 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
   const [subTab, setSubTab] = useState('items');
   const [items, setItems] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [localSkus, setLocalSkus] = useState([]);
+  const [localStock, setLocalStock] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(null);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
@@ -5936,12 +5958,16 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
     if (!cid) return;
     setLoading(true);
     try {
-      const [itemsRes, ordersRes] = await Promise.allSettled([
+      const [itemsRes, ordersRes, skusRes, stockRes] = await Promise.allSettled([
         axios.get(`/api/channel-inventory?channel_id=${cid}`),
         axios.get(`/api/orders?channel_id=${cid}`),
+        axios.get('/api/skus'),
+        axios.get('/api/inventory-stock'),
       ]);
       setItems(itemsRes.status === 'fulfilled' ? (itemsRes.value.data.items || []) : []);
       setOrders(ordersRes.status === 'fulfilled' ? (ordersRes.value.data.orders || []) : []);
+      setLocalSkus(skusRes.status === 'fulfilled' ? (skusRes.value.data.skus || []) : []);
+      setLocalStock(stockRes.status === 'fulfilled' ? (stockRes.value.data.inventory || []) : []);
     } catch { setItems([]); setOrders([]); }
     finally { setLoading(false); }
   }, []);
@@ -5949,6 +5975,8 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
   useEffect(() => { fetchItems(selectedChannelId); }, [selectedChannelId, fetchItems]);
 
   const closeAndRefresh = () => { setModal(null); fetchItems(selectedChannelId); };
+
+  const ownSkus = localSkus.filter(s => String(s.channel_id) === String(selectedChannelId));
 
   const activeCount   = items.filter(i => i.active).length;
   const physicalCount = items.filter(i => i.item_type === 'physical').length;
@@ -6003,6 +6031,9 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
             <button className={`subtab-btn${subTab === 'items' ? ' active' : ''}`} onClick={() => setSubTab('items')}>
               <Box size={13} />{ti.itemsTab}
             </button>
+            <button className={`subtab-btn${subTab === 'skus' ? ' active' : ''}`} onClick={() => setSubTab('skus')}>
+              <Layers size={13} />{ti.skusTab}
+            </button>
             <button className={`subtab-btn${subTab === 'orders' ? ' active' : ''}`} onClick={() => setSubTab('orders')}>
               <Package size={13} />{ti.ordersTab} {pendingOrders > 0 && <span style={{ background: '#f59e0b', color: '#000', borderRadius: 10, padding: '1px 6px', fontSize: 11, marginLeft: 4 }}>{pendingOrders}</span>}
             </button>
@@ -6014,9 +6045,11 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
                 <button className="btn-secondary" onClick={() => setModal({ type: 'import-from-store' })}>
                   <ShoppingBag size={13} />{ti.importFromStore}
                 </button>
-                <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-                  <Plus size={13} />{ti.addItem}
-                </button>
+                {(isSuperadmin || session?.canCustomizeStore) && (
+                  <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+                    <Plus size={13} />{ti.addItem}
+                  </button>
+                )}
               </div>
 
               {loading ? (
@@ -6111,6 +6144,75 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
                 </div>
               )}
             </>
+          )}
+
+          {subTab === 'skus' && (
+            <div className="card">
+              <div className="table-toolbar">
+                <span className="table-count">{ownSkus.length} {t.store.skusRegistered}</span>
+                <button className="btn-primary" onClick={() => setModal({ type: 'add-sku' })}>
+                  <Plus size={14} />{t.store.addSku}
+                </button>
+              </div>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>{t.store.skuCode}</th>
+                    <th>{t.table.nameEn}</th>
+                    <th>{t.table.nameZh}</th>
+                    <th>{t.table.type}</th>
+                    <th>{t.store.unit}</th>
+                    <th>{t.store.locationStocks}</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ownSkus.length === 0 && <tr><td colSpan={7} className="empty-row">{t.store.noSkus}</td></tr>}
+                  {ownSkus.map(sku => {
+                    const stocks = localStock.filter(st => st.sku_id === sku.id);
+                    return (
+                      <tr key={sku.id}>
+                        <td><code className="code-tag">{sku.sku_code}</code></td>
+                        <td className="bold">{sku.name_en}</td>
+                        <td className="muted">{sku.name_zh}</td>
+                        <td>
+                          <Badge color={sku.item_type === 'physical' ? '#6366f1' : '#10b981'}>
+                            {sku.item_type === 'physical' ? t.store.physical : t.store.virtual}
+                          </Badge>
+                        </td>
+                        <td>{sku.unit_zh} / {sku.unit_en}</td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {stocks.length === 0
+                              ? <span className="muted" style={{ fontSize: 11 }}>— {t.store.noStocksConfigured}</span>
+                              : stocks.map(st => (
+                                <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                                  <span style={{ padding: '1px 5px', borderRadius: 4, background: 'rgba(99,102,241,0.15)', color: '#818cf8', fontWeight: 500 }}>
+                                    {channels.find(c => String(c.id) === String(st.channel_id))?.name || st.channel_id}
+                                  </span>
+                                  <span className="bold" style={{ color: (st.quantity ?? 0) <= (st.low_stock_threshold ?? 0) ? '#ef4444' : '#10b981' }}>
+                                    {st.quantity === null ? '∞' : `${st.quantity} ${t.store.left}`}
+                                  </span>
+                                </div>
+                              ))
+                            }
+                          </div>
+                        </td>
+                        <td>
+                          <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                            <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }} onClick={() => setModal({ type: 'adjust-stock', sku })}>
+                              {t.store.adjustStock}
+                            </button>
+                            <button className="icon-btn" title={t.store.editSku} onClick={() => setModal({ type: 'edit-sku', sku })}><Pencil size={14} /></button>
+                            <button className="icon-btn danger" title={t.store.deleteSku} onClick={() => setModal({ type: 'delete-sku', sku })}><Trash2 size={14} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
 
           {subTab === 'orders' && (
@@ -6208,7 +6310,7 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
         <ChannelInventoryItemModal
           item={modal.prefill || null}
           channelId={selectedChannelId}
-          skus={skus}
+          skus={localSkus}
           onClose={() => setModal(null)}
           onSave={closeAndRefresh}
         />
@@ -6217,7 +6319,7 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
         <ChannelInventoryItemModal
           item={modal.item}
           channelId={selectedChannelId}
-          skus={skus}
+          skus={localSkus}
           onClose={() => setModal(null)}
           onSave={closeAndRefresh}
         />
@@ -6227,6 +6329,26 @@ function InventoryTab({ channels, session, isSuperadmin, skus = [] }) {
           item={modal.item}
           onClose={() => setModal(null)}
           onConfirm={closeAndRefresh}
+        />
+      )}
+      {modal?.type === 'add-sku' && (
+        <SkuModal sku={null} channelId={selectedChannelId} onClose={() => setModal(null)} onSave={closeAndRefresh} />
+      )}
+      {modal?.type === 'edit-sku' && (
+        <SkuModal sku={modal.sku} channelId={selectedChannelId} onClose={() => setModal(null)} onSave={closeAndRefresh} />
+      )}
+      {modal?.type === 'delete-sku' && (
+        <DeleteSkuConfirm sku={modal.sku} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />
+      )}
+      {modal?.type === 'adjust-stock' && (
+        <StockAdjustModal
+          sku={modal.sku}
+          skus={ownSkus}
+          channels={channels.filter(c => String(c.id) === String(selectedChannelId))}
+          defaultLocationType="channel"
+          channelMode={selectedChannelId}
+          onClose={() => setModal(null)}
+          onSave={closeAndRefresh}
         />
       )}
       {modal?.type === 'import-from-store' && (
@@ -7033,7 +7155,7 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
   );
 }
 
-function SkuModal({ sku, onClose, onSave }) {
+function SkuModal({ sku, onClose, onSave, channelId = null }) {
   const { t } = useLang();
   const isEdit = !!sku?.id;
   const [form, setForm] = useState(isEdit
@@ -7051,8 +7173,9 @@ function SkuModal({ sku, onClose, onSave }) {
     if (!form.name_en.trim() || !form.name_zh.trim()) { setError(t.store.skuNamesRequired); return; }
     setBusy(true); setError('');
     try {
-      if (isEdit) await axios.put(`/api/skus/\${sku.id}`, form);
-      else        await axios.post('/api/skus', form);
+      const payload = channelId ? { ...form, channel_id: channelId } : form;
+      if (isEdit) await axios.put(`/api/skus/\${sku.id}`, payload);
+      else        await axios.post('/api/skus', payload);
       onSave();
     } catch (err) { setError(err.response?.data?.error || t.saveFailed); }
     finally { setBusy(false); }
@@ -7155,12 +7278,12 @@ function DeleteSkuConfirm({ sku, onClose, onConfirm }) {
   );
 }
 
-function StockAdjustModal({ sku: skuProp = null, skus = [], defaultLocationType = 'warehouse', defaultWarehouseName = '', channels = [], onClose, onSave }) {
+function StockAdjustModal({ sku: skuProp = null, skus = [], defaultLocationType = 'warehouse', defaultWarehouseName = '', channels = [], onClose, onSave, channelMode = null }) {
   const { t } = useLang();
   const [selectedSkuId, setSelectedSkuId] = useState(skuProp?.id ? String(skuProp.id) : '');
   const sku = skuProp || skus.find(s => String(s.id) === selectedSkuId) || null;
-  const [locationType, setLocationType] = useState(defaultLocationType);
-  const [channelId, setChannelId] = useState('');
+  const [locationType, setLocationType] = useState(channelMode ? 'channel' : defaultLocationType);
+  const [channelId, setChannelId] = useState(channelMode ? String(channelMode) : '');
   const [warehouseName, setWarehouseName] = useState(defaultWarehouseName || 'shanghai-central');
   const [quantity, setQuantity] = useState('');
   const [lowStockThreshold, setLowStockThreshold] = useState(5);
@@ -7213,18 +7336,20 @@ function StockAdjustModal({ sku: skuProp = null, skus = [], defaultLocationType 
             )}
           </div>
           <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
-            <label className="form-field">
-              <span>{t.store.locationType}</span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={locationType} onChange={e => setLocationType(e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  <option value="warehouse">{t.store.centralWarehouse}</option>
-                  <option value="channel">{t.store.clinicChannel}</option>
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
+            {!channelMode && (
+              <label className="form-field">
+                <span>{t.store.locationType}</span>
+                <div className="select-wrap" style={{ width: '100%' }}>
+                  <select value={locationType} onChange={e => setLocationType(e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                    <option value="warehouse">{t.store.centralWarehouse}</option>
+                    <option value="channel">{t.store.clinicChannel}</option>
+                  </select>
+                  <ChevronDown size={11} className="select-chevron" />
+                </div>
+              </label>
+            )}
 
-            {locationType === 'channel' ? (
+            {locationType === 'channel' && !channelMode ? (
               <label className="form-field">
                 <span>{t.store.selectChannel}</span>
                 <div className="select-wrap" style={{ width: '100%' }}>
@@ -7237,12 +7362,12 @@ function StockAdjustModal({ sku: skuProp = null, skus = [], defaultLocationType 
                   <ChevronDown size={11} className="select-chevron" />
                 </div>
               </label>
-            ) : (
+            ) : locationType !== 'channel' ? (
               <label className="form-field">
                 <span>{t.store.warehouseName}</span>
                 <input value={warehouseName} onChange={e => setWarehouseName(e.target.value)} placeholder="shanghai-central" />
               </label>
-            )}
+            ) : null}
 
             <label className="form-field">
               <span>{t.store.quantityLabel}</span>
@@ -9559,15 +9684,15 @@ function SimulatorsTab() {
 
 // ── Channel components ────────────────────────────────────────────────────────
 
-const EMPTY_CHANNEL = { key_name: '', name: '', logo_url: '', persona_type: 'nano', credit_exchange_rate: '1.0', currency: 'CNY' };
+const EMPTY_CHANNEL = { key_name: '', name: '', logo_url: '', persona_type: 'nano', locale: 'zh', credit_exchange_rate: '1.0', currency: 'CNY' };
 
 function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose, onSave }) {
   const { t } = useLang();
   const ch = t.channels;
   const isEdit = !!channel?.id;
   const [form, setForm] = useState(isEdit
-    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '', parent_channel_id: channel.parent_channel_id || '', persona_type: channel.config?.persona_type ?? 'nano', credit_exchange_rate: channel.config?.credit_exchange_rate ?? '1.0', currency: channel.config?.currency ?? 'CNY' }
-    : { ...EMPTY_CHANNEL, parent_channel_id: parentChannel?.id || '', persona_type: parentChannel?.config?.persona_type ?? 'nano' });
+    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '', parent_channel_id: channel.parent_channel_id || '', persona_type: channel.config?.persona_type ?? 'nano', locale: channel.config?.locale ?? 'zh', credit_exchange_rate: channel.config?.credit_exchange_rate ?? '1.0', currency: channel.config?.currency ?? 'CNY' }
+    : { ...EMPTY_CHANNEL, parent_channel_id: parentChannel?.id || '', persona_type: parentChannel?.config?.persona_type ?? 'nano', locale: parentChannel?.config?.locale ?? 'zh' });
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -9643,11 +9768,18 @@ function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose,
                 </select>
               </label>
             )}
-            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+            <label className="form-field">
               <span>{t.modal.channelPersonaType}</span>
               <select value={form.persona_type} onChange={e => set('persona_type', e.target.value)}>
                 <option value="nano">{t.modal.channelPersonaNano}</option>
                 <option value="viva">{t.modal.channelPersonaViva}</option>
+              </select>
+            </label>
+            <label className="form-field">
+              <span>{t.modal.channelLocale}</span>
+              <select value={form.locale} onChange={e => set('locale', e.target.value)}>
+                <option value="zh">{t.modal.channelLocaleZh}</option>
+                <option value="en">{t.modal.channelLocaleEn}</option>
               </select>
             </label>
             <label className="form-field">
@@ -10156,7 +10288,7 @@ function SubchannelsTab_UNUSED({ subchannels, adminAccounts, invitations, sessio
   );
 }
 
-function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchannels, subchannels, onClose, onSave }) {
+function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchannels, subchannels, onClose, onSave, onRefreshData }) {
   const { t } = useLang();
   const ch = t.channels;
   const [activeTab, setActiveTab] = useState('general');
@@ -10406,9 +10538,24 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
   const toggleSubchTierPermission = async (subch) => {
     try {
       await axios.put(`/api/channels/${subch.id}/partner-tiers-permission`, { can_customize_partner_tiers: !subch.can_customize_partner_tiers });
-      onSave();
+      onRefreshData?.();
     } catch (e) { alert(e.response?.data?.error || 'Failed'); }
   };
+
+  const toggleSubchStorePermission = async (subch) => {
+    try {
+      await axios.put(`/api/channels/${subch.id}/store-permission`, { can_customize_store: !subch.can_customize_store });
+      onRefreshData?.();
+    } catch (e) { alert(e.response?.data?.error || 'Failed'); }
+  };
+
+  const toggleOwnStorePermission = async () => {
+    try {
+      await axios.put(`/api/channels/${channel.id}/store-permission`, { can_customize_store: !channel.can_customize_store });
+      onRefreshData?.();
+    } catch (e) { alert(e.response?.data?.error || 'Failed'); }
+  };
+
 
   const saveRates = async () => {
     setRewardsSaving(true); setRewardsError('');
@@ -10439,7 +10586,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
   const toggleSubchRewardsPermission = async (subch) => {
     try {
       await axios.put(`/api/channels/${subch.id}/rewards-permission`, { can_customize_rewards: !subch.can_customize_rewards });
-      onSave();
+      onRefreshData?.();
     } catch (e) { alert(e.response?.data?.error || 'Failed'); }
   };
 
@@ -10450,6 +10597,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
     { id: 'invites', label: ch.tabInvites },
     { id: 'rewards', label: ch.tabRewards },
     { id: 'partner-tiers', label: ch.tabPartnerTiers },
+    { id: 'store', label: ch.tabStore },
     ...(isSuperadmin ? [{ id: 'sub-age', label: ch.tabSubAge }] : []),
     { id: 'danger', label: ch.tabDanger, danger: true },
   ];
@@ -10929,6 +11077,69 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
             </div>
           )}
 
+          {activeTab === 'store' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Own channel store permission status */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: channel.can_customize_store ? '#10b981' : '#94a3b8', marginBottom: 4 }}>
+                    {channel.can_customize_store ? ch.storePermEnabled : ch.storePermDisabled}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#64748b' }}>
+                    {channel.can_customize_store ? ch.storePermHint : ch.storePermDisabledHint}
+                  </div>
+                </div>
+                {isSuperadmin && (
+                  <button
+                    type="button"
+                    onClick={toggleOwnStorePermission}
+                    style={{
+                      width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
+                      background: channel.can_customize_store ? '#6366f1' : '#334155',
+                      transition: 'background 0.2s', position: 'relative',
+                    }}
+                    title={channel.can_customize_store ? ch.storeRevoke : ch.storeAllow}
+                  >
+                    <span style={{
+                      position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                      transition: 'left 0.2s', left: channel.can_customize_store ? 23 : 3,
+                    }} />
+                  </button>
+                )}
+              </div>
+
+              {/* Sub-channel store permissions */}
+              {(isSuperadmin || (canGrantSubch && channel.can_customize_store)) && subchannels?.length > 0 && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>{ch.storeSubchTitle}</div>
+                  <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>{ch.storeSubchHint}</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {subchannels.map(subch => (
+                      <div key={subch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                        <span style={{ fontSize: 13, color: '#e2e8f0' }}>{subch.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleSubchStorePermission(subch)}
+                          style={{
+                            width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
+                            background: subch.can_customize_store ? '#6366f1' : '#334155',
+                            transition: 'background 0.2s', position: 'relative',
+                          }}
+                          title={subch.can_customize_store ? ch.storeRevoke : ch.storeAllow}
+                        >
+                          <span style={{
+                            position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                            transition: 'left 0.2s', left: subch.can_customize_store ? 23 : 3,
+                          }} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'danger' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               {hasSubchannels ? (
@@ -11050,10 +11261,8 @@ function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
             <div className="row-actions">
               <button className="icon-btn" title={ch.titleAddSubchannel} onClick={() => setModal({ type: 'add', parentChannel: c })}><Plus size={13} /></button>
               <button className="icon-btn" title={ch.titleSettings} onClick={() => setModal({
-                type: 'config', channel: c,
-                hasSubchannels: !!(childrenOf[c.id]?.length),
+                type: 'config', channel: c, channelId: c.id,
                 canGrantSubch: isSuperadmin || (session?.canManageSubchannels && c.id !== parseInt(session?.channelId)),
-                subchannels: childrenOf[c.id] || [],
               })}><Settings2 size={13} /></button>
             </div>
           </td>
@@ -11108,7 +11317,20 @@ function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
       </div>
 
       {modal?.type === 'add'    && <ChannelModal channel={null} channels={channels} isSuperadmin={isSuperadmin} parentChannel={modal.parentChannel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'config' && <ChannelConfigModal channel={modal.channel} isSuperadmin={isSuperadmin} canGrantSubch={modal.canGrantSubch} hasSubchannels={modal.hasSubchannels} subchannels={modal.subchannels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'config' && (() => {
+        const liveChannel = channels.find(c => c.id === modal.channelId) || modal.channel;
+        const liveChildren = channels.filter(c => c.parent_channel_id === modal.channelId);
+        return <ChannelConfigModal
+          channel={liveChannel}
+          isSuperadmin={isSuperadmin}
+          canGrantSubch={modal.canGrantSubch}
+          hasSubchannels={liveChildren.length > 0}
+          subchannels={liveChildren}
+          onClose={() => setModal(null)}
+          onSave={closeAndRefresh}
+          onRefreshData={onRefresh}
+        />;
+      })()}
     </>
   );
 }
@@ -15727,7 +15949,7 @@ function AdminPanel({ session, onLogout }) {
 
   const isSuperadmin = !session || session.role === 'superadmin';
   const isCmsAdmin = session?.role === 'channel' && session?.canManageSubchannels;
-  const SUPERADMIN_ONLY = new Set([]);
+  const SUPERADMIN_ONLY = new Set(['store']);
 
   const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], kinoMachinePagination: null, chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [], skus: [], inventoryStock: [] });
   const [loading, setLoading] = useState(true);
@@ -15871,7 +16093,7 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
           {tab === 'dots'     && <DotsTab     dots={data.dots} onRefresh={fetchData} />}
           {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} channels={data.channels} skus={data.skus || []} inventoryStock={data.inventoryStock || []} session={session} onRefresh={fetchData} />}
-          {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} skus={data.skus || []} />}
+          {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} />}
           {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} session={session} />}
           {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} machinePagination={data.kinoMachinePagination} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
           {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
@@ -15904,6 +16126,7 @@ export default function App() {
     allowedTabs: JSON.parse(sessionStorage.getItem('nano_admin_tabs') || '[]'),
     allowedPerms: JSON.parse(sessionStorage.getItem('nano_admin_perms') || '[]'),
     canManageSubchannels: sessionStorage.getItem('nano_admin_cms') === '1',
+    canCustomizeStore: sessionStorage.getItem('nano_admin_can_customize_store') === '1',
     username: sessionStorage.getItem('nano_admin_user') || '',
   });
 

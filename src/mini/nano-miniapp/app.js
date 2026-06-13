@@ -17,7 +17,7 @@ App({
         this.globalData.user = user
         this.globalData.channel = channel || null
         this.globalData.coach = coach || null
-        this.globalData.lang = user.language === 'en' ? 'en' : 'zh'
+        this.globalData.lang = user.language === 'en' ? 'en' : ((channel?.locale === 'en') ? 'en' : 'zh')
         const savedTheme = wx.getStorageSync('nano_theme')
         this.globalData.theme = savedTheme || user.theme || 'dark'
       }
