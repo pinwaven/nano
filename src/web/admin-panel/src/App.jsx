@@ -320,7 +320,7 @@ const T = {
       // ChannelConfigModal — header & tab labels
       configTitle: (name) => `Settings — ${name}`,
       tabGeneral: 'General', tabAdmins: 'Admins', tabInvites: 'Invites',
-      tabRewards: 'Rewards', tabPartnerTiers: 'Partner Tiers',
+      tabRewards: 'Rewards', tabPartnerTiers: 'Partner Tiers', tabPartnerSystem: 'Partner System',
       tabSubAge: 'Sub-age Labels', tabDanger: 'Danger',
       // General tab
       subchannelMgmt: 'Sub-channel Management',
@@ -362,6 +362,28 @@ const T = {
       tierSubchTitle: 'Sub-channel tier config',
       tierSubchHint: 'Allow sub-channels to define their own partner tier labels and entry fees instead of inheriting from this channel.',
       tierRevoke: 'Revoke custom tier config', tierAllow: 'Allow custom tier config',
+      // Partner System tab
+      psPermEnabled: 'Custom partner system enabled',
+      psPermDisabled: 'Custom partner system disabled',
+      psPermHint: 'This channel can define its own partner types and commission rules independently of the global system.',
+      psPermDisabledHint: 'Enable to allow this channel to define custom partner types and commission rules.',
+      psRevoke: 'Revoke partner system', psAllow: 'Enable partner system',
+      psSubchTitle: 'Sub-channel partner system',
+      psSubchHint: 'Allow sub-channels to define their own partner types and commission rules.',
+      psTypesTitle: 'Partner Types', psRulesTitle: 'Commission Rules',
+      psAddType: 'Add Type', psEditType: 'Edit', psDeactivateType: 'Deactivate',
+      psAddRule: 'Add Rule', psEditRule: 'Edit', psDeleteRule: 'Delete',
+      psTypeKey: 'Key (snake_case)', psTypeLabelEn: 'Label EN', psTypeLabelZh: 'Label ZH',
+      psTypeColor: 'Color', psTypeEntryFee: 'Entry Fee (¥)', psTypeSortOrder: 'Sort Order',
+      psTypeDesc: 'Description', psTypeActive: 'Active',
+      psRuleEventType: 'Event Type', psRuleUplineLevel: 'Upline Level',
+      psRuleEarnerType: 'Earner Type (tier)', psRuleSubjectType: 'Subject Type (tier)',
+      psRuleRate: 'Rate (0–1)', psRuleDesc: 'Description', psRuleSortOrder: 'Sort',
+      psSaving: 'Saving…', psDeleting: 'Deleting…',
+      psNoTypes: 'No custom types yet. Add one to start customizing.',
+      psNoRules: 'No custom commission rules yet.',
+      psNoPermission: 'This channel does not have partner system customization permission.',
+      psGlobalTypesHint: 'Earner/subject types use global tier keys as reference.',
       // Store tab
       tabStore: 'Store',
       storePermEnabled: 'Custom inventory items enabled',
@@ -952,7 +974,7 @@ const T = {
       parentChannelNone: '无（顶级渠道）',
       configTitle: (name) => `设置 — ${name}`,
       tabGeneral: '基本信息', tabAdmins: '管理员', tabInvites: '邀请码',
-      tabRewards: '奖励设置', tabPartnerTiers: '合伙人级别',
+      tabRewards: '奖励设置', tabPartnerTiers: '合伙人级别', tabPartnerSystem: '合伙人体系',
       tabSubAge: '年龄维度标签', tabDanger: '危险操作',
       subchannelMgmt: '子渠道管理',
       subchannelMgmtHint: '允许该渠道的管理员创建和管理子渠道',
@@ -987,6 +1009,27 @@ const T = {
       tierSubchTitle: '子渠道级别配置',
       tierSubchHint: '允许子渠道自定义合伙人级别名称和入伙费，而不是继承此渠道的设置。',
       tierRevoke: '撤销自定义级别配置', tierAllow: '允许自定义级别配置',
+      psPermEnabled: '自定义合伙人体系已开启',
+      psPermDisabled: '自定义合伙人体系未开启',
+      psPermHint: '此渠道可定义独立的合伙人类型和佣金规则，不受全局设置约束。',
+      psPermDisabledHint: '开启后，此渠道可创建自定义合伙人类型和佣金规则。',
+      psRevoke: '撤销合伙人体系权限', psAllow: '开启合伙人体系权限',
+      psSubchTitle: '子渠道合伙人体系',
+      psSubchHint: '允许子渠道定义各自的合伙人类型和佣金规则。',
+      psTypesTitle: '合伙人类型', psRulesTitle: '佣金规则',
+      psAddType: '添加类型', psEditType: '编辑', psDeactivateType: '停用',
+      psAddRule: '添加规则', psEditRule: '编辑', psDeleteRule: '删除',
+      psTypeKey: '标识符（snake_case）', psTypeLabelEn: '英文名称', psTypeLabelZh: '中文名称',
+      psTypeColor: '颜色', psTypeEntryFee: '入伙费（¥）', psTypeSortOrder: '排序',
+      psTypeDesc: '描述', psTypeActive: '启用',
+      psRuleEventType: '事件类型', psRuleUplineLevel: '上级层级',
+      psRuleEarnerType: '获益方类型', psRuleSubjectType: '触发方类型',
+      psRuleRate: '比例（0–1）', psRuleDesc: '描述', psRuleSortOrder: '排序',
+      psSaving: '保存中…', psDeleting: '删除中…',
+      psNoTypes: '暂无自定义类型，添加后开始定制。',
+      psNoRules: '暂无自定义佣金规则。',
+      psNoPermission: '该渠道尚未开启合伙人体系自定义权限。',
+      psGlobalTypesHint: '获益方/触发方类型参考全局合伙人类型标识符。',
       tabStore: '商城',
       storePermEnabled: '自定义库存商品已开启',
       storePermDisabled: '自定义库存商品未开启',
@@ -8804,10 +8847,17 @@ function PartnersTab({ users = [], session }) {
   const [commBusy, setCommBusy] = useState(false);
   const [commError, setCommError] = useState('');
 
-  const TIER_KEYS = ['light_entrepreneur', 'leader_partner', 'operations_center'];
+  const [partnerTypes, setPartnerTypes] = useState([]);
   const [config, setConfig] = useState(null);
   const [configBusy, setConfigBusy] = useState(false);
   const [configMsg, setConfigMsg] = useState('');
+  const [typeForm, setTypeForm] = useState({});
+  const [editingType, setEditingType] = useState(null);
+  const [showTypeForm, setShowTypeForm] = useState(false);
+  const [typeBusy, setTypeBusy] = useState(false);
+  const [typeError, setTypeError] = useState('');
+
+  const TIER_KEYS = partnerTypes.map(t => t.key);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -8817,15 +8867,17 @@ function PartnersTab({ users = [], session }) {
         axios.get('/api/partner-commissions'),
         axios.get('/api/partner-payouts'),
         axios.get('/api/partner-commission-config'),
+        axios.get('/api/partner-types'),
       ];
       if (session?.channelId) {
         requests.push(axios.get(`/api/channels/${session.channelId}/partner-tiers-config`));
       }
-      const [pRes, cRes, pyRes, cfgRes, tcRes] = await Promise.all(requests);
+      const [pRes, cRes, pyRes, cfgRes, ptRes, tcRes] = await Promise.all(requests);
       setPartners(pRes.data.partners || []);
       setCommissions(cRes.data.commissions || []);
       setPayouts(pyRes.data.payouts || []);
       setConfig(cfgRes.data.config || null);
+      setPartnerTypes(ptRes.data.types || []);
       if (tcRes) setTierCfg(tcRes.data.partner_tiers_config || null);
     } finally {
       setLoading(false);
@@ -8864,11 +8916,35 @@ function PartnersTab({ users = [], session }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const tierLabel = (tier) => tierCfg?.[tier]?.label || ({ light_entrepreneur: p.tierLight, leader_partner: p.tierLeader, operations_center: p.tierOps }[tier] || tier);
-  const tierColor = (tier) => tierCfg?.[tier]?.color || ({ light_entrepreneur: '#0ea5e9', leader_partner: '#8b5cf6', operations_center: '#f59e0b' }[tier] || '#64748b');
+  const tierLabel = (tier) => tierCfg?.[tier]?.label || partnerTypes.find(t => t.key === tier)?.label_zh || partnerTypes.find(t => t.key === tier)?.label || tier;
+  const tierColor = (tier) => tierCfg?.[tier]?.color || partnerTypes.find(t => t.key === tier)?.color || '#64748b';
   const statusColor = (s) => ({ active: '#16a34a', pending: '#f59e0b', inactive: '#94a3b8', draft: '#64748b', approved: '#2563eb', transferred: '#16a34a' }[s] || '#64748b');
   const statusLabel = (s) => ({ active: p.statusActive, pending: p.statusPending, inactive: p.statusInactive, draft: p.draft, approved: p.approved, transferred: p.transferred }[s] || s);
   const sourceLabel = (s) => ({ referral: p.typeReferral, sales: p.typeSales, team_primary: p.typeTeamPrimary, team_secondary: p.typeTeamSecondary, wholesale_margin: p.typeWholesale }[s] || s);
+
+  function openAddType() { setEditingType(null); setTypeForm({ color: '#64748b', sort_order: partnerTypes.length + 1, entry_fee: 0 }); setTypeError(''); setShowTypeForm(true); }
+  function openEditType(t) { setEditingType(t); setTypeForm({ ...t }); setTypeError(''); setShowTypeForm(true); }
+
+  async function savePartnerType() {
+    if (!typeForm.key && !editingType) { setTypeError('Key is required'); return; }
+    if (!typeForm.label) { setTypeError('Label is required'); return; }
+    setTypeBusy(true); setTypeError('');
+    try {
+      if (editingType) await axios.put(`/api/partner-types/${editingType.key}`, typeForm);
+      else await axios.post('/api/partner-types', typeForm);
+      setShowTypeForm(false);
+      await load();
+    } catch (err) { setTypeError(err.response?.data?.error || 'Save failed'); }
+    finally { setTypeBusy(false); }
+  }
+
+  async function deactivatePartnerType(key) {
+    if (!confirm(`Deactivate partner type "${key}"? Active partners with this type will not be affected.`)) return;
+    try {
+      await axios.delete(`/api/partner-types/${key}`);
+      await load();
+    } catch (err) { alert(err.response?.data?.error || 'Failed'); }
+  }
 
   function openAdd() { setEditing(null); setForm({ status: 'active' }); setFormError(''); setUserSearch(''); setShowForm(true); }
   function openEdit(partner) { setEditing(partner); setForm({ ...partner }); setFormError(''); setShowForm(true); }
@@ -8929,11 +9005,7 @@ function PartnersTab({ users = [], session }) {
   const totalEarned = commissions.reduce((sum, c) => sum + Number(c.amount_cny || 0), 0);
   const pendingPayoutCount = payouts.filter(py => py.status === 'draft').length;
 
-  const TIERS = [
-    { value: 'light_entrepreneur', label: p.tierLight },
-    { value: 'leader_partner', label: p.tierLeader },
-    { value: 'operations_center', label: p.tierOps },
-  ];
+  const TIERS = partnerTypes.filter(t => t.is_active).map(t => ({ value: t.key, label: t.label_zh || t.label }));
   const SOURCE_TYPES = [
     { value: 'referral', label: p.typeReferral },
     { value: 'sales', label: p.typeSales },
@@ -8963,6 +9035,9 @@ function PartnersTab({ users = [], session }) {
         </button>
         <button className={`subtab-btn${subTab === 'rules' ? ' active' : ''}`} onClick={() => setSubTab('rules')}>
           <Settings2 size={13} /> {p.rulesTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'types' ? ' active' : ''}`} onClick={() => setSubTab('types')}>
+          <Users size={13} /> Partner Types
         </button>
       </div>
 
@@ -9084,6 +9159,40 @@ function PartnersTab({ users = [], session }) {
         </div>
       )}
 
+      {!loading && subTab === 'types' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{partnerTypes.length} type{partnerTypes.length !== 1 ? 's' : ''}</span>
+            <button className="btn-primary" onClick={openAddType}><Plus size={13} />Add Partner Type</button>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr><th>Key</th><th>Label</th><th>Label (ZH)</th><th>Color</th><th>Entry Fee</th><th>Sort</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody>
+              {partnerTypes.length === 0 && <tr><td colSpan={8} className="empty-row">No partner types</td></tr>}
+              {partnerTypes.map(t => (
+                <tr key={t.key}>
+                  <td><code className="code-tag">{t.key}</code></td>
+                  <td className="bold"><Badge color={t.color || '#64748b'}>{t.label}</Badge></td>
+                  <td>{t.label_zh || <span className="muted">—</span>}</td>
+                  <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 14, height: 14, borderRadius: '50%', background: t.color, border: '1px solid rgba(255,255,255,0.2)', display: 'inline-block' }} />{t.color}</span></td>
+                  <td>¥{Number(t.entry_fee || 0).toLocaleString()}</td>
+                  <td className="muted">{t.sort_order}</td>
+                  <td><Badge color={t.is_active ? '#16a34a' : '#94a3b8'}>{t.is_active ? 'Active' : 'Inactive'}</Badge></td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" title="Edit" onClick={() => openEditType(t)}><Pencil size={14} /></button>
+                      {t.is_active && <button className="icon-btn" title="Deactivate" onClick={() => deactivatePartnerType(t.key)}><Trash2 size={14} /></button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {!loading && subTab === 'rules' && config && (
         <div className="card" style={{ padding: '24px 28px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
@@ -9104,13 +9213,13 @@ function PartnersTab({ users = [], session }) {
               <thead>
                 <tr>
                   <th style={{ minWidth: 130 }}>{p.uplineTier} / {p.newTier}</th>
-                  {TIER_KEYS.map(tk => <th key={tk} style={{ minWidth: 120 }}>{({ light_entrepreneur: p.tierLight, leader_partner: p.tierLeader, operations_center: p.tierOps })[tk]}</th>)}
+                  {TIER_KEYS.map(tk => <th key={tk} style={{ minWidth: 120 }}>{tierLabel(tk)}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {TIER_KEYS.map(upline => (
                   <tr key={upline}>
-                    <td className="bold">{({ light_entrepreneur: p.tierLight, leader_partner: p.tierLeader, operations_center: p.tierOps })[upline]}</td>
+                    <td className="bold">{tierLabel(upline)}</td>
                     {TIER_KEYS.map(newTier => (
                       <td key={newTier}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -9140,7 +9249,7 @@ function PartnersTab({ users = [], session }) {
                 <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
                   {TIER_KEYS.map(tk => (
                     <label className="form-field" key={tk}>
-                      <span>{({ light_entrepreneur: p.tierLight, leader_partner: p.tierLeader, operations_center: p.tierOps })[tk]}</span>
+                      <span>{tierLabel(tk)}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <input type="number" min="0" max="100" step="1"
                           value={config[field]?.[tk] != null ? Math.round(Number(config[field][tk]) * 100) : ''}
@@ -9176,6 +9285,69 @@ function PartnersTab({ users = [], session }) {
                 </label>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {showTypeForm && (
+        <div className="modal-overlay" onClick={() => setShowTypeForm(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span>{editingType ? 'Edit Partner Type' : 'Add Partner Type'}</span>
+              <button className="icon-btn" onClick={() => setShowTypeForm(false)}><X size={16} /></button>
+            </div>
+            <form onSubmit={e => { e.preventDefault(); savePartnerType(); }}>
+              <div className="modal-body">
+                <div className="form-grid">
+                  {!editingType && (
+                    <label className="form-field">
+                      <span>Key (snake_case) *</span>
+                      <input value={typeForm.key || ''} onChange={e => setTypeForm(f => ({ ...f, key: e.target.value }))} placeholder="e.g. gold_partner" />
+                    </label>
+                  )}
+                  <label className="form-field">
+                    <span>Label (EN) *</span>
+                    <input value={typeForm.label || ''} onChange={e => setTypeForm(f => ({ ...f, label: e.target.value }))} />
+                  </label>
+                  <label className="form-field">
+                    <span>Label (ZH)</span>
+                    <input value={typeForm.label_zh || ''} onChange={e => setTypeForm(f => ({ ...f, label_zh: e.target.value }))} />
+                  </label>
+                  <label className="form-field">
+                    <span>Color</span>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input type="color" value={typeForm.color || '#64748b'} onChange={e => setTypeForm(f => ({ ...f, color: e.target.value }))} style={{ width: 36, height: 32, padding: 2, borderRadius: 4, border: '1px solid var(--border)', cursor: 'pointer' }} />
+                      <input value={typeForm.color || ''} onChange={e => setTypeForm(f => ({ ...f, color: e.target.value }))} placeholder="#64748b" style={{ flex: 1 }} />
+                    </div>
+                  </label>
+                  <label className="form-field">
+                    <span>Entry Fee (¥)</span>
+                    <input type="number" min="0" value={typeForm.entry_fee ?? ''} onChange={e => setTypeForm(f => ({ ...f, entry_fee: e.target.value === '' ? 0 : Number(e.target.value) }))} />
+                  </label>
+                  <label className="form-field">
+                    <span>Sort Order</span>
+                    <input type="number" value={typeForm.sort_order ?? ''} onChange={e => setTypeForm(f => ({ ...f, sort_order: Number(e.target.value) }))} />
+                  </label>
+                  <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                    <span>Description</span>
+                    <input value={typeForm.description || ''} onChange={e => setTypeForm(f => ({ ...f, description: e.target.value }))} style={{ width: '100%' }} />
+                  </label>
+                  {editingType && (
+                    <label className="form-field" style={{ gridColumn: '1 / -1', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <input type="checkbox" checked={!!typeForm.is_active} onChange={e => setTypeForm(f => ({ ...f, is_active: e.target.checked }))} />
+                      <span>Active</span>
+                    </label>
+                  )}
+                </div>
+                {typeError && <div className="form-error">{typeError}</div>}
+              </div>
+              <div className="modal-footer" style={{ padding: '12px 20px 16px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setShowTypeForm(false)} disabled={typeBusy}>{t.modal.cancel}</button>
+                <button type="submit" className="btn-primary" disabled={typeBusy}>
+                  <Check size={14} />{typeBusy ? t.modal.saving : t.modal.save}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -10486,12 +10658,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
   const canEditRates = isSuperadmin || isRoot || channel.can_customize_rewards;
 
   // ── Partner Tiers tab ─────────────────────────────────────────────────────────
-  const TIER_KEYS = ['light_entrepreneur', 'leader_partner', 'operations_center'];
-  const TIER_DEFAULTS = {
-    light_entrepreneur: { label: 'Light Entrepreneur', label_zh: '轻创业者',  entry_fee: 9800,   color: '#0ea5e9', description: '' },
-    leader_partner:     { label: 'Leader Partner',     label_zh: '领导合伙人', entry_fee: 49800,  color: '#8b5cf6', description: '' },
-    operations_center:  { label: 'Operations Center',  label_zh: '运营中心',   entry_fee: 300000, color: '#f59e0b', description: '' },
-  };
+  const [chPartnerTypes, setChPartnerTypes] = useState([]);
   const [tierCfgData, setTierCfgData] = useState(null);
   const [tierCfgForm, setTierCfgForm] = useState(null);
   const [tierCfgLoading, setTierCfgLoading] = useState(false);
@@ -10504,11 +10671,18 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
   const loadTierCfg = async () => {
     setTierCfgLoading(true); setTierCfgError('');
     try {
-      const r = await axios.get(`/api/channels/${channel.id}/partner-tiers-config`);
+      const [r, ptRes] = await Promise.all([
+        axios.get(`/api/channels/${channel.id}/partner-tiers-config`),
+        axios.get('/api/partner-types'),
+      ]);
+      const types = ptRes.data.types || [];
+      setChPartnerTypes(types);
       setTierCfgData(r.data);
       const effective = r.data.partner_tiers_config || {};
       const merged = {};
-      TIER_KEYS.forEach(k => { merged[k] = { ...TIER_DEFAULTS[k], ...(effective[k] || {}) }; });
+      types.forEach(t => {
+        merged[t.key] = { label: t.label, label_zh: t.label_zh || '', entry_fee: Number(t.entry_fee || 0), color: t.color, description: t.description || '', ...(effective[t.key] || {}) };
+      });
       setTierCfgForm(merged);
     } catch (e) { setTierCfgError(e.response?.data?.error || 'Failed to load'); }
     finally { setTierCfgLoading(false); }
@@ -10556,6 +10730,114 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
     } catch (e) { alert(e.response?.data?.error || 'Failed'); }
   };
 
+  // ── Partner System tab ───────────────────────────────────────────────────────
+  const [psTypes, setPsTypes] = useState([]);
+  const [psRules, setPsRules] = useState([]);
+  const [globalTypes, setGlobalTypes] = useState([]);
+  const [psLoading, setPsLoading] = useState(false);
+  const [psError, setPsError] = useState('');
+  const [psMsg, setPsMsg] = useState('');
+
+  // Type form state
+  const psTypeEmpty = { key: '', label: '', label_zh: '', color: '#64748b', entry_fee: 0, sort_order: 0, description: '', is_active: true };
+  const [psTypeForm, setPsTypeForm] = useState(psTypeEmpty);
+  const [editingPsType, setEditingPsType] = useState(null);
+  const [showPsTypeForm, setShowPsTypeForm] = useState(false);
+  const [psTypeBusy, setPsTypeBusy] = useState(false);
+
+  // Rule form state
+  const psRuleEmpty = { event_type: 'referral', upline_level: '', earner_type: '', subject_type: '', rate: '', description: '', sort_order: 0 };
+  const [psRuleForm, setPsRuleForm] = useState(psRuleEmpty);
+  const [editingPsRule, setEditingPsRule] = useState(null);
+  const [showPsRuleForm, setShowPsRuleForm] = useState(false);
+  const [psRuleBusy, setPsRuleBusy] = useState(false);
+
+  const loadPartnerSystem = async () => {
+    setPsLoading(true); setPsError('');
+    try {
+      const [typesRes, rulesRes, globalRes] = await Promise.all([
+        axios.get('/api/partner-types', { params: { channel_id: channel.id } }),
+        axios.get('/api/partner-commission-rules', { params: { channel_id: channel.id } }),
+        axios.get('/api/partner-types'),
+      ]);
+      setPsTypes(typesRes.data.types || []);
+      setPsRules(rulesRes.data.rules || []);
+      setGlobalTypes(globalRes.data.types || []);
+    } catch (e) { setPsError(e.response?.data?.error || 'Failed to load'); }
+    finally { setPsLoading(false); }
+  };
+
+  useEffect(() => { if (activeTab === 'partner-system') loadPartnerSystem(); }, [activeTab, channel.id]);
+
+  const savePsType = async () => {
+    setPsTypeBusy(true); setPsError('');
+    try {
+      if (editingPsType) {
+        await axios.put(`/api/partner-types/${editingPsType.key}`, { ...psTypeForm, channel_id: channel.id });
+      } else {
+        await axios.post('/api/partner-types', { ...psTypeForm, channel_id: channel.id });
+      }
+      setShowPsTypeForm(false); setEditingPsType(null); setPsTypeForm(psTypeEmpty);
+      setPsMsg('Saved'); setTimeout(() => setPsMsg(''), 2000);
+      await loadPartnerSystem();
+    } catch (e) { setPsError(e.response?.data?.error || 'Save failed'); }
+    finally { setPsTypeBusy(false); }
+  };
+
+  const deactivatePsType = async (t) => {
+    if (!window.confirm(`Deactivate type "${t.key}"?`)) return;
+    try {
+      await axios.delete(`/api/partner-types/${t.key}`, { data: { channel_id: channel.id } });
+      await loadPartnerSystem();
+    } catch (e) { alert(e.response?.data?.error || 'Failed'); }
+  };
+
+  const savePsRule = async () => {
+    setPsRuleBusy(true); setPsError('');
+    try {
+      const payload = {
+        event_type: psRuleForm.event_type,
+        upline_level: psRuleForm.upline_level !== '' ? Number(psRuleForm.upline_level) : null,
+        earner_type: psRuleForm.earner_type || null,
+        subject_type: psRuleForm.subject_type || null,
+        rate: Number(psRuleForm.rate),
+        description: psRuleForm.description || null,
+        sort_order: Number(psRuleForm.sort_order) || 0,
+        channel_id: channel.id,
+      };
+      if (editingPsRule) {
+        await axios.put(`/api/partner-commission-rules/${editingPsRule.id}`, payload);
+      } else {
+        await axios.post('/api/partner-commission-rules', payload);
+      }
+      setShowPsRuleForm(false); setEditingPsRule(null); setPsRuleForm(psRuleEmpty);
+      setPsMsg('Saved'); setTimeout(() => setPsMsg(''), 2000);
+      await loadPartnerSystem();
+    } catch (e) { setPsError(e.response?.data?.error || 'Save failed'); }
+    finally { setPsRuleBusy(false); }
+  };
+
+  const deletePsRule = async (rule) => {
+    if (!window.confirm(`Delete rule "${rule.description || rule.event_type}"?`)) return;
+    try {
+      await axios.delete(`/api/partner-commission-rules/${rule.id}`);
+      await loadPartnerSystem();
+    } catch (e) { alert(e.response?.data?.error || 'Failed'); }
+  };
+
+  const toggleSubchPartnerSystemPermission = async (subch) => {
+    try {
+      await axios.put(`/api/channels/${subch.id}/partner-system-permission`, { can_customize_partner_system: !subch.can_customize_partner_system });
+      onRefreshData?.();
+    } catch (e) { alert(e.response?.data?.error || 'Failed'); }
+  };
+
+  const toggleOwnPartnerSystemPermission = async () => {
+    try {
+      await axios.put(`/api/channels/${channel.id}/partner-system-permission`, { can_customize_partner_system: !channel.can_customize_partner_system });
+      onRefreshData?.();
+    } catch (e) { alert(e.response?.data?.error || 'Failed'); }
+  };
 
   const saveRates = async () => {
     setRewardsSaving(true); setRewardsError('');
@@ -10597,6 +10879,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
     { id: 'invites', label: ch.tabInvites },
     { id: 'rewards', label: ch.tabRewards },
     { id: 'partner-tiers', label: ch.tabPartnerTiers },
+    ...(isSuperadmin || channel.can_customize_partner_system ? [{ id: 'partner-system', label: ch.tabPartnerSystem }] : []),
     { id: 'store', label: ch.tabStore },
     ...(isSuperadmin ? [{ id: 'sub-age', label: ch.tabSubAge }] : []),
     { id: 'danger', label: ch.tabDanger, danger: true },
@@ -10981,7 +11264,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                     </div>
                   )}
 
-                  {tierCfgForm && TIER_KEYS.map(tk => {
+                  {tierCfgForm && chPartnerTypes.map(pt => { const tk = pt.key;
                     const row = tierCfgForm[tk] || {};
                     const setField = (field, val) =>
                       setTierCfgForm(f => ({ ...f, [tk]: { ...f[tk], [field]: val } }));
@@ -11073,6 +11356,273 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                     </div>
                   )}
                 </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'partner-system' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Permission status */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: channel.can_customize_partner_system ? '#10b981' : '#94a3b8', marginBottom: 4 }}>
+                    {channel.can_customize_partner_system ? ch.psPermEnabled : ch.psPermDisabled}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#64748b' }}>
+                    {channel.can_customize_partner_system ? ch.psPermHint : ch.psPermDisabledHint}
+                  </div>
+                </div>
+                {isSuperadmin && (
+                  <button type="button" onClick={toggleOwnPartnerSystemPermission} style={{
+                    width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
+                    background: channel.can_customize_partner_system ? '#6366f1' : '#334155', transition: 'background 0.2s', position: 'relative',
+                  }} title={channel.can_customize_partner_system ? ch.psRevoke : ch.psAllow}>
+                    <span style={{ position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', left: channel.can_customize_partner_system ? 23 : 3 }} />
+                  </button>
+                )}
+              </div>
+
+              {channel.can_customize_partner_system ? (
+                psLoading ? (
+                  <p style={{ fontSize: 13, color: '#94a3b8' }}>Loading…</p>
+                ) : (
+                  <>
+                    {psError && <p className="form-error">{psError}</p>}
+                    {psMsg && <p style={{ fontSize: 13, color: '#16a34a' }}>{psMsg}</p>}
+
+                    {/* ── Partner Types ──────────────────────────────────────── */}
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <span style={{ fontWeight: 600, fontSize: 13 }}>{ch.psTypesTitle}</span>
+                        <button className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => { setPsTypeForm(psTypeEmpty); setEditingPsType(null); setShowPsTypeForm(true); }}>
+                          + {ch.psAddType}
+                        </button>
+                      </div>
+                      {psTypes.length === 0 ? (
+                        <p style={{ fontSize: 12, color: '#64748b' }}>{ch.psNoTypes}</p>
+                      ) : (
+                        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ color: '#64748b', borderBottom: '1px solid var(--border)' }}>
+                              <th style={{ textAlign: 'left', padding: '4px 6px' }}>Key</th>
+                              <th style={{ textAlign: 'left', padding: '4px 6px' }}>Label</th>
+                              <th style={{ textAlign: 'left', padding: '4px 6px' }}>Color</th>
+                              <th style={{ textAlign: 'right', padding: '4px 6px' }}>Fee</th>
+                              <th style={{ padding: '4px 6px' }}>Status</th>
+                              <th style={{ padding: '4px 6px' }}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {psTypes.map(t => (
+                              <tr key={t.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                <td style={{ padding: '5px 6px', fontFamily: 'monospace', color: '#94a3b8' }}>{t.key}</td>
+                                <td style={{ padding: '5px 6px' }}>{t.label_zh || t.label}</td>
+                                <td style={{ padding: '5px 6px' }}>
+                                  <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: 3, background: t.color, verticalAlign: 'middle', marginRight: 4 }} />
+                                  <span style={{ color: '#64748b', fontFamily: 'monospace' }}>{t.color}</span>
+                                </td>
+                                <td style={{ padding: '5px 6px', textAlign: 'right' }}>¥{Number(t.entry_fee).toLocaleString()}</td>
+                                <td style={{ padding: '5px 6px', textAlign: 'center' }}>
+                                  <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: t.is_active ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: t.is_active ? '#10b981' : '#ef4444' }}>
+                                    {t.is_active ? 'Active' : 'Inactive'}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '5px 6px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                  <button className="btn-secondary" style={{ fontSize: 11, padding: '2px 8px', marginRight: 4 }} onClick={() => { setPsTypeForm({ key: t.key, label: t.label, label_zh: t.label_zh || '', color: t.color, entry_fee: t.entry_fee, sort_order: t.sort_order, description: t.description || '', is_active: t.is_active }); setEditingPsType(t); setShowPsTypeForm(true); }}>
+                                    {ch.psEditType}
+                                  </button>
+                                  {t.is_active && (
+                                    <button className="btn-secondary" style={{ fontSize: 11, padding: '2px 8px', color: '#f87171' }} onClick={() => deactivatePsType(t)}>
+                                      {ch.psDeactivateType}
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+
+                      {/* Type form */}
+                      {showPsTypeForm && (
+                        <div style={{ marginTop: 12, padding: 14, background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                          <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 10 }}>{editingPsType ? `Edit: ${editingPsType.key}` : 'New Partner Type'}</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                            {!editingPsType && (
+                              <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                                <span style={{ fontSize: 11 }}>{ch.psTypeKey} *</span>
+                                <input className="form-input" value={psTypeForm.key} onChange={e => setPsTypeForm(f => ({ ...f, key: e.target.value }))} placeholder="e.g. gold_partner" />
+                              </label>
+                            )}
+                            <label className="form-field">
+                              <span style={{ fontSize: 11 }}>{ch.psTypeLabelEn} *</span>
+                              <input className="form-input" value={psTypeForm.label} onChange={e => setPsTypeForm(f => ({ ...f, label: e.target.value }))} />
+                            </label>
+                            <label className="form-field">
+                              <span style={{ fontSize: 11 }}>{ch.psTypeLabelZh}</span>
+                              <input className="form-input" value={psTypeForm.label_zh} onChange={e => setPsTypeForm(f => ({ ...f, label_zh: e.target.value }))} />
+                            </label>
+                            <label className="form-field">
+                              <span style={{ fontSize: 11 }}>{ch.psTypeColor}</span>
+                              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                <input type="color" value={psTypeForm.color} onChange={e => setPsTypeForm(f => ({ ...f, color: e.target.value }))} style={{ width: 32, height: 28, padding: 2, borderRadius: 4, border: '1px solid var(--border)', cursor: 'pointer' }} />
+                                <input className="form-input" value={psTypeForm.color} onChange={e => setPsTypeForm(f => ({ ...f, color: e.target.value }))} style={{ flex: 1 }} />
+                              </div>
+                            </label>
+                            <label className="form-field">
+                              <span style={{ fontSize: 11 }}>{ch.psTypeEntryFee}</span>
+                              <input type="number" className="form-input" value={psTypeForm.entry_fee} onChange={e => setPsTypeForm(f => ({ ...f, entry_fee: Number(e.target.value) }))} />
+                            </label>
+                            <label className="form-field">
+                              <span style={{ fontSize: 11 }}>{ch.psTypeSortOrder}</span>
+                              <input type="number" className="form-input" value={psTypeForm.sort_order} onChange={e => setPsTypeForm(f => ({ ...f, sort_order: Number(e.target.value) }))} />
+                            </label>
+                            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                              <span style={{ fontSize: 11 }}>{ch.psTypeDesc}</span>
+                              <input className="form-input" value={psTypeForm.description} onChange={e => setPsTypeForm(f => ({ ...f, description: e.target.value }))} />
+                            </label>
+                            {editingPsType && (
+                              <label className="form-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <input type="checkbox" checked={psTypeForm.is_active} onChange={e => setPsTypeForm(f => ({ ...f, is_active: e.target.checked }))} />
+                                <span style={{ fontSize: 11 }}>{ch.psTypeActive}</span>
+                              </label>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
+                            <button className="btn-secondary" onClick={() => { setShowPsTypeForm(false); setEditingPsType(null); }}>{t.modal.cancel}</button>
+                            <button className="btn-primary" onClick={savePsType} disabled={psTypeBusy}>{psTypeBusy ? ch.psSaving : t.modal.save}</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Commission Rules ──────────────────────────────────── */}
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <span style={{ fontWeight: 600, fontSize: 13 }}>{ch.psRulesTitle}</span>
+                        <button className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => { setPsRuleForm(psRuleEmpty); setEditingPsRule(null); setShowPsRuleForm(true); }}>
+                          + {ch.psAddRule}
+                        </button>
+                      </div>
+                      <p style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>{ch.psGlobalTypesHint}</p>
+                      {psRules.length === 0 ? (
+                        <p style={{ fontSize: 12, color: '#64748b' }}>{ch.psNoRules}</p>
+                      ) : (
+                        <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ color: '#64748b', borderBottom: '1px solid var(--border)' }}>
+                              <th style={{ textAlign: 'left', padding: '4px 6px' }}>Event</th>
+                              <th style={{ textAlign: 'left', padding: '4px 6px' }}>Lvl</th>
+                              <th style={{ textAlign: 'left', padding: '4px 6px' }}>Earner</th>
+                              <th style={{ textAlign: 'left', padding: '4px 6px' }}>Subject</th>
+                              <th style={{ textAlign: 'right', padding: '4px 6px' }}>Rate</th>
+                              <th style={{ padding: '4px 6px' }}>On</th>
+                              <th style={{ padding: '4px 6px' }}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {psRules.map(r => (
+                              <tr key={r.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', opacity: r.is_active ? 1 : 0.5 }}>
+                                <td style={{ padding: '4px 6px', fontFamily: 'monospace', fontSize: 10 }}>{r.event_type}</td>
+                                <td style={{ padding: '4px 6px', color: '#94a3b8' }}>{r.upline_level ?? '—'}</td>
+                                <td style={{ padding: '4px 6px', color: '#94a3b8' }}>{r.earner_type || '*'}</td>
+                                <td style={{ padding: '4px 6px', color: '#94a3b8' }}>{r.subject_type || '*'}</td>
+                                <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 600 }}>{(Number(r.rate) * 100).toFixed(1)}%</td>
+                                <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                                  <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: r.is_active ? '#10b981' : '#475569' }} />
+                                </td>
+                                <td style={{ padding: '4px 6px', whiteSpace: 'nowrap' }}>
+                                  <button className="btn-secondary" style={{ fontSize: 10, padding: '1px 6px', marginRight: 3 }} onClick={() => { setPsRuleForm({ event_type: r.event_type, upline_level: r.upline_level ?? '', earner_type: r.earner_type || '', subject_type: r.subject_type || '', rate: r.rate, description: r.description || '', sort_order: r.sort_order }); setEditingPsRule(r); setShowPsRuleForm(true); }}>
+                                    {ch.psEditRule}
+                                  </button>
+                                  <button className="btn-secondary" style={{ fontSize: 10, padding: '1px 6px', color: '#f87171' }} onClick={() => deletePsRule(r)}>
+                                    {ch.psDeleteRule}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+
+                      {/* Rule form */}
+                      {showPsRuleForm && (
+                        <div style={{ marginTop: 12, padding: 14, background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                          <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 10 }}>{editingPsRule ? 'Edit Rule' : 'New Commission Rule'}</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                            <label className="form-field">
+                              <span style={{ fontSize: 11 }}>{ch.psRuleEventType} *</span>
+                              <select className="form-input" value={psRuleForm.event_type} onChange={e => setPsRuleForm(f => ({ ...f, event_type: e.target.value }))} disabled={!!editingPsRule}>
+                                <option value="referral">referral</option>
+                                <option value="team_income">team_income</option>
+                                <option value="product_discount">product_discount</option>
+                                <option value="training_discount">training_discount</option>
+                              </select>
+                            </label>
+                            <label className="form-field">
+                              <span style={{ fontSize: 11 }}>{ch.psRuleUplineLevel} (blank=none)</span>
+                              <input type="number" className="form-input" value={psRuleForm.upline_level} onChange={e => setPsRuleForm(f => ({ ...f, upline_level: e.target.value }))} placeholder="e.g. 1" disabled={!!editingPsRule} />
+                            </label>
+                            <label className="form-field">
+                              <span style={{ fontSize: 11 }}>{ch.psRuleEarnerType} (blank=any)</span>
+                              <select className="form-input" value={psRuleForm.earner_type} onChange={e => setPsRuleForm(f => ({ ...f, earner_type: e.target.value }))} disabled={!!editingPsRule}>
+                                <option value="">* (any)</option>
+                                {(psTypes.length > 0 ? psTypes : globalTypes).map(pt => <option key={pt.key} value={pt.key}>{pt.key}</option>)}
+                              </select>
+                            </label>
+                            <label className="form-field">
+                              <span style={{ fontSize: 11 }}>{ch.psRuleSubjectType} (blank=any)</span>
+                              <select className="form-input" value={psRuleForm.subject_type} onChange={e => setPsRuleForm(f => ({ ...f, subject_type: e.target.value }))} disabled={!!editingPsRule}>
+                                <option value="">* (any)</option>
+                                {(psTypes.length > 0 ? psTypes : globalTypes).map(pt => <option key={pt.key} value={pt.key}>{pt.key}</option>)}
+                              </select>
+                            </label>
+                            <label className="form-field">
+                              <span style={{ fontSize: 11 }}>{ch.psRuleRate} *</span>
+                              <input type="number" step="0.001" min="0" max="1" className="form-input" value={psRuleForm.rate} onChange={e => setPsRuleForm(f => ({ ...f, rate: e.target.value }))} placeholder="0.25" />
+                            </label>
+                            <label className="form-field">
+                              <span style={{ fontSize: 11 }}>{ch.psRuleSortOrder}</span>
+                              <input type="number" className="form-input" value={psRuleForm.sort_order} onChange={e => setPsRuleForm(f => ({ ...f, sort_order: e.target.value }))} />
+                            </label>
+                            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                              <span style={{ fontSize: 11 }}>{ch.psRuleDesc}</span>
+                              <input className="form-input" value={psRuleForm.description} onChange={e => setPsRuleForm(f => ({ ...f, description: e.target.value }))} />
+                            </label>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
+                            <button className="btn-secondary" onClick={() => { setShowPsRuleForm(false); setEditingPsRule(null); }}>{t.modal.cancel}</button>
+                            <button className="btn-primary" onClick={savePsRule} disabled={psRuleBusy}>{psRuleBusy ? ch.psSaving : t.modal.save}</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )
+              ) : (
+                !isSuperadmin && <p style={{ fontSize: 13, color: '#64748b' }}>{ch.psNoPermission}</p>
+              )}
+
+              {/* Subchannel permissions */}
+              {(isSuperadmin || canGrantSubch) && subchannels?.length > 0 && (
+                <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>{ch.psSubchTitle}</div>
+                  <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>{ch.psSubchHint}</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {subchannels.map(subch => (
+                      <div key={subch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                        <span style={{ fontSize: 13, color: '#e2e8f0' }}>{subch.name}</span>
+                        <button type="button" onClick={() => toggleSubchPartnerSystemPermission(subch)} style={{
+                          width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
+                          background: subch.can_customize_partner_system ? '#6366f1' : '#334155',
+                          transition: 'background 0.2s', position: 'relative',
+                        }} title={subch.can_customize_partner_system ? ch.psRevoke : ch.psAllow}>
+                          <span style={{ position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', left: subch.can_customize_partner_system ? 23 : 3 }} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}

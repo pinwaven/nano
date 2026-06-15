@@ -1,52 +1,55 @@
 const { pool } = require('./db');
 
-const DEFAULT_CONFIG = {
-    referral_rates: {
-        light_entrepreneur: { light_entrepreneur: 0.25, leader_partner: 0.20, operations_center: 0.10 },
-        leader_partner:     { light_entrepreneur: 0.40, leader_partner: 0.25, operations_center: 0.20 },
-        operations_center:  { light_entrepreneur: 0.50, leader_partner: 0.30, operations_center: 0.25 },
-    },
-    product_discount_rates: { light_entrepreneur: 0.30, leader_partner: 0.40, operations_center: 0.50 },
-    training_discount_rates: { light_entrepreneur: 0.10, leader_partner: 0.30, operations_center: 0.50 },
-    team_primary_rate: 0.02,
-    team_secondary_rate: 0.02,
-};
-
-async function getCommissionConfig() {
-    if (!pool) return DEFAULT_CONFIG;
+// When channelId is provided: return channel-specific rules if any exist for this
+// event_type; otherwise fall back to global (channel_id IS NULL) rules.
+async function getCommissionRules(eventType, channelId) {
+    if (!pool) return [];
     try {
+        if (channelId) {
+            const { rows } = await pool.query(
+                `SELECT * FROM partner_commission_rules WHERE event_type = $1 AND channel_id = $2 AND is_active = TRUE ORDER BY sort_order, id`,
+                [eventType, channelId]
+            );
+            if (rows.length > 0) return rows;
+        }
         const { rows } = await pool.query(
-            `SELECT referral_rates, product_discount_rates, training_discount_rates,
-                    team_primary_rate, team_secondary_rate
-             FROM partner_commission_config WHERE id = 1`
+            `SELECT * FROM partner_commission_rules WHERE event_type = $1 AND channel_id IS NULL AND is_active = TRUE ORDER BY sort_order, id`,
+            [eventType]
         );
-        if (rows[0]) return rows[0];
+        return rows;
     } catch (err) {
-        console.log(JSON.stringify({ level: 'WARN', msg: 'getCommissionConfig fallback to defaults', data: { error: err.message } }));
+        console.log(JSON.stringify({ level: 'WARN', msg: 'getCommissionRules failed', data: { error: err.message } }));
+        return [];
     }
-    return DEFAULT_CONFIG;
 }
 
-// Keep named exports for backward compat (reflect current DB config at import time is not feasible in CJS;
-// callers that need fresh config should use getCommissionConfig() directly)
-const REFERRAL_RATES         = DEFAULT_CONFIG.referral_rates;
-const PRODUCT_DISCOUNT_RATES = DEFAULT_CONFIG.product_discount_rates;
-const TRAINING_DISCOUNT_RATES = DEFAULT_CONFIG.training_discount_rates;
+// Most-specific match wins: (earner+subject) > (earner only) > (subject only) > wildcard
+function resolveRate(rules, earnerType, subjectType) {
+    const score = r => (r.earner_type ? 2 : 0) + (r.subject_type ? 1 : 0);
+    const candidates = rules
+        .filter(r =>
+            (r.earner_type === null || r.earner_type === earnerType) &&
+            (r.subject_type === null || r.subject_type === subjectType)
+        )
+        .sort((a, b) => score(b) - score(a));
+    return candidates.length > 0 ? Number(candidates[0].rate) : null;
+}
 
-// Returns { tier, rate } for the user's active partner record (best rate if multiple), or null.
+// Returns { tier, rate } for the user's active partner record (best rate), or null.
 async function getPartnerProductDiscount(userId) {
     if (!pool || !userId) return null;
     try {
         const { rows } = await pool.query(
-            `SELECT tier FROM partners WHERE user_id = $1 AND status = 'active'`,
+            `SELECT tier, channel_id FROM partners WHERE user_id = $1 AND status = 'active'`,
             [userId]
         );
         if (rows.length === 0) return null;
-        const cfg = await getCommissionConfig();
+        const channelId = rows[0]?.channel_id;
+        const rules = await getCommissionRules('product_discount', channelId);
         let best = null;
         for (const { tier } of rows) {
-            const rate = Number(cfg.product_discount_rates?.[tier] || 0);
-            if (rate > 0 && rate < 1 && (!best || rate > best.rate)) best = { tier, rate };
+            const rate = resolveRate(rules, tier, null);
+            if (rate && rate > 0 && rate < 1 && (!best || rate > best.rate)) best = { tier, rate };
         }
         return best;
     } catch (err) {
@@ -60,79 +63,120 @@ function applyPartnerDiscount(price, rate) {
     return Number((Number(price) * (1 - rate)).toFixed(2));
 }
 
-async function recordReferralCommission(uplinePartner, newPartner) {
-    if (!pool) return;
-    const cfg = await getCommissionConfig();
-    const rate = cfg.referral_rates?.[uplinePartner.tier]?.[newPartner.tier];
-    if (!rate) return;
-    const amount = Number((Number(newPartner.entry_fee_paid) * rate).toFixed(2));
-    if (amount <= 0) return;
+// Records referral commissions for all upline levels defined in commission rules.
+// Uses a recursive CTE to walk up the referral chain N levels.
+async function recordReferralCommission(newPartner) {
+    if (!pool || !newPartner?.referred_by_partner_id) return;
     try {
-        await pool.query(`
-            INSERT INTO partner_commissions
-                (partner_id, source_type, source_partner_id, amount_cny, rate, base_amount, description)
-            VALUES ($1, 'referral', $2, $3, $4, $5, $6)
-        `, [
-            uplinePartner.id,
-            newPartner.id,
-            amount,
-            rate,
-            newPartner.entry_fee_paid,
-            `Referral: ${newPartner.real_name} (${newPartner.tier}) @ ${(rate * 100).toFixed(0)}%`,
-        ]);
+        const channelId = newPartner.channel_id || null;
+        const rules = await getCommissionRules('referral', channelId);
+        if (rules.length === 0) return;
+
+        const maxLevel = Math.max(...rules.map(r => r.upline_level ?? 1));
+
+        const { rows: chain } = await pool.query(`
+            WITH RECURSIVE upline_chain AS (
+                SELECT id, tier, real_name, referred_by_partner_id, 1 AS level
+                FROM partners WHERE id = $1 AND status = 'active'
+                UNION ALL
+                SELECT p.id, p.tier, p.real_name, p.referred_by_partner_id, uc.level + 1
+                FROM partners p
+                JOIN upline_chain uc ON p.id = uc.referred_by_partner_id
+                WHERE uc.level < $2 AND p.status = 'active'
+            )
+            SELECT * FROM upline_chain
+        `, [newPartner.referred_by_partner_id, maxLevel]);
+
+        for (const upline of chain) {
+            const levelRules = rules.filter(r => (r.upline_level ?? 1) === upline.level);
+            const rate = resolveRate(levelRules, upline.tier, newPartner.tier);
+            if (!rate) continue;
+            const amount = Number((Number(newPartner.entry_fee_paid) * rate).toFixed(2));
+            if (amount <= 0) continue;
+            await pool.query(`
+                INSERT INTO partner_commissions
+                    (partner_id, source_type, source_partner_id, amount_cny, rate, base_amount, description, commission_level)
+                VALUES ($1, 'referral', $2, $3, $4, $5, $6, $7)
+            `, [
+                upline.id,
+                newPartner.id,
+                amount,
+                rate,
+                newPartner.entry_fee_paid,
+                `Referral L${upline.level}: ${newPartner.real_name} (${newPartner.tier}) @ ${(rate * 100).toFixed(0)}%`,
+                upline.level,
+            ]);
+        }
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'recordReferralCommission failed', data: { error: err.message } }));
     }
 }
 
-// Records selling partner's sales commission + 2% team income for up to 2 upline levels.
+// Records selling partner's sales margin + N-level team income defined in commission rules.
 async function recordSalesCommission(sellingPartnerId, saleAmountCny, description) {
     if (!pool) return;
     try {
+        const { rows: sellerMeta } = await pool.query(
+            `SELECT channel_id FROM partners WHERE id = $1`, [sellingPartnerId]
+        );
+        const channelId = sellerMeta[0]?.channel_id || null;
+
+        const [productRules, teamRules] = await Promise.all([
+            getCommissionRules('product_discount', channelId),
+            getCommissionRules('team_income', channelId),
+        ]);
+
+        const maxLevel = teamRules.length > 0
+            ? Math.max(...teamRules.map(r => r.upline_level ?? 0))
+            : 0;
+
         const { rows } = await pool.query(`
-            SELECT p.id, p.tier, p.referred_by_partner_id,
-                   up.id AS upline_id, up.tier AS upline_tier,
-                   up2.id AS upline2_id, up2.tier AS upline2_tier
-            FROM partners p
-            LEFT JOIN partners up  ON up.id  = p.referred_by_partner_id
-            LEFT JOIN partners up2 ON up2.id = up.referred_by_partner_id
-            WHERE p.id = $1 AND p.status = 'active'
-        `, [sellingPartnerId]);
+            WITH RECURSIVE chain AS (
+                SELECT id, tier, referred_by_partner_id, 0 AS level
+                FROM partners WHERE id = $1 AND status = 'active'
+                UNION ALL
+                SELECT p.id, p.tier, p.referred_by_partner_id, c.level + 1
+                FROM partners p
+                JOIN chain c ON p.id = c.referred_by_partner_id
+                WHERE c.level < $2 AND p.status = 'active'
+            )
+            SELECT * FROM chain
+        `, [sellingPartnerId, maxLevel]);
 
-        const partner = rows[0];
-        if (!partner) return;
+        const seller = rows.find(r => r.level === 0);
+        if (!seller) return;
 
-        const cfg = await getCommissionConfig();
-        const salesRate = cfg.product_discount_rates?.[partner.tier] || 0;
-        if (salesRate > 0) {
+        // Seller's own product margin
+        const salesRate = resolveRate(productRules, seller.tier, null);
+        if (salesRate && salesRate > 0) {
             const salesAmount = Number((saleAmountCny * salesRate).toFixed(2));
             await pool.query(`
                 INSERT INTO partner_commissions
-                    (partner_id, source_type, source_partner_id, amount_cny, rate, base_amount, description)
-                VALUES ($1, 'sales', NULL, $2, $3, $4, $5)
+                    (partner_id, source_type, source_partner_id, amount_cny, rate, base_amount, description, commission_level)
+                VALUES ($1, 'sales', NULL, $2, $3, $4, $5, 0)
             `, [sellingPartnerId, salesAmount, salesRate, saleAmountCny, description || 'Product sale']);
         }
 
-        const teamPrimaryRate = Number(cfg.team_primary_rate ?? 0.02);
-        const teamSecondaryRate = Number(cfg.team_secondary_rate ?? 0.02);
-        if (partner.upline_id) {
-            const amount = Number((saleAmountCny * teamPrimaryRate).toFixed(2));
+        // Upline team income for each defined level
+        for (const ancestor of rows.filter(r => r.level > 0)) {
+            const levelRules = teamRules.filter(r => r.upline_level === ancestor.level);
+            const rate = resolveRate(levelRules, ancestor.tier, seller.tier);
+            if (!rate) continue;
+            const amount = Number((saleAmountCny * rate).toFixed(2));
+            if (amount <= 0) continue;
+            // Keep legacy source_types for L1/L2; use team_income for L3+
+            const srcType = ancestor.level === 1 ? 'team_primary'
+                          : ancestor.level === 2 ? 'team_secondary'
+                          : 'team_income';
             await pool.query(`
                 INSERT INTO partner_commissions
-                    (partner_id, source_type, source_partner_id, amount_cny, rate, base_amount, description)
-                VALUES ($1, 'team_primary', $2, $3, $4, $5, $6)
-            `, [partner.upline_id, sellingPartnerId, amount, teamPrimaryRate, saleAmountCny,
-                `Team income (primary) from partner #${sellingPartnerId}`]);
-        }
-
-        if (partner.upline2_id) {
-            const amount = Number((saleAmountCny * teamSecondaryRate).toFixed(2));
-            await pool.query(`
-                INSERT INTO partner_commissions
-                    (partner_id, source_type, source_partner_id, amount_cny, rate, base_amount, description)
-                VALUES ($1, 'team_secondary', $2, $3, $4, $5, $6)
-            `, [partner.upline2_id, sellingPartnerId, amount, teamSecondaryRate, saleAmountCny,
-                `Team income (secondary) from partner #${sellingPartnerId}`]);
+                    (partner_id, source_type, source_partner_id, amount_cny, rate, base_amount, description, commission_level)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `, [
+                ancestor.id, srcType, sellingPartnerId, amount, rate, saleAmountCny,
+                `Team income L${ancestor.level} from partner #${sellingPartnerId}`,
+                ancestor.level,
+            ]);
         }
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'recordSalesCommission failed', data: { error: err.message } }));
@@ -175,4 +219,12 @@ async function generatePartnerPayouts(period, channelId) {
     return { generated: created };
 }
 
-module.exports = { REFERRAL_RATES, PRODUCT_DISCOUNT_RATES, TRAINING_DISCOUNT_RATES, getCommissionConfig, getPartnerProductDiscount, applyPartnerDiscount, recordReferralCommission, recordSalesCommission, generatePartnerPayouts };
+module.exports = {
+    getCommissionRules,
+    resolveRate,
+    getPartnerProductDiscount,
+    applyPartnerDiscount,
+    recordReferralCommission,
+    recordSalesCommission,
+    generatePartnerPayouts,
+};

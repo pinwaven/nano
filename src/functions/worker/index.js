@@ -1,7 +1,7 @@
 const { pool } = require('./lib/db');
 const { recordOrderCommissions, recordUserReferralCommission } = require('./lib/commissions');
 const { getUserBalance, getLedgerHistory, debitUser, getChannelExchangeRate, getChannelCurrency } = require('./lib/credits');
-const { recordReferralCommission, generatePartnerPayouts, getPartnerProductDiscount, applyPartnerDiscount } = require('./lib/partnerCommissions');
+const { recordReferralCommission, generatePartnerPayouts, getPartnerProductDiscount, applyPartnerDiscount, getCommissionRules, resolveRate } = require('./lib/partnerCommissions');
 const ossLib = require('./lib/oss');
 const crypto = require('crypto');
 
@@ -1326,6 +1326,9 @@ async function handlePostPartner(body) {
     }
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const typeCheck = await pool.query(`SELECT key FROM partner_types WHERE key=$1 AND is_active=TRUE`, [tier]);
+        if (typeCheck.rows.length === 0) return { success: false, error: `Invalid partner tier: ${tier}`, statusCode: 400 };
+
         const { rows } = await pool.query(`
             INSERT INTO partners (tier, real_name, phone, entry_fee_paid, channel_id, user_id,
                                   referred_by_partner_id, contracted_at, notes, status)
@@ -1336,13 +1339,7 @@ async function handlePostPartner(body) {
         const newPartner = rows[0];
 
         if (referred_by_partner_id) {
-            const { rows: uplineRows } = await pool.query(
-                `SELECT id, tier, real_name FROM partners WHERE id=$1 AND status='active'`,
-                [referred_by_partner_id]
-            );
-            if (uplineRows[0]) {
-                await recordReferralCommission(uplineRows[0], newPartner);
-            }
+            await recordReferralCommission(newPartner);
         }
 
         return { success: true, partner: newPartner };
@@ -1357,6 +1354,10 @@ async function handlePutPartner(partnerId, body) {
             referred_by_partner_id, contracted_at, notes, status } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (tier) {
+            const typeCheck = await pool.query(`SELECT key FROM partner_types WHERE key=$1 AND is_active=TRUE`, [tier]);
+            if (typeCheck.rows.length === 0) return { success: false, error: `Invalid partner tier: ${tier}`, statusCode: 400 };
+        }
         await pool.query(`
             UPDATE partners SET
                 tier=$1, real_name=$2, phone=$3, entry_fee_paid=$4,
@@ -1602,49 +1603,378 @@ async function handleGetChannelReferralNetwork(channelId) {
     }
 }
 
+// ── Shim: synthesise old JSON format from partner_commission_rules ────────────
 async function handleGetPartnerCommissionConfig() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const { rows } = await pool.query(
-            `SELECT referral_rates, product_discount_rates, training_discount_rates,
-                    team_primary_rate, team_secondary_rate, updated_at
-             FROM partner_commission_config WHERE id = 1`
+            `SELECT * FROM partner_commission_rules WHERE is_active = TRUE ORDER BY sort_order, id`
         );
-        const cfg = rows[0] || {
-            referral_rates: { light_entrepreneur: { light_entrepreneur: 0.25, leader_partner: 0.20, operations_center: 0.10 }, leader_partner: { light_entrepreneur: 0.40, leader_partner: 0.25, operations_center: 0.20 }, operations_center: { light_entrepreneur: 0.50, leader_partner: 0.30, operations_center: 0.25 } },
-            product_discount_rates: { light_entrepreneur: 0.30, leader_partner: 0.40, operations_center: 0.50 },
-            training_discount_rates: { light_entrepreneur: 0.10, leader_partner: 0.30, operations_center: 0.50 },
-            team_primary_rate: 0.02,
-            team_secondary_rate: 0.02,
-        };
-        return { success: true, config: cfg };
+        const referral_rates = {};
+        const product_discount_rates = {};
+        const training_discount_rates = {};
+        let team_primary_rate = 0.02;
+        let team_secondary_rate = 0.02;
+        for (const rule of rows) {
+            if (rule.event_type === 'referral' && rule.earner_type && rule.subject_type) {
+                if (!referral_rates[rule.earner_type]) referral_rates[rule.earner_type] = {};
+                referral_rates[rule.earner_type][rule.subject_type] = Number(rule.rate);
+            } else if (rule.event_type === 'product_discount' && rule.earner_type) {
+                product_discount_rates[rule.earner_type] = Number(rule.rate);
+            } else if (rule.event_type === 'training_discount' && rule.earner_type) {
+                training_discount_rates[rule.earner_type] = Number(rule.rate);
+            } else if (rule.event_type === 'team_income') {
+                if (rule.upline_level === 1) team_primary_rate = Number(rule.rate);
+                if (rule.upline_level === 2) team_secondary_rate = Number(rule.rate);
+            }
+        }
+        return { success: true, config: { referral_rates, product_discount_rates, training_discount_rates, team_primary_rate, team_secondary_rate } };
     } catch (err) {
         return { success: false, error: err.message };
     }
 }
 
+// ── Shim: translate old JSON format into upserts on partner_commission_rules ──
 async function handlePutPartnerCommissionConfig(body) {
     const { referral_rates, product_discount_rates, training_discount_rates, team_primary_rate, team_secondary_rate } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        await pool.query(`
-            INSERT INTO partner_commission_config
-                (id, referral_rates, product_discount_rates, training_discount_rates, team_primary_rate, team_secondary_rate, updated_at)
-            VALUES (1, $1, $2, $3, $4, $5, NOW())
-            ON CONFLICT (id) DO UPDATE SET
-                referral_rates = EXCLUDED.referral_rates,
-                product_discount_rates = EXCLUDED.product_discount_rates,
-                training_discount_rates = EXCLUDED.training_discount_rates,
-                team_primary_rate = EXCLUDED.team_primary_rate,
-                team_secondary_rate = EXCLUDED.team_secondary_rate,
-                updated_at = NOW()
-        `, [
-            JSON.stringify(referral_rates),
-            JSON.stringify(product_discount_rates),
-            JSON.stringify(training_discount_rates),
-            team_primary_rate,
-            team_secondary_rate,
-        ]);
+        const toUpsert = [];
+        let order = 0;
+        if (referral_rates) {
+            for (const [earner, subjects] of Object.entries(referral_rates)) {
+                for (const [subject, rate] of Object.entries(subjects)) {
+                    toUpsert.push({ event_type: 'referral', upline_level: 1, earner_type: earner, subject_type: subject, rate: Number(rate), description: `Referral: ${earner} → ${subject}`, sort_order: order++ });
+                }
+            }
+        }
+        if (product_discount_rates) {
+            for (const [tier, rate] of Object.entries(product_discount_rates)) {
+                toUpsert.push({ event_type: 'product_discount', upline_level: null, earner_type: tier, subject_type: null, rate: Number(rate), description: `Product discount: ${tier}`, sort_order: order++ });
+            }
+        }
+        if (training_discount_rates) {
+            for (const [tier, rate] of Object.entries(training_discount_rates)) {
+                toUpsert.push({ event_type: 'training_discount', upline_level: null, earner_type: tier, subject_type: null, rate: Number(rate), description: `Training discount: ${tier}`, sort_order: order++ });
+            }
+        }
+        if (team_primary_rate != null) toUpsert.push({ event_type: 'team_income', upline_level: 1, earner_type: null, subject_type: null, rate: Number(team_primary_rate), description: 'Team income level 1', sort_order: order++ });
+        if (team_secondary_rate != null) toUpsert.push({ event_type: 'team_income', upline_level: 2, earner_type: null, subject_type: null, rate: Number(team_secondary_rate), description: 'Team income level 2', sort_order: order++ });
+
+        for (const rule of toUpsert) {
+            await pool.query(
+                `DELETE FROM partner_commission_rules WHERE event_type=$1 AND (upline_level IS NOT DISTINCT FROM $2) AND (earner_type IS NOT DISTINCT FROM $3) AND (subject_type IS NOT DISTINCT FROM $4)`,
+                [rule.event_type, rule.upline_level, rule.earner_type, rule.subject_type]
+            );
+            await pool.query(
+                `INSERT INTO partner_commission_rules (event_type, upline_level, earner_type, subject_type, rate, description, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+                [rule.event_type, rule.upline_level, rule.earner_type, rule.subject_type, rule.rate, rule.description, rule.sort_order]
+            );
+        }
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ── Partner Types CRUD ────────────────────────────────────────────────────────
+// GET /api/partner-types
+// - No channel_id param → effective types for caller:
+//     superadmin gets all global types; channel admin gets their channel's types
+//     if they have can_customize_partner_system AND have created some, else global.
+// - ?channel_id=X → returns ONLY channel-specific types stored for channel X
+//     (used by channel config modal for CRUD).
+async function handleGetPartnerTypes(query, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const requestedChannelId = query?.channel_id ? parseInt(query.channel_id) : null;
+
+        if (adminCtx?.role === 'channel') {
+            const myChannelId = adminCtx.channelId;
+            if (requestedChannelId) {
+                // Scope check: must be own channel or owned subchannel
+                if (requestedChannelId !== myChannelId) {
+                    const owns = await verifySubchannelOwnership(requestedChannelId, adminCtx);
+                    if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+                }
+                const { rows } = await pool.query(
+                    `SELECT * FROM partner_types WHERE channel_id = $1 ORDER BY sort_order, id`,
+                    [requestedChannelId]
+                );
+                return { success: true, types: rows };
+            }
+            // No explicit channel_id: return effective types for dropdowns
+            const { rows: permRows } = await pool.query(
+                `SELECT can_customize_partner_system FROM channels WHERE id = $1`, [myChannelId]
+            );
+            if (permRows[0]?.can_customize_partner_system) {
+                const { rows: channelTypes } = await pool.query(
+                    `SELECT * FROM partner_types WHERE channel_id = $1 AND is_active = TRUE ORDER BY sort_order, id`,
+                    [myChannelId]
+                );
+                if (channelTypes.length > 0) return { success: true, types: channelTypes };
+            }
+            // Fall through: return global types
+            const { rows } = await pool.query(
+                `SELECT * FROM partner_types WHERE channel_id IS NULL ORDER BY sort_order, id`
+            );
+            return { success: true, types: rows };
+        }
+
+        // Superadmin
+        if (requestedChannelId) {
+            const { rows } = await pool.query(
+                `SELECT * FROM partner_types WHERE channel_id = $1 ORDER BY sort_order, id`,
+                [requestedChannelId]
+            );
+            return { success: true, types: rows };
+        }
+        const { rows } = await pool.query(
+            `SELECT * FROM partner_types ORDER BY COALESCE(channel_id, 0), sort_order, id`
+        );
+        return { success: true, types: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostPartnerType(body, adminCtx) {
+    const { key, label, label_zh, color, entry_fee, sort_order, description, channel_id: bodyChannelId } = body;
+    if (!key || !label) return { success: false, error: 'key and label are required', statusCode: 400 };
+    if (!/^[a-z][a-z0-9_]*$/.test(key)) return { success: false, error: 'key must be snake_case (lowercase letters, digits, underscores)', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        let channelId = null;
+        if (adminCtx?.role === 'channel') {
+            const { rows: permRows } = await pool.query(
+                `SELECT can_customize_partner_system FROM channels WHERE id = $1`, [adminCtx.channelId]
+            );
+            if (!permRows[0]?.can_customize_partner_system)
+                return { statusCode: 403, success: false, error: 'Channel does not have partner system customization permission' };
+            channelId = adminCtx.channelId;
+        } else {
+            channelId = bodyChannelId ? parseInt(bodyChannelId) : null;
+        }
+        const { rows } = await pool.query(
+            `INSERT INTO partner_types (key, label, label_zh, color, entry_fee, sort_order, description, channel_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+            [key, label, label_zh || null, color || '#64748b', entry_fee || 0, sort_order || 0, description || null, channelId]
+        );
+        return { success: true, type: rows[0] };
+    } catch (err) {
+        if (err.code === '23505') return { success: false, error: `Partner type key '${key}' already exists in this channel`, statusCode: 409 };
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutPartnerType(typeKey, body, adminCtx) {
+    if (!typeKey) return { success: false, error: 'type key required', statusCode: 400 };
+    const { label, label_zh, color, entry_fee, sort_order, description, is_active } = body;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        let channelFilter, params;
+        if (adminCtx?.role === 'channel') {
+            const { rows: permRows } = await pool.query(
+                `SELECT can_customize_partner_system FROM channels WHERE id = $1`, [adminCtx.channelId]
+            );
+            if (!permRows[0]?.can_customize_partner_system)
+                return { statusCode: 403, success: false, error: 'Forbidden' };
+            channelFilter = 'channel_id = $9';
+            params = [label, label_zh, color, entry_fee, sort_order, description, is_active, typeKey, adminCtx.channelId];
+        } else {
+            // Superadmin: can pass channel_id in body to edit channel-specific types, else global
+            const targetChannelId = body.channel_id ? parseInt(body.channel_id) : null;
+            channelFilter = targetChannelId ? `channel_id = $9` : `channel_id IS NULL`;
+            params = targetChannelId
+                ? [label, label_zh, color, entry_fee, sort_order, description, is_active, typeKey, targetChannelId]
+                : [label, label_zh, color, entry_fee, sort_order, description, is_active, typeKey];
+        }
+        const { rows } = await pool.query(
+            `UPDATE partner_types SET
+                label=COALESCE($1,label), label_zh=COALESCE($2,label_zh), color=COALESCE($3,color),
+                entry_fee=COALESCE($4,entry_fee), sort_order=COALESCE($5,sort_order),
+                description=COALESCE($6,description), is_active=COALESCE($7,is_active), updated_at=NOW()
+             WHERE key=$8 AND ${channelFilter} RETURNING *`,
+            params
+        );
+        if (rows.length === 0) return { success: false, error: 'Partner type not found', statusCode: 404 };
+        return { success: true, type: rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeletePartnerType(typeKey, adminCtx) {
+    if (!typeKey) return { success: false, error: 'type key required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        let channelFilter, params;
+        if (adminCtx?.role === 'channel') {
+            const { rows: permRows } = await pool.query(
+                `SELECT can_customize_partner_system FROM channels WHERE id = $1`, [adminCtx.channelId]
+            );
+            if (!permRows[0]?.can_customize_partner_system)
+                return { statusCode: 403, success: false, error: 'Forbidden' };
+            channelFilter = 'channel_id = $2';
+            params = [typeKey, adminCtx.channelId];
+        } else {
+            const targetChannelId = null; // superadmin delete always targets global types by key
+            channelFilter = 'channel_id IS NULL';
+            params = [typeKey];
+        }
+        const { rows: active } = await pool.query(
+            `SELECT COUNT(*) AS cnt FROM partners WHERE tier=$1 AND status='active'`, [typeKey]
+        );
+        if (Number(active[0].cnt) > 0) {
+            return { success: false, error: `Cannot deactivate: ${active[0].cnt} active partner(s) use this type`, statusCode: 409 };
+        }
+        await pool.query(
+            `UPDATE partner_types SET is_active=FALSE, updated_at=NOW() WHERE key=$1 AND ${channelFilter}`,
+            params
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ── Partner Commission Rules CRUD ─────────────────────────────────────────────
+// GET /api/partner-commission-rules
+// - No channel_id → all global rules (superadmin) or channel admin's channel rules
+// - ?channel_id=X → rules scoped to channel X
+async function handleGetPartnerCommissionRules(query, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const requestedChannelId = query?.channel_id ? parseInt(query.channel_id) : null;
+
+        if (adminCtx?.role === 'channel') {
+            const myChannelId = adminCtx.channelId;
+            const targetId = requestedChannelId || myChannelId;
+            if (targetId !== myChannelId) {
+                const owns = await verifySubchannelOwnership(targetId, adminCtx);
+                if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+            }
+            const { rows } = await pool.query(
+                `SELECT * FROM partner_commission_rules WHERE channel_id = $1 ORDER BY event_type, sort_order, id`,
+                [targetId]
+            );
+            return { success: true, rules: rows };
+        }
+
+        // Superadmin
+        if (requestedChannelId) {
+            const { rows } = await pool.query(
+                `SELECT * FROM partner_commission_rules WHERE channel_id = $1 ORDER BY event_type, sort_order, id`,
+                [requestedChannelId]
+            );
+            return { success: true, rules: rows };
+        }
+        const { rows } = await pool.query(
+            `SELECT * FROM partner_commission_rules WHERE channel_id IS NULL ORDER BY event_type, sort_order, id`
+        );
+        return { success: true, rules: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostPartnerCommissionRule(body, adminCtx) {
+    const { event_type, upline_level, earner_type, subject_type, rate, description, sort_order, channel_id: bodyChannelId } = body;
+    if (!event_type || rate == null) return { success: false, error: 'event_type and rate are required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        let channelId = null;
+        if (adminCtx?.role === 'channel') {
+            const { rows: permRows } = await pool.query(
+                `SELECT can_customize_partner_system FROM channels WHERE id = $1`, [adminCtx.channelId]
+            );
+            if (!permRows[0]?.can_customize_partner_system)
+                return { statusCode: 403, success: false, error: 'Channel does not have partner system customization permission' };
+            channelId = adminCtx.channelId;
+        } else {
+            channelId = bodyChannelId ? parseInt(bodyChannelId) : null;
+        }
+        const { rows } = await pool.query(
+            `INSERT INTO partner_commission_rules (event_type, upline_level, earner_type, subject_type, rate, description, sort_order, channel_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+            [event_type, upline_level ?? null, earner_type || null, subject_type || null, rate, description || null, sort_order || 0, channelId]
+        );
+        return { success: true, rule: rows[0] };
+    } catch (err) {
+        if (err.code === '23505') return { success: false, error: 'A rule with this exact combination already exists in this channel', statusCode: 409 };
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutPartnerCommissionRule(ruleId, body, adminCtx) {
+    if (!ruleId) return { success: false, error: 'rule id required', statusCode: 400 };
+    const { rate, description, is_active, sort_order } = body;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        let channelFilter = '';
+        let params = [rate, description, is_active, sort_order, ruleId];
+        if (adminCtx?.role === 'channel') {
+            const { rows: permRows } = await pool.query(
+                `SELECT can_customize_partner_system FROM channels WHERE id = $1`, [adminCtx.channelId]
+            );
+            if (!permRows[0]?.can_customize_partner_system)
+                return { statusCode: 403, success: false, error: 'Forbidden' };
+            channelFilter = ` AND channel_id = $${params.length + 1}`;
+            params.push(adminCtx.channelId);
+        }
+        const { rows } = await pool.query(
+            `UPDATE partner_commission_rules SET
+                rate=COALESCE($1,rate), description=COALESCE($2,description),
+                is_active=COALESCE($3,is_active), sort_order=COALESCE($4,sort_order), updated_at=NOW()
+             WHERE id=$5${channelFilter} RETURNING *`,
+            params
+        );
+        if (rows.length === 0) return { success: false, error: 'Rule not found', statusCode: 404 };
+        return { success: true, rule: rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeletePartnerCommissionRule(ruleId, adminCtx) {
+    if (!ruleId) return { success: false, error: 'rule id required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        let channelFilter = '';
+        let params = [ruleId];
+        if (adminCtx?.role === 'channel') {
+            const { rows: permRows } = await pool.query(
+                `SELECT can_customize_partner_system FROM channels WHERE id = $1`, [adminCtx.channelId]
+            );
+            if (!permRows[0]?.can_customize_partner_system)
+                return { statusCode: 403, success: false, error: 'Forbidden' };
+            channelFilter = ' AND channel_id = $2';
+            params.push(adminCtx.channelId);
+        }
+        await pool.query(`DELETE FROM partner_commission_rules WHERE id=$1${channelFilter}`, params);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// Superadmin or parent channel admin can grant/revoke can_customize_partner_system on a channel.
+async function handlePutChannelPartnerSystemPermission(channelId, body, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const cid = parseInt(channelId);
+        if (adminCtx?.role === 'channel') {
+            if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+            const { rows } = await pool.query('SELECT parent_channel_id FROM channels WHERE id = $1', [cid]);
+            const parentId = rows[0]?.parent_channel_id;
+            if (!parentId) return { statusCode: 403, success: false, error: 'Cannot grant partner system permission to a root channel' };
+            const owns = await verifySubchannelOwnership(parentId, adminCtx);
+            if (!owns && parentId !== adminCtx.channelId) return { statusCode: 403, success: false, error: 'Forbidden' };
+        }
+        const { can_customize_partner_system } = body || {};
+        if (typeof can_customize_partner_system !== 'boolean')
+            return { statusCode: 400, success: false, error: 'can_customize_partner_system must be a boolean' };
+        await pool.query('UPDATE channels SET can_customize_partner_system = $1 WHERE id = $2', [can_customize_partner_system, cid]);
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -2442,12 +2772,27 @@ async function handleGetCoachList(channelId) {
     }
 }
 
-async function handleGetChannelUsers(channelId, includeSubchannels = false) {
+async function handleGetChannelUsers(channelId, query = {}) {
     if (!channelId) return { success: false, error: 'channelId is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
 
-        const channelFilter = includeSubchannels
+        const includeSubchannels = query.include_subchannels === 'true';
+        const limit = Math.min(parseInt(query.limit) || 50, 200);
+        const offset = parseInt(query.offset) || 0;
+        const search = (query.q || '').trim();
+
+        const sortFieldMap = {
+            user_id: 'u.user_id', nickname: 'u.nickname', channel_name: 'ch.name',
+            birth_date: 'u.birth_date', chrono_age: 'u.birth_date',
+            bio_age: 'b.bio_age', created_at: 'u.created_at',
+        };
+        const sortCol = sortFieldMap[query.sort_field] || 'u.created_at';
+        let sortDir = query.sort_dir === 'asc' ? 'ASC' : 'DESC';
+        if (query.sort_field === 'chrono_age') sortDir = sortDir === 'ASC' ? 'DESC' : 'ASC';
+
+        // Channel scope JOIN — same fragment reused in both the list query and stats queries
+        const channelJoin = includeSubchannels
             ? `JOIN (WITH RECURSIVE subtree AS (
                     SELECT id FROM channels WHERE id = $1
                     UNION ALL
@@ -2455,12 +2800,23 @@ async function handleGetChannelUsers(channelId, includeSubchannels = false) {
                 ) SELECT id FROM subtree) st ON u.channel_id = st.id`
             : 'JOIN (SELECT $1::int AS id) st ON u.channel_id = st.id';
 
-        const result = await pool.query(`
+        // ── Paginated user list (with optional search) ─────────────────────────
+        const listParams = [channelId];
+        let searchClause = '';
+        if (search) {
+            const idx = listParams.push(`%${search}%`);
+            searchClause = `AND (u.nickname ILIKE $${idx} OR u.phone ILIKE $${idx} OR u.email ILIKE $${idx} OR u.user_id::TEXT ILIKE $${idx})`;
+        }
+        const limitIdx = listParams.push(limit);
+        const offsetIdx = listParams.push(offset);
+
+        const listRes = await pool.query(`
             SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
                    u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
-                   b.bio_age, cu.nickname AS coach_name, ch.name AS channel_name
+                   b.bio_age, cu.nickname AS coach_name, ch.name AS channel_name,
+                   COUNT(*) OVER() AS _total
             FROM users u
-            ${channelFilter}
+            ${channelJoin}
             LEFT JOIN channels ch ON ch.id = u.channel_id
             LEFT JOIN coaches p ON u.coach_id = p.id
             LEFT JOIN users cu ON p.user_id = cu.user_id
@@ -2468,50 +2824,67 @@ async function handleGetChannelUsers(channelId, includeSubchannels = false) {
                 SELECT DISTINCT ON (user_id) user_id, bio_age
                 FROM biomarkers ORDER BY user_id, tested_at DESC
             ) b ON u.user_id = b.user_id
-            ORDER BY u.created_at DESC
-        `, [channelId]);
+            WHERE 1=1 ${searchClause}
+            ORDER BY ${sortCol} ${sortDir} NULLS LAST
+            LIMIT $${limitIdx} OFFSET $${offsetIdx}
+        `, listParams);
 
-        const rows = result.rows.map(u => ({ ...u, chrono_age: calculateAge(u.birth_date) }));
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const rows = listRes.rows.map(({ _total, ...u }) => ({ ...u, chrono_age: calculateAge(u.birth_date) }));
+        const filteredTotal = listRes.rows.length > 0 ? parseInt(listRes.rows[0]._total) : 0;
         const testedRows = rows.filter(r => r.bio_age != null);
         const avgBioAgeVal = testedRows.length > 0
             ? (testedRows.reduce((s, r) => s + parseFloat(r.bio_age), 0) / testedRows.length).toFixed(1)
             : null;
 
+        // ── Channel-wide stats (no search filter, no pagination) ───────────────
         const subtreeCte = `WITH RECURSIVE subtree AS (SELECT id FROM channels WHERE id = $1 UNION ALL SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id)`;
-        const channelUserIds = rows.map(r => r.user_id);
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-        const [coachRes, scanRes] = await Promise.all([
+        const [statsRes, coachRes, scanRes] = await Promise.all([
+            pool.query(`
+                SELECT COUNT(*) AS total_users,
+                       COUNT(*) FILTER (WHERE u.gender = 'male') AS male_count,
+                       COUNT(*) FILTER (WHERE u.gender = 'female') AS female_count,
+                       COUNT(*) FILTER (WHERE u.created_at >= NOW() - INTERVAL '7 days') AS new_7d,
+                       COUNT(b.bio_age) AS tested,
+                       ROUND(AVG(b.bio_age)::NUMERIC, 1) AS avg_bio_age
+                FROM users u
+                ${channelJoin}
+                LEFT JOIN (
+                    SELECT DISTINCT ON (user_id) user_id, bio_age
+                    FROM biomarkers ORDER BY user_id, tested_at DESC
+                ) b ON u.user_id = b.user_id
+            `, [channelId]),
             pool.query(
                 includeSubchannels
                     ? `${subtreeCte} SELECT u.gender, p.created_at FROM coaches p JOIN users u ON p.user_id = u.user_id JOIN subtree st ON u.channel_id = st.id`
                     : `SELECT u.gender, p.created_at FROM coaches p JOIN users u ON p.user_id = u.user_id WHERE u.channel_id = $1`,
                 [channelId]
             ),
-            channelUserIds.length > 0
-                ? pool.query(
-                    `SELECT COUNT(*) FILTER (WHERE tested_at >= NOW() - INTERVAL '7 days') AS s7,
-                            COUNT(*) FILTER (WHERE tested_at >= NOW() - INTERVAL '14 days') AS s14,
-                            COUNT(*) FILTER (WHERE tested_at >= NOW() - INTERVAL '30 days') AS s30,
-                            COUNT(*) AS total
-                     FROM biomarkers WHERE user_id = ANY($1)`,
-                    [channelUserIds]
-                )
-                : Promise.resolve({ rows: [{ s7: 0, s14: 0, s30: 0, total: 0 }] }),
+            pool.query(`
+                SELECT COUNT(*) FILTER (WHERE b.tested_at >= NOW() - INTERVAL '7 days') AS s7,
+                       COUNT(*) FILTER (WHERE b.tested_at >= NOW() - INTERVAL '14 days') AS s14,
+                       COUNT(*) FILTER (WHERE b.tested_at >= NOW() - INTERVAL '30 days') AS s30,
+                       COUNT(*) AS total
+                FROM biomarkers b
+                JOIN users u ON u.user_id = b.user_id
+                ${channelJoin}
+            `, [channelId]),
         ]);
 
+        const stats = statsRes.rows[0] || {};
         const coaches = coachRes.rows;
         const scanRow = scanRes.rows[0] || {};
 
         return {
             success: true,
             users: rows,
-            total: rows.length,
-            tested: testedRows.length,
-            avgBioAge: avgBioAgeVal ?? '—',
-            maleCount: rows.filter(r => r.gender === 'male').length,
-            femaleCount: rows.filter(r => r.gender === 'female').length,
-            newUsers7d: rows.filter(r => new Date(r.created_at) >= sevenDaysAgo).length,
+            total: filteredTotal,
+            tested: parseInt(stats.tested) || 0,
+            avgBioAge: stats.avg_bio_age ?? avgBioAgeVal ?? '—',
+            maleCount: parseInt(stats.male_count) || 0,
+            femaleCount: parseInt(stats.female_count) || 0,
+            newUsers7d: parseInt(stats.new_7d) || 0,
             coachTotal: coaches.length,
             maleCoachCount: coaches.filter(c => c.gender === 'male').length,
             femaleCoachCount: coaches.filter(c => c.gender === 'female').length,
@@ -4165,7 +4538,7 @@ async function handleGetChannels(adminCtx) {
                     WHERE s.depth < 20
                 )
                 SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at,
-                       c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers, c.can_customize_store,
+                       c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers, c.can_customize_partner_system, c.can_customize_store,
                        st.depth,
                        COUNT(DISTINCT u.user_id) AS user_count,
                        COUNT(DISTINCT p.id) AS coach_count,
@@ -4237,9 +4610,12 @@ async function handlePostChannel(body, adminCtx) {
 
 async function handlePutChannel(channelId, body, adminCtx) {
     if (adminCtx?.role === 'channel') {
-        if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
-        const owns = await verifySubchannelOwnership(channelId, adminCtx);
-        if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+        const isSelf = parseInt(channelId) === adminCtx.channelId;
+        if (!isSelf) {
+            if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+            const owns = await verifySubchannelOwnership(channelId, adminCtx);
+            if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+        }
     }
     const { name, logo_url, commission_config, persona_type, credit_exchange_rate, currency, locale } = body;
     if (!name) return { success: false, error: 'name is required', statusCode: 400 };
@@ -4573,10 +4949,11 @@ async function handlePutChannelPartnerTiersConfig(channelId, body, adminCtx) {
         }
 
         const { partner_tiers_config } = body || {};
-        const VALID_TIER_KEYS = ['light_entrepreneur', 'leader_partner', 'operations_center'];
         if (partner_tiers_config != null) {
+            const { rows: validTypes } = await pool.query(`SELECT key FROM partner_types`);
+            const validKeys = new Set(validTypes.map(r => r.key));
             for (const key of Object.keys(partner_tiers_config)) {
-                if (!VALID_TIER_KEYS.includes(key)) {
+                if (!validKeys.has(key)) {
                     return { statusCode: 400, success: false, error: `Invalid tier key: ${key}` };
                 }
             }
@@ -4983,7 +5360,7 @@ async function handleAdminLogin(body) {
             return { success: true, token: process.env.API_BEARER_TOKEN, role: 'superadmin', channel_id: null, allowed_tabs: null };
         }
 
-        const chRes = await pool.query(`SELECT name, logo_url, config->'admin_tabs' AS admin_tabs, can_manage_subchannels, can_customize_store FROM channels WHERE id = $1`, [row.channel_id]);
+        const chRes = await pool.query(`SELECT name, effective_channel_logo(id) AS logo_url, config->'admin_tabs' AS admin_tabs, can_manage_subchannels, can_customize_store FROM channels WHERE id = $1`, [row.channel_id]);
         const channelRow = chRes.rows[0] || {};
         // admin_tabs on a channel are feature flags ("is store enabled?"), not permission ceilings
         const channelFeatureTabs = Array.isArray(channelRow.admin_tabs) ? channelRow.admin_tabs : [];
@@ -5222,7 +5599,7 @@ async function handleWxLogin(body) {
                 u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
                 u.referred_by_user_id, b.bio_age,
                 cu.nickname AS coach_name,
-                c.name AS channel_name, c.logo_url AS channel_logo_url,
+                c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
                 c.config->'sub_age_display_names' AS channel_sub_age_names,
                 c.config->>'locale' AS channel_locale
          FROM users u
@@ -5279,7 +5656,7 @@ async function handleWxLogin(body) {
                                 u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
                                 u.referral_code, u.referred_by_user_id, b.bio_age,
                                 cu.nickname AS coach_name,
-                                c.name AS channel_name, c.logo_url AS channel_logo_url,
+                                c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
                                 c.config->'sub_age_display_names' AS channel_sub_age_names,
                 c.config->>'locale' AS channel_locale
                          FROM users u
@@ -5321,7 +5698,7 @@ async function handleWxLogin(body) {
         // channel_slug fallback: brand-level default when no invite/referral resolved a channel
         if (!existingRow.channel_id && channel_slug) {
             const slugRes = await pool.query(
-                `SELECT id, name, logo_url, config->'sub_age_display_names' AS sub_age_names, config->>'locale' AS locale FROM channels WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+                `SELECT id, name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_names, config->>'locale' AS locale FROM channels WHERE LOWER(name) = LOWER($1) LIMIT 1`,
                 [channel_slug]
             );
             if (slugRes.rows.length > 0) {
@@ -5365,7 +5742,7 @@ async function handleWxLogin(body) {
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                     u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
                     cu.nickname AS coach_name,
-                    c.name AS channel_name, c.logo_url AS channel_logo_url,
+                    c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
                     c.config->'sub_age_display_names' AS channel_sub_age_names,
                 c.config->>'locale' AS channel_locale
              FROM users u
@@ -5490,7 +5867,7 @@ async function handleWxLogin(body) {
     let channel = null;
     if (channelId) {
         const chanRes = await pool.query(
-            `SELECT name, logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
+            `SELECT name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
             [channelId]
         );
         if (chanRes.rows.length > 0) channel = {
@@ -5529,7 +5906,7 @@ async function handleWxAppLogin(body) {
                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
                u.referred_by_user_id, b.bio_age,
                cu.nickname AS coach_name,
-               c.name AS channel_name, c.logo_url AS channel_logo_url,
+               c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
                c.config->'sub_age_display_names' AS channel_sub_age_names
         FROM users u
         LEFT JOIN coaches p ON u.coach_id = p.id
@@ -5664,7 +6041,7 @@ async function handleWxAppLogin(body) {
     let channel = null;
     if (channelId) {
         const chanRes = await pool.query(
-            `SELECT name, logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
+            `SELECT name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
             [channelId]
         );
         if (chanRes.rows.length > 0) channel = {
@@ -5691,7 +6068,7 @@ async function handleValidateInvite(body) {
         const channelId = invRes.rows[0].channel_id;
         let channel = null;
         if (channelId) {
-            const chanRes = await pool.query('SELECT name, logo_url FROM channels WHERE id = $1', [channelId]);
+            const chanRes = await pool.query('SELECT name, effective_channel_logo(id) AS logo_url FROM channels WHERE id = $1', [channelId]);
             if (chanRes.rows.length > 0) channel = { name: chanRes.rows[0].name, logo_url: chanRes.rows[0].logo_url };
         }
         return { success: true, channel };
@@ -5699,7 +6076,7 @@ async function handleValidateInvite(body) {
 
     // Fall back to user referral code
     const refRes = await pool.query(
-        `SELECT u.user_id, u.channel_id, c.name AS channel_name, c.logo_url AS channel_logo_url
+        `SELECT u.user_id, u.channel_id, c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url
          FROM users u
          LEFT JOIN channels c ON c.id = u.channel_id
          WHERE u.referral_code = $1 LIMIT 1`,
@@ -10070,7 +10447,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/coach-list')) {
                 result = await handleGetCoachList(adminCtx.channelId);
             } else if (path.match(/\/channel-users\/(\d+)/)) {
-                result = await handleGetChannelUsers(path.match(/\/channel-users\/(\d+)/)[1], query.include_subchannels === 'true');
+                result = await handleGetChannelUsers(path.match(/\/channel-users\/(\d+)/)[1], query);
             } else if (path.match(/\/channel-coaches\/(\d+)/)) {
                 result = await handleGetChannelCoaches(path.match(/\/channel-coaches\/(\d+)/)[1], query.include_subchannels === 'true');
             } else if (path.match(/\/coach-users\/(\d+)/)) {
@@ -10088,6 +10465,10 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/invitations')) {
                 const invQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
                 result = await handleGetInvitations(invQuery);
+            } else if (path === '/partner-types') {
+                result = await handleGetPartnerTypes(query, adminCtx);
+            } else if (path === '/partner-commission-rules') {
+                result = await handleGetPartnerCommissionRules(query, adminCtx);
             } else if (path.includes('/partner-commission-config')) {
                 result = await handleGetPartnerCommissionConfig();
             } else if (path.includes('/channel-referral-network')) {
@@ -10337,6 +10718,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostGenerateChannelPayouts(parsedBody);
             } else if (path.includes('/generate-partner-payouts')) {
                 result = await handlePostGeneratePartnerPayouts(parsedBody);
+            } else if (path === '/partner-types') {
+                result = await handlePostPartnerType(parsedBody, adminCtx);
+            } else if (path === '/partner-commission-rules') {
+                result = await handlePostPartnerCommissionRule(parsedBody, adminCtx);
             } else if (path.includes('/partner-commissions')) {
                 result = await handlePostPartnerCommission(parsedBody);
             } else if (path.includes('/partners')) {
@@ -10451,6 +10836,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/channels\/(\d+)\/partner-tiers-permission$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/partner-tiers-permission$/)[1];
                 result = await handlePutChannelPartnerTiersPermission(channelId, parsedBody, adminCtx);
+            } else if (path.match(/\/channels\/(\d+)\/partner-system-permission$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/partner-system-permission$/)[1];
+                result = await handlePutChannelPartnerSystemPermission(channelId, parsedBody, adminCtx);
             } else if (path.match(/\/channels\/(\d+)\/store-permission$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/store-permission$/)[1];
                 result = await handlePutChannelStorePermission(channelId, parsedBody, adminCtx);
@@ -10489,6 +10877,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/channel-payouts/')) {
                 const payoutId = path.split('/channel-payouts/')[1];
                 result = await handlePutChannelPayout(payoutId, parsedBody);
+            } else if (path.match(/\/partner-types\/([^/]+)$/)) {
+                const typeKey = path.match(/\/partner-types\/([^/]+)$/)[1];
+                result = await handlePutPartnerType(typeKey, parsedBody, adminCtx);
+            } else if (path.match(/\/partner-commission-rules\/(\d+)$/)) {
+                const ruleId = path.match(/\/partner-commission-rules\/(\d+)$/)[1];
+                result = await handlePutPartnerCommissionRule(ruleId, parsedBody, adminCtx);
             } else if (path.includes('/partner-commission-config')) {
                 result = await handlePutPartnerCommissionConfig(parsedBody);
             } else if (path.includes('/partner-payouts/')) {
@@ -10593,6 +10987,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/channels/')) {
                 const channelId = path.split('/channels/')[1];
                 result = await handleDeleteChannel(channelId, adminCtx);
+            } else if (path.match(/\/partner-types\/([^/]+)$/)) {
+                const typeKey = path.match(/\/partner-types\/([^/]+)$/)[1];
+                result = await handleDeletePartnerType(typeKey, adminCtx);
+            } else if (path.match(/\/partner-commission-rules\/(\d+)$/)) {
+                const ruleId = path.match(/\/partner-commission-rules\/(\d+)$/)[1];
+                result = await handleDeletePartnerCommissionRule(ruleId, adminCtx);
             } else if (path.includes('/partners/')) {
                 const partnerId = path.split('/partners/')[1];
                 result = await handleDeletePartner(partnerId);
