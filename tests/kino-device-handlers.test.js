@@ -11,8 +11,9 @@ const {
 } = require('../src/functions/kino/lib/deviceHandlers');
 const { _private } = require('../src/functions/kino');
 
-function createDevicePool() {
+function createDevicePool(options = {}) {
   const queries = [];
+  const { existingBiomarkers = [] } = options;
   const pool = {
     queries,
     async query(sql, params = []) {
@@ -80,7 +81,7 @@ function createDevicePool() {
       }
 
       if (sql.includes('FROM biomarkers') || sql.includes('FROM nutrition_schedules')) {
-        return { rows: [] };
+        return { rows: sql.includes('test_type') ? existingBiomarkers : [] };
       }
 
       if (sql.startsWith('INSERT INTO notifications') || sql.startsWith('INSERT INTO chat_messages')) {
@@ -163,6 +164,45 @@ describe('Kino protected device business handlers', () => {
     assert.strictEqual(insert.params[2], 32.1);
     assert.strictEqual(insert.params[3], 42);
     assert.strictEqual(insert.params.includes(999), false);
+  });
+
+  test('kino-result updates the same device biomarker when it was tested within 10 minutes', async () => {
+    const pool = createDevicePool({
+      existingBiomarkers: [{
+        id: 88,
+        data: { actual: { hsCRP: 1.1 }, estimated: { Albumin: 42 } },
+        tested_at: '2026-06-15T02:00:00.000Z',
+      }],
+    });
+
+    const result = await handlePostKinoResult({
+      pool,
+      machine,
+      body: {
+        chip_id: 'chip-001',
+        data: { estimated: { hsCRP: 1.2 }, bioage_profile: { BioAge: 32.1 } },
+        bio_age: 32.1,
+      },
+    });
+
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.biomarker_id, 88);
+
+    const select = pool.queries.find((q) => q.sql.includes('FROM biomarkers'));
+    assert.match(select.sql, /tested_at\s*>=\s*NOW\(\)\s*-\s*INTERVAL '10 minutes'/i);
+
+    const update = pool.queries.find((q) => q.sql.includes('UPDATE biomarkers'));
+    assert.ok(update);
+    assert.strictEqual(update.params[1], 32.1);
+    assert.strictEqual(update.params[2], 88);
+    assert.deepStrictEqual(JSON.parse(update.params[0]), {
+      actual: { hsCRP: 1.1 },
+      estimated: { Albumin: 42, hsCRP: 1.2 },
+      bioage_profile: { BioAge: 32.1 },
+    });
+
+    const insert = pool.queries.find((q) => q.sql.includes('INSERT INTO biomarkers'));
+    assert.strictEqual(insert, undefined);
   });
 
   test('biomarkers stores the authenticated machine id and ignores body kino_device_id', async () => {

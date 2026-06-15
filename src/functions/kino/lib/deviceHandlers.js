@@ -221,6 +221,35 @@ function normalizeVersion(value) {
   return version;
 }
 
+function asPlainObject(value) {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return asPlainObject(parsed);
+    } catch (_) {
+      return {};
+    }
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) return value;
+  return {};
+}
+
+function isPlainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function mergePlainObjects(base, patch) {
+  const result = { ...asPlainObject(base) };
+  for (const [key, value] of Object.entries(asPlainObject(patch))) {
+    const current = result[key];
+    result[key] = isPlainObject(current) && isPlainObject(value)
+      ? mergePlainObjects(current, value)
+      : value;
+  }
+  return result;
+}
+
 async function handlePostMachineInfo({ pool, body = {}, machine }) {
   const softwareVersion = normalizeVersion(body.software_version ?? body.softwareVersion ?? body.app_version);
   const firmwareVersion = normalizeVersion(body.firmware_version ?? body.firmwareVersion);
@@ -352,17 +381,42 @@ async function handlePostKinoResult({ pool, body = {}, machine }) {
   );
   await pool.query('UPDATE kino_chips SET status = $1 WHERE chip_code = $2', ['used', chipId]);
 
-  const bmResult = await pool.query(
-    `INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at, kino_device_id)
+  let bmId = '';
+  const biomarkersResult = await pool.query(
+    `SELECT id, data, tested_at
+     FROM biomarkers
+     WHERE user_id = $1
+       AND test_type = 'kino_chip'
+       AND kino_device_id = $2
+       AND tested_at >= NOW() - INTERVAL '10 minutes'
+     ORDER BY tested_at DESC
+     LIMIT 1`,
+    [userId, machine.id]
+  );
+
+  if (biomarkersResult.rows.length === 1) {
+    bmId = biomarkersResult.rows[0].id;
+    const newData = mergePlainObjects(biomarkersResult.rows[0].data, data);
+    await pool.query(
+      `UPDATE biomarkers
+       SET data = $1, bio_age = $2, tested_at = NOW()
+       WHERE id = $3`,
+      [JSON.stringify(newData), bioAge ?? null, bmId]
+    );
+  } else {
+    const bmResult = await pool.query(
+      `INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at, kino_device_id)
      VALUES ($1, 'kino_chip', $2, $3, NOW(), $4)
      RETURNING id`,
-    [userId, JSON.stringify(data), bioAge ?? null, machine.id]
-  );
+      [userId, JSON.stringify(data), bioAge ?? null, machine.id]
+    );
+    bmId = bmResult.rows[0].id;
+  }
 
   return {
     success: true,
     scan_id: scanId,
-    biomarker_id: bmResult.rows[0].id,
+    biomarker_id: bmId,
     user_id: userId,
     machine_no: machine.machine_no,
   };
