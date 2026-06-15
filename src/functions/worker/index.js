@@ -6053,14 +6053,23 @@ async function handleGetKinoDevices() {
 async function handlePostKinoDevice(body) {
     const { serial_number, name, coach_id, channel_id, status, notes } = body;
     if (!serial_number?.trim()) return { success: false, error: 'serial_number is required', statusCode: 400 };
+    const normalizedSerialNumber = serial_number.trim().toUpperCase();
     try {
         const result = await pool.query(
             `INSERT INTO kino_devices (serial_number, name, coach_id, channel_id, status, notes)
              VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-            [serial_number.trim(), name || null, coach_id || null, channel_id || null, status || 'active', notes || null]
+            [normalizedSerialNumber, name || null, coach_id || null, channel_id || null, status || 'active', notes || null]
         );
         return { success: true, id: result.rows[0].id };
     } catch (err) {
+        if (err.code === '23505' && err.constraint === 'kino_devices_serial_number_key') {
+            return {
+                success: false,
+                error: 'serial_number already exists',
+                code: 'duplicate_serial_number',
+                statusCode: 409,
+            };
+        }
         return { success: false, error: err.detail || err.message };
     }
 }
@@ -6533,6 +6542,34 @@ async function handlePostKinoScan(body) {
     return { success: true, status: 'registered', scan_id: result.rows[0].id };
 }
 
+function asPlainObject(value) {
+    if (!value) return {};
+    if (typeof value === 'string') {
+        try {
+            return asPlainObject(JSON.parse(value));
+        } catch (_) {
+            return {};
+        }
+    }
+    if (typeof value === 'object' && !Array.isArray(value)) return value;
+    return {};
+}
+
+function isPlainObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function mergePlainObjects(base, patch) {
+    const result = { ...asPlainObject(base) };
+    for (const [key, value] of Object.entries(asPlainObject(patch))) {
+        const current = result[key];
+        result[key] = isPlainObject(current) && isPlainObject(value)
+            ? mergePlainObjects(current, value)
+            : value;
+    }
+    return result;
+}
+
 async function handlePostKinoResult(body) {
     const { chip_id, data, bio_age, kino_device_id } = body;
     if (!chip_id) throw new Error('chip_id is required');
@@ -6556,14 +6593,45 @@ async function handlePostKinoResult(body) {
         [chip_id]
     );
 
-    const bmResult = await pool.query(
-        `INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at, kino_device_id)
-         VALUES ($1, 'kino_chip', $2, $3, NOW(), $4)
-         RETURNING id`,
-        [user_id, JSON.stringify(data), bio_age ?? null, kino_device_id || null]
-    );
+    const deviceId = kino_device_id || null;
+    let biomarkerId = null;
 
-    return { success: true, scan_id, biomarker_id: bmResult.rows[0].id, user_id };
+    if (deviceId !== null) {
+        const biomarkerResult = await pool.query(
+            `SELECT id, data, tested_at
+             FROM biomarkers
+             WHERE user_id = $1
+               AND test_type = 'kino_chip'
+               AND kino_device_id = $2
+               AND tested_at >= NOW() - INTERVAL '10 minutes'
+             ORDER BY tested_at DESC
+             LIMIT 1`,
+            [user_id, deviceId]
+        );
+
+        if (biomarkerResult.rows.length === 1) {
+            biomarkerId = biomarkerResult.rows[0].id;
+            const mergedData = mergePlainObjects(biomarkerResult.rows[0].data, data);
+            await pool.query(
+                `UPDATE biomarkers
+                 SET data = $1, bio_age = $2, tested_at = NOW()
+                 WHERE id = $3`,
+                [JSON.stringify(mergedData), bio_age ?? null, biomarkerId]
+            );
+        }
+    }
+
+    if (biomarkerId === null) {
+        const bmResult = await pool.query(
+            `INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at, kino_device_id)
+             VALUES ($1, 'kino_chip', $2, $3, NOW(), $4)
+             RETURNING id`,
+            [user_id, JSON.stringify(data), bio_age ?? null, deviceId]
+        );
+        biomarkerId = bmResult.rows[0].id;
+    }
+
+    return { success: true, scan_id, biomarker_id: biomarkerId, user_id };
 }
 
 async function handlePostHealthAdvice(body) {
