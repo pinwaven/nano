@@ -6081,7 +6081,7 @@ async function handlePostBiomarkers(body) {
 
         refreshGoalProgress(user_id);
 
-        return { success: true, user_id, biomarkers: estimationReport.BiomarkerValues, bioage_profile: bioAgeReport };
+        return { success: true, user_id, biomarker_id: biomarkerId, biomarkers: estimationReport.BiomarkerValues, bioage_profile: bioAgeReport };
     } else {
         // Non-kino: save raw record only, no estimation
         await pool.query(
@@ -6973,7 +6973,7 @@ async function handlePostKinoScan(body) {
 }
 
 async function handlePostKinoResult(body) {
-    const { chip_id, data, bio_age, kino_device_id } = body;
+    const { chip_id, data, bio_age, kino_device_id, biomarker_id } = body;
     if (!chip_id) throw new Error('chip_id is required');
     if (!data) throw new Error('data is required');
 
@@ -6995,14 +6995,19 @@ async function handlePostKinoResult(body) {
         [chip_id]
     );
 
-    const bmResult = await pool.query(
-        `INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at, kino_device_id)
-         VALUES ($1, 'kino_chip', $2, $3, NOW(), $4)
-         RETURNING id`,
-        [user_id, JSON.stringify(data), bio_age ?? null, kino_device_id || null]
-    );
+    let finalBiomarkerId = biomarker_id;
+    if (!biomarker_id) {
+        // Real device flow: biomarker record doesn't exist yet — insert it now
+        const bmResult = await pool.query(
+            `INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at, kino_device_id)
+             VALUES ($1, 'kino_chip', $2, $3, NOW(), $4)
+             RETURNING id`,
+            [user_id, JSON.stringify(data), bio_age ?? null, kino_device_id || null]
+        );
+        finalBiomarkerId = bmResult.rows[0].id;
+    }
 
-    return { success: true, scan_id, biomarker_id: bmResult.rows[0].id, user_id };
+    return { success: true, scan_id, biomarker_id: finalBiomarkerId, user_id };
 }
 
 async function handlePostHealthAdvice(body) {

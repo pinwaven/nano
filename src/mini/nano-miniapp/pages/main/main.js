@@ -1205,6 +1205,7 @@ Page({
         throw new Error(`POST /biomarkers HTTP ${res.statusCode}: ${res.data?.error || JSON.stringify(res.data)}`)
       }
       const biomarkers = res.data?.biomarkers || null
+      const biomarkerId = res.data?.biomarker_id || null
       let bioageProfile = res.data?.bioage_profile || null
       if (!bioageProfile) {
         try {
@@ -1236,6 +1237,7 @@ Page({
             data: { biomarkers, bioage_profile: bioageProfile },
             bio_age: rawBioAge,
             kino_device_id: this.data.kinoSimDeviceId || undefined,
+            biomarker_id: biomarkerId,
           })
         } catch (e) {}
       }
