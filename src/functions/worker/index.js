@@ -1,6 +1,6 @@
 const { pool } = require('./lib/db');
 const { recordOrderCommissions, recordUserReferralCommission } = require('./lib/commissions');
-const { getUserBalance, getLedgerHistory, debitUser, getChannelExchangeRate, getChannelCurrency } = require('./lib/credits');
+const { getUserBalance, getLedgerHistory, creditUser, debitUser, getChannelExchangeRate, getChannelCurrency } = require('./lib/credits');
 const { recordReferralCommission, generatePartnerPayouts, getPartnerProductDiscount, applyPartnerDiscount, getCommissionRules, resolveRate } = require('./lib/partnerCommissions');
 const ossLib = require('./lib/oss');
 const crypto = require('crypto');
@@ -16,10 +16,10 @@ async function generateReferralCode() {
     throw new Error('Failed to generate unique referral code');
 }
 
-function signChannelAdminToken({ sub, cid, tabs, perms, cms }) {
+function signChannelAdminToken({ sub, username, cid, tabs, perms, cms }) {
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + 86400;
-    const payload = Buffer.from(JSON.stringify({ sub, cid, tabs, perms: perms ?? tabs, cms: cms ?? false, iat, exp })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({ sub, username, cid, tabs, perms: perms ?? tabs, cms: cms ?? false, iat, exp })).toString('base64url');
     const sig = crypto.createHmac('sha256', process.env.API_BEARER_TOKEN)
                       .update(`ch.${payload}`).digest('hex');
     return `ch.${payload}.${sig}`;
@@ -5543,7 +5543,7 @@ async function handleAdminLogin(body) {
         const cms = isAutonomous || (channelRow.can_manage_subchannels ?? false);
         const canCustomizeStore = isAutonomous || (channelRow.can_customize_store ?? false);
         const canManageWarehouses = isAutonomous || (channelRow.can_manage_warehouses ?? false);
-        const token = signChannelAdminToken({ sub: row.id, cid: row.channel_id, tabs, perms: resolvedPerms, cms, cmw: canManageWarehouses, auto: isAutonomous });
+        const token = signChannelAdminToken({ sub: row.id, username, cid: row.channel_id, tabs, perms: resolvedPerms, cms, cmw: canManageWarehouses, auto: isAutonomous });
         return { success: true, token, role: 'channel', channel_id: row.channel_id,
                  channel_name: channelRow.name || '', channel_logo: channelRow.logo_url || '',
                  allowed_tabs: tabs, allowed_perms: resolvedPerms, can_manage_subchannels: cms,
@@ -6451,7 +6451,7 @@ async function handlePostAdminUserCreditAdjustment(userId, body, adminCtx) {
         if (!u) return { success: false, error: 'User not found', statusCode: 404 };
         if (adminCtx.role !== 'superadmin' && String(u.channel_id) !== String(adminCtx.channelId))
             return { success: false, error: 'Access denied', statusCode: 403 };
-        const annotatedNote = `[Admin: ${adminCtx.userId || 'unknown'}] ${note}`;
+        const annotatedNote = `[Admin: ${adminCtx.username || adminCtx.accountId || 'unknown'}] ${note}`;
         if (amount > 0) {
             await creditUser(userId, amount, 1.0, 'adjustment', null, null, annotatedNote);
         } else {
@@ -10588,7 +10588,7 @@ exports.handler = async (req, resp, context) => {
         return optionsPayload;
     }
 
-    const adminCtx = { role: 'superadmin', channelId: null, accountId: null, canManageSubchannels: false };
+    const adminCtx = { role: 'superadmin', username: 'superadmin', channelId: null, accountId: null, canManageSubchannels: false };
     const expectedBearer = process.env.API_BEARER_TOKEN;
     if (expectedBearer && rawPath && path !== '/admin/login') {
         const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
@@ -10603,6 +10603,7 @@ exports.handler = async (req, resp, context) => {
                 return unauthorizedPayload;
             }
             adminCtx.role = 'channel';
+            adminCtx.username = payload.username || payload.sub;
             adminCtx.channelId = payload.cid;
             adminCtx.accountId = payload.sub;
             adminCtx.autonomous = payload.auto ?? false;

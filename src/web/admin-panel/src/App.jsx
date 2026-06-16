@@ -2989,10 +2989,10 @@ function UserCreditModal({ user, onClose }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ width: 560 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 className="modal-title">{uc.title} — {user.nickname || user.user_id}</h2>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+          <span>{uc.title} — {user.nickname || user.user_id}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
 
         {loading ? (
@@ -3062,8 +3062,8 @@ function UserCreditModal({ user, onClose }) {
               </div>
               {formError && <div style={{ fontSize: 12, color: '#ef4444' }}>{formError}</div>}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                <button type="button" className="btn btn-ghost" onClick={onClose}>{isZh ? '取消' : 'Cancel'}</button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>
+                <button type="button" className="btn-secondary" onClick={onClose}>{isZh ? '取消' : 'Cancel'}</button>
+                <button type="submit" className="btn-primary" disabled={saving}>
                   {saving ? uc.saving : uc.submit}
                 </button>
               </div>
