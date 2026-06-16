@@ -7,6 +7,22 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 ## [Unreleased]
 
 ### Added
+- **SKU Variant System** — Products with multiple sizes, colours, or other attributes are now modelled with a parent-child relationship inside the `skus` table.
+  - **Schema** (`migration_sku_variants.sql`): added `parent_sku_id UUID REFERENCES skus(id)`, `attributes JSONB DEFAULT '{}'`, and `is_parent BOOLEAN DEFAULT FALSE` to `skus`. Index on `parent_sku_id` for fast child lookups. All three columns default to their "standalone" state so existing rows are unaffected.
+  - **Backend** (`index.js`): `handlePostSku` and `handlePutSku` now persist and return the three variant columns.
+  - **Admin panel — SKU modal**: 3-mode selector: **Standalone** (default), **Parent product** (`is_parent=TRUE`), **Variant / Child SKU** (`parent_sku_id` + attributes). Variant mode shows a parent picker, a dynamic key-value attribute editor, and a **Suggest code** button that auto-builds `{PARENT_CODE}-{ATTR_VALUES}`.
+  - **Admin panel — SKU list** (Store tab and Inventory → SKUs sub-tab): collapsible tree view. Parent rows show a `PARENT` badge, variant count, and **Add Variant** shortcut. Child rows appear indented with coloured attribute chips. Standalone rows unchanged.
+
+- **Autonomous channel flag** — A new `channels.autonomous` boolean (superadmin-only) lets a channel operate as a fully independent unit (e.g. country-level partner `aeviva-china`). When set, all capability flags are implicitly true; the JWT carries `auto: true` and the auth middleware overrides all per-request flags accordingly. Admin panel: purple `AUTO` badge on channel rows; toggle in Channel Settings → General (superadmin-only). API: `PUT /api/channels/:id/autonomous`. Migration: `migration_autonomous_channel.sql`.
+
+- **Warehouse management for channel admins** — New `channels.can_manage_warehouses` boolean unlocks the **Inventory → Warehouses sub-tab** for channel admins, scoped to SKUs they own. Delegatable from a parent channel admin with `can_manage_subchannels`. Autonomous channels get this automatically. API: `PUT /api/channels/:id/warehouse-permission`. Migration: `migration_warehouse_permission.sql`.
+
+- **Store tab access for autonomous channel admins** — Autonomous channel admins can now browse the **Store → Items sub-tab** (global catalog, read-only). SKUs, Warehouses, and Orders sub-tabs within Store remain superadmin-only.
+
+### Fixed
+- **SKU save "nothing happens" bug** — Three compounding issues were fixed: (1) `t.saveFailed` was referenced at the wrong object path in `SkuModal`. (2) Template literals in PUT/DELETE URLs used a backslash-escaped `\${sku.id}`, preventing interpolation. (3) `handlePostSku` didn't return a `statusCode` on DB errors, so unique-constraint failures returned HTTP 200 and the modal closed silently.
+
+### Added
 - **Channel-scoped Partner System** — Channels granted `can_customize_partner_system` permission can now define their own partner types and commission rules independently of the global system.
   - **Schema** (`migration_partner_channel_scope.sql`): added `channel_id` FK to `partner_types` and `partner_commission_rules`; unique constraint changed to `(COALESCE(channel_id,0), key)` so each channel can have its own type with the same key as a global type; `partners.tier` FK dropped (application-layer validation). Added `can_customize_partner_system BOOLEAN DEFAULT FALSE` to `channels`.
   - **Commission engine** (`partnerCommissions.js`): `getCommissionRules(eventType, channelId)` now prefers channel-specific rules when they exist; falls back to global rules if not. `getPartnerProductDiscount`, `recordReferralCommission`, and `recordSalesCommission` all pass channel context.

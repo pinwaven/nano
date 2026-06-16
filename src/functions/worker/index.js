@@ -688,7 +688,7 @@ async function handlePostDispense(body) {
             if (!channelId) return { success: true, items: [] };
             const result = await pool.query(
                 `SELECT ci.id, ci.key_name, ci.name_zh, ci.name_en, ci.desc_zh, ci.desc_en,
-                        ci.unit_zh, ci.unit_en, ci.price_cny, ci.price_usd, ci.tag, ci.sort_order,
+                        ci.unit_zh, ci.unit_en, ci.price_cny, ci.price_usd, ci.price_credits, ci.tag, ci.sort_order,
                         ci.active, ci.image_url, ci.item_type, ci.sku_id,
                         COALESCE(ist.quantity, ci.stock_quantity) AS stock_quantity
                  FROM channel_inventory_items ci
@@ -711,7 +711,7 @@ async function handlePostDispense(body) {
         const showAll = query.all === 'true';
         const result = await pool.query(
             `SELECT s.id, s.key_name, s.name_zh, s.name_en, s.desc_zh, s.desc_en,
-                    s.unit_zh, s.unit_en, s.price_cny, s.price_usd, s.tag, s.sort_order, s.active, s.image_url, s.sku_id,
+                    s.unit_zh, s.unit_en, s.price_cny, s.price_usd, s.price_credits, s.tag, s.sort_order, s.active, s.image_url, s.sku_id,
                     COALESCE(ist.quantity, 0) AS stock_quantity
              FROM store_items s
              LEFT JOIN inventory_stock ist ON s.sku_id = ist.sku_id AND ist.location_type = 'warehouse' AND ist.warehouse_name = 'shanghai-central'
@@ -732,7 +732,7 @@ async function handleGetOrders(query = {}, adminCtx) {
         const channelFilter = channelId ? `AND o.channel_id = \$${params.push(channelId)}` : '';
         const result = await pool.query(
             `SELECT o.id, o.user_id, o.item_id, o.channel_inventory_item_id, o.item_key,
-                    o.quantity, o.price_cny, o.price_usd, o.status, o.created_at, o.channel_id,
+                    o.quantity, o.price_cny, o.price_usd, o.price_credits, o.status, o.created_at, o.channel_id,
                     o.shipping_name, o.shipping_phone, o.shipping_address, o.shipping_carrier, o.tracking_number,
                     o.shipped_at, o.delivered_at, o.payment_status, o.payment_method, o.fulfillment_notes, o.fulfilled_assets,
                     u.nickname, u.external_id,
@@ -761,7 +761,7 @@ async function handleGetMyOrders(openid) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `SELECT o.id, o.item_key, o.quantity, o.price_cny, o.price_usd, o.status, o.created_at,
+            `SELECT o.id, o.item_key, o.quantity, o.price_cny, o.price_usd, o.price_credits, o.status, o.created_at,
                     o.shipping_name, o.shipping_phone, o.shipping_address, o.shipping_carrier, o.tracking_number,
                     o.shipped_at, o.delivered_at, o.payment_status, o.payment_method, o.fulfillment_notes, o.fulfilled_assets,
                     COALESCE(ci.name_zh, s.name_zh, sk.name_zh, o.item_key) AS name_zh,
@@ -783,17 +783,18 @@ async function handleGetMyOrders(openid) {
 }
 
 async function handlePostStoreItem(body) {
-    const { key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url, sku_id } = body;
+    const { key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, price_credits, tag, sort_order, active, image_url, sku_id } = body;
     if (!key_name) return { success: false, error: 'key_name is required', statusCode: 400 };
     if (!name_en)  return { success: false, error: 'name_en is required', statusCode: 400 };
     if (!sku_id)   return { success: false, error: 'sku_id is required — create the SKU first', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `INSERT INTO store_items (key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url, sku_id)
-             VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12, \$13, \$14) RETURNING id`,
+            `INSERT INTO store_items (key_name, name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, price_credits, tag, sort_order, active, image_url, sku_id)
+             VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12, \$13, \$14, \$15) RETURNING id`,
             [key_name, name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
              parseFloat(price_cny) || 0, parseFloat(price_usd) || 0,
+             price_credits != null ? parseFloat(price_credits) : null,
              tag || null, parseInt(sort_order) || 0, active !== false, image_url || null, sku_id]
         );
         return { success: true, id: result.rows[0].id };
@@ -803,17 +804,18 @@ async function handlePostStoreItem(body) {
 }
 
 async function handlePutStoreItem(itemId, body) {
-    const { name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, tag, sort_order, active, image_url, sku_id } = body;
+    const { name_en, name_zh, desc_en, desc_zh, unit_en, unit_zh, price_cny, price_usd, price_credits, tag, sort_order, active, image_url, sku_id } = body;
     if (!sku_id) return { success: false, error: 'sku_id is required — create the SKU first', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query(
             `UPDATE store_items SET name_en=\$1, name_zh=\$2, desc_en=\$3, desc_zh=\$4,
-             unit_en=\$5, unit_zh=\$6, price_cny=\$7, price_usd=\$8, tag=\$9, sort_order=\$10, active=\$11,
-             image_url=\$12, sku_id=\$13
-             WHERE id=\$14`,
+             unit_en=\$5, unit_zh=\$6, price_cny=\$7, price_usd=\$8, price_credits=\$9, tag=\$10, sort_order=\$11, active=\$12,
+             image_url=\$13, sku_id=\$14
+             WHERE id=\$15`,
             [name_en, name_zh || '', desc_en || '', desc_zh || '', unit_en || '', unit_zh || '',
              parseFloat(price_cny), parseFloat(price_usd),
+             price_credits != null ? parseFloat(price_credits) : null,
              tag || null, parseInt(sort_order) || 0, active !== false,
              image_url || null, sku_id, itemId]
         );
@@ -843,7 +845,7 @@ async function handleGetSkus(adminCtx = {}) {
 }
 
 async function handlePostSku(body, adminCtx = {}) {
-    const { sku_code, name_zh, name_en, desc_zh, desc_en, item_type, unit_zh, unit_en, channel_id: bodyChannelId } = body;
+    const { sku_code, name_zh, name_en, desc_zh, desc_en, item_type, unit_zh, unit_en, channel_id: bodyChannelId, parent_sku_id, attributes, is_parent } = body;
     if (!sku_code) return { success: false, error: 'sku_code is required', statusCode: 400 };
     if (!name_zh || !name_en) return { success: false, error: 'name_zh and name_en are required', statusCode: 400 };
     const channelId = adminCtx.role === 'superadmin'
@@ -852,26 +854,26 @@ async function handlePostSku(body, adminCtx = {}) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `INSERT INTO skus (sku_code, name_zh, name_en, desc_zh, desc_en, item_type, unit_zh, unit_en, channel_id)
-             VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9) RETURNING *`,
-            [sku_code, name_zh, name_en, desc_zh || null, desc_en || null, item_type || 'physical', unit_zh || '个', unit_en || 'pcs', channelId]
+            `INSERT INTO skus (sku_code, name_zh, name_en, desc_zh, desc_en, item_type, unit_zh, unit_en, channel_id, parent_sku_id, attributes, is_parent)
+             VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12) RETURNING *`,
+            [sku_code, name_zh, name_en, desc_zh || null, desc_en || null, item_type || 'physical', unit_zh || '个', unit_en || 'pcs', channelId, parent_sku_id || null, JSON.stringify(attributes || {}), is_parent === true]
         );
         return { success: true, sku: result.rows[0] };
     } catch (err) {
-        return { success: false, error: err.detail || err.message };
+        return { success: false, error: err.detail || err.message, statusCode: 500 };
     }
 }
 
 async function handlePutSku(id, body, adminCtx = {}) {
-    const { sku_code, name_zh, name_en, desc_zh, desc_en, item_type, unit_zh, unit_en } = body;
+    const { sku_code, name_zh, name_en, desc_zh, desc_en, item_type, unit_zh, unit_en, parent_sku_id, attributes, is_parent } = body;
     if (!sku_code) return { success: false, error: 'sku_code is required', statusCode: 400 };
     if (!name_zh || !name_en) return { success: false, error: 'name_zh and name_en are required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const base = [sku_code, name_zh, name_en, desc_zh || null, desc_en || null, item_type || 'physical', unit_zh || '个', unit_en || 'pcs', id];
+        const base = [sku_code, name_zh, name_en, desc_zh || null, desc_en || null, item_type || 'physical', unit_zh || '个', unit_en || 'pcs', parent_sku_id || null, JSON.stringify(attributes || {}), is_parent === true, id];
         const sql = adminCtx.role === 'superadmin'
-            ? `UPDATE skus SET sku_code=\$1, name_zh=\$2, name_en=\$3, desc_zh=\$4, desc_en=\$5, item_type=\$6, unit_zh=\$7, unit_en=\$8 WHERE id=\$9 RETURNING *`
-            : `UPDATE skus SET sku_code=\$1, name_zh=\$2, name_en=\$3, desc_zh=\$4, desc_en=\$5, item_type=\$6, unit_zh=\$7, unit_en=\$8 WHERE id=\$9 AND channel_id=\$10 RETURNING *`;
+            ? `UPDATE skus SET sku_code=\$1, name_zh=\$2, name_en=\$3, desc_zh=\$4, desc_en=\$5, item_type=\$6, unit_zh=\$7, unit_en=\$8, parent_sku_id=\$9, attributes=\$10, is_parent=\$11 WHERE id=\$12 RETURNING *`
+            : `UPDATE skus SET sku_code=\$1, name_zh=\$2, name_en=\$3, desc_zh=\$4, desc_en=\$5, item_type=\$6, unit_zh=\$7, unit_en=\$8, parent_sku_id=\$9, attributes=\$10, is_parent=\$11 WHERE id=\$12 AND channel_id=\$13 RETURNING *`;
         const params = adminCtx.role === 'superadmin' ? base : [...base, adminCtx.channelId];
         const result = await pool.query(sql, params);
         if (result.rows.length === 0) return { success: false, error: 'SKU not found or not owned by your channel', statusCode: 404 };
@@ -908,6 +910,17 @@ async function handleGetInventoryStock(query, adminCtx = {}) {
                  LEFT JOIN channels c ON i.channel_id = c.id
                  ORDER BY s.sku_code ASC, i.location_type ASC`
             ));
+        } else if (adminCtx.canManageWarehouses) {
+            ({ rows } = await pool.query(
+                `SELECT i.*, s.sku_code, s.name_zh AS sku_name_zh, s.name_en AS sku_name_en, c.name AS channel_name
+                 FROM inventory_stock i
+                 JOIN skus s ON i.sku_id = s.id
+                 LEFT JOIN channels c ON i.channel_id = c.id
+                 WHERE (i.channel_id = \$1 AND i.location_type = 'channel')
+                    OR (i.location_type = 'warehouse' AND i.sku_id IN (SELECT id FROM skus WHERE channel_id = \$1))
+                 ORDER BY s.sku_code ASC, i.location_type ASC`,
+                [adminCtx.channelId]
+            ));
         } else {
             ({ rows } = await pool.query(
                 `SELECT i.*, s.sku_code, s.name_zh AS sku_name_zh, s.name_en AS sku_name_en, c.name AS channel_name
@@ -928,8 +941,16 @@ async function handleGetInventoryStock(query, adminCtx = {}) {
 async function handlePostInventoryStock(body, adminCtx = {}) {
     let { sku_id, location_type, channel_id, warehouse_name, quantity, low_stock_threshold } = body;
     if (adminCtx.role !== 'superadmin') {
-        location_type = 'channel';
-        channel_id = adminCtx.channelId;
+        if (location_type === 'warehouse' && adminCtx.canManageWarehouses) {
+            // Warehouse entry: verify the SKU belongs to this channel
+            if (!pool) return { success: false, error: 'Database pool not initialized' };
+            const skuCheck = await pool.query('SELECT channel_id FROM skus WHERE id = $1', [sku_id]);
+            if (!skuCheck.rows[0] || String(skuCheck.rows[0].channel_id) !== String(adminCtx.channelId))
+                return { statusCode: 403, success: false, error: 'SKU does not belong to your channel' };
+        } else {
+            location_type = 'channel';
+            channel_id = adminCtx.channelId;
+        }
     }
     if (!sku_id) return { success: false, error: 'sku_id is required', statusCode: 400 };
     if (!location_type) return { success: false, error: 'location_type is required', statusCode: 400 };
@@ -967,6 +988,57 @@ async function handlePostInventoryStock(body, adminCtx = {}) {
     } catch (err) {
         return { success: false, error: err.message };
     }
+}
+
+// ── Warehouse handlers ────────────────────────────────────────────────────────
+
+async function handleGetWarehouses() {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query('SELECT * FROM warehouses ORDER BY name ASC');
+        return { success: true, warehouses: rows };
+    } catch (err) { return { success: false, error: err.message }; }
+}
+
+async function handlePostWarehouse(body) {
+    const { name, address } = body;
+    if (!name?.trim()) return { success: false, error: 'name is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query(
+            'INSERT INTO warehouses (name, address) VALUES ($1, $2) RETURNING *',
+            [name.trim(), address?.trim() || null]
+        );
+        return { success: true, warehouse: rows[0] };
+    } catch (err) {
+        if (err.code === '23505') return { success: false, error: 'Warehouse name already exists', statusCode: 409 };
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutWarehouse(id, body) {
+    const { name, address, active } = body;
+    if (!name?.trim()) return { success: false, error: 'name is required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query(
+            'UPDATE warehouses SET name=$1, address=$2, active=$3 WHERE id=$4 RETURNING *',
+            [name.trim(), address?.trim() || null, active !== false, id]
+        );
+        if (!rows.length) return { success: false, error: 'Warehouse not found', statusCode: 404 };
+        return { success: true, warehouse: rows[0] };
+    } catch (err) {
+        if (err.code === '23505') return { success: false, error: 'Warehouse name already exists', statusCode: 409 };
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteWarehouse(id) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query('DELETE FROM warehouses WHERE id=$1', [id]);
+        return { success: true };
+    } catch (err) { return { success: false, error: err.message }; }
 }
 
 // ── Commission & Rewards handlers ─────────────────────────────────────────────
@@ -2070,14 +2142,15 @@ async function handlePostChannelInventory(body, adminCtx) {
         const { rows } = await pool.query(
             `INSERT INTO channel_inventory_items
               (channel_id, key_name, name_zh, name_en, desc_zh, desc_en, item_type,
-               unit_zh, unit_en, price_cny, price_usd, stock_quantity, tag, sort_order, active, image_url, metadata, store_item_id, show_in_store, sku_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+               unit_zh, unit_en, price_cny, price_usd, price_credits, stock_quantity, tag, sort_order, active, image_url, metadata, store_item_id, show_in_store, sku_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
              RETURNING *`,
             [channelId, body.key_name, body.name_zh || '', body.name_en,
              body.desc_zh || '', body.desc_en || '', body.item_type || 'physical',
              body.unit_zh || '', body.unit_en || '',
              body.price_cny != null ? body.price_cny : null,
              body.price_usd != null ? body.price_usd : null,
+             body.price_credits != null ? body.price_credits : null,
              body.stock_quantity != null ? body.stock_quantity : null,
              body.tag || '', body.sort_order || 0, body.active !== false,
              body.image_url || '', body.metadata || null, body.store_item_id || null,
@@ -2100,6 +2173,7 @@ async function handlePutChannelInventory(id, body, adminCtx) {
             body.item_type || 'physical', body.unit_zh || '', body.unit_en || '',
             body.price_cny != null ? body.price_cny : null,
             body.price_usd != null ? body.price_usd : null,
+            body.price_credits != null ? body.price_credits : null,
             body.stock_quantity != null ? body.stock_quantity : null,
             body.tag || '', body.sort_order || 0, body.active !== false,
             body.image_url || '', body.metadata || null,
@@ -2109,10 +2183,10 @@ async function handlePutChannelInventory(id, body, adminCtx) {
         ];
         let sql = `UPDATE channel_inventory_items
              SET name_zh=$1, name_en=$2, desc_zh=$3, desc_en=$4, item_type=$5,
-                 unit_zh=$6, unit_en=$7, price_cny=$8, price_usd=$9, stock_quantity=$10,
-                 tag=$11, sort_order=$12, active=$13, image_url=$14, metadata=$15, show_in_store=$16, sku_id=$17
-             WHERE id=$18`;
-        if (channelId) { sql += ' AND channel_id=$19'; params.push(channelId); }
+                 unit_zh=$6, unit_en=$7, price_cny=$8, price_usd=$9, price_credits=$10, stock_quantity=$11,
+                 tag=$12, sort_order=$13, active=$14, image_url=$15, metadata=$16, show_in_store=$17, sku_id=$18
+             WHERE id=$19`;
+        if (channelId) { sql += ' AND channel_id=$20'; params.push(channelId); }
         sql += ' RETURNING *';
         const { rows } = await pool.query(sql, params);
         if (!rows.length) return { success: false, error: 'Not found', statusCode: 404 };
@@ -2362,16 +2436,18 @@ async function handlePostOrderBatch(body) {
         const order_ids = [];
         const partnerDiscount = await getPartnerProductDiscount(openid);
 
+        // Collect item data first so we can validate credit balance before touching stock/orders
+        const resolvedItems = [];
         for (const entry of items) {
             const { channel_inventory_item_id, item_id, quantity = 1 } = entry;
             if (!item_id && !channel_inventory_item_id)
                 throw Object.assign(new Error('Each item requires item_id or channel_inventory_item_id'), { statusCode: 400 });
 
-            let sku_id = null, channel_id = null, item_key = '', price_cny = 0, price_usd = 0;
+            let sku_id = null, channel_id = null, item_key = '', price_cny = 0, price_usd = 0, price_credits = null;
 
             if (channel_inventory_item_id) {
                 const r = await client.query(
-                    `SELECT id, key_name, price_cny, price_usd, channel_id, sku_id
+                    `SELECT id, key_name, price_cny, price_usd, price_credits, channel_id, sku_id
                      FROM channel_inventory_items WHERE id = $1 AND active = TRUE`,
                     [channel_inventory_item_id]
                 );
@@ -2381,9 +2457,10 @@ async function handlePostOrderBatch(body) {
                 item_key = r.rows[0].key_name;
                 price_cny = r.rows[0].price_cny || 0;
                 price_usd = r.rows[0].price_usd || 0;
+                price_credits = r.rows[0].price_credits != null ? parseFloat(r.rows[0].price_credits) : null;
             } else {
                 const r = await client.query(
-                    'SELECT id, key_name, price_cny, price_usd, sku_id FROM store_items WHERE id = $1 AND active = TRUE',
+                    'SELECT id, key_name, price_cny, price_usd, price_credits, sku_id FROM store_items WHERE id = $1 AND active = TRUE',
                     [item_id]
                 );
                 if (r.rows.length === 0) throw Object.assign(new Error('Item not found'), { statusCode: 404 });
@@ -2391,12 +2468,32 @@ async function handlePostOrderBatch(body) {
                 item_key = r.rows[0].key_name;
                 price_cny = r.rows[0].price_cny || 0;
                 price_usd = r.rows[0].price_usd || 0;
+                price_credits = r.rows[0].price_credits != null ? parseFloat(r.rows[0].price_credits) : null;
             }
 
             if (partnerDiscount) {
                 price_cny = applyPartnerDiscount(price_cny, partnerDiscount.rate);
                 price_usd = applyPartnerDiscount(price_usd, partnerDiscount.rate);
             }
+
+            resolvedItems.push({ channel_inventory_item_id, item_id, quantity, sku_id, channel_id, item_key, price_cny, price_usd, price_credits });
+        }
+
+        // If paying with credits, validate balance before touching anything else
+        const useCredits = payment_method === 'credits';
+        if (useCredits) {
+            const totalCreditsNeeded = resolvedItems.reduce((sum, it) => sum + (it.price_credits || 0) * it.quantity, 0);
+            const balanceRow = await client.query(
+                `SELECT COALESCE(SUM(amount), 0)::NUMERIC(12,2) AS balance FROM credit_ledger WHERE user_id = $1`,
+                [openid]
+            );
+            const balance = parseFloat(balanceRow.rows[0].balance || 0);
+            if (balance < totalCreditsNeeded)
+                throw Object.assign(new Error(`Insufficient credits (need ${totalCreditsNeeded}, have ${balance.toFixed(2)})`), { statusCode: 400 });
+        }
+
+        for (const it of resolvedItems) {
+            const { channel_inventory_item_id, item_id, quantity, sku_id, channel_id, item_key, price_cny, price_usd, price_credits } = it;
 
             if (sku_id) {
                 const stockResult = await client.query(
@@ -2423,22 +2520,34 @@ async function handlePostOrderBatch(body) {
                 }
             }
 
+            // Debit credits within the same transaction
+            if (useCredits && price_credits != null) {
+                const creditsToDebit = parseFloat((price_credits * quantity).toFixed(2));
+                await client.query(
+                    `INSERT INTO credit_ledger (user_id, amount, type, note)
+                     VALUES ($1, $2, 'store_purchase', $3)`,
+                    [openid, -creditsToDebit, `Store purchase: ${item_key} x${quantity}`]
+                );
+            }
+
+            const effectivePaymentMethod = useCredits ? 'credits' : payment_method;
+            const effectivePaymentStatus  = useCredits ? 'paid'    : payment_status;
             const inserted = await client.query(
                 `INSERT INTO orders (
-                    user_id, item_id, channel_inventory_item_id, item_key, quantity, price_cny, price_usd,
+                    user_id, item_id, channel_inventory_item_id, item_key, quantity, price_cny, price_usd, price_credits,
                     status, channel_id, sku_id, shipping_name, shipping_phone, shipping_address,
                     payment_method, payment_status, paid_at
                  )
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11, $12, $13, $14, ${payment_status === 'paid' ? 'NOW()' : 'NULL'})
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10, $11, $12, $13, $14, $15, ${effectivePaymentStatus === 'paid' ? 'NOW()' : 'NULL'})
                  RETURNING id`,
                 [
                     openid,
                     channel_inventory_item_id ? null : item_id,
                     channel_inventory_item_id || null,
-                    item_key, quantity, price_cny, price_usd,
+                    item_key, quantity, price_cny, price_usd, price_credits != null ? price_credits : null,
                     channel_id, sku_id,
                     shipping_name, shipping_phone, shipping_address,
-                    payment_method, payment_status,
+                    effectivePaymentMethod, effectivePaymentStatus,
                 ]
             );
             order_ids.push(inserted.rows[0].id);
@@ -4538,7 +4647,7 @@ async function handleGetChannels(adminCtx) {
                     WHERE s.depth < 20
                 )
                 SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at,
-                       c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers, c.can_customize_partner_system, c.can_customize_store,
+                       c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers, c.can_customize_partner_system, c.can_customize_store, c.can_manage_warehouses, c.autonomous,
                        st.depth,
                        COUNT(DISTINCT u.user_id) AS user_count,
                        COUNT(DISTINCT p.id) AS coach_count,
@@ -4557,7 +4666,7 @@ async function handleGetChannels(adminCtx) {
             return { success: true, channels: result.rows };
         }
         const result = await pool.query(`
-            SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers, c.can_customize_store,
+            SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers, c.can_customize_store, c.can_manage_warehouses, c.autonomous,
                    COUNT(DISTINCT u.user_id) AS user_count,
                    COUNT(DISTINCT p.id) AS coach_count,
                    COUNT(DISTINCT kd.id) AS kino_device_count,
@@ -4868,6 +4977,46 @@ async function handlePutChannelStorePermission(channelId, body, adminCtx) {
         if (typeof can_customize_store !== 'boolean')
             return { statusCode: 400, success: false, error: 'can_customize_store must be a boolean' };
         await pool.query('UPDATE channels SET can_customize_store = $1 WHERE id = $2', [can_customize_store, cid]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutChannelAutonomous(channelId, body, adminCtx) {
+    if (adminCtx?.role !== 'superadmin')
+        return { statusCode: 403, success: false, error: 'Only superadmins can set the autonomous flag' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { autonomous } = body || {};
+        if (typeof autonomous !== 'boolean')
+            return { statusCode: 400, success: false, error: 'autonomous must be a boolean' };
+        await pool.query('UPDATE channels SET autonomous = $1 WHERE id = $2', [autonomous, parseInt(channelId)]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutChannelWarehousePermission(channelId, body, adminCtx) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const cid = parseInt(channelId);
+        if (adminCtx?.role === 'channel') {
+            if (!adminCtx.canManageSubchannels) return { statusCode: 403, success: false, error: 'Forbidden' };
+            const { rows } = await pool.query('SELECT parent_channel_id FROM channels WHERE id = $1', [cid]);
+            const parentId = rows[0]?.parent_channel_id;
+            if (!parentId) return { statusCode: 403, success: false, error: 'Cannot grant warehouse permission to a root channel' };
+            const owns = await verifySubchannelOwnership(parentId, adminCtx);
+            if (!owns && parentId !== adminCtx.channelId) return { statusCode: 403, success: false, error: 'Forbidden' };
+            const { rows: parentRows } = await pool.query('SELECT can_manage_warehouses FROM channels WHERE id = $1', [adminCtx.channelId]);
+            if (!parentRows[0]?.can_manage_warehouses)
+                return { statusCode: 403, success: false, error: 'Your channel does not have warehouse management permission' };
+        }
+        const { can_manage_warehouses } = body || {};
+        if (typeof can_manage_warehouses !== 'boolean')
+            return { statusCode: 400, success: false, error: 'can_manage_warehouses must be a boolean' };
+        await pool.query('UPDATE channels SET can_manage_warehouses = $1 WHERE id = $2', [can_manage_warehouses, cid]);
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -5360,7 +5509,7 @@ async function handleAdminLogin(body) {
             return { success: true, token: process.env.API_BEARER_TOKEN, role: 'superadmin', channel_id: null, allowed_tabs: null };
         }
 
-        const chRes = await pool.query(`SELECT name, effective_channel_logo(id) AS logo_url, config->'admin_tabs' AS admin_tabs, can_manage_subchannels, can_customize_store FROM channels WHERE id = $1`, [row.channel_id]);
+        const chRes = await pool.query(`SELECT name, effective_channel_logo(id) AS logo_url, config->'admin_tabs' AS admin_tabs, can_manage_subchannels, can_customize_store, can_manage_warehouses, autonomous FROM channels WHERE id = $1`, [row.channel_id]);
         const channelRow = chRes.rows[0] || {};
         // admin_tabs on a channel are feature flags ("is store enabled?"), not permission ceilings
         const channelFeatureTabs = Array.isArray(channelRow.admin_tabs) ? channelRow.admin_tabs : [];
@@ -5384,15 +5533,22 @@ async function handleAdminLogin(body) {
                 : (channelActivePerms || CHANNEL_ADMIN_FULL_PERMS);
         }
 
+        const isAutonomous = channelRow.autonomous ?? false;
+        if (isAutonomous) resolvedPerms = [...CHANNEL_ADMIN_FULL_PERMS];
+
         // Derive tab names from resolved perms for nav visibility (existing behavior preserved)
-        const tabs = [...new Set(resolvedPerms.map(p => p.split(':')[0]))];
-        const cms = channelRow.can_manage_subchannels ?? false;
-        const canCustomizeStore = channelRow.can_customize_store ?? false;
-        const token = signChannelAdminToken({ sub: row.id, cid: row.channel_id, tabs, perms: resolvedPerms, cms });
+        const tabs = isAutonomous
+            ? [...new Set(CHANNEL_ADMIN_FULL_PERMS.map(p => p.split(':')[0]))]
+            : [...new Set(resolvedPerms.map(p => p.split(':')[0]))];
+        const cms = isAutonomous || (channelRow.can_manage_subchannels ?? false);
+        const canCustomizeStore = isAutonomous || (channelRow.can_customize_store ?? false);
+        const canManageWarehouses = isAutonomous || (channelRow.can_manage_warehouses ?? false);
+        const token = signChannelAdminToken({ sub: row.id, cid: row.channel_id, tabs, perms: resolvedPerms, cms, cmw: canManageWarehouses, auto: isAutonomous });
         return { success: true, token, role: 'channel', channel_id: row.channel_id,
                  channel_name: channelRow.name || '', channel_logo: channelRow.logo_url || '',
                  allowed_tabs: tabs, allowed_perms: resolvedPerms, can_manage_subchannels: cms,
-                 can_customize_store: canCustomizeStore };
+                 can_customize_store: canCustomizeStore, can_manage_warehouses: canManageWarehouses,
+                 autonomous: isAutonomous };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -6261,6 +6417,48 @@ async function handlePutAdminWithdrawal(withdrawalId, body, adminCtx) {
                 wd.id, 'credit_withdrawals', `Withdrawal approved: ${wd.currency_amount} ${wd.currency}`);
         }
         return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetAdminUserCreditHistory(userId, adminCtx) {
+    if (!userId) return { success: false, error: 'userId is required', statusCode: 400 };
+    try {
+        const { rows: [u] } = await pool.query('SELECT channel_id FROM users WHERE user_id = $1', [userId]);
+        if (!u) return { success: false, error: 'User not found', statusCode: 404 };
+        if (adminCtx.role !== 'superadmin' && String(u.channel_id) !== String(adminCtx.channelId))
+            return { success: false, error: 'Access denied', statusCode: 403 };
+        const [balance, currency, historyRows] = await Promise.all([
+            getUserBalance(userId),
+            getChannelCurrency(u.channel_id),
+            pool.query('SELECT * FROM credit_ledger WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100', [userId]),
+        ]);
+        return { success: true, balance, currency, history: historyRows.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAdminUserCreditAdjustment(userId, body, adminCtx) {
+    if (!userId) return { success: false, error: 'userId is required', statusCode: 400 };
+    const amount = parseFloat(body?.amount);
+    const note = (body?.note || '').trim();
+    if (!amount || amount === 0) return { success: false, error: 'amount must be a non-zero number', statusCode: 400 };
+    if (!note) return { success: false, error: 'note is required', statusCode: 400 };
+    try {
+        const { rows: [u] } = await pool.query('SELECT channel_id FROM users WHERE user_id = $1', [userId]);
+        if (!u) return { success: false, error: 'User not found', statusCode: 404 };
+        if (adminCtx.role !== 'superadmin' && String(u.channel_id) !== String(adminCtx.channelId))
+            return { success: false, error: 'Access denied', statusCode: 403 };
+        const annotatedNote = `[Admin: ${adminCtx.userId || 'unknown'}] ${note}`;
+        if (amount > 0) {
+            await creditUser(userId, amount, 1.0, 'adjustment', null, null, annotatedNote);
+        } else {
+            await debitUser(userId, Math.abs(amount), 'adjustment', null, null, annotatedNote);
+        }
+        const balance = await getUserBalance(userId);
+        return { success: true, balance };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -10407,11 +10605,13 @@ exports.handler = async (req, resp, context) => {
             adminCtx.role = 'channel';
             adminCtx.channelId = payload.cid;
             adminCtx.accountId = payload.sub;
-            adminCtx.canManageSubchannels = payload.cms ?? false;
+            adminCtx.autonomous = payload.auto ?? false;
+            adminCtx.canManageSubchannels = adminCtx.autonomous || (payload.cms ?? false);
+            adminCtx.canManageWarehouses = adminCtx.autonomous || (payload.cmw ?? false);
             adminCtx.tabs = payload.tabs ?? [];
-            adminCtx.perms = Array.isArray(payload.perms)
-                ? payload.perms
-                : expandPermissions(payload.tabs ?? []);
+            adminCtx.perms = adminCtx.autonomous
+                ? [...CHANNEL_ADMIN_FULL_PERMS]
+                : (Array.isArray(payload.perms) ? payload.perms : expandPermissions(payload.tabs ?? []));
         } else {
             const unauthorizedPayload = { isBase64Encoded: false, statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized' }) };
             if (isStandardHttp) { resp.setStatusCode(401); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Unauthorized' })); return; }
@@ -10498,6 +10698,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetSkus(adminCtx);
             } else if (path.includes('/inventory-stock')) {
                 result = await handleGetInventoryStock(query, adminCtx);
+            } else if (path === '/api/warehouses') {
+                result = await handleGetWarehouses();
             } else if (path.includes('/store-items')) {
                 result = await handleGetStoreItems(query);
             } else if (path.includes('/my-orders')) {
@@ -10522,6 +10724,9 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetUserWithdrawals(query);
             } else if (path === '/admin/credit-withdrawals') {
                 result = await handleGetAdminWithdrawals(query);
+            } else if (path.match(/\/admin\/users\/([^/]+)\/credit-history/)) {
+                const uid = path.match(/\/admin\/users\/([^/]+)\/credit-history/)[1];
+                result = await handleGetAdminUserCreditHistory(uid, adminCtx);
             } else if (path.includes('/invitations')) {
                 const invQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
                 result = await handleGetInvitations(invQuery);
@@ -10706,6 +10911,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostSku(parsedBody, adminCtx);
             } else if (path.includes('/inventory-stock')) {
                 result = await handlePostInventoryStock(parsedBody, adminCtx);
+            } else if (path === '/api/warehouses') {
+                result = adminCtx.role !== 'superadmin'
+                    ? { statusCode: 403, success: false, error: 'Permission denied: superadmin only' }
+                    : await handlePostWarehouse(parsedBody);
             } else if (path.includes('/store-items')) {
                 result = adminCtx.role !== 'superadmin'
                     ? { statusCode: 403, success: false, error: 'Permission denied: superadmin only' }
@@ -10772,6 +10981,9 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostBiomarkers(parsedBody);
             } else if (path === '/credits/withdraw') {
                 result = await handlePostCreditWithdraw(parsedBody);
+            } else if (path.match(/\/admin\/users\/([^/]+)\/credit-adjustments/)) {
+                const uid = path.match(/\/admin\/users\/([^/]+)\/credit-adjustments/)[1];
+                result = await handlePostAdminUserCreditAdjustment(uid, parsedBody, adminCtx);
             } else if (path.includes('/generate-coach-payouts')) {
                 result = await handlePostGenerateCoachPayouts(parsedBody);
             } else if (path.includes('/generate-channel-payouts')) {
@@ -10902,6 +11114,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/channels\/(\d+)\/store-permission$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/store-permission$/)[1];
                 result = await handlePutChannelStorePermission(channelId, parsedBody, adminCtx);
+            } else if (path.match(/\/channels\/(\d+)\/autonomous$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/autonomous$/)[1];
+                result = await handlePutChannelAutonomous(channelId, parsedBody, adminCtx);
+            } else if (path.match(/\/channels\/(\d+)\/warehouse-permission$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/warehouse-permission$/)[1];
+                result = await handlePutChannelWarehousePermission(channelId, parsedBody, adminCtx);
             } else if (path.match(/\/channels\/(\d+)\/manage-subchannels$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/manage-subchannels$/)[1];
                 result = await handlePutChannelManageSubchannels(channelId, parsedBody, adminCtx);
@@ -10917,6 +11135,11 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/skus/')) {
                 const skuId = path.split('/skus/')[1];
                 result = await handlePutSku(skuId, parsedBody, adminCtx);
+            } else if (path.match(/\/api\/warehouses\/(\d+)$/)) {
+                const wId = path.match(/\/api\/warehouses\/(\d+)$/)[1];
+                result = adminCtx.role !== 'superadmin'
+                    ? { statusCode: 403, success: false, error: 'Permission denied: superadmin only' }
+                    : await handlePutWarehouse(wId, parsedBody);
             } else if (path.includes('/store-items/')) {
                 const itemId = path.split('/store-items/')[1];
                 result = adminCtx.role !== 'superadmin'
@@ -11068,6 +11291,11 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/skus/')) {
                 const skuId = path.split('/skus/')[1];
                 result = await handleDeleteSku(skuId, adminCtx);
+            } else if (path.match(/\/api\/warehouses\/(\d+)$/)) {
+                const wId = path.match(/\/api\/warehouses\/(\d+)$/)[1];
+                result = adminCtx.role !== 'superadmin'
+                    ? { statusCode: 403, success: false, error: 'Permission denied: superadmin only' }
+                    : await handleDeleteWarehouse(wId);
             } else if (path.includes('/store-items/')) {
                 const itemId = path.split('/store-items/')[1];
                 result = adminCtx.role !== 'superadmin'

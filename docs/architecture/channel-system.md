@@ -19,6 +19,9 @@ Channels are the top-level multi-tenancy unit. Every user, coach, Kino device, i
 | `config` | JSONB | Per-channel settings (see below) |
 | `parent_channel_id` | INTEGER FK → `channels.id` | NULL = top-level. SET NULL on parent delete |
 | `can_manage_subchannels` | BOOLEAN | Whether this channel's admin may create/manage sub-channels |
+| `can_customize_store` | BOOLEAN | Channel admin may manage their own channel inventory items |
+| `can_manage_warehouses` | BOOLEAN | Channel admin sees the Warehouses sub-tab and may add/edit warehouse stock for their own SKUs |
+| `autonomous` | BOOLEAN | Channel operates as a fully independent unit — all capability flags implicitly true; superadmin-only to set |
 | `commission_config` | JSONB | Commission rates for the rewards system |
 | `created_at` | TIMESTAMPTZ | |
 
@@ -63,6 +66,46 @@ WITH RECURSIVE subtree AS (
 SELECT * FROM subtree;
 ```
 
+### `autonomous` flag
+
+When `autonomous = TRUE`, the channel operates as a **fully independent unit** (e.g. a country-level partner like `aeviva-china`). The flag is a meta-override: at login time the backend forces full permissions without requiring any individual flag to be set.
+
+**Effect at login** (`handleAdminLogin`):
+- `perms` → full `CHANNEL_ADMIN_FULL_PERMS` list
+- `tabs` → derived from full perms (all tabs enabled)
+- `cms` → `TRUE`
+- `cmw` (can_manage_warehouses) → `TRUE`
+- JWT carries `auto: true`
+
+**Effect per-request** (auth middleware):
+- `adminCtx.autonomous = true`
+- `adminCtx.canManageSubchannels = true`
+- `adminCtx.canManageWarehouses = true`
+- `adminCtx.perms` → `CHANNEL_ADMIN_FULL_PERMS`
+
+**Admin panel effect**:
+- The **Store** tab becomes visible (global catalog browse, read-only for non-superadmin)
+- The **Inventory** tab's Warehouses sub-tab is enabled
+- An `AUTO` badge appears on the channel row in the Channels list
+- A purple "Autonomous" toggle in the Channel Settings → General tab (superadmin-only)
+
+Superadmin-only to set/revoke via `PUT /api/channels/:id/autonomous`.
+
+---
+
+### `can_manage_warehouses` flag
+
+Grants a channel admin access to the **Inventory → Warehouses sub-tab**. When enabled:
+- The admin can view warehouse stock entries for their own channel's SKUs
+- The admin can create/adjust warehouse stock for any SKU whose `channel_id` matches their own channel
+- The admin cannot manage warehouse stock for global (null `channel_id`) SKUs or other channels' SKUs
+
+A parent channel admin with `can_manage_subchannels` can grant this flag to child channels via `PUT /api/channels/:id/warehouse-permission`.
+
+Migration: `src/schemas/migration_warehouse_permission.sql` (adds column; backfills `TRUE` for root channels that already owned their warehouses).
+
+---
+
 ### `can_manage_subchannels` flag
 
 When `true` on a channel, its admin account is elevated to a **CMS admin**:
@@ -105,14 +148,27 @@ ch.{base64url(payload)}.{hmac_sig}
 
 Payload:
 ```json
-{ "sub": <account_id>, "cid": <channel_id>, "tabs": ["users", "coaches", ...], "cms": true|false }
+{
+  "sub": <account_id>,
+  "cid": <channel_id>,
+  "tabs": ["users", "coaches", ...],
+  "perms": ["users:read", "store:write", ...],
+  "cms": true|false,
+  "cmw": true|false,
+  "auto": true|false
+}
 ```
 
-- `cid` — the channel this admin owns
-- `tabs` — intersection of channel's `admin_tabs` and account's `permissions`
-- `cms` — mirrors `channels.can_manage_subchannels` at login time
+| Claim | Meaning |
+|---|---|
+| `cid` | The channel this admin owns |
+| `tabs` | Tab IDs the admin may access |
+| `perms` | Granular permission strings (expanded from tabs if not autonomous) |
+| `cms` | Mirrors `channels.can_manage_subchannels` at login time |
+| `cmw` | Mirrors `channels.can_manage_warehouses` at login time |
+| `auto` | TRUE if `channels.autonomous` — auth middleware overrides all other flags when set |
 
-The login response also returns `channel_name` and `channel_logo` so the admin panel sidebar can show the channel's branding instead of the platform name.
+The login response also returns `channel_name`, `channel_logo`, `can_manage_warehouses`, and `autonomous` so the admin panel can render the correct sidebar and badges.
 
 The frontend stores all session data in `sessionStorage`:
 
@@ -125,6 +181,8 @@ The frontend stores all session data in `sessionStorage`:
 | `nano_admin_channel_logo` | Channel logo URL |
 | `nano_admin_tabs` | JSON array of allowed tab IDs |
 | `nano_admin_cms` | `'1'` if CMS admin |
+| `nano_admin_can_manage_warehouses` | `'1'` if warehouse management is enabled |
+| `nano_admin_autonomous` | `'1'` if channel is autonomous |
 
 ---
 
@@ -132,21 +190,24 @@ The frontend stores all session data in `sessionStorage`:
 
 All endpoints require `Authorization: Bearer <token>`.
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/admin-login` | Authenticate and receive token |
-| `GET` | `/api/channels` | List channels. Superadmin: all. CMS admin: own subtree with `depth` field |
-| `POST` | `/api/channels` | Create channel. Superadmin: any parent. CMS admin: within own subtree |
-| `PUT` | `/api/channels/:id` | Edit name/logo/persona/config. CMS admin: own subtree only |
-| `DELETE` | `/api/channels/:id` | Delete channel. Blocked if channel has sub-channels |
-| `PUT` | `/api/channels/:id/manage-subchannels` | Grant/revoke `can_manage_subchannels` |
-| `PUT` | `/api/channels/:id/admin-tabs` | Set allowed tabs |
-| `PUT` | `/api/channels/:id/sub-age-labels` | Override sub-age display names (superadmin only) |
-| `GET` | `/api/channel-users/:id` | Users in channel. `?include_subchannels=true` → full subtree |
-| `GET` | `/api/channel-coaches/:id` | Coaches in channel. `?include_subchannels=true` → full subtree |
-| `GET` | `/api/admin-accounts` | List admin accounts. `?channel_id=N` to filter |
-| `POST` | `/api/admin-accounts` | Create admin account |
-| `DELETE` | `/api/admin-accounts/:id` | Delete admin account |
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/admin-login` | — | Authenticate and receive token |
+| `GET` | `/api/channels` | Any admin | List channels. Superadmin: all. CMS admin: own subtree with `depth` field |
+| `POST` | `/api/channels` | Any admin | Create channel. Superadmin: any parent. CMS admin: within own subtree |
+| `PUT` | `/api/channels/:id` | Any admin | Edit name/logo/persona/config. CMS admin: own subtree only |
+| `DELETE` | `/api/channels/:id` | Any admin | Delete channel. Blocked if channel has sub-channels |
+| `PUT` | `/api/channels/:id/manage-subchannels` | Superadmin / CMS admin | Grant/revoke `can_manage_subchannels` |
+| `PUT` | `/api/channels/:id/store-permission` | Superadmin / CMS admin | Grant/revoke `can_customize_store` |
+| `PUT` | `/api/channels/:id/warehouse-permission` | Superadmin / CMS admin (if `can_manage_warehouses`) | Grant/revoke `can_manage_warehouses` for a sub-channel |
+| `PUT` | `/api/channels/:id/autonomous` | **Superadmin only** | Set/revoke `autonomous` flag |
+| `PUT` | `/api/channels/:id/admin-tabs` | Any admin | Set allowed tabs |
+| `PUT` | `/api/channels/:id/sub-age-labels` | Superadmin only | Override sub-age display names |
+| `GET` | `/api/channel-users/:id` | Any admin | Users in channel. `?include_subchannels=true` → full subtree |
+| `GET` | `/api/channel-coaches/:id` | Any admin | Coaches in channel. `?include_subchannels=true` → full subtree |
+| `GET` | `/api/admin-accounts` | Any admin | List admin accounts. `?channel_id=N` to filter |
+| `POST` | `/api/admin-accounts` | Any admin | Create admin account |
+| `DELETE` | `/api/admin-accounts/:id` | Any admin | Delete admin account |
 
 ### `include_subchannels` behaviour
 
@@ -201,20 +262,27 @@ The "Add Channel" button in the toolbar is superadmin-only (for creating top-lev
 
 ### Settings modal (ChannelConfigModal)
 
-A 6-tab unified modal replacing all per-action buttons:
+A unified modal with tabs:
 
 | Tab | Contents | Who sees it |
 |---|---|---|
-| General | Name, logo, persona, exchange rate, currency, Sub-ch Management toggle | All |
+| General | Name, logo, persona, exchange rate, currency; Sub-ch Management toggle; **Autonomous toggle** | All (Autonomous: superadmin only) |
 | Admin Tabs | Checkboxes for allowed tab IDs | All |
 | Admins | List + create/delete admin accounts | All |
 | Invites | List + create/deactivate invite codes | All |
+| Store | `can_customize_store` toggle; warehouse permission toggle + sub-channel delegation | Superadmin / CMS admin |
 | Sub-age Labels | Override dimension display names | Superadmin only |
 | Danger | Type-to-confirm delete | All (blocked if channel has sub-channels) |
+
+The **Autonomous toggle** (General tab, superadmin-only) shows a purple indicator when active, with a text explanation that all capability flags are overridden.
 
 The **Sub-ch Management toggle** (General tab) is shown when `canGrantSubch` is true:
 - Superadmin: always true for any channel
 - CMS admin: true for channels in their subtree (but not their own root channel)
+
+The **Store tab** (in Settings modal) shows:
+- `can_customize_store` permission toggle (same delegation model as sub-ch management)
+- `can_manage_warehouses` permission toggle with sub-channel delegation list
 
 ### Add Channel modal (ChannelModal)
 
@@ -240,3 +308,5 @@ When a channel is deleted, PostgreSQL's `ON DELETE SET NULL` on `parent_channel_
 |---|---|
 | `src/schemas/migration_channels.sql` | Initial `channels` table |
 | `src/schemas/migration_channel_subchannels.sql` | Adds `parent_channel_id`, `can_manage_subchannels`, `idx_channels_parent` |
+| `src/schemas/migration_warehouse_permission.sql` | Adds `can_manage_warehouses`; backfills `TRUE` for root channels |
+| `src/schemas/migration_autonomous_channel.sql` | Adds `autonomous` flag (default `FALSE`) |

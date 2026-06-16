@@ -8,13 +8,17 @@ Each channel in the Waven platform operates as an independent commercial entity 
 
 ### Channel Inventory vs Global Store
 
-| | Channel Inventory | Global Store |
+| | Channel Inventory (Inventory tab) | Global Store (Store tab) |
 |---|---|---|
 | Table | `channel_inventory_items` | `store_items` |
 | Scope | Per-channel | Platform-wide |
-| Who manages | Superadmin or channel admin | Superadmin only |
-| Use case | Channel-specific products & services | Waven-branded products (Kino chips, Dots subscriptions) |
-| Order system | Not yet — inventory catalogue only | `orders` table with full order lifecycle |
+| Who manages | Superadmin or channel admin | Superadmin only (write); autonomous channel admins can browse read-only |
+| Use case | Channel-specific products & pricing | Waven-branded products (Kino chips, Dots subscriptions) |
+| SKUs | Channel-scoped SKUs (`skus.channel_id = N`) | Global SKUs (`skus.channel_id IS NULL`) |
+| Warehouses | Inventory → Warehouses sub-tab (if `can_manage_warehouses`) | Store → Warehouses sub-tab (superadmin only) |
+| Order system | Inventory → Orders sub-tab | Store → Orders sub-tab (superadmin only) |
+
+**Store tab visibility for channel admins**: the Store tab is normally hidden from channel admins. An **autonomous channel** (`channels.autonomous = TRUE`) gains read-only visibility of the Store → Items sub-tab so their admin can browse the global product catalog. The SKUs, Warehouses, and Orders sub-tabs within Store remain superadmin-only — autonomous channel admins use the Inventory tab for those operations.
 
 ### Item Types
 

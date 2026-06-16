@@ -685,6 +685,8 @@ function mapStoreItems(rawItems, lang) {
     const hasPartnerPrice = partnerRaw != null
     const desc = (lang === 'zh' ? item.desc_zh : item.desc_en) || ''
     const descIsHtml = /<[a-z][^>]*>/i.test(desc)
+    const hasCreditsPrice = item.price_credits != null
+    const creditsRaw = hasCreditsPrice ? parseFloat(item.price_credits) : null
     return {
       id: item.id,
       key: item.key_name,
@@ -692,9 +694,10 @@ function mapStoreItems(rawItems, lang) {
       desc: descIsHtml ? prepDescHtml(desc) : desc,
       descIsHtml,
       unit: lang === 'zh' ? item.unit_zh : item.unit_en,
-      price: lang === 'zh' ? `¥${item.price_cny}` : `$${item.price_usd}`,
-      partnerPrice: hasPartnerPrice ? (lang === 'zh' ? `¥${partnerRaw}` : `$${partnerRaw}`) : '',
-      rawPrice: hasPartnerPrice ? partnerRaw : (lang === 'zh' ? (item.price_cny || 0) : (item.price_usd || 0)),
+      price: hasCreditsPrice ? `${creditsRaw} ${lang === 'zh' ? '积分' : 'pts'}` : (lang === 'zh' ? `¥${item.price_cny}` : `$${item.price_usd}`),
+      partnerPrice: (!hasCreditsPrice && hasPartnerPrice) ? (lang === 'zh' ? `¥${partnerRaw}` : `$${partnerRaw}`) : '',
+      rawPrice: hasCreditsPrice ? creditsRaw : (hasPartnerPrice ? partnerRaw : (lang === 'zh' ? (item.price_cny || 0) : (item.price_usd || 0))),
+      useCredits: hasCreditsPrice,
       tagLabel: tagLabel(item.tag),
     }
   })
@@ -707,7 +710,7 @@ function mapStoreOrders(rawOrders, lang) {
     name: lang === 'zh' ? (o.name_zh || o.item_key) : (o.name_en || o.item_key),
     unit: lang === 'zh' ? o.unit_zh : o.unit_en,
     quantity: o.quantity,
-    price: lang === 'zh' ? `¥${o.price_cny}` : `$${o.price_usd}`,
+    price: o.price_credits != null ? `${o.price_credits} ${lang === 'zh' ? '积分' : 'pts'}` : (lang === 'zh' ? `¥${o.price_cny}` : `$${o.price_usd}`),
     status: o.status,
     createdAt: new Date(o.created_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US'),
     shippingName: o.shipping_name || '',
@@ -1069,7 +1072,7 @@ Page({
       const res = await this._req(`${BASE}/api/kino-devices`)
       const devices = res.data?.devices || []
       const dev = devices.find(d => d.serial_number === KINO_SIM_SERIAL)
-      if (dev) this.setData({ kinoSimDeviceId: dev.id })
+      if (dev) this.setData({ kinoSimDeviceId: dev.serial_number })
     } catch (e) {}
   },
 
@@ -2030,12 +2033,15 @@ Page({
     const { lang } = this.data
     const cartMap = {}
     let total = 0, count = 0
+    const allCredits = cart.length > 0 && cart.every(e => e.useCredits)
     for (const entry of cart) {
       cartMap[entry.id] = entry.quantity
       total += entry.rawPrice * entry.quantity
       count += entry.quantity
     }
-    const cartTotal = lang === 'zh' ? `¥${total}` : `$${(total / 7.2).toFixed(0)}`
+    const cartTotal = allCredits
+      ? `${total} ${lang === 'zh' ? '积分' : 'pts'}`
+      : (lang === 'zh' ? `¥${total}` : `$${(total / 7.2).toFixed(0)}`)
     this.setData({ cart, cartMap, cartCount: count, cartTotal })
   },
 
@@ -2075,6 +2081,7 @@ Page({
     const { t, user, lang, cart } = this.data
     if (cart.length === 0) return
     const items = cart.map(x => ({ channel_inventory_item_id: x.id, quantity: x.quantity }))
+    const useCredits = cart.every(x => x.useCredits)
     const _submitBatchOrder = async (shipping_name, shipping_phone, shipping_address) => {
       try {
         wx.showLoading({ title: t.storeOrderSent || 'Processing...' })
@@ -2084,7 +2091,7 @@ Page({
           shipping_name,
           shipping_phone,
           shipping_address,
-          payment_method: 'wechat_pay',
+          payment_method: useCredits ? 'credits' : 'wechat_pay',
           payment_status: 'paid'
         })
         wx.hideLoading()

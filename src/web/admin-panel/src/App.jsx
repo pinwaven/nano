@@ -120,6 +120,8 @@ function LoginScreen({ onLogin, sessionExpired }) {
         sessionStorage.setItem('nano_admin_perms', JSON.stringify(res.data.allowed_perms || []))
         sessionStorage.setItem('nano_admin_cms', res.data.can_manage_subchannels ? '1' : '')
         sessionStorage.setItem('nano_admin_can_customize_store', res.data.can_customize_store ? '1' : '')
+        sessionStorage.setItem('nano_admin_can_manage_warehouses', res.data.can_manage_warehouses ? '1' : '')
+        sessionStorage.setItem('nano_admin_autonomous', res.data.autonomous ? '1' : '')
         onLogin(res.data.token)
       } else {
         setError('Login failed')
@@ -196,6 +198,7 @@ const T = {
       totalChannels: 'Channels',
       totalInvites: 'Total Invites', activeInvites: 'Active', usedInvites: 'Used',
       totalDevices: 'Total Devices', activeDevices: 'Active', totalTests: 'Total Tests',
+      activeEvents: 'Active', upcomingEvents: 'Upcoming', totalSignups: 'Total Signups',
     },
     table: {
       id: 'ID', nickname: 'Nickname', gender: 'Gender', birthDate: 'Birth Date',
@@ -208,6 +211,7 @@ const T = {
       timing: 'Timing', coating: 'Coating', group: 'Group', subAge: 'Sub-Age',
       code: 'Code', maxUses: 'Max Uses', useCount: 'Uses', creator: 'Creator',
       serialNumber: 'Serial No.', lastUsed: 'Last Used', testCount: 'Tests', status: 'Status', notes: 'Notes',
+      title: 'Title', startTime: 'Start', location: 'Location', capacity: 'Capacity', signups: 'Signups',
     },
     empty: { users: 'No users found', coaches: 'No Coaches found', dots: 'No dots found', store: 'No items', orders: 'No orders', channels: 'No channels found', invites: 'No invitations found', kino: 'No Kino devices registered', chipBatches: 'No chip batches created', chipModels: 'No chip models defined', tickets: 'No tickets yet' },
     count: (n) => `${n} users`,
@@ -259,7 +263,7 @@ const T = {
       descEn: 'Description (EN)', descZh: 'Description (ZH)',
       descHtmlHint: 'Supports HTML — text + <img> pictures', insertImage: 'Insert image', previewHtml: 'Preview',
       unitEn: 'Unit (EN)', unitZh: 'Unit (ZH)',
-      priceCny: 'Price CNY *', priceUsd: 'Price USD *',
+      priceCny: 'Price CNY *', priceUsd: 'Price USD *', priceCredits: 'Price (Credits)',
       tag: 'Tag', noTag: 'No tag', tagBestseller: 'Best Seller', tagValue: 'Value Pack',
       sortOrder: 'Sort Order', active: 'Active',
       externalIdRequired: 'External ID is required',
@@ -300,6 +304,12 @@ const T = {
       apkFile: 'APK File *', apkSetActive: 'Set as current version after upload',
       apkUploading: 'Uploading to OSS…', apkSaving: 'Saving release…',
       apkSetActiveBtn: 'Set Active', apkDeleteWarning: (v) => `Delete APK release "${v}"? This cannot be undone.`,
+      addEvent: 'Create Event', noEvents: 'No events yet',
+      cancelEvent: 'Cancel event', confirmCancel: 'Cancel this event?',
+      noSignups: 'No signups yet', add: 'Create',
+      title: 'Title', location: 'Location', capacity: 'Capacity',
+      startTime: 'Start Time', endTime: 'End Time', close: 'Close',
+      eventStatusActive: 'Active', eventStatusCancelled: 'Cancelled', eventStatusCompleted: 'Completed',
     },
     apk: {
       title: 'APK Releases', activeVersion: 'Active Version', totalReleases: 'Total Releases',
@@ -393,6 +403,19 @@ const T = {
       storeSubchTitle: 'Sub-channel store customization',
       storeSubchHint: 'Allow sub-channels to add and manage their own store items independently.',
       storeRevoke: 'Revoke store access', storeAllow: 'Allow store access',
+      warehousePermEnabled: 'Warehouse management enabled',
+      warehousePermDisabled: 'Warehouse management disabled',
+      warehousePermHint: 'This channel can manage warehouse stock levels for its own SKUs.',
+      warehousePermDisabledHint: 'Enable to allow this channel to manage warehouse stock for its own SKUs.',
+      warehouseSubchTitle: 'Sub-channel warehouse management',
+      warehouseSubchHint: 'Grant sub-channels the ability to manage warehouse stock for their own SKUs.',
+      warehouseRevoke: 'Revoke warehouse access', warehouseAllow: 'Allow warehouse access',
+      autonomousLabel: 'Autonomous Channel',
+      autonomousEnabled: 'Autonomous — full access',
+      autonomousDisabled: 'Autonomous mode disabled',
+      autonomousHint: 'All capabilities are unlocked. Channel admin receives full permissions without individual grants. Use for country-level or fully independent partner channels.',
+      autonomousDisabledHint: 'Enable to grant this channel full autonomy — all store, warehouse, rewards, and partner capabilities in one switch. Superadmin only.',
+      autonomousRevoke: 'Revoke autonomous', autonomousGrant: 'Grant autonomous',
       // Danger tab
       dangerBlockedTitle: 'Cannot delete this channel',
       dangerBlockedHint: 'This channel has sub-channels. Remove all sub-channels before deleting it.',
@@ -404,7 +427,7 @@ const T = {
     },
     store: {
       itemsTab: 'Items', ordersTab: 'Orders',
-      priceCny: 'CNY (¥)', priceUsd: 'USD ($)', tag: 'Tag', active: 'Active',
+      priceCny: 'CNY (¥)', priceUsd: 'USD ($)', priceCredits: 'Credits', tag: 'Tag', active: 'Active',
       qty: 'Qty', status: 'Status', orderedAt: 'Ordered', yes: 'Yes', no: 'No',
       pending: 'Pending', confirmed: 'Confirmed', shipped: 'Shipped',
       delivered: 'Delivered', cancelled: 'Cancelled',
@@ -437,6 +460,10 @@ const T = {
       noWarehouses: 'No warehouses configured yet. Use the SKUs tab to add warehouse stock.',
       addStock: 'Add Stock', totalUnitsLabel: 'Total Units', stockHealth: 'Health',
       pleaseSelectSku: 'Please select a SKU', selectSkuLabel: 'Select SKU',
+      skuModeLabel: 'SKU Type', skuModeStandalone: 'Standalone SKU', skuModeParent: 'Parent product (has variants)', skuModeVariant: 'Variant / Child SKU',
+      parentSkuLabel: 'Parent SKU', parentSkuPlaceholder: '— Select parent SKU —', parentSkuRequired: 'Please select a parent SKU',
+      variantAttrs: 'Variant attributes', addAttr: '+ Add attribute', attrKeyPlaceholder: 'e.g. size', attrValuePlaceholder: 'e.g. M',
+      suggestCode: 'Suggest code', parentBadge: 'PARENT', variantBadge: 'VARIANT', variantsCount: 'variants', addVariant: 'Add Variant',
     },
     inventory: {
       selectChannel: 'Select a channel to manage its inventory',
@@ -470,7 +497,7 @@ const T = {
       keyName: 'Key Name', nameEn: 'Name (EN)', nameZh: 'Name (ZH)',
       descEn: 'Description (EN)', descZh: 'Description (ZH)',
       unitEn: 'Unit (EN)', unitZh: 'Unit (ZH)',
-      priceCny: 'Price CNY (¥)', priceUsd: 'Price USD ($)',
+      priceCny: 'Price CNY (¥)', priceUsd: 'Price USD ($)', priceCredits: 'Price (Credits)',
       stockQty: 'Stock Qty', stockHint: 'Leave blank for unlimited',
       tag: 'Tag', sortOrder: 'Sort Order', active: 'Active',
       image: 'Image', uploadImage: 'Click to upload image (PNG / JPG)',
@@ -478,6 +505,11 @@ const T = {
       yes: 'Yes', no: 'No',
       deleteWarning: (name) => ['Delete ', name, '? This cannot be undone.'],
       saveFailed: 'Save failed', keyRequired: 'Key name is required', nameRequired: 'Name (EN) is required',
+      addWarehouse: 'Add Warehouse', editWarehouse: 'Edit Warehouse',
+      warehouseAddress: 'Address', warehouseStatus: 'Status',
+      warehouseActive: 'Active', warehouseInactive: 'Inactive',
+      warehouseNameLabel: 'Warehouse Name', warehouseAddressLabel: 'Address (optional)',
+      warehouseDeleteWarning: 'Delete this warehouse? Stock records will not be affected.',
     },
     invites: { active: 'Active', deactivated: 'Deactivated', unlimited: 'Unlimited' },
     rewards: {
@@ -501,6 +533,14 @@ const T = {
       filterApproved: 'Approved', filterRejected: 'Rejected', filterCompleted: 'Completed',
       totalWithdrawals: 'Withdrawals', pendingWithdrawals: 'Pending',
       pending: 'Pending', rejected: 'Rejected', completed: 'Completed',
+    },
+    userCredit: {
+      title: 'Credit Balance', history: 'Transaction History',
+      adjustTitle: 'Add / Deduct Credits', amount: 'Amount (positive to add, negative to deduct)',
+      note: 'Note (required)', notePlaceholder: 'e.g., Offline purchase – receipt #123',
+      submit: 'Apply', loading: 'Loading…', saving: 'Applying…', error: 'Error',
+      balance: 'Current balance', noHistory: 'No transactions yet',
+      types: { adjustment: 'Manual', referral_commission: 'Referral', coach_commission: 'Coach', channel_commission: 'Channel', withdrawal: 'Withdrawal' },
     },
     partners: {
       addPartner: 'Add Partner', editPartner: 'Edit Partner', deactivatePartner: 'Deactivate',
@@ -529,6 +569,15 @@ const T = {
       teamIncome: 'Team Continuous Income', teamPrimary: 'Level 1 Upline Rate', teamSecondary: 'Level 2 Upline Rate',
       teamHint: '% of sales amount paid to each upline level',
       uplineTier: 'Upline →', newTier: 'New Partner ↓', saveRules: 'Save Rules', saving: 'Saving…',
+      typesTab: 'Partner Types',
+      countTypes: (n) => `${n} type${n !== 1 ? 's' : ''}`,
+      addType: 'Add Partner Type', editType: 'Edit Partner Type',
+      typeKey: 'Key', typeLabel: 'Label', typeLabelZh: 'Label (ZH)', typeColor: 'Color',
+      typeEntryFee: 'Entry Fee (¥)', typeSort: 'Sort Order',
+      typeActive: 'Active', typeInactive: 'Inactive', noTypes: 'No partner types',
+      typeKeyLabel: 'Key (snake_case) *', typeLabelEn: 'Label (EN) *', typeDesc: 'Description',
+      keyRequired: 'Key is required', labelRequired: 'Label is required',
+      confirmDeactivateType: (key) => `Deactivate partner type "${key}"? Active partners with this type will not be affected.`,
     },
     addBatch: 'Add Batch', countBatch: (n) => `${n} batch${n !== 1 ? 'es' : ''}`,
     chips: {
@@ -807,6 +856,7 @@ const T = {
       totalChannels: '渠道数',
       totalInvites: '邀请码总数', activeInvites: '有效', usedInvites: '已使用',
       totalDevices: '设备总数', activeDevices: '运行中', totalTests: '总检测次数',
+      activeEvents: '进行中', upcomingEvents: '即将开始', totalSignups: '报名总数',
     },
     table: {
       id: 'ID', nickname: '昵称', gender: '性别', birthDate: '出生日期',
@@ -819,6 +869,7 @@ const T = {
       timing: '服用时间', coating: '包衣', group: '功能分组', subAge: '目标年龄',
       code: '邀请码', maxUses: '上限', useCount: '已用', creator: '创建者',
       serialNumber: '序列号', lastUsed: '最后使用', testCount: '检测次数', status: '状态', notes: '备注',
+      title: '标题', startTime: '开始时间', location: '地点', capacity: '容量', signups: '报名数',
     },
     empty: { users: '暂无用户', coaches: '暂无 Coach', dots: '暂无原粒', store: '暂无商品', orders: '暂无订单', channels: '暂无渠道', invites: '暂无邀请码', kino: '暂无 Kino 设备', chipBatches: '暂无芯片批次', chipModels: '暂无芯片型号', tickets: '暂无工单' },
     count: (n) => `共 ${n} 位用户`,
@@ -916,7 +967,7 @@ const T = {
       descEn: '描述 (英)', descZh: '描述 (中)',
       descHtmlHint: '支持 HTML — 文字 + <img> 图片', insertImage: '插入图片', previewHtml: '预览',
       unitEn: '单位 (英)', unitZh: '单位 (中)',
-      priceCny: '售价 CNY *', priceUsd: '售价 USD *',
+      priceCny: '售价 CNY *', priceUsd: '售价 USD *', priceCredits: '积分定价',
       tag: '标签', noTag: '无标签', tagBestseller: '热销', tagValue: '超值',
       sortOrder: '排序', active: '上架',
       externalIdRequired: '外部 ID 为必填项',
@@ -957,6 +1008,12 @@ const T = {
       apkFile: 'APK 文件 *', apkSetActive: '上传后设为当前版本',
       apkUploading: '正在上传至 OSS…', apkSaving: '正在保存版本记录…',
       apkSetActiveBtn: '设为当前版本', apkDeleteWarning: (v) => `确认删除 APK 版本"${v}"？此操作不可撤销。`,
+      addEvent: '创建活动', noEvents: '暂无活动',
+      cancelEvent: '取消活动', confirmCancel: '确认取消此活动？',
+      noSignups: '暂无报名', add: '创建',
+      title: '标题', location: '地点', capacity: '容量',
+      startTime: '开始时间', endTime: '结束时间', close: '关闭',
+      eventStatusActive: '进行中', eventStatusCancelled: '已取消', eventStatusCompleted: '已结束',
     },
     apk: {
       title: 'APK 版本管理', activeVersion: '当前版本', totalReleases: '版本总数',
@@ -1038,6 +1095,19 @@ const T = {
       storeSubchTitle: '子渠道自定义库存',
       storeSubchHint: '允许子渠道新增不在全局商品目录中的自定义库存商品。',
       storeRevoke: '撤销商城权限', storeAllow: '开启商城权限',
+      warehousePermEnabled: '仓库管理已开启',
+      warehousePermDisabled: '仓库管理未开启',
+      warehousePermHint: '此渠道可管理其自有SKU的仓库库存。',
+      warehousePermDisabledHint: '开启后允许此渠道管理其自有SKU的仓库库存量。',
+      warehouseSubchTitle: '子渠道仓库管理',
+      warehouseSubchHint: '允许子渠道管理其自有SKU的仓库库存。',
+      warehouseRevoke: '撤销仓库权限', warehouseAllow: '开启仓库权限',
+      autonomousLabel: '自治渠道',
+      autonomousEnabled: '自治模式 — 全权开放',
+      autonomousDisabled: '自治模式未开启',
+      autonomousHint: '所有功能已解锁。渠道管理员无需逐项授权即可获得完整权限，适用于国家级或完全独立的合伙渠道。',
+      autonomousDisabledHint: '开启后一键授予该渠道完整自主权，包括商城、仓库、奖励及合伙人所有功能。仅超级管理员可操作。',
+      autonomousRevoke: '撤销自治', autonomousGrant: '授予自治',
       dangerBlockedTitle: '无法删除此渠道',
       dangerBlockedHint: '该渠道存在子渠道，请先删除所有子渠道后再操作。',
       dangerDeleteTitle: '删除渠道',
@@ -1048,7 +1118,7 @@ const T = {
     },
     store: {
       itemsTab: '商品', ordersTab: '订单',
-      priceCny: '售价 (CNY)', priceUsd: '售价 (USD)', tag: '标签', active: '上架',
+      priceCny: '售价 (CNY)', priceUsd: '售价 (USD)', priceCredits: '积分价格', tag: '标签', active: '上架',
       qty: '数量', status: '状态', orderedAt: '下单时间', yes: '是', no: '否',
       pending: '待处理', confirmed: '已确认', shipped: '已发货',
       delivered: '已送达', cancelled: '已取消',
@@ -1081,6 +1151,10 @@ const T = {
       noWarehouses: '暂无仓库配置。请在 SKU 标签页中添加仓库库存。',
       addStock: '补充库存', totalUnitsLabel: '总库存量', stockHealth: '状态',
       pleaseSelectSku: '请选择 SKU', selectSkuLabel: '选择 SKU',
+      skuModeLabel: 'SKU 类型', skuModeStandalone: '独立 SKU', skuModeParent: '父级商品（含规格变体）', skuModeVariant: '变体 / 子 SKU',
+      parentSkuLabel: '父级 SKU', parentSkuPlaceholder: '— 选择父级 SKU —', parentSkuRequired: '请选择父级 SKU',
+      variantAttrs: '变体属性', addAttr: '+ 添加属性', attrKeyPlaceholder: '例如 尺寸', attrValuePlaceholder: '例如 M',
+      suggestCode: '自动生成编码', parentBadge: '父级', variantBadge: '变体', variantsCount: '个变体', addVariant: '添加变体',
     },
     inventory: {
       selectChannel: '请选择渠道以管理库存',
@@ -1114,7 +1188,7 @@ const T = {
       keyName: '唯一标识', nameEn: '名称（英文）', nameZh: '名称（中文）',
       descEn: '描述（英文）', descZh: '描述（中文）',
       unitEn: '单位（英文）', unitZh: '单位（中文）',
-      priceCny: '售价 CNY (¥)', priceUsd: '售价 USD ($)',
+      priceCny: '售价 CNY (¥)', priceUsd: '售价 USD ($)', priceCredits: '积分定价',
       stockQty: '库存数量', stockHint: '留空表示不限',
       tag: '标签', sortOrder: '排序', active: '上架',
       image: '图片', uploadImage: '点击上传图片（PNG / JPG）',
@@ -1122,6 +1196,11 @@ const T = {
       yes: '是', no: '否',
       deleteWarning: (name) => ['删除 ', name, '？此操作不可撤销。'],
       saveFailed: '保存失败', keyRequired: '请填写唯一标识', nameRequired: '请填写英文名称',
+      addWarehouse: '新增仓库', editWarehouse: '编辑仓库',
+      warehouseAddress: '地址', warehouseStatus: '状态',
+      warehouseActive: '启用', warehouseInactive: '停用',
+      warehouseNameLabel: '仓库名称', warehouseAddressLabel: '地址（选填）',
+      warehouseDeleteWarning: '确认删除此仓库？库存记录不受影响。',
     },
     invites: { active: '有效', deactivated: '已停用', unlimited: '不限' },
     rewards: {
@@ -1145,6 +1224,14 @@ const T = {
       filterApproved: '已审批', filterRejected: '已拒绝', filterCompleted: '已完成',
       totalWithdrawals: '提现申请', pendingWithdrawals: '待审批',
       pending: '待审批', rejected: '已拒绝', completed: '已完成',
+    },
+    userCredit: {
+      title: '积分余额', history: '交易记录',
+      adjustTitle: '手动调整积分', amount: '金额（正数增加，负数扣减）',
+      note: '备注（必填）', notePlaceholder: '例：线下购买 – 收据 #123',
+      submit: '确认', loading: '加载中…', saving: '提交中…', error: '错误',
+      balance: '当前余额', noHistory: '暂无交易记录',
+      types: { adjustment: '手动调整', referral_commission: '推荐佣金', coach_commission: '教练佣金', channel_commission: '渠道佣金', withdrawal: '提现' },
     },
     partners: {
       addPartner: '新增合伙人', editPartner: '编辑合伙人', deactivatePartner: '停用',
@@ -1173,6 +1260,15 @@ const T = {
       teamIncome: '团队持续收入', teamPrimary: '一级上线比例', teamSecondary: '二级上线比例',
       teamHint: '按销售额的百分比支付给各级上线',
       uplineTier: '上线 →', newTier: '新合伙人 ↓', saveRules: '保存规则', saving: '保存中…',
+      typesTab: '合伙人级别',
+      countTypes: (n) => `共 ${n} 个级别`,
+      addType: '新增级别', editType: '编辑级别',
+      typeKey: '标识符', typeLabel: '英文名称', typeLabelZh: '中文名称', typeColor: '颜色',
+      typeEntryFee: '入伙费 (¥)', typeSort: '排序',
+      typeActive: '启用', typeInactive: '已停用', noTypes: '暂无级别',
+      typeKeyLabel: '标识符（snake_case）*', typeLabelEn: '英文名称 *', typeDesc: '描述',
+      keyRequired: '标识符为必填项', labelRequired: '英文名称为必填项',
+      confirmDeactivateType: (key) => `确认停用合伙人级别 "${key}"？已有该级别的合伙人不受影响。`,
     },
     academy: {
       coursesTab: '课程', libraryTab: '文库', certificationsTab: '证书管理',
@@ -2838,6 +2934,147 @@ function UserDetailModal({ user, onClose }) {
   );
 }
 
+// ── UserCreditModal ───────────────────────────────────────────────────────────
+
+function UserCreditModal({ user, onClose }) {
+  const { t, lang } = useLang();
+  const uc = t.userCredit;
+  const isZh = lang === 'zh';
+  const [balance, setBalance] = useState(null);
+  const [currency, setCurrency] = useState('');
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get(`/api/admin/users/${user.user_id}/credit-history`);
+      setBalance(res.data.balance);
+      setCurrency(res.data.currency || 'pts');
+      setHistory(res.data.history || []);
+    } catch (e) {
+      setFormError(e.response?.data?.error || uc.error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user.user_id, uc.error]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    const amt = parseFloat(amount);
+    if (!amt || amt === 0) { setFormError(isZh ? '请输入非零金额' : 'Amount must be non-zero'); return; }
+    if (!note.trim()) { setFormError(isZh ? '备注不能为空' : 'Note is required'); return; }
+    setFormError('');
+    setSaving(true);
+    try {
+      await axios.post(`/api/admin/users/${user.user_id}/credit-adjustments`, { amount: amt, note: note.trim() });
+      setAmount('');
+      setNote('');
+      await load();
+    } catch (e) {
+      setFormError(e.response?.data?.error || uc.error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const typeLabel = (type) => uc.types[type] || type;
+  const fmtDate = (d) => d ? new Date(d).toLocaleString(isZh ? 'zh-CN' : 'en-US', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2 className="modal-title">{uc.title} — {user.nickname || user.user_id}</h2>
+          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>{uc.loading}</div>
+        ) : (
+          <>
+            <div style={{ padding: '12px 20px', background: 'var(--bg)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 13, color: 'var(--muted)' }}>{uc.balance}:</span>
+              <span style={{ fontSize: 20, fontWeight: 700, color: balance > 0 ? '#10b981' : balance < 0 ? '#ef4444' : 'var(--text)' }}>
+                {Number(balance || 0).toFixed(2)} {currency}
+              </span>
+            </div>
+
+            <div style={{ maxHeight: 260, overflowY: 'auto', borderBottom: '1px solid var(--border)' }}>
+              {history.length === 0 ? (
+                <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{uc.noHistory}</div>
+              ) : (
+                <table className="data-table" style={{ fontSize: 12 }}>
+                  <thead>
+                    <tr>
+                      <th>{isZh ? '日期' : 'Date'}</th>
+                      <th>{isZh ? '类型' : 'Type'}</th>
+                      <th style={{ textAlign: 'right' }}>{isZh ? '金额' : 'Amount'}</th>
+                      <th>{isZh ? '备注' : 'Note'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map(row => (
+                      <tr key={row.id}>
+                        <td className="muted" style={{ whiteSpace: 'nowrap' }}>{fmtDate(row.created_at)}</td>
+                        <td><Badge color={row.type === 'withdrawal' ? '#ef4444' : row.type === 'adjustment' ? '#8b5cf6' : '#10b981'}>{typeLabel(row.type)}</Badge></td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: Number(row.amount) >= 0 ? '#10b981' : '#ef4444' }}>
+                          {Number(row.amount) >= 0 ? '+' : ''}{Number(row.amount).toFixed(2)}
+                        </td>
+                        <td className="muted" style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.note || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <form onSubmit={handleSubmit} style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>{uc.adjustTitle}</div>
+              <div className="form-row">
+                <label className="form-label">{uc.amount}</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  placeholder={isZh ? '例：100 或 -20' : 'e.g. 100 or -20'}
+                  className="form-input"
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div className="form-row">
+                <label className="form-label">{uc.note}</label>
+                <input
+                  type="text"
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  placeholder={uc.notePlaceholder}
+                  className="form-input"
+                  style={{ width: '100%' }}
+                />
+              </div>
+              {formError && <div style={{ fontSize: 12, color: '#ef4444' }}>{formError}</div>}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+                <button type="button" className="btn btn-ghost" onClick={onClose}>{isZh ? '取消' : 'Cancel'}</button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>
+                  {saving ? uc.saving : uc.submit}
+                </button>
+              </div>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Users tab ─────────────────────────────────────────────────────────────────
 
 function ReferralNetworkTab({ channels, session }) {
@@ -3341,6 +3578,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
                 <td className="muted">{fmt(u.email)}</td>
                 <td onClick={e => e.stopPropagation()}>
                   <div className="row-actions">
+                    <button className="icon-btn" title={isZh ? '积分管理' : 'Manage Credits'} onClick={() => setModal({ type: 'credits', user: u })}><Coins size={14} /></button>
                     {hasPermission(session, PERMS.USERS_WRITE) && <button className="icon-btn" title={t.modal.editUser} onClick={() => setModal({ type: 'edit', user: u })}><Pencil size={14} /></button>}
                     {hasPermission(session, PERMS.USERS_DELETE) && <button className="icon-btn danger" title={t.modal.deleteUser} onClick={() => setModal({ type: 'delete', user: u })}><Trash2 size={14} /></button>}
                   </div>
@@ -3384,9 +3622,10 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
         )}
       </>}
       </div>
-      {modal?.type === 'add'    && <UserModal user={null}       coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'   && <UserModal user={modal.user} coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'delete' && <DeleteConfirm user={modal.user} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {modal?.type === 'add'     && <UserModal user={null}       coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'    && <UserModal user={modal.user} coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'delete'  && <DeleteConfirm user={modal.user} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {modal?.type === 'credits' && <UserCreditModal user={modal.user} onClose={() => setModal(null)} />}
       {detailUser && <UserDetailModal user={detailUser} onClose={() => setDetailUser(null)} />}
     </>
   );
@@ -5635,7 +5874,7 @@ function HtmlDescField({ label, value, onChange, placeholder, category }) {
 const EMPTY_INV_ITEM = {
   key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '',
   item_type: 'physical', unit_en: '', unit_zh: '',
-  price_cny: '', price_usd: '', stock_quantity: '',
+  price_cny: '', price_usd: '', price_credits: '', stock_quantity: '',
   tag: '', sort_order: 0, active: true, image_url: '', store_item_id: null, show_in_store: false, sku_id: '',
 };
 
@@ -5647,7 +5886,7 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
     ? { key_name: item.key_name, name_en: item.name_en || '', name_zh: item.name_zh || '',
         desc_en: item.desc_en || '', desc_zh: item.desc_zh || '',
         item_type: item.item_type || 'physical', unit_en: item.unit_en || '', unit_zh: item.unit_zh || '',
-        price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '',
+        price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '', price_credits: item.price_credits ?? '',
         stock_quantity: item.stock_quantity ?? '',
         tag: item.tag || '', sort_order: item.sort_order ?? 0,
         active: item.active !== false, image_url: item.image_url || '',
@@ -5658,7 +5897,7 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
       ? { key_name: item.key_name || '', name_en: item.name_en || '', name_zh: item.name_zh || '',
           desc_en: item.desc_en || '', desc_zh: item.desc_zh || '',
           item_type: item.item_type || 'physical', unit_en: item.unit_en || '', unit_zh: item.unit_zh || '',
-          price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '',
+          price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '', price_credits: item.price_credits ?? '',
           stock_quantity: '',
           tag: item.tag || '', sort_order: item.sort_order ?? 0,
           active: true, image_url: item.image_url || '',
@@ -5700,6 +5939,7 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
       channel_id: channelId,
       price_cny: form.price_cny !== '' ? form.price_cny : null,
       price_usd: form.price_usd !== '' ? form.price_usd : null,
+      price_credits: form.price_credits !== '' ? form.price_credits : null,
       stock_quantity: form.stock_quantity !== '' ? parseInt(form.stock_quantity, 10) : null,
       sku_id: form.sku_id,
     };
@@ -5779,6 +6019,10 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
             <label className="form-field">
               <span>{ti.priceUsd}</span>
               <input type="number" step="0.01" min="0" value={form.price_usd} onChange={e => set('price_usd', e.target.value)} placeholder="0.00" />
+            </label>
+            <label className="form-field">
+              <span>{ti.priceCredits}</span>
+              <input type="number" step="0.01" min="0" value={form.price_credits} onChange={e => set('price_credits', e.target.value)} placeholder="100" />
             </label>
             <label className="form-field">
               <span>{ti.stockQty}</span>
@@ -5896,6 +6140,83 @@ function DeleteInventoryItemConfirm({ item, onClose, onConfirm }) {
   );
 }
 
+function WarehouseModal({ modal, onClose, onSave }) {
+  const { t } = useLang();
+  const ti = t.inventory;
+  const isEdit = modal.type === 'edit';
+  const isDelete = modal.type === 'delete';
+  const w = modal.warehouse || {};
+  const [form, setForm] = useState({ name: w.name || '', address: w.address || '', active: w.active !== false });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { setError(ti.warehouseNameLabel + ' is required'); return; }
+    setBusy(true); setError('');
+    try {
+      if (isEdit) await axios.put(`/api/warehouses/${w.id}`, form);
+      else await axios.post('/api/warehouses', form);
+      onSave();
+    } catch (e) { setError(e.response?.data?.error || t.inventory.saveFailed); }
+    finally { setBusy(false); }
+  };
+
+  const handleDelete = async () => {
+    setBusy(true);
+    try { await axios.delete(`/api/warehouses/${w.id}`); onSave(); }
+    catch (e) { setError(e.response?.data?.error || t.inventory.saveFailed); setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+        <div className="modal-header">
+          <h3>{isDelete ? (isEdit ? ti.editWarehouse : ti.addWarehouse) : isEdit ? ti.editWarehouse : ti.addWarehouse}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        {isDelete ? (
+          <>
+            <p style={{ color: '#94a3b8', marginBottom: 20 }}>{ti.warehouseDeleteWarning}</p>
+            <strong style={{ color: '#e2e8f0' }}>{w.name}</strong>
+            {error && <p style={{ color: '#ef4444', marginTop: 12, fontSize: 13 }}>{error}</p>}
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={onClose}>{t.cancel || 'Cancel'}</button>
+              <button className="btn-danger" onClick={handleDelete} disabled={busy}>
+                {busy ? '…' : t.delete || 'Delete'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="form-field">
+              <label className="form-label">{ti.warehouseNameLabel} *</label>
+              <input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. shanghai-central" />
+            </div>
+            <div className="form-field">
+              <label className="form-label">{ti.warehouseAddressLabel}</label>
+              <input className="form-input" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="e.g. 上海市浦东新区XX路XX号" />
+            </div>
+            {isEdit && (
+              <div className="form-field" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <label className="form-label" style={{ margin: 0 }}>{ti.warehouseStatus}</label>
+                <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} />
+                <span style={{ color: '#94a3b8', fontSize: 13 }}>{form.active ? ti.warehouseActive : ti.warehouseInactive}</span>
+              </div>
+            )}
+            {error && <p style={{ color: '#ef4444', marginTop: 4, fontSize: 13 }}>{error}</p>}
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={onClose}>{t.cancel || 'Cancel'}</button>
+              <button className="btn-primary" onClick={handleSave} disabled={busy}>
+                {busy ? '…' : t.save || 'Save'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ImportFromStoreModal({ existingItems, onClose, onSelect }) {
   const { t } = useLang();
   const ti = t.inventory;
@@ -5987,6 +6308,8 @@ function InventoryTab({ channels, session, isSuperadmin }) {
   const [orders, setOrders] = useState([]);
   const [localSkus, setLocalSkus] = useState([]);
   const [localStock, setLocalStock] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [warehouseModal, setWarehouseModal] = useState(null);
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(null);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
@@ -5996,6 +6319,13 @@ function InventoryTab({ channels, session, isSuperadmin }) {
       setSelectedChannelId(String(channels[0].id));
     }
   }, [isSuperadmin, channels, selectedChannelId]);
+
+  const fetchWarehouses = useCallback(async () => {
+    try {
+      const res = await axios.get('/api/warehouses');
+      setWarehouses(res.data.warehouses || []);
+    } catch { setWarehouses([]); }
+  }, []);
 
   const fetchItems = useCallback(async (cid) => {
     if (!cid) return;
@@ -6015,11 +6345,18 @@ function InventoryTab({ channels, session, isSuperadmin }) {
     finally { setLoading(false); }
   }, []);
 
+  useEffect(() => { fetchWarehouses(); }, [fetchWarehouses]);
+
   useEffect(() => { fetchItems(selectedChannelId); }, [selectedChannelId, fetchItems]);
 
   const closeAndRefresh = () => { setModal(null); fetchItems(selectedChannelId); };
 
   const ownSkus = localSkus.filter(s => String(s.channel_id) === String(selectedChannelId));
+
+  const warehouseStock = localStock.filter(s => s.location_type === 'warehouse');
+  const warehouseNames = [...new Set(warehouseStock.map(s => s.warehouse_name).filter(Boolean))].sort();
+  const [expandedWarehouse, setExpandedWarehouse] = useState(null);
+  const [expandedSkuId, setExpandedSkuId] = useState(null);
 
   const activeCount   = items.filter(i => i.active).length;
   const physicalCount = items.filter(i => i.item_type === 'physical').length;
@@ -6080,6 +6417,11 @@ function InventoryTab({ channels, session, isSuperadmin }) {
             <button className={`subtab-btn${subTab === 'orders' ? ' active' : ''}`} onClick={() => setSubTab('orders')}>
               <Package size={13} />{ti.ordersTab} {pendingOrders > 0 && <span style={{ background: '#f59e0b', color: '#000', borderRadius: 10, padding: '1px 6px', fontSize: 11, marginLeft: 4 }}>{pendingOrders}</span>}
             </button>
+            {(isSuperadmin || session?.canManageWarehouses) && (
+              <button className={`subtab-btn${subTab === 'warehouses' ? ' active' : ''}`} onClick={() => setSubTab('warehouses')}>
+                <Building2 size={13} />{t.store.warehousesTab}
+              </button>
+            )}
           </div>
 
           {subTab === 'items' && (
@@ -6112,6 +6454,7 @@ function InventoryTab({ channels, session, isSuperadmin }) {
                         <th>{ti.itemType}</th>
                         <th>{ti.source}</th>
                         <th>{ti.priceCny}</th>
+                        <th>{ti.priceCredits}</th>
                         <th>{ti.stock}</th>
                         <th>{ti.active}</th>
                         <th>{ti.inStore}</th>
@@ -6144,6 +6487,9 @@ function InventoryTab({ channels, session, isSuperadmin }) {
                           </td>
                           <td>
                             {item.price_cny != null ? `¥${Number(item.price_cny).toFixed(2)}` : '—'}
+                          </td>
+                          <td style={{ color: '#10b981', fontWeight: 600 }}>
+                            {item.price_credits != null ? `${item.price_credits} pts` : '—'}
                           </td>
                           <td>
                             {item.stock_quantity != null ? (
@@ -6211,48 +6557,110 @@ function InventoryTab({ channels, session, isSuperadmin }) {
                 </thead>
                 <tbody>
                   {ownSkus.length === 0 && <tr><td colSpan={7} className="empty-row">{t.store.noSkus}</td></tr>}
-                  {ownSkus.map(sku => {
-                    const stocks = localStock.filter(st => st.sku_id === sku.id);
-                    return (
-                      <tr key={sku.id}>
-                        <td><code className="code-tag">{sku.sku_code}</code></td>
-                        <td className="bold">{sku.name_en}</td>
-                        <td className="muted">{sku.name_zh}</td>
-                        <td>
-                          <Badge color={sku.item_type === 'physical' ? '#6366f1' : '#10b981'}>
-                            {sku.item_type === 'physical' ? t.store.physical : t.store.virtual}
-                          </Badge>
-                        </td>
-                        <td>{sku.unit_zh} / {sku.unit_en}</td>
-                        <td>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            {stocks.length === 0
-                              ? <span className="muted" style={{ fontSize: 11 }}>— {t.store.noStocksConfigured}</span>
-                              : stocks.map(st => (
-                                <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
-                                  <span style={{ padding: '1px 5px', borderRadius: 4, background: 'rgba(99,102,241,0.15)', color: '#818cf8', fontWeight: 500 }}>
-                                    {channels.find(c => String(c.id) === String(st.channel_id))?.name || st.channel_id}
-                                  </span>
-                                  <span className="bold" style={{ color: (st.quantity ?? 0) <= (st.low_stock_threshold ?? 0) ? '#ef4444' : '#10b981' }}>
-                                    {st.quantity === null ? '∞' : `${st.quantity} ${t.store.left}`}
-                                  </span>
-                                </div>
-                              ))
-                            }
-                          </div>
-                        </td>
-                        <td>
-                          <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
-                            <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }} onClick={() => setModal({ type: 'adjust-stock', sku })}>
-                              {t.store.adjustStock}
-                            </button>
-                            <button className="icon-btn" title={t.store.editSku} onClick={() => setModal({ type: 'edit-sku', sku })}><Pencil size={14} /></button>
-                            <button className="icon-btn danger" title={t.store.deleteSku} onClick={() => setModal({ type: 'delete-sku', sku })}><Trash2 size={14} /></button>
-                          </div>
-                        </td>
-                      </tr>
+                  {(() => {
+                    const parentSkus = ownSkus.filter(s => s.is_parent);
+                    const childSkus = ownSkus.filter(s => s.parent_sku_id);
+                    const standaloneSkus = ownSkus.filter(s => !s.is_parent && !s.parent_sku_id);
+                    const rows = [];
+                    const renderStocks = (stocks) => (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {stocks.length === 0
+                          ? <span className="muted" style={{ fontSize: 11 }}>— {t.store.noStocksConfigured}</span>
+                          : stocks.map(st => (
+                            <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                              <span style={{ padding: '1px 5px', borderRadius: 4, background: st.location_type === 'warehouse' ? '#334155' : 'rgba(99,102,241,0.15)', color: st.location_type === 'warehouse' ? '#e2e8f0' : '#818cf8', fontWeight: 500 }}>
+                                {st.location_type === 'warehouse' ? `${t.store.warehouse}: ${st.warehouse_name}` : channels.find(c => String(c.id) === String(st.channel_id))?.name || st.channel_id}
+                              </span>
+                              <span className="bold" style={{ color: (st.quantity ?? 0) <= (st.low_stock_threshold ?? 0) ? '#ef4444' : '#10b981' }}>
+                                {st.quantity === null ? '∞' : `${st.quantity} ${t.store.left}`}
+                              </span>
+                            </div>
+                          ))
+                        }
+                      </div>
                     );
-                  })}
+                    standaloneSkus.forEach(sku => {
+                      const stocks = localStock.filter(st => st.sku_id === sku.id);
+                      rows.push(
+                        <tr key={sku.id}>
+                          <td><code className="code-tag">{sku.sku_code}</code></td>
+                          <td className="bold">{sku.name_en}</td>
+                          <td className="muted">{sku.name_zh}</td>
+                          <td><Badge color={sku.item_type === 'physical' ? '#6366f1' : '#10b981'}>{sku.item_type === 'physical' ? t.store.physical : t.store.virtual}</Badge></td>
+                          <td>{sku.unit_zh} / {sku.unit_en}</td>
+                          <td>{renderStocks(stocks)}</td>
+                          <td>
+                            <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                              <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }} onClick={() => setModal({ type: 'adjust-stock', sku })}>{t.store.adjustStock}</button>
+                              <button className="icon-btn" title={t.store.editSku} onClick={() => setModal({ type: 'edit-sku', sku })}><Pencil size={14} /></button>
+                              <button className="icon-btn danger" title={t.store.deleteSku} onClick={() => setModal({ type: 'delete-sku', sku })}><Trash2 size={14} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    });
+                    parentSkus.forEach(parent => {
+                      const children = childSkus.filter(c => c.parent_sku_id === parent.id);
+                      const isExp = expandedSkuId === parent.id;
+                      rows.push(
+                        <tr key={parent.id} onClick={() => setExpandedSkuId(isExp ? null : parent.id)} style={{ cursor: 'pointer', background: 'rgba(99,102,241,0.05)' }}>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              {isExp ? <ChevronUp size={12} style={{ color: '#6366f1', flexShrink: 0 }} /> : <ChevronDown size={12} style={{ color: '#6366f1', flexShrink: 0 }} />}
+                              <code className="code-tag">{parent.sku_code}</code>
+                              <Badge color="#7c3aed">{t.store.parentBadge}</Badge>
+                            </div>
+                          </td>
+                          <td className="bold">{parent.name_en}</td>
+                          <td className="muted">{parent.name_zh}</td>
+                          <td><Badge color={parent.item_type === 'physical' ? '#6366f1' : '#10b981'}>{parent.item_type === 'physical' ? t.store.physical : t.store.virtual}</Badge></td>
+                          <td>{parent.unit_zh} / {parent.unit_en}</td>
+                          <td><span style={{ color: '#94a3b8', fontSize: 12 }}>{children.length} {t.store.variantsCount}</span></td>
+                          <td>
+                            <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                              <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }} onClick={e => { e.stopPropagation(); setModal({ type: 'add-variant-sku', parentSku: parent }); }}>
+                                <Plus size={11} />{t.store.addVariant}
+                              </button>
+                              <button className="icon-btn" title={t.store.editSku} onClick={e => { e.stopPropagation(); setModal({ type: 'edit-sku', sku: parent }); }}><Pencil size={14} /></button>
+                              <button className="icon-btn danger" title={t.store.deleteSku} onClick={e => { e.stopPropagation(); setModal({ type: 'delete-sku', sku: parent }); }}><Trash2 size={14} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                      if (isExp) {
+                        children.forEach(child => {
+                          const stocks = localStock.filter(st => st.sku_id === child.id);
+                          const attrPairs = child.attributes ? Object.entries(child.attributes) : [];
+                          rows.push(
+                            <tr key={child.id} style={{ background: 'rgba(99,102,241,0.03)' }}>
+                              <td style={{ paddingLeft: 36 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ color: '#475569', fontSize: 12 }}>↳</span>
+                                  <code className="code-tag" style={{ fontSize: 11 }}>{child.sku_code}</code>
+                                  {attrPairs.map(([k, v]) => (
+                                    <span key={k} style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{v}</span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="bold" style={{ fontSize: 12 }}>{child.name_en}</td>
+                              <td className="muted" style={{ fontSize: 12 }}>{child.name_zh}</td>
+                              <td><Badge color={child.item_type === 'physical' ? '#6366f1' : '#10b981'}>{child.item_type === 'physical' ? t.store.physical : t.store.virtual}</Badge></td>
+                              <td style={{ fontSize: 12 }}>{child.unit_zh} / {child.unit_en}</td>
+                              <td>{renderStocks(stocks)}</td>
+                              <td>
+                                <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                                  <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }} onClick={() => setModal({ type: 'adjust-stock', sku: child })}>{t.store.adjustStock}</button>
+                                  <button className="icon-btn" title={t.store.editSku} onClick={() => setModal({ type: 'edit-sku', sku: child })}><Pencil size={14} /></button>
+                                  <button className="icon-btn danger" title={t.store.deleteSku} onClick={() => setModal({ type: 'delete-sku', sku: child })}><Trash2 size={14} /></button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      }
+                    });
+                    return rows;
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -6349,11 +6757,89 @@ function InventoryTab({ channels, session, isSuperadmin }) {
         </>
       )}
 
+      {subTab === 'warehouses' && (isSuperadmin || session?.canManageWarehouses) && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">
+              {warehouses.length} {warehouses.length === 1 ? t.store.warehousesLabel : t.store.warehousesLabelPlural}
+            </span>
+            {isSuperadmin && (
+              <button className="btn-primary" onClick={() => setWarehouseModal({ type: 'add' })}>
+                <Plus size={14} />{t.inventory.addWarehouse}
+              </button>
+            )}
+          </div>
+          {warehouses.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '48px 0', color: '#64748b' }}>
+              <Building2 size={36} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.3 }} />
+              <p style={{ fontSize: 14 }}>{t.store.noWarehouses}</p>
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>{t.store.warehouseName}</th>
+                  <th>{t.inventory.warehouseAddress}</th>
+                  <th>{t.inventory.warehouseStatus}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {warehouses.map(w => (
+                  <tr key={w.id}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Building2 size={14} style={{ color: '#6366f1', flexShrink: 0 }} />
+                        <strong style={{ color: '#e2e8f0' }}>{w.name}</strong>
+                      </div>
+                    </td>
+                    <td className="muted" style={{ fontSize: 13 }}>{w.address || '—'}</td>
+                    <td>
+                      <Badge color={w.active ? '#10b981' : '#64748b'}>
+                        {w.active ? t.inventory.warehouseActive : t.inventory.warehouseInactive}
+                      </Badge>
+                    </td>
+                    <td>
+                      {isSuperadmin && (
+                        <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                          <button className="icon-btn" title={t.store.editSku} onClick={() => setWarehouseModal({ type: 'edit', warehouse: w })}><Pencil size={14} /></button>
+                          <button className="icon-btn danger" title={t.store.deleteSku} onClick={() => setWarehouseModal({ type: 'delete', warehouse: w })}><Trash2 size={14} /></button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {warehouseModal && (
+        <WarehouseModal
+          modal={warehouseModal}
+          onClose={() => setWarehouseModal(null)}
+          onSave={() => { setWarehouseModal(null); fetchWarehouses(); }}
+        />
+      )}
+
+      {modal?.type === 'add-warehouse-stock' && (
+        <StockAdjustModal
+          sku={null}
+          skus={ownSkus}
+          defaultLocationType="warehouse"
+          defaultWarehouseName={modal.warehouseName || ''}
+          channels={[]}
+          onClose={() => setModal(null)}
+          onSave={closeAndRefresh}
+        />
+      )}
+
       {modal?.type === 'add' && (
         <ChannelInventoryItemModal
           item={modal.prefill || null}
           channelId={selectedChannelId}
-          skus={localSkus}
+          skus={ownSkus}
           onClose={() => setModal(null)}
           onSave={closeAndRefresh}
         />
@@ -6362,7 +6848,7 @@ function InventoryTab({ channels, session, isSuperadmin }) {
         <ChannelInventoryItemModal
           item={modal.item}
           channelId={selectedChannelId}
-          skus={localSkus}
+          skus={ownSkus}
           onClose={() => setModal(null)}
           onSave={closeAndRefresh}
         />
@@ -6375,10 +6861,13 @@ function InventoryTab({ channels, session, isSuperadmin }) {
         />
       )}
       {modal?.type === 'add-sku' && (
-        <SkuModal sku={null} channelId={selectedChannelId} onClose={() => setModal(null)} onSave={closeAndRefresh} />
+        <SkuModal sku={null} channelId={selectedChannelId} allSkus={localSkus} onClose={() => setModal(null)} onSave={closeAndRefresh} />
       )}
       {modal?.type === 'edit-sku' && (
-        <SkuModal sku={modal.sku} channelId={selectedChannelId} onClose={() => setModal(null)} onSave={closeAndRefresh} />
+        <SkuModal sku={modal.sku} channelId={selectedChannelId} allSkus={localSkus} onClose={() => setModal(null)} onSave={closeAndRefresh} />
+      )}
+      {modal?.type === 'add-variant-sku' && (
+        <SkuModal sku={null} channelId={selectedChannelId} allSkus={localSkus} initialParentSkuId={modal.parentSku?.id || ''} onClose={() => setModal(null)} onSave={closeAndRefresh} />
       )}
       {modal?.type === 'delete-sku' && (
         <DeleteSkuConfirm sku={modal.sku} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />
@@ -6428,7 +6917,7 @@ function InventoryTab({ channels, session, isSuperadmin }) {
 
 const EMPTY_ITEM = {
   key_name: '', name_en: '', name_zh: '', desc_en: '', desc_zh: '',
-  unit_en: '', unit_zh: '', price_cny: '', price_usd: '',
+  unit_en: '', unit_zh: '', price_cny: '', price_usd: '', price_credits: '',
   tag: '', sort_order: 0, active: true, image_url: '', sku_id: '',
 };
 
@@ -6439,7 +6928,7 @@ function StoreItemModal({ item, skus = [], onClose, onSave }) {
     ? { key_name: item.key_name, name_en: item.name_en || '', name_zh: item.name_zh || '',
         desc_en: item.desc_en || '', desc_zh: item.desc_zh || '',
         unit_en: item.unit_en || '', unit_zh: item.unit_zh || '',
-        price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '',
+        price_cny: item.price_cny ?? '', price_usd: item.price_usd ?? '', price_credits: item.price_credits ?? '',
         tag: item.tag || '', sort_order: item.sort_order ?? 0, active: item.active !== false,
         image_url: item.image_url || '', sku_id: item.sku_id || '' }
     : { ...EMPTY_ITEM });
@@ -6542,6 +7031,10 @@ function StoreItemModal({ item, skus = [], onClose, onSave }) {
             <label className="form-field">
               <span>{t.modal.priceUsd}</span>
               <input type="number" step="0.01" min="0" value={form.price_usd} onChange={e => set('price_usd', e.target.value)} placeholder="39.99" />
+            </label>
+            <label className="form-field">
+              <span>{t.modal.priceCredits}</span>
+              <input type="number" step="0.01" min="0" value={form.price_credits} onChange={e => set('price_credits', e.target.value)} placeholder="100" />
             </label>
             <label className="form-field">
               <span>{t.modal.sortOrder}</span>
@@ -6798,11 +7291,13 @@ function OrderStatusSelect({ orderId, status, onSave }) {
 
 function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = [], session, onRefresh }) {
   const { t } = useLang();
+  const isSuperadmin = session?.role === 'superadmin';
   const [subTab, setSubTab] = useState('items');
   const [orderChannelFilter, setOrderChannelFilter] = useState('');
   const [modal, setModal] = useState(null);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [expandedWarehouse, setExpandedWarehouse] = useState(null);
+  const [expandedSkuId, setExpandedSkuId] = useState(null);
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
 
   const warehouseStocks = inventoryStock.filter(s => s.location_type === 'warehouse');
@@ -6819,30 +7314,36 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
       <div className="stat-row">
         <StatCard icon={ShoppingBag} label={t.stats.totalItems}    value={storeItems.length} color="#6366f1" />
         <StatCard icon={ShoppingBag} label={t.stats.activeItems}   value={activeCount}       color="#10b981" />
-        <StatCard icon={Package}     label={t.stats.totalOrders}   value={orders.length}     color="#3b82f6" />
-        <StatCard icon={Package}     label={t.stats.pendingOrders} value={pendingCount}      color="#f59e0b" />
+        {isSuperadmin && <StatCard icon={Package} label={t.stats.totalOrders}   value={orders.length} color="#3b82f6" />}
+        {isSuperadmin && <StatCard icon={Package} label={t.stats.pendingOrders} value={pendingCount}  color="#f59e0b" />}
       </div>
 
       <div className="subtab-row">
         <button className={`subtab-btn${subTab === 'items' ? ' active' : ''}`} onClick={() => setSubTab('items')}>
           <ShoppingBag size={13} />{t.store.itemsTab}
         </button>
-        <button className={`subtab-btn${subTab === 'skus' ? ' active' : ''}`} onClick={() => setSubTab('skus')}>
-          <Layers size={13} />SKUs & Stock
-        </button>
-        <button className={`subtab-btn${subTab === 'warehouses' ? ' active' : ''}`} onClick={() => setSubTab('warehouses')}>
-          <Building2 size={13} />{t.store.warehousesTab}
-        </button>
-        <button className={`subtab-btn${subTab === 'orders' ? ' active' : ''}`} onClick={() => setSubTab('orders')}>
-          <Package size={13} />{t.store.ordersTab}
-        </button>
+        {isSuperadmin && (
+          <button className={`subtab-btn${subTab === 'skus' ? ' active' : ''}`} onClick={() => setSubTab('skus')}>
+            <Layers size={13} />SKUs & Stock
+          </button>
+        )}
+        {isSuperadmin && (
+          <button className={`subtab-btn${subTab === 'warehouses' ? ' active' : ''}`} onClick={() => setSubTab('warehouses')}>
+            <Building2 size={13} />{t.store.warehousesTab}
+          </button>
+        )}
+        {isSuperadmin && (
+          <button className={`subtab-btn${subTab === 'orders' ? ' active' : ''}`} onClick={() => setSubTab('orders')}>
+            <Package size={13} />{t.store.ordersTab}
+          </button>
+        )}
       </div>
 
       {subTab === 'items' && (
         <div className="card">
           <div className="table-toolbar">
             <span className="table-count">{t.countItem(storeItems.length)}</span>
-            {hasPermission(session, PERMS.STORE_WRITE) && (
+            {isSuperadmin && (
               <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
                 <Plus size={14} />{t.addItem}
               </button>
@@ -6858,13 +7359,14 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
                 <th>Linked SKU</th>
                 <th>{t.store.priceCny}</th>
                 <th>{t.store.priceUsd}</th>
+                <th>{t.store.priceCredits}</th>
                 <th>{t.store.tag}</th>
                 <th>{t.store.active}</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {storeItems.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.store}</td></tr>}
+              {storeItems.length === 0 && <tr><td colSpan={11} className="empty-row">{t.empty.store}</td></tr>}
               {storeItems.map(item => {
                 const linkedSku = skus.find(s => s.id === item.sku_id);
                 return (
@@ -6883,6 +7385,7 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
                     </td>
                     <td>¥{item.price_cny}</td>
                     <td className="muted">${item.price_usd}</td>
+                    <td style={{ color: '#10b981', fontWeight: 600 }}>{item.price_credits != null ? `${item.price_credits} pts` : '—'}</td>
                     <td>{item.tag ? <Badge color="#6366f1">{item.tag}</Badge> : '—'}</td>
                     <td>
                       <Badge color={item.active ? '#10b981' : '#94a3b8'}>
@@ -6891,8 +7394,8 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
                     </td>
                     <td>
                       <div className="row-actions">
-                        {hasPermission(session, PERMS.STORE_WRITE) && <button className="icon-btn" title={t.modal.editItem} onClick={() => setModal({ type: 'edit', item })}><Pencil size={14} /></button>}
-                        {hasPermission(session, PERMS.STORE_DELETE) && <button className="icon-btn danger" title={t.modal.deleteItem} onClick={() => setModal({ type: 'delete', item })}><Trash2 size={14} /></button>}
+                        {isSuperadmin && <button className="icon-btn" title={t.modal.editItem} onClick={() => setModal({ type: 'edit', item })}><Pencil size={14} /></button>}
+                        {isSuperadmin && <button className="icon-btn danger" title={t.modal.deleteItem} onClick={() => setModal({ type: 'delete', item })}><Trash2 size={14} /></button>}
                       </div>
                     </td>
                   </tr>
@@ -6925,52 +7428,114 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
             </thead>
             <tbody>
               {skus.length === 0 && <tr><td colSpan={7} className="empty-row">{t.store.noSkus}</td></tr>}
-              {skus.map(sku => {
-                const stocks = inventoryStock.filter(st => st.sku_id === sku.id);
-                return (
-                  <tr key={sku.id}>
-                    <td><code className="code-tag">{sku.sku_code}</code></td>
-                    <td className="bold">{sku.name_en}</td>
-                    <td className="muted">{sku.name_zh}</td>
-                    <td>
-                      <Badge color={sku.item_type === 'physical' ? '#6366f1' : '#10b981'}>
-                        {sku.item_type === 'physical' ? t.store.physical : t.store.virtual}
-                      </Badge>
-                    </td>
-                    <td>{sku.unit_zh} / {sku.unit_en}</td>
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {stocks.length === 0 ? <span className="muted" style={{ fontSize: 11 }}>— {t.store.noStocksConfigured}</span> : null}
-                        {stocks.map(st => {
-                          const ch = channels?.find(c => String(c.id) === String(st.channel_id));
-                          return (
-                            <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
-                              <span style={{ padding: '1px 5px', borderRadius: 4, background: st.location_type === 'warehouse' ? '#334155' : 'rgba(99,102,241,0.15)', color: st.location_type === 'warehouse' ? '#e2e8f0' : '#818cf8', fontWeight: 500 }}>
-                                {st.location_type === 'warehouse' ? `${t.store.warehouse}: ${st.warehouse_name}` : `${t.store.channel}: ${ch?.name || st.channel_id}`}
-                              </span>
-                              <span className="bold" style={{ color: (st.quantity ?? 0) <= (st.low_stock_threshold ?? 0) ? '#ef4444' : '#10b981' }}>
-                                {st.quantity === null ? '∞' : `${st.quantity} ${t.store.left}`}
-                              </span>
-                              {(st.quantity !== null && (st.quantity <= (st.low_stock_threshold ?? 0))) && (
-                                <span style={{ color: '#ef4444', fontWeight: 600 }}>⚠️ LOW</span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
-                        <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }} onClick={() => setModal({ type: 'adjust-stock', sku })}>
-                          {t.store.adjustStock}
-                        </button>
-                        <button className="icon-btn" title={t.store.editSku} onClick={() => setModal({ type: 'edit-sku', sku })}><Pencil size={14} /></button>
-                        <button className="icon-btn danger" title={t.store.deleteSku} onClick={() => setModal({ type: 'delete-sku', sku })}><Trash2 size={14} /></button>
-                      </div>
-                    </td>
-                  </tr>
+              {(() => {
+                const parentSkus = skus.filter(s => s.is_parent);
+                const childSkus = skus.filter(s => s.parent_sku_id);
+                const standaloneSkus = skus.filter(s => !s.is_parent && !s.parent_sku_id);
+                const rows = [];
+                const renderStockCells = (stocks) => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {stocks.length === 0 ? <span className="muted" style={{ fontSize: 11 }}>— {t.store.noStocksConfigured}</span> : null}
+                    {stocks.map(st => {
+                      const ch = channels?.find(c => String(c.id) === String(st.channel_id));
+                      return (
+                        <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                          <span style={{ padding: '1px 5px', borderRadius: 4, background: st.location_type === 'warehouse' ? '#334155' : 'rgba(99,102,241,0.15)', color: st.location_type === 'warehouse' ? '#e2e8f0' : '#818cf8', fontWeight: 500 }}>
+                            {st.location_type === 'warehouse' ? `${t.store.warehouse}: ${st.warehouse_name}` : `${t.store.channel}: ${ch?.name || st.channel_id}`}
+                          </span>
+                          <span className="bold" style={{ color: (st.quantity ?? 0) <= (st.low_stock_threshold ?? 0) ? '#ef4444' : '#10b981' }}>
+                            {st.quantity === null ? '∞' : `${st.quantity} ${t.store.left}`}
+                          </span>
+                          {st.quantity !== null && st.quantity <= (st.low_stock_threshold ?? 0) && (
+                            <span style={{ color: '#ef4444', fontWeight: 600 }}>⚠ LOW</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 );
-              })}
+                standaloneSkus.forEach(sku => {
+                  const stocks = inventoryStock.filter(st => st.sku_id === sku.id);
+                  rows.push(
+                    <tr key={sku.id}>
+                      <td><code className="code-tag">{sku.sku_code}</code></td>
+                      <td className="bold">{sku.name_en}</td>
+                      <td className="muted">{sku.name_zh}</td>
+                      <td><Badge color={sku.item_type === 'physical' ? '#6366f1' : '#10b981'}>{sku.item_type === 'physical' ? t.store.physical : t.store.virtual}</Badge></td>
+                      <td>{sku.unit_zh} / {sku.unit_en}</td>
+                      <td>{renderStockCells(stocks)}</td>
+                      <td>
+                        <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                          <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }} onClick={() => setModal({ type: 'adjust-stock', sku })}>{t.store.adjustStock}</button>
+                          <button className="icon-btn" title={t.store.editSku} onClick={() => setModal({ type: 'edit-sku', sku })}><Pencil size={14} /></button>
+                          <button className="icon-btn danger" title={t.store.deleteSku} onClick={() => setModal({ type: 'delete-sku', sku })}><Trash2 size={14} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                });
+                parentSkus.forEach(parent => {
+                  const children = childSkus.filter(c => c.parent_sku_id === parent.id);
+                  const isExp = expandedSkuId === parent.id;
+                  rows.push(
+                    <tr key={parent.id} onClick={() => setExpandedSkuId(isExp ? null : parent.id)} style={{ cursor: 'pointer', background: 'rgba(99,102,241,0.05)' }}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {isExp ? <ChevronUp size={12} style={{ color: '#6366f1', flexShrink: 0 }} /> : <ChevronDown size={12} style={{ color: '#6366f1', flexShrink: 0 }} />}
+                          <code className="code-tag">{parent.sku_code}</code>
+                          <Badge color="#7c3aed">{t.store.parentBadge}</Badge>
+                        </div>
+                      </td>
+                      <td className="bold">{parent.name_en}</td>
+                      <td className="muted">{parent.name_zh}</td>
+                      <td><Badge color={parent.item_type === 'physical' ? '#6366f1' : '#10b981'}>{parent.item_type === 'physical' ? t.store.physical : t.store.virtual}</Badge></td>
+                      <td>{parent.unit_zh} / {parent.unit_en}</td>
+                      <td><span style={{ color: '#94a3b8', fontSize: 12 }}>{children.length} {t.store.variantsCount}</span></td>
+                      <td>
+                        <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                          <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }} onClick={e => { e.stopPropagation(); setModal({ type: 'add-variant-sku', parentSku: parent }); }}>
+                            <Plus size={11} />{t.store.addVariant}
+                          </button>
+                          <button className="icon-btn" title={t.store.editSku} onClick={e => { e.stopPropagation(); setModal({ type: 'edit-sku', sku: parent }); }}><Pencil size={14} /></button>
+                          <button className="icon-btn danger" title={t.store.deleteSku} onClick={e => { e.stopPropagation(); setModal({ type: 'delete-sku', sku: parent }); }}><Trash2 size={14} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                  if (isExp) {
+                    children.forEach(child => {
+                      const stocks = inventoryStock.filter(st => st.sku_id === child.id);
+                      const attrPairs = child.attributes ? Object.entries(child.attributes) : [];
+                      rows.push(
+                        <tr key={child.id} style={{ background: 'rgba(99,102,241,0.03)' }}>
+                          <td style={{ paddingLeft: 36 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ color: '#475569', fontSize: 12 }}>↳</span>
+                              <code className="code-tag" style={{ fontSize: 11 }}>{child.sku_code}</code>
+                              {attrPairs.map(([k, v]) => (
+                                <span key={k} style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{v}</span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="bold" style={{ fontSize: 12 }}>{child.name_en}</td>
+                          <td className="muted" style={{ fontSize: 12 }}>{child.name_zh}</td>
+                          <td><Badge color={child.item_type === 'physical' ? '#6366f1' : '#10b981'}>{child.item_type === 'physical' ? t.store.physical : t.store.virtual}</Badge></td>
+                          <td style={{ fontSize: 12 }}>{child.unit_zh} / {child.unit_en}</td>
+                          <td>{renderStockCells(stocks)}</td>
+                          <td>
+                            <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                              <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', height: 24 }} onClick={() => setModal({ type: 'adjust-stock', sku: child })}>{t.store.adjustStock}</button>
+                              <button className="icon-btn" title={t.store.editSku} onClick={() => setModal({ type: 'edit-sku', sku: child })}><Pencil size={14} /></button>
+                              <button className="icon-btn danger" title={t.store.deleteSku} onClick={() => setModal({ type: 'delete-sku', sku: child })}><Trash2 size={14} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  }
+                });
+                return rows;
+              })()}
             </tbody>
           </table>
         </div>
@@ -7115,13 +7680,14 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
                 <th>{t.table.nameEn}</th>
                 <th>{t.store.qty}</th>
                 <th>{t.store.priceCny}</th>
+                <th>{t.store.priceCredits}</th>
                 <th>Channel</th>
                 <th>{t.store.status}</th>
                 <th>{t.store.orderedAt}</th>
               </tr>
             </thead>
             <tbody>
-              {filteredOrders.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.orders}</td></tr>}
+              {filteredOrders.length === 0 && <tr><td colSpan={9} className="empty-row">{t.empty.orders}</td></tr>}
               {filteredOrders.map(o => {
                 const ch = channels?.find(c => String(c.id) === String(o.channel_id));
                 const isExpanded = expandedOrderId === o.id;
@@ -7133,6 +7699,7 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
                       <td className="bold">{fmt(o.name_zh || o.name_en)}</td>
                       <td>{o.quantity}</td>
                       <td>¥{o.price_cny}</td>
+                      <td style={{ color: '#10b981', fontWeight: 600 }}>{o.price_credits != null ? `${o.price_credits} pts` : '—'}</td>
                       <td>
                         {ch ? <Badge color="#6366f1">{ch.name || ch.key_name}</Badge> : <span className="muted">—</span>}
                       </td>
@@ -7189,8 +7756,9 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
       {modal?.type === 'edit'   && <StoreItemModal item={modal.item} skus={skus} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteStoreItemConfirm item={modal.item} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
 
-      {modal?.type === 'add-sku'    && <SkuModal sku={null}       onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit-sku'   && <SkuModal sku={modal.sku}  onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add-sku'          && <SkuModal sku={null}      allSkus={skus} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit-sku'         && <SkuModal sku={modal.sku} allSkus={skus} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add-variant-sku'  && <SkuModal sku={null}      allSkus={skus} initialParentSkuId={modal.parentSku?.id || ''} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete-sku' && <DeleteSkuConfirm sku={modal.sku} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
       {modal?.type === 'adjust-stock' && <StockAdjustModal sku={modal.sku} skus={skus} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'add-warehouse-stock' && <StockAdjustModal sku={null} skus={skus} defaultLocationType="warehouse" defaultWarehouseName={modal.warehouseName || ''} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
@@ -7198,9 +7766,17 @@ function StoreTab({ storeItems, orders, channels, skus = [], inventoryStock = []
   );
 }
 
-function SkuModal({ sku, onClose, onSave, channelId = null }) {
+function SkuModal({ sku, onClose, onSave, channelId = null, allSkus = [], initialParentSkuId = '' }) {
   const { t } = useLang();
+  const ts = t.store;
   const isEdit = !!sku?.id;
+
+  const initMode = initialParentSkuId ? 'variant' : (sku?.is_parent ? 'parent' : sku?.parent_sku_id ? 'variant' : 'standalone');
+  const initAttrs = sku?.attributes ? Object.entries(sku.attributes).map(([k, v]) => ({ key: k, value: v })) : [];
+
+  const [skuMode, setSkuMode] = useState(initMode);
+  const [parentSkuId, setParentSkuId] = useState(initialParentSkuId || sku?.parent_sku_id || '');
+  const [attrs, setAttrs] = useState(initAttrs.length ? initAttrs : [{ key: '', value: '' }]);
   const [form, setForm] = useState(isEdit
     ? { sku_code: sku.sku_code, name_zh: sku.name_zh || '', name_en: sku.name_en || '',
         desc_zh: sku.desc_zh || '', desc_en: sku.desc_en || '',
@@ -7210,65 +7786,138 @@ function SkuModal({ sku, onClose, onSave, channelId = null }) {
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const parentSkus = allSkus.filter(s => s.is_parent && s.id !== sku?.id);
+
+  const suggestCode = () => {
+    const parent = parentSkus.find(s => s.id === parentSkuId);
+    if (!parent) return;
+    const attrPart = attrs.filter(a => a.value).map(a => a.value.toUpperCase().replace(/\s+/g, '-')).join('-');
+    set('sku_code', attrPart ? `${parent.sku_code}-${attrPart}` : parent.sku_code);
+  };
+
+  const setAttr = (i, field, val) => setAttrs(prev => prev.map((a, idx) => idx === i ? { ...a, [field]: val } : a));
+  const removeAttr = (i) => setAttrs(prev => prev.filter((_, idx) => idx !== i));
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.sku_code.trim()) { setError(t.store.skuCodeRequired); return; }
-    if (!form.name_en.trim() || !form.name_zh.trim()) { setError(t.store.skuNamesRequired); return; }
+    if (!form.sku_code.trim()) { setError(ts.skuCodeRequired); return; }
+    if (!form.name_en.trim() || !form.name_zh.trim()) { setError(ts.skuNamesRequired); return; }
+    if (skuMode === 'variant' && !parentSkuId) { setError(ts.parentSkuRequired); return; }
     setBusy(true); setError('');
     try {
-      const payload = channelId ? { ...form, channel_id: channelId } : form;
-      if (isEdit) await axios.put(`/api/skus/\${sku.id}`, payload);
+      const attrsObj = skuMode === 'variant'
+        ? Object.fromEntries(attrs.filter(a => a.key && a.value).map(a => [a.key.trim(), a.value.trim()]))
+        : {};
+      const payload = {
+        ...form,
+        is_parent: skuMode === 'parent',
+        parent_sku_id: skuMode === 'variant' ? parentSkuId : null,
+        attributes: attrsObj,
+        ...(channelId ? { channel_id: channelId } : {}),
+      };
+      if (isEdit) await axios.put(`/api/skus/${sku.id}`, payload);
       else        await axios.post('/api/skus', payload);
       onSave();
-    } catch (err) { setError(err.response?.data?.error || t.saveFailed); }
+    } catch (err) { setError(err.response?.data?.error || ts.saveFailed); }
     finally { setBusy(false); }
   };
+
+  const modeStyle = (m) => ({
+    flex: 1, padding: '8px 12px', borderRadius: 6, border: `1px solid ${skuMode === m ? '#6366f1' : 'var(--border)'}`,
+    background: skuMode === m ? 'rgba(99,102,241,0.12)' : 'var(--surface)', color: skuMode === m ? '#818cf8' : '#94a3b8',
+    cursor: 'pointer', fontSize: 12, fontWeight: skuMode === m ? 600 : 400, textAlign: 'center',
+  });
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span>{isEdit ? t.store.editSkuTitle : t.store.createSkuTitle}</span>
+          <span>{isEdit ? ts.editSkuTitle : ts.createSkuTitle}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-field" style={{ marginBottom: 16 }}>
+            <span style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 6 }}>{ts.skuModeLabel}</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" style={modeStyle('standalone')} onClick={() => setSkuMode('standalone')}>{ts.skuModeStandalone}</button>
+              <button type="button" style={modeStyle('parent')} onClick={() => setSkuMode('parent')}>{ts.skuModeParent}</button>
+              <button type="button" style={modeStyle('variant')} onClick={() => setSkuMode('variant')}>{ts.skuModeVariant}</button>
+            </div>
+          </div>
+
+          {skuMode === 'variant' && (
+            <div style={{ marginBottom: 16, padding: '12px 14px', borderRadius: 8, background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.25)' }}>
+              <div className="form-field" style={{ marginBottom: 10 }}>
+                <span style={{ fontSize: 12, color: '#a78bfa', display: 'block', marginBottom: 6 }}>{ts.parentSkuLabel}</span>
+                <div className="select-wrap" style={{ width: '100%' }}>
+                  <select value={parentSkuId} onChange={e => setParentSkuId(e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                    <option value="">{ts.parentSkuPlaceholder}</option>
+                    {parentSkus.map(p => <option key={p.id} value={p.id}>{p.sku_code} — {p.name_en}</option>)}
+                  </select>
+                  <ChevronDown size={11} className="select-chevron" />
+                </div>
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, color: '#a78bfa' }}>{ts.variantAttrs}</span>
+                  <button type="button" style={{ fontSize: 11, color: '#818cf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                    onClick={() => setAttrs(prev => [...prev, { key: '', value: '' }])}>
+                    {ts.addAttr}
+                  </button>
+                </div>
+                {attrs.map((a, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                    <input value={a.key} onChange={e => setAttr(i, 'key', e.target.value)} placeholder={ts.attrKeyPlaceholder} style={{ flex: 1 }} />
+                    <input value={a.value} onChange={e => setAttr(i, 'value', e.target.value)} placeholder={ts.attrValuePlaceholder} style={{ flex: 1 }} />
+                    <button type="button" className="icon-btn danger" onClick={() => removeAttr(i)} style={{ flexShrink: 0 }}><X size={12} /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="form-grid">
             <label className="form-field">
-              <span>{t.store.skuCodeLabel}</span>
-              <input value={form.sku_code} onChange={e => set('sku_code', e.target.value)} disabled={isEdit} placeholder="e.g. KINO-CHIP-V2" />
+              <span>{ts.skuCodeLabel}</span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input value={form.sku_code} onChange={e => set('sku_code', e.target.value)} disabled={isEdit} placeholder="e.g. KINO-CHIP-V2" style={{ flex: 1 }} />
+                {skuMode === 'variant' && !isEdit && (
+                  <button type="button" className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, minHeight: 'auto', flexShrink: 0 }} onClick={suggestCode}>{ts.suggestCode}</button>
+                )}
+              </div>
             </label>
             <label className="form-field">
-              <span>{t.store.itemType}</span>
+              <span>{ts.itemType}</span>
               <div className="select-wrap" style={{ width: '100%' }}>
                 <select value={form.item_type} onChange={e => set('item_type', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  <option value="physical">{t.store.physical}</option>
-                  <option value="virtual">{t.store.virtual}</option>
+                  <option value="physical">{ts.physical}</option>
+                  <option value="virtual">{ts.virtual}</option>
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
             </label>
             <label className="form-field">
               <span>{t.table.nameEn}</span>
-              <input value={form.name_en} onChange={e => set('name_en', e.target.value)} placeholder="e.g. Kino Biomarker Test Chip" />
+              <input value={form.name_en} onChange={e => set('name_en', e.target.value)} placeholder="e.g. Smart Ring Size M Black" />
             </label>
             <label className="form-field">
               <span>{t.table.nameZh}</span>
-              <input value={form.name_zh} onChange={e => set('name_zh', e.target.value)} placeholder="例如 Kino 生物标志物检测芯片" />
+              <input value={form.name_zh} onChange={e => set('name_zh', e.target.value)} placeholder="例如 智能戒指 M 码 黑色" />
             </label>
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.store.descEn}</span>
-              <input value={form.desc_en} onChange={e => set('desc_en', e.target.value)} placeholder="Central description of physical or virtual asset" />
+              <span>{ts.descEn}</span>
+              <input value={form.desc_en} onChange={e => set('desc_en', e.target.value)} placeholder="Description" />
             </label>
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t.store.descZh}</span>
-              <input value={form.desc_zh} onChange={e => set('desc_zh', e.target.value)} placeholder="统一中文描述" />
+              <span>{ts.descZh}</span>
+              <input value={form.desc_zh} onChange={e => set('desc_zh', e.target.value)} placeholder="中文描述" />
             </label>
             <label className="form-field">
-              <span>{t.store.unitEn}</span>
+              <span>{ts.unitEn}</span>
               <input value={form.unit_en} onChange={e => set('unit_en', e.target.value)} placeholder="e.g. pcs, chip, box" />
             </label>
             <label className="form-field">
-              <span>{t.store.unitZh}</span>
+              <span>{ts.unitZh}</span>
               <input value={form.unit_zh} onChange={e => set('unit_zh', e.target.value)} placeholder="例如 个, 片, 盒" />
             </label>
           </div>
@@ -7292,7 +7941,7 @@ function DeleteSkuConfirm({ sku, onClose, onConfirm }) {
   const handleDelete = async () => {
     setBusy(true); setError('');
     try {
-      await axios.delete(`/api/skus/\${sku.id}`);
+      await axios.delete(`/api/skus/${sku.id}`);
       onConfirm();
     } catch (err) {
       setError(err.response?.data?.error || t.store.deleteSkuFailed);
@@ -8926,8 +9575,8 @@ function PartnersTab({ users = [], session }) {
   function openEditType(t) { setEditingType(t); setTypeForm({ ...t }); setTypeError(''); setShowTypeForm(true); }
 
   async function savePartnerType() {
-    if (!typeForm.key && !editingType) { setTypeError('Key is required'); return; }
-    if (!typeForm.label) { setTypeError('Label is required'); return; }
+    if (!typeForm.key && !editingType) { setTypeError(p.keyRequired); return; }
+    if (!typeForm.label) { setTypeError(p.labelRequired); return; }
     setTypeBusy(true); setTypeError('');
     try {
       if (editingType) await axios.put(`/api/partner-types/${editingType.key}`, typeForm);
@@ -8939,7 +9588,7 @@ function PartnersTab({ users = [], session }) {
   }
 
   async function deactivatePartnerType(key) {
-    if (!confirm(`Deactivate partner type "${key}"? Active partners with this type will not be affected.`)) return;
+    if (!confirm(p.confirmDeactivateType(key))) return;
     try {
       await axios.delete(`/api/partner-types/${key}`);
       await load();
@@ -9037,7 +9686,7 @@ function PartnersTab({ users = [], session }) {
           <Settings2 size={13} /> {p.rulesTab}
         </button>
         <button className={`subtab-btn${subTab === 'types' ? ' active' : ''}`} onClick={() => setSubTab('types')}>
-          <Users size={13} /> Partner Types
+          <Users size={13} /> {p.typesTab}
         </button>
       </div>
 
@@ -9162,15 +9811,15 @@ function PartnersTab({ users = [], session }) {
       {!loading && subTab === 'types' && (
         <div className="card">
           <div className="table-toolbar">
-            <span className="table-count">{partnerTypes.length} type{partnerTypes.length !== 1 ? 's' : ''}</span>
-            <button className="btn-primary" onClick={openAddType}><Plus size={13} />Add Partner Type</button>
+            <span className="table-count">{p.countTypes(partnerTypes.length)}</span>
+            <button className="btn-primary" onClick={openAddType}><Plus size={13} />{p.addType}</button>
           </div>
           <table className="data-table">
             <thead>
-              <tr><th>Key</th><th>Label</th><th>Label (ZH)</th><th>Color</th><th>Entry Fee</th><th>Sort</th><th>Status</th><th></th></tr>
+              <tr><th>{p.typeKey}</th><th>{p.typeLabel}</th><th>{p.typeLabelZh}</th><th>{p.typeColor}</th><th>{p.typeEntryFee}</th><th>{p.typeSort}</th><th>{p.status}</th><th></th></tr>
             </thead>
             <tbody>
-              {partnerTypes.length === 0 && <tr><td colSpan={8} className="empty-row">No partner types</td></tr>}
+              {partnerTypes.length === 0 && <tr><td colSpan={8} className="empty-row">{p.noTypes}</td></tr>}
               {partnerTypes.map(t => (
                 <tr key={t.key}>
                   <td><code className="code-tag">{t.key}</code></td>
@@ -9179,11 +9828,11 @@ function PartnersTab({ users = [], session }) {
                   <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 14, height: 14, borderRadius: '50%', background: t.color, border: '1px solid rgba(255,255,255,0.2)', display: 'inline-block' }} />{t.color}</span></td>
                   <td>¥{Number(t.entry_fee || 0).toLocaleString()}</td>
                   <td className="muted">{t.sort_order}</td>
-                  <td><Badge color={t.is_active ? '#16a34a' : '#94a3b8'}>{t.is_active ? 'Active' : 'Inactive'}</Badge></td>
+                  <td><Badge color={t.is_active ? '#16a34a' : '#94a3b8'}>{t.is_active ? p.typeActive : p.typeInactive}</Badge></td>
                   <td>
                     <div className="row-actions">
-                      <button className="icon-btn" title="Edit" onClick={() => openEditType(t)}><Pencil size={14} /></button>
-                      {t.is_active && <button className="icon-btn" title="Deactivate" onClick={() => deactivatePartnerType(t.key)}><Trash2 size={14} /></button>}
+                      <button className="icon-btn" title={p.editType} onClick={() => openEditType(t)}><Pencil size={14} /></button>
+                      {t.is_active && <button className="icon-btn" title={p.deactivatePartner} onClick={() => deactivatePartnerType(t.key)}><Trash2 size={14} /></button>}
                     </div>
                   </td>
                 </tr>
@@ -9293,7 +9942,7 @@ function PartnersTab({ users = [], session }) {
         <div className="modal-overlay" onClick={() => setShowTypeForm(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span>{editingType ? 'Edit Partner Type' : 'Add Partner Type'}</span>
+              <span>{editingType ? p.editType : p.addType}</span>
               <button className="icon-btn" onClick={() => setShowTypeForm(false)}><X size={16} /></button>
             </div>
             <form onSubmit={e => { e.preventDefault(); savePartnerType(); }}>
@@ -9301,41 +9950,41 @@ function PartnersTab({ users = [], session }) {
                 <div className="form-grid">
                   {!editingType && (
                     <label className="form-field">
-                      <span>Key (snake_case) *</span>
+                      <span>{p.typeKeyLabel}</span>
                       <input value={typeForm.key || ''} onChange={e => setTypeForm(f => ({ ...f, key: e.target.value }))} placeholder="e.g. gold_partner" />
                     </label>
                   )}
                   <label className="form-field">
-                    <span>Label (EN) *</span>
+                    <span>{p.typeLabelEn}</span>
                     <input value={typeForm.label || ''} onChange={e => setTypeForm(f => ({ ...f, label: e.target.value }))} />
                   </label>
                   <label className="form-field">
-                    <span>Label (ZH)</span>
+                    <span>{p.typeLabelZh}</span>
                     <input value={typeForm.label_zh || ''} onChange={e => setTypeForm(f => ({ ...f, label_zh: e.target.value }))} />
                   </label>
                   <label className="form-field">
-                    <span>Color</span>
+                    <span>{p.typeColor}</span>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       <input type="color" value={typeForm.color || '#64748b'} onChange={e => setTypeForm(f => ({ ...f, color: e.target.value }))} style={{ width: 36, height: 32, padding: 2, borderRadius: 4, border: '1px solid var(--border)', cursor: 'pointer' }} />
                       <input value={typeForm.color || ''} onChange={e => setTypeForm(f => ({ ...f, color: e.target.value }))} placeholder="#64748b" style={{ flex: 1 }} />
                     </div>
                   </label>
                   <label className="form-field">
-                    <span>Entry Fee (¥)</span>
+                    <span>{p.typeEntryFee}</span>
                     <input type="number" min="0" value={typeForm.entry_fee ?? ''} onChange={e => setTypeForm(f => ({ ...f, entry_fee: e.target.value === '' ? 0 : Number(e.target.value) }))} />
                   </label>
                   <label className="form-field">
-                    <span>Sort Order</span>
+                    <span>{p.typeSort}</span>
                     <input type="number" value={typeForm.sort_order ?? ''} onChange={e => setTypeForm(f => ({ ...f, sort_order: Number(e.target.value) }))} />
                   </label>
                   <label className="form-field" style={{ gridColumn: '1 / -1' }}>
-                    <span>Description</span>
+                    <span>{p.typeDesc}</span>
                     <input value={typeForm.description || ''} onChange={e => setTypeForm(f => ({ ...f, description: e.target.value }))} style={{ width: '100%' }} />
                   </label>
                   {editingType && (
                     <label className="form-field" style={{ gridColumn: '1 / -1', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                       <input type="checkbox" checked={!!typeForm.is_active} onChange={e => setTypeForm(f => ({ ...f, is_active: e.target.checked }))} />
-                      <span>Active</span>
+                      <span>{p.typeActive}</span>
                     </label>
                   )}
                 </div>
@@ -10394,6 +11043,11 @@ function SubchannelsTab_UNUSED({ subchannels, adminAccounts, invitations, sessio
           <td className="muted">{fmtDate(c.created_at)}</td>
           <td>
             <div className="row-actions">
+              {c.autonomous && (
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, background: 'rgba(99,102,241,0.2)', color: '#818cf8', borderRadius: 4, padding: '2px 6px', textTransform: 'uppercase', border: '1px solid rgba(99,102,241,0.35)' }}>
+                  AUTO
+                </span>
+              )}
               {session?.canManageSubchannels && (
                 <button
                   className="btn-secondary"
@@ -10730,6 +11384,27 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
     } catch (e) { alert(e.response?.data?.error || 'Failed'); }
   };
 
+  const toggleSubchWarehousePermission = async (subch) => {
+    try {
+      await axios.put(`/api/channels/${subch.id}/warehouse-permission`, { can_manage_warehouses: !subch.can_manage_warehouses });
+      onRefreshData?.();
+    } catch (e) { alert(e.response?.data?.error || 'Failed'); }
+  };
+
+  const toggleOwnWarehousePermission = async () => {
+    try {
+      await axios.put(`/api/channels/${channel.id}/warehouse-permission`, { can_manage_warehouses: !channel.can_manage_warehouses });
+      onRefreshData?.();
+    } catch (e) { alert(e.response?.data?.error || 'Failed'); }
+  };
+
+  const toggleAutonomous = async () => {
+    try {
+      await axios.put(`/api/channels/${channel.id}/autonomous`, { autonomous: !channel.autonomous });
+      onRefreshData?.();
+    } catch (e) { alert(e.response?.data?.error || 'Failed'); }
+  };
+
   // ── Partner System tab ───────────────────────────────────────────────────────
   const [psTypes, setPsTypes] = useState([]);
   const [psRules, setPsRules] = useState([]);
@@ -10973,6 +11648,46 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                     <span style={{
                       position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
                       transition: 'left 0.2s', left: cmsValue ? 23 : 3,
+                    }} />
+                  </button>
+                </div>
+              )}
+              {isSuperadmin && (
+                <div style={{
+                  gridColumn: '1 / -1',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px 14px', borderRadius: 10, marginTop: 4,
+                  background: channel.autonomous ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${channel.autonomous ? 'rgba(99,102,241,0.4)' : 'var(--border)'}`,
+                }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                      {channel.autonomous && (
+                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, background: '#6366f1', color: '#fff', borderRadius: 4, padding: '1px 6px', textTransform: 'uppercase' }}>
+                          {ch.autonomousLabel}
+                        </span>
+                      )}
+                      <span style={{ fontWeight: 700, fontSize: 13, color: channel.autonomous ? '#818cf8' : '#94a3b8' }}>
+                        {channel.autonomous ? ch.autonomousEnabled : ch.autonomousDisabled}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>
+                      {channel.autonomous ? ch.autonomousHint : ch.autonomousDisabledHint}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={toggleAutonomous}
+                    style={{
+                      width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
+                      background: channel.autonomous ? '#6366f1' : '#334155',
+                      transition: 'background 0.2s', position: 'relative', marginLeft: 16,
+                    }}
+                    title={channel.autonomous ? ch.autonomousRevoke : ch.autonomousGrant}
+                  >
+                    <span style={{
+                      position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                      transition: 'left 0.2s', left: channel.autonomous ? 23 : 3,
                     }} />
                   </button>
                 </div>
@@ -11657,6 +12372,65 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                   </button>
                 )}
               </div>
+
+              {/* Warehouse management permission */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: channel.can_manage_warehouses ? '#10b981' : '#94a3b8', marginBottom: 4 }}>
+                    {channel.can_manage_warehouses ? ch.warehousePermEnabled : ch.warehousePermDisabled}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#64748b' }}>
+                    {channel.can_manage_warehouses ? ch.warehousePermHint : ch.warehousePermDisabledHint}
+                  </div>
+                </div>
+                {isSuperadmin && (
+                  <button
+                    type="button"
+                    onClick={toggleOwnWarehousePermission}
+                    style={{
+                      width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
+                      background: channel.can_manage_warehouses ? '#6366f1' : '#334155',
+                      transition: 'background 0.2s', position: 'relative',
+                    }}
+                    title={channel.can_manage_warehouses ? ch.warehouseRevoke : ch.warehouseAllow}
+                  >
+                    <span style={{
+                      position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                      transition: 'left 0.2s', left: channel.can_manage_warehouses ? 23 : 3,
+                    }} />
+                  </button>
+                )}
+              </div>
+
+              {/* Sub-channel warehouse permissions */}
+              {(isSuperadmin || (canGrantSubch && channel.can_manage_warehouses)) && subchannels?.length > 0 && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>{ch.warehouseSubchTitle}</div>
+                  <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>{ch.warehouseSubchHint}</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {subchannels.map(subch => (
+                      <div key={subch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                        <span style={{ fontSize: 13, color: '#e2e8f0' }}>{subch.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleSubchWarehousePermission(subch)}
+                          style={{
+                            width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
+                            background: subch.can_manage_warehouses ? '#6366f1' : '#334155',
+                            transition: 'background 0.2s', position: 'relative',
+                          }}
+                          title={subch.can_manage_warehouses ? ch.warehouseRevoke : ch.warehouseAllow}
+                        >
+                          <span style={{
+                            position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                            transition: 'left 0.2s', left: subch.can_manage_warehouses ? 23 : 3,
+                          }} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Sub-channel store permissions */}
               {(isSuperadmin || (canGrantSubch && channel.can_customize_store)) && subchannels?.length > 0 && (
@@ -15775,7 +16549,7 @@ function EventCreateModal({ channels, isSuperadmin, channelId, headers, onClose,
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span>{t.nav.events} — {t.modal?.add || 'Create'}</span>
+          <span>{t.modal?.addEvent || 'Create Event'}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
@@ -15820,7 +16594,7 @@ function EventCreateModal({ channels, isSuperadmin, channelId, headers, onClose,
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
             <button type="button" className="btn-secondary" onClick={onClose}>{t.modal?.cancel || 'Cancel'}</button>
-            <button type="submit" className="btn-primary" disabled={busy}>{busy ? '…' : (t.modal?.save || 'Create')}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>{busy ? (t.modal?.saving || '…') : (t.modal?.addEvent || 'Create')}</button>
           </div>
         </form>
       </div>
@@ -15849,7 +16623,7 @@ function EventSignupsModal({ event, headers, onClose }) {
         </div>
         <div className="modal-body">
           {signups === null ? (
-            <p className="muted">Loading…</p>
+            <p className="muted">{t.topbar.loading}</p>
           ) : signups.length === 0 ? (
             <p className="muted">{t.modal?.noSignups || 'No signups yet'}</p>
           ) : (
@@ -15949,11 +16723,11 @@ function EventsTab({ channels, session, isSuperadmin, onRefresh }) {
             <th>{t.table?.location || 'Location'}</th>
             <th>{t.table?.capacity || 'Capacity'}</th>
             <th>{t.table?.signups || 'Signups'}</th>
-            <th>Status</th>
+            <th>{t.table?.status || 'Status'}</th>
             <th></th>
           </tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={isSuperadmin ? 8 : 7} className="empty-row">Loading…</td></tr>}
+            {loading && <tr><td colSpan={isSuperadmin ? 8 : 7} className="empty-row">{t.topbar.loading}</td></tr>}
             {!loading && events.length === 0 && (
               <tr><td colSpan={isSuperadmin ? 8 : 7} className="empty-row">{t.modal?.noEvents || 'No events yet'}</td></tr>
             )}
@@ -15970,7 +16744,7 @@ function EventsTab({ channels, session, isSuperadmin, onRefresh }) {
                 <td><Badge color="#3b82f6">{ev.signup_count || 0}</Badge></td>
                 <td>
                   <Badge color={ev.status === 'cancelled' ? '#ef4444' : ev.status === 'completed' ? '#94a3b8' : '#10b981'}>
-                    {ev.status}
+                    {{ active: t.modal?.eventStatusActive, cancelled: t.modal?.eventStatusCancelled, completed: t.modal?.eventStatusCompleted }[ev.status] || ev.status}
                   </Badge>
                 </td>
                 <td onClick={e => e.stopPropagation()}>
@@ -16499,7 +17273,7 @@ function AdminPanel({ session, onLogout }) {
 
   const isSuperadmin = !session || session.role === 'superadmin';
   const isCmsAdmin = session?.role === 'channel' && session?.canManageSubchannels;
-  const SUPERADMIN_ONLY = new Set(['store']);
+  const SUPERADMIN_ONLY = new Set([]);
 
   const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], kinoMachinePagination: null, chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [], skus: [], inventoryStock: [] });
   const [loading, setLoading] = useState(true);
@@ -16588,6 +17362,7 @@ function AdminPanel({ session, onLogout }) {
         if (n.id === 'dashboard') return true;
         if (n.disabled) return false;
         if (SUPERADMIN_ONLY.has(n.id)) return false;
+        if (n.id === 'store') return false;
         if (n.id === 'channels') return isCmsAdmin;
         if (n.id === 'coach-crm') return (session?.allowedTabs || []).includes('coaches');
         return (session?.allowedTabs || []).includes(n.id);
@@ -16677,6 +17452,8 @@ export default function App() {
     allowedPerms: JSON.parse(sessionStorage.getItem('nano_admin_perms') || '[]'),
     canManageSubchannels: sessionStorage.getItem('nano_admin_cms') === '1',
     canCustomizeStore: sessionStorage.getItem('nano_admin_can_customize_store') === '1',
+    canManageWarehouses: sessionStorage.getItem('nano_admin_can_manage_warehouses') === '1',
+    autonomous: sessionStorage.getItem('nano_admin_autonomous') === '1',
     username: sessionStorage.getItem('nano_admin_user') || '',
   });
 
@@ -16689,12 +17466,12 @@ export default function App() {
   const handleLogin = (token) => { setSessionExpired(false); setSession(readSession(token)); };
 
   const handleLogout = useCallback(() => {
-    ['nano_admin_token','nano_admin_user','nano_admin_role','nano_admin_channel_id','nano_admin_channel_name','nano_admin_channel_logo','nano_admin_tabs','nano_admin_perms','nano_admin_cms'].forEach(k => sessionStorage.removeItem(k));
+    ['nano_admin_token','nano_admin_user','nano_admin_role','nano_admin_channel_id','nano_admin_channel_name','nano_admin_channel_logo','nano_admin_tabs','nano_admin_perms','nano_admin_cms','nano_admin_can_customize_store','nano_admin_can_manage_warehouses','nano_admin_autonomous'].forEach(k => sessionStorage.removeItem(k));
     setSession(null);
   }, []);
 
   const handleSessionExpired = useCallback(() => {
-    ['nano_admin_token','nano_admin_user','nano_admin_role','nano_admin_channel_id','nano_admin_channel_name','nano_admin_channel_logo','nano_admin_tabs','nano_admin_perms','nano_admin_cms'].forEach(k => sessionStorage.removeItem(k));
+    ['nano_admin_token','nano_admin_user','nano_admin_role','nano_admin_channel_id','nano_admin_channel_name','nano_admin_channel_logo','nano_admin_tabs','nano_admin_perms','nano_admin_cms','nano_admin_can_customize_store','nano_admin_can_manage_warehouses','nano_admin_autonomous'].forEach(k => sessionStorage.removeItem(k));
     setSessionExpired(true);
     setSession(null);
   }, []);

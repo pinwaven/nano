@@ -71,7 +71,7 @@ const BIOMARKER_META = [
   { key: 'CD38',      label: 'CD38',             unit: 'xBaseline' },
 ];
 
-const VERSION = '2026-04-19.1';
+const VERSION = '2026-06-16.1';
 
 const SUB_AGE_META = [
   { key: 'ResilienceAge',    label: 'Resilience',    desc: 'Stress buffering',        color: '#ef4444' },
@@ -155,7 +155,7 @@ function App() {
     setStatus('Analyzing...');
     try {
       const randomCRP = parseFloat((Math.random() * (3.5 - 0.2) + 0.2).toFixed(2));
-      const res = await axios.post('/api/chat', {
+      const res = await axios.post('/api/biomarkers', {
         openid: selectedUser.user_id,
         test_type: 'kino_chip',
         test_data: { hsCRP: randomCRP },

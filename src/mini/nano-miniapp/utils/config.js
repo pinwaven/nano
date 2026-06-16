@@ -22,7 +22,7 @@ const IS_DEV = envVersion === 'develop' || envVersion === 'trial';
 // New users are auto-assigned to the channel; the logo/name show on the login screen immediately.
 const APPID_TO_CHANNEL = {
   'wxd19a1403c4fea89d': {
-    slug: 'aeviva',
+    slug: 'Aeviva China',
     name: 'AEVIVA',
     logo: 'https://waven-nano.oss-cn-shanghai.aliyuncs.com/channels/logo/0d0321b89b5c9e25.png?OSSAccessKeyId=LTAI5t6bJNW5XQyeiNr2MUp4&Expires=2094125079&Signature=xWrxY1%2F4uMjlPIKPzNYD95sjnAc%3D',
   },

@@ -27,17 +27,24 @@ erDiagram
 #### A. Central SKUs Table (`skus`)
 ```sql
 CREATE TABLE skus (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    sku_code    VARCHAR(100) UNIQUE NOT NULL,      -- e.g., KINO-CHIP-V2, WD-DOT-MONTHLY
-    name_zh     TEXT NOT NULL,                     -- Chinese product name
-    name_en     TEXT NOT NULL,                     -- English product name
-    desc_zh     TEXT,                              -- Chinese product description
-    desc_en     TEXT,                              -- English product description
-    item_type   VARCHAR(50) NOT NULL DEFAULT 'physical', -- 'physical' | 'virtual'
-    unit_zh     VARCHAR(50) NOT NULL DEFAULT '个',  -- Chinese unit
-    unit_en     VARCHAR(50) NOT NULL DEFAULT 'pcs', -- English unit
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sku_code       VARCHAR(100) UNIQUE NOT NULL,         -- e.g., KINO-CHIP-V2, RING-SMART-M-BLK
+    name_zh        TEXT NOT NULL,                        -- Chinese product name
+    name_en        TEXT NOT NULL,                        -- English product name
+    desc_zh        TEXT,                                 -- Chinese product description
+    desc_en        TEXT,                                 -- English product description
+    item_type      VARCHAR(50) NOT NULL DEFAULT 'physical', -- 'physical' | 'virtual'
+    unit_zh        VARCHAR(50) NOT NULL DEFAULT '个',    -- Chinese unit
+    unit_en        VARCHAR(50) NOT NULL DEFAULT 'pcs',   -- English unit
+    channel_id     INTEGER REFERENCES channels(id),      -- NULL = global; set = channel-scoped
+    -- Variant system (migration_sku_variants.sql)
+    parent_sku_id  UUID REFERENCES skus(id) ON DELETE SET NULL, -- NULL unless this is a child/variant
+    attributes     JSONB NOT NULL DEFAULT '{}',          -- {"size":"M","color":"Black"} on variants
+    is_parent      BOOLEAN NOT NULL DEFAULT FALSE,       -- TRUE on the grouping/parent SKU row
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_skus_parent ON skus(parent_sku_id) WHERE parent_sku_id IS NOT NULL;
 ```
 
 #### B. Location-Scoped Stock Table (`inventory_stock`)
@@ -130,7 +137,55 @@ Operators fulfill orders by clicking the "Shipped" status dropdown, which opens 
 
 ## 5. Visual SKU & Stock Registry
 
-Administrators can configure the underlying physical inventory registry using the **SKUs & Stock** subtab inside the Store management page:
+Administrators can configure the underlying physical inventory registry using the **SKUs & Stock** subtab inside the Store management page (superadmin) or the Inventory → SKUs sub-tab (channel admins with `can_manage_warehouses`).
 
-* **Sku CRUD Modals**: Define raw product codes (`WD-DOT-MONTHLY`), localized names/descriptions, and base units.
-* **Stock Adjuster Widget**: Lets superadmins add stock quantities to specific clinical channels or central warehouses and set low-stock warning thresholds. Low stocks trigger automatic red `⚠️ LOW` alert badges in the table.
+* **SKU CRUD Modals**: Define raw product codes (`WD-DOT-MONTHLY`), localized names/descriptions, and base units. See §6 for the variant/parent flow.
+* **Stock Adjuster Widget**: Lets administrators add stock quantities to specific clinical channels or central warehouses and set low-stock warning thresholds. Low stocks trigger automatic red `⚠ LOW` alert badges in the table.
+
+---
+
+## 6. SKU Variant System
+
+Products that come in multiple sizes, colours, or other distinguishing options are modelled with a **parent-child (variant) relationship** inside the same `skus` table.
+
+### Data model
+
+```
+RING-SMART  (is_parent=TRUE, attributes={})
+  ├─ RING-SMART-S-BLK  (parent_sku_id=RING-SMART, attributes={"size":"S","color":"Black"})
+  ├─ RING-SMART-M-BLK  (parent_sku_id=RING-SMART, attributes={"size":"M","color":"Black"})
+  └─ RING-SMART-M-SLV  (parent_sku_id=RING-SMART, attributes={"size":"M","color":"Silver"})
+```
+
+| Concept | Column | Notes |
+|---|---|---|
+| **Parent** SKU | `is_parent = TRUE` | Groups variants. Holds no stock of its own. |
+| **Child / Variant** SKU | `parent_sku_id = <parent.id>` | Standalone leaf that carries its own `inventory_stock` rows. |
+| **Attributes** | `attributes JSONB` | Key-value pairs describing what distinguishes this variant (e.g. `{"size":"M","color":"Black"}`). Empty `{}` on parents and standalones. |
+| **Standalone** SKU | `is_parent=FALSE, parent_sku_id=NULL` | Original single-variant products — unaffected by this system. |
+
+**Rule**: Only leaf SKUs (child or standalone) should be linked to `inventory_stock` or `store_items`/`channel_inventory_items`. Parent SKUs exist solely for grouping.
+
+### SKU code convention
+
+Variant codes are built as `{PARENT_CODE}-{ATTR_VALUES}`, e.g. `RING-SMART-M-BLK`. The admin modal's **Suggest code** button auto-generates this from the selected parent and filled-in attribute values.
+
+### Migration
+
+`src/schemas/migration_sku_variants.sql` — adds `parent_sku_id`, `attributes`, `is_parent` to existing `skus` table. Safe to apply to tables with existing rows: all three columns default to their "standalone" state (`NULL`, `{}`, `FALSE`).
+
+### Admin panel tree view
+
+The SKU list in both the Store tab (superadmin) and Inventory → SKUs sub-tab (channel admins) renders a **collapsible tree**:
+
+- **Standalone rows** — flat, same as before.
+- **Parent rows** — indigo-tinted row with a `PARENT` badge and chevron toggle; shows variant count in the stock column; "Add Variant" button opens the SKU modal pre-configured for that parent.
+- **Child rows** (expanded) — indented below the parent with attribute chips (e.g. `M` · `Black`); carry their own stock cells and full CRUD actions.
+
+### SKU modal — three modes
+
+| Mode | What it creates | Extra fields shown |
+|---|---|---|
+| **Standalone SKU** | `is_parent=FALSE, parent_sku_id=NULL` | None |
+| **Parent product** | `is_parent=TRUE` | None (children define their own attributes) |
+| **Variant / Child SKU** | `parent_sku_id=<selected>` | Parent SKU picker + key-value attribute editor + Suggest Code button |
