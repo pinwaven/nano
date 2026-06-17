@@ -6787,7 +6787,7 @@ function InventoryTab({ channels, session, isSuperadmin }) {
             <span className="table-count">
               {warehouses.length} {warehouses.length === 1 ? t.store.warehousesLabel : t.store.warehousesLabelPlural}
             </span>
-            {isSuperadmin && (
+            {(isSuperadmin || session?.canManageWarehouses) && (
               <button className="btn-primary" onClick={() => setWarehouseModal({ type: 'add' })}>
                 <Plus size={14} />{t.inventory.addWarehouse}
               </button>
@@ -6824,7 +6824,7 @@ function InventoryTab({ channels, session, isSuperadmin }) {
                       </Badge>
                     </td>
                     <td>
-                      {isSuperadmin && (
+                      {(isSuperadmin || session?.canManageWarehouses) && (
                         <div className="row-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
                           <button className="icon-btn" title={t.store.editSku} onClick={() => setWarehouseModal({ type: 'edit', warehouse: w })}><Pencil size={14} /></button>
                           <button className="icon-btn danger" title={t.store.deleteSku} onClick={() => setWarehouseModal({ type: 'delete', warehouse: w })}><Trash2 size={14} /></button>

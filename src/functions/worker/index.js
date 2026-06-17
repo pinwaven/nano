@@ -16,10 +16,10 @@ async function generateReferralCode() {
     throw new Error('Failed to generate unique referral code');
 }
 
-function signChannelAdminToken({ sub, username, cid, tabs, perms, cms }) {
+function signChannelAdminToken({ sub, username, cid, tabs, perms, cms, cmw, auto }) {
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + 86400;
-    const payload = Buffer.from(JSON.stringify({ sub, username, cid, tabs, perms: perms ?? tabs, cms: cms ?? false, iat, exp })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({ sub, username, cid, tabs, perms: perms ?? tabs, cms: cms ?? false, cmw: cmw ?? false, auto: auto ?? false, iat, exp })).toString('base64url');
     const sig = crypto.createHmac('sha256', process.env.API_BEARER_TOKEN)
                       .update(`ch.${payload}`).digest('hex');
     return `ch.${payload}.${sig}`;
@@ -10890,7 +10890,7 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetSkus(adminCtx);
             } else if (path.includes('/inventory-stock')) {
                 result = await handleGetInventoryStock(query, adminCtx);
-            } else if (path === '/api/warehouses') {
+            } else if (path === '/warehouses') {
                 result = await handleGetWarehouses();
             } else if (path.includes('/store-items')) {
                 result = await handleGetStoreItems(query);
@@ -11103,9 +11103,9 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostSku(parsedBody, adminCtx);
             } else if (path.includes('/inventory-stock')) {
                 result = await handlePostInventoryStock(parsedBody, adminCtx);
-            } else if (path === '/api/warehouses') {
-                result = adminCtx.role !== 'superadmin'
-                    ? { statusCode: 403, success: false, error: 'Permission denied: superadmin only' }
+            } else if (path === '/warehouses') {
+                result = (adminCtx.role !== 'superadmin' && !adminCtx.canManageWarehouses)
+                    ? { statusCode: 403, success: false, error: 'Permission denied' }
                     : await handlePostWarehouse(parsedBody);
             } else if (path.includes('/store-items')) {
                 result = adminCtx.role !== 'superadmin'
@@ -11334,10 +11334,10 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/skus/')) {
                 const skuId = path.split('/skus/')[1];
                 result = await handlePutSku(skuId, parsedBody, adminCtx);
-            } else if (path.match(/\/api\/warehouses\/(\d+)$/)) {
-                const wId = path.match(/\/api\/warehouses\/(\d+)$/)[1];
-                result = adminCtx.role !== 'superadmin'
-                    ? { statusCode: 403, success: false, error: 'Permission denied: superadmin only' }
+            } else if (path.match(/\/warehouses\/(\d+)$/)) {
+                const wId = path.match(/\/warehouses\/(\d+)$/)[1];
+                result = (adminCtx.role !== 'superadmin' && !adminCtx.canManageWarehouses)
+                    ? { statusCode: 403, success: false, error: 'Permission denied' }
                     : await handlePutWarehouse(wId, parsedBody);
             } else if (path.includes('/store-items/')) {
                 const itemId = path.split('/store-items/')[1];
@@ -11493,10 +11493,10 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/skus/')) {
                 const skuId = path.split('/skus/')[1];
                 result = await handleDeleteSku(skuId, adminCtx);
-            } else if (path.match(/\/api\/warehouses\/(\d+)$/)) {
-                const wId = path.match(/\/api\/warehouses\/(\d+)$/)[1];
-                result = adminCtx.role !== 'superadmin'
-                    ? { statusCode: 403, success: false, error: 'Permission denied: superadmin only' }
+            } else if (path.match(/\/warehouses\/(\d+)$/)) {
+                const wId = path.match(/\/warehouses\/(\d+)$/)[1];
+                result = (adminCtx.role !== 'superadmin' && !adminCtx.canManageWarehouses)
+                    ? { statusCode: 403, success: false, error: 'Permission denied' }
                     : await handleDeleteWarehouse(wId);
             } else if (path.includes('/store-items/')) {
                 const itemId = path.split('/store-items/')[1];
