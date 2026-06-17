@@ -747,8 +747,21 @@
 
       <view class="store-header">
         <text class="store-title">{{t.storeTitle}}</text>
-        <view wx:if="{{cartCount > 0}}" class="store-cart-icon" bindtap="handleOpenCart">
-          <text class="store-cart-badge">{{cartCount}}</text>
+        <view class="store-header-right">
+          <view wx:if="{{!isGuest}}" class="store-credit-card">
+            <view class="store-credit-card-glow"></view>
+            <image class="store-credit-card-icon" src="/assets/icons/credits.svg" mode="aspectFit"/>
+            <view class="store-credit-card-body">
+              <view class="store-credit-card-amount-row">
+                <text class="store-credit-card-num">{{creditBalance}}</text>
+                <text class="store-credit-card-unit">pts</text>
+              </view>
+              <text class="store-credit-card-label">{{lang === 'zh' ? '我的积分' : 'MY CREDITS'}}</text>
+            </view>
+          </view>
+          <view wx:if="{{cartCount > 0}}" class="store-cart-icon" bindtap="handleOpenCart">
+            <text class="store-cart-badge">{{cartCount}}</text>
+          </view>
         </view>
       </view>
 
@@ -921,17 +934,34 @@
 
         <block wx:elif="{{trainingView === 'list'}}">
 
-          <view wx:if="{{trainingDashboard}}" class="training-dashboard">
-            <view class="training-dashboard-credits">
-              <text class="training-dashboard-credits-num">{{trainingDashboard.total_credits}}</text>
-              <text class="training-dashboard-credits-label">{{lang === 'zh' ? '学分' : 'Credits'}}</text>
-            </view>
-            <view class="training-dashboard-stats">
-              <view class="training-dashboard-tier">
-                <text class="training-dashboard-tier-label">{{trainingDashboard.tier}}</text>
+          <view wx:if="{{trainingDashboard}}" class="academy-status-card">
+            <view class="academy-card-glow-tl"></view>
+            <view class="academy-card-glow-br"></view>
+
+            <view class="academy-card-header">
+              <text class="academy-card-header-label">{{lang === 'zh' ? '学院状态' : 'ACADEMY STATUS'}}</text>
+              <view class="academy-card-tier-badge">
+                <text class="academy-card-tier-text">{{trainingDashboard.tier}}</text>
               </view>
-              <text class="training-dashboard-stat">✅ {{trainingDashboard.completed_lessons}} {{lang === 'zh' ? '课' : 'lessons'}}</text>
-              <text class="training-dashboard-stat">🏅 {{trainingDashboard.certifications_count}} {{lang === 'zh' ? '证书' : 'certs'}}</text>
+            </view>
+
+            <view class="academy-card-hero">
+              <text class="academy-card-credits-num">{{trainingDashboard.total_credits}}</text>
+              <text class="academy-card-credits-label">{{lang === 'zh' ? '学分' : 'CREDITS'}}</text>
+            </view>
+
+            <view class="academy-card-divider"></view>
+
+            <view class="academy-card-stats">
+              <view class="academy-card-stat">
+                <text class="academy-card-stat-num">{{trainingDashboard.completed_lessons}}</text>
+                <text class="academy-card-stat-label">{{lang === 'zh' ? '完成课程' : 'LESSONS'}}</text>
+              </view>
+              <view class="academy-card-stat-sep"></view>
+              <view class="academy-card-stat">
+                <text class="academy-card-stat-num">{{trainingDashboard.certifications_count}}</text>
+                <text class="academy-card-stat-label">{{lang === 'zh' ? '证书' : 'CERTS'}}</text>
+              </view>
             </view>
           </view>
 
@@ -1133,6 +1163,77 @@
       </view>
     </scroll-view>
     <!-- end ACADEMY -->
+
+    <!-- ════ WELLNESS ════ -->
+    <scroll-view class="wellness-tab{{tab !== 'wellness' ? ' tab-hidden' : ''}}" scroll-y="true">
+      <view wx:if="{{wellnessLoading}}" class="wellness-loading">
+        <view class="pulse-dot"></view><view class="pulse-dot"></view><view class="pulse-dot"></view>
+      </view>
+
+      <view wx:if="{{!wellnessLoading}}">
+
+        <!-- All digital assets -->
+        <view wx:if="{{wellnessAssets.length === 0 && !deviceApkUrl}}" class="wellness-empty" style="padding:60rpx 28rpx;">
+          <text class="wellness-empty-text">{{t.wellnessEmpty}}</text>
+        </view>
+
+        <view wx:for="{{wellnessAssets}}" wx:key="id" class="wellness-section" style="padding-bottom:0;">
+          <!-- Audio asset -->
+          <view wx:if="{{item.mediaType === 'audio'}}" class="sleep-track-card" bindtap="playAudioAsset" data-track="{{item}}">
+            <view class="sleep-track-icon">
+              <text class="sleep-icon-glyph">{{sleepCurrentTrack.id === item.id && sleepPlaying ? '⏸' : '▶'}}</text>
+            </view>
+            <view class="sleep-track-info">
+              <text class="sleep-track-name">{{item.title_zh || item.title}}</text>
+              <text wx:if="{{item.duration_seconds}}" class="sleep-track-dur">{{item.duration_seconds >= 60 ? (item.duration_seconds / 60 | 0) + ' 分钟' : item.duration_seconds + ' 秒'}}</text>
+            </view>
+            <view wx:if="{{sleepCurrentTrack.id === item.id}}" class="sleep-track-active-dot"></view>
+          </view>
+
+          <!-- Video asset -->
+          <view wx:elif="{{item.mediaType === 'video'}}" class="media-asset-card" bindtap="openMediaAsset" data-asset="{{item}}">
+            <view class="media-asset-icon media-asset-icon--video">
+              <text class="media-asset-glyph">▶</text>
+            </view>
+            <view class="media-asset-info">
+              <text class="media-asset-name">{{item.title_zh || item.title}}</text>
+              <text wx:if="{{item.duration_seconds}}" class="media-asset-sub">{{item.duration_seconds >= 60 ? (item.duration_seconds / 60 | 0) + ' 分钟' : item.duration_seconds + ' 秒'}}</text>
+            </view>
+            <view class="media-asset-btn">
+              <text class="media-asset-btn-text">{{t.wellnessOpenLink}}</text>
+            </view>
+          </view>
+
+          <!-- Document / other asset -->
+          <view wx:else class="media-asset-card" bindtap="openMediaAsset" data-asset="{{item}}">
+            <view class="media-asset-icon media-asset-icon--doc">
+              <text class="media-asset-glyph">↓</text>
+            </view>
+            <view class="media-asset-info">
+              <text class="media-asset-name">{{item.title_zh || item.title}}</text>
+            </view>
+            <view class="media-asset-btn">
+              <text class="media-asset-btn-text">{{t.wellnessOpenLink}}</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- Now playing bar (audio) -->
+        <view wx:if="{{sleepCurrentTrack}}" class="sleep-now-playing" style="margin:16rpx 28rpx 0;">
+          <view class="sleep-np-info">
+            <text class="sleep-np-label">正在播放</text>
+            <text class="sleep-np-title">{{sleepCurrentTrack.title_zh || sleepCurrentTrack.title}}</text>
+          </view>
+          <view class="sleep-np-controls">
+            <view class="sleep-np-btn" bindtap="stopAudioAsset">
+              <text class="sleep-np-btn-icon">⏹</text>
+            </view>
+          </view>
+        </view>
+
+      </view>
+    </scroll-view>
+    <!-- end WELLNESS -->
 
   </view>
   <!-- end tab-content -->
@@ -1363,6 +1464,11 @@
       <view wx:if="{{tab === 'academy'}}" class="tab-line"></view>
       <image class="tab-icon-img" src="/assets/icons/training.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabAcademy}}</text>
+    </view>
+    <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'wellness' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="wellness">
+      <view wx:if="{{tab === 'wellness'}}" class="tab-line"></view>
+      <image class="tab-icon-img" src="/assets/icons/box.svg" mode="aspectFit" />
+      <text class="tab-label">{{t.tabWellness}}</text>
     </view>
   </view>
 

@@ -53,7 +53,10 @@ const CART_SETS = [
 
 const T = {
   zh: {
-    tabChat: '对话', tabHealth: '健康', tabDots: '原粒', tabPlans: '方案', tabStore: '补给', tabAcademy: '学院',
+    tabChat: '对话', tabHealth: '健康', tabDots: '原粒', tabPlans: '方案', tabStore: '补给', tabAcademy: '学院', tabWellness: '魔盒',
+    wellnessEmpty: '暂无内容',
+    wellnessDeviceTitle: '智能戒指', wellnessDeviceDownload: '复制下载链接', wellnessDeviceNoApk: '暂无可用版本',
+    wellnessDeviceVersion: '版本', wellnessOpenLink: '复制链接',
     loading: '加载中…',
     plansTitle: '健康方案',
     plansEmpty: '暂无进行中的健康方案',
@@ -229,7 +232,10 @@ const T = {
     },
   },
   en: {
-    tabChat: 'Chat', tabHealth: 'Health', tabDots: 'Dots', tabPlans: 'Plans', tabStore: 'Store', tabAcademy: 'Academy',
+    tabChat: 'Chat', tabHealth: 'Health', tabDots: 'Dots', tabPlans: 'Plans', tabStore: 'Store', tabAcademy: 'Academy', tabWellness: 'Box',
+    wellnessEmpty: 'No content yet',
+    wellnessDeviceTitle: 'Smart Ring', wellnessDeviceDownload: 'Copy Download Link', wellnessDeviceNoApk: 'No APK available',
+    wellnessDeviceVersion: 'Version', wellnessOpenLink: 'Copy Link',
     loading: 'Loading…',
     plansTitle: 'Health Plans',
     plansEmpty: 'No active health plans',
@@ -864,6 +870,16 @@ Page({
     upcomingReminders: [],
     remindersLoading: false,
 
+    // Magic Box tab
+    wellnessLoading: false,
+    wellnessAssets: [],        // all digital assets (with mediaType: 'audio'|'video'|'other')
+    sleepPlaying: false,
+    sleepCurrentTrack: null,
+    sleepPosition: 0,
+    sleepDuration: 0,
+    deviceApkVersion: '',
+    deviceApkUrl: '',
+
     // Academy tab
     trainingCourses: [],
     trainingLibrary: [],
@@ -994,6 +1010,9 @@ Page({
     }
     if (tab === 'academy' && this.data.trainingCourses.length === 0) {
       this._loadAcademy()
+    }
+    if (tab === 'wellness' && this.data.wellnessAssets.length === 0) {
+      this._loadWellness()
     }
   },
 
@@ -2850,6 +2869,93 @@ Page({
   _getCode() {
     return new Promise((resolve, reject) => {
       wx.login({ success: resolve, fail: reject })
+    })
+  },
+
+  // ── Wellness tab ─────────────────────────────────────────────────────────────
+
+  _bgAudio: null,
+
+  async _loadWellness() {
+    this.setData({ wellnessLoading: true })
+    try {
+      const cid = this.data.user?.channel_id
+      const [assetsRes, apkRes] = await Promise.allSettled([
+        this._req(`${BASE}/api/digital-assets${cid ? `?channel_id=${cid}` : ''}`),
+        this._req(`${BASE}/api/kino-upgrade`),
+      ])
+      const raw = assetsRes.status === 'fulfilled' ? (assetsRes.value.data?.assets || []) : []
+      const assets = raw.map(a => ({
+        ...a,
+        mediaType: (a.content_type || '').startsWith('audio/') ? 'audio'
+                 : (a.content_type || '').startsWith('video/') ? 'video'
+                 : 'other',
+      }))
+      const apk = apkRes.status === 'fulfilled' ? apkRes.value.data : {}
+      this.setData({
+        wellnessAssets: assets,
+        deviceApkVersion: apk?.version || '',
+        deviceApkUrl: apk?.url || '',
+        wellnessLoading: false,
+      })
+    } catch (err) {
+      this.setData({ wellnessLoading: false })
+    }
+  },
+
+  _initBgAudio() {
+    if (this._bgAudio) return
+    this._bgAudio = wx.getBackgroundAudioManager()
+    this._bgAudio.onPlay(() => this.setData({ sleepPlaying: true }))
+    this._bgAudio.onPause(() => this.setData({ sleepPlaying: false }))
+    this._bgAudio.onStop(() => this.setData({ sleepPlaying: false, sleepPosition: 0 }))
+    this._bgAudio.onEnded(() => this.setData({ sleepPlaying: false, sleepPosition: 0 }))
+    this._bgAudio.onTimeUpdate(() => {
+      this.setData({
+        sleepPosition: Math.floor(this._bgAudio.currentTime),
+        sleepDuration: Math.floor(this._bgAudio.duration) || this.data.sleepDuration,
+      })
+    })
+  },
+
+  playAudioAsset(e) {
+    const track = e.currentTarget.dataset.track
+    const current = this.data.sleepCurrentTrack
+    this._initBgAudio()
+    if (current?.id === track.id && this.data.sleepPlaying) {
+      this._bgAudio.pause()
+      return
+    }
+    this._bgAudio.src = track.url
+    this._bgAudio.title = track.title_zh || track.title
+    this._bgAudio.coverImgUrl = ''
+    this.setData({
+      sleepCurrentTrack: track,
+      sleepPosition: 0,
+      sleepDuration: track.duration_seconds || 0,
+    })
+  },
+
+  stopAudioAsset() {
+    this._bgAudio?.stop()
+    this.setData({ sleepCurrentTrack: null, sleepPlaying: false, sleepPosition: 0 })
+  },
+
+  openMediaAsset(e) {
+    const asset = e.currentTarget.dataset.asset
+    if (!asset?.url) return
+    wx.setClipboardData({
+      data: asset.url,
+      success: () => wx.showToast({ title: '链接已复制，请在浏览器打开', icon: 'none', duration: 2500 }),
+    })
+  },
+
+  copyApkUrl() {
+    const url = this.data.deviceApkUrl
+    if (!url) return
+    wx.setClipboardData({
+      data: url,
+      success: () => wx.showToast({ title: '链接已复制，请在浏览器打开', icon: 'none', duration: 2500 }),
     })
   },
 

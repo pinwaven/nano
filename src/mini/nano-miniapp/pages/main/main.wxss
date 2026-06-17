@@ -912,18 +912,103 @@
 /* ── Store tab ── */
 
 .store-header {
+  display: flex;
   flex-shrink: 0;
-  padding: 36rpx 36rpx 20rpx;
-  position: relative;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 28rpx 36rpx 20rpx;
 }
 
 .store-title {
-  font-size: 26rpx;
+  font-size: 34rpx;
   font-weight: 700;
-  letter-spacing: 2rpx;
-  text-transform: uppercase;
-  color: rgba(166, 196, 229, 0.4);
+  color: #EEF2FF;
 }
+
+.store-header-right {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.store-credit-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 18rpx;
+  position: relative;
+  overflow: hidden;
+  padding: 18rpx 28rpx 18rpx 22rpx;
+  background: linear-gradient(150deg, #1D3565 0%, #162E4A 100%);
+  border: 1rpx solid rgba(139, 159, 255, 0.45);
+  border-radius: 26rpx;
+  box-shadow: 0 8rpx 32rpx rgba(99, 117, 236, 0.35), inset 0 1rpx 0 rgba(255, 255, 255, 0.07);
+}
+
+.store-credit-card-glow {
+  position: absolute;
+  top: -28rpx;
+  right: -28rpx;
+  width: 110rpx;
+  height: 110rpx;
+  background: radial-gradient(circle, rgba(139, 159, 255, 0.22) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.store-credit-card-icon {
+  width: 48rpx;
+  height: 48rpx;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2rpx 8rpx rgba(99, 117, 236, 0.5));
+}
+
+.store-credit-card-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.store-credit-card-amount-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6rpx;
+}
+
+.store-credit-card-num {
+  font-size: 52rpx;
+  font-weight: 800;
+  line-height: 1;
+  color: #ffffff;
+  letter-spacing: -1rpx;
+}
+
+.store-credit-card-unit {
+  font-size: 18rpx;
+  font-weight: 600;
+  color: rgba(160, 180, 255, 0.65);
+  margin-bottom: 4rpx;
+}
+
+.store-credit-card-label {
+  font-size: 13rpx;
+  font-weight: 700;
+  letter-spacing: 2.5rpx;
+  color: rgba(139, 159, 255, 0.55);
+  margin-top: 6rpx;
+}
+
+.theme-light .store-credit-card {
+  background: linear-gradient(150deg, rgba(99, 117, 236, 0.12) 0%, rgba(99, 117, 236, 0.04) 100%);
+  border-color: rgba(99, 117, 236, 0.3);
+  box-shadow: 0 4rpx 20rpx rgba(99, 117, 236, 0.12);
+}
+
+.theme-light .store-credit-card-num { color: #1e2c8a; }
+.theme-light .store-credit-card-unit { color: rgba(75, 92, 210, 0.55); }
+.theme-light .store-credit-card-label { color: rgba(75, 92, 210, 0.45); }
 
 .store-scroll {
   flex: 1;
@@ -1225,11 +1310,9 @@
 /* ── Cart ── */
 
 .store-cart-icon {
-  position: absolute;
-  right: 36rpx;
-  top: 50%;
-  transform: translateY(-50%);
-  margin-top: 8rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .store-cart-badge {
@@ -2360,7 +2443,7 @@
 .theme-light .dots-empty          { color: var(--text-muted); }
 
 /* ── Store tab ── */
-.theme-light .store-title         { color: var(--text-muted); }
+.theme-light .store-title         { color: #1a2744; }
 .theme-light .store-subtab-btn    { border-color: rgba(201, 149, 106, 0.3); background: rgba(201, 149, 106, 0.06); color: var(--text-muted); }
 .theme-light .store-card          { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.18); }
 .theme-light .store-card-name     { color: var(--text); }
@@ -3291,19 +3374,122 @@ button.consent-row::after { border: none; }
 }
 
 /* ── Academy Credit Dashboard ─────────────────────────────────────────────── */
-.training-dashboard {
-  display: flex; align-items: center; gap: 24rpx;
-  background: linear-gradient(135deg, #1a2f4a, #1e3a5f);
-  border-radius: 20rpx; padding: 28rpx 24rpx; margin: 0 0 8rpx;
-  border: 1rpx solid rgba(99,101,241,0.3);
+.academy-status-card {
+  position: relative;
+  overflow: hidden;
+  margin: 24rpx 28rpx 16rpx;
+  padding: 32rpx 32rpx 28rpx;
+  background: linear-gradient(150deg, #1a1f62 0%, #1D3565 50%, #162E4A 100%);
+  border: 1rpx solid rgba(139, 159, 255, 0.38);
+  border-radius: 32rpx;
+  box-shadow: 0 12rpx 48rpx rgba(99, 117, 236, 0.32), inset 0 1rpx 0 rgba(255,255,255,0.06);
 }
-.training-dashboard-credits { text-align: center; flex-shrink: 0; }
-.training-dashboard-credits-num { display: block; font-size: 52rpx; font-weight: 800; color: #818cf8; line-height: 1; }
-.training-dashboard-credits-label { display: block; font-size: 20rpx; color: #7A9ABF; margin-top: 4rpx; }
-.training-dashboard-stats { flex: 1; display: flex; flex-direction: column; gap: 8rpx; }
-.training-dashboard-tier { display: inline-flex; align-items: center; background: rgba(99,101,241,0.2); border-radius: 8rpx; padding: 4rpx 14rpx; align-self: flex-start; margin-bottom: 4rpx; }
-.training-dashboard-tier-label { font-size: 22rpx; font-weight: 600; color: #818cf8; text-transform: capitalize; }
-.training-dashboard-stat { font-size: 23rpx; color: #A6C4E5; }
+
+.academy-card-glow-tl {
+  position: absolute; top: -70rpx; right: -50rpx;
+  width: 220rpx; height: 220rpx;
+  background: radial-gradient(circle, rgba(139,159,255,0.22) 0%, transparent 70%);
+  border-radius: 50%; pointer-events: none;
+}
+
+.academy-card-glow-br {
+  position: absolute; bottom: -50rpx; left: -30rpx;
+  width: 180rpx; height: 180rpx;
+  background: radial-gradient(circle, rgba(99,117,236,0.15) 0%, transparent 70%);
+  border-radius: 50%; pointer-events: none;
+}
+
+.academy-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 32rpx;
+}
+
+.academy-card-header-label {
+  font-size: 20rpx;
+  font-weight: 700;
+  letter-spacing: 3rpx;
+  color: rgba(139, 159, 255, 0.5);
+}
+
+.academy-card-tier-badge {
+  padding: 7rpx 22rpx;
+  background: linear-gradient(135deg, rgba(139,159,255,0.22), rgba(99,117,236,0.12));
+  border: 1rpx solid rgba(139, 159, 255, 0.38);
+  border-radius: 40rpx;
+}
+
+.academy-card-tier-text {
+  font-size: 20rpx;
+  font-weight: 700;
+  letter-spacing: 1.5rpx;
+  color: #A0B2FF;
+  text-transform: capitalize;
+}
+
+.academy-card-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: 28rpx;
+}
+
+.academy-card-credits-num {
+  font-size: 80rpx;
+  font-weight: 800;
+  line-height: 1;
+  color: #ffffff;
+  letter-spacing: -2rpx;
+}
+
+.academy-card-credits-label {
+  font-size: 16rpx;
+  font-weight: 700;
+  letter-spacing: 4rpx;
+  color: rgba(139, 159, 255, 0.5);
+  margin-top: 12rpx;
+}
+
+.academy-card-divider {
+  height: 1rpx;
+  background: linear-gradient(90deg, transparent, rgba(139,159,255,0.28), transparent);
+  margin-bottom: 24rpx;
+}
+
+.academy-card-stats {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.academy-card-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+}
+
+.academy-card-stat-sep {
+  width: 1rpx;
+  height: 48rpx;
+  background: rgba(139, 159, 255, 0.18);
+}
+
+.academy-card-stat-num {
+  font-size: 36rpx;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.academy-card-stat-label {
+  font-size: 16rpx;
+  font-weight: 600;
+  letter-spacing: 2rpx;
+  color: rgba(139, 159, 255, 0.5);
+}
 
 /* ── Learning Paths ───────────────────────────────────────────────────────── */
 .training-path-card {
@@ -3370,3 +3556,53 @@ button.consent-row::after { border: none; }
 .training-cert-info { flex: 1; }
 .training-cert-title { display: block; font-size: 27rpx; font-weight: 600; color: var(--text); }
 .training-cert-tier { display: block; font-size: 22rpx; color: #f59e0b; margin-top: 4rpx; text-transform: capitalize; }
+
+/* ── Wellness tab ─────────────────────────────────────────────────────────── */
+.wellness-tab { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+.wellness-loading { display: flex; gap: 16rpx; justify-content: center; align-items: center; padding: 80rpx 0; }
+.wellness-section { padding: 32rpx 28rpx 8rpx; }
+.wellness-section-title { display: block; font-size: 30rpx; font-weight: 700; color: var(--text); margin-bottom: 20rpx; letter-spacing: 0.5rpx; }
+.wellness-empty { padding: 24rpx 0 32rpx; }
+.wellness-empty-text { font-size: 26rpx; color: var(--text-muted); }
+
+/* Sleep track cards */
+.sleep-track-card { display: flex; align-items: center; gap: 20rpx; background: var(--navy-lift); border-radius: 18rpx; padding: 24rpx 20rpx; margin-bottom: 16rpx; border: 1rpx solid rgba(166,196,229,0.1); }
+.sleep-track-icon { width: 68rpx; height: 68rpx; border-radius: 50%; background: rgba(99,117,236,0.18); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sleep-icon-glyph { font-size: 28rpx; color: #6375EC; }
+.sleep-track-info { flex: 1; min-width: 0; }
+.sleep-track-name { display: block; font-size: 28rpx; font-weight: 600; color: var(--text); }
+.sleep-track-dur { display: block; font-size: 22rpx; color: var(--text-muted); margin-top: 6rpx; }
+.sleep-track-active-dot { width: 14rpx; height: 14rpx; border-radius: 50%; background: #6375EC; flex-shrink: 0; }
+
+/* Now-playing bar */
+.sleep-now-playing { display: flex; align-items: center; justify-content: space-between; background: rgba(99,117,236,0.15); border-radius: 14rpx; padding: 18rpx 20rpx; margin-top: 8rpx; border: 1rpx solid rgba(99,117,236,0.3); }
+.sleep-np-info { flex: 1; min-width: 0; }
+.sleep-np-label { display: block; font-size: 20rpx; color: #6375EC; font-weight: 600; margin-bottom: 4rpx; }
+.sleep-np-title { display: block; font-size: 26rpx; color: var(--text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sleep-np-controls { display: flex; gap: 16rpx; margin-left: 20rpx; }
+.sleep-np-btn { width: 56rpx; height: 56rpx; border-radius: 50%; background: rgba(99,117,236,0.2); display: flex; align-items: center; justify-content: center; }
+.sleep-np-btn-icon { font-size: 24rpx; color: #6375EC; }
+
+/* Video / document asset cards */
+.media-asset-card { display: flex; align-items: center; gap: 20rpx; background: var(--navy-lift); border-radius: 18rpx; padding: 24rpx 20rpx; margin-bottom: 16rpx; border: 1rpx solid rgba(166,196,229,0.1); }
+.media-asset-icon { width: 68rpx; height: 68rpx; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.media-asset-icon--video { background: rgba(239,68,68,0.15); }
+.media-asset-icon--doc { background: rgba(245,158,11,0.15); }
+.media-asset-glyph { font-size: 26rpx; color: #fff; }
+.media-asset-icon--video .media-asset-glyph { color: #ef4444; }
+.media-asset-icon--doc .media-asset-glyph { color: #f59e0b; }
+.media-asset-info { flex: 1; min-width: 0; }
+.media-asset-name { display: block; font-size: 28rpx; font-weight: 600; color: var(--text); }
+.media-asset-sub { display: block; font-size: 22rpx; color: var(--text-muted); margin-top: 6rpx; }
+.media-asset-btn { padding: 12rpx 20rpx; background: rgba(166,196,229,0.1); border-radius: 20rpx; border: 1rpx solid rgba(166,196,229,0.2); flex-shrink: 0; }
+.media-asset-btn-text { font-size: 22rpx; color: var(--text-sub); font-weight: 600; }
+
+/* Smart Ring APK card */
+.device-apk-card { display: flex; align-items: center; gap: 20rpx; background: var(--navy-lift); border-radius: 18rpx; padding: 24rpx 20rpx; border: 1rpx solid rgba(166,196,229,0.1); }
+.device-apk-icon { width: 68rpx; height: 68rpx; border-radius: 14rpx; background: rgba(16,185,129,0.15); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.device-apk-img { width: 40rpx; height: 40rpx; }
+.device-apk-info { flex: 1; min-width: 0; }
+.device-apk-name { display: block; font-size: 28rpx; font-weight: 600; color: var(--text); }
+.device-apk-version { display: block; font-size: 22rpx; color: var(--text-muted); margin-top: 4rpx; }
+.device-apk-btn { padding: 14rpx 24rpx; background: rgba(16,185,129,0.18); border-radius: 24rpx; border: 1rpx solid rgba(16,185,129,0.35); flex-shrink: 0; }
+.device-apk-btn-text { font-size: 22rpx; color: #10b981; font-weight: 600; }

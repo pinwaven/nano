@@ -13,7 +13,7 @@ import {
   Bug, AlertCircle, Image as ImageIcon,
   ClipboardList, ChevronUp, Send, Eye,
   BarChart2, Award, Archive, Box, Target, Filter, MessageSquare, FlaskConical, Shield,
-  LayoutDashboard,
+  LayoutDashboard, Sparkles, Music2,
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
@@ -182,7 +182,7 @@ function LoginScreen({ onLogin, sessionExpired }) {
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { dashboard: 'Dashboard', users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'CRM', lab: 'Lab', events: 'Events' },
+    nav: { dashboard: 'Dashboard', users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', rewards: 'Rewards', partners: 'Partners', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'CRM', lab: 'Lab', events: 'Events', digitalAssets: 'Media' },
     adminAccounts: { title: 'Admin Accounts', add: 'Add Admin', changePassword: 'Change Password', confirmDelete: 'Delete this admin account?', newPassword: 'New Password', usernameLabel: 'Username', passwordLabel: 'Password', count: (n) => `${n} account${n !== 1 ? 's' : ''}` },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
@@ -464,6 +464,7 @@ const T = {
       parentSkuLabel: 'Parent SKU', parentSkuPlaceholder: '— Select parent SKU —', parentSkuRequired: 'Please select a parent SKU',
       variantAttrs: 'Variant attributes', addAttr: '+ Add attribute', attrKeyPlaceholder: 'e.g. size', attrValuePlaceholder: 'e.g. M',
       suggestCode: 'Suggest code', parentBadge: 'PARENT', variantBadge: 'VARIANT', variantsCount: 'variants', addVariant: 'Add Variant',
+      aiFill: 'AI Auto-fill', aiFilling: 'Filling…', aiFillFailed: 'AI fill failed',
     },
     inventory: {
       selectChannel: 'Select a channel to manage its inventory',
@@ -840,7 +841,7 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { dashboard: '数据概览', users: '用户管理', coaches: 'COACH', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'CRM', lab: '检验中心', events: '线下活动' },
+    nav: { dashboard: '数据概览', users: '用户管理', coaches: 'COACH', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', rewards: '奖励管理', partners: '合伙人', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'CRM', lab: '检验中心', events: '线下活动', digitalAssets: '媒体资源' },
     adminAccounts: { title: '管理员账号', add: '添加管理员', changePassword: '修改密码', confirmDelete: '确认删除此管理员账号？', newPassword: '新密码', usernameLabel: '用户名', passwordLabel: '密码', count: (n) => `${n} 个账号` },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
@@ -1155,6 +1156,7 @@ const T = {
       parentSkuLabel: '父级 SKU', parentSkuPlaceholder: '— 选择父级 SKU —', parentSkuRequired: '请选择父级 SKU',
       variantAttrs: '变体属性', addAttr: '+ 添加属性', attrKeyPlaceholder: '例如 尺寸', attrValuePlaceholder: '例如 M',
       suggestCode: '自动生成编码', parentBadge: '父级', variantBadge: '变体', variantsCount: '个变体', addVariant: '添加变体',
+      aiFill: 'AI 自动填写', aiFilling: '填写中…', aiFillFailed: 'AI 填写失败',
     },
     inventory: {
       selectChannel: '请选择渠道以管理库存',
@@ -5968,6 +5970,40 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
           <div className="form-grid">
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ti.skuBinding} <span style={{ color: '#ef4444' }}>*</span></span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={form.sku_id || ''} onChange={e => {
+                  const skuId = e.target.value;
+                  if (!isEdit && skuId) {
+                    const sku = skus.find(s => String(s.id) === String(skuId));
+                    if (sku) {
+                      const autoKey = sku.sku_code.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+                      setForm(f => ({
+                        ...f,
+                        sku_id: skuId,
+                        key_name: autoKey,
+                        name_en: sku.name_en || f.name_en,
+                        name_zh: sku.name_zh || f.name_zh,
+                        desc_en: sku.desc_en || f.desc_en,
+                        desc_zh: sku.desc_zh || f.desc_zh,
+                        item_type: sku.item_type || f.item_type,
+                        unit_en: sku.unit_en || f.unit_en,
+                        unit_zh: sku.unit_zh || f.unit_zh,
+                      }));
+                      return;
+                    }
+                  }
+                  set('sku_id', skuId);
+                }} className="inline-select" style={{ width: '100%', borderColor: !form.sku_id ? '#ef4444' : undefined }}>
+                  <option value="">{ti.selectSku}</option>
+                  {skus.map(s => (
+                    <option key={s.id} value={s.id}>{s.sku_code} - {s.name_zh || s.name_en}</option>
+                  ))}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
             <label className="form-field">
               <span>{ti.keyName}</span>
               <input value={form.key_name} onChange={e => set('key_name', e.target.value)} disabled={isEdit} placeholder="e.g. health-checkup-basic" />
@@ -5978,18 +6014,6 @@ function ChannelInventoryItemModal({ item, channelId, skus = [], onClose, onSave
                 <select value={form.item_type} onChange={e => set('item_type', e.target.value)} className="inline-select" style={{ width: '100%' }}>
                   <option value="physical">{ti.physical}</option>
                   <option value="virtual">{ti.virtual}</option>
-                </select>
-                <ChevronDown size={11} className="select-chevron" />
-              </div>
-            </label>
-            <label className="form-field">
-              <span>{ti.skuBinding} <span style={{ color: '#ef4444' }}>*</span></span>
-              <div className="select-wrap" style={{ width: '100%' }}>
-                <select value={form.sku_id || ''} onChange={e => set('sku_id', e.target.value)} className="inline-select" style={{ width: '100%', borderColor: !form.sku_id ? '#ef4444' : undefined }}>
-                  <option value="">{ti.selectSku}</option>
-                  {skus.map(s => (
-                    <option key={s.id} value={s.id}>{s.sku_code} - {s.name_zh || s.name_en}</option>
-                  ))}
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -7783,8 +7807,39 @@ function SkuModal({ sku, onClose, onSave, channelId = null, allSkus = [], initia
         item_type: sku.item_type || 'physical', unit_zh: sku.unit_zh || '个', unit_en: sku.unit_en || 'pcs' }
     : { sku_code: '', name_zh: '', name_en: '', desc_zh: '', desc_en: '', item_type: 'physical', unit_zh: '个', unit_en: 'pcs' });
   const [busy, setBusy] = useState(false);
+  const [aiFilling, setAiFilling] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleAiFill = async () => {
+    setAiFilling(true); setError('');
+    try {
+      const res = await axios.post('/api/admin/ai-fill-sku', {
+        sku_code: form.sku_code,
+        name_en: form.name_en,
+        name_zh: form.name_zh,
+        desc_en: form.desc_en,
+        desc_zh: form.desc_zh,
+        item_type: form.item_type,
+        unit_en: form.unit_en,
+        unit_zh: form.unit_zh,
+      });
+      if (res.data.success && res.data.filled) {
+        const f = res.data.filled;
+        setForm(prev => ({
+          ...prev,
+          name_en: f.name_en || prev.name_en,
+          name_zh: f.name_zh || prev.name_zh,
+          desc_en: f.desc_en || prev.desc_en,
+          desc_zh: f.desc_zh || prev.desc_zh,
+          item_type: f.item_type || prev.item_type,
+          unit_en: f.unit_en || prev.unit_en,
+          unit_zh: f.unit_zh || prev.unit_zh,
+        }));
+      }
+    } catch (err) { setError(err.response?.data?.error || ts.aiFillFailed); }
+    finally { setAiFilling(false); }
+  };
 
   const parentSkus = allSkus.filter(s => s.is_parent && s.id !== sku?.id);
 
@@ -7833,7 +7888,12 @@ function SkuModal({ sku, onClose, onSave, channelId = null, allSkus = [], initia
       <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <span>{isEdit ? ts.editSkuTitle : ts.createSkuTitle}</span>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button type="button" className="btn-secondary" style={{ padding: '4px 10px', fontSize: 11, minHeight: 'auto', display: 'flex', alignItems: 'center', gap: 5 }} onClick={handleAiFill} disabled={aiFilling || busy}>
+              <Sparkles size={12} style={{ color: '#818cf8' }} />{aiFilling ? ts.aiFilling : ts.aiFill}
+            </button>
+            <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+          </div>
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
           <div className="form-field" style={{ marginBottom: 16 }}>
@@ -12825,6 +12885,218 @@ function DeleteDeviceConfirm({ device, onClose, onConfirm }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Digital Assets Tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+function DigitalAssetUploadModal({ onClose, onSave, fixedChannelId, channels, isSuperadmin }) {
+  const [form, setForm] = useState({
+    type: 'sleep_music', title: '', title_zh: '', duration_seconds: '', sort_order: '0',
+    channel_id: fixedChannelId ?? '',
+  });
+  const [file, setFile] = useState(null);
+  const [phase, setPhase] = useState('idle');
+  const [error, setError] = useState('');
+
+  const handleFile = (e) => setFile(e.target.files[0] || null);
+
+  const handleSubmit = async () => {
+    if (!file || !form.title || !form.type) { setError('Type, title, and file are required'); return; }
+    setError('');
+    try {
+      setPhase('uploading');
+      const presignRes = await axios.get(`/api/digital-assets/presign?filename=${encodeURIComponent(file.name)}&content_type=${encodeURIComponent(file.type || 'audio/mpeg')}`);
+      const { put_url, key } = presignRes.data;
+      await axios.put(put_url, file, { headers: { 'Content-Type': 'application/octet-stream' } });
+      setPhase('saving');
+      await axios.post('/api/digital-assets', {
+        type: form.type,
+        title: form.title,
+        title_zh: form.title_zh || null,
+        oss_key: key,
+        content_type: file.type || 'audio/mpeg',
+        duration_seconds: form.duration_seconds ? parseInt(form.duration_seconds) : null,
+        sort_order: parseInt(form.sort_order) || 0,
+        channel_id: form.channel_id ? parseInt(form.channel_id) : null,
+      });
+      setPhase('done');
+      setTimeout(onSave, 800);
+    } catch (err) {
+      setError(err?.response?.data?.error || err.message);
+      setPhase('idle');
+    }
+  };
+
+  const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: 8, background: '#0e1f3a', border: '1px solid rgba(166,196,229,0.2)', color: '#E8F0F8', fontSize: 14, boxSizing: 'border-box' };
+  const labelStyle = { fontSize: 12, color: '#8ca9c5', display: 'block', marginBottom: 4 };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ background: '#1a2744', borderRadius: 14, padding: 28, width: 420, maxWidth: '95vw' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+          <span style={{ fontWeight: 700, fontSize: 17, color: '#E8F0F8' }}>Upload Media Asset</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#8ca9c5', cursor: 'pointer', fontSize: 20 }}>×</button>
+        </div>
+        {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', marginBottom: 14, color: '#ef4444', fontSize: 13 }}>{error}</div>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Type</label>
+            <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))} style={inputStyle}>
+              <option value="sleep_music">Sleep Music</option>
+              <option value="guide_video">Guide Video</option>
+              <option value="document">Document</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Title (EN)</label>
+            <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Track title" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Title (ZH)</label>
+            <input value={form.title_zh} onChange={e => setForm(p => ({ ...p, title_zh: e.target.value }))} placeholder="中文标题" style={inputStyle} />
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <label style={labelStyle}>Duration (seconds)</label>
+              <input type="number" value={form.duration_seconds} onChange={e => setForm(p => ({ ...p, duration_seconds: e.target.value }))} placeholder="e.g. 1800" style={inputStyle} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={labelStyle}>Sort Order</label>
+              <input type="number" value={form.sort_order} onChange={e => setForm(p => ({ ...p, sort_order: e.target.value }))} style={inputStyle} />
+            </div>
+          </div>
+          {isSuperadmin && (
+            <div>
+              <label style={labelStyle}>Channel (leave blank for global)</label>
+              <select value={form.channel_id} onChange={e => setForm(p => ({ ...p, channel_id: e.target.value }))} style={inputStyle}>
+                <option value="">Global (all channels)</option>
+                {(channels || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
+          <div>
+            <label style={labelStyle}>File</label>
+            <input type="file" accept="audio/*,video/*,application/*" onChange={handleFile}
+              style={{ ...inputStyle, fontSize: 13 }} />
+          </div>
+        </div>
+        <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 8, background: 'transparent', border: '1px solid rgba(166,196,229,0.2)', color: '#8ca9c5', cursor: 'pointer' }}>Cancel</button>
+          <button onClick={handleSubmit} disabled={phase !== 'idle'}
+            style={{ padding: '9px 20px', borderRadius: 8, background: '#6375EC', border: 'none', color: '#fff', fontWeight: 600, cursor: phase !== 'idle' ? 'not-allowed' : 'pointer', opacity: phase !== 'idle' ? 0.7 : 1 }}>
+            {phase === 'uploading' ? 'Uploading…' : phase === 'saving' ? 'Saving…' : phase === 'done' ? 'Done ✓' : 'Upload'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DigitalAssetsTab({ session, channels, isSuperadmin, onRefresh }) {
+  const channelAdminId = !isSuperadmin ? session?.channelId : null;
+  const [filterChannelId, setFilterChannelId] = useState(channelAdminId ?? '');
+  const [assets, setAssets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = channelAdminId
+        ? ''
+        : (filterChannelId ? `?channel_id=${filterChannelId}` : '');
+      const res = await axios.get(`/api/digital-assets${params}`);
+      setAssets(res.data.assets || []);
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, [channelAdminId, filterChannelId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggleActive = async (asset) => {
+    await axios.put(`/api/digital-assets/${asset.id}`, { is_active: !asset.is_active });
+    load();
+  };
+
+  const deleteAsset = async (id) => {
+    if (!window.confirm('Delete this asset?')) return;
+    await axios.delete(`/api/digital-assets/${id}`);
+    load();
+  };
+
+  const TYPE_LABELS = { sleep_music: 'Sleep Music', guide_video: 'Guide Video', document: 'Document' };
+  const channelName = (id) => (channels || []).find(c => c.id === id)?.name || `ch.${id}`;
+
+  return (
+    <div style={{ padding: 28 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div>
+          <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)' }}>Media / Digital Assets</span>
+          {!isSuperadmin && session?.channelName && (
+            <span style={{ marginLeft: 10, fontSize: 13, color: '#8ca9c5' }}>{session.channelName}</span>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {isSuperadmin && (
+            <select value={filterChannelId} onChange={e => setFilterChannelId(e.target.value)}
+              style={{ padding: '7px 10px', borderRadius: 8, background: '#0e1f3a', border: '1px solid rgba(166,196,229,0.2)', color: '#E8F0F8', fontSize: 13 }}>
+              <option value="">Global</option>
+              {(channels || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
+          <button onClick={() => setModal('upload')}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, background: '#6375EC', border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}>
+            <Upload size={15} /> Upload
+          </button>
+        </div>
+      </div>
+      {loading ? (
+        <div style={{ color: '#8ca9c5', padding: 40, textAlign: 'center' }}>Loading…</div>
+      ) : assets.length === 0 ? (
+        <div style={{ color: '#8ca9c5', padding: 40, textAlign: 'center' }}>No assets yet. Upload one to get started.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {assets.map(a => (
+            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#1a2744', borderRadius: 10, padding: '14px 18px', border: '1px solid rgba(166,196,229,0.1)' }}>
+              <div style={{ width: 40, height: 40, borderRadius: 8, background: 'rgba(99,117,236,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Music2 size={18} color="#6375EC" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, color: '#E8F0F8', fontSize: 14 }}>{a.title_zh ? `${a.title_zh} / ${a.title}` : a.title}</div>
+                <div style={{ fontSize: 12, color: '#8ca9c5', marginTop: 2 }}>
+                  {TYPE_LABELS[a.type] || a.type}
+                  {a.duration_seconds ? ` · ${Math.floor(a.duration_seconds / 60)}m ${a.duration_seconds % 60}s` : ''}
+                  {isSuperadmin && a.channel_id ? ` · ${channelName(a.channel_id)}` : ''}
+                  {isSuperadmin && !a.channel_id ? ' · Global' : ''}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                <button onClick={() => toggleActive(a)}
+                  style={{ padding: '5px 12px', borderRadius: 6, border: 'none', background: a.is_active ? 'rgba(16,185,129,0.15)' : 'rgba(166,196,229,0.1)', color: a.is_active ? '#10b981' : '#8ca9c5', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+                  {a.is_active ? 'Active' : 'Inactive'}
+                </button>
+                <button onClick={() => deleteAsset(a.id)}
+                  style={{ padding: '5px 10px', borderRadius: 6, border: 'none', background: 'rgba(239,68,68,0.1)', color: '#ef4444', cursor: 'pointer', fontSize: 12 }}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {modal === 'upload' && (
+        <DigitalAssetUploadModal
+          onClose={() => setModal(null)}
+          onSave={() => { setModal(null); load(); }}
+          fixedChannelId={channelAdminId}
+          channels={channels}
+          isSuperadmin={isSuperadmin}
+        />
+      )}
+    </div>
+  );
+}
+
 function KoneApkUploadModal({ onClose, onSave }) {
   const { t } = useLang();
   const [form, setForm] = useState({ version: '', notes: '', setActive: true });
@@ -15667,7 +15939,8 @@ const PERMISSION_GROUPS = [
   { resource: 'lab',           actions: ['read','write'],          label: 'Lab' },
   { resource: 'kino',          actions: ['read'],                  label: 'Kino' },
   { resource: 'chips',         actions: ['read'],                  label: 'Chips' },
-  { resource: 'admin-accounts',actions: ['read','write'],          label: 'Admin Accounts' },
+  { resource: 'admin-accounts',  actions: ['read','write'],          label: 'Admin Accounts' },
+  { resource: 'digital-assets', actions: ['read','write','delete'], label: 'Media' },
 ];
 
 function PermissionGroupsEditor({ available, value, onChange }) {
@@ -17339,8 +17612,8 @@ function AdminPanel({ session, onLogout }) {
     { id: 'dots',     label: t.nav.dots,     icon: Droplets    },
     { id: 'store',     label: t.nav.store,      icon: ShoppingBag },
     { id: 'inventory', label: t.nav.inventory,  icon: Archive     },
-    { id: 'kino',     label: t.nav.kino,     icon: Cpu         },
-    { id: 'chips',    label: t.nav.chips,    icon: Layers      },
+    { id: 'kino',           label: t.nav.kino,          icon: Cpu    },
+    { id: 'chips',          label: t.nav.chips,         icon: Layers },
     { id: 'invites',  label: t.nav.invites,  icon: Tag         },
     { id: 'rewards',   label: t.nav.rewards,   icon: Coins          },
     { id: 'partners',  label: t.nav.partners,  icon: Award          },
@@ -17354,6 +17627,7 @@ function AdminPanel({ session, onLogout }) {
     { id: 'admin-accounts', label: t.nav.adminAccounts, icon: Settings2 },
     { id: 'coach-crm',     label: t.nav.coachCrm,     icon: Target        },
     { id: 'lab',           label: t.nav.lab,           icon: FlaskConical  },
+    { id: 'digital-assets', label: t.nav.digitalAssets, icon: Music2 },
   ];
 
   const visibleNAV = isSuperadmin
@@ -17421,7 +17695,8 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} />}
           {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} session={session} />}
           {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} machinePagination={data.kinoMachinePagination} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
-          {tab === 'chips'    && <ChipsTab    batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
+          {tab === 'chips'          && <ChipsTab         batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
+          {tab === 'digital-assets' && <DigitalAssetsTab session={session} channels={data.channels} isSuperadmin={isSuperadmin} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} coaches={data.coaches} session={session} onRefresh={fetchData} />}
           {tab === 'rewards'   && <RewardsTab />}
           {tab === 'partners'  && <PartnersTab users={data.users} session={session} />}

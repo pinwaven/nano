@@ -57,6 +57,7 @@ const CHANNEL_ADMIN_FULL_PERMS = [
     'tickets:read',
     'events:read','events:write','events:delete',
     'admin-accounts:read','admin-accounts:write',
+    'digital-assets:read','digital-assets:write','digital-assets:delete',
 ];
 
 // Maps legacy tab names to resource:action strings for backward compat.
@@ -79,6 +80,7 @@ const LEGACY_TAB_EXPANSION = {
     dots:             ['dots:read'],
     events:           ['events:read','events:write','events:delete'],
     'admin-accounts': ['admin-accounts:read','admin-accounts:write'],
+    'digital-assets': ['digital-assets:read','digital-assets:write','digital-assets:delete'],
     subchannels:      [],
 };
 
@@ -7116,6 +7118,7 @@ async function handleDeleteKinoDevice(id) {
 
 const KONE_APK_BUCKET  = process.env.KONE_APK_OSS_BUCKET  || 'kone-apk';
 const KONE_APK_CNAME   = process.env.KONE_APK_CNAME_DOMAIN || null;
+const OSS_CNAME        = process.env.OSS_CNAME_DOMAIN       || null;
 
 async function handleGetKinoUpgrade() {
     try {
@@ -7195,6 +7198,143 @@ async function handleGetKoneApkPresign() {
         const key = `apk/${id}.apk`;
         const put_url = ossLib.generatePresignedPutUrl(key, 3600, KONE_APK_BUCKET);
         const get_url = ossLib.generatePresignedGetUrl(key, 315360000, KONE_APK_BUCKET, KONE_APK_CNAME);
+        return { success: true, put_url, get_url, key };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Digital Assets Handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function handleGetDigitalAssets(query, adminCtx = {}) {
+    const { type } = query;
+    // Channel admins are always scoped to their channel; superadmins use query.channel_id (admin panel)
+    // or query.channel_id (miniapp passing user's channel). No channel_id → global assets only.
+    const isChannelAdmin = adminCtx.role === 'channel';
+    const effectiveChannelId = isChannelAdmin
+        ? adminCtx.channelId
+        : (query.channel_id ? parseInt(query.channel_id) : null);
+    try {
+        const params = [];
+        const conditions = [];
+        if (!isChannelAdmin) conditions.push('is_active = true');
+        if (type) {
+            params.push(type);
+            conditions.push(`type = $${params.length}`);
+        }
+        if (effectiveChannelId) {
+            params.push(effectiveChannelId);
+            // Return channel-specific assets + global assets (channel_id IS NULL) for miniapp;
+            // For admin panel (channel admin), return only their assets.
+            if (isChannelAdmin) {
+                conditions.push(`channel_id = $${params.length}`);
+            } else {
+                conditions.push(`(channel_id IS NULL OR channel_id = $${params.length})`);
+            }
+        } else {
+            conditions.push('channel_id IS NULL');
+        }
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+        const result = await pool.query(
+            `SELECT id, type, title, title_zh, oss_key, content_type, duration_seconds, sort_order, is_active, channel_id
+             FROM digital_assets ${where} ORDER BY sort_order ASC, id ASC`,
+            params
+        );
+        const assets = result.rows.map(row => ({
+            id: row.id,
+            type: row.type,
+            title: row.title,
+            title_zh: row.title_zh,
+            content_type: row.content_type,
+            duration_seconds: row.duration_seconds,
+            sort_order: row.sort_order,
+            is_active: row.is_active,
+            channel_id: row.channel_id,
+            url: ossLib.generatePresignedGetUrl(row.oss_key, 604800, null, OSS_CNAME),
+        }));
+        return { success: true, assets };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetDigitalAssets', error: err.message }));
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostDigitalAsset(body, adminCtx = {}) {
+    const { type, title, title_zh, oss_key, content_type, duration_seconds, sort_order } = body;
+    if (!type || !title || !oss_key) return { success: false, error: 'type, title, oss_key are required' };
+    // Channel admins always create for their own channel; superadmins can set any channel_id.
+    const channelId = adminCtx.role === 'channel'
+        ? adminCtx.channelId
+        : (body.channel_id ? parseInt(body.channel_id) : null);
+    try {
+        const result = await pool.query(
+            `INSERT INTO digital_assets (type, title, title_zh, oss_key, content_type, duration_seconds, channel_id, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+            [type, title, title_zh || null, oss_key, content_type || 'audio/mpeg',
+             duration_seconds || null, channelId, sort_order || 0]
+        );
+        return { success: true, id: result.rows[0].id };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostDigitalAsset', error: err.message }));
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutDigitalAsset(id, body, adminCtx = {}) {
+    const assetId = parseInt(id);
+    if (adminCtx.role === 'channel') {
+        const check = await pool.query('SELECT channel_id FROM digital_assets WHERE id = $1', [assetId]);
+        if (!check.rows.length || check.rows[0].channel_id !== adminCtx.channelId)
+            return { success: false, error: 'Not found' };
+    }
+    const fields = ['type', 'title', 'title_zh', 'oss_key', 'content_type', 'duration_seconds', 'is_active', 'sort_order'];
+    // Channel admins cannot reassign channel_id; superadmins can.
+    if (adminCtx.role === 'superadmin') fields.push('channel_id');
+    const updates = [];
+    const params = [];
+    for (const f of fields) {
+        if (body[f] !== undefined) {
+            params.push(body[f] === '' ? null : body[f]);
+            updates.push(`${f} = $${params.length}`);
+        }
+    }
+    if (updates.length === 0) return { success: false, error: 'No fields to update' };
+    params.push(assetId);
+    try {
+        await pool.query(`UPDATE digital_assets SET ${updates.join(', ')} WHERE id = $${params.length}`, params);
+        return { success: true };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePutDigitalAsset', error: err.message }));
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteDigitalAsset(id, adminCtx = {}) {
+    const assetId = parseInt(id);
+    if (adminCtx.role === 'channel') {
+        const check = await pool.query('SELECT channel_id FROM digital_assets WHERE id = $1', [assetId]);
+        if (!check.rows.length || check.rows[0].channel_id !== adminCtx.channelId)
+            return { success: false, error: 'Not found' };
+    }
+    try {
+        await pool.query('DELETE FROM digital_assets WHERE id = $1', [assetId]);
+        return { success: true };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleDeleteDigitalAsset', error: err.message }));
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetDigitalAssetsPresign(query) {
+    const { filename, content_type } = query;
+    try {
+        const ext = filename?.includes('.') ? filename.split('.').pop().toLowerCase() : 'bin';
+        const id = crypto.randomBytes(8).toString('hex');
+        const key = `assets/media/${id}.${ext}`;
+        const put_url = ossLib.generatePresignedPutUrl(key, 3600);
+        const get_url = ossLib.generatePresignedGetUrl(key, 315360000, null, OSS_CNAME);
         return { success: true, put_url, get_url, key };
     } catch (err) {
         return { success: false, error: err.message };
@@ -9416,6 +9556,53 @@ Rules: 3–8 questions; choose input_type that best fits each question; button_s
     }
 }
 
+async function handleAiFillSku(body) {
+    const { sku_code, name_en, name_zh, desc_en, desc_zh, item_type, unit_en, unit_zh } = body || {};
+    const systemPrompt = `You are a product catalog assistant for a precision health supplement and wellness platform. Given partial SKU information, fill in all missing fields and translate between Chinese and English as needed.
+
+Return ONLY valid JSON with no markdown fences, no explanation. Use this exact shape:
+{
+  "name_en": "Product name in English",
+  "name_zh": "产品名称（中文）",
+  "desc_en": "Short product description in English (1-2 sentences)",
+  "desc_zh": "产品简介（中文，1-2句）",
+  "item_type": "physical or virtual",
+  "unit_en": "e.g. 1 box / 1 session",
+  "unit_zh": "例如 1 盒 / 1 次"
+}
+
+Rules:
+- If a field already has a value, keep it unchanged.
+- If name_en exists but name_zh is missing, translate name_en to Chinese for name_zh (and vice versa).
+- If desc_en exists but desc_zh is missing, translate to Chinese (and vice versa).
+- If both name fields are missing, infer sensible names from the sku_code.
+- item_type should be "physical" for tangible goods (supplements, chips, kits) and "virtual" for services or digital access.
+- unit_en / unit_zh should describe one purchasable unit concisely.
+- Keep descriptions concise and suitable for a wellness product listing.`;
+
+    const userMsg = JSON.stringify({ sku_code, name_en, name_zh, desc_en, desc_zh, item_type, unit_en, unit_zh });
+    try {
+        const llmClient = getLlmClient();
+        const model = process.env.MODEL || 'qwen3.6-plus';
+        const completion = await llmClient.chat.completions.create({
+            model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userMsg },
+            ],
+        });
+        let text = (completion.choices[0].message.content || '').trim();
+        text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        let filled;
+        try { filled = JSON.parse(text); }
+        catch (e) { return { statusCode: 502, success: false, error: 'LLM returned invalid JSON', raw: text.slice(0, 500) }; }
+        return { success: true, filled };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleAiFillSku', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
 async function handlePostQuestionnaire(body) {
     const { name, name_zh, description, description_zh, type = 'custom', channel_id, created_by } = body || {};
     if (!name) return { statusCode: 400, success: false, error: 'name required' };
@@ -10639,6 +10826,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetKoneApkReleases();
             } else if (path.includes('/oss/kone-apk/presign')) {
                 result = await handleGetKoneApkPresign();
+            } else if (path === '/digital-assets/presign') {
+                result = await handleGetDigitalAssetsPresign(query);
+            } else if (path === '/digital-assets') {
+                result = await handleGetDigitalAssets(query, adminCtx);
             } else if (path.includes('/kino-devices')) {
                 result = await handleGetKinoDevices();
             } else if (path.match(/\/kino-chip-batches\/(\d+)\/chips/)) {
@@ -10930,6 +11121,8 @@ exports.handler = async (req, resp, context) => {
                 result = requireAdminTab(adminCtx, 'users') || await handlePostUsers(parsedBody);
             } else if (path.includes('/kone-apk-releases')) {
                 result = await handlePostKoneApkRelease(parsedBody);
+            } else if (path === '/digital-assets') {
+                result = await handlePostDigitalAsset(parsedBody, adminCtx);
             } else if (path.includes('/kino-chip-batches')) {
                 result = await handlePostKinoChipBatch(parsedBody);
             } else if (path.includes('/kino-chip-models')) {
@@ -11020,6 +11213,8 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/questionnaires\/(\d+)\/questions/)) {
                 const qid = path.match(/\/questionnaires\/(\d+)\/questions/)[1];
                 result = await handlePostQuestionnaireQuestion(qid, parsedBody);
+            } else if (path === '/admin/ai-fill-sku') {
+                result = await handleAiFillSku(parsedBody);
             } else if (path === '/questionnaires/generate') {
                 result = await handleGenerateQuestionnaire(parsedBody);
             } else if (path === '/questionnaires') {
@@ -11070,7 +11265,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostChat(parsedBody);
             }
         } else if (method === 'PUT') {
-            if (path.match(/\/kone-apk-releases\/(\d+)/)) {
+            if (path.match(/\/digital-assets\/(\d+)/)) {
+                const assetId = path.match(/\/digital-assets\/(\d+)/)[1];
+                result = await handlePutDigitalAsset(assetId, parsedBody, adminCtx);
+            } else if (path.match(/\/kone-apk-releases\/(\d+)/)) {
                 const releaseId = path.match(/\/kone-apk-releases\/(\d+)/)[1];
                 result = await handlePutKoneApkRelease(releaseId, parsedBody);
             } else if (path.match(/\/kino-chip-batches\/(\d+)/)) {
@@ -11247,7 +11445,10 @@ exports.handler = async (req, resp, context) => {
                 result = { success: false, error: `Unknown PUT route: ${path}` };
             }
         } else if (method === 'DELETE') {
-            if (path.match(/\/kone-apk-releases\/(\d+)/)) {
+            if (path.match(/\/digital-assets\/(\d+)/)) {
+                const assetId = path.match(/\/digital-assets\/(\d+)/)[1];
+                result = await handleDeleteDigitalAsset(assetId, adminCtx);
+            } else if (path.match(/\/kone-apk-releases\/(\d+)/)) {
                 const releaseId = path.match(/\/kone-apk-releases\/(\d+)/)[1];
                 result = await handleDeleteKoneApkRelease(releaseId);
             } else if (path.match(/\/kino-chip-batches\/(\d+)/)) {
