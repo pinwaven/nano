@@ -6,6 +6,70 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Refactored
+- **Worker and Admin Panel modularisation** — Both large monolith files have been split into focused domain modules to improve maintainability and reduce Claude Code editing errors caused by context-window overrun.
+
+  **Worker (`src/functions/worker/index.js`):** 11,635 → 1,019 lines. All handler functions extracted into `handlers/` (one file per domain) and shared auth/permission helpers extracted into `lib/auth.js`.
+
+  | Handler file | Domain |
+  |---|---|
+  | `handlers/academy.js` | Academy courses, lessons, certifications, learning paths |
+  | `handlers/admin-accounts.js` | Admin accounts, channel roles, admin login |
+  | `handlers/channels.js` | Channel CRUD, subchannel management, rewards/store/warehouse config |
+  | `handlers/chat.js` | AI chat, health advice, biomarkers, health events, health twin |
+  | `handlers/coach-groups.js` | Coach group CRUD and KPIs |
+  | `handlers/coaches.js` | Coach management, reminders, coach-user chat |
+  | `handlers/commissions.js` | Commission settings, payout generation |
+  | `handlers/crm.js` | Coach CRM — tags, pipeline, notes, campaigns, appointments, goals, NPS, KPIs, follow-up rules |
+  | `handlers/credits.js` | User credit balance, history, withdrawals |
+  | `handlers/digital-assets.js` | Digital assets, OSS presign, Kone APK releases |
+  | `handlers/dots.js` | Dots inventory, cartridges, dispense, orders, nutrition plan, formulation |
+  | `handlers/events.js` | Offline events (线下活动) |
+  | `handlers/health-plans.js` | Health plan templates, plans, checkins, milestones, health reports |
+  | `handlers/inventory.js` | Warehouse inventory stock |
+  | `handlers/kino.js` | Kino devices, chip batches, chip models, scan flow |
+  | `handlers/labs.js` | Lab providers, user mappings, lab reports, lab import |
+  | `handlers/login.js` | WeChat login (miniapp + app), phone binding, invite validation, referrals |
+  | `handlers/partners.js` | Partner system — types, rules, commission rules, referral network, payouts |
+  | `handlers/questionnaires.js` | Questionnaire CRUD, assignments, responses, AI fill |
+  | `handlers/reports.js` | Saved reports, admin report generation |
+  | `handlers/store.js` | SKUs, store items, orders |
+  | `handlers/tickets.js` | Support tickets |
+  | `handlers/users.js` | User CRUD, dashboard stats, biomarkers, notifications, invitations |
+  | `lib/auth.js` | Token sign/verify, permission constants, `requirePermission`, WeChat access-token cache |
+
+  **Admin Panel (`src/web/admin-panel/src/App.jsx`):** 17,761 → 284 lines. All tab components extracted into `tabs/` (one file per tab). Shared utilities and the translation object split into `shared.jsx` and `translations.js`.
+
+  | File | Contents |
+  |---|---|
+  | `translations.js` | The full `T` i18n object (EN + ZH) |
+  | `shared.jsx` | `LangCtx`, `useLang`, `PERMS`, `hasPermission`, `LoginScreen`, `StatCard`, `RichStatCard`, `Badge`, `fmt`, `fmtDate`, `bioAgeColor`, Kino normalisation helpers |
+  | `tabs/AcademyTab.jsx` | Academy — courses, lessons, library, certifications, learning paths |
+  | `tabs/AdminAccountsTab.jsx` | Admin account management |
+  | `tabs/ChannelTab.jsx` | Channel CRUD, subchannel config, `ChannelConfigModal` |
+  | `tabs/ChipsTab.jsx` | Kino chip batches and chip models |
+  | `tabs/CoachCRMTab.jsx` | Coach CRM kanban, campaigns, client drawer |
+  | `tabs/CoachTab.jsx` | Coach management, coach groups |
+  | `tabs/DashboardTab.jsx` | Dashboard KPIs and sparklines |
+  | `tabs/DigitalAssetsTab.jsx` | Digital asset upload and management |
+  | `tabs/DotsTab.jsx` | Dots catalogue management |
+  | `tabs/EventsTab.jsx` | Offline events |
+  | `tabs/HealthPlansTab.jsx` | Health plan templates and active plans |
+  | `tabs/InventoryTab.jsx` | Channel inventory, warehouses, SKUs |
+  | `tabs/InvitesTab.jsx` | Invite code management |
+  | `tabs/KinoTab.jsx` | Kino device management and APK releases |
+  | `tabs/LabTab.jsx` | Lab providers, user mappings, lab reports |
+  | `tabs/PartnersTab.jsx` | Partner system |
+  | `tabs/QuestionnairesTab.jsx` | Questionnaire CRUD, assignment, responses |
+  | `tabs/ReportsTab.jsx` | Saved reports and admin report generation |
+  | `tabs/RewardsTab.jsx` | Reward settings |
+  | `tabs/SimulatorsTab.jsx` | Kino and Nano simulators |
+  | `tabs/StoreTab.jsx` | Store items, orders, SKUs, stock adjustments |
+  | `tabs/TicketsTab.jsx` | Support tickets |
+  | `tabs/UsersTab.jsx` | User management, user detail, credit, referral network |
+
+  No functional changes — pure structural refactor. Build (`npm run build`) and worker syntax check (`node -e "require('./src/functions/worker/index.js')"`) both pass.
+
 ### Added
 - **Magic Box (魔盒) — Digital Asset Distribution** — New miniapp tab and admin panel section for distributing large digital files (audio, video, APK, documents) to channel members.
   - **Schema** (`migration_digital_assets.sql`): new `digital_assets` table with `type`, `title`, `title_zh`, `oss_key`, `content_type`, `duration_seconds`, `channel_id`, `is_active`, `sort_order`.
