@@ -7,6 +7,13 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 ## [Unreleased]
 
 ### Added
+- **Magic Box (魔盒) — Digital Asset Distribution** — New miniapp tab and admin panel section for distributing large digital files (audio, video, APK, documents) to channel members.
+  - **Schema** (`migration_digital_assets.sql`): new `digital_assets` table with `type`, `title`, `title_zh`, `oss_key`, `content_type`, `duration_seconds`, `channel_id`, `is_active`, `sort_order`.
+  - **Backend** (`index.js`): 5 new endpoints — `GET /api/digital-assets`, `POST /api/digital-assets`, `PUT /api/digital-assets/:id`, `DELETE /api/digital-assets/:id`, `GET /api/digital-assets/presign`. Channel admins are scoped to their own channel's assets. Presigned GET URLs use 7-day expiry and the `nano-oss.fros.cc` CNAME domain.
+  - **Miniapp — Box tab**: replaces the placeholder Wellness tab. Fetches all active assets for the user's channel. Audio assets play via `wx.getBackgroundAudioManager()` (lock-screen capable). Video/other assets copy a presigned download link to clipboard. Icon: `assets/icons/box.svg`. Tab label: **Box** (EN) / **魔盒** (ZH).
+  - **Admin panel — Media tab**: full CRUD for digital assets. Channel admins see only their channel's assets with no channel selector. Superadmins get a channel filter dropdown. Presigned PUT URLs power direct-to-OSS uploads. Tab is at the bottom of the sidebar and is granted via `CHANNEL_ADMIN_FULL_PERMS`.
+  - **OSS CNAME** (`nano-oss.fros.cc`): custom domain CNAME → `waven-nano.oss-cn-shanghai.aliyuncs.com`; `*.fros.cc` wildcard SSL cert bound via `aliyun oss bucket-cname --item certificate`. Download links are browser-accessible without raw OSS endpoint exposure. Full details: `docs/architecture/digital-assets.md`.
+
 - **SKU Variant System** — Products with multiple sizes, colours, or other attributes are now modelled with a parent-child relationship inside the `skus` table.
   - **Schema** (`migration_sku_variants.sql`): added `parent_sku_id UUID REFERENCES skus(id)`, `attributes JSONB DEFAULT '{}'`, and `is_parent BOOLEAN DEFAULT FALSE` to `skus`. Index on `parent_sku_id` for fast child lookups. All three columns default to their "standalone" state so existing rows are unaffected.
   - **Backend** (`index.js`): `handlePostSku` and `handlePutSku` now persist and return the three variant columns.
