@@ -81,6 +81,19 @@ async function handleGetKoneApkPresign() {
     }
 }
 
+async function handleGetKinoUpgrade() {
+    try {
+        const result = await pool.query(
+            `SELECT version, download_url FROM kone_apk_releases WHERE is_active = true LIMIT 1`
+        );
+        if (result.rows.length === 0) return { version: '', url: '' };
+        const row = result.rows[0];
+        return { version: row.version, url: row.download_url };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Digital Assets Handlers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -229,4 +242,5 @@ module.exports = {
     handlePutDigitalAsset,
     handleDeleteDigitalAsset,
     handleGetDigitalAssetsPresign,
+    handleGetKinoUpgrade,
 };

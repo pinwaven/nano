@@ -2,8 +2,44 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
   Plus, Pencil, Trash2, X, Check, Copy, Tag, UserCog, Settings2,
+  Building2, Users, Cpu, Activity,
 } from 'lucide-react';
 import { useLang, fmt, fmtDate, Badge, StatCard } from '../shared.jsx';
+
+const EMPTY_CHANNEL = {
+  key_name: '',
+  name: '',
+  logo_url: '',
+  parent_channel_id: '',
+  persona_type: 'nano',
+  locale: 'zh',
+  credit_exchange_rate: '1.0',
+  currency: 'CNY'
+};
+
+const SUB_AGE_KEYS_CONFIG = [
+  { key: 'ResilienceAge',    defaultZh: '抗压年龄',   defaultEn: 'Resilience Age' },
+  { key: 'CellularAge',      defaultZh: '细胞年龄',   defaultEn: 'Cellular Age' },
+  { key: 'MetabolicAge',     defaultZh: '代谢年龄',   defaultEn: 'Metabolic Age' },
+  { key: 'MicroVascularAge', defaultZh: '微血管年龄', defaultEn: 'Micro-Vascular Age' },
+];
+
+function uploadToOSS(url, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`Upload failed: HTTP ${xhr.status}`));
+    });
+    xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+    xhr.open('PUT', url);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.send(file);
+  });
+}
 
 function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose, onSave }) {
   const { t } = useLang();
@@ -801,11 +837,6 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
     finally { setRewardsLoading(false); }
   };
 
-  useEffect(() => {
-    if (activeTab === 'rewards') loadRewards();
-    if (activeTab === 'partner-tiers') loadTierCfg();
-  }, [activeTab, channel.id]);
-
   const isRoot = !channel.parent_channel_id;
   const canEditRates = isSuperadmin || isRoot || channel.can_customize_rewards;
 
@@ -839,6 +870,11 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
     } catch (e) { setTierCfgError(e.response?.data?.error || 'Failed to load'); }
     finally { setTierCfgLoading(false); }
   };
+
+  useEffect(() => {
+    if (activeTab === 'rewards') loadRewards();
+    if (activeTab === 'partner-tiers') loadTierCfg();
+  }, [activeTab, channel.id]);
 
   const saveTierCfg = async () => {
     setTierCfgSaving(true); setTierCfgError(''); setTierCfgMsg('');
