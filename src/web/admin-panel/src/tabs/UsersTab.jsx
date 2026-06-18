@@ -31,15 +31,33 @@ function CoachSelect({ userId, currentCoachId, coaches, onAssign }) {
   );
 }
 
+// ── Channel subtree helper ────────────────────────────────────────────────────
+
+function getChannelSubtree(channels, rootId) {
+  if (!rootId) return channels;
+  const id = parseInt(rootId);
+  const result = [];
+  const queue = [id];
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    const ch = channels.find(c => c.id === cur);
+    if (ch) result.push(ch);
+    channels.filter(c => parseInt(c.parent_channel_id) === cur).forEach(c => queue.push(c.id));
+  }
+  return result;
+}
+
 // ── User modal ────────────────────────────────────────────────────────────────
 
-function UserModal({ user, coaches, channels, onClose, onSave }) {
+function UserModal({ user, coaches, channels, session, onClose, onSave }) {
   const { t } = useLang();
   const isEdit = !!(user?.user_id || user?.id);
   const userId = user?.user_id || user?.id;
+  const defaultChannelId = !isEdit ? (session?.channelId ?? '') : '';
+  const visibleChannels = getChannelSubtree(channels, session?.channelId);
   const [form, setForm] = useState(isEdit
     ? { nickname: user.nickname || '', gender: user.gender || '', birth_date: user.birth_date ? user.birth_date.slice(0, 10) : '', language: user.language || 'zh', external_id: user.external_id || '', external_app: user.external_app || 'wechat', coach_id: user.coach_id ?? '', channel_id: user.channel_id ?? '', phone: user.phone || '', email: user.email || '', roles: user.roles || ['user'] }
-    : { ...EMPTY_USER });
+    : { ...EMPTY_USER, channel_id: defaultChannelId });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -132,7 +150,7 @@ function UserModal({ user, coaches, channels, onClose, onSave }) {
               <div className="select-wrap" style={{ width: '100%' }}>
                 <select value={form.channel_id} onChange={e => set('channel_id', e.target.value)} className="inline-select" style={{ width: '100%' }}>
                   <option value="">{t.modal.channelUnassigned}</option>
-                  {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {visibleChannels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -1586,7 +1604,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
         )}
       </>}
       </div>
-      {modal?.type === 'add'     && <UserModal user={null}       coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'add'     && <UserModal user={null}       coaches={coaches} channels={channels} session={session} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit'    && <UserModal user={modal.user} coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete'  && <DeleteConfirm user={modal.user} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
       {modal?.type === 'credits' && <UserCreditModal user={modal.user} onClose={() => setModal(null)} />}
