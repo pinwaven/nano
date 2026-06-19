@@ -409,7 +409,7 @@ async function handlePostChat(body) {
                     age: calculateAge(user.birth_date),
                     language: user.language,
                 },
-                biomarkers: biomarkerRow.data?.actual || {},
+                biomarkers: biomarkerRow.data?.estimated || {},
                 bioage: biomarkerRow.data?.bioage_profile || {},
                 dots: fetched.dots?.rows || [],
                 plan: fetched.plan?.rows[0]?.content || null,

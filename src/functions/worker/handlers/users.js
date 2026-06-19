@@ -72,6 +72,7 @@ async function handleGetUsers(channelId, query = {}) {
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
                     u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
                     u.referred_by_user_id, u.invited_by_invitation_id,
+                    u.bio_data as user_bio_data,
                     ru.nickname as referrer_nickname,
                     inv.code as invite_code,
                     inv_cu.nickname as inviter_nickname,
@@ -328,6 +329,7 @@ async function handleGetUser(user_id) {
         const res = await pool.query(
             `SELECT u.user_id, u.nickname, u.avatar_url, u.phone, u.email, u.language, u.gender,
                     u.birth_date, u.roles, u.coach_id, u.channel_id, u.created_at,
+                    u.bio_data as user_bio_data,
                     u.referred_by_user_id, u.invited_by_invitation_id,
                     ru.nickname as referrer_nickname,
                     inv.code as invite_code,

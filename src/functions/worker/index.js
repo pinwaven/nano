@@ -436,6 +436,15 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetCoachGroups(query, adminCtx);
             } else if (path.includes('/coach-kpis')) {
                 result = await handleGetCoachKpis(query);
+            } else if (path === '/release-notes') {
+                result = adminCtx.role !== 'superadmin'
+                    ? { statusCode: 403, success: false, error: 'Permission denied: superadmin only' }
+                    : await (async () => {
+                        const { rows } = await pool.query(
+                            'SELECT version, title, summary, published_at FROM release_notes ORDER BY published_at DESC'
+                        );
+                        return { success: true, entries: rows };
+                    })();
             } else if (path.includes('/follow-up-rules')) {
                 result = await handleGetFollowUpRules(query.coach_id);
             } else if (path.includes('/my-event-signups')) {

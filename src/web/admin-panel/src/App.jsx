@@ -5,12 +5,12 @@ import {
   Users, Droplets, UserCog, RefreshCcw,
   ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout,
   ShoppingBag, Package, Building2, Tag, Copy, Cpu, Layers, QrCode, Printer, ChevronLeft, ChevronRight, Download,
-  Coins, TrendingUp, Settings2,
+  Coins, TrendingUp, Settings2, Landmark,
   GraduationCap, Video, FileText, Upload, ExternalLink, Play, BookOpen,
   Bug, AlertCircle, Image as ImageIcon,
   ClipboardList, ChevronUp, Send, Eye,
   BarChart2, Award, Archive, Box, Target, Filter, MessageSquare, FlaskConical, Shield,
-  LayoutDashboard, Sparkles, Music2,
+  LayoutDashboard, Sparkles, Music2, ScrollText,
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
@@ -18,29 +18,27 @@ import {
 } from 'recharts';
 
 import { T, LoginScreen, LangCtx, useLang, PERMS, hasPermission, StatCard, RichStatCard, Badge, normalizeKinoMachinesPayload, buildKinoMachinesUrl } from './shared.jsx';
-import { AcademyTab } from './tabs/AcademyTab.jsx';
+import { ContentTab } from './tabs/ContentTab.jsx';
 import { AdminAccountsTab } from './tabs/AdminAccountsTab.jsx';
 import { ChannelTab } from './tabs/ChannelTab.jsx';
-import { ChipsTab } from './tabs/ChipsTab.jsx';
 import { CoachCRMTab } from './tabs/CoachCRMTab.jsx';
 import { CoachTab } from './tabs/CoachTab.jsx';
 import { DashboardTab } from './tabs/DashboardTab.jsx';
 import { DigitalAssetsTab } from './tabs/DigitalAssetsTab.jsx';
 import DotsTab from './tabs/DotsTab.jsx';
-import { EventsTab } from './tabs/EventsTab.jsx';
-import { HealthPlansTab } from './tabs/HealthPlansTab.jsx';
+import { FinanceTab } from './tabs/FinanceTab.jsx';
+import { HardwareTab } from './tabs/HardwareTab.jsx';
 import InventoryTab from './tabs/InventoryTab.jsx';
 import { InvitesTab } from './tabs/InvitesTab.jsx';
-import { KinoTab } from './tabs/KinoTab.jsx';
 import { LabTab } from './tabs/LabTab.jsx';
 import { PartnersTab } from './tabs/PartnersTab.jsx';
-import { QuestionnairesTab } from './tabs/QuestionnairesTab.jsx';
 import { ReportsTab } from './tabs/ReportsTab.jsx';
 import { RewardsTab } from './tabs/RewardsTab.jsx';
 import { SimulatorsTab } from './tabs/SimulatorsTab.jsx';
 import StoreTab from './tabs/StoreTab.jsx';
 import { TicketsTab } from './tabs/TicketsTab.jsx';
 import { UsersTab } from './tabs/UsersTab.jsx';
+import { ChangelogTab } from './tabs/ChangelogTab.jsx';
 
 axios.interceptors.request.use((config) => {
   const token = sessionStorage.getItem('nano_admin_token') || import.meta.env.VITE_API_TOKEN
@@ -69,7 +67,7 @@ function AdminPanel({ session, onLogout }) {
 
   const isSuperadmin = !session || session.role === 'superadmin';
   const isCmsAdmin = session?.role === 'channel' && session?.canManageSubchannels;
-  const SUPERADMIN_ONLY = new Set([]);
+  const SUPERADMIN_ONLY = new Set(['changelog']);
 
   const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], kinoMachinePagination: null, chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [], skus: [], inventoryStock: [] });
   const [loading, setLoading] = useState(true);
@@ -135,15 +133,12 @@ function AdminPanel({ session, onLogout }) {
     { id: 'dots',     label: t.nav.dots,     icon: Droplets    },
     { id: 'store',     label: t.nav.store,      icon: ShoppingBag },
     { id: 'inventory', label: t.nav.inventory,  icon: Archive     },
-    { id: 'kino',           label: t.nav.kino,          icon: Cpu    },
-    { id: 'chips',          label: t.nav.chips,         icon: Layers },
+    { id: 'hardware',       label: t.nav.hardware,      icon: Cpu    },
     { id: 'invites',  label: t.nav.invites,  icon: Tag         },
     { id: 'rewards',   label: t.nav.rewards,   icon: Coins          },
     { id: 'partners',  label: t.nav.partners,  icon: Award          },
-    { id: 'academy',   label: t.nav.academy,   icon: GraduationCap  },
-    { id: 'questionnaires', label: t.nav.questionnaires, icon: ClipboardList },
-    { id: 'health-plans',   label: t.nav.healthPlans,    icon: Activity      },
-    { id: 'events',         label: t.nav.events,         icon: Calendar      },
+    { id: 'finance',   label: t.nav.finance,   icon: Landmark       },
+    { id: 'content',   label: t.nav.content,   icon: GraduationCap  },
     { id: 'reports',        label: t.nav.reports,        icon: BarChart2     },
     { id: 'tickets',  label: t.nav.tickets,  icon: Bug            },
     { id: 'sims',     label: t.nav.sims,     icon: Layout,      disabled: true },
@@ -151,6 +146,7 @@ function AdminPanel({ session, onLogout }) {
     { id: 'coach-crm',     label: t.nav.coachCrm,     icon: Target        },
     { id: 'lab',           label: t.nav.lab,           icon: FlaskConical  },
     { id: 'digital-assets', label: t.nav.digitalAssets, icon: Music2 },
+    { id: 'changelog',      label: t.nav.changelog,      icon: ScrollText },
   ];
 
   const visibleNAV = isSuperadmin
@@ -217,22 +213,20 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} channels={data.channels} skus={data.skus || []} inventoryStock={data.inventoryStock || []} session={session} onRefresh={fetchData} />}
           {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} />}
           {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} session={session} />}
-          {tab === 'kino'     && <KinoTab      devices={data.kinoDevices} machinePagination={data.kinoMachinePagination} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} onRefresh={fetchData} />}
-          {tab === 'chips'          && <ChipsTab         batches={data.chipBatches} models={data.chipModels} onRefresh={fetchData} />}
+          {tab === 'hardware' && <HardwareTab devices={data.kinoDevices} machinePagination={data.kinoMachinePagination} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} chipBatches={data.chipBatches} chipModels={data.chipModels} onRefresh={fetchData} />}
           {tab === 'digital-assets' && <DigitalAssetsTab session={session} channels={data.channels} isSuperadmin={isSuperadmin} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} coaches={data.coaches} session={session} onRefresh={fetchData} />}
           {tab === 'rewards'   && <RewardsTab />}
           {tab === 'partners'  && <PartnersTab users={data.users} session={session} />}
-          {tab === 'academy'   && <AcademyTab />}
-          {tab === 'questionnaires' && <QuestionnairesTab channels={data.channels} users={data.users} coaches={data.coaches} />}
-          {tab === 'health-plans'   && <HealthPlansTab dots={data.dots} healthPlanTemplates={data.healthPlanTemplates || []} onRefresh={fetchData} />}
-          {tab === 'events'         && <EventsTab channels={data.channels} session={session} isSuperadmin={isSuperadmin} onRefresh={fetchData} />}
+          {tab === 'finance'   && <FinanceTab />}
+          {tab === 'content' && <ContentTab channels={data.channels} users={data.users} coaches={data.coaches} dots={data.dots} healthPlanTemplates={data.healthPlanTemplates || []} session={session} isSuperadmin={isSuperadmin} onRefresh={fetchData} />}
           {tab === 'reports'        && <ReportsTab />}
           {tab === 'tickets'  && <TicketsTab tickets={data.tickets} onRefresh={fetchData} />}
           {tab === 'sims'     && <SimulatorsTab />}
           {tab === 'admin-accounts' && <AdminAccountsTab accounts={data.adminAccounts} channels={data.channels} session={session} onRefresh={fetchData} />}
           {tab === 'coach-crm'     && <CoachCRMTab coaches={data.coaches} users={data.users} />}
           {tab === 'lab'           && <LabTab users={data.users} onRefresh={fetchData} />}
+          {tab === 'changelog'     && <ChangelogTab />}
         </div>
       </div>
     </LangCtx.Provider>

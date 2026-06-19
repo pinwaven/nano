@@ -70,6 +70,7 @@ async function handleGetChannelUsers(channelId, query = {}) {
         const listRes = await pool.query(`
             SELECT u.user_id, u.external_id, u.nickname, u.birth_date, u.language, u.gender,
                    u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
+                   u.bio_data AS user_bio_data,
                    b.bio_age, cu.nickname AS coach_name, ch.name AS channel_name,
                    COUNT(*) OVER() AS _total
             FROM users u

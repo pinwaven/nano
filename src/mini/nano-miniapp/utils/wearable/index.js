@@ -30,11 +30,15 @@ class WearableDevice {
 }
 
 // Factory — returns the right adapter for the given brand string.
-// brand: 'colmi'  (add more as new devices are supported)
+// brand: 'colmi' | 'x3'
 function createWearable(brand) {
   if (brand === 'colmi') {
     const ColmiRing = require('./colmi/index.js')
     return new ColmiRing()
+  }
+  if (brand === 'x3') {
+    const X3Ring = require('./x3/index.js')
+    return new X3Ring()
   }
   throw new Error(`Unknown wearable brand: ${brand}`)
 }

@@ -41,8 +41,8 @@
         <text class="menu-item-icon">★</text>
         <text class="menu-item-label">{{t.referralMenu}}</text>
       </view>
-      <view wx:if="{{!isGuest}}" class="menu-divider"></view>
-      <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openKinoSim">
+      <view wx:if="{{isAdmin || isSuperadmin}}" class="menu-divider"></view>
+      <view wx:if="{{isAdmin || isSuperadmin}}" class="menu-item" bindtap="openKinoSim">
         <text class="menu-item-icon">⬡</text>
         <text class="menu-item-label">{{t.kinoSimMenu}}</text>
       </view>
@@ -1162,6 +1162,11 @@
 
       </view>
     </scroll-view>
+    <!-- Floating back button for library-viewer — fixed so it stays visible while scrolling -->
+    <view wx:if="{{tab === 'academy' && trainingView === 'library-viewer'}}" class="library-float-back" bindtap="trainingBackToList">
+      <text class="library-float-back-arrow">‹</text>
+      <text class="library-float-back-label">{{t.training.backToCourses}}</text>
+    </view>
     <!-- end ACADEMY -->
 
     <!-- ════ WELLNESS ════ -->

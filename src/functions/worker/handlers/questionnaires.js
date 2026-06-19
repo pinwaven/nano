@@ -195,6 +195,16 @@ async function handlePostQuestionnaireResponse(body, saveChatMessage) {
                  VALUES ($1, $2, $3, CURRENT_TIMESTAMP)`,
                 [user_id, save_biomarker_type, JSON.stringify({ actual: answer })]
             );
+            // Mirror height/weight into bio_data so BioAge calculator and scan gate can read them
+            if (answer && (answer.height != null || answer.weight != null)) {
+                const bioMirror = {};
+                if (answer.height != null) bioMirror.height = answer.height;
+                if (answer.weight != null) bioMirror.weight = answer.weight;
+                await pool.query(
+                    `UPDATE users SET bio_data = bio_data || $1::jsonb, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`,
+                    [JSON.stringify(bioMirror), user_id]
+                );
+            }
         }
 
         // Mark assignment in_progress if pending

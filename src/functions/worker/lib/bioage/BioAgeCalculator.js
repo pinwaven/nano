@@ -139,7 +139,9 @@ class BioAgeCalculator {
     const rawBioAge     = this._mfiToAge(mFI_Actual);
     const rawDeviation  = rawBioAge - chronologicalAge;
     const compressed    = this._compress(rawDeviation);
-    return parseFloat((chronologicalAge + compressed).toFixed(1));
+    const cap           = 10 + Math.random() * 2; // random hard cap [10, 12] years from chrono age
+    const clamped       = Math.max(-cap, Math.min(cap, compressed));
+    return parseFloat((chronologicalAge + clamped).toFixed(1));
   }
 
   /**

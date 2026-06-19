@@ -19,10 +19,14 @@
  * @property {Array|null}  sleepSlots - [{type, min}] consecutive sleep stage periods
  * @property {Array|null}  hrSlots    - [{t, bpm}] per 5-min interval
  * @property {number|null} restingHr - bpm
- * @property {number|null} hrv       - ms (RMSSD)
- * @property {number|null} stress    - 0–100
- * @property {number|null} spo2      - % (SpO2 blood oxygen)
- * @property {number}      syncedAt  - Date.now()
+ * @property {number|null} hrv            - ms (RMSSD)
+ * @property {number|null} stress         - 0–100
+ * @property {number|null} spo2           - % (SpO2 blood oxygen)
+ * @property {number|null} breathRate     - breaths per minute (from HRV measurement)
+ * @property {number|null} heartRateFromHrv - bpm measured during HRV session
+ * @property {number|null} systolicBP     - mmHg systolic blood pressure
+ * @property {number|null} diastolicBP    - mmHg diastolic blood pressure
+ * @property {number}      syncedAt       - Date.now()
  */
 
 const { BASE } = require('../config.js')
@@ -37,8 +41,8 @@ const { BASE } = require('../config.js')
  */
 function syncWearableData(openid, snapshot, apiToken) {
   const now = new Date(snapshot.syncedAt)
-  const todayDate  = _utcDateStr(now, 0)
-  const sleepDate  = _utcDateStr(now, -1)   // sleep is overnight — belongs to the previous date
+  const todayDate  = _shanghaiDateStr(now, 0)
+  const sleepDate  = _shanghaiDateStr(now, -1)   // sleep is overnight — belongs to the previous date
   const recordedAt = now.toISOString()
   const src = snapshot.source
 
@@ -95,8 +99,9 @@ function syncWearableData(openid, snapshot, apiToken) {
     })
   }
 
-  // Per-measurement: HRV / stress / SpO₂ — each sync gets its own row (timestamp external_id)
+  // Per-measurement: HRV / stress / SpO₂ / BP — each sync gets its own row (timestamp external_id)
   const hasRealtime = snapshot.hrv != null || snapshot.stress != null || snapshot.spo2 != null
+    || snapshot.systolicBP != null || snapshot.breathRate != null
   if (hasRealtime) {
     const ts = new Date(snapshot.syncedAt).toISOString().replace(/[:.]/g, '')
     events.push({
@@ -106,9 +111,13 @@ function syncWearableData(openid, snapshot, apiToken) {
       recorded_at: recordedAt,
       external_id: `${src}_realtime_${ts}`,
       data: {
-        hrv_ms: snapshot.hrv    ?? null,
-        stress: snapshot.stress ?? null,
-        spo2:   snapshot.spo2   ?? null,
+        hrv_ms:       snapshot.hrv             ?? null,
+        stress:       snapshot.stress          ?? null,
+        spo2:         snapshot.spo2            ?? null,
+        breath_rate:  snapshot.breathRate      ?? null,
+        heart_rate_hrv: snapshot.heartRateFromHrv ?? null,
+        bp_systolic:  snapshot.systolicBP      ?? null,
+        bp_diastolic: snapshot.diastolicBP     ?? null,
       },
     })
   }
@@ -127,13 +136,11 @@ function syncWearableData(openid, snapshot, apiToken) {
   })
 }
 
-function _utcDateStr(date, dayOffset) {
-  const d = new Date(date)
+function _shanghaiDateStr(date, dayOffset) {
+  const OFFSET_MS = 8 * 60 * 60 * 1000
+  const d = new Date(date.getTime() + OFFSET_MS)
   d.setUTCDate(d.getUTCDate() + dayOffset)
-  const y  = d.getUTCFullYear()
-  const m  = String(d.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(d.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${dd}`
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
 module.exports = { syncWearableData }

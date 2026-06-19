@@ -376,7 +376,7 @@ function UserDetailModal({ user, onClose }) {
 
   if (!user) return null;
 
-  const bioData      = user.bio_data || {};
+  const bioData      = user.user_bio_data || {};
   const kinoRecs     = records.filter(r => r.test_type === 'kino_chip');
   const latestRec    = [...kinoRecs].reverse().find(r => r.data?.estimated) || null;
   const latestBm     = latestRec?.data?.estimated || null;

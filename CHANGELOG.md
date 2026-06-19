@@ -7,6 +7,20 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 ## [Unreleased]
 
 ### Refactored
+- **Admin Panel — hub tab consolidation** — The web admin panel sidebar was reduced from 24 tabs to 20 by grouping related tabs under three new hub wrappers. Each hub renders a top-level subtab row and delegates to the existing tab components unchanged; no backend changes.
+
+  | New hub tab | Replaces | Subtabs |
+  |---|---|---|
+  | **Hardware** (`tabs/HardwareTab.jsx`) | `kino` + `chips` | Devices (`KinoTab`) · Chips (`ChipsTab`) |
+  | **Content** (`tabs/ContentTab.jsx`) | `academy` + `questionnaires` + `health-plans` + `events` | Academy · Questionnaires · Health Plans · Events |
+  | **Finance** (`tabs/FinanceTab.jsx`) | scattered subtabs in Rewards + Partners + Store | Overview · Credit Withdrawals · Channel Payouts · Coach Commissions · Partner Payouts · Order Payments |
+
+  **Finance tab** additionally adds a new **Order Payments** subtab — the first UI surface that exposes `payment_status` management for orders (mark an unpaid order as paid via `PUT /api/orders/:id { payment_status: 'paid' }`). Previously `payment_status` was displayed read-only inside the Store orders row detail.
+
+  **Rewards tab** (`RewardsTab.jsx`) now shows only the Commission Settings subtab (rate config). Channel Payouts, Coach Commissions, and Credit Withdrawals subtabs moved to Finance.
+
+  **Partners tab** (`PartnersTab.jsx`) Payouts subtab moved to Finance; Partners, Commissions, Commission Rules, and Partner Types subtabs remain.
+
 - **Worker and Admin Panel modularisation** — Both large monolith files have been split into focused domain modules to improve maintainability and reduce Claude Code editing errors caused by context-window overrun.
 
   **Worker (`src/functions/worker/index.js`):** 11,635 → 1,019 lines. All handler functions extracted into `handlers/` (one file per domain) and shared auth/permission helpers extracted into `lib/auth.js`.
@@ -44,25 +58,28 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   |---|---|
   | `translations.js` | The full `T` i18n object (EN + ZH) |
   | `shared.jsx` | `LangCtx`, `useLang`, `PERMS`, `hasPermission`, `LoginScreen`, `StatCard`, `RichStatCard`, `Badge`, `fmt`, `fmtDate`, `bioAgeColor`, Kino normalisation helpers |
-  | `tabs/AcademyTab.jsx` | Academy — courses, lessons, library, certifications, learning paths |
+  | `tabs/AcademyTab.jsx` | Academy — courses, lessons, library, certifications, learning paths _(wrapped by ContentTab)_ |
   | `tabs/AdminAccountsTab.jsx` | Admin account management |
   | `tabs/ChannelTab.jsx` | Channel CRUD, subchannel config, `ChannelConfigModal` |
-  | `tabs/ChipsTab.jsx` | Kino chip batches and chip models |
+  | `tabs/ChipsTab.jsx` | Kino chip batches and chip models _(wrapped by HardwareTab)_ |
   | `tabs/CoachCRMTab.jsx` | Coach CRM kanban, campaigns, client drawer |
   | `tabs/CoachTab.jsx` | Coach management, coach groups |
+  | `tabs/ContentTab.jsx` | Hub: Academy · Questionnaires · Health Plans · Events |
   | `tabs/DashboardTab.jsx` | Dashboard KPIs and sparklines |
   | `tabs/DigitalAssetsTab.jsx` | Digital asset upload and management |
   | `tabs/DotsTab.jsx` | Dots catalogue management |
-  | `tabs/EventsTab.jsx` | Offline events |
-  | `tabs/HealthPlansTab.jsx` | Health plan templates and active plans |
+  | `tabs/EventsTab.jsx` | Offline events _(wrapped by ContentTab)_ |
+  | `tabs/FinanceTab.jsx` | Hub: Credit Withdrawals · Channel Payouts · Coach Commissions · Partner Payouts · Order Payments |
+  | `tabs/HardwareTab.jsx` | Hub: Kino Devices · Chips |
+  | `tabs/HealthPlansTab.jsx` | Health plan templates and active plans _(wrapped by ContentTab)_ |
   | `tabs/InventoryTab.jsx` | Channel inventory, warehouses, SKUs |
   | `tabs/InvitesTab.jsx` | Invite code management |
-  | `tabs/KinoTab.jsx` | Kino device management and APK releases |
+  | `tabs/KinoTab.jsx` | Kino device management and APK releases _(wrapped by HardwareTab)_ |
   | `tabs/LabTab.jsx` | Lab providers, user mappings, lab reports |
-  | `tabs/PartnersTab.jsx` | Partner system |
-  | `tabs/QuestionnairesTab.jsx` | Questionnaire CRUD, assignment, responses |
+  | `tabs/PartnersTab.jsx` | Partner system — Partners, Commissions, Commission Rules, Partner Types |
+  | `tabs/QuestionnairesTab.jsx` | Questionnaire CRUD, assignment, responses _(wrapped by ContentTab)_ |
   | `tabs/ReportsTab.jsx` | Saved reports and admin report generation |
-  | `tabs/RewardsTab.jsx` | Reward settings |
+  | `tabs/RewardsTab.jsx` | Commission rate settings only (payouts moved to FinanceTab) |
   | `tabs/SimulatorsTab.jsx` | Kino and Nano simulators |
   | `tabs/StoreTab.jsx` | Store items, orders, SKUs, stock adjustments |
   | `tabs/TicketsTab.jsx` | Support tickets |

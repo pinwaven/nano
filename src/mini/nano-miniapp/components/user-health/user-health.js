@@ -73,6 +73,15 @@ function _scoreBmi(bmi) {
   return Math.max(10, Math.round(bmi / 17 * 70))
 }
 
+function _scoreBp(sys, dia) {
+  if (sys == null || dia == null) return null
+  if (sys >= 140 || dia >= 90) return 20
+  if (sys >= 130 || dia >= 85) return 50
+  if (sys >= 120 || dia >= 80) return 75
+  if (sys < 85  || dia < 55)  return 60  // hypotension
+  return 100
+}
+
 const TWIN_COV_LABELS = {
   zh: { sleep: '睡眠', activity: '活动', vitals: '体征', lab_result: '化验', body_composition: '体成分' },
   en: { sleep: 'Sleep', activity: 'Activity', vitals: 'Vitals', lab_result: 'Labs', body_composition: 'Body' },
@@ -182,6 +191,9 @@ const T = {
     ringHrChart: '心率分布',
     ringSleepChart: '睡眠分期',
     ringDeep: '深睡', ringRem: 'REM', ringLight: '浅睡', ringAwake: '清醒',
+    x3IntervalTitle: '测量间隔',
+    metricHr: '心率', metricSpo2: 'SpO₂', metricTemp: '体温', metricHrv: 'HRV',
+    x3IntervalUnit: '分钟',
   },
   en: {
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -286,14 +298,14 @@ const T = {
     ringHrChart: 'Heart Rate by Hour',
     ringSleepChart: 'Sleep Stages',
     ringDeep: 'Deep', ringRem: 'REM', ringLight: 'Light', ringAwake: 'Awake',
+    x3IntervalTitle: 'Monitoring Intervals',
+    metricHr: 'Heart Rate', metricSpo2: 'SpO₂', metricTemp: 'Temp', metricHrv: 'HRV',
+    x3IntervalUnit: 'min',
   },
 }
 
 function _buildRingDisplayData(raw, isZh) {
-  const d = new Date(raw.syncedAt)
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  const syncLabel = isZh ? `已同步 ${hh}:${mm}` : `Synced ${hh}:${mm}`
+  const syncLabel = isZh ? `已同步 ${_shanghaiTimeStr(raw.syncedAt)}` : `Synced ${_shanghaiTimeStr(raw.syncedAt)}`
 
   let sleepStr = null, sleepDeepPct = 0, sleepLightPct = 0, sleepRemPct = 0, sleepAwakePct = 0
   if (raw.sleepMinutes != null && raw.sleepMinutes > 0) {
@@ -345,6 +357,14 @@ function _buildRingDisplayData(raw, isZh) {
   }
   const spo2Pct = raw.spo2 != null ? Math.min(100, Math.max(2, Math.round((raw.spo2 - 90) / 10 * 100))) : 0
 
+  // Blood pressure (X3 HRV measurement) + breath rate
+  let bpStr = null, bpColor = '#A6C4E5'
+  if (raw.systolicBP != null && raw.diastolicBP != null) {
+    bpStr = `${raw.systolicBP}/${raw.diastolicBP}`
+    bpColor = raw.systolicBP >= 140 ? '#ef4444' : raw.systolicBP >= 130 ? '#f97316' : raw.systolicBP >= 120 ? '#f97316' : '#10b981'
+  }
+  const breathRateStr = raw.breathRate != null ? String(raw.breathRate) : null
+
   // ── Slot charts ──
   const CHART_H = 72  // rpx height of bar chart area
 
@@ -353,7 +373,7 @@ function _buildRingDisplayData(raw, isZh) {
   if (raw.stepSlots && raw.stepSlots.length > 0) {
     const hrSteps = new Array(24).fill(0)
     for (const s of raw.stepSlots) {
-      hrSteps[new Date(s.t).getHours()] += s.steps
+      hrSteps[_shanghaiHour(s.t)] += s.steps
     }
     const maxS = Math.max(...hrSteps, 1)
     stepsBars = hrSteps.map((steps, h) => ({
@@ -368,7 +388,7 @@ function _buildRingDisplayData(raw, isZh) {
   if (raw.hrSlots && raw.hrSlots.length > 0) {
     const hrMap = {}
     for (const r of raw.hrSlots) {
-      const h = new Date(r.t).getHours()
+      const h = _shanghaiHour(r.t)
       if (!hrMap[h]) hrMap[h] = []
       hrMap[h].push(r.bpm)
     }
@@ -402,23 +422,44 @@ function _buildRingDisplayData(raw, isZh) {
     sleepStr, sleepDeepPct, sleepLightPct, sleepRemPct, sleepAwakePct,
     stepsStr, stepsPct,
     syncLabel,
-    hasSteps:  raw.steps       != null,
-    hasSleep:  raw.sleepMinutes != null && raw.sleepMinutes > 0,
-    hasHr:     raw.restingHr   != null,
-    hasHrv:    raw.hrv         != null,
-    hasStress: raw.stress      != null,
-    hasSpo2:   raw.spo2        != null,
+    hasSteps:      raw.steps        != null,
+    hasSleep:      raw.sleepMinutes != null && raw.sleepMinutes > 0,
+    hasHr:         raw.restingHr    != null,
+    hasHrv:        raw.hrv          != null,
+    hasStress:     raw.stress       != null,
+    hasSpo2:       raw.spo2         != null,
+    hasBp:         raw.systolicBP   != null && raw.diastolicBP != null,
+    hasBreathRate: raw.breathRate   != null,
     hrvColor, hrvPct,
     stressLabel, stressColor,
     spo2Color, spo2Pct,
+    bpStr, bpColor, breathRateStr,
     stepsBars, hrBars, sleepSegs, sleepTimeRange,
     hasSlotCharts: !!(stepsBars || hrBars || sleepSegs),
   }
 }
 
+const _CST_MS = 8 * 60 * 60 * 1000
+
+function _shanghaiDateStr(ts) {
+  const d = new Date((ts || Date.now()) + _CST_MS)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+}
+
+// Converts any timestamp (Unix ms or ISO string) to Shanghai (UTC+8) HH:MM string
+function _shanghaiTimeStr(t) {
+  const d = new Date(new Date(t).getTime() + _CST_MS)
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`
+}
+
+// Returns the Shanghai (UTC+8) hour (0–23) from any timestamp or ISO string
+function _shanghaiHour(t) {
+  return new Date(new Date(t).getTime() + _CST_MS).getUTCHours()
+}
+
 function _getRealtimeReadings(syncedAt) {
   try {
-    const todayStr = new Date(syncedAt || Date.now()).toISOString().slice(0, 10)
+    const todayStr = _shanghaiDateStr(syncedAt)
     const stored = wx.getStorageSync('wearable_realtime_today')
     if (!stored || stored.date !== todayStr) return []
     return stored.readings || []
@@ -427,12 +468,13 @@ function _getRealtimeReadings(syncedAt) {
 
 function _fmtRealtimeReadings(readings) {
   return readings.map(r => {
-    const d = new Date(r.t)
-    const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-    const hrvColor  = r.hrv    == null ? null : r.hrv >= 80 ? '#0ea5e9' : r.hrv >= 50 ? '#10b981' : r.hrv >= 30 ? '#f97316' : '#ef4444'
-    const spo2Color = r.spo2   == null ? null : r.spo2 >= 98 ? '#0ea5e9' : r.spo2 >= 95 ? '#10b981' : r.spo2 >= 90 ? '#f97316' : '#ef4444'
+    const time = _shanghaiTimeStr(r.t)
+    const hrvColor    = r.hrv    == null ? null : r.hrv >= 80 ? '#0ea5e9' : r.hrv >= 50 ? '#10b981' : r.hrv >= 30 ? '#f97316' : '#ef4444'
+    const spo2Color   = r.spo2   == null ? null : r.spo2 >= 98 ? '#0ea5e9' : r.spo2 >= 95 ? '#10b981' : r.spo2 >= 90 ? '#f97316' : '#ef4444'
     const stressColor = r.stress == null ? null : r.stress <= 25 ? '#10b981' : r.stress <= 50 ? '#6375EC' : r.stress <= 75 ? '#f97316' : '#ef4444'
-    return { time, hrv: r.hrv, stress: r.stress, spo2: r.spo2, hrvColor, spo2Color, stressColor }
+    const bpStr   = r.systolicBP != null && r.diastolicBP != null ? `${r.systolicBP}/${r.diastolicBP}` : null
+    const bpColor = r.systolicBP == null ? null : r.systolicBP >= 140 ? '#ef4444' : r.systolicBP >= 130 ? '#f97316' : r.systolicBP >= 120 ? '#f97316' : '#10b981'
+    return { time, hrv: r.hrv, stress: r.stress, spo2: r.spo2, hrvColor, spo2Color, stressColor, bpStr, bpColor, breathRate: r.breathRate ?? null }
   })
 }
 
@@ -679,15 +721,19 @@ Component({
     healthDomains: [],
     vitalGauges: [],
     twinBodyBar: null,
-    // Wearable device (Colmi ring)
+    // Wearable device
     wearableId: '',
     wearableName: '',
+    wearableBrand: '',   // 'x3' | 'colmi'
     wearableConnected: false,
     wearableBattery: 0,
     wearableBusy: false,
     ringMeasuring: false,
     ringSettingsOpen: false,
     ringData: null,
+    // X3 background-measurement intervals (minutes per metric type)
+    x3Intervals: { hr: 10, spo2: 30, temp: 30, hrv: 60 },
+    x3IntervalOpts: { hr: [5, 10, 15, 30], spo2: [5, 15, 30, 60], temp: [15, 30, 60], hrv: [30, 60, 120] },
   },
 
   observers: {
@@ -1669,6 +1715,28 @@ Component({
         })
       }
 
+
+      if (twin.avg_systolic_bp != null && twin.avg_diastolic_bp != null) {
+        const sys = Math.round(twin.avg_systolic_bp)
+        const dia = Math.round(twin.avg_diastolic_bp)
+        domainScores.bp = _scoreBp(sys, dia)
+        vitalGauges.push({
+          key: 'bp', label: isZh ? '血压' : 'Blood Pressure',
+          val: `${sys}/${dia}`, unit: 'mmHg',
+          score: domainScores.bp, color: '#ef4444',
+          trend: '', trendColor: '',
+          markerPct: Math.min(97, Math.max(2, Math.round((sys - 80) / 80 * 100))),
+          zones: [
+            { width: 12, color: '#0ea5e9' },
+            { width: 38, color: '#10b981' },
+            { width: 12, color: '#f97316' },
+            { width: 13, color: '#ef4444' },
+            { width: 25, color: '#7f1d1d' },
+          ],
+          sublabel: isZh ? '最优: <120/80' : 'Optimal: <120/80',
+        })
+      }
+
       if (twin.avg_spo2 != null) {
         const pct = twin.avg_spo2
         domainScores.spo2 = _scoreSpo2(pct)
@@ -1715,7 +1783,7 @@ Component({
       const avg = arr => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null
       const healthDomains = []
       const recoveryS = avg([domainScores.sleep, domainScores.hrv].filter(v => v != null))
-      const cardioS   = avg([domainScores.hr, domainScores.spo2].filter(v => v != null))
+      const cardioS   = avg([domainScores.hr, domainScores.spo2, domainScores.bp].filter(v => v != null))
       const activityS = avg([domainScores.steps].filter(v => v != null))
       const bodyS     = avg([domainScores.bmi].filter(v => v != null))
 
@@ -1847,7 +1915,10 @@ Component({
       try {
         const saved = wx.getStorageSync('wearable_device')
         if (saved && saved.deviceId) {
-          this.setData({ wearableId: saved.deviceId, wearableName: saved.name || 'Colmi Ring', wearableConnected: false })
+          const fallbackName = saved.brand === 'x3' ? 'X3 Ring' : 'Colmi Ring'
+          const x3Saved = wx.getStorageSync('x3_interval_settings')
+          const x3Intervals = x3Saved ? { ...this.data.x3Intervals, ...x3Saved } : this.data.x3Intervals
+          this.setData({ wearableId: saved.deviceId, wearableName: saved.name || fallbackName, wearableConnected: false, wearableBrand: saved.brand || 'colmi', x3Intervals })
         }
         const rawRing = wx.getStorageSync('wearable_ring_data')
         if (rawRing && rawRing.syncedAt) {
@@ -1879,9 +1950,11 @@ Component({
       const t = this.data.t
       this.setData({ wearableBusy: true })
       try {
-        const ColmiRing = require('../../utils/wearable/colmi/index.js')
         const { BLEManager } = require('../../utils/wearable/ble-manager.js')
         const { COLMI_NAME_PREFIXES } = require('../../utils/wearable/colmi/protocol.js')
+        const { X3_NAME_PREFIXES } = require('../../utils/wearable/x3/protocol.js')
+        const { createWearable } = require('../../utils/wearable/index.js')
+        const ALL_PREFIXES = [...COLMI_NAME_PREFIXES, ...X3_NAME_PREFIXES]
 
         // Open BLE adapter — this prompts the user to enable Bluetooth if off
         const mgr = new BLEManager()
@@ -1895,7 +1968,7 @@ Component({
           wx.onBluetoothDeviceFound((res) => {
             for (const d of res.devices) {
               if (!d.name) continue
-              if (!COLMI_NAME_PREFIXES.some((p) => d.name.startsWith(p))) continue
+              if (!ALL_PREFIXES.some((p) => d.name.startsWith(p))) continue
               found.set(d.deviceId, { deviceId: d.deviceId, name: d.name, rssi: d.RSSI })
             }
           })
@@ -1929,17 +2002,19 @@ Component({
         })
 
         wx.showLoading({ title: t.wearableConnecting, mask: true })
-        const ring = new ColmiRing()
+        const brand = chosen.name.startsWith('X3') ? 'x3' : 'colmi'
+        const ring = createWearable(brand)
         await ring.connect(chosen.deviceId, { syncTime: true })
         const battery = await ring.getBattery()
         await ring.disconnect()
         wx.hideLoading()
 
-        const saved = { deviceId: chosen.deviceId, name: chosen.name }
+        const saved = { deviceId: chosen.deviceId, name: chosen.name, brand }
         wx.setStorageSync('wearable_device', saved)
         this.setData({
           wearableId: chosen.deviceId,
           wearableName: chosen.name,
+          wearableBrand: brand,
           wearableConnected: true,
           wearableBattery: battery.level,
           wearableBusy: false,
@@ -1957,10 +2032,75 @@ Component({
       const lang = this.properties.lang || 'zh'
       const isZh = lang !== 'en'
       this.setData({ wearableBusy: true, ringMeasuring: false })
-      const ColmiRing = require('../../utils/wearable/colmi/index.js')
-      const ring = new ColmiRing()
+      const { createWearable } = require('../../utils/wearable/index.js')
+      const _savedDev = wx.getStorageSync('wearable_device') || {}
+      const brand = _savedDev.brand || 'colmi'
+      const ring = createWearable(brand)
 
-      // ── Phase 1: connect + read stored data (few seconds, blocking modal) ──
+      // ── X3: single-phase sync — all data is historical, no real-time measurement needed ──
+      if (brand === 'x3') {
+        try {
+          await new Promise((resolve, reject) =>
+            wx.authorize({ scope: 'scope.bluetooth', success: resolve, fail: reject })
+          )
+          wx.showLoading({ title: t.wearableConnecting, mask: true })
+          await ring.connect(this.data.wearableId)
+          // Apply background measurement intervals (silently, failures are non-fatal)
+          const _ivals = this.data.x3Intervals
+          const _baseOpts = { workMode: 1, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
+          await ring.setAutoMonitoring({ ..._baseOpts, intervalMinutes: _ivals.hr,   type: 1 }).catch(() => {})
+          await ring.setAutoMonitoring({ ..._baseOpts, intervalMinutes: _ivals.spo2, type: 2 }).catch(() => {})
+          await ring.setAutoMonitoring({ ..._baseOpts, intervalMinutes: _ivals.temp, type: 3 }).catch(() => {})
+          await ring.setAutoMonitoring({ ..._baseOpts, intervalMinutes: _ivals.hrv,  type: 4 }).catch(() => {})
+          const battery = await ring.getBattery()
+          const steps   = await ring.getSteps().catch(() => null)
+          const sleep   = await ring.getSleep().catch(() => null)
+          const hrLog   = await ring.getHeartRateLog().catch(() => null)
+          const hrvData = await ring.getHrvLog().catch(() => null)
+          const spo2    = await ring.getSpo2Log().catch(() => null)
+          await ring.disconnect()
+          wx.hideLoading()
+
+          const hrEntries = (hrLog || []).filter(r => r.value > 0)
+          const restingHr = hrEntries.length ? Math.min(...hrEntries.map(r => r.value)) : null
+          const raw = {
+            steps:        steps?.steps       ?? null,
+            calories:     steps?.calories    ?? null,
+            distance:     steps?.distance    ?? null,
+            stepSlots:    steps?.slots       ?? null,
+            sleepMinutes: (sleep?.totalMinutes > 0) ? sleep.totalMinutes : null,
+            sleepDeep:    sleep?.deep        ?? null,
+            sleepLight:   sleep?.light       ?? null,
+            sleepRem:     sleep?.rem         ?? null,
+            sleepAwake:   sleep?.awake       ?? null,
+            sleepStart:   sleep?.sleepStart  ?? null,
+            sleepEnd:     sleep?.sleepEnd    ?? null,
+            sleepSlots:   sleep?.periods?.map(p => ({ type: p.typeName, min: p.minutes })) ?? null,
+            hrSlots:         hrEntries.map(r => ({ t: r.timestamp.toISOString(), bpm: r.value })),
+            restingHr,
+            hrv:             hrvData?.hrv       ?? null,
+            stress:          hrvData?.stress    ?? null,
+            spo2:            spo2               ?? null,
+            breathRate:      hrvData?.breath    ?? null,
+            heartRateFromHrv: hrvData?.heartRate ?? null,
+            systolicBP:      hrvData?.highBP    ?? null,
+            diastolicBP:     hrvData?.lowBP     ?? null,
+            syncedAt: Date.now(),
+          }
+          this._commitRingData(raw, battery.level, isZh, false)
+        } catch (e) {
+          wx.hideLoading()
+          await ring.disconnect().catch(() => {})
+          wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
+          this.setData({ wearableConnected: false, wearableBusy: false })
+        } finally {
+          this.setData({ wearableBusy: false, ringMeasuring: false })
+        }
+        return
+      }
+
+      // ── Colmi: two-phase sync ──
+      // Phase 1: connect + read stored data (few seconds, blocking modal)
       let battery, steps, sleep, hrLog
       try {
         await new Promise((resolve, reject) =>
@@ -2004,7 +2144,7 @@ Component({
       }
       this._commitRingData(rawPhase1, battery.level, isZh, true)
 
-      // ── Phase 2: HRV + stress + SpO2 (background — no blocking modal) ──
+      // Phase 2: HRV + stress + SpO2 (background — no blocking modal)
       this.setData({ wearableBusy: false, ringMeasuring: true })
       try {
         const spo2   = await ring.getRealtime('spo2',      60000).catch(() => null)
@@ -2027,22 +2167,26 @@ Component({
       syncWearableData(this.properties.userId, { source: 'smart_ring', ...raw }, app?.globalData?.apiToken).catch(() => {})
 
       // Accumulate today's realtime (Phase 2) readings in local storage
-      if (!isPartial && (raw.hrv != null || raw.stress != null || raw.spo2 != null)) {
-        const todayStr = new Date(raw.syncedAt).toISOString().slice(0, 10)
+      if (!isPartial && (raw.hrv != null || raw.stress != null || raw.spo2 != null || raw.systolicBP != null)) {
+        const todayStr = _shanghaiDateStr(raw.syncedAt)
         let stored = wx.getStorageSync('wearable_realtime_today') || { date: todayStr, readings: [] }
         if (stored.date !== todayStr) stored = { date: todayStr, readings: [] }
-        stored.readings.push({ t: raw.syncedAt, hrv: raw.hrv, stress: raw.stress, spo2: raw.spo2 })
+        stored.readings.push({
+          t: raw.syncedAt, hrv: raw.hrv, stress: raw.stress, spo2: raw.spo2,
+          systolicBP: raw.systolicBP ?? null, diastolicBP: raw.diastolicBP ?? null,
+          breathRate: raw.breathRate ?? null,
+        })
         wx.setStorageSync('wearable_realtime_today', stored)
       }
 
       const realtimeReadings = _fmtRealtimeReadings(_getRealtimeReadings(raw.syncedAt))
       const ringData = { ..._buildRingDisplayData(raw, isZh), realtimeReadings, hasRealtimeReadings: realtimeReadings.length > 0 }
       const virtualTwin = {
-        avg_daily_steps: raw.steps,
-        avg_sleep_hours: raw.sleepMinutes != null ? raw.sleepMinutes / 60 : null,
-        avg_resting_hr:  raw.restingHr,
-        avg_hrv_ms:      raw.hrv,
-        avg_spo2:        raw.spo2 ?? null,
+        avg_daily_steps:  raw.steps,
+        avg_sleep_hours:  raw.sleepMinutes != null ? raw.sleepMinutes / 60 : null,
+        avg_resting_hr:   raw.restingHr,
+        avg_hrv_ms:       raw.hrv,
+        avg_spo2:         raw.spo2 ?? null,
         latest_bmi: null, trend_data: {},
       }
       const visuals = this._buildTwinVisuals(virtualTwin, T[isZh ? 'zh' : 'en'], isZh)
@@ -2060,6 +2204,13 @@ Component({
       this.setData({ ringSettingsOpen: !this.data.ringSettingsOpen })
     },
 
+    handleIntervalChange(e) {
+      const { type, min } = e.currentTarget.dataset
+      const x3Intervals = { ...this.data.x3Intervals, [type]: min }
+      this.setData({ x3Intervals })
+      wx.setStorageSync('x3_interval_settings', x3Intervals)
+    },
+
     handleUnbindWearable() {
       this.setData({ ringSettingsOpen: false })
       const t = this.data.t
@@ -2071,7 +2222,8 @@ Component({
           if (res.confirm) {
             wx.removeStorageSync('wearable_device')
             wx.removeStorageSync('wearable_ring_data')
-            this.setData({ wearableId: '', wearableName: '', wearableConnected: false, wearableBattery: 0, ringData: null })
+            wx.removeStorageSync('x3_interval_settings')
+            this.setData({ wearableId: '', wearableName: '', wearableBrand: '', wearableConnected: false, wearableBattery: 0, ringData: null })
           }
         },
       })

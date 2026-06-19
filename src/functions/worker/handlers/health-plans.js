@@ -164,7 +164,7 @@ async function handlePostJoinHealthPlan(body) {
             [openid]
         );
         const baseline_data = bioRow.rows.length > 0
-            ? { bioage_profile: bioRow.rows[0].data?.bioage_profile || {}, biomarkers: bioRow.rows[0].data?.actual || {} }
+            ? { bioage_profile: bioRow.rows[0].data?.bioage_profile || {}, biomarkers: bioRow.rows[0].data?.estimated || {} }
             : {};
 
         // Resolve duration and reminders from template

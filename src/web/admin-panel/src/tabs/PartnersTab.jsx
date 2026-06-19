@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Users, Coins, TrendingUp, Settings2, Plus, Pencil, Trash2, X, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { Users, Coins, Settings2, Plus, Pencil, Trash2, X, Check, ChevronDown } from 'lucide-react';
 import { useLang, fmtDate, StatCard, Badge } from '../shared.jsx';
 
 function PartnersTab({ users = [], session }) {
@@ -9,14 +9,8 @@ function PartnersTab({ users = [], session }) {
   const [subTab, setSubTab] = useState('partners');
   const [partners, setPartners] = useState([]);
   const [commissions, setCommissions] = useState([]);
-  const [payouts, setPayouts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [tierCfg, setTierCfg] = useState(null);
-  const [generating, setGenerating] = useState(false);
-  const [generatePeriod, setGeneratePeriod] = useState(() => {
-    const n = new Date();
-    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
-  });
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
   const [showForm, setShowForm] = useState(false);
@@ -46,17 +40,15 @@ function PartnersTab({ users = [], session }) {
       const requests = [
         axios.get('/api/partners'),
         axios.get('/api/partner-commissions'),
-        axios.get('/api/partner-payouts'),
         axios.get('/api/partner-commission-config'),
         axios.get('/api/partner-types'),
       ];
       if (session?.channelId) {
         requests.push(axios.get(`/api/channels/${session.channelId}/partner-tiers-config`));
       }
-      const [pRes, cRes, pyRes, cfgRes, ptRes, tcRes] = await Promise.all(requests);
+      const [pRes, cRes, cfgRes, ptRes, tcRes] = await Promise.all(requests);
       setPartners(pRes.data.partners || []);
       setCommissions(cRes.data.commissions || []);
-      setPayouts(pyRes.data.payouts || []);
       setConfig(cfgRes.data.config || null);
       setPartnerTypes(ptRes.data.types || []);
       if (tcRes) setTierCfg(tcRes.data.partner_tiers_config || null);
@@ -166,25 +158,8 @@ function PartnersTab({ users = [], session }) {
     finally { setCommBusy(false); }
   }
 
-  async function generatePayouts() {
-    if (!generatePeriod) return;
-    setGenerating(true);
-    try {
-      await axios.post('/api/generate-partner-payouts', { period: generatePeriod });
-      await load();
-    } finally { setGenerating(false); }
-  }
-
-  async function updatePayout(id, status) {
-    try {
-      await axios.put(`/api/partner-payouts/${id}`, { status });
-      setPayouts(prev => prev.map(py => py.id === id ? { ...py, status } : py));
-    } catch { alert(p.saveFailed); }
-  }
-
   const activeCount = partners.filter(pt => pt.status === 'active').length;
   const totalEarned = commissions.reduce((sum, c) => sum + Number(c.amount_cny || 0), 0);
-  const pendingPayoutCount = payouts.filter(py => py.status === 'draft').length;
 
   const TIERS = partnerTypes.filter(t => t.is_active).map(t => ({ value: t.key, label: t.label_zh || t.label }));
   const SOURCE_TYPES = [
@@ -198,10 +173,9 @@ function PartnersTab({ users = [], session }) {
   return (
     <>
       <div className="stat-row">
-        <StatCard icon={Users}      label={p.totalPartners}    value={partners.length}                 color="#6366f1" />
-        <StatCard icon={Users}      label={p.activePartners}   value={activeCount}                     color="#16a34a" />
-        <StatCard icon={Coins}      label={p.totalEarned}      value={`¥${totalEarned.toFixed(0)}`}   color="#10b981" />
-        <StatCard icon={TrendingUp} label={p.pendingPayouts}   value={pendingPayoutCount}              color="#f59e0b" />
+        <StatCard icon={Users}  label={p.totalPartners}  value={partners.length}               color="#6366f1" />
+        <StatCard icon={Users}  label={p.activePartners} value={activeCount}                   color="#16a34a" />
+        <StatCard icon={Coins}  label={p.totalEarned}    value={`¥${totalEarned.toFixed(0)}`} color="#10b981" />
       </div>
 
       <div className="subtab-row">
@@ -210,9 +184,6 @@ function PartnersTab({ users = [], session }) {
         </button>
         <button className={`subtab-btn${subTab === 'commissions' ? ' active' : ''}`} onClick={() => setSubTab('commissions')}>
           <Coins size={13} /> {p.commissionsTab}
-        </button>
-        <button className={`subtab-btn${subTab === 'payouts' ? ' active' : ''}`} onClick={() => setSubTab('payouts')}>
-          <TrendingUp size={13} /> {p.payoutsTab}
         </button>
         <button className={`subtab-btn${subTab === 'rules' ? ' active' : ''}`} onClick={() => setSubTab('rules')}>
           <Settings2 size={13} /> {p.rulesTab}
@@ -290,49 +261,6 @@ function PartnersTab({ users = [], session }) {
                   <td className="muted" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.description || '—'}</td>
                   <td><Badge color={statusColor(c.status)}>{statusLabel(c.status)}</Badge></td>
                   <td className="muted">{fmtDate(c.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {!loading && subTab === 'payouts' && (
-        <div className="card">
-          <div className="table-toolbar">
-            <span className="table-count">{payouts.length} payout{payouts.length !== 1 ? 's' : ''}</span>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input value={generatePeriod} onChange={e => setGeneratePeriod(e.target.value)}
-                placeholder="YYYY-MM" style={{ width: 110 }} />
-              <button className="btn-primary" onClick={generatePayouts} disabled={generating}>
-                <TrendingUp size={13} />{generating ? p.generating : p.generatePayouts}
-              </button>
-            </div>
-          </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>{p.partnerName}</th><th>{p.tier}</th><th>{p.payoutPeriod}</th>
-                <th>{p.payoutTotal}</th><th>{p.payoutStatus}</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {payouts.length === 0 && <tr><td colSpan={6} className="empty-row">{p.noPayouts}</td></tr>}
-              {payouts.map(py => (
-                <tr key={py.id}>
-                  <td className="bold">{py.partner_name || py.partner_id}</td>
-                  <td><Badge color={tierColor(py.partner_tier)}>{tierLabel(py.partner_tier)}</Badge></td>
-                  <td><code className="code-tag">{py.period}</code></td>
-                  <td className="bold">¥{Number(py.total_cny).toFixed(2)}</td>
-                  <td><Badge color={statusColor(py.status)}>{statusLabel(py.status)}</Badge></td>
-                  <td>
-                    <div className="row-actions">
-                      {py.status === 'draft' &&
-                        <button className="icon-btn" title={p.approve} onClick={() => updatePayout(py.id, 'approved')}><Check size={14} /></button>}
-                      {py.status === 'approved' &&
-                        <button className="icon-btn" title={p.markTransferred} onClick={() => updatePayout(py.id, 'transferred')}><ChevronRight size={14} /></button>}
-                    </div>
-                  </td>
                 </tr>
               ))}
             </tbody>

@@ -299,8 +299,37 @@
               </view>
             </view>
             <view wx:if="{{ringSettingsOpen}}" class="wd-settings-panel">
-              <view class="wd-unbind-btn" bindtap="handleUnbindWearable">
-                <text class="wd-unbind-txt">{{t.wearableUnbind}}</text>
+              <view wx:if="{{wearableBrand === 'x3'}}" class="wd-interval-section">
+                <text class="wd-interval-title">{{t.x3IntervalTitle}}</text>
+                <view class="wd-interval-row">
+                  <text class="wd-interval-label">{{t.metricHr}}</text>
+                  <view class="wd-interval-opts">
+                    <view wx:for="{{x3IntervalOpts.hr}}" wx:key="index" bindtap="handleIntervalChange" data-type="hr" data-min="{{item}}" class="wd-int-btn {{x3Intervals.hr === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.x3IntervalUnit}}</view>
+                  </view>
+                </view>
+                <view class="wd-interval-row">
+                  <text class="wd-interval-label">{{t.metricSpo2}}</text>
+                  <view class="wd-interval-opts">
+                    <view wx:for="{{x3IntervalOpts.spo2}}" wx:key="index" bindtap="handleIntervalChange" data-type="spo2" data-min="{{item}}" class="wd-int-btn {{x3Intervals.spo2 === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.x3IntervalUnit}}</view>
+                  </view>
+                </view>
+                <view class="wd-interval-row">
+                  <text class="wd-interval-label">{{t.metricTemp}}</text>
+                  <view class="wd-interval-opts">
+                    <view wx:for="{{x3IntervalOpts.temp}}" wx:key="index" bindtap="handleIntervalChange" data-type="temp" data-min="{{item}}" class="wd-int-btn {{x3Intervals.temp === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.x3IntervalUnit}}</view>
+                  </view>
+                </view>
+                <view class="wd-interval-row">
+                  <text class="wd-interval-label">{{t.metricHrv}}</text>
+                  <view class="wd-interval-opts">
+                    <view wx:for="{{x3IntervalOpts.hrv}}" wx:key="index" bindtap="handleIntervalChange" data-type="hrv" data-min="{{item}}" class="wd-int-btn {{x3Intervals.hrv === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.x3IntervalUnit}}</view>
+                  </view>
+                </view>
+              </view>
+              <view class="wd-settings-footer">
+                <view class="wd-unbind-btn" bindtap="handleUnbindWearable">
+                  <text class="wd-unbind-txt">{{t.wearableUnbind}}</text>
+                </view>
               </view>
             </view>
             <view wx:if="{{ringMeasuring}}" class="wd-measuring-row">
