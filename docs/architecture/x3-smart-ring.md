@@ -234,14 +234,14 @@ value[9]    = Heart rate (bpm); skip if 0 or 0xFF
 value[0]    = 0x56
 value[3..8] = BCD timestamp
 value[9]    = HRV index      (ms)
-value[10]   = Breath proxy
+value[10]   = Breath rate proxy (breaths/min)
 value[11]   = Heart rate     (bpm)
-value[12]   = Stress / tiredness index
-value[13]   = Mood / systolic BP proxy
-value[14]   = Breath rate / diastolic BP proxy
+value[12]   = Stress / tiredness index (0–100)
+value[13]   = Systolic BP proxy (mmHg)
+value[14]   = Diastolic BP proxy (mmHg)
 ```
 
-The most recent record for today is the one used for the daily sync.
+> **Deduplication:** The ring sends the full batch twice in a single BLE response. `_parseHrvRecords56` deduplicates by timestamp using a `Set` before returning.
 
 ### 4.6 Auto SpO2 History (`0x66` → 10-byte records)
 ```
@@ -341,18 +341,35 @@ The `X3Ring.getRealtime()` implementation caches the paired metric: when request
 - `src/mini/nano-miniapp/utils/wearable/x3/protocol.js` — UUID constants, checksum, `buildCommand`, BCD helpers, all packet builders
 - `src/mini/nano-miniapp/utils/wearable/x3/index.js` — `X3Ring` class extending `WearableDevice`
 - `src/mini/nano-miniapp/utils/wearable/index.js` — factory registers brand `'x3'`
+- `src/mini/nano-miniapp/utils/wearable/sync.js` — `syncWearableData()` maps a `WearableSnapshot` to `health_events` and POSTs to `/api/health-events/sync`
 
 **What the current sync pulls on each connection (`handleSyncWearable`):**
-| Data | Method | Command |
-|---|---|---|
-| Battery | `getBattery()` | `0x13` |
-| Steps summary | `getSteps()` | `0x51` + `0x52` |
-| Sleep | `getSleep()` | `0x53` |
-| Static heart rate | `getHeartRateLog()` | `0x55` |
-| HRV + stress | `getHrvLog()` | `0x56` |
-| Auto SpO2 | `getSpo2Log()` | `0x66` |
 
-The additional methods (`getTemperatureLog`, `getExerciseSessions`, `getSleepApneaRisk`, etc.) are available but not yet called from `handleSyncWearable` — wire them in when the health tab UI is ready to display those dimensions.
+| Data | Method | Command | Sent to backend as |
+|---|---|---|---|
+| Battery level (local only) | `getBattery()` | `0x13` | not synced |
+| Steps + 15-min slots | `getSteps()` | `0x51` + `0x52` | `activity` event |
+| Last night's sleep | `getSleep()` | `0x53` | `sleep` event |
+| Static HR log | `getHeartRateLog()` | `0x55` | `vitals` event (resting HR + `hr_slots`) |
+| All-day HRV readings | `getHrvLog()` | `0x56` | one `vitals` event **per reading** (`external_id = smart_ring_hrv_<ts>`) |
+| All-day SpO2 readings | `getSpo2Log()` | `0x66` | one `vitals` event **per reading** (`external_id = smart_ring_spo2_<ts>`) |
+
+Per-measurement storage means a typical daily sync produces ~24 `health_events` rows (15 HRV + 6 SpO2 + 1 activity + 1 sleep + 1 resting-HR vitals). Repeated syncs upsert the same rows via `ON CONFLICT (user_id, source, external_id)` — no duplicates accumulate.
+
+**Not yet wired into `handleSyncWearable`** (available methods, not yet called):
+
+| Method | Data |
+|---|---|
+| `getHeartRateHistory()` | Continuous HR — 15 samples per 15-min window (0x54) |
+| `getSleepHistory()` | All cached nights (use instead of `getSleep()` for multi-night view) |
+| `getSleepHrv()` | Per-period RMSSD during sleep (0x60) |
+| `getTemperatureLog()` | Skin / body / ambient temperature (0x62) |
+| `getSleepTemperatureLog()` | Temperature sampled during sleep (0x69) |
+| `getExerciseSessions()` | Sport mode sessions with pace, HR, distance (0x5C) |
+| `getSleepApneaRisk()` | OSA risk level per night (0x5F) |
+| `getOxygenVariation()` | Elevated SpO2 variation events (0x5D) |
+
+Wire these in when the health tab UI is ready to display the corresponding dimensions.
 
 **Brand detection during scan:**
 ```js
@@ -363,47 +380,188 @@ const brand = chosen.name.startsWith('X3') ? 'x3' : 'colmi'
 
 ---
 
-## 8. Full Command Coverage
+## 8. Full API Reference (`X3Ring`)
 
-All X3 BLE commands are implemented in `x3/index.js`. The table below lists every public method:
+All methods are `async` and throw on BLE error or timeout. `date` parameters default to today (CST) when omitted. Timestamps in returned objects are `'YYYY-MM-DD HH:MM:SS'` strings in CST; history arrays are sorted **oldest-first**.
+
+### Device lifecycle
 
 | Method | Command | Returns |
 |---|---|---|
-| `getBattery()` | `0x13` | `{ level, charging }` |
-| `setTime(date)` | `0x01` | ack |
-| `getDeviceTime()` | `0x41` | `Date` |
-| `getMac()` | `0x22` | MAC string |
-| `getFirmwareVersion()` | `0x27` | version string |
-| `factoryReset()` | `0x12` | ack |
-| `mcuReset()` | `0x2E` | ack |
-| `setBasicParameters(rHand, autoMo)` | `0x03` | ack |
-| `getBasicParameters()` | `0x04` | `{ rightHand, autoMotion, eov }` |
-| `setPersonalProfile(p)` | `0x02` | ack |
-| `getPersonalProfile()` | `0x42` | `{ gender, age, height, weight, stride }` |
-| `setAutoMonitoring(s)` | `0x2A` | ack |
-| `getAutoMonitoring(type)` | `0x2B` | schedule object |
-| `getSteps(date)` | `0x51` + `0x52` | `{ steps, calories, distance, slots }` |
-| `getSleep()` | `0x53` | `{ totalMinutes, deep, light, rem, awake, periods, sleepStart, sleepEnd }` |
-| `getHeartRateLog(date)` | `0x55` | `[{ value, timestamp }]` |
-| `getHeartRateHistory(date)` | `0x54` | `[{ date, hrSamples }]` — 15 samples/record |
-| `getHrvLog(date)` | `0x56` | `{ hrv, stress }` |
-| `getSpo2Log(date)` | `0x66` | latest SpO2 % |
-| `getSpo2History(date)` | `0x57` | `[{ date, samples }]` — 20 samples × 30 s |
-| `getSleepHrv(date)` | `0x60` | `[{ date, rmssd }]` — 30-sample RMSSD/night |
-| `getTemperatureLog(date)` | `0x62` | `[{ date, skinTemp, ambientTemp, shellTemp, estimatedBodyTemp, status }]` |
-| `getExerciseSessions(date)` | `0x5C` | `[{ date, sportMode, avgHeartRate, durationSec, steps, paceMin, paceSec, calories, distanceKm }]` |
-| `getSleepApneaRisk(date)` | `0x5F` | `[{ date, riskLevel }]` |
-| `getOxygenVariation(date)` | `0x5D` | `[{ date, riskCount, variationList }]` |
-| `getRealtime(type)` | `0x28` | number (HR bpm / SpO2 % / HRV ms / stress) |
-| `startRealtimeStream(cb, opts)` | `0x09` | live broadcast every second |
-| `stopRealtimeStream()` | `0x09` | stops broadcast |
-| `startBloodGlucose(onData)` | `0x78` | starts 5-min PPG session |
-| `sendBloodGlucoseProgress(pct)` | `0x78` | updates progress on ring display |
-| `stopBloodGlucose()` | `0x78` | returns raw PPG samples for server upload |
-| `sendBloodGlucoseResult(status)` | `0x78` | sends server result back to ring |
-| `exitBloodGlucose()` | `0x78` | closes session |
-| `startPpgStream(cb)` | `0x11` | streams raw 32-bit PPG waveform |
-| `stopPpgStream()` | `0x11` | stops waveform stream |
+| `static scan(timeoutMs?)` | — | `[{ deviceId, name, rssi }]` |
+| `connect(deviceId, { syncTime? })` | — | — |
+| `disconnect()` | — | — |
+
+### Device info
+
+| Method | Command | Returns |
+|---|---|---|
+| `getBattery()` | `0x13` | `{ level: number, charging: boolean }` |
+| `getDeviceTime()` | `0x41` | `Date` (CST) or `null` |
+| `getMac()` | `0x22` | `'AA:BB:CC:DD:EE:FF'` |
+| `getFirmwareVersion()` | `0x27` | `'1.2.3.4'` |
+| `setTime(date?)` | `0x01` | — |
+
+### Ring configuration
+
+| Method | Command | Returns |
+|---|---|---|
+| `setBasicParameters(rightHand, autoMotion)` | `0x03` | — |
+| `getBasicParameters()` | `0x04` | `{ rightHand: bool, autoMotion: bool, eov: number }` |
+| `setPersonalProfile({ gender, age, height, weight, stride })` | `0x02` | — |
+| `getPersonalProfile()` | `0x42` | `{ gender: 'male'\|'female', age, height, weight, stride }` |
+| `setAutoMonitoring({ workMode, startHour, startMinute, endHour, endMinute, weekdays, intervalMinutes, type })` | `0x2A` | — |
+| `getAutoMonitoring(type)` | `0x2B` | `{ workMode, startTime, endTime, weekdays, intervalMinutes, type }` |
+
+`type`: `1`=HR · `2`=SpO2 · `3`=Temperature · `4`=HRV  
+`workMode`: `0`=Off · `1`=Continuous · `2`=Scheduled
+
+### Maintenance
+
+| Method | Command |
+|---|---|
+| `factoryReset()` | `0x12` |
+| `mcuReset()` | `0x2E` |
+
+### Daily health history
+
+All history methods accept an optional `date` (JS `Date`); default is today in CST.
+
+#### Steps — `getSteps(date?)`  `0x51` + `0x52`
+```
+{ steps, calories, distance (metres), slots: [{ t, steps, cal, dist }] }
+```
+`slots` — one entry per 15-min window containing steps, calories (kcal), and distance (m) for that slot. `t` is an ISO 8601 string (`'2026-06-20T09:00:00+08:00'`).
+
+#### Static heart rate — `getHeartRateLog(date?)`  `0x55`
+```
+[{ value: bpm, timestamp: Date }]
+```
+One entry per 5-min auto-monitoring reading. Filter `value === 0 || value === 0xFF` already done.
+
+#### Continuous heart rate — `getHeartRateHistory(date?)`  `0x54`
+```
+[{ date: '2026-06-20 09:00:00', hrSamples: [bpm, …] }]
+```
+Each record covers a ~15-min window and contains 15 individual bpm samples.
+
+#### HRV + stress + BP — `getHrvHistory()`  `0x56`
+```
+[{ timestamp, hrv, breath, heartRate, stress, highBP, lowBP }]
+```
+All cached days (~3), sorted oldest-first, duplicates removed. Nil fields (`0` or `0xFF` from ring) are returned as `null`.
+
+#### `getHrvLog(date?)`  `0x56`
+`getHrvHistory()` filtered to one date. Same record shape.
+
+#### Stress log — `getStressLog(date?)`  `0x56`
+```
+[{ timestamp, stress }]
+```
+Derived from `getHrvHistory()` — one BLE fetch, filtered to records with a non-null stress value.
+
+#### Auto SpO2 — `getAutoSpo2History()`  `0x66`
+```
+[{ timestamp, spo2 }]
+```
+All cached days (~3), sorted oldest-first, duplicates removed.
+
+#### `getSpo2Log(date?)`  `0x66`
+`getAutoSpo2History()` filtered to one date.
+
+#### Detailed SpO2 — `getSpo2History(date?)`  `0x57`
+```
+[{ date: '2026-06-20 09:00:00', samples: [%, …] }]
+```
+Each record spans ~10 minutes with 20 SpO2 samples at 30-second intervals.
+
+#### Temperature — `getTemperatureLog(date?)`  `0x62`
+```
+[{ date, skinTemp, ambientTemp, shellTemp, estimatedBodyTemp, status }]
+```
+All temps in °C. `status`: `1`=Cold · `2`=Normal · `3`=SlightlyElevated · `4`=Fever · `5`=HighFever · `6`=Error
+
+#### Exercise sessions — `getExerciseSessions(date?)`  `0x5C`
+```
+[{ date, sportMode, avgHeartRate, durationSec, steps, paceMin, paceSec, calories, distanceKm }]
+```
+`sportMode` codes: `0`=Run · `1`=Cycling · `2`=Badminton · `3`=Football · `4`=Tennis · `5`=Yoga · `6`=Meditation · `7`=Dance · `8`=Basketball · `9`=Walk · `10`=Workout · `11`=Cricket · `12`=Hiking · `13`=Aerobics · `14`=Ping-Pong · `15`=Rope Jump · `16`=Sit-ups
+
+#### Sleep apnea risk — `getSleepApneaRisk(date?)`  `0x5F`
+```
+[{ date, riskLevel }]
+```
+`riskLevel`: `16`=no result · `0`/`1`=low · `2`=mild · `3`=severe
+
+#### Elevated oxygen variation — `getOxygenVariation(date?)`  `0x5D`
+```
+[{ date, riskCount, variationList: number[] }]
+```
+
+### Sleep history
+
+#### `getSleepHistory()`  `0x53`
+```
+[{
+  date,          // 'YYYY-MM-DD' — evening calendar date (night of Jun 19 → '2026-06-19')
+  onset,         // 'YYYY-MM-DD HH:MM:SS' — actual sleep start timestamp (CST)
+  totalMinutes,
+  deep, light, rem, awake,       // minutes in each stage
+  sleepStart,    // minutes after midnight (onset as number)
+  sleepEnd,      // sleepStart + totalMinutes
+  periods: [{ type: 0|1|2|3, typeName: 'awake'|'deep'|'light'|'rem', minutes }]
+}]
+```
+Sorted oldest → newest. Up to ~3 nights cached on ring. Blocks before noon CST are mapped to the previous calendar night.
+
+#### `getSleep()`  `0x53`
+Last element of `getSleepHistory()`. Returns an empty summary `{ totalMinutes: 0, … }` if no data.
+
+### Sleep diagnostics
+
+#### Sleep HRV / RMSSD — `getSleepHrv(date?)`  `0x60`
+```
+[{ date: '2026-06-20 22:00:00', rmssd: [ms, …] }]
+```
+30 RMSSD samples per record (2-byte LE each), one record per sleep period.
+
+#### Sleep body temperature — `getSleepTemperatureLog(date?)`  `0x69`
+```
+[{ date, samples: [{ skinTemp, ambientTemp, shellTemp, estimatedBodyTemp, status }] }]
+```
+10 NTC-triple samples per record.
+
+### Real-time & streaming
+
+#### On-demand measurement — `getRealtime(type, timeoutMs?)`  `0x28`
+`type`: `'heart-rate'` · `'spo2'` · `'hrv'` · `'pressure'`  
+Returns the measured value as a number (bpm / % / ms / 0–100), or `null` on timeout (default 30 s).
+
+HRV and pressure (`stress`) arrive in the same ring response. Requesting either caches the other so the second call returns immediately without a second BLE round-trip.
+
+#### Live step/temp stream — `startRealtimeStream(cb, { steps?, temp? })`  `0x09`
+`cb` receives `{ steps, calories, distanceKm, exerciseMinutes, heartRate, tempC, spo2 }` every ~1 s. Call `stopRealtimeStream()` to end.
+
+### Blood glucose PPG session
+
+Five-step flow using command `0x78`:
+
+```js
+await ring.startBloodGlucose(({ samples, total }) => { /* live progress */ })
+// every ~30 s:
+await ring.sendBloodGlucoseProgress(pct)   // 0–100
+// when server responds:
+const rawSamples = await ring.stopBloodGlucose()   // upload these to server
+await ring.sendBloodGlucoseResult(status)  // 0=fail 1=low 2=normal 3=high
+await ring.exitBloodGlucose()
+```
+
+### Raw PPG waveform stream  `0x11`
+
+```js
+await ring.startPpgStream(({ points }) => { /* 32-bit BE intensity values */ })
+await ring.stopPpgStream()
+```
 
 ---
 
