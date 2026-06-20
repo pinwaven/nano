@@ -1,5 +1,5 @@
 const app = getApp()
-const { BASE, VERSION, IS_DEV } = require('../../utils/config.js')
+const { BASE, VERSION, WX_VERSION, IS_DEV } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
@@ -739,7 +739,7 @@ Page({
     lang: 'zh',
     t: T.zh,
     tab: 'chat',
-    version: IS_DEV ? VERSION : '',
+    version: IS_DEV ? VERSION : WX_VERSION,
 
     // Chat
     messages: [],

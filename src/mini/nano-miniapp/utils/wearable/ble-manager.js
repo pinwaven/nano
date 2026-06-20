@@ -31,8 +31,9 @@ class BLEManager {
 
   // Scan for nearby BLE devices. Returns [{ deviceId, name, rssi }].
   // nameFilter: string or array of strings — devices whose name starts with any prefix are kept.
-  // Pass null to return all devices.
-  scan(nameFilter, timeoutMs = 8000) {
+  //   Pass null to return all devices (use services filter instead).
+  // services: array of service UUIDs to filter by advertisement (passed to wx API).
+  scan(nameFilter, timeoutMs = 8000, services = []) {
     return new Promise((resolve, reject) => {
       const found = new Map()
       const prefixes = nameFilter
@@ -41,13 +42,14 @@ class BLEManager {
 
       wx.onBluetoothDeviceFound((res) => {
         for (const d of res.devices) {
-          if (!d.name) continue
-          if (prefixes && !prefixes.some((p) => d.name.startsWith(p))) continue
-          found.set(d.deviceId, { deviceId: d.deviceId, name: d.name, rssi: d.RSSI })
+          if (!d.name && !services.length) continue
+          if (prefixes && !prefixes.some((p) => d.name && d.name.startsWith(p))) continue
+          found.set(d.deviceId, { deviceId: d.deviceId, name: d.name || '', rssi: d.RSSI })
         }
       })
 
       wx.startBluetoothDevicesDiscovery({
+        services,
         allowDuplicatesKey: false,
         success: () => {
           setTimeout(() => {

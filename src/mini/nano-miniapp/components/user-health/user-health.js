@@ -1943,7 +1943,7 @@ Component({
       try {
         const saved = wx.getStorageSync('wearable_device')
         if (saved && saved.deviceId) {
-          const fallbackName = saved.brand === 'x3' ? 'X3 Ring' : 'Colmi Ring'
+          const fallbackName = saved.brand === 'x3' ? 'X3 Ring' : saved.brand === 'aizo' ? 'Aizo Ring' : 'Colmi Ring'
           const x3Saved = wx.getStorageSync('x3_interval_settings')
           const x3Intervals = x3Saved ? { ...this.data.x3Intervals, ...x3Saved } : this.data.x3Intervals
           this.setData({ wearableId: saved.deviceId, wearableName: saved.name || fallbackName, wearableConnected: false, wearableBrand: saved.brand || 'colmi', x3Intervals })
@@ -1984,8 +1984,10 @@ Component({
         const { BLEManager } = require('../../utils/wearable/ble-manager.js')
         const { COLMI_NAME_PREFIXES } = require('../../utils/wearable/colmi/protocol.js')
         const { X3_NAME_PREFIXES } = require('../../utils/wearable/x3/protocol.js')
+        const { BLE_SERVICE_UUID: AIZO_SVC_UUID, AIZO_NAME_PREFIXES } = require('../../utils/wearable/aizo/protocol.js')
         const { createWearable } = require('../../utils/wearable/index.js')
         const ALL_PREFIXES = [...COLMI_NAME_PREFIXES, ...X3_NAME_PREFIXES]
+        const AIZO_SVC_NORM = AIZO_SVC_UUID.replace(/-/g, '').toLowerCase()
 
         // Open BLE adapter — this prompts the user to enable Bluetooth if off
         const mgr = new BLEManager()
@@ -1998,9 +2000,14 @@ Component({
         await new Promise((resolve) => {
           wx.onBluetoothDeviceFound((res) => {
             for (const d of res.devices) {
-              if (!d.name) continue
-              if (!ALL_PREFIXES.some((p) => d.name.startsWith(p))) continue
-              found.set(d.deviceId, { deviceId: d.deviceId, name: d.name, rssi: d.RSSI })
+              const advUUIDs  = (d.advertisServiceUUIDs || []).map(u => u.replace(/-/g, '').toLowerCase())
+              const isAizoSvc  = advUUIDs.includes(AIZO_SVC_NORM)
+              const isAizoName = d.name && AIZO_NAME_PREFIXES.some((p) => d.name.startsWith(p))
+              const isAizo     = isAizoSvc || isAizoName
+              const isNamed    = d.name && ALL_PREFIXES.some((p) => d.name.startsWith(p))
+              if (!isAizo && !isNamed) continue
+              const brand = isAizo ? 'aizo' : (d.name.startsWith('X3') ? 'x3' : 'colmi')
+              found.set(d.deviceId, { deviceId: d.deviceId, name: d.name || 'Aizo Ring', rssi: d.RSSI, brand })
             }
           })
           wx.startBluetoothDevicesDiscovery({
@@ -2033,9 +2040,9 @@ Component({
         })
 
         wx.showLoading({ title: t.wearableConnecting, mask: true })
-        const brand = chosen.name.startsWith('X3') ? 'x3' : 'colmi'
+        const brand = chosen.brand
         const ring = createWearable(brand)
-        await ring.connect(chosen.deviceId, { syncTime: true })
+        await ring.connect(chosen.deviceId, { syncTime: true, name: chosen.name })
         const battery = await ring.getBattery()
         await ring.disconnect()
         wx.hideLoading()
@@ -2122,6 +2129,51 @@ Component({
             hrvSlots:  hrvLog.length  > 0 ? hrvLog  : null,
             spo2Slots: spo2Log.length > 0 ? spo2Log : null,
             syncedAt: Date.now(),
+          }
+          this._commitRingData(raw, battery.level, isZh, false)
+        } catch (e) {
+          wx.hideLoading()
+          await ring.disconnect().catch(() => {})
+          wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
+          this.setData({ wearableConnected: false, wearableBusy: false })
+        } finally {
+          this.setData({ wearableBusy: false, ringMeasuring: false })
+        }
+        return
+      }
+
+      // ── Aizo: single-phase sync — historical data via syncAll() ──
+      if (brand === 'aizo') {
+        try {
+          await new Promise((resolve, reject) =>
+            wx.authorize({ scope: 'scope.bluetooth', success: resolve, fail: reject })
+          )
+          wx.showLoading({ title: t.wearableConnecting, mask: true })
+          const savedDev = wx.getStorageSync('wearable_device') || {}
+          await ring.connect(this.data.wearableId, { name: savedDev.name || '' })
+          const battery  = await ring.getBattery()
+          const snapshot = await ring.syncAll()
+          await ring.disconnect()
+          wx.hideLoading()
+          const raw = {
+            steps:        snapshot.steps        ?? null,
+            calories:     snapshot.calories     ?? null,
+            distance:     snapshot.distance     ?? null,
+            stepSlots:    snapshot.stepSlots    ?? null,
+            sleepMinutes: (snapshot.sleepMinutes > 0) ? snapshot.sleepMinutes : null,
+            sleepDeep:    snapshot.sleepDeep    ?? null,
+            sleepLight:   snapshot.sleepLight   ?? null,
+            sleepRem:     snapshot.sleepRem     ?? null,
+            sleepAwake:   snapshot.sleepAwake   ?? null,
+            sleepStart:   snapshot.sleepStart   ?? null,
+            sleepEnd:     snapshot.sleepEnd     ?? null,
+            sleepSlots:   snapshot.sleepSlots?.map(p => ({ type: p.typeName, min: p.minutes })) ?? null,
+            hrSlots:      [],
+            restingHr:    null,
+            hrv:          null,
+            stress:       snapshot.stress       ?? null,
+            spo2:         null,
+            syncedAt:     Date.now(),
           }
           this._commitRingData(raw, battery.level, isZh, false)
         } catch (e) {

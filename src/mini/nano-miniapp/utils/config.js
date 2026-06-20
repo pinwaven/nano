@@ -15,7 +15,8 @@ switch (envVersion) {
 
 // Bump this before each preview upload so you can confirm the newest build is on device.
 // Format: MMDD-N (month+day, build number that day)
-const VERSION = '0612-4';
+const VERSION = '0620-1';
+const WX_VERSION = accountInfo.miniProgram.version || '';
 const IS_DEV = envVersion === 'develop' || envVersion === 'trial';
 
 // Maps appid → channel config for brand-specific miniprograms.
@@ -31,4 +32,4 @@ const _channelCfg = APPID_TO_CHANNEL[accountInfo.miniProgram.appId] || null;
 const CHANNEL_SLUG = _channelCfg ? _channelCfg.slug : null;
 const CHANNEL_DISPLAY = _channelCfg ? { logo_url: _channelCfg.logo, name: _channelCfg.name } : null;
 
-module.exports = { BASE, VERSION, IS_DEV, CHANNEL_SLUG, CHANNEL_DISPLAY };
+module.exports = { BASE, VERSION, WX_VERSION, IS_DEV, CHANNEL_SLUG, CHANNEL_DISPLAY };
