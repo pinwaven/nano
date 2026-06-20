@@ -171,6 +171,8 @@ const T = {
     wearableBattery: '电量',
     wearableSyncNow: '立即同步',
     wearableUnbind: '解绑',
+    x3SaveIntervals: '保存到戒指',
+    x3IntervalLoading: '读取中...',
     wearableScanning: '正在搜索...',
     wearableNoDevices: '未找到设备，请确认戒指已开机',
     wearableConnecting: '正在同步...',
@@ -278,6 +280,8 @@ const T = {
     wearableBattery: 'Battery',
     wearableSyncNow: 'Sync Now',
     wearableUnbind: 'Unbind',
+    x3SaveIntervals: 'Save to Ring',
+    x3IntervalLoading: 'Reading...',
     wearableScanning: 'Scanning...',
     wearableNoDevices: 'No devices found. Make sure the ring is powered on.',
     wearableConnecting: 'Syncing...',
@@ -464,6 +468,28 @@ function _getRealtimeReadings(syncedAt) {
     if (!stored || stored.date !== todayStr) return []
     return stored.readings || []
   } catch (_) { return [] }
+}
+
+// Merge X3 HRV+SpO2 slot arrays into the same reading shape _fmtRealtimeReadings expects.
+// Ring timestamps ('2026-06-20 14:30:12') are CST, so append +08:00 before parsing.
+function _slotsToReadings(hrvSlots, spo2Slots) {
+  const byTs = {}
+  for (const s of (spo2Slots || [])) {
+    byTs[s.timestamp] = byTs[s.timestamp] || {}
+    byTs[s.timestamp].spo2 = s.spo2
+  }
+  for (const s of (hrvSlots || [])) {
+    byTs[s.timestamp] = byTs[s.timestamp] || {}
+    Object.assign(byTs[s.timestamp], {
+      hrv: s.hrv ?? null, stress: s.stress ?? null,
+      breathRate: s.breath ?? null,
+      systolicBP: s.highBP ?? null, diastolicBP: s.lowBP ?? null,
+    })
+  }
+  return Object.keys(byTs).sort().map(ts => ({
+    t: new Date(ts.replace(' ', 'T') + '+08:00').getTime(),
+    ...byTs[ts],
+  }))
 }
 
 function _fmtRealtimeReadings(readings) {
@@ -730,10 +756,12 @@ Component({
     wearableBusy: false,
     ringMeasuring: false,
     ringSettingsOpen: false,
+    ringSettingsBusy: false,
     ringData: null,
     // X3 background-measurement intervals (minutes per metric type)
     x3Intervals: { hr: 10, spo2: 30, temp: 30, hrv: 60 },
     x3IntervalOpts: { hr: [5, 10, 15, 30], spo2: [5, 15, 30, 60], temp: [15, 30, 60], hrv: [30, 60, 120] },
+    x3IntervalsChanged: false,
   },
 
   observers: {
@@ -1924,7 +1952,10 @@ Component({
         if (rawRing && rawRing.syncedAt) {
           const lang = this.properties.lang || 'zh'
           const isZh = lang !== 'en'
-          const realtimeReadings = _fmtRealtimeReadings(_getRealtimeReadings(rawRing.syncedAt))
+          const _rawReads = rawRing.hrvSlots != null
+            ? _slotsToReadings(rawRing.hrvSlots, rawRing.spo2Slots)
+            : _getRealtimeReadings(rawRing.syncedAt)
+          const realtimeReadings = _fmtRealtimeReadings(_rawReads)
           const ringData = { ..._buildRingDisplayData(rawRing, isZh), realtimeReadings, hasRealtimeReadings: realtimeReadings.length > 0 }
           const virtualTwin = {
             avg_daily_steps: rawRing.steps,
@@ -2171,8 +2202,10 @@ Component({
       const app = getApp()
       syncWearableData(this.properties.userId, { source: 'smart_ring', ...raw }, app?.globalData?.apiToken).catch(() => {})
 
-      // Accumulate today's realtime (Phase 2) readings in local storage
-      if (!isPartial && (raw.hrv != null || raw.stress != null || raw.spo2 != null || raw.systolicBP != null)) {
+      // Accumulate today's realtime (Phase 2) readings for Colmi on-demand measurements.
+      // X3 uses ring.hrvSlots / spo2Slots from its auto-monitoring buffer — skip accumulation
+      // so repeated syncs don't push the same latest ring reading into the list every time.
+      if (!isPartial && !raw.hrvSlots && (raw.hrv != null || raw.stress != null || raw.spo2 != null || raw.systolicBP != null)) {
         const todayStr = _shanghaiDateStr(raw.syncedAt)
         let stored = wx.getStorageSync('wearable_realtime_today') || { date: todayStr, readings: [] }
         if (stored.date !== todayStr) stored = { date: todayStr, readings: [] }
@@ -2184,7 +2217,10 @@ Component({
         wx.setStorageSync('wearable_realtime_today', stored)
       }
 
-      const realtimeReadings = _fmtRealtimeReadings(_getRealtimeReadings(raw.syncedAt))
+      const rawReadings = raw.hrvSlots != null
+        ? _slotsToReadings(raw.hrvSlots, raw.spo2Slots)
+        : _getRealtimeReadings(raw.syncedAt)
+      const realtimeReadings = _fmtRealtimeReadings(rawReadings)
       const ringData = { ..._buildRingDisplayData(raw, isZh), realtimeReadings, hasRealtimeReadings: realtimeReadings.length > 0 }
       const virtualTwin = {
         avg_daily_steps:  raw.steps,
@@ -2205,15 +2241,67 @@ Component({
       })
     },
 
-    toggleRingSettings() {
-      this.setData({ ringSettingsOpen: !this.data.ringSettingsOpen })
+    async toggleRingSettings() {
+      if (this.data.ringSettingsOpen) {
+        this.setData({ ringSettingsOpen: false, x3IntervalsChanged: false })
+        return
+      }
+      if (this.data.wearableBusy || this.data.ringSettingsBusy) return
+
+      // Non-X3 brands have no interval settings — just open the panel
+      if (this.data.wearableBrand !== 'x3') {
+        this.setData({ ringSettingsOpen: true })
+        return
+      }
+
+      this.setData({ ringSettingsOpen: true, ringSettingsBusy: true })
+      const { createWearable } = require('../../utils/wearable/index.js')
+      const ring = createWearable('x3')
+      try {
+        await ring.connect(this.data.wearableId)
+        const s1 = await ring.getAutoMonitoring(1)
+        const s2 = await ring.getAutoMonitoring(2)
+        const s3 = await ring.getAutoMonitoring(3)
+        const s4 = await ring.getAutoMonitoring(4)
+        this.setData({
+          x3Intervals: { hr: s1.intervalMinutes, spo2: s2.intervalMinutes, temp: s3.intervalMinutes, hrv: s4.intervalMinutes },
+          x3IntervalsChanged: false,
+        })
+      } catch (_) {
+        // fall back to locally cached values silently
+      } finally {
+        ring.disconnect().catch(() => {})
+        this.setData({ ringSettingsBusy: false })
+      }
     },
 
     handleIntervalChange(e) {
       const { type, min } = e.currentTarget.dataset
-      const x3Intervals = { ...this.data.x3Intervals, [type]: min }
-      this.setData({ x3Intervals })
-      wx.setStorageSync('x3_interval_settings', x3Intervals)
+      this.setData({ x3Intervals: { ...this.data.x3Intervals, [type]: min }, x3IntervalsChanged: true })
+    },
+
+    async saveRingIntervals() {
+      if (this.data.ringSettingsBusy || this.data.wearableBusy) return
+      this.setData({ ringSettingsBusy: true })
+      const ivals = this.data.x3Intervals
+      const baseOpts = { workMode: 1, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
+      const { createWearable } = require('../../utils/wearable/index.js')
+      const ring = createWearable('x3')
+      try {
+        await ring.connect(this.data.wearableId)
+        await ring.setAutoMonitoring({ ...baseOpts, intervalMinutes: ivals.hr,   type: 1 })
+        await ring.setAutoMonitoring({ ...baseOpts, intervalMinutes: ivals.spo2, type: 2 })
+        await ring.setAutoMonitoring({ ...baseOpts, intervalMinutes: ivals.temp, type: 3 })
+        await ring.setAutoMonitoring({ ...baseOpts, intervalMinutes: ivals.hrv,  type: 4 })
+        wx.setStorageSync('x3_interval_settings', ivals)
+        this.setData({ x3IntervalsChanged: false })
+      } catch (e) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'saveRingIntervals failed', err: e?.message }))
+        wx.showToast({ title: this.data.t.wearableSyncFail, icon: 'none' })
+      } finally {
+        ring.disconnect().catch(() => {})
+        this.setData({ ringSettingsBusy: false })
+      }
     },
 
     handleUnbindWearable() {

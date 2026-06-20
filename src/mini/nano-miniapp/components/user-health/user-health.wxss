@@ -2331,6 +2331,27 @@
   background: rgba(99, 117, 236, 0.1);
 }
 
+.wd-settings-loading-row {
+  padding: 12rpx 0;
+}
+
+.wd-settings-loading-txt {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.wd-save-btn {
+  padding: 8rpx 24rpx;
+  border-radius: 40rpx;
+  border: 1rpx solid rgba(99, 117, 236, 0.45);
+  background: rgba(99, 117, 236, 0.12);
+}
+
+.wd-save-txt {
+  font-size: 22rpx;
+  color: rgba(99, 117, 236, 0.95);
+}
+
 .wd-unbind-btn {
   padding: 8rpx 24rpx;
   border-radius: 40rpx;

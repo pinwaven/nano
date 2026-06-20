@@ -8,6 +8,26 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Fixed
 
+- **X3 ring settings — BLE connection leak causing '同步失败' on Save** (`user-health.js`)
+
+  `toggleRingSettings` used `Promise.all` for 4 concurrent `getAutoMonitoring` calls. Because `_send` has a single `notifyHandler` slot, concurrent calls overwrote each other: 3 of 4 timed out, `Promise.all` rejected, and `ring.disconnect()` was never reached — leaving the BLE device connected. When "Save to Ring" was subsequently pressed, `ring.connect()` failed because the device was already connected, triggering the error toast.
+
+  **What changed:**
+  - `toggleRingSettings`: `Promise.all` replaced with sequential `await` calls; `ring` declared before `try` so `finally` can always call `ring.disconnect().catch(() => {})`.
+  - `saveRingIntervals`: `ring.disconnect()` likewise moved to `finally`; catch now logs the error for easier debugging.
+
+- **X3 health tab — repeated sync shows identical HRV/Stress/SpO2 readings** (`user-health.js`)
+
+  `_commitRingData` accumulated the latest ring reading into `wearable_realtime_today` on every sync call. Because X3 auto-monitoring readings don't change between syncs (only the ring's own schedule updates them), each sync pushed the same HRV=142, Stress=91, SpO2=95 values with a new timestamp, making the "readings" list grow with identical entries.
+
+  The `wearable_realtime_today` store was designed for Colmi Phase 2 on-demand measurements (each reading is new). For X3 the full per-measurement history is already in `raw.hrvSlots`/`raw.spo2Slots`.
+
+  **What changed:**
+  - Added `_slotsToReadings(hrvSlots, spo2Slots)` — merges HRV and SpO2 slot arrays by timestamp into the standard reading shape (CST timestamps converted to Unix ms via `+08:00` suffix).
+  - `_commitRingData`: skips `wearable_realtime_today` accumulation when `raw.hrvSlots != null`; builds `realtimeReadings` from slots instead.
+  - Page-load path (`_loadWearableFromStorage`) updated to the same slot-first logic.
+  - Colmi path unchanged — falls through to existing `_getRealtimeReadings` when no slots are present.
+
 - **X3 sync pipeline — per-measurement HRV and SpO2 storage** (`sync.js`, `user-health.js`)
 
   The X3 sync path in `user-health.js` was broken after `getHrvLog()` and `getSpo2Log()` were updated to return arrays: the code still accessed `.hrv` and `.spo2` as scalar properties on the returned arrays (both resolving to `undefined`).

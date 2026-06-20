@@ -102,3 +102,6 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 | Partner System | [partner-system.md](partner-system.md) |
 | Lab Integration | [lab-integration.md](lab-integration.md) |
 | WeChat Multiterminal | [wechat-multiterminal.md](wechat-multiterminal.md) |
+| Wearable System | [wearable-system.md](wearable-system.md) |
+| Bluetooth Release Guide | [../wechat-bluetooth-release-guide.md](../wechat-bluetooth-release-guide.md) |
+

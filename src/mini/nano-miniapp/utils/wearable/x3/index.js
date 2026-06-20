@@ -50,7 +50,12 @@ class X3Ring extends WearableDevice {
     await this._ble.openAdapter()
     await this._ble.connect(deviceId, NOTIFY_MAP)
     if (syncTime) {
-      try { await this.setTime(new Date()) } catch (_) {}
+      try {
+        const ringTime = await this.getDeviceTime()
+        if (!ringTime || Math.abs(Date.now() - ringTime.getTime()) > 60000) {
+          await this.setTime(new Date())
+        }
+      } catch (_) {}
     }
   }
 
