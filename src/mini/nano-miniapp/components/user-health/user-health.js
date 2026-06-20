@@ -2056,13 +2056,15 @@ Component({
           const steps   = await ring.getSteps().catch(() => null)
           const sleep   = await ring.getSleep().catch(() => null)
           const hrLog   = await ring.getHeartRateLog().catch(() => null)
-          const hrvData = await ring.getHrvLog().catch(() => null)
-          const spo2    = await ring.getSpo2Log().catch(() => null)
+          const hrvLog  = await ring.getHrvLog().catch(() => [])   // [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}]
+          const spo2Log = await ring.getSpo2Log().catch(() => [])  // [{timestamp, spo2}]
           await ring.disconnect()
           wx.hideLoading()
 
-          const hrEntries = (hrLog || []).filter(r => r.value > 0)
-          const restingHr = hrEntries.length ? Math.min(...hrEntries.map(r => r.value)) : null
+          const hrEntries  = (hrLog || []).filter(r => r.value > 0)
+          const restingHr  = hrEntries.length ? Math.min(...hrEntries.map(r => r.value)) : null
+          const latestHrv  = hrvLog.length  ? hrvLog[hrvLog.length - 1]   : {}
+          const latestSpo2 = spo2Log.length ? spo2Log[spo2Log.length - 1] : {}
           const raw = {
             steps:        steps?.steps       ?? null,
             calories:     steps?.calories    ?? null,
@@ -2078,13 +2080,16 @@ Component({
             sleepSlots:   sleep?.periods?.map(p => ({ type: p.typeName, min: p.minutes })) ?? null,
             hrSlots:         hrEntries.map(r => ({ t: r.timestamp.toISOString(), bpm: r.value })),
             restingHr,
-            hrv:             hrvData?.hrv       ?? null,
-            stress:          hrvData?.stress    ?? null,
-            spo2:            spo2               ?? null,
-            breathRate:      hrvData?.breath    ?? null,
-            heartRateFromHrv: hrvData?.heartRate ?? null,
-            systolicBP:      hrvData?.highBP    ?? null,
-            diastolicBP:     hrvData?.lowBP     ?? null,
+            hrv:             latestHrv.hrv       ?? null,
+            stress:          latestHrv.stress    ?? null,
+            spo2:            latestSpo2.spo2     ?? null,
+            breathRate:      latestHrv.breath    ?? null,
+            heartRateFromHrv: latestHrv.heartRate ?? null,
+            systolicBP:      latestHrv.highBP   ?? null,
+            diastolicBP:     latestHrv.lowBP    ?? null,
+            hrvMeasuredAt:   latestHrv.timestamp ?? null,
+            hrvSlots:  hrvLog.length  > 0 ? hrvLog  : null,
+            spo2Slots: spo2Log.length > 0 ? spo2Log : null,
             syncedAt: Date.now(),
           }
           this._commitRingData(raw, battery.level, isZh, false)

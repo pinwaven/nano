@@ -6,6 +6,57 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Fixed
+
+- **X3 sync pipeline — per-measurement HRV and SpO2 storage** (`sync.js`, `user-health.js`)
+
+  The X3 sync path in `user-health.js` was broken after `getHrvLog()` and `getSpo2Log()` were updated to return arrays: the code still accessed `.hrv` and `.spo2` as scalar properties on the returned arrays (both resolving to `undefined`).
+
+  Additionally, only the last reading was ever stored; the full day's auto-monitoring history was discarded.
+
+  **What changed:**
+  - `user-health.js` X3 path: `getHrvLog()` / `getSpo2Log()` results now treated as arrays; last element used for display fields (`hrv`, `stress`, `spo2`, …); full arrays passed as new `hrvSlots` / `spo2Slots` fields.
+  - `sync.js`: Added `hrvSlots` and `spo2Slots` to `WearableSnapshot`. When present, one `health_events` vitals row is generated per measurement (unique `external_id` = `smart_ring_hrv_<timestamp>` / `smart_ring_spo2_<timestamp>`). The existing single-realtime-event path is preserved for Colmi (which has no slots).
+  - Repeated syncs upsert the same rows via `ON CONFLICT (user_id, source, external_id)` — no duplicates accumulate.
+  - `health_twin` averages (`avg_hrv_ms`, `avg_spo2`) now reflect all daily readings rather than just the last sync.
+
+- **X3 ring auto-SpO2 parser — array returned instead of single latest value** (`src/mini/nano-miniapp/utils/wearable/x3/index.js`)
+
+  The old `getSpo2Log()` returned a single scalar (the last matching SpO2 value for today) instead of all readings.
+
+  **What changed:**
+  - `_parseSpo2Log66` replaced by `_parseSpo2Records66` — returns an array of `{ timestamp, spo2 }` records, deduped by timestamp and sorted oldest-first.
+  - Added `getAutoSpo2History()` returning the full multi-day array (named `getAuto…` to avoid collision with the existing `getSpo2History()` which reads the 0x57 detail stream).
+  - `getSpo2Log(date)` now calls `getAutoSpo2History()` internally and filters to the requested day.
+
+  **Verified live** against an X3B ring: 80 unique records across 4 days (Jun 17–20) returned; today's 6 readings all correct.
+
+- **X3 ring HRV parser — all records returned instead of last** (`src/mini/nano-miniapp/utils/wearable/x3/index.js`)
+
+  The old `_parseHrvLog56` accumulated HRV fields into a single result object, overwriting each field with the next matching record. A ring with 293 records in its buffer (3+ days at 15-min intervals) returned only the values from the final record.
+
+  **Root cause:** The parser looped through all 0x56 records but kept only one accumulator object, so every record overwrote the previous.
+
+  **What changed:**
+  - `_parseHrvLog56` replaced by `_parseHrvRecords56` — returns an array of all records, with `Set`-based deduplication by timestamp (ring sends the full batch twice in one BLE response) and sorted oldest-first.
+  - `getHrvLog(date)` now calls the new `getHrvHistory()` internally and filters to the requested day, so both methods share a single BLE round-trip.
+  - Added `getHrvHistory()` returning the full multi-day array, parallel to `getSleepHistory()`.
+
+  **Verified live** against an X3B ring: 230 unique records across 4 days (Jun 17–20) now returned by `getHrvHistory()`; `getHrvLog()` for today returns all 15 readings instead of 1.
+
+- **X3 ring sleep parser — multi-block 1-min format** (`src/mini/nano-miniapp/utils/wearable/x3/index.js`)
+
+  The X3B ring stores sleep data as **130-byte 1-minute-resolution blocks** (up to 12 blocks ≈ 3 nights cached), not as 34-byte 5-minute blocks. The old `_parseSleep53` treated the entire multi-block response as one 130-byte single-block record, producing a 5-min nap instead of a full night.
+
+  **Root cause:** the original format-detection used `buf.length === 130` as the only 1-min guard; any larger buffer fell through to the 34-byte parser, which then only found one valid `0x53` header (at offset 0) and discarded the rest.
+
+  **What changed:**
+  - Added `_dateStrToMin()` helper for gap arithmetic without JS `Date` timezone hazards.
+  - `_parseSleep53` now checks `dataLen % 130 === 0` first (multi-block 1-min path), sorts the blocks oldest-first (ring transmits newest-first, with a sequence counter at `byte[1]`), then isolates the most recent continuous sleep session by dropping any blocks separated from the tail by a gap > 4 hours. Falls through to the 34-byte 5-min path for rings that use that format.
+  - `getSleep()` stream timeout raised from 12 s → 15 s to handle larger multi-block transfers reliably.
+
+  **Verified live** against an X3B ring: 1 562-byte response (12 × 130-byte blocks, 3 nights) now correctly returns only the last session — onset 00:17, 5 blocks, 6 h 47 m total (Deep 27 % / Light 53 % / REM 18 % / Awake 2 %).
+
 ### Refactored
 - **Admin Panel — hub tab consolidation** — The web admin panel sidebar was reduced from 24 tabs to 20 by grouping related tabs under three new hub wrappers. Each hub renders a top-level subtab row and delegates to the existing tab components unchanged; no backend changes.
 

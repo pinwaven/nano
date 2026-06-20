@@ -19,13 +19,16 @@
  * @property {Array|null}  sleepSlots - [{type, min}] consecutive sleep stage periods
  * @property {Array|null}  hrSlots    - [{t, bpm}] per 5-min interval
  * @property {number|null} restingHr - bpm
- * @property {number|null} hrv            - ms (RMSSD)
- * @property {number|null} stress         - 0–100
- * @property {number|null} spo2           - % (SpO2 blood oxygen)
+ * @property {number|null} hrv            - ms (RMSSD) — last reading, used for display
+ * @property {number|null} stress         - 0–100 — last reading, used for display
+ * @property {number|null} spo2           - % (SpO2 blood oxygen) — last reading, used for display
  * @property {number|null} breathRate     - breaths per minute (from HRV measurement)
  * @property {number|null} heartRateFromHrv - bpm measured during HRV session
  * @property {number|null} systolicBP     - mmHg systolic blood pressure
  * @property {number|null} diastolicBP    - mmHg diastolic blood pressure
+ * @property {string|null} hrvMeasuredAt  - ring's BCD timestamp for the HRV record ("YYYY-MM-DD HH:MM:SS")
+ * @property {Array|null}  hrvSlots  - [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}] all HRV readings (X3)
+ * @property {Array|null}  spo2Slots - [{timestamp, spo2}] all SpO2 readings (X3)
  * @property {number}      syncedAt       - Date.now()
  */
 
@@ -99,25 +102,67 @@ function syncWearableData(openid, snapshot, apiToken) {
     })
   }
 
-  // Per-measurement: HRV / stress / SpO₂ / BP — each sync gets its own row (timestamp external_id)
-  const hasRealtime = snapshot.hrv != null || snapshot.stress != null || snapshot.spo2 != null
-    || snapshot.systolicBP != null || snapshot.breathRate != null
+  // Per-measurement HRV events (X3 — one event per reading, each with its own external_id).
+  // Each slot already carries stress, breath, HR, and BP from the same 0x56 record.
+  if (snapshot.hrvSlots?.length) {
+    for (const slot of snapshot.hrvSlots) {
+      const ts = slot.timestamp.replace(/\D/g, '')
+      events.push({
+        category: 'vitals',
+        source: src,
+        data_date: todayDate,
+        recorded_at: recordedAt,
+        external_id: `${src}_hrv_${ts}`,
+        data: {
+          hrv_ms:         slot.hrv       ?? null,
+          stress:         slot.stress    ?? null,
+          breath_rate:    slot.breath    ?? null,
+          heart_rate_hrv: slot.heartRate ?? null,
+          bp_systolic:    slot.highBP    ?? null,
+          bp_diastolic:   slot.lowBP     ?? null,
+        },
+      })
+    }
+  }
+
+  // Per-measurement SpO2 events (X3 — one event per auto-SpO2 reading).
+  if (snapshot.spo2Slots?.length) {
+    for (const slot of snapshot.spo2Slots) {
+      const ts = slot.timestamp.replace(/\D/g, '')
+      events.push({
+        category: 'vitals',
+        source: src,
+        data_date: todayDate,
+        recorded_at: recordedAt,
+        external_id: `${src}_spo2_${ts}`,
+        data: { spo2: slot.spo2 ?? null },
+      })
+    }
+  }
+
+  // Single realtime vitals event — Colmi / on-demand measurements (no per-measurement slots).
+  // external_id uses the ring's actual measurement timestamp so repeated syncs upsert the same row.
+  const hasRealtime = !snapshot.hrvSlots?.length && !snapshot.spo2Slots?.length
+    && (snapshot.hrv != null || snapshot.stress != null || snapshot.spo2 != null
+      || snapshot.systolicBP != null || snapshot.breathRate != null)
   if (hasRealtime) {
-    const ts = new Date(snapshot.syncedAt).toISOString().replace(/[:.]/g, '')
+    const measuredTs = snapshot.hrvMeasuredAt
+      ? snapshot.hrvMeasuredAt.replace(/[^0-9]/g, '')
+      : new Date(snapshot.syncedAt).toISOString().replace(/[:.]/g, '')
     events.push({
       category: 'vitals',
       source: src,
       data_date: todayDate,
       recorded_at: recordedAt,
-      external_id: `${src}_realtime_${ts}`,
+      external_id: `${src}_realtime_${measuredTs}`,
       data: {
-        hrv_ms:       snapshot.hrv             ?? null,
-        stress:       snapshot.stress          ?? null,
-        spo2:         snapshot.spo2            ?? null,
-        breath_rate:  snapshot.breathRate      ?? null,
+        hrv_ms:         snapshot.hrv             ?? null,
+        stress:         snapshot.stress          ?? null,
+        spo2:           snapshot.spo2            ?? null,
+        breath_rate:    snapshot.breathRate      ?? null,
         heart_rate_hrv: snapshot.heartRateFromHrv ?? null,
-        bp_systolic:  snapshot.systolicBP      ?? null,
-        bp_diastolic: snapshot.diastolicBP     ?? null,
+        bp_systolic:    snapshot.systolicBP      ?? null,
+        bp_diastolic:   snapshot.diastolicBP     ?? null,
       },
     })
   }

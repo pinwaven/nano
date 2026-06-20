@@ -173,28 +173,53 @@ class X3Ring extends WearableDevice {
     return _parseHrLog55(buf, todayStr)
   }
 
-  // Returns { hrv, stress } from today's most recent HRV history record
-  async getHrvLog(date) {
-    const todayStr = _isoDateStr(date || new Date())
+  // Returns all HRV records across all cached days as
+  // [{ timestamp, hrv, stress, breath, heartRate, highBP, lowBP }], sorted oldest-first.
+  // The ring caches ~3 days of 15-min interval readings.
+  async getHrvHistory() {
     const buf = await this._stream(
       getHrvHistoryPacket(),
       0x56,
       (acc) => acc.length > 0 && acc[acc.length - 1] === 0xFF,
       8000,
     )
-    return _parseHrvLog56(buf, todayStr)
+    return _parseHrvRecords56(buf)
   }
 
-  // Returns today's most recent SpO2 value (%) from auto-SpO2 history
-  async getSpo2Log(date) {
-    const todayStr = _isoDateStr(date || new Date())
+  // Returns HRV records for the given date (defaults to today) as an array.
+  async getHrvLog(date) {
+    const dayStr = _isoDateStr(date || new Date())
+    const history = await this.getHrvHistory()
+    return history.filter(r => r.timestamp.startsWith(dayStr))
+  }
+
+  // Returns stress readings for the given date (defaults to today) as
+  // [{ timestamp, stress }], sourced from the HRV history (0x56 records).
+  async getStressLog(date) {
+    const dayStr = _isoDateStr(date || new Date())
+    const history = await this.getHrvHistory()
+    return history
+      .filter(r => r.timestamp.startsWith(dayStr) && r.stress != null)
+      .map(r => ({ timestamp: r.timestamp, stress: r.stress }))
+  }
+
+  // Returns all auto-SpO2 records across all cached days as
+  // [{ timestamp, spo2 }], sorted oldest-first.
+  async getAutoSpo2History() {
     const buf = await this._stream(
       getAutoSpo2HistoryPacket(),
       0x66,
       (acc) => acc.length > 0 && acc[acc.length - 1] === 0xFF,
       8000,
     )
-    return _parseSpo2Log66(buf, todayStr)
+    return _parseSpo2Records66(buf)
+  }
+
+  // Returns auto-SpO2 records for the given date (defaults to today) as an array.
+  async getSpo2Log(date) {
+    const dayStr = _isoDateStr(date || new Date())
+    const history = await this.getAutoSpo2History()
+    return history.filter(r => r.timestamp.startsWith(dayStr))
   }
 
   // Returns { steps, calories, distance (metres), slots: [{ t, steps, cal, dist }] }
@@ -215,8 +240,11 @@ class X3Ring extends WearableDevice {
     return _parseSteps(buf51, buf52, todayStr)
   }
 
-  // Returns { totalMinutes, deep, light, rem, awake, periods, sleepStart, sleepEnd }
-  async getSleep() {
+  // Returns [{ date, onset, totalMinutes, deep, light, rem, awake, sleepStart, sleepEnd, periods }]
+  // sorted oldest → newest, one entry per night cached on the ring (up to ~3 nights).
+  // date  — evening calendar date string ('YYYY-MM-DD').
+  // onset — ring's actual sleep-start timestamp ('YYYY-MM-DD HH:MM:SS' CST).
+  async getSleepHistory() {
     const buf = await this._stream(
       getSleepHistoryPacket(),
       0x53,
@@ -224,9 +252,18 @@ class X3Ring extends WearableDevice {
         const n = acc.length
         return n >= 2 && acc[n - 2] === 0x53 && acc[n - 1] === 0xFF
       },
-      12000,
+      15000,
     )
-    return _parseSleep53(buf)
+    return _parseSleepHistory(buf)
+  }
+
+  // Returns the most recent night's summary (same shape as one getSleepHistory() element).
+  async getSleep() {
+    const history = await this.getSleepHistory()
+    if (!history.length) {
+      return { totalMinutes: 0, deep: 0, light: 0, rem: 0, awake: 0, periods: [], sleepStart: null, sleepEnd: null }
+    }
+    return history[history.length - 1]
   }
 
   // --- History: new data types ---
@@ -597,45 +634,50 @@ function _parseHrHistory54(buf, todayStr) {
 }
 
 // 0x56 — HRV: 15-byte records [cmd][?][?][y][mo][d][h][mi][s][hrv][breath][hr][stress][highBP][lowBP]
-function _parseHrvLog56(buf, todayStr) {
-  const result = { hrv: null, stress: null, breath: null, heartRate: null, highBP: null, lowBP: null }
-  if (!buf || buf.length < 15) return result
+// Returns all records as an array sorted oldest-first, deduped by timestamp
+// (the ring sends the same batch twice in a single response).
+function _parseHrvRecords56(buf) {
+  if (!buf || buf.length < 15) return []
   const size = Math.floor(buf.length / 15)
+  const seen = new Set()
+  const records = []
   for (let i = 0; i < size; i++) {
     const off = i * 15
     if (buf[off] !== 0x56) continue
-    const dateStr = parseBcdDate(buf, 3 + off, true)
-    if (!dateStr.startsWith(todayStr)) continue
-    const hrv       = buf[9  + off]
-    const breath    = buf[10 + off]
-    const heartRate = buf[11 + off]
-    const stress    = buf[12 + off]
-    const highBP    = buf[13 + off]
-    const lowBP     = buf[14 + off]
-    if (hrv       > 0 && hrv       !== 0xFF) result.hrv       = hrv
-    if (breath    > 0 && breath    !== 0xFF) result.breath    = breath
-    if (heartRate > 0 && heartRate !== 0xFF) result.heartRate = heartRate
-    if (stress    > 0 && stress    !== 0xFF) result.stress    = stress
-    if (highBP    > 0 && highBP    !== 0xFF) result.highBP    = highBP
-    if (lowBP     > 0 && lowBP     !== 0xFF) result.lowBP     = lowBP
+    const timestamp = parseBcdDate(buf, 3 + off, true)
+    if (seen.has(timestamp)) continue
+    seen.add(timestamp)
+    const v = (b) => (b > 0 && b !== 0xFF) ? b : null
+    records.push({
+      timestamp,
+      hrv:       v(buf[9  + off]),
+      breath:    v(buf[10 + off]),
+      heartRate: v(buf[11 + off]),
+      stress:    v(buf[12 + off]),
+      highBP:    v(buf[13 + off]),
+      lowBP:     v(buf[14 + off]),
+    })
   }
-  return result
+  return records.sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
 }
 
 // 0x66 — auto SpO2: 10-byte records [cmd][?][?][y][mo][d][h][mi][s][spo2]
-function _parseSpo2Log66(buf, todayStr) {
-  if (!buf || buf.length < 10) return null
+// Returns all records as an array sorted oldest-first, deduped by timestamp.
+function _parseSpo2Records66(buf) {
+  if (!buf || buf.length < 10) return []
   const size = Math.floor(buf.length / 10)
-  let latest = null
+  const seen = new Set()
+  const records = []
   for (let i = 0; i < size; i++) {
     const off = i * 10
     if (buf[off] !== 0x66) continue
-    const dateStr = parseBcdDate(buf, 3 + off, true)
-    if (!dateStr.startsWith(todayStr)) continue
+    const timestamp = parseBcdDate(buf, 3 + off, true)
+    if (seen.has(timestamp)) continue
+    seen.add(timestamp)
     const val = buf[9 + off]
-    if (val !== 0 && val !== 0xFF) latest = val
+    if (val !== 0 && val !== 0xFF) records.push({ timestamp, spo2: val })
   }
-  return latest
+  return records.sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
 }
 
 // 0x57 — detailed SpO2: 30-byte records, 20 samples × 30 s
@@ -836,19 +878,42 @@ function _parseSteps(buf51, buf52, todayStr) {
   return { steps, calories, distance: distanceM, slots }
 }
 
-// 0x53 — sleep history (1-min or 5-min mode)
-function _parseSleep53(buf) {
-  const empty = { totalMinutes: 0, deep: 0, light: 0, rem: 0, awake: 0, periods: [], sleepStart: null, sleepEnd: null }
-  if (!buf || buf.length < 12) return empty
+// Maps a block timestamp to its night label.
+// Blocks starting before noon belong to the previous calendar day (overnight tail).
+// Pure string arithmetic — no JS Date, avoids local-timezone issues.
+const _DAYS_IN_MONTH = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+function _nightKey(dateStr) {
+  const [dp, tp] = dateStr.split(' ')
+  if (parseInt(tp, 10) >= 12) return dp
+  const [y, mo, d] = dp.split('-').map(Number)
+  let dd = d - 1, mm = mo, yy = y
+  if (dd < 1) {
+    if (--mm < 1) { mm = 12; yy-- }
+    dd = (mm === 2 && (yy % 4 === 0 && (yy % 100 !== 0 || yy % 400 === 0))) ? 29 : _DAYS_IN_MONTH[mm]
+  }
+  return `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`
+}
 
-  const isEnd = buf.length >= 2 && buf[buf.length - 2] === 0x53 && buf[buf.length - 1] === 0xFF
-  let records = []
+// 0x53 — parse raw buffer into a flat list of block records, sorted oldest-first.
+// Handles:
+//   • N × 130-byte blocks, 1-min resolution, sent newest-first (seq byte at [1])
+//   • N × 34-byte blocks, 5-min resolution
+function _parseSleepBlocks(buf) {
+  if (!buf || buf.length < 12) return []
+  const hasTerminator = buf.length >= 2 && buf[buf.length - 2] === 0x53 && buf[buf.length - 1] === 0xFF
+  const dataLen = hasTerminator ? buf.length - 2 : buf.length
+  const records = []
 
-  if (buf.length === 130 || (isEnd && buf.length === 132)) {
-    const dateStr = parseBcdDate(buf, 3, true)
-    const sleepLength = buf[9]
-    const stages = Array.from(buf.slice(10, 10 + sleepLength))
-    records = [{ dateStr, unitMin: 1, stages }]
+  if (dataLen > 0 && dataLen % 130 === 0) {
+    const count = dataLen / 130
+    for (let i = 0; i < count; i++) {
+      const off = i * 130
+      if (buf[off] !== 0x53) continue
+      const dateStr = parseBcdDate(buf, off + 3, true)
+      const sleepLength = buf[off + 9]
+      const stages = Array.from(buf.slice(off + 10, off + 10 + sleepLength))
+      if (stages.length > 0) records.push({ dateStr, unitMin: 1, stages })
+    }
   } else {
     const recSize = 34
     const count = Math.floor(buf.length / recSize)
@@ -858,32 +923,42 @@ function _parseSleep53(buf) {
       const dateStr = parseBcdDate(buf, 3 + off, true)
       const sleepLength = buf[9 + off]
       const stages = Array.from(buf.slice(10 + off, 10 + off + sleepLength))
-      records.push({ dateStr, unitMin: 5, stages })
+      if (stages.length > 0) records.push({ dateStr, unitMin: 5, stages })
     }
   }
 
-  if (!records.length) return empty
+  return records.sort((a, b) => (a.dateStr < b.dateStr ? -1 : 1))
+}
 
-  // Use first record's timestamp as sleep onset; accumulate stages from all records.
-  // (For single-large-packet rings this is records[0] only; for multi-block BLE the
-  // last record's timestamp is the tail interval, not the sleep start.)
-  const first = records[0]
+// Compute one night's summary from its sorted block records.
+function _summariseNight(date, records) {
+  const unitMin = records[0].unitMin
   const allStages = records.flatMap(r => r.stages)
-  const periods = _stagesToPeriods(allStages, first.unitMin)
-  const totalMinutes = allStages.length * first.unitMin
-  const deep  = periods.filter((p) => p.type === 1).reduce((s, p) => s + p.minutes, 0)
-  const light = periods.filter((p) => p.type === 2).reduce((s, p) => s + p.minutes, 0)
-  const rem   = periods.filter((p) => p.type === 3).reduce((s, p) => s + p.minutes, 0)
-  const awake = periods.filter((p) => p.type === 0).reduce((s, p) => s + p.minutes, 0)
-
-  const timePart = first.dateStr.slice(first.dateStr.indexOf(' ') + 1)
+  const periods = _stagesToPeriods(allStages, unitMin)
+  const totalMinutes = allStages.length * unitMin
+  const deep  = periods.filter(p => p.type === 1).reduce((s, p) => s + p.minutes, 0)
+  const light = periods.filter(p => p.type === 2).reduce((s, p) => s + p.minutes, 0)
+  const rem   = periods.filter(p => p.type === 3).reduce((s, p) => s + p.minutes, 0)
+  const awake = periods.filter(p => p.type === 0).reduce((s, p) => s + p.minutes, 0)
+  const timePart = records[0].dateStr.slice(records[0].dateStr.indexOf(' ') + 1)
   const colonIdx = timePart.indexOf(':')
   const hh = parseInt(timePart.slice(0, colonIdx), 10)
   const mm = parseInt(timePart.slice(colonIdx + 1, colonIdx + 3), 10)
   const sleepStart = hh * 60 + mm
   const sleepEnd   = sleepStart + totalMinutes
+  return { date, onset: records[0].dateStr, totalMinutes, deep, light, rem, awake, sleepStart, sleepEnd, periods }
+}
 
-  return { totalMinutes, deep, light, rem, awake, periods, sleepStart, sleepEnd }
+// Parse a raw 0x53 buffer into per-night summaries, oldest night first.
+function _parseSleepHistory(buf) {
+  const records = _parseSleepBlocks(buf)
+  if (!records.length) return []
+  const nightMap = {}
+  for (const rec of records) {
+    const key = _nightKey(rec.dateStr)
+    ;(nightMap[key] = nightMap[key] || []).push(rec)
+  }
+  return Object.keys(nightMap).sort().map(date => _summariseNight(date, nightMap[date]))
 }
 
 // 0x09 — real-time activity broadcast (25 bytes)
