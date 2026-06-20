@@ -755,6 +755,7 @@ Component({
     wearableBattery: 0,
     wearableBusy: false,
     ringMeasuring: false,
+    showPrivacyPopup: false,
     ringSettingsOpen: false,
     ringSettingsBusy: false,
     ringData: null,
@@ -792,6 +793,14 @@ Component({
       }
       if (this.properties.userId) this._loadHealth()
       this._loadWearableFromStorage()
+
+      // Register with app so onNeedPrivacyAuthorization can notify this component
+      const _app = getApp()
+      _app._onPrivacyRequest = () => this.setData({ showPrivacyPopup: true })
+    },
+    detached() {
+      const _app = getApp()
+      if (_app._onPrivacyRequest) _app._onPrivacyRequest = null
     },
   },
 
@@ -1976,11 +1985,55 @@ Component({
       } catch (_) {}
     },
 
+    onPrivacyAgree(e) {
+      const _app = getApp()
+      if (_app._privacyResolve) {
+        _app._privacyResolve({ event: e, buttonId: 'privacy-agree-btn' })
+        _app._privacyResolve = null
+      }
+      this.setData({ showPrivacyPopup: false })
+      if (this._privacyDone) { this._privacyDone(true); this._privacyDone = null }
+    },
+
+    onPrivacyCancel() {
+      const _app = getApp()
+      if (_app._privacyResolve) {
+        _app._privacyResolve({ event: null })
+        _app._privacyResolve = null
+      }
+      this.setData({ showPrivacyPopup: false })
+      if (this._privacyDone) { this._privacyDone(false); this._privacyDone = null }
+    },
+
+    // Returns a Promise that resolves once privacy consent exists, rejects if declined.
+    // Call this before any BLE API so the BLE call only runs after consent is confirmed.
+    _ensurePrivacyConsent() {
+      return new Promise((resolve, reject) => {
+        if (!wx.getPrivacySetting) { resolve(); return }
+        wx.getPrivacySetting({
+          success: (res) => {
+            if (!res.needAuthorization) { resolve(); return }
+            // Store callback — onPrivacyAgree/Cancel will invoke it to unblock this promise
+            this._privacyDone = (agreed) => { agreed ? resolve() : reject(new Error('declined')) }
+            wx.requirePrivacyAuthorize({
+              success: () => {},
+              fail: () => { if (this._privacyDone) { this._privacyDone(false); this._privacyDone = null } },
+            })
+          },
+          fail: () => resolve(),
+        })
+      })
+    },
+
     async handleBindWearable() {
       if (this.data.wearableBusy) return
       const t = this.data.t
       this.setData({ wearableBusy: true })
       try {
+        await this._ensurePrivacyConsent()
+        await new Promise((resolve, reject) =>
+          wx.authorize({ scope: 'scope.bluetooth', success: resolve, fail: reject })
+        )
         const { BLEManager } = require('../../utils/wearable/ble-manager.js')
         const { COLMI_NAME_PREFIXES } = require('../../utils/wearable/colmi/protocol.js')
         const { X3_NAME_PREFIXES } = require('../../utils/wearable/x3/protocol.js')
@@ -2070,6 +2123,7 @@ Component({
       const lang = this.properties.lang || 'zh'
       const isZh = lang !== 'en'
       this.setData({ wearableBusy: true, ringMeasuring: false })
+      try { await this._ensurePrivacyConsent() } catch (e) { this.setData({ wearableBusy: false }); return }
       const { createWearable } = require('../../utils/wearable/index.js')
       const _savedDev = wx.getStorageSync('wearable_device') || {}
       const brand = _savedDev.brand || 'colmi'

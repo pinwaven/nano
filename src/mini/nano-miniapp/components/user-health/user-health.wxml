@@ -825,4 +825,21 @@
     </view>
   </view>
 
+  <!-- Privacy consent popup — shown when WeChat triggers onNeedPrivacyAuthorization -->
+  <view wx:if="{{showPrivacyPopup}}" class="privacy-mask" catchtap="noop">
+    <view class="privacy-box">
+      <text class="privacy-title">{{isZh ? '隐私保护提示' : 'Privacy Notice'}}</text>
+      <text class="privacy-body">{{isZh ? '为连接您的健康戒指并读取健康数据，需要使用蓝牙权限。请阅读并同意我们的隐私保护指引后继续。' : 'To connect your smart ring and read health data, we need Bluetooth access. Please agree to our privacy policy to continue.'}}</text>
+      <button class="privacy-agree-btn"
+              id="privacy-agree-btn"
+              open-type="agreePrivacyAuthorization"
+              bindagreeprivacyauthorization="onPrivacyAgree">
+        {{isZh ? '同意并继续' : 'Agree & Continue'}}
+      </button>
+      <view class="privacy-cancel-btn" bindtap="onPrivacyCancel">
+        <text>{{isZh ? '拒绝' : 'Decline'}}</text>
+      </view>
+    </view>
+  </view>
+
 </view>
