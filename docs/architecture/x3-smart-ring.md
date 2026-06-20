@@ -380,6 +380,99 @@ const brand = chosen.name.startsWith('X3') ? 'x3' : 'colmi'
 
 ---
 
+## 7a. BLE Concurrency Constraint
+
+`X3Ring._send(packet, expectedCmdId)` registers a single `notifyHandler` slot on the FFF7 characteristic. Only one pending command can wait for a response at a time.
+
+**Do not use `Promise.all` to issue multiple ring commands concurrently.** Each call to `_send` overwrites the shared `notifyHandler`. If you fire four commands in parallel, only the last-registered handler is active when the ring's first response arrives — the other three callers will timeout.
+
+```js
+// WRONG — 3 of 4 calls will timeout
+const [s1, s2, s3, s4] = await Promise.all([
+  ring.getAutoMonitoring(1),
+  ring.getAutoMonitoring(2),
+  ring.getAutoMonitoring(3),
+  ring.getAutoMonitoring(4),
+])
+
+// CORRECT — sequential, each waits for its own response
+const s1 = await ring.getAutoMonitoring(1)
+const s2 = await ring.getAutoMonitoring(2)
+const s3 = await ring.getAutoMonitoring(3)
+const s4 = await ring.getAutoMonitoring(4)
+```
+
+**Always close the BLE connection in a `finally` block.** If a command throws (timeout, BLE error), execution jumps to `catch`, skipping any `ring.disconnect()` call placed inside `try`. A leaked connection prevents re-connection until the WeChat BLE adapter is reset. Pattern:
+
+```js
+const ring = createWearable('x3')
+try {
+  await ring.connect(deviceId)
+  // ... sequential ring commands ...
+} catch (e) {
+  // handle error
+} finally {
+  ring.disconnect().catch(() => {})   // always runs, even on throw
+}
+```
+
+---
+
+## 7b. Ring Settings Panel (`toggleRingSettings` / `saveRingIntervals`)
+
+The ⚙ button in the health tab opens a panel showing the four auto-monitoring intervals. Pressing it triggers `toggleRingSettings()` in `user-health.js`.
+
+**Open flow:**
+1. For non-X3 brands: opens immediately with no BLE call.
+2. For X3: connects, reads intervals for all four types **sequentially** (HR → SpO2 → Temp → HRV), disconnects in `finally`, then populates `x3Intervals` state. While reading, `ringSettingsBusy = true` shows a loading row.
+3. On failure: silently falls back to locally cached intervals (last values saved to `x3_interval_settings`).
+
+**Change detection:** `handleIntervalChange` sets `x3IntervalsChanged = true`. The Save button appears only when this is true.
+
+**Save flow (`saveRingIntervals`):**
+1. Connects to ring.
+2. Calls `setAutoMonitoring` for each of the four types **sequentially** with `workMode: 1` (Continuous), 00:00–23:59 window, all weekdays (`0x7F`).
+3. On success: persists `x3Intervals` to `wx.setStorageSync('x3_interval_settings', …)`, clears the change flag (Save button hides).
+4. On failure: shows `wearableSyncFail` toast; logs error to console for DevTools inspection.
+5. `ring.disconnect()` always runs in `finally`.
+
+The Save path **does not** call `getAutoMonitoring` — it writes the current UI state directly to the ring.
+
+---
+
+## 7c. Realtime Readings Display (X3 vs Colmi)
+
+The "readings" list beneath the ring card (`ringData.realtimeReadings`) works differently per brand.
+
+**Colmi (on-demand, Phase 2):**  
+After each manual measurement, `_commitRingData` appends `{ t, hrv, stress, spo2, … }` to `wearable_realtime_today` in local storage, keyed by today's date. On the next page load, `_getRealtimeReadings` retrieves today's accumulated list. This captures multiple on-demand readings taken throughout a single day.
+
+**X3 (auto-monitoring, synced from ring buffer):**  
+The ring's auto-monitoring already produces a full day of timed readings stored in `raw.hrvSlots` and `raw.spo2Slots`. Pushing `raw.hrv` (always the latest ring reading) into `wearable_realtime_today` on every sync would accumulate identical values with different sync timestamps — showing the same reading three times after three syncs.
+
+X3 therefore **bypasses `wearable_realtime_today` entirely** and builds `realtimeReadings` from the slot arrays using `_slotsToReadings(hrvSlots, spo2Slots)`:
+
+```
+_slotsToReadings:
+  merge HRV and SpO2 slots by timestamp
+  convert ring timestamp strings ('2026-06-20 14:30:12', CST)
+  to Unix ms via new Date(ts.replace(' ', 'T') + '+08:00').getTime()
+  return sorted by timestamp, each record shaped for _fmtRealtimeReadings
+```
+
+This means the health tab for X3 users shows one entry per ring auto-measurement (e.g. one HRV reading every 60 min), not one entry per sync session.
+
+The branch in `_commitRingData`:
+```js
+const rawReadings = raw.hrvSlots != null
+  ? _slotsToReadings(raw.hrvSlots, raw.spo2Slots)  // X3
+  : _getRealtimeReadings(raw.syncedAt)              // Colmi
+```
+
+`_loadWearableFromStorage` (page-load restore from `wearable_ring_data`) applies the same branch.
+
+---
+
 ## 8. Full API Reference (`X3Ring`)
 
 All methods are `async` and throw on BLE error or timeout. `date` parameters default to today (CST) when omitted. Timestamps in returned objects are `'YYYY-MM-DD HH:MM:SS'` strings in CST; history arrays are sorted **oldest-first**.
