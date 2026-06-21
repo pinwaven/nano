@@ -2586,12 +2586,25 @@
   border-radius: 14rpx;
 }
 
+.ring-reading-time-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 80rpx;
+  flex-shrink: 0;
+}
+
+.ring-reading-date {
+  font-size: 18rpx;
+  color: rgba(166, 196, 229, 0.3);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
 .ring-reading-time {
   font-size: 22rpx;
   font-weight: 700;
   color: rgba(166, 196, 229, 0.45);
-  width: 72rpx;
-  flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
 

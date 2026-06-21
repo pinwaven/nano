@@ -78,11 +78,13 @@ async function handleGetUserWithdrawals(query) {
 }
 
 async function handleGetAdminWithdrawals(query) {
-    const { status } = query;
+    const { status, channel_id } = query;
     try {
         const params = [];
-        let where = '';
-        if (status) { params.push(status); where = `WHERE cw.status = $1`; }
+        const conditions = [];
+        if (status)     { params.push(status);     conditions.push(`cw.status = $${params.length}`); }
+        if (channel_id) { params.push(channel_id); conditions.push(`u.channel_id = $${params.length}`); }
+        const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
         const { rows } = await pool.query(
             `SELECT cw.*, u.nickname, u.avatar_url
              FROM credit_withdrawals cw

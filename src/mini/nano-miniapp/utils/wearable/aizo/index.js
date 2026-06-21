@@ -3,7 +3,7 @@
 const { WearableDevice } = require('../index.js')
 const { BLEManager }     = require('../ble-manager.js')
 const {
-  BLE_SERVICE_UUID, WRITE_UUID, NOTIFY_UUID,
+  BLE_SERVICE_UUID, WRITE_UUID, NOTIFY_UUID, AIZO_NAME_PREFIXES,
   buildFrame, parseFrame,
   getBindRequest, getWatchInfoRequest,
   getStepInfoRequest, getSleepInfoRequest,
@@ -23,12 +23,12 @@ class AizoRing extends WearableDevice {
     this._name     = null
   }
 
-  // Scan for Aizo rings by service UUID. Returns [{ deviceId, name, rssi }].
+  // Scan for Aizo rings by name prefix. Returns [{ deviceId, name, rssi }].
   static async scan(timeoutMs) {
     const mgr = new BLEManager()
     await mgr.openAdapter()
     try {
-      return await mgr.scan(null, timeoutMs || 8000, [BLE_SERVICE_UUID])
+      return await mgr.scan(AIZO_NAME_PREFIXES, timeoutMs || 8000)
     } finally {
       await mgr.closeAdapter()
     }

@@ -6,7 +6,26 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Added
+
+- **Finance tab visible to channel admins** (`auth.js`, `index.js`, `handlers/partners.js`, `handlers/credits.js`)
+
+  Channel admin accounts (including autonomous channels like Aeviva China) can now access the **Finance** tab in the admin panel. They see partner payouts, coach commissions, channel payouts, and credit withdrawals scoped to their own channel. Previously the Finance tab was superadmin-only.
+
+  - Added `finance:read`, `finance:write` to `CHANNEL_ADMIN_FULL_PERMS`
+  - All Finance GET routes in `index.js` now inject `adminCtx.channelId` so channel admins are auto-scoped
+  - `handleGetPartnerCommissions` now supports `channel_id` filtering
+  - `handleGetAdminWithdrawals` now supports `channel_id` filtering via `users.channel_id`
+  - Generate-payouts POST routes enforce channel scope for channel admin callers
+
 ### Fixed
+
+- **Aizo ring (Infinity Ring) — BLE scanning and UUID normalization fixes** (`ble-manager.js`, `user-health.js`, `aizo/index.js`, `colmi/index.js`)
+
+  **What changed:**
+  - **UUID Normalization:** Modified `_normalizeUUID` in `ble-manager.js` and `colmi/index.js` to support expanding standard 16-bit and 32-bit UUIDs (e.g., `fe02`, `010a`) to their 128-bit equivalents (using the standard Bluetooth base UUID `00000000-0000-1000-8000-00805f9b34fb`). This ensures standard 16-bit characteristic UUIDs returned by WeChat match the 128-bit strings defined in protocol files.
+  - **Scanning by Name:** The physical "infinity ring" does not advertise its service UUID `fe02` in its BLE advertisement headers. Changed `AizoRing.scan` in `aizo/index.js` to scan by name prefixes (`AIZO_NAME_PREFIXES` which contains `"infinity"`) rather than filtering on `[BLE_SERVICE_UUID]`.
+  - **Case-Insensitive Scan Matching:** Updated the scan loop in `user-health.js` and `ble-manager.js` to perform case-insensitive name prefix matching (e.g., matching `"Infinity Ring"` to `"infinity"`) and check `d.localName` if `d.name` is empty.
 
 - **X3 ring settings — BLE connection leak causing '同步失败' on Save** (`user-health.js`)
 

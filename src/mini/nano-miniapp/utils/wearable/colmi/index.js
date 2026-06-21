@@ -392,7 +392,14 @@ function _concat(arrays, totalLen) {
 }
 
 function _normalizeUUID(uuid) {
-  return uuid.replace(/-/g, '').toLowerCase()
+  if (!uuid) return ''
+  let clean = uuid.replace(/-/g, '').toLowerCase()
+  if (clean.length === 4) {
+    clean = '0000' + clean + '00001000800000805f9b34fb'
+  } else if (clean.length === 8) {
+    clean = clean + '00001000800000805f9b34fb'
+  }
+  return clean
 }
 
 module.exports = ColmiRing

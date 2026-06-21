@@ -46,6 +46,7 @@ const CHANNEL_ADMIN_FULL_PERMS = [
     'inventory:read','inventory:write',
     'rewards:read','rewards:write','rewards:delete',
     'partners:read','partners:write','partners:delete',
+    'finance:read','finance:write',
     'academy:read','academy:write',
     'questionnaires:read',
     'health-plans:read',

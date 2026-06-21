@@ -42,9 +42,10 @@ class BLEManager {
 
       wx.onBluetoothDeviceFound((res) => {
         for (const d of res.devices) {
-          if (!d.name && !services.length) continue
-          if (prefixes && !prefixes.some((p) => d.name && d.name.startsWith(p))) continue
-          found.set(d.deviceId, { deviceId: d.deviceId, name: d.name || '', rssi: d.RSSI })
+          const name = d.name || d.localName || ''
+          if (!name && !services.length) continue
+          if (prefixes && !prefixes.some((p) => name.toLowerCase().startsWith(p.toLowerCase()))) continue
+          found.set(d.deviceId, { deviceId: d.deviceId, name: name, rssi: d.RSSI })
         }
       })
 
@@ -207,7 +208,14 @@ class BLEManager {
 }
 
 function _normalizeUUID(uuid) {
-  return uuid.replace(/-/g, '').toLowerCase()
+  if (!uuid) return ''
+  let clean = uuid.replace(/-/g, '').toLowerCase()
+  if (clean.length === 4) {
+    clean = '0000' + clean + '00001000800000805f9b34fb'
+  } else if (clean.length === 8) {
+    clean = clean + '00001000800000805f9b34fb'
+  }
+  return clean
 }
 
 function _delay(ms) {

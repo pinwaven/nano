@@ -27,8 +27,8 @@
  * @property {number|null} systolicBP     - mmHg systolic blood pressure
  * @property {number|null} diastolicBP    - mmHg diastolic blood pressure
  * @property {string|null} hrvMeasuredAt  - ring's BCD timestamp for the HRV record ("YYYY-MM-DD HH:MM:SS")
- * @property {Array|null}  hrvSlots  - [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}] all HRV readings (X3)
- * @property {Array|null}  spo2Slots - [{timestamp, spo2}] all SpO2 readings (X3)
+ * @property {Array|null}  hrvSlots  - [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}] all cached HRV readings across ~3 days (X3)
+ * @property {Array|null}  spo2Slots - [{timestamp, spo2}] all cached SpO2 readings across ~3 days (X3)
  * @property {number}      syncedAt       - Date.now()
  */
 
@@ -107,10 +107,11 @@ function syncWearableData(openid, snapshot, apiToken) {
   if (snapshot.hrvSlots?.length) {
     for (const slot of snapshot.hrvSlots) {
       const ts = slot.timestamp.replace(/\D/g, '')
+      const slotDate = slot.timestamp.substring(0, 10)  // '2026-06-20' from '2026-06-20 14:30:12'
       events.push({
         category: 'vitals',
         source: src,
-        data_date: todayDate,
+        data_date: slotDate,
         recorded_at: recordedAt,
         external_id: `${src}_hrv_${ts}`,
         data: {
@@ -129,10 +130,11 @@ function syncWearableData(openid, snapshot, apiToken) {
   if (snapshot.spo2Slots?.length) {
     for (const slot of snapshot.spo2Slots) {
       const ts = slot.timestamp.replace(/\D/g, '')
+      const slotDate = slot.timestamp.substring(0, 10)
       events.push({
         category: 'vitals',
         source: src,
-        data_date: todayDate,
+        data_date: slotDate,
         recorded_at: recordedAt,
         external_id: `${src}_spo2_${ts}`,
         data: { spo2: slot.spo2 ?? null },

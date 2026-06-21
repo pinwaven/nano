@@ -455,7 +455,10 @@
             <text class="ring-chart-label">{{t.ringHrv}} · {{t.ringStress}} · SpO₂</text>
             <view class="ring-readings-list">
               <view wx:for="{{ringData.realtimeReadings}}" wx:key="index" class="ring-reading-row">
-                <text class="ring-reading-time">{{item.time}}</text>
+                <view class="ring-reading-time-col">
+                  <text wx:if="{{item.dateLabel}}" class="ring-reading-date">{{item.dateLabel}}</text>
+                  <text class="ring-reading-time">{{item.time}}</text>
+                </view>
                 <view class="ring-reading-metrics">
                   <view wx:if="{{item.hrv != null}}" class="ring-reading-metric">
                     <text class="ring-reading-val" style="color:{{item.hrvColor}}">{{item.hrv}}</text>

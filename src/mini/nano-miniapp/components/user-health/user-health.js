@@ -466,7 +466,7 @@ function _getRealtimeReadings(syncedAt) {
     const todayStr = _shanghaiDateStr(syncedAt)
     const stored = wx.getStorageSync('wearable_realtime_today')
     if (!stored || stored.date !== todayStr) return []
-    return stored.readings || []
+    return (stored.readings || []).slice().reverse()
   } catch (_) { return [] }
 }
 
@@ -486,22 +486,31 @@ function _slotsToReadings(hrvSlots, spo2Slots) {
       systolicBP: s.highBP ?? null, diastolicBP: s.lowBP ?? null,
     })
   }
-  return Object.keys(byTs).sort().map(ts => ({
+  return Object.keys(byTs).sort().reverse().map(ts => ({
     t: new Date(ts.replace(' ', 'T') + '+08:00').getTime(),
     ...byTs[ts],
   }))
 }
 
 function _fmtRealtimeReadings(readings) {
+  const todayStr = _shanghaiDateStr(Date.now())
+  const yesterStr = _shanghaiDateStr(Date.now() - 86400000)
   return readings.map(r => {
     const time = _shanghaiTimeStr(r.t)
+    const dateStr = _shanghaiDateStr(r.t)
+    const dateLabel = dateStr === todayStr ? null : dateStr === yesterStr ? '昨天' : dateStr.slice(5).replace('-', '/')
     const hrvColor    = r.hrv    == null ? null : r.hrv >= 80 ? '#0ea5e9' : r.hrv >= 50 ? '#10b981' : r.hrv >= 30 ? '#f97316' : '#ef4444'
     const spo2Color   = r.spo2   == null ? null : r.spo2 >= 98 ? '#0ea5e9' : r.spo2 >= 95 ? '#10b981' : r.spo2 >= 90 ? '#f97316' : '#ef4444'
     const stressColor = r.stress == null ? null : r.stress <= 25 ? '#10b981' : r.stress <= 50 ? '#6375EC' : r.stress <= 75 ? '#f97316' : '#ef4444'
     const bpStr   = r.systolicBP != null && r.diastolicBP != null ? `${r.systolicBP}/${r.diastolicBP}` : null
     const bpColor = r.systolicBP == null ? null : r.systolicBP >= 140 ? '#ef4444' : r.systolicBP >= 130 ? '#f97316' : r.systolicBP >= 120 ? '#f97316' : '#10b981'
-    return { time, hrv: r.hrv, stress: r.stress, spo2: r.spo2, hrvColor, spo2Color, stressColor, bpStr, bpColor, breathRate: r.breathRate ?? null }
+    return { time, dateLabel, hrv: r.hrv, stress: r.stress, spo2: r.spo2, hrvColor, spo2Color, stressColor, bpStr, bpColor, breathRate: r.breathRate ?? null }
   })
+}
+
+function _isPrivacyError(e) {
+  const msg = e?.message || e?.errMsg || ''
+  return msg.includes('privacy api banned') || msg.includes('privacy')
 }
 
 function chronoAge(birthDate) {
@@ -2005,35 +2014,11 @@ Component({
       if (this._privacyDone) { this._privacyDone(false); this._privacyDone = null }
     },
 
-    // Returns a Promise that resolves once privacy consent exists, rejects if declined.
-    // Call this before any BLE API so the BLE call only runs after consent is confirmed.
-    _ensurePrivacyConsent() {
-      return new Promise((resolve, reject) => {
-        if (!wx.getPrivacySetting) { resolve(); return }
-        wx.getPrivacySetting({
-          success: (res) => {
-            if (!res.needAuthorization) { resolve(); return }
-            // Store callback — onPrivacyAgree/Cancel will invoke it to unblock this promise
-            this._privacyDone = (agreed) => { agreed ? resolve() : reject(new Error('declined')) }
-            wx.requirePrivacyAuthorize({
-              success: () => {},
-              fail: () => { if (this._privacyDone) { this._privacyDone(false); this._privacyDone = null } },
-            })
-          },
-          fail: () => resolve(),
-        })
-      })
-    },
-
     async handleBindWearable() {
       if (this.data.wearableBusy) return
       const t = this.data.t
       this.setData({ wearableBusy: true })
       try {
-        await this._ensurePrivacyConsent()
-        await new Promise((resolve, reject) =>
-          wx.authorize({ scope: 'scope.bluetooth', success: resolve, fail: reject })
-        )
         const { BLEManager } = require('../../utils/wearable/ble-manager.js')
         const { COLMI_NAME_PREFIXES } = require('../../utils/wearable/colmi/protocol.js')
         const { X3_NAME_PREFIXES } = require('../../utils/wearable/x3/protocol.js')
@@ -2053,14 +2038,16 @@ Component({
         await new Promise((resolve) => {
           wx.onBluetoothDeviceFound((res) => {
             for (const d of res.devices) {
+              const name = d.name || d.localName || ''
+              const nameLower = name.toLowerCase()
               const advUUIDs  = (d.advertisServiceUUIDs || []).map(u => u.replace(/-/g, '').toLowerCase())
               const isAizoSvc  = advUUIDs.includes(AIZO_SVC_NORM)
-              const isAizoName = d.name && AIZO_NAME_PREFIXES.some((p) => d.name.startsWith(p))
+              const isAizoName = nameLower && AIZO_NAME_PREFIXES.some((p) => nameLower.startsWith(p.toLowerCase()))
               const isAizo     = isAizoSvc || isAizoName
-              const isNamed    = d.name && ALL_PREFIXES.some((p) => d.name.startsWith(p))
+              const isNamed    = nameLower && ALL_PREFIXES.some((p) => nameLower.startsWith(p.toLowerCase()))
               if (!isAizo && !isNamed) continue
-              const brand = isAizo ? 'aizo' : (d.name.startsWith('X3') ? 'x3' : 'colmi')
-              found.set(d.deviceId, { deviceId: d.deviceId, name: d.name || 'Aizo Ring', rssi: d.RSSI, brand })
+              const brand = isAizo ? 'aizo' : (nameLower.startsWith('x3') ? 'x3' : 'colmi')
+              found.set(d.deviceId, { deviceId: d.deviceId, name: name || (brand === 'aizo' ? 'Aizo Ring' : brand === 'x3' ? 'X3 Ring' : 'Colmi Ring'), rssi: d.RSSI, brand })
             }
           })
           wx.startBluetoothDevicesDiscovery({
@@ -2112,7 +2099,8 @@ Component({
         })
       } catch (e) {
         wx.hideLoading()
-        wx.showToast({ title: t.wearableConnectFail, icon: 'none', duration: 2500 })
+        console.error('[BLE][bind]', e?.message || e?.errMsg || e)
+        if (!_isPrivacyError(e)) wx.showToast({ title: t.wearableConnectFail, icon: 'none', duration: 2500 })
         this.setData({ wearableBusy: false })
       }
     },
@@ -2123,7 +2111,6 @@ Component({
       const lang = this.properties.lang || 'zh'
       const isZh = lang !== 'en'
       this.setData({ wearableBusy: true, ringMeasuring: false })
-      try { await this._ensurePrivacyConsent() } catch (e) { this.setData({ wearableBusy: false }); return }
       const { createWearable } = require('../../utils/wearable/index.js')
       const _savedDev = wx.getStorageSync('wearable_device') || {}
       const brand = _savedDev.brand || 'colmi'
@@ -2132,9 +2119,6 @@ Component({
       // ── X3: single-phase sync — all data is historical, no real-time measurement needed ──
       if (brand === 'x3') {
         try {
-          await new Promise((resolve, reject) =>
-            wx.authorize({ scope: 'scope.bluetooth', success: resolve, fail: reject })
-          )
           wx.showLoading({ title: t.wearableConnecting, mask: true })
           await ring.connect(this.data.wearableId)
           // Apply background measurement intervals (silently, failures are non-fatal)
@@ -2148,8 +2132,8 @@ Component({
           const steps   = await ring.getSteps().catch(() => null)
           const sleep   = await ring.getSleep().catch(() => null)
           const hrLog   = await ring.getHeartRateLog().catch(() => null)
-          const hrvLog  = await ring.getHrvLog().catch(() => [])   // [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}]
-          const spo2Log = await ring.getSpo2Log().catch(() => [])  // [{timestamp, spo2}]
+          const hrvLog  = await ring.getHrvHistory().catch(() => [])       // all cached days [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}]
+          const spo2Log = await ring.getAutoSpo2History().catch(() => [])  // all cached days [{timestamp, spo2}]
           await ring.disconnect()
           wx.hideLoading()
 
@@ -2188,7 +2172,8 @@ Component({
         } catch (e) {
           wx.hideLoading()
           await ring.disconnect().catch(() => {})
-          wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
+          console.error('[BLE][sync:x3]', e?.message || e?.errMsg || e)
+          if (!_isPrivacyError(e)) wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
           this.setData({ wearableConnected: false, wearableBusy: false })
         } finally {
           this.setData({ wearableBusy: false, ringMeasuring: false })
@@ -2199,9 +2184,6 @@ Component({
       // ── Aizo: single-phase sync — historical data via syncAll() ──
       if (brand === 'aizo') {
         try {
-          await new Promise((resolve, reject) =>
-            wx.authorize({ scope: 'scope.bluetooth', success: resolve, fail: reject })
-          )
           wx.showLoading({ title: t.wearableConnecting, mask: true })
           const savedDev = wx.getStorageSync('wearable_device') || {}
           await ring.connect(this.data.wearableId, { name: savedDev.name || '' })
@@ -2233,7 +2215,8 @@ Component({
         } catch (e) {
           wx.hideLoading()
           await ring.disconnect().catch(() => {})
-          wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
+          console.error('[BLE][sync:aizo]', e?.message || e?.errMsg || e)
+          if (!_isPrivacyError(e)) wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
           this.setData({ wearableConnected: false, wearableBusy: false })
         } finally {
           this.setData({ wearableBusy: false, ringMeasuring: false })
@@ -2245,9 +2228,6 @@ Component({
       // Phase 1: connect + read stored data (few seconds, blocking modal)
       let battery, steps, sleep, hrLog
       try {
-        await new Promise((resolve, reject) =>
-          wx.authorize({ scope: 'scope.bluetooth', success: resolve, fail: reject })
-        )
         wx.showLoading({ title: t.wearableConnecting, mask: true })
         await ring.connect(this.data.wearableId, { name: this.data.wearableName || '' })
         battery = await ring.getBattery()
@@ -2258,7 +2238,8 @@ Component({
       } catch (e) {
         wx.hideLoading()
         await ring.disconnect().catch(() => {})
-        wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
+        console.error('[BLE][sync:colmi]', e?.message || e?.errMsg || e)
+        if (!_isPrivacyError(e)) wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
         this.setData({ wearableConnected: false, wearableBusy: false })
         return
       }

@@ -142,6 +142,7 @@ async function handleGetPartnerCommissions(query) {
         if (query.partner_id)   { params.push(query.partner_id);   conditions.push(`pc.partner_id=$${params.length}`); }
         if (query.source_type)  { params.push(query.source_type);  conditions.push(`pc.source_type=$${params.length}`); }
         if (query.status)       { params.push(query.status);       conditions.push(`pc.status=$${params.length}`); }
+        if (query.channel_id)   { params.push(query.channel_id);   conditions.push(`p.channel_id=$${params.length}`); }
         if (query.from)         { params.push(query.from);         conditions.push(`pc.created_at>=$${params.length}`); }
         if (query.to)           { params.push(query.to);           conditions.push(`pc.created_at<=$${params.length}`); }
         const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';

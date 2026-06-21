@@ -299,7 +299,8 @@ exports.handler = async (req, resp, context) => {
             } else if (path === '/credits/withdrawals') {
                 result = await handleGetUserWithdrawals(query);
             } else if (path === '/admin/credit-withdrawals') {
-                result = await handleGetAdminWithdrawals(query);
+                const wdQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
+                result = await handleGetAdminWithdrawals(wdQuery);
             } else if (path.match(/\/admin\/users\/([^/]+)\/credit-history/)) {
                 const uid = path.match(/\/admin\/users\/([^/]+)\/credit-history/)[1];
                 result = await handleGetAdminUserCreditHistory(uid, adminCtx);
@@ -320,9 +321,11 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/partners\/(\d+)/)) {
                 result = await handleGetPartner(path.match(/\/partners\/(\d+)/)[1]);
             } else if (path.includes('/partner-commissions')) {
-                result = await handleGetPartnerCommissions(query);
+                const pcQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
+                result = await handleGetPartnerCommissions(pcQuery);
             } else if (path.includes('/partner-payouts')) {
-                result = await handleGetPartnerPayouts(query);
+                const ppQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
+                result = await handleGetPartnerPayouts(ppQuery);
             } else if (path.includes('/partners')) {
                 result = await handleGetPartners(query, adminCtx);
             } else if (path.match(/\/channels\/(\d+)\/rewards-config$/)) {
@@ -371,7 +374,8 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/commission-settings')) {
                 result = await handleGetCommissionSettings();
             } else if (path.includes('/coach-commissions')) {
-                result = await handleGetCoachCommissions(query);
+                const ccQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
+                result = await handleGetCoachCommissions(ccQuery);
             } else if (path.includes('/channel-commissions')) {
                 result = await handleGetChannelCommissions(query);
             } else if (path.includes('/coach-earnings')) {
@@ -379,7 +383,8 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/coach-payouts')) {
                 result = await handleGetCoachPayouts(query);
             } else if (path.includes('/channel-payouts')) {
-                result = await handleGetChannelPayouts(query);
+                const cpQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
+                result = await handleGetChannelPayouts(cpQuery);
             } else if (path.includes('/channel-rewards-summary')) {
                 result = await handleGetChannelRewardsSummary(query.channel_id);
             } else if (path === '/admin/dashboard-stats') {
@@ -574,9 +579,11 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/generate-coach-payouts')) {
                 result = await handlePostGenerateCoachPayouts(parsedBody);
             } else if (path.includes('/generate-channel-payouts')) {
-                result = await handlePostGenerateChannelPayouts(parsedBody);
+                const gcBody = adminCtx.channelId ? { channel_id: adminCtx.channelId, ...parsedBody } : parsedBody;
+                result = await handlePostGenerateChannelPayouts(gcBody);
             } else if (path.includes('/generate-partner-payouts')) {
-                result = await handlePostGeneratePartnerPayouts(parsedBody);
+                const gpBody = adminCtx.channelId ? { channel_id: adminCtx.channelId, ...parsedBody } : parsedBody;
+                result = await handlePostGeneratePartnerPayouts(gpBody);
             } else if (path === '/partner-types') {
                 result = await handlePostPartnerType(parsedBody, adminCtx);
             } else if (path === '/partner-commission-rules') {
