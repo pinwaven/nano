@@ -3,7 +3,7 @@
     <view
       wx:for="{{tools}}"
       wx:key="action"
-      class="tool-item"
+      class="tool-item{{disabled ? ' tool-item-disabled' : ''}}"
       bindtap="onTap"
       data-action="{{item.action}}"
     >

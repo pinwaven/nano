@@ -20,6 +20,19 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Fixed
 
+- **Toolbox image upload — second upload silently hangs, picker never opens** (`components/toolbox/toolbox.js`, `pages/main/main.js`, `pages/coach/coach.js`, `utils/tool-actions.js`)
+
+  After a user successfully uploaded an image, tapping "Upload Image" in the toolbox again produced no visible result — `wx.chooseMedia` was called (confirmed via vConsole) but neither the success nor fail callback ever fired.
+
+  **Root cause:** `wx.chooseMedia` requires WeChat's privacy authorization (`onNeedPrivacyAuthorization`). The app routes that event through `_app._onPrivacyRequest`, which the `user-health` component registers to show its own privacy popup. However, `user-health` lives inside `.health-tab`, which applies `display: none !important` whenever the chat tab is active. A `position: fixed; z-index: 9999` element inside a `display: none` parent is also hidden — the user never saw the privacy prompt, could never tap "Agree", `resolve()` was never called, and `wx.chooseMedia` hung indefinitely. Each subsequent tap stacked another pending call.
+
+  **What changed:**
+  - `main.js` and `coach.js` each register their own `_app._onPrivacyRequest` in `onReady` (which fires after component `attached()`, so it wins over user-health's registration). This points to a page-level `showPrivacyModal` flag instead of user-health's component-scoped flag.
+  - A privacy consent modal (`page-privacy-mask`) was added at the root of `main.wxml` and `coach.wxml`, outside all tab containers, so it is always visible regardless of which tab is active.
+  - `onPrivacyAgree` / `onPrivacyCancel` handlers added to both pages; they call `_app._privacyResolve(...)` the same way user-health did.
+  - After `readFile` loads the image into memory as an ArrayBuffer, the temp file is immediately `unlink`'d so WeChat can allocate a fresh temp path on the next `wx.chooseMedia` call.
+  - After OSS PUT succeeds, the chat image message URL is swapped from the local temp path to the permanent OSS `get_url` (better for persistence and frees the temp file reference).
+
 - **Aizo ring (Infinity Ring) — BLE scanning and UUID normalization fixes** (`ble-manager.js`, `user-health.js`, `aizo/index.js`, `colmi/index.js`)
 
   **What changed:**

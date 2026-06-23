@@ -306,6 +306,7 @@ Page({
     lang: 'zh',
     t: T.zh,
     tab: 'clients',
+    showPrivacyModal: false,
     loading: false,
     clientsRefreshing: false,
     statusBarHeight: 0,
@@ -517,6 +518,29 @@ Page({
   },
   handleBack() { wx.navigateBack() },
   noop() {},
+
+  onReady() {
+    const _app = getApp()
+    _app._onPrivacyRequest = () => this.setData({ showPrivacyModal: true })
+  },
+
+  onPrivacyAgree(e) {
+    const _app = getApp()
+    if (_app._privacyResolve) {
+      _app._privacyResolve({ event: e, buttonId: 'privacy-agree-btn' })
+      _app._privacyResolve = null
+    }
+    this.setData({ showPrivacyModal: false })
+  },
+
+  onPrivacyCancel() {
+    const _app = getApp()
+    if (_app._privacyResolve) {
+      _app._privacyResolve({ event: null })
+      _app._privacyResolve = null
+    }
+    this.setData({ showPrivacyModal: false })
+  },
 
   toggleMenu() { this.setData({ menuOpen: !this.data.menuOpen }) },
   closeMenu()  { this.setData({ menuOpen: false }) },
@@ -737,7 +761,9 @@ Page({
   onMsgInput(e) { this.setData({ msgText: e.detail.value }) },
 
   toggleChatToolbox() {
-    this.setData({ chatToolboxOpen: !this.data.chatToolboxOpen })
+    const { chatToolBusy, chatToolboxOpen } = this.data
+    if (chatToolBusy && !chatToolboxOpen) return
+    this.setData({ chatToolboxOpen: !chatToolboxOpen })
   },
 
   handleChatToolAction(e) {
@@ -748,6 +774,7 @@ Page({
     const ctx = {
       addMsg: (role, content, persist) => this._addChatMsg(role, content, persist),
       addImageMsg: (url) => this._addChatImageMsg(url),
+      updateImageMsg: (id, url) => this._updateChatImageMsg(id, url),
       req: (url, method, data) => this._req(url, method, data),
       setTyping: (v) => this.setData({ chatToolBusy: v }),
     }
@@ -758,7 +785,8 @@ Page({
     } else if (action === 'health_advice') {
       toolActions.runHealthAdvice(detailClient.user_id, t, ctx)
     } else if (action === 'upload_image') {
-      toolActions.runUploadImage(detailClient.user_id, t, ctx)
+      const tempFilePath = e.detail?.tempFilePath
+      if (tempFilePath) toolActions.runUploadImage(detailClient.user_id, t, ctx, tempFilePath)
     }
   },
 
@@ -790,12 +818,19 @@ Page({
   },
 
   _addChatImageMsg(imageUrl) {
-    const msg = { id: `img-${Date.now()}`, role: 'coach', content: '', imageUrl, _isCoach: true, _isUser: false, _isAi: false, _time: '' }
+    const id = `img-${Date.now()}`
+    const msg = { id, role: 'coach', content: '', imageUrl, _isCoach: true, _isUser: false, _isAi: false, _time: '' }
     const chatMessages = [...this.data.chatMessages, msg]
     const lastIdx = chatMessages.length - 1
     this.setData({ chatMessages }, () => {
       this.setData({ chatScrollId: `cmsg${lastIdx}` })
     })
+    return id
+  },
+
+  _updateChatImageMsg(id, imageUrl) {
+    const chatMessages = this.data.chatMessages.map(m => m.id === id ? { ...m, imageUrl } : m)
+    this.setData({ chatMessages })
   },
 
   async sendMessage() {

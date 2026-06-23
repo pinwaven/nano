@@ -142,7 +142,7 @@ The Nano Flow is a streamlined, device-led sequence that integrates the Kino-One
 
 3. AI Assessment
    → POST /api/biomarkers { openid, test_type: "kino_chip", test_data: {hsCRP: ...} }
-   ← Returns BioAge + Sub-Ages + AI-estimated biomarkers
+   ← Returns BioAge + Sub-Ages + validated biomarkers
 
 4. Finalisation
    → POST /api/kino-result { chip_id, bio_age, data }

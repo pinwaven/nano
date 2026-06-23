@@ -433,21 +433,21 @@ Edit files under `src/functions/worker/prompts/viva/`. All Viva prompts are pure
 
 `chat_messages.persona_type` was added via `src/schemas/migration_chat_messages_persona_type.sql`. Existing rows default to `'nano'`.
 
-## 17. Biomarker Actual vs Estimated — Never Merge Actual Over Estimated
+## 17. Biomarker Actual vs Validated — Never Merge Actual Over Validated
 
-`data.estimated` (stored in the `biomarkers` table) is the **single source of truth** for biomarker values used in AI outputs. When passing biomarker values to any LLM prompt, always use `data.estimated`, never merge `data.actual` on top of it.
+`data.validated` (stored in the `biomarkers` table) is the **single source of truth** for biomarker values used in AI outputs. When passing biomarker values to any LLM prompt, always use `data.validated`, never merge `data.actual` on top of it.
 
 ### Why
 
-`BiomarkerEstimator` validates each submitted value against a physiologically plausible range before accepting it. When a submitted value is within range, the estimator stores it as `estimated` (so estimated = actual). When a submitted value is out of range or missing, the estimator generates a plausible estimate. The BioAge calculation always runs on `data.estimated`.
+`BiomarkerEstimator` validates each submitted value against a physiologically plausible range before accepting it. When a submitted value is within range, the estimator stores it as `validated` (so validated = actual). When a submitted value is out of range or missing, the estimator generates a plausible replacement. The BioAge calculation always runs on `data.validated`.
 
-`data.actual` is the **raw unvalidated** value from the Kino reader. Merging it over `estimated` in a prompt can pass an out-of-range value directly to the LLM while the stored BioAge was computed with the validated estimate — creating a contradiction in the report.
+`data.actual` is the **raw unvalidated** value from the Kino reader. Merging it over `validated` in a prompt can pass an out-of-range value directly to the LLM while the stored BioAge was computed with the validated value — creating a contradiction in the report.
 
 ### The bug (fixed 2026-06-07)
 
-`handlePostHealthAdvice` used `{ ...estimatedBm, ...actualBm }`, which let `actual.hsCRP = 0.14` (below the estimator's 0.2 minimum) overwrite `estimated.hsCRP = 1.02`. The LLM narrated "hsCRP = 0.14, excellent health" while the stored ResilienceAge had been scored with 1.02 — an internal contradiction visible to the user.
+`handlePostHealthAdvice` used `{ ...validatedBm, ...actualBm }`, which let `actual.hsCRP = 0.14` (below the estimator's 0.2 minimum) overwrite `validated.hsCRP = 1.02`. The LLM narrated "hsCRP = 0.14, excellent health" while the stored ResilienceAge had been scored with 1.02 — an internal contradiction visible to the user.
 
-**Fix:** Use `estimatedBm` directly (`src/functions/worker/index.js`, `handlePostHealthAdvice`).
+**Fix:** Use `validatedBm` directly (`src/functions/worker/index.js`, `handlePostHealthAdvice`).
 
 ### Rule for new code
 
@@ -455,10 +455,10 @@ When reading from `biomarkers.data` to feed an LLM prompt or build a user-facing
 
 ```js
 // CORRECT — validated, consistent with BioAge calculation
-const biomarkers = latestBio?.data?.estimated || {};
+const biomarkers = latestBio?.data?.validated || {};
 
 // WRONG — raw value can bypass estimator validation
-const biomarkers = { ...latestBio?.data?.estimated, ...latestBio?.data?.actual };
+const biomarkers = { ...latestBio?.data?.validated, ...latestBio?.data?.actual };
 ```
 
-`data.actual` is for audit/debug purposes only. Do not use it to override `data.estimated` in any user-facing output.
+`data.actual` is for audit/debug purposes only. Do not use it to override `data.validated` in any user-facing output.

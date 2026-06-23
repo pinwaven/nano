@@ -1459,3 +1459,54 @@
 .overlay-cancel-btn  { flex: 1; padding: 22rpx; background: var(--navy-lift); border-radius: 14rpx; text-align: center; font-size: 26rpx; color: var(--text-muted); }
 .overlay-confirm-btn { flex: 2; padding: 22rpx; background: linear-gradient(90deg,#6375EC,#8B9FFF); border-radius: 14rpx; text-align: center; font-size: 26rpx; font-weight: 600; color: #fff; }
 
+
+/* Page-level privacy authorization modal */
+.page-privacy-mask {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.page-privacy-box {
+  background: #132236;
+  border-radius: 24rpx;
+  padding: 48rpx 40rpx 36rpx;
+  margin: 0 48rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24rpx;
+}
+.page-privacy-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #e2eaf4;
+  text-align: center;
+}
+.page-privacy-body {
+  font-size: 26rpx;
+  color: rgba(166, 196, 229, 0.8);
+  text-align: center;
+  line-height: 1.6;
+}
+.page-privacy-agree-btn {
+  width: 100%;
+  background: #3b82f6;
+  color: #fff;
+  border-radius: 100rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  padding: 20rpx 0;
+  margin-top: 8rpx;
+  border: none;
+}
+.page-privacy-cancel-btn {
+  padding: 8rpx 0;
+}
+.page-privacy-cancel-btn text {
+  font-size: 26rpx;
+  color: rgba(166, 196, 229, 0.5);
+}

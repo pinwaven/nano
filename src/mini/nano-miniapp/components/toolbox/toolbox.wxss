@@ -34,3 +34,7 @@
   color: #EEF2FF;
   text-align: center;
 }
+
+.tool-item-disabled {
+  opacity: 0.35;
+}

@@ -817,7 +817,7 @@ async function handlePostFormulaDots(body) {
         const user = userResult.rows[0];
         const latestBio = bioResult.rows[0] || {};
         const data = latestBio.data || {};
-        const biomarkers = data.biomarkers || data.estimated || data.actual || {};
+        const biomarkers = data.biomarkers || data.validated || {};
         const bioageProfile = data.bioage_profile || {};
 
         let personaType = 'nano';

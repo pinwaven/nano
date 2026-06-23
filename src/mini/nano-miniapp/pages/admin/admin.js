@@ -408,10 +408,10 @@ Page({
       const records = res.data?.records || []
       const kinoRecords = records.filter(r => r.test_type === 'kino_chip')
       const latest = kinoRecords.length > 0 ? kinoRecords[kinoRecords.length - 1] : null
-      const estimated = latest?.data?.estimated || null
+      const validated = latest?.data?.validated || null
       const bmList = BM_META.map(({ key, label, unit, color }) => ({
         key, label, unit, color,
-        value: estimated?.[key] != null ? estimated[key] : null,
+        value: validated?.[key] != null ? validated[key] : null,
       }))
       this.setData({ detailBmList: bmList, detailBmLoading: false })
     } catch (e) {

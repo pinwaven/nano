@@ -832,8 +832,8 @@ Component({
         const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(userId)}`)
         const records = res.data?.records || []
         const kinoRecords = records.filter(r => r.test_type === 'kino_chip')
-        const latestAnalyzed = [...kinoRecords].reverse().find(r => r.data?.estimated) || null
-        const latestBm = latestAnalyzed?.data?.estimated || null
+        const latestAnalyzed = [...kinoRecords].reverse().find(r => r.data?.validated) || null
+        const latestBm = latestAnalyzed?.data?.validated || null
         const subAgesRaw = latestAnalyzed?.data?.bioage_profile?.SubAges || null
 
         const bmList = BM_META.map(({ key, unit, color }) => ({
@@ -842,7 +842,7 @@ Component({
         }))
 
         const trendList = BM_META.map(({ key, unit, color }) => {
-          const allVals = kinoRecords.slice(-10).map(r => r.data?.estimated?.[key] ?? null)
+          const allVals = kinoRecords.slice(-10).map(r => r.data?.validated?.[key] ?? null)
           const defined = allVals.filter(v => v != null)
           const min = defined.length ? Math.min(...defined) : 0
           const max = defined.length ? Math.max(...defined) : 1

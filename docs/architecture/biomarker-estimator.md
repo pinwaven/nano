@@ -35,7 +35,7 @@ POST /api/biomarkers (kino_chip)
     │     For each biomarker:
     │       formula(age, BMI) → applyTagAdjustments → applyBiologicalNoise
     │
-    └─ INSERT biomarkers.data = { actual, estimated, tags, bioage_profile, context }
+    └─ INSERT biomarkers.data = { actual, validated, tags, bioage_profile, context }
        LOG  level=INFO msg=biomarker_tags_derived (audit trail)
 ```
 

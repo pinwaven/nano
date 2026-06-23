@@ -80,18 +80,13 @@ async function runHealthAdvice(openid, t, ctx) {
   }
 }
 
-// Image upload: picks from album/camera, presigns, uploads to OSS, then analyzes.
-function runUploadImage(openid, t, ctx) {
-  wx.chooseImage({
-    count: 1,
-    sizeType: ['original'],
-    sourceType: ['album', 'camera'],
-    success: (res) => _doUpload(res.tempFilePaths[0], openid, t, ctx),
-  })
+// Called directly with a tempFilePath already obtained by the toolbox component's onTap.
+function runUploadImage(openid, t, ctx, tempFilePath) {
+  _doUpload(tempFilePath, openid, t, ctx)
 }
 
 function _doUpload(tempPath, openid, t, ctx) {
-  const { addMsg, addImageMsg, req, setTyping } = ctx
+  const { addMsg, addImageMsg, updateImageMsg, req, setTyping } = ctx
   const filename = `img_${Date.now()}.jpg`
   addMsg('ai', t.imageUploading)
   setTyping(true)
@@ -99,10 +94,13 @@ function _doUpload(tempPath, openid, t, ctx) {
     .then(presignRes => {
       const { put_url, get_url, key } = presignRes.data || {}
       if (!put_url) throw new Error('presign failed')
-      if (addImageMsg) addImageMsg(tempPath)
+      const msgId = addImageMsg ? addImageMsg(tempPath) : null
       wx.getFileSystemManager().readFile({
         filePath: tempPath,
         success: (fileRes) => {
+          // File is now in memory — release the temp file immediately so WeChat
+          // can create a new temp file on the next wx.chooseMedia call.
+          wx.getFileSystemManager().unlink({ filePath: tempPath, fail: () => {} })
           wx.request({
             url: put_url,
             method: 'PUT',
@@ -110,6 +108,8 @@ function _doUpload(tempPath, openid, t, ctx) {
             header: { 'Content-Type': 'application/octet-stream' },
             responseType: 'text',
             success: () => {
+              // Swap the local temp path to the permanent OSS URL in the chat.
+              if (msgId && updateImageMsg) updateImageMsg(msgId, get_url)
               addMsg('ai', t.imageAnalyzing)
               req(`${BASE}/api/analyze-image`, 'POST', { openid, oss_key: key, filename, get_url })
                 .then(res => {
@@ -120,7 +120,11 @@ function _doUpload(tempPath, openid, t, ctx) {
                 .catch(() => addMsg('ai', t.imageError))
                 .finally(() => setTyping(false))
             },
-            fail: () => { addMsg('ai', t.imageError); setTyping(false) },
+            fail: () => {
+              if (msgId && updateImageMsg) updateImageMsg(msgId, null)
+              addMsg('ai', t.imageError)
+              setTyping(false)
+            },
           })
         },
         fail: () => { addMsg('ai', t.imageError); setTyping(false) },
@@ -129,4 +133,4 @@ function _doUpload(tempPath, openid, t, ctx) {
     .catch(() => { addMsg('ai', t.imageError); setTyping(false) })
 }
 
-module.exports = { getToolList, runTestChip, runFormulaDs, runHealthAdvice, runUploadImage }
+module.exports = { getToolList, runTestChip, runFormulaDs, runHealthAdvice, runUploadImage, doUpload: _doUpload }

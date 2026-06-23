@@ -92,7 +92,7 @@ async function fetchTagDerivationContext(pool, userId) {
     );
     ctx.history = r.rows.map((row) => {
       const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-      return { tested_at: row.tested_at, biomarkers: (data && (data.estimated || data.actual)) || {} };
+      return { tested_at: row.tested_at, biomarkers: (data && data.validated) || {} };
     });
   } catch (_) {}
 
@@ -453,7 +453,7 @@ async function handlePostBiomarkers({ pool, body = {}, machine }) {
     const bioAgeReport = bioAgeCalc.calculateBioAge(age, estimationReport.BiomarkerValues);
     const finalData = {
       actual: testData,
-      estimated: estimationReport.BiomarkerValues,
+      validated: estimationReport.BiomarkerValues,
       context: estimationReport.ClinicalContext,
       bioage_profile: bioAgeReport,
       tags,

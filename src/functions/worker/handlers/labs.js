@@ -191,7 +191,7 @@ async function handleLabImportEvent(data, fetchTagDerivationContext) {
 
     const finalData = {
         actual:         partialBiomarkers,
-        estimated:      estimationReport.BiomarkerValues,
+        validated:      estimationReport.BiomarkerValues,
         context:        estimationReport.ClinicalContext,
         bioage_profile: bioAgeReport,
         tags,

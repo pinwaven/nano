@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS biomarkers (
     id SERIAL PRIMARY KEY,
     user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE,
     test_type TEXT NOT NULL, -- e.g., 'body_composition', 'blood_glucose', 'heart_rate', 'kino_chip'
-    data JSONB NOT NULL, -- e.g., {"actual": {...}, "estimated": {...}, "context": "..."}
+    data JSONB NOT NULL, -- e.g., {"actual": {...}, "validated": {...}, "context": "..."}
     bio_age FLOAT, -- Calculated biological age
     tested_at TIMESTAMP WITH TIME ZONE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

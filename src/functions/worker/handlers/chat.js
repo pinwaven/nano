@@ -137,7 +137,7 @@ async function fetchTagDerivationContext(user_id) {
         );
         ctx.history = r.rows.map(row => {
             const d = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-            return { tested_at: row.tested_at, biomarkers: (d && (d.estimated || d.actual)) || {} };
+            return { tested_at: row.tested_at, biomarkers: (d && d.validated) || {} };
         });
     } catch (err) {
         console.log(JSON.stringify({ level: 'WARN', msg: 'fetchTagDerivationContext.history failed', error: err.message }));
@@ -224,7 +224,7 @@ async function handlePostBiomarkers(body) {
             if (devRow.rows.length > 0) deviceFk = devRow.rows[0].id;
         }
 
-        const finalData = { actual: test_data, estimated: estimationReport.BiomarkerValues, context: estimationReport.ClinicalContext, bioage_profile: bioAgeReport, tags };
+        const finalData = { actual: test_data, validated: estimationReport.BiomarkerValues, context: estimationReport.ClinicalContext, bioage_profile: bioAgeReport, tags };
         const biomarkerResult = await pool.query(
             'INSERT INTO biomarkers (user_id, test_type, data, bio_age, tested_at, kino_device_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
             [user_id, test_type, JSON.stringify(finalData), bioAgeReport.BioAge, tested_at || new Date().toISOString(), deviceFk]
@@ -409,7 +409,7 @@ async function handlePostChat(body) {
                     age: calculateAge(user.birth_date),
                     language: user.language,
                 },
-                biomarkers: biomarkerRow.data?.estimated || {},
+                biomarkers: biomarkerRow.data?.validated || {},
                 bioage: biomarkerRow.data?.bioage_profile || {},
                 dots: fetched.dots?.rows || [],
                 plan: fetched.plan?.rows[0]?.content || null,
@@ -479,7 +479,8 @@ async function handlePostChat(body) {
                     description: `Run a read-only SQL SELECT to retrieve this user's health data when it isn't already in context.
 Tables (always filter by user_id = $1):
 - biomarkers(tested_at TIMESTAMPTZ, test_type TEXT, data JSONB)
-    data.actual: {hsCRP, GDF15, GA, CystatinC, IL6, CD38}  (body_composition has .weight)
+    data.validated: {hsCRP, GDF15, GA, CystatinC, IL6, CD38}  (kino_chip only — always use this for reasoning)
+    data.actual.weight: number  (body_composition only)
     data.bioage_profile: {BioAge, ChronoAge, SubAges:{CellularAge,MetabolicAge,MicroVascularAge,ResilienceAge}}
 - nutrition_schedules(scheduled_date DATE, dot_id INT, dot_name TEXT, timing TEXT, quantity INT)
 - reminders(content TEXT, scheduled_for TIMESTAMPTZ, recurrence TEXT, status TEXT)
@@ -700,9 +701,7 @@ async function handlePostHealthAdvice(body) {
 
         const latestBio = bioResult.rows[0] || null;
         const bioageProfile = latestBio?.data?.bioage_profile || null;
-        const estimatedBm = latestBio?.data?.estimated || {};
-        const actualBm = latestBio?.data?.actual || {};
-        const biomarkers = estimatedBm;
+        const biomarkers = latestBio?.data?.validated || {};
         const subAges = bioageProfile?.SubAges || {};
         const bioAge = bioageProfile?.BioAge ?? null;
         const age = calculateAge(user.birth_date);
@@ -1202,13 +1201,13 @@ async function handleGetHealthTwin(openid) {
         const [twinResult, bmResult] = await Promise.all([
             pool.query(`SELECT * FROM health_twin WHERE user_id = $1`, [user_id]),
             pool.query(
-                `SELECT data FROM biomarkers WHERE user_id = $1 AND test_type = 'kino_chip' AND (data->'estimated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
+                `SELECT data FROM biomarkers WHERE user_id = $1 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
                 [user_id]
             ),
         ]);
 
         const twin = twinResult.rows[0] || null;
-        const latestBm = bmResult.rows[0]?.data?.estimated || null;
+        const latestBm = bmResult.rows[0]?.data?.validated || null;
         const conditionKeys = bio_data?.health_conditions || [];
         const tags = _buildHealthTagsBackend(twin, latestBm, conditionKeys);
 

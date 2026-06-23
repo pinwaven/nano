@@ -1564,4 +1564,22 @@
     </view>
   </view>
 
+  <!-- Page-level privacy modal — outside all tab containers so it is visible
+       regardless of which tab is active (health tab uses display:none). -->
+  <view wx:if="{{showPrivacyModal}}" class="page-privacy-mask" catchtap="noop">
+    <view class="page-privacy-box">
+      <text class="page-privacy-title">{{lang === 'en' ? 'Privacy Notice' : '隐私保护提示'}}</text>
+      <text class="page-privacy-body">{{lang === 'en' ? 'To upload images and use health features, this app needs access to your photo album and camera. Please agree to our privacy policy to continue.' : '为上传图片及使用健康功能，本应用需要访问您的相册和摄像头。请阅读并同意我们的隐私保护指引后继续。'}}</text>
+      <button class="page-privacy-agree-btn"
+              id="privacy-agree-btn"
+              open-type="agreePrivacyAuthorization"
+              bindagreeprivacyauthorization="onPrivacyAgree">
+        {{lang === 'en' ? 'Agree & Continue' : '同意并继续'}}
+      </button>
+      <view class="page-privacy-cancel-btn" bindtap="onPrivacyCancel">
+        <text>{{lang === 'en' ? 'Decline' : '拒绝'}}</text>
+      </view>
+    </view>
+  </view>
+
 </view>

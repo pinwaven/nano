@@ -741,6 +741,9 @@ Page({
     tab: 'chat',
     version: IS_DEV ? VERSION : WX_VERSION,
 
+    // Privacy authorization (page-level — always visible regardless of active tab)
+    showPrivacyModal: false,
+
     // Chat
     messages: [],
     chatInput: '',
@@ -970,9 +973,20 @@ Page({
     this._stopKinoSlide()
   },
 
+  onReady() {
+    // Override user-health's onNeedPrivacyAuthorization handler with a page-level one.
+    // user-health renders inside .health-tab which is display:none when the chat tab
+    // is active, so its privacy popup is invisible. This page-level handler is always
+    // rendered outside any tab container and is always visible.
+    const _app = getApp()
+    _app._onPrivacyRequest = () => this.setData({ showPrivacyModal: true })
+  },
+
   onUnload() {
     this._stopPolling()
     this._stopKinoSlide()
+    const _app = getApp()
+    if (_app._onPrivacyRequest) _app._onPrivacyRequest = null
   },
 
   async onPullDownRefresh() {
@@ -1021,6 +1035,24 @@ Page({
   toggleMenu() { this.setData({ menuOpen: !this.data.menuOpen }) },
   closeMenu()  { this.setData({ menuOpen: false }) },
   noop()       {},
+
+  onPrivacyAgree(e) {
+    const _app = getApp()
+    if (_app._privacyResolve) {
+      _app._privacyResolve({ event: e, buttonId: 'privacy-agree-btn' })
+      _app._privacyResolve = null
+    }
+    this.setData({ showPrivacyModal: false })
+  },
+
+  onPrivacyCancel() {
+    const _app = getApp()
+    if (_app._privacyResolve) {
+      _app._privacyResolve({ event: null })
+      _app._privacyResolve = null
+    }
+    this.setData({ showPrivacyModal: false })
+  },
 
   toggleLang() {
     const lang = this.data.lang === 'zh' ? 'en' : 'zh'
@@ -1598,18 +1630,25 @@ Page({
   },
 
   toggleToolbox() {
-    this.setData({ toolboxOpen: !this.data.toolboxOpen })
+    const { typing, toolboxOpen } = this.data
+    if (typing && !toolboxOpen) return
+    this.setData({ toolboxOpen: !toolboxOpen })
   },
 
   handleToolAction(e) {
     const action = e.detail?.action || e.currentTarget?.dataset?.action
     const { t, typing, obStep, user } = this.data
-    if (typing || obStep !== 'done') return
+    console.log('[main] handleToolAction', JSON.stringify({ action, typing, obStep, tempFilePath: e.detail?.tempFilePath }))
+    if (typing || obStep !== 'done') {
+      console.log('[main] handleToolAction blocked', JSON.stringify({ typing, obStep }))
+      return
+    }
     this.setData({ toolboxOpen: false })
     const ctx = {
       addMsg: (role, content, persist) => this._addMsg(role, content, persist),
       addActionMsg: (action, label, persist) => this._addActionMsg(action, label, persist),
       addImageMsg: (url) => this._addImageMsg(url),
+      updateImageMsg: (id, url) => this._updateImageMsg(id, url),
       req: (url, method, data) => this._req(url, method, data),
       setTyping: (v) => this.setData({ typing: v }),
     }
@@ -1621,14 +1660,22 @@ Page({
     } else if (action === 'health_advice') {
       toolActions.runHealthAdvice(user.user_id, t, ctx)
     } else if (action === 'upload_image') {
-      toolActions.runUploadImage(user.user_id, t, ctx)
+      const tempFilePath = e.detail?.tempFilePath
+      if (tempFilePath) toolActions.runUploadImage(user.user_id, t, ctx, tempFilePath)
     }
   },
 
   _addImageMsg(imageUrl) {
-    const msg = { id: `user-${Date.now()}`, role: 'user', content: '', imageUrl }
+    const id = `user-${Date.now()}`
+    const msg = { id, role: 'user', content: '', imageUrl }
     this.setData({ messages: [...this.data.messages, msg] })
     this._scrollBottom()
+    return id
+  },
+
+  _updateImageMsg(id, imageUrl) {
+    const messages = this.data.messages.map(m => m.id === id ? { ...m, imageUrl } : m)
+    this.setData({ messages })
   },
 
   _addActionMsg(action, label, persist = false) {
@@ -1703,7 +1750,7 @@ Page({
   async _sendMessage(text) {
     const { user } = this.data
     this._addMsg('user', text)
-    this.setData({ typing: true })
+    this.setData({ typing: true, toolboxOpen: false })
     try {
       const res = await this._req(`${BASE}/api/chat`, 'POST', { openid: user.user_id, message: text })
       if (res.data?.recorded_weight != null) {
