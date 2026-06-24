@@ -325,6 +325,7 @@ async function handlePostChat(body) {
                     model: process.env.CLASSIFIER_MODEL || model,
                     messages: [{ role: 'user', content: intentClassifierTemplate(message) }],
                     max_tokens: 60,
+                    temperature: 0.1,
                 });
                 const raw = classifierCompletion.choices[0].message.content.trim();
                 const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
@@ -509,6 +510,7 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                     messages: chatMessages,
                     tools: [dbQueryTool],
                     tool_choice: 'auto',
+                    temperature: 0.3,
                 });
                 const choice = completion.choices[0];
 
@@ -765,6 +767,7 @@ async function handlePostHealthAdvice(body) {
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userMsg },
             ],
+            temperature: 0.3,
         });
 
         const reply = completion.choices[0].message.content;
@@ -878,6 +881,7 @@ async function handlePostAnalyzeImage(body) {
                 role: 'user',
                 content: [imageEntry, { type: 'text', text: systemPrompt }],
             }],
+            temperature: 0.3,
         });
 
         const rawReply = completion.choices[0].message.content || '';

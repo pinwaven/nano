@@ -8,6 +8,66 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 
+- **X3 ring — workMode badges and scheduled monitoring** (`user-health.js`, `user-health.wxml`, `user-health.wxss`)
+
+  The interval settings panel now shows a tappable workMode badge next to each metric label (HRV, SpO₂, HR, Temp). Tapping cycles Off → Auto → Sched → Off. Badges are color-coded: green for active modes, red for Off. Defaults are `hr: 30 min / spo₂: 60 min / temp: 60 min / hrv: 120 min`, all in Scheduled mode (workMode = 2).
+
+  **What changed:**
+  - `x3WorkModes: { hr, spo2, temp, hrv }` added to component data; persisted via `wx.setStorageSync('x3_work_mode_settings')`.
+  - `handleWorkModeChange(e)` handler cycles the mode; sets `x3IntervalsChanged: true` so Save button appears.
+  - `saveRingIntervals` reads stored workModes and passes them to `setAutoMonitoring`.
+  - `toggleRingSettings` reads back all 4 types via `getAutoMonitoring` and stores workModes alongside intervals.
+  - On first X3 bind (`handleBindWearable`), default scheduled config is applied immediately to the ring and saved to storage.
+  - `handleSyncWearable` now reads back type=4 after `setAutoMonitoring` and logs a WARN if HRV monitoring is not active.
+  - Error logging in the X3 sync catch block gated behind `IS_DEV`.
+
+- **X3 ring — temperature history fetch** (`user-health.js`, `x3/index.js`, `sync.js`)
+
+  Temperature was collected by the ring but never fetched or displayed. Added `getTemperatureHistory()` method on the X3 driver (command 0x62, all cached days, no date filter). Sync now fetches the full temp history, picks the latest valid reading (>34 °C), and stores `bodyTempC` / `tempSlots` in the raw snapshot.
+
+  `sync.js` now emits one `health_events` row per temperature reading (`external_id: smart_ring_temp_<timestamp>`) with `body_temp_c` and `skin_temp_c` fields, following the same per-reading upsert pattern as HRV/SpO₂.
+
+- **X3 ring data display — multi-day trend charts** (`user-health.js`, `user-health.wxml`, `user-health.wxss`)
+
+  The detail card now shows four daily trend bar charts above the dense history charts:
+
+  | Chart | Source | Color scale |
+  |---|---|---|
+  | HRV 趋势 | `hrvSlots` daily avg, last 7 days | blue ≥80 / green ≥50 / orange ≥30 / red |
+  | SpO₂ 趋势 | `spo2Slots` daily avg, last 7 days | blue ≥98% / green ≥95% / orange ≥90% / red |
+  | 睡眠趋势 | `sleepHistory` per night, last 7 nights | green ≥7h / blue ≥6h / orange ≥5h / red |
+  | 体温 | latest `bodyTempC` | green <37.2°C / orange <38°C / red |
+
+  Body temperature also appears as a summary card in the metrics grid (same row as HRV/SpO₂/Stress), gated on `hasBodyTemp`.
+
+  **What changed:**
+  - `_buildRingDisplayData`: added `hrvDayBars`, `spo2DayBars`, `sleepDayBars`, `bodyTempC`, `tempPct`, `tempColor`, `hasBodyTemp`; `hasSlotCharts` extended to include all new chart types.
+  - `.ring-chart-day-col`, `.ring-chart-day-avg`, `.ring-chart-day-label`, `.ring-reading-date-header` added to WXSS.
+
+- **X3 ring data display — dense bar charts for HRV/SpO₂/Stress history** (`user-health.js`, `user-health.wxml`, `user-health.wxss`)
+
+  Replaced the long scrollable grouped readings list (which could reach 200+ entries) with three dense bar charts — one each for HRV, SpO₂, and Stress. Each chart bins up to 48 bars from all cached readings (oldest → newest, left → right), with bar height encoding the value within its min–max range and bar color encoding quality.
+
+  The header row shows the latest reading colored by quality; the footer shows min / count / max.
+
+  **Note:** WeChat Mini Program does not apply `{{}}` data bindings to SVG child element attributes (`<polyline points="...">`, `<path d="...">`). The initial SVG implementation rendered blank charts. Replaced with the same WXML bar-column pattern used by the existing steps/HR charts.
+
+  **What changed:**
+  - `_buildReadingLineCharts(readings)` added: extracts HRV/SpO₂/Stress value arrays, bins into ≤48 bars with `_toBars()`, returns `{ hrvChart, spo2Chart, stressChart }` each with `{ hasData, bars, latestVal, latestColor, minVal, maxVal, count }`.
+  - Called at both `_commitRingData` sites; result spread into `ringData` with `hasSlotCharts` updated to include line chart data.
+  - `.ring-lc-bars`, `.ring-lc-col`, `.ring-lc-bar` added to WXSS.
+
+- **X3 ring — multi-night sleep history** (`user-health.js`, `x3/index.js`)
+
+  Sleep trend requires multi-night data. The X3 ring caches up to ~3 nights via command 0x53.
+
+  **What changed:**
+  - X3 sync path: `getSleep()` replaced with `getSleepHistory()` (returns all cached nights oldest → newest). Last element is used for the existing `sleepMinutes` / `sleepSlots` / `sleepStart` / `sleepEnd` fields. Full array stored as `sleepHistory: [{ date, totalMinutes, deep, light, rem, awake }]`.
+  - Colmi sync path: `getSleep()` result wrapped into a single-element `sleepHistory` array so the display code is uniform.
+  - `_buildRingDisplayData`: `sleepDayBars` computed from `raw.sleepHistory` (up to last 7 nights).
+
+### Added
+
 - **Finance tab visible to channel admins** (`auth.js`, `index.js`, `handlers/partners.js`, `handlers/credits.js`)
 
   Channel admin accounts (including autonomous channels like Aeviva China) can now access the **Finance** tab in the admin panel. They see partner payouts, coach commissions, channel payouts, and credit withdrawals scoped to their own channel. Previously the Finance tab was superadmin-only.
