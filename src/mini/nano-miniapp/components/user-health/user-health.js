@@ -1,5 +1,5 @@
 const app = getApp()
-const { BASE } = require('../../utils/config.js')
+const { BASE, IS_DEV } = require('../../utils/config.js')
 
 const BM_META = [
   { key: 'hsCRP',     unit: 'mg/L',      color: '#f472b6' },
@@ -196,6 +196,7 @@ const T = {
     x3IntervalTitle: '测量间隔',
     metricHr: '心率', metricSpo2: 'SpO₂', metricTemp: '体温', metricHrv: 'HRV',
     x3IntervalUnit: '分钟',
+    x3WorkModeOff: '关闭', x3WorkModeAuto: '自动', x3WorkModeSched: '定时',
   },
   en: {
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -305,6 +306,7 @@ const T = {
     x3IntervalTitle: 'Monitoring Intervals',
     metricHr: 'Heart Rate', metricSpo2: 'SpO₂', metricTemp: 'Temp', metricHrv: 'HRV',
     x3IntervalUnit: 'min',
+    x3WorkModeOff: 'Off', x3WorkModeAuto: 'Auto', x3WorkModeSched: 'Sched',
   },
 }
 
@@ -769,8 +771,9 @@ Component({
     ringSettingsBusy: false,
     ringData: null,
     // X3 background-measurement intervals (minutes per metric type)
-    x3Intervals: { hr: 10, spo2: 30, temp: 30, hrv: 60 },
+    x3Intervals: { hr: 30, spo2: 60, temp: 60, hrv: 120 },
     x3IntervalOpts: { hr: [5, 10, 15, 30], spo2: [5, 15, 30, 60], temp: [15, 30, 60], hrv: [30, 60, 120] },
+    x3WorkModes: { hr: 2, spo2: 2, temp: 2, hrv: 2 },
     x3IntervalsChanged: false,
   },
 
@@ -1964,7 +1967,9 @@ Component({
           const fallbackName = saved.brand === 'x3' ? 'X3 Ring' : saved.brand === 'aizo' ? 'Aizo Ring' : 'Colmi Ring'
           const x3Saved = wx.getStorageSync('x3_interval_settings')
           const x3Intervals = x3Saved ? { ...this.data.x3Intervals, ...x3Saved } : this.data.x3Intervals
-          this.setData({ wearableId: saved.deviceId, wearableName: saved.name || fallbackName, wearableConnected: false, wearableBrand: saved.brand || 'colmi', x3Intervals })
+          const x3WmSaved = wx.getStorageSync('x3_work_mode_settings')
+          const x3WorkModes = x3WmSaved ? { ...this.data.x3WorkModes, ...x3WmSaved } : this.data.x3WorkModes
+          this.setData({ wearableId: saved.deviceId, wearableName: saved.name || fallbackName, wearableConnected: false, wearableBrand: saved.brand || 'colmi', x3Intervals, x3WorkModes })
         }
         const rawRing = wx.getStorageSync('wearable_ring_data')
         if (rawRing && rawRing.syncedAt) {
@@ -2084,6 +2089,20 @@ Component({
         const ring = createWearable(brand)
         await ring.connect(chosen.deviceId, { syncTime: true, name: chosen.name })
         const battery = await ring.getBattery()
+
+        // X3: apply default scheduled monitoring immediately on first bind
+        const defaultIvals = { hr: 30, spo2: 60, temp: 60, hrv: 120 }
+        const defaultWms   = { hr: 2, spo2: 2, temp: 2, hrv: 2 }
+        if (brand === 'x3') {
+          const _opts = { workMode: 2, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
+          await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.hr,   type: 1 }).catch(() => {})
+          await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.spo2, type: 2 }).catch(() => {})
+          await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.temp, type: 3 }).catch(() => {})
+          await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.hrv,  type: 4 }).catch(() => {})
+          wx.setStorageSync('x3_interval_settings', defaultIvals)
+          wx.setStorageSync('x3_work_mode_settings', defaultWms)
+        }
+
         await ring.disconnect()
         wx.hideLoading()
 
@@ -2096,6 +2115,7 @@ Component({
           wearableConnected: true,
           wearableBattery: battery.level,
           wearableBusy: false,
+          ...(brand === 'x3' ? { x3Intervals: defaultIvals, x3WorkModes: defaultWms } : {}),
         })
       } catch (e) {
         wx.hideLoading()
@@ -2120,14 +2140,28 @@ Component({
       if (brand === 'x3') {
         try {
           wx.showLoading({ title: t.wearableConnecting, mask: true })
-          await ring.connect(this.data.wearableId)
-          // Apply background measurement intervals (silently, failures are non-fatal)
+          await ring.connect(this.data.wearableId, { syncTime: true })
+          // Apply background measurement intervals. Track failures so we can detect
+          // if the ring's schedule was wiped (e.g. after a full battery drain).
           const _ivals = this.data.x3Intervals
-          const _baseOpts = { workMode: 1, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
-          await ring.setAutoMonitoring({ ..._baseOpts, intervalMinutes: _ivals.hr,   type: 1 }).catch(() => {})
-          await ring.setAutoMonitoring({ ..._baseOpts, intervalMinutes: _ivals.spo2, type: 2 }).catch(() => {})
-          await ring.setAutoMonitoring({ ..._baseOpts, intervalMinutes: _ivals.temp, type: 3 }).catch(() => {})
-          await ring.setAutoMonitoring({ ..._baseOpts, intervalMinutes: _ivals.hrv,  type: 4 }).catch(() => {})
+          const _wms   = this.data.x3WorkModes
+          const _baseOpts = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
+          let _monitorFailed = 0
+          for (const [type, interval, wm] of [[1, _ivals.hr, _wms.hr], [2, _ivals.spo2, _wms.spo2], [3, _ivals.temp, _wms.temp], [4, _ivals.hrv, _wms.hrv]]) {
+            try { await ring.setAutoMonitoring({ ..._baseOpts, workMode: wm, intervalMinutes: interval, type }) }
+            catch (_) { _monitorFailed++ }
+          }
+          // Read back HRV (type 4) to verify the ring accepted the schedule.
+          try {
+            const _s4 = await ring.getAutoMonitoring(4)
+            if (IS_DEV) console.log(JSON.stringify({ level: 'DEBUG', msg: 'x3 HRV monitor readback', config: _s4 }))
+            if (_s4.workMode === 0 || _s4.intervalMinutes === 0) {
+              console.log(JSON.stringify({ level: 'WARN', msg: 'x3 HRV auto-monitor not active after sync', config: _s4 }))
+            }
+          } catch (_) {}
+          if (_monitorFailed > 0) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'x3 setAutoMonitoring partial failure', failed: _monitorFailed }))
+          }
           const battery = await ring.getBattery()
           const steps   = await ring.getSteps().catch(() => null)
           const sleep   = await ring.getSleep().catch(() => null)
@@ -2172,7 +2206,7 @@ Component({
         } catch (e) {
           wx.hideLoading()
           await ring.disconnect().catch(() => {})
-          console.error('[BLE][sync:x3]', e?.message || e?.errMsg || e)
+          if (IS_DEV) console.error('[BLE][sync:x3]', e?.message || e?.errMsg || e)
           if (!_isPrivacyError(e)) wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
           this.setData({ wearableConnected: false, wearableBusy: false })
         } finally {
@@ -2352,6 +2386,7 @@ Component({
         const s4 = await ring.getAutoMonitoring(4)
         this.setData({
           x3Intervals: { hr: s1.intervalMinutes, spo2: s2.intervalMinutes, temp: s3.intervalMinutes, hrv: s4.intervalMinutes },
+          x3WorkModes: { hr: s1.workMode, spo2: s2.workMode, temp: s3.workMode, hrv: s4.workMode },
           x3IntervalsChanged: false,
         })
       } catch (_) {
@@ -2367,20 +2402,29 @@ Component({
       this.setData({ x3Intervals: { ...this.data.x3Intervals, [type]: min }, x3IntervalsChanged: true })
     },
 
+    handleWorkModeChange(e) {
+      const { type } = e.currentTarget.dataset
+      const modes = this.data.x3WorkModes
+      const next = { 0: 1, 1: 2, 2: 0 }
+      this.setData({ x3WorkModes: { ...modes, [type]: next[modes[type]] ?? 2 }, x3IntervalsChanged: true })
+    },
+
     async saveRingIntervals() {
       if (this.data.ringSettingsBusy || this.data.wearableBusy) return
       this.setData({ ringSettingsBusy: true })
       const ivals = this.data.x3Intervals
-      const baseOpts = { workMode: 1, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
+      const wms   = this.data.x3WorkModes
+      const baseOpts = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
       const { createWearable } = require('../../utils/wearable/index.js')
       const ring = createWearable('x3')
       try {
         await ring.connect(this.data.wearableId)
-        await ring.setAutoMonitoring({ ...baseOpts, intervalMinutes: ivals.hr,   type: 1 })
-        await ring.setAutoMonitoring({ ...baseOpts, intervalMinutes: ivals.spo2, type: 2 })
-        await ring.setAutoMonitoring({ ...baseOpts, intervalMinutes: ivals.temp, type: 3 })
-        await ring.setAutoMonitoring({ ...baseOpts, intervalMinutes: ivals.hrv,  type: 4 })
+        await ring.setAutoMonitoring({ ...baseOpts, workMode: wms.hr,   intervalMinutes: ivals.hr,   type: 1 })
+        await ring.setAutoMonitoring({ ...baseOpts, workMode: wms.spo2, intervalMinutes: ivals.spo2, type: 2 })
+        await ring.setAutoMonitoring({ ...baseOpts, workMode: wms.temp, intervalMinutes: ivals.temp, type: 3 })
+        await ring.setAutoMonitoring({ ...baseOpts, workMode: wms.hrv,  intervalMinutes: ivals.hrv,  type: 4 })
         wx.setStorageSync('x3_interval_settings', ivals)
+        wx.setStorageSync('x3_work_mode_settings', wms)
         this.setData({ x3IntervalsChanged: false })
       } catch (e) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'saveRingIntervals failed', err: e?.message }))

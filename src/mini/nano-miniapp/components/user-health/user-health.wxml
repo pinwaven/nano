@@ -306,25 +306,37 @@
                 <block wx:else>
                   <text class="wd-interval-title">{{t.x3IntervalTitle}}</text>
                   <view class="wd-interval-row">
-                    <text class="wd-interval-label">{{t.metricHr}}</text>
+                    <view class="wd-interval-label-col">
+                      <text class="wd-interval-label">{{t.metricHr}}</text>
+                      <text class="wd-wm-badge {{x3WorkModes.hr === 0 ? 'wd-wm-off' : 'wd-wm-on'}}" bindtap="handleWorkModeChange" data-type="hr">{{x3WorkModes.hr === 0 ? t.x3WorkModeOff : x3WorkModes.hr === 2 ? t.x3WorkModeSched : t.x3WorkModeAuto}}</text>
+                    </view>
                     <view class="wd-interval-opts">
                       <view wx:for="{{x3IntervalOpts.hr}}" wx:key="index" bindtap="handleIntervalChange" data-type="hr" data-min="{{item}}" class="wd-int-btn {{x3Intervals.hr === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.x3IntervalUnit}}</view>
                     </view>
                   </view>
                   <view class="wd-interval-row">
-                    <text class="wd-interval-label">{{t.metricSpo2}}</text>
+                    <view class="wd-interval-label-col">
+                      <text class="wd-interval-label">{{t.metricSpo2}}</text>
+                      <text class="wd-wm-badge {{x3WorkModes.spo2 === 0 ? 'wd-wm-off' : 'wd-wm-on'}}" bindtap="handleWorkModeChange" data-type="spo2">{{x3WorkModes.spo2 === 0 ? t.x3WorkModeOff : x3WorkModes.spo2 === 2 ? t.x3WorkModeSched : t.x3WorkModeAuto}}</text>
+                    </view>
                     <view class="wd-interval-opts">
                       <view wx:for="{{x3IntervalOpts.spo2}}" wx:key="index" bindtap="handleIntervalChange" data-type="spo2" data-min="{{item}}" class="wd-int-btn {{x3Intervals.spo2 === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.x3IntervalUnit}}</view>
                     </view>
                   </view>
                   <view class="wd-interval-row">
-                    <text class="wd-interval-label">{{t.metricTemp}}</text>
+                    <view class="wd-interval-label-col">
+                      <text class="wd-interval-label">{{t.metricTemp}}</text>
+                      <text class="wd-wm-badge {{x3WorkModes.temp === 0 ? 'wd-wm-off' : 'wd-wm-on'}}" bindtap="handleWorkModeChange" data-type="temp">{{x3WorkModes.temp === 0 ? t.x3WorkModeOff : x3WorkModes.temp === 2 ? t.x3WorkModeSched : t.x3WorkModeAuto}}</text>
+                    </view>
                     <view class="wd-interval-opts">
                       <view wx:for="{{x3IntervalOpts.temp}}" wx:key="index" bindtap="handleIntervalChange" data-type="temp" data-min="{{item}}" class="wd-int-btn {{x3Intervals.temp === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.x3IntervalUnit}}</view>
                     </view>
                   </view>
                   <view class="wd-interval-row">
-                    <text class="wd-interval-label">{{t.metricHrv}}</text>
+                    <view class="wd-interval-label-col">
+                      <text class="wd-interval-label">{{t.metricHrv}}</text>
+                      <text class="wd-wm-badge {{x3WorkModes.hrv === 0 ? 'wd-wm-off' : 'wd-wm-on'}}" bindtap="handleWorkModeChange" data-type="hrv">{{x3WorkModes.hrv === 0 ? t.x3WorkModeOff : x3WorkModes.hrv === 2 ? t.x3WorkModeSched : t.x3WorkModeAuto}}</text>
+                    </view>
                     <view class="wd-interval-opts">
                       <view wx:for="{{x3IntervalOpts.hrv}}" wx:key="index" bindtap="handleIntervalChange" data-type="hrv" data-min="{{item}}" class="wd-int-btn {{x3Intervals.hrv === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.x3IntervalUnit}}</view>
                     </view>

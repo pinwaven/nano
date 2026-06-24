@@ -1,5 +1,5 @@
 const app = getApp()
-const { BASE, CHANNEL_SLUG, CHANNEL_DISPLAY } = require('../../utils/config.js')
+const { BASE, CHANNEL_SLUG, CHANNEL_DISPLAY, IS_DEV } = require('../../utils/config.js')
 
 Page({
   data: {
@@ -60,7 +60,7 @@ Page({
 
       this._finishLogin(res.data)
     } catch (e) {
-      console.error('wxLogin error', e)
+      if (IS_DEV) console.error('wxLogin error', e)
       this.setData({ loading: false, step: 'error', error: e.message || '登录失败，请重试' })
     }
   },
@@ -196,7 +196,10 @@ Page({
     app.globalData.channel = channel
     app.globalData.coach = coach
     app.globalData.lang = user.language === 'en' ? 'en' : 'zh'
-    wx.setStorageSync('nano_user', user)
+    // Store a trimmed user object: omit phone/email (sensitive PII); keep phoneSet flag
+    // for session-restore and phone-prompt checks. Full data is re-fetched as needed.
+    const { phone: _ph, email: _em, ...userToStore } = user
+    wx.setStorageSync('nano_user', { ...userToStore, phoneSet: !!_ph })
     wx.setStorageSync('nano_channel', channel)
     wx.setStorageSync('nano_coach', coach)
     wx.reLaunch({ url: '/pages/main/main' })

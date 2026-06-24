@@ -211,6 +211,8 @@ const T = {
     guestChatCtaBtn: '立即加入',
     guestDotsCta: '激活账户后，获取您的专属营养方案',
     guestMenuSignUp: '注册账户',
+    aiDisclaimer: '本服务为AI生成内容，结果仅供参考',
+    nowPlaying: '正在播放',
     eventsTitle: '线下活动', eventsSignUp: '立即报名', eventsSignedUp: '已报名',
     eventsCancel: '取消报名', eventsFull: '已满', eventsEmpty: '暂无线下活动',
     eventsLocation: '地点', eventsCapacity: '名额', eventsLoading: '加载中…',
@@ -390,6 +392,8 @@ const T = {
     guestChatCtaBtn: 'Join Now',
     guestDotsCta: 'Activate your account to get your personalized nutrition plan',
     guestMenuSignUp: 'Sign Up',
+    aiDisclaimer: 'AI-generated content — for reference only',
+    nowPlaying: 'Now Playing',
     eventsTitle: 'Events', eventsSignUp: 'Sign Up', eventsSignedUp: 'Registered',
     eventsCancel: 'Cancel Registration', eventsFull: 'Full', eventsEmpty: 'No events available',
     eventsLocation: 'Location', eventsCapacity: 'Spots', eventsLoading: 'Loading…',
@@ -748,6 +752,7 @@ Page({
     messages: [],
     chatInput: '',
     typing: false,
+    isSending: false,
     toolboxOpen: false,
     toolList: [],
     kinoScanPending: false,
@@ -912,6 +917,8 @@ Page({
   _seenIds: null,
   _rawStoreItems: null,
   _rawStoreOrders: null,
+  _dotsLoadedAt: 0,
+  _plansLoadedAt: 0,
   _pendingGuestSignup: null,
   _pendingGuestAvatarUrl: '',
   _pendingInviteCode: '',
@@ -954,6 +961,11 @@ Page({
     this._loadCartridges(user, lang)
     this._loadStore(user, lang)
     this._loadCreditBalance(user)
+    // Restore persisted cart
+    try {
+      const savedCart = wx.getStorageSync('nano_cart')
+      if (Array.isArray(savedCart) && savedCart.length > 0) this._syncCart(savedCart)
+    } catch (e) {}
   },
 
   onShow() {
@@ -1012,12 +1024,14 @@ Page({
   switchTab(e) {
     const tab = e.currentTarget.dataset.tab
     this.setData({ tab })
-    if (tab === 'dots') {
+    const STALE_MS = 30_000
+    const now = Date.now()
+    if (tab === 'dots' && (now - this._dotsLoadedAt > STALE_MS)) {
       this.setData({ dotsLoading: true, cartridgesLoading: true })
       this._loadDots(this.data.user, this.data.lang)
       this._loadCartridges(this.data.user, this.data.lang)
     }
-    if (tab === 'plans') {
+    if (tab === 'plans' && (now - this._plansLoadedAt > STALE_MS)) {
       this.setData({ plansLoading: true, remindersLoading: true })
       this._loadPlans(this.data.user, this.data.lang)
       this._loadReminders(this.data.user)
@@ -1358,7 +1372,7 @@ Page({
         this._lastMsgId = 0
       }
     } catch (e) {
-      console.error('History load failed', e)
+      if (IS_DEV) console.error('History load failed', e)
     }
     if (!historyLoaded) { this.setData({ messages: [initMsg] }) }
 
@@ -1372,7 +1386,7 @@ Page({
       ])
       pendingAssignments = qRes.data?.assignments || []
       biomarkerRecords = bRes.data?.records || []
-    } catch (e) { console.error('Init fetch failed', e) }
+    } catch (e) { if (IS_DEV) console.error('Init fetch failed', e) }
 
     // Find first assignment with an unanswered question
     for (const assignment of pendingAssignments) {
@@ -1565,7 +1579,7 @@ Page({
     const { t } = this.data
     if (!silent) this._addMsg('ai', t.questionnaireThanks, true)
     this.setData({ obStep: 'done' })
-    if (!user.phone && !wx.getStorageSync('nano_phone_prompted')) {
+    if (!user.phone && !user.phoneSet && !wx.getStorageSync('nano_phone_prompted')) {
       wx.setStorageSync('nano_phone_prompted', '1')
       setTimeout(() => {
         this._addMsg('ai', t.phonePromptMsg)
@@ -1612,7 +1626,7 @@ Page({
       this._req(`${BASE}/api/chat-messages`, 'POST', {
         openid: this.data.user.user_id,
         role, content: rawContent
-      }).catch(e => console.error('Persistent msg failed', e))
+      }).catch(e => { if (IS_DEV) console.error('Persistent msg failed', e) })
     }
   },
 
@@ -1638,9 +1652,7 @@ Page({
   handleToolAction(e) {
     const action = e.detail?.action || e.currentTarget?.dataset?.action
     const { t, typing, obStep, user } = this.data
-    console.log('[main] handleToolAction', JSON.stringify({ action, typing, obStep, tempFilePath: e.detail?.tempFilePath }))
     if (typing || obStep !== 'done') {
-      console.log('[main] handleToolAction blocked', JSON.stringify({ typing, obStep }))
       return
     }
     this.setData({ toolboxOpen: false })
@@ -1689,7 +1701,7 @@ Page({
         openid: this.data.user.user_id,
         role: 'action',
         content: JSON.stringify({ action, label })
-      }).catch(e => console.error('Persistent action failed', e))
+      }).catch(e => { if (IS_DEV) console.error('Persistent action failed', e) })
     }
   },
 
@@ -1712,7 +1724,7 @@ Page({
       const { appId } = wx.getAccountInfoSync().miniProgram
       const res = await this._req(`${BASE}/api/bind-phone`, 'POST', { user_id: user.user_id, code, app_id: appId })
       if (res.data?.success) {
-        const updatedUser = { ...user, phone: res.data.phone }
+        const updatedUser = { ...user, phoneSet: true }
         app.globalData.user = updatedUser
         wx.setStorageSync('nano_user', updatedUser)
         this.setData({ user: updatedUser })
@@ -1740,11 +1752,12 @@ Page({
   },
 
   async handleSend() {
-    const { chatInput, typing, obStep } = this.data
+    const { chatInput, typing, obStep, isSending } = this.data
     const text = chatInput.trim()
-    if (!text || typing || obStep !== 'done') return
-    this.setData({ chatInput: '' })
+    if (!text || typing || obStep !== 'done' || isSending) return
+    this.setData({ chatInput: '', isSending: true })
     await this._sendMessage(text)
+    this.setData({ isSending: false })
   },
 
   async _sendMessage(text) {
@@ -1927,6 +1940,7 @@ Page({
   // ── Dots tab ────────────────────────────────────────────────────────────────
 
   async _loadDots(user, lang) {
+    this._dotsLoadedAt = Date.now()
     try {
       const res = await this._req(`${BASE}/api/nutrition-plan?openid=${encodeURIComponent(user.user_id)}`)
       const plan = res.data?.plan || null
@@ -2109,6 +2123,7 @@ Page({
       ? `${total} ${lang === 'zh' ? '积分' : 'pts'}`
       : (lang === 'zh' ? `¥${total}` : `$${(total / 7.2).toFixed(0)}`)
     this.setData({ cart, cartMap, cartCount: count, cartTotal })
+    try { wx.setStorageSync('nano_cart', cart) } catch (e) {}
   },
 
   handleAddToCart(e) {
@@ -2232,6 +2247,7 @@ Page({
 
   async _loadPlans(user, lang) {
     if (!user) { this.setData({ plansLoading: false }); return }
+    this._plansLoadedAt = Date.now()
     try {
       const [plansRes, tplRes] = await Promise.all([
         this._req(`${BASE}/api/health-plans?openid=${encodeURIComponent(user.user_id)}`),

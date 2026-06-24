@@ -131,7 +131,7 @@
             </view>
           </view>
 
-          <view style="height: 16px;"></view>
+          <view style="height: 16rpx;"></view>
         </view>
       </scroll-view>
 
@@ -255,7 +255,7 @@
 
       <!-- AI disclaimer -->
       <view wx:if="{{obStep === 'done' || isGuest}}" class="ai-disclaimer">
-        <text class="ai-disclaimer-text">本服务为AI生成内容，结果仅供参考</text>
+        <text class="ai-disclaimer-text">{{t.aiDisclaimer}}</text>
       </view>
 
       <!-- Normal chat input -->
@@ -881,7 +881,7 @@
               </view>
             </view>
           </view>
-          <view style="height: 32px;"></view>
+          <view style="height: 32rpx;"></view>
         </view>
       </scroll-view>
 
@@ -1226,7 +1226,7 @@
         <!-- Now playing bar (audio) -->
         <view wx:if="{{sleepCurrentTrack}}" class="sleep-now-playing" style="margin:16rpx 28rpx 0;">
           <view class="sleep-np-info">
-            <text class="sleep-np-label">正在播放</text>
+            <text class="sleep-np-label">{{t.nowPlaying}}</text>
             <text class="sleep-np-title">{{sleepCurrentTrack.title_zh || sleepCurrentTrack.title}}</text>
           </view>
           <view class="sleep-np-controls">

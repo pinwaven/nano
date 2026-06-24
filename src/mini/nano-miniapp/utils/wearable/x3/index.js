@@ -73,7 +73,9 @@ class X3Ring extends WearableDevice {
   }
 
   async getDeviceInfo() {
-    return { name: 'X3 Smart Ring', model: 'X3', firmware: 'unknown', hardware: 'unknown' }
+    let firmware = 'unknown'
+    try { firmware = await this.getFirmwareVersion() } catch (_) {}
+    return { name: 'X3 Smart Ring', model: 'X3', firmware, hardware: 'unknown' }
   }
 
   // Returns the ring's current clock as a Date (or null on failure)
