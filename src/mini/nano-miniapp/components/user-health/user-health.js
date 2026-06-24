@@ -197,6 +197,7 @@ const T = {
     metricHr: '心率', metricSpo2: 'SpO₂', metricTemp: '体温', metricHrv: 'HRV',
     x3IntervalUnit: '分钟',
     x3WorkModeOff: '关闭', x3WorkModeAuto: '自动', x3WorkModeSched: '定时',
+    ringHrvTrend: 'HRV 趋势', ringSpo2Trend: 'SpO₂ 趋势', ringSleepTrend: '睡眠趋势', ringBodyTemp: '体温',
   },
   en: {
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -307,6 +308,7 @@ const T = {
     metricHr: 'Heart Rate', metricSpo2: 'SpO₂', metricTemp: 'Temp', metricHrv: 'HRV',
     x3IntervalUnit: 'min',
     x3WorkModeOff: 'Off', x3WorkModeAuto: 'Auto', x3WorkModeSched: 'Sched',
+    ringHrvTrend: 'HRV Trend', ringSpo2Trend: 'SpO₂ Trend', ringSleepTrend: 'Sleep Trend', ringBodyTemp: 'Body Temp',
   },
 }
 
@@ -371,6 +373,13 @@ function _buildRingDisplayData(raw, isZh) {
   }
   const breathRateStr = raw.breathRate != null ? String(raw.breathRate) : null
 
+  // ── Body temperature ──
+  let tempColor = '#A6C4E5', tempPct = 0
+  if (raw.bodyTempC != null) {
+    tempColor = raw.bodyTempC >= 38 ? '#ef4444' : raw.bodyTempC >= 37.2 ? '#f97316' : '#10b981'
+    tempPct   = Math.min(100, Math.max(2, Math.round((raw.bodyTempC - 35.5) / 3 * 100)))
+  }
+
   // ── Slot charts ──
   const CHART_H = 72  // rpx height of bar chart area
 
@@ -423,6 +432,65 @@ function _buildRingDisplayData(raw, isZh) {
     }
   }
 
+  // HRV daily trend bars (last 7 days)
+  let hrvDayBars = null
+  if (raw.hrvSlots?.length > 0) {
+    const byDay = {}
+    for (const s of raw.hrvSlots) {
+      const d = s.timestamp.substring(0, 10)
+      if (!byDay[d]) byDay[d] = []
+      if (s.hrv != null) byDay[d].push(s.hrv)
+    }
+    const days = Object.keys(byDay).sort().slice(-7)
+    const avgs = days.map(d => byDay[d].length ? Math.round(byDay[d].reduce((a, b) => a + b, 0) / byDay[d].length) : 0)
+    const maxHrv = Math.max(...avgs, 1)
+    hrvDayBars = days.map((d, i) => ({
+      label: d.slice(5).replace('-', '/'),
+      heightRpx: Math.round(Math.max(4, avgs[i] / maxHrv * CHART_H)),
+      color: avgs[i] >= 80 ? '#0ea5e9' : avgs[i] >= 50 ? '#10b981' : avgs[i] >= 30 ? '#f97316' : '#ef4444',
+      avg: avgs[i],
+    }))
+  }
+
+  // SpO₂ daily trend bars (last 7 days)
+  let spo2DayBars = null
+  if (raw.spo2Slots?.length > 0) {
+    const byDay = {}
+    for (const s of raw.spo2Slots) {
+      const d = s.timestamp.substring(0, 10)
+      if (!byDay[d]) byDay[d] = []
+      if (s.spo2 != null) byDay[d].push(s.spo2)
+    }
+    const days = Object.keys(byDay).sort().slice(-7)
+    const avgs = days.map(d => byDay[d].length ? Math.round(byDay[d].reduce((a, b) => a + b, 0) / byDay[d].length * 10) / 10 : 0)
+    const minSpo2 = 90, maxSpo2 = 100
+    spo2DayBars = days.map((d, i) => ({
+      label: d.slice(5).replace('-', '/'),
+      heightRpx: Math.round(Math.max(4, (avgs[i] - minSpo2) / (maxSpo2 - minSpo2) * CHART_H)),
+      color: avgs[i] >= 98 ? '#0ea5e9' : avgs[i] >= 95 ? '#10b981' : avgs[i] >= 90 ? '#f97316' : '#ef4444',
+      avg: avgs[i],
+    }))
+  }
+
+  // Sleep daily trend bars (from ring-cached multi-night history)
+  let sleepDayBars = null
+  if (raw.sleepHistory?.length > 0) {
+    const nights = raw.sleepHistory.filter(n => n.totalMinutes > 0).slice(-7)
+    if (nights.length > 0) {
+      const maxMin = Math.max(...nights.map(n => n.totalMinutes))
+      sleepDayBars = nights.map(n => {
+        const h = Math.floor(n.totalMinutes / 60)
+        const m = n.totalMinutes % 60
+        return {
+          label: n.date.slice(5).replace('-', '/'),
+          avg: m > 0 ? `${h}h${m}` : `${h}h`,
+          heightRpx: Math.round(Math.max(4, n.totalMinutes / maxMin * CHART_H)),
+          color: n.totalMinutes >= 420 ? '#10b981' : n.totalMinutes >= 360 ? '#0ea5e9' : n.totalMinutes >= 300 ? '#f97316' : '#ef4444',
+        }
+      })
+    }
+  }
+
   return {
     ...raw,
     sleepStr, sleepDeepPct, sleepLightPct, sleepRemPct, sleepAwakePct,
@@ -436,12 +504,16 @@ function _buildRingDisplayData(raw, isZh) {
     hasSpo2:       raw.spo2         != null,
     hasBp:         raw.systolicBP   != null && raw.diastolicBP != null,
     hasBreathRate: raw.breathRate   != null,
+    hasBodyTemp:   raw.bodyTempC    != null,
     hrvColor, hrvPct,
     stressLabel, stressColor,
     spo2Color, spo2Pct,
     bpStr, bpColor, breathRateStr,
     stepsBars, hrBars, sleepSegs, sleepTimeRange,
-    hasSlotCharts: !!(stepsBars || hrBars || sleepSegs),
+    hrvDayBars, spo2DayBars, sleepDayBars,
+    bodyTempC: raw.bodyTempC != null ? raw.bodyTempC.toFixed(1) : null,
+    tempPct, tempColor,
+    hasSlotCharts: !!(stepsBars || hrBars || sleepSegs || hrvDayBars || spo2DayBars || sleepDayBars),
   }
 }
 
@@ -497,17 +569,72 @@ function _slotsToReadings(hrvSlots, spo2Slots) {
 function _fmtRealtimeReadings(readings) {
   const todayStr = _shanghaiDateStr(Date.now())
   const yesterStr = _shanghaiDateStr(Date.now() - 86400000)
-  return readings.map(r => {
-    const time = _shanghaiTimeStr(r.t)
+  const sectionMap = {}
+  const sectionOrder = []
+  for (const r of readings) {
     const dateStr = _shanghaiDateStr(r.t)
-    const dateLabel = dateStr === todayStr ? null : dateStr === yesterStr ? '昨天' : dateStr.slice(5).replace('-', '/')
+    const sectionLabel = dateStr === todayStr ? '今天' : dateStr === yesterStr ? '昨天' : dateStr.slice(5).replace('-', '/')
+    if (!sectionMap[dateStr]) {
+      sectionMap[dateStr] = { dateLabel: sectionLabel, readings: [] }
+      sectionOrder.push(dateStr)
+    }
+    const time = _shanghaiTimeStr(r.t)
     const hrvColor    = r.hrv    == null ? null : r.hrv >= 80 ? '#0ea5e9' : r.hrv >= 50 ? '#10b981' : r.hrv >= 30 ? '#f97316' : '#ef4444'
     const spo2Color   = r.spo2   == null ? null : r.spo2 >= 98 ? '#0ea5e9' : r.spo2 >= 95 ? '#10b981' : r.spo2 >= 90 ? '#f97316' : '#ef4444'
     const stressColor = r.stress == null ? null : r.stress <= 25 ? '#10b981' : r.stress <= 50 ? '#6375EC' : r.stress <= 75 ? '#f97316' : '#ef4444'
     const bpStr   = r.systolicBP != null && r.diastolicBP != null ? `${r.systolicBP}/${r.diastolicBP}` : null
     const bpColor = r.systolicBP == null ? null : r.systolicBP >= 140 ? '#ef4444' : r.systolicBP >= 130 ? '#f97316' : r.systolicBP >= 120 ? '#f97316' : '#10b981'
-    return { time, dateLabel, hrv: r.hrv, stress: r.stress, spo2: r.spo2, hrvColor, spo2Color, stressColor, bpStr, bpColor, breathRate: r.breathRate ?? null }
-  })
+    sectionMap[dateStr].readings.push({ time, hrv: r.hrv, stress: r.stress, spo2: r.spo2, hrvColor, spo2Color, stressColor, bpStr, bpColor, breathRate: r.breathRate ?? null })
+  }
+  return sectionOrder.map(d => sectionMap[d])
+}
+
+function _buildReadingLineCharts(readings) {
+  const pts = readings.slice().reverse()  // oldest → newest
+
+  function _extract(key) { return pts.filter(r => r[key] != null).map(r => r[key]) }
+  function _hrvColor(v)    { return v >= 80 ? '#0ea5e9' : v >= 50 ? '#10b981' : v >= 30 ? '#f97316' : '#ef4444' }
+  function _spo2Color(v)   { return v >= 98 ? '#0ea5e9' : v >= 95 ? '#10b981' : v >= 90 ? '#f97316' : '#ef4444' }
+  function _stressColor(v) { return v <= 25 ? '#10b981' : v <= 50 ? '#6375EC' : v <= 75 ? '#f97316' : '#ef4444' }
+
+  const CHART_H = 72, MAX_BARS = 48
+
+  function _toBars(vals, colorFn) {
+    if (vals.length < 2) return null
+    const N = Math.min(vals.length, MAX_BARS)
+    const binned = []
+    for (let i = 0; i < N; i++) {
+      const s = Math.floor(i / N * vals.length)
+      const e = Math.floor((i + 1) / N * vals.length)
+      const slice = vals.slice(s, e)
+      binned.push(slice.reduce((a, b) => a + b, 0) / slice.length)
+    }
+    const min = Math.min(...binned), max = Math.max(...binned)
+    const range = max - min || 1
+    return binned.map(v => ({
+      heightRpx: Math.round(Math.max(4, (v - min) / range * CHART_H)),
+      color: colorFn(v),
+    }))
+  }
+
+  function _chart(vals, colorFn, fallbackColor) {
+    const latest = vals.length ? vals[vals.length - 1] : null
+    return {
+      hasData:     vals.length >= 2,
+      bars:        _toBars(vals, colorFn),
+      latestVal:   latest,
+      latestColor: latest != null ? colorFn(latest) : 'rgba(166,196,229,0.5)',
+      minVal:      vals.length ? Math.min(...vals) : null,
+      maxVal:      vals.length ? Math.max(...vals) : null,
+      count:       vals.length,
+    }
+  }
+
+  return {
+    hrvChart:    _chart(_extract('hrv'),    _hrvColor,    '#6375EC'),
+    spo2Chart:   _chart(_extract('spo2'),   _spo2Color,   '#6375EC'),
+    stressChart: _chart(_extract('stress'), _stressColor, '#6375EC'),
+  }
 }
 
 function _isPrivacyError(e) {
@@ -1979,7 +2106,10 @@ Component({
             ? _slotsToReadings(rawRing.hrvSlots, rawRing.spo2Slots)
             : _getRealtimeReadings(rawRing.syncedAt)
           const realtimeReadings = _fmtRealtimeReadings(_rawReads)
-          const ringData = { ..._buildRingDisplayData(rawRing, isZh), realtimeReadings, hasRealtimeReadings: realtimeReadings.length > 0 }
+          const _charts = _buildReadingLineCharts(_rawReads)
+          if (IS_DEV) console.log(JSON.stringify({ level: 'DEBUG', msg: 'ring line charts', rawReadsLen: _rawReads.length, hrv: _charts.hrvChart.count, spo2: _charts.spo2Chart.count, stress: _charts.stressChart.count, hrvHasData: _charts.hrvChart.hasData }))
+          const _base = _buildRingDisplayData(rawRing, isZh)
+          const ringData = { ..._base, realtimeReadings, hasRealtimeReadings: realtimeReadings.length > 0, ..._charts, hasSlotCharts: _base.hasSlotCharts || _charts.hrvChart.hasData || _charts.spo2Chart.hasData || _charts.stressChart.hasData }
           const virtualTwin = {
             avg_daily_steps: rawRing.steps,
             avg_sleep_hours: rawRing.sleepMinutes != null ? rawRing.sleepMinutes / 60 : null,
@@ -2162,12 +2292,14 @@ Component({
           if (_monitorFailed > 0) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'x3 setAutoMonitoring partial failure', failed: _monitorFailed }))
           }
-          const battery = await ring.getBattery()
-          const steps   = await ring.getSteps().catch(() => null)
-          const sleep   = await ring.getSleep().catch(() => null)
+          const battery   = await ring.getBattery()
+          const steps     = await ring.getSteps().catch(() => null)
+          const sleepHist = await ring.getSleepHistory().catch(() => [])
+          const sleep     = sleepHist.length ? sleepHist[sleepHist.length - 1] : null
           const hrLog   = await ring.getHeartRateLog().catch(() => null)
-          const hrvLog  = await ring.getHrvHistory().catch(() => [])       // all cached days [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}]
-          const spo2Log = await ring.getAutoSpo2History().catch(() => [])  // all cached days [{timestamp, spo2}]
+          const hrvLog  = await ring.getHrvHistory().catch(() => [])            // all cached days [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}]
+          const spo2Log = await ring.getAutoSpo2History().catch(() => [])       // all cached days [{timestamp, spo2}]
+          const tempLog = await ring.getTemperatureHistory().catch(() => [])    // all cached days [{date, estimatedBodyTemp, skinTemp, status}]
           await ring.disconnect()
           wx.hideLoading()
 
@@ -2175,6 +2307,8 @@ Component({
           const restingHr  = hrEntries.length ? Math.min(...hrEntries.map(r => r.value)) : null
           const latestHrv  = hrvLog.length  ? hrvLog[hrvLog.length - 1]   : {}
           const latestSpo2 = spo2Log.length ? spo2Log[spo2Log.length - 1] : {}
+          const validTemps = (tempLog || []).filter(r => r.estimatedBodyTemp != null && r.estimatedBodyTemp > 34)
+          const latestTemp = validTemps.length ? validTemps[validTemps.length - 1] : {}
           const raw = {
             steps:        steps?.steps       ?? null,
             calories:     steps?.calories    ?? null,
@@ -2188,6 +2322,7 @@ Component({
             sleepStart:   sleep?.sleepStart  ?? null,
             sleepEnd:     sleep?.sleepEnd    ?? null,
             sleepSlots:   sleep?.periods?.map(p => ({ type: p.typeName, min: p.minutes })) ?? null,
+            sleepHistory: sleepHist.filter(n => n.totalMinutes > 0).map(n => ({ date: n.date, totalMinutes: n.totalMinutes, deep: n.deep ?? null, light: n.light ?? null, rem: n.rem ?? null, awake: n.awake ?? null })),
             hrSlots:         hrEntries.map(r => ({ t: r.timestamp.toISOString(), bpm: r.value })),
             restingHr,
             hrv:             latestHrv.hrv       ?? null,
@@ -2198,8 +2333,10 @@ Component({
             systolicBP:      latestHrv.highBP   ?? null,
             diastolicBP:     latestHrv.lowBP    ?? null,
             hrvMeasuredAt:   latestHrv.timestamp ?? null,
-            hrvSlots:  hrvLog.length  > 0 ? hrvLog  : null,
-            spo2Slots: spo2Log.length > 0 ? spo2Log : null,
+            hrvSlots:    hrvLog.length       > 0 ? hrvLog       : null,
+            spo2Slots:   spo2Log.length      > 0 ? spo2Log      : null,
+            tempSlots:   validTemps.length   > 0 ? validTemps   : null,
+            bodyTempC:   latestTemp.estimatedBodyTemp ?? null,
             syncedAt: Date.now(),
           }
           this._commitRingData(raw, battery.level, isZh, false)
@@ -2294,6 +2431,7 @@ Component({
         sleepStart:   sleep?.sleepStart ?? null,
         sleepEnd:     sleep?.sleepEnd   ?? null,
         sleepSlots:   sleep?.periods?.map(p => ({ type: p.typeName, min: p.minutes })) ?? null,
+        sleepHistory: (sleep?.totalMinutes > 0) ? [{ date: _shanghaiDateStr(Date.now()), totalMinutes: sleep.totalMinutes, deep: sleep.deep ?? null, light: sleep.light ?? null, rem: sleep.rem ?? null, awake: sleep.awake ?? null }] : [],
         hrSlots:      hrEntries.map(r => ({ t: r.timestamp.toISOString(), bpm: r.value })),
         restingHr,
         hrv: null, stress: null, spo2: null,
@@ -2342,7 +2480,9 @@ Component({
         ? _slotsToReadings(raw.hrvSlots, raw.spo2Slots)
         : _getRealtimeReadings(raw.syncedAt)
       const realtimeReadings = _fmtRealtimeReadings(rawReadings)
-      const ringData = { ..._buildRingDisplayData(raw, isZh), realtimeReadings, hasRealtimeReadings: realtimeReadings.length > 0 }
+      const _charts2 = _buildReadingLineCharts(rawReadings)
+      const _base2 = _buildRingDisplayData(raw, isZh)
+      const ringData = { ..._base2, realtimeReadings, hasRealtimeReadings: realtimeReadings.length > 0, ..._charts2, hasSlotCharts: _base2.hasSlotCharts || _charts2.hrvChart.hasData || _charts2.spo2Chart.hasData || _charts2.stressChart.hasData }
       const virtualTwin = {
         avg_daily_steps:  raw.steps,
         avg_sleep_hours:  raw.sleepMinutes != null ? raw.sleepMinutes / 60 : null,

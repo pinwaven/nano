@@ -323,6 +323,17 @@ class X3Ring extends WearableDevice {
     return _parseTempLog62(buf, todayStr)
   }
 
+  // All cached temperature records across all stored days (no date filter).
+  async getTemperatureHistory() {
+    const buf = await this._stream(
+      getTemperatureHistoryPacket(),
+      0x62,
+      (acc) => acc.length > 0 && acc[acc.length - 1] === 0xFF,
+      8000,
+    )
+    return _parseTempLog62(buf, null)
+  }
+
   // Exercise sessions: [{ date, sportMode, avgHeartRate, durationSec, steps, paceMin, paceSec, calories, distanceKm }]
   async getExerciseSessions(date) {
     const todayStr = _isoDateStr(date || new Date())

@@ -429,6 +429,16 @@
                 <view class="ring-sum-bar-fill" style="width: {{ringData.spo2Pct}}%; background: {{ringData.spo2Color}};"></view>
               </view>
             </view>
+            <view wx:if="{{ringData.hasBodyTemp}}" class="ring-sum-item">
+              <view class="ring-sum-val-row">
+                <text class="ring-sum-val" style="color: {{ringData.tempColor}}">{{ringData.bodyTempC}}</text>
+                <text class="ring-sum-unit">°C</text>
+              </view>
+              <text class="ring-sum-sub">{{t.ringBodyTemp}}</text>
+              <view class="ring-sum-bar">
+                <view class="ring-sum-bar-fill" style="width: {{ringData.tempPct}}%; background: {{ringData.tempColor}};"></view>
+              </view>
+            </view>
           </view>
           <text class="ring-sum-footer">{{ringData.syncLabel}}</text>
         </view>
@@ -462,30 +472,104 @@
             </view>
           </view>
 
-          <!-- Realtime readings history (HRV / Stress / SpO₂) -->
-          <view wx:if="{{ringData.hasRealtimeReadings}}" class="ring-chart-block">
-            <text class="ring-chart-label">{{t.ringHrv}} · {{t.ringStress}} · SpO₂</text>
-            <view class="ring-readings-list">
-              <view wx:for="{{ringData.realtimeReadings}}" wx:key="index" class="ring-reading-row">
-                <view class="ring-reading-time-col">
-                  <text wx:if="{{item.dateLabel}}" class="ring-reading-date">{{item.dateLabel}}</text>
-                  <text class="ring-reading-time">{{item.time}}</text>
-                </view>
-                <view class="ring-reading-metrics">
-                  <view wx:if="{{item.hrv != null}}" class="ring-reading-metric">
-                    <text class="ring-reading-val" style="color:{{item.hrvColor}}">{{item.hrv}}</text>
-                    <text class="ring-reading-unit">ms HRV</text>
-                  </view>
-                  <view wx:if="{{item.stress != null}}" class="ring-reading-metric">
-                    <text class="ring-reading-val" style="color:{{item.stressColor}}">{{item.stress}}</text>
-                    <text class="ring-reading-unit">stress</text>
-                  </view>
-                  <view wx:if="{{item.spo2 != null}}" class="ring-reading-metric">
-                    <text class="ring-reading-val" style="color:{{item.spo2Color}}">{{item.spo2}}</text>
-                    <text class="ring-reading-unit">% SpO₂</text>
-                  </view>
-                </view>
+          <!-- HRV daily trend (last 7 days) -->
+          <view wx:if="{{ringData.hrvDayBars}}" class="ring-chart-block">
+            <text class="ring-chart-label">{{t.ringHrvTrend}}</text>
+            <view class="ring-chart-bars">
+              <view wx:for="{{ringData.hrvDayBars}}" wx:key="label" class="ring-chart-day-col">
+                <text class="ring-chart-day-avg">{{item.avg}}</text>
+                <view class="ring-chart-bar"
+                      style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
+                <text class="ring-chart-day-label">{{item.label}}</text>
               </view>
+            </view>
+          </view>
+
+          <!-- SpO₂ daily trend (last 7 days) -->
+          <view wx:if="{{ringData.spo2DayBars}}" class="ring-chart-block">
+            <text class="ring-chart-label">{{t.ringSpo2Trend}}</text>
+            <view class="ring-chart-bars">
+              <view wx:for="{{ringData.spo2DayBars}}" wx:key="label" class="ring-chart-day-col">
+                <text class="ring-chart-day-avg">{{item.avg}}%</text>
+                <view class="ring-chart-bar"
+                      style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
+                <text class="ring-chart-day-label">{{item.label}}</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- Sleep daily trend -->
+          <view wx:if="{{ringData.sleepDayBars}}" class="ring-chart-block">
+            <text class="ring-chart-label">{{t.ringSleepTrend}}</text>
+            <view class="ring-chart-bars">
+              <view wx:for="{{ringData.sleepDayBars}}" wx:key="label" class="ring-chart-day-col">
+                <text class="ring-chart-day-avg">{{item.avg}}</text>
+                <view class="ring-chart-bar"
+                      style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
+                <text class="ring-chart-day-label">{{item.label}}</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- HRV line chart -->
+          <view wx:if="{{ringData.hrvChart.hasData}}" class="ring-chart-block">
+            <view class="ring-linechart-header">
+              <text class="ring-chart-label">{{t.ringHrv}}</text>
+              <view class="ring-linechart-latest-row">
+                <text class="ring-linechart-latest" style="color:{{ringData.hrvChart.latestColor}}">{{ringData.hrvChart.latestVal}}</text>
+                <text class="ring-linechart-unit">ms</text>
+              </view>
+            </view>
+            <view class="ring-lc-bars">
+              <view wx:for="{{ringData.hrvChart.bars}}" wx:key="index" class="ring-lc-col">
+                <view class="ring-lc-bar" style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
+              </view>
+            </view>
+            <view class="ring-linechart-range">
+              <text class="ring-linechart-bound">{{ringData.hrvChart.minVal}} ms</text>
+              <text class="ring-linechart-count">{{ringData.hrvChart.count}} 次</text>
+              <text class="ring-linechart-bound">{{ringData.hrvChart.maxVal}} ms</text>
+            </view>
+          </view>
+
+          <!-- SpO₂ line chart -->
+          <view wx:if="{{ringData.spo2Chart.hasData}}" class="ring-chart-block">
+            <view class="ring-linechart-header">
+              <text class="ring-chart-label">SpO₂</text>
+              <view class="ring-linechart-latest-row">
+                <text class="ring-linechart-latest" style="color:{{ringData.spo2Chart.latestColor}}">{{ringData.spo2Chart.latestVal}}</text>
+                <text class="ring-linechart-unit">%</text>
+              </view>
+            </view>
+            <view class="ring-lc-bars">
+              <view wx:for="{{ringData.spo2Chart.bars}}" wx:key="index" class="ring-lc-col">
+                <view class="ring-lc-bar" style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
+              </view>
+            </view>
+            <view class="ring-linechart-range">
+              <text class="ring-linechart-bound">{{ringData.spo2Chart.minVal}}%</text>
+              <text class="ring-linechart-count">{{ringData.spo2Chart.count}} 次</text>
+              <text class="ring-linechart-bound">{{ringData.spo2Chart.maxVal}}%</text>
+            </view>
+          </view>
+
+          <!-- Stress line chart -->
+          <view wx:if="{{ringData.stressChart.hasData}}" class="ring-chart-block">
+            <view class="ring-linechart-header">
+              <text class="ring-chart-label">{{t.ringStress}}</text>
+              <view class="ring-linechart-latest-row">
+                <text class="ring-linechart-latest" style="color:{{ringData.stressChart.latestColor}}">{{ringData.stressChart.latestVal}}</text>
+              </view>
+            </view>
+            <view class="ring-lc-bars">
+              <view wx:for="{{ringData.stressChart.bars}}" wx:key="index" class="ring-lc-col">
+                <view class="ring-lc-bar" style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
+              </view>
+            </view>
+            <view class="ring-linechart-range">
+              <text class="ring-linechart-bound">{{ringData.stressChart.minVal}}</text>
+              <text class="ring-linechart-count">{{ringData.stressChart.count}} 次</text>
+              <text class="ring-linechart-bound">{{ringData.stressChart.maxVal}}</text>
             </view>
           </view>
 

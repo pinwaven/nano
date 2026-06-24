@@ -29,6 +29,7 @@
  * @property {string|null} hrvMeasuredAt  - ring's BCD timestamp for the HRV record ("YYYY-MM-DD HH:MM:SS")
  * @property {Array|null}  hrvSlots  - [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}] all cached HRV readings across ~3 days (X3)
  * @property {Array|null}  spo2Slots - [{timestamp, spo2}] all cached SpO2 readings across ~3 days (X3)
+ * @property {Array|null}  tempSlots - [{timestamp, skinTemp, estimatedBodyTemp, status}] all cached temp readings (X3)
  * @property {number}      syncedAt       - Date.now()
  */
 
@@ -138,6 +139,26 @@ function syncWearableData(openid, snapshot, apiToken) {
         recorded_at: recordedAt,
         external_id: `${src}_spo2_${ts}`,
         data: { spo2: slot.spo2 ?? null },
+      })
+    }
+  }
+
+  // Per-measurement temperature events (X3 — one event per scheduled temp reading).
+  if (snapshot.tempSlots?.length) {
+    for (const slot of snapshot.tempSlots) {
+      const ts = slot.timestamp ? slot.timestamp.replace(/\D/g, '') : String(slot.date || '').replace(/\D/g, '') + '0000'
+      const slotDate = slot.timestamp ? slot.timestamp.substring(0, 10) : String(slot.date || todayDate)
+      if (slot.estimatedBodyTemp == null) continue
+      events.push({
+        category: 'vitals',
+        source: src,
+        data_date: slotDate,
+        recorded_at: recordedAt,
+        external_id: `${src}_temp_${ts}`,
+        data: {
+          body_temp_c: slot.estimatedBodyTemp,
+          skin_temp_c: slot.skinTemp ?? null,
+        },
       })
     }
   }

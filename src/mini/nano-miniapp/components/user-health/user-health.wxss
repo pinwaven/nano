@@ -2601,6 +2601,42 @@
   min-height: 16rpx;
 }
 
+/* Daily trend bar column (HRV / SpO₂ multi-day charts) */
+.ring-chart-day-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  gap: 4rpx;
+}
+
+.ring-chart-day-avg {
+  font-size: 16rpx;
+  font-weight: 600;
+  color: rgba(166, 196, 229, 0.55);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring-chart-day-label {
+  font-size: 15rpx;
+  color: rgba(166, 196, 229, 0.35);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Date section header in grouped readings list */
+.ring-reading-date-header {
+  font-size: 19rpx;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: rgba(166, 196, 229, 0.35);
+  padding: 14rpx 4rpx 6rpx;
+}
+
 /* Realtime readings list */
 
 .ring-readings-list {
@@ -2662,6 +2698,72 @@
 .ring-reading-unit {
   font-size: 17rpx;
   color: rgba(166, 196, 229, 0.35);
+}
+
+/* Dense bar charts used for HRV / SpO₂ / Stress history (replaces SVG which doesn't support data binding) */
+.ring-lc-bars {
+  display: flex;
+  align-items: flex-end;
+  height: 72rpx;
+  gap: 3rpx;
+  margin: 0 2rpx;
+}
+
+.ring-lc-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.ring-lc-bar {
+  width: 100%;
+  border-radius: 2rpx 2rpx 0 0;
+  min-height: 4rpx;
+}
+
+/* Line charts (HRV / SpO₂ / Stress history) */
+.ring-linechart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.ring-linechart-latest-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4rpx;
+}
+
+.ring-linechart-latest {
+  font-size: 34rpx;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.ring-linechart-unit {
+  font-size: 18rpx;
+  color: rgba(166, 196, 229, 0.45);
+}
+
+.ring-linechart-range {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8rpx;
+}
+
+.ring-linechart-bound {
+  font-size: 18rpx;
+  color: rgba(166, 196, 229, 0.35);
+  font-variant-numeric: tabular-nums;
+}
+
+.ring-linechart-count {
+  font-size: 18rpx;
+  color: rgba(166, 196, 229, 0.25);
 }
 
 /* Sleep timeline */
