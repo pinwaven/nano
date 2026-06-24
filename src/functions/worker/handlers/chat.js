@@ -96,7 +96,7 @@ async function resolveOrUpsertUser(body) {
 
     const userQuery = `
         INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, bio_data, channel_id)
-        VALUES ($1, $2, 'wechat', $3, $4, $5, $6, $7, $8, $9, (SELECT id FROM channels WHERE key_name = 'nanovate' LIMIT 1))
+        VALUES ($1, $2, 'wechat', $3, $4, $5, $6, $7, $8, $9, (SELECT id FROM channels WHERE key_name = 'waven' LIMIT 1))
         ON CONFLICT (external_id)
         DO UPDATE SET
             nickname = COALESCE(EXCLUDED.nickname, users.nickname),

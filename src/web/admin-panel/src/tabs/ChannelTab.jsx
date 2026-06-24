@@ -96,7 +96,7 @@ function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose,
           <div className="form-grid">
             <label className="form-field">
               <span>{t.modal.channelKeyName}</span>
-              <input value={form.key_name} onChange={e => set('key_name', e.target.value)} disabled={isEdit} placeholder="e.g. nanovate" />
+              <input value={form.key_name} onChange={e => set('key_name', e.target.value)} disabled={isEdit} placeholder="e.g. waven" />
             </label>
             <label className="form-field">
               <span>{t.modal.channelName}</span>

@@ -290,7 +290,7 @@ async function handleWxLogin(body) {
         return { success: true, guest: true, openid };
     }
 
-    // New user — determine channel from invite code, coach invite, referral, or default to nanovate
+    // New user — determine channel from invite code, coach invite, referral, or default to waven
     let channelId = null;
     let resolvedCoachId = coach_id ? parseInt(coach_id) : null;
     let inviteRecord = null;
@@ -351,7 +351,7 @@ async function handleWxLogin(body) {
             );
             if (slugRes.rows.length > 0) channelId = slugRes.rows[0].id;
         } else {
-            const defaultCh = await pool.query("SELECT id FROM channels WHERE key_name = 'nanovate' LIMIT 1");
+            const defaultCh = await pool.query("SELECT id FROM channels WHERE key_name = 'waven' LIMIT 1");
             channelId = defaultCh.rows[0]?.id || null;
         }
     }
@@ -525,7 +525,7 @@ async function handleWxAppLogin(body) {
             const slugRes = await pool.query('SELECT id FROM channels WHERE LOWER(name) = LOWER($1) LIMIT 1', [channel_slug]);
             if (slugRes.rows.length > 0) channelId = slugRes.rows[0].id;
         } else {
-            const defaultCh = await pool.query("SELECT id FROM channels WHERE key_name = 'nanovate' LIMIT 1");
+            const defaultCh = await pool.query("SELECT id FROM channels WHERE key_name = 'waven' LIMIT 1");
             channelId = defaultCh.rows[0]?.id || null;
         }
     }
