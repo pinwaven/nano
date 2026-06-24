@@ -51,7 +51,7 @@ async function saveChatMessage(user_id, role, content, image_url = null, persona
 }
 
 
-async function handleGetChatHistory(openid, sinceId = null) {
+async function handleGetChatHistory(openid, sinceId = null, beforeId = null) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (!openid) return { success: true, messages: [] };
@@ -66,6 +66,20 @@ async function handleGetChatHistory(openid, sinceId = null) {
             return { success: true, messages: result.rows };
         }
         const limit = parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10);
+        if (beforeId !== null) {
+            const result = await pool.query(
+                `SELECT id, role, content, image_url, created_at FROM (
+                    SELECT id, role, content, image_url, created_at FROM chat_messages
+                    WHERE user_id = $1 AND id < $2
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT $3
+                ) sub ORDER BY created_at ASC, id ASC`,
+                [openid, beforeId, limit + 1]
+            );
+            const has_more = result.rows.length > limit;
+            const messages = has_more ? result.rows.slice(1) : result.rows;
+            return { success: true, messages, has_more };
+        }
         const result = await pool.query(
             `SELECT id, role, content, image_url, created_at FROM (
                 SELECT id, role, content, image_url, created_at FROM chat_messages
@@ -75,7 +89,7 @@ async function handleGetChatHistory(openid, sinceId = null) {
             ) sub ORDER BY created_at ASC, id ASC`,
             [openid, limit]
         );
-        return { success: true, messages: result.rows };
+        return { success: true, messages: result.rows, has_more: result.rows.length >= limit };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -897,6 +911,7 @@ async function handlePostAnalyzeImage(body) {
         let scaleUnit = 'kg';
         let bpSystolic = null, bpDiastolic = null, bpPulse = null;
         let glucoseValue = null, glucoseUnit = 'mmol/L', glucoseContext = null;
+        let institution = null, reportType = 'lab_panel', observations = [];
         if (jsonMatch) {
             try {
                 const parsed = JSON.parse(jsonMatch[1]);
@@ -904,6 +919,9 @@ async function handlePostAnalyzeImage(body) {
                 extracted = parsed.extracted || {};
                 abnormalItems = parsed.abnormal_items || [];
                 reportDate = parsed.report_date || null;
+                institution = parsed.institution || null;
+                reportType = parsed.report_type || 'lab_panel';
+                observations = Array.isArray(parsed.observations) ? parsed.observations : [];
                 bodyWeightKg = parsed.body_weight_kg || null;
                 scaleUnit = parsed.scale_unit || 'kg';
                 bmi = parsed.bmi || null;
@@ -926,6 +944,30 @@ async function handlePostAnalyzeImage(body) {
         }
 
         let narrative = rawReply.replace(/```json[\s\S]*?```\s*/, '').trim();
+
+        // Lab reports are NOT auto-saved. We surface the read-out, then ask the user
+        // (in the miniapp) whether it's their own report and whether to save it to the
+        // health tab. The actual persistence happens later via POST /health-reports.
+        if (contentType === 'health_report') {
+            const userTrigger = isZh ? '（图片）' : '(image)';
+            await saveChatMessage(user_id, 'user', userTrigger, get_url || null);
+            await saveChatMessage(user_id, 'ai', narrative);
+            console.log(JSON.stringify({ level: 'INFO', msg: 'Lab report analyzed (pending consent)', user_id, observation_count: observations.length }));
+            return {
+                success: true,
+                message: narrative,
+                pending_health_report: true,
+                payload: {
+                    oss_key,
+                    get_url: get_url || null,
+                    report_date: reportDate,
+                    institution,
+                    report_type: reportType,
+                    observations,
+                    abnormal_items: abnormalItems,
+                },
+            };
+        }
 
         const testType = contentType === 'food_photo' ? 'food_photo'
                        : contentType === 'health_report' ? 'health_checkup_report'

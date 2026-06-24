@@ -53,7 +53,8 @@ const CART_SETS = [
 
 const T = {
   zh: {
-    tabChat: '对话', tabHealth: '健康', tabDots: '原粒', tabPlans: '方案', tabStore: '补给', tabAcademy: '学院', tabWellness: '魔盒',
+    tabChat: '对话', tabHealth: '健康', tabPlans: '方案', tabStore: '补给', tabLearn: '学院',
+    plansDotsPlanTab: '方案', plansDotsDotsTab: '原粒', learnAcademyTab: '学院', learnBoxTab: '魔盒',
     wellnessEmpty: '暂无内容',
     wellnessDeviceTitle: '智能戒指', wellnessDeviceDownload: '复制下载链接', wellnessDeviceNoApk: '暂无可用版本',
     wellnessDeviceVersion: '版本', wellnessOpenLink: '复制链接',
@@ -146,6 +147,18 @@ const T = {
     imageUploading: '正在上传图片…',
     imageAnalyzing: '正在分析图片，请稍候…',
     imageError: '图片分析失败，请重试。',
+    hrAskOwn: '这份化验／体检报告是您本人的吗？',
+    hrYes: '是的',
+    hrNo: '不是',
+    hrAskSave: '要把它保存到您的健康档案吗（健康页 › 实验室）？',
+    hrSave: '保存',
+    hrLater: '暂不',
+    hrNotOwn: '好的，我不会保存这份报告。',
+    hrNotSaved: '好的，已取消保存。',
+    hrSaving: '正在保存…',
+    hrSaved: '已保存到您的健康档案（健康页 › 实验室）。',
+    hrSavedBioage: '您的生物年龄也已更新。',
+    hrSaveError: '保存失败，请重试。',
     toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
     toolTestChipMsg: '我想使用 Kino 芯片',
     toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
@@ -234,7 +247,8 @@ const T = {
     },
   },
   en: {
-    tabChat: 'Chat', tabHealth: 'Health', tabDots: 'Dots', tabPlans: 'Plans', tabStore: 'Store', tabAcademy: 'Academy', tabWellness: 'Box',
+    tabChat: 'Chat', tabHealth: 'Health', tabPlans: 'Plans', tabStore: 'Store', tabLearn: 'Learn',
+    plansDotsPlanTab: 'Plans', plansDotsDotsTab: 'Dots', learnAcademyTab: 'Academy', learnBoxTab: 'Box',
     wellnessEmpty: 'No content yet',
     wellnessDeviceTitle: 'Smart Ring', wellnessDeviceDownload: 'Copy Download Link', wellnessDeviceNoApk: 'No APK available',
     wellnessDeviceVersion: 'Version', wellnessOpenLink: 'Copy Link',
@@ -327,6 +341,18 @@ const T = {
     imageUploading: 'Uploading image…',
     imageAnalyzing: 'Analyzing your image, please wait…',
     imageError: 'Image analysis failed. Please try again.',
+    hrAskOwn: 'Is this lab / checkup report your own?',
+    hrYes: 'Yes',
+    hrNo: 'No',
+    hrAskSave: 'Save it to your health records (Health tab › Lab)?',
+    hrSave: 'Save',
+    hrLater: 'Not now',
+    hrNotOwn: "Got it — I won't save this report.",
+    hrNotSaved: 'Okay, not saved.',
+    hrSaving: 'Saving…',
+    hrSaved: 'Saved to your health records (Health tab › Lab).',
+    hrSavedBioage: 'Your BioAge has been updated too.',
+    hrSaveError: 'Save failed. Please try again.',
     toolFormulaDotMsg: 'Please formulate my Dots plan',
     toolTestChipMsg: 'I want to use a Kino chip',
     toolHealthAdviceMsg: 'Please analyze my current health status and give me personalized health advice.',
@@ -797,6 +823,7 @@ Page({
     obOtherSelected: false,
     obConditionsOther: '',
     scrollTop: 0,
+    scrollAnchor: '',
 
     userAvatarLetter: 'U',
 
@@ -862,6 +889,8 @@ Page({
     planDetailOpen: false,
     planDetailData: null,
     planSubTab: 'overview',
+    plansDotsSubTab: 'plans',
+    learnSubTab: 'academy',
     planBrowseOpen: false,
     events: [],
     mySignupEventIds: [],
@@ -935,6 +964,7 @@ Page({
       return
     }
     const { statusBarHeight = 0, windowWidth = 375 } = wx.getSystemInfoSync()
+    this._screenW = windowWidth
     const capsule = wx.getMenuButtonBoundingClientRect()
     const capsuleRightPad = windowWidth - (capsule.left || windowWidth - 96) + 8
     const menuTop = statusBarHeight + 44
@@ -973,6 +1003,7 @@ Page({
     if (user && !isGuest) {
       this._req(`${BASE}/api/heartbeat`, 'POST', { user_id: user.user_id }).catch(() => {})
       this.selectComponent('#health-comp')?.refresh()
+      this.selectComponent('#health-comp')?._maybeAutoSync()
       this._startPolling(user)
       this._loadCreditBalance(user)
       // Check for questionnaires assigned while the user was away
@@ -1024,24 +1055,48 @@ Page({
   switchTab(e) {
     const tab = e.currentTarget.dataset.tab
     this.setData({ tab })
+    if (tab === 'health') {
+      this.selectComponent('#health-comp')?._maybeAutoSync()
+    }
     const STALE_MS = 30_000
     const now = Date.now()
-    if (tab === 'dots' && (now - this._dotsLoadedAt > STALE_MS)) {
-      this.setData({ dotsLoading: true, cartridgesLoading: true })
-      this._loadDots(this.data.user, this.data.lang)
-      this._loadCartridges(this.data.user, this.data.lang)
+    if (tab === 'plans') {
+      if (now - this._plansLoadedAt > STALE_MS) {
+        this.setData({ plansLoading: true, remindersLoading: true })
+        this._loadPlans(this.data.user, this.data.lang)
+        this._loadReminders(this.data.user)
+      }
+      if (now - this._dotsLoadedAt > STALE_MS) {
+        this.setData({ dotsLoading: true, cartridgesLoading: true })
+        this._loadDots(this.data.user, this.data.lang)
+        this._loadCartridges(this.data.user, this.data.lang)
+      }
     }
-    if (tab === 'plans' && (now - this._plansLoadedAt > STALE_MS)) {
-      this.setData({ plansLoading: true, remindersLoading: true })
-      this._loadPlans(this.data.user, this.data.lang)
-      this._loadReminders(this.data.user)
+    if (tab === 'learn') {
+      const { learnSubTab } = this.data
+      if (learnSubTab === 'academy' && this.data.trainingCourses.length === 0) this._loadAcademy()
+      if (learnSubTab === 'wellness' && this.data.wellnessAssets.length === 0) this._loadWellness()
     }
-    if (tab === 'academy' && this.data.trainingCourses.length === 0) {
-      this._loadAcademy()
+  },
+
+  switchPlansDotsSubTab(e) {
+    const subTab = e.currentTarget.dataset.tab
+    this.setData({ plansDotsSubTab: subTab })
+    if (subTab === 'dots') {
+      const STALE_MS = 30_000
+      if (Date.now() - this._dotsLoadedAt > STALE_MS) {
+        this.setData({ dotsLoading: true, cartridgesLoading: true })
+        this._loadDots(this.data.user, this.data.lang)
+        this._loadCartridges(this.data.user, this.data.lang)
+      }
     }
-    if (tab === 'wellness' && this.data.wellnessAssets.length === 0) {
-      this._loadWellness()
-    }
+  },
+
+  switchLearnSubTab(e) {
+    const subTab = e.currentTarget.dataset.tab
+    this.setData({ learnSubTab: subTab })
+    if (subTab === 'academy' && this.data.trainingCourses.length === 0) this._loadAcademy()
+    if (subTab === 'wellness' && this.data.wellnessAssets.length === 0) this._loadWellness()
   },
 
   // ── Logo menu ───────────────────────────────────────────────────────────────
@@ -1107,6 +1162,7 @@ Page({
     if (!this.data.isCoach) return
     const d = this.data
     if (d.menuOpen || d.kinoSimOpen || d.guestSheetOpen || d.qSheetOpen) return
+    if (this._touchX < (this._screenW || 375) - 40) return // only honor swipes starting at the right edge
     const dx = e.changedTouches[0].clientX - this._touchX
     const dy = e.changedTouches[0].clientY - this._touchY
     if (dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
@@ -1365,6 +1421,8 @@ Page({
         })
         const ids = history.map(m => m.id).filter(id => typeof id === 'number')
         this._lastMsgId = ids.length > 0 ? Math.max(...ids) : 0
+        this._oldestDbId = ids.length > 0 ? Math.min(...ids) : 0
+        this._hasMoreHistory = res.data?.has_more ?? false
         this.setData({ messages: msgs })
         this._scrollBottom()
         historyLoaded = true
@@ -1589,6 +1647,44 @@ Page({
     this._startPolling(user)
   },
 
+  onScrollToUpper() {
+    this._loadMoreHistory()
+  },
+
+  async _loadMoreHistory() {
+    if (this._loadingMore || !this._hasMoreHistory) return
+    const user = this.data.user
+    if (!user || !this._oldestDbId) return
+    this._loadingMore = true
+    try {
+      const url = `${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}&before_id=${this._oldestDbId}`
+      const res = await this._req(url)
+      const history = res.data?.messages || []
+      this._hasMoreHistory = res.data?.has_more ?? false
+      if (history.length > 0) {
+        const newMsgs = history.map(m => {
+          const role = (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role
+          if (role === 'action') {
+            try { const d = JSON.parse(m.content); return { id: `old-${m.id}`, role: 'action', action: d.action, label: d.label } }
+            catch (e) { return { id: `old-${m.id}`, role: 'ai', content: mdToHtml(m.content || '') } }
+          }
+          const content = role === 'coach'
+            ? (m.content || '').replace(/\n+/g, ' ')
+            : role === 'ai' ? mdToHtml(m.content || '') : m.content
+          return { id: `old-${m.id}`, role, content, imageUrl: m.image_url || null }
+        })
+        const anchorId = 'm' + (this.data.messages[0]?.id || '')
+        const ids = history.map(m => m.id).filter(id => typeof id === 'number')
+        this._oldestDbId = ids.length > 0 ? Math.min(...ids) : this._oldestDbId
+        this.setData({ messages: [...newMsgs, ...this.data.messages], scrollAnchor: anchorId })
+        setTimeout(() => this.setData({ scrollAnchor: '' }), 300)
+      }
+    } catch (e) {
+      if (IS_DEV) console.error('Load more history failed', e)
+    }
+    this._loadingMore = false
+  },
+
   async _loadHistory(user) {
     // Already handled in _initChat or can be called separately to refresh
     try {
@@ -1663,6 +1759,7 @@ Page({
       updateImageMsg: (id, url) => this._updateImageMsg(id, url),
       req: (url, method, data) => this._req(url, method, data),
       setTyping: (v) => this.setData({ typing: v }),
+      onHealthReportPending: (payload) => this._startHealthReportConsent(payload),
     }
     if (action === 'test_chip') {
       this._addMsg('ai', t.kinoScanPrompt)
@@ -1691,7 +1788,7 @@ Page({
   },
 
   _addActionMsg(action, label, persist = false) {
-    const msg = { id: `action-${Date.now()}`, role: 'action', action, label }
+    const msg = { id: `action-${action}-${Date.now()}`, role: 'action', action, label }
     const messages = [...this.data.messages, msg]
     this.setData({ messages })
     this._scrollBottom()
@@ -1707,11 +1804,81 @@ Page({
 
   handleMsgAction(e) {
     const { action } = e.currentTarget.dataset
+    const { t } = this.data
     if (action === 'view_dots') {
       const { user, lang } = this.data
       this.setData({ tab: 'dots', dotsLoading: true, cartridgesLoading: true })
       this._loadDots(user, lang)
       this._loadCartridges(user, lang)
+    } else if (action === 'hr_own_yes') {
+      this._removeHrActions()
+      this._addMsg('ai', t.hrAskSave)
+      this._addActionMsg('hr_save_yes', t.hrSave)
+      this._addActionMsg('hr_save_no', t.hrLater)
+    } else if (action === 'hr_own_no') {
+      this._removeHrActions()
+      this._pendingHealthReport = null
+      this._addMsg('ai', t.hrNotOwn)
+    } else if (action === 'hr_save_yes') {
+      this._removeHrActions()
+      this._saveHealthReport()
+    } else if (action === 'hr_save_no') {
+      this._removeHrActions()
+      this._pendingHealthReport = null
+      this._addMsg('ai', t.hrNotSaved)
+    }
+  },
+
+  // Lab-report consent flow: triggered after analyze-image flags pending_health_report.
+  _startHealthReportConsent(payload) {
+    if (!payload) return
+    this._pendingHealthReport = payload
+    const { t } = this.data
+    this._addMsg('ai', t.hrAskOwn)
+    this._addActionMsg('hr_own_yes', t.hrYes)
+    this._addActionMsg('hr_own_no', t.hrNo)
+  },
+
+  _removeHrActions() {
+    const messages = this.data.messages.filter(
+      m => !(m.role === 'action' && typeof m.action === 'string' && m.action.indexOf('hr_') === 0)
+    )
+    this.setData({ messages })
+  },
+
+  async _saveHealthReport() {
+    const { t, user } = this.data
+    const payload = this._pendingHealthReport
+    if (!payload) return
+    this._pendingHealthReport = null
+    this.setData({ typing: true })
+    try {
+      const res = await this._req(`${BASE}/api/health-reports`, 'POST', {
+        openid: user.user_id,
+        oss_key: payload.oss_key,
+        get_url: payload.get_url,
+        report_date: payload.report_date,
+        institution: payload.institution,
+        report_type: payload.report_type,
+        observations: payload.observations || [],
+        compute_bioage: true,
+      })
+      if (res.data?.success) {
+        let msg = t.hrSaved
+        if (res.data.bioage_updated) msg += ' ' + t.hrSavedBioage
+        this._addMsg('ai', msg)
+        const healthComp = this.selectComponent('#health-comp')
+        if (healthComp && typeof healthComp.refreshHealthReports === 'function') {
+          healthComp.refreshHealthReports()
+        }
+      } else {
+        this._addMsg('ai', t.hrSaveError)
+      }
+    } catch (err) {
+      if (IS_DEV) console.error('save health report failed', err)
+      this._addMsg('ai', t.hrSaveError)
+    } finally {
+      this.setData({ typing: false })
     }
   },
 

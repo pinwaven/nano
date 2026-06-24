@@ -77,6 +77,11 @@ const T = {
       noInvites: '暂无邀请码',
       deactivateWarning: '停用此邀请码？已复制的链接将失效。',
       copied: '链接已复制',
+      notePrompt: '备注（这个邀请码用于？）',
+      notePlaceholder: '例如：微信A群、春季活动',
+      editNote: '备注',
+      noNote: '点击添加备注',
+      noteSaved: '备注已保存',
     },
     earnings: {
       thisMonth: '本月待结算', available: '可提现余额', noPayouts: '暂无结算记录',
@@ -100,6 +105,7 @@ const T = {
     goalTypeLabel: '目标类型', goalTargetLabel: '目标值', goalDateLabel: '目标日期',
     goalTypes: { bio_age: '生理年龄', sub_age: '生理维度', weight: '体重', steps: '步数', sleep_score: '睡眠分', hrv: 'HRV', custom: '自定义' },
     crmPipeline: '客户管道', crmStages: { lead: '待跟进', onboarding: '接入中', active: '活跃', at_risk: '需关注', churned: '已流失', graduated: '已毕业' },
+    crmMoveTitle: '移动到阶段…', crmMoveSuccess: '已更新阶段', crmMoveError: '更新失败，请重试',
     crmAppointments: '近期预约', crmActivity: '动态', noActivity: '暂无动态', noAppointments: '暂无预约',
     newAppt: '+ 新增预约', apptTitle: '预约标题', apptDate: '日期', apptTime: '时间',
     apptFormats: { video: '视频通话', phone: '电话', in_person: '面诊', wechat: '微信' },
@@ -202,6 +208,11 @@ const T = {
       noInvites: 'No invite codes yet',
       deactivateWarning: 'Deactivate this invite code? Shared links will stop working.',
       copied: 'Link copied',
+      notePrompt: 'Note (what is this code for?)',
+      notePlaceholder: 'e.g. WeChat group A, Spring promo',
+      editNote: 'Note',
+      noNote: 'Tap to add a note',
+      noteSaved: 'Note saved',
     },
     earnings: {
       thisMonth: 'This Month (Pending)', available: 'Available Balance', noPayouts: 'No payout history',
@@ -225,6 +236,7 @@ const T = {
     goalTypeLabel: 'Goal Type', goalTargetLabel: 'Target Value', goalDateLabel: 'Target Date',
     goalTypes: { bio_age: 'Bio Age', sub_age: 'Sub Age', weight: 'Weight', steps: 'Steps', sleep_score: 'Sleep Score', hrv: 'HRV', custom: 'Custom' },
     crmPipeline: 'Pipeline', crmStages: { lead: 'Lead', onboarding: 'Onboarding', active: 'Active', at_risk: 'At Risk', churned: 'Churned', graduated: 'Graduated' },
+    crmMoveTitle: 'Move to stage…', crmMoveSuccess: 'Stage updated', crmMoveError: 'Update failed, please retry',
     crmAppointments: 'Upcoming', crmActivity: 'Activity', noActivity: 'No activity yet', noAppointments: 'No upcoming appointments',
     newAppt: '+ New Appointment', apptTitle: 'Title', apptDate: 'Date', apptTime: 'Time',
     apptFormats: { video: 'Video Call', phone: 'Phone', in_person: 'In Person', wechat: 'WeChat' },
@@ -596,6 +608,7 @@ Page({
 
   onTouchEnd(e) {
     if (this.data.menuOpen || this.data.detailOpen || this.data.reminderOpen || this.data.qAssignOpen || this.data.qResponsesOpen) return
+    if (this._touchX > 40) return // only honor swipes starting at the left edge (frees interior gestures like the CRM kanban)
     const dx = e.changedTouches[0].clientX - this._touchX
     const dy = e.changedTouches[0].clientY - this._touchY
     if (dx > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
@@ -901,22 +914,58 @@ Page({
 
   // ── Invites ──────────────────────────────────────────────────────────────
 
-  async generateInvite() {
+  generateInvite() {
     const { lang } = this.data
+    const t = T[lang]
     if (!this._coachChannelId) {
-      wx.showToast({ title: T[lang].networkError, icon: 'none' })
+      wx.showToast({ title: t.networkError, icon: 'none' })
       return
     }
-    try {
-      await this._req(`${BASE}/api/invitations`, 'POST', {
-        created_by: this._coachUserId,
-        channel_id: this._coachChannelId,
-        type: 'coach',
-      })
-      this._loadAll()
-    } catch {
-      wx.showToast({ title: T[lang].networkError, icon: 'none' })
-    }
+    // Ask for an optional note so the coach knows what the code is for.
+    wx.showModal({
+      title: t.invite.generate,
+      editable: true,
+      placeholderText: t.invite.notePlaceholder,
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/invitations`, 'POST', {
+            created_by: this._coachUserId,
+            channel_id: this._coachChannelId,
+            type: 'coach',
+            note: (res.content || '').trim(),
+          })
+          this._loadAll()
+        } catch {
+          wx.showToast({ title: t.networkError, icon: 'none' })
+        }
+      },
+    })
+  },
+
+  // Add or edit the note on an existing invite code.
+  editInviteNote(e) {
+    const invite = e.currentTarget.dataset.invite
+    const { lang } = this.data
+    const t = T[lang]
+    wx.showModal({
+      title: t.invite.editNote,
+      editable: true,
+      content: invite.note || '',
+      placeholderText: t.invite.notePlaceholder,
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/invitations/${invite.id}`, 'PATCH', {
+            note: (res.content || '').trim(),
+          })
+          wx.showToast({ title: t.invite.noteSaved, icon: 'success' })
+          this._loadAll()
+        } catch {
+          wx.showToast({ title: t.networkError, icon: 'none' })
+        }
+      },
+    })
   },
 
   copyInvite(e) {
@@ -1186,24 +1235,61 @@ Page({
         ...a, _timeFmt: fmtTime(a.scheduled_at),
       }))
       // Build pipeline columns from clients
-      const stageOrder = ['lead', 'onboarding', 'active', 'at_risk', 'churned', 'graduated']
-      const stageColorMap = { lead: '#f59e0b', onboarding: '#6375EC', active: '#10b981', at_risk: '#ef4444', churned: '#6b7280', graduated: '#0ea5e9' }
-      const t = this.data.t
-      const clientsByStage = {}
-      for (const s of stageOrder) clientsByStage[s] = []
-      for (const c of this.data.clients) {
-        const stage = c.crm_stage || 'lead'
-        if (clientsByStage[stage]) clientsByStage[stage].push(c)
-      }
-      const crmPipelineColumns = stageOrder.map(s => ({
-        stage: s, label: t.crmStages[s] || s, color: stageColorMap[s], clients: clientsByStage[s],
-      }))
-      this.setData({ crmPipelineColumns, crmActivityFeed: activityFeed, crmUpcomingAppts: upcomingAppts })
+      this.setData({ crmPipelineColumns: this._buildPipelineColumns(), crmActivityFeed: activityFeed, crmUpcomingAppts: upcomingAppts })
     } catch (e) {
       wx.showToast({ title: this.data.t.networkError, icon: 'none' })
     } finally {
       this.setData({ crmLoading: false })
     }
+  },
+
+  _stageOrder: ['lead', 'onboarding', 'active', 'at_risk', 'churned', 'graduated'],
+  _stageColorMap: { lead: '#f59e0b', onboarding: '#6375EC', active: '#10b981', at_risk: '#ef4444', churned: '#6b7280', graduated: '#0ea5e9' },
+
+  _buildPipelineColumns() {
+    const t = this.data.t
+    const clientsByStage = {}
+    for (const s of this._stageOrder) clientsByStage[s] = []
+    for (const c of this.data.clients) {
+      const stage = c.crm_stage || 'lead'
+      if (clientsByStage[stage]) clientsByStage[stage].push(c)
+    }
+    return this._stageOrder.map(s => ({
+      stage: s, label: t.crmStages[s] || s, color: this._stageColorMap[s], clients: clientsByStage[s],
+    }))
+  },
+
+  // Long-press a pipeline card → action sheet to move the client to another stage
+  openStagePicker(e) {
+    const client = e.currentTarget.dataset.client
+    if (!client || !this._coachId) return
+    const t = this.data.t
+    const current = client.crm_stage || 'lead'
+    const targets = this._stageOrder.filter(s => s !== current)
+    const itemList = targets.map(s => t.crmStages[s] || s)
+    wx.showActionSheet({
+      itemList,
+      success: async (res) => {
+        const stage = targets[res.tapIndex]
+        if (!stage) return
+        try {
+          const r = await this._req(`${BASE}/api/client-pipeline`, 'POST', {
+            coach_id: this._coachId, user_id: client.user_id, stage,
+          })
+          if (!r.data?.success) throw new Error(r.data?.error || 'failed')
+          // Update local state in place and rebuild columns
+          const clients = this.data.clients.map(c =>
+            c.user_id === client.user_id ? { ...c, crm_stage: stage } : c
+          )
+          this.setData({ clients }, () => {
+            this.setData({ crmPipelineColumns: this._buildPipelineColumns() })
+          })
+          wx.showToast({ title: t.crmMoveSuccess, icon: 'success' })
+        } catch (err) {
+          wx.showToast({ title: t.crmMoveError, icon: 'none' })
+        }
+      },
+    })
   },
 
   openApptForm(e) {

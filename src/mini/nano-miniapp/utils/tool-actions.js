@@ -86,7 +86,7 @@ function runUploadImage(openid, t, ctx, tempFilePath) {
 }
 
 function _doUpload(tempPath, openid, t, ctx) {
-  const { addMsg, addImageMsg, updateImageMsg, req, setTyping } = ctx
+  const { addMsg, addImageMsg, updateImageMsg, req, setTyping, onHealthReportPending } = ctx
   const filename = `img_${Date.now()}.jpg`
   addMsg('ai', t.imageUploading)
   setTyping(true)
@@ -116,6 +116,10 @@ function _doUpload(tempPath, openid, t, ctx) {
                   const reply = res.data?.message
                   if (!reply) throw new Error('empty response')
                   addMsg('ai', reply, true)
+                  // Lab report detected → ask the user (in the page) whether to save it.
+                  if (res.data?.pending_health_report && onHealthReportPending) {
+                    onHealthReportPending(res.data.payload)
+                  }
                 })
                 .catch(() => addMsg('ai', t.imageError))
                 .finally(() => setTyping(false))

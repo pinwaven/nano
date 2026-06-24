@@ -493,6 +493,7 @@ async function handleGetInvitations(query) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         let sql = `
             SELECT i.id, i.code, i.type, i.max_uses, i.use_count, i.is_active, i.created_at, i.expires_at,
+                   i.note,
                    i.channel_id, COALESCE(i.created_by, i.created_by_snapshot) AS created_by,
                    c.name AS channel_name,
                    COALESCE(u.nickname, i.created_by_snapshot) AS creator_name
@@ -514,7 +515,7 @@ async function handleGetInvitations(query) {
 }
 
 async function handlePostInvitation(body, adminCtx) {
-    const { created_by, channel_id, type = 'coach', max_uses = null } = body;
+    const { created_by, channel_id, type = 'coach', max_uses = null, note = null } = body;
     if (!channel_id) return { success: false, error: 'channel_id is required', statusCode: 400 };
     if (adminCtx?.role === 'channel' && adminCtx.canManageSubchannels && parseInt(channel_id) !== adminCtx.channelId) {
         const owns = await verifySubchannelOwnership(channel_id, adminCtx);
@@ -529,14 +530,28 @@ async function handlePostInvitation(body, adminCtx) {
             if (exists.rows.length === 0) break;
             attempts++;
         } while (attempts < 10);
+        const cleanNote = (typeof note === 'string' && note.trim()) ? note.trim() : null;
         const result = await pool.query(
-            `INSERT INTO invitations (code, created_by, created_by_snapshot, channel_id, type, max_uses)
-             VALUES ($1, $2, $2, $3, $4, $5) RETURNING id, code`,
-            [code, created_by || null, parseInt(channel_id), type, max_uses || null]
+            `INSERT INTO invitations (code, created_by, created_by_snapshot, channel_id, type, max_uses, note)
+             VALUES ($1, $2, $2, $3, $4, $5, $6) RETURNING id, code`,
+            [code, created_by || null, parseInt(channel_id), type, max_uses || null, cleanNote]
         );
         return { success: true, id: result.rows[0].id, code: result.rows[0].code };
     } catch (err) {
         return { success: false, error: err.detail || err.message };
+    }
+}
+
+async function handlePatchInvitation(inviteId, body) {
+    const { note } = body;
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (note === undefined) return { success: true };
+        const cleanNote = (typeof note === 'string' && note.trim()) ? note.trim() : null;
+        await pool.query('UPDATE invitations SET note = $1 WHERE id = $2', [cleanNote, inviteId]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
     }
 }
 
@@ -562,5 +577,6 @@ module.exports = {
     handleDeleteUser,
     handleGetInvitations,
     handlePostInvitation,
+    handlePatchInvitation,
     handleDeleteInvitation,
 };

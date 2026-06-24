@@ -197,6 +197,7 @@ const T = {
     metricHr: '心率', metricSpo2: 'SpO₂', metricTemp: '体温', metricHrv: 'HRV',
     x3IntervalUnit: '分钟',
     x3WorkModeOff: '关闭', x3WorkModeAuto: '自动', x3WorkModeSched: '定时',
+    x3RingTimeLabel: '戒指时间',
     ringHrvTrend: 'HRV 趋势', ringSpo2Trend: 'SpO₂ 趋势', ringSleepTrend: '睡眠趋势', ringBodyTemp: '体温',
   },
   en: {
@@ -308,6 +309,7 @@ const T = {
     metricHr: 'Heart Rate', metricSpo2: 'SpO₂', metricTemp: 'Temp', metricHrv: 'HRV',
     x3IntervalUnit: 'min',
     x3WorkModeOff: 'Off', x3WorkModeAuto: 'Auto', x3WorkModeSched: 'Sched',
+    x3RingTimeLabel: 'Ring Time',
     ringHrvTrend: 'HRV Trend', ringSpo2Trend: 'SpO₂ Trend', ringSleepTrend: 'Sleep Trend', ringBodyTemp: 'Body Temp',
   },
 }
@@ -902,6 +904,7 @@ Component({
     x3IntervalOpts: { hr: [5, 10, 15, 30], spo2: [5, 15, 30, 60], temp: [15, 30, 60], hrv: [30, 60, 120] },
     x3WorkModes: { hr: 2, spo2: 2, temp: 2, hrv: 2 },
     x3IntervalsChanged: false,
+    x3RingTime: null,
   },
 
   observers: {
@@ -2008,6 +2011,7 @@ Component({
           report_type: t.reportTypeLabels[r.report_type] || r.report_type,
           source_label: t.reportSourceLabels[r.source] || r.source,
           type_color: _reportTypeColor(r.report_type),
+          image_url: r.image_url || '',
         }))
         this.setData({ healthReports: reports, reportsLoading: false })
       } catch (_) {
@@ -2063,6 +2067,7 @@ Component({
           report_date: fmtDate(report.report_date, lang),
           report_type: t.reportTypeLabels[report.report_type] || report.report_type,
           type_color: _reportTypeColor(report.report_type),
+          image_url: raw.image_url || '',
           hasDiag: Array.isArray(raw.diagnostics) && raw.diagnostics.length > 0,
           hasAdvice: Array.isArray(raw.doctor_advice) && raw.doctor_advice.length > 0,
           hasDoctorNotes: !!activeReportDoctorNotes,
@@ -2085,7 +2090,29 @@ Component({
       this.setData({ activeReport: null, activeReportEvents: [], activeReportDiag: [], activeReportAdvice: [], activeReportDoctorNotes: null })
     },
 
+    // Public: called by the chat page after a lab report is saved, to refresh the list.
+    refreshHealthReports() {
+      this._loadHealthReports()
+    },
+
+    previewReportImage(e) {
+      const url = e.currentTarget.dataset.url
+      if (!url) return
+      wx.previewImage({ urls: [url], current: url })
+    },
+
     // --- Wearable (Smart Ring) ---
+
+    _maybeAutoSync() {
+      if (this.data.wearableBusy || !this.data.wearableId) return
+      try {
+        const raw = wx.getStorageSync('wearable_ring_data')
+        const lastSync = raw?.syncedAt || 0
+        if (Date.now() - lastSync > 30 * 60 * 1000) {
+          this.handleSyncWearable()
+        }
+      } catch (_) {}
+    },
 
     _loadWearableFromStorage() {
       try {
@@ -2097,6 +2124,8 @@ Component({
           const x3WmSaved = wx.getStorageSync('x3_work_mode_settings')
           const x3WorkModes = x3WmSaved ? { ...this.data.x3WorkModes, ...x3WmSaved } : this.data.x3WorkModes
           this.setData({ wearableId: saved.deviceId, wearableName: saved.name || fallbackName, wearableConnected: false, wearableBrand: saved.brand || 'colmi', x3Intervals, x3WorkModes })
+          // Delay auto-sync to let the BLE stack initialize on cold launch
+          setTimeout(() => this._maybeAutoSync(), 2000)
         }
         const rawRing = wx.getStorageSync('wearable_ring_data')
         if (rawRing && rawRing.syncedAt) {
@@ -2119,7 +2148,11 @@ Component({
             latest_bmi: null, trend_data: {},
           }
           const visuals = this._buildTwinVisuals(virtualTwin, T[isZh ? 'zh' : 'en'], isZh)
+          // Show as connected if we have data synced within the last 24 hours —
+          // the ring is working; we just don't have an active BLE session right now.
+          const recentSync = (Date.now() - rawRing.syncedAt) < 24 * 60 * 60 * 1000
           this.setData({
+            wearableConnected: recentSync,
             ringData,
             hasTwinData: visuals.vitalGauges.length > 0,
             twinLoading: false,
@@ -2269,7 +2302,6 @@ Component({
       // ── X3: single-phase sync — all data is historical, no real-time measurement needed ──
       if (brand === 'x3') {
         try {
-          wx.showLoading({ title: t.wearableConnecting, mask: true })
           await ring.connect(this.data.wearableId, { syncTime: true })
           // Apply background measurement intervals. Track failures so we can detect
           // if the ring's schedule was wiped (e.g. after a full battery drain).
@@ -2301,7 +2333,6 @@ Component({
           const spo2Log = await ring.getAutoSpo2History().catch(() => [])       // all cached days [{timestamp, spo2}]
           const tempLog = await ring.getTemperatureHistory().catch(() => [])    // all cached days [{date, estimatedBodyTemp, skinTemp, status}]
           await ring.disconnect()
-          wx.hideLoading()
 
           const hrEntries  = (hrLog || []).filter(r => r.value > 0)
           const restingHr  = hrEntries.length ? Math.min(...hrEntries.map(r => r.value)) : null
@@ -2341,7 +2372,6 @@ Component({
           }
           this._commitRingData(raw, battery.level, isZh, false)
         } catch (e) {
-          wx.hideLoading()
           await ring.disconnect().catch(() => {})
           if (IS_DEV) console.error('[BLE][sync:x3]', e?.message || e?.errMsg || e)
           if (!_isPrivacyError(e)) wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
@@ -2355,13 +2385,11 @@ Component({
       // ── Aizo: single-phase sync — historical data via syncAll() ──
       if (brand === 'aizo') {
         try {
-          wx.showLoading({ title: t.wearableConnecting, mask: true })
           const savedDev = wx.getStorageSync('wearable_device') || {}
           await ring.connect(this.data.wearableId, { name: savedDev.name || '' })
           const battery  = await ring.getBattery()
           const snapshot = await ring.syncAll()
           await ring.disconnect()
-          wx.hideLoading()
           const raw = {
             steps:        snapshot.steps        ?? null,
             calories:     snapshot.calories     ?? null,
@@ -2384,7 +2412,6 @@ Component({
           }
           this._commitRingData(raw, battery.level, isZh, false)
         } catch (e) {
-          wx.hideLoading()
           await ring.disconnect().catch(() => {})
           console.error('[BLE][sync:aizo]', e?.message || e?.errMsg || e)
           if (!_isPrivacyError(e)) wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
@@ -2396,18 +2423,14 @@ Component({
       }
 
       // ── Colmi: two-phase sync ──
-      // Phase 1: connect + read stored data (few seconds, blocking modal)
       let battery, steps, sleep, hrLog
       try {
-        wx.showLoading({ title: t.wearableConnecting, mask: true })
         await ring.connect(this.data.wearableId, { name: this.data.wearableName || '' })
         battery = await ring.getBattery()
         steps   = await ring.getSteps().catch(() => null)
         sleep   = await ring.getSleep().catch(() => null)
         hrLog   = await ring.getHeartRateLog().catch(() => null)
-        wx.hideLoading()
       } catch (e) {
-        wx.hideLoading()
         await ring.disconnect().catch(() => {})
         console.error('[BLE][sync:colmi]', e?.message || e?.errMsg || e)
         if (!_isPrivacyError(e)) wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
@@ -2504,7 +2527,7 @@ Component({
 
     async toggleRingSettings() {
       if (this.data.ringSettingsOpen) {
-        this.setData({ ringSettingsOpen: false, x3IntervalsChanged: false })
+        this.setData({ ringSettingsOpen: false, x3IntervalsChanged: false, x3RingTime: null })
         return
       }
       if (this.data.wearableBusy || this.data.ringSettingsBusy) return
@@ -2524,9 +2547,18 @@ Component({
         const s2 = await ring.getAutoMonitoring(2)
         const s3 = await ring.getAutoMonitoring(3)
         const s4 = await ring.getAutoMonitoring(4)
+        const ringTime = await ring.getDeviceTime().catch(() => null)
+        let x3RingTime = null
+        if (ringTime) {
+          const hh = String(ringTime.getHours()).padStart(2, '0')
+          const mm = String(ringTime.getMinutes()).padStart(2, '0')
+          const ss = String(ringTime.getSeconds()).padStart(2, '0')
+          x3RingTime = `${hh}:${mm}:${ss}`
+        }
         this.setData({
           x3Intervals: { hr: s1.intervalMinutes, spo2: s2.intervalMinutes, temp: s3.intervalMinutes, hrv: s4.intervalMinutes },
           x3WorkModes: { hr: s1.workMode, spo2: s2.workMode, temp: s3.workMode, hrv: s4.workMode },
+          x3RingTime,
           x3IntervalsChanged: false,
         })
       } catch (_) {
@@ -2559,6 +2591,13 @@ Component({
       const ring = createWearable('x3')
       try {
         await ring.connect(this.data.wearableId)
+        // Sync ring clock if it drifts more than 1 minute from host time
+        try {
+          const ringTime = await ring.getDeviceTime()
+          if (!ringTime || Math.abs(Date.now() - ringTime.getTime()) > 60000) {
+            await ring.setTime(new Date())
+          }
+        } catch (_) {}
         await ring.setAutoMonitoring({ ...baseOpts, workMode: wms.hr,   intervalMinutes: ivals.hr,   type: 1 })
         await ring.setAutoMonitoring({ ...baseOpts, workMode: wms.spo2, intervalMinutes: ivals.spo2, type: 2 })
         await ring.setAutoMonitoring({ ...baseOpts, workMode: wms.temp, intervalMinutes: ivals.temp, type: 3 })

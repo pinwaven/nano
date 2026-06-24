@@ -128,6 +128,10 @@
           <text class="invite-status-text">{{item.is_active ? t.invite.active : t.invite.inactive}}</text>
         </view>
       </view>
+      <view class="invite-note-row" catchtap="editInviteNote" data-invite="{{item}}">
+        <text class="invite-note {{item.note ? '' : 'invite-note-empty'}}">{{item.note || t.invite.noNote}}</text>
+        <text class="invite-note-edit">✎</text>
+      </view>
       <text class="invite-uses">{{t.invite.uses}}: {{item.use_count}}</text>
       <view class="client-actions" style="margin-top: 12px;">
         <view class="action-btn msg-btn" catchtap="copyInvite" data-invite="{{item}}">
@@ -222,7 +226,8 @@
             </view>
           </view>
           <view wx:for="{{item.clients}}" wx:key="user_id" wx:for-item="client" class="pipeline-card"
-                catchtap="openClientDetail" data-client="{{client}}" data-tab="health">
+                catchtap="openClientDetail" data-client="{{client}}" data-tab="health"
+                bindlongpress="openStagePicker">
             <text class="pipeline-card-name">{{client.nickname || '—'}}</text>
             <text wx:if="{{client.bio_age && client._cAge}}" class="pipeline-card-delta {{client.bio_age <= client._cAge ? 'delta-good' : 'delta-bad'}}">
               {{client.bio_age <= client._cAge ? '-' : '+'}}{{Math.abs(client.bio_age - client._cAge).toFixed(1)}}yr

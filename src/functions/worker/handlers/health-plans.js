@@ -413,7 +413,8 @@ async function handleGetHealthReports(query) {
         const uid = user_id || (await pool.query('SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid])).rows[0]?.user_id;
         if (!uid) return { statusCode: 404, success: false, error: 'User not found' };
         const result = await pool.query(
-            `SELECT id, report_date, source, institution, report_type, status, created_at
+            `SELECT id, report_date, source, institution, report_type, status, created_at,
+                    oss_key, raw_data->>'image_url' AS image_url
              FROM health_reports WHERE user_id = $1 ORDER BY report_date DESC LIMIT 50`,
             [uid]
         );
@@ -442,14 +443,14 @@ async function handleGetHealthReport(reportId, query) {
     }
 }
 
-async function handlePostHealthReport(body) {
+async function handlePostHealthReport(body, deps = {}) {
     try {
-        const { user_id, openid, report_date, source = 'manual_upload', institution, report_type = 'lab_panel', observations = [], fhir_bundle } = body || {};
+        const { user_id, openid, report_date, source = 'manual_upload', institution, report_type = 'lab_panel', observations = [], fhir_bundle, oss_key = null, get_url = null, compute_bioage = false } = body || {};
         if (!user_id && !openid) return { statusCode: 400, success: false, error: 'user_id or openid required' };
 
         let uid = user_id;
         if (!uid) {
-            const userRes = await pool.query('SELECT user_id FROM users WHERE external_id = $1 LIMIT 1', [openid]);
+            const userRes = await pool.query('SELECT user_id FROM users WHERE external_id = $1 OR user_id = $1 LIMIT 1', [openid]);
             if (userRes.rows.length === 0) return { statusCode: 404, success: false, error: 'User not found' };
             uid = userRes.rows[0].user_id;
         }
@@ -459,41 +460,45 @@ async function handlePostHealthReport(body) {
         if (fhir_bundle && fhir_bundle.resourceType === 'Bundle') {
             obs = extractObservationsFromFhir(fhir_bundle);
         }
-        if (obs.length === 0) return { statusCode: 400, success: false, error: 'No observations provided' };
+        // Allow a photo-only report (no parseable observations) as long as we have an image.
+        if (obs.length === 0 && !oss_key) return { statusCode: 400, success: false, error: 'No observations provided' };
 
-        // Resolve LOINC codes → catalog metadata
+        // Resolve catalog metadata by LOINC code AND by canonical key_name (chat-uploaded
+        // reports come from the vision model keyed by key_name, lab imports by loinc_code).
         const catalogRes = await pool.query(
             'SELECT key_name, loinc_code, nano_dimension, is_kino_core, unit FROM biomarker_catalog WHERE is_active = TRUE'
         );
         const loincMap = {};
+        const keyNameMap = {};
         for (const row of catalogRes.rows) {
             if (row.loinc_code) loincMap[row.loinc_code] = row;
+            keyNameMap[row.key_name] = row;
         }
 
         const date = report_date || obs[0]?.data_date?.split('T')[0] || new Date().toISOString().split('T')[0];
 
         const reportRes = await pool.query(
-            `INSERT INTO health_reports (user_id, report_date, source, institution, report_type, status, raw_data)
-             VALUES ($1, $2, $3, $4, $5, 'parsed', $6) RETURNING id`,
-            [uid, date, source, institution || null, report_type, JSON.stringify({ observations: obs })]
+            `INSERT INTO health_reports (user_id, report_date, source, institution, report_type, status, oss_key, raw_data)
+             VALUES ($1, $2, $3, $4, $5, 'parsed', $6, $7) RETURNING id`,
+            [uid, date, source, institution || null, report_type, oss_key, JSON.stringify({ observations: obs, image_url: get_url || null })]
         );
         const reportId = reportRes.rows[0].id;
 
         let hasKinoCore = false;
         for (const o of obs) {
-            const catalog = loincMap[o.loinc_code];
+            const catalog = o.loinc_code ? loincMap[o.loinc_code] : keyNameMap[o.key_name];
             if (!catalog) continue;
             const dataDate = (o.data_date || date).split('T')[0];
-            const externalId = `${o.loinc_code}::${dataDate}`;
+            const externalId = `${catalog.key_name}::${dataDate}`;
             await pool.query(
                 `INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, report_id, external_id)
                  VALUES ($1, $2, 'lab_result', $3, NOW(), $4, $5, $6)
-                 ON CONFLICT (user_id, source, external_id) DO NOTHING`,
+                 ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING`,
                 [
                     uid, source, dataDate,
                     JSON.stringify({
                         key_name:       catalog.key_name,
-                        loinc_code:     o.loinc_code,
+                        loinc_code:     catalog.loinc_code,
                         value:          parseFloat(o.value),
                         unit:           o.unit || catalog.unit,
                         nano_dimension: catalog.nano_dimension,
@@ -505,7 +510,19 @@ async function handlePostHealthReport(body) {
             if (catalog.is_kino_core) hasKinoCore = true;
         }
 
-        return { success: true, report_id: reportId, has_kino_core: hasKinoCore };
+        // Optionally run the BioAge import inline (reuses the lab-import pipeline:
+        // estimator → BioAgeCalculator → biomarkers(lab_import) → updateHealthTwin).
+        let bioageUpdated = false;
+        if (compute_bioage && hasKinoCore && deps.handleLabImportEvent && deps.fetchTagDerivationContext) {
+            try {
+                await deps.handleLabImportEvent({ report_id: reportId, user_id: uid }, deps.fetchTagDerivationContext);
+                bioageUpdated = true;
+            } catch (bioErr) {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'handlePostHealthReport BioAge import failed', error: bioErr.message }));
+            }
+        }
+
+        return { success: true, report_id: reportId, has_kino_core: hasKinoCore, bioage_updated: bioageUpdated };
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostHealthReport', error: err.message }));
         return { statusCode: 500, success: false, error: err.message };

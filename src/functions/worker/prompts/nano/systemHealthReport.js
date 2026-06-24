@@ -11,7 +11,9 @@ module.exports = (context) => {
 
 **类型 A — 正式体检报告（含化验单、检验报告、健康体检报告等）**
 - 提取所有检测项目（血糖、血脂、肝肾功能、全血细胞计数、甲状腺、血压、体重/BMI 等），记录数值、单位、参考范围及异常标记
-- 识别报告日期（如有）
+- 识别报告日期（如有）、出具机构名称、报告类型
+- 对于可识别的标准化指标，额外填入 \`observations\` 数组，\`key_name\` 必须使用以下标准 key（仅限识别到的项目）：
+  hsCRP, IL6, GDF15, GA, CystatinC, CD38, HbA1c, FPG, Triglycerides, ALT, AST, GGT, TSH, TotalCholesterol, LDL, HDL, Creatinine, eGFR, BUN, UricAcid, CRP, VitaminD, WBC, Ferritin, Hemoglobin
 
 **类型 B — 其他健康相关内容（皮肤状况、伤口、医疗设备读数、症状照片等）**
 - 描述所见内容，提供专业的健康建议或观察
@@ -42,9 +44,14 @@ module.exports = (context) => {
 {
   "content_type": "health_report 或 health_photo 或 food_photo 或 waven_dots 或 scale_reading 或 bp_reading 或 glucose_reading",
   "report_date": "YYYY-MM-DD 或 null",
+  "institution": "<出具机构名称或 null>",
+  "report_type": "lab_panel 或 annual_checkup 或 imaging 或 other",
   "extracted": {
     "<检测项英文key>": { "value": <数值>, "unit": "<单位>", "ref_range": "<参考范围>", "flag": "normal|high|low" }
   },
+  "observations": [
+    { "key_name": "<标准 key>", "value": <数值>, "unit": "<单位>" }
+  ],
   "abnormal_items": ["异常项描述1"],
   "body_weight_kg": <体重数值或 null>,
   "scale_unit": "kg 或 lb 或 null",
@@ -69,7 +76,9 @@ module.exports = (context) => {
 
 **Type A — Formal health report** (lab results, blood test panels, health checkup report, etc.)
 - Extract all test items (blood glucose, lipid panel, liver/kidney function, CBC, thyroid, blood pressure, weight/BMI, etc.) with values, units, reference ranges, and normal/abnormal flags
-- Identify the report date if present
+- Identify the report date if present, the issuing institution name, and the report type
+- For recognized standardized markers, also fill the \`observations\` array; \`key_name\` MUST use one of these canonical keys (only for markers you actually recognize):
+  hsCRP, IL6, GDF15, GA, CystatinC, CD38, HbA1c, FPG, Triglycerides, ALT, AST, GGT, TSH, TotalCholesterol, LDL, HDL, Creatinine, eGFR, BUN, UricAcid, CRP, VitaminD, WBC, Ferritin, Hemoglobin
 
 **Type B — Other health-related content** (skin condition, wound, medical device reading, symptom photo, etc.)
 - Describe what you observe and provide professional health insights or commentary
@@ -100,9 +109,14 @@ module.exports = (context) => {
 {
   "content_type": "health_report or health_photo or food_photo or waven_dots or scale_reading or bp_reading or glucose_reading",
   "report_date": "YYYY-MM-DD or null",
+  "institution": "<issuing institution name or null>",
+  "report_type": "lab_panel or annual_checkup or imaging or other",
   "extracted": {
     "<test_key>": { "value": <number>, "unit": "<str>", "ref_range": "<str>", "flag": "normal|high|low" }
   },
+  "observations": [
+    { "key_name": "<canonical key>", "value": <number>, "unit": "<str>" }
+  ],
   "abnormal_items": ["description of abnormal item"],
   "body_weight_kg": <number or null>,
   "scale_unit": "kg or lb or null",

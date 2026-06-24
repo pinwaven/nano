@@ -66,7 +66,7 @@ const { handleGetKinoDevices, handlePostKinoDevice, handlePutKinoDevice, handleD
 const { handleGetCreditBalance, handleGetCreditHistory, handlePostCreditWithdraw, handleGetUserWithdrawals, handleGetAdminWithdrawals, handlePutAdminWithdrawal, handleGetAdminUserCreditHistory, handlePostAdminUserCreditAdjustment } = require('./handlers/credits');
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
 const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
-const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleDeleteUser, handleGetInvitations, handlePostInvitation, handleDeleteInvitation } = require('./handlers/users');
+const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation } = require('./handlers/users');
 const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
 const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals } = require('./handlers/login');
@@ -231,7 +231,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetCoachUserChat(query.user_id, query.coach_id);
             } else if (path.includes('/chat-history')) {
                 const sinceId = query.since_id ? parseInt(query.since_id, 10) : null;
-                result = await handleGetChatHistory(query.openid, sinceId);
+                const beforeId = query.before_id ? parseInt(query.before_id, 10) : null;
+                result = await handleGetChatHistory(query.openid, sinceId, beforeId);
             } else if (path.includes('/biomarkers')) {
                 result = await handleGetBiomarkers(query.openid);
             } else if (path.includes('/notifications')) {
@@ -552,7 +553,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path === '/health-events/fhir') {
                 result = await handlePostHealthReport({ ...parsedBody, source: 'fhir_import' });
             } else if (path === '/health-reports') {
-                result = await handlePostHealthReport(parsedBody);
+                result = await handlePostHealthReport(parsedBody, { handleLabImportEvent, fetchTagDerivationContext });
             } else if (path === '/lab-providers') {
                 result = await handlePostLabProvider(parsedBody);
             } else if (path === '/lab-user-mappings') {
@@ -981,6 +982,9 @@ exports.handler = async (req, resp, context) => {
             if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
                 result = await handlePatchUser(user_id, parsedBody);
+            } else if (path.includes('/invitations/')) {
+                const inviteId = path.split('/invitations/')[1];
+                result = requireAdminTab(adminCtx, 'invites') || await handlePatchInvitation(inviteId, parsedBody);
             } else if (path.match(/\/questionnaire-assignments\/(\d+)/)) {
                 const aId = path.match(/\/questionnaire-assignments\/(\d+)/)[1];
                 result = await handlePatchQuestionnaireAssignment(aId, parsedBody);

@@ -164,14 +164,22 @@
 
 .chat-tab,
 .health-tab,
-.dots-tab,
 .store-tab,
-.academy-tab {
+.learn-tab {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   display: flex;
   flex-direction: column;
 }
+
+.academy-subtab-scroll,
+.wellness-subtab-scroll,
+.dots-subtab-scroll { flex: 1; overflow: hidden; }
+
+.inner-tab-bar { display: flex; border-bottom: 1rpx solid #1E3A5F; background: #0A1F36; flex-shrink: 0; }
+.inner-tab { flex: 1; padding: 20rpx 0; display: flex; align-items: center; justify-content: center; }
+.inner-tab-text { font-size: 26rpx; color: #7A9ABF; font-weight: 500; }
+.inner-tab-active .inner-tab-text { color: #A0B4FF; font-weight: 700; }
 
 /* ── Tab bar ── */
 
@@ -2887,6 +2895,9 @@ button.consent-row::after { border: none; }
 .theme-light .detail-tabs { background: #f0f4ff; border-bottom-color: #dde5f5; }
 .theme-light .detail-tab-text { color: #607090; }
 .theme-light .detail-tab-active .detail-tab-text { color: #6375EC; }
+.theme-light .inner-tab-bar { background: #f0f4ff; border-bottom-color: #dde5f5; }
+.theme-light .inner-tab-text { color: #607090; }
+.theme-light .inner-tab-active .inner-tab-text { color: #6375EC; }
 .theme-light .plans-title   { color: #1a2744; }
 .theme-light .plan-card     { background: rgba(255,255,255,0.7); border-color: rgba(99,117,236,0.12); }
 .theme-light .plan-card-name { color: #1a2744; }
@@ -3586,7 +3597,6 @@ button.consent-row::after { border: none; }
 .training-cert-tier { display: block; font-size: 22rpx; color: #f59e0b; margin-top: 4rpx; text-transform: capitalize; }
 
 /* ── Wellness tab ─────────────────────────────────────────────────────────── */
-.wellness-tab { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
 .wellness-loading { display: flex; gap: 16rpx; justify-content: center; align-items: center; padding: 80rpx 0; }
 .wellness-section { padding: 32rpx 28rpx 8rpx; }
 .wellness-section-title { display: block; font-size: 30rpx; font-weight: 700; color: var(--text); margin-bottom: 20rpx; letter-spacing: 0.5rpx; }

@@ -290,7 +290,8 @@
                 <text class="wd-status-text">{{wearableConnected ? t.wearableConnected : t.wearableDisconnected}}</text>
               </view>
               <view class="wd-card-actions">
-                <view class="wd-sync-btn {{wearableBusy ? 'wd-btn-disabled' : ''}}" bindtap="handleSyncWearable">
+                <view wx:if="{{wearableBusy}}" class="wd-sync-spinner"></view>
+                <view wx:else class="wd-sync-btn" bindtap="handleSyncWearable">
                   <text class="wd-sync-btn-text">{{t.wearableSyncNow}}</text>
                 </view>
                 <view class="wd-gear-btn {{ringSettingsOpen ? 'wd-gear-btn-active' : ''}}" catchtap="toggleRingSettings">
@@ -304,6 +305,10 @@
                   <text class="wd-settings-loading-txt">{{t.x3IntervalLoading}}</text>
                 </view>
                 <block wx:else>
+                  <view class="wd-ring-time-row">
+                    <text class="wd-ring-time-label">{{t.x3RingTimeLabel}}</text>
+                    <text class="wd-ring-time-val">{{x3RingTime || '—'}}</text>
+                  </view>
                   <text class="wd-interval-title">{{t.x3IntervalTitle}}</text>
                   <view class="wd-interval-row">
                     <view class="wd-interval-label-col">
@@ -698,6 +703,12 @@
                 class="rpt-card"
                 bindtap="onReportTap"
                 data-id="{{item.id}}">
+            <image wx:if="{{item.image_url}}"
+                   class="rpt-thumb"
+                   src="{{item.image_url}}"
+                   mode="aspectFill"
+                   catchtap="previewReportImage"
+                   data-url="{{item.image_url}}" />
             <view class="rpt-card-left" style="border-left-color: {{item.type_color}};">
               <text class="rpt-institution">{{item.institution}}</text>
               <text class="rpt-date">{{item.report_date}}</text>
@@ -738,6 +749,15 @@
           <view class="pulse-dot"></view>
         </view>
         <block wx:else>
+
+          <!-- Uploaded report photo -->
+          <view wx:if="{{activeReport.image_url}}" class="rpt-section">
+            <image class="rpt-photo"
+                   src="{{activeReport.image_url}}"
+                   mode="widthFix"
+                   bindtap="previewReportImage"
+                   data-url="{{activeReport.image_url}}" />
+          </view>
 
           <!-- Doctor Notes (admin panel / liangkang format) -->
           <view wx:if="{{activeReport.hasDoctorNotes}}" class="rpt-section">

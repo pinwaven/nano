@@ -8,6 +8,50 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 
+- **Chat lab-report upload → consent → save to digital twin + photo lookup** (`prompts/nano/systemHealthReport.js`, `handlers/chat.js`, `handlers/health-plans.js`, `index.js`, `utils/tool-actions.js`, `pages/main/main.js`, `components/user-health/user-health.{js,wxml,wxss}`)
+
+  When a user uploads a lab/checkup report photo in the chatbox, Nano now reads it out and then **asks for consent** before saving — instead of silently storing it. The user is asked (1) "Is this your own report?" and (2) "Save it to your health records?" via inline Yes/No buttons. On confirmation the report is saved to `health_reports` (with the photo) and, when core biomarkers are present, the BioAge digital twin is updated. Saved report photos are now viewable in the Health tab (thumbnail on each Lab card + full photo in the report detail sheet, tap to preview full-screen).
+
+  **What changed:**
+  - Vision prompt: Type-A (health report) output now also emits `institution`, `report_type`, and an `observations[]` array keyed by canonical `biomarker_catalog` `key_name`s.
+  - `handlePostAnalyzeImage`: for `content_type === 'health_report'`, no longer auto-inserts a `biomarkers` row — returns `pending_health_report: true` + a `payload` (oss_key, get_url, report_date, institution, report_type, observations) and still saves the chat read-out. All other photo types unchanged.
+  - `handlePostHealthReport`: accepts `oss_key`/`get_url`/`compute_bioage`, maps observations by `key_name` (in addition to `loinc_code`), stores the photo (`oss_key` column + `raw_data.image_url`), allows photo-only reports, and runs the existing lab-import BioAge pipeline inline when core markers are present (deps injected from `index.js`). `handleGetHealthReports` now returns `image_url`. Also fixed a pre-existing bug where its `ON CONFLICT (user_id, source, external_id)` on `health_events` was missing the `WHERE external_id IS NOT NULL` predicate, so it failed to match the partial dedup index and threw on every insert with observations.
+  - Miniapp: `tool-actions.js` surfaces the pending flag to the page; `main.js` runs the two-step consent state machine (inline action-card buttons) and POSTs `/api/health-reports` on confirm; `user-health` renders report photo thumbnails + a tappable photo in the detail sheet (`wx.previewImage`). New zh/en strings added.
+  - **No DB migration** — `health_reports.oss_key` already exists; the photo URL is stored in `raw_data`.
+
+- **Coach invite codes — optional note/label** (`migration_invitations_note.sql`, `handlers/users.js`, `index.js`, `pages/coach/coach.js`, `coach.wxml`, `coach.wxss`)
+
+  Coaches can now attach a free-text note to each invite code (e.g. "WeChat group A", "Spring promo") so they remember what each code is for. The note is captured when generating a code and can be edited later, and it shows on each invite card.
+
+  **What changed:**
+  - DB: `invitations` gains a nullable `note TEXT` column (`migration_invitations_note.sql`). **Run `npm run migrate:dev` then `npm run migrate:prod`.**
+  - Backend: `handlePostInvitation` accepts and stores `note`; `handleGetInvitations` selects `note`; new `handlePatchInvitation(id, { note })` updates it, routed at `PATCH /api/invitations/:id` (guarded by `requireAdminTab('invites')`, same as create).
+  - Miniapp: `generateInvite` now opens an editable `wx.showModal` to capture the note before creating; new `editInviteNote` edits an existing code's note via PATCH. The invite card shows a tappable note row (placeholder "Tap to add a note" when empty). Strings added to the `invite` block in both zh and en.
+
+- **Coach CRM — move clients between pipeline stages via long-press** (`pages/coach/coach.js`, `pages/coach/coach.wxml`)
+
+  Coaches can now long-press a card in the CRM pipeline kanban to open an action sheet of the other stages and move the client. The change persists via the existing `POST /api/client-pipeline` upsert and updates the kanban in place (counts adjust immediately); a short tap still opens the client detail sheet. No backend change.
+
+  **What changed:**
+  - `coach.js`: new `openStagePicker(e)` (action sheet → `POST /api/client-pipeline` with `coach_id`/`user_id`/`stage`, then local `clients` update + rebuild). Extracted `_buildPipelineColumns()` (plus `_stageOrder`/`_stageColorMap`) so `_loadCRM` and the picker share column-building logic. Added `crmMoveTitle`/`crmMoveSuccess`/`crmMoveError` strings (zh + en).
+  - `coach.wxml`: pipeline card gains `bindlongpress="openStagePicker"` (keeps `catchtap` for detail).
+
+### Changed
+
+- **Coach panel swipe navigation is now edge-only** (`pages/coach/coach.js`, `pages/main/main.js`)
+
+  The swipe shortcuts that open (main → coach, left-swipe) and exit (coach → back, right-swipe) the coach panel now only trigger when the swipe *starts* within ~40px of the relevant screen edge, matching native iOS edge gestures. Previously these were page-wide, so any horizontal in-page gesture (e.g. the CRM kanban interaction) could unintentionally navigate. The coach panel remains reachable via the menu button and native back.
+
+- **Chatbox — load older messages on scroll to top** (`handlers/chat.js`, `index.js`, `pages/main/main.js`, `pages/main/main.wxml`)
+
+  The miniapp chatbox previously loaded only the most recent 20 messages with no way to see older history. Scrolling to the top of the chat now fetches the previous page of messages and prepends them, while keeping the scroll position anchored to what was the first visible message.
+
+  **What changed:**
+  - `handleGetChatHistory` accepts a new `beforeId` parameter. When provided, it queries messages with `id < beforeId` (DESC, `limit+1`) then re-orders ASC, returning a `has_more` flag. The initial load also returns `has_more`.
+  - `index.js` extracts `before_id` from the query string and passes it to the handler.
+  - `main.wxml`: scroll-view gains `bindscrolltoupper="onScrollToUpper"` and `scroll-into-view="{{scrollAnchor}}"`. Message element IDs changed from `msg{{index}}` (unstable after prepend) to `m{{item.id}}` (content-based, stable).
+  - `main.js`: `_initChat` now records `_oldestDbId` (min DB id in first batch) and `_hasMoreHistory`. `onScrollToUpper` triggers `_loadMoreHistory`, which fetches the previous page, normalises messages, prepends them, then anchors the scroll-view to the former first message via `scrollAnchor`. The anchor resets to `''` after 300 ms so normal bottom-scroll continues to work.
+
 - **X3 ring — workMode badges and scheduled monitoring** (`user-health.js`, `user-health.wxml`, `user-health.wxss`)
 
   The interval settings panel now shows a tappable workMode badge next to each metric label (HRV, SpO₂, HR, Temp). Tapping cycles Off → Auto → Sched → Off. Badges are color-coded: green for active modes, red for Off. Defaults are `hr: 30 min / spo₂: 60 min / temp: 60 min / hrv: 120 min`, all in Scheduled mode (workMode = 2).

@@ -81,13 +81,15 @@
         scroll-with-animation="false"
         enhanced="true"
         bounces="false"
+        bindscrolltoupper="onScrollToUpper"
+        scroll-into-view="{{scrollAnchor}}"
       >
         <view class="chat-inner">
 
           <view
             wx:for="{{messages}}"
             wx:key="id"
-            id="msg{{index}}"
+            id="m{{item.id}}"
             class="msg-row {{item.role === 'user' ? 'msg-row-user' : 'msg-row-ai'}}"
           >
             <block wx:if="{{item.role === 'action'}}">
@@ -303,224 +305,217 @@
     </view>
     <!-- end HEALTH -->
 
-    <!-- ════ DOTS ════ -->
-    <view class="dots-tab{{tab !== 'dots' ? ' tab-hidden' : ''}}">
-
-      <!-- ── Cartridge panel ─────────────────────────────────────────── -->
-      <view wx:if="{{!isGuest}}" class="cart-section">
-        <view class="cart-section-hdr">
-          <text class="cart-section-title">{{t.cartridgeTitle}}</text>
-          <view class="cart-sim-btn" bindtap="openCartSim">
-            <text class="cart-sim-btn-icon">+</text>
-          </view>
-        </view>
-
-        <view wx:if="{{cartridgesLoading}}" class="cart-loading">
-          <view class="pulse-dot"></view>
-          <view class="pulse-dot"></view>
-          <view class="pulse-dot"></view>
-        </view>
-
-        <view wx:elif="{{cartridges.length > 0}}" class="cart-grid">
-          <view
-            wx:for="{{cartridges}}"
-            wx:key="id"
-            class="cart-slot{{item.isEmpty ? ' cart-slot-empty' : ''}}"
-          >
-            <view class="ink-bar-wrap">
-              <view class="ink-bar-fill" style="height:{{item.percent}}%;background:{{item.barColor}};"></view>
-            </view>
-            <text class="cart-key">{{item.dotKey}}</text>
-            <text class="cart-remaining">{{item.remaining}}</text>
-          </view>
-        </view>
-
-        <view wx:else class="cart-empty">
-          <text>{{t.noCartridges}}</text>
-        </view>
-      </view>
-
-      <!-- ── Weekly plan ─────────────────────────────────────────────── -->
-      <view class="dots-header">
-        <text class="dots-title">{{t.dotsTitle}}</text>
-        <text wx:if="{{weekLabel}}" class="dots-week-label">{{weekLabel}}</text>
-      </view>
-
-      <!-- Guest lock -->
-      <view wx:if="{{isGuest}}" class="guest-lock-card" bindtap="openGuestSheet">
-        <text class="guest-lock-icon">◉</text>
-        <text class="guest-lock-title">{{t.guestDotsCta}}</text>
-        <view class="guest-lock-btn"><text>{{t.guestJoinBtn}}</text></view>
-      </view>
-
-      <view wx:elif="{{dotsLoading}}" class="center-wrap">
-        <view class="pulse-dot"></view>
-        <view class="pulse-dot"></view>
-        <view class="pulse-dot"></view>
-      </view>
-
-      <block wx:elif="{{dotsDays.length > 0}}">
-        <scroll-view class="dots-scroll" scroll-x enhanced="{{true}}" show-scrollbar="{{false}}" scroll-left="{{todayScrollLeft}}">
-          <view class="dots-days">
-            <view
-              wx:for="{{dotsDays}}"
-              wx:key="label"
-              class="day-card {{item.isToday ? 'day-today' : ''}}"
-            >
-              <text class="day-label">{{item.label}}</text>
-
-              <view wx:if="{{item.morning.length > 0}}" class="meal-slot{{item.isToday && dispenseSlot === 'morning_cup' ? ' meal-slot-active' : ''}}">
-                <text class="meal-name">{{t.morning}}</text>
-                <view class="dot-chips">
-                  <view
-                    wx:for="{{item.morning}}"
-                    wx:key="displayKey"
-                    wx:for-item="dot"
-                    class="dot-chip"
-                  >
-                    <view class="dot-swatch" style="background: {{dot.color}}"></view>
-                    <text class="dot-key">{{dot.displayKey}}</text>
-                    <text class="dot-count">×{{dot.count}}</text>
-                  </view>
-                </view>
-              </view>
-
-              <view wx:if="{{item.evening.length > 0}}" class="meal-slot{{item.isToday && dispenseSlot === 'evening_cup' ? ' meal-slot-active' : ''}}">
-                <text class="meal-name">{{t.evening}}</text>
-                <view class="dot-chips">
-                  <view
-                    wx:for="{{item.evening}}"
-                    wx:key="displayKey"
-                    wx:for-item="dot"
-                    class="dot-chip"
-                  >
-                    <view class="dot-swatch" style="background: {{dot.color}}"></view>
-                    <text class="dot-key">{{dot.displayKey}}</text>
-                    <text class="dot-count">×{{dot.count}}</text>
-                  </view>
-                </view>
-              </view>
-            </view>
-            <view style="width: 8rpx; flex-shrink: 0;"></view>
-          </view>
-        </scroll-view>
-
-        <!-- ── Dispense section ─────────────────────────────────────────── -->
-        <view wx:if="{{dispenseHasToday}}" class="dispense-section">
-          <view
-            class="dispense-btn{{dispenseStatus === 'done' ? ' dispense-btn-done' : dispenseStatus === 'error' ? ' dispense-btn-error' : dispenseStatus === 'loading' ? ' dispense-btn-loading' : ''}}"
-            bindtap="dispenseToday"
-          >
-            <view class="dispense-btn-gloss"></view>
-            <text class="dispense-btn-text">{{dispenseStatus === 'loading' ? t.dispensing : dispenseStatus === 'done' ? t.dispenseOk : dispenseStatus === 'error' ? t.dispenseErr : t.dispenseBtn}}</text>
-          </view>
-        </view>
-      </block>
-
-      <view wx:elif="{{!dotsLoading}}" class="dots-empty">
-        <text>{{t.noPlan}}</text>
-      </view>
-
-    </view>
-    <!-- end DOTS -->
-
-    <!-- ════ PLANS ════ -->
+    <!-- ════ PLANS + DOTS ════ -->
     <view class="plans-tab{{tab !== 'plans' ? ' tab-hidden' : ''}}">
 
-      <!-- Guest lock -->
-      <view wx:if="{{isGuest}}" class="guest-lock-card" bindtap="openGuestSheet">
-        <text class="guest-lock-icon">🔒</text>
-        <text class="guest-lock-text">{{t.guestLockMsg}}</text>
+      <view class="inner-tab-bar">
+        <view class="inner-tab {{plansDotsSubTab==='plans'?'inner-tab-active':''}}" bindtap="switchPlansDotsSubTab" data-tab="plans">
+          <text class="inner-tab-text">{{t.plansDotsPlanTab}}</text>
+        </view>
+        <view class="inner-tab {{plansDotsSubTab==='dots'?'inner-tab-active':''}}" bindtap="switchPlansDotsSubTab" data-tab="dots">
+          <text class="inner-tab-text">{{t.plansDotsDotsTab}}</text>
+        </view>
       </view>
 
-      <view wx:elif="{{plansLoading}}" class="plans-loading">
-        <text class="loading-dots">···</text>
-      </view>
+      <block wx:if="{{plansDotsSubTab==='plans'}}">
+        <view wx:if="{{isGuest}}" class="guest-lock-card" bindtap="openGuestSheet">
+          <text class="guest-lock-icon">🔒</text>
+          <text class="guest-lock-text">{{t.guestLockMsg}}</text>
+        </view>
+        <view wx:elif="{{plansLoading}}" class="plans-loading">
+          <text class="loading-dots">···</text>
+        </view>
+        <block wx:else>
+          <scroll-view class="plans-scroll" scroll-y="true">
 
-      <block wx:else>
-        <scroll-view class="plans-scroll" scroll-y="true">
-
-          <!-- Header row -->
-          <view class="plans-header">
-            <text class="plans-title">{{t.plansTitle}}</text>
-            <view class="plans-browse-btn" bindtap="openPlanBrowse">
-              <text class="plans-browse-btn-text">+ {{t.plansBrowse}}</text>
-            </view>
-          </view>
-
-          <!-- Empty state -->
-          <view wx:if="{{activePlans.length === 0}}" class="plans-empty">
-            <text class="plans-empty-text">{{t.plansEmpty}}</text>
-            <view class="plans-browse-cta" bindtap="openPlanBrowse">
-              <text class="plans-browse-cta-text">{{t.plansBrowse}}</text>
-            </view>
-          </view>
-
-          <!-- Active plan cards -->
-          <view wx:for="{{activePlans}}" wx:key="id" class="plan-card" bindtap="openPlanDetail" data-plan="{{item}}">
-            <view class="plan-card-header">
-              <view class="plan-type-badge plan-type-{{item.plan_type}}">
-                <text class="plan-type-text">{{item.plan_type === 'primary' ? t.plansPrimary : t.plansSecondary}}</text>
+            <view class="plans-header">
+              <text class="plans-title">{{t.plansTitle}}</text>
+              <view class="plans-browse-btn" bindtap="openPlanBrowse">
+                <text class="plans-browse-btn-text">+ {{t.plansBrowse}}</text>
               </view>
-              <text class="plan-card-name">{{lang === 'zh' ? item.name_zh : item.name_en}}</text>
             </view>
-            <view class="plan-progress-bar-track">
-              <view class="plan-progress-bar-fill" style="width: {{item.progressPct}}%;"></view>
+
+            <view wx:if="{{activePlans.length === 0}}" class="plans-empty">
+              <text class="plans-empty-text">{{t.plansEmpty}}</text>
+              <view class="plans-browse-cta" bindtap="openPlanBrowse">
+                <text class="plans-browse-cta-text">{{t.plansBrowse}}</text>
+              </view>
             </view>
-            <view class="plan-card-meta-row">
-              <text class="plan-meta-item">{{t.plansAdherence}}: {{item.adherencePct}}%</text>
-              <text class="plan-meta-item">{{item.weeksDone}}/{{item.totalWeeks}} {{t.plansWeeks}}</text>
-            </view>
-            <!-- Daily task chips + progress bar -->
-            <view class="plan-daily-section">
-              <view class="plan-daily-tasks">
-                <view wx:for="{{item.todayTasks}}" wx:key="key" wx:for-item="task"
-                      class="plan-task-chip {{task.done ? 'plan-task-done' : ''}}"
-                      catchtap="handlePlanTask" data-plan-id="{{item.id}}" data-task="{{task.key}}">
-                  <text class="plan-task-label">{{lang === 'zh' ? task.labelZh : task.labelEn}}</text>
-                  <text class="plan-task-check">{{task.done ? '✓' : '○'}}</text>
+
+            <view wx:for="{{activePlans}}" wx:key="id" class="plan-card" bindtap="openPlanDetail" data-plan="{{item}}">
+              <view class="plan-card-header">
+                <view class="plan-type-badge plan-type-{{item.plan_type}}">
+                  <text class="plan-type-text">{{item.plan_type === 'primary' ? t.plansPrimary : t.plansSecondary}}</text>
                 </view>
+                <text class="plan-card-name">{{lang === 'zh' ? item.name_zh : item.name_en}}</text>
               </view>
-              <view class="plan-daily-bar-row">
-                <view class="plan-daily-bar-track">
-                  <view class="plan-daily-bar-fill {{item.todayDoneCount === item.todayTasks.length ? 'plan-daily-complete' : ''}}"
-                        style="width: {{item.todayProgressPct}}%;"></view>
+              <view class="plan-progress-bar-track">
+                <view class="plan-progress-bar-fill" style="width: {{item.progressPct}}%;"></view>
+              </view>
+              <view class="plan-card-meta-row">
+                <text class="plan-meta-item">{{t.plansAdherence}}: {{item.adherencePct}}%</text>
+                <text class="plan-meta-item">{{item.weeksDone}}/{{item.totalWeeks}} {{t.plansWeeks}}</text>
+              </view>
+              <view class="plan-daily-section">
+                <view class="plan-daily-tasks">
+                  <view wx:for="{{item.todayTasks}}" wx:key="key" wx:for-item="task"
+                        class="plan-task-chip {{task.done ? 'plan-task-done' : ''}}"
+                        catchtap="handlePlanTask" data-plan-id="{{item.id}}" data-task="{{task.key}}">
+                    <text class="plan-task-label">{{lang === 'zh' ? task.labelZh : task.labelEn}}</text>
+                    <text class="plan-task-check">{{task.done ? '✓' : '○'}}</text>
+                  </view>
                 </view>
-                <text class="plan-daily-count">{{item.todayDoneCount}}/{{item.todayTasks.length}} {{t.todayProgress}}</text>
-              </view>
-            </view>
-          </view>
-
-          <!-- Upcoming Reminders Section -->
-          <view wx:if="{{!plansLoading}}" class="reminders-section">
-            <text class="reminders-section-title">{{t.remindersTitle}}</text>
-            <view wx:if="{{remindersLoading}}" class="reminders-empty"><text class="reminder-date">···</text></view>
-            <view wx:elif="{{upcomingReminders.length === 0}}" class="reminders-empty">
-              <text class="reminder-date">{{t.remindersEmpty}}</text>
-            </view>
-            <view wx:for="{{upcomingReminders}}" wx:key="id" class="reminder-card">
-              <view class="reminder-card-top">
-                <text class="reminder-content">{{item.content}}</text>
-                <view class="reminder-source-badge reminder-source-{{item.isCoach ? 'coach' : 'ai'}}">
-                  <text class="reminder-source-text">{{item.isCoach ? t.reminderSourceCoach : t.reminderSourceAi}}</text>
-                </view>
-              </view>
-              <view class="reminder-card-bottom">
-                <text class="reminder-date">{{item.dateLabel}}</text>
-                <view wx:if="{{item.recurrenceLabel}}" class="reminder-recur-badge">
-                  <text class="reminder-recur-text">{{item.recurrenceLabel}}</text>
+                <view class="plan-daily-bar-row">
+                  <view class="plan-daily-bar-track">
+                    <view class="plan-daily-bar-fill {{item.todayDoneCount === item.todayTasks.length ? 'plan-daily-complete' : ''}}"
+                          style="width: {{item.todayProgressPct}}%;"></view>
+                  </view>
+                  <text class="plan-daily-count">{{item.todayDoneCount}}/{{item.todayTasks.length}} {{t.todayProgress}}</text>
                 </view>
               </view>
             </view>
-          </view>
 
-          <view style="height: 48rpx;"></view>
-        </scroll-view>
+            <view wx:if="{{!plansLoading}}" class="reminders-section">
+              <text class="reminders-section-title">{{t.remindersTitle}}</text>
+              <view wx:if="{{remindersLoading}}" class="reminders-empty"><text class="reminder-date">···</text></view>
+              <view wx:elif="{{upcomingReminders.length === 0}}" class="reminders-empty">
+                <text class="reminder-date">{{t.remindersEmpty}}</text>
+              </view>
+              <view wx:for="{{upcomingReminders}}" wx:key="id" class="reminder-card">
+                <view class="reminder-card-top">
+                  <text class="reminder-content">{{item.content}}</text>
+                  <view class="reminder-source-badge reminder-source-{{item.isCoach ? 'coach' : 'ai'}}">
+                    <text class="reminder-source-text">{{item.isCoach ? t.reminderSourceCoach : t.reminderSourceAi}}</text>
+                  </view>
+                </view>
+                <view class="reminder-card-bottom">
+                  <text class="reminder-date">{{item.dateLabel}}</text>
+                  <view wx:if="{{item.recurrenceLabel}}" class="reminder-recur-badge">
+                    <text class="reminder-recur-text">{{item.recurrenceLabel}}</text>
+                  </view>
+                </view>
+              </view>
+            </view>
 
+            <view style="height: 48rpx;"></view>
+          </scroll-view>
+        </block>
       </block>
+      <scroll-view wx:elif="{{plansDotsSubTab==='dots'}}" scroll-y class="dots-subtab-scroll">
+
+        <view wx:if="{{!isGuest}}" class="cart-section">
+          <view class="cart-section-hdr">
+            <text class="cart-section-title">{{t.cartridgeTitle}}</text>
+            <view class="cart-sim-btn" bindtap="openCartSim">
+              <text class="cart-sim-btn-icon">+</text>
+            </view>
+          </view>
+
+          <view wx:if="{{cartridgesLoading}}" class="cart-loading">
+            <view class="pulse-dot"></view>
+            <view class="pulse-dot"></view>
+            <view class="pulse-dot"></view>
+          </view>
+
+          <view wx:elif="{{cartridges.length > 0}}" class="cart-grid">
+            <view
+              wx:for="{{cartridges}}"
+              wx:key="id"
+              class="cart-slot{{item.isEmpty ? ' cart-slot-empty' : ''}}"
+            >
+              <view class="ink-bar-wrap">
+                <view class="ink-bar-fill" style="height:{{item.percent}}%;background:{{item.barColor}};"></view>
+              </view>
+              <text class="cart-key">{{item.dotKey}}</text>
+              <text class="cart-remaining">{{item.remaining}}</text>
+            </view>
+          </view>
+
+          <view wx:else class="cart-empty">
+            <text>{{t.noCartridges}}</text>
+          </view>
+        </view>
+
+        <view class="dots-header">
+          <text class="dots-title">{{t.dotsTitle}}</text>
+          <text wx:if="{{weekLabel}}" class="dots-week-label">{{weekLabel}}</text>
+        </view>
+
+        <view wx:if="{{isGuest}}" class="guest-lock-card" bindtap="openGuestSheet">
+          <text class="guest-lock-icon">◉</text>
+          <text class="guest-lock-title">{{t.guestDotsCta}}</text>
+          <view class="guest-lock-btn"><text>{{t.guestJoinBtn}}</text></view>
+        </view>
+        <view wx:elif="{{dotsLoading}}" class="center-wrap">
+          <view class="pulse-dot"></view>
+          <view class="pulse-dot"></view>
+          <view class="pulse-dot"></view>
+        </view>
+        <block wx:elif="{{dotsDays.length > 0}}">
+          <scroll-view class="dots-scroll" scroll-x enhanced="{{true}}" show-scrollbar="{{false}}" scroll-left="{{todayScrollLeft}}">
+            <view class="dots-days">
+              <view
+                wx:for="{{dotsDays}}"
+                wx:key="label"
+                class="day-card {{item.isToday ? 'day-today' : ''}}"
+              >
+                <text class="day-label">{{item.label}}</text>
+
+                <view wx:if="{{item.morning.length > 0}}" class="meal-slot{{item.isToday && dispenseSlot === 'morning_cup' ? ' meal-slot-active' : ''}}">
+                  <text class="meal-name">{{t.morning}}</text>
+                  <view class="dot-chips">
+                    <view
+                      wx:for="{{item.morning}}"
+                      wx:key="displayKey"
+                      wx:for-item="dot"
+                      class="dot-chip"
+                    >
+                      <view class="dot-swatch" style="background: {{dot.color}}"></view>
+                      <text class="dot-key">{{dot.displayKey}}</text>
+                      <text class="dot-count">×{{dot.count}}</text>
+                    </view>
+                  </view>
+                </view>
+
+                <view wx:if="{{item.evening.length > 0}}" class="meal-slot{{item.isToday && dispenseSlot === 'evening_cup' ? ' meal-slot-active' : ''}}">
+                  <text class="meal-name">{{t.evening}}</text>
+                  <view class="dot-chips">
+                    <view
+                      wx:for="{{item.evening}}"
+                      wx:key="displayKey"
+                      wx:for-item="dot"
+                      class="dot-chip"
+                    >
+                      <view class="dot-swatch" style="background: {{dot.color}}"></view>
+                      <text class="dot-key">{{dot.displayKey}}</text>
+                      <text class="dot-count">×{{dot.count}}</text>
+                    </view>
+                  </view>
+                </view>
+              </view>
+              <view style="width: 8rpx; flex-shrink: 0;"></view>
+            </view>
+          </scroll-view>
+
+          <view wx:if="{{dispenseHasToday}}" class="dispense-section">
+            <view
+              class="dispense-btn{{dispenseStatus === 'done' ? ' dispense-btn-done' : dispenseStatus === 'error' ? ' dispense-btn-error' : dispenseStatus === 'loading' ? ' dispense-btn-loading' : ''}}"
+              bindtap="dispenseToday"
+            >
+              <view class="dispense-btn-gloss"></view>
+              <text class="dispense-btn-text">{{dispenseStatus === 'loading' ? t.dispensing : dispenseStatus === 'done' ? t.dispenseOk : dispenseStatus === 'error' ? t.dispenseErr : t.dispenseBtn}}</text>
+            </view>
+          </view>
+        </block>
+        <view wx:elif="{{!dotsLoading}}" class="dots-empty">
+          <text>{{t.noPlan}}</text>
+        </view>
+
+        <view style="height: 48rpx;"></view>
+      </scroll-view>
 
     </view>
-    <!-- end PLANS -->
+    <!-- end PLANS+DOTS -->
 
     <!-- Weight entry modal -->
     <view wx:if="{{planWeightOpen}}" class="modal-overlay" catchtouchmove="noop">
@@ -924,8 +919,19 @@
     </view>
     <!-- end STORE -->
 
-    <!-- ════ ACADEMY ════ -->
-    <scroll-view class="academy-tab{{tab !== 'academy' ? ' tab-hidden' : ''}}" scroll-y="true">
+    <!-- ════ LEARN (Academy + Wellness) ════ -->
+    <view class="learn-tab{{tab !== 'learn' ? ' tab-hidden' : ''}}">
+
+      <view class="inner-tab-bar">
+        <view class="inner-tab {{learnSubTab==='academy'?'inner-tab-active':''}}" bindtap="switchLearnSubTab" data-tab="academy">
+          <text class="inner-tab-text">{{t.learnAcademyTab}}</text>
+        </view>
+        <view class="inner-tab {{learnSubTab==='wellness'?'inner-tab-active':''}}" bindtap="switchLearnSubTab" data-tab="wellness">
+          <text class="inner-tab-text">{{t.learnBoxTab}}</text>
+        </view>
+      </view>
+
+      <scroll-view wx:if="{{learnSubTab==='academy'}}" scroll-y class="academy-subtab-scroll">
       <view class="training-tab">
 
         <view wx:if="{{trainingLoading}}" class="loading-row">
@@ -1161,84 +1167,76 @@
         </block>
 
       </view>
-    </scroll-view>
+      </scroll-view>
+      <scroll-view wx:elif="{{learnSubTab==='wellness'}}" scroll-y class="wellness-subtab-scroll">
+        <view wx:if="{{wellnessLoading}}" class="wellness-loading">
+          <view class="pulse-dot"></view><view class="pulse-dot"></view><view class="pulse-dot"></view>
+        </view>
+
+        <view wx:if="{{!wellnessLoading}}">
+
+          <view wx:if="{{wellnessAssets.length === 0 && !deviceApkUrl}}" class="wellness-empty" style="padding:60rpx 28rpx;">
+            <text class="wellness-empty-text">{{t.wellnessEmpty}}</text>
+          </view>
+
+          <view wx:for="{{wellnessAssets}}" wx:key="id" class="wellness-section" style="padding-bottom:0;">
+            <view wx:if="{{item.mediaType === 'audio'}}" class="sleep-track-card" bindtap="playAudioAsset" data-track="{{item}}">
+              <view class="sleep-track-icon">
+                <text class="sleep-icon-glyph">{{sleepCurrentTrack.id === item.id && sleepPlaying ? '⏸' : '▶'}}</text>
+              </view>
+              <view class="sleep-track-info">
+                <text class="sleep-track-name">{{item.title_zh || item.title}}</text>
+                <text wx:if="{{item.duration_seconds}}" class="sleep-track-dur">{{item.duration_seconds >= 60 ? (item.duration_seconds / 60 | 0) + ' 分钟' : item.duration_seconds + ' 秒'}}</text>
+              </view>
+              <view wx:if="{{sleepCurrentTrack.id === item.id}}" class="sleep-track-active-dot"></view>
+            </view>
+            <view wx:elif="{{item.mediaType === 'video'}}" class="media-asset-card" bindtap="openMediaAsset" data-asset="{{item}}">
+              <view class="media-asset-icon media-asset-icon--video">
+                <text class="media-asset-glyph">▶</text>
+              </view>
+              <view class="media-asset-info">
+                <text class="media-asset-name">{{item.title_zh || item.title}}</text>
+                <text wx:if="{{item.duration_seconds}}" class="media-asset-sub">{{item.duration_seconds >= 60 ? (item.duration_seconds / 60 | 0) + ' 分钟' : item.duration_seconds + ' 秒'}}</text>
+              </view>
+              <view class="media-asset-btn">
+                <text class="media-asset-btn-text">{{t.wellnessOpenLink}}</text>
+              </view>
+            </view>
+            <view wx:else class="media-asset-card" bindtap="openMediaAsset" data-asset="{{item}}">
+              <view class="media-asset-icon media-asset-icon--doc">
+                <text class="media-asset-glyph">↓</text>
+              </view>
+              <view class="media-asset-info">
+                <text class="media-asset-name">{{item.title_zh || item.title}}</text>
+              </view>
+              <view class="media-asset-btn">
+                <text class="media-asset-btn-text">{{t.wellnessOpenLink}}</text>
+              </view>
+            </view>
+          </view>
+
+          <view wx:if="{{sleepCurrentTrack}}" class="sleep-now-playing" style="margin:16rpx 28rpx 0;">
+            <view class="sleep-np-info">
+              <text class="sleep-np-label">{{t.nowPlaying}}</text>
+              <text class="sleep-np-title">{{sleepCurrentTrack.title_zh || sleepCurrentTrack.title}}</text>
+            </view>
+            <view class="sleep-np-controls">
+              <view class="sleep-np-btn" bindtap="stopAudioAsset">
+                <text class="sleep-np-btn-icon">⏹</text>
+              </view>
+            </view>
+          </view>
+
+        </view>
+      </scroll-view>
+
+    </view>
     <!-- Floating back button for library-viewer — fixed so it stays visible while scrolling -->
-    <view wx:if="{{tab === 'academy' && trainingView === 'library-viewer'}}" class="library-float-back" bindtap="trainingBackToList">
+    <view wx:if="{{tab === 'learn' && learnSubTab === 'academy' && trainingView === 'library-viewer'}}" class="library-float-back" bindtap="trainingBackToList">
       <text class="library-float-back-arrow">‹</text>
       <text class="library-float-back-label">{{t.training.backToCourses}}</text>
     </view>
-    <!-- end ACADEMY -->
-
-    <!-- ════ WELLNESS ════ -->
-    <scroll-view class="wellness-tab{{tab !== 'wellness' ? ' tab-hidden' : ''}}" scroll-y="true">
-      <view wx:if="{{wellnessLoading}}" class="wellness-loading">
-        <view class="pulse-dot"></view><view class="pulse-dot"></view><view class="pulse-dot"></view>
-      </view>
-
-      <view wx:if="{{!wellnessLoading}}">
-
-        <!-- All digital assets -->
-        <view wx:if="{{wellnessAssets.length === 0 && !deviceApkUrl}}" class="wellness-empty" style="padding:60rpx 28rpx;">
-          <text class="wellness-empty-text">{{t.wellnessEmpty}}</text>
-        </view>
-
-        <view wx:for="{{wellnessAssets}}" wx:key="id" class="wellness-section" style="padding-bottom:0;">
-          <!-- Audio asset -->
-          <view wx:if="{{item.mediaType === 'audio'}}" class="sleep-track-card" bindtap="playAudioAsset" data-track="{{item}}">
-            <view class="sleep-track-icon">
-              <text class="sleep-icon-glyph">{{sleepCurrentTrack.id === item.id && sleepPlaying ? '⏸' : '▶'}}</text>
-            </view>
-            <view class="sleep-track-info">
-              <text class="sleep-track-name">{{item.title_zh || item.title}}</text>
-              <text wx:if="{{item.duration_seconds}}" class="sleep-track-dur">{{item.duration_seconds >= 60 ? (item.duration_seconds / 60 | 0) + ' 分钟' : item.duration_seconds + ' 秒'}}</text>
-            </view>
-            <view wx:if="{{sleepCurrentTrack.id === item.id}}" class="sleep-track-active-dot"></view>
-          </view>
-
-          <!-- Video asset -->
-          <view wx:elif="{{item.mediaType === 'video'}}" class="media-asset-card" bindtap="openMediaAsset" data-asset="{{item}}">
-            <view class="media-asset-icon media-asset-icon--video">
-              <text class="media-asset-glyph">▶</text>
-            </view>
-            <view class="media-asset-info">
-              <text class="media-asset-name">{{item.title_zh || item.title}}</text>
-              <text wx:if="{{item.duration_seconds}}" class="media-asset-sub">{{item.duration_seconds >= 60 ? (item.duration_seconds / 60 | 0) + ' 分钟' : item.duration_seconds + ' 秒'}}</text>
-            </view>
-            <view class="media-asset-btn">
-              <text class="media-asset-btn-text">{{t.wellnessOpenLink}}</text>
-            </view>
-          </view>
-
-          <!-- Document / other asset -->
-          <view wx:else class="media-asset-card" bindtap="openMediaAsset" data-asset="{{item}}">
-            <view class="media-asset-icon media-asset-icon--doc">
-              <text class="media-asset-glyph">↓</text>
-            </view>
-            <view class="media-asset-info">
-              <text class="media-asset-name">{{item.title_zh || item.title}}</text>
-            </view>
-            <view class="media-asset-btn">
-              <text class="media-asset-btn-text">{{t.wellnessOpenLink}}</text>
-            </view>
-          </view>
-        </view>
-
-        <!-- Now playing bar (audio) -->
-        <view wx:if="{{sleepCurrentTrack}}" class="sleep-now-playing" style="margin:16rpx 28rpx 0;">
-          <view class="sleep-np-info">
-            <text class="sleep-np-label">{{t.nowPlaying}}</text>
-            <text class="sleep-np-title">{{sleepCurrentTrack.title_zh || sleepCurrentTrack.title}}</text>
-          </view>
-          <view class="sleep-np-controls">
-            <view class="sleep-np-btn" bindtap="stopAudioAsset">
-              <text class="sleep-np-btn-icon">⏹</text>
-            </view>
-          </view>
-        </view>
-
-      </view>
-    </scroll-view>
-    <!-- end WELLNESS -->
+    <!-- end LEARN -->
 
   </view>
   <!-- end tab-content -->
@@ -1455,25 +1453,15 @@
       <image class="tab-icon-img" src="/assets/icons/plans.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabPlans}}</text>
     </view>
-    <view class="tab-btn {{tab === 'dots' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="dots">
-      <view wx:if="{{tab === 'dots'}}" class="tab-line"></view>
-      <image class="tab-icon-img" src="/assets/icons/dots.svg" mode="aspectFit" />
-      <text class="tab-label">{{t.tabDots}}</text>
-    </view>
     <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'store' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="store">
       <view wx:if="{{tab === 'store'}}" class="tab-line"></view>
       <image class="tab-icon-img" src="/assets/icons/store.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabStore}}</text>
     </view>
-    <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'academy' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="academy">
-      <view wx:if="{{tab === 'academy'}}" class="tab-line"></view>
+    <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'learn' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="learn">
+      <view wx:if="{{tab === 'learn'}}" class="tab-line"></view>
       <image class="tab-icon-img" src="/assets/icons/training.svg" mode="aspectFit" />
-      <text class="tab-label">{{t.tabAcademy}}</text>
-    </view>
-    <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'wellness' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="wellness">
-      <view wx:if="{{tab === 'wellness'}}" class="tab-line"></view>
-      <image class="tab-icon-img" src="/assets/icons/box.svg" mode="aspectFit" />
-      <text class="tab-label">{{t.tabWellness}}</text>
+      <text class="tab-label">{{t.tabLearn}}</text>
     </view>
   </view>
 
