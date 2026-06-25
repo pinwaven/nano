@@ -1531,7 +1531,9 @@
         <!-- Avatar consent row -->
         <button
           class="consent-row {{guestAvatarReady ? 'consent-row-done' : ''}}"
-          bindtap="handleGuestChooseAvatarTap"
+          open-type="chooseAvatar"
+          bindchooseavatar="handleGuestChooseAvatar"
+          bindtap="handleGuestAvatarButtonTap"
         >
           <view class="consent-check {{guestAvatarReady ? 'consent-check-done' : ''}}">
             <text wx:if="{{guestAvatarReady}}" class="consent-check-icon">✓</text>

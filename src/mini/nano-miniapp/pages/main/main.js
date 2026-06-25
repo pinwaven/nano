@@ -3046,20 +3046,39 @@ Page({
     }).catch(() => this.setData({ guestAvatarUploading: false }))
   },
 
-  handleGuestChooseAvatarTap() {
-    const onPath = (localPath) => { if (localPath) this._uploadGuestAvatar(localPath, localPath) }
-    if (wx.chooseMedia) {
-      wx.chooseMedia({
-        count: 1, mediaType: ['image'], sourceType: ['album', 'camera'],
-        success: (res) => onPath(res.tempFiles[0]?.tempFilePath),
-        fail: () => {},
+  handleGuestAvatarButtonTap() {
+    // Give open-type="chooseAvatar" 500 ms to fire bindchooseavatar.
+    // If it doesn't respond (unsupported context or WeChat version), fall back to wx.chooseMedia.
+    if (this._avatarFallbackTimer) clearTimeout(this._avatarFallbackTimer)
+    this._avatarFallbackTimer = setTimeout(() => {
+      this._avatarFallbackTimer = null
+      if (!this.data.guestAvatarReady && !this.data.guestAvatarUploading) this._openGuestAvatarFallback()
+    }, 500)
+  },
+
+  handleGuestChooseAvatar(e) {
+    // open-type="chooseAvatar" responded — cancel the fallback timer
+    if (this._avatarFallbackTimer) { clearTimeout(this._avatarFallbackTimer); this._avatarFallbackTimer = null }
+    const avatarUrl = e.detail?.avatarUrl
+    if (!avatarUrl) return
+    if (avatarUrl.startsWith('http')) {
+      this.setData({ guestPendingAvatar: avatarUrl })
+      wx.downloadFile({
+        url: avatarUrl,
+        success: (res) => this._uploadGuestAvatar(avatarUrl, res.tempFilePath),
+        fail: () => this.setData({ guestAvatarUploading: false }),
       })
     } else {
-      wx.chooseImage({
-        count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'],
-        success: (res) => onPath(res.tempFilePaths[0]),
-        fail: () => {},
-      })
+      this._uploadGuestAvatar(avatarUrl, avatarUrl)
+    }
+  },
+
+  _openGuestAvatarFallback() {
+    const onPath = (p) => { if (p) this._uploadGuestAvatar(p, p) }
+    if (wx.chooseMedia) {
+      wx.chooseMedia({ count: 1, mediaType: ['image'], sourceType: ['album', 'camera'], success: (res) => onPath(res.tempFiles[0]?.tempFilePath), fail: () => {} })
+    } else {
+      wx.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'], success: (res) => onPath(res.tempFilePaths[0]), fail: () => {} })
     }
   },
 
@@ -3165,6 +3184,7 @@ Page({
   },
 
   cancelGuestSignup() {
+    if (this._avatarFallbackTimer) { clearTimeout(this._avatarFallbackTimer); this._avatarFallbackTimer = null }
     this._pendingGuestSignup = null
     this._pendingGuestAvatarUrl = ''
     this._pendingInviteCode = ''
