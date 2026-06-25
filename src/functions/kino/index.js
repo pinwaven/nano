@@ -15,8 +15,12 @@ function getHeader(headers = {}, name) {
 
 function parseBody(body) {
   if (!body) return {};
-  if (Buffer.isBuffer(body)) return JSON.parse(body.toString('utf8'));
-  if (typeof body === 'string') return JSON.parse(body);
+  try {
+    if (Buffer.isBuffer(body)) return JSON.parse(body.toString('utf8'));
+    if (typeof body === 'string') return JSON.parse(body);
+  } catch {
+    return {};
+  }
   return body;
 }
 
@@ -93,6 +97,7 @@ function isProtectedDeviceRoute(method, path) {
     (method === 'GET' && path === '/biomarkers') ||
     (method === 'POST' && path === '/biomarkers') ||
     (method === 'POST' && path === '/kino-result') ||
+    (method === 'POST' && path === '/kino-curve') ||
     (method === 'GET' && path === '/kino-upgrade')
   );
 }
