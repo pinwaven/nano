@@ -747,6 +747,14 @@ function mapStoreItems(rawItems, lang) {
     const descIsHtml = /<[a-z][^>]*>/i.test(desc)
     const hasCreditsPrice = item.price_credits != null
     const creditsRaw = hasCreditsPrice ? parseFloat(item.price_credits) : null
+    const variants = item.variants
+      ? item.variants.map(v => ({
+          id: v.id,
+          skuCode: v.sku_code,
+          label: Object.entries(v.attributes || {}).map(([k, val]) => `${k} ${val}`).join(' · '),
+          stockQuantity: v.stock_quantity,
+        }))
+      : null
     return {
       id: item.id,
       key: item.key_name,
@@ -759,6 +767,8 @@ function mapStoreItems(rawItems, lang) {
       rawPrice: hasCreditsPrice ? creditsRaw : (hasPartnerPrice ? partnerRaw : (lang === 'zh' ? (item.price_cny || 0) : (item.price_usd || 0))),
       useCredits: hasCreditsPrice,
       tagLabel: tagLabel(item.tag),
+      variants,
+      selectedVariantId: null,
     }
   })
 }
@@ -1056,6 +1066,9 @@ Page({
     // rendered outside any tab container and is always visible.
     const _app = getApp()
     _app._onPrivacyRequest = () => this.setData({ showPrivacyModal: true })
+    // If onNeedPrivacyAuthorization fired before this handler was registered (e.g. during
+    // app launch before onReady), the resolve is stored but no modal was shown — flush it now.
+    if (_app._privacyResolve) this.setData({ showPrivacyModal: true })
   },
 
   onUnload() {
@@ -2330,6 +2343,19 @@ Page({
   handleAddToCart(e) {
     if (this.data.isGuest) { this.openGuestSheet(); return }
     const item = e.currentTarget.dataset.item
+    if (item.variants && item.variants.length > 0) {
+      if (!item.selectedVariantId) {
+        wx.showToast({ title: this.data.lang === 'zh' ? '请先选择规格' : 'Please select a size', icon: 'none', duration: 1500 })
+        return
+      }
+      const variant = item.variants.find(v => v.id === item.selectedVariantId)
+      const cartItem = { ...item, id: item.selectedVariantId, name: item.name + ' ' + variant.label, variants: null }
+      const cart = [...this.data.cart]
+      const existing = cart.find(x => x.id === cartItem.id)
+      if (existing) { existing.quantity += 1 } else { cart.push({ ...cartItem, quantity: 1 }) }
+      this._syncCart(cart)
+      return
+    }
     const cart = [...this.data.cart]
     const existing = cart.find(x => x.id === item.id)
     if (existing) {
@@ -2338,6 +2364,14 @@ Page({
       cart.push({ ...item, quantity: 1 })
     }
     this._syncCart(cart)
+  },
+
+  handleSelectVariant(e) {
+    const { itemId, variantId } = e.currentTarget.dataset
+    const storeItems = this.data.storeItems.map(it =>
+      it.id === itemId ? { ...it, selectedVariantId: variantId } : it
+    )
+    this.setData({ storeItems })
   },
 
   handleCartQtyChange(e) {
@@ -2977,47 +3011,55 @@ Page({
       this._pendingInviteCode = code
       this._pendingGuestSignup = { channel: res.data.channel }
       this.setData({ guestSheetStep: 'phone', guestInviteBusy: false })
+      // Pre-trigger privacy authorization so both avatar and phone buttons work on first tap.
+      // wx.requirePrivacyAuthorize routes through onNeedPrivacyAuthorization → our modal.
+      // If consent is already recorded by WeChat, success fires immediately and no modal appears.
+      if (wx.requirePrivacyAuthorize) wx.requirePrivacyAuthorize({ success() {}, fail() {} })
     } catch (e) {
       this.setData({ guestInviteError: this.data.t.errServer, guestInviteBusy: false })
     }
   },
 
-  handleGuestChooseAvatar(e) {
-    const avatarUrl = e.detail?.avatarUrl
-    if (!avatarUrl) return
-    this.setData({ guestPendingAvatar: avatarUrl, guestAvatarDone: true, guestAvatarUploading: true })
-    const upload = (localPath) => {
-      this._req(`${BASE}/api/oss/presign?type=avatar&filename=avatar.jpg&category=users`, 'GET').then(presignRes => {
-        const { put_url, get_url } = presignRes.data || {}
-        if (!put_url) { this.setData({ guestAvatarUploading: false }); return }
-        wx.getFileSystemManager().readFile({
-          filePath: localPath,
-          success: (fileRes) => {
-            wx.request({
-              url: put_url,
-              method: 'PUT',
-              data: fileRes.data,
-              header: { 'Content-Type': 'application/octet-stream' },
-              responseType: 'text',
-              success: () => {
-                this._pendingGuestAvatarUrl = get_url
-                this.setData({ guestPendingAvatar: get_url, guestAvatarUploading: false, guestAvatarReady: true })
-              },
-              fail: () => this.setData({ guestAvatarUploading: false }),
-            })
-          },
-          fail: () => this.setData({ guestAvatarUploading: false }),
-        })
-      }).catch(() => this.setData({ guestAvatarUploading: false }))
-    }
-    if (avatarUrl.startsWith('http')) {
-      wx.downloadFile({
-        url: avatarUrl,
-        success: (res) => upload(res.tempFilePath),
+  _uploadGuestAvatar(previewPath, localPath) {
+    this.setData({ guestPendingAvatar: previewPath, guestAvatarDone: true, guestAvatarUploading: true })
+    this._req(`${BASE}/api/oss/presign?type=avatar&filename=avatar.jpg&category=users`, 'GET').then(presignRes => {
+      const { put_url, get_url } = presignRes.data || {}
+      if (!put_url) { this.setData({ guestAvatarUploading: false }); return }
+      wx.getFileSystemManager().readFile({
+        filePath: localPath,
+        success: (fileRes) => {
+          wx.request({
+            url: put_url,
+            method: 'PUT',
+            data: fileRes.data,
+            header: { 'Content-Type': 'application/octet-stream' },
+            responseType: 'text',
+            success: () => {
+              this._pendingGuestAvatarUrl = get_url
+              this.setData({ guestPendingAvatar: get_url, guestAvatarUploading: false, guestAvatarReady: true })
+            },
+            fail: () => this.setData({ guestAvatarUploading: false }),
+          })
+        },
         fail: () => this.setData({ guestAvatarUploading: false }),
       })
+    }).catch(() => this.setData({ guestAvatarUploading: false }))
+  },
+
+  handleGuestChooseAvatarTap() {
+    const onPath = (localPath) => { if (localPath) this._uploadGuestAvatar(localPath, localPath) }
+    if (wx.chooseMedia) {
+      wx.chooseMedia({
+        count: 1, mediaType: ['image'], sourceType: ['album', 'camera'],
+        success: (res) => onPath(res.tempFiles[0]?.tempFilePath),
+        fail: () => {},
+      })
     } else {
-      upload(avatarUrl)
+      wx.chooseImage({
+        count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'],
+        success: (res) => onPath(res.tempFilePaths[0]),
+        fail: () => {},
+      })
     }
   },
 
@@ -3083,8 +3125,8 @@ Page({
   },
 
   async proceedGuestSignup() {
-    const { guestAvatarReady, guestAvatarUploading, guestResolvedPhone, guestInviteBusy, t } = this.data
-    if (!guestAvatarReady || guestAvatarUploading || !guestResolvedPhone || guestInviteBusy) return
+    const { guestAvatarUploading, guestResolvedPhone, guestInviteBusy, t } = this.data
+    if (guestAvatarUploading || !guestResolvedPhone || guestInviteBusy) return
     this.setData({ guestInviteBusy: true })
     try {
       const { code: wxCode } = await this._getCode()

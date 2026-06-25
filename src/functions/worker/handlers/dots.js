@@ -182,10 +182,29 @@ async function handleGetStoreItems(query = {}) {
                 `SELECT ci.id, ci.key_name, ci.name_zh, ci.name_en, ci.desc_zh, ci.desc_en,
                         ci.unit_zh, ci.unit_en, ci.price_cny, ci.price_usd, ci.price_credits, ci.tag, ci.sort_order,
                         ci.active, ci.image_url, ci.item_type, ci.sku_id,
-                        COALESCE(ist.quantity, ci.stock_quantity) AS stock_quantity
+                        COALESCE(ist.quantity, ci.stock_quantity) AS stock_quantity,
+                        sk.is_parent,
+                        CASE WHEN sk.is_parent THEN (
+                            SELECT json_agg(json_build_object(
+                                'id', child_ci.id,
+                                'sku_id', child_ci.sku_id,
+                                'sku_code', child_sk.sku_code,
+                                'attributes', child_sk.attributes,
+                                'stock_quantity', COALESCE(child_ist.quantity, child_ci.stock_quantity)
+                            ) ORDER BY child_sk.sku_code)
+                            FROM channel_inventory_items child_ci
+                            JOIN skus child_sk ON child_sk.id = child_ci.sku_id
+                            LEFT JOIN inventory_stock child_ist
+                                ON child_ist.sku_id = child_ci.sku_id
+                                AND child_ist.location_type = 'channel'
+                                AND child_ist.channel_id = $1
+                            WHERE child_ci.parent_item_id = ci.id AND child_ci.active = TRUE
+                        ) END AS variants
                  FROM channel_inventory_items ci
+                 LEFT JOIN skus sk ON sk.id = ci.sku_id
                  LEFT JOIN inventory_stock ist ON ci.sku_id = ist.sku_id AND ist.location_type = 'channel' AND ist.channel_id = $1
                  WHERE ci.channel_id = $1 AND ci.show_in_store = TRUE AND ci.active = TRUE
+                   AND ci.parent_item_id IS NULL
                  ORDER BY ci.sort_order ASC, ci.created_at ASC`,
                 [channelId]
             );
@@ -244,6 +263,11 @@ async function handlePostChannelInventory(body, adminCtx) {
         if (!body.key_name) return { success: false, error: 'key_name required', statusCode: 400 };
         if (!body.name_en) return { success: false, error: 'name_en required', statusCode: 400 };
         if (!body.sku_id)  return { success: false, error: 'sku_id required — create the SKU first', statusCode: 400 };
+
+        const skuRes = await pool.query('SELECT id, is_parent FROM skus WHERE id = $1', [body.sku_id]);
+        if (!skuRes.rows.length) return { success: false, error: 'SKU not found', statusCode: 404 };
+        const sku = skuRes.rows[0];
+
         const { rows } = await pool.query(
             `INSERT INTO channel_inventory_items
               (channel_id, key_name, name_zh, name_en, desc_zh, desc_en, item_type,
@@ -262,7 +286,41 @@ async function handlePostChannelInventory(body, adminCtx) {
              body.show_in_store === true || body.show_in_store === 'true',
              body.sku_id || null]
         );
-        return { success: true, item: rows[0] };
+        const parentItem = rows[0];
+
+        // Auto-create one child item per child SKU when the bound SKU is a parent
+        let childItems = [];
+        if (sku.is_parent) {
+            const childSkus = await pool.query(
+                'SELECT id, sku_code FROM skus WHERE parent_sku_id = $1 ORDER BY sku_code',
+                [sku.id]
+            );
+            for (const childSku of childSkus.rows) {
+                const childKey = childSku.sku_code.toLowerCase();
+                const { rows: childRows } = await pool.query(
+                    `INSERT INTO channel_inventory_items
+                      (channel_id, key_name, name_zh, name_en, desc_zh, desc_en, item_type,
+                       unit_zh, unit_en, price_cny, price_usd, price_credits, tag, sort_order,
+                       active, image_url, metadata, show_in_store, sku_id, parent_item_id)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+                     ON CONFLICT (channel_id, key_name) DO NOTHING
+                     RETURNING *`,
+                    [channelId, childKey, body.name_zh || '', body.name_en,
+                     body.desc_zh || '', body.desc_en || '', body.item_type || 'physical',
+                     body.unit_zh || '', body.unit_en || '',
+                     body.price_cny != null ? body.price_cny : null,
+                     body.price_usd != null ? body.price_usd : null,
+                     body.price_credits != null ? body.price_credits : null,
+                     body.tag || '', body.sort_order || 0, body.active !== false,
+                     body.image_url || '', body.metadata || null,
+                     false, // child items are not independently shown in store
+                     childSku.id, parentItem.id]
+                );
+                if (childRows[0]) childItems.push(childRows[0]);
+            }
+        }
+
+        return { success: true, item: parentItem, childItems };
     } catch (err) {
         return { success: false, error: err.message };
     }

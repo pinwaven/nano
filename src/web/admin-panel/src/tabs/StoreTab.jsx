@@ -188,12 +188,26 @@ function StoreItemModal({ item, skus = [], onClose, onSave }) {
                 <select value={form.sku_id || ''} onChange={e => set('sku_id', e.target.value)} className="inline-select" style={{ width: '100%', borderColor: !form.sku_id ? '#ef4444' : undefined }}>
                   <option value="">{t.store.selectSku}</option>
                   {skus.map(s => (
-                    <option key={s.id} value={s.id}>{s.sku_code} - {s.name_zh || s.name_en}</option>
+                    <option key={s.id} value={s.id}>{s.sku_code}{s.is_parent ? ' ★ parent' : ''} — {s.name_zh || s.name_en}</option>
                   ))}
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
             </label>
+            {(() => {
+              const selectedSku = skus.find(s => s.id === form.sku_id);
+              if (!selectedSku?.is_parent) return null;
+              const childSkus = skus.filter(s => s.parent_sku_id === form.sku_id);
+              return (
+                <div style={{ gridColumn: '1 / -1', background: 'rgba(99,117,236,0.08)', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#a5b4fc' }}>
+                  <strong style={{ color: '#818cf8' }}>Parent SKU</strong> — variant items will be created automatically for:
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    {childSkus.map(c => <li key={c.id}><code style={{ color: '#6366f1' }}>{c.sku_code}</code> — {c.name_zh || c.name_en}</li>)}
+                    {childSkus.length === 0 && <li style={{ color: '#64748b' }}>No child SKUs found — add them first in the SKUs tab.</li>}
+                  </ul>
+                </div>
+              );
+            })()}
             <label className="form-field">
               <span>{t.modal.nameEn}</span>
               <input value={form.name_en} onChange={e => set('name_en', e.target.value)} placeholder="e.g. Kino Biomarker Test Chip" />
@@ -907,7 +921,14 @@ export default function StoreTab({ storeItems, orders, channels, skus = [], inve
                     <td className="bold">{fmt(item.name_en)}</td>
                     <td className="muted">{fmt(item.name_zh)}</td>
                     <td>
-                      {linkedSku ? <code style={{ color: '#818cf8', fontWeight: 600 }}>{linkedSku.sku_code}</code> : <span className="muted" style={{ fontStyle: 'italic', fontSize: 11 }}>No SKU (Unlimited)</span>}
+                      {linkedSku ? (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <code style={{ color: '#818cf8', fontWeight: 600 }}>{linkedSku.sku_code}</code>
+                          {linkedSku.is_parent && (
+                            <Badge color="#6366f1">Grouped</Badge>
+                          )}
+                        </span>
+                      ) : <span className="muted" style={{ fontStyle: 'italic', fontSize: 11 }}>No SKU (Unlimited)</span>}
                     </td>
                     <td>¥{item.price_cny}</td>
                     <td className="muted">${item.price_usd}</td>

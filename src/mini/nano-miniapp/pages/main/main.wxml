@@ -805,6 +805,20 @@
             <text class="store-card-name">{{item.name}}</text>
             <rich-text wx:if="{{item.descIsHtml}}" class="store-card-desc store-card-desc-rich" nodes="{{item.desc}}"></rich-text>
             <text wx:else class="store-card-desc">{{item.desc}}</text>
+            <view wx:if="{{item.variants && item.variants.length > 0}}" class="store-variants">
+              <view
+                wx:for="{{item.variants}}"
+                wx:key="id"
+                wx:for-item="variant"
+                wx:for-index="vi"
+                class="store-variant-pill{{item.selectedVariantId === variant.id ? ' store-variant-pill-active' : ''}}"
+                bindtap="handleSelectVariant"
+                data-item-id="{{item.id}}"
+                data-variant-id="{{variant.id}}"
+              >
+                <text class="store-variant-label">{{variant.label}}</text>
+              </view>
+            </view>
             <view class="store-card-footer">
               <view wx:if="{{item.partnerPrice}}" class="store-price-wrap store-price-wrap-partner">
                 <view class="store-partner-row">
@@ -818,13 +832,13 @@
                 <text class="store-price">{{item.price}}</text>
                 <text class="store-unit">/ {{item.unit}}</text>
               </view>
-              <view wx:if="{{!cartMap[item.id]}}" class="store-buy-btn" bindtap="handleAddToCart" data-item="{{item}}">
+              <view wx:if="{{!cartMap[item.selectedVariantId || item.id]}}" class="store-buy-btn" bindtap="handleAddToCart" data-item="{{item}}">
                 <text class="store-buy-label">{{t.storeAddToCart}}</text>
               </view>
               <view wx:else class="cart-stepper">
-                <view class="stepper-btn" bindtap="handleCartQtyChange" data-id="{{item.id}}" data-delta="{{-1}}"><text class="stepper-sym">－</text></view>
-                <text class="stepper-qty">{{cartMap[item.id]}}</text>
-                <view class="stepper-btn" bindtap="handleCartQtyChange" data-id="{{item.id}}" data-delta="{{1}}"><text class="stepper-sym">＋</text></view>
+                <view class="stepper-btn" bindtap="handleCartQtyChange" data-id="{{item.selectedVariantId || item.id}}" data-delta="{{-1}}"><text class="stepper-sym">－</text></view>
+                <text class="stepper-qty">{{cartMap[item.selectedVariantId || item.id]}}</text>
+                <view class="stepper-btn" bindtap="handleCartQtyChange" data-id="{{item.selectedVariantId || item.id}}" data-delta="{{1}}"><text class="stepper-sym">＋</text></view>
               </view>
             </view>
           </view>
@@ -1517,13 +1531,12 @@
         <!-- Avatar consent row -->
         <button
           class="consent-row {{guestAvatarReady ? 'consent-row-done' : ''}}"
-          open-type="chooseAvatar"
-          bindchooseavatar="handleGuestChooseAvatar"
+          bindtap="handleGuestChooseAvatarTap"
         >
           <view class="consent-check {{guestAvatarReady ? 'consent-check-done' : ''}}">
             <text wx:if="{{guestAvatarReady}}" class="consent-check-icon">✓</text>
           </view>
-          <text class="consent-label">{{t.guestAvatarLabel}}</text>
+          <text class="consent-label">{{t.guestAvatarLabel}}<text class="consent-label-optional"> ({{lang === 'en' ? 'optional' : '可选'}})</text></text>
           <view wx:if="{{guestPendingAvatar}}" class="consent-avatar-wrap">
             <image class="consent-avatar-preview" src="{{guestPendingAvatar}}" mode="aspectFill" />
             <view wx:if="{{guestAvatarUploading || (guestAvatarReady && guestInviteBusy)}}" class="avatar-saving-ring"></view>
@@ -1550,7 +1563,7 @@
 
         <!-- Continue -->
         <view
-          class="guest-sheet-btn {{(!guestAvatarReady || guestAvatarUploading || !guestResolvedPhone || guestInviteBusy) ? 'guest-sheet-btn-disabled' : ''}}"
+          class="guest-sheet-btn {{(guestAvatarUploading || !guestResolvedPhone || guestInviteBusy) ? 'guest-sheet-btn-disabled' : ''}}"
           bindtap="proceedGuestSignup"
         >
           <text>{{guestInviteBusy ? t.guestActivating : t.guestContinueBtn}}</text>
