@@ -168,6 +168,9 @@ const T = {
     formulaComplete: '您的7天营养方案已生成！',
     formulaViewDots: '查看营养方案 →',
     formulaError: '方案生成失败，请重试。',
+    chatHistoryLoadMore: '下拉或点此加载更早消息',
+    chatHistoryLoading: '加载中…',
+    chatHistoryStart: '— 对话开始 —',
     adminMenu: '渠道管理',
     coachMenu: '教练面板',
     superadminMenu: '超管面板',
@@ -362,6 +365,9 @@ const T = {
     formulaComplete: 'Your 7-day nutrition plan is ready!',
     formulaViewDots: 'View Dots Plan →',
     formulaError: 'Plan generation failed. Please try again.',
+    chatHistoryLoadMore: 'Pull or tap to load older messages',
+    chatHistoryLoading: 'Loading…',
+    chatHistoryStart: '— Beginning of conversation —',
     adminMenu: 'Channel Admin',
     coachMenu: 'Coach Panel',
     superadminMenu: 'Super Admin',
@@ -824,6 +830,8 @@ Page({
     obConditionsOther: '',
     scrollTop: 0,
     scrollAnchor: '',
+    hasMoreHistory: false,
+    historyLoading: false,
 
     userAvatarLetter: 'U',
 
@@ -1422,8 +1430,7 @@ Page({
         const ids = history.map(m => m.id).filter(id => typeof id === 'number')
         this._lastMsgId = ids.length > 0 ? Math.max(...ids) : 0
         this._oldestDbId = ids.length > 0 ? Math.min(...ids) : 0
-        this._hasMoreHistory = res.data?.has_more ?? false
-        this.setData({ messages: msgs })
+        this.setData({ messages: msgs, hasMoreHistory: res.data?.has_more ?? false })
         this._scrollBottom()
         historyLoaded = true
       } else {
@@ -1648,19 +1655,19 @@ Page({
   },
 
   onScrollToUpper() {
-    this._loadMoreHistory()
+    // Intentionally empty — history is loaded on explicit pull or tap, not auto-triggered.
   },
 
   async _loadMoreHistory() {
-    if (this._loadingMore || !this._hasMoreHistory) return
+    if (this.data.historyLoading || !this.data.hasMoreHistory) return
     const user = this.data.user
     if (!user || !this._oldestDbId) return
-    this._loadingMore = true
+    this.setData({ historyLoading: true })
     try {
       const url = `${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}&before_id=${this._oldestDbId}`
       const res = await this._req(url)
       const history = res.data?.messages || []
-      this._hasMoreHistory = res.data?.has_more ?? false
+      const hasMore = res.data?.has_more ?? false
       if (history.length > 0) {
         const newMsgs = history.map(m => {
           const role = (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role
@@ -1676,13 +1683,15 @@ Page({
         const anchorId = 'm' + (this.data.messages[0]?.id || '')
         const ids = history.map(m => m.id).filter(id => typeof id === 'number')
         this._oldestDbId = ids.length > 0 ? Math.min(...ids) : this._oldestDbId
-        this.setData({ messages: [...newMsgs, ...this.data.messages], scrollAnchor: anchorId })
+        this.setData({ messages: [...newMsgs, ...this.data.messages], hasMoreHistory: hasMore, scrollAnchor: anchorId })
         setTimeout(() => this.setData({ scrollAnchor: '' }), 300)
+      } else {
+        this.setData({ hasMoreHistory: false })
       }
     } catch (e) {
       if (IS_DEV) console.error('Load more history failed', e)
     }
-    this._loadingMore = false
+    this.setData({ historyLoading: false })
   },
 
   async _loadHistory(user) {

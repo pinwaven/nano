@@ -967,7 +967,20 @@ function _summariseNight(date, records) {
   return { date, onset: records[0].dateStr, totalMinutes, deep, light, rem, awake, sleepStart, sleepEnd, periods }
 }
 
-// Parse a raw 0x53 buffer into per-night summaries, oldest night first.
+// "YYYY-MM-DD HH:MM:SS" → absolute minutes via Date.UTC (timezone-safe).
+function _dateStrToAbsMins(dateStr) {
+  const [dp, tp] = dateStr.split(' ')
+  const [y, mo, d] = dp.split('-').map(Number)
+  const [h, m] = tp.split(':').map(Number)
+  return Date.UTC(y, mo - 1, d, h, m) / 60000
+}
+
+// Blocks separated by more than this are treated as separate sleep sessions.
+const SPLIT_GAP_MINS = 90
+
+// Parse a raw 0x53 buffer into per-session summaries, oldest first.
+// Multiple sessions on the same calendar night (e.g. an afternoon nap and a
+// separate night sleep) are kept as distinct entries rather than merged.
 function _parseSleepHistory(buf) {
   const records = _parseSleepBlocks(buf)
   if (!records.length) return []
@@ -976,7 +989,29 @@ function _parseSleepHistory(buf) {
     const key = _nightKey(rec.dateStr)
     ;(nightMap[key] = nightMap[key] || []).push(rec)
   }
-  return Object.keys(nightMap).sort().map(date => _summariseNight(date, nightMap[date]))
+  const nights = []
+  for (const date of Object.keys(nightMap).sort()) {
+    const recs = nightMap[date]
+    // Split into contiguous sessions: a gap > SPLIT_GAP_MINS between the end
+    // of one block and the start of the next means a new sleep session.
+    const sessions = [[recs[0]]]
+    for (let i = 1; i < recs.length; i++) {
+      const prev = recs[i - 1]
+      const curr = recs[i]
+      const prevEnd = _dateStrToAbsMins(prev.dateStr) + prev.stages.length * prev.unitMin
+      const gap = _dateStrToAbsMins(curr.dateStr) - prevEnd
+      if (gap > SPLIT_GAP_MINS) {
+        sessions.push([curr])
+      } else {
+        sessions[sessions.length - 1].push(curr)
+      }
+    }
+    for (const session of sessions) {
+      nights.push(_summariseNight(date, session))
+    }
+  }
+  // Sort by session onset so the most recent session is last (caller uses .last).
+  return nights.sort((a, b) => (a.onset < b.onset ? -1 : 1))
 }
 
 // 0x09 — real-time activity broadcast (25 bytes)

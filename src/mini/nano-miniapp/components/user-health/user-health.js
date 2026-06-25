@@ -477,7 +477,15 @@ function _buildRingDisplayData(raw, isZh) {
   // Sleep daily trend bars (from ring-cached multi-night history)
   let sleepDayBars = null
   if (raw.sleepHistory?.length > 0) {
-    const nights = raw.sleepHistory.filter(n => n.totalMinutes > 0).slice(-7)
+    // Aggregate multiple sessions on the same date (e.g. nap + night sleep)
+    // so the chart shows one bar per calendar day rather than duplicate labels.
+    const byDate = {}
+    for (const n of raw.sleepHistory) {
+      if (!n.totalMinutes) continue
+      if (!byDate[n.date]) byDate[n.date] = { ...n }
+      else byDate[n.date].totalMinutes += n.totalMinutes
+    }
+    const nights = Object.values(byDate).filter(n => n.totalMinutes > 0).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-7)
     if (nights.length > 0) {
       const maxMin = Math.max(...nights.map(n => n.totalMinutes))
       sleepDayBars = nights.map(n => {

@@ -83,8 +83,27 @@
         bounces="false"
         bindscrolltoupper="onScrollToUpper"
         scroll-into-view="{{scrollAnchor}}"
+        refresher-enabled="{{hasMoreHistory}}"
+        refresher-triggered="{{historyLoading}}"
+        refresher-default-style="none"
+        bindrefresherrefresh="_loadMoreHistory"
       >
+        <view slot="refresher" class="chat-refresher">
+          <view class="chat-refresher-spinner"></view>
+        </view>
         <view class="chat-inner">
+
+          <!-- history load-more / start indicator -->
+          <view wx:if="{{hasMoreHistory}}" class="chat-history-load {{historyLoading ? 'chat-history-loading' : ''}}" bindtap="_loadMoreHistory">
+            <view wx:if="{{historyLoading}}" class="chat-history-spinner-row">
+              <view class="chat-history-spinner"></view>
+              <text class="chat-history-text">{{t.chatHistoryLoading}}</text>
+            </view>
+            <text wx:else class="chat-history-text">{{t.chatHistoryLoadMore}}</text>
+          </view>
+          <view wx:elif="{{messages.length > 0}}" class="chat-history-start">
+            <text class="chat-history-start-text">{{t.chatHistoryStart}}</text>
+          </view>
 
           <view
             wx:for="{{messages}}"
