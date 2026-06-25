@@ -140,6 +140,15 @@ const T = {
     storeAddToCart: '加入', storeCart: '购物车',
     storeCartCheckout: '结算', storeCartTotal: '合计',
     storeCartItems: '件商品', storeCartEmpty: '购物车是空的',
+    checkoutShippingTitle: '收货信息',
+    checkoutName: '收货人姓名', checkoutNamePh: '请输入姓名',
+    checkoutPhone: '手机号码', checkoutPhonePh: '请输入手机号',
+    checkoutAddress: '收货地址', checkoutAddressPh: '省市区街道详细地址',
+    checkoutFillRequired: '请填写完整的收货信息',
+    checkoutWxAddress: '使用微信地址',
+    checkoutWxAddressFail: '无法获取微信地址，请手动填写',
+    checkoutInsufficientTitle: '积分不足',
+    checkoutInsufficientMsg: '本次结算需要 {need} 积分，您当前有 {have} 积分。',
     toolFormulaDots: '营养定制',
     toolTestChip: '检测服务',
     toolHealthAdvice: '健康管理',
@@ -337,6 +346,15 @@ const T = {
     storeAddToCart: 'Add', storeCart: 'Cart',
     storeCartCheckout: 'Checkout', storeCartTotal: 'Total',
     storeCartItems: ' items', storeCartEmpty: 'Cart is empty',
+    checkoutShippingTitle: 'Shipping Info',
+    checkoutName: 'Recipient Name', checkoutNamePh: 'Enter full name',
+    checkoutPhone: 'Phone Number', checkoutPhonePh: 'Enter phone number',
+    checkoutAddress: 'Shipping Address', checkoutAddressPh: 'Province, city, district, street & details',
+    checkoutFillRequired: 'Please fill in all shipping details',
+    checkoutWxAddress: 'Use WeChat Address',
+    checkoutWxAddressFail: 'Cannot get WeChat address, please fill manually',
+    checkoutInsufficientTitle: 'Not Enough Credits',
+    checkoutInsufficientMsg: 'This order needs {need} credits, but you only have {have}.',
     toolFormulaDots: 'Formulate Dots',
     toolTestChip: 'Use Kino Chip',
     toolHealthAdvice: 'Health Advice',
@@ -890,6 +908,9 @@ Page({
     cartCount: 0,
     cartTotal: '',
     cartOpen: false,
+    checkoutName: '',
+    checkoutPhone: '',
+    checkoutAddress: '',
     // Plans tab
     plansLoading: true,
     activePlans: [],
@@ -1009,7 +1030,11 @@ Page({
   onShow() {
     const { user, lang, isGuest, obStep } = this.data
     if (user && !isGuest) {
-      this._req(`${BASE}/api/heartbeat`, 'POST', { user_id: user.user_id }).catch(() => {})
+      this._req(`${BASE}/api/heartbeat`, 'POST', { user_id: user.user_id }).then(res => {
+        if (res?.phone && !this.data.user.phone) {
+          this.setData({ user: { ...this.data.user, phone: res.phone } })
+        }
+      }).catch(() => {})
       this.selectComponent('#health-comp')?.refresh()
       this.selectComponent('#health-comp')?._maybeAutoSync()
       this._startPolling(user)
@@ -2330,19 +2355,40 @@ Page({
   },
 
   handleCloseCart() {
-    this.setData({ cartOpen: false })
+    this.setData({ cartOpen: false, checkoutName: '', checkoutPhone: '', checkoutAddress: '' })
   },
 
-  handleCheckout() {
+  handleCheckoutFieldInput(e) {
+    const field = e.currentTarget.dataset.field
+    this.setData({ [field]: e.detail.value })
+  },
+
+  async handleCheckout() {
     if (this.data.isGuest) { this.openGuestSheet(); return }
     const { t, user, lang, cart } = this.data
     if (cart.length === 0) return
     const items = cart.map(x => ({ channel_inventory_item_id: x.id, quantity: x.quantity }))
     const useCredits = cart.every(x => x.useCredits)
+    const needCredits = useCredits ? cart.reduce((sum, x) => sum + x.rawPrice * x.quantity, 0) : 0
+    const _showInsufficient = () => {
+      wx.showModal({
+        title: t.checkoutInsufficientTitle,
+        content: t.checkoutInsufficientMsg
+          .replace('{need}', needCredits)
+          .replace('{have}', this.data.creditBalance),
+        showCancel: false,
+        confirmText: 'OK',
+      })
+    }
+    // Credit-paid orders: stop before submitting if the balance can't cover the cart.
+    if (useCredits && this.data.creditBalance < needCredits) {
+      _showInsufficient()
+      return
+    }
     const _submitBatchOrder = async (shipping_name, shipping_phone, shipping_address) => {
       try {
         wx.showLoading({ title: t.storeOrderSent || 'Processing...' })
-        await this._req(`${BASE}/api/orders/batch`, 'POST', {
+        const res = await this._req(`${BASE}/api/orders/batch`, 'POST', {
           openid: user.user_id,
           items,
           shipping_name,
@@ -2352,36 +2398,64 @@ Page({
           payment_status: 'paid'
         })
         wx.hideLoading()
+        // wx.request resolves on HTTP 4xx/5xx too — must check the payload.
+        if (!res.data?.success) {
+          const errMsg = res.data?.error || ''
+          if (/insufficient credits/i.test(errMsg)) {
+            await this._loadCreditBalance(user) // refresh stale balance, then notify
+            _showInsufficient()
+          } else {
+            wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
+          }
+          return
+        }
         wx.showToast({ title: t.storeOrderSent || 'Order Sent', icon: 'success', duration: 2500 })
         this._syncCart([])
-        this.setData({ cartOpen: false })
+        this.setData({ cartOpen: false, checkoutName: '', checkoutPhone: '', checkoutAddress: '' })
         await this._loadStoreOrders(user, lang)
         this.setData({ storeSubTab: 'orders' })
+        this._loadCreditBalance(user) // reflect the debit
       } catch (err) {
         wx.hideLoading()
         wx.showToast({ title: t.errServer, icon: 'none', duration: 2500 })
       }
     }
+    const { checkoutName, checkoutPhone, checkoutAddress } = this.data
+    if (checkoutName.trim() && checkoutPhone.trim() && checkoutAddress.trim()) {
+      await _submitBatchOrder(checkoutName.trim(), checkoutPhone.trim(), checkoutAddress.trim())
+      return
+    }
+    // Address incomplete — open cart, pre-fill name/phone, then try WeChat address book
+    this.setData({
+      cartOpen: true,
+      checkoutName: checkoutName || user.nickname || '',
+      checkoutPhone: checkoutPhone || user.phone || '',
+    })
+    if (!checkoutAddress.trim()) this.fetchWechatAddress()
+  },
+
+  // Pull name/phone/address from the user's WeChat address book.
+  // Requires "用户收货地址" declared in the MP privacy protocol; with
+  // __usePrivacyCheck__ enabled, the onNeedPrivacyAuthorization flow (app.js +
+  // onPrivacyAgree) handles consent automatically before the picker opens.
+  fetchWechatAddress() {
+    const { t } = this.data
     wx.chooseAddress({
-      success: async (addrRes) => {
-        const address = `${addrRes.provinceName}${addrRes.cityName}${addrRes.countyName}${addrRes.detailInfo}`
-        await _submitBatchOrder(addrRes.userName, addrRes.telNumber, address)
-      },
-      fail: () => {
-        wx.showModal({
-          title: lang === 'zh' ? '确认模拟地址' : 'Verify Mock Address',
-          content: lang === 'zh' ? '无法获取微信收货地址，是否使用模拟地址进行下单测试？' : 'Cannot fetch address, proceed with mock testing address?',
-          confirmText: lang === 'zh' ? '确认下单' : 'Confirm',
-          success: async (mockRes) => {
-            if (!mockRes.confirm) return
-            await _submitBatchOrder(
-              user.nickname || 'Tester',
-              '13800138000',
-              lang === 'zh' ? '上海市浦东新区张江高科技园区' : 'Pudong New Area, Shanghai'
-            )
-          }
+      success: (addr) => {
+        this.setData({
+          checkoutName: addr.userName || this.data.checkoutName,
+          checkoutPhone: addr.telNumber || this.data.checkoutPhone,
+          checkoutAddress: `${addr.provinceName || ''}${addr.cityName || ''}${addr.countyName || ''}${addr.detailInfo || ''}`,
         })
-      }
+      },
+      fail: (err) => {
+        const errMsg = (err && err.errMsg) || ''
+        console.log(JSON.stringify({ level: 'WARN', msg: 'wx.chooseAddress failed', data: { errMsg } }))
+        // User dismissed the picker / denied — stay silent, manual form is ready.
+        if (/cancel|deny/i.test(errMsg)) return
+        // Real failure (e.g. privacy declaration missing) — prompt manual entry.
+        wx.showToast({ title: t.checkoutWxAddressFail, icon: 'none', duration: 2500 })
+      },
     })
   },
 

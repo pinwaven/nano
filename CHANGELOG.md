@@ -8,6 +8,19 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 
+- **Store cart — inline shipping form with WeChat address pre-fill** (`app.json`, `pages/main/main.{js,wxml,wxss}`, `handlers/chat.js`, `docs/architecture/orders-fulfillment.md`)
+
+  The store cart now collects shipping details via an editable 收货信息 form inside the cart sheet, replacing reliance on the deprecated-fragile `wx.chooseAddress()` as the sole path. Recipient name pre-fills from `user.nickname` and phone from `user.phone`; the WeChat address book is an optional pre-fill helper via a 「使用微信地址」 button.
+
+  **What changed:**
+  - Cart sheet renders a name/phone/address form *inside* the `scroll-view` (so it scrolls with items while 结算 stays pinned). Fields fixed for text clipping (`box-sizing: border-box`, `line-height`, `min-height`).
+  - `handleCheckout`: validates the form and submits directly; when the address is empty it pre-fills name/phone and calls `fetchWechatAddress()`. `fetchWechatAddress()` calls `wx.chooseAddress` to pre-fill, staying silent on cancel/deny and toasting otherwise.
+  - **`app.json`: added `"chooseAddress"` to `requiredPrivateInfos`** — `wx.chooseAddress` fails with `the api need to be declared in the requiredPrivateInfos field` without it (that field is *not* geolocation-only). Still requires the MP-backend 用户隐私保护指引 「用户收货地址」 declaration; first-use consent flows through the existing `onNeedPrivacyAuthorization` modal.
+  - `POST /api/heartbeat` now returns `phone` (`UPDATE ... RETURNING phone`), cached onto the user in `main.js`, because `login.js` strips phone from session storage as PII so it's null on session restore.
+  - Fixed cart sheet dismissing on any inner button tap: `catchtap=""` → `catchtap="noop"` (empty handler name doesn't reliably register the catch binding).
+  - **Insufficient-credits guard**: for credit-paid carts, `handleCheckout` now stops before submitting and shows an 积分不足 modal (with need/have amounts) when `creditBalance < needCredits`. Also fixed a latent bug where `_submitBatchOrder` ignored the response payload — `wx.request` resolves on HTTP 4xx too, so a backend `Insufficient credits` 400 previously still showed the success toast. It now checks `res.data.success`, surfaces insufficient-credits (re-syncing balance) vs. generic errors, and refreshes the balance after a successful debit. (Backend `handlePostOrderBatch` already validates balance transactionally — this is matching client UX + defense in depth.)
+  - **No DB migration.**
+
 - **Chat lab-report upload → consent → save to digital twin + photo lookup** (`prompts/nano/systemHealthReport.js`, `handlers/chat.js`, `handlers/health-plans.js`, `index.js`, `utils/tool-actions.js`, `pages/main/main.js`, `components/user-health/user-health.{js,wxml,wxss}`)
 
   When a user uploads a lab/checkup report photo in the chatbox, Nano now reads it out and then **asks for consent** before saving — instead of silently storing it. The user is asked (1) "Is this your own report?" and (2) "Save it to your health records?" via inline Yes/No buttons. On confirmation the report is saved to `health_reports` (with the photo) and, when core biomarkers are present, the BioAge digital twin is updated. Saved report photos are now viewable in the Health tab (thumbnail on each Lab card + full photo in the report detail sheet, tap to preview full-screen).

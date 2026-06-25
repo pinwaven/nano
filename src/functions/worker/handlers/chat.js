@@ -646,8 +646,12 @@ async function handlePostChatMessages(body) {
 async function handlePostHeartbeat(body) {
     const { user_id } = body;
     if (!user_id) return { success: false, error: 'user_id required', statusCode: 400 };
-    await pool.query('UPDATE users SET last_active_at = NOW() WHERE user_id = $1', [user_id]);
-    return { success: true };
+    const result = await pool.query(
+        'UPDATE users SET last_active_at = NOW() WHERE user_id = $1 RETURNING phone',
+        [user_id]
+    );
+    const phone = result.rows[0]?.phone || null;
+    return { success: true, phone };
 }
 
 async function handlePostHealthAdvice(body) {

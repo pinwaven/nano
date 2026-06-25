@@ -905,7 +905,7 @@
 
       <!-- Cart modal -->
       <view wx:if="{{cartOpen}}" class="cart-overlay" catchtap="handleCloseCart">
-        <view class="cart-sheet" catchtap="">
+        <view class="cart-sheet" catchtap="noop">
           <view class="cart-sheet-header">
             <text class="cart-sheet-title">{{t.storeCart}}</text>
             <view class="cart-close-btn" bindtap="handleCloseCart"><text class="cart-close-sym">✕</text></view>
@@ -923,6 +923,27 @@
                 <view class="stepper-btn" bindtap="handleCartQtyChange" data-id="{{item.id}}" data-delta="{{-1}}"><text class="stepper-sym">－</text></view>
                 <text class="stepper-qty">{{item.quantity}}</text>
                 <view class="stepper-btn" bindtap="handleCartQtyChange" data-id="{{item.id}}" data-delta="{{1}}"><text class="stepper-sym">＋</text></view>
+              </view>
+            </view>
+            <view wx:if="{{cart.length > 0}}" class="checkout-addr-form">
+              <view class="checkout-addr-hdr">
+                <text class="checkout-addr-title">{{t.checkoutShippingTitle}}</text>
+                <view class="checkout-wx-addr-btn" bindtap="fetchWechatAddress">
+                  <text class="checkout-wx-addr-icon">📍</text>
+                  <text class="checkout-wx-addr-text">{{t.checkoutWxAddress}}</text>
+                </view>
+              </view>
+              <view class="checkout-addr-row">
+                <text class="checkout-addr-label">{{t.checkoutName}}</text>
+                <input class="checkout-addr-input" placeholder="{{t.checkoutNamePh}}" value="{{checkoutName}}" bindinput="handleCheckoutFieldInput" data-field="checkoutName" />
+              </view>
+              <view class="checkout-addr-row">
+                <text class="checkout-addr-label">{{t.checkoutPhone}}</text>
+                <input class="checkout-addr-input" placeholder="{{t.checkoutPhonePh}}" value="{{checkoutPhone}}" bindinput="handleCheckoutFieldInput" data-field="checkoutPhone" type="number" />
+              </view>
+              <view class="checkout-addr-row checkout-addr-row-tall">
+                <text class="checkout-addr-label">{{t.checkoutAddress}}</text>
+                <textarea class="checkout-addr-textarea" placeholder="{{t.checkoutAddressPh}}" value="{{checkoutAddress}}" bindinput="handleCheckoutFieldInput" data-field="checkoutAddress" auto-height />
               </view>
             </view>
           </scroll-view>

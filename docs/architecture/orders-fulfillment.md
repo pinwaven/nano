@@ -104,10 +104,12 @@ If an unpaid or pending order is cancelled (either by the client or an administr
 
 ## 3. WeChat Mini Program Client Experience
 
-The WeChat Mini Program (`src/mini/nano-miniapp`) integrates a seamless checkout experience:
+The WeChat Mini Program (`src/mini/nano-miniapp`) integrates a seamless checkout experience. All cart UI, the shipping form, and the checkout handler (`handleCheckout`, `fetchWechatAddress`) live in `pages/main/main.{wxml,wxss,js}` inside the cart overlay sheet.
 
-* **Native Address Picker**: Integrates WeChat's native address collector `wx.chooseAddress()`. It pops up a premium, secure address selection sheet on mobile devices.
-* **Fallback Address Prompts**: In simulated developer environments (WeChat DevTools) where native components might be offline, the program gracefully triggers a mock fallback form to gather recipient name, phone, and detailed address without blocking.
+* **Inline Shipping Form (primary)**: The cart sheet contains an editable 收货信息 form — recipient name, phone, and address — rendered *inside* the `scroll-view` so it scrolls with the cart items while the 结算 button stays pinned in the footer. Name pre-fills from `user.nickname` and phone from `user.phone` (the latter is also returned by `POST /api/heartbeat` and cached onto the user, because `login.js` strips phone from session storage as PII). On 结算, the form is validated and the order is submitted via `POST /api/orders/batch`.
+* **WeChat Address Pre-fill (helper)**: A 「使用微信地址」 button (and an auto-trigger when the address is empty on first 结算) calls `wx.chooseAddress()` to pre-fill name/phone/address from the user's WeChat address book. This is a convenience layer over the manual form, **not** the only path.
+  * **`requiredPrivateInfos` requirement**: `wx.chooseAddress` will fail with `chooseAddress:fail the api need to be declared in the requiredPrivateInfos field in app.json/ext.json` unless **`"chooseAddress"` is listed in `requiredPrivateInfos` in `app.json`**. Note: `requiredPrivateInfos` is *not* geolocation-only — it governs `chooseAddress` too. The MP-backend privacy declaration (设置 → 服务内容声明 → 用户隐私保护指引 → 「用户收货地址」) is separately required, and `__usePrivacyCheck__: true` routes first-use consent through the page-level `onNeedPrivacyAuthorization` modal (`onPrivacyAgree` in `main.js`).
+  * **Graceful failure**: If the picker fails (declaration missing, account-type restriction, simulator), the `fail` handler stays silent on user cancel/deny and otherwise shows a toast directing the user to fill the form manually. The manual form is always the reliable fallback.
 * **Click-to-Copy Courier Code**: Displays glassmorphic shipping cards inside order histories once marked as `shipped`, with SF Express or JD Logistics tracking numbers and a clipboard helper badge (`wx.setClipboardData`).
 * **Interactive Mobile Admin Actions**: Clinic coaches or channel managers can manage shipments directly from their phone using status modals with prompt entries.
 
