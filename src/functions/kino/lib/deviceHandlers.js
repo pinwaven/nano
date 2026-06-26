@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { BiomarkerEstimator } = require('./estimator/BiomarkerEstimator');
 const { BioAgeCalculator } = require('./bioage/BioAgeCalculator');
 const { deriveTags } = require('./estimator/tagDerivation');
+const { handlePostKinoCurve } = require('./curveHandler');
 
 function calculateAge(birthDate) {
   if (!birthDate) return 30;
@@ -503,6 +504,10 @@ async function handleDeviceBusinessRequest({ pool, method, path, event, machine,
   if (method === 'GET' && path === '/biomarkers') return handleGetBiomarkers({ pool, query, machine });
   if (method === 'POST' && path === '/biomarkers') return handlePostBiomarkers({ pool, body, machine, event });
   if (method === 'POST' && path === '/kino-result') return handlePostKinoResult({ pool, body, machine, event });
+  if (method === 'POST' && path === '/kino-curve') {
+    const contentType = Object.entries(event.headers || {}).find(([k]) => k.toLowerCase() === 'content-type')?.[1] || '';
+    return handlePostKinoCurve({ pool, rawBody: event.body, contentType, machine });
+  }
   return { statusCode: 404, success: false, error: `Unknown device route: ${method} ${path}` };
 }
 

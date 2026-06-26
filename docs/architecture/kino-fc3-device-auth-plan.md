@@ -338,6 +338,7 @@ Move these device-facing endpoints into `src/functions/kino` and require a valid
 - `POST /biomarkers`
 - `POST /kino-result`
 - `POST /kino-machines/info`
+- `POST /kino-curve`
 - `GET /kino-upgrade`
 
 Authentication:
@@ -361,6 +362,93 @@ Expired-token response:
   "error": "comm_token_expired"
 }
 ```
+
+### Upload Raw ADC Curve Data
+
+Device-facing endpoint:
+
+```http
+POST /kino-curve
+```
+
+Authentication:
+
+```http
+Authorization: Bearer ${comm_token}
+```
+
+Request: `multipart/form-data` with three fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `qrcode` | text | Chip code (e.g. `KNC12345678-0001`) — the QR code value scanned from the chip |
+| `reference_values` | text (JSON) | Calibration and metadata JSON string provided by the device (e.g. `{"laserCurr":100,"dataBias":200}`) |
+| `curve_file` | binary | Raw `.bin` file read from the chip sensor |
+
+**Binary format** (little-endian):
+
+| Offset | Length | Field | Notes |
+|---|---|---|---|
+| 0 | 2 bytes | `dataLen` | uint16 — number of 13-bit ADC samples |
+| 2 | 2 bytes | `laserCurr` | uint16 — laser current |
+| 4 | 1 byte | fixed `0x5A` | validation marker |
+| 5 | 2 bytes | `dataBias` | uint16 — data bias |
+| 7 | 2 bytes | `laserCurrBias` | uint16 — laser current bias |
+| 9 | 1 byte | fixed `0xA5` | validation marker |
+| 10+ | `dataLen × 2` bytes | ADC samples | uint16 LE each, must be ≤ `0x1FFF` (13-bit) |
+
+Validation rules:
+
+- Byte 4 must equal `0x5A`; byte 9 must equal `0xA5` — reject with 422 if either fails.
+- Remaining bytes after header must equal `dataLen × 2` — reject with 422 on mismatch.
+- Each uint16 sample must be ≤ `0x1FFF` — reject with 422 if any sample exceeds 13-bit range.
+
+Stored in table `kino_curve`:
+
+- `kino_device_id` — from authenticated comm token
+- `chip_code` — from `qrcode` field
+- `curve` — `integer[]` of parsed ADC values (from binary)
+- `reference_values` — JSON stored as-is from `reference_values` field (device-supplied, not derived from binary header)
+
+Success response:
+
+```json
+{
+  "success": true,
+  "id": 42
+}
+```
+
+Parse error response (422):
+
+```json
+{
+  "success": false,
+  "error": "invalid magic byte at offset 4: 0xff",
+  "code": "BAD_MAGIC_5A"
+}
+```
+
+Validation error response (400):
+
+```json
+{
+  "success": false,
+  "error": "reference_values_required"
+}
+```
+
+```json
+{
+  "success": false,
+  "error": "reference_values_invalid_json"
+}
+```
+
+Binary parse error codes: `HEADER_TOO_SHORT`, `BAD_MAGIC_5A`, `BAD_MAGIC_A5`, `LENGTH_MISMATCH`, `ADC_OUT_OF_RANGE`.
+
+Implementation: `src/functions/kino/lib/curveParser.js` (binary parser), `src/functions/kino/lib/curveHandler.js` (handler + multipart parser).
+Migration: `src/schemas/migration_kino_curve.sql`.
 
 ### Upload Machine Software/Firmware Versions
 
@@ -425,9 +513,10 @@ Response:
    - `kino-result`
    - `kino-upgrade`
 9. Implement `POST /kino-machines/info` for authenticated software/firmware version uploads.
-10. Require communication-token authentication in the Kino function.
-11. Keep the old worker endpoints temporarily if device backward compatibility is required.
-12. Remove or lock down old anonymous worker access after device rollout is complete.
+10. Implement `POST /kino-curve` for raw ADC curve binary upload (`kino_curve` table).
+11. Require communication-token authentication in the Kino function.
+12. Keep the old worker endpoints temporarily if device backward compatibility is required.
+13. Remove or lock down old anonymous worker access after device rollout is complete.
 
 ## Tests
 
@@ -463,6 +552,16 @@ Required focused tests:
   - expired token rejected
   - valid token allows existing business behavior
   - software/firmware version upload uses the token-authenticated machine id
+- Curve upload (`POST /kino-curve`):
+  - valid binary parses and inserts to `kino_curve`
+  - bad `0x5A` magic byte rejected with `BAD_MAGIC_5A`
+  - bad `0xA5` magic byte rejected with `BAD_MAGIC_A5`
+  - data length mismatch rejected with `LENGTH_MISMATCH`
+  - ADC value > `0x1FFF` rejected with `ADC_OUT_OF_RANGE`
+  - missing `qrcode` field returns 400
+  - missing `reference_values` field returns 400
+  - invalid JSON in `reference_values` returns 400
+  - missing `curve_file` field returns 400
 
 ## Non-Goals
 
