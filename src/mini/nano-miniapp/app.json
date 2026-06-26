@@ -18,7 +18,7 @@
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",
-  "requiredPrivateInfos": [],
+  "requiredPrivateInfos": ["chooseAddress"],
   "requiredBackgroundModes": ["audio"],
   "permission": {
     "scope.bluetooth": {
