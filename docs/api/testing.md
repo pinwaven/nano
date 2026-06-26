@@ -22,13 +22,6 @@ All three simulators are Electron apps with Vite dev servers. They proxy `/api/*
 - **Run**: `cd tests/chat-simulator && npm run dev`
 - **Role**: Simulates the user's WeChat interface. Select a user, send messages, and see AI replies and notifications appear in real time via polling.
 
-### Kino Simulator — Device clone
-
-- **Location**: `tests/kino-simulator/`
-- **Port**: `5174`
-- **Run**: `cd tests/kino-simulator && npm run dev`
-- **Role**: Simulates the Kino portable biomarker chip. Click **Start Biomarker Test** to submit a randomised hsCRP reading for the selected user, triggering the full AI pipeline.
-
 ### Coach Simulator — Coach mobile app
 
 - **Location**: `tests/coach-simulator/`
@@ -40,7 +33,6 @@ All three simulators are Electron apps with Vite dev servers. They proxy `/api/*
 
 The simulators are also available in production via the main domain:
 - **Chat**: `https://nano.fros.cc/admin/sim/chat/`
-- **Kino**: `https://nano.fros.cc/admin/sim/kino/`
 - **Coach**: `https://nano.fros.cc/admin/sim/coach/`
 
 In production, these simulators use the public `/api` path to talk directly to the worker, ensuring better performance and lower overhead. See [Simulator Build & Deploy](../simulator-build-deploy.md) for how to rebuild and redeploy them.
@@ -50,11 +42,10 @@ In production, these simulators use the public `/api` path to talk directly to t
 1. Start PostgreSQL (`brew services start postgresql@16`)
 2. Start the backend: `npm run start:backend`
 3. Open the Chat Simulator (`cd tests/chat-simulator && npm run dev`)
-4. Open the Kino Simulator (`cd tests/kino-simulator && npm run dev`)
-5. Open the Coach Simulator (`cd tests/coach-simulator && npm run dev`)
-6. In **Kino**, select a user and click **Start Biomarker Test**
-7. In **Chat**, select the same user — a biological age report and nutrition plan should arrive within a few seconds
-8. In **Coach**, send a coach instruction — it should appear in the user's **Chat** window
+4. Open the Coach Simulator (`cd tests/coach-simulator && npm run dev`)
+5. Submit a biomarker reading for a user — via the miniapp Kino scan flow (`POST /kino-scan` → `POST /biomarkers` → `POST /kino-result`) or by posting directly to `POST /biomarkers` — to trigger the full AI pipeline
+6. In **Chat**, select the same user — a biological age report and nutrition plan should arrive within a few seconds
+7. In **Coach**, send a coach instruction — it should appear in the user's **Chat** window
 
 ## Troubleshooting
 

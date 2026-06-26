@@ -3,7 +3,7 @@ import axios from 'axios';
 import wavenLogo from '../../shared/assets/waven-logo-icon.png';
 import {
   Users, Droplets, UserCog, RefreshCcw,
-  ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe, Layout,
+  ChevronDown, Activity, Calendar, Plus, Pencil, Trash2, X, Check, Globe,
   ShoppingBag, Package, Building2, Tag, Copy, Cpu, Layers, QrCode, Printer, ChevronLeft, ChevronRight, Download,
   Coins, TrendingUp, Settings2, Landmark,
   GraduationCap, Video, FileText, Upload, ExternalLink, Play, BookOpen,
@@ -34,7 +34,6 @@ import { LabTab } from './tabs/LabTab.jsx';
 import { PartnersTab } from './tabs/PartnersTab.jsx';
 import { ReportsTab } from './tabs/ReportsTab.jsx';
 import { RewardsTab } from './tabs/RewardsTab.jsx';
-import { SimulatorsTab } from './tabs/SimulatorsTab.jsx';
 import StoreTab from './tabs/StoreTab.jsx';
 import { TicketsTab } from './tabs/TicketsTab.jsx';
 import { UsersTab } from './tabs/UsersTab.jsx';
@@ -141,7 +140,6 @@ function AdminPanel({ session, onLogout }) {
     { id: 'content',   label: t.nav.content,   icon: GraduationCap  },
     { id: 'reports',        label: t.nav.reports,        icon: BarChart2     },
     { id: 'tickets',  label: t.nav.tickets,  icon: Bug            },
-    { id: 'sims',     label: t.nav.sims,     icon: Layout,      disabled: true },
     { id: 'admin-accounts', label: t.nav.adminAccounts, icon: Settings2 },
     { id: 'coach-crm',     label: t.nav.coachCrm,     icon: Target        },
     { id: 'lab',           label: t.nav.lab,           icon: FlaskConical  },
@@ -222,7 +220,6 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'content' && <ContentTab channels={data.channels} users={data.users} coaches={data.coaches} dots={data.dots} healthPlanTemplates={data.healthPlanTemplates || []} session={session} isSuperadmin={isSuperadmin} onRefresh={fetchData} />}
           {tab === 'reports'        && <ReportsTab />}
           {tab === 'tickets'  && <TicketsTab tickets={data.tickets} onRefresh={fetchData} />}
-          {tab === 'sims'     && <SimulatorsTab />}
           {tab === 'admin-accounts' && <AdminAccountsTab accounts={data.adminAccounts} channels={data.channels} session={session} onRefresh={fetchData} />}
           {tab === 'coach-crm'     && <CoachCRMTab coaches={data.coaches} users={data.users} />}
           {tab === 'lab'           && <LabTab users={data.users} onRefresh={fetchData} />}

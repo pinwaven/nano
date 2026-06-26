@@ -58,7 +58,6 @@ Admin (Browser)
   │ Serves React SPA (dist/)    │
   │ Serves simulator iframes    │
   │   /admin/sim/chat/          │
-  │   /admin/sim/kino/          │
   │   /admin/sim/coach/           │
   │ Proxies /admin/api/* to     │
   │   nano-worker               │

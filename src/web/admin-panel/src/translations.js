@@ -1,7 +1,7 @@
 const T = {
   en: {
     brand: 'Nano Admin',
-    nav: { dashboard: 'Dashboard', users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', sims: 'Simulators', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', hardware: 'Hardware', rewards: 'Rewards', partners: 'Partners', finance: 'Finance', content: 'Content', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'CRM', lab: 'Lab', events: 'Events', digitalAssets: 'Media', changelog: 'Changelog' },
+    nav: { dashboard: 'Dashboard', users: 'Users', coaches: 'Coaches', dots: 'Dots', store: 'Store', inventory: 'Inventory', channels: 'Channels', invites: 'Invites', kino: 'Kino', chips: 'Chips', hardware: 'Hardware', rewards: 'Rewards', partners: 'Partners', finance: 'Finance', content: 'Content', academy: 'Academy', tickets: 'Tickets', adminAccounts: 'Admin', questionnaires: 'Questionnaires', reports: 'Reports', healthPlans: 'Health Plans', coachCrm: 'CRM', lab: 'Lab', events: 'Events', digitalAssets: 'Media', changelog: 'Changelog' },
     adminAccounts: { title: 'Admin Accounts', add: 'Add Admin', changePassword: 'Change Password', confirmDelete: 'Delete this admin account?', newPassword: 'New Password', usernameLabel: 'Username', passwordLabel: 'Password', count: (n) => `${n} account${n !== 1 ? 's' : ''}` },
     topbar: { refresh: 'Refresh', loading: 'Loading…' },
     updated: 'Updated',
@@ -675,7 +675,7 @@ const T = {
   },
   zh: {
     brand: 'Nano 管理后台',
-    nav: { dashboard: '数据概览', users: '用户管理', coaches: 'COACH', dots: '原粒', store: '商城管理', inventory: '库存管理', sims: '模拟器', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', hardware: '硬件管理', rewards: '奖励管理', partners: '合伙人', finance: '财务管理', content: '内容管理', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'CRM', lab: '检验中心', events: '线下活动', digitalAssets: '媒体资源', changelog: '更新日志' },
+    nav: { dashboard: '数据概览', users: '用户管理', coaches: 'COACH', dots: '原粒', store: '商城管理', inventory: '库存管理', channels: '渠道管理', invites: '邀请码', kino: 'Kino 设备', chips: '芯片管理', hardware: '硬件管理', rewards: '奖励管理', partners: '合伙人', finance: '财务管理', content: '内容管理', academy: '学院', tickets: '工单', adminAccounts: '管理员', questionnaires: '问卷管理', reports: '数据报表', healthPlans: '健康方案', coachCrm: 'CRM', lab: '检验中心', events: '线下活动', digitalAssets: '媒体资源', changelog: '更新日志' },
     adminAccounts: { title: '管理员账号', add: '添加管理员', changePassword: '修改密码', confirmDelete: '确认删除此管理员账号？', newPassword: '新密码', usernameLabel: '用户名', passwordLabel: '密码', count: (n) => `${n} 个账号` },
     topbar: { refresh: '刷新', loading: '加载中…' },
     updated: '更新于',
