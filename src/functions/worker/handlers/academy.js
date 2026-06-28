@@ -476,17 +476,98 @@ async function handleGetCoachDashboard(userId) {
 async function handleGetAcademyLeaderboard() {
     try {
         const result = await pool.query(`
-            SELECT l.user_id,
+            SELECT e.user_id,
                    u.name,
+                   e.cohort,
                    COALESCE(SUM(l.amount),0)::int AS total_credits,
                    COUNT(DISTINCT p.lesson_id)::int AS completed_lessons
-            FROM academy_credit_ledger l
-            LEFT JOIN users u ON u.user_id = l.user_id
-            LEFT JOIN academy_coach_progress p ON p.user_id = l.user_id
-            GROUP BY l.user_id, u.name
+            FROM academy_enrollments e
+            LEFT JOIN users u ON u.user_id = e.user_id
+            LEFT JOIN academy_credit_ledger l ON l.user_id = e.user_id
+            LEFT JOIN academy_coach_progress p ON p.user_id = e.user_id
+            WHERE e.status = 'active'
+            GROUP BY e.user_id, u.name, e.cohort
             ORDER BY total_credits DESC
-            LIMIT 20`);
+            LIMIT 50`);
         return { success: true, leaderboard: result.rows.map(r => ({ ...r, tier: _getTier(r.total_credits) })) };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetAcademyEnrollments(adminCtx) {
+    try {
+        const { requirePermission } = require('../lib/auth');
+        const err = requirePermission(adminCtx, 'academy:read');
+        if (err) return err;
+        const result = await pool.query(`
+            SELECT e.id, e.user_id, e.cohort, e.status, e.enrolled_at, e.enrolled_by, e.notes,
+                   u.nickname, u.avatar_url,
+                   COALESCE(SUM(l.amount),0)::int AS total_credits,
+                   COUNT(DISTINCT p.lesson_id)::int AS completed_lessons
+            FROM academy_enrollments e
+            LEFT JOIN users u ON u.user_id = e.user_id
+            LEFT JOIN academy_credit_ledger l ON l.user_id = e.user_id
+            LEFT JOIN academy_coach_progress p ON p.user_id = e.user_id
+            GROUP BY e.id, e.user_id, e.cohort, e.status, e.enrolled_at, e.enrolled_by, e.notes, u.nickname, u.avatar_url
+            ORDER BY e.enrolled_at DESC`);
+        return { success: true, enrollments: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostAcademyEnrollment(body, adminCtx) {
+    try {
+        const { requirePermission } = require('../lib/auth');
+        const err = requirePermission(adminCtx, 'academy:write');
+        if (err) return err;
+        const { user_id, cohort, notes } = body;
+        if (!user_id) return { success: false, error: 'user_id is required', statusCode: 400 };
+        const result = await pool.query(
+            `INSERT INTO academy_enrollments (user_id, cohort, notes, enrolled_by)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (user_id) DO UPDATE
+               SET cohort = EXCLUDED.cohort, status = 'active',
+                   notes = COALESCE(EXCLUDED.notes, academy_enrollments.notes),
+                   enrolled_by = EXCLUDED.enrolled_by
+             RETURNING *`,
+            [user_id, cohort || null, notes || null, adminCtx.userId || null]
+        );
+        return { success: true, enrollment: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutAcademyEnrollment(id, body, adminCtx) {
+    try {
+        const { requirePermission } = require('../lib/auth');
+        const err = requirePermission(adminCtx, 'academy:write');
+        if (err) return err;
+        const { cohort, status, notes } = body;
+        const result = await pool.query(
+            `UPDATE academy_enrollments SET
+               cohort = COALESCE($1, cohort),
+               status = COALESCE($2, status),
+               notes  = COALESCE($3, notes)
+             WHERE id = $4 RETURNING *`,
+            [cohort || null, status || null, notes !== undefined ? notes : null, id]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Not found', statusCode: 404 };
+        return { success: true, enrollment: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteAcademyEnrollment(id, adminCtx) {
+    try {
+        const { requirePermission } = require('../lib/auth');
+        const err = requirePermission(adminCtx, 'academy:write');
+        if (err) return err;
+        await pool.query('DELETE FROM academy_enrollments WHERE id = $1', [id]);
+        return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -503,12 +584,18 @@ async function handleGetAcademyCertifications() {
 
 async function handlePostAcademyCertification(body) {
     try {
-        const { title, description, required_course_ids, min_credits, tier, badge_image_url } = body;
+        const { title, description, required_course_ids, min_credits, tier, badge_image_url,
+                cert_number_prefix, issuing_org, school_org, validity_years, course_display_name, template_image_oss_key } = body;
         if (!title) return { success: false, error: 'Title is required' };
         const result = await pool.query(
-            `INSERT INTO academy_certifications (title, description, required_course_ids, min_credits, tier, badge_image_url)
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-            [title, description || null, required_course_ids || [], min_credits || 0, tier || 'bronze', badge_image_url || null]
+            `INSERT INTO academy_certifications
+               (title, description, required_course_ids, min_credits, tier, badge_image_url,
+                cert_number_prefix, issuing_org, school_org, validity_years, course_display_name, template_image_oss_key)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+            [title, description || null, required_course_ids || [], min_credits || 0, tier || 'bronze', badge_image_url || null,
+             cert_number_prefix || '', issuing_org || null, school_org || null,
+             validity_years != null ? parseInt(validity_years) : 3,
+             course_display_name || null, template_image_oss_key || null]
         );
         return { success: true, certification: result.rows[0] };
     } catch (err) {
@@ -518,22 +605,34 @@ async function handlePostAcademyCertification(body) {
 
 async function handlePutAcademyCertification(id, body) {
     try {
-        const { title, description, required_course_ids, min_credits, tier, badge_image_url, is_active } = body;
+        const { title, description, required_course_ids, min_credits, tier, badge_image_url, is_active,
+                cert_number_prefix, issuing_org, school_org, validity_years, course_display_name, template_image_oss_key } = body;
         const result = await pool.query(
             `UPDATE academy_certifications SET
-                title               = COALESCE($1, title),
-                description         = COALESCE($2, description),
-                required_course_ids = COALESCE($3, required_course_ids),
-                min_credits         = COALESCE($4, min_credits),
-                tier                = COALESCE($5, tier),
-                badge_image_url     = COALESCE($6, badge_image_url),
-                is_active           = COALESCE($7, is_active)
-             WHERE id = $8 RETURNING *`,
+                title                   = COALESCE($1,  title),
+                description             = COALESCE($2,  description),
+                required_course_ids     = COALESCE($3,  required_course_ids),
+                min_credits             = COALESCE($4,  min_credits),
+                tier                    = COALESCE($5,  tier),
+                badge_image_url         = COALESCE($6,  badge_image_url),
+                is_active               = COALESCE($7,  is_active),
+                cert_number_prefix      = COALESCE($8,  cert_number_prefix),
+                issuing_org             = COALESCE($9,  issuing_org),
+                school_org              = COALESCE($10, school_org),
+                validity_years          = COALESCE($11, validity_years),
+                course_display_name     = COALESCE($12, course_display_name),
+                template_image_oss_key  = COALESCE($13, template_image_oss_key)
+             WHERE id = $14 RETURNING *`,
             [title || null, description || null,
-             required_course_ids ? required_course_ids : null,
+             required_course_ids || null,
              min_credits != null ? min_credits : null,
              tier || null, badge_image_url || null,
-             is_active != null ? is_active : null, id]
+             is_active != null ? is_active : null,
+             cert_number_prefix != null ? cert_number_prefix : null,
+             issuing_org || null, school_org || null,
+             validity_years != null ? parseInt(validity_years) : null,
+             course_display_name || null, template_image_oss_key || null,
+             id]
         );
         if (result.rows.length === 0) return { success: false, error: 'Not found' };
         return { success: true, certification: result.rows[0] };
@@ -555,7 +654,13 @@ async function handleGetCoachCertifications(userId) {
     try {
         if (!userId) return { success: false, error: 'user_id is required' };
         const result = await pool.query(
-            `SELECT cc.*, c.title, c.description, c.tier, c.badge_image_url, c.required_course_ids, c.min_credits
+            `SELECT cc.id, cc.user_id, cc.certification_id, cc.earned_at,
+                    cc.certificate_number, cc.issue_date, cc.expiry_date, cc.score,
+                    cc.assessment_period, cc.cert_oss_key, cc.is_revoked, cc.notes,
+                    c.title, c.description, c.tier, c.badge_image_url,
+                    c.required_course_ids, c.min_credits,
+                    c.cert_number_prefix, c.issuing_org, c.school_org,
+                    c.validity_years, c.course_display_name, c.template_image_oss_key
              FROM academy_coach_certifications cc
              JOIN academy_certifications c ON c.id = cc.certification_id
              WHERE cc.user_id = $1
@@ -563,6 +668,113 @@ async function handleGetCoachCertifications(userId) {
             [userId]
         );
         return { success: true, certifications: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetIssuedCertifications(adminCtx) {
+    try {
+        const { requirePermission } = require('../lib/auth');
+        const err = requirePermission(adminCtx, 'academy:read');
+        if (err) return err;
+        const result = await pool.query(
+            `SELECT cc.id, cc.user_id, cc.certification_id, cc.earned_at,
+                    cc.certificate_number, cc.issue_date, cc.expiry_date, cc.score,
+                    cc.assessment_period, cc.cert_oss_key, cc.is_revoked, cc.notes,
+                    c.title AS cert_title, c.tier,
+                    c.cert_number_prefix, c.issuing_org, c.school_org,
+                    c.course_display_name,
+                    u.nickname, u.avatar_url
+             FROM academy_coach_certifications cc
+             JOIN academy_certifications c ON c.id = cc.certification_id
+             LEFT JOIN users u ON u.user_id = cc.user_id
+             ORDER BY cc.earned_at DESC`
+        );
+        return { success: true, issued: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePutCoachCertification(id, body, adminCtx) {
+    try {
+        const { requirePermission } = require('../lib/auth');
+        const err = requirePermission(adminCtx, 'academy:write');
+        if (err) return err;
+        const { certificate_number, issue_date, expiry_date, score, assessment_period, cert_oss_key, is_revoked, notes } = body;
+        const result = await pool.query(
+            `UPDATE academy_coach_certifications SET
+                certificate_number = COALESCE($1, certificate_number),
+                issue_date         = COALESCE($2::date, issue_date),
+                expiry_date        = COALESCE($3::date, expiry_date),
+                score              = COALESCE($4, score),
+                assessment_period  = COALESCE($5, assessment_period),
+                cert_oss_key       = COALESCE($6, cert_oss_key),
+                is_revoked         = COALESCE($7, is_revoked),
+                notes              = COALESCE($8, notes)
+             WHERE id = $9 RETURNING *`,
+            [certificate_number || null, issue_date || null, expiry_date || null,
+             score != null ? score : null,
+             assessment_period || null, cert_oss_key || null,
+             is_revoked != null ? is_revoked : null,
+             notes || null, id]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Not found' };
+        return { success: true, issued: result.rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostCoachCertification(body, adminCtx) {
+    try {
+        const { requirePermission } = require('../lib/auth');
+        const err = requirePermission(adminCtx, 'academy:write');
+        if (err) return err;
+        const { user_id, certification_id, certificate_number, issue_date, expiry_date, score, assessment_period, notes } = body;
+        if (!user_id || !certification_id) return { success: false, error: 'user_id and certification_id are required', statusCode: 400 };
+        const result = await pool.query(
+            `INSERT INTO academy_coach_certifications
+               (user_id, certification_id, earned_at, is_manual_issue,
+                certificate_number, issue_date, expiry_date, score, assessment_period, notes)
+             VALUES ($1, $2, NOW(), TRUE, $3, $4::date, $5::date, $6, $7, $8)
+             RETURNING *`,
+            [user_id, certification_id,
+             certificate_number || null,
+             issue_date || new Date().toISOString().slice(0, 10),
+             expiry_date || null,
+             score != null ? score : null,
+             assessment_period || null,
+             notes || null]
+        );
+        return { success: true, issued: result.rows[0] };
+    } catch (err) {
+        if (err.code === '23505') return { success: false, error: 'This user already holds this certification', statusCode: 409 };
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleVerifyCertificate(certNumber) {
+    try {
+        if (!certNumber) return { success: false, error: 'Certificate number is required', statusCode: 400 };
+        const result = await pool.query(
+            `SELECT cc.id, cc.user_id, cc.certification_id, cc.earned_at,
+                    cc.certificate_number, cc.issue_date, cc.expiry_date, cc.score,
+                    cc.assessment_period, cc.cert_oss_key, cc.is_revoked,
+                    c.title, c.tier, c.issuing_org, c.school_org,
+                    c.course_display_name, c.template_image_oss_key,
+                    u.nickname
+             FROM academy_coach_certifications cc
+             JOIN academy_certifications c ON c.id = cc.certification_id
+             LEFT JOIN users u ON u.user_id = cc.user_id
+             WHERE cc.certificate_number = $1`,
+            [certNumber]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Certificate not found', statusCode: 404 };
+        const cert = result.rows[0];
+        if (cert.is_revoked) return { success: false, error: 'Certificate has been revoked', statusCode: 410 };
+        return { success: true, valid: true, certificate: cert };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -746,11 +958,19 @@ module.exports = {
     handleGetCoachCredits,
     handleGetCoachDashboard,
     handleGetAcademyLeaderboard,
+    handleGetAcademyEnrollments,
+    handlePostAcademyEnrollment,
+    handlePutAcademyEnrollment,
+    handleDeleteAcademyEnrollment,
     handleGetAcademyCertifications,
     handlePostAcademyCertification,
     handlePutAcademyCertification,
     handleDeleteAcademyCertification,
     handleGetCoachCertifications,
+    handleGetIssuedCertifications,
+    handlePostCoachCertification,
+    handlePutCoachCertification,
+    handleVerifyCertificate,
     handleGetAcademyLearningPaths,
     handlePostAcademyLearningPath,
     handlePutAcademyLearningPath,

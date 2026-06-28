@@ -1074,11 +1074,84 @@
           <view wx:if="{{trainingCertifications.length > 0}}" class="training-section-header" style="margin-top: 28rpx;">
             <text class="training-section-title">{{lang === 'zh' ? '我的证书' : 'My Certifications'}}</text>
           </view>
-          <view wx:for="{{trainingCertifications}}" wx:key="id" class="training-cert-card">
+          <view wx:for="{{trainingCertifications}}" wx:key="id" class="training-cert-card" bindtap="showCertDetail" data-cert="{{item}}">
             <text class="training-cert-icon">🏅</text>
             <view class="training-cert-info">
               <text class="training-cert-title">{{item.title}}</text>
               <text class="training-cert-tier">{{item.tier}}</text>
+            </view>
+            <text class="training-cert-chevron">›</text>
+          </view>
+
+          <!-- Certificate detail overlay -->
+          <view wx:if="{{showCertDetail}}" class="cert-overlay" catchtap="hideCertDetail">
+            <view class="cert-detail-card" catchtap="noop">
+              <view class="cert-detail-header">
+                <view class="cert-status-badge">
+                  <text class="cert-status-check">✓</text>
+                  <text class="cert-status-text">{{lang === 'zh' ? '证书有效' : 'Certificate Valid'}}</text>
+                </view>
+                <view class="cert-close-btn" bindtap="hideCertDetail">✕</view>
+              </view>
+
+              <view wx:if="{{certDetailItem.template_image_oss_key && certDetailItem.templateImageUrl}}" class="cert-bg-wrap">
+                <image src="{{certDetailItem.templateImageUrl}}" class="cert-bg-preview" mode="widthFix" />
+              </view>
+
+              <view class="cert-field-list">
+                <view class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '姓名' : 'Name'}}</text>
+                  <text class="cert-value">{{certDetailItem._userName || user.nickname || '—'}}</text>
+                </view>
+                <view class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '学员编号' : 'Student ID'}}</text>
+                  <text class="cert-value cert-mono">{{certDetailItem.user_id || '—'}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.course_display_name}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '课程名称' : 'Course'}}</text>
+                  <text class="cert-value">{{certDetailItem.course_display_name}}</text>
+                </view>
+                <view class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '证书名称' : 'Certificate'}}</text>
+                  <text class="cert-value">{{certDetailItem.title}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.certificate_number}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '证书编号' : 'Cert No.'}}</text>
+                  <text class="cert-value cert-mono cert-number">{{certDetailItem.certificate_number}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.assessment_period}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '考核时间' : 'Assessment'}}</text>
+                  <text class="cert-value">{{certDetailItem.assessment_period}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.score != null}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '考试分数' : 'Score'}}</text>
+                  <text class="cert-value">{{certDetailItem.score}}</text>
+                </view>
+                <view class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '证书状态' : 'Status'}}</text>
+                  <text class="cert-value cert-valid">{{lang === 'zh' ? '有效' : 'Valid'}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.issuing_org}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '颁发机构' : 'Issuing Org'}}</text>
+                  <text class="cert-value">{{certDetailItem.issuing_org}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.school_org}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '办学机构' : 'Institute'}}</text>
+                  <text class="cert-value">{{certDetailItem.school_org}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.issue_date}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '颁发时间' : 'Issue Date'}}</text>
+                  <text class="cert-value">{{certDetailItem.issue_date}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.expiry_date}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '有效期至' : 'Expires'}}</text>
+                  <text class="cert-value">{{certDetailItem.expiry_date}}</text>
+                </view>
+              </view>
+
+              <view wx:if="{{certDetailItem.cert_oss_key}}" class="cert-download-btn" bindtap="downloadCert" data-key="{{certDetailItem.cert_oss_key}}">
+                <text>↓ {{lang === 'zh' ? '下载电子证书' : 'Download Certificate'}}</text>
+              </view>
             </view>
           </view>
 

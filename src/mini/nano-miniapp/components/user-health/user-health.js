@@ -2222,7 +2222,7 @@ Component({
               const isAizo     = isAizoSvc || isAizoName
               const isNamed    = nameLower && ALL_PREFIXES.some((p) => nameLower.startsWith(p.toLowerCase()))
               if (!isAizo && !isNamed) continue
-              const brand = isAizo ? 'aizo' : (nameLower.startsWith('x3') ? 'x3' : 'colmi')
+              const brand = isAizo ? 'aizo' : (nameLower.startsWith('x3') || nameLower.startsWith('x6') ? 'x3' : 'colmi')
               found.set(d.deviceId, { deviceId: d.deviceId, name: name || (brand === 'aizo' ? 'Aizo Ring' : brand === 'x3' ? 'X3 Ring' : 'Colmi Ring'), rssi: d.RSSI, brand })
             }
           })

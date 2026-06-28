@@ -973,6 +973,8 @@ Page({
     trainingDashboard: null,
     trainingPaths: [],
     trainingCertifications: [],
+    showCertDetail: false,
+    certDetailItem: null,
     trainingQuizQuestions: [],
     trainingQuizAnswers: {},
     trainingQuizResult: null,
@@ -3503,6 +3505,43 @@ Page({
 
   trainingBackToList() {
     this.setData({ trainingView: 'list', trainingCurrentCourse: null, trainingCurrentLesson: null, trainingVideoUrl: '', trainingQuizQuestions: [], trainingQuizAnswers: {}, trainingQuizResult: null, trainingQuizReview: [] })
+  },
+
+  async showCertDetail(e) {
+    const cert = e.currentTarget.dataset.cert
+    let templateImageUrl = ''
+    if (cert.template_image_oss_key) {
+      try {
+        const res = await this._req(`${BASE}/api/oss/presign?action=get&key=${encodeURIComponent(cert.template_image_oss_key)}`)
+        templateImageUrl = res.data?.url || ''
+      } catch (_) {}
+    }
+    this.setData({ showCertDetail: true, certDetailItem: { ...cert, templateImageUrl } })
+  },
+
+  hideCertDetail() {
+    this.setData({ showCertDetail: false, certDetailItem: null })
+  },
+
+  noop() {},
+
+  async downloadCert(e) {
+    const key = e.currentTarget.dataset.key
+    if (!key) return
+    wx.showLoading({ title: this.data.lang === 'zh' ? '准备中…' : 'Loading…' })
+    try {
+      const res = await this._req(`${BASE}/api/oss/presign?action=get&key=${encodeURIComponent(key)}`)
+      const url = res.data?.url
+      if (!url) throw new Error('No URL')
+      wx.hideLoading()
+      const dlRes = await new Promise((resolve, reject) => {
+        wx.downloadFile({ url, success: resolve, fail: reject })
+      })
+      wx.openDocument({ filePath: dlRes.tempFilePath, showMenu: true })
+    } catch (_) {
+      wx.hideLoading()
+      wx.showToast({ title: this.data.lang === 'zh' ? '下载失败' : 'Download failed', icon: 'none' })
+    }
   },
 
   trainingBackToLessons() {

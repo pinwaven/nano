@@ -1,4 +1,4 @@
-import React, { useState, createContext, useContext } from 'react';
+import React, { useState, createContext, useContext, useEffect, useRef } from 'react';
 import axios from 'axios';
 import wavenLogo from '../../shared/assets/waven-logo-icon.png';
 import { T } from './translations.js';
@@ -203,6 +203,99 @@ function Badge({ children, color = '#3b82f6' }) {
   return <span className="badge" style={{ background: color + '1a', color }}>{children}</span>;
 }
 
+// ── UserPicker ─────────────────────────────────────────────────────────────────
+// Reusable channel-scoped user search widget.
+// Props:
+//   value        — { user_id, nickname } or null
+//   onChange     — called with { user_id, nickname } on select, or null on clear
+//   placeholder  — input placeholder text
+//   label        — optional label string
+function UserPicker({ value, onChange, placeholder = 'Search by name, phone…', label }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const debounceRef = useRef(null);
+  const wrapRef = useRef(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const search = (q) => {
+    setQuery(q);
+    if (!q.trim()) { setResults([]); setOpen(false); return; }
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await axios.get('/api/users', { params: { q, limit: 10 } });
+        setResults(res.data.users || []);
+        setOpen(true);
+      } catch { setResults([]); }
+      finally { setLoading(false); }
+    }, 280);
+  };
+
+  const select = (u) => {
+    onChange({ user_id: u.user_id, nickname: u.nickname });
+    setQuery('');
+    setResults([]);
+    setOpen(false);
+  };
+
+  const clear = () => { onChange(null); setQuery(''); setResults([]); };
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      {label && <div className="form-label-text" style={{ marginBottom: 4, fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}>{label}</div>}
+      {value ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+          <div style={{ flex: 1 }}>
+            <span style={{ fontWeight: 600, fontSize: 13 }}>{value.nickname || value.user_id}</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 8, fontFamily: 'monospace' }}>{value.user_id?.slice(0, 20)}…</span>
+          </div>
+          <button type="button" onClick={clear} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', lineHeight: 1, padding: 2, fontSize: 16 }}>×</button>
+        </div>
+      ) : (
+        <div style={{ position: 'relative' }}>
+          <input
+            value={query}
+            onChange={e => search(e.target.value)}
+            onFocus={() => results.length > 0 && setOpen(true)}
+            placeholder={placeholder}
+            style={{ width: '100%', boxSizing: 'border-box' }}
+            autoComplete="off"
+          />
+          {loading && <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: 'var(--muted)' }}>…</span>}
+        </div>
+      )}
+      {open && results.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999,
+          background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.1)', maxHeight: 220, overflowY: 'auto', marginTop: 2,
+        }}>
+          {results.map(u => (
+            <button key={u.user_id} type="button" onMouseDown={() => select(u)} style={{
+              display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px',
+              border: 'none', background: 'none', cursor: 'pointer', borderBottom: '1px solid #f1f5f9',
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{u.nickname || '—'}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>{u.user_id?.slice(0, 24)}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export {
   T,
   PERMS, hasPermission,
@@ -212,4 +305,5 @@ export {
   fmt, fmtDate, bioAgeColor,
   ALL_ROLES, EMPTY_USER,
   StatCard, RichStatCard, Badge,
+  UserPicker,
 };

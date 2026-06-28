@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
-  Users, UserCog, Plus, Pencil, Trash2, X, Check, ChevronDown,
+  Users, UserCog, Plus, Pencil, Trash2, X, Check, ChevronDown, GraduationCap,
 } from 'lucide-react';
 import { useLang, fmt, fmtDate, Badge, StatCard, PERMS, hasPermission } from '../shared.jsx';
 
@@ -443,6 +443,18 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
                 <td className="muted">{fmtDate(p.created_at)}</td>
                 <td>
                   <div className="row-actions">
+                    {p.user_id && <button className="icon-btn" title="Enroll in Academy" onClick={async (e) => {
+                      const btn = e.currentTarget;
+                      try {
+                        await axios.post('/api/academy/enrollments', { user_id: p.user_id });
+                        btn.style.color = '#10b981';
+                        setTimeout(() => { btn.style.color = ''; }, 2000);
+                      } catch (err) {
+                        btn.style.color = '#ef4444';
+                        btn.title = err.response?.data?.error || err.message;
+                        setTimeout(() => { btn.style.color = ''; }, 3000);
+                      }
+                    }}><GraduationCap size={14} /></button>}
                     {hasPermission(session, PERMS.COACHES_WRITE) && <button className="icon-btn" title={t.modal.editCoach} onClick={() => setModal({ type: 'edit', coach: p })}><Pencil size={14} /></button>}
                     {hasPermission(session, PERMS.COACHES_DELETE) && <button className="icon-btn danger" title={t.modal.deleteCoach} onClick={() => setModal({ type: 'delete', coach: p })}><Trash2 size={14} /></button>}
                   </div>

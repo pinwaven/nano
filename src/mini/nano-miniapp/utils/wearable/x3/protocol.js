@@ -10,7 +10,7 @@ const NOTIFY_MAP = {
   [SERVICE_UUID]: { txCharUUID: NOTIFY_UUID, rxCharUUID: WRITE_UUID },
 }
 
-const X3_NAME_PREFIXES = ['X3', 'X3B']
+const X3_NAME_PREFIXES = ['X3', 'X6']
 
 // --- Low-level frame primitives ---
 

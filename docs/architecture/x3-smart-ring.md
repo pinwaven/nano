@@ -16,7 +16,7 @@ The ring exposes a single custom service with two characteristics.
 
 > **WeChat BLE UUID normalization:** WeChat returns service/characteristic UUIDs in full 128-bit form with dashes (e.g. `0000FFF0-0000-1000-8000-00805F9B34FB`). The `BLEManager._normalizeUUID()` helper strips dashes and lowercases, but does **not** expand short UUIDs. Always define X3 UUIDs in their normalized full form (no dashes, lowercase) as done in `x3/protocol.js` — never as the short 4-character alias.
 
-Advertisement names begin with `X3` or `X3B` — used for scanning in `X3_NAME_PREFIXES`.
+Advertisement names begin with `X3` (covering X3B, X3C, X3D, …) or `X6` (covering X6F, X6E, X6B, …) — stored in `X3_NAME_PREFIXES`. The X6 hardware series uses the identical BLE GATT structure and command set as X3; no protocol differences have been observed. Both families are handled by the same `X3Ring` adapter.
 
 ---
 
@@ -373,8 +373,10 @@ Wire these in when the health tab UI is ready to display the corresponding dimen
 
 **Brand detection during scan:**
 ```js
-const brand = chosen.name.startsWith('X3') ? 'x3' : 'colmi'
+const brand = isAizo ? 'aizo'
+  : (nameLower.startsWith('x3') || nameLower.startsWith('x6') ? 'x3' : 'colmi')
 ```
+X6 devices are mapped to brand `'x3'` because they share the same protocol and `X3Ring` adapter.
 
 **X3 sync is single-phase** (no real-time measurement step) — all data is historical log data read off the ring directly. Colmi requires a second phase for on-demand HRV/SpO2.
 

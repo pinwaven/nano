@@ -4,9 +4,9 @@ import { marked } from 'marked';
 import {
   X, Check, Trash2, Plus, Pencil, ChevronDown, ChevronUp, ChevronRight,
   Upload, Video, FileText, BookOpen, Play, Target, TrendingUp,
-  GraduationCap, Award, ClipboardList,
+  GraduationCap, Award, ClipboardList, Users,
 } from 'lucide-react';
-import { useLang, fmt, fmtDate, Badge, StatCard } from '../shared.jsx';
+import { useLang, fmt, fmtDate, Badge, StatCard, UserPicker } from '../shared.jsx';
 
 // ── Academy helpers ───────────────────────────────────────────────────────────
 
@@ -713,7 +713,15 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
     min_credits: cert?.min_credits ?? 0,
     badge_image_url: cert?.badge_image_url || '',
     is_active: cert?.is_active !== false,
+    cert_number_prefix: cert?.cert_number_prefix || '',
+    issuing_org: cert?.issuing_org || '',
+    school_org: cert?.school_org || '',
+    validity_years: cert?.validity_years ?? 3,
+    course_display_name: cert?.course_display_name || '',
   });
+  const [templateFile, setTemplateFile] = useState(null);
+  const [templateOssKey, setTemplateOssKey] = useState(cert?.template_image_oss_key || '');
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedCourseIds, setSelectedCourseIds] = useState(cert?.required_course_ids || []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -725,9 +733,22 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.title.trim()) { setError(ta.titleRequired); return; }
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setUploadProgress(0);
     try {
-      const payload = { ...form, required_course_ids: selectedCourseIds, min_credits: parseInt(form.min_credits) || 0 };
+      let template_image_oss_key = templateOssKey;
+      if (templateFile) {
+        const presignRes = await axios.get('/api/oss/presign', { params: { type: 'cert', filename: templateFile.name } });
+        if (!presignRes.data.success) throw new Error(presignRes.data.error || ta.uploadFailed);
+        await uploadToOSS(presignRes.data.url, templateFile, setUploadProgress);
+        template_image_oss_key = presignRes.data.key;
+      }
+      const payload = {
+        ...form,
+        required_course_ids: selectedCourseIds,
+        min_credits: parseInt(form.min_credits) || 0,
+        validity_years: parseInt(form.validity_years) || 3,
+        template_image_oss_key: template_image_oss_key || null,
+      };
       if (isEdit) await axios.put(`/api/academy/certifications/${cert.id}`, payload);
       else await axios.post('/api/academy/certifications', payload);
       onSave();
@@ -740,7 +761,7 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 600 }}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 640 }}>
         <div className="modal-header">
           <span>{isEdit ? ta.editCert : ta.newCert}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
@@ -749,7 +770,7 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
           <div className="form-grid">
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{ta.title}</span>
-              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Certified Longevity Coach" />
+              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. PRECISION LONGEVITY PRACTITIONER" />
             </label>
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{ta.description}</span>
@@ -768,10 +789,45 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
               <span>{ta.minCredits}</span>
               <input type="number" min={0} value={form.min_credits} onChange={e => setForm(f => ({ ...f, min_credits: e.target.value }))} />
             </label>
+            <label className="form-field">
+              <span>{ta.certNumberPrefix}</span>
+              <input value={form.cert_number_prefix} onChange={e => setForm(f => ({ ...f, cert_number_prefix: e.target.value }))} placeholder="e.g. AEVIVA" />
+            </label>
+            <label className="form-field">
+              <span>{ta.validityYears}</span>
+              <input type="number" min={1} value={form.validity_years} onChange={e => setForm(f => ({ ...f, validity_years: e.target.value }))} />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.courseDisplayName}</span>
+              <input value={form.course_display_name} onChange={e => setForm(f => ({ ...f, course_display_name: e.target.value }))} placeholder="e.g. 谢克曼长寿管理实操班" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.issuingOrg}</span>
+              <textarea value={form.issuing_org} onChange={e => setForm(f => ({ ...f, issuing_org: e.target.value }))} rows={2} style={{ resize: 'vertical' }} placeholder="e.g. RANDY W. SCHEKMAN INTERNATIONAL HEALTH EDUCATION COLLEGE LIMITED" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.schoolOrg}</span>
+              <input value={form.school_org} onChange={e => setForm(f => ({ ...f, school_org: e.target.value }))} placeholder="e.g. AEVIVA LONGEVITY INSTITUTE" />
+            </label>
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>Badge Image URL (optional)</span>
               <input value={form.badge_image_url} onChange={e => setForm(f => ({ ...f, badge_image_url: e.target.value }))} placeholder="https://…" />
             </label>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span className="form-label-text">{ta.templateImage}</span>
+              <label className="upload-zone">
+                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => setTemplateFile(e.target.files[0])} />
+                <Upload size={18} style={{ marginBottom: 6, color: 'var(--muted)' }} />
+                <span className="upload-zone-hint">
+                  {templateFile ? templateFile.name : (templateOssKey ? ta.replaceTemplateImage : ta.selectTemplateImage)}
+                </span>
+              </label>
+              {busy && templateFile && (
+                <div className="upload-progress">
+                  <div className="upload-progress-bar" style={{ width: `${uploadProgress}%` }} />
+                </div>
+              )}
+            </div>
             <div className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span className="form-label-text">{ta.requiredCourses}</span>
               <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 6, padding: 8 }}>
@@ -792,6 +848,281 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
                 <span>{ta.active}</span>
               </label>
             )}
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              <Check size={14} />{busy ? ta.uploading : t.modal.save}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EnrollModal({ onClose, onSave, prefilledUserId = '', prefilledUserName = '' }) {
+  const { t } = useLang();
+  const ta = t.academy;
+  const [selectedUser, setSelectedUser] = useState(
+    prefilledUserId ? { user_id: prefilledUserId, nickname: prefilledUserName } : null
+  );
+  const [cohort, setCohort] = useState('');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!selectedUser?.user_id) { setError('Please select a user'); return; }
+    setSaving(true); setError('');
+    try {
+      await axios.post('/api/academy/enrollments', {
+        user_id: selectedUser.user_id,
+        cohort: cohort || undefined,
+        notes: notes || undefined,
+      });
+      onSave();
+    } catch (err) {
+      setError(err.response?.data?.error || err.message);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{ta.enrollTitle}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSave} className="modal-body">
+          <div className="form-grid">
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <UserPicker value={selectedUser} onChange={setSelectedUser} label={`${ta.userOpenid} *`} />
+            </div>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.cohort}</span>
+              <input value={cohort} onChange={e => setCohort(e.target.value)} placeholder="e.g. 第一期" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>Notes</span>
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ resize: 'vertical' }} />
+            </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={saving}>{saving ? '…' : t.modal.save}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function GrantCertModal({ certifications, onClose, onSave, prefilledUserId = '', prefilledUserName = '' }) {
+  const { t } = useLang();
+  const ta = t.academy;
+  const today = new Date().toISOString().slice(0, 10);
+  const [selectedUser, setSelectedUser] = useState(
+    prefilledUserId ? { user_id: prefilledUserId, nickname: prefilledUserName } : null
+  );
+  const [form, setForm] = useState({
+    certification_id: '',
+    certificate_number: '',
+    issue_date: today,
+    expiry_date: '',
+    assessment_period: '',
+    score: '',
+    notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!selectedUser?.user_id) { setError('Please select a user'); return; }
+    if (!form.certification_id) { setError('Please select a certification template'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const payload = {
+        user_id: selectedUser.user_id,
+        certification_id: Number(form.certification_id),
+        certificate_number: form.certificate_number || undefined,
+        issue_date: form.issue_date || undefined,
+        expiry_date: form.expiry_date || undefined,
+        score: form.score !== '' ? Number(form.score) : undefined,
+        assessment_period: form.assessment_period || undefined,
+        notes: form.notes || undefined,
+      };
+      await axios.post('/api/academy/coach-certifications', payload);
+      onSave();
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{ta.grantCertTitle}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={e => { e.preventDefault(); handleSave(); }} className="modal-body">
+          <div className="form-grid">
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <UserPicker value={selectedUser} onChange={setSelectedUser} label={`${ta.userOpenid} *`} />
+            </div>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.selectCertTemplate} *</span>
+              <select value={form.certification_id} onChange={e => set('certification_id', e.target.value)} required>
+                <option value="">— {ta.selectCertTemplate} —</option>
+                {certifications.map(c => (
+                  <option key={c.id} value={c.id}>{c.title} ({c.tier})</option>
+                ))}
+              </select>
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.certNumber}</span>
+              <input value={form.certificate_number} onChange={e => set('certificate_number', e.target.value)}
+                placeholder="e.g. AEVIVA20260614001" />
+            </label>
+            <label className="form-field">
+              <span>{ta.issueDate}</span>
+              <input type="date" value={form.issue_date} onChange={e => set('issue_date', e.target.value)} />
+            </label>
+            <label className="form-field">
+              <span>{ta.expiryDate}</span>
+              <input type="date" value={form.expiry_date} onChange={e => set('expiry_date', e.target.value)} />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.assessmentPeriod}</span>
+              <input value={form.assessment_period} onChange={e => set('assessment_period', e.target.value)}
+                placeholder="e.g. 【第一期】2026年6月14日" />
+            </label>
+            <label className="form-field">
+              <span>{ta.certScore}</span>
+              <input type="number" min={0} max={100} value={form.score} onChange={e => set('score', e.target.value)} placeholder="Optional" />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>Notes</span>
+              <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} style={{ resize: 'vertical' }} />
+            </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>{t.modal.cancel}</button>
+            <button type="submit" className="btn-primary" disabled={saving}>{saving ? '…' : t.modal.save}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function IssuedCertModal({ issued, onClose, onSave }) {
+  const { t } = useLang();
+  const ta = t.academy;
+  const [form, setForm] = useState({
+    certificate_number: issued?.certificate_number || '',
+    issue_date: issued?.issue_date ? issued.issue_date.slice(0, 10) : new Date().toISOString().slice(0, 10),
+    expiry_date: issued?.expiry_date ? issued.expiry_date.slice(0, 10) : '',
+    assessment_period: issued?.assessment_period || '',
+    score: issued?.score ?? '',
+    is_revoked: issued?.is_revoked || false,
+    notes: issued?.notes || '',
+  });
+  const [certFile, setCertFile] = useState(null);
+  const [certOssKey, setCertOssKey] = useState(issued?.cert_oss_key || '');
+  const [progress, setProgress] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.certificate_number.trim()) { setError(ta.certNumber + ' is required'); return; }
+    setBusy(true); setError(''); setProgress(0);
+    try {
+      let cert_oss_key = certOssKey;
+      if (certFile) {
+        const presignRes = await axios.get('/api/oss/presign', { params: { type: 'cert', filename: certFile.name } });
+        if (!presignRes.data.success) throw new Error(presignRes.data.error || ta.uploadFailed);
+        await uploadToOSS(presignRes.data.url, certFile, setProgress);
+        cert_oss_key = presignRes.data.key;
+      }
+      const payload = {
+        ...form,
+        score: form.score !== '' ? parseInt(form.score) : null,
+        expiry_date: form.expiry_date || null,
+        cert_oss_key: cert_oss_key || null,
+      };
+      await axios.put(`/api/academy/coach-certifications/${issued.id}`, payload);
+      onSave();
+    } catch (err) { setError(err.response?.data?.error || err.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
+        <div className="modal-header">
+          <span>{ta.editIssuedCert}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+            {issued.cert_title} — {issued.nickname || issued.user_id}
+          </div>
+          <div className="form-grid">
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.certNumber} *</span>
+              <input value={form.certificate_number} onChange={e => setForm(f => ({ ...f, certificate_number: e.target.value }))} placeholder="e.g. AEVIVA202405200001" />
+            </label>
+            <label className="form-field">
+              <span>{ta.issueDate}</span>
+              <input type="date" value={form.issue_date} onChange={e => setForm(f => ({ ...f, issue_date: e.target.value }))} />
+            </label>
+            <label className="form-field">
+              <span>{ta.expiryDate}</span>
+              <input type="date" value={form.expiry_date} onChange={e => setForm(f => ({ ...f, expiry_date: e.target.value }))} />
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.assessmentPeriod}</span>
+              <input value={form.assessment_period} onChange={e => setForm(f => ({ ...f, assessment_period: e.target.value }))} placeholder="e.g. 【第一期】2026年6月14日" />
+            </label>
+            <label className="form-field">
+              <span>{ta.certScore}</span>
+              <input type="number" min={0} max={100} value={form.score} onChange={e => setForm(f => ({ ...f, score: e.target.value }))} placeholder="Optional" />
+            </label>
+            <label className="form-field" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={form.is_revoked} onChange={e => setForm(f => ({ ...f, is_revoked: e.target.checked }))} />
+              <span>{ta.revoked}</span>
+            </label>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span className="form-label-text">{ta.certFile}</span>
+              <label className="upload-zone">
+                <input type="file" accept="image/*,.pdf" style={{ display: 'none' }} onChange={e => setCertFile(e.target.files[0])} />
+                <Upload size={18} style={{ marginBottom: 6, color: 'var(--muted)' }} />
+                <span className="upload-zone-hint">
+                  {certFile ? certFile.name : (certOssKey ? ta.replaceCertFile : ta.selectCertFile)}
+                </span>
+              </label>
+              {busy && certFile && (
+                <div className="upload-progress">
+                  <div className="upload-progress-bar" style={{ width: `${progress}%` }} />
+                </div>
+              )}
+            </div>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>Notes</span>
+              <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ resize: 'vertical' }} />
+            </label>
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
@@ -953,6 +1284,8 @@ function AcademyTab() {
   const [library, setLibrary] = useState([]);
   const [progress, setProgress] = useState([]);
   const [certifications, setCertifications] = useState([]);
+  const [issued, setIssued] = useState([]);
+  const [enrollments, setEnrollments] = useState([]);
   const [paths, setPaths] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -965,13 +1298,15 @@ function AcademyTab() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [cRes, lRes, pRes, certRes, pathRes, lbRes] = await Promise.allSettled([
+      const [cRes, lRes, pRes, certRes, pathRes, lbRes, issuedRes, enrollRes] = await Promise.allSettled([
         axios.get('/api/academy/courses'),
         axios.get('/api/academy/library'),
         axios.get('/api/academy/course-progress'),
         axios.get('/api/academy/certifications'),
         axios.get('/api/academy/learning-paths'),
         axios.get('/api/academy/leaderboard'),
+        axios.get('/api/academy/issued-certifications'),
+        axios.get('/api/academy/enrollments'),
       ]);
       setCourses(cRes.status === 'fulfilled' ? (cRes.value.data.courses || []) : []);
       setLibrary(lRes.status === 'fulfilled' ? (lRes.value.data.items || []) : []);
@@ -979,6 +1314,8 @@ function AcademyTab() {
       setCertifications(certRes.status === 'fulfilled' ? (certRes.value.data.certifications || []) : []);
       setPaths(pathRes.status === 'fulfilled' ? (pathRes.value.data.paths || []) : []);
       setLeaderboard(lbRes.status === 'fulfilled' ? (lbRes.value.data.leaderboard || []) : []);
+      setIssued(issuedRes.status === 'fulfilled' ? (issuedRes.value.data.issued || []) : []);
+      setEnrollments(enrollRes.status === 'fulfilled' ? (enrollRes.value.data.enrollments || []) : []);
     } catch (err) { console.error('Academy fetch error:', err); }
     finally { setLoading(false); }
   }, []);
@@ -1028,6 +1365,12 @@ function AcademyTab() {
         </button>
         <button className={`subtab-btn${subTab === 'certifications' ? ' active' : ''}`} onClick={() => setSubTab('certifications')}>
           <Award size={13} />{ta.certificationsTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'enrollments' ? ' active' : ''}`} onClick={() => setSubTab('enrollments')}>
+          <Users size={13} />{ta.enrollTab}
+        </button>
+        <button className={`subtab-btn${subTab === 'issued' ? ' active' : ''}`} onClick={() => setSubTab('issued')}>
+          <GraduationCap size={13} />{ta.issuedTab}
         </button>
         <button className={`subtab-btn${subTab === 'paths' ? ' active' : ''}`} onClick={() => setSubTab('paths')}>
           <Target size={13} />{ta.pathsTab}
@@ -1273,6 +1616,132 @@ function AcademyTab() {
         </div>
       )}
 
+      {subTab === 'enrollments' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{ta.countEnrolled(enrollments.length)}</span>
+            <button className="btn-primary" onClick={() => setModal({ type: 'enroll' })}>
+              + {ta.enrollBtn}
+            </button>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{ta.title.replace(' *', '')}</th>
+                <th>{ta.cohort}</th>
+                <th>{ta.enrolledAt}</th>
+                <th>Progress</th>
+                <th>{ta.enrollStatus}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {enrollments.length === 0 && (
+                <tr><td colSpan={6} className="empty-row">{ta.noEnrolled}</td></tr>
+              )}
+              {enrollments.map(row => (
+                <tr key={row.id}>
+                  <td>
+                    <div className="bold">{row.nickname || '—'}</div>
+                    <div className="muted mono" style={{ fontSize: 11 }}>{row.user_id?.slice(0, 18)}…</div>
+                  </td>
+                  <td>{row.cohort ? <Badge color="#6366f1">{row.cohort}</Badge> : <span className="muted">—</span>}</td>
+                  <td className="muted">{row.enrolled_at ? row.enrolled_at.slice(0, 10) : '—'}</td>
+                  <td>
+                    <span style={{ fontSize: 12 }}>{row.completed_lessons} lessons · {row.total_credits} cr</span>
+                  </td>
+                  <td>
+                    {row.status === 'active'
+                      ? <Badge color="#10b981">Active</Badge>
+                      : <Badge color="#94a3b8">{ta.inactive}</Badge>}
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" title={ta.grantCertBtn}
+                        onClick={() => setModal({ type: 'grant-cert', userId: row.user_id, userName: row.nickname })}>
+                        <Award size={14} />
+                      </button>
+                      <button className="icon-btn" title={row.status === 'active' ? ta.deactivate : ta.reactivate}
+                        onClick={async () => {
+                          await axios.put(`/api/academy/enrollments/${row.id}`, { status: row.status === 'active' ? 'inactive' : 'active' });
+                          fetchData();
+                        }}>
+                        {row.status === 'active' ? <X size={14} /> : <Check size={14} />}
+                      </button>
+                      <button className="icon-btn danger" title="Remove"
+                        onClick={async () => {
+                          if (!confirm(`Remove ${row.nickname || row.user_id} from Academy?`)) return;
+                          await axios.delete(`/api/academy/enrollments/${row.id}`);
+                          fetchData();
+                        }}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {subTab === 'issued' && (
+        <div className="card">
+          <div className="table-toolbar">
+            <span className="table-count">{ta.countIssued(issued.length)}</span>
+            <button className="btn-primary" onClick={() => setModal({ type: 'grant-cert' })}>
+              + {ta.grantCertBtn}
+            </button>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{ta.title.replace(' *', '')}</th>
+                <th>Coach</th>
+                <th>{ta.certNumber}</th>
+                <th>{ta.issueDate}</th>
+                <th>{ta.assessmentPeriod}</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {issued.length === 0 && (
+                <tr><td colSpan={7} className="empty-row">{ta.noIssued}</td></tr>
+              )}
+              {issued.map(row => (
+                <tr key={row.id}>
+                  <td className="bold">{row.cert_title}</td>
+                  <td>
+                    <div style={{ fontSize: 13 }}>{row.nickname || '—'}</div>
+                    <div className="muted mono" style={{ fontSize: 11 }}>{row.user_id?.slice(0, 16)}</div>
+                  </td>
+                  <td className="mono" style={{ fontSize: 12 }}>
+                    {row.certificate_number
+                      ? <span style={{ color: '#6366f1' }}>{row.certificate_number}</span>
+                      : <span className="muted">—</span>}
+                  </td>
+                  <td className="muted">{row.issue_date ? row.issue_date.slice(0, 10) : '—'}</td>
+                  <td className="muted" style={{ fontSize: 12 }}>{row.assessment_period || '—'}</td>
+                  <td>
+                    {row.is_revoked
+                      ? <Badge color="#ef4444">{ta.revokedBadge}</Badge>
+                      : row.certificate_number
+                        ? <Badge color="#10b981">{ta.valid}</Badge>
+                        : <Badge color="#f59e0b">Pending</Badge>}
+                  </td>
+                  <td>
+                    <button className="icon-btn" title={ta.editIssuedCert} onClick={() => setModal({ type: 'edit-issued', issued: row })}>
+                      <Pencil size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {subTab === 'paths' && (
         <div className="card">
           <div className="table-toolbar">
@@ -1369,6 +1838,10 @@ function AcademyTab() {
                   <div style={{ fontSize: 14, fontWeight: 700, color: '#6366f1' }}>{coach.total_credits} cr</div>
                   <div style={{ fontSize: 11, color: '#94a3b8' }}>{coach.completed_lessons} lessons</div>
                 </div>
+                <button className="icon-btn" title={ta.grantCertBtn}
+                  onClick={() => setModal({ type: 'grant-cert', userId: coach.coach_user_id, userName: coach.name })}>
+                  <Award size={14} />
+                </button>
               </div>
             ))}
           </div>
@@ -1387,6 +1860,9 @@ function AcademyTab() {
       {modal?.type === 'delete-lesson' && <DeleteLessonConfirm lesson={modal.lesson} onClose={() => setModal(null)} onConfirm={() => { setModal(null); refreshLessons(modal.courseId); }} />}
       {modal?.type === 'add-cert'      && <CertificationModal cert={null} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit-cert'     && <CertificationModal cert={modal.cert} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'enroll'        && <EnrollModal prefilledUserId={modal.userId || ''} prefilledUserName={modal.userName || ''} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'grant-cert'    && <GrantCertModal certifications={certifications} prefilledUserId={modal.userId || ''} prefilledUserName={modal.userName || ''} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit-issued'   && <IssuedCertModal issued={modal.issued} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'add-path'      && <LearningPathModal path={null} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit-path'     && <LearningPathModal path={modal.path} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
     </>
