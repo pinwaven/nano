@@ -10,3 +10,4 @@ temp/
 backup/
 backups/
 .antigravitycli/*.json
+*.key
