@@ -942,7 +942,11 @@ Component({
         this.setData({ avatarLetter: letter })
       }
       if (this.properties.userId) this._loadHealth()
-      this._loadWearableFromStorage()
+      if (this.properties.mode === 'coach') {
+        this._loadRingDataFromServer()
+      } else {
+        this._loadWearableFromStorage()
+      }
 
       // Register with app so onNeedPrivacyAuthorization can notify this component
       const _app = getApp()
@@ -2167,6 +2171,136 @@ Component({
             ...visuals,
           })
         }
+      } catch (_) {}
+    },
+
+    async _loadRingDataFromServer() {
+      const { userId, lang } = this.properties
+      if (!userId) return
+      const isZh = (lang || 'zh') !== 'en'
+      try {
+        const [vitalsRes, activityRes, sleepRes] = await Promise.all([
+          this._req(`${BASE}/api/health-events?openid=${encodeURIComponent(userId)}&category=vitals&limit=200`),
+          this._req(`${BASE}/api/health-events?openid=${encodeURIComponent(userId)}&category=activity&limit=14`),
+          this._req(`${BASE}/api/health-events?openid=${encodeURIComponent(userId)}&category=sleep&limit=14`),
+        ])
+        const vitalsEvents   = vitalsRes.data?.events   || []
+        const activityEvents = activityRes.data?.events || []
+        const sleepEvents    = sleepRes.data?.events    || []
+        if (!vitalsEvents.length && !activityEvents.length && !sleepEvents.length) return
+
+        const _pd = (data) => typeof data === 'string' ? JSON.parse(data) : (data || {})
+        const _tsFromExtId = (extId) => {
+          const ts = (extId || '').split('_').pop()
+          if (!ts || ts.length !== 14 || !/^\d{14}$/.test(ts)) return null
+          return `${ts.slice(0,4)}-${ts.slice(4,6)}-${ts.slice(6,8)} ${ts.slice(8,10)}:${ts.slice(10,12)}:${ts.slice(12,14)}`
+        }
+
+        // Derive syncedAt from most recent ingested_at across all events
+        let latestIngestedMs = 0
+        for (const ev of [...vitalsEvents, ...activityEvents, ...sleepEvents]) {
+          const t = ev.ingested_at ? new Date(ev.ingested_at).getTime() : 0
+          if (t > latestIngestedMs) latestIngestedMs = t
+        }
+        const rawRing = { syncedAt: latestIngestedMs || Date.now() }
+
+        // Activity
+        const actEv = activityEvents[0]
+        if (actEv) {
+          const d = _pd(actEv.data)
+          rawRing.steps     = d.steps      ?? null
+          rawRing.calories  = d.calories   ?? null
+          rawRing.distance  = d.distance_m ?? null
+          rawRing.stepSlots = d.slots      ?? null
+        }
+
+        // Sleep (most recent night + multi-night history for chart)
+        const sleepEv = sleepEvents[0]
+        if (sleepEv) {
+          const d = _pd(sleepEv.data)
+          rawRing.sleepMinutes = d.duration_minutes ?? null
+          rawRing.sleepDeep    = d.deep_minutes     ?? null
+          rawRing.sleepLight   = d.light_minutes    ?? null
+          rawRing.sleepRem     = d.rem_minutes      ?? null
+          rawRing.sleepAwake   = d.awake_minutes    ?? null
+          rawRing.sleepStart   = d.sleep_start_min  ?? null
+          rawRing.sleepEnd     = d.sleep_end_min    ?? null
+          rawRing.sleepSlots   = d.slots            ?? null
+        }
+        rawRing.sleepHistory = sleepEvents
+          .map(ev => ({ date: (ev.data_date || '').substring(0, 10), totalMinutes: _pd(ev.data).duration_minutes || 0 }))
+          .filter(n => n.totalMinutes > 0)
+
+        // Vitals: split into resting-HR, HRV slots, SpO2 slots, temp, realtime
+        const hrvSlots = [], spo2Slots = []
+        let latestHrv = null, latestSpo2 = null
+
+        for (const ev of vitalsEvents) {
+          const d = _pd(ev.data)
+          const extId = ev.external_id || ''
+
+          if (extId.includes('_resting_hr_')) {
+            if (rawRing.restingHr == null) {
+              rawRing.restingHr = d.resting_hr ?? null
+              if (d.hr_slots) rawRing.hrSlots = d.hr_slots
+            }
+          } else if (extId.includes('_hrv_')) {
+            const ts = _tsFromExtId(extId)
+            if (ts) {
+              hrvSlots.push({
+                timestamp: ts,
+                hrv:       d.hrv_ms          ?? null,
+                stress:    d.stress          ?? null,
+                breath:    d.breath_rate     ?? null,
+                heartRate: d.heart_rate_hrv  ?? null,
+                highBP:    d.bp_systolic     ?? null,
+                lowBP:     d.bp_diastolic    ?? null,
+              })
+            }
+            if (!latestHrv) latestHrv = d
+          } else if (extId.includes('_spo2_')) {
+            const ts = _tsFromExtId(extId)
+            if (ts) spo2Slots.push({ timestamp: ts, spo2: d.spo2 ?? null })
+            if (!latestSpo2 && d.spo2 != null) latestSpo2 = d
+          } else if (extId.includes('_temp_')) {
+            if (rawRing.bodyTempC == null && d.body_temp_c != null) rawRing.bodyTempC = d.body_temp_c
+          } else if (extId.includes('_realtime_')) {
+            if (!latestHrv) latestHrv = d
+            if (!latestSpo2 && d.spo2 != null) latestSpo2 = d
+          }
+        }
+
+        if (hrvSlots.length)  rawRing.hrvSlots  = hrvSlots.sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))
+        if (spo2Slots.length) rawRing.spo2Slots = spo2Slots.sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))
+
+        if (latestHrv) {
+          rawRing.hrv         = latestHrv.hrv_ms       ?? null
+          rawRing.stress      = latestHrv.stress        ?? null
+          rawRing.breathRate  = latestHrv.breath_rate   ?? null
+          rawRing.systolicBP  = latestHrv.bp_systolic   ?? null
+          rawRing.diastolicBP = latestHrv.bp_diastolic  ?? null
+        }
+        if (latestSpo2) rawRing.spo2 = latestSpo2.spo2
+
+        // Same display pipeline as _loadWearableFromStorage
+        const _rawReads = rawRing.hrvSlots?.length
+          ? _slotsToReadings(rawRing.hrvSlots, rawRing.spo2Slots)
+          : []
+        const realtimeReadings = _fmtRealtimeReadings(_rawReads)
+        const _charts = _buildReadingLineCharts(_rawReads)
+        const _base = _buildRingDisplayData(rawRing, isZh)
+        const ringData = {
+          ..._base, realtimeReadings, hasRealtimeReadings: realtimeReadings.length > 0,
+          ..._charts,
+          hasSlotCharts: _base.hasSlotCharts || _charts.hrvChart.hasData || _charts.spo2Chart.hasData || _charts.stressChart.hasData,
+        }
+        const recentSync = (Date.now() - rawRing.syncedAt) < 24 * 60 * 60 * 1000
+        this.setData({
+          wearableId: '__server__',
+          wearableConnected: recentSync,
+          ringData,
+          twinLoading: false,
+        })
       } catch (_) {}
     },
 
