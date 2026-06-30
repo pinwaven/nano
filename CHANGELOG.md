@@ -8,6 +8,18 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 
+- **QCS order backfill import script** (`scripts/import-qcs-orders.js`, `src/functions/lab/lib/adapters/qcs.js`, `src/functions/lab/index.js`, `tests/import-qcs-orders.test.js`, `tests/lab-qcs-adapter.test.js`, `tests/lab-order.test.js`, `package.json`)
+
+  New operational script that takes a QCS `AK`/`AS`, lists **all** QCS orders, fetches each order's detail, matches the patient phone to a Nano user, and stores matched orders into `lab_orders` + `health_reports`/`health_events`. Orders whose phone matches no user are skipped (no insert).
+
+  **What changed:**
+  - QCS adapter: added `listOrders({config, params})` (paginated `GET /services/labtest/orders`, follows `meta.pagination`) and `phoneFromOrder(detail)` (`mobile || primary_mobile || telephone`).
+  - Lab `index.js`: exposed `insertLabOrder` + `ingestObservations` via `__private` for reuse.
+  - `runImport` orchestrator is dependency-injected and unit-tested (matched insert, skip-no-user, dedup on re-run via existence check, dry-run, per-order error isolation). CLI wires the real adapter + lab DB helpers; `DATABASE_URL` is set from `--env` before requiring the lab `db` singleton.
+  - Run: `npm run import:qcs-orders -- --ak <AK> --as <AS> [--env dev|prod] [--base-url <url>] [--progress <status>] [--dry-run]` (AK/AS also read from `QCS_AK`/`QCS_AS`). Dev + `--dry-run` first.
+  - Added `scripts/tdd-guard-node-reporter.mjs` (node:test → tdd-guard `test.json`) and wired `npm test` to use it.
+  - **No DB migration.**
+
 - **Store cart — inline shipping form with WeChat address pre-fill** (`app.json`, `pages/main/main.{js,wxml,wxss}`, `handlers/chat.js`, `docs/architecture/orders-fulfillment.md`)
 
   The store cart now collects shipping details via an editable 收货信息 form inside the cart sheet, replacing reliance on the deprecated-fragile `wx.chooseAddress()` as the sole path. Recipient name pre-fills from `user.nickname` and phone from `user.phone`; the WeChat address book is an optional pre-fill helper via a 「使用微信地址」 button.

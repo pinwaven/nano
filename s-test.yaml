@@ -169,12 +169,13 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         LAB_WEBHOOK_SECRET: ${env(LAB_WEBHOOK_SECRET)}
+        QCS_DEFAULT_SAMPLE_CENTER_ID: "46"
       triggers:
         - triggerName: lab-http
           triggerType: http
           triggerConfig:
             authType: anonymous
-            methods: ["POST"]
+            methods: ["GET", "POST", "OPTIONS"]
         - triggerName: lab-poll
           triggerType: timer
           triggerConfig:

@@ -1,3 +1,10 @@
+/**
+ * Database client for nano-lab.
+ *
+ * The Pool is created at module scope (outside the FC handler) so that warm
+ * container reuse in FC 3.0 can share a single connection pool across
+ * invocations, avoiding repeated TCP+SSL handshakes on each request.
+ */
 'use strict';
 
 const { Pool } = require('pg');
