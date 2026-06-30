@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(psql *)",
+      "Bash(git -C /Users/pin/waven/nano add CLAUDE.md)",
+      "Bash(git -C /Users/pin/waven/nano commit -m ' *)",
+      "Bash(git *)",
+      "Bash(npm list *)",
+      "Bash(npm run *)",
+      "Bash(curl -s \"https://nano-dev.fros.cc/api/users?q=pin&limit=50&offset=0&sort_field=created_at&sort_dir=desc\" -H \"Authorization: Bearer tokenData-gh9bc7917115bid72c68c8c4693g\")",
+      "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\(0,'utf8'\\); const j=JSON.parse\\(d\\); console.log\\('total:', j.total, 'users count:', j.users?.length, 'first user:', j.users?.[0]?.nickname, 'last user:', j.users?.[j.users?.length-1]?.nickname\\);\")",
+      "Bash(node bin/cli.js --address 4dd20ec90c43ddf59d1c630dfd17d865 get-sleep)",
+      "Bash(node *)",
+      "WebSearch"
+    ]
+  }
+}
