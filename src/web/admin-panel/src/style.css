@@ -2050,3 +2050,82 @@ tr:hover .row-actions { opacity: 1; }
 @media (max-width: 700px) {
   .dashboard-kpi-grid-5 { grid-template-columns: 1fr; }
 }
+
+/* ── Hamburger button (hidden on desktop) ───────────────── */
+.hamburger {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 8px;
+  flex-shrink: 0;
+  border-radius: 6px;
+}
+.hamburger:hover { background: rgba(0,0,0,0.06); }
+.hamburger span {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+}
+
+/* ── Mobile (≤480px) ────────────────────────────────────── */
+@media (max-width: 480px) {
+  /* Sidebar slides in as overlay */
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    z-index: 200;
+    transform: translateX(calc(-1 * var(--sidebar-w)));
+    transition: transform 0.25s ease;
+  }
+  .sidebar.open {
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Dim backdrop behind open sidebar */
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 199;
+  }
+
+  /* Main fills full width (sidebar is out of flow) */
+  #root { overflow: hidden; }
+  .main { width: 100%; }
+
+  /* Show hamburger */
+  .hamburger { display: flex; }
+
+  /* Topbar */
+  .topbar { padding: 0 10px; gap: 6px; }
+  .topbar-title { font-size: 14px; }
+
+  /* Content */
+  .content { padding: 14px 12px; gap: 14px; }
+
+  /* Forms: collapse to single column */
+  .form-grid { grid-template-columns: 1fr !important; }
+
+  /* Toolbar: wrap so search can go full-width */
+  .toolbar { flex-wrap: wrap; }
+  .toolbar-search { width: 100% !important; min-width: 0; }
+
+  /* Modals */
+  .modal { width: 96vw; max-height: 92vh; }
+  .modal-footer { flex-direction: column-reverse; gap: 8px; }
+  .modal-footer > * { width: 100%; }
+
+  /* Drawers */
+  .drawer { width: 92vw; }
+
+  /* Tables: smaller, scroll horizontally */
+  .data-table { font-size: 12px; }
+  .data-table th, .data-table td { padding: 8px 10px; white-space: nowrap; }
+}

@@ -161,10 +161,13 @@ function AdminPanel({ session, onLogout }) {
 
   const defaultTab = 'dashboard';
   const [tab, setTab] = useState(defaultTab);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const handleNavClick = (id) => { setTab(id); setSidebarOpen(false); };
 
   return (
     <LangCtx.Provider value={{ lang, t, toggleLang }}>
-      <aside className="sidebar">
+      <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
         <div className="sidebar-brand">
           {!isSuperadmin && session?.channelLogo
             ? <img src={session.channelLogo} alt={session.channelName} className="brand-logo" style={{ borderRadius: 6, objectFit: 'cover' }} />
@@ -176,7 +179,7 @@ function AdminPanel({ session, onLogout }) {
           {visibleNAV.map(({ id, label, icon: Icon, disabled }) => (
             <button key={id}
               className={`nav-item${tab === id ? ' active' : ''}${disabled ? ' disabled' : ''}`}
-              onClick={() => !disabled && setTab(id)}
+              onClick={() => !disabled && handleNavClick(id)}
               style={disabled ? { opacity: 0.35, cursor: 'not-allowed' } : undefined}
               title={disabled ? 'Coming soon' : undefined}
             >
@@ -194,9 +197,13 @@ function AdminPanel({ session, onLogout }) {
           {lastRefresh && <span>{t.updated} {lastRefresh.toLocaleTimeString()}</span>}
         </div>
       </aside>
+      {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
 
       <div className="main">
         <header className="topbar">
+          <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menu">
+            <span /><span /><span />
+          </button>
           <div className="topbar-title">{NAV.find(n => n.id === tab)?.label}</div>
           <button className="refresh-btn" onClick={fetchData} disabled={loading}>
             <RefreshCcw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
