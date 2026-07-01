@@ -6,7 +6,8 @@
     "pages/admin/admin",
     "pages/coach/coach",
     "pages/superadmin/superadmin",
-    "pages/referral/referral"
+    "pages/referral/referral",
+    "pages/webadmin/webadmin"
   ],
   "window": {
     "backgroundTextStyle": "light",

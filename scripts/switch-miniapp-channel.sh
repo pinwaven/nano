@@ -11,7 +11,7 @@ CHANNEL="${1:-}"
 
 case "$CHANNEL" in
   nano)
-    CONFIG="nanovate.project.config.json"
+    CONFIG="waven.project.config.json"
     APPID="wx84bd7d00a6fd626e"
     ;;
   aeviva)

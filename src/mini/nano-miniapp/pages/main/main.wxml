@@ -36,6 +36,10 @@
         <text class="menu-item-icon">🌐</text>
         <text class="menu-item-label">{{t.superadminMenu}}</text>
       </view>
+      <view wx:if="{{isSuperadmin}}" class="menu-item" bindtap="openWebAdmin">
+        <text class="menu-item-icon">🖥</text>
+        <text class="menu-item-label">{{t.webAdminMenu}}</text>
+      </view>
       <view wx:if="{{!isGuest}}" class="menu-divider"></view>
       <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openReferral">
         <text class="menu-item-icon">★</text>

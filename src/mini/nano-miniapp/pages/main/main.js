@@ -183,6 +183,7 @@ const T = {
     adminMenu: '渠道管理',
     coachMenu: '教练面板',
     superadminMenu: '超管面板',
+    webAdminMenu: '网页后台',
     kinoSimMenu: 'Kino 模拟器',
     referralMenu: '邀请好友',
     kinoSimPassTitle: '输入密码',
@@ -389,6 +390,7 @@ const T = {
     adminMenu: 'Channel Admin',
     coachMenu: 'Coach Panel',
     superadminMenu: 'Super Admin',
+    webAdminMenu: 'Web Admin',
     kinoSimMenu: 'Kino Simulator',
     referralMenu: 'Invite Friends',
     kinoSimPassTitle: 'Enter Passcode',
@@ -1232,6 +1234,11 @@ Page({
   openSuperadmin() {
     this.setData({ menuOpen: false })
     wx.navigateTo({ url: '/pages/superadmin/superadmin' })
+  },
+
+  openWebAdmin() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/webadmin/webadmin' })
   },
 
   // ── Kino Simulator ──────────────────────────────────────────────────────────

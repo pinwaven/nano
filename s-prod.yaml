@@ -292,6 +292,8 @@ resources:
         privateKey: ./certs/key.pem
       routeConfig:
         routes:
+          - path: /QJaeMN3iR8.txt
+            functionName: nano-worker
           - path: /api/*
             functionName: nano-worker
           - path: /api

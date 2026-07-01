@@ -159,6 +159,13 @@ exports.handler = async (req, resp, context) => {
         return optionsPayload;
     }
 
+    // WeChat business domain verification file — no auth required
+    if (method === 'GET' && rawPath === '/QJaeMN3iR8.txt') {
+        const wxVerifyPayload = { isBase64Encoded: false, statusCode: 200, headers: { 'Content-Type': 'text/plain' }, body: 'e038f3e1651b72fc26feaf9eb6cf30e7' };
+        if (isStandardHttp) { resp.setStatusCode(200); resp.setHeader('Content-Type', 'text/plain'); resp.send('e038f3e1651b72fc26feaf9eb6cf30e7'); return; }
+        return wxVerifyPayload;
+    }
+
     // Public certificate verification — no auth required
     if (method === 'GET' && path.match(/^\/academy\/verify\/(.+)/)) {
         const certNumber = decodeURIComponent(path.match(/^\/academy\/verify\/(.+)/)[1]);
