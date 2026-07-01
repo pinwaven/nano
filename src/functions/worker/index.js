@@ -69,7 +69,7 @@ const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChan
 const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation } = require('./handlers/users');
 const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
-const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals } = require('./handlers/login');
+const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm } = require('./handlers/login');
 const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign } = require('./handlers/chat');
 
 
@@ -178,7 +178,7 @@ exports.handler = async (req, resp, context) => {
 
     const adminCtx = { role: 'superadmin', username: 'superadmin', channelId: null, accountId: null, canManageSubchannels: false };
     const expectedBearer = process.env.API_BEARER_TOKEN;
-    if (expectedBearer && rawPath && path !== '/admin/login') {
+    if (expectedBearer && rawPath && path !== '/admin/login' && !path.startsWith('/qr-login/')) {
         const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
         const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
         if (token === expectedBearer) {
@@ -310,6 +310,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetCoachUsers(path.match(/\/coach-users\/(\d+)/)[1], query);
             } else if (path.includes('/my-referrals')) {
                 result = await handleGetMyReferrals(query);
+            } else if (path === '/qr-login/status') {
+                result = await handleGetQrLoginStatus(query.session_id);
             } else if (path === '/credits/balance') {
                 result = await handleGetCreditBalance(query);
             } else if (path === '/credits/history') {
@@ -480,7 +482,10 @@ exports.handler = async (req, resp, context) => {
                 const evId = path.match(/\/events\/(\d+)\/signups/)[1];
                 result = requirePermission(adminCtx, 'events:read') || await handleGetEventSignups(evId);
             } else if (path.includes('/events')) {
-                result = requirePermission(adminCtx, 'events:read') || await handleGetEvents(query, adminCtx);
+                // Allow user-level access when openid is present (browsing channel events)
+                result = query.openid
+                    ? await handleGetEvents({ ...query, user_id: query.openid }, adminCtx)
+                    : requirePermission(adminCtx, 'events:read') || await handleGetEvents(query, adminCtx);
             } else {
                 result = { success: false, error: `Unknown GET route: ${path}` };
             }
@@ -497,6 +502,14 @@ exports.handler = async (req, resp, context) => {
                 result = await handleWxAppLogin(parsedBody);
             } else if (path === '/wx-login') {
                 result = await handleWxLogin(parsedBody);
+            } else if (path === '/webview-token') {
+                result = await handlePostWebviewToken(parsedBody);
+            } else if (path === '/exchange-webview-token') {
+                result = await handleExchangeWebviewToken(parsedBody);
+            } else if (path === '/qr-login/init') {
+                result = await handlePostQrLoginInit(parsedBody);
+            } else if (path === '/qr-login/confirm') {
+                result = await handlePostQrLoginConfirm(parsedBody);
             } else if (path === '/resolve-phone') {
                 const { code, app_id } = parsedBody;
                 result = await handleResolvePhone(code, app_id);

@@ -1,1063 +1,16 @@
-import React, { useState, useRef, useEffect, createContext, useContext } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
-import ReactMarkdown from 'react-markdown';
 import wavenLogo from '../../shared/assets/waven-logo-icon.png';
+import { T, LangContext } from './i18n.js';
+import LoginScreen from './components/LoginScreen.jsx';
+import ChatTab from './tabs/ChatTab.jsx';
+import HealthTab from './tabs/HealthTab.jsx';
+import DotsTab from './tabs/DotsTab.jsx';
+import PlansTab from './tabs/PlansTab.jsx';
+import StoreTab from './tabs/StoreTab.jsx';
+import AcademyTab from './tabs/AcademyTab.jsx';
 
 const API = '/api';
-
-// ── i18n ──────────────────────────────────────────────────────────────────────
-
-const T = {
-  en: {
-    subtitle:          'Your Precision Health Companion',
-    signIn:            'Sign in to your account',
-    phoneLabel:        'Phone Number',
-    phonePlaceholder:  '138 0000 0000',
-    continue:          'Continue',
-    verifying:         'Verifying…',
-    errNotFound:       'No account found with this phone number. Please contact your coach.',
-    errNetwork:        'Connection failed. Please check your network and try again.',
-    footerBrand:       'Harvard Innovation Labs',
-    footerTag:         'Member Company',
-    tabChat:           'Chat',
-    tabHealth:         'Health',
-    tabDots:           'Dots',
-    dotsTitle:         'Nutrition Plan',
-    noPlan:            'No nutrition plan yet. Complete a Kino biomarker test to generate your personalized plan.',
-    morning:           'Morning',
-    evening:           'Evening',
-    today:             'Today',
-    tomorrow:          'Tomorrow',
-    initMsg:           'Hello! I am Nano, your personal health companion. How can I help you today?',
-    inputPlaceholder:  'Type a message…',
-    errServer:         'Could not reach the server. Please try again.',
-    profile:           'Profile',
-    gender:            'Gender',
-    born:              'Born',
-    language:          'Language',
-    coach:             'Coach',
-    joined:            'Joined',
-    phone:             'Phone',
-    email:             'Email',
-    bioAge:            'Bio Age',
-    chronoAge:         'Chrono Age',
-    latestBm:          'Latest Biomarkers',
-    trends:            'Trends',
-    noBmData:          'No biomarker data available yet.',
-    noHistory:         'No test history yet.',
-    tests:             n => `${n} test${n !== 1 ? 's' : ''}`,
-    genderMap:         { male: 'Male', female: 'Female' },
-    langMap:           { zh: 'Chinese', en: 'English' },
-    // Onboarding
-    obNamePrompt:      'Before we start, I need a couple of quick details to personalize your health insights. What should I call you?',
-    obNameOnly:        'One quick thing — what is your name?',
-    obNamePlaceholder: 'Your name',
-    obGenderPrompt:    'Great! And what is your gender?',
-    obGenderOnly:      'To personalize your experience, could you share your gender?',
-    male:              'Male',
-    female:            'Female',
-    obBirthdayPrompt:  'What is your date of birth?',
-    obBirthdayOnly:    'One quick thing — could you share your date of birth?',
-    obBodyPrompt:      'Last step — could you share your height and weight? This helps calculate your health metrics.',
-    obBodyOnly:        'One more thing — could you share your height and weight?',
-    obComplete:        'Your profile is all set! How can I help you today?',
-    dpYear:            'Year',
-    dpMonth:           'Month',
-    dpDay:             'Day',
-    dpConfirm:         'Confirm',
-    bsHeight:          'Height',
-    bsWeight:          'Weight',
-    bsConfirm:         'Confirm',
-    bsCm:              'cm',
-    bsKg:              'kg',
-    subAgeLabels: {
-      ResilienceAge:    'Resilience Age',
-      CellularAge:      'Cellular Age',
-      MetabolicAge:     'Metabolic Age',
-      MicroVascularAge: 'Micro-Vascular Age',
-    },
-    subAgeDesc: {
-      ResilienceAge:    'How well you buffer stress.',
-      CellularAge:      'How much raw life-force your cells have.',
-      MetabolicAge:     'How cleanly you burn fuel.',
-      MicroVascularAge: 'How well you deliver nutrients and oxygen.',
-    },
-    bmLabels: {
-      hsCRP:     'hsCRP',
-      GDF15:     'GDF-15',
-      IL6:       'IL-6',
-      GA:        'Glycated Albumin',
-      CystatinC: 'Cystatin C',
-      CD38:      'CD38',
-    },
-  },
-  zh: {
-    subtitle:          '您的精准健康伴侣',
-    signIn:            '登录您的账户',
-    phoneLabel:        '手机号码',
-    phonePlaceholder:  '138 0000 0000',
-    continue:          '继续',
-    verifying:         '验证中…',
-    errNotFound:       '未找到该手机号对应的账户，请联系您的 Coach。',
-    errNetwork:        '连接失败，请检查网络后重试。',
-    footerBrand:       '哈佛大学创新实验室',
-    footerTag:         '成员企业',
-    tabChat:           '对话',
-    tabHealth:         '健康',
-    tabDots:           '营养',
-    dotsTitle:         '营养方案',
-    noPlan:            '暂无营养方案。完成 Kino 生物标志物检测后，系统将为您生成个性化方案。',
-    morning:           '早上',
-    evening:           '晚上',
-    today:             '今天',
-    tomorrow:          '明天',
-    initMsg:           '您好！我是 Nano，您的个人健康伴侣。今天有什么可以帮您的？',
-    inputPlaceholder:  '输入消息…',
-    errServer:         '无法连接服务器，请重试。',
-    profile:           '个人信息',
-    gender:            '性别',
-    born:              '出生日期',
-    language:          '语言',
-    coach:             'Coach',
-    joined:            '注册时间',
-    phone:             '手机',
-    email:             '邮箱',
-    bioAge:            '生理年龄',
-    chronoAge:         '实际年龄',
-    latestBm:          '最新生物标志物',
-    trends:            '趋势',
-    noBmData:          '暂无生物标志物数据。',
-    noHistory:         '暂无检测记录。',
-    tests:             n => `${n} 次检测`,
-    genderMap:         { male: '男', female: '女' },
-    langMap:           { zh: '中文', en: 'English' },
-    // Onboarding
-    obNamePrompt:      '在开始之前，需要了解一些基本信息来个性化您的健康洞察。请问您的姓名是？',
-    obNameOnly:        '有一件小事——请问您叫什么名字？',
-    obNamePlaceholder: '您的姓名',
-    obGenderPrompt:    '好的！请问您的性别是？',
-    obGenderOnly:      '为了个性化您的体验，请问您的性别是？',
-    male:              '男',
-    female:            '女',
-    obBirthdayPrompt:  '请问您的出生日期是？',
-    obBirthdayOnly:    '还有一件事——请告诉我您的出生日期？',
-    obBodyPrompt:      '最后一步——请告诉我您的身高和体重，帮助计算您的健康指标。',
-    obBodyOnly:        '还有一件事——请告诉我您的身高和体重？',
-    obComplete:        '您的个人信息已完善！今天有什么可以帮您的？',
-    dpYear:            '年',
-    dpMonth:           '月',
-    dpDay:             '日',
-    dpConfirm:         '确认',
-    bsHeight:          '身高',
-    bsWeight:          '体重',
-    bsConfirm:         '确认',
-    bsCm:              'cm',
-    bsKg:              'kg',
-    subAgeLabels: {
-      ResilienceAge:    '抗压年龄',
-      CellularAge:      '细胞年龄',
-      MetabolicAge:     '代谢年龄',
-      MicroVascularAge: '微血管年龄',
-    },
-    subAgeDesc: {
-      ResilienceAge:    '衡量你的身体抵御和缓冲压力的能力。',
-      CellularAge:      '衡量你细胞底层的原生生命力。',
-      MetabolicAge:     '衡量你的身体燃烧能量的洁净度与效率。',
-      MicroVascularAge: '衡量你输送营养与氧气的微循环能力。',
-    },
-    bmLabels: {
-      hsCRP:     'hsCRP',
-      GDF15:     'GDF-15',
-      IL6:       'IL-6',
-      GA:        '糖化白蛋白',
-      CystatinC: '胱抑素 C',
-      CD38:      'CD38',
-    },
-  },
-};
-
-const LangContext = createContext({ lang: 'zh', t: T.zh });
-const useLang = () => useContext(LangContext);
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const BM_META = [
-  { key: 'hsCRP',     unit: 'mg/L',      color: '#ef4444' },
-  { key: 'GDF15',     unit: 'pg/mL',     color: '#f97316' },
-  { key: 'IL6',       unit: 'pg/mL',     color: '#a855f7' },
-  { key: 'GA',        unit: '%',         color: '#6375EC' },
-  { key: 'CystatinC', unit: 'mg/L',      color: '#0ea5e9' },
-  { key: 'CD38',      unit: 'xBaseline', color: '#10b981' },
-];
-
-function chronoAge(birthDate) {
-  if (!birthDate) return null;
-  return Math.floor((Date.now() - new Date(birthDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
-}
-
-function fmtDate(d, lang) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US', {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
-}
-
-function bioAgeColor(bio, chrono) {
-  if (!bio || !chrono) return 'var(--text)';
-  const diff = Number(bio) - Number(chrono);
-  if (diff > 2) return '#ef4444';
-  if (diff < -2) return '#10b981';
-  return '#f59e0b';
-}
-
-function parseDate(str) {
-  // Accept YYYY-MM-DD or common variants
-  const cleaned = str.trim().replace(/\//g, '-').replace(/\./g, '-');
-  const match = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (!match) return null;
-  const [, y, m, d] = match;
-  const date = new Date(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
-  if (isNaN(date.getTime())) return null;
-  if (date > new Date()) return null;
-  return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-}
-
-// ── Sparkline ─────────────────────────────────────────────────────────────────
-
-function Sparkline({ values, color, width = 130, height = 38 }) {
-  if (!values || values.length < 2) {
-    return <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>;
-  }
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const pad = 4;
-  const w = width - pad * 2;
-  const h = height - pad * 2;
-  const pts = values.map((v, i) => {
-    const x = pad + (i / (values.length - 1)) * w;
-    const y = pad + h - ((v - min) / range) * h;
-    return `${x},${y}`;
-  }).join(' ');
-  const last = values[values.length - 1];
-  const lx = pad + w;
-  const ly = pad + h - ((last - min) / range) * h;
-  return (
-    <svg width={width} height={height} style={{ display: 'block' }}>
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={lx} cy={ly} r="2.5" fill={color} />
-    </svg>
-  );
-}
-
-// ── Lang toggle ───────────────────────────────────────────────────────────────
-
-function LangToggle({ lang, onChange }) {
-  return (
-    <button className="lang-toggle" onClick={() => onChange(lang === 'zh' ? 'en' : 'zh')}>
-      <span className={lang === 'zh' ? 'lang-active' : ''}>中</span>
-      <span className="lang-sep">/</span>
-      <span className={lang === 'en' ? 'lang-active' : ''}>EN</span>
-    </button>
-  );
-}
-
-// ── Login Screen ──────────────────────────────────────────────────────────────
-
-function LoginScreen({ onLogin, lang, onLangChange }) {
-  const { t } = useLang();
-  const [phone, setPhone] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleLogin = async () => {
-    const cleaned = phone.trim().replace(/[\s\-()]/g, '');
-    if (!cleaned) return;
-    setLoading(true);
-    setError('');
-    try {
-      const r = await axios.get(`${API}/users`);
-      const users = r.data.users || [];
-      const found = users.find(u =>
-        u.phone && u.phone.replace(/[\s\-()]/g, '') === cleaned
-      );
-      if (found) {
-        onLogin(found);
-      } else {
-        setError(t.errNotFound);
-      }
-    } catch {
-      setError(t.errNetwork);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="login-screen">
-      <div className="login-glow" />
-      <div className="login-top-bar">
-        <LangToggle lang={lang} onChange={onLangChange} />
-      </div>
-      <div className="login-brand">
-        <div className="login-logo-ring">
-          <img src={wavenLogo} className="login-logo" alt="Waven" />
-        </div>
-        <div className="login-title">NANO</div>
-        <div className="login-subtitle">{t.subtitle}</div>
-      </div>
-      <div className="login-card">
-        <div className="login-card-label">{t.signIn}</div>
-        <div className="login-field">
-          <label className="login-label">{t.phoneLabel}</label>
-          <input
-            className="login-input"
-            type="tel"
-            inputMode="tel"
-            placeholder={t.phonePlaceholder}
-            value={phone}
-            onChange={e => { setPhone(e.target.value); setError(''); }}
-            onKeyDown={e => { if (e.key === 'Enter') handleLogin(); }}
-            autoFocus
-          />
-        </div>
-        {error && <div className="login-error">{error}</div>}
-        <button
-          className="login-btn"
-          onClick={handleLogin}
-          disabled={!phone.trim() || loading}
-        >
-          {loading && <span className="login-btn-spinner" />}
-          {loading ? t.verifying : t.continue}
-        </button>
-      </div>
-      <div className="login-footer">
-        <span>{t.footerBrand}</span>
-        <span className="login-footer-dot">·</span>
-        <span>{t.footerTag}</span>
-      </div>
-    </div>
-  );
-}
-
-// ── Health Tab ────────────────────────────────────────────────────────────────
-
-function HealthTab({ user }) {
-  const { t, lang } = useLang();
-  const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!user?.user_id) return;
-    setLoading(true);
-    axios.get(`${API}/biomarkers?openid=${encodeURIComponent(user.user_id)}`)
-      .then(r => setRecords(r.data.records || []))
-      .catch(() => setRecords([]))
-      .finally(() => setLoading(false));
-  }, [user?.user_id]);
-
-  const latestRecord   = records.length > 0 ? records[records.length - 1] : null;
-  const latestBm       = latestRecord?.data?.estimated || null;
-  const subAges        = latestRecord?.data?.bioage_profile?.SubAges || null;
-  const trendFor = key => records.map(r => r.data?.estimated?.[key]).filter(v => v != null);
-  const age = chronoAge(user.birth_date);
-
-  const SUB_AGE_KEYS = ['ResilienceAge', 'CellularAge', 'MetabolicAge', 'MicroVascularAge'];
-  const SUB_AGE_COLORS = {
-    ResilienceAge:    '#ef4444',
-    CellularAge:      '#10b981',
-    MetabolicAge:     '#6375EC',
-    MicroVascularAge: '#0ea5e9',
-  };
-
-  return (
-    <div className="health-tab">
-      <div className="health-hero">
-        <div className="health-hero-bg" />
-        <div className="health-avatar">{(user.nickname || 'U')[0].toUpperCase()}</div>
-        <div className="health-name">{user.nickname || 'User'}</div>
-        {(user.bio_age || age) && (
-          <div className="health-bio-row">
-            <div className="health-bio-chip">
-              <span className="health-bio-num" style={{ color: user.bio_age ? bioAgeColor(user.bio_age, age) : 'var(--text-muted)' }}>
-                {user.bio_age ? Number(user.bio_age).toFixed(1) : '—'}
-              </span>
-              <span className="health-bio-unit">{t.bioAge}</span>
-            </div>
-            <div className="health-bio-chip health-bio-chip--dim">
-              <span className="health-bio-num" style={{ color: 'var(--text-sub)' }}>
-                {age ?? '—'}
-              </span>
-              <span className="health-bio-unit">{t.chronoAge}</span>
-            </div>
-          </div>
-        )}
-        {subAges && (
-          <div className="sub-age-grid">
-            {SUB_AGE_KEYS.map(key => (
-              <div key={key} className="sub-age-card">
-                <span className="sub-age-val" style={{ color: SUB_AGE_COLORS[key] }}>
-                  {subAges[key] != null ? subAges[key].toFixed(1) : '—'}
-                </span>
-                <span className="sub-age-label">{t.subAgeLabels[key]}</span>
-                <span className="sub-age-desc">{t.subAgeDesc[key]}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="health-section">
-        <div className="health-section-title">{t.profile}</div>
-        <div className="health-info-grid">
-          {[
-            [t.gender,   t.genderMap[user.gender] || user.gender],
-            [t.born,     fmtDate(user.birth_date, lang)],
-            [t.language, t.langMap[user.language] || user.language],
-            [t.coach,    user.coach_name],
-            [t.joined,   fmtDate(user.created_at, lang)],
-            [t.phone,    user.phone],
-            [t.email,    user.email],
-          ].map(([k, v]) => (
-            <React.Fragment key={k}>
-              <span className="health-info-key">{k}</span>
-              <span className="health-info-val">{v || '—'}</span>
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
-
-      <div className="health-section">
-        <div className="health-section-title">{t.latestBm}</div>
-        {loading ? (
-          <div className="health-loading"><span /><span /><span /></div>
-        ) : latestBm ? (
-          <div className="bm-list">
-            {BM_META.map(({ key, unit, color }) => (
-              <div key={key} className="bm-row">
-                <span className="bm-dot" style={{ background: color }} />
-                <span className="bm-label">{t.bmLabels[key]}</span>
-                <span className="bm-val" style={{ color }}>{latestBm[key] ?? '—'}</span>
-                <span className="bm-unit">{unit}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="health-empty">{t.noBmData}</div>
-        )}
-      </div>
-
-      <div className="health-section">
-        <div className="health-section-title">
-          {t.trends}
-          {records.length > 0 && (
-            <span className="health-section-badge">{t.tests(records.length)}</span>
-          )}
-        </div>
-        {loading ? (
-          <div className="health-loading"><span /><span /><span /></div>
-        ) : records.length > 0 ? (
-          <div className="trend-grid">
-            {BM_META.map(({ key, unit, color }) => {
-              const vals = trendFor(key);
-              const last = vals[vals.length - 1];
-              return (
-                <div key={key} className="trend-card">
-                  <div className="trend-label">{t.bmLabels[key]}</div>
-                  <div className="trend-val" style={{ color }}>
-                    {last != null ? last : '—'}
-                    <span className="trend-unit">{unit}</span>
-                  </div>
-                  <Sparkline values={vals} color={color} width={130} height={38} />
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="health-empty">{t.noHistory}</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Date Picker Widget ────────────────────────────────────────────────────────
-
-function DatePickerWidget({ onConfirm, disabled }) {
-  const { t, lang } = useLang();
-  const currentYear = new Date().getFullYear();
-  const [year,  setYear]  = useState('');
-  const [month, setMonth] = useState('');
-  const [day,   setDay]   = useState('');
-
-  const years  = Array.from({ length: currentYear - 1919 }, (_, i) => currentYear - i);
-  const months = Array.from({ length: 12 }, (_, i) => i + 1);
-  const daysInMonth = year && month ? new Date(Number(year), Number(month), 0).getDate() : 31;
-  const days   = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-
-  // Reset day if it exceeds the new month's length
-  useEffect(() => {
-    if (day && Number(day) > daysInMonth) setDay('');
-  }, [year, month]);
-
-  const monthLabel = (m) =>
-    new Date(2000, m - 1, 1).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { month: 'short' });
-
-  const isComplete = year && month && day;
-
-  const handleConfirm = () => {
-    if (!isComplete || disabled) return;
-    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    onConfirm(dateStr);
-  };
-
-  return (
-    <div className="date-picker">
-      <div className="date-picker-selects">
-        <select
-          className="date-picker-select"
-          value={year}
-          onChange={e => { setYear(e.target.value); setDay(''); }}
-          disabled={disabled}
-        >
-          <option value="">{t.dpYear}</option>
-          {years.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-        <select
-          className="date-picker-select"
-          value={month}
-          onChange={e => { setMonth(e.target.value); setDay(''); }}
-          disabled={disabled}
-        >
-          <option value="">{t.dpMonth}</option>
-          {months.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
-        </select>
-        <select
-          className="date-picker-select"
-          value={day}
-          onChange={e => setDay(e.target.value)}
-          disabled={disabled || !year || !month}
-        >
-          <option value="">{t.dpDay}</option>
-          {days.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-      </div>
-      <button
-        className="date-picker-confirm"
-        onClick={handleConfirm}
-        disabled={!isComplete || disabled}
-      >
-        {t.dpConfirm}
-      </button>
-    </div>
-  );
-}
-
-// ── Body Slider Widget ────────────────────────────────────────────────────────
-
-function NameInputWidget({ onConfirm, disabled }) {
-  const { t } = useLang();
-  const [name, setName] = useState('');
-  return (
-    <div className="name-input-widget">
-      <input
-        className="name-input-field"
-        type="text"
-        placeholder={t.obNamePlaceholder}
-        value={name}
-        onChange={e => setName(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter' && name.trim() && !disabled) onConfirm(name.trim()); }}
-        disabled={disabled}
-        autoFocus
-      />
-      <button
-        className="name-input-confirm"
-        onClick={() => name.trim() && onConfirm(name.trim())}
-        disabled={disabled || !name.trim()}
-      >
-        {t.dpConfirm}
-      </button>
-    </div>
-  );
-}
-
-function BodySliderWidget({ onConfirm, disabled }) {
-  const { t } = useLang();
-  const [height, setHeight] = useState(165);
-  const [weight, setWeight] = useState(65);
-
-  const handleConfirm = () => {
-    if (disabled) return;
-    onConfirm({ height, weight });
-  };
-
-  return (
-    <div className="body-slider">
-      <div className="body-slider-row">
-        <div className="body-slider-label">
-          <span>{t.bsHeight}</span>
-          <span className="body-slider-val">{height} <span className="body-slider-unit">{t.bsCm}</span></span>
-        </div>
-        <input
-          type="range"
-          className="body-slider-input"
-          min={100} max={220} step={1}
-          value={height}
-          style={{ '--pct': `${((height - 100) / 120) * 100}%` }}
-          onChange={e => setHeight(Number(e.target.value))}
-          disabled={disabled}
-        />
-      </div>
-      <div className="body-slider-row">
-        <div className="body-slider-label">
-          <span>{t.bsWeight}</span>
-          <span className="body-slider-val">{weight} <span className="body-slider-unit">{t.bsKg}</span></span>
-        </div>
-        <input
-          type="range"
-          className="body-slider-input"
-          min={30} max={150} step={0.5}
-          value={weight}
-          style={{ '--pct': `${((weight - 30) / 120) * 100}%` }}
-          onChange={e => setWeight(Number(e.target.value))}
-          disabled={disabled}
-        />
-      </div>
-      <button
-        className="date-picker-confirm"
-        onClick={handleConfirm}
-        disabled={disabled}
-      >
-        {t.bsConfirm}
-      </button>
-    </div>
-  );
-}
-
-// ── Chat Tab ──────────────────────────────────────────────────────────────────
-
-function ChatTab({ user, onUserUpdate }) {
-  const { t } = useLang();
-  const [messages, setMessages] = useState([]);
-  const [seenIds, setSeenIds] = useState(new Set());
-  const [input, setInput] = useState('');
-  const [typing, setTyping] = useState(false);
-  // 'gender' | 'birthday' | 'done' | null (null = not yet determined)
-  const [obStep, setObStep] = useState(null);
-  const chatEndRef = useRef(null);
-
-  const addMsg = (role, content) =>
-    setMessages(prev => [...prev, { id: `${role}-${Date.now()}`, role, content }]);
-
-  // Save user fields to API, preserving all existing values
-  const saveUser = async (updates) => {
-    await axios.put(`${API}/users/${user.user_id}`, {
-      nickname:   user.nickname,
-      phone:      user.phone,
-      email:      user.email,
-      gender:     user.gender,
-      birth_date: user.birth_date,
-      language:   user.language,
-      coach_id:   user.coach_id,
-      ...updates,
-    });
-  };
-
-  // Initialise chat + determine onboarding step when user changes
-  useEffect(() => {
-    if (!user?.user_id) return;
-
-    const msgs = [{ id: 'init', role: 'ai', content: t.initMsg }];
-
-    const init = async () => {
-      if (!user.nickname) {
-        msgs.push({ id: 'ob-name', role: 'ai', content: t.obNamePrompt });
-        setObStep('name');
-        setMessages(msgs);
-        return;
-      }
-      if (!user.gender) {
-        msgs.push({ id: 'ob-gender', role: 'ai', content: t.obGenderPrompt });
-        setObStep('gender');
-        setMessages(msgs);
-        return;
-      }
-      if (!user.birth_date) {
-        msgs.push({ id: 'ob-bday', role: 'ai', content: t.obBirthdayOnly });
-        setObStep('birthday');
-        setMessages(msgs);
-        return;
-      }
-      try {
-        const r = await axios.get(`${API}/biomarkers?openid=${encodeURIComponent(user.user_id)}`);
-        const records = r.data.records || [];
-        const hasBody = records.some(rec => rec.test_type === 'body_composition' && rec.data?.actual?.weight);
-        if (!hasBody) {
-          msgs.push({ id: 'ob-body', role: 'ai', content: t.obBodyOnly });
-          setObStep('body');
-          setMessages(msgs);
-          return;
-        }
-      } catch { /* skip body check on error */ }
-      setObStep('done');
-      await loadHistory();
-    };
-
-    const loadHistory = async () => {
-      try {
-        const r = await axios.get(`${API}/chat-history?openid=${encodeURIComponent(user.user_id)}`);
-        const history = r.data.messages || [];
-        if (history.length > 0) {
-          setMessages(history.map((m, i) => ({ id: `h-${i}`, role: m.role === 'assistant' ? 'ai' : m.role, content: m.content })));
-        } else {
-          setMessages(msgs);
-        }
-      } catch {
-        setMessages(msgs);
-      }
-    };
-
-    setSeenIds(new Set());
-    setInput('');
-    init();
-  }, [user?.user_id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, typing]);
-
-  // Notification polling (only in normal chat mode)
-  useEffect(() => {
-    if (!user?.user_id || obStep !== 'done') return;
-    const poll = async () => {
-      try {
-        const r = await axios.get(`${API}/notifications?openid=${user.user_id}`);
-        const notifications = r.data.notifications || [];
-        setSeenIds(prev => {
-          const next = new Set(prev);
-          const unseen = notifications.filter(n => !next.has(n.id));
-          if (unseen.length > 0) {
-            setMessages(prev => [
-              ...prev,
-              ...unseen.map(n => ({ id: `n-${n.id}`, role: 'ai', content: n.content })),
-            ]);
-            unseen.forEach(n => next.add(n.id));
-          }
-          return next;
-        });
-      } catch { /* silent */ }
-    };
-    poll();
-    const iv = setInterval(poll, 3000);
-    return () => clearInterval(iv);
-  }, [user?.user_id, obStep]);
-
-  // ── Onboarding handlers ──
-
-  const checkBodyStep = async () => {
-    try {
-      const r = await axios.get(`${API}/biomarkers?openid=${encodeURIComponent(user.user_id)}`);
-      const records = r.data.records || [];
-      const hasBody = records.some(rec => rec.test_type === 'body_composition' && rec.data?.actual?.weight);
-      if (!hasBody) {
-        addMsg('ai', t.obBodyPrompt);
-        setObStep('body');
-        return;
-      }
-    } catch { /* fall through */ }
-    addMsg('ai', t.obComplete);
-    setObStep('done');
-    try {
-      const r = await axios.get(`${API}/chat-history?openid=${encodeURIComponent(user.user_id)}`);
-      const history = r.data.messages || [];
-      if (history.length > 0) {
-        setMessages(history.map((m, i) => ({ id: `h-${i}`, role: m.role === 'assistant' ? 'ai' : m.role, content: m.content })));
-      }
-    } catch { /* keep current messages */ }
-  };
-
-  const handleSubmitName = async (name) => {
-    addMsg('user', name);
-    setTyping(true);
-    try {
-      await saveUser({ nickname: name });
-      onUserUpdate({ nickname: name });
-      if (!user.gender) {
-        addMsg('ai', t.obGenderOnly);
-        setObStep('gender');
-      } else if (!user.birth_date) {
-        addMsg('ai', t.obBirthdayOnly);
-        setObStep('birthday');
-      } else {
-        await checkBodyStep();
-      }
-    } catch {
-      addMsg('ai', t.errServer);
-    } finally {
-      setTyping(false);
-    }
-  };
-
-  const handleSelectGender = async (value) => {
-    addMsg('user', t[value]);
-    setTyping(true);
-    try {
-      await saveUser({ gender: value });
-      onUserUpdate({ gender: value });
-      if (!user.birth_date) {
-        addMsg('ai', t.obBirthdayPrompt);
-        setObStep('birthday');
-      } else {
-        await checkBodyStep();
-      }
-    } catch {
-      addMsg('ai', t.errServer);
-    } finally {
-      setTyping(false);
-    }
-  };
-
-  const handleSubmitBirthday = async (dateStr) => {
-    addMsg('user', dateStr);
-    setTyping(true);
-    try {
-      await saveUser({ birth_date: dateStr });
-      onUserUpdate({ birth_date: dateStr });
-      await checkBodyStep();
-    } catch {
-      addMsg('ai', t.errServer);
-    } finally {
-      setTyping(false);
-    }
-  };
-
-  const handleSubmitBody = async ({ height, weight }) => {
-    addMsg('user', `${t.bsHeight}: ${height}${t.bsCm}  ${t.bsWeight}: ${weight}${t.bsKg}`);
-    setTyping(true);
-    try {
-      await axios.post(`${API}/chat`, {
-        openid: user.user_id,
-        test_type: 'body_composition',
-        test_data: { height, weight },
-        tested_at: new Date().toISOString(),
-      });
-      addMsg('ai', t.obComplete);
-      setObStep('done');
-    } catch {
-      addMsg('ai', t.errServer);
-    } finally {
-      setTyping(false);
-    }
-  };
-
-  // ── Normal chat handler ──
-
-  const handleSend = async () => {
-    if (!input.trim() || typing || obStep !== 'done') return;
-    const text = input.trim();
-    addMsg('user', text);
-    setInput('');
-    setTyping(true);
-    try {
-      await axios.post(`${API}/chat`, { openid: user.user_id, message: text });
-    } catch {
-      addMsg('ai', t.errServer);
-    } finally {
-      setTyping(false);
-    }
-  };
-
-  const inputDisabled = typing || obStep !== 'done';
-
-  return (
-    <div className="chat-tab">
-      <div className="chat-container">
-        {messages.map(msg => (
-          <div key={msg.id} className={`message-bubble message-${msg.role}`}>
-            <ReactMarkdown>{msg.content}</ReactMarkdown>
-          </div>
-        ))}
-        {typing && (
-          <div className="message-bubble message-ai typing-indicator">
-            <span /><span /><span />
-          </div>
-        )}
-        <div ref={chatEndRef} />
-      </div>
-
-      {/* Name input */}
-      {obStep === 'name' && (
-        <NameInputWidget onConfirm={handleSubmitName} disabled={typing} />
-      )}
-
-      {/* Gender quick-reply chips */}
-      {obStep === 'gender' && !typing && (
-        <div className="quick-replies">
-          <button className="quick-reply-btn" onClick={() => handleSelectGender('male')}>
-            {t.male}
-          </button>
-          <button className="quick-reply-btn" onClick={() => handleSelectGender('female')}>
-            {t.female}
-          </button>
-        </div>
-      )}
-
-      {/* Birthday date picker */}
-      {obStep === 'birthday' && (
-        <DatePickerWidget onConfirm={handleSubmitBirthday} disabled={typing} />
-      )}
-
-      {/* Body composition sliders */}
-      {obStep === 'body' && (
-        <BodySliderWidget onConfirm={handleSubmitBody} disabled={typing} />
-      )}
-
-      {/* Normal chat input — hidden during onboarding */}
-      {obStep === 'done' && (
-        <div className="input-area">
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
-            }}
-            placeholder={t.inputPlaceholder}
-            disabled={inputDisabled}
-            rows={1}
-          />
-          <button
-            className="send-btn"
-            onClick={handleSend}
-            disabled={inputDisabled || !input.trim()}
-            aria-label="Send"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Dots Tab ─────────────────────────────────────────────────────────────────
-
-const MONTH_ZH = ['一','二','三','四','五','六','七','八','九','十','十一','十二'];
-const MONTH_EN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
-function parsePlan(text) {
-  if (!text) return [];
-  return text.trim().split('\n').filter(Boolean).map(line => {
-    const colonIdx = line.indexOf(':');
-    if (colonIdx === -1) return null;
-    const dateText = line.slice(0, colonIdx).trim();
-    const rest = line.slice(colonIdx + 1).trim();
-    const morningMatch = rest.match(/(?:早上|Morning)\s+((?:D\d{2}x\d+\s*)+)/i);
-    const eveningMatch = rest.match(/(?:晚上|Evening)\s+((?:D\d{2}x\d+\s*)+)/i);
-    const parseDots = str => str
-      ? [...str.matchAll(/D(\d{2})x(\d+)/g)].map(m => ({ key: `D${m[1]}`, dotKey: `DOT${m[1]}`, count: parseInt(m[2]) }))
-      : [];
-    // Try to extract month/day for "today" comparison
-    const zhDate = dateText.match(/(\d+)月(\d+)日/);
-    const enDate = dateText.match(/(\w+)\s+(\d+)/);
-    let month = null, day = null;
-    if (zhDate) { month = parseInt(zhDate[1]); day = parseInt(zhDate[2]); }
-    else if (enDate) {
-      const mi = MONTH_EN.findIndex(m => enDate[1].toLowerCase().startsWith(m.toLowerCase().slice(0, 3)));
-      if (mi !== -1) { month = mi + 1; day = parseInt(enDate[2]); }
-    }
-    return { dateText, month, day, morning: parseDots(morningMatch?.[1]), evening: parseDots(eveningMatch?.[1]) };
-  }).filter(Boolean);
-}
-
-function DotChip({ dotKey, count, dotsMap }) {
-  const dot = dotsMap[dotKey];
-  const color = dot?.color || '#6375EC';
-  const label = dot?.name_zh || dot?.name || dotKey;
-  return (
-    <div className="dot-chip" title={label}>
-      <span className="dot-chip-swatch" style={{ background: color }} />
-      <span className="dot-chip-key">{dotKey.replace('DOT', 'D')}</span>
-      <span className="dot-chip-count">×{count}</span>
-    </div>
-  );
-}
-
-function DotsTab({ user }) {
-  const { t } = useLang();
-  const [plan, setPlan] = useState(null);
-  const [days, setDays] = useState([]);
-  const [dotsMap, setDotsMap] = useState({});
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!user?.user_id) return;
-    (async () => {
-      try {
-        const r = await axios.get(`${API}/nutrition-plan?openid=${encodeURIComponent(user.user_id)}`);
-        const dotMap = {};
-        (r.data.dots || []).forEach(d => { dotMap[d.key_name] = d; });
-        setDotsMap(dotMap);
-        setPlan(r.data.plan);
-        setDays(parsePlan(r.data.plan));
-      } catch { /* silent */ } finally {
-        setLoading(false);
-      }
-    })();
-  }, [user?.user_id]);
-
-  const now = new Date();
-  const todayM = now.getMonth() + 1;
-  const todayD = now.getDate();
-  const tomorrowD = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getDate();
-  const tomorrowM = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getMonth() + 1;
-
-  const dayLabel = (d) => {
-    if (d.month === todayM && d.day === todayD) return t.today;
-    if (d.month === tomorrowM && d.day === tomorrowD) return t.tomorrow;
-    return d.dateText;
-  };
-
-  return (
-    <div className="dots-tab">
-      <div className="dots-header">
-        <span className="dots-title">{t.dotsTitle}</span>
-      </div>
-      {loading ? (
-        <div className="dots-empty"><span className="dots-loading-dot" /><span className="dots-loading-dot" /><span className="dots-loading-dot" /></div>
-      ) : !plan ? (
-        <div className="dots-empty">{t.noPlan}</div>
-      ) : (
-        <div className="dots-days">
-          {days.map((d, i) => {
-            const isToday = d.month === todayM && d.day === todayD;
-            return (
-              <div key={i} className={`dots-day-card${isToday ? ' is-today' : ''}`}>
-                <div className="dots-day-label">{dayLabel(d)}</div>
-                {d.morning.length > 0 && (
-                  <div className="dots-slot">
-                    <span className="dots-slot-name">{t.morning}</span>
-                    <div className="dots-chips">{d.morning.map(dc => <DotChip key={dc.key} dotKey={dc.dotKey} count={dc.count} dotsMap={dotsMap} />)}</div>
-                  </div>
-                )}
-                {d.evening.length > 0 && (
-                  <div className="dots-slot">
-                    <span className="dots-slot-name">{t.evening}</span>
-                    <div className="dots-chips">{d.evening.map(dc => <DotChip key={dc.key} dotKey={dc.dotKey} count={dc.count} dotsMap={dotsMap} />)}</div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Root App ──────────────────────────────────────────────────────────────────
 
 function App() {
   const [user, setUser] = useState(() => {
@@ -1065,8 +18,31 @@ function App() {
   });
   const [tab, setTab] = useState('chat');
   const [lang, setLang] = useState(() => user?.language || 'zh');
+  const [wvtLoading, setWvtLoading] = useState(false);
 
   const t = T[lang] || T.zh;
+
+  useEffect(() => {
+    if (user) return;
+    const params = new URLSearchParams(window.location.search);
+    const wvt = params.get('wvt');
+    if (!wvt) return;
+    setWvtLoading(true);
+    axios.post(`${API}/exchange-webview-token`, { wvt })
+      .then(r => {
+        if (r.data.success && r.data.user) {
+          const u = r.data.user;
+          sessionStorage.setItem('nano_user', JSON.stringify(u));
+          setUser(u);
+          setLang(u.language === 'en' ? 'en' : 'zh');
+          const url = new URL(window.location.href);
+          url.searchParams.delete('wvt');
+          window.history.replaceState({}, '', url.toString());
+        }
+      })
+      .catch(() => {})
+      .finally(() => setWvtLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogin = u => {
     sessionStorage.setItem('nano_user', JSON.stringify(u));
@@ -1093,11 +69,81 @@ function App() {
     return (
       <LangContext.Provider value={{ lang, t }}>
         <div className="shell">
-          <LoginScreen onLogin={handleLogin} lang={lang} onLangChange={setLang} />
+          {wvtLoading ? (
+            <div className="wvt-loading">
+              <div className="login-glow" />
+              <div className="login-brand">
+                <div className="login-logo-ring">
+                  <img src={wavenLogo} className="login-logo" alt="Waven" />
+                </div>
+                <div className="login-title">NANO</div>
+              </div>
+            </div>
+          ) : (
+            <LoginScreen onLogin={handleLogin} lang={lang} onLangChange={setLang} />
+          )}
         </div>
       </LangContext.Provider>
     );
   }
+
+  const TABS = [
+    {
+      id: 'chat', label: t.tabChat,
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'health', label: t.tabHealth,
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+        </svg>
+      ),
+    },
+    {
+      id: 'dots', label: t.tabDots,
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="8" cy="8" r="2.2" /><circle cx="16" cy="8" r="2.2" />
+          <circle cx="8" cy="16" r="2.2" /><circle cx="16" cy="16" r="2.2" />
+        </svg>
+      ),
+    },
+    {
+      id: 'plans', label: t.tabPlans,
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+          <line x1="3" y1="10" x2="21" y2="10"/>
+          <line x1="8" y1="14" x2="16" y2="14"/>
+        </svg>
+      ),
+    },
+    {
+      id: 'store', label: t.tabStore,
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <path d="M16 10a4 4 0 0 1-8 0"/>
+        </svg>
+      ),
+    },
+    {
+      id: 'learn', label: t.tabLearn,
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+        </svg>
+      ),
+    },
+  ];
 
   return (
     <LangContext.Provider value={{ lang, t }}>
@@ -1124,36 +170,22 @@ function App() {
             <div style={{ display: tab === 'chat'   ? 'contents' : 'none' }}><ChatTab user={user} onUserUpdate={handleUserUpdate} /></div>
             <div style={{ display: tab === 'health' ? 'contents' : 'none' }}><HealthTab user={user} /></div>
             <div style={{ display: tab === 'dots'   ? 'contents' : 'none' }}><DotsTab user={user} /></div>
+            <div style={{ display: tab === 'plans'  ? 'contents' : 'none' }}><PlansTab user={user} /></div>
+            <div style={{ display: tab === 'store'  ? 'contents' : 'none' }}><StoreTab user={user} /></div>
+            <div style={{ display: tab === 'learn'  ? 'contents' : 'none' }}><AcademyTab user={user} /></div>
           </div>
 
           <nav className="tab-bar">
-            <button
-              className={`tab-btn${tab === 'chat' ? ' active' : ''}`}
-              onClick={() => setTab('chat')}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
-              <span>{t.tabChat}</span>
-            </button>
-            <button
-              className={`tab-btn${tab === 'health' ? ' active' : ''}`}
-              onClick={() => setTab('health')}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-              </svg>
-              <span>{t.tabHealth}</span>
-            </button>
-            <button
-              className={`tab-btn${tab === 'dots' ? ' active' : ''}`}
-              onClick={() => setTab('dots')}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="8" cy="8" r="2.5" /><circle cx="16" cy="8" r="2.5" /><circle cx="8" cy="16" r="2.5" /><circle cx="16" cy="16" r="2.5" />
-              </svg>
-              <span>{t.tabDots}</span>
-            </button>
+            {TABS.map(tb => (
+              <button
+                key={tb.id}
+                className={`tab-btn${tab === tb.id ? ' active' : ''}`}
+                onClick={() => setTab(tb.id)}
+              >
+                {tb.icon}
+                <span>{tb.label}</span>
+              </button>
+            ))}
           </nav>
         </div>
       </div>

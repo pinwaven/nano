@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 // Upload a channel's miniprogram to WeChat without opening DevTools.
 // Usage: node scripts/upload-miniapp.js <channel>
-// Requires: scripts/keys/<channel>.key (download from WeChat developer console →
-//           Development → Development Settings → Mini Program Code Upload Key)
+// Keys live in certs/ — named waven-mini-upload-key.<appid>.key
 
 const ci = require('miniprogram-ci');
 const path = require('path');
 
 const CHANNELS = {
-  waven:  { appid: 'wx84bd7d00a6fd626e', key: 'scripts/keys/waven.key'  },
-  aeviva: { appid: 'wxd19a1403c4fea89d', key: 'scripts/keys/aeviva.key' },
-  fusion: { appid: 'wxecbcf00ce480fcf2', key: 'scripts/keys/fusion.key' },
+  waven:  { appid: 'wx84bd7d00a6fd626e', key: 'certs/waven-mini-upload-key.wx84bd7d00a6fd626e.key' },
+  aeviva: { appid: 'wxd19a1403c4fea89d', key: 'certs/aeviva-mini-upload-key.wxd19a1403c4fea89d.key' },
+  fusion: { appid: 'wxecbcf00ce480fcf2', key: 'certs/fusion-mini-upload-key.wxecbcf00ce480fcf2.key' },
 };
 
 const channel = process.argv[2];

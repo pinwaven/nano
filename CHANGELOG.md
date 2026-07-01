@@ -8,6 +8,29 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 
+- **User web app — full feature parity with miniapp (all 4 phases)** (`src/web/user-app/src/`)
+
+  Refactored from a single 1,585-line `App.jsx` into a modular structure and added Plans, Store, Events, Kino scan, and Health Reports. App now has 6 tabs: Chat, Health, Dots, Plans, Store, Learn.
+
+  **Architecture changes:**
+  - `App.jsx` → root shell only (~120 lines), imports from tab files
+  - `i18n.js` — all bilingual strings (zh/en) extracted into one place
+  - `utils.js` — shared helpers (`chronoAge`, `fmtDate`, `fmtDateTime`, `bioAgeColor`, `BM_META`)
+  - `components/LoginScreen.jsx`, `components/Sparkline.jsx`, `components/Widgets.jsx` (DatePickerWidget, NameInputWidget, BodySliderWidget, LangToggle)
+  - `tabs/ChatTab.jsx`, `tabs/HealthTab.jsx`, `tabs/DotsTab.jsx`, `tabs/AcademyTab.jsx` — existing features
+  - `tabs/PlansTab.jsx` — health plan templates browser, active plan check-in with progress tracking, events sign-up/cancel
+  - `tabs/StoreTab.jsx` — product grid with cart, shipping address form, CNY/credits payment, order history, credits balance + history
+  - Shared modal system (`.modal-overlay`, `.modal-card`) used by Kino scan, checkin, checkout
+
+  **Phase 4 features added to HealthTab:**
+  - Kino chip link button (`scanChip`) → modal for manual chip code entry, calls `POST /api/kino-scan`
+  - Health report generation button → calls `POST /api/health-reports`, lists past reports with markdown viewer
+
+  **Backend change (`src/functions/worker/index.js`):**
+  - `GET /events` now accessible without admin auth when `openid` query param is present; automatically maps `openid` → `user_id` for the signed_up field
+
+### Added
+
 - **Store cart — inline shipping form with WeChat address pre-fill** (`app.json`, `pages/main/main.{js,wxml,wxss}`, `handlers/chat.js`, `docs/architecture/orders-fulfillment.md`)
 
   The store cart now collects shipping details via an editable 收货信息 form inside the cart sheet, replacing reliance on the deprecated-fragile `wx.chooseAddress()` as the sole path. Recipient name pre-fills from `user.nickname` and phone from `user.phone`; the WeChat address book is an optional pre-fill helper via a 「使用微信地址」 button.

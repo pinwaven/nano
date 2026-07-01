@@ -1,0 +1,47 @@
+.appview-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #0B1C2E;
+}
+
+.status-bar-spacer { width: 100%; flex-shrink: 0; }
+
+.app-header {
+  background: rgba(11, 28, 46, 0.95);
+  border-bottom: 1rpx solid rgba(99, 117, 236, 0.18);
+  padding: 16rpx 36rpx 28rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  flex-shrink: 0;
+}
+
+.back-icon {
+  font-size: 44rpx;
+  color: #6375EC;
+  line-height: 1;
+}
+
+.back-label {
+  font-size: 26rpx;
+  color: #6375EC;
+}
+
+.header-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  letter-spacing: 4rpx;
+  color: #EEF2FF;
+}
+
+web-view {
+  flex: 1;
+}

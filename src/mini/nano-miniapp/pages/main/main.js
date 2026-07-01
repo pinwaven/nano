@@ -1241,6 +1241,11 @@ Page({
     wx.navigateTo({ url: '/pages/webadmin/webadmin' })
   },
 
+  openUserApp(path = '/app') {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: `/pages/appview/appview?url=${encodeURIComponent(path)}` })
+  },
+
   // ── Kino Simulator ──────────────────────────────────────────────────────────
 
   async _resolveKinoSimDevice() {

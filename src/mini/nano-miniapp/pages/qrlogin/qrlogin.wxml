@@ -1,0 +1,37 @@
+<view class="page">
+  <view class="card" wx:if="{{!confirmed && !error}}">
+    <view class="logo-wrap">
+      <image class="logo" src="/images/waven-logo.png" mode="aspectFit" />
+    </view>
+    <view class="title">网页扫码登录</view>
+    <view class="subtitle">用您的微信身份登录 Waven 网页端</view>
+
+    <view class="user-info" wx:if="{{userInfo}}">
+      <image class="avatar" src="{{userInfo.avatarUrl || '/images/default-avatar.png'}}" mode="aspectFill" />
+      <view class="uname">{{userInfo.nickName || nickname || '当前用户'}}</view>
+    </view>
+
+    <view class="loading-row" wx:if="{{status === 'loading'}}">
+      <view class="dot-pulse"><view /><view /><view /></view>
+      <text>正在确认登录…</text>
+    </view>
+
+    <view class="actions" wx:if="{{status === 'idle'}}">
+      <button class="btn-confirm" bindtap="confirmLogin">确认登录</button>
+      <button class="btn-cancel" bindtap="cancelLogin">取消</button>
+    </view>
+  </view>
+
+  <view class="card card--success" wx:if="{{confirmed}}">
+    <view class="success-icon">✓</view>
+    <view class="title">登录成功</view>
+    <view class="subtitle">您已成功登录网页端，可以关闭此页面</view>
+  </view>
+
+  <view class="card card--error" wx:if="{{error}}">
+    <view class="error-icon">✕</view>
+    <view class="title">登录失败</view>
+    <view class="subtitle">{{errorMsg}}</view>
+    <button class="btn-cancel" bindtap="cancelLogin" style="margin-top:20px">返回</button>
+  </view>
+</view>

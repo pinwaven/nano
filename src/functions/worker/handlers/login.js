@@ -9,8 +9,8 @@ async function handleResolvePhone(code, app_id = null) {
         const credMap = {};
         if (process.env.WX_APPID && process.env.WX_SECRET)
             credMap[process.env.WX_APPID] = process.env.WX_SECRET;
-        if (process.env.WX_APPID_NANOVATE && process.env.WX_SECRET_NANOVATE)
-            credMap[process.env.WX_APPID_NANOVATE] = process.env.WX_SECRET_NANOVATE;
+        if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN)
+            credMap[process.env.WX_APPID_WAVEN] = process.env.WX_SECRET_WAVEN;
         const appid = (app_id && credMap[app_id]) ? app_id : process.env.WX_APPID;
         const token = await getWxAccessToken(appid, credMap[appid]);
         const wxRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
@@ -41,8 +41,8 @@ async function handleBindPhone(user_id, code, app_id = null, rawPhone = null) {
         const credMap = {};
         if (process.env.WX_APPID && process.env.WX_SECRET)
             credMap[process.env.WX_APPID] = process.env.WX_SECRET;
-        if (process.env.WX_APPID_NANOVATE && process.env.WX_SECRET_NANOVATE)
-            credMap[process.env.WX_APPID_NANOVATE] = process.env.WX_SECRET_NANOVATE;
+        if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN)
+            credMap[process.env.WX_APPID_WAVEN] = process.env.WX_SECRET_WAVEN;
         const appid = (app_id && credMap[app_id]) ? app_id : process.env.WX_APPID;
         const token = await getWxAccessToken(appid, credMap[appid]);
         const wxRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
@@ -69,8 +69,8 @@ async function handleWxLogin(body) {
     const credMap = {};
     if (process.env.WX_APPID && process.env.WX_SECRET)
         credMap[process.env.WX_APPID] = process.env.WX_SECRET;
-    if (process.env.WX_APPID_NANOVATE && process.env.WX_SECRET_NANOVATE)
-        credMap[process.env.WX_APPID_NANOVATE] = process.env.WX_SECRET_NANOVATE;
+    if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN)
+        credMap[process.env.WX_APPID_WAVEN] = process.env.WX_SECRET_WAVEN;
     if (process.env.WX_APPID_AEVIVA && process.env.WX_SECRET_AEVIVA)
         credMap[process.env.WX_APPID_AEVIVA] = process.env.WX_SECRET_AEVIVA;
 
@@ -645,6 +645,197 @@ async function handleGetMyReferrals(query) {
     }
 }
 
+// Generates a short-lived one-time token so the miniapp can open the user web
+// app with the user pre-authenticated (no phone login required in the webview).
+async function handlePostWebviewToken(body) {
+    try {
+        const { openid } = body || {};
+        if (!openid) return { success: false, error: 'openid is required' };
+
+        const token = require('crypto').randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 60_000); // 60 seconds
+
+        await pool.query(
+            `INSERT INTO webview_tokens (token, openid, expires_at) VALUES ($1, $2, $3)`,
+            [token, openid, expiresAt]
+        );
+
+        return { success: true, wvt: token, expires_in: 60 };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// Exchanges a one-time webview token for the user's profile.
+// Called by the web app immediately on load when ?wvt= is present in the URL.
+async function handleExchangeWebviewToken(body) {
+    try {
+        const { wvt } = body || {};
+        if (!wvt) return { success: false, error: 'wvt is required' };
+
+        const { rows } = await pool.query(
+            `UPDATE webview_tokens
+             SET used = TRUE
+             WHERE token = $1 AND used = FALSE AND expires_at > NOW()
+             RETURNING openid`,
+            [wvt]
+        );
+        if (rows.length === 0) return { success: false, error: 'Invalid or expired token' };
+
+        const openid = rows[0].openid;
+        const userRes = await pool.query(
+            `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
+                    u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
+                    cu.nickname AS coach_name,
+                    c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
+                    c.config->'sub_age_display_names' AS channel_sub_age_names,
+                    c.config->>'locale' AS channel_locale
+             FROM users u
+             LEFT JOIN coaches p ON u.coach_id = p.id
+             LEFT JOIN users cu ON p.user_id = cu.user_id
+             LEFT JOIN channels c ON u.channel_id = c.id
+             LEFT JOIN (
+                 SELECT DISTINCT ON (user_id) user_id, bio_age
+                 FROM biomarkers ORDER BY user_id, tested_at DESC
+             ) b ON u.user_id = b.user_id
+             WHERE u.external_id = $1 OR u.user_id = $1
+             LIMIT 1`,
+            [openid]
+        );
+
+        if (userRes.rows.length === 0) return { success: false, error: 'User not found' };
+
+        const { channel_name, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = userRes.rows[0];
+        const channel = channel_name
+            ? { name: channel_name, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
+            : null;
+
+        return { success: true, user, channel };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ── QR Login (web app QR → miniapp scan → auto-login) ────────────────────────
+//
+// Flow:
+//   1. Web app calls POST /qr-login/init  → gets session_id + QR image (base64 PNG)
+//   2. User scans QR with WeChat → miniapp opens pages/qrlogin/qrlogin
+//   3. Miniapp calls POST /qr-login/confirm with { session_id, openid }
+//   4. Web app polls GET /qr-login/status?session_id=  → detects "confirmed" → logs in
+
+async function handlePostQrLoginInit(body) {
+    try {
+        const { app_id } = body || {};
+        const credMap = {};
+        if (process.env.WX_APPID && process.env.WX_SECRET)
+            credMap[process.env.WX_APPID] = process.env.WX_SECRET;
+        if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN)
+            credMap[process.env.WX_APPID_WAVEN] = process.env.WX_SECRET_WAVEN;
+        if (process.env.WX_APPID_AEVIVA && process.env.WX_SECRET_AEVIVA)
+            credMap[process.env.WX_APPID_AEVIVA] = process.env.WX_SECRET_AEVIVA;
+
+        const appid  = (app_id && credMap[app_id]) ? app_id
+            : (process.env.WX_APPID_WAVEN || process.env.WX_APPID);
+        const secret = credMap[appid];
+        if (!appid || !secret) return { success: false, error: 'WX_APPID_WAVEN / WX_SECRET_WAVEN not configured' };
+
+        // session_id = 32 hex chars, matches wxacode.getunlimited scene max (32 UTF-8 chars)
+        const sessionId = require('crypto').randomBytes(14).toString('hex'); // 28 hex chars, stored in DB
+        const isdev = process.env.NODE_ENV !== 'production';
+        // scene encodes the backend env so the miniapp routes confirm to the right host.
+        // DB always stores the bare sessionId; the 'd:' prefix is only in the QR scene.
+        const scene = isdev ? `d:${sessionId}` : sessionId;
+        await pool.query(
+            `INSERT INTO qr_login_sessions (session_id, status, expires_at)
+             VALUES ($1, 'pending', NOW() + INTERVAL '5 minutes')`,
+            [sessionId]
+        );
+
+        const token = await getWxAccessToken(appid, secret);
+        const wxRes = await fetch(
+            `https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=${token}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    scene: scene,
+                    page: 'pages/qrlogin/qrlogin',
+                    width: 280,
+                    check_path: false,
+                    env_version: process.env.NODE_ENV === 'production' ? 'release' : 'trial',
+                }),
+            }
+        );
+        const contentType = wxRes.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            const errData = await wxRes.json();
+            console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostQrLoginInit wx error', errData }));
+            return { statusCode: 500, success: false, error: `WeChat: ${errData.errmsg} (${errData.errcode})` };
+        }
+        const imgBuf = await wxRes.arrayBuffer();
+        const base64 = Buffer.from(imgBuf).toString('base64');
+        console.log(JSON.stringify({ level: 'INFO', msg: 'handlePostQrLoginInit', sessionId, appid }));
+        return { success: true, session_id: sessionId, qr_image: `data:image/png;base64,${base64}`, expires_in: 300 };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostQrLoginInit', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handleGetQrLoginStatus(sessionId) {
+    if (!sessionId) return { statusCode: 400, success: false, error: 'session_id required' };
+    try {
+        const r = await pool.query(
+            `SELECT session_id, status, openid, expires_at FROM qr_login_sessions WHERE session_id = $1`,
+            [sessionId]
+        );
+        if (!r.rows.length) return { statusCode: 404, success: false, error: 'Session not found' };
+        const sess = r.rows[0];
+        if (new Date(sess.expires_at) < new Date()) {
+            return { success: true, status: 'expired' };
+        }
+        if (sess.status === 'confirmed' && sess.openid) {
+            const uRes = await pool.query(
+                `SELECT u.*,
+                        ch.name AS channel_name, ch.logo_url AS channel_logo_url,
+                        co_u.nickname AS coach_name
+                 FROM users u
+                 LEFT JOIN channels ch ON ch.id = u.channel_id
+                 LEFT JOIN coaches co ON co.user_id = u.user_id
+                 LEFT JOIN users co_u ON co_u.user_id = co.user_id
+                 WHERE u.user_id = $1`,
+                [sess.openid]
+            );
+            if (uRes.rows.length) {
+                return { success: true, status: 'confirmed', user: uRes.rows[0] };
+            }
+        }
+        return { success: true, status: sess.status };
+    } catch (err) {
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handlePostQrLoginConfirm(body) {
+    const { session_id, openid } = body || {};
+    if (!session_id || !openid) return { statusCode: 400, success: false, error: 'session_id and openid required' };
+    try {
+        const r = await pool.query(
+            `UPDATE qr_login_sessions
+             SET status = 'confirmed', openid = $2, confirmed_at = NOW()
+             WHERE session_id = $1 AND status = 'pending' AND expires_at > NOW()
+             RETURNING session_id`,
+            [session_id, openid]
+        );
+        if (!r.rows.length) return { statusCode: 409, success: false, error: 'Session expired or already confirmed' };
+        console.log(JSON.stringify({ level: 'INFO', msg: 'handlePostQrLoginConfirm', session_id, openid }));
+        return { success: true };
+    } catch (err) {
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
 module.exports = {
     handleResolvePhone,
     handleBindPhone,
@@ -652,4 +843,9 @@ module.exports = {
     handleWxAppLogin,
     handleValidateInvite,
     handleGetMyReferrals,
+    handlePostWebviewToken,
+    handleExchangeWebviewToken,
+    handlePostQrLoginInit,
+    handleGetQrLoginStatus,
+    handlePostQrLoginConfirm,
 };
