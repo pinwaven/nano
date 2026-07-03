@@ -462,3 +462,17 @@ const biomarkers = { ...latestBio?.data?.validated, ...latestBio?.data?.actual }
 ```
 
 `data.actual` is for audit/debug purposes only. Do not use it to override `data.validated` in any user-facing output.
+
+## Agent skills
+
+### Issue tracker
+
+Issues tracked as local markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default triage vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context repo: one `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
