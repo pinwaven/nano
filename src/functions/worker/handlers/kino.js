@@ -1,5 +1,12 @@
 const { pool } = require('../lib/db');
 const { calculateAge } = require('../lib/time-utils');
+const { buildKinoCurvesQuery } = require('./kinoCurveQuery');
+
+async function handleGetKinoCurves(query = {}, db = pool) {
+    const { sql, params } = buildKinoCurvesQuery(query);
+    const result = await db.query(sql, params);
+    return { success: true, curves: result.rows };
+}
 
 async function handleGetKinoDevices() {
     const result = await pool.query(`
@@ -510,6 +517,7 @@ async function handlePostKinoResult(body) {
 }
 
 module.exports = {
+    handleGetKinoCurves,
     handleGetKinoDevices,
     handlePostKinoDevice,
     handlePutKinoDevice,
