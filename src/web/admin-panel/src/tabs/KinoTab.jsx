@@ -9,6 +9,7 @@ import {
   normalizeKinoMachine, normalizeKinoMachinesPayload, buildKinoMachinesUrl,
   KINO_MACHINE_PAGE_LIMIT,
 } from '../shared.jsx';
+import { KinoCurveSection } from './KinoCurveSection.jsx';
 
 function uploadToOSS(url, file, onProgress) {
   return new Promise((resolve, reject) => {
@@ -474,6 +475,8 @@ export function KinoTab({ devices, machinePagination, coaches, channels, release
           </tbody>
         </table>
       </div>
+
+      <KinoCurveSection devices={devices} />
 
       {modal?.type === 'add'       && <KinoModal device={null}          coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit'      && <KinoModal device={modal.device}  coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}

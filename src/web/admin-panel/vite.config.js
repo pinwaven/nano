@@ -26,6 +26,14 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/api/, '')
         }
       }
+    },
+    test: {
+      environment: 'jsdom',
+      setupFiles: ['./src/test-setup.js'],
+      reporters: [
+        'default',
+        ['tdd-guard-vitest', { projectRoot: path.resolve(__dirname, '../../../') }],
+      ],
     }
   };
 });
