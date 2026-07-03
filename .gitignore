@@ -10,3 +10,5 @@ temp/
 backup/
 backups/
 .antigravitycli/*.json
+*.key
+.claude/tdd-guard/
