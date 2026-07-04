@@ -1,7 +1,7 @@
 'use strict';
 
-// Node/noble BLE transport for the X3 ring. Mirrors the interface of the
-// miniapp's wx.*-based ble-manager.js so the X3 protocol logic can stay identical.
+// Node/noble BLE transport for the Halo ring. Mirrors the interface of the
+// miniapp's wx.*-based ble-manager.js so the Halo protocol logic can stay identical.
 
 const noble = require('@abandonware/noble');
 
@@ -79,7 +79,7 @@ class BLETransport {
       peripheral.discoverServices([serviceUUID], (err, svcs) => (err ? reject(err) : resolve(svcs)));
     });
     const svc = services.find((s) => normalizeUUID(s.uuid) === normalizeUUID(serviceUUID));
-    if (!svc) throw new Error(`X3 service ${serviceUUID} not found`);
+    if (!svc) throw new Error(`Halo service ${serviceUUID} not found`);
 
     const chars = await new Promise((resolve, reject) => {
       svc.discoverCharacteristics([], (err, cs) => (err ? reject(err) : resolve(cs)));
@@ -87,7 +87,7 @@ class BLETransport {
 
     this._writeChar = chars.find((c) => normalizeUUID(c.uuid) === normalizeUUID(writeUUID));
     const notifyChar = chars.find((c) => normalizeUUID(c.uuid) === normalizeUUID(notifyUUID));
-    if (!this._writeChar || !notifyChar) throw new Error('X3 write/notify characteristics not found');
+    if (!this._writeChar || !notifyChar) throw new Error('Halo write/notify characteristics not found');
 
     await new Promise((resolve, reject) => {
       notifyChar.subscribe((err) => (err ? reject(err) : resolve()));

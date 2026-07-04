@@ -1,16 +1,22 @@
-# x3-ring
+# halo-ring
 
-CLI tool for reading data from the X3 smart ring over BLE (macOS, via `noble`).
+CLI tool for reading data from the Halo smart ring over BLE (macOS, via `noble`).
 
-It reuses the production X3 protocol (packet builders, BCD/byte parsers) from
-`src/mini/nano-miniapp/utils/wearable/x3/` — only the BLE transport differs
+Halo is our supported ring product line; the hardware/protocol underneath is
+the X3/X6/X9/V4 family (X3/X6/X9 are rings, V4 is a wrist band — all four
+confirmed to share the identical BLE protocol). BLE-advertised names
+literally start with those prefixes — the manufacturer's own model
+designations, not something we control.
+
+It reuses the production Halo protocol (packet builders, BCD/byte parsers) from
+`src/mini/nano-miniapp/utils/wearable/halo/` — only the BLE transport differs
 (this uses `noble`/Node instead of the Mini Program's `wx.*` APIs). If the
-X3 protocol changes in the miniapp, this tool picks it up automatically.
+protocol changes in the miniapp, this tool picks it up automatically.
 
 ## Install
 
 ```bash
-cd tools/x3-ring
+cd tools/halo-ring
 npm install
 ```
 
@@ -26,7 +32,7 @@ node bin/cli.js --name X3 --json
 # Connect to a known device directly (skips scanning)
 node bin/cli.js --address <uuid>
 
-# Just list nearby X3/X6 rings
+# Just list nearby X3/X6/X9/V4 devices
 node bin/cli.js scan
 
 # Sync the ring's clock to the current time
@@ -36,7 +42,7 @@ node bin/cli.js set-time
 node bin/cli.js get-auto-monitoring
 ```
 
-With no arguments, `x3_ring` scans for a nearby X3/X6 ring, connects, and
+With no arguments, `halo_ring` scans for a nearby X3/X6/X9/V4 device, connects, and
 dumps: battery, device time, MAC, firmware, auto-monitoring schedule, steps,
 sleep history, heart rate (log + continuous history), HRV history, SpO2
 (auto + detailed), sleep HRV, temperature (surface + sleep), exercise

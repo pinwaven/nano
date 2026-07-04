@@ -42,6 +42,12 @@ function _scoreSleep(h) {
   return Math.max(10, Math.round(h / 6 * 50))
 }
 
+// 'x3' is a legacy brand value from before the X3→Halo rename — still present
+// in local storage / server rows for anyone bound before this change shipped.
+function _normalizeBrand(brand) {
+  return brand === 'x3' ? 'halo' : brand
+}
+
 // --- Sleep session helpers (shared by BLE-live sync, server hydration, and display prep) ---
 // A "night" session starts in the 20:00–05:59 window; anything starting 06:00–19:59
 // is a daytime nap. onset is a "YYYY-MM-DD HH:MM:SS" string.
@@ -51,7 +57,7 @@ function _isNightSession(onset) {
 }
 
 // Minutes since the most recent noon (0 = noon, 720 = midnight, 1439 = 11:59am next day).
-// Matches the noon-to-noon "night" bucket used by x3/index.js's _nightKey, so a session's
+// Matches the noon-to-noon "night" bucket used by halo/index.js's _nightKey, so a session's
 // position on a 24h axis lines up with the calendar day it's grouped under.
 function _minutesSinceNoon(onset) {
   const hour = parseInt(onset.slice(11, 13), 10)
@@ -219,13 +225,14 @@ const T = {
     bioAgeTrend: '生理年龄趋势',
     wearableDevice: '可穿戴设备',
     bindSmartRing: '绑定智能戒指',
+    wearableAlreadyBound: '此账号已绑定：',
     wearableConnected: '已连接',
     wearableDisconnected: '未连接',
     wearableBattery: '电量',
     wearableSyncNow: '立即同步',
     wearableUnbind: '解绑',
-    x3SaveIntervals: '保存到戒指',
-    x3IntervalLoading: '读取中...',
+    haloSaveIntervals: '保存到戒指',
+    haloIntervalLoading: '读取中...',
     wearableScanning: '正在搜索...',
     wearableNoDevices: '未找到设备，请确认戒指已开机',
     wearableConnecting: '正在同步...',
@@ -246,11 +253,11 @@ const T = {
     ringHrChart: '心率分布',
     ringSleepChart: '睡眠分期',
     ringDeep: '深睡', ringRem: 'REM', ringLight: '浅睡', ringAwake: '清醒',
-    x3IntervalTitle: '测量间隔',
+    haloIntervalTitle: '测量间隔',
     metricHr: '心率', metricSpo2: 'SpO₂', metricTemp: '体温', metricHrv: 'HRV',
-    x3IntervalUnit: '分钟',
-    x3WorkModeOff: '关闭', x3WorkModeAuto: '自动', x3WorkModeSched: '定时',
-    x3RingTimeLabel: '戒指时间',
+    haloIntervalUnit: '分钟',
+    haloWorkModeOff: '关闭', haloWorkModeAuto: '自动', haloWorkModeSched: '定时',
+    haloRingTimeLabel: '戒指时间',
     ringHrvTrend: 'HRV 趋势', ringSpo2Trend: 'SpO₂ 趋势', ringBodyTemp: '体温',
     ringSleepWeek: '过去7天睡眠', ringNap: '小睡', ringNightSleep: '夜间睡眠', ringSleepNoBlocks: '暂无睡眠记录',
   },
@@ -332,13 +339,14 @@ const T = {
     bioAgeTrend: 'BioAge Trend',
     wearableDevice: 'Wearable Device',
     bindSmartRing: 'Bind Smart Ring',
+    wearableAlreadyBound: 'Already bound on this account:',
     wearableConnected: 'Connected',
     wearableDisconnected: 'Disconnected',
     wearableBattery: 'Battery',
     wearableSyncNow: 'Sync Now',
     wearableUnbind: 'Unbind',
-    x3SaveIntervals: 'Save to Ring',
-    x3IntervalLoading: 'Reading...',
+    haloSaveIntervals: 'Save to Ring',
+    haloIntervalLoading: 'Reading...',
     wearableScanning: 'Scanning...',
     wearableNoDevices: 'No devices found. Make sure the ring is powered on.',
     wearableConnecting: 'Syncing...',
@@ -359,11 +367,11 @@ const T = {
     ringHrChart: 'Heart Rate by Hour',
     ringSleepChart: 'Sleep Stages',
     ringDeep: 'Deep', ringRem: 'REM', ringLight: 'Light', ringAwake: 'Awake',
-    x3IntervalTitle: 'Monitoring Intervals',
+    haloIntervalTitle: 'Monitoring Intervals',
     metricHr: 'Heart Rate', metricSpo2: 'SpO₂', metricTemp: 'Temp', metricHrv: 'HRV',
-    x3IntervalUnit: 'min',
-    x3WorkModeOff: 'Off', x3WorkModeAuto: 'Auto', x3WorkModeSched: 'Sched',
-    x3RingTimeLabel: 'Ring Time',
+    haloIntervalUnit: 'min',
+    haloWorkModeOff: 'Off', haloWorkModeAuto: 'Auto', haloWorkModeSched: 'Sched',
+    haloRingTimeLabel: 'Ring Time',
     ringHrvTrend: 'HRV Trend', ringSpo2Trend: 'SpO₂ Trend', ringBodyTemp: 'Body Temp',
     ringSleepWeek: '7-Day Sleep', ringNap: 'Nap', ringNightSleep: 'Night Sleep', ringSleepNoBlocks: 'No sleep recorded yet',
   },
@@ -422,7 +430,7 @@ function _buildRingDisplayData(raw, isZh) {
   }
   const spo2Pct = raw.spo2 != null ? Math.min(100, Math.max(2, Math.round((raw.spo2 - 90) / 10 * 100))) : 0
 
-  // Blood pressure (X3 HRV measurement) + breath rate
+  // Blood pressure (Halo HRV measurement) + breath rate
   let bpStr = null, bpColor = '#A6C4E5'
   if (raw.systolicBP != null && raw.diastolicBP != null) {
     bpStr = `${raw.systolicBP}/${raw.diastolicBP}`
@@ -626,7 +634,7 @@ function _getRealtimeReadings(syncedAt) {
   } catch (_) { return [] }
 }
 
-// Merge X3 HRV+SpO2 slot arrays into the same reading shape _fmtRealtimeReadings expects.
+// Merge Halo HRV+SpO2 slot arrays into the same reading shape _fmtRealtimeReadings expects.
 // Ring timestamps ('2026-06-20 14:30:12') are CST, so append +08:00 before parsing.
 function _slotsToReadings(hrvSlots, spo2Slots) {
   const byTs = {}
@@ -970,21 +978,22 @@ Component({
     // Wearable device
     wearableId: '',
     wearableName: '',
-    wearableBrand: '',   // 'x3' | 'colmi'
+    wearableBrand: '',   // 'halo' | 'colmi' (legacy stored value: 'x3')
     wearableConnected: false,
     wearableBattery: 0,
     wearableBusy: false,
+    wearableServerHint: null, // { brand, mac, name, boundAt } — set when this device has no local binding but the account does
     ringMeasuring: false,
     showPrivacyPopup: false,
     ringSettingsOpen: false,
     ringSettingsBusy: false,
     ringData: null,
-    // X3 background-measurement intervals (minutes per metric type)
-    x3Intervals: { hr: 30, spo2: 60, temp: 60, hrv: 120 },
-    x3IntervalOpts: { hr: [5, 10, 15, 30], spo2: [5, 15, 30, 60], temp: [15, 30, 60], hrv: [30, 60, 120] },
-    x3WorkModes: { hr: 2, spo2: 2, temp: 2, hrv: 2 },
-    x3IntervalsChanged: false,
-    x3RingTime: null,
+    // Halo background-measurement intervals (minutes per metric type)
+    haloIntervals: { hr: 30, spo2: 60, temp: 60, hrv: 120 },
+    haloIntervalOpts: { hr: [5, 10, 15, 30], spo2: [5, 15, 30, 60], temp: [15, 30, 60], hrv: [30, 60, 120] },
+    haloWorkModes: { hr: 2, spo2: 2, temp: 2, hrv: 2 },
+    haloIntervalsChanged: false,
+    haloRingTime: null,
   },
 
   observers: {
@@ -2202,14 +2211,21 @@ Component({
       try {
         const saved = wx.getStorageSync('wearable_device')
         if (saved && saved.deviceId) {
-          const fallbackName = saved.brand === 'x3' ? 'X3 Ring' : saved.brand === 'aizo' ? 'Aizo Ring' : 'Colmi Ring'
-          const x3Saved = wx.getStorageSync('x3_interval_settings')
-          const x3Intervals = x3Saved ? { ...this.data.x3Intervals, ...x3Saved } : this.data.x3Intervals
-          const x3WmSaved = wx.getStorageSync('x3_work_mode_settings')
-          const x3WorkModes = x3WmSaved ? { ...this.data.x3WorkModes, ...x3WmSaved } : this.data.x3WorkModes
-          this.setData({ wearableId: saved.deviceId, wearableName: saved.name || fallbackName, wearableConnected: false, wearableBrand: saved.brand || 'colmi', x3Intervals, x3WorkModes })
+          const brand = _normalizeBrand(saved.brand) || 'colmi'
+          const fallbackName = brand === 'halo' ? 'Halo Ring' : brand === 'aizo' ? 'Aizo Ring' : 'Colmi Ring'
+          const haloSaved = wx.getStorageSync('halo_interval_settings') || wx.getStorageSync('x3_interval_settings')
+          const haloIntervals = haloSaved ? { ...this.data.haloIntervals, ...haloSaved } : this.data.haloIntervals
+          const haloWmSaved = wx.getStorageSync('halo_work_mode_settings') || wx.getStorageSync('x3_work_mode_settings')
+          const haloWorkModes = haloWmSaved ? { ...this.data.haloWorkModes, ...haloWmSaved } : this.data.haloWorkModes
+          this.setData({ wearableId: saved.deviceId, wearableName: saved.name || fallbackName, wearableConnected: false, wearableBrand: brand, haloIntervals, haloWorkModes })
           // Delay auto-sync to let the BLE stack initialize on cold launch
           setTimeout(() => this._maybeAutoSync(), 2000)
+        } else {
+          // No local binding on this device/install — check if the account already
+          // has a ring registered from another client app (Android/iOS builds of
+          // this same codebase, or a previous install) so we can hint the user
+          // instead of them thinking they've never paired a ring.
+          this._loadWearableHintFromServer()
         }
         const rawRing = wx.getStorageSync('wearable_ring_data')
         if (rawRing && rawRing.syncedAt) {
@@ -2244,6 +2260,44 @@ Component({
           })
         }
       } catch (_) {}
+    },
+
+    // Persists (or clears, when `wearable` is null) the wearable binding on the
+    // user's account so other client apps built from this codebase can discover
+    // it. Best-effort — failures here shouldn't block the local bind/unbind flow.
+    async _syncWearableBindingToServer(wearable) {
+      const { userId } = this.properties
+      if (!userId) return
+      try {
+        await this._req(`${BASE}/api/users/${userId}`, 'PATCH', { wearable })
+      } catch (e) {
+        if (IS_DEV) console.error('[wearable][server-sync]', e?.message || e?.errMsg || e)
+      }
+    },
+
+    // Called when this device/install has no local wearable_device — checks
+    // whether the account already has a ring bound (from another client app or
+    // a previous install) so the UI can hint "you already have a ring, tap Scan
+    // to reconnect" instead of looking like the user has never paired one.
+    async _loadWearableHintFromServer() {
+      const { userId } = this.properties
+      if (!userId) return
+      try {
+        const res = await this._req(`${BASE}/api/users/${userId}`)
+        const user = res.data?.user
+        if (user?.wearable_brand) {
+          this.setData({
+            wearableServerHint: {
+              brand: user.wearable_brand,
+              mac: user.wearable_mac || null,
+              name: user.wearable_name || null,
+              boundAt: user.wearable_bound_at || null,
+            },
+          })
+        }
+      } catch (e) {
+        if (IS_DEV) console.error('[wearable][server-hint]', e?.message || e?.errMsg || e)
+      }
     },
 
     async _loadRingDataFromServer() {
@@ -2410,10 +2464,10 @@ Component({
       try {
         const { BLEManager } = require('../../utils/wearable/ble-manager.js')
         const { COLMI_NAME_PREFIXES } = require('../../utils/wearable/colmi/protocol.js')
-        const { X3_NAME_PREFIXES } = require('../../utils/wearable/x3/protocol.js')
+        const { HALO_NAME_PREFIXES } = require('../../utils/wearable/halo/protocol.js')
         const { BLE_SERVICE_UUID: AIZO_SVC_UUID, AIZO_NAME_PREFIXES } = require('../../utils/wearable/aizo/protocol.js')
         const { createWearable } = require('../../utils/wearable/index.js')
-        const ALL_PREFIXES = [...COLMI_NAME_PREFIXES, ...X3_NAME_PREFIXES]
+        const ALL_PREFIXES = [...COLMI_NAME_PREFIXES, ...HALO_NAME_PREFIXES]
         const AIZO_SVC_NORM = AIZO_SVC_UUID.replace(/-/g, '').toLowerCase()
 
         // Open BLE adapter — this prompts the user to enable Bluetooth if off
@@ -2435,8 +2489,9 @@ Component({
               const isAizo     = isAizoSvc || isAizoName
               const isNamed    = nameLower && ALL_PREFIXES.some((p) => nameLower.startsWith(p.toLowerCase()))
               if (!isAizo && !isNamed) continue
-              const brand = isAizo ? 'aizo' : (nameLower.startsWith('x3') || nameLower.startsWith('x6') ? 'x3' : 'colmi')
-              found.set(d.deviceId, { deviceId: d.deviceId, name: name || (brand === 'aizo' ? 'Aizo Ring' : brand === 'x3' ? 'X3 Ring' : 'Colmi Ring'), rssi: d.RSSI, brand })
+              const isHalo = nameLower && HALO_NAME_PREFIXES.some((p) => nameLower.startsWith(p.toLowerCase()))
+              const brand = isAizo ? 'aizo' : (isHalo ? 'halo' : 'colmi')
+              found.set(d.deviceId, { deviceId: d.deviceId, name: name || (brand === 'aizo' ? 'Aizo Ring' : brand === 'halo' ? 'Halo Ring' : 'Colmi Ring'), rssi: d.RSSI, brand })
             }
           })
           wx.startBluetoothDevicesDiscovery({
@@ -2473,18 +2528,21 @@ Component({
         const ring = createWearable(brand)
         await ring.connect(chosen.deviceId, { syncTime: true, name: chosen.name })
         const battery = await ring.getBattery()
+        // MAC is the ring's stable hardware identifier (unlike deviceId, which
+        // is a per-OS/per-scan BLE handle) — only Halo currently exposes it.
+        const mac = typeof ring.getMac === 'function' ? await ring.getMac().catch(() => null) : null
 
-        // X3: apply default scheduled monitoring immediately on first bind
+        // Halo: apply default scheduled monitoring immediately on first bind
         const defaultIvals = { hr: 30, spo2: 60, temp: 60, hrv: 120 }
         const defaultWms   = { hr: 2, spo2: 2, temp: 2, hrv: 2 }
-        if (brand === 'x3') {
+        if (brand === 'halo') {
           const _opts = { workMode: 2, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
           await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.hr,   type: 1 }).catch(() => {})
           await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.spo2, type: 2 }).catch(() => {})
           await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.temp, type: 3 }).catch(() => {})
           await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.hrv,  type: 4 }).catch(() => {})
-          wx.setStorageSync('x3_interval_settings', defaultIvals)
-          wx.setStorageSync('x3_work_mode_settings', defaultWms)
+          wx.setStorageSync('halo_interval_settings', defaultIvals)
+          wx.setStorageSync('halo_work_mode_settings', defaultWms)
         }
 
         await ring.disconnect()
@@ -2499,8 +2557,12 @@ Component({
           wearableConnected: true,
           wearableBattery: battery.level,
           wearableBusy: false,
-          ...(brand === 'x3' ? { x3Intervals: defaultIvals, x3WorkModes: defaultWms } : {}),
+          wearableServerHint: null,
+          ...(brand === 'halo' ? { haloIntervals: defaultIvals, haloWorkModes: defaultWms } : {}),
         })
+        // Best-effort — so other client apps (Android/iOS builds of this same
+        // codebase, or a miniapp reinstall) can discover the same ring later.
+        this._syncWearableBindingToServer({ brand, mac, name: chosen.name })
       } catch (e) {
         wx.hideLoading()
         console.error('[BLE][bind]', e?.message || e?.errMsg || e)
@@ -2517,17 +2579,17 @@ Component({
       this.setData({ wearableBusy: true, ringMeasuring: false })
       const { createWearable } = require('../../utils/wearable/index.js')
       const _savedDev = wx.getStorageSync('wearable_device') || {}
-      const brand = _savedDev.brand || 'colmi'
+      const brand = _normalizeBrand(_savedDev.brand) || 'colmi'
       const ring = createWearable(brand)
 
-      // ── X3: single-phase sync — all data is historical, no real-time measurement needed ──
-      if (brand === 'x3') {
+      // ── Halo: single-phase sync — all data is historical, no real-time measurement needed ──
+      if (brand === 'halo') {
         try {
           await ring.connect(this.data.wearableId, { syncTime: true })
           // Apply background measurement intervals. Track failures so we can detect
           // if the ring's schedule was wiped (e.g. after a full battery drain).
-          const _ivals = this.data.x3Intervals
-          const _wms   = this.data.x3WorkModes
+          const _ivals = this.data.haloIntervals
+          const _wms   = this.data.haloWorkModes
           const _baseOpts = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
           let _monitorFailed = 0
           for (const [type, interval, wm] of [[1, _ivals.hr, _wms.hr], [2, _ivals.spo2, _wms.spo2], [3, _ivals.temp, _wms.temp], [4, _ivals.hrv, _wms.hrv]]) {
@@ -2537,13 +2599,13 @@ Component({
           // Read back HRV (type 4) to verify the ring accepted the schedule.
           try {
             const _s4 = await ring.getAutoMonitoring(4)
-            if (IS_DEV) console.log(JSON.stringify({ level: 'DEBUG', msg: 'x3 HRV monitor readback', config: _s4 }))
+            if (IS_DEV) console.log(JSON.stringify({ level: 'DEBUG', msg: 'halo HRV monitor readback', config: _s4 }))
             if (_s4.workMode === 0 || _s4.intervalMinutes === 0) {
-              console.log(JSON.stringify({ level: 'WARN', msg: 'x3 HRV auto-monitor not active after sync', config: _s4 }))
+              console.log(JSON.stringify({ level: 'WARN', msg: 'halo HRV auto-monitor not active after sync', config: _s4 }))
             }
           } catch (_) {}
           if (_monitorFailed > 0) {
-            console.log(JSON.stringify({ level: 'WARN', msg: 'x3 setAutoMonitoring partial failure', failed: _monitorFailed }))
+            console.log(JSON.stringify({ level: 'WARN', msg: 'halo setAutoMonitoring partial failure', failed: _monitorFailed }))
           }
           const battery   = await ring.getBattery()
           const steps     = await ring.getSteps().catch(() => null)
@@ -2610,7 +2672,7 @@ Component({
           this._commitRingData(raw, battery.level, isZh, false)
         } catch (e) {
           await ring.disconnect().catch(() => {})
-          if (IS_DEV) console.error('[BLE][sync:x3]', e?.message || e?.errMsg || e)
+          if (IS_DEV) console.error('[BLE][sync:halo]', e?.message || e?.errMsg || e)
           if (!_isPrivacyError(e)) wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
           this.setData({ wearableConnected: false, wearableBusy: false })
         } finally {
@@ -2722,7 +2784,7 @@ Component({
       syncWearableData(this.properties.userId, { source: 'smart_ring', ...raw }, app?.globalData?.apiToken).catch(() => {})
 
       // Accumulate today's realtime (Phase 2) readings for Colmi on-demand measurements.
-      // X3 uses ring.hrvSlots / spo2Slots from its auto-monitoring buffer — skip accumulation
+      // Halo uses ring.hrvSlots / spo2Slots from its auto-monitoring buffer — skip accumulation
       // so repeated syncs don't push the same latest ring reading into the list every time.
       if (!isPartial && !raw.hrvSlots && (raw.hrv != null || raw.stress != null || raw.spo2 != null || raw.systolicBP != null)) {
         const todayStr = _shanghaiDateStr(raw.syncedAt)
@@ -2764,20 +2826,20 @@ Component({
 
     async toggleRingSettings() {
       if (this.data.ringSettingsOpen) {
-        this.setData({ ringSettingsOpen: false, x3IntervalsChanged: false, x3RingTime: null })
+        this.setData({ ringSettingsOpen: false, haloIntervalsChanged: false, haloRingTime: null })
         return
       }
       if (this.data.wearableBusy || this.data.ringSettingsBusy) return
 
-      // Non-X3 brands have no interval settings — just open the panel
-      if (this.data.wearableBrand !== 'x3') {
+      // Non-Halo brands have no interval settings — just open the panel
+      if (this.data.wearableBrand !== 'halo') {
         this.setData({ ringSettingsOpen: true })
         return
       }
 
       this.setData({ ringSettingsOpen: true, ringSettingsBusy: true })
       const { createWearable } = require('../../utils/wearable/index.js')
-      const ring = createWearable('x3')
+      const ring = createWearable('halo')
       try {
         await ring.connect(this.data.wearableId)
         const s1 = await ring.getAutoMonitoring(1)
@@ -2785,18 +2847,18 @@ Component({
         const s3 = await ring.getAutoMonitoring(3)
         const s4 = await ring.getAutoMonitoring(4)
         const ringTime = await ring.getDeviceTime().catch(() => null)
-        let x3RingTime = null
+        let haloRingTime = null
         if (ringTime) {
           const hh = String(ringTime.getHours()).padStart(2, '0')
           const mm = String(ringTime.getMinutes()).padStart(2, '0')
           const ss = String(ringTime.getSeconds()).padStart(2, '0')
-          x3RingTime = `${hh}:${mm}:${ss}`
+          haloRingTime = `${hh}:${mm}:${ss}`
         }
         this.setData({
-          x3Intervals: { hr: s1.intervalMinutes, spo2: s2.intervalMinutes, temp: s3.intervalMinutes, hrv: s4.intervalMinutes },
-          x3WorkModes: { hr: s1.workMode, spo2: s2.workMode, temp: s3.workMode, hrv: s4.workMode },
-          x3RingTime,
-          x3IntervalsChanged: false,
+          haloIntervals: { hr: s1.intervalMinutes, spo2: s2.intervalMinutes, temp: s3.intervalMinutes, hrv: s4.intervalMinutes },
+          haloWorkModes: { hr: s1.workMode, spo2: s2.workMode, temp: s3.workMode, hrv: s4.workMode },
+          haloRingTime,
+          haloIntervalsChanged: false,
         })
       } catch (_) {
         // fall back to locally cached values silently
@@ -2808,24 +2870,24 @@ Component({
 
     handleIntervalChange(e) {
       const { type, min } = e.currentTarget.dataset
-      this.setData({ x3Intervals: { ...this.data.x3Intervals, [type]: min }, x3IntervalsChanged: true })
+      this.setData({ haloIntervals: { ...this.data.haloIntervals, [type]: min }, haloIntervalsChanged: true })
     },
 
     handleWorkModeChange(e) {
       const { type } = e.currentTarget.dataset
-      const modes = this.data.x3WorkModes
+      const modes = this.data.haloWorkModes
       const next = { 0: 1, 1: 2, 2: 0 }
-      this.setData({ x3WorkModes: { ...modes, [type]: next[modes[type]] ?? 2 }, x3IntervalsChanged: true })
+      this.setData({ haloWorkModes: { ...modes, [type]: next[modes[type]] ?? 2 }, haloIntervalsChanged: true })
     },
 
     async saveRingIntervals() {
       if (this.data.ringSettingsBusy || this.data.wearableBusy) return
       this.setData({ ringSettingsBusy: true })
-      const ivals = this.data.x3Intervals
-      const wms   = this.data.x3WorkModes
+      const ivals = this.data.haloIntervals
+      const wms   = this.data.haloWorkModes
       const baseOpts = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
       const { createWearable } = require('../../utils/wearable/index.js')
-      const ring = createWearable('x3')
+      const ring = createWearable('halo')
       try {
         await ring.connect(this.data.wearableId)
         // Sync ring clock if it drifts more than 1 minute from host time
@@ -2839,9 +2901,9 @@ Component({
         await ring.setAutoMonitoring({ ...baseOpts, workMode: wms.spo2, intervalMinutes: ivals.spo2, type: 2 })
         await ring.setAutoMonitoring({ ...baseOpts, workMode: wms.temp, intervalMinutes: ivals.temp, type: 3 })
         await ring.setAutoMonitoring({ ...baseOpts, workMode: wms.hrv,  intervalMinutes: ivals.hrv,  type: 4 })
-        wx.setStorageSync('x3_interval_settings', ivals)
-        wx.setStorageSync('x3_work_mode_settings', wms)
-        this.setData({ x3IntervalsChanged: false })
+        wx.setStorageSync('halo_interval_settings', ivals)
+        wx.setStorageSync('halo_work_mode_settings', wms)
+        this.setData({ haloIntervalsChanged: false })
       } catch (e) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'saveRingIntervals failed', err: e?.message }))
         wx.showToast({ title: this.data.t.wearableSyncFail, icon: 'none' })
@@ -2862,8 +2924,12 @@ Component({
           if (res.confirm) {
             wx.removeStorageSync('wearable_device')
             wx.removeStorageSync('wearable_ring_data')
+            wx.removeStorageSync('halo_interval_settings')
+            wx.removeStorageSync('halo_work_mode_settings')
             wx.removeStorageSync('x3_interval_settings')
-            this.setData({ wearableId: '', wearableName: '', wearableBrand: '', wearableConnected: false, wearableBattery: 0, ringData: null })
+            wx.removeStorageSync('x3_work_mode_settings')
+            this.setData({ wearableId: '', wearableName: '', wearableBrand: '', wearableConnected: false, wearableBattery: 0, ringData: null, wearableServerHint: null })
+            this._syncWearableBindingToServer(null)
           }
         },
       })

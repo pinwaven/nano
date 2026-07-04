@@ -1,18 +1,18 @@
 'use strict';
 
-// High-level X3 ring client for Node, built on noble instead of the wx.* BLE
+// High-level Halo ring client for Node, built on noble instead of the wx.* BLE
 // APIs. Reuses the production protocol (packet builders + BCD/byte parsers)
-// from src/mini/nano-miniapp/utils/wearable/x3/ so decoding stays identical
+// from src/mini/nano-miniapp/utils/wearable/halo/ so decoding stays identical
 // to what the Mini Program does — only the BLE transport differs.
 
 const { BLETransport, scanDevices } = require('./ble');
 
-const protocol = require('../../../src/mini/nano-miniapp/utils/wearable/x3/protocol.js');
-const X3Ring = require('../../../src/mini/nano-miniapp/utils/wearable/x3/index.js');
-const parsers = X3Ring.parsers;
+const protocol = require('../../../src/mini/nano-miniapp/utils/wearable/halo/protocol.js');
+const HaloRing = require('../../../src/mini/nano-miniapp/utils/wearable/halo/index.js');
+const parsers = HaloRing.parsers;
 
 const {
-  SERVICE_UUID, WRITE_UUID, NOTIFY_UUID, X3_NAME_PREFIXES,
+  SERVICE_UUID, WRITE_UUID, NOTIFY_UUID, HALO_NAME_PREFIXES,
   getBatteryPacket, getTimePacket, setTimePacket,
   getMacPacket, getVersionPacket,
   getDailyActivitySummaryPacket, getDetailActivityPacket,
@@ -43,14 +43,14 @@ function endsFF(acc) {
   return acc.length > 0 && acc[acc.length - 1] === 0xFF;
 }
 
-class X3RingClient {
+class HaloRingClient {
   constructor(address, opts = {}) {
     this.address = address;
     this._ble = new BLETransport(address, opts);
   }
 
   static scan(timeoutMs) {
-    return scanDevices(timeoutMs || 8000, X3_NAME_PREFIXES);
+    return scanDevices(timeoutMs || 8000, HALO_NAME_PREFIXES);
   }
 
   async connect() {
@@ -74,7 +74,7 @@ class X3RingClient {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this._ble.onNotify(null);
-        reject(new Error(`X3 response timeout (cmd 0x${expectedCmdId.toString(16)})`));
+        reject(new Error(`Halo response timeout (cmd 0x${expectedCmdId.toString(16)})`));
       }, timeoutMs);
 
       this._ble.onNotify((data) => {
@@ -108,10 +108,10 @@ class X3RingClient {
       const timer = setTimeout(() => {
         this._ble.onNotify(null);
         if (chunks.length === 0) {
-          reject(new Error(`X3 stream timeout (cmd 0x${expectedCmdId.toString(16)}), no data received`));
+          reject(new Error(`Halo stream timeout (cmd 0x${expectedCmdId.toString(16)}), no data received`));
           return;
         }
-        console.error(`[warn] X3 stream (cmd 0x${expectedCmdId.toString(16)}) timed out after ${chunks.length} packet(s) without a terminator — returning partial data`);
+        console.error(`[warn] Halo stream (cmd 0x${expectedCmdId.toString(16)}) timed out after ${chunks.length} packet(s) without a terminator — returning partial data`);
         resolve(concat(chunks, totalLen));
       }, timeoutMs);
 
@@ -274,4 +274,4 @@ class X3RingClient {
   }
 }
 
-module.exports = { X3RingClient };
+module.exports = { HaloRingClient };

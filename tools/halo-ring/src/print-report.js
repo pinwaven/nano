@@ -1,7 +1,7 @@
 'use strict';
 
 function printReport(data) {
-  console.log('X3 Smart Ring — Full Data Dump');
+  console.log('Halo Smart Ring — Full Data Dump');
   console.log('-'.repeat(60));
 
   if (data.battery && !data.battery.error) {

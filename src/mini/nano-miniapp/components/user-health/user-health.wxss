@@ -2170,6 +2170,12 @@
   color: rgba(166, 196, 229, 0.5);
 }
 
+.wd-server-hint {
+  font-size: 20rpx;
+  color: rgba(99, 117, 236, 0.65);
+  font-weight: 500;
+}
+
 .wd-chevron {
   font-size: 36rpx;
   color: rgba(99, 117, 236, 0.5);

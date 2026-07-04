@@ -6,7 +6,32 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Changed
+
+- **X3 → Halo rename** (`src/mini/nano-miniapp/utils/wearable/{x3→halo}/`, `tools/{x3-ring→halo-ring}/`, `components/user-health/user-health.{js,wxml}`, `utils/wearable/{index,sync}.js`, `docs/architecture/`, `CLAUDE.md`)
+
+  "X3" is the OEM hardware model number (the ring literally advertises itself over BLE as `X3B`/`X6...`), not our product name — renamed the internal identifiers to "Halo" to avoid conflating a specific vendor SKU with the ring line we're building support around.
+
+  **What changed:**
+  - `brand === 'x3'` → `brand === 'halo'` everywhere (factory dispatch, local storage, server `wearable_brand` column, UI checks). `'x3'` is kept as a permanent legacy alias — `createWearable()` and a new `_normalizeBrand()` helper in `user-health.js` accept it so anyone already bound before this rename doesn't break.
+  - Folder + class rename: `utils/wearable/x3/` → `utils/wearable/halo/`, `X3Ring` → `HaloRing`. `X3Ring.parsers` → `HaloRing.parsers`.
+  - Local storage keys `x3_interval_settings`/`x3_work_mode_settings` → `halo_interval_settings`/`halo_work_mode_settings`; reads fall back to the old key names, unbind clears both old and new.
+  - CLI tool `tools/x3-ring/` → `tools/halo-ring/` (package name, bin, class names, docs all updated); confirmed working end-to-end against a real ring after the rename.
+  - **Not renamed, intentionally:** `HALO_NAME_PREFIXES` still holds the literal hardware-broadcast values, not something we control. `model: 'X3'` in `getDeviceInfo()` similarly stays (real hardware model field); only the human-facing `name` became `'Halo Smart Ring'`.
+  - `docs/architecture/x3-smart-ring.md` → `docs/architecture/halo-smart-ring.md`; `CLAUDE.md` §18 and `docs/architecture/wearable-system.md` updated to match.
+  - **Extended to the full Halo product line:** `HALO_NAME_PREFIXES` grew from `['X3', 'X6']` to `['X3', 'X6', 'X9', 'V4']` (X9 is another ring model, V4 is a wrist band — confirmed to share the identical BLE protocol). Brand detection during scan (`user-health.js`) now checks against `HALO_NAME_PREFIXES` directly instead of hardcoding `'x3'`/`'x6'` prefix checks inline, so future model additions are a one-line change to that array rather than a second place to remember.
+
 ### Added
+
+- **Server-side wearable ring binding** (`schemas/migration_wearable_binding.sql`, `functions/worker/handlers/users.js`, `components/user-health/user-health.js`)
+
+  The bound ring (brand/device) previously lived only in `wx.storageSync` on one phone — lost on reinstall, cache clear, or switching devices, and invisible to the Android/iOS builds of this same codebase (WeChat Donut Multiterminal). Now persisted server-side on `users` so any client app can discover the same binding.
+
+  **What changed:**
+  - Migration adds `users.wearable_brand`, `wearable_mac`, `wearable_name`, `wearable_bound_at` — purely additive columns, no other schema impact. `wearable_mac` is the ring's stable hardware MAC (from `ring.getMac()`), not the BLE `deviceId`, which is a per-OS/per-scan handle that isn't portable across devices. Only Halo currently exposes a MAC; other brands bind with `mac: null`.
+  - `handlePatchUser` (`PATCH /api/users/:id`) accepts a new `wearable: {brand, mac, name} | null` field alongside the existing `theme` field — reuses the existing generic user-patch endpoint rather than adding a new route. `handleGetUser` now returns the four new columns.
+  - `user-health.js`: `handleBindWearable` now also calls `ring.getMac()` (Halo only) and pushes `{brand, mac, name}` to the server after a successful local bind; `handleUnbindWearable` clears it. Both are best-effort (wrapped so a server hiccup doesn't block the local BLE flow). When a device/install has no local `wearable_device` in storage, `_loadWearableHintFromServer()` checks the account for an existing server-side binding and shows "Already bound on this account: <name>" in the empty-state card instead of looking like the user has never paired a ring.
+  - No auto-reconnect across devices — the BLE `deviceId` still requires a fresh scan on each device regardless of what's stored server-side; this only removes the "which ring did I have again" ambiguity and gives a foundation for future admin/coach visibility into device bindings.
 
 - **Miniapp HealthTab — weekly multi-block sleep timeline** (`components/user-health/user-health.{js,wxml,wxss}`, `utils/wearable/sync.js`)
 

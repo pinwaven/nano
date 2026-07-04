@@ -1,6 +1,6 @@
 'use strict'
 
-// X3 Smart Ring BLE constants and command builders.
+// Halo Smart Ring BLE constants and command builders. (hardware family: X3/X6/X9/V4)
 
 const SERVICE_UUID = '0000fff000001000800000805f9b34fb'
 const WRITE_UUID   = '0000fff600001000800000805f9b34fb'
@@ -10,7 +10,10 @@ const NOTIFY_MAP = {
   [SERVICE_UUID]: { txCharUUID: NOTIFY_UUID, rxCharUUID: WRITE_UUID },
 }
 
-const X3_NAME_PREFIXES = ['X3', 'X6']
+// Literal BLE-advertised hardware name prefixes for the Halo product line
+// (X3/X6/X9 rings + V4 band) — all confirmed to share this same protocol.
+// Do not rename the values themselves; this is what the hardware broadcasts.
+const HALO_NAME_PREFIXES = ['X3', 'X6', 'X9', 'V4']
 
 // --- Low-level frame primitives ---
 
@@ -319,7 +322,7 @@ function setPpgStreamPacket(open) {
 }
 
 module.exports = {
-  SERVICE_UUID, WRITE_UUID, NOTIFY_UUID, NOTIFY_MAP, X3_NAME_PREFIXES,
+  SERVICE_UUID, WRITE_UUID, NOTIFY_UUID, NOTIFY_MAP, HALO_NAME_PREFIXES,
   calculateChecksum, buildCommand, decToBcd, bcdToString,
   parseBcdDate, readLEInt, readFloat32LE,
   setTimePacket, getTimePacket,

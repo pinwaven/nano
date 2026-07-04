@@ -1,6 +1,8 @@
-# X3 Smart Ring — BLE Protocol & Integration Reference
+# Halo Smart Ring — BLE Protocol & Integration Reference
 
-This document covers the full BLE protocol of the X3 Smart Ring and its integration in `src/mini/nano-miniapp/utils/wearable/x3/`. Source material: reverse-engineered Android SDK in `temp/x3/`.
+> **Support status:** as of 2026-07, Halo — the underlying hardware/protocol family is X3/X6/X9 (rings) and V4 (band); BLE-advertised names literally start with those prefixes, the manufacturer's own model designations — is the **only actively supported ring family**. Colmi and Aizo adapters remain in the codebase for existing bound users but are not being extended — see CLAUDE.md §18. All new wearable work targets this document's protocol.
+
+This document covers the full BLE protocol of the X3/X6/X9/V4 hardware family (product name: Halo) and its integration in `src/mini/nano-miniapp/utils/wearable/halo/`. Source material: reverse-engineered Android SDK in `temp/x3/` (X3/X6) — protocol confirmed identical for X9 and the V4 band; no separate SDK dump exists for those yet.
 
 ---
 
@@ -14,9 +16,9 @@ The ring exposes a single custom service with two characteristics.
 | **Write (host → ring)** | `0000fff6-0000-1000-8000-00805f9b34fb` | `FFF6` |
 | **Notify (ring → host)** | `0000fff7-0000-1000-8000-00805f9b34fb` | `FFF7` |
 
-> **WeChat BLE UUID normalization:** WeChat returns service/characteristic UUIDs in full 128-bit form with dashes (e.g. `0000FFF0-0000-1000-8000-00805F9B34FB`). The `BLEManager._normalizeUUID()` helper strips dashes and lowercases, but does **not** expand short UUIDs. Always define X3 UUIDs in their normalized full form (no dashes, lowercase) as done in `x3/protocol.js` — never as the short 4-character alias.
+> **WeChat BLE UUID normalization:** WeChat returns service/characteristic UUIDs in full 128-bit form with dashes (e.g. `0000FFF0-0000-1000-8000-00805F9B34FB`). The `BLEManager._normalizeUUID()` helper strips dashes and lowercases, but does **not** expand short UUIDs. Always define X3 UUIDs in their normalized full form (no dashes, lowercase) as done in `halo/protocol.js` — never as the short 4-character alias.
 
-Advertisement names begin with `X3` (covering X3B, X3C, X3D, …) or `X6` (covering X6F, X6E, X6B, …) — stored in `X3_NAME_PREFIXES`. The X6 hardware series uses the identical BLE GATT structure and command set as X3; no protocol differences have been observed. Both families are handled by the same `X3Ring` adapter.
+Advertisement names begin with `X3` (covering X3B, X3C, X3D, …), `X6` (X6F, X6E, X6B, …), `X9`, or `V4` (the band form factor) — stored in `HALO_NAME_PREFIXES = ['X3', 'X6', 'X9', 'V4']`. All four hardware lines use the identical BLE GATT structure and command set; no protocol differences have been observed across them. All are handled by the same `HaloRing` adapter.
 
 ---
 
@@ -331,16 +333,16 @@ value[6] = Systolic BP proxy  (mmHg)
 value[7] = Diastolic BP proxy (mmHg)
 ```
 
-The `X3Ring.getRealtime()` implementation caches the paired metric: when requesting HRV (type `1`), the response also contains stress in `value[5]`, and vice versa. The cached value is returned on the next `getRealtime('pressure')` call without sending another command.
+The `HaloRing.getRealtime()` implementation caches the paired metric: when requesting HRV (type `1`), the response also contains stress in `value[5]`, and vice versa. The cached value is returned on the next `getRealtime('pressure')` call without sending another command.
 
 ---
 
 ## 7. Current Mini Program Integration
 
 **Files:**
-- `src/mini/nano-miniapp/utils/wearable/x3/protocol.js` — UUID constants, checksum, `buildCommand`, BCD helpers, all packet builders
-- `src/mini/nano-miniapp/utils/wearable/x3/index.js` — `X3Ring` class extending `WearableDevice`
-- `src/mini/nano-miniapp/utils/wearable/index.js` — factory registers brand `'x3'`
+- `src/mini/nano-miniapp/utils/wearable/halo/protocol.js` — UUID constants, checksum, `buildCommand`, BCD helpers, all packet builders
+- `src/mini/nano-miniapp/utils/wearable/halo/index.js` — `HaloRing` class extending `WearableDevice`
+- `src/mini/nano-miniapp/utils/wearable/index.js` — factory registers brand `'halo'` (accepts legacy `'x3'` as an alias)
 - `src/mini/nano-miniapp/utils/wearable/sync.js` — `syncWearableData()` maps a `WearableSnapshot` to `health_events` and POSTs to `/api/health-events/sync`
 
 **What the current sync pulls on each connection (`handleSyncWearable`):**
@@ -373,18 +375,18 @@ Wire these in when the health tab UI is ready to display the corresponding dimen
 
 **Brand detection during scan:**
 ```js
-const brand = isAizo ? 'aizo'
-  : (nameLower.startsWith('x3') || nameLower.startsWith('x6') ? 'x3' : 'colmi')
+const isHalo = HALO_NAME_PREFIXES.some((p) => nameLower.startsWith(p.toLowerCase()))
+const brand = isAizo ? 'aizo' : (isHalo ? 'halo' : 'colmi')
 ```
-X6 devices are mapped to brand `'x3'` because they share the same protocol and `X3Ring` adapter.
+X6/X9/V4 devices are all mapped to brand `'halo'` because they share the same protocol and `HaloRing` adapter — checked against `HALO_NAME_PREFIXES` directly rather than hardcoding each prefix, so adding a new model line only requires updating that one array.
 
-**X3 sync is single-phase** (no real-time measurement step) — all data is historical log data read off the ring directly. Colmi requires a second phase for on-demand HRV/SpO2.
+**Halo sync is single-phase** (no real-time measurement step) — all data is historical log data read off the ring directly. Colmi requires a second phase for on-demand HRV/SpO2.
 
 ---
 
 ## 7a. BLE Concurrency Constraint
 
-`X3Ring._send(packet, expectedCmdId)` registers a single `notifyHandler` slot on the FFF7 characteristic. Only one pending command can wait for a response at a time.
+`HaloRing._send(packet, expectedCmdId)` registers a single `notifyHandler` slot on the FFF7 characteristic. Only one pending command can wait for a response at a time.
 
 **Do not use `Promise.all` to issue multiple ring commands concurrently.** Each call to `_send` overwrites the shared `notifyHandler`. If you fire four commands in parallel, only the last-registered handler is active when the ring's first response arrives — the other three callers will timeout.
 
@@ -407,7 +409,7 @@ const s4 = await ring.getAutoMonitoring(4)
 **Always close the BLE connection in a `finally` block.** If a command throws (timeout, BLE error), execution jumps to `catch`, skipping any `ring.disconnect()` call placed inside `try`. A leaked connection prevents re-connection until the WeChat BLE adapter is reset. Pattern:
 
 ```js
-const ring = createWearable('x3')
+const ring = createWearable('halo')
 try {
   await ring.connect(deviceId)
   // ... sequential ring commands ...
@@ -425,16 +427,16 @@ try {
 The ⚙ button in the health tab opens a panel showing the four auto-monitoring intervals. Pressing it triggers `toggleRingSettings()` in `user-health.js`.
 
 **Open flow:**
-1. For non-X3 brands: opens immediately with no BLE call.
-2. For X3: connects, reads intervals for all four types **sequentially** (HR → SpO2 → Temp → HRV), disconnects in `finally`, then populates `x3Intervals` state. While reading, `ringSettingsBusy = true` shows a loading row.
-3. On failure: silently falls back to locally cached intervals (last values saved to `x3_interval_settings`).
+1. For non-Halo brands: opens immediately with no BLE call.
+2. For Halo: connects, reads intervals for all four types **sequentially** (HR → SpO2 → Temp → HRV), disconnects in `finally`, then populates `haloIntervals` state. While reading, `ringSettingsBusy = true` shows a loading row.
+3. On failure: silently falls back to locally cached intervals (last values saved to `halo_interval_settings`).
 
-**Change detection:** `handleIntervalChange` sets `x3IntervalsChanged = true`. The Save button appears only when this is true.
+**Change detection:** `handleIntervalChange` sets `haloIntervalsChanged = true`. The Save button appears only when this is true.
 
 **Save flow (`saveRingIntervals`):**
 1. Connects to ring.
 2. Calls `setAutoMonitoring` for each of the four types **sequentially** with `workMode: 1` (Continuous), 00:00–23:59 window, all weekdays (`0x7F`).
-3. On success: persists `x3Intervals` to `wx.setStorageSync('x3_interval_settings', …)`, clears the change flag (Save button hides).
+3. On success: persists `haloIntervals` to `wx.setStorageSync('halo_interval_settings', …)`, clears the change flag (Save button hides).
 4. On failure: shows `wearableSyncFail` toast; logs error to console for DevTools inspection.
 5. `ring.disconnect()` always runs in `finally`.
 
@@ -442,17 +444,17 @@ The Save path **does not** call `getAutoMonitoring` — it writes the current UI
 
 ---
 
-## 7c. Realtime Readings Display (X3 vs Colmi)
+## 7c. Realtime Readings Display (Halo vs Colmi)
 
 The "readings" list beneath the ring card (`ringData.realtimeReadings`) works differently per brand.
 
 **Colmi (on-demand, Phase 2):**  
 After each manual measurement, `_commitRingData` appends `{ t, hrv, stress, spo2, … }` to `wearable_realtime_today` in local storage, keyed by today's date. On the next page load, `_getRealtimeReadings` retrieves today's accumulated list. This captures multiple on-demand readings taken throughout a single day.
 
-**X3 (auto-monitoring, synced from ring buffer):**  
+**Halo (auto-monitoring, synced from ring buffer):**  
 The ring's auto-monitoring already produces a full day of timed readings stored in `raw.hrvSlots` and `raw.spo2Slots`. Pushing `raw.hrv` (always the latest ring reading) into `wearable_realtime_today` on every sync would accumulate identical values with different sync timestamps — showing the same reading three times after three syncs.
 
-X3 therefore **bypasses `wearable_realtime_today` entirely** and builds `realtimeReadings` from the slot arrays using `_slotsToReadings(hrvSlots, spo2Slots)`:
+Halo therefore **bypasses `wearable_realtime_today` entirely** and builds `realtimeReadings` from the slot arrays using `_slotsToReadings(hrvSlots, spo2Slots)`:
 
 ```
 _slotsToReadings:
@@ -462,12 +464,12 @@ _slotsToReadings:
   return sorted by timestamp, each record shaped for _fmtRealtimeReadings
 ```
 
-This means the health tab for X3 users shows one entry per ring auto-measurement (e.g. one HRV reading every 60 min), not one entry per sync session.
+This means the health tab for Halo users shows one entry per ring auto-measurement (e.g. one HRV reading every 60 min), not one entry per sync session.
 
 The branch in `_commitRingData`:
 ```js
 const rawReadings = raw.hrvSlots != null
-  ? _slotsToReadings(raw.hrvSlots, raw.spo2Slots)  // X3
+  ? _slotsToReadings(raw.hrvSlots, raw.spo2Slots)  // Halo
   : _getRealtimeReadings(raw.syncedAt)              // Colmi
 ```
 
@@ -475,7 +477,7 @@ const rawReadings = raw.hrvSlots != null
 
 ---
 
-## 8. Full API Reference (`X3Ring`)
+## 8. Full API Reference (`HaloRing`)
 
 All methods are `async` and throw on BLE error or timeout. `date` parameters default to today (CST) when omitted. Timestamps in returned objects are `'YYYY-MM-DD HH:MM:SS'` strings in CST; history arrays are sorted **oldest-first**.
 
@@ -672,9 +674,9 @@ function getDailyActivitySummaryPacket(mode, dateFilter) {
 }
 
 // Usage:
-const lastSync = wx.getStorageSync('x3_last_sync')  // Date | null
+const lastSync = wx.getStorageSync('halo_last_sync')  // Date | null
 const mode = lastSync ? 0x01 : 0x00
 const packet = getDailyActivitySummaryPacket(mode, lastSync ? new Date(lastSync) : null)
 ```
 
-After a successful sync, store the timestamp of the latest record as `x3_last_sync`.
+After a successful sync, store the timestamp of the latest record as `halo_last_sync`.

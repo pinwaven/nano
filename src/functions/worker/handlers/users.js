@@ -330,6 +330,7 @@ async function handleGetUser(user_id) {
             `SELECT u.user_id, u.nickname, u.avatar_url, u.phone, u.email, u.language, u.gender,
                     u.birth_date, u.roles, u.coach_id, u.channel_id, u.created_at,
                     u.bio_data as user_bio_data,
+                    u.wearable_brand, u.wearable_mac, u.wearable_name, u.wearable_bound_at,
                     u.referred_by_user_id, u.invited_by_invitation_id,
                     ru.nickname as referrer_nickname,
                     inv.code as invite_code,
@@ -459,7 +460,7 @@ async function handlePutUser(user_id, body) {
 }
 
 async function handlePatchUser(user_id, body) {
-    const { theme } = body;
+    const { theme, wearable } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const updates = [];
@@ -467,6 +468,20 @@ async function handlePatchUser(user_id, body) {
         if (theme !== undefined) {
             params.push(theme === 'light' ? 'light' : 'dark');
             updates.push(`theme = $${params.length}`);
+        }
+        // wearable: { brand, mac, name } to bind/update, or null to unbind.
+        if (wearable !== undefined) {
+            if (wearable === null) {
+                updates.push('wearable_brand = NULL', 'wearable_mac = NULL', 'wearable_name = NULL', 'wearable_bound_at = NULL');
+            } else {
+                params.push(wearable.brand ?? null);
+                updates.push(`wearable_brand = $${params.length}`);
+                params.push(wearable.mac ?? null);
+                updates.push(`wearable_mac = $${params.length}`);
+                params.push(wearable.name ?? null);
+                updates.push(`wearable_name = $${params.length}`);
+                updates.push('wearable_bound_at = NOW()');
+            }
         }
         if (updates.length === 0) return { success: true };
         params.push(user_id);

@@ -2,16 +2,16 @@
 'use strict';
 
 const { Command } = require('commander');
-const { X3RingClient } = require('../src/x3-ring');
+const { HaloRingClient } = require('../src/halo-ring');
 const printReport = require('../src/print-report');
 
 const program = new Command();
 
 program
-  .name('x3_ring')
-  .description('CLI tool for the X3 smart ring over BLE. Run with no arguments to fetch and print all stored data.')
+  .name('halo_ring')
+  .description('CLI tool for the Halo smart ring over BLE. Run with no arguments to fetch and print all stored data.')
   .option('--address <address>', 'bluetooth address/UUID of the ring (skips scanning)')
-  .option('--name <prefix>', 'name prefix to scan for (default: X3, X6)')
+  .option('--name <prefix>', 'name prefix to scan for (default: X3, X6, X9, V4 — the hardware\'s BLE-advertised name)')
   .option('--scan-timeout <ms>', 'scan duration in milliseconds', '8000')
   .option('--debug', 'enable debug logging', false)
   .option('--json', 'print raw JSON instead of a formatted report', false);
@@ -24,15 +24,15 @@ async function resolveAddress(opts) {
   if (opts.address) return opts.address;
 
   const prefixes = opts.name ? [opts.name] : undefined;
-  console.error('Scanning for X3 ring...');
-  const found = await X3RingClient.scan(parseInt(opts.scanTimeout, 10));
+  console.error('Scanning for Halo ring...');
+  const found = await HaloRingClient.scan(parseInt(opts.scanTimeout, 10));
   const matches = prefixes
     ? found.filter((p) => prefixes.some((pre) =>
         ((p.advertisement && p.advertisement.localName) || '').toLowerCase().startsWith(pre.toLowerCase())))
     : found;
 
   if (!matches.length) {
-    console.error('No X3 ring found. Make sure it is powered on and nearby, or pass --address.');
+    console.error('No Halo ring found. Make sure it is powered on and nearby, or pass --address.');
     process.exit(1);
   }
   if (matches.length > 1) {
@@ -47,7 +47,7 @@ async function resolveAddress(opts) {
 async function makeClient(opts) {
   const address = await resolveAddress(opts);
   console.error(`Connecting to ${address}...`);
-  return new X3RingClient(address, { debug: opts.debug });
+  return new HaloRingClient(address, { debug: opts.debug });
 }
 
 // --- default: fetch everything ---
@@ -102,12 +102,12 @@ program
 // --- scan ---
 program
   .command('scan')
-  .description('Scan for nearby X3 rings')
+  .description('Scan for nearby Halo rings')
   .action(async () => {
     const opts = program.opts();
     const timeout = parseInt(opts.scanTimeout, 10);
     console.error(`Scanning for ${timeout}ms...`);
-    const found = await X3RingClient.scan(timeout);
+    const found = await HaloRingClient.scan(timeout);
     if (!found.length) {
       console.log('No devices found.');
     } else {

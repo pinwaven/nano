@@ -3,7 +3,7 @@
 const { WearableDevice } = require('../index.js')
 const { BLEManager } = require('../ble-manager.js')
 const {
-  SERVICE_UUID, WRITE_UUID, NOTIFY_UUID, NOTIFY_MAP, X3_NAME_PREFIXES,
+  SERVICE_UUID, WRITE_UUID, NOTIFY_UUID, NOTIFY_MAP, HALO_NAME_PREFIXES,
   getBatteryPacket, setTimePacket, getTimePacket,
   setPersonalProfilePacket, getPersonalProfilePacket,
   getMacPacket, getVersionPacket,
@@ -25,7 +25,7 @@ const {
   parseBcdDate, bcdToString, readLEInt, readFloat32LE,
 } = require('./protocol.js')
 
-class X3Ring extends WearableDevice {
+class HaloRing extends WearableDevice {
   constructor() {
     super()
     this._ble = new BLEManager()
@@ -34,12 +34,12 @@ class X3Ring extends WearableDevice {
     this._ppgSamples = []         // accumulates raw PPG samples during a glucose session
   }
 
-  // Scan for X3 rings nearby. Returns [{ deviceId, name, rssi }].
+  // Scan for Halo rings nearby. Returns [{ deviceId, name, rssi }].
   static async scan(timeoutMs) {
     const mgr = new BLEManager()
     await mgr.openAdapter()
     try {
-      return await mgr.scan(X3_NAME_PREFIXES, timeoutMs || 8000)
+      return await mgr.scan(HALO_NAME_PREFIXES, timeoutMs || 8000)
     } finally {
       await mgr.closeAdapter()
     }
@@ -75,7 +75,7 @@ class X3Ring extends WearableDevice {
   async getDeviceInfo() {
     let firmware = 'unknown'
     try { firmware = await this.getFirmwareVersion() } catch (_) {}
-    return { name: 'X3 Smart Ring', model: 'X3', firmware, hardware: 'unknown' }
+    return { name: 'Halo Smart Ring', model: 'X3', firmware, hardware: 'unknown' }
   }
 
   // Returns the ring's current clock as a Date (or null on failure)
@@ -448,12 +448,12 @@ class X3Ring extends WearableDevice {
       return val
     }
 
-    const x3TypeMap = { 'heart-rate': 2, 'spo2': 3, 'hrv': 1, 'pressure': 1 }
-    const x3Type = x3TypeMap[type]
-    if (!x3Type) throw new Error(`Unknown realtime type for X3: ${type}`)
+    const haloTypeMap = { 'heart-rate': 2, 'spo2': 3, 'hrv': 1, 'pressure': 1 }
+    const haloType = haloTypeMap[type]
+    if (!haloType) throw new Error(`Unknown realtime type for Halo: ${type}`)
 
-    const startPkt = setMeasurementWithTypePacket(x3Type, 30, true)
-    const stopPkt  = setMeasurementWithTypePacket(x3Type, 0, false)
+    const startPkt = setMeasurementWithTypePacket(haloType, 30, true)
+    const stopPkt  = setMeasurementWithTypePacket(haloType, 0, false)
 
     const result = await new Promise((resolve) => {
       const cleanup = (value) => {
@@ -464,7 +464,7 @@ class X3Ring extends WearableDevice {
 
       this._ble.onNotify(NOTIFY_UUID, (data) => {
         if (data.length < 8 || data[0] !== 0x28) return
-        if (data[1] !== x3Type) return
+        if (data[1] !== haloType) return
         if (data[2] === 0 && data[3] === 0 && data[4] === 0 && data[5] === 0) return
 
         let value = null
@@ -566,7 +566,7 @@ class X3Ring extends WearableDevice {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this._ble.onNotify(NOTIFY_UUID, null)
-        reject(new Error(`X3 response timeout (cmd 0x${expectedCmdId.toString(16)})`))
+        reject(new Error(`Halo response timeout (cmd 0x${expectedCmdId.toString(16)})`))
       }, timeoutMs)
 
       this._ble.onNotify(NOTIFY_UUID, (data) => {
@@ -601,10 +601,10 @@ class X3Ring extends WearableDevice {
       const timer = setTimeout(() => {
         this._ble.onNotify(NOTIFY_UUID, null)
         if (chunks.length === 0) {
-          reject(new Error(`X3 stream timeout (cmd 0x${expectedCmdId.toString(16)}), no data received`))
+          reject(new Error(`Halo stream timeout (cmd 0x${expectedCmdId.toString(16)}), no data received`))
           return
         }
-        console.log(JSON.stringify({ level: 'WARN', msg: 'X3 stream timed out, returning partial data', cmd: `0x${expectedCmdId.toString(16)}`, packets: chunks.length }))
+        console.log(JSON.stringify({ level: 'WARN', msg: 'Halo stream timed out, returning partial data', cmd: `0x${expectedCmdId.toString(16)}`, packets: chunks.length }))
         resolve(_concat(chunks, totalLen))
       }, timeoutMs)
 
@@ -1131,9 +1131,9 @@ function _concat(arrays, totalLen) {
   return out
 }
 
-// Exposed so non-wx callers (e.g. tools/x3-ring, a Node/noble CLI) can reuse the
+// Exposed so non-wx callers (e.g. tools/halo-ring, a Node/noble CLI) can reuse the
 // exact same byte-parsing logic without depending on the wx.* BLE APIs.
-X3Ring.parsers = {
+HaloRing.parsers = {
   parseHrLog55: _parseHrLog55,
   parseHrHistory54: _parseHrHistory54,
   parseHrvRecords56: _parseHrvRecords56,
@@ -1150,4 +1150,4 @@ X3Ring.parsers = {
   isoDateStr: _isoDateStr,
 }
 
-module.exports = X3Ring
+module.exports = HaloRing

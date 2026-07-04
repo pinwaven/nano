@@ -1,10 +1,10 @@
 {
-  "name": "x3-ring-tool",
+  "name": "halo-ring-tool",
   "version": "0.1.0",
-  "description": "CLI tool for reading data from the X3 smart ring over BLE",
-  "main": "src/x3-ring.js",
+  "description": "CLI tool for reading data from the Halo smart ring over BLE",
+  "main": "src/halo-ring.js",
   "bin": {
-    "x3_ring": "./bin/cli.js"
+    "halo_ring": "./bin/cli.js"
   },
   "scripts": {
     "start": "node bin/cli.js"

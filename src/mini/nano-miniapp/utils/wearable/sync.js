@@ -17,7 +17,7 @@
  * @property {number|null} sleepStart - minutes after midnight (sleep onset)
  * @property {number|null} sleepEnd   - minutes after midnight (wake time)
  * @property {Array|null}  sleepSlots - [{type, min}] consecutive sleep stage periods
- * @property {Array|null}  sleepHistory - [{date, onset, totalMinutes, deep, light, rem, awake, sleepStart, sleepEnd, slots}] per-session sleep summaries, oldest first (X3). `date` is the noon-to-noon "night" bucket (see _nightKey in x3/index.js); `onset` is the session's actual "YYYY-MM-DD HH:MM:SS" start time, used to distinguish naps from night sleep and to position blocks on a 24h timeline.
+ * @property {Array|null}  sleepHistory - [{date, onset, totalMinutes, deep, light, rem, awake, sleepStart, sleepEnd, slots}] per-session sleep summaries, oldest first (Halo). `date` is the noon-to-noon "night" bucket (see _nightKey in halo/index.js); `onset` is the session's actual "YYYY-MM-DD HH:MM:SS" start time, used to distinguish naps from night sleep and to position blocks on a 24h timeline.
  * @property {Array|null}  hrSlots    - [{t, bpm}] per 5-min interval
  * @property {number|null} restingHr - bpm
  * @property {number|null} hrv            - ms (RMSSD) — last reading, used for display
@@ -28,9 +28,9 @@
  * @property {number|null} systolicBP     - mmHg systolic blood pressure
  * @property {number|null} diastolicBP    - mmHg diastolic blood pressure
  * @property {string|null} hrvMeasuredAt  - ring's BCD timestamp for the HRV record ("YYYY-MM-DD HH:MM:SS")
- * @property {Array|null}  hrvSlots  - [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}] all cached HRV readings across ~3 days (X3)
- * @property {Array|null}  spo2Slots - [{timestamp, spo2}] all cached SpO2 readings across ~3 days (X3)
- * @property {Array|null}  tempSlots - [{timestamp, skinTemp, estimatedBodyTemp, status}] all cached temp readings (X3)
+ * @property {Array|null}  hrvSlots  - [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}] all cached HRV readings across ~3 days (Halo)
+ * @property {Array|null}  spo2Slots - [{timestamp, spo2}] all cached SpO2 readings across ~3 days (Halo)
+ * @property {Array|null}  tempSlots - [{timestamp, skinTemp, estimatedBodyTemp, status}] all cached temp readings (Halo)
  * @property {number}      syncedAt       - Date.now()
  */
 
@@ -123,7 +123,7 @@ function syncWearableData(openid, snapshot, apiToken) {
       })
     }
   } else if (snapshot.sleepMinutes != null && snapshot.sleepMinutes > 0) {
-    // Fallback for sources without per-session history (e.g. non-X3 wearables).
+    // Fallback for sources without per-session history (e.g. non-Halo wearables).
     events.push({
       category: 'sleep',
       source: src,
@@ -158,7 +158,7 @@ function syncWearableData(openid, snapshot, apiToken) {
     })
   }
 
-  // Per-measurement HRV events (X3 — one event per reading, each with its own external_id).
+  // Per-measurement HRV events (Halo — one event per reading, each with its own external_id).
   // Each slot already carries stress, breath, HR, and BP from the same 0x56 record.
   if (snapshot.hrvSlots?.length) {
     for (const slot of snapshot.hrvSlots) {
@@ -182,7 +182,7 @@ function syncWearableData(openid, snapshot, apiToken) {
     }
   }
 
-  // Per-measurement SpO2 events (X3 — one event per auto-SpO2 reading).
+  // Per-measurement SpO2 events (Halo — one event per auto-SpO2 reading).
   if (snapshot.spo2Slots?.length) {
     for (const slot of snapshot.spo2Slots) {
       const ts = slot.timestamp.replace(/\D/g, '')
@@ -198,7 +198,7 @@ function syncWearableData(openid, snapshot, apiToken) {
     }
   }
 
-  // Per-measurement temperature events (X3 — one event per scheduled temp reading).
+  // Per-measurement temperature events (Halo — one event per scheduled temp reading).
   if (snapshot.tempSlots?.length) {
     for (const slot of snapshot.tempSlots) {
       const ts = slot.timestamp ? slot.timestamp.replace(/\D/g, '') : String(slot.date || '').replace(/\D/g, '') + '0000'
