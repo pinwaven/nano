@@ -1168,7 +1168,7 @@ async function handleGetHealthEvents(query) {
         params.push(rowLimit);
 
         const result = await pool.query(
-            `SELECT id, source, category, data_date, recorded_at, data, ingested_at
+            `SELECT id, source, category, data_date, recorded_at, data, ingested_at, external_id
              FROM health_events
              WHERE ${conditions.join(' AND ')}
              ORDER BY data_date DESC, recorded_at DESC

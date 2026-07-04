@@ -998,7 +998,18 @@ Component({
 
   observers: {
     'userId': function(newId) {
-      if (newId) this._loadHealth()
+      if (!newId) return
+      this._loadHealth()
+      // attached() calls _loadWearableFromStorage()/_loadRingDataFromServer()
+      // unconditionally, but their server-dependent paths need userId, which
+      // may not have been bound yet at that exact synchronous tick (a race
+      // with the parent page's own async user-fetch/login). Retry once it's
+      // actually available — safe to re-run, it just re-reads current state.
+      if (this.properties.mode === 'coach') {
+        this._loadRingDataFromServer()
+      } else {
+        this._loadWearableFromStorage()
+      }
     },
     'lang': function(newLang) {
       const isZh = newLang !== 'en'
@@ -2210,7 +2221,8 @@ Component({
     _loadWearableFromStorage() {
       try {
         const saved = wx.getStorageSync('wearable_device')
-        if (saved && saved.deviceId) {
+        const hasLocalDevice = !!(saved && saved.deviceId)
+        if (hasLocalDevice) {
           const brand = _normalizeBrand(saved.brand) || 'colmi'
           const fallbackName = brand === 'halo' ? 'Halo Ring' : brand === 'aizo' ? 'Aizo Ring' : 'Colmi Ring'
           const haloSaved = wx.getStorageSync('halo_interval_settings') || wx.getStorageSync('x3_interval_settings')
@@ -2258,6 +2270,15 @@ Component({
             twinLoading: false,
             ...visuals,
           })
+        } else if (!hasLocalDevice) {
+          // No local device bound AND no local snapshot (e.g. the WeChat
+          // DevTools simulator, which can't do a live BLE sync at all, or any
+          // client/install that has never bound a ring here) — fall back to
+          // whatever was last synced to the server from any client app, same
+          // as the coach-viewing-another-user path already does. Only runs
+          // when there's no real local device, so it never clobbers a real
+          // wearableId with the server-hydration sentinel and break "Sync Now".
+          this._loadRingDataFromServer()
         }
       } catch (_) {}
     },
@@ -2310,6 +2331,15 @@ Component({
           this._req(`${BASE}/api/health-events?openid=${encodeURIComponent(userId)}&category=activity&limit=14`),
           this._req(`${BASE}/api/health-events?openid=${encodeURIComponent(userId)}&category=sleep&limit=14`),
         ])
+        // wx.request's success callback fires for ANY completed HTTP response
+        // (2xx, 4xx, 5xx alike) — only a network-level failure hits `fail`. So an
+        // auth error or 5xx here would otherwise silently look like "no events
+        // yet" (data?.events defaults to []) instead of surfacing as a real error.
+        for (const [label, res] of [['vitals', vitalsRes], ['activity', activityRes], ['sleep', sleepRes]]) {
+          if (res.statusCode !== 200 || res.data?.success === false) {
+            if (IS_DEV) console.error('[wearable][server-data]', label, res.statusCode, res.data)
+          }
+        }
         const vitalsEvents   = vitalsRes.data?.events   || []
         const activityEvents = activityRes.data?.events || []
         const sleepEvents    = sleepRes.data?.events    || []
@@ -2434,7 +2464,9 @@ Component({
           ringData,
           twinLoading: false,
         })
-      } catch (_) {}
+      } catch (e) {
+        if (IS_DEV) console.error('[wearable][server-data]', e?.message || e?.errMsg || e)
+      }
     },
 
     onPrivacyAgree(e) {
