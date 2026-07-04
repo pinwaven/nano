@@ -41,6 +41,59 @@ function _scoreSleep(h) {
   if (h >= 6) return Math.round(50 + (h - 6) * 30)
   return Math.max(10, Math.round(h / 6 * 50))
 }
+
+// --- Sleep session helpers (shared by BLE-live sync, server hydration, and display prep) ---
+// A "night" session starts in the 20:00–05:59 window; anything starting 06:00–19:59
+// is a daytime nap. onset is a "YYYY-MM-DD HH:MM:SS" string.
+function _isNightSession(onset) {
+  const hour = parseInt(onset.slice(11, 13), 10)
+  return hour >= 20 || hour < 6
+}
+
+// Minutes since the most recent noon (0 = noon, 720 = midnight, 1439 = 11:59am next day).
+// Matches the noon-to-noon "night" bucket used by x3/index.js's _nightKey, so a session's
+// position on a 24h axis lines up with the calendar day it's grouped under.
+function _minutesSinceNoon(onset) {
+  const hour = parseInt(onset.slice(11, 13), 10)
+  const min  = parseInt(onset.slice(14, 16), 10)
+  let mins = hour * 60 + min - 12 * 60
+  if (mins < 0) mins += 1440
+  return mins
+}
+
+function _dayQualityColor(totalMinutes) {
+  return totalMinutes >= 420 ? '#10b981' : totalMinutes >= 360 ? '#0ea5e9' : totalMinutes >= 300 ? '#f97316' : '#ef4444'
+}
+
+function _fmtHM(totalMinutes, isZh) {
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
+  if (isZh) return m > 0 ? `${h}时${m}分` : `${h}时`
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+
+// Reconstructs per-session sleep blocks from one health_events sleep row.
+// Prefers the `sessions` array (added so distinct naps/night segments survive
+// the per-date merge in sync.js); falls back to synthesizing a single session
+// from the older aggregate-only shape for rows synced before that change.
+function _sessionsFromEventData(date, d) {
+  if (Array.isArray(d.sessions) && d.sessions.length) {
+    return d.sessions.map(s => ({ ...s, date }))
+  }
+  if (!d.duration_minutes) return []
+  let onset = null
+  if (d.sleep_start_min != null) {
+    const mins = ((d.sleep_start_min % 1440) + 1440) % 1440
+    onset = `${date} ${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}:00`
+  }
+  return [{
+    date, onset,
+    totalMinutes: d.duration_minutes,
+    deep: d.deep_minutes ?? null, light: d.light_minutes ?? null, rem: d.rem_minutes ?? null, awake: d.awake_minutes ?? null,
+    sleepStart: d.sleep_start_min ?? null, sleepEnd: d.sleep_end_min ?? null,
+    slots: d.slots ?? null,
+  }]
+}
 function _scoreHrv(ms) {
   if (ms >= 80) return 100
   if (ms >= 50) return Math.round(75 + (ms - 50) / 30 * 25)
@@ -198,7 +251,8 @@ const T = {
     x3IntervalUnit: '分钟',
     x3WorkModeOff: '关闭', x3WorkModeAuto: '自动', x3WorkModeSched: '定时',
     x3RingTimeLabel: '戒指时间',
-    ringHrvTrend: 'HRV 趋势', ringSpo2Trend: 'SpO₂ 趋势', ringSleepTrend: '睡眠趋势', ringBodyTemp: '体温',
+    ringHrvTrend: 'HRV 趋势', ringSpo2Trend: 'SpO₂ 趋势', ringBodyTemp: '体温',
+    ringSleepWeek: '过去7天睡眠', ringNap: '小睡', ringNightSleep: '夜间睡眠', ringSleepNoBlocks: '暂无睡眠记录',
   },
   en: {
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -310,7 +364,8 @@ const T = {
     x3IntervalUnit: 'min',
     x3WorkModeOff: 'Off', x3WorkModeAuto: 'Auto', x3WorkModeSched: 'Sched',
     x3RingTimeLabel: 'Ring Time',
-    ringHrvTrend: 'HRV Trend', ringSpo2Trend: 'SpO₂ Trend', ringSleepTrend: 'Sleep Trend', ringBodyTemp: 'Body Temp',
+    ringHrvTrend: 'HRV Trend', ringSpo2Trend: 'SpO₂ Trend', ringBodyTemp: 'Body Temp',
+    ringSleepWeek: '7-Day Sleep', ringNap: 'Nap', ringNightSleep: 'Night Sleep', ringSleepNoBlocks: 'No sleep recorded yet',
   },
 }
 
@@ -474,32 +529,48 @@ function _buildRingDisplayData(raw, isZh) {
     }))
   }
 
-  // Sleep daily trend bars (from ring-cached multi-night history)
-  let sleepDayBars = null
+  // Weekly sleep timeline: every discrete block (naps kept separate from night
+  // sleep, and a night interrupted by a long wake-up kept as separate segments)
+  // positioned on a noon→noon 24h axis, up to the last 7 nights.
+  const SLEEP_AXIS_H = 480 // rpx — represents the full 24h noon-to-noon window
+  let sleepWeek = null
   if (raw.sleepHistory?.length > 0) {
-    // Aggregate multiple sessions on the same date (e.g. nap + night sleep)
-    // so the chart shows one bar per calendar day rather than duplicate labels.
     const byDate = {}
-    for (const n of raw.sleepHistory) {
-      if (!n.totalMinutes) continue
-      if (!byDate[n.date]) byDate[n.date] = { ...n }
-      else byDate[n.date].totalMinutes += n.totalMinutes
+    for (const s of raw.sleepHistory) {
+      if (!s.totalMinutes || !s.onset) continue
+      ;(byDate[s.date] = byDate[s.date] || []).push(s)
     }
-    const nights = Object.values(byDate).filter(n => n.totalMinutes > 0).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-7)
-    if (nights.length > 0) {
-      const maxMin = Math.max(...nights.map(n => n.totalMinutes))
-      sleepDayBars = nights.map(n => {
-        const h = Math.floor(n.totalMinutes / 60)
-        const m = n.totalMinutes % 60
+    const dates = Object.keys(byDate).sort().slice(-7)
+    if (dates.length > 0) {
+      sleepWeek = dates.map(date => {
+        const sessions = byDate[date].slice().sort((a, b) => (a.onset < b.onset ? -1 : 1))
+        const nightMins = sessions.filter(s => _isNightSession(s.onset)).reduce((sum, s) => sum + s.totalMinutes, 0)
+        const napMins = sessions.filter(s => !_isNightSession(s.onset)).reduce((sum, s) => sum + s.totalMinutes, 0)
+        const nightColor = _dayQualityColor(nightMins)
+        const blocks = sessions.map((s, i) => {
+          const mins = _minutesSinceNoon(s.onset)
+          return {
+            key: `${date}-${i}`,
+            topRpx: Math.round(mins / 1440 * SLEEP_AXIS_H),
+            heightRpx: Math.max(6, Math.round(s.totalMinutes / 1440 * SLEEP_AXIS_H)),
+            color: _isNightSession(s.onset) ? nightColor : '#f59e0b',
+            isNap: !_isNightSession(s.onset),
+            timeLabel: s.onset.slice(11, 16),
+            durLabel: _fmtHM(s.totalMinutes, isZh),
+          }
+        })
         return {
-          label: n.date.slice(5).replace('-', '/'),
-          avg: m > 0 ? `${h}h${m}` : `${h}h`,
-          heightRpx: Math.round(Math.max(4, n.totalMinutes / maxMin * CHART_H)),
-          color: n.totalMinutes >= 420 ? '#10b981' : n.totalMinutes >= 360 ? '#0ea5e9' : n.totalMinutes >= 300 ? '#f97316' : '#ef4444',
+          date,
+          label: date.slice(5).replace('-', '/'),
+          totalLabel: (nightMins + napMins) > 0 ? _fmtHM(nightMins + napMins, isZh) : '—',
+          hasNap: napMins > 0,
+          blocks,
         }
       })
     }
   }
+
+  const sleepDateLabel = raw.sleepDate ? raw.sleepDate.slice(5).replace('-', '/') : null
 
   return {
     ...raw,
@@ -519,11 +590,12 @@ function _buildRingDisplayData(raw, isZh) {
     stressLabel, stressColor,
     spo2Color, spo2Pct,
     bpStr, bpColor, breathRateStr,
-    stepsBars, hrBars, sleepSegs, sleepTimeRange,
-    hrvDayBars, spo2DayBars, sleepDayBars,
+    stepsBars, hrBars, sleepSegs, sleepTimeRange, sleepDateLabel,
+    hrvDayBars, spo2DayBars, sleepWeek,
+    sleepAxisHeightRpx: SLEEP_AXIS_H,
     bodyTempC: raw.bodyTempC != null ? raw.bodyTempC.toFixed(1) : null,
     tempPct, tempColor,
-    hasSlotCharts: !!(stepsBars || hrBars || sleepSegs || hrvDayBars || spo2DayBars || sleepDayBars),
+    hasSlotCharts: !!(stepsBars || hrBars || sleepSegs || hrvDayBars || spo2DayBars || sleepWeek),
   }
 }
 
@@ -2214,22 +2286,29 @@ Component({
           rawRing.stepSlots = d.slots      ?? null
         }
 
-        // Sleep (most recent night + multi-night history for chart)
-        const sleepEv = sleepEvents[0]
-        if (sleepEv) {
-          const d = _pd(sleepEv.data)
-          rawRing.sleepMinutes = d.duration_minutes ?? null
-          rawRing.sleepDeep    = d.deep_minutes     ?? null
-          rawRing.sleepLight   = d.light_minutes    ?? null
-          rawRing.sleepRem     = d.rem_minutes      ?? null
-          rawRing.sleepAwake   = d.awake_minutes    ?? null
-          rawRing.sleepStart   = d.sleep_start_min  ?? null
-          rawRing.sleepEnd     = d.sleep_end_min    ?? null
-          rawRing.sleepSlots   = d.slots            ?? null
-        }
+        // Sleep: flatten every date's event into its individual sessions (naps kept
+        // distinct from night sleep — see _sessionsFromEventData) for the weekly
+        // multi-block timeline, then pick the most recent NIGHT session for the
+        // "Last Night" quick-glance card so a trailing nap doesn't take it over.
         rawRing.sleepHistory = sleepEvents
-          .map(ev => ({ date: (ev.data_date || '').substring(0, 10), totalMinutes: _pd(ev.data).duration_minutes || 0 }))
-          .filter(n => n.totalMinutes > 0)
+          .flatMap(ev => _sessionsFromEventData((ev.data_date || '').substring(0, 10), _pd(ev.data)))
+          .filter(s => s.totalMinutes > 0)
+          .sort((a, b) => (a.onset || a.date) < (b.onset || b.date) ? -1 : 1)
+
+        const lastNight = rawRing.sleepHistory.slice().reverse().find(s => s.onset && _isNightSession(s.onset))
+          || rawRing.sleepHistory[rawRing.sleepHistory.length - 1]
+        if (lastNight) {
+          rawRing.sleepMinutes = lastNight.totalMinutes ?? null
+          rawRing.sleepDeep    = lastNight.deep         ?? null
+          rawRing.sleepLight   = lastNight.light        ?? null
+          rawRing.sleepRem     = lastNight.rem          ?? null
+          rawRing.sleepAwake   = lastNight.awake        ?? null
+          rawRing.sleepStart   = lastNight.sleepStart   ?? null
+          rawRing.sleepEnd     = lastNight.sleepEnd     ?? null
+          rawRing.sleepSlots   = lastNight.slots        ?? null
+          rawRing.sleepOnset   = lastNight.onset        ?? null
+          rawRing.sleepDate    = lastNight.date         ?? null
+        }
 
         // Vitals: split into resting-HR, HRV slots, SpO2 slots, temp, realtime
         const hrvSlots = [], spo2Slots = []
@@ -2469,7 +2548,10 @@ Component({
           const battery   = await ring.getBattery()
           const steps     = await ring.getSteps().catch(() => null)
           const sleepHist = await ring.getSleepHistory().catch(() => [])
-          const sleep     = sleepHist.length ? sleepHist[sleepHist.length - 1] : null
+          // Prefer the most recent actual NIGHT session over a trailing daytime
+          // nap so "Last Night" doesn't show a nap synced after the real sleep.
+          const sleep = sleepHist.slice().reverse().find(n => n.onset && _isNightSession(n.onset))
+            || (sleepHist.length ? sleepHist[sleepHist.length - 1] : null)
           const hrLog   = await ring.getHeartRateLog().catch(() => null)
           const hrvLog  = await ring.getHrvHistory().catch(() => [])            // all cached days [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}]
           const spo2Log = await ring.getAutoSpo2History().catch(() => [])       // all cached days [{timestamp, spo2}]
@@ -2495,7 +2577,20 @@ Component({
             sleepStart:   sleep?.sleepStart  ?? null,
             sleepEnd:     sleep?.sleepEnd    ?? null,
             sleepSlots:   sleep?.periods?.map(p => ({ type: p.typeName, min: p.minutes })) ?? null,
-            sleepHistory: sleepHist.filter(n => n.totalMinutes > 0).map(n => ({ date: n.date, totalMinutes: n.totalMinutes, deep: n.deep ?? null, light: n.light ?? null, rem: n.rem ?? null, awake: n.awake ?? null })),
+            sleepOnset:   sleep?.onset       ?? null,
+            sleepDate:    sleep?.date        ?? null,
+            sleepHistory: sleepHist.filter(n => n.totalMinutes > 0).map(n => ({
+              date: n.date,
+              onset: n.onset ?? null,
+              totalMinutes: n.totalMinutes,
+              deep: n.deep ?? null,
+              light: n.light ?? null,
+              rem: n.rem ?? null,
+              awake: n.awake ?? null,
+              sleepStart: n.sleepStart ?? null,
+              sleepEnd: n.sleepEnd ?? null,
+              slots: n.periods?.map(p => ({ type: p.typeName, min: p.minutes })) ?? null,
+            })),
             hrSlots:         hrEntries.map(r => ({ t: r.timestamp.toISOString(), bpm: r.value })),
             restingHr,
             hrv:             latestHrv.hrv       ?? null,

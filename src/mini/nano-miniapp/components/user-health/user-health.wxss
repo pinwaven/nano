@@ -2617,6 +2617,18 @@
   font-weight: 600;
 }
 
+.ring-chart-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.ring-chart-date {
+  font-size: 17rpx;
+  color: rgba(166, 196, 229, 0.4);
+  font-weight: 500;
+}
+
 /* Bar chart: 24 columns side-by-side, bars grow upward */
 .ring-chart-bars {
   display: flex;
@@ -2816,6 +2828,85 @@
 .ring-linechart-count {
   font-size: 18rpx;
   color: rgba(166, 196, 229, 0.25);
+}
+
+/* Weekly sleep timeline: 7 columns, each a noon→noon 24h vertical track with
+   positioned blocks — naps and night-sleep segments shown distinctly. */
+.ring-sleepweek-wrap {
+  display: flex;
+  gap: 10rpx;
+}
+
+.ring-sleepweek-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 34rpx;
+  flex-shrink: 0;
+  padding-bottom: 34rpx; /* aligns with the total/day labels under each track */
+}
+
+.ring-sleepweek-axis-lbl {
+  font-size: 14rpx;
+  color: rgba(166, 196, 229, 0.3);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring-sleepweek-days {
+  flex: 1;
+  display: flex;
+  gap: 6rpx;
+}
+
+.ring-sleepweek-daycol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+}
+
+.ring-sleepweek-track {
+  position: relative;
+  width: 100%;
+  border-radius: 8rpx;
+  background: rgba(99, 117, 236, 0.06);
+  overflow: hidden;
+}
+
+.ring-sleepweek-gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1rpx;
+  background: rgba(166, 196, 229, 0.1);
+}
+
+.ring-sleepweek-block {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  border-radius: 4rpx;
+  min-height: 6rpx;
+}
+
+.ring-sleepweek-block-nap {
+  opacity: 0.9;
+}
+
+.ring-sleepweek-total {
+  font-size: 15rpx;
+  font-weight: 600;
+  color: rgba(166, 196, 229, 0.55);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring-sleepweek-daylabel {
+  font-size: 14rpx;
+  color: rgba(166, 196, 229, 0.3);
+  line-height: 1;
 }
 
 /* Sleep timeline */

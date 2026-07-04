@@ -8,6 +8,50 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 
+- **Miniapp HealthTab — weekly multi-block sleep timeline** (`components/user-health/user-health.{js,wxml,wxss}`, `utils/wearable/sync.js`)
+
+  The wearable section's sleep chart previously collapsed every session on a calendar day into a single merged total, hiding naps and wake-interrupted night segments (found via direct BLE investigation against a real X3 ring — `tools/x3-ring`). Replaced the old single-bar-per-day trend with a 7-day timeline that shows every discrete sleep block (naps and night-sleep segments) positioned on a noon-to-noon 24h vertical axis, so overnight sleep isn't split across the midnight boundary. Also added a date label and per-stage minute counts (not just percentages) to the existing "last night" detail view, and fixed that view to prefer the most recent actual **night** session over a trailing daytime nap.
+
+  **What changed:**
+  - `sync.js`: each per-date sleep event now also carries a `sessions` array (each discrete block's onset, duration, and stage minutes) alongside the existing merged-total fields — purely additive to the `health_events.data` JSONB, no schema migration, fully backward compatible with existing consumers reading only the aggregate fields.
+  - `user-health.js`: new shared helpers `_isNightSession` (20:00–05:59 = night, else nap), `_minutesSinceNoon` (positions a session on the noon-to-noon axis used by `x3/index.js`'s `_nightKey`), `_dayQualityColor`, `_fmtHM`, and `_sessionsFromEventData` (reads the new `sessions` array, or synthesizes one session from older rows that predate this change). Both the live BLE sync path and the server-hydration path now prefer the latest night session (not just the latest session) for the quick-glance card.
+  - `user-health.wxml`/`.wxss`: new `ring-sleepweek-*` timeline chart (replaces the old `sleepDayBars` bar chart) with per-day tracks, positioned blocks, a 12/18/24/06/12 time axis, and a night-vs-nap legend.
+
+### Fixed
+
+- **X3 ring — sleep, resting HR, and temperature silently empty after sync on rings with a large unsynced backlog** (`utils/wearable/x3/index.js`)
+
+  `X3Ring._stream()` rejected the whole request if the ring's history transfer didn't finish (hit its terminator packet) within the timeout (8–15s depending on data type). Confirmed via direct BLE capture (`tools/x3-ring`) against a real ring that hadn't synced in 2+ weeks: the ring genuinely sends real, well-formed data for sleep (0x53), HR log (0x55), and temperature (0x62) — it just takes far longer than the timeout to stream a large backlog. Every caller wraps these in `.catch(() => [])`/`.catch(() => null)`, so the reject was silently swallowed and the UI showed "—" for sleep and resting HR with no error, indistinguishable from "the ring truly has no data."
+
+  **Fix:** `_stream()` now resolves with whatever has accumulated so far on timeout instead of rejecting (only rejects if literally zero packets arrived). Since every notification is one complete, self-contained record, a partial buffer still parses correctly — it just loses the oldest tail of an unusually large backlog rather than the entire request. This mirrors the fix already applied to the standalone `tools/x3-ring` CLI's own copy of this logic during that investigation, which was never ported back into this canonical production file until now.
+
+- **X3 ring — sleep records missing after sync** (`utils/wearable/x3/index.js`, `components/user-health/user-health.js`, `utils/wearable/sync.js`)
+
+  Real overnight sleep would silently disappear from the app after syncing, sometimes for several days in a row, even though the ring had recorded it.
+
+  **Root cause:** `f69742c` ("enabled pull to load more history") changed `_parseSleepHistory` to split same-night blocks into distinct sessions (e.g. an afternoon nap vs. the night's sleep) whenever there's a >90 min gap. `user-health.js` still picked only `sleepHist[sleepHist.length - 1]` (the chronologically last session) and treated it as "last night." If a nap happened after the real overnight sleep, the nap won instead. `sync.js` then tagged whatever was picked with a hardcoded `data_date = yesterday` regardless of which session it actually was, and upserted it into `health_events` keyed on `(user_id, source, external_id)` — so the mislabeled nap overwrote the correct prior night's row.
+
+  Verified independently by connecting directly to the physical X3 ring over BLE (`temp/x3-connect.js`) — the ring's raw sleep buffer did contain the missing data; only the miniapp's session-selection and dating logic was dropping it.
+
+  **What changed:**
+  - `user-health.js` now keeps `sleepStart`/`sleepEnd`/per-stage `slots` on each entry in `raw.sleepHistory` (previously only `date`/`totalMinutes`/`deep`/`light`/`rem`/`awake`).
+  - `sync.js` (`syncWearableData`) now builds one `sleep` event per calendar date from `snapshot.sleepHistory`, using each session's own recorded date instead of a hardcoded "yesterday" offset. Multiple sessions on the same date (nap + night) are merged into a single event rather than the last one silently winning. The old single-session/hardcoded-date path is kept as a fallback for sources without per-session history.
+  - As a side effect, this also fixes a pre-existing chart/backend date mismatch for the Colmi ring, whose local sleep chart already dated sessions by their actual day (`_shanghaiDateStr(Date.now())`) while the backend previously stored them one day off.
+
+### Added
+
+- **Web admin panel — coach row opens a users modal** (`src/web/admin-panel/src/tabs/CoachTab.jsx`, `translations.js`)
+
+  Clicking a coach row in the Coaches tab now opens a modal listing all users assigned to that coach (avatar/nickname, openid, BioAge, phone, email, join date), fetched from the existing `GET /api/coach-users/:coachId` endpoint. Action buttons (enroll/edit/delete) still work independently via `stopPropagation`, matching the Users tab's clickable-row pattern. New bilingual strings `modal.coachUsersTitle` / `modal.coachUsersEmpty`.
+
+- **`tools/x3-ring` — standalone CLI for the X3 smart ring** (`tools/x3-ring/`, `utils/wearable/x3/index.js`)
+
+  A Node/`noble`-based CLI (mirroring the existing `tools/colmi-ring` tool) for scanning, connecting to, and reading data directly from an X3 ring over BLE from a terminal — useful for debugging sync issues without going through the Mini Program. Run with no arguments to auto-scan and dump every stored data type (battery, device time/MAC/firmware, auto-monitoring schedule, steps, sleep history, heart rate, HRV, SpO2, temperature, exercise sessions, sleep apnea risk, oxygen variation); `scan` lists nearby rings; `set-time` syncs the ring's clock; `get-auto-monitoring` reads the HR/SpO2/Temperature/HRV background schedule on its own.
+
+  **Bug fixed during live debugging against a real ring:** `src/ble.js`'s UUID comparison stripped dashes/lowercased but never expanded short-form UUIDs — noble reports `fff0`/`fff6`/`fff7` while `protocol.js`'s constants are full 128-bit UUIDs, so every connection failed with `X3 service ... not found`. Fixed by expanding 16-/32-bit UUIDs to the full Bluetooth base form, matching what the miniapp's `wx.*` ble-manager already does.
+
+  Reuses the production X3 protocol (packet builders + BCD/byte parsers) from `src/mini/nano-miniapp/utils/wearable/x3/protocol.js` directly, so decoding stays identical to what the Mini Program does — only the BLE transport differs (`noble` instead of `wx.*`). `utils/wearable/x3/index.js` now also exposes its previously-private parsing functions as `X3Ring.parsers` (purely additive, no behavior change) so the CLI doesn't have to duplicate ~500 lines of delicate bit-parsing logic.
+
 - **User web app — full feature parity with miniapp (all 4 phases)** (`src/web/user-app/src/`)
 
   Refactored from a single 1,585-line `App.jsx` into a modular structure and added Plans, Store, Events, Kino scan, and Health Reports. App now has 6 tabs: Chat, Health, Dots, Plans, Store, Learn.

@@ -146,6 +146,72 @@ function DeleteCoachConfirm({ coach, onClose, onConfirm }) {
   );
 }
 
+// ── CoachUsersModal ───────────────────────────────────────────────────────────
+
+function CoachUsersModal({ coach, onClose }) {
+  const { t } = useLang();
+  const [list, setList] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    axios.get(`/api/coach-users/${coach.id}`)
+      .then(r => { if (!cancelled) setList(r.data.users || []); })
+      .catch(err => { if (!cancelled) { setError(err.response?.data?.error || err.message); setList([]); } });
+    return () => { cancelled = true; };
+  }, [coach.id]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.modal.coachUsersTitle(coach.name || '—')}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto', padding: 0 }}>
+          {list === null && <div className="empty-row" style={{ padding: 24, textAlign: 'center' }}>{t.topbar.loading}</div>}
+          {error && <div className="form-error" style={{ margin: 16 }}>{error}</div>}
+          {list !== null && !error && list.length === 0 && (
+            <div className="empty-row" style={{ padding: 24, textAlign: 'center' }}>{t.modal.coachUsersEmpty}</div>
+          )}
+          {list !== null && list.length > 0 && (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>{t.table.name}</th>
+                  <th>{t.table.bioAge}</th>
+                  <th>{t.table.phone}</th>
+                  <th>{t.table.email}</th>
+                  <th>{t.table.joined}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map(u => (
+                  <tr key={u.user_id}>
+                    <td>
+                      <div className="avatar-cell">
+                        <div className="avatar" style={{ background: '#3b82f620', color: '#3b82f6' }}>{(u.nickname || 'U')[0].toUpperCase()}</div>
+                        <div>
+                          <div className="bold">{fmt(u.nickname)}</div>
+                          <div className="muted mono" style={{ fontSize: 10 }}>{u.user_id}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>{u.bio_age != null ? <Badge color="#10b981">{Number(u.bio_age).toFixed(1)}</Badge> : <span className="muted">—</span>}</td>
+                    <td className="muted">{fmt(u.phone)}</td>
+                    <td className="muted">{fmt(u.email)}</td>
+                    <td className="muted">{fmtDate(u.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── CoachGroupModal ───────────────────────────────────────────────────────────
 
 function CoachGroupModal({ group, channelId, onClose, onSave }) {
@@ -425,7 +491,7 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
           <tbody>
             {sorted.length === 0 && <tr><td colSpan={11} className="empty-row">{t.empty.coaches}</td></tr>}
             {sorted.map(p => (
-              <tr key={p.id}>
+              <tr key={p.id} className="clickable-row" onClick={() => setModal({ type: 'users', coach: p })}>
                 <td className="muted">{p.id}</td>
                 <td>
                   <div className="avatar-cell">
@@ -441,7 +507,7 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
                 <td><Badge color={p.language === 'zh' ? '#16a34a' : '#2563eb'}>{(p.language || 'zh').toUpperCase()}</Badge></td>
                 <td><Badge color="#3b82f6">{p.user_count || 0}</Badge></td>
                 <td className="muted">{fmtDate(p.created_at)}</td>
-                <td>
+                <td onClick={e => e.stopPropagation()}>
                   <div className="row-actions">
                     {p.user_id && <button className="icon-btn" title="Enroll in Academy" onClick={async (e) => {
                       const btn = e.currentTarget;
@@ -503,6 +569,7 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
       {modal?.type === 'add'    && <CoachModal coach={null}        users={users} channels={channels} groups={groups} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit'   && <CoachModal coach={modal.coach} users={users} channels={channels} groups={groups} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteCoachConfirm coach={modal.coach} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
+      {modal?.type === 'users'  && <CoachUsersModal coach={modal.coach} onClose={() => setModal(null)} />}
       {groupModal?.type === 'add-group'    && <CoachGroupModal group={null} channelId={session?.channelId} onClose={() => setGroupModal(null)} onSave={() => { setGroupModal(null); fetchGroups(); }} />}
       {groupModal?.type === 'edit-group'   && <CoachGroupModal group={groupModal.group} channelId={session?.channelId} onClose={() => setGroupModal(null)} onSave={() => { setGroupModal(null); fetchGroups(); }} />}
       {groupModal?.type === 'delete-group' && <DeleteCoachGroupConfirm group={groupModal.group} onClose={() => setGroupModal(null)} onConfirm={() => { setGroupModal(null); setGroupFilter(''); fetchGroups(); }} />}

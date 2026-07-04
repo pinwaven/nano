@@ -582,6 +582,16 @@ class X3Ring extends WearableDevice {
     })
   }
 
+  // On timeout, resolves with whatever has accumulated so far instead of
+  // rejecting. Each notification is one complete, self-contained record, so a
+  // partial buffer (missing only the terminator, or older backlog on a ring
+  // with a large unsynced history) still parses cleanly — losing only the
+  // oldest tail of an unusually large backlog rather than the whole request.
+  // Confirmed live against a real ring: sleep/HR-log/temperature history can
+  // take well over this timeout to fully stream, and previously came back
+  // empty (swallowed by the `.catch(() => [])` callers) instead of partial.
+  // Only rejects if nothing at all came back, which usually means the write
+  // itself failed or the BLE link dropped.
   _stream(packet, expectedCmdId, isDone, timeoutMs) {
     timeoutMs = timeoutMs || 8000
     return new Promise((resolve, reject) => {
@@ -590,7 +600,12 @@ class X3Ring extends WearableDevice {
 
       const timer = setTimeout(() => {
         this._ble.onNotify(NOTIFY_UUID, null)
-        reject(new Error(`X3 stream timeout (cmd 0x${expectedCmdId.toString(16)})`))
+        if (chunks.length === 0) {
+          reject(new Error(`X3 stream timeout (cmd 0x${expectedCmdId.toString(16)}), no data received`))
+          return
+        }
+        console.log(JSON.stringify({ level: 'WARN', msg: 'X3 stream timed out, returning partial data', cmd: `0x${expectedCmdId.toString(16)}`, packets: chunks.length }))
+        resolve(_concat(chunks, totalLen))
       }, timeoutMs)
 
       this._ble.onNotify(NOTIFY_UUID, (data) => {
@@ -1114,6 +1129,25 @@ function _concat(arrays, totalLen) {
   let offset = 0
   for (const arr of arrays) { out.set(arr, offset); offset += arr.length }
   return out
+}
+
+// Exposed so non-wx callers (e.g. tools/x3-ring, a Node/noble CLI) can reuse the
+// exact same byte-parsing logic without depending on the wx.* BLE APIs.
+X3Ring.parsers = {
+  parseHrLog55: _parseHrLog55,
+  parseHrHistory54: _parseHrHistory54,
+  parseHrvRecords56: _parseHrvRecords56,
+  parseSpo2Records66: _parseSpo2Records66,
+  parseSpo2History57: _parseSpo2History57,
+  parseSleepHrv60: _parseSleepHrv60,
+  parseTempLog62: _parseTempLog62,
+  parseSleepTempLog69: _parseSleepTempLog69,
+  parseExercise5C: _parseExercise5C,
+  parseSleepApnea5F: _parseSleepApnea5F,
+  parseOxygenVariation5D: _parseOxygenVariation5D,
+  parseSteps: _parseSteps,
+  parseSleepHistory: _parseSleepHistory,
+  isoDateStr: _isoDateStr,
 }
 
 module.exports = X3Ring

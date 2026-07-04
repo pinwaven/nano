@@ -15,7 +15,7 @@ switch (envVersion) {
 
 // Bump this before each preview upload so you can confirm the newest build is on device.
 // Format: MMDD-N (month+day, build number that day)
-const VERSION = '0701-1';
+const VERSION = '0704-2';
 const WX_VERSION = accountInfo.miniProgram.version || '';
 const IS_DEV = envVersion === 'develop' || envVersion === 'trial';
 

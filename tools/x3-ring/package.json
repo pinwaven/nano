@@ -1,0 +1,19 @@
+{
+  "name": "x3-ring-tool",
+  "version": "0.1.0",
+  "description": "CLI tool for reading data from the X3 smart ring over BLE",
+  "main": "src/x3-ring.js",
+  "bin": {
+    "x3_ring": "./bin/cli.js"
+  },
+  "scripts": {
+    "start": "node bin/cli.js"
+  },
+  "dependencies": {
+    "@abandonware/noble": "^1.9.2-20",
+    "commander": "^12.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

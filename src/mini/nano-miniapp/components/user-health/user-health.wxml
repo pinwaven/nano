@@ -503,15 +503,43 @@
             </view>
           </view>
 
-          <!-- Sleep daily trend -->
-          <view wx:if="{{ringData.sleepDayBars}}" class="ring-chart-block">
-            <text class="ring-chart-label">{{t.ringSleepTrend}}</text>
-            <view class="ring-chart-bars">
-              <view wx:for="{{ringData.sleepDayBars}}" wx:key="label" class="ring-chart-day-col">
-                <text class="ring-chart-day-avg">{{item.avg}}</text>
-                <view class="ring-chart-bar"
-                      style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
-                <text class="ring-chart-day-label">{{item.label}}</text>
+          <!-- Weekly sleep timeline: every night + nap as a distinct block, -->
+          <!-- positioned on a noon-to-noon 24h axis so overnight sleep isn't split by midnight -->
+          <view wx:if="{{ringData.sleepWeek}}" class="ring-chart-block">
+            <text class="ring-chart-label">{{t.ringSleepWeek}}</text>
+            <view class="ring-sleepweek-wrap">
+              <view class="ring-sleepweek-axis" style="height:{{ringData.sleepAxisHeightRpx}}rpx;">
+                <text class="ring-sleepweek-axis-lbl">12</text>
+                <text class="ring-sleepweek-axis-lbl">18</text>
+                <text class="ring-sleepweek-axis-lbl">24</text>
+                <text class="ring-sleepweek-axis-lbl">06</text>
+                <text class="ring-sleepweek-axis-lbl">12</text>
+              </view>
+              <view class="ring-sleepweek-days">
+                <view wx:for="{{ringData.sleepWeek}}" wx:for-item="day" wx:key="date" class="ring-sleepweek-daycol">
+                  <view class="ring-sleepweek-track" style="height:{{ringData.sleepAxisHeightRpx}}rpx;">
+                    <view class="ring-sleepweek-gridline" style="top:0%;"></view>
+                    <view class="ring-sleepweek-gridline" style="top:25%;"></view>
+                    <view class="ring-sleepweek-gridline" style="top:50%;"></view>
+                    <view class="ring-sleepweek-gridline" style="top:75%;"></view>
+                    <view wx:for="{{day.blocks}}" wx:for-item="blk" wx:key="key"
+                          class="ring-sleepweek-block {{blk.isNap ? 'ring-sleepweek-block-nap' : ''}}"
+                          style="top:{{blk.topRpx}}rpx; height:{{blk.heightRpx}}rpx; background:{{blk.color}};">
+                    </view>
+                  </view>
+                  <text class="ring-sleepweek-total">{{day.totalLabel}}</text>
+                  <text class="ring-sleepweek-daylabel">{{day.label}}</text>
+                </view>
+              </view>
+            </view>
+            <view class="ring-sleep-legend">
+              <view class="ring-sleep-leg-item">
+                <view class="ring-sleep-leg-dot" style="background:#10b981;"></view>
+                <text class="ring-sleep-leg-txt">{{t.ringNightSleep}}</text>
+              </view>
+              <view class="ring-sleep-leg-item">
+                <view class="ring-sleep-leg-dot" style="background:#f59e0b;"></view>
+                <text class="ring-sleep-leg-txt">{{t.ringNap}}</text>
               </view>
             </view>
           </view>
@@ -578,11 +606,14 @@
             </view>
           </view>
 
-          <!-- Sleep stage timeline -->
+          <!-- Sleep stage timeline (most recent night, detailed) -->
           <view wx:if="{{ringData.sleepSegs}}" class="ring-chart-block">
             <view class="ring-chart-header">
               <text class="ring-chart-label">{{t.ringSleepChart}}</text>
-              <text wx:if="{{ringData.sleepTimeRange}}" class="ring-chart-time">{{ringData.sleepTimeRange}}</text>
+              <view class="ring-chart-header-right">
+                <text wx:if="{{ringData.sleepDateLabel}}" class="ring-chart-date">{{ringData.sleepDateLabel}}</text>
+                <text wx:if="{{ringData.sleepTimeRange}}" class="ring-chart-time">{{ringData.sleepTimeRange}}</text>
+              </view>
             </view>
             <view class="ring-sleep-timeline">
               <view wx:for="{{ringData.sleepSegs}}" wx:key="index"
@@ -593,19 +624,19 @@
             <view class="ring-sleep-legend">
               <view class="ring-sleep-leg-item">
                 <view class="ring-sleep-leg-dot" style="background:#6375EC;"></view>
-                <text class="ring-sleep-leg-txt">{{t.ringDeep}}</text>
+                <text class="ring-sleep-leg-txt">{{t.ringDeep}} {{ringData.sleepDeep}}m</text>
               </view>
               <view class="ring-sleep-leg-item">
                 <view class="ring-sleep-leg-dot" style="background:#a855f7;"></view>
-                <text class="ring-sleep-leg-txt">{{t.ringRem}}</text>
+                <text class="ring-sleep-leg-txt">{{t.ringRem}} {{ringData.sleepRem}}m</text>
               </view>
               <view class="ring-sleep-leg-item">
                 <view class="ring-sleep-leg-dot" style="background:#0ea5e9;"></view>
-                <text class="ring-sleep-leg-txt">{{t.ringLight}}</text>
+                <text class="ring-sleep-leg-txt">{{t.ringLight}} {{ringData.sleepLight}}m</text>
               </view>
               <view class="ring-sleep-leg-item">
                 <view class="ring-sleep-leg-dot" style="background:rgba(166,196,229,0.4);"></view>
-                <text class="ring-sleep-leg-txt">{{t.ringAwake}}</text>
+                <text class="ring-sleep-leg-txt">{{t.ringAwake}} {{ringData.sleepAwake}}m</text>
               </view>
             </view>
           </view>
