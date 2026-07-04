@@ -8,7 +8,7 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
-- **X3 → Halo rename** (`src/mini/nano-miniapp/utils/wearable/{x3→halo}/`, `tools/{x3-ring→halo-ring}/`, `components/user-health/user-health.{js,wxml}`, `utils/wearable/{index,sync}.js`, `docs/architecture/`, `CLAUDE.md`)
+- **X3 → Halo rename** (`src/mini/nano-miniapp/utils/wearable/{x3→halo}/`, `tools/{x3-ring→halo}/`, `components/user-health/user-health.{js,wxml}`, `utils/wearable/{index,sync}.js`, `docs/architecture/`, `CLAUDE.md`)
 
   "X3" is the OEM hardware model number (the ring literally advertises itself over BLE as `X3B`/`X6...`), not our product name — renamed the internal identifiers to "Halo" to avoid conflating a specific vendor SKU with the ring line we're building support around.
 
@@ -16,7 +16,7 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   - `brand === 'x3'` → `brand === 'halo'` everywhere (factory dispatch, local storage, server `wearable_brand` column, UI checks). `'x3'` is kept as a permanent legacy alias — `createWearable()` and a new `_normalizeBrand()` helper in `user-health.js` accept it so anyone already bound before this rename doesn't break.
   - Folder + class rename: `utils/wearable/x3/` → `utils/wearable/halo/`, `X3Ring` → `HaloRing`. `X3Ring.parsers` → `HaloRing.parsers`.
   - Local storage keys `x3_interval_settings`/`x3_work_mode_settings` → `halo_interval_settings`/`halo_work_mode_settings`; reads fall back to the old key names, unbind clears both old and new.
-  - CLI tool `tools/x3-ring/` → `tools/halo-ring/` (package name, bin, class names, docs all updated); confirmed working end-to-end against a real ring after the rename.
+  - CLI tool `tools/x3-ring/` → `tools/halo/` (package name `halo`, bin `halo`, main entry `src/halo.js`, `HaloRingClient` → `HaloClient` — matches the bare-name convention already used for "kino"/"nano" elsewhere in this repo, not `<name>-ring`/`<name>-tool`); confirmed working end-to-end against a real ring after the rename.
   - **Not renamed, intentionally:** `HALO_NAME_PREFIXES` still holds the literal hardware-broadcast values, not something we control. `model: 'X3'` in `getDeviceInfo()` similarly stays (real hardware model field); only the human-facing `name` became `'Halo Smart Ring'`.
   - `docs/architecture/x3-smart-ring.md` → `docs/architecture/halo-smart-ring.md`; `CLAUDE.md` §18 and `docs/architecture/wearable-system.md` updated to match.
   - **Extended to the full Halo product line:** `HALO_NAME_PREFIXES` grew from `['X3', 'X6']` to `['X3', 'X6', 'X9', 'V4']` (X9 is another ring model, V4 is a wrist band — confirmed to share the identical BLE protocol). Brand detection during scan (`user-health.js`) now checks against `HALO_NAME_PREFIXES` directly instead of hardcoding `'x3'`/`'x6'` prefix checks inline, so future model additions are a one-line change to that array rather than a second place to remember.

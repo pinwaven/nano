@@ -43,7 +43,7 @@ function endsFF(acc) {
   return acc.length > 0 && acc[acc.length - 1] === 0xFF;
 }
 
-class HaloRingClient {
+class HaloClient {
   constructor(address, opts = {}) {
     this.address = address;
     this._ble = new BLETransport(address, opts);
@@ -274,4 +274,4 @@ class HaloRingClient {
   }
 }
 
-module.exports = { HaloRingClient };
+module.exports = { HaloClient };

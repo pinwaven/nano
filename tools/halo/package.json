@@ -1,10 +1,10 @@
 {
-  "name": "halo-ring-tool",
+  "name": "halo",
   "version": "0.1.0",
   "description": "CLI tool for reading data from the Halo smart ring over BLE",
-  "main": "src/halo-ring.js",
+  "main": "src/halo.js",
   "bin": {
-    "halo_ring": "./bin/cli.js"
+    "halo": "./bin/cli.js"
   },
   "scripts": {
     "start": "node bin/cli.js"

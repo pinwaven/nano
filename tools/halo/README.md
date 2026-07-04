@@ -1,4 +1,4 @@
-# halo-ring
+# halo
 
 CLI tool for reading data from the Halo smart ring over BLE (macOS, via `noble`).
 
@@ -16,7 +16,7 @@ protocol changes in the miniapp, this tool picks it up automatically.
 ## Install
 
 ```bash
-cd tools/halo-ring
+cd tools/halo
 npm install
 ```
 
@@ -42,7 +42,7 @@ node bin/cli.js set-time
 node bin/cli.js get-auto-monitoring
 ```
 
-With no arguments, `halo_ring` scans for a nearby X3/X6/X9/V4 device, connects, and
+With no arguments, `halo` scans for a nearby X3/X6/X9/V4 device, connects, and
 dumps: battery, device time, MAC, firmware, auto-monitoring schedule, steps,
 sleep history, heart rate (log + continuous history), HRV history, SpO2
 (auto + detailed), sleep HRV, temperature (surface + sleep), exercise

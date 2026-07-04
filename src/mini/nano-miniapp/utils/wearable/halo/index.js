@@ -1131,7 +1131,7 @@ function _concat(arrays, totalLen) {
   return out
 }
 
-// Exposed so non-wx callers (e.g. tools/halo-ring, a Node/noble CLI) can reuse the
+// Exposed so non-wx callers (e.g. tools/halo, a Node/noble CLI) can reuse the
 // exact same byte-parsing logic without depending on the wx.* BLE APIs.
 HaloRing.parsers = {
   parseHrLog55: _parseHrLog55,

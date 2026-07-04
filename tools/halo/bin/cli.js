@@ -2,13 +2,13 @@
 'use strict';
 
 const { Command } = require('commander');
-const { HaloRingClient } = require('../src/halo-ring');
+const { HaloClient } = require('../src/halo');
 const printReport = require('../src/print-report');
 
 const program = new Command();
 
 program
-  .name('halo_ring')
+  .name('halo')
   .description('CLI tool for the Halo smart ring over BLE. Run with no arguments to fetch and print all stored data.')
   .option('--address <address>', 'bluetooth address/UUID of the ring (skips scanning)')
   .option('--name <prefix>', 'name prefix to scan for (default: X3, X6, X9, V4 — the hardware\'s BLE-advertised name)')
@@ -25,7 +25,7 @@ async function resolveAddress(opts) {
 
   const prefixes = opts.name ? [opts.name] : undefined;
   console.error('Scanning for Halo ring...');
-  const found = await HaloRingClient.scan(parseInt(opts.scanTimeout, 10));
+  const found = await HaloClient.scan(parseInt(opts.scanTimeout, 10));
   const matches = prefixes
     ? found.filter((p) => prefixes.some((pre) =>
         ((p.advertisement && p.advertisement.localName) || '').toLowerCase().startsWith(pre.toLowerCase())))
@@ -47,7 +47,7 @@ async function resolveAddress(opts) {
 async function makeClient(opts) {
   const address = await resolveAddress(opts);
   console.error(`Connecting to ${address}...`);
-  return new HaloRingClient(address, { debug: opts.debug });
+  return new HaloClient(address, { debug: opts.debug });
 }
 
 // --- default: fetch everything ---
@@ -107,7 +107,7 @@ program
     const opts = program.opts();
     const timeout = parseInt(opts.scanTimeout, 10);
     console.error(`Scanning for ${timeout}ms...`);
-    const found = await HaloRingClient.scan(timeout);
+    const found = await HaloClient.scan(timeout);
     if (!found.length) {
       console.log('No devices found.');
     } else {
