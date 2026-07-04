@@ -2271,9 +2271,9 @@ Component({
             ...visuals,
           })
         } else if (!hasLocalDevice) {
-          // No local device bound AND no local snapshot (e.g. the WeChat
-          // DevTools simulator, which can't do a live BLE sync at all, or any
-          // client/install that has never bound a ring here) — fall back to
+          // No local device bound AND no local snapshot (e.g. a fresh WeChat
+          // DevTools session, or any client/install that has never bound a
+          // ring here) — fall back to
           // whatever was last synced to the server from any client app, same
           // as the coach-viewing-another-user path already does. Only runs
           // when there's no real local device, so it never clobbers a real

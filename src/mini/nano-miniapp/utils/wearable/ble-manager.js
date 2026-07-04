@@ -18,7 +18,17 @@ class BLEManager {
     return new Promise((resolve, reject) => {
       wx.openBluetoothAdapter({
         success: resolve,
-        fail: (err) => reject(new Error(err.errMsg || 'openBluetoothAdapter failed')),
+        fail: (err) => {
+          // "already opened" means the adapter is already usable (e.g. a prior
+          // BLEManager instance opened it, like handleBindWearable's own scan
+          // phase does before handing off to ring.connect()'s separate
+          // BLEManager) — not a real failure, so don't fail the whole flow.
+          if ((err.errMsg || '').includes('already opened')) {
+            resolve(err)
+          } else {
+            reject(new Error(err.errMsg || 'openBluetoothAdapter failed'))
+          }
+        },
       })
     })
   }
