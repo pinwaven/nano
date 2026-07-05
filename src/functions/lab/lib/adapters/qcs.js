@@ -238,11 +238,22 @@ function bodyType(rawBody) {
 }
 
 async function fetchOrder(orderId, config) {
-    const res = await axios.get(`${trimTrailingSlash(config.api_base_url)}/services/labtest/orders/${encodeURIComponent(orderId)}`, {
-        headers: { Authorization: `Bearer ${config.api_key}` },
+    // const res = await axios.get(`${trimTrailingSlash(config.api_base_url)}/services/labtest/orders/${encodeURIComponent(orderId)}`, {
+    //     headers: { Authorization: `Bearer ${config.api_key}` },
+    //     timeout: 15000,
+    // });
+    // return res.data?.data || res.data;
+
+    const transport = config.transport || axios;
+    const baseUrl = trimTrailingSlash(config.api_base_url);
+    const token = await getAccessToken(baseUrl, config, transport);
+
+    const orderRes = await requestQcs(transport, 'GET', `${baseUrl}/services/labtest/orders/${encodeURIComponent(orderId)}`, {}, {
+        headers: authHeaders(token),
         timeout: 15000,
+        stage: `orders/${orderId}`,
     });
-    return res.data?.data || res.data;
+    return orderRes.data?.data || orderRes.data;
 }
 
 /**
@@ -389,6 +400,47 @@ async function listOrders({ config, params = {} }) {
         page = currentPage + 1;
     }
     return orders;
+}
+
+/**
+ * Fetch the temporary download descriptor for a good's test report PDF.
+ * QCS returns { data: { url, size } }; the url is short-lived, so callers
+ * must download the file promptly rather than persist the url.
+ *
+ * @param {object} args
+ * @param {string} args.orderId - QCS order id
+ * @param {number|string} args.goodId - QCS good id within the order
+ * @param {object} args.config - { api_base_url, api_key, api_secret, cache, transport }
+ * @returns {Promise<{url?: string, size?: number}>}
+ */
+async function fetchReportUrl({ orderId, goodId, config }) {
+    const transport = config.transport || axios;
+    const baseUrl = trimTrailingSlash(config.api_base_url);
+    const token = await getAccessToken(baseUrl, config, transport);
+    const res = await requestQcs(
+        transport,
+        'GET',
+        `${baseUrl}/services/labtest/orders/${encodeURIComponent(orderId)}/goods/${encodeURIComponent(goodId)}/_download-report`,
+        null,
+        {
+            headers: authHeaders(token),
+            timeout: 15000,
+            stage: 'orders/:id/goods/:good_id/_download-report',
+        }
+    );
+    return res.data?.data || res.data || {};
+}
+
+/**
+ * Goods of an order whose good-level progress is 'completed' — the only goods
+ * for which QCS can serve a report PDF. Accepts a raw order object or a
+ * { data: order } envelope.
+ */
+function completedGoods(detail) {
+    const order = detail?.data || detail || {};
+    return normalizeArray(order.goods).filter(
+        (good) => String(good?.progress || '').toLowerCase() === 'completed'
+    );
 }
 
 /**
@@ -632,6 +684,10 @@ module.exports = {
     list_orders: listOrders,
     phoneFromOrder,
     phone_from_order: phoneFromOrder,
+    fetchReportUrl,
+    fetch_report_url: fetchReportUrl,
+    completedGoods,
+    completed_goods: completedGoods,
     projectsByBarcode,
     projects_by_barcode: projectsByBarcode,
     allProjectsByBarcodeSuffix,

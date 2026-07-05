@@ -41,6 +41,21 @@ function generatePresignedGetUrl(key, expiresSeconds = 86400, bucket = null, cna
     return client.signatureUrl(key, { method: 'GET', expires: expiresSeconds });
 }
 
+// Uploads a Buffer to OSS. Pass publicRead: true to make the object readable
+// via its permanent URL (objects default to the bucket ACL, which is private).
+// clientFactory is injectable for tests; production callers omit it.
+async function putBuffer(key, buffer, options = {}, clientFactory = getClient) {
+    const client = clientFactory(options.bucket || null);
+    const headers = {
+        'Content-Type': options.contentType || 'application/octet-stream',
+    };
+    if (options.publicRead) {
+        headers['x-oss-object-acl'] = 'public-read';
+    }
+    await client.put(key, buffer, { headers });
+    return key;
+}
+
 async function deleteObject(key) {
     try {
         const client = getClient();
@@ -57,4 +72,4 @@ async function getObjectBuffer(key) {
     return result.content;
 }
 
-module.exports = { generateKey, generatePresignedPutUrl, generatePresignedGetUrl, deleteObject, getObjectBuffer };
+module.exports = { generateKey, generatePresignedPutUrl, generatePresignedGetUrl, putBuffer, deleteObject, getObjectBuffer };

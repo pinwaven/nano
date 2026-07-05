@@ -561,3 +561,51 @@ describe('QCS lab adapter', () => {
     assert.equal(writes[0].expiredAt.toISOString(), new Date(1000 + 3600 * 1000).toISOString());
   });
 });
+
+describe('QCS report download', () => {
+  test('fetchReportUrl requests the per-good download-report endpoint with bearer token', async () => {
+    const qcs = require('../src/functions/lab/lib/adapters/qcs');
+    qcs.clearTokenCache();
+    const calls = [];
+    const transport = {
+      async post(url, data) {
+        calls.push({ method: 'POST', url, data });
+        return { data: { access_token: 'tok', expires_in: 7200 } };
+      },
+      async get(url, options) {
+        calls.push({ method: 'GET', url, options });
+        return { data: { data: { url: 'https://files.qcs/abc.pdf', size: 1111 } } };
+      },
+    };
+    const config = {
+      api_base_url: 'https://qcs.example/third-party/',
+      api_key: 'ak',
+      api_secret: 'as',
+      transport,
+      now: () => 1000,
+    };
+
+    const report = await qcs.fetchReportUrl({ orderId: 'QCS-9', goodId: 42, config });
+
+    assert.equal(report.url, 'https://files.qcs/abc.pdf');
+    const getCall = calls.find((c) => c.method === 'GET');
+    assert.equal(getCall.url, 'https://qcs.example/third-party/services/labtest/orders/QCS-9/goods/42/_download-report');
+    assert.equal(getCall.options.headers.Authorization, 'Bearer tok');
+  });
+
+  test('completedGoods returns only goods with completed progress, raw or enveloped', () => {
+    const qcs = require('../src/functions/lab/lib/adapters/qcs');
+    const order = {
+      goods: [
+        { id: 1, progress: 'no_process' },
+        { id: 2, progress: 'completed' },
+        { id: 3, progress: 'completed' },
+      ],
+    };
+
+    assert.deepEqual(qcs.completedGoods(order).map((g) => g.id), [2, 3]);
+    assert.deepEqual(qcs.completedGoods({ data: order }).map((g) => g.id), [2, 3]);
+    assert.deepEqual(qcs.completedGoods({}), []);
+    assert.deepEqual(qcs.completedGoods(null), []);
+  });
+});

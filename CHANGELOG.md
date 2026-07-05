@@ -6,6 +6,35 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Fixed
+
+- **QCS import: report PDFs stored private, status refresh on re-run, and per-order progress output** (`scripts/import-qcs-orders.js`, `tests/import-qcs-orders.test.js`, `src/functions/lab/index.js`)
+
+  Two OSS upload failures and a crashing dedup lookup in the QCS import, plus a status-refresh path and progress reporting for long runs.
+
+  **What changed:**
+  - **`InvalidAccessKeyId` ("The OSS Access Key Id you provided does not exist in our records")** — not a code bug. `.env` had the **retired** OSS key pair uncommented and the current pair commented out. See the OSS key-rotation note further down this file: rotating `OSS_ACCESS_KEY_ID` also invalidates every presigned GET URL already persisted in `store_items.image_url`, `channel_inventory.image_url`, and `chat_messages.image_url`.
+  - **`AccessDenied` ("Put public object acl is not allowed")** — the report upload passed `publicRead: true`, but bucket `waven-nano` has **Block Public Access** enabled, so OSS rejects any request carrying `x-oss-object-acl: public-read`. Dropped the flag; report PDFs now upload private. **Block Public Access was deliberately left on** — these are patient lab reports (PHI) and must not be world-readable; the previous design relied on an unguessable key, which is security-by-obscurity. Nothing reads `report_pdf_key` yet, so no consumer breaks. Any future download endpoint must mint a short-lived `oss.generatePresignedGetUrl` per request and never persist it.
+  - **`findLabOrder` threw `ReferenceError: row is not defined` on every hit** — it guarded on `if (!res)` (a pg result object is always truthy) and then indexed an undefined `row` as an array, while pg returns named columns. Every already-imported order hit this, was swallowed by the per-order `catch`, and counted as `errors`, so dedup never actually worked. Now returns `res.rows[0] || null`.
+  - **Existing rows are refreshed when their status drifts.** QCS advances an order's progress after first import, so a re-run now calls `updateLabOrder(existingRow, detail)`; the drift comparison lives in `buildImportDeps` next to the SQL and resolves `null` when the stored status already matched, so unchanged rows are not rewritten (and `updated_at` is not churned). The full payload rides along with the status — updating `status` alone would leave a row marked `已完成` with a stale `lab_last_result` and a `NULL` lab_final_result. `findLabOrder` now also selects `external_order_id` and `status`, because the shared `updateLabOrder` keys its `WHERE` on `id AND external_order_id`.
+  - **Per-order progress output.** `runImport` takes an optional `deps.onProgress({index, total, orderId, outcome})`, fired exactly once per order from a `finally` so `continue` and `throw` paths cannot skip it. `outcome` is one of `inserted` / `updated` / `duplicate` / `no-user` / `dry-run` / `error`, defaulting to `error` so an unhandled throw is never mislabeled. The CLI renders `[import-qcs-orders] 47/1203 (3%) 89s QCS-8891 inserted`; a page sweep of thousands of orders was previously silent until the final summary.
+  - New summary counter `ordersUpdated`.
+  - **No DB migration.**
+
+### Changed
+
+- **QCS import: lab_orders-only + report PDF archival to OSS** (`scripts/import-qcs-orders.js`, `src/functions/lab/lib/adapters/qcs.js`, `src/functions/worker/lib/oss.js`, `src/schemas/migration_lab_orders_report_pdf_key.sql`, `tests/import-qcs-orders.test.js`, `tests/lab-qcs-adapter.test.js`, `tests/oss-put-buffer.test.js`)
+
+  The QCS import script no longer writes `health_reports`/`health_events` — it imports into `lab_orders` only. For completed orders it now downloads the test report PDF from QCS, uploads it to OSS, and stores the object key on the row.
+
+  **What changed:**
+  - QCS adapter: added `fetchReportUrl({orderId, goodId, config})` (`GET orders/:id/goods/:good_id/_download-report`, returns the short-lived `{url, size}`) and `completedGoods(detail)` (goods with good-level progress `completed`).
+  - Worker OSS lib: added `putBuffer(key, buffer, {contentType, publicRead, bucket})`.
+  - **New column `lab_orders.report_pdf_key`** (`migration_lab_orders_report_pdf_key.sql`) — OSS key `lab-reports/{lab}/{order_id}/{good_id}-{16hex}.pdf`. Objects are uploaded **private** (see the report-PDF privacy fix below); the random suffix avoids collisions on re-import. Column stores the key, not a URL.
+  - PDFs are fetched only for orders with progress `complete`; multi-good orders store the first completed good's report (WARN logged). PDF failure never blocks the order insert (`pdfErrors` counter); re-runs backfill missing PDFs onto existing rows (`report_pdf_key IS NULL`), touching nothing else on the row.
+  - `main()` wiring is now a tested `buildImportDeps()` builder; OSS env vars (`OSS_ACCESS_KEY_ID`/`OSS_ACCESS_KEY_SECRET`/`OSS_BUCKET`) are validated at startup unless `--dry-run`.
+  - Summary counters: `reportsInserted` removed; `pdfUploaded` + `pdfErrors` added.
+
 ### Added
 
 - **QCS order backfill import script** (`scripts/import-qcs-orders.js`, `src/functions/lab/lib/adapters/qcs.js`, `src/functions/lab/index.js`, `tests/import-qcs-orders.test.js`, `tests/lab-qcs-adapter.test.js`, `tests/lab-order.test.js`, `package.json`)

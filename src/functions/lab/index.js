@@ -200,7 +200,7 @@ async function handleWebhook(labName, headers, rawBody, fcContext, url = '') {
     }
 
     const payload = JSON.parse(typeof rawBody === 'string' ? rawBody : rawBody.toString('utf8'));
-    const config  = { api_base_url: provider.api_base_url, api_key: provider.api_key_enc };
+    const config  = { api_base_url: provider.api_base_url, api_key: provider.api_key_enc, api_secret: provider.webhook_secret_enc };
 
     // Notification payload may not include full results — fetch the order
     const orderId = payload.order_id;
@@ -806,4 +806,5 @@ module.exports.__private = {
     updateLabOrder,
     insertLabOrder,
     ingestObservations,
+    mapLabStatus,
 };
