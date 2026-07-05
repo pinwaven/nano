@@ -14,6 +14,8 @@
  * real adapter + DB implementations.
  */
 
+// node scripts/import-qcs-orders.js --base-url https://api.quantumhealth.cn/third-party/ --ak clientid --as secret
+
 /**
  * @param {object} deps
  * @param {object} deps.config            - QCS provider config { api_base_url, api_key, api_secret, cache }
