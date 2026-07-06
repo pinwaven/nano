@@ -4,9 +4,10 @@ import { marked } from 'marked';
 import {
   X, Check, Trash2, Plus, Pencil, ChevronDown, ChevronUp, ChevronRight,
   Upload, Video, FileText, BookOpen, Play, Target, TrendingUp,
-  GraduationCap, Award, ClipboardList, Users,
+  GraduationCap, Award, ClipboardList, Users, Download,
 } from 'lucide-react';
 import { useLang, fmt, fmtDate, Badge, StatCard, UserPicker } from '../shared.jsx';
+import { formatOrdinal, renderCertificate, DEFAULT_TEMPLATE_LAYOUT, LAYOUT_FIELDS, resolveDisplayName, NAME_DISPLAY_MODES } from '../utils/certRender.js';
 
 // ── Academy helpers ───────────────────────────────────────────────────────────
 
@@ -70,7 +71,7 @@ function CourseModal({ course, courses = [], onClose, onSave }) {
       const payload = {
         ...form,
         oss_key,
-        credit_value: parseInt(form.credit_value) || 10,
+        credit_value: Number.isNaN(parseInt(form.credit_value)) ? 10 : parseInt(form.credit_value),
         prerequisite_course_id: form.prerequisite_course_id ? parseInt(form.prerequisite_course_id) : null,
       };
       if (isEdit) {
@@ -402,7 +403,7 @@ function LessonModal({ lesson, courseId, onClose, onSave }) {
       const payload = {
         ...form,
         oss_key,
-        credit_value: parseInt(form.credit_value) || 5,
+        credit_value: Number.isNaN(parseInt(form.credit_value)) ? 5 : parseInt(form.credit_value),
         min_watch_seconds: form.min_watch_seconds ? parseInt(form.min_watch_seconds) : null,
       };
       if (isEdit) {
@@ -636,7 +637,7 @@ function QuizQuestionModal({ lessonId, question, onClose, onSave }) {
     if (!options.some(o => o.is_correct)) { setError('Mark one option as correct'); return; }
     setBusy(true); setError('');
     try {
-      const payload = { ...form, lesson_id: lessonId, options, credit_value: parseInt(form.credit_value) || 5 };
+      const payload = { ...form, lesson_id: lessonId, options, credit_value: Number.isNaN(parseInt(form.credit_value)) ? 5 : parseInt(form.credit_value) };
       if (isEdit) await axios.put(`/api/academy/lesson-quizzes/${question.id}`, payload);
       else await axios.post('/api/academy/lesson-quizzes', payload);
       onSave();
@@ -700,7 +701,144 @@ function QuizQuestionModal({ lessonId, question, onClose, onSave }) {
   );
 }
 
+// ── Certificate template layout editor ─────────────────────────────────────────
+
+const LAYOUT_FIELD_LABELS = {
+  name: 'Name', certificate_number: 'Cert. Number', validity_date: 'Validity Date', issue_date: 'Issue Date',
+};
+const LAYOUT_FIELD_SAMPLE = {
+  name: 'Jane Doe', certificate_number: 'NO.SAMPLE0001',
+  validity_date: 'Validity Date: 31st Dec 2027', issue_date: 'Awarded on 19th Jun 2026',
+};
+
+const LAYOUT_MIN_FONT_PCT = 0.5;
+const LAYOUT_MAX_FONT_PCT = 15;
+
+function TemplateLayoutEditor({ imageUrl, layout, onChange }) {
+  const [dragging, setDragging] = useState(null);
+  const [resizing, setResizing] = useState(null);
+  const [containerHeight, setContainerHeight] = useState(0);
+  const containerRef = React.useRef(null);
+  const resizeStartRef = React.useRef(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) setContainerHeight(entry.contentRect.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [imageUrl]);
+
+  const setField = (field, patch) => onChange({ ...layout, [field]: { ...layout[field], ...patch } });
+
+  const handlePointerDown = (field) => (e) => {
+    e.preventDefault();
+    setDragging(field);
+    e.target.setPointerCapture(e.pointerId);
+  };
+  const handleResizePointerDown = (field) => (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const cfg = layout[field] || DEFAULT_TEMPLATE_LAYOUT[field];
+    resizeStartRef.current = { y: e.clientY, fontSizePct: cfg.fontSizePct };
+    setResizing(field);
+    e.target.setPointerCapture(e.pointerId);
+  };
+  const handlePointerMove = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (dragging) {
+      const xPct = Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
+      const yPct = Math.min(100, Math.max(0, ((e.clientY - rect.top) / rect.height) * 100));
+      setField(dragging, { xPct, yPct });
+    } else if (resizing && resizeStartRef.current) {
+      const deltaY = e.clientY - resizeStartRef.current.y;
+      const deltaPct = (deltaY / rect.height) * 100;
+      const fontSizePct = Math.min(LAYOUT_MAX_FONT_PCT, Math.max(LAYOUT_MIN_FONT_PCT, resizeStartRef.current.fontSizePct + deltaPct));
+      setField(resizing, { fontSizePct });
+    }
+  };
+  const handlePointerUp = () => {
+    setDragging(null);
+    setResizing(null);
+    resizeStartRef.current = null;
+  };
+
+  if (!imageUrl) return null;
+
+  return (
+    <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+      <span className="form-label-text">Certificate Text Layout</span>
+      <p className="muted" style={{ fontSize: 12, margin: '2px 0 8px' }}>
+        Drag a marker to position it; drag its bottom-right handle to resize the text.
+      </p>
+      <div
+        ref={containerRef}
+        style={{ position: 'relative', width: '100%', userSelect: 'none', border: '1px solid #e2e8f0', borderRadius: 6, overflow: 'hidden' }}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+      >
+        <img src={imageUrl} alt="Certificate template" style={{ width: '100%', display: 'block' }} draggable={false} />
+        {LAYOUT_FIELDS.map((field) => {
+          const cfg = layout[field] || DEFAULT_TEMPLATE_LAYOUT[field];
+          if (!cfg.enabled) return null;
+          const fontSizePx = containerHeight ? (cfg.fontSizePct / 100) * containerHeight : 11;
+          // Must mirror ctx.textAlign anchoring in renderCertificate(): canvas anchors the
+          // text's left/center/right edge exactly at (xPct, yPct), so the drag handle here
+          // needs the same horizontal anchor or the marker position won't match the render.
+          const hTranslate = cfg.align === 'left' ? '0%' : cfg.align === 'right' ? '-100%' : '-50%';
+          return (
+            <div
+              key={field}
+              onPointerDown={handlePointerDown(field)}
+              style={{
+                position: 'absolute', left: `${cfg.xPct}%`, top: `${cfg.yPct}%`,
+                transform: `translate(${hTranslate}, -50%)`, cursor: 'grab',
+                background: 'rgba(99,102,241,0.15)', border: '1px dashed #6366f1',
+                borderRadius: 4, padding: '2px 10px 2px 6px', fontSize: fontSizePx, lineHeight: 1.15,
+                textAlign: cfg.align || 'center',
+                color: cfg.color || '#1a1a1a', fontWeight: cfg.fontWeight, whiteSpace: 'nowrap', touchAction: 'none',
+              }}
+            >
+              {LAYOUT_FIELD_SAMPLE[field]}
+              <span
+                onPointerDown={handleResizePointerDown(field)}
+                title="Drag to resize"
+                style={{
+                  position: 'absolute', right: -6, bottom: -6, width: 12, height: 12,
+                  background: '#6366f1', border: '1px solid #fff', borderRadius: '50%',
+                  cursor: 'nwse-resize', touchAction: 'none',
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 8 }}>
+        {LAYOUT_FIELDS.map((field) => {
+          const cfg = layout[field] || DEFAULT_TEMPLATE_LAYOUT[field];
+          return (
+            <label key={field} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+              <input
+                type="checkbox"
+                checked={!!cfg.enabled}
+                onChange={(e) => setField(field, { enabled: e.target.checked })}
+                style={{ accentColor: '#6366f1' }}
+              />
+              {LAYOUT_FIELD_LABELS[field]}
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Certification modals ──────────────────────────────────────────────────────
+
+const TIERS = ['bronze', 'silver', 'gold', 'platinum'];
+const TIER_COLORS = { bronze: '#cd7f32', silver: '#94a3b8', gold: '#f59e0b', platinum: '#8b5cf6' };
 
 function CertificationModal({ cert, courses = [], onClose, onSave }) {
   const { t } = useLang();
@@ -709,7 +847,7 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
   const [form, setForm] = useState({
     title: cert?.title || '',
     description: cert?.description || '',
-    tier: cert?.tier || 'bronze',
+    tier: cert?.tier || '',
     min_credits: cert?.min_credits ?? 0,
     badge_image_url: cert?.badge_image_url || '',
     is_active: cert?.is_active !== false,
@@ -718,9 +856,13 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
     school_org: cert?.school_org || '',
     validity_years: cert?.validity_years ?? 3,
     course_display_name: cert?.course_display_name || '',
+    issue_date: cert?.issue_date ? cert.issue_date.slice(0, 10) : '',
+    validity_date: cert?.validity_date ? cert.validity_date.slice(0, 10) : '',
   });
   const [templateFile, setTemplateFile] = useState(null);
   const [templateOssKey, setTemplateOssKey] = useState(cert?.template_image_oss_key || '');
+  const [templateLayout, setTemplateLayout] = useState({ ...DEFAULT_TEMPLATE_LAYOUT, ...(cert?.template_layout || {}) });
+  const [templatePreviewUrl, setTemplatePreviewUrl] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedCourseIds, setSelectedCourseIds] = useState(cert?.required_course_ids || []);
   const [busy, setBusy] = useState(false);
@@ -729,6 +871,29 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
   const toggleCourse = (id) => setSelectedCourseIds(ids =>
     ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]
   );
+
+  // Keep a local object URL for the layout editor preview: a newly-picked
+  // file previews instantly; an already-uploaded template is fetched once
+  // through the same-origin proxy (auth header required, so <img src> alone can't load it).
+  useEffect(() => {
+    let objectUrl = null;
+    let cancelled = false;
+    if (templateFile) {
+      objectUrl = URL.createObjectURL(templateFile);
+      setTemplatePreviewUrl(objectUrl);
+    } else if (isEdit && templateOssKey) {
+      axios.get(`/api/academy/certifications/${cert.id}/template-image`, { responseType: 'blob' })
+        .then((res) => {
+          if (cancelled) return;
+          objectUrl = URL.createObjectURL(res.data);
+          setTemplatePreviewUrl(objectUrl);
+        })
+        .catch(() => { if (!cancelled) setTemplatePreviewUrl(null); });
+    } else {
+      setTemplatePreviewUrl(null);
+    }
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [templateFile, templateOssKey, isEdit, cert?.id]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -748,6 +913,7 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
         min_credits: parseInt(form.min_credits) || 0,
         validity_years: parseInt(form.validity_years) || 3,
         template_image_oss_key: template_image_oss_key || null,
+        template_layout: templateLayout,
       };
       if (isEdit) await axios.put(`/api/academy/certifications/${cert.id}`, payload);
       else await axios.post('/api/academy/certifications', payload);
@@ -755,9 +921,6 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
     } catch (err) { setError(err.response?.data?.error || err.message); }
     finally { setBusy(false); }
   };
-
-  const TIERS = ['bronze', 'silver', 'gold', 'platinum'];
-  const TIER_COLORS = { bronze: '#cd7f32', silver: '#94a3b8', gold: '#f59e0b', platinum: '#8b5cf6' };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -780,6 +943,7 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
               <span>{ta.tier}</span>
               <div className="select-wrap" style={{ width: '100%' }}>
                 <select value={form.tier} onChange={e => setForm(f => ({ ...f, tier: e.target.value }))} className="inline-select" style={{ width: '100%' }}>
+                  <option value="">— {ta.noTier} —</option>
                   {TIERS.map(tier => <option key={tier} value={tier} style={{ color: TIER_COLORS[tier] }}>{tier.charAt(0).toUpperCase() + tier.slice(1)}</option>)}
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
@@ -796,6 +960,22 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
             <label className="form-field">
               <span>{ta.validityYears}</span>
               <input type="number" min={1} value={form.validity_years} onChange={e => setForm(f => ({ ...f, validity_years: e.target.value }))} />
+            </label>
+            <label className="form-field">
+              <span>{ta.certIssueDate}</span>
+              <input
+                type="date"
+                value={form.issue_date}
+                onChange={e => {
+                  const issue_date = e.target.value;
+                  setForm(f => ({ ...f, issue_date, validity_date: f.validity_date || addYears(issue_date, f.validity_years) }));
+                }}
+              />
+              <span className="muted" style={{ fontSize: 11 }}>{ta.certDatesSharedHint}</span>
+            </label>
+            <label className="form-field">
+              <span>{ta.certValidityDate}</span>
+              <input type="date" value={form.validity_date} onChange={e => setForm(f => ({ ...f, validity_date: e.target.value }))} />
             </label>
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{ta.courseDisplayName}</span>
@@ -828,6 +1008,7 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
                 </div>
               )}
             </div>
+            <TemplateLayoutEditor imageUrl={templatePreviewUrl} layout={templateLayout} onChange={setTemplateLayout} />
             <div className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span className="form-label-text">{ta.requiredCourses}</span>
               <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 6, padding: 8 }}>
@@ -862,12 +1043,13 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
   );
 }
 
-function EnrollModal({ onClose, onSave, prefilledUserId = '', prefilledUserName = '' }) {
+function EnrollModal({ courses = [], onClose, onSave, prefilledUserId = '', prefilledUserName = '' }) {
   const { t } = useLang();
   const ta = t.academy;
   const [selectedUser, setSelectedUser] = useState(
     prefilledUserId ? { user_id: prefilledUserId, nickname: prefilledUserName } : null
   );
+  const [courseId, setCourseId] = useState('');
   const [cohort, setCohort] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -876,10 +1058,12 @@ function EnrollModal({ onClose, onSave, prefilledUserId = '', prefilledUserName 
   const handleSave = async (e) => {
     e.preventDefault();
     if (!selectedUser?.user_id) { setError('Please select a user'); return; }
+    if (!courseId) { setError(ta.selectCourseRequired); return; }
     setSaving(true); setError('');
     try {
       await axios.post('/api/academy/enrollments', {
         user_id: selectedUser.user_id,
+        course_id: Number(courseId),
         cohort: cohort || undefined,
         notes: notes || undefined,
       });
@@ -902,6 +1086,15 @@ function EnrollModal({ onClose, onSave, prefilledUserId = '', prefilledUserName 
               <UserPicker value={selectedUser} onChange={setSelectedUser} label={`${ta.userOpenid} *`} />
             </div>
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{ta.selectCourse} *</span>
+              <select value={courseId} onChange={e => setCourseId(e.target.value)} required>
+                <option value="">— {ta.selectCourse} —</option>
+                {courses.map(c => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
+                ))}
+              </select>
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{ta.cohort}</span>
               <input value={cohort} onChange={e => setCohort(e.target.value)} placeholder="e.g. 第一期" />
             </label>
@@ -921,26 +1114,66 @@ function EnrollModal({ onClose, onSave, prefilledUserId = '', prefilledUserName 
   );
 }
 
+// "2026-06-14" + 3 -> "2029-06-14", used to suggest a validity/expiry date from the
+// certification template's validity_years when the admin enables the toggle.
+const addYears = (dateStr, years) => {
+  if (!dateStr) return '';
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setFullYear(d.getFullYear() + (parseInt(years, 10) || 0));
+  return d.toISOString().slice(0, 10);
+};
+
 function GrantCertModal({ certifications, onClose, onSave, prefilledUserId = '', prefilledUserName = '' }) {
   const { t } = useLang();
   const ta = t.academy;
-  const today = new Date().toISOString().slice(0, 10);
   const [selectedUser, setSelectedUser] = useState(
     prefilledUserId ? { user_id: prefilledUserId, nickname: prefilledUserName } : null
   );
   const [form, setForm] = useState({
     certification_id: '',
     certificate_number: '',
-    issue_date: today,
-    expiry_date: '',
     assessment_period: '',
     score: '',
     notes: '',
   });
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [certPreviewBlob, setCertPreviewBlob] = useState(null);
+  const [certPreviewUrl, setCertPreviewUrl] = useState('');
+  const [nameDisplayMode, setNameDisplayMode] = useState('en');
   const [error, setError] = useState('');
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const selectedCert = certifications.find(c => String(c.id) === String(form.certification_id));
+
+  const handleGenerate = async () => {
+    if (!selectedCert?.template_image_oss_key) { setError('Selected template has no background image'); return; }
+    if (!form.certificate_number.trim()) { setError(ta.certNumber + ' is required'); return; }
+    setGenerating(true); setError('');
+    let imageObjectUrl = null;
+    try {
+      const imgRes = await axios.get(`/api/academy/certifications/${selectedCert.id}/template-image`, { responseType: 'blob' });
+      imageObjectUrl = URL.createObjectURL(imgRes.data);
+      const blob = await renderCertificate({
+        imageObjectUrl,
+        layout: { ...DEFAULT_TEMPLATE_LAYOUT, ...(selectedCert.template_layout || {}) },
+        values: {
+          name: resolveDisplayName(selectedUser?.nickname || '', nameDisplayMode),
+          certificate_number: `NO.${form.certificate_number}`,
+          validity_date: selectedCert.validity_date ? `Validity Date: ${formatOrdinal(selectedCert.validity_date.slice(0, 10))}` : '',
+          issue_date: selectedCert.issue_date ? `Awarded on ${formatOrdinal(selectedCert.issue_date.slice(0, 10))}` : '',
+        },
+      });
+      if (certPreviewUrl) URL.revokeObjectURL(certPreviewUrl);
+      setCertPreviewBlob(blob);
+      setCertPreviewUrl(URL.createObjectURL(blob));
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+    } finally {
+      if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl);
+      setGenerating(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!selectedUser?.user_id) { setError('Please select a user'); return; }
@@ -948,15 +1181,21 @@ function GrantCertModal({ certifications, onClose, onSave, prefilledUserId = '',
     setSaving(true);
     setError('');
     try {
+      let cert_oss_key;
+      if (certPreviewBlob) {
+        const presignRes = await axios.get('/api/oss/presign', { params: { type: 'cert', filename: 'certificate.png' } });
+        if (!presignRes.data.success) throw new Error(presignRes.data.error || ta.uploadFailed);
+        await uploadToOSS(presignRes.data.url, certPreviewBlob, () => {});
+        cert_oss_key = presignRes.data.key;
+      }
       const payload = {
         user_id: selectedUser.user_id,
         certification_id: Number(form.certification_id),
         certificate_number: form.certificate_number || undefined,
-        issue_date: form.issue_date || undefined,
-        expiry_date: form.expiry_date || undefined,
         score: form.score !== '' ? Number(form.score) : undefined,
         assessment_period: form.assessment_period || undefined,
         notes: form.notes || undefined,
+        cert_oss_key,
       };
       await axios.post('/api/academy/coach-certifications', payload);
       onSave();
@@ -984,7 +1223,7 @@ function GrantCertModal({ certifications, onClose, onSave, prefilledUserId = '',
               <select value={form.certification_id} onChange={e => set('certification_id', e.target.value)} required>
                 <option value="">— {ta.selectCertTemplate} —</option>
                 {certifications.map(c => (
-                  <option key={c.id} value={c.id}>{c.title} ({c.tier})</option>
+                  <option key={c.id} value={c.id}>{c.title}{c.tier ? ` (${c.tier})` : ''}</option>
                 ))}
               </select>
             </label>
@@ -993,14 +1232,14 @@ function GrantCertModal({ certifications, onClose, onSave, prefilledUserId = '',
               <input value={form.certificate_number} onChange={e => set('certificate_number', e.target.value)}
                 placeholder="e.g. AEVIVA20260614001" />
             </label>
-            <label className="form-field">
-              <span>{ta.issueDate}</span>
-              <input type="date" value={form.issue_date} onChange={e => set('issue_date', e.target.value)} />
-            </label>
-            <label className="form-field">
-              <span>{ta.expiryDate}</span>
-              <input type="date" value={form.expiry_date} onChange={e => set('expiry_date', e.target.value)} />
-            </label>
+            {selectedCert && (
+              <div className="form-field" style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted)' }}>
+                {ta.issueDate}: {selectedCert.issue_date ? fmtDate(selectedCert.issue_date) : '—'}
+                {' · '}
+                {ta.expiryDate}: {selectedCert.validity_date ? fmtDate(selectedCert.validity_date) : '—'}
+                {' — '}{ta.certDatesEditHint}
+              </div>
+            )}
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{ta.assessmentPeriod}</span>
               <input value={form.assessment_period} onChange={e => set('assessment_period', e.target.value)}
@@ -1010,6 +1249,28 @@ function GrantCertModal({ certifications, onClose, onSave, prefilledUserId = '',
               <span>{ta.certScore}</span>
               <input type="number" min={0} max={100} value={form.score} onChange={e => set('score', e.target.value)} placeholder="Optional" />
             </label>
+            {selectedCert?.template_image_oss_key && (
+              <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                <span className="form-label-text">{ta.certPreview}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                    <span>{ta.nameDisplay}</span>
+                    <div className="select-wrap">
+                      <select value={nameDisplayMode} onChange={e => setNameDisplayMode(e.target.value)} className="inline-select">
+                        {NAME_DISPLAY_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                      <ChevronDown size={11} className="select-chevron" />
+                    </div>
+                  </label>
+                  <button type="button" className="btn-secondary" onClick={handleGenerate} disabled={generating}>
+                    {generating ? '…' : ta.generateCertificate}
+                  </button>
+                </div>
+                {certPreviewUrl && (
+                  <img src={certPreviewUrl} alt="Certificate preview" style={{ width: '100%', marginTop: 8, borderRadius: 6, border: '1px solid #e2e8f0' }} />
+                )}
+              </div>
+            )}
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>Notes</span>
               <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} style={{ resize: 'vertical' }} />
@@ -1031,8 +1292,6 @@ function IssuedCertModal({ issued, onClose, onSave }) {
   const ta = t.academy;
   const [form, setForm] = useState({
     certificate_number: issued?.certificate_number || '',
-    issue_date: issued?.issue_date ? issued.issue_date.slice(0, 10) : new Date().toISOString().slice(0, 10),
-    expiry_date: issued?.expiry_date ? issued.expiry_date.slice(0, 10) : '',
     assessment_period: issued?.assessment_period || '',
     score: issued?.score ?? '',
     is_revoked: issued?.is_revoked || false,
@@ -1040,9 +1299,42 @@ function IssuedCertModal({ issued, onClose, onSave }) {
   });
   const [certFile, setCertFile] = useState(null);
   const [certOssKey, setCertOssKey] = useState(issued?.cert_oss_key || '');
+  const [certPreviewBlob, setCertPreviewBlob] = useState(null);
+  const [certPreviewUrl, setCertPreviewUrl] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [nameDisplayMode, setNameDisplayMode] = useState('en');
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  const handleGenerate = async () => {
+    if (!issued?.template_image_oss_key) { setError('This template has no background image'); return; }
+    if (!form.certificate_number.trim()) { setError(ta.certNumber + ' is required'); return; }
+    setGenerating(true); setError('');
+    let imageObjectUrl = null;
+    try {
+      const imgRes = await axios.get(`/api/academy/certifications/${issued.certification_id}/template-image`, { responseType: 'blob' });
+      imageObjectUrl = URL.createObjectURL(imgRes.data);
+      const blob = await renderCertificate({
+        imageObjectUrl,
+        layout: { ...DEFAULT_TEMPLATE_LAYOUT, ...(issued.template_layout || {}) },
+        values: {
+          name: resolveDisplayName(issued?.nickname || '', nameDisplayMode),
+          certificate_number: `NO.${form.certificate_number}`,
+          validity_date: issued.expiry_date ? `Validity Date: ${formatOrdinal(issued.expiry_date.slice(0, 10))}` : '',
+          issue_date: issued.issue_date ? `Awarded on ${formatOrdinal(issued.issue_date.slice(0, 10))}` : '',
+        },
+      });
+      if (certPreviewUrl) URL.revokeObjectURL(certPreviewUrl);
+      setCertPreviewBlob(blob);
+      setCertPreviewUrl(URL.createObjectURL(blob));
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+    } finally {
+      if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl);
+      setGenerating(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -1050,7 +1342,12 @@ function IssuedCertModal({ issued, onClose, onSave }) {
     setBusy(true); setError(''); setProgress(0);
     try {
       let cert_oss_key = certOssKey;
-      if (certFile) {
+      if (certPreviewBlob) {
+        const presignRes = await axios.get('/api/oss/presign', { params: { type: 'cert', filename: 'certificate.png' } });
+        if (!presignRes.data.success) throw new Error(presignRes.data.error || ta.uploadFailed);
+        await uploadToOSS(presignRes.data.url, certPreviewBlob, setProgress);
+        cert_oss_key = presignRes.data.key;
+      } else if (certFile) {
         const presignRes = await axios.get('/api/oss/presign', { params: { type: 'cert', filename: certFile.name } });
         if (!presignRes.data.success) throw new Error(presignRes.data.error || ta.uploadFailed);
         await uploadToOSS(presignRes.data.url, certFile, setProgress);
@@ -1059,7 +1356,6 @@ function IssuedCertModal({ issued, onClose, onSave }) {
       const payload = {
         ...form,
         score: form.score !== '' ? parseInt(form.score) : null,
-        expiry_date: form.expiry_date || null,
         cert_oss_key: cert_oss_key || null,
       };
       await axios.put(`/api/academy/coach-certifications/${issued.id}`, payload);
@@ -1084,14 +1380,12 @@ function IssuedCertModal({ issued, onClose, onSave }) {
               <span>{ta.certNumber} *</span>
               <input value={form.certificate_number} onChange={e => setForm(f => ({ ...f, certificate_number: e.target.value }))} placeholder="e.g. AEVIVA202405200001" />
             </label>
-            <label className="form-field">
-              <span>{ta.issueDate}</span>
-              <input type="date" value={form.issue_date} onChange={e => setForm(f => ({ ...f, issue_date: e.target.value }))} />
-            </label>
-            <label className="form-field">
-              <span>{ta.expiryDate}</span>
-              <input type="date" value={form.expiry_date} onChange={e => setForm(f => ({ ...f, expiry_date: e.target.value }))} />
-            </label>
+            <div className="form-field" style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted)' }}>
+              {ta.issueDate}: {issued.issue_date ? fmtDate(issued.issue_date) : '—'}
+              {' · '}
+              {ta.expiryDate}: {issued.expiry_date ? fmtDate(issued.expiry_date) : '—'}
+              {' — '}{ta.certDatesEditHint}
+            </div>
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{ta.assessmentPeriod}</span>
               <input value={form.assessment_period} onChange={e => setForm(f => ({ ...f, assessment_period: e.target.value }))} placeholder="e.g. 【第一期】2026年6月14日" />
@@ -1104,6 +1398,28 @@ function IssuedCertModal({ issued, onClose, onSave }) {
               <input type="checkbox" checked={form.is_revoked} onChange={e => setForm(f => ({ ...f, is_revoked: e.target.checked }))} />
               <span>{ta.revoked}</span>
             </label>
+            {issued?.template_image_oss_key && (
+              <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                <span className="form-label-text">{ta.certPreview}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                    <span>{ta.nameDisplay}</span>
+                    <div className="select-wrap">
+                      <select value={nameDisplayMode} onChange={e => setNameDisplayMode(e.target.value)} className="inline-select">
+                        {NAME_DISPLAY_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                      <ChevronDown size={11} className="select-chevron" />
+                    </div>
+                  </label>
+                  <button type="button" className="btn-secondary" onClick={handleGenerate} disabled={generating}>
+                    {generating ? '…' : ta.generateCertificate}
+                  </button>
+                </div>
+                {certPreviewUrl && (
+                  <img src={certPreviewUrl} alt="Certificate preview" style={{ width: '100%', marginTop: 8, borderRadius: 6, border: '1px solid #e2e8f0' }} />
+                )}
+              </div>
+            )}
             <div className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span className="form-label-text">{ta.certFile}</span>
               <label className="upload-zone">
@@ -1132,6 +1448,97 @@ function IssuedCertModal({ issued, onClose, onSave }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function CertPreviewModal({ issued, onClose }) {
+  const { t } = useLang();
+  const ta = t.academy;
+  const [imgUrl, setImgUrl] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [downloadUrl, setDownloadUrl] = useState('');
+
+  useEffect(() => {
+    let objectUrl = null;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        if (issued?.cert_oss_key) {
+          const presignRes = await axios.get('/api/oss/presign', { params: { action: 'get', key: issued.cert_oss_key } });
+          if (!presignRes.data.success) throw new Error(presignRes.data.error || ta.certLoadFailed);
+          if (cancelled) return;
+          setImgUrl(presignRes.data.url);
+          setDownloadUrl(presignRes.data.url);
+        } else if (issued?.template_image_oss_key) {
+          const imgRes = await axios.get(`/api/academy/certifications/${issued.certification_id}/template-image`, { responseType: 'blob' });
+          const templateObjectUrl = URL.createObjectURL(imgRes.data);
+          const blob = await renderCertificate({
+            imageObjectUrl: templateObjectUrl,
+            layout: { ...DEFAULT_TEMPLATE_LAYOUT, ...(issued.template_layout || {}) },
+            values: {
+              name: resolveDisplayName(issued?.nickname || '', 'en'),
+              certificate_number: issued.certificate_number ? `NO.${issued.certificate_number}` : '',
+              validity_date: issued.expiry_date ? `Validity Date: ${formatOrdinal(issued.expiry_date.slice(0, 10))}` : '',
+              issue_date: issued.issue_date ? `Awarded on ${formatOrdinal(issued.issue_date.slice(0, 10))}` : '',
+            },
+          });
+          URL.revokeObjectURL(templateObjectUrl);
+          if (cancelled) return;
+          objectUrl = URL.createObjectURL(blob);
+          setImgUrl(objectUrl);
+          setDownloadUrl(objectUrl);
+        } else {
+          setError(ta.noCertImage);
+        }
+      } catch (e) {
+        if (!cancelled) setError(e.response?.data?.error || e.message || ta.certLoadFailed);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [issued]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 640 }}>
+        <div className="modal-header">
+          <span>{ta.viewCertificate} — {issued.certificate_number}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+            {issued.cert_title} — {issued.nickname || issued.user_id}
+          </div>
+          {loading && <div className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>{ta.generatingPreview}</div>}
+          {!loading && error && <div className="form-error">{error}</div>}
+          {!loading && !error && imgUrl && (
+            <img src={imgUrl} alt="Certificate" style={{ width: '100%', borderRadius: 6, border: '1px solid #e2e8f0' }} />
+          )}
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+          {!loading && !error && downloadUrl && (
+            <a
+              href={downloadUrl}
+              download={`${issued.certificate_number || 'certificate'}.png`}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-primary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+            >
+              <Download size={14} />{ta.downloadCertificate}
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1596,7 +2003,7 @@ function AcademyTab() {
                     <div className="bold">{cert.title}</div>
                     {cert.description && <div className="muted" style={{ fontSize: 12 }}>{cert.description.slice(0, 80)}</div>}
                   </td>
-                  <td><Badge color={CERT_TIER_COLORS[cert.tier] || '#94a3b8'}>{cert.tier}</Badge></td>
+                  <td>{cert.tier ? <Badge color={CERT_TIER_COLORS[cert.tier] || '#94a3b8'}>{cert.tier}</Badge> : <span className="muted">—</span>}</td>
                   <td className="muted">{ta.countCourses((cert.required_course_ids || []).length)}</td>
                   <td className="muted">{cert.min_credits}</td>
                   <td>{cert.is_active ? <Badge color="#10b981">{ta.active}</Badge> : <Badge color="#94a3b8">—</Badge>}</td>
@@ -1628,6 +2035,7 @@ function AcademyTab() {
             <thead>
               <tr>
                 <th>{ta.title.replace(' *', '')}</th>
+                <th>{ta.selectCourse}</th>
                 <th>{ta.cohort}</th>
                 <th>{ta.enrolledAt}</th>
                 <th>Progress</th>
@@ -1637,7 +2045,7 @@ function AcademyTab() {
             </thead>
             <tbody>
               {enrollments.length === 0 && (
-                <tr><td colSpan={6} className="empty-row">{ta.noEnrolled}</td></tr>
+                <tr><td colSpan={7} className="empty-row">{ta.noEnrolled}</td></tr>
               )}
               {enrollments.map(row => (
                 <tr key={row.id}>
@@ -1645,6 +2053,7 @@ function AcademyTab() {
                     <div className="bold">{row.nickname || '—'}</div>
                     <div className="muted mono" style={{ fontSize: 11 }}>{row.user_id?.slice(0, 18)}…</div>
                   </td>
+                  <td className="muted">{row.course_title || '—'}</td>
                   <td>{row.cohort ? <Badge color="#6366f1">{row.cohort}</Badge> : <span className="muted">—</span>}</td>
                   <td className="muted">{row.enrolled_at ? row.enrolled_at.slice(0, 10) : '—'}</td>
                   <td>
@@ -1718,7 +2127,17 @@ function AcademyTab() {
                   </td>
                   <td className="mono" style={{ fontSize: 12 }}>
                     {row.certificate_number
-                      ? <span style={{ color: '#6366f1' }}>{row.certificate_number}</span>
+                      ? (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          title={ta.viewCertificate}
+                          onClick={() => setModal({ type: 'view-cert', issued: row })}
+                          style={{ color: '#6366f1', cursor: 'pointer', textDecoration: 'underline dotted' }}
+                        >
+                          {row.certificate_number}
+                        </span>
+                      )
                       : <span className="muted">—</span>}
                   </td>
                   <td className="muted">{row.issue_date ? row.issue_date.slice(0, 10) : '—'}</td>
@@ -1860,9 +2279,10 @@ function AcademyTab() {
       {modal?.type === 'delete-lesson' && <DeleteLessonConfirm lesson={modal.lesson} onClose={() => setModal(null)} onConfirm={() => { setModal(null); refreshLessons(modal.courseId); }} />}
       {modal?.type === 'add-cert'      && <CertificationModal cert={null} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit-cert'     && <CertificationModal cert={modal.cert} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'enroll'        && <EnrollModal prefilledUserId={modal.userId || ''} prefilledUserName={modal.userName || ''} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'enroll'        && <EnrollModal courses={courses} prefilledUserId={modal.userId || ''} prefilledUserName={modal.userName || ''} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'grant-cert'    && <GrantCertModal certifications={certifications} prefilledUserId={modal.userId || ''} prefilledUserName={modal.userName || ''} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit-issued'   && <IssuedCertModal issued={modal.issued} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'view-cert'     && <CertPreviewModal issued={modal.issued} onClose={() => setModal(null)} />}
       {modal?.type === 'add-path'      && <LearningPathModal path={null} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit-path'     && <LearningPathModal path={modal.path} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
     </>

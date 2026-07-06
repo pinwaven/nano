@@ -1082,7 +1082,7 @@
             <text class="training-cert-icon">🏅</text>
             <view class="training-cert-info">
               <text class="training-cert-title">{{item.title}}</text>
-              <text class="training-cert-tier">{{item.tier}}</text>
+              <text wx:if="{{item.tier}}" class="training-cert-tier">{{item.tier}}</text>
             </view>
             <text class="training-cert-chevron">›</text>
           </view>

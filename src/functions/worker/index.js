@@ -48,7 +48,7 @@ const getLlmClient = () => new OpenAI({
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
 });
 
-const { handleGetAcademyCourses, handlePostAcademyCourse, handlePutAcademyCourse, handleDeleteAcademyCourse, handleGetAcademyLibrary, handlePostAcademyLibraryItem, handlePutAcademyLibraryItem, handleDeleteAcademyLibraryItem, handleGetAcademyLessons, handlePostAcademyLesson, handlePutAcademyLesson, handleDeleteAcademyLesson, handleGetAcademyProgress, handlePostAcademyProgress, handleGetAcademyCourseProgress, handleGetAcademyLibraryContent, handleGetAcademyLessonById, handlePostQuizAttempt, handleGetCoachCredits, handleGetCoachDashboard, handleGetAcademyLeaderboard, handleGetAcademyCertifications, handlePostAcademyCertification, handlePutAcademyCertification, handleDeleteAcademyCertification, handleGetCoachCertifications, handleGetIssuedCertifications, handlePostCoachCertification, handlePutCoachCertification, handleVerifyCertificate, handleGetAcademyLearningPaths, handlePostAcademyLearningPath, handlePutAcademyLearningPath, handleDeleteAcademyLearningPath, handlePostAcademyQuizQuestion, handlePutAcademyQuizQuestion, handleDeleteAcademyQuizQuestion, handleGetAcademyCourseProgressAll, handleGetAcademyEnrollments, handlePostAcademyEnrollment, handlePutAcademyEnrollment, handleDeleteAcademyEnrollment } = require('./handlers/academy');
+const { handleGetAcademyCourses, handlePostAcademyCourse, handlePutAcademyCourse, handleDeleteAcademyCourse, handleGetAcademyLibrary, handlePostAcademyLibraryItem, handlePutAcademyLibraryItem, handleDeleteAcademyLibraryItem, handleGetAcademyLessons, handlePostAcademyLesson, handlePutAcademyLesson, handleDeleteAcademyLesson, handleGetAcademyProgress, handlePostAcademyProgress, handleGetAcademyCourseProgress, handleGetAcademyLibraryContent, handleGetAcademyLessonById, handlePostQuizAttempt, handleGetCoachCredits, handleGetCoachDashboard, handleGetAcademyLeaderboard, handleGetAcademyCertifications, handlePostAcademyCertification, handlePutAcademyCertification, handleDeleteAcademyCertification, handleGetCoachCertifications, handleGetAcademyTemplateImage, handleGetIssuedCertifications, handlePostCoachCertification, handlePutCoachCertification, handleVerifyCertificate, handleGetAcademyLearningPaths, handlePostAcademyLearningPath, handlePutAcademyLearningPath, handleDeleteAcademyLearningPath, handlePostAcademyQuizQuestion, handlePutAcademyQuizQuestion, handleDeleteAcademyQuizQuestion, handleGetAcademyCourseProgressAll, handleGetAcademyEnrollments, handlePostAcademyEnrollment, handlePutAcademyEnrollment, handleDeleteAcademyEnrollment } = require('./handlers/academy');
 const { handleGetTickets, handlePostTicket, handlePutTicket, handleDeleteTicket } = require('./handlers/tickets');
 const { getNestedPath, formatQuestionnaireContext, handleGetPendingQuestionnaires, handlePostQuestionnaireResponse, handlePatchQuestionnaireAssignment, handleGetQuestionnaires, handleGenerateQuestionnaire, handleAiFillSku, handlePostQuestionnaire, handlePutQuestionnaire, handleDeleteQuestionnaire, handleGetQuestionnaireQuestions, handlePostQuestionnaireQuestion, handlePutQuestionnaireQuestion, handleDeleteQuestionnaireQuestion, handlePutQuestionnaireQuestionsReorder, handlePostQuestionnaireAssignment, handleGetQuestionnaireAssignments, handleGetQuestionnaireResponses } = require('./handlers/questionnaires');
 const { handleGetSavedReports, handlePostSavedReport, handlePutSavedReport, handleDeleteSavedReport, handlePostAdminReport } = require('./handlers/reports');
@@ -384,6 +384,9 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetIssuedCertifications(adminCtx);
             } else if (path.includes('/academy/enrollments')) {
                 result = await handleGetAcademyEnrollments(adminCtx);
+            } else if (path.match(/\/academy\/certifications\/(\d+)\/template-image/)) {
+                const certId = path.match(/\/academy\/certifications\/(\d+)\/template-image/)[1];
+                result = await handleGetAcademyTemplateImage(certId);
             } else if (path.includes('/academy/certifications')) {
                 result = await handleGetAcademyCertifications();
             } else if (path.includes('/academy/learning-paths')) {
@@ -1049,22 +1052,25 @@ exports.handler = async (req, resp, context) => {
         }
 
         const statusCode = result.statusCode || 200;
-        const { statusCode: _sc, _rawText, content, ...resultBody } = result;
+        const { statusCode: _sc, _rawText, _rawBinary, contentType, content, ...resultBody } = result;
         const isText = _rawText === true;
-        const responseHeaders = isText
-            ? { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' }
-            : corsHeaders;
+        const isBinary = _rawBinary === true;
+        const responseHeaders = isBinary
+            ? { ...corsHeaders, 'Content-Type': contentType || 'application/octet-stream' }
+            : isText
+              ? { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' }
+              : corsHeaders;
         const responsePayload = {
-            isBase64Encoded: false,
+            isBase64Encoded: isBinary,
             statusCode,
             headers: responseHeaders,
-            body: isText ? (content || '') : JSON.stringify(resultBody)
+            body: isBinary ? (content || '') : (isText ? (content || '') : JSON.stringify(resultBody))
         };
 
         if (isStandardHttp) {
             resp.setStatusCode(statusCode);
             Object.entries(responseHeaders).forEach(([k, v]) => resp.setHeader(k, v));
-            resp.send(responsePayload.body);
+            resp.send(isBinary ? Buffer.from(responsePayload.body, 'base64') : responsePayload.body);
             return;
         }
 
