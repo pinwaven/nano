@@ -854,7 +854,6 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
     cert_number_prefix: cert?.cert_number_prefix || '',
     issuing_org: cert?.issuing_org || '',
     school_org: cert?.school_org || '',
-    validity_years: cert?.validity_years ?? 3,
     course_display_name: cert?.course_display_name || '',
     issue_date: cert?.issue_date ? cert.issue_date.slice(0, 10) : '',
     validity_date: cert?.validity_date ? cert.validity_date.slice(0, 10) : '',
@@ -911,7 +910,6 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
         ...form,
         required_course_ids: selectedCourseIds,
         min_credits: parseInt(form.min_credits) || 0,
-        validity_years: parseInt(form.validity_years) || 3,
         template_image_oss_key: template_image_oss_key || null,
         template_layout: templateLayout,
       };
@@ -958,18 +956,11 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
               <input value={form.cert_number_prefix} onChange={e => setForm(f => ({ ...f, cert_number_prefix: e.target.value }))} placeholder="e.g. AEVIVA" />
             </label>
             <label className="form-field">
-              <span>{ta.validityYears}</span>
-              <input type="number" min={1} value={form.validity_years} onChange={e => setForm(f => ({ ...f, validity_years: e.target.value }))} />
-            </label>
-            <label className="form-field">
               <span>{ta.certIssueDate}</span>
               <input
                 type="date"
                 value={form.issue_date}
-                onChange={e => {
-                  const issue_date = e.target.value;
-                  setForm(f => ({ ...f, issue_date, validity_date: f.validity_date || addYears(issue_date, f.validity_years) }));
-                }}
+                onChange={e => setForm(f => ({ ...f, issue_date: e.target.value }))}
               />
               <span className="muted" style={{ fontSize: 11 }}>{ta.certDatesSharedHint}</span>
             </label>
@@ -1113,15 +1104,6 @@ function EnrollModal({ courses = [], onClose, onSave, prefilledUserId = '', pref
     </div>
   );
 }
-
-// "2026-06-14" + 3 -> "2029-06-14", used to suggest a validity/expiry date from the
-// certification template's validity_years when the admin enables the toggle.
-const addYears = (dateStr, years) => {
-  if (!dateStr) return '';
-  const d = new Date(`${dateStr}T00:00:00`);
-  d.setFullYear(d.getFullYear() + (parseInt(years, 10) || 0));
-  return d.toISOString().slice(0, 10);
-};
 
 function GrantCertModal({ certifications, onClose, onSave, prefilledUserId = '', prefilledUserName = '' }) {
   const { t } = useLang();

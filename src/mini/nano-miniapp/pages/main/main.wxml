@@ -1098,7 +1098,7 @@
                 <view class="cert-close-btn" bindtap="hideCertDetail">✕</view>
               </view>
 
-              <view wx:if="{{certDetailItem.template_image_oss_key && certDetailItem.templateImageUrl}}" class="cert-bg-wrap">
+              <view wx:if="{{certDetailItem.templateImageUrl}}" class="cert-bg-wrap">
                 <image src="{{certDetailItem.templateImageUrl}}" class="cert-bg-preview" mode="widthFix" />
               </view>
 
@@ -1143,13 +1143,13 @@
                   <text class="cert-label">{{lang === 'zh' ? '办学机构' : 'Institute'}}</text>
                   <text class="cert-value">{{certDetailItem.school_org}}</text>
                 </view>
-                <view wx:if="{{certDetailItem.issue_date}}" class="cert-field">
+                <view wx:if="{{certDetailItem.issueDateDisplay}}" class="cert-field">
                   <text class="cert-label">{{lang === 'zh' ? '颁发时间' : 'Issue Date'}}</text>
-                  <text class="cert-value">{{certDetailItem.issue_date}}</text>
+                  <text class="cert-value">{{certDetailItem.issueDateDisplay}}</text>
                 </view>
-                <view wx:if="{{certDetailItem.expiry_date}}" class="cert-field">
+                <view wx:if="{{certDetailItem.expiryDateDisplay}}" class="cert-field">
                   <text class="cert-label">{{lang === 'zh' ? '有效期至' : 'Expires'}}</text>
-                  <text class="cert-value">{{certDetailItem.expiry_date}}</text>
+                  <text class="cert-value">{{certDetailItem.expiryDateDisplay}}</text>
                 </view>
               </view>
 

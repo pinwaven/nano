@@ -25,6 +25,8 @@
     "deploy:admin": "./scripts/deploy-admin.sh",
     "deploy:kino": "source .env && s kino deploy -y",
     "deploy:kino:prod": "source .env && s kino deploy -t s-prod.yaml -y",
+    "deploy:media": "source .env && s media deploy -y",
+    "deploy:media:prod": "source .env && s media deploy -t s-prod.yaml -y",
     "deploy:chat": "./scripts/deploy-chat.sh",
     "deploy:coach": "./scripts/deploy-coach.sh",
     "migrate:dev": "node scripts/migrate.js --env dev",

@@ -1,5 +1,28 @@
 const { pool } = require('../lib/db');
 const ossLib = require('../lib/oss');
+const axios = require('axios');
+
+// Certificate image compositing lives in the separate `media` FC function — it
+// needs @napi-rs/canvas + pinyin-pro (native binaries + font data), which nearly
+// tripled the worker's deploy package size when they lived here directly.
+async function _requestCertificateImage({ certification, issuedCert, nickname }) {
+    if (!certification?.template_image_oss_key) return null;
+    if (!process.env.MEDIA_URL) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'MEDIA_URL not configured, skipping cert image generation' }));
+        return null;
+    }
+    try {
+        const res = await axios.post(
+            `${process.env.MEDIA_URL}/generate-certificate`,
+            { certification, issuedCert, nickname },
+            { headers: { Authorization: `Bearer ${process.env.API_BEARER_TOKEN}` }, timeout: 25000 }
+        );
+        return res.data?.key || null;
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'certificate image request failed', data: { certification_id: certification?.id, issued_id: issuedCert?.id, error: err.message } }));
+        return null;
+    }
+}
 
 // ── Academy handlers ──────────────────────────────────────────────────────────
 
@@ -275,7 +298,9 @@ async function handlePostAcademyProgress(body) {
 async function _checkAndAwardCertifications(userId) {
     try {
         const certs = await pool.query(
-            `SELECT id, required_course_ids, min_credits FROM academy_certifications
+            `SELECT id, required_course_ids, min_credits, cert_number_prefix, validity_years,
+                    template_image_oss_key, template_layout
+             FROM academy_certifications
              WHERE is_active = TRUE
                AND id NOT IN (SELECT certification_id FROM academy_coach_certifications WHERE user_id = $1)`,
             [userId]
@@ -296,14 +321,33 @@ async function _checkAndAwardCertifications(userId) {
         );
         const completedCourseIds = new Set(completedRes.rows.map(r => r.course_id));
 
+        const userRes = await pool.query('SELECT nickname FROM users WHERE user_id = $1', [userId]);
+        const nickname = userRes.rows[0]?.nickname || '';
+
         for (const cert of certs.rows) {
             const reqIds = cert.required_course_ids || [];
             if (cert.min_credits > 0 && totalCredits < cert.min_credits) continue;
             if (reqIds.length > 0 && !reqIds.every(id => completedCourseIds.has(id))) continue;
-            await pool.query(
-                'INSERT INTO academy_coach_certifications (user_id, certification_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-                [userId, cert.id]
+
+            const issueDate = new Date().toISOString().slice(0, 10);
+            const expiryDate = cert.validity_years
+                ? new Date(new Date().setFullYear(new Date().getFullYear() + cert.validity_years)).toISOString().slice(0, 10)
+                : null;
+
+            const insertRes = await pool.query(
+                `INSERT INTO academy_coach_certifications (user_id, certification_id, issue_date, expiry_date)
+                 VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING *`,
+                [userId, cert.id, issueDate, expiryDate]
             );
+            const issuedCert = insertRes.rows[0];
+            if (issuedCert) {
+                issuedCert.certificate_number = `${cert.cert_number_prefix || 'CERT'}${String(issuedCert.id).padStart(6, '0')}`;
+                const ossKey = await _requestCertificateImage({ certification: cert, issuedCert, nickname });
+                await pool.query(
+                    'UPDATE academy_coach_certifications SET certificate_number = $1, cert_oss_key = $2 WHERE id = $3',
+                    [issuedCert.certificate_number, ossKey, issuedCert.id]
+                );
+            }
             await pool.query(
                 `INSERT INTO academy_credit_ledger (user_id, amount, reason, ref_type, ref_id)
                  VALUES ($1, 50, 'cert_earned', 'certification', $2)`,
@@ -687,7 +731,8 @@ async function handleGetCoachCertifications(userId) {
                     c.title, c.description, c.tier, c.badge_image_url,
                     c.required_course_ids, c.min_credits,
                     c.cert_number_prefix, c.issuing_org, c.school_org,
-                    c.validity_years, c.course_display_name, c.template_image_oss_key
+                    c.validity_years, c.course_display_name, c.template_image_oss_key,
+                    c.template_layout
              FROM academy_coach_certifications cc
              JOIN academy_certifications c ON c.id = cc.certification_id
              WHERE cc.user_id = $1
@@ -724,6 +769,25 @@ async function handleGetIssuedCertifications(adminCtx) {
     }
 }
 
+// Re-renders and re-uploads a coach certification's image after it's been created
+// or edited, so the OSS copy always reflects the current certificate_number/dates —
+// single source of truth for admin panel, miniapp, and public verification alike.
+async function _generateCertImageForIssuedCert(issuedCert) {
+    try {
+        const [certRes, userRes] = await Promise.all([
+            pool.query('SELECT id, template_image_oss_key, template_layout FROM academy_certifications WHERE id = $1', [issuedCert.certification_id]),
+            pool.query('SELECT nickname FROM users WHERE user_id = $1', [issuedCert.user_id]),
+        ]);
+        const certification = certRes.rows[0];
+        if (!certification) return null;
+        const nickname = userRes.rows[0]?.nickname || '';
+        return await _requestCertificateImage({ certification, issuedCert, nickname });
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'cert image regen failed', data: { id: issuedCert.id, error: err.message } }));
+        return null;
+    }
+}
+
 async function handlePutCoachCertification(id, body, adminCtx) {
     try {
         const { requirePermission } = require('../lib/auth');
@@ -748,7 +812,13 @@ async function handlePutCoachCertification(id, body, adminCtx) {
              notes || null, id]
         );
         if (result.rows.length === 0) return { success: false, error: 'Not found' };
-        return { success: true, issued: result.rows[0] };
+        let issued = result.rows[0];
+        const ossKey = await _generateCertImageForIssuedCert(issued);
+        if (ossKey) {
+            const updRes = await pool.query('UPDATE academy_coach_certifications SET cert_oss_key = $1 WHERE id = $2 RETURNING *', [ossKey, issued.id]);
+            issued = updRes.rows[0];
+        }
+        return { success: true, issued };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -782,7 +852,13 @@ async function handlePostCoachCertification(body, adminCtx) {
              notes || null,
              cert_oss_key || null]
         );
-        return { success: true, issued: result.rows[0] };
+        let issued = result.rows[0];
+        const ossKey = await _generateCertImageForIssuedCert(issued);
+        if (ossKey) {
+            const updRes = await pool.query('UPDATE academy_coach_certifications SET cert_oss_key = $1 WHERE id = $2 RETURNING *', [ossKey, issued.id]);
+            issued = updRes.rows[0];
+        }
+        return { success: true, issued };
     } catch (err) {
         if (err.code === '23505') return { success: false, error: 'This user already holds this certification', statusCode: 409 };
         return { success: false, error: err.message };

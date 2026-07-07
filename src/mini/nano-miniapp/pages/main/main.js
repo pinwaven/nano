@@ -3519,16 +3519,41 @@ Page({
     this.setData({ trainingView: 'list', trainingCurrentCourse: null, trainingCurrentLesson: null, trainingVideoUrl: '', trainingQuizQuestions: [], trainingQuizAnswers: {}, trainingQuizResult: null, trainingQuizReview: [] })
   },
 
+  // API responses serialize DATE columns as full ISO datetimes, e.g.
+  // "2026-07-05T16:00:00.000Z" for what the DB actually stores as 2026-07-06 — the
+  // backend parses DATE columns using its process timezone (Asia/Shanghai, set on
+  // every FC function), so by the time it's JSON, the value is one calendar day
+  // "behind" in UTC terms. Shift by the fixed +8h Shanghai offset (no DST in China)
+  // before reading fields, so the day comes out right regardless of the device's
+  // own local timezone.
+  _formatCertDate(dateStr) {
+    if (!dateStr) return ''
+    const d = new Date(dateStr)
+    if (Number.isNaN(d.getTime())) return dateStr
+    const shanghai = new Date(d.getTime() + 8 * 60 * 60 * 1000)
+    const y = shanghai.getUTCFullYear()
+    const day = shanghai.getUTCDate()
+    if (this.data.lang === 'zh') return `${y}年${shanghai.getUTCMonth() + 1}月${day}日`
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+    return `${months[shanghai.getUTCMonth()]} ${day}, ${y}`
+  },
+
   async showCertDetail(e) {
     const cert = e.currentTarget.dataset.cert
+    // cert_oss_key is the backend-composited image (name/dates burned in) — prefer
+    // it for the preview. template_image_oss_key is the blank template, only used
+    // as a fallback for the rare case a cert exists but generation hasn't run yet.
+    const displayKey = cert.cert_oss_key || cert.template_image_oss_key
     let templateImageUrl = ''
-    if (cert.template_image_oss_key) {
+    if (displayKey) {
       try {
-        const res = await this._req(`${BASE}/api/oss/presign?action=get&key=${encodeURIComponent(cert.template_image_oss_key)}`)
+        const res = await this._req(`${BASE}/api/oss/presign?action=get&key=${encodeURIComponent(displayKey)}`)
         templateImageUrl = res.data?.url || ''
       } catch (_) {}
     }
-    this.setData({ showCertDetail: true, certDetailItem: { ...cert, templateImageUrl } })
+    const issueDateDisplay = this._formatCertDate(cert.issue_date)
+    const expiryDateDisplay = this._formatCertDate(cert.expiry_date)
+    this.setData({ showCertDetail: true, certDetailItem: { ...cert, templateImageUrl, issueDateDisplay, expiryDateDisplay } })
   },
 
   hideCertDetail() {

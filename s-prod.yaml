@@ -88,6 +88,7 @@ resources:
         OSS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
         KONE_APK_CNAME_DOMAIN: ${env(KONE_APK_CNAME_DOMAIN)}
         OSS_CNAME_DOMAIN: ${env(OSS_CNAME_DOMAIN)}
+        MEDIA_URL: "https://nano-media-napllanrqp.cn-shanghai-vpc.fcapp.run"
       triggers:
         - triggerName: http-webhook
           triggerType: http
@@ -221,6 +222,40 @@ resources:
           triggerConfig:
             authType: anonymous
             methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+
+  media:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-media
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 1024
+      timeout: 60
+      code: ./src/functions/media
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        TZ: "Asia/Shanghai"
+        API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        OSS_REGION: "oss-cn-shanghai"
+        OSS_BUCKET: "waven-nano"
+        OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
+        OSS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
+      triggers:
+        - triggerName: media-http
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["POST", "OPTIONS"]
 
   admin-panel:
     component: fc3
