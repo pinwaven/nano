@@ -67,6 +67,56 @@ function _minutesSinceNoon(onset) {
   return mins
 }
 
+// A long wake-up in the middle of the night splits one night's sleep into
+// multiple discrete session records (see SPLIT_GAP_MINS in halo/index.js).
+// Merges them into a single aggregate for the "Last Night" card, inserting a
+// synthetic awake slot for the gap so the stage bar shows the time spent
+// awake between segments instead of silently skipping it.
+function _mergeNightSessions(sessions) {
+  const ordered = sessions.slice().sort((a, b) => (a.onset < b.onset ? -1 : 1))
+  const first = ordered[0], last = ordered[ordered.length - 1]
+  let totalMinutes = 0, deep = 0, light = 0, rem = 0, awake = 0
+  const slots = []
+  let prevEndMins = null
+  for (const s of ordered) {
+    totalMinutes += s.totalMinutes || 0
+    deep  += s.deep  || 0
+    light += s.light || 0
+    rem   += s.rem   || 0
+    awake += s.awake || 0
+    if (s.onset) {
+      const startMins = _minutesSinceNoon(s.onset)
+      if (prevEndMins != null && startMins > prevEndMins) slots.push({ type: 'awake', min: startMins - prevEndMins })
+      prevEndMins = startMins + (s.totalMinutes || 0)
+    }
+    if (s.slots?.length) slots.push(...s.slots)
+  }
+  return {
+    date: first.date, onset: first.onset,
+    totalMinutes, deep, light, rem, awake,
+    sleepStart: first.sleepStart, sleepEnd: last.sleepEnd,
+    slots: slots.length ? slots : null,
+  }
+}
+
+// Picks the most recent night's session(s) from a sleepHistory array (oldest
+// first, each with a `date` = noon-to-noon night bucket) and merges them so a
+// wake-interrupted night is represented as one session. `_isNightSession` is
+// only used to pick WHICH date bucket is "last night" (so a trailing daytime
+// nap doesn't take it over) — once chosen, every session sharing that date
+// bucket is merged in, since a segment resumed after 6am still classifies as
+// a "nap" by the hour heuristic even though it's a continuation of that same
+// night (see the noon-to-noon bucketing in halo/index.js's _nightKey).
+// Falls back to the single most recent session if no night session exists yet.
+function _selectLastNight(sleepHistory) {
+  if (!sleepHistory.length) return null
+  const nightSessions = sleepHistory.filter(s => s.onset && _isNightSession(s.onset))
+  if (!nightSessions.length) return sleepHistory[sleepHistory.length - 1]
+  const lastDate = nightSessions.reduce((max, s) => (s.date > max ? s.date : max), nightSessions[0].date)
+  const group = sleepHistory.filter(s => s.date === lastDate)
+  return group.length > 1 ? _mergeNightSessions(group) : group[0]
+}
+
 function _dayQualityColor(totalMinutes) {
   return totalMinutes >= 420 ? '#10b981' : totalMinutes >= 360 ? '#0ea5e9' : totalMinutes >= 300 ? '#f97316' : '#ef4444'
 }
@@ -2372,15 +2422,14 @@ Component({
 
         // Sleep: flatten every date's event into its individual sessions (naps kept
         // distinct from night sleep — see _sessionsFromEventData) for the weekly
-        // multi-block timeline, then pick the most recent NIGHT session for the
-        // "Last Night" quick-glance card so a trailing nap doesn't take it over.
+        // multi-block timeline, then merge every session belonging to the most
+        // recent night (see _selectLastNight) for the "Last Night" quick-glance card.
         rawRing.sleepHistory = sleepEvents
           .flatMap(ev => _sessionsFromEventData((ev.data_date || '').substring(0, 10), _pd(ev.data)))
           .filter(s => s.totalMinutes > 0)
           .sort((a, b) => (a.onset || a.date) < (b.onset || b.date) ? -1 : 1)
 
-        const lastNight = rawRing.sleepHistory.slice().reverse().find(s => s.onset && _isNightSession(s.onset))
-          || rawRing.sleepHistory[rawRing.sleepHistory.length - 1]
+        const lastNight = _selectLastNight(rawRing.sleepHistory)
         if (lastNight) {
           rawRing.sleepMinutes = lastNight.totalMinutes ?? null
           rawRing.sleepDeep    = lastNight.deep         ?? null
@@ -2642,10 +2691,22 @@ Component({
           const battery   = await ring.getBattery()
           const steps     = await ring.getSteps().catch(() => null)
           const sleepHist = await ring.getSleepHistory().catch(() => [])
-          // Prefer the most recent actual NIGHT session over a trailing daytime
-          // nap so "Last Night" doesn't show a nap synced after the real sleep.
-          const sleep = sleepHist.slice().reverse().find(n => n.onset && _isNightSession(n.onset))
-            || (sleepHist.length ? sleepHist[sleepHist.length - 1] : null)
+          const sleepHistoryNorm = sleepHist.filter(n => n.totalMinutes > 0).map(n => ({
+            date: n.date,
+            onset: n.onset ?? null,
+            totalMinutes: n.totalMinutes,
+            deep: n.deep ?? null,
+            light: n.light ?? null,
+            rem: n.rem ?? null,
+            awake: n.awake ?? null,
+            sleepStart: n.sleepStart ?? null,
+            sleepEnd: n.sleepEnd ?? null,
+            slots: n.periods?.map(p => ({ type: p.typeName, min: p.minutes })) ?? null,
+          }))
+          // Merge every session belonging to the most recent night (see
+          // _selectLastNight) so "Last Night" reflects the whole night rather
+          // than only its most recent wake-interrupted segment.
+          const sleep = _selectLastNight(sleepHistoryNorm)
           const hrLog   = await ring.getHeartRateLog().catch(() => null)
           const hrvLog  = await ring.getHrvHistory().catch(() => [])            // all cached days [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}]
           const spo2Log = await ring.getAutoSpo2History().catch(() => [])       // all cached days [{timestamp, spo2}]
@@ -2670,21 +2731,10 @@ Component({
             sleepAwake:   sleep?.awake       ?? null,
             sleepStart:   sleep?.sleepStart  ?? null,
             sleepEnd:     sleep?.sleepEnd    ?? null,
-            sleepSlots:   sleep?.periods?.map(p => ({ type: p.typeName, min: p.minutes })) ?? null,
+            sleepSlots:   sleep?.slots       ?? null,
             sleepOnset:   sleep?.onset       ?? null,
             sleepDate:    sleep?.date        ?? null,
-            sleepHistory: sleepHist.filter(n => n.totalMinutes > 0).map(n => ({
-              date: n.date,
-              onset: n.onset ?? null,
-              totalMinutes: n.totalMinutes,
-              deep: n.deep ?? null,
-              light: n.light ?? null,
-              rem: n.rem ?? null,
-              awake: n.awake ?? null,
-              sleepStart: n.sleepStart ?? null,
-              sleepEnd: n.sleepEnd ?? null,
-              slots: n.periods?.map(p => ({ type: p.typeName, min: p.minutes })) ?? null,
-            })),
+            sleepHistory: sleepHistoryNorm,
             hrSlots:         hrEntries.map(r => ({ t: r.timestamp.toISOString(), bpm: r.value })),
             restingHr,
             hrv:             latestHrv.hrv       ?? null,
