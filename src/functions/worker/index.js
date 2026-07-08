@@ -62,7 +62,7 @@ const { handleGetEvents, handlePostEvent, handlePutEvent, handleDeleteEvent, han
 const { handleGetCoachGroups, handlePostCoachGroup, handlePutCoachGroup, handleDeleteCoachGroup, handleGetCoachGroupKpis } = require('./handlers/coach-groups');
 const { handleGetKoneApkReleases, handlePostKoneApkRelease, handlePutKoneApkRelease, handleDeleteKoneApkRelease, handleGetKoneApkPresign, handleGetDigitalAssets, handlePostDigitalAsset, handlePutDigitalAsset, handleDeleteDigitalAsset, handleGetDigitalAssetsPresign, handleGetKinoUpgrade } = require('./handlers/digital-assets');
 const { logActivity, handleGetCoachTags, handlePostCoachTag, handlePutCoachTag, handleDeleteCoachTag, handlePostCoachTagAssignments, handleDeleteCoachTagAssignment, handleGetClientPipeline, handlePostClientPipeline, handleGetCoachNotes, handlePostCoachNote, handlePutCoachNote, handleDeleteCoachNote, handleGetClientActivity, handleGetCoachActivityFeed, handleGetMessageTemplates, handlePostMessageTemplate, handlePutMessageTemplate, handleDeleteMessageTemplate, handlePostMessageTemplatePreview, resolveBulkRecipients, handlePostBulkCampaign, handlePostBulkCampaignSend, handleGetBulkCampaigns, handleGetBulkCampaignRecipients, handleGetAppointments, handlePostAppointment, handlePutAppointment, handleDeleteAppointment, handleGetUpcomingAppointments, handleGetClientGoals, handlePostClientGoal, handlePutClientGoal, handleDeleteClientGoal, refreshGoalProgress, handlePostNpsSurvey, handlePatchNpsSurvey, handleGetNpsSurveys, handleGetCoachKpis, handlePostCoachKpisCompute, handleGetFollowUpRules, handlePostFollowUpRule, handlePutFollowUpRule, handleDeleteFollowUpRule, handlePostFollowUpRulesEvaluate } = require('./handlers/crm');
-const { handleGetKinoDevices, handlePostKinoDevice, handlePutKinoDevice, handleDeleteKinoDevice, handleGetKinoChipBatches, handleGetKinoChipBatchChips, handlePostKinoChipBatch, handlePutKinoChipBatch, handleDeleteKinoChipBatch, handleGetKinoChipModels, handlePostKinoChipModel, handlePutKinoChipModel, handleDeleteKinoChipModel, handleGetKinoChip, handlePostKinoScan, handlePostKinoResult } = require('./handlers/kino');
+const { handleGetKinoDevices, handlePostKinoDevice, handlePutKinoDevice, handleDeleteKinoDevice, handleGetKinoChipBatches, handleGetKinoChipBatchChips, handlePostKinoChipBatch, handlePutKinoChipBatch, handleDeleteKinoChipBatch, handleGetKinoChipModels, handlePostKinoChipModel, handlePutKinoChipModel, handleDeleteKinoChipModel, handleGetKinoChip, handlePostKinoScan, handlePostKinoResult, handleGetKinoTestedChips, handleGetKinoTestedChipDetail, handlePostKinoChipReset } = require('./handlers/kino');
 const { handleGetCreditBalance, handleGetCreditHistory, handlePostCreditWithdraw, handleGetUserWithdrawals, handleGetAdminWithdrawals, handlePutAdminWithdrawal, handleGetAdminUserCreditHistory, handlePostAdminUserCreditAdjustment } = require('./handlers/credits');
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
 const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
@@ -260,6 +260,11 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetKinoChipBatches();
             } else if (path.includes('/kino-chip-models')) {
                 result = await handleGetKinoChipModels();
+            } else if (path.match(/\/kino-tested-chips\/(\d+)/)) {
+                const scanId = path.match(/\/kino-tested-chips\/(\d+)/)[1];
+                result = await handleGetKinoTestedChipDetail(scanId);
+            } else if (path.includes('/kino-tested-chips')) {
+                result = await handleGetKinoTestedChips(query);
             } else if (path.includes('/kino-chip')) {
                 result = await handleGetKinoChip(query.chip_id);
             } else if (path.includes('/coach-sent-messages')) {
@@ -583,6 +588,9 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostKinoChipBatch(parsedBody);
             } else if (path.includes('/kino-chip-models')) {
                 result = await handlePostKinoChipModel(parsedBody);
+            } else if (path.match(/\/kino-tested-chips\/(\d+)\/reset/)) {
+                const scanId = path.match(/\/kino-tested-chips\/(\d+)\/reset/)[1];
+                result = await handlePostKinoChipReset(scanId);
             } else if (path.includes('/kino-devices')) {
                 result = await handlePostKinoDevice(parsedBody);
             } else if (path.includes('/kino-result')) {
