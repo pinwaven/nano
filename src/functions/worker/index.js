@@ -48,7 +48,7 @@ const getLlmClient = () => new OpenAI({
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
 });
 
-const { handleGetAcademyCourses, handlePostAcademyCourse, handlePutAcademyCourse, handleDeleteAcademyCourse, handleGetAcademyLibrary, handlePostAcademyLibraryItem, handlePutAcademyLibraryItem, handleDeleteAcademyLibraryItem, handleGetAcademyLessons, handlePostAcademyLesson, handlePutAcademyLesson, handleDeleteAcademyLesson, handleGetAcademyProgress, handlePostAcademyProgress, handleGetAcademyCourseProgress, handleGetAcademyLibraryContent, handleGetAcademyLessonById, handlePostQuizAttempt, handleGetCoachCredits, handleGetCoachDashboard, handleGetAcademyLeaderboard, handleGetAcademyCertifications, handlePostAcademyCertification, handlePutAcademyCertification, handleDeleteAcademyCertification, handleGetCoachCertifications, handleGetAcademyTemplateImage, handleGetIssuedCertifications, handlePostCoachCertification, handlePutCoachCertification, handleVerifyCertificate, handleGetAcademyLearningPaths, handlePostAcademyLearningPath, handlePutAcademyLearningPath, handleDeleteAcademyLearningPath, handlePostAcademyQuizQuestion, handlePutAcademyQuizQuestion, handleDeleteAcademyQuizQuestion, handleGetAcademyCourseProgressAll, handleGetAcademyEnrollments, handlePostAcademyEnrollment, handlePutAcademyEnrollment, handleDeleteAcademyEnrollment } = require('./handlers/academy');
+const { handleGetAcademyCourses, handlePostAcademyCourse, handlePutAcademyCourse, handleDeleteAcademyCourse, handleGetAcademyLibrary, handlePostAcademyLibraryItem, handlePutAcademyLibraryItem, handleDeleteAcademyLibraryItem, handleGetAcademyLessons, handlePostAcademyLesson, handlePutAcademyLesson, handleDeleteAcademyLesson, handleGetAcademyProgress, handlePostAcademyProgress, handleGetAcademyCourseProgress, handleGetAcademyLibraryContent, handleGetAcademyLessonById, handlePostQuizAttempt, handleGetCoachCredits, handleGetCoachDashboard, handleGetAcademyLeaderboard, handleGetAcademyCertifications, handlePostAcademyCertification, handlePutAcademyCertification, handleDeleteAcademyCertification, handleGetCoachCertifications, handleGetAcademyTemplateImage, handleGetIssuedCertifications, handlePostCoachCertification, handlePutCoachCertification, handleVerifyCertificate, handleVerifyCertificatesByGovernmentId, handleGetCertImageUrl, handleGetAcademyLearningPaths, handlePostAcademyLearningPath, handlePutAcademyLearningPath, handleDeleteAcademyLearningPath, handlePostAcademyQuizQuestion, handlePutAcademyQuizQuestion, handleDeleteAcademyQuizQuestion, handleGetAcademyCourseProgressAll, handleGetAcademyEnrollments, handlePostAcademyEnrollment, handlePutAcademyEnrollment, handleDeleteAcademyEnrollment } = require('./handlers/academy');
 const { handleGetTickets, handlePostTicket, handlePutTicket, handleDeleteTicket } = require('./handlers/tickets');
 const { getNestedPath, formatQuestionnaireContext, handleGetPendingQuestionnaires, handlePostQuestionnaireResponse, handlePatchQuestionnaireAssignment, handleGetQuestionnaires, handleGenerateQuestionnaire, handleAiFillSku, handlePostQuestionnaire, handlePutQuestionnaire, handleDeleteQuestionnaire, handleGetQuestionnaireQuestions, handlePostQuestionnaireQuestion, handlePutQuestionnaireQuestion, handleDeleteQuestionnaireQuestion, handlePutQuestionnaireQuestionsReorder, handlePostQuestionnaireAssignment, handleGetQuestionnaireAssignments, handleGetQuestionnaireResponses } = require('./handlers/questionnaires');
 const { handleGetSavedReports, handlePostSavedReport, handlePutSavedReport, handleDeleteSavedReport, handlePostAdminReport } = require('./handlers/reports');
@@ -174,6 +174,26 @@ exports.handler = async (req, resp, context) => {
         const verifyPayload = { isBase64Encoded: false, statusCode: sc, headers: corsHeaders, body: JSON.stringify(verifyResult) };
         if (isStandardHttp) { resp.setStatusCode(sc); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify(verifyResult)); return; }
         return verifyPayload;
+    }
+
+    // Public certificate verification by government ID — no auth required, exact match only
+    if (method === 'GET' && path.match(/^\/academy\/verify-by-id\/(.+)/)) {
+        const governmentId = decodeURIComponent(path.match(/^\/academy\/verify-by-id\/(.+)/)[1]);
+        const byIdResult = await handleVerifyCertificatesByGovernmentId(governmentId);
+        const sc = byIdResult.statusCode || (byIdResult.success ? 200 : 404);
+        const byIdPayload = { isBase64Encoded: false, statusCode: sc, headers: corsHeaders, body: JSON.stringify(byIdResult) };
+        if (isStandardHttp) { resp.setStatusCode(sc); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify(byIdResult)); return; }
+        return byIdPayload;
+    }
+
+    // Public certificate image URL — no auth required (same visibility as verify)
+    if (method === 'GET' && path.match(/^\/academy\/cert-image\/(.+)/)) {
+        const certNumber = decodeURIComponent(path.match(/^\/academy\/cert-image\/(.+)/)[1]);
+        const imageResult = await handleGetCertImageUrl(certNumber);
+        const sc = imageResult.statusCode || (imageResult.success ? 200 : 404);
+        const imagePayload = { isBase64Encoded: false, statusCode: sc, headers: corsHeaders, body: JSON.stringify(imageResult) };
+        if (isStandardHttp) { resp.setStatusCode(sc); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify(imageResult)); return; }
+        return imagePayload;
     }
 
     const adminCtx = { role: 'superadmin', username: 'superadmin', channelId: null, accountId: null, canManageSubchannels: false };

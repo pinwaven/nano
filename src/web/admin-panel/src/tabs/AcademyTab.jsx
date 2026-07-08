@@ -1034,15 +1034,18 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
   );
 }
 
-function EnrollModal({ courses = [], onClose, onSave, prefilledUserId = '', prefilledUserName = '' }) {
+function EnrollModal({ courses = [], onClose, onSave, prefilledUserId = '', prefilledUserName = '', enrollment = null }) {
   const { t } = useLang();
   const ta = t.academy;
+  const isEdit = !!enrollment?.id;
   const [selectedUser, setSelectedUser] = useState(
-    prefilledUserId ? { user_id: prefilledUserId, nickname: prefilledUserName } : null
+    isEdit ? { user_id: enrollment.user_id, nickname: enrollment.nickname }
+      : prefilledUserId ? { user_id: prefilledUserId, nickname: prefilledUserName } : null
   );
-  const [courseId, setCourseId] = useState('');
-  const [cohort, setCohort] = useState('');
-  const [notes, setNotes] = useState('');
+  const [courseId, setCourseId] = useState(isEdit ? String(enrollment.course_id) : '');
+  const [cohort, setCohort] = useState(isEdit ? (enrollment.cohort || '') : '');
+  const [status, setStatus] = useState(isEdit ? (enrollment.status || 'active') : 'active');
+  const [notes, setNotes] = useState(isEdit ? (enrollment.notes || '') : '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -1052,12 +1055,21 @@ function EnrollModal({ courses = [], onClose, onSave, prefilledUserId = '', pref
     if (!courseId) { setError(ta.selectCourseRequired); return; }
     setSaving(true); setError('');
     try {
-      await axios.post('/api/academy/enrollments', {
-        user_id: selectedUser.user_id,
-        course_id: Number(courseId),
-        cohort: cohort || undefined,
-        notes: notes || undefined,
-      });
+      if (isEdit) {
+        await axios.put(`/api/academy/enrollments/${enrollment.id}`, {
+          course_id: Number(courseId),
+          cohort: cohort || undefined,
+          status,
+          notes: notes || undefined,
+        });
+      } else {
+        await axios.post('/api/academy/enrollments', {
+          user_id: selectedUser.user_id,
+          course_id: Number(courseId),
+          cohort: cohort || undefined,
+          notes: notes || undefined,
+        });
+      }
       onSave();
     } catch (err) {
       setError(err.response?.data?.error || err.message);
@@ -1068,13 +1080,17 @@ function EnrollModal({ courses = [], onClose, onSave, prefilledUserId = '', pref
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span>{ta.enrollTitle}</span>
+          <span>{isEdit ? ta.editEnrollTitle : ta.enrollTitle}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <form onSubmit={handleSave} className="modal-body">
           <div className="form-grid">
             <div className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <UserPicker value={selectedUser} onChange={setSelectedUser} label={`${ta.userOpenid} *`} />
+              {isEdit
+                ? <label className="form-field"><span>{ta.userOpenid}</span>
+                    <input value={`${selectedUser.nickname || ''} (${selectedUser.user_id})`} disabled />
+                  </label>
+                : <UserPicker value={selectedUser} onChange={setSelectedUser} label={`${ta.userOpenid} *`} />}
             </div>
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{ta.selectCourse} *</span>
@@ -1089,6 +1105,15 @@ function EnrollModal({ courses = [], onClose, onSave, prefilledUserId = '', pref
               <span>{ta.cohort}</span>
               <input value={cohort} onChange={e => setCohort(e.target.value)} placeholder="e.g. 第一期" />
             </label>
+            {isEdit && (
+              <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                <span>{ta.enrollStatus}</span>
+                <select value={status} onChange={e => setStatus(e.target.value)}>
+                  <option value="active">{ta.active}</option>
+                  <option value="inactive">{ta.inactive}</option>
+                </select>
+              </label>
+            )}
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>Notes</span>
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ resize: 'vertical' }} />
@@ -2052,6 +2077,10 @@ function AcademyTab() {
                         onClick={() => setModal({ type: 'grant-cert', userId: row.user_id, userName: row.nickname })}>
                         <Award size={14} />
                       </button>
+                      <button className="icon-btn" title="Edit"
+                        onClick={() => setModal({ type: 'edit-enroll', enrollment: row })}>
+                        <Pencil size={14} />
+                      </button>
                       <button className="icon-btn" title={row.status === 'active' ? ta.deactivate : ta.reactivate}
                         onClick={async () => {
                           await axios.put(`/api/academy/enrollments/${row.id}`, { status: row.status === 'active' ? 'inactive' : 'active' });
@@ -2262,6 +2291,7 @@ function AcademyTab() {
       {modal?.type === 'add-cert'      && <CertificationModal cert={null} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit-cert'     && <CertificationModal cert={modal.cert} courses={courses} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'enroll'        && <EnrollModal courses={courses} prefilledUserId={modal.userId || ''} prefilledUserName={modal.userName || ''} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit-enroll'   && <EnrollModal courses={courses} enrollment={modal.enrollment} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'grant-cert'    && <GrantCertModal certifications={certifications} prefilledUserId={modal.userId || ''} prefilledUserName={modal.userName || ''} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit-issued'   && <IssuedCertModal issued={modal.issued} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'view-cert'     && <CertPreviewModal issued={modal.issued} onClose={() => setModal(null)} />}

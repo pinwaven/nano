@@ -890,6 +890,51 @@ async function handleVerifyCertificate(certNumber) {
     }
 }
 
+async function handleVerifyCertificatesByGovernmentId(governmentId) {
+    try {
+        if (!governmentId) return { success: false, error: 'Government ID is required', statusCode: 400 };
+        const result = await pool.query(
+            `SELECT cc.id, cc.user_id, cc.certification_id, cc.earned_at,
+                    cc.certificate_number, cc.issue_date, cc.expiry_date, cc.score,
+                    cc.assessment_period, cc.cert_oss_key, cc.is_revoked,
+                    c.title, c.tier, c.issuing_org, c.school_org,
+                    c.course_display_name, c.template_image_oss_key,
+                    u.nickname
+             FROM academy_coach_certifications cc
+             JOIN academy_certifications c ON c.id = cc.certification_id
+             JOIN users u ON u.user_id = cc.user_id
+             WHERE u.government_id = $1
+             ORDER BY cc.issue_date DESC`,
+            [governmentId]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'No certificates found', statusCode: 404 };
+        return { success: true, certificates: result.rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetCertImageUrl(certNumber) {
+    try {
+        if (!certNumber) return { success: false, error: 'Certificate number is required', statusCode: 400 };
+        const result = await pool.query(
+            `SELECT cc.cert_oss_key, c.template_image_oss_key, cc.is_revoked
+             FROM academy_coach_certifications cc
+             JOIN academy_certifications c ON c.id = cc.certification_id
+             WHERE cc.certificate_number = $1`,
+            [certNumber]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Certificate not found', statusCode: 404 };
+        const row = result.rows[0];
+        if (row.is_revoked) return { success: false, error: 'Certificate has been revoked', statusCode: 410 };
+        const key = row.cert_oss_key || row.template_image_oss_key;
+        if (!key) return { success: false, error: 'No image available', statusCode: 404 };
+        return { success: true, url: ossLib.generatePresignedGetUrl(key, 86400) };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleGetAcademyLearningPaths() {
     try {
         const pathsRes = await pool.query(
@@ -1098,6 +1143,8 @@ module.exports = {
     handlePostCoachCertification,
     handlePutCoachCertification,
     handleVerifyCertificate,
+    handleVerifyCertificatesByGovernmentId,
+    handleGetCertImageUrl,
     handleGetAcademyLearningPaths,
     handlePostAcademyLearningPath,
     handlePutAcademyLearningPath,

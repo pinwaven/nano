@@ -1155,10 +1155,10 @@ Page({
   closeMenu()  { this.setData({ menuOpen: false }) },
   noop()       {},
 
-  onPrivacyAgree(e) {
+  onPrivacyAgree() {
     const _app = getApp()
     if (_app._privacyResolve) {
-      _app._privacyResolve({ event: e, buttonId: 'privacy-agree-btn' })
+      _app._privacyResolve({ event: 'agree', buttonId: 'privacy-agree-btn' })
       _app._privacyResolve = null
     }
     this.setData({ showPrivacyModal: false })
@@ -3060,19 +3060,7 @@ Page({
     }).catch(() => this.setData({ guestAvatarUploading: false }))
   },
 
-  handleGuestAvatarButtonTap() {
-    // Give open-type="chooseAvatar" 500 ms to fire bindchooseavatar.
-    // If it doesn't respond (unsupported context or WeChat version), fall back to wx.chooseMedia.
-    if (this._avatarFallbackTimer) clearTimeout(this._avatarFallbackTimer)
-    this._avatarFallbackTimer = setTimeout(() => {
-      this._avatarFallbackTimer = null
-      if (!this.data.guestAvatarReady && !this.data.guestAvatarUploading) this._openGuestAvatarFallback()
-    }, 500)
-  },
-
   handleGuestChooseAvatar(e) {
-    // open-type="chooseAvatar" responded — cancel the fallback timer
-    if (this._avatarFallbackTimer) { clearTimeout(this._avatarFallbackTimer); this._avatarFallbackTimer = null }
     const avatarUrl = e.detail?.avatarUrl
     if (!avatarUrl) return
     if (avatarUrl.startsWith('http')) {
@@ -3084,15 +3072,6 @@ Page({
       })
     } else {
       this._uploadGuestAvatar(avatarUrl, avatarUrl)
-    }
-  },
-
-  _openGuestAvatarFallback() {
-    const onPath = (p) => { if (p) this._uploadGuestAvatar(p, p) }
-    if (wx.chooseMedia) {
-      wx.chooseMedia({ count: 1, mediaType: ['image'], sourceType: ['album', 'camera'], success: (res) => onPath(res.tempFiles[0]?.tempFilePath), fail: () => {} })
-    } else {
-      wx.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'], success: (res) => onPath(res.tempFilePaths[0]), fail: () => {} })
     }
   },
 
@@ -3198,7 +3177,6 @@ Page({
   },
 
   cancelGuestSignup() {
-    if (this._avatarFallbackTimer) { clearTimeout(this._avatarFallbackTimer); this._avatarFallbackTimer = null }
     this._pendingGuestSignup = null
     this._pendingGuestAvatarUrl = ''
     this._pendingInviteCode = ''

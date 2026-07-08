@@ -2518,10 +2518,10 @@ Component({
       }
     },
 
-    onPrivacyAgree(e) {
+    onPrivacyAgree() {
       const _app = getApp()
       if (_app._privacyResolve) {
-        _app._privacyResolve({ event: e, buttonId: 'privacy-agree-btn' })
+        _app._privacyResolve({ event: 'agree', buttonId: 'privacy-agree-btn' })
         _app._privacyResolve = null
       }
       this.setData({ showPrivacyPopup: false })

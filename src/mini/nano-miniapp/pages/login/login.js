@@ -73,7 +73,7 @@ Page({
 
     const upload = (localPath) => {
       wx.request({
-        url: `${BASE}/api/oss-presign?type=avatar&filename=avatar.jpg&category=users`,
+        url: `${BASE}/api/oss/presign?type=avatar&filename=avatar.jpg&category=users`,
         method: 'GET',
         header: { 'Authorization': `Bearer ${app.globalData.apiToken}` },
         success: (presignRes) => {
