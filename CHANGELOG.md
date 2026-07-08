@@ -23,6 +23,19 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 
+- **Admin Panel Hardware tab — Tested Chips sub-tab** (`schemas/migration_scans_biomarker_id.sql`, `functions/worker/handlers/kino.js`, `functions/worker/index.js`, `web/admin-panel/src/tabs/ChipsTab.jsx`, `web/admin-panel/src/translations.js`)
+
+  There was no way to see which Kino chips had actually been tested, or inspect what a specific chip's raw scan + biomarker results looked like — only aggregate inventory counts (available/used/damaged) via the existing Batches/Models sub-tabs. Added a third "Tested" sub-tab under Hardware → Chips: a paginated, searchable (chip code or nickname) list of completed scans; clicking a row opens a detail modal showing chip/batch/model, device, BioAge + sub-ages, validated vs. raw biomarker values side by side, clinical context, and the raw `scan_results` JSON.
+
+  **What changed:**
+  - `scans.biomarker_id` (new column, migration) — links a completed scan directly to the `biomarkers` row it produced. There was previously no FK at all; `handlePostKinoResult`'s only association was a fragile "same user + closest timestamp within a device's 10-minute window" heuristic, used purely to *avoid re-creating* a biomarker row and never persisted anywhere. `handlePostKinoResult` now writes this column on completion.
+  - `GET /api/kino-tested-chips` (paginated list) and `GET /api/kino-tested-chips/:id` (detail) — join `scans` → `kino_chips` → `kino_chip_batches`/`kino_chip_models` → `users` → `biomarkers` → `kino_devices`. For historical scans that predate the new column, falls back to the same nearest-timestamp heuristic so old tests still show up correctly instead of being silently excluded.
+  - Reuses the existing `UserDetailModal` styling (`modal-user-detail`, `udm-*`, `bm-table` CSS classes) rather than inventing new modal chrome.
+
+- **"Reset Chip" action in the Tested Chips detail modal** (`functions/worker/handlers/kino.js`, `functions/worker/index.js`, `web/admin-panel/src/tabs/ChipsTab.jsx`)
+
+  No way to free a chip for reuse (bad test, intentional re-test) short of manual SQL. Added a "Reset Chip" button (behind a confirm dialog) that marks the chip `available` again in `kino_chips` and deletes its `scans` row — freeing the unique `chip_id` index so the chip can be scanned/registered fresh exactly like a brand-new one. The user's `biomarkers` history record is left untouched; only the chip's binding/scan state resets. `POST /api/kino-tested-chips/:id/reset`.
+
 - **Server-side wearable ring binding** (`schemas/migration_wearable_binding.sql`, `functions/worker/handlers/users.js`, `components/user-health/user-health.js`)
 
   The bound ring (brand/device) previously lived only in `wx.storageSync` on one phone — lost on reinstall, cache clear, or switching devices, and invisible to the Android/iOS builds of this same codebase (WeChat Donut Multiterminal). Now persisted server-side on `users` so any client app can discover the same binding.
@@ -43,6 +56,10 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   - `user-health.wxml`/`.wxss`: new `ring-sleepweek-*` timeline chart (replaces the old `sleepDayBars` bar chart) with per-day tracks, positioned blocks, a 12/18/24/06/12 time axis, and a night-vs-nap legend.
 
 ### Fixed
+
+- **Admin Panel Users tab — user detail modal showed "No biomarker data yet." and blank biomarker trends for every user** (`web/admin-panel/src/tabs/UsersTab.jsx`)
+
+  `UserDetailModal` still read `data.estimated`, but `migration_biomarkers_rename_estimated_to_validated.sql` renamed that key to `data.validated` on every existing row (dev is migrated; prod migration is still pending). With no `estimated` key left on dev, `latestBm` was always `null` and `trendFor()` always returned an empty array — reproduced exactly as reported. BioAge/sub-ages still rendered fine (they come from the `bio_age` column and `bioage_profile`, neither of which were renamed); only "Latest Biomarkers" and "Biomarker Trends" were empty. **Fix:** updated the three stale reads to `data?.validated`. Do not ship this fix to prod until the equivalent rename migration runs there — prod's still-`estimated`-keyed rows would otherwise show the same blank state instead.
 
 - **HealthTab "Last Night" sleep summary and stage bar only showed one segment of a wake-interrupted night** (`components/user-health/user-health.js`)
 
