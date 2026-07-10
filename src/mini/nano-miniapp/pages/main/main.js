@@ -1246,6 +1246,17 @@ Page({
     wx.navigateTo({ url: `/pages/appview/appview?url=${encodeURIComponent(path)}` })
   },
 
+  openAevivaStore() {
+    // gcn.net itself isn't ICP-filed, so it fails WeChat's <web-view> business-domain
+    // check — gcn(-dev).fros.cc is the ICP-filed proxy (Nginx → edge(-dev).gcn.net,
+    // path-prefixed by sector) set up specifically for miniapp webview access; see
+    // gcn/docs/deploy.md "gcn.fros.cc — WeChat mini-program webview access". Mirror
+    // BASE's own develop-vs-trial/release split (CLAUDE.md §"Miniapp Backend Selection")
+    // rather than IS_DEV, which also covers trial builds.
+    const host = BASE.includes('-dev.') ? 'https://gcn-dev.fros.cc' : 'https://gcn.fros.cc'
+    this.openUserApp(`${host}/aeviva/dashboard.html`)
+  },
+
   // ── Kino Simulator ──────────────────────────────────────────────────────────
 
   async _resolveKinoSimDevice() {

@@ -1,6 +1,6 @@
 const { pool } = require('../lib/db');
 const { requirePermission, verifySubchannelOwnership } = require('../lib/auth');
-const { recordReferralCommission, generatePartnerPayouts, getCommissionRules, resolveRate } = require('../lib/partnerCommissions');
+const { recordReferralCommission, recordSalesCommission, generatePartnerPayouts, getCommissionRules, resolveRate } = require('../lib/partnerCommissions');
 
 // ── Partner system handlers ──────────────────────────────────────────────────
 
@@ -69,7 +69,67 @@ async function handleGetPartner(partnerId) {
     }
 }
 
-async function handlePostPartner(body) {
+// GET /api/partners/by-phone/:phone?channel=<key_name>
+// Resolves a partner by phone number, scoped to a channel (by key_name) and its
+// sub-channels (recursive — e.g. channel=aeviva also matches partners enrolled under
+// aeviva-china). Used by GCN's aeviva-sector integration to verify partner identity/tier
+// before granting a GCN login — see docs/architecture/partner-system.md.
+async function handleGetPartnerByPhone(phone, channelKey) {
+    if (!phone) return { success: false, error: 'phone required', statusCode: 400 };
+    if (!channelKey) return { success: false, error: 'channel query param required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query(`
+            WITH RECURSIVE subtree AS (
+                SELECT id FROM channels WHERE key_name = $2
+                UNION ALL
+                SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
+            )
+            SELECT p.id, p.tier, p.status, p.real_name, p.phone, p.channel_id,
+                   p.referred_by_partner_id
+            FROM partners p
+            WHERE p.phone = $1 AND p.channel_id IN (SELECT id FROM subtree)
+            ORDER BY p.created_at DESC
+            LIMIT 1
+        `, [phone, channelKey]);
+        if (rows.length === 0) return { success: false, error: 'partner not found', statusCode: 404 };
+        return { success: true, partner: rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// POST /api/partner-sales
+// Body: { partner_id, sale_amount_cny, description? }
+// Reports a completed sale for an existing partner and triggers nano's own commission
+// engine (recordSalesCommission — rate lookup from partner_commission_rules + level-1/
+// level-2 team-income fan-out off the referral chain). Distinct from the raw ledger-entry
+// endpoint POST /api/partner-commissions (which requires a pre-computed amount_cny and does
+// no rate calculation) — this is the automated path external systems like GCN should call.
+async function handlePostPartnerSale(body) {
+    const { partner_id, sale_amount_cny, description } = body;
+    if (!partner_id || !sale_amount_cny) {
+        return { success: false, error: 'partner_id, sale_amount_cny are required', statusCode: 400 };
+    }
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await recordSalesCommission(partner_id, Number(sale_amount_cny), description || null);
+        // recordSalesCommission also fans out commissions to upline partners; return just
+        // the seller's own new row(s) here (source_type='sales', commission_level=0) as
+        // a lightweight confirmation, not the full upline set.
+        const { rows } = await pool.query(
+            `SELECT * FROM partner_commissions
+             WHERE partner_id = $1 AND source_type = 'sales' AND commission_level = 0
+             ORDER BY created_at DESC LIMIT 1`,
+            [partner_id]
+        );
+        return { success: true, commission: rows[0] || null };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostPartner(body, adminCtx) {
     const { tier, real_name, phone, entry_fee_paid, channel_id, user_id, referred_by_partner_id, contracted_at, notes, status } = body;
     if (!tier || !real_name || !phone || !entry_fee_paid) {
         return { success: false, error: 'tier, real_name, phone, entry_fee_paid are required', statusCode: 400 };
@@ -79,12 +139,17 @@ async function handlePostPartner(body) {
         const typeCheck = await pool.query(`SELECT key FROM partner_types WHERE key=$1 AND is_active=TRUE`, [tier]);
         if (typeCheck.rows.length === 0) return { success: false, error: `Invalid partner tier: ${tier}`, statusCode: 400 };
 
+        // Channel-scoped admins never submit channel_id (the Add Partner form has no such field) —
+        // default to their own channel so the new partner actually shows up in handleGetPartners'
+        // channel-filtered list. Superadmins may still pass an explicit channel_id, or none.
+        const resolvedChannelId = adminCtx?.channelId || channel_id || null;
+
         const { rows } = await pool.query(`
             INSERT INTO partners (tier, real_name, phone, entry_fee_paid, channel_id, user_id,
                                   referred_by_partner_id, contracted_at, notes, status)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
             RETURNING *
-        `, [tier, real_name, phone, entry_fee_paid, channel_id || null, user_id || null,
+        `, [tier, real_name, phone, entry_fee_paid, resolvedChannelId, user_id || null,
             referred_by_partner_id || null, contracted_at || null, notes || null, status || 'active']);
         const newPartner = rows[0];
 
@@ -781,7 +846,9 @@ async function handleGetChannelRewardsSummary(channelId) {
 module.exports = {
     handleGetPartners,
     handleGetPartner,
+    handleGetPartnerByPhone,
     handlePostPartner,
+    handlePostPartnerSale,
     handlePutPartner,
     handleDeletePartner,
     handleGetPartnerCommissions,

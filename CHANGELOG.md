@@ -23,6 +23,16 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 
+- **Miniapp menu — "Aeviva Store" entry into the GCN storefront** (`mini/nano-miniapp/pages/main/main.{js,wxml}`, `pages/appview/appview.js`)
+
+  Aeviva channel users had no in-app way to reach the GCN storefront (`aeviva.gcn.net`), a separate serverless store/ERP platform being integrated as the sales engine for nano's existing Aeviva partner program. Added a menu item (aeviva channels only, hidden for guests) that opens it as an embedded `<web-view>` via the existing appview page.
+
+  **What changed:**
+  - `appview.js`'s `onLoad` now accepts an absolute `http(s)://` URL in `options.url` (previously only `/app/...`-relative paths), still appending a one-time `wvt` webview token the same way so the external page can identify the user without its own login.
+  - `main.js`: `openAevivaStore()` picks `aeviva-dev.gcn.net` vs `aeviva.gcn.net` by checking whether `BASE` is the `-dev.` host — mirrors the same develop-vs-trial/release split `BASE` itself uses (CLAUDE.md "Miniapp Backend Selection"), rather than `IS_DEV`, which also covers trial builds.
+  - `main.wxml`: new menu item, gated on `channel.key_name === 'aeviva' || 'aeviva-china'`.
+  - Not yet done: `aeviva.gcn.net`/`aeviva-dev.gcn.net` still need WeChat business-domain verification (only `nano.fros.cc` is verified today per `docs/wechat-domain-setup.md`) before this works outside the DevTools domain-check bypass.
+
 - **Admin Panel Hardware tab — Tested Chips sub-tab** (`schemas/migration_scans_biomarker_id.sql`, `functions/worker/handlers/kino.js`, `functions/worker/index.js`, `web/admin-panel/src/tabs/ChipsTab.jsx`, `web/admin-panel/src/translations.js`)
 
   There was no way to see which Kino chips had actually been tested, or inspect what a specific chip's raw scan + biomarker results looked like — only aggregate inventory counts (available/used/damaged) via the existing Batches/Models sub-tabs. Added a third "Tested" sub-tab under Hardware → Chips: a paginated, searchable (chip code or nickname) list of completed scans; clicking a row opens a detail modal showing chip/batch/model, device, BioAge + sub-ages, validated vs. raw biomarker values side by side, clinical context, and the raw `scan_results` JSON.

@@ -35,6 +35,27 @@ async function handleGetChannelUsers(channelId, query = {}) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
 
         const includeSubchannels = query.include_subchannels === 'true';
+
+        // Lightweight query used by other tabs (e.g. Partners/Coach "linked user" search) that
+        // just need the full user list for a dropdown — mirrors handleGetUsers' minimal branch.
+        // Must stay unpaginated: search widgets filter client-side over the whole list.
+        if (query.minimal === 'true') {
+            const subtreeJoin = includeSubchannels
+                ? `JOIN (WITH RECURSIVE subtree AS (
+                        SELECT id FROM channels WHERE id = $1
+                        UNION ALL
+                        SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
+                    ) SELECT id FROM subtree) st ON u.channel_id = st.id`
+                : 'JOIN (SELECT $1::int AS id) st ON u.channel_id = st.id';
+            const res = await pool.query(
+                `SELECT u.user_id, u.nickname, u.phone, u.coach_id, u.channel_id
+                 FROM users u ${subtreeJoin}
+                 ORDER BY u.created_at DESC`,
+                [channelId]
+            );
+            return { success: true, users: res.rows };
+        }
+
         const limit = Math.min(parseInt(query.limit) || 50, 200);
         const offset = parseInt(query.offset) || 0;
         const search = (query.q || '').trim();

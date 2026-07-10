@@ -17,6 +17,7 @@ function PartnersTab({ users = [], session }) {
   const [formBusy, setFormBusy] = useState(false);
   const [formError, setFormError] = useState('');
   const [userSearch, setUserSearch] = useState('');
+  const [referrerSearch, setReferrerSearch] = useState('');
   const [commForm, setCommForm] = useState({});
   const [showCommForm, setShowCommForm] = useState(false);
   const [commBusy, setCommBusy] = useState(false);
@@ -119,8 +120,8 @@ function PartnersTab({ users = [], session }) {
     } catch (err) { alert(err.response?.data?.error || 'Failed'); }
   }
 
-  function openAdd() { setEditing(null); setForm({ status: 'active' }); setFormError(''); setUserSearch(''); setShowForm(true); }
-  function openEdit(partner) { setEditing(partner); setForm({ ...partner }); setFormError(''); setShowForm(true); }
+  function openAdd() { setEditing(null); setForm({ status: 'active' }); setFormError(''); setUserSearch(''); setReferrerSearch(''); setShowForm(true); }
+  function openEdit(partner) { setEditing(partner); setForm({ ...partner }); setFormError(''); setReferrerSearch(''); setShowForm(true); }
 
   async function savePartner() {
     if (!editing && !form.user_id) { setFormError('A linked user is required'); return; }
@@ -489,7 +490,7 @@ function PartnersTab({ users = [], session }) {
                               <div style={{ fontWeight: 600 }}>{selectedUser.nickname || '—'}</div>
                               <div style={{ fontSize: 11, color: '#64748b' }}>{selectedUser.user_id}</div>
                             </div>
-                            <button type="button" className="icon-btn" onClick={() => { setForm(f => ({ ...f, user_id: null, real_name: '' })); setUserSearch(''); }}><X size={14} /></button>
+                            <button type="button" className="icon-btn" onClick={() => { setForm(f => ({ ...f, user_id: null, real_name: '', phone: '' })); setUserSearch(''); }}><X size={14} /></button>
                           </div>
                         ) : (
                           <>
@@ -503,7 +504,7 @@ function PartnersTab({ users = [], session }) {
                               <div className="coach-user-dropdown">
                                 {filteredUsers.map(u => (
                                   <div key={u.user_id} className="coach-user-option" onClick={() => {
-                                    setForm(f => ({ ...f, user_id: u.user_id, real_name: f.real_name || u.nickname || '' }));
+                                    setForm(f => ({ ...f, user_id: u.user_id, real_name: f.real_name || u.nickname || '', phone: f.phone || u.phone || '' }));
                                     setUserSearch('');
                                   }}>
                                     <div className="avatar" style={{ background: '#6366f120', color: '#6366f1', width: 24, height: 24, fontSize: 11, flexShrink: 0 }}>{(u.nickname || 'U')[0].toUpperCase()}</div>
@@ -542,10 +543,56 @@ function PartnersTab({ users = [], session }) {
                     <span>{p.entryFee}</span>
                     <input type="number" value={form.entry_fee_paid || ''} onChange={e => setForm(f => ({ ...f, entry_fee_paid: e.target.value }))} />
                   </label>
-                  <label className="form-field">
-                    <span>{p.referredBy} (ID)</span>
-                    <input type="number" value={form.referred_by_partner_id || ''} onChange={e => setForm(f => ({ ...f, referred_by_partner_id: e.target.value || null }))} placeholder="Partner ID" />
-                  </label>
+                  {(() => {
+                    const selectedReferrer = partners.find(pt => pt.id === Number(form.referred_by_partner_id)) || null;
+                    const filteredReferrers = referrerSearch.trim().length > 0
+                      ? partners.filter(pt => {
+                          if (editing && pt.id === editing.id) return false;
+                          const q = referrerSearch.toLowerCase();
+                          return (pt.real_name || '').toLowerCase().includes(q) || (pt.phone || '').toLowerCase().includes(q) || String(pt.id).includes(q);
+                        }).slice(0, 8)
+                      : [];
+                    return (
+                      <div className="form-field" style={{ gridColumn: '1 / -1', position: 'relative' }}>
+                        <span>{p.referredBy}</span>
+                        {selectedReferrer ? (
+                          <div className="coach-user-selected">
+                            <div className="avatar" style={{ background: '#6366f120', color: '#6366f1', width: 28, height: 28, fontSize: 13, flexShrink: 0 }}>{(selectedReferrer.real_name || 'U')[0].toUpperCase()}</div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 600 }}>{selectedReferrer.real_name} <Badge color={tierColor(selectedReferrer.tier)} style={{ fontSize: 10 }}>{tierLabel(selectedReferrer.tier)}</Badge></div>
+                              <div style={{ fontSize: 11, color: '#64748b' }}>#{selectedReferrer.id} · {selectedReferrer.phone || '—'}</div>
+                            </div>
+                            <button type="button" className="icon-btn" onClick={() => { setForm(f => ({ ...f, referred_by_partner_id: null })); setReferrerSearch(''); }}><X size={14} /></button>
+                          </div>
+                        ) : (
+                          <>
+                            <input
+                              value={referrerSearch}
+                              onChange={e => setReferrerSearch(e.target.value)}
+                              placeholder="Search by name, phone or ID…"
+                              autoComplete="off"
+                            />
+                            {filteredReferrers.length > 0 && (
+                              <div className="coach-user-dropdown">
+                                {filteredReferrers.map(pt => (
+                                  <div key={pt.id} className="coach-user-option" onClick={() => {
+                                    setForm(f => ({ ...f, referred_by_partner_id: pt.id }));
+                                    setReferrerSearch('');
+                                  }}>
+                                    <div className="avatar" style={{ background: '#6366f120', color: '#6366f1', width: 24, height: 24, fontSize: 11, flexShrink: 0 }}>{(pt.real_name || 'U')[0].toUpperCase()}</div>
+                                    <div>
+                                      <div style={{ fontWeight: 500 }}>{pt.real_name} <Badge color={tierColor(pt.tier)} style={{ fontSize: 10 }}>{tierLabel(pt.tier)}</Badge></div>
+                                      <div style={{ fontSize: 11, color: '#64748b' }}>#{pt.id} · {pt.phone || '—'}</div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <label className="form-field">
                     <span>{p.status}</span>
                     <div className="select-wrap" style={{ width: '100%' }}>

@@ -40,6 +40,11 @@
         <text class="menu-item-icon">🖥</text>
         <text class="menu-item-label">{{t.webAdminMenu}}</text>
       </view>
+      <view wx:if="{{!isGuest && (channel.key_name === 'aeviva' || channel.key_name === 'aeviva-china')}}" class="menu-divider"></view>
+      <view wx:if="{{!isGuest && (channel.key_name === 'aeviva' || channel.key_name === 'aeviva-china')}}" class="menu-item" bindtap="openAevivaStore">
+        <text class="menu-item-icon">🛍</text>
+        <text class="menu-item-label">{{lang === 'zh' ? 'Aeviva 商城' : 'Aeviva Store'}}</text>
+      </view>
       <view wx:if="{{!isGuest}}" class="menu-divider"></view>
       <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openReferral">
         <text class="menu-item-icon">★</text>
