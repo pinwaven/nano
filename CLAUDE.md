@@ -461,3 +461,20 @@ const biomarkers = { ...latestBio?.data?.validated, ...latestBio?.data?.actual }
 - `HaloRing._stream()` resolves with whatever data has accumulated on timeout rather than rejecting — rings with a large unsynced backlog (sleep, HR log, temperature history) can take well over the 8–15s per-command timeout to fully stream. Do not revert this to a hard reject; every caller already expects partial results over a full failure.
 - Server-side ring binding (`users.wearable_brand/wearable_mac/wearable_name/wearable_bound_at`, migration `migration_wearable_binding.sql`) is brand-agnostic in the DB/API layer, but in practice `wearable_mac` is only ever populated for Halo (the only brand implementing `getMac()`).
 - Full Halo BLE protocol reference: `docs/architecture/halo-smart-ring.md`. The Colmi-focused `docs/architecture/wearable-system.md` predates Halo/Aizo and is kept for historical/OEM-transition context only — don't treat it as current guidance for new work.
+
+## 19. GCN Integration (Aeviva Partner Storefront)
+
+The `aeviva` nano channel has a partner/distributor program (`docs/architecture/partner-system.md`, tables `partners`/`partner_commissions`) whose storefront, wholesale/resale inventory, and manual-QR checkout are implemented in a **separate sibling repo**, `/Users/pin/waven/gcn` (GCN — see its own `CLAUDE.md`). Nano remains the single source of truth for partner identity, tier, referral tree, and commission math; GCN is the automated storefront/order engine reporting sales back into nano's existing commission rate engine.
+
+**Before changing any of the following, check GCN's usage first** (`grep -rn <endpoint> /Users/pin/waven/gcn/src/functions/`) — these are server-to-server contracts GCN depends on, not just internal nano routes:
+
+| Nano endpoint | Called by (GCN) | Purpose |
+|---|---|---|
+| `POST /api/webview-token` | miniapp (`appview.js`) | mints a one-time `wvt` before opening the aeviva GCN webview |
+| `POST /api/exchange-webview-token` | `gcn/src/functions/auth/index.js` `handleNanoSSO` | exchanges `wvt` → nano user identity (phone) for GCN's consumer SSO bridge |
+| `GET /api/partners/by-phone/:phone?channel=aeviva` | `gcn/src/functions/auth/index.js` (OTP verify, aeviva branch) | resolves a phone to its nano `partners` row/tier; GCN rejects login if not found |
+| `POST /api/partner-sales` | `gcn/src/functions/mall/index.js` `reportCommissionToNano` (via `confirm-payment`) | reports a completed GCN sale, triggering nano's `recordSalesCommission()` rate lookup + upline fan-out |
+
+All four are gated by nano's static `API_BEARER_TOKEN` (`worker/index.js`, ~line 200) — the same credential GCN's `nanoClient.js` (`NANO_API_TOKEN` env var) and the miniapp client both use. GCN mirrors nano's `partners.tier` into its own `partners.partner_type` at login time only (no realtime sync) — tier changes on nano's side take effect on the partner's next GCN login.
+
+Miniapp entry point: for aeviva-channel users, tapping the **Store tab** button (`pages/main/main.js` `switchTab`) intercepts before switching `tab`, and instead calls `_openAevivaStore()` → `openUserApp()` → `wx.navigateTo` to `pages/appview/appview.js` (generic webview launcher — mints the `wvt` itself, supports both nano-relative and absolute external URLs) → `https://gcn(-dev).fros.cc/aeviva/dashboard.html`. **Not** rendered inline inside the Store tab's own section — `<web-view>` doesn't reliably support any overlay back button (`cover-view` is only documented for `map`/`video`/`canvas`/`camera`, not `web-view`) when embedded inside `main.wxml`'s absolutely-positioned tab-switching containers; confirmed by live testing, not just platform docs. `main.wxml`'s `store-tab` section itself has no aeviva-specific branching — `tab` is simply never set to `'store'` for aeviva users, so it always renders the native dots/credits store underneath (harmlessly unused for them).

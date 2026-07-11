@@ -40,11 +40,6 @@
         <text class="menu-item-icon">🖥</text>
         <text class="menu-item-label">{{t.webAdminMenu}}</text>
       </view>
-      <view wx:if="{{!isGuest && (channel.key_name === 'aeviva' || channel.key_name === 'aeviva-china')}}" class="menu-divider"></view>
-      <view wx:if="{{!isGuest && (channel.key_name === 'aeviva' || channel.key_name === 'aeviva-china')}}" class="menu-item" bindtap="openAevivaStore">
-        <text class="menu-item-icon">🛍</text>
-        <text class="menu-item-label">{{lang === 'zh' ? 'Aeviva 商城' : 'Aeviva Store'}}</text>
-      </view>
       <view wx:if="{{!isGuest}}" class="menu-divider"></view>
       <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openReferral">
         <text class="menu-item-icon">★</text>
@@ -767,6 +762,14 @@
 
     <!-- ════ STORE ════ -->
     <view class="store-tab{{tab !== 'store' ? ' tab-hidden' : ''}}">
+
+      <!-- Aeviva channel: tapping the Store tab button opens the GCN partner storefront
+           as a separate navigated page instead (see main.js switchTab/_openAevivaStore)
+           rather than showing it here inline — <web-view> doesn't reliably support an
+           overlay back button when embedded inside this absolutely-positioned
+           tab-switching container (confirmed by testing, not just theory), so `tab` is
+           never actually set to 'store' for aeviva users and this section always renders
+           the native store below for everyone. -->
 
       <view class="store-header">
         <text class="store-title">{{t.storeTitle}}</text>
@@ -1589,15 +1592,15 @@
       <image class="tab-icon-img" src="/assets/icons/plans.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabPlans}}</text>
     </view>
-    <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'store' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="store">
-      <view wx:if="{{tab === 'store'}}" class="tab-line"></view>
-      <image class="tab-icon-img" src="/assets/icons/store.svg" mode="aspectFit" />
-      <text class="tab-label">{{t.tabStore}}</text>
-    </view>
     <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'learn' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="learn">
       <view wx:if="{{tab === 'learn'}}" class="tab-line"></view>
       <image class="tab-icon-img" src="/assets/icons/training.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabLearn}}</text>
+    </view>
+    <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'store' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="store">
+      <view wx:if="{{tab === 'store'}}" class="tab-line"></view>
+      <image class="tab-icon-img" src="/assets/icons/store.svg" mode="aspectFit" />
+      <text class="tab-label">{{t.tabStore}}</text>
     </view>
   </view>
 

@@ -53,7 +53,7 @@ const CART_SETS = [
 
 const T = {
   zh: {
-    tabChat: '对话', tabHealth: '健康', tabPlans: '方案', tabStore: '补给', tabLearn: '学院',
+    tabChat: '对话', tabHealth: '健康', tabPlans: '方案', tabStore: '补给', tabLearn: '学习',
     plansDotsPlanTab: '方案', plansDotsDotsTab: '原粒', learnAcademyTab: '学院', learnBoxTab: '魔盒',
     wellnessEmpty: '暂无内容',
     wellnessDeviceTitle: '智能戒指', wellnessDeviceDownload: '复制下载链接', wellnessDeviceNoApk: '暂无可用版本',
@@ -1032,7 +1032,13 @@ Page({
     this._initChat(user, lang)
     this._loadDots(user, lang)
     this._loadCartridges(user, lang)
-    this._loadStore(user, lang)
+    const isAeviva = channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china'
+    // Aeviva's GCN store URL is minted lazily in switchTab (wvt is one-time/60s-TTL —
+    // minting it here on page load, before the user has even looked at Store, risks it
+    // being stale by the time they tap the tab).
+    if (!isAeviva) {
+      this._loadStore(user, lang)
+    }
     this._loadCreditBalance(user)
     // Restore persisted cart
     try {
@@ -1104,6 +1110,19 @@ Page({
 
   switchTab(e) {
     const tab = e.currentTarget.dataset.tab
+    if (tab === 'store' && !this.data.isGuest) {
+      const { channel } = this.data
+      if (channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china') {
+        // Aeviva's GCN store opens as a separate navigated page (pages/appview — its own
+        // header/back button, a plain page layout) rather than an inline tab section:
+        // <web-view> doesn't reliably support any overlay button (cover-view is only
+        // documented for map/video/canvas/camera, not web-view) when embedded inside this
+        // page's absolutely-positioned tab-switching containers — confirmed by testing,
+        // not just theory. Don't change `tab` at all; stay on whatever tab was active.
+        this._openAevivaStore()
+        return
+      }
+    }
     this.setData({ tab })
     if (tab === 'health') {
       this.selectComponent('#health-comp')?._maybeAutoSync()
@@ -1246,13 +1265,15 @@ Page({
     wx.navigateTo({ url: `/pages/appview/appview?url=${encodeURIComponent(path)}` })
   },
 
-  openAevivaStore() {
-    // gcn.net itself isn't ICP-filed, so it fails WeChat's <web-view> business-domain
-    // check — gcn(-dev).fros.cc is the ICP-filed proxy (Nginx → edge(-dev).gcn.net,
-    // path-prefixed by sector) set up specifically for miniapp webview access; see
-    // gcn/docs/deploy.md "gcn.fros.cc — WeChat mini-program webview access". Mirror
-    // BASE's own develop-vs-trial/release split (CLAUDE.md §"Miniapp Backend Selection")
-    // rather than IS_DEV, which also covers trial builds.
+  // Aeviva channel's Store tab tap opens the GCN storefront via appview.js (which mints
+  // its own wvt internally) instead of the native dots/credits store — see switchTab.
+  // gcn.net itself isn't ICP-filed, so it fails WeChat's <web-view> business-domain check
+  // — gcn(-dev).fros.cc is the ICP-filed proxy (Nginx → edge(-dev).gcn.net, path-prefixed
+  // by sector) set up specifically for miniapp webview access; see gcn/docs/deploy.md
+  // "gcn.fros.cc — WeChat mini-program webview access". Mirror BASE's own
+  // develop-vs-trial/release split (CLAUDE.md §"Miniapp Backend Selection") rather than
+  // IS_DEV, which also covers trial builds.
+  _openAevivaStore() {
     const host = BASE.includes('-dev.') ? 'https://gcn-dev.fros.cc' : 'https://gcn.fros.cc'
     this.openUserApp(`${host}/aeviva/dashboard.html`)
   },
@@ -3241,7 +3262,10 @@ Page({
     this._initChat(user, lang)
     this._loadDots(user, lang)
     this._loadCartridges(user, lang)
-    this._loadStore(user, lang)
+    // See onLoad's comment — aeviva's store URL is minted lazily in switchTab, not here.
+    if (!(channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china')) {
+      this._loadStore(user, lang)
+    }
   },
 
   _getCode() {
