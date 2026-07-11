@@ -19,6 +19,12 @@ const SUB_AGE_META = [
 
 const SUB_AGE_KEYS = SUB_AGE_META.map(m => m.key)
 
+// health_events.source values that represent a real BP-device reading the user
+// supplied themselves. Ring-derived sources (e.g. 'smart_ring') are excluded —
+// the Halo ring estimates BP from HRV pulse-wave data, not a cuff, and is not
+// accurate until calibrated against an actual BP device.
+const USER_UPLOADED_BP_SOURCES = new Set(['manual_photo'])
+
 function buildSubAgeLabels(base, overrides, lang) {
   if (!overrides) return base
   const result = { ...base }
@@ -1567,7 +1573,10 @@ Component({
             if (!seenStress.has(date) && d?.stress != null) {
               stressHistory.push({ date, stress: d.stress }); seenStress.add(date)
             }
-            if (!seenBp.has(date) && d?.bp_systolic != null && d?.bp_diastolic != null) {
+            // Ring-derived BP (source 'smart_ring') is inferred from HRV pulse-wave data,
+            // not a real cuff reading, and is unreliable until calibrated against an actual
+            // BP device — only surface BP the user uploaded themselves (e.g. a cuff photo).
+            if (!seenBp.has(date) && USER_UPLOADED_BP_SOURCES.has(ev.source) && d?.bp_systolic != null && d?.bp_diastolic != null) {
               bpHistory.push({ date, systolic: d.bp_systolic, diastolic: d.bp_diastolic, pulse: d.bp_pulse || null })
               seenBp.add(date)
             }
