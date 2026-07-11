@@ -1238,6 +1238,30 @@
 .theme-light .ht-body-bar         { background: rgba(201, 149, 106, 0.08); }
 .theme-light .ht-body-lbl         { color: var(--text-muted); }
 
+/* ── Report Detail Bottom Sheet ── */
+.theme-light .rpt-sheet-header     { border-bottom-color: rgba(201, 149, 106, 0.1); }
+.theme-light .rpt-sheet-institution { color: var(--text); }
+.theme-light .rpt-sheet-date       { color: var(--text-muted); }
+.theme-light .rpt-close-x          { color: var(--text-muted); }
+.theme-light .rpt-ev-row           { border-bottom-color: rgba(201, 149, 106, 0.07); }
+.theme-light .rpt-ev-ref           { color: var(--text-muted); }
+.theme-light .rpt-ev-val           { color: var(--text); }
+.theme-light .rpt-ev-unit          { color: var(--text-muted); }
+.theme-light .rpt-section-header   { border-bottom-color: rgba(201, 149, 106, 0.1); }
+.theme-light .rpt-section-title    { color: var(--text-muted); }
+.theme-light .rpt-diag-text        { color: var(--text-sub); }
+.theme-light .rpt-advice-text      { color: var(--text-sub); }
+.theme-light .rpt-dn-key           { color: var(--text-muted); }
+.theme-light .rpt-vital-item       { background: rgba(0, 0, 0, 0.03); border-color: rgba(201, 149, 106, 0.15); }
+.theme-light .rpt-vital-key        { color: var(--text-muted); }
+.theme-light .rpt-vital-val        { color: var(--text); }
+.theme-light .rpt-clinical-label   { color: var(--text-muted); }
+.theme-light .ht-lab-card          { background: rgba(255, 255, 255, 0.6); border-color: rgba(201, 149, 106, 0.15); }
+.theme-light .ht-lab-title         { color: var(--text-muted); }
+.theme-light .ht-lab-snapshot-wrap { border-bottom-color: rgba(201, 149, 106, 0.1); }
+.theme-light .ht-lab-snapshot-title { color: var(--text-muted); }
+.theme-light .ht-lab-date          { color: var(--text-muted); }
+
 /* === Digital Twin Body Figure === */
 /* ── Digital Twin Hero Card ── */
 .dt-hero-card {
