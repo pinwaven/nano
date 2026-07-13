@@ -646,6 +646,54 @@
   color: #fff;
 }
 
+.mic-btn {
+  width: 80rpx;
+  height: 80rpx;
+  flex-shrink: 0;
+  border-radius: 24rpx;
+  background: rgba(99, 117, 236, 0.12);
+  border: 1rpx solid rgba(99, 117, 236, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mic-btn-active {
+  background: linear-gradient(135deg, #E25858 0%, #FF7A7A 100%);
+  border-color: transparent;
+  box-shadow: 0 4rpx 20rpx rgba(226, 88, 88, 0.45);
+}
+
+.mic-btn-disabled {
+  opacity: 0.4;
+}
+
+.mic-icon {
+  width: 36rpx;
+  height: 36rpx;
+}
+
+.mic-recording-banner {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  background: rgba(226, 88, 88, 0.12);
+  border-top: 1rpx solid rgba(226, 88, 88, 0.3);
+  padding: 14rpx 24rpx;
+}
+
+.mic-recording-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #E25858;
+}
+
+.mic-recording-text {
+  font-size: 24rpx;
+  color: #FFB3B3;
+}
+
 /* ── Loading states (used across tabs) ── */
 
 .center-wrap {
@@ -2565,6 +2613,16 @@
 .theme-light .plus-icon          { color: var(--text-sub); }
 .theme-light .plus-btn-open      { background: rgba(201, 149, 106, 0.25); border-color: var(--blue); }
 .theme-light .plus-btn-open .plus-icon { color: var(--blue); }
+.theme-light .mic-btn {
+  background: rgba(201, 149, 106, 0.1);
+  border-color: rgba(201, 149, 106, 0.25);
+}
+.theme-light .mic-recording-banner {
+  background: rgba(226, 88, 88, 0.08);
+  border-top-color: rgba(226, 88, 88, 0.25);
+}
+.theme-light .mic-icon { filter: brightness(0); opacity: 0.55; }
+.theme-light .mic-btn-active .mic-icon { filter: none; opacity: 1; }
 .theme-light .kino-scan-bar {
   background: var(--bg-input);
   border-top-color: var(--navy-border);

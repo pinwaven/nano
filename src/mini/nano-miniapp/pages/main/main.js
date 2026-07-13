@@ -1,6 +1,7 @@
 const app = getApp()
 const { BASE, VERSION, WX_VERSION, IS_DEV } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
+const speechPlugin = requirePlugin('WechatSI')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
 
@@ -96,6 +97,7 @@ const T = {
     logout: '退出',
     initMsg: '您好！我是 Nano，您的AI健康伴侣。今天有什么可以帮您的？',
     inputPh: '输入消息…',
+    micRecording: '正在录音…松开结束',
     errServer: '无法连接服务器，请重试。',
     obNamePrompt: '在开始之前，需要了解一些基本信息来个性化您的健康洞察。请问您的姓名是？',
     obNameOnly: '有一件小事——请问您叫什么名字？',
@@ -303,6 +305,7 @@ const T = {
     logout: 'Logout',
     initMsg: 'Hello! I am Nano, your AI health companion. How can I help you today?',
     inputPh: 'Type a message…',
+    micRecording: 'Recording… release to finish',
     errServer: 'Could not reach the server. Please try again.',
     obNamePrompt: 'Before we start, I need a couple of quick details to personalize your health insights. What should I call you?',
     obNameOnly: 'One quick thing — what is your name?',
@@ -813,6 +816,7 @@ Page({
     // Chat
     messages: [],
     chatInput: '',
+    isRecording: false,
     typing: false,
     isSending: false,
     toolboxOpen: false,
@@ -1006,6 +1010,12 @@ Page({
       wx.reLaunch({ url: '/pages/login/login' })
       return
     }
+    this._recordManager = speechPlugin.getRecordRecognitionManager()
+    this._recordManager.onStop = (res) => this._onMicStop(res)
+    this._recordManager.onError = (res) => {
+      console.log(JSON.stringify({ level: 'WARN', msg: '[mic] recognition error', data: res }))
+      this.setData({ isRecording: false })
+    }
     const { statusBarHeight = 0, windowWidth = 375 } = wx.getSystemInfoSync()
     this._screenW = windowWidth
     const capsule = wx.getMenuButtonBoundingClientRect()
@@ -1067,6 +1077,10 @@ Page({
   onHide() {
     this._stopPolling()
     this._stopKinoSlide()
+    if (this.data.isRecording) {
+      this._recordManager && this._recordManager.stop()
+      this.setData({ isRecording: false })
+    }
   },
 
   onReady() {
@@ -1084,6 +1098,9 @@ Page({
   onUnload() {
     this._stopPolling()
     this._stopKinoSlide()
+    if (this.data.isRecording) {
+      this._recordManager && this._recordManager.stop()
+    }
     const _app = getApp()
     if (_app._onPrivacyRequest) _app._onPrivacyRequest = null
   },
@@ -1836,6 +1853,90 @@ Page({
     const { typing, toolboxOpen } = this.data
     if (typing && !toolboxOpen) return
     this.setData({ toolboxOpen: !toolboxOpen })
+  },
+
+  // ── Voice input (mic) ──────────────────────────────────────────────────────
+
+  onMicTouchStart() {
+    const { typing, isSending, isRecording, lang } = this.data
+    if (typing || isSending || isRecording) return
+    this._micStartTs = Date.now()
+    this._micReleased = false
+    this._checkRecordAuth().then((granted) => {
+      if (!granted) return
+      // Fast tap-and-release can finish before this async auth check resolves —
+      // skip starting the recorder if the user already lifted their finger.
+      if (this._micReleased) return
+      this.setData({ isRecording: true })
+      this._recordManager.start({
+        duration: 60000,
+        lang: lang === 'zh' ? 'zh_CN' : 'en_US',
+      })
+    })
+  },
+
+  onMicTouchEnd() {
+    this._micReleased = true
+    if (!this.data.isRecording) return
+    this.setData({ isRecording: false })
+    this._recordManager.stop()
+  },
+
+  _onMicStop(res) {
+    const heldMs = Date.now() - (this._micStartTs || 0)
+    const result = ((res && res.result) || '').trim()
+    // Accidental tap or silence — fail quietly, no error toast.
+    if (heldMs < 500 || !result) return
+    const current = this.data.chatInput
+    const merged = current
+      ? `${current}${/\s$/.test(current) ? '' : ' '}${result}`
+      : result
+    this.setData({ chatInput: merged })
+  },
+
+  _checkRecordAuth() {
+    return new Promise((resolve) => {
+      wx.getSetting({
+        success: (res) => {
+          if (res.authSetting['scope.record'] === true) {
+            resolve(true)
+            return
+          }
+          if (res.authSetting['scope.record'] === false) {
+            // Previously denied — wx.authorize would just fail silently again; must
+            // route through Settings per WeChat's documented pattern.
+            this._promptOpenSetting()
+            resolve(false)
+            return
+          }
+          // Never asked — trigger the native one-time authorize prompt.
+          wx.authorize({
+            scope: 'scope.record',
+            success: () => resolve(true),
+            fail: () => {
+              this._promptOpenSetting()
+              resolve(false)
+            },
+          })
+        },
+        fail: () => resolve(false),
+      })
+    })
+  },
+
+  _promptOpenSetting() {
+    const { lang } = this.data
+    wx.showModal({
+      title: lang === 'zh' ? '需要麦克风权限' : 'Microphone access needed',
+      content: lang === 'zh'
+        ? '请在设置中开启麦克风权限，以使用语音输入功能'
+        : 'Please enable microphone access in Settings to use voice input.',
+      confirmText: lang === 'zh' ? '去设置' : 'Settings',
+      cancelText: lang === 'zh' ? '取消' : 'Cancel',
+      success: (r) => {
+        if (r.confirm) wx.openSetting()
+      },
+    })
   },
 
   handleToolAction(e) {
