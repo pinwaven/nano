@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
-import { X, Plus, Pencil, Trash2, Bug, Activity, Check, ChevronRight, ChevronDown, CornerDownRight } from 'lucide-react';
+import { X, Plus, Pencil, Trash2, Bug, Activity, Check, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, CornerDownRight } from 'lucide-react';
 import { LangCtx, StatCard } from '../shared.jsx';
 
 const TICKET_STATUS_COLORS = {
@@ -14,6 +14,47 @@ const TICKET_PRIORITY_COLORS = {
   normal: '#6375EC',
   high:   '#f87171',
 };
+
+const STATUS_SORT_ORDER   = { open: 0, in_progress: 1, resolved: 2, closed: 3 };
+const PRIORITY_SORT_ORDER = { low: 0, normal: 1, high: 2 };
+
+function compareTickets(a, b, key) {
+  switch (key) {
+    case 'id':         return a.id - b.id;
+    case 'title':      return a.title.localeCompare(b.title);
+    case 'status':     return (STATUS_SORT_ORDER[a.status] ?? 99) - (STATUS_SORT_ORDER[b.status] ?? 99);
+    case 'priority':   return (PRIORITY_SORT_ORDER[a.priority] ?? 99) - (PRIORITY_SORT_ORDER[b.priority] ?? 99);
+    case 'reporter':   return (a.reporter || '').localeCompare(b.reporter || '');
+    case 'created_at': return new Date(a.created_at) - new Date(b.created_at);
+    default:           return 0;
+  }
+}
+
+function sortTickets(list, sort) {
+  const sorted = [...list].sort((a, b) => compareTickets(a, b, sort.key));
+  return sort.dir === 'asc' ? sorted : sorted.reverse();
+}
+
+function SortableTh({ label, sortKey, sort, onSort }) {
+  const active = sort.key === sortKey;
+  return (
+    <th className="sortable-th" onClick={() => onSort(sortKey)}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        {label}
+        {active
+          ? (sort.dir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)
+          : <ChevronsUpDown size={12} style={{ opacity: 0.35 }} />}
+      </span>
+    </th>
+  );
+}
+
+function matchesSearch(ticket, query) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  return [ticket.title, ticket.description, ticket.reporter, String(ticket.id)]
+    .some(v => v && String(v).toLowerCase().includes(q));
+}
 
 function uploadToOSS(url, file, onProgress) {
   return new Promise((resolve, reject) => {
@@ -94,8 +135,11 @@ function TicketsTab({ tickets, onRefresh }) {
   const tk = t.tickets;
   const [modal, setModal]     = useState(null);
   const [filter, setFilter]   = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [search, setSearch]   = useState('');
   const [lightbox, setLightbox] = useState(null);
   const [expanded, setExpanded] = useState(new Set());
+  const [sort, setSort] = useState({ key: 'status', dir: 'asc' });
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
   const selectTicket = (ticket) => setModal({ type: 'view', ticket });
   const toggleExpanded = (id) => setExpanded(prev => {
@@ -103,6 +147,9 @@ function TicketsTab({ tickets, onRefresh }) {
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
+  const onSort = (key) => setSort(prev => (
+    prev.key !== key ? { key, dir: key === 'created_at' ? 'desc' : 'asc' } : { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+  ));
 
   const topLevel = tickets.filter(t => !t.parent_id);
   const childrenByParent = tickets.reduce((acc, t) => {
@@ -117,7 +164,20 @@ function TicketsTab({ tickets, onRefresh }) {
     resolved:    tickets.filter(t => t.status === 'resolved').length,
     closed:      tickets.filter(t => t.status === 'closed').length,
   };
-  const filtered = filter === 'all' ? topLevel : topLevel.filter(t => t.status === filter);
+  const query = search.trim().toLowerCase();
+  const statusPriorityMatch = (t) =>
+    (filter === 'all' || t.status === filter) &&
+    (priorityFilter === 'all' || t.priority === priorityFilter);
+
+  const visibleTopLevel = topLevel.filter(statusPriorityMatch).filter(t => {
+    const kids = childrenByParent[t.id] || [];
+    return matchesSearch(t, query) || kids.some(k => matchesSearch(k, query));
+  });
+  // A ticket that only matches via a child (not itself) is force-expanded so the match stays visible.
+  const revealedByChild = new Set(
+    query ? visibleTopLevel.filter(t => !matchesSearch(t, query)).map(t => t.id) : []
+  );
+  const filtered = sortTickets(visibleTopLevel, sort);
 
   return (
     <>
@@ -130,6 +190,18 @@ function TicketsTab({ tickets, onRefresh }) {
 
       <div className="card">
         <div className="table-toolbar">
+          <input
+            className="toolbar-search"
+            type="text"
+            placeholder={tk.searchTickets}
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
+            <Plus size={14} />{tk.addTicket}
+          </button>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {['all', 'open', 'in_progress', 'resolved', 'closed'].map(s => (
               <button key={s}
@@ -140,32 +212,40 @@ function TicketsTab({ tickets, onRefresh }) {
               </button>
             ))}
           </div>
-          <button className="btn-primary" onClick={() => setModal({ type: 'add' })}>
-            <Plus size={14} />{tk.addTicket}
-          </button>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {['all', 'low', 'normal', 'high'].map(p => (
+              <button key={p}
+                      className={`subtab-btn${priorityFilter === p ? ' active' : ''}`}
+                      onClick={() => setPriorityFilter(p)}>
+                {p === 'all' ? tk.filterAll : (p === 'low' ? tk.pLow : p === 'normal' ? tk.pNormal : tk.pHigh)}
+              </button>
+            ))}
+          </div>
         </div>
         <table className="data-table">
           <thead><tr>
-            <th>ID</th>
-            <th>{tk.title.replace(' *', '')}</th>
-            <th>{tk.status}</th>
-            <th>{tk.priority}</th>
+            <SortableTh label="ID"                              sortKey="id"         sort={sort} onSort={onSort} />
+            <SortableTh label={tk.title.replace(' *', '')}      sortKey="title"      sort={sort} onSort={onSort} />
+            <SortableTh label={tk.status}                       sortKey="status"     sort={sort} onSort={onSort} />
+            <SortableTh label={tk.priority}                     sortKey="priority"   sort={sort} onSort={onSort} />
             <th>{tk.images}</th>
-            <th>{tk.reporter}</th>
-            <th>Created</th>
+            <SortableTh label={tk.reporter}                     sortKey="reporter"   sort={sort} onSort={onSort} />
+            <SortableTh label="Created"                         sortKey="created_at" sort={sort} onSort={onSort} />
             <th></th>
           </tr></thead>
           <tbody>
-            {filtered.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.tickets}</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={8} className="empty-row">{(search.trim() || filter !== 'all' || priorityFilter !== 'all') ? tk.noResults : t.empty.tickets}</td></tr>}
             {filtered.map(ticket => {
-              const kids = childrenByParent[ticket.id] || [];
-              const isExpanded = expanded.has(ticket.id);
+              const forcedExpand = revealedByChild.has(ticket.id);
+              const allKids = childrenByParent[ticket.id] || [];
+              const kids = sortTickets(forcedExpand ? allKids.filter(k => matchesSearch(k, query)) : allKids, sort);
+              const isExpanded = expanded.has(ticket.id) || forcedExpand;
               return (
                 <React.Fragment key={ticket.id}>
                   <TicketRow ticket={ticket} tk={tk}
-                             childCount={kids.length}
+                             childCount={allKids.length}
                              expanded={isExpanded}
-                             onToggleExpand={kids.length > 0 ? () => toggleExpanded(ticket.id) : null}
+                             onToggleExpand={allKids.length > 0 ? () => toggleExpanded(ticket.id) : null}
                              onSelect={() => selectTicket(ticket)}
                              onEdit={() => setModal({ type: 'edit', ticket })}
                              onDelete={() => setModal({ type: 'delete', ticket })}

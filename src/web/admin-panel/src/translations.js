@@ -480,6 +480,8 @@ const T = {
       noSubtickets: 'No sub-tickets yet',
       parentTicket: 'Parent Ticket', backToParent: 'Back to parent ticket',
       deleteSubticketsWarning: (n) => `This will also delete ${n} sub-ticket${n !== 1 ? 's' : ''}.`,
+      searchTickets: 'Search title, description, reporter…',
+      noResults: 'No tickets match your search/filters',
     },
     academy: {
       coursesTab: 'Courses', libraryTab: 'Library', certificationsTab: 'Certifications',
@@ -826,6 +828,8 @@ const T = {
       noSubtickets: '暂无子工单',
       parentTicket: '父工单', backToParent: '返回父工单',
       deleteSubticketsWarning: (n) => `此操作将同时删除 ${n} 个子工单。`,
+      searchTickets: '搜索标题、详情、提交人…',
+      noResults: '没有符合搜索/筛选条件的工单',
     },
     addUser: '添加用户',
     addCoach: '添加 Coach', addDot: '添加原粒', addItem: '添加商品', addChannel: '添加渠道', addInvite: '创建邀请码', addDevice: '添加设备',
