@@ -1,7 +1,7 @@
 const { pool } = require('../lib/db');
 const ossLib = require('../lib/oss');
 const { generateUserId, getWxAccessToken } = require('../lib/auth');
-const { getNowShanghai, calculateAge } = require('../lib/time-utils');
+const { getNowShanghai, calculateAge, formatToShanghai } = require('../lib/time-utils');
 const { updateHealthTwin } = require('../lib/healthTwinUpdater');
 const { BiomarkerEstimator } = require('../lib/estimator/BiomarkerEstimator');
 const { deriveTags } = require('../lib/estimator/tagDerivation');
@@ -303,6 +303,78 @@ async function sendWeightSubscribeMsg(openid, weightKg, accessToken) {
     }
 }
 
+// Known biomarker labels as they tend to appear in LLM prose (English + Chinese variants),
+// mapped to the key in data.validated. Order matters: longer/more specific labels first so
+// e.g. "GDF-15" doesn't get swallowed by a looser "GA" pattern.
+const BIOMARKER_LABEL_PATTERNS = [
+    { key: 'GDF15', re: /GDF-?15/gi },
+    { key: 'CystatinC', re: /Cystatin[- ]?C|胱抑素\s*C/gi },
+    { key: 'hsCRP', re: /hs-?CRP/gi },
+    { key: 'IL6', re: /IL-?6/gi },
+    { key: 'CD38', re: /CD38/gi },
+    { key: 'GA', re: /\bGA\b|糖化白蛋白/gi },
+];
+
+// Pulls "<label> ... <number>" pairs out of free-text (label and number within ~12 chars of
+// each other, matching how the prompt templates and model both tend to phrase it: "hsCRP 1.16 mg/L",
+// "GA（糖化白蛋白）13.29%", etc).
+function extractBiomarkerMentions(text) {
+    const mentions = [];
+    for (const { key, re } of BIOMARKER_LABEL_PATTERNS) {
+        // Only the first occurrence of a label counts as its stated value. Labels like GA are
+        // often mentioned twice in one sentence — "GA 13.5%（糖化白蛋白，反映近2-3周血糖控制）" — where
+        // the second (gloss) occurrence has no number of its own and would otherwise grab an
+        // unrelated number from the explanatory clause that follows it.
+        for (const m of text.matchAll(re)) {
+            // Start scanning AFTER the label match itself — labels like "GDF-15" and "CD38"
+            // contain digits, so slicing from m.index would grab the label's own number.
+            const start = m.index + m[0].length;
+            const after = text.slice(start, start + 20);
+            const numMatch = after.match(/([\d]+\.?\d*)/);
+            if (numMatch) {
+                mentions.push({ key, value: parseFloat(numMatch[1]) });
+                break;
+            }
+        }
+    }
+    return mentions;
+}
+
+function extractDateMentions(text) {
+    const dates = [];
+    for (const m of text.matchAll(/(\d{4})-(\d{2})-(\d{2})/g)) {
+        dates.push(`${m[1]}-${m[2]}-${m[3]}`);
+    }
+    for (const m of text.matchAll(/(\d{4})年(\d{1,2})月(\d{1,2})日/g)) {
+        dates.push(`${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`);
+    }
+    return dates;
+}
+
+// Cross-checks any biomarker figures / dates the model actually wrote against the ground-truth
+// row already fetched server-side. Only flags values the model chose to state — silence on a key
+// is fine, a wrong number or date next to a known label is not.
+function verifyBiomarkerGrounding(text, groundTruth) {
+    const mismatches = [];
+    const mentions = extractBiomarkerMentions(text);
+    for (const { key, value } of mentions) {
+        const truth = groundTruth.validated?.[key];
+        if (truth == null) continue;
+        const tolerance = Math.max(0.05, Math.abs(truth) * 0.02);
+        if (Math.abs(value - truth) > tolerance) {
+            mismatches.push({ key, stated: value, actual: truth });
+        }
+    }
+    if (groundTruth.tested_at) {
+        for (const stated of extractDateMentions(text)) {
+            if (stated !== groundTruth.tested_at) {
+                mismatches.push({ key: 'tested_at', stated, actual: groundTruth.tested_at });
+            }
+        }
+    }
+    return { ok: mismatches.length === 0, mismatches };
+}
+
 async function handlePostChat(body) {
     const { openid, message } = body;
     if (!openid) throw new Error('openid is required');
@@ -352,12 +424,13 @@ async function handlePostChat(body) {
 
             // Step 2: Fetch only the data the intent actually needs
             const fetches = {};
-            if (required_data.includes('biomarkers') || required_data.includes('bioage')) {
-                fetches.biomarker = pool.query(
-                    `SELECT data FROM biomarkers WHERE user_id = $1 AND test_type = 'kino_chip' ORDER BY tested_at DESC LIMIT 1`,
-                    [user_id]
-                );
-            }
+            // Always fetch the latest biomarker/bioage snapshot — cheap indexed query, and it's the
+            // single source of truth the model must be grounded on for every intent, not just ones
+            // the classifier happens to tag (classifier misses are exactly what caused the 2026-07-14 bug).
+            fetches.biomarker = pool.query(
+                `SELECT data, tested_at FROM biomarkers WHERE user_id = $1 AND test_type = 'kino_chip' ORDER BY tested_at DESC LIMIT 1`,
+                [user_id]
+            );
             if (required_data.includes('dots')) {
                 fetches.dots = pool.query(
                     `SELECT id, key_name, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh FROM dots ORDER BY id ASC`
@@ -425,6 +498,9 @@ async function handlePostChat(body) {
                     language: user.language,
                 },
                 biomarkers: biomarkerRow.data?.validated || {},
+                biomarkers_tested_at: biomarkerRow.tested_at
+                    ? formatToShanghai(new Date(biomarkerRow.tested_at)).slice(0, 10)
+                    : null,
                 bioage: biomarkerRow.data?.bioage_profile || {},
                 dots: fetched.dots?.rows || [],
                 plan: fetched.plan?.rows[0]?.content || null,
@@ -492,11 +568,9 @@ async function handlePostChat(body) {
                 function: {
                     name: 'query_database',
                     description: `Run a read-only SQL SELECT to retrieve this user's health data when it isn't already in context.
+The user's latest Kino biomarkers, bio age, and test date are ALWAYS already provided above in your system context —
+querying the biomarkers table is blocked and will be rejected. Never attempt it; use the values already given to you.
 Tables (always filter by user_id = $1):
-- biomarkers(tested_at TIMESTAMPTZ, test_type TEXT, data JSONB)
-    data.validated: {hsCRP, GDF15, GA, CystatinC, IL6, CD38}  (kino_chip only — always use this for reasoning)
-    data.actual.weight: number  (body_composition only)
-    data.bioage_profile: {BioAge, ChronoAge, SubAges:{CellularAge,MetabolicAge,MicroVascularAge,ResilienceAge}}
 - nutrition_schedules(scheduled_date DATE, dot_id INT, dot_name TEXT, timing TEXT, quantity INT)
 - reminders(content TEXT, scheduled_for TIMESTAMPTZ, recurrence TEXT, status TEXT)
 - chat_messages(role TEXT, content TEXT, created_at TIMESTAMPTZ)
@@ -540,6 +614,12 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                                 const extraParams = Array.isArray(args.extra_params) ? args.extra_params : [];
                                 if (!/^\s*(SELECT|WITH)\s/i.test(sql) || !/\$1\b/.test(sql)) {
                                     toolResult = { error: 'Rejected: must be SELECT with $1 for user_id' };
+                                } else if (/\bbiomarkers\b/i.test(sql)) {
+                                    // The latest kino biomarkers/bioage/test-date are already in system context
+                                    // (see llmContext.biomarkers/biomarkers_tested_at above) — self-authored queries
+                                    // against this table are how the 2026-07-14 stale-data bug happened, so this is
+                                    // enforced here rather than just requested in the tool description.
+                                    toolResult = { error: 'Rejected: biomarkers table is not queryable — use the values already provided in your context.' };
                                 } else {
                                     const qr = await pool.query(sql, [user_id, ...extraParams]);
                                     toolResult = { rows: qr.rows, count: qr.rowCount };
@@ -547,7 +627,7 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                             } catch (qErr) {
                                 toolResult = { error: qErr.message };
                             }
-                            console.log(JSON.stringify({ level: 'INFO', msg: 'DB tool call', rows: toolResult.rows?.length ?? 0 }));
+                            console.log(JSON.stringify({ level: 'INFO', msg: 'DB tool call', sql: tc.function.arguments, rows: toolResult.rows?.length ?? 0, error: toolResult.error }));
                             toolResults.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(toolResult) });
                         }
                     }
@@ -555,6 +635,32 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                 } else {
                     rawReply = choice.message.content || '';
                     break;
+                }
+            }
+
+            // Grounding check: the model can still misstate biomarker figures/dates from conversation
+            // history even when correct data is right there in its own system prompt (this is exactly
+            // how the 2026-07-14 stale-data bug happened). Cross-check what it actually wrote against
+            // the ground-truth row fetched above, and retry once with an explicit correction if it drifted.
+            if (Object.keys(llmContext.biomarkers).length > 0) {
+                const groundTruth = { validated: llmContext.biomarkers, tested_at: llmContext.biomarkers_tested_at };
+                const verification = verifyBiomarkerGrounding(rawReply, groundTruth);
+                if (!verification.ok) {
+                    console.log(JSON.stringify({ level: 'WARN', msg: 'biomarker_grounding_mismatch', user_id, mismatches: verification.mismatches }));
+                    const correctionPrompt = `Your previous reply stated biomarker figures and/or a test date that do not match the patient's actual record.
+Ground truth — test date: ${groundTruth.tested_at || 'unknown'}, values: ${JSON.stringify(groundTruth.validated)}.
+Rewrite your previous reply using ONLY these exact values and this exact date. Keep the same language, tone, and structure otherwise.`;
+                    chatMessages.push({ role: 'assistant', content: rawReply });
+                    chatMessages.push({ role: 'user', content: correctionPrompt });
+                    const retryCompletion = await client.chat.completions.create({
+                        model,
+                        messages: chatMessages,
+                        temperature: 0.2,
+                    });
+                    const retryReply = retryCompletion.choices[0].message.content || rawReply;
+                    const retryVerification = verifyBiomarkerGrounding(retryReply, groundTruth);
+                    console.log(JSON.stringify({ level: retryVerification.ok ? 'INFO' : 'WARN', msg: 'biomarker_grounding_retry', user_id, ok: retryVerification.ok, mismatches: retryVerification.mismatches }));
+                    rawReply = retryReply;
                 }
             }
 
