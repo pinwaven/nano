@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
-import { X, Plus, Pencil, Trash2, Bug, Activity, Check } from 'lucide-react';
+import { X, Plus, Pencil, Trash2, Bug, Activity, Check, ChevronRight, ChevronDown, CornerDownRight } from 'lucide-react';
 import { LangCtx, StatCard } from '../shared.jsx';
 
 const TICKET_STATUS_COLORS = {
@@ -95,7 +95,20 @@ function TicketsTab({ tickets, onRefresh }) {
   const [modal, setModal]     = useState(null);
   const [filter, setFilter]   = useState('all');
   const [lightbox, setLightbox] = useState(null);
+  const [expanded, setExpanded] = useState(new Set());
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
+  const selectTicket = (ticket) => setModal({ type: 'view', ticket });
+  const toggleExpanded = (id) => setExpanded(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const topLevel = tickets.filter(t => !t.parent_id);
+  const childrenByParent = tickets.reduce((acc, t) => {
+    if (t.parent_id) (acc[t.parent_id] ||= []).push(t);
+    return acc;
+  }, {});
 
   const counts = {
     all:         tickets.length,
@@ -104,7 +117,7 @@ function TicketsTab({ tickets, onRefresh }) {
     resolved:    tickets.filter(t => t.status === 'resolved').length,
     closed:      tickets.filter(t => t.status === 'closed').length,
   };
-  const filtered = filter === 'all' ? tickets : tickets.filter(t => t.status === filter);
+  const filtered = filter === 'all' ? topLevel : topLevel.filter(t => t.status === filter);
 
   return (
     <>
@@ -144,58 +157,51 @@ function TicketsTab({ tickets, onRefresh }) {
           </tr></thead>
           <tbody>
             {filtered.length === 0 && <tr><td colSpan={8} className="empty-row">{t.empty.tickets}</td></tr>}
-            {filtered.map(ticket => (
-              <tr key={ticket.id} style={{ cursor: 'pointer' }} onClick={() => setModal({ type: 'view', ticket })}>
-                <td style={{ color: '#94a3b8', fontSize: 11 }}>#{ticket.id}</td>
-                <td>
-                  <div style={{ fontWeight: 600 }}>{ticket.title}</div>
-                  {ticket.description && (
-                    <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2, maxWidth: 480, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {ticket.description}
-                    </div>
-                  )}
-                </td>
-                <td><TicketStatusLabel status={ticket.status} /></td>
-                <td><TicketPriorityLabel priority={ticket.priority} /></td>
-                <td onClick={e => e.stopPropagation()}>
-                  {(ticket.images && ticket.images.length > 0) ? (
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {ticket.images.slice(0, 3).map(k => (
-                        <TicketImageThumb key={k} ossKey={k} onClick={() => setLightbox(k)} />
-                      ))}
-                      {ticket.images.length > 3 && (
-                        <div style={{ width: 64, height: 64, borderRadius: 6, background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 12, fontWeight: 600 }}>
-                          +{ticket.images.length - 3}
-                        </div>
-                      )}
-                    </div>
-                  ) : <span style={{ color: '#475569', fontSize: 11 }}>—</span>}
-                </td>
-                <td style={{ fontSize: 12 }}>{ticket.reporter || <span style={{ color: '#475569' }}>—</span>}</td>
-                <td style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(ticket.created_at).toLocaleString()}</td>
-                <td onClick={e => e.stopPropagation()}>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button className="icon-btn" title={tk.editTicket}   onClick={() => setModal({ type: 'edit', ticket })}><Pencil size={14} /></button>
-                    <button className="icon-btn" title={tk.deleteTicket} onClick={() => setModal({ type: 'delete', ticket })}><Trash2 size={14} /></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {filtered.map(ticket => {
+              const kids = childrenByParent[ticket.id] || [];
+              const isExpanded = expanded.has(ticket.id);
+              return (
+                <React.Fragment key={ticket.id}>
+                  <TicketRow ticket={ticket} tk={tk}
+                             childCount={kids.length}
+                             expanded={isExpanded}
+                             onToggleExpand={kids.length > 0 ? () => toggleExpanded(ticket.id) : null}
+                             onSelect={() => selectTicket(ticket)}
+                             onEdit={() => setModal({ type: 'edit', ticket })}
+                             onDelete={() => setModal({ type: 'delete', ticket })}
+                             onImageClick={setLightbox} />
+                  {isExpanded && kids.map(child => (
+                    <TicketRow key={child.id} ticket={child} tk={tk} sub
+                               onSelect={() => selectTicket(child)}
+                               onEdit={() => setModal({ type: 'edit', ticket: child })}
+                               onDelete={() => setModal({ type: 'delete', ticket: child })}
+                               onImageClick={setLightbox} />
+                  ))}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       {modal?.type === 'view' && (
         <TicketDetailModal ticket={modal.ticket}
+                           parent={modal.ticket.parent_id ? tickets.find(x => x.id === modal.ticket.parent_id) : null}
+                           subtickets={childrenByParent[modal.ticket.id] || []}
                            onClose={() => setModal(null)}
-                           onEdit={() => setModal({ type: 'edit', ticket: modal.ticket })} />
+                           onEdit={() => setModal({ type: 'edit', ticket: modal.ticket })}
+                           onSelectTicket={selectTicket}
+                           onAddSubticket={() => setModal({ type: 'add', parentId: modal.ticket.id })} />
       )}
       {(modal?.type === 'add' || modal?.type === 'edit') && (
         <TicketModal ticket={modal.type === 'edit' ? modal.ticket : null}
+                     parentId={modal.type === 'add' ? modal.parentId : null}
+                     parentTitle={modal.type === 'add' && modal.parentId ? tickets.find(x => x.id === modal.parentId)?.title : null}
                      onClose={() => setModal(null)} onSave={closeAndRefresh} />
       )}
       {modal?.type === 'delete' && (
         <DeleteTicketConfirm ticket={modal.ticket}
+                             subticketCount={(childrenByParent[modal.ticket.id] || []).length}
                              onClose={() => setModal(null)} onConfirm={closeAndRefresh} />
       )}
       {lightbox && <TicketImageLightbox ossKey={lightbox} onClose={() => setLightbox(null)} />}
@@ -203,7 +209,66 @@ function TicketsTab({ tickets, onRefresh }) {
   );
 }
 
-function TicketDetailModal({ ticket, onClose, onEdit }) {
+function TicketRow({ ticket, tk, sub = false, childCount = 0, expanded = false, onToggleExpand, onSelect, onEdit, onDelete, onImageClick }) {
+  return (
+    <tr style={{ cursor: 'pointer', background: sub ? 'rgba(99,117,236,0.04)' : undefined }} onClick={onSelect}>
+      <td style={{ color: '#94a3b8', fontSize: 11 }}>#{ticket.id}</td>
+      <td>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: sub ? 22 : 0 }}>
+          {sub && <CornerDownRight size={13} style={{ color: '#64748b', flexShrink: 0 }} />}
+          {!sub && onToggleExpand && (
+            <button className="icon-btn" style={{ width: 20, height: 20, flexShrink: 0 }}
+                    onClick={e => { e.stopPropagation(); onToggleExpand(); }}>
+              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+          )}
+          {!sub && !onToggleExpand && <span style={{ width: 20, flexShrink: 0 }} />}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: sub ? 500 : 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+              {ticket.title}
+              {!sub && childCount > 0 && (
+                <span style={{ fontSize: 10, fontWeight: 600, color: '#6375EC', background: 'rgba(99,117,236,0.12)', borderRadius: 8, padding: '1px 7px' }}>
+                  {tk.subticketCount(childCount)}
+                </span>
+              )}
+            </div>
+            {ticket.description && (
+              <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2, maxWidth: 440, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {ticket.description}
+              </div>
+            )}
+          </div>
+        </div>
+      </td>
+      <td><TicketStatusLabel status={ticket.status} /></td>
+      <td><TicketPriorityLabel priority={ticket.priority} /></td>
+      <td onClick={e => e.stopPropagation()}>
+        {(ticket.images && ticket.images.length > 0) ? (
+          <div style={{ display: 'flex', gap: 4 }}>
+            {ticket.images.slice(0, 3).map(k => (
+              <TicketImageThumb key={k} ossKey={k} onClick={() => onImageClick(k)} />
+            ))}
+            {ticket.images.length > 3 && (
+              <div style={{ width: 64, height: 64, borderRadius: 6, background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 12, fontWeight: 600 }}>
+                +{ticket.images.length - 3}
+              </div>
+            )}
+          </div>
+        ) : <span style={{ color: '#475569', fontSize: 11 }}>—</span>}
+      </td>
+      <td style={{ fontSize: 12 }}>{ticket.reporter || <span style={{ color: '#475569' }}>—</span>}</td>
+      <td style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(ticket.created_at).toLocaleString()}</td>
+      <td onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button className="icon-btn" title={tk.editTicket}   onClick={onEdit}><Pencil size={14} /></button>
+          <button className="icon-btn" title={tk.deleteTicket} onClick={onDelete}><Trash2 size={14} /></button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function TicketDetailModal({ ticket, parent, subtickets = [], onClose, onEdit, onSelectTicket, onAddSubticket }) {
   const { t } = useContext(LangCtx);
   const tk = t.tickets;
   const [lightbox, setLightbox] = useState(null);
@@ -217,6 +282,14 @@ function TicketDetailModal({ ticket, onClose, onEdit }) {
         </div>
         <div className="modal-body">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+            {parent && (
+              <button type="button" onClick={() => onSelectTicket(parent)}
+                      style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(99,117,236,0.08)', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', color: '#6375EC', fontSize: 12, fontWeight: 600 }}>
+                <CornerDownRight size={13} style={{ transform: 'rotate(180deg)' }} />
+                {tk.parentTicket}: {parent.title}
+              </button>
+            )}
 
             <div>
               <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{tk.title.replace(' *', '')}</div>
@@ -268,6 +341,33 @@ function TicketDetailModal({ ticket, onClose, onEdit }) {
                 </div>
               </div>
             )}
+
+            {!parent && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{tk.subtickets} ({subtickets.length})</div>
+                  <button type="button" className="btn-secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={onAddSubticket}>
+                    <Plus size={12} style={{ marginRight: 4 }} />{tk.addSubticket}
+                  </button>
+                </div>
+                {subtickets.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#94a3b8' }}>{tk.noSubtickets}</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {subtickets.map(sub => (
+                      <button type="button" key={sub.id} onClick={() => onSelectTicket(sub)}
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', textAlign: 'left' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.title}</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                          <TicketPriorityLabel priority={sub.priority} />
+                          <TicketStatusLabel status={sub.status} />
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="modal-footer">
@@ -281,7 +381,7 @@ function TicketDetailModal({ ticket, onClose, onEdit }) {
   );
 }
 
-function TicketModal({ ticket, onClose, onSave }) {
+function TicketModal({ ticket, parentId, parentTitle, onClose, onSave }) {
   const { t } = useContext(LangCtx);
   const tk = t.tickets;
   const isEdit = !!ticket;
@@ -326,6 +426,7 @@ function TicketModal({ ticket, onClose, onSave }) {
     setBusy(true); setError('');
     try {
       const payload = { ...form, images };
+      if (!isEdit && parentId) payload.parent_id = parentId;
       let res;
       if (isEdit) {
         res = await axios.put(`/api/tickets/${ticket.id}`, payload);
@@ -343,11 +444,16 @@ function TicketModal({ ticket, onClose, onSave }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span>{isEdit ? tk.editTicket : tk.addTicket}</span>
+          <span>{isEdit ? tk.editTicket : (parentId ? tk.addSubticket : tk.addTicket)}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
           <div className="form-grid">
+            {!isEdit && parentId && (
+              <div style={{ gridColumn: '1 / -1', fontSize: 12, color: '#6375EC', background: 'rgba(99,117,236,0.08)', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 8, padding: '6px 10px' }}>
+                {tk.parentTicket}: {parentTitle}
+              </div>
+            )}
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{tk.title}</span>
               <input value={form.title}
@@ -421,7 +527,7 @@ function TicketModal({ ticket, onClose, onSave }) {
   );
 }
 
-function DeleteTicketConfirm({ ticket, onClose, onConfirm }) {
+function DeleteTicketConfirm({ ticket, subticketCount = 0, onClose, onConfirm }) {
   const { t } = useContext(LangCtx);
   const tk = t.tickets;
   const [busy, setBusy]   = useState(false);
@@ -447,6 +553,9 @@ function DeleteTicketConfirm({ ticket, onClose, onConfirm }) {
         </div>
         <div className="modal-body">
           <p>{tk.deleteWarning(ticket.title)}</p>
+          {subticketCount > 0 && (
+            <p style={{ color: '#f59e0b', fontSize: 13 }}>{tk.deleteSubticketsWarning(subticketCount)}</p>
+          )}
           {error && <p className="form-error">{error}</p>}
           <div className="modal-footer">
             <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
