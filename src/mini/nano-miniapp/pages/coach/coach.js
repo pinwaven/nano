@@ -17,6 +17,8 @@ const T = {
     adminMenu: '渠道管理',
     superadminMenu: '超管面板',
     logout: '退出',
+    exitSandbox: '退出沙盒',
+    sandboxBanner: '沙盒模式：正在以「{name}」的身份查看，任何操作都不会保存',
     noClients: '暂无分配的客户',
     searchPlaceholder: '搜索客户姓名…',
     filterAll: '全部',
@@ -148,6 +150,8 @@ const T = {
     adminMenu: 'Channel Admin',
     superadminMenu: 'Super Admin',
     logout: 'Logout',
+    exitSandbox: 'Exit Sandbox',
+    sandboxBanner: 'Sandbox: viewing as "{name}" — nothing is saved',
     noClients: 'No clients assigned yet',
     searchPlaceholder: 'Search by name…',
     filterAll: 'All',
@@ -453,7 +457,9 @@ Page({
     const theme = user.theme || app.globalData.theme || 'dark'
     const lang = app.globalData.lang || 'zh'
     const t = T[lang]
-    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t) })
+    const sandboxMode = !!app.globalData.sandboxMode
+    const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', nickname || '—') : ''
+    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
     this._loadAll()
   },
 
@@ -594,8 +600,29 @@ Page({
     wx.navigateTo({ url: '/pages/superadmin/superadmin' })
   },
 
+  exitSandbox() {
+    const origin = wx.getStorageSync('nano_sandbox_origin')
+    wx.removeStorageSync('nano_sandbox_origin')
+    wx.removeStorageSync('nano_sandbox_active')
+    app.globalData.sandboxMode = false
+    if (origin && origin.user) {
+      app.globalData.user = origin.user
+      app.globalData.channel = origin.channel || null
+      app.globalData.coach = origin.coach || null
+      wx.setStorageSync('nano_user', origin.user)
+      wx.setStorageSync('nano_channel', origin.channel || null)
+      wx.setStorageSync('nano_coach', origin.coach || null)
+      wx.reLaunch({ url: '/pages/main/main' })
+    } else {
+      wx.removeStorageSync('nano_user')
+      app.globalData.user = null
+      wx.reLaunch({ url: '/pages/login/login' })
+    }
+  },
+
   handleLogout() {
     this.setData({ menuOpen: false })
+    if (app.globalData.sandboxMode) { this.exitSandbox(); return }
     wx.removeStorageSync('nano_user')
     app.globalData.user = null
     wx.reLaunch({ url: '/pages/login/login' })
@@ -1393,6 +1420,7 @@ Page({
   _req(url, method = 'GET', data = null) {
     return new Promise((resolve, reject) => {
       const opts = { url, method, header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` }, success: resolve, fail: reject }
+      if (app.globalData.sandboxMode && method !== 'GET') data = { ...(data || {}), sandbox: true }
       if (data) opts.data = data
       wx.request(opts)
     })

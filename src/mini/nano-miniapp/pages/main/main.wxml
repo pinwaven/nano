@@ -14,6 +14,12 @@
     <text wx:if="{{version}}" class="header-version">v{{version}}</text>
   </view>
 
+  <!-- ── Sandbox banner ── -->
+  <view wx:if="{{sandboxMode}}" class="sandbox-banner" catchtap="exitSandbox">
+    <text class="sandbox-banner-text">{{sandboxBannerText}}</text>
+    <text class="sandbox-banner-exit">{{t.exitSandbox}}</text>
+  </view>
+
   <!-- ── Logo menu ── -->
   <view wx:if="{{menuOpen}}" class="menu-mask" bindtap="closeMenu">
     <view class="menu-dropdown" catchtap="noop" style="top: {{menuTop}}px;">
@@ -63,7 +69,7 @@
       <view class="menu-divider"></view>
       <view wx:if="{{!isGuest}}" class="menu-item" bindtap="handleLogout">
         <text class="menu-item-icon">↪</text>
-        <text class="menu-item-label">{{t.logout}}</text>
+        <text class="menu-item-label">{{sandboxMode ? t.exitSandbox : t.logout}}</text>
       </view>
       <view wx:if="{{isGuest}}" class="menu-item" bindtap="openGuestSheet">
         <text class="menu-item-icon">✦</text>

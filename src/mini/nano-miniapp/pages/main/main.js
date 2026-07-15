@@ -95,6 +95,8 @@ const T = {
     taskQSubmit: '提交', taskQCancel: '取消',
     todayProgress: '今日进度',
     logout: '退出',
+    exitSandbox: '退出沙盒',
+    sandboxBanner: '沙盒模式：正在以「{name}」的身份查看，任何操作都不会保存',
     initMsg: '您好！我是 Nano，您的AI健康伴侣。今天有什么可以帮您的？',
     inputPh: '输入消息…',
     micRecording: '正在录音…松开结束',
@@ -303,6 +305,8 @@ const T = {
     taskQSubmit: 'Submit', taskQCancel: 'Cancel',
     todayProgress: 'Today',
     logout: 'Logout',
+    exitSandbox: 'Exit Sandbox',
+    sandboxBanner: 'Sandbox: viewing as "{name}" — nothing is saved',
     initMsg: 'Hello! I am Nano, your AI health companion. How can I help you today?',
     inputPh: 'Type a message…',
     micRecording: 'Recording… release to finish',
@@ -1033,7 +1037,9 @@ Page({
     const userAvatarLetter = (user.nickname || 'U').slice(-1).toUpperCase()
     const channelOverrides = channel?.sub_age_display_names || null
     const t = { ...T[lang], subAgeLabels: buildSubAgeLabels(T[lang].subAgeLabels, channelOverrides, lang) }
-    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, toolList: toolActions.getToolList(t) })
+    const sandboxMode = !!app.globalData.sandboxMode
+    const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', user.nickname || '—') : ''
+    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
     if (isGuest) {
       this.setData({ messages: [{ id: 'init', role: 'ai', content: T[lang].initMsg }], obStep: null, storeLoading: true })
       this._loadGuestStore(lang)
@@ -1493,8 +1499,31 @@ Page({
 
   // ── Logout ──────────────────────────────────────────────────────────────────
 
+  exitSandbox() {
+    this._stopPolling()
+    const origin = wx.getStorageSync('nano_sandbox_origin')
+    wx.removeStorageSync('nano_sandbox_origin')
+    wx.removeStorageSync('nano_sandbox_active')
+    app.globalData.sandboxMode = false
+    if (origin && origin.user) {
+      app.globalData.user = origin.user
+      app.globalData.channel = origin.channel || null
+      app.globalData.coach = origin.coach || null
+      wx.setStorageSync('nano_user', origin.user)
+      wx.setStorageSync('nano_channel', origin.channel || null)
+      wx.setStorageSync('nano_coach', origin.coach || null)
+      wx.reLaunch({ url: '/pages/main/main' })
+    } else {
+      // No origin snapshot (unexpected) — fall back to a full logout.
+      wx.removeStorageSync('nano_user')
+      app.globalData.user = null
+      wx.reLaunch({ url: '/pages/login/login' })
+    }
+  },
+
   handleLogout() {
     this.setData({ menuOpen: false })
+    if (app.globalData.sandboxMode) { this.exitSandbox(); return }
     this._stopPolling()
     wx.removeStorageSync('nano_user')
     app.globalData.user = null
@@ -2129,6 +2158,11 @@ Page({
       const res = await this._req(`${BASE}/api/chat`, 'POST', { openid: user.user_id, message: text })
       if (res.data?.recorded_weight != null) {
         this.selectComponent('#health-comp')?.refresh()
+      }
+      // Sandbox sessions get the reply directly in the response (nothing was persisted
+      // to notifications for polling to pick up).
+      if (app.globalData.sandboxMode && res.data?.reply) {
+        this._addMsg('ai', res.data.reply)
       }
     } catch (e) {
       this._addMsg('ai', this.data.t.errServer)
@@ -3709,6 +3743,7 @@ Page({
         success: resolve,
         fail: reject,
       }
+      if (app.globalData.sandboxMode && method !== 'GET') data = { ...(data || {}), sandbox: true }
       if (data) opts.data = data
       wx.request(opts)
     })

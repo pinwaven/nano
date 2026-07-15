@@ -6,6 +6,7 @@ App({
     lang: 'zh',
     theme: 'dark',
     apiToken: 'tokenData-gh9bc7917115bid72c68c8c4693g',
+    sandboxMode: false,
   },
 
   // Holds the resolve fn WeChat passes to onNeedPrivacyAuthorization.
@@ -27,6 +28,7 @@ App({
         this.globalData.lang = user.language === 'en' ? 'en' : ((channel?.locale === 'en') ? 'en' : 'zh')
         const savedTheme = wx.getStorageSync('nano_theme')
         this.globalData.theme = savedTheme || user.theme || 'dark'
+        this.globalData.sandboxMode = !!wx.getStorageSync('nano_sandbox_active')
       }
     } catch (e) {}
 

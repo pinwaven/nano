@@ -240,7 +240,15 @@ exports.handler = async (req, resp, context) => {
             }
         }
 
-        if (method === 'GET') {
+        // Superadmin "login as" sandbox sessions tag every mutating request with
+        // sandbox:true so nothing they do persists against the impersonated user's
+        // real account. /chat is excluded — it needs to still call the LLM and
+        // return a reply; its own writes are suppressed inside handlePostChat.
+        const sandbox = (parsedBody && parsedBody.sandbox === true) || query.sandbox === 'true';
+
+        if (sandbox && method !== 'GET' && path !== '/chat') {
+            result = { success: true, sandbox: true };
+        } else if (method === 'GET') {
             if (path === '/kino-upgrade') {
                 result = await handleGetKinoUpgrade();
             } else if (path.includes('/kone-apk-releases')) {

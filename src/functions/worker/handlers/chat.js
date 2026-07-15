@@ -376,7 +376,7 @@ function verifyBiomarkerGrounding(text, groundTruth) {
 }
 
 async function handlePostChat(body) {
-    const { openid, message } = body;
+    const { openid, message, sandbox } = body;
     if (!openid) throw new Error('openid is required');
 
     const user = await resolveOrUpsertUser(body);
@@ -528,11 +528,15 @@ async function handlePostChat(body) {
             const promptBuilder = activePrompts[intent] || activePrompts.casual_chat;
             const systemPrompt = promptBuilder(llmContext);
 
-            // Save the incoming user message to the conversation log
-            await pool.query(
-                'INSERT INTO chat_messages (user_id, role, content, persona_type) VALUES ($1, $2, $3, $4)',
-                [user_id, 'user', message, personaType]
-            );
+            // Save the incoming user message to the conversation log — skipped in sandbox
+            // mode (superadmin "login as" sessions), which never persist against the
+            // impersonated user's real account.
+            if (!sandbox) {
+                await pool.query(
+                    'INSERT INTO chat_messages (user_id, role, content, persona_type) VALUES ($1, $2, $3, $4)',
+                    [user_id, 'user', message, personaType]
+                );
+            }
 
             // Fetch recent conversation history scoped to the current persona
             const historyLimit = parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10);
@@ -561,6 +565,14 @@ async function handlePostChat(body) {
             }
             while (cleanHistory.length > 0 && cleanHistory[0].role !== 'user') {
                 cleanHistory.shift();
+            }
+            // The current sandboxed turn was never persisted above, so splice it into
+            // the in-memory history the model sees — otherwise it has no idea what was
+            // just asked.
+            if (sandbox) {
+                const lastTurn = cleanHistory[cleanHistory.length - 1];
+                if (lastTurn && lastTurn.role === 'user') lastTurn.content = message;
+                else cleanHistory.push({ role: 'user', content: message });
             }
 
             const dbQueryTool = {
@@ -685,16 +697,21 @@ Rewrite your previous reply using ONLY these exact values and this exact date. K
                             ? `⚠️ 您上次记录的体重是 **${lastWeight} kg**，与本次输入（**${weightKg} kg**）相差较大，请核对后重新发送。`
                             : `⚠️ Your last recorded weight was **${lastWeight} kg**. The new value **${weightKg} kg** looks quite different — please double-check and resend if it's correct.`;
                     } else {
-                        await pool.query(
-                            'INSERT INTO biomarkers (user_id, test_type, data, tested_at) VALUES ($1, $2, $3, $4)',
-                            [user_id, 'body_composition', JSON.stringify({ actual: { weight: weightKg } }), new Date().toISOString()]
-                        );
-                        recordedWeight = weightKg;
+                        if (!sandbox) {
+                            await pool.query(
+                                'INSERT INTO biomarkers (user_id, test_type, data, tested_at) VALUES ($1, $2, $3, $4)',
+                                [user_id, 'body_composition', JSON.stringify({ actual: { weight: weightKg } }), new Date().toISOString()]
+                            );
+                            recordedWeight = weightKg;
+                        }
                         simpleReply = isZh
                             ? `✅ 已记录您的体重：**${weightKg} kg**`
                             : `✅ Weight recorded: **${weightKg} kg**`;
                     }
 
+                    if (sandbox) {
+                        return { success: true, user_id, sandbox: true, reply: simpleReply };
+                    }
                     await saveChatMessage(user_id, 'ai', simpleReply, null, personaType);
                     await pool.query(
                         'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
@@ -709,7 +726,7 @@ Rewrite your previous reply using ONLY these exact values and this exact date. K
             if (reminderActionMatch) {
                 try {
                     const reminderAction = JSON.parse(reminderActionMatch[0]);
-                    if (reminderAction.content && reminderAction.scheduled_for) {
+                    if (reminderAction.content && reminderAction.scheduled_for && !sandbox) {
                         await handlePostReminder({ user_id, content: reminderAction.content, scheduled_for: reminderAction.scheduled_for });
                     }
                 } catch (e) {
@@ -722,6 +739,12 @@ Rewrite your previous reply using ONLY these exact values and this exact date. K
                 .replace(/\n?\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
                 .trim();
 
+            if (sandbox) {
+                // Sandbox sessions have no notification-polling side channel to rely on —
+                // hand the reply back directly instead of persisting it.
+                return { success: true, user_id, sandbox: true, reply };
+            }
+
             // Save assistant reply to the conversation log
             await saveChatMessage(user_id, 'ai', reply, null, personaType);
 
@@ -732,10 +755,14 @@ Rewrite your previous reply using ONLY these exact values and this exact date. K
             );
         } catch (err) {
             console.error('LLM Chat Error:', err);
+            const fallbackText = "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.";
+            if (sandbox) {
+                return { success: true, user_id, sandbox: true, reply: fallbackText };
+            }
             // Fallback for demo if LLM fails
             await pool.query(
                 'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                [user_id, 'chat_reply', "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.", 'pending']
+                [user_id, 'chat_reply', fallbackText, 'pending']
             );
         }
     }

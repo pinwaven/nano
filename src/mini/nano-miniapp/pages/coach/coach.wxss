@@ -36,6 +36,20 @@
   gap: 16rpx;
 }
 
+.sandbox-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 14rpx 28rpx;
+  background: rgba(245, 158, 11, 0.16);
+  border-bottom: 1rpx solid rgba(245, 158, 11, 0.4);
+}
+
+.sandbox-banner-text { flex: 1; font-size: 22rpx; color: #f59e0b; font-weight: 500; }
+.sandbox-banner-exit { flex-shrink: 0; font-size: 22rpx; font-weight: 700; color: #f59e0b; text-decoration: underline; }
+
 .header-logo-btn {
   display: flex;
   align-items: center;

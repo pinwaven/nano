@@ -12,6 +12,12 @@
     <text class="header-user">{{nickname}} ({{t.coachLabel}})</text>
   </view>
 
+  <!-- Sandbox banner -->
+  <view wx:if="{{sandboxMode}}" class="sandbox-banner" catchtap="exitSandbox">
+    <text class="sandbox-banner-text">{{sandboxBannerText}}</text>
+    <text class="sandbox-banner-exit">{{t.exitSandbox}}</text>
+  </view>
+
   <!-- Scrollable content area -->
   <scroll-view scroll-y class="coach-content"
     refresher-enabled="{{tab === 'clients'}}"
