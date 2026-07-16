@@ -57,7 +57,7 @@ const { handleGetLabProviders, handlePostLabProvider, handlePutLabProvider, hand
 const { handleGetInventoryStock, handlePostInventoryStock, handleGetWarehouses, handlePostWarehouse, handlePutWarehouse, handleDeleteWarehouse } = require('./handlers/inventory');
 const { handleGetOrders, handleGetMyOrders, handlePostStoreItem, handlePutStoreItem, handleDeleteStoreItem, handleGetSkus, handlePostSku, handlePutSku, handleDeleteSku } = require('./handlers/store');
 const { handleGetCommissionSettings, handlePutCommissionSetting, handleGetCoachCommissions, handleGetChannelCommissions, handleGetCoachEarnings, handleGetCoachPayouts, handleGetChannelPayouts, handlePostGenerateCoachPayouts, handlePostGenerateChannelPayouts, handlePutCoachPayout, handlePutChannelPayout } = require('./handlers/commissions');
-const { handleGetPartners, handleGetPartner, handleGetPartnerByPhone, handlePostPartner, handlePostPartnerSale, handlePutPartner, handleDeletePartner, handleGetPartnerCommissions, handlePostPartnerCommission, handleGetPartnerPayouts, handlePostGeneratePartnerPayouts, handlePutPartnerPayout, handleGetPartnerTree, handleGetChannelReferralNetwork, handleGetPartnerCommissionConfig, handlePutPartnerCommissionConfig, handleGetPartnerTypes, handlePostPartnerType, handlePutPartnerType, handleDeletePartnerType, handleGetPartnerCommissionRules, handlePostPartnerCommissionRule, handlePutPartnerCommissionRule, handleDeletePartnerCommissionRule, handlePutChannelPartnerSystemPermission, handleGetChannelRewardsSummary } = require('./handlers/partners');
+const { handleGetPartners, handleGetPartner, handleGetPartnerByPhone, handlePostPartner, handlePostPartnerGcnProvision, handlePostPartnerSale, handlePutPartner, handleDeletePartner, handleGetPartnerCommissions, handlePostPartnerCommission, handleGetPartnerPayouts, handlePostGeneratePartnerPayouts, handlePutPartnerPayout, handleGetPartnerTree, handleGetChannelReferralNetwork, handleGetPartnerCommissionConfig, handlePutPartnerCommissionConfig, handleGetPartnerTypes, handlePostPartnerType, handlePutPartnerType, handleDeletePartnerType, handleGetPartnerCommissionRules, handlePostPartnerCommissionRule, handlePutPartnerCommissionRule, handleDeletePartnerCommissionRule, handlePutChannelPartnerSystemPermission, handleGetChannelRewardsSummary } = require('./handlers/partners');
 const { handleGetEvents, handlePostEvent, handlePutEvent, handleDeleteEvent, handleGetEventSignups, handlePostEventSignup, handleDeleteEventSignup, handleGetMyEventSignups } = require('./handlers/events');
 const { handleGetCoachGroups, handlePostCoachGroup, handlePutCoachGroup, handleDeleteCoachGroup, handleGetCoachGroupKpis } = require('./handlers/coach-groups');
 const { handleGetKoneApkReleases, handlePostKoneApkRelease, handlePutKoneApkRelease, handleDeleteKoneApkRelease, handleGetKoneApkPresign, handleGetDigitalAssets, handlePostDigitalAsset, handlePutDigitalAsset, handleDeleteDigitalAsset, handleGetDigitalAssetsPresign, handleGetKinoUpgrade } = require('./handlers/digital-assets');
@@ -69,7 +69,7 @@ const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChan
 const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation } = require('./handlers/users');
 const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
-const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm } = require('./handlers/login');
+const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm } = require('./handlers/login');
 const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign } = require('./handlers/chat');
 
 
@@ -203,6 +203,18 @@ exports.handler = async (req, resp, context) => {
         const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
         if (token === expectedBearer) {
             adminCtx.role = 'superadmin';
+        } else if (process.env.GCN_API_TOKEN && token === process.env.GCN_API_TOKEN) {
+            // Scoped nano<-GCN service credential — distinct from API_BEARER_TOKEN (nano's
+            // full superadmin bearer). Authenticated but restricted to the exact paths GCN's
+            // nanoClient.js actually calls; anything else 403s even with a valid token.
+            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales']);
+            if (!GCN_ALLOWED_PATHS.has(path)) {
+                const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
+                if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
+                return forbiddenPayload;
+            }
+            adminCtx.role = 'superadmin';
+            adminCtx.username = 'gcn-service';
         } else if (token.startsWith('ch.')) {
             const payload = verifyChannelAdminToken(token);
             if (!payload) {
@@ -546,6 +558,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostWebviewToken(parsedBody);
             } else if (path === '/exchange-webview-token') {
                 result = await handleExchangeWebviewToken(parsedBody);
+            } else if (path === '/admin-webview-token') {
+                result = await handlePostAdminWebviewToken(parsedBody, adminCtx);
+            } else if (path === '/exchange-admin-webview-token') {
+                result = await handleExchangeAdminWebviewToken(parsedBody);
             } else if (path === '/qr-login/init') {
                 result = await handlePostQrLoginInit(parsedBody);
             } else if (path === '/qr-login/confirm') {
@@ -666,6 +682,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostPartnerType(parsedBody, adminCtx);
             } else if (path === '/partner-commission-rules') {
                 result = await handlePostPartnerCommissionRule(parsedBody, adminCtx);
+            } else if (path.match(/\/partners\/(\d+)\/gcn-provision/)) {
+                result = await handlePostPartnerGcnProvision(path.match(/\/partners\/(\d+)\/gcn-provision/)[1]);
             } else if (path.includes('/partner-sales')) {
                 result = await handlePostPartnerSale(parsedBody);
             } else if (path.includes('/partner-commissions')) {

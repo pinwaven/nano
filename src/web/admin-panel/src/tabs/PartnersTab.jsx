@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Users, Coins, Settings2, Plus, Pencil, Trash2, X, Check, ChevronDown } from 'lucide-react';
+import { Users, Coins, Settings2, Plus, Pencil, Trash2, X, Check, ChevronDown, Store } from 'lucide-react';
+
+const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
 import { useLang, fmtDate, StatCard, Badge } from '../shared.jsx';
 
 function PartnersTab({ users = [], session }) {
@@ -147,6 +149,20 @@ function PartnersTab({ users = [], session }) {
     } catch { alert(p.saveFailed); }
   }
 
+  const [provisioningId, setProvisioningId] = useState(null);
+
+  async function provisionGcnStore(id) {
+    setProvisioningId(id);
+    try {
+      await axios.post(`/api/partners/${id}/gcn-provision`);
+      await load();
+    } catch (err) {
+      alert(err?.response?.data?.error || p.saveFailed);
+    } finally {
+      setProvisioningId(null);
+    }
+  }
+
   async function saveCommission() {
     if (!commForm.partner_id || !commForm.source_type || !commForm.amount_cny) { setCommError(p.saveFailed); return; }
     setCommBusy(true); setCommError('');
@@ -228,6 +244,16 @@ function PartnersTab({ users = [], session }) {
                       <button className="icon-btn" title={p.editPartner} onClick={() => openEdit(pt)}><Pencil size={14} /></button>
                       {pt.status !== 'inactive' &&
                         <button className="icon-btn" title={p.deactivatePartner} onClick={() => deactivatePartner(pt.id)}><Trash2 size={14} /></button>}
+                      {GCN_LINKED_CHANNEL_KEYS.has(pt.channel_key) && (
+                        pt.gcn_partner_id
+                          ? <Badge color="green" title={p.gcnProvisioned}>{p.gcnProvisioned}</Badge>
+                          : <button
+                              className="icon-btn"
+                              title={p.provisionGcnStore}
+                              disabled={pt.status !== 'active' || provisioningId === pt.id}
+                              onClick={() => provisionGcnStore(pt.id)}
+                            ><Store size={14} /></button>
+                      )}
                     </div>
                   </td>
                 </tr>

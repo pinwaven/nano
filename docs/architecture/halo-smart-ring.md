@@ -4,6 +4,8 @@
 
 This document covers the full BLE protocol of the X3/X6/X9/V4 hardware family (product name: Halo) and its integration in `src/mini/nano-miniapp/utils/wearable/halo/`. Source material: reverse-engineered Android SDK in `temp/x3/` (X3/X6) — protocol confirmed identical for X9 and the V4 band; no separate SDK dump exists for those yet.
 
+> **Related device:** V8, a smart band from the same hardware team, is a close protocol relative (same GATT UUIDs, same frame format, ~20 shared opcodes) but is CLI-only so far — no miniapp adapter yet. See [`v8-smart-band.md`](v8-smart-band.md), particularly its §1 for exactly where the two protocols diverge.
+
 ---
 
 ## 1. BLE GATT Structure

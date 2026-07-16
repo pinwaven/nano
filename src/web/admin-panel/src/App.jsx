@@ -124,6 +124,17 @@ function AdminPanel({ session, onLogout }) {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Channel-scoped admins locked into a GCN-linked channel see this tab's real content —
+  // GCN's own admin console (GcnInventoryEmbed, see InventoryTab.jsx) — so the nav label
+  // should say "GCN", not "Inventory" (which is inert for them). Superadmins switch between
+  // channels inside the tab itself, so there's no single "current channel" to key off here —
+  // their label stays generic.
+  const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
+  const currentChannel = (data.channels || []).find(c => String(c.id) === String(session?.channelId));
+  const inventoryLabel = !isSuperadmin && GCN_LINKED_CHANNEL_KEYS.has(currentChannel?.key_name)
+    ? 'GCN'
+    : t.nav.inventory;
+
   const NAV = [
     { id: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
     { id: 'channels',  label: t.nav.channels,   icon: Building2   },
@@ -131,7 +142,7 @@ function AdminPanel({ session, onLogout }) {
     { id: 'coaches',  label: t.nav.coaches,  icon: UserCog     },
     { id: 'dots',     label: t.nav.dots,     icon: Droplets    },
     { id: 'store',     label: t.nav.store,      icon: ShoppingBag },
-    { id: 'inventory', label: t.nav.inventory,  icon: Archive     },
+    { id: 'inventory', label: inventoryLabel,  icon: Archive     },
     { id: 'hardware',       label: t.nav.hardware,      icon: Cpu    },
     { id: 'invites',  label: t.nav.invites,  icon: Tag         },
     { id: 'rewards',   label: t.nav.rewards,   icon: Coins          },
@@ -162,6 +173,8 @@ function AdminPanel({ session, onLogout }) {
   const defaultTab = 'dashboard';
   const [tab, setTab] = useState(defaultTab);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isGcnEmbedTab = tab === 'inventory' && !isSuperadmin && GCN_LINKED_CHANNEL_KEYS.has(currentChannel?.key_name);
+  const topbarLabel = isGcnEmbedTab ? 'GCN : Guardian Chain Network' : NAV.find(n => n.id === tab)?.label;
 
   const handleNavClick = (id) => { setTab(id); setSidebarOpen(false); };
 
@@ -204,13 +217,22 @@ function AdminPanel({ session, onLogout }) {
           <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menu">
             <span /><span /><span />
           </button>
-          <div className="topbar-title">{NAV.find(n => n.id === tab)?.label}</div>
+          <div className="topbar-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isGcnEmbedTab && session?.channelLogo && (
+              <img
+                src={session.channelLogo}
+                alt={session.channelName || 'Aeviva'}
+                style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }}
+              />
+            )}
+            {topbarLabel}
+          </div>
           <button className="refresh-btn" onClick={fetchData} disabled={loading}>
             <RefreshCcw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
             {loading ? t.topbar.loading : t.topbar.refresh}
           </button>
         </header>
-        <div className="content">
+        <div className={`content${isGcnEmbedTab ? ' content--full-bleed' : ''}`}>
           {tab === 'dashboard' && <DashboardTab users={data.users} coaches={data.coaches} devices={data.kinoDevices} batches={data.chipBatches} orders={data.orders} tickets={data.tickets} session={session} isSuperadmin={isSuperadmin} onNavigate={setTab} />}
           {tab === 'users'    && <UsersTab    users={data.users} coaches={data.coaches} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}
           {tab === 'coaches'  && <CoachTab    coaches={data.coaches} users={data.users} channels={data.channels} session={session} isCmsAdmin={isCmsAdmin} onRefresh={fetchData} />}

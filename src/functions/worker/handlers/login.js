@@ -718,6 +718,68 @@ async function handleExchangeWebviewToken(body) {
     }
 }
 
+// ── Admin webview token (web admin panel → GCN admin console SSO handoff) ────
+//
+// Mirrors handlePostWebviewToken/handleExchangeWebviewToken above, but for the
+// Inventory tab's embedded GCN console rather than a miniapp consumer webview.
+// Gating is channel-based, not role-based: any channel with a GCN sector (aeviva
+// today) can be bridged, for either a superadmin or that channel's own admin.
+const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
+
+async function handlePostAdminWebviewToken(body, adminCtx) {
+    try {
+        let channelId;
+        if (adminCtx.role === 'channel') {
+            // Real per-account identity — ignore any channel_id the client sent.
+            channelId = adminCtx.channelId;
+        } else if (adminCtx.role === 'superadmin') {
+            channelId = body?.channel_id;
+            if (!channelId) return { success: false, error: 'channel_id is required' };
+        } else {
+            return { success: false, error: 'Unauthorized', statusCode: 403 };
+        }
+
+        const chRes = await pool.query('SELECT key_name FROM channels WHERE id = $1', [channelId]);
+        const keyName = chRes.rows[0]?.key_name;
+        if (!keyName || !GCN_LINKED_CHANNEL_KEYS.has(keyName)) {
+            return { success: false, error: 'Channel is not GCN-linked', statusCode: 403 };
+        }
+
+        const token = require('crypto').randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 60_000);
+        await pool.query(
+            `INSERT INTO admin_webview_tokens (token, admin_role, admin_account_id, channel_id, expires_at)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [token, adminCtx.role, adminCtx.accountId ?? null, channelId, expiresAt]
+        );
+
+        return { success: true, wvt: token, expires_in: 60 };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleExchangeAdminWebviewToken(body) {
+    try {
+        const { wvt } = body || {};
+        if (!wvt) return { success: false, error: 'wvt is required' };
+
+        const { rows } = await pool.query(
+            `UPDATE admin_webview_tokens
+             SET used = TRUE
+             WHERE token = $1 AND used = FALSE AND expires_at > NOW()
+             RETURNING admin_role, admin_account_id, channel_id`,
+            [wvt]
+        );
+        if (rows.length === 0) return { success: false, error: 'Invalid or expired token' };
+
+        const { admin_role, admin_account_id, channel_id } = rows[0];
+        return { success: true, admin_role, admin_account_id, channel_id };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 // ── QR Login (web app QR → miniapp scan → auto-login) ────────────────────────
 //
 // Flow:
@@ -847,6 +909,8 @@ module.exports = {
     handleGetMyReferrals,
     handlePostWebviewToken,
     handleExchangeWebviewToken,
+    handlePostAdminWebviewToken,
+    handleExchangeAdminWebviewToken,
     handlePostQrLoginInit,
     handleGetQrLoginStatus,
     handlePostQrLoginConfirm,

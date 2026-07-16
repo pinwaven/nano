@@ -147,6 +147,10 @@ body {
 
 .content { flex: 1; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 20px; }
 
+/* Full-bleed variant for embedded surfaces (e.g. the GCN console iframe) that should fill
+   the content area edge-to-edge instead of sitting inside the normal page padding. */
+.content--full-bleed { padding: 0; gap: 0; }
+
 /* ── Stat cards ── */
 .stat-row { display: flex; gap: 16px; flex-shrink: 0; }
 

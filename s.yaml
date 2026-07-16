@@ -81,6 +81,9 @@ resources:
         WX_SECRET_WAVEN: ${env(WX_SECRET_WAVEN)}
         WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
+        GCN_API_BASE_URL: "https://gcn-dev.fros.cc"
+        GCN_SERVICE_TOKEN: ${env(GCN_SERVICE_TOKEN)}
         OSS_REGION: "oss-cn-shanghai"
         OSS_BUCKET: "waven-nano"
         OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}

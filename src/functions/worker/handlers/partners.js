@@ -1,6 +1,13 @@
 const { pool } = require('../lib/db');
 const { requirePermission, verifySubchannelOwnership } = require('../lib/auth');
 const { recordReferralCommission, recordSalesCommission, generatePartnerPayouts, getCommissionRules, resolveRate } = require('../lib/partnerCommissions');
+const { gcnFetch } = require('../lib/gcnClient');
+
+// Channels whose commerce (store creation, sales, shipping) is delegated to GCN — mirrors
+// GCN_LINKED_CHANNEL_KEYS in handlers/login.js (kept separate/duplicated intentionally,
+// same pattern GCN itself uses for its nanoClient.js copies — not worth a shared-module
+// coupling for one small constant).
+const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
 
 // ── Partner system handlers ──────────────────────────────────────────────────
 
@@ -16,7 +23,7 @@ async function handleGetPartners(query, adminCtx) {
         const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
         const { rows } = await pool.query(`
             SELECT p.*,
-                   ch.name AS channel_name,
+                   ch.name AS channel_name, ch.key_name AS channel_key,
                    up.real_name AS upline_name, up.tier AS upline_tier,
                    COALESCE(comm.total_commissions, 0) AS total_commissions_cny
             FROM partners p
@@ -124,6 +131,49 @@ async function handlePostPartnerSale(body) {
             [partner_id]
         );
         return { success: true, commission: rows[0] || null };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// POST /api/partners/:id/gcn-provision
+// Explicit action (nano admin panel button) that provisions this partner a GCN store —
+// replaces the old implicit "GCN creates it on first login" flow, so store creation is an
+// intentional admin action rather than a side effect of a partner's first GCN login. Only
+// meaningful for partners in a GCN-linked channel. Stores the returned GCN partner_id back
+// on partners.gcn_partner_id so the admin UI can show provisioning status.
+async function handlePostPartnerGcnProvision(partnerId) {
+    if (!partnerId) return { success: false, error: 'partner id required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query(`
+            SELECT p.id, p.tier, p.real_name, p.phone, p.status, p.gcn_partner_id, ch.key_name AS channel_key
+            FROM partners p
+            LEFT JOIN channels ch ON ch.id = p.channel_id
+            WHERE p.id = $1
+        `, [partnerId]);
+        const partner = rows[0];
+        if (!partner) return { success: false, error: 'Partner not found', statusCode: 404 };
+        if (!GCN_LINKED_CHANNEL_KEYS.has(partner.channel_key)) {
+            return { success: false, error: 'Partner is not in a GCN-linked channel', statusCode: 400 };
+        }
+        if (partner.status !== 'active') {
+            return { success: false, error: 'Partner must be active before provisioning a GCN store', statusCode: 400 };
+        }
+
+        const result = await gcnFetch('/api/auth/partners/nano/provision', {
+            method: 'POST',
+            body: {
+                nano_partner_id: partner.id,
+                phone: partner.phone,
+                tier: partner.tier,
+                real_name: partner.real_name,
+                sector_id: 'aeviva',
+            },
+        });
+
+        await pool.query(`UPDATE partners SET gcn_partner_id = $1, updated_at = NOW() WHERE id = $2`, [result.partner_id, partnerId]);
+        return { success: true, gcn_partner_id: result.partner_id };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -848,6 +898,7 @@ module.exports = {
     handleGetPartner,
     handleGetPartnerByPhone,
     handlePostPartner,
+    handlePostPartnerGcnProvision,
     handlePostPartnerSale,
     handlePutPartner,
     handleDeletePartner,

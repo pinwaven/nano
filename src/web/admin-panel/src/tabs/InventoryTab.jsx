@@ -6,6 +6,13 @@ import {
   Image as ImageIcon, Eye, Upload, Sparkles,
 } from 'lucide-react';
 import { useLang, fmt, fmtDate, Badge, StatCard } from '../shared.jsx';
+import GcnInventoryEmbed from './GcnInventoryEmbed.jsx';
+
+// Channels whose SKU/inventory/shipping are managed entirely in GCN (see CLAUDE.md
+// §19) — kept as a literal set rather than a per-channel config flag since GCN
+// integration is currently a single sector, matching the gate already established
+// for the aeviva miniapp Store tab.
+const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
 
 // ── uploadToOSS helper ────────────────────────────────────────────────────────
 
@@ -1064,6 +1071,12 @@ export default function InventoryTab({ channels, session, isSuperadmin }) {
   const [modal, setModal] = useState(null);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
 
+  const selectedChannel = channels.find(c => String(c.id) === String(selectedChannelId));
+  // Channels with a GCN sector manage their own SKU/inventory/shipping entirely in
+  // GCN — nano's native inventory UI is inert for them (see CLAUDE.md §19). Applies
+  // to whoever is viewing that channel here, superadmin or the channel's own admin.
+  const isGcnLinked = GCN_LINKED_CHANNEL_KEYS.has(selectedChannel?.key_name);
+
   useEffect(() => {
     if (isSuperadmin && !selectedChannelId && channels.length) {
       setSelectedChannelId(String(channels[0].id));
@@ -1097,7 +1110,10 @@ export default function InventoryTab({ channels, session, isSuperadmin }) {
 
   useEffect(() => { fetchWarehouses(); }, [fetchWarehouses]);
 
-  useEffect(() => { fetchItems(selectedChannelId); }, [selectedChannelId, fetchItems]);
+  useEffect(() => {
+    if (isGcnLinked) return;
+    fetchItems(selectedChannelId);
+  }, [selectedChannelId, fetchItems, isGcnLinked]);
 
   const closeAndRefresh = () => { setModal(null); fetchItems(selectedChannelId); };
 
@@ -1113,8 +1129,6 @@ export default function InventoryTab({ channels, session, isSuperadmin }) {
   const virtualCount  = items.filter(i => i.item_type === 'virtual').length;
   const pendingOrders = orders.filter(o => o.status === 'pending').length;
   const revenue       = orders.filter(o => o.status === 'delivered').reduce((s, o) => s + Number(o.price_cny) * o.quantity, 0);
-
-  const selectedChannel = channels.find(c => String(c.id) === String(selectedChannelId));
 
   return (
     <>
@@ -1148,6 +1162,8 @@ export default function InventoryTab({ channels, session, isSuperadmin }) {
           <Archive size={40} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.4 }} />
           <p>{ti.selectChannel}</p>
         </div>
+      ) : isGcnLinked ? (
+        <GcnInventoryEmbed channelId={selectedChannelId} />
       ) : (
         <>
           <div className="stat-row">

@@ -290,6 +290,7 @@ const T = {
     inventory: {
       selectChannel: 'Select a channel to manage its inventory',
       selectChannelOption: '— Select Channel —',
+      gcnLoadFailed: 'Failed to load GCN dashboard — please try again',
       addItem: 'Add Item', editItem: 'Edit Item', deleteItem: 'Delete Item',
       noItems: 'No inventory items yet', noChannel: 'No channels available',
       physical: 'Physical', virtual: 'Virtual',
@@ -381,6 +382,7 @@ const T = {
     },
     partners: {
       addPartner: 'Add Partner', editPartner: 'Edit Partner', deactivatePartner: 'Deactivate',
+      provisionGcnStore: 'Provision GCN Store', gcnProvisioned: 'GCN store provisioned',
       partnersTab: 'Partners', commissionsTab: 'Commissions', payoutsTab: 'Payouts', rulesTab: 'Commission Rules',
       realName: 'Real Name *', phone: 'Phone *', tier: 'Tier *', entryFee: 'Entry Fee (¥) *',
       channel: 'Channel', referredBy: 'Referred By', contractedAt: 'Contracted', status: 'Status', notes: 'Notes',
@@ -1070,6 +1072,7 @@ const T = {
     inventory: {
       selectChannel: '请选择渠道以管理库存',
       selectChannelOption: '— 请选择渠道 —',
+      gcnLoadFailed: '加载 GCN 控制台失败，请重试',
       addItem: '添加商品', editItem: '编辑商品', deleteItem: '删除商品',
       noItems: '暂无库存商品', noChannel: '暂无渠道',
       physical: '实体商品', virtual: '虚拟商品',
@@ -1161,6 +1164,7 @@ const T = {
     },
     partners: {
       addPartner: '新增合伙人', editPartner: '编辑合伙人', deactivatePartner: '停用',
+      provisionGcnStore: '开通 GCN 店铺', gcnProvisioned: 'GCN 店铺已开通',
       partnersTab: '合伙人列表', commissionsTab: '佣金记录', payoutsTab: '结算单', rulesTab: '佣金规则',
       realName: '真实姓名 *', phone: '手机号 *', tier: '级别 *', entryFee: '入伙费 (¥) *',
       channel: '渠道', referredBy: '推荐人', contractedAt: '签约时间', status: '状态', notes: '备注',
