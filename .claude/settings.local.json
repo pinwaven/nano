@@ -1,4 +1,7 @@
 {
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": false
+  },
   "permissions": {
     "allow": [
       "Bash(psql *)",
@@ -14,7 +17,9 @@
       "WebSearch",
       "Bash(brew --version)",
       "Bash(gh auth *)",
-      "Bash(jobs)"
+      "Bash(jobs)",
+      "Skill(update-config)",
+      "mcp__claude-in-chrome__get_page_text"
     ]
   }
 }

@@ -202,108 +202,7 @@ Kino chip scan
 
 ## 12. Aliyun Function Compute 3.0 (FC 3.0) Runtime Behavior
 
-When writing or modifying FC handler code, use these facts. They were confirmed by live debugging against the deployed function.
-
-### Handler invocation model
-
-FC 3.0 invokes HTTP trigger functions as **event functions**, not as Node.js HTTP server functions. The handler receives:
-
-```
-exports.handler = async (req, resp, context) => { ... }
-```
-
-- `req` — a plain JS object (already parsed from the raw event Buffer). It is **not** a Node.js `http.IncomingMessage`.
-- `resp` — the FC context object. It does **not** have `.send()`, `.setStatusCode()`, or `.setHeader()`. Do not test for `resp.send` to detect HTTP mode.
-- Response is sent by **returning** a payload object (see below), not by calling `resp`.
-
-### Event object shape (FC 3.0 HTTP trigger)
-
-```js
-{
-  version: "v1",
-  rawPath: "/notifications",          // ← URL path. NOT event.path
-  headers: { "Host": "...", ... },
-  queryParameters: { openid: "xxx" }, // ← query string. NOT queryStringParameters
-  body: "",                           // base64-encoded if isBase64Encoded: true
-  isBase64Encoded: true,
-  requestContext: {
-    accountId: "...",
-    domainName: "...",
-    http: {
-      method: "GET",                  // ← HTTP method lives here
-      ...
-    },
-    ...
-  }
-}
-```
-
-Key differences from AWS Lambda / FC 2.0 / Express conventions:
-
-| Correct (FC 3.0)                     | Wrong (will be undefined)                                       |
-| ------------------------------------ | --------------------------------------------------------------- |
-| `event.rawPath`                    | `event.path`, `req.path`, `req.url`                       |
-| `event.queryParameters`            | `event.queryStringParameters`, `req.queries`, `req.query` |
-| `event.requestContext.http.method` | `event.httpMethod`, `event.method`, `req.method`          |
-| `event.headers`                    | `req.headers`                                                 |
-
-### Canonical way to extract path, method, query in a handler
-
-```js
-exports.handler = async (req, resp, context) => {
-    const event = req; // req IS the event object in FC 3.0
- 
-    const path    = event.rawPath || '';
-    const method  = event.requestContext?.http?.method || 'POST';
-    const query   = event.queryParameters || {};
- 
-    let body = event.body || '';
-    if (event.isBase64Encoded && body) {
-        body = Buffer.from(body, 'base64').toString('utf8');
-    }
-    let parsedBody = {};
-    if (body) {
-        try { parsedBody = JSON.parse(body); } catch (e) {}
-    }
- 
-    // ... routing logic ...
- 
-    // Send response by returning a payload object
-    return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(result),
-        isBase64Encoded: false,
-    };
-};
-```
-
-### Response format
-
-Return a plain object — do NOT call `resp.send()`:
-
-```js
-return {
-    statusCode: 200,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(result),
-    isBase64Encoded: false,
-};
-```
-
-### Deployment
-
-- **Always source `.env` before deploying** — `s.yaml` uses `${env(VAR)}` references for all secrets (DB_PASS, DASHSCOPE_API_KEY, WX_SECRET, API_BEARER_TOKEN, OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET). Without sourcing, those vars resolve to empty strings and the deployed function breaks.
-- Preferred commands (handle sourcing automatically):
-  - `npm run deploy:worker` — deploys only the worker
-  - `npm run deploy:dispatcher` — deploys only the dispatcher
-- Manual equivalent: `source .env && s worker deploy -y`
-- `s deploy` — deploys all functions; prefix with `source .env &&` if used directly
-- FC 3.0 does not hot-reload; each deploy takes ~15 s before changes are live
-
-### Local dev vs FC 3.0 parity
-
-`scripts/local-dev.js` bridges Express → FC handler format by wrapping `req.body` in a Buffer and providing a minimal `resp` shim (`setStatusCode`, `setHeader`, `send`). Keep this shim in sync with any response API changes in the worker handler.
+FC 3.0's HTTP-trigger handler invocation model, event object shape, and response format differ from Express/Lambda conventions in ways that are easy to get wrong. Full reference (confirmed by live debugging): `fc3-handler-reference` skill — load it before writing or modifying an FC handler.
 
 ## 13. Kino Hardware System
 
@@ -455,47 +354,18 @@ const biomarkers = { ...latestBio?.data?.validated, ...latestBio?.data?.actual }
 
 `data.actual` is for audit/debug purposes only. Do not use it to override `data.validated` in any user-facing output.
 
-## 18. Wearable Ring System — Halo Only
+## 18. Wearable Ring System — Halo + V8 Only
 
-**As of 2026-07, only the Halo ring series (`brand === 'halo'`) is actively supported.** Halo is our product name for the X3/X6/X9/V4 hardware family — X3, X6, and X9 are rings, V4 is a wrist-worn band; all four share the identical BLE protocol (confirmed, not assumed). BLE-advertised names literally start with these prefixes (`HALO_NAME_PREFIXES` in `halo/protocol.js`) — that's the manufacturer's own model designation, not something we control or rename. Colmi and Aizo adapters (`src/mini/nano-miniapp/utils/wearable/colmi/`, `.../aizo/`) still exist in the codebase and must keep working for any users already bound to them, but **do not extend, "improve," or bug-fix their protocol/parsing code** — no new features, no refactors, no reuse-driven cleanups that touch `colmi/` or `aizo/`. All new wearable work (protocol changes, new data types, sync/backend changes, HealthTab UI) targets Halo only.
+**As of 2026-07, only Halo (`brand === 'halo'`) and V8 (`brand === 'v8'`) are actively supported.** Halo is our product name for the X3/X6/X9/V4 hardware family — X3, X6, and X9 are rings, V4 is a wrist-worn band; all four share the identical BLE protocol (confirmed, not assumed). V8 is a smart band from the same hardware team — a close protocol relative of Halo (same GATT UUIDs, same frame format, ~20 shared opcodes) but not identical (e.g. opcode `0x57` means something different on each) — see `docs/architecture/v8-smart-band.md`. BLE-advertised names literally start with the manufacturer's own model prefixes (`HALO_NAME_PREFIXES` in `halo/protocol.js`, `V8_NAME_PREFIXES` in `v8/protocol.js`) — not something we control or rename. Colmi and Aizo adapters (`src/mini/nano-miniapp/utils/wearable/colmi/`, `.../aizo/`) still exist in the codebase and must keep working for any users already bound to them, but **do not extend, "improve," or bug-fix their protocol/parsing code** — no new features, no refactors, no reuse-driven cleanups that touch `colmi/` or `aizo/`. All new wearable work (protocol changes, new data types, sync/backend changes, HealthTab UI) targets Halo and V8 only.
 
 - `'x3'` is a legacy brand value from before the X3→Halo rename (2026-07) — still present in local storage / server rows for anyone bound before the rename shipped. `createWearable()` and the miniapp's `_normalizeBrand()` helper accept it as an alias for `'halo'`; don't remove that compat path without a data migration for existing bindings.
 - Canonical Halo protocol + BLE implementation: `src/mini/nano-miniapp/utils/wearable/halo/` (`protocol.js` for packet builders/BCD parsing, `index.js` for the BLE-driven `HaloRing` class — also exports pure parsing helpers as `HaloRing.parsers` for reuse outside the wx.* BLE stack). The literal hardware name prefixes (`HALO_NAME_PREFIXES = ['X3', 'X6', 'X9', 'V4']`) must stay as-is — only the internal identifiers around them were renamed. Brand detection during scan (`user-health.js`) checks against this array directly rather than hardcoding individual prefixes, so adding a future model line is a one-line change there.
-- Standalone debugging CLI for the Halo protocol (Node/noble, no phone required): `tools/halo/` — run with no arguments to dump every stored data type from a nearby ring. See its README for usage.
-- The same CLI (`--device v8`) also supports **V8**, a smart band from the same hardware team as Halo, protocol-ported from vendor SDK source and confirmed against real hardware — but **CLI-only, no miniapp adapter exists yet** ("Halo only" above still describes production/miniapp support). Full protocol reference, including exactly where V8 diverges from Halo (e.g. opcode `0x57` means something different on each), is in `docs/architecture/v8-smart-band.md`.
+- Standalone debugging CLI for the Halo protocol (Node/noble, no phone required): `tools/halo/` — run with no arguments to dump every stored data type from a nearby ring. See its README for usage. `--device v8` targets V8 instead.
+- V8 adapter: `src/mini/nano-miniapp/utils/wearable/v8/` (`protocol.js` + `index.js` for the `V8Band` class), registered as brand `'v8'` in `utils/wearable/index.js`. Wired into `user-health.js`'s bind/sync/interval-settings flow alongside Halo via a shared `_hasIntervalSettings(brand)` helper — their sync shapes are identical so this reuses Halo's code paths rather than duplicating them. Some fields are deliberately left `null` rather than guessed — notably sleep stage (deep/light/rem/awake) breakdown, since V8's raw stage codes don't match Halo's confirmed enum and mislabeling would be worse than a gap. Full protocol reference and the complete list of what didn't carry over 1:1 from Halo: `docs/architecture/v8-smart-band.md` §6–7.
 - `HaloRing._stream()` resolves with whatever data has accumulated on timeout rather than rejecting — rings with a large unsynced backlog (sleep, HR log, temperature history) can take well over the 8–15s per-command timeout to fully stream. Do not revert this to a hard reject; every caller already expects partial results over a full failure.
-- Server-side ring binding (`users.wearable_brand/wearable_mac/wearable_name/wearable_bound_at`, migration `migration_wearable_binding.sql`) is brand-agnostic in the DB/API layer, but in practice `wearable_mac` is only ever populated for Halo (the only brand implementing `getMac()`).
+- Server-side ring binding (`users.wearable_brand/wearable_mac/wearable_name/wearable_bound_at`, migration `migration_wearable_binding.sql`) is brand-agnostic in the DB/API layer, but in practice `wearable_mac` is only populated for Halo and V8 (the only brands implementing `getMac()`).
 - Full Halo BLE protocol reference: `docs/architecture/halo-smart-ring.md`. The Colmi-focused `docs/architecture/wearable-system.md` predates Halo/Aizo and is kept for historical/OEM-transition context only — don't treat it as current guidance for new work.
 
 ## 19. GCN Integration (Aeviva Partner Storefront)
 
-The `aeviva` nano channel has a partner/distributor program (`docs/architecture/partner-system.md`, tables `partners`/`partner_commissions`) whose storefront, wholesale/resale inventory, and manual-QR checkout are implemented in a **separate sibling repo**, `/Users/pin/waven/gcn` (GCN — see its own `CLAUDE.md`). Nano remains the single source of truth for partner identity, MLM tier, referral tree, and MLM referral/team-income commission math (this is structural — that data only exists in nano's referral graph, it does not and should not live in GCN). GCN owns its own storefronts (`partners`/`referral_codes`/`partner_inventory`), its own order/commerce engine, and — since 2026-07-16 — its own parallel, independently-configurable platform-economics settlement/dividend rules (`sector_settlement_rules`/`sector_dividend_tiers`, seeded for aeviva alongside tea). GCN reports paid aeviva sales back into nano's MLM engine via a durable outbox, but GCN's own settlement rules are a separate, additive revenue split GCN administrators configure entirely within GCN — not something nano computes or needs to know about.
-
-**GCN store provisioning is explicit, not login-implicit.** A GCN `partners` row for an aeviva partner is created only via nano's admin panel ("Provision GCN Store" button in the Partners tab, gated to GCN-linked channels) calling `POST /api/auth/partners/nano/provision` on GCN — GCN's own OTP login (`handleOTPVerify`'s aeviva branch) no longer calls nano or creates/mutates a partner row itself; it only checks one was already provisioned, rejecting login otherwise. This replaced the old flow where GCN called nano's `by-phone` lookup and silently created/refreshed the partner row on every login attempt.
-
-**Before changing any of the following, check GCN's usage first** (`grep -rn <endpoint> /Users/pin/waven/gcn/src/functions/`) — these are server-to-server contracts GCN depends on, not just internal nano routes:
-
-| Nano endpoint | Called by (GCN) | Purpose |
-|---|---|---|
-| `POST /api/webview-token` | miniapp (`appview.js`) | mints a one-time `wvt` before opening the aeviva GCN webview |
-| `POST /api/exchange-webview-token` | `gcn/src/functions/auth/index.js` `handleNanoSSO` | exchanges `wvt` → nano user identity (phone) for GCN's consumer SSO bridge |
-| `POST /api/partner-sales` | `gcn/src/functions/worker/index.js` `handleCommissionReport`, draining the `commission_reports` outbox (written by `mall/index.js`'s `confirm-payment`, no longer an inline call) | reports a completed GCN sale, triggering nano's `recordSalesCommission()` rate lookup + upline fan-out |
-| `POST /api/exchange-admin-webview-token` | `gcn/src/functions/auth/index.js` `handleNanoAdminSSO` | exchanges an admin-panel `wvt` → `{ admin_role, admin_account_id, channel_id }` for GCN's **admin** SSO bridge (distinct from the consumer bridge above) |
-
-These three are gated by a **scoped** nano<->GCN service token (`worker/index.js`'s `GCN_ALLOWED_PATHS` allowlist, env var `GCN_API_TOKEN` on nano's side / `NANO_API_TOKEN` on GCN's — same value, different var names per side) — no longer nano's superadmin `API_BEARER_TOKEN`, which GCN previously held unscoped access via. The reverse direction (nano calling GCN's new provisioning endpoint) uses a separate scoped credential, `GCN_SERVICE_TOKEN` (nano) / `NANO_SERVICE_TOKEN` (GCN). `GET /api/partners/by-phone/:phone?channel=aeviva` still exists in nano (`handlers/partners.js`) but is no longer part of the cross-repo contract — nano's own provisioning handler reads its local `partners` table directly instead of calling its own API.
-
-GCN sets its own `partners.partner_type` directly to the real nano tier key (`light_entrepreneur`/`leader_partner`/`operations_center`, already-seeded `partner_types` rows) at provisioning time — it no longer hardcodes `partner_type='store'` with the real tier stashed in `metadata.nano_tier`. Tier changes on nano's side take effect on the partner's next explicit re-provisioning (not automatically on login, since login no longer touches nano).
-
-### Web Admin Panel entry point: GCN-linked channels' Inventory tab
-
-Channels with a GCN sector (aeviva/aeviva-china today) have their **wholesale/retail product commerce** — product/SKU catalog, per-partner stock (`products`/`skus`/`partner_inventory`), and order shipping — run entirely in GCN, genuinely independent of nano: suppliers create and stock products via their own GCN login (`dashboard-supplier.html`), and consumers buy through a partner's GCN storefront link, not through nano. Nano's own Inventory tab (`src/web/admin-panel/src/tabs/InventoryTab.jsx`) is inert for these channels' commerce — when the channel currently in view there (superadmin's channel-selector pick, or a channel-scoped admin's locked channel) is GCN-linked, the tab renders `GcnInventoryEmbed.jsx` — an iframe to `aeviva/dashboard-admin.html` — instead of the native items/SKUs/orders/warehouses sub-tabs. Gating is channel-based, not role-based: a superadmin viewing aeviva sees the same embed a locked-in aeviva channel admin does. Inside that embed, admin-role cross-partner product/stock CRUD and order shipping/tracking are real GCN features (`gcn/src/functions/mall/index.js`'s `handleAdminProductList`/`handleAdminProductCreate`/`handleAdminInventoryAdjust`/`handleAdminOrderList`/`handleOrderShip`/`handleOrderComplete`) — not a nano proxy. GCN products can have parent-child SKU variants (size/color/etc.), a feature ported from nano's own SKU variant system (`migration_sku_variants.sql`) into GCN's `mall/index.js` and admin/supplier/consumer UI — see GCN `CLAUDE.md`'s "Parent-Child SKU System" section; nano's own SKU variants are unrelated/unaffected by this port.
-
-For a channel-scoped admin (not superadmin) locked into a GCN-linked channel, this nav item is relabeled **"GCN"** instead of "Inventory" (`App.jsx`'s `inventoryLabel`, keyed off `session.channelId` → the channel's `key_name` — superadmin's label stays generic since their in-tab channel selector isn't known at the nav level). The same condition (`isGcnEmbedTab`) also strips `.content`'s normal page padding/border-radius (`content--full-bleed` class in `style.css`) so the iframe fills the panel edge-to-edge instead of floating in a padded box, and adds the Aeviva channel logo (`session.channelLogo`) to nano's own topbar next to the "GCN" title. The iframe itself uses `flex: 1` (not a fixed `calc(100vh - Npx)`) to fill available height — a hardcoded offset drifts out of sync with actual chrome height and leaves blank space. GCN's own side of this — collapsing its left sidebar into a top bar when it detects it's iframed, hiding its own logo/sign-out since nano's chrome already covers that — is documented in GCN `CLAUDE.md`'s "Embedded mode" section.
-
-`dashboard-admin.html`'s "商城商品" (Store Products) panel — the same GCN-linked-channel Inventory tab embed above — used to be a read-only mirror of nano's own **Waven Dots** cartridge line (§14, `channel_inventory_items`, via a `handleAdminNanoStoreItems` proxy to nano's `/api/store-items/by-channel`). That proxy has been removed (2026-07-16): "商城商品" is now just the label for the same GCN-native `handleAdminProductList`/create/stock-adjust surface described above — there is no nano-sourced product data anywhere in `dashboard-admin.html` anymore. Waven Dots (§14) remain a distinct, nano-owned physical product line sold through nano's own miniapp/native store — unrelated to aeviva's GCN commerce, and no longer surfaced in GCN's admin console at all.
-
-The same embed also has a "结算规则" (Settlement Rules) panel (`GET`/`PUT /api/mall/settlement/rules`, `handleSettlementRules`/`handlePutSettlementRules` in `gcn/src/functions/mall/index.js`) — GCN's own configurable platform-economics split (supplier/store/county/regional/ecosystem pool percentages + dividend tiers), admin-only, entirely GCN-native. This is **not** nano's MLM commission config (that stays in nano's Partners tab, `partner_commission_rules`) — it's a separate, parallel revenue split GCN runs on its own commerce, previously only seeded for the `tea` sector and deliberately left unseeded for aeviva.
-
-This uses a **separate** SSO bridge from the consumer one above (`POST /api/admin-webview-token` → `POST /api/exchange-admin-webview-token`, `src/functions/worker/handlers/login.js`), because nano's web admin panel session model differs from the miniapp's: a superadmin login returns the literal `API_BEARER_TOKEN` as its bearer (no per-user identity — every superadmin request looks identical server-side), while a channel-scoped admin's `ch.`-prefixed token does carry a real `admin_accounts.id`. GCN's `handleNanoAdminSSO` reflects this: it upserts a `users` row keyed by `nano-admin:${admin_account_id}` for a real channel admin, or the shared placeholder `nano-admin:superadmin` for the anonymous superadmin case, forcing `role='admin'` directly rather than deriving it from partner status — no `partners` row is created (an admin isn't a storefront member). Token minting itself re-validates the channel is GCN-linked server-side (`GCN_LINKED_CHANNEL_KEYS` in both `login.js` and `InventoryTab.jsx`) — the frontend gate is not trusted alone.
-
-Miniapp entry point: for aeviva-channel users, tapping the **Store tab** button (`pages/main/main.js` `switchTab`) intercepts before switching `tab`, and instead calls `_openAevivaStore()` → `openUserApp()` → `wx.navigateTo` to `pages/appview/appview.js` (generic webview launcher — mints the `wvt` itself, supports both nano-relative and absolute external URLs) → `https://gcn(-dev).fros.cc/aeviva/dashboard.html`. **Not** rendered inline inside the Store tab's own section — `<web-view>` doesn't reliably support any overlay back button (`cover-view` is only documented for `map`/`video`/`canvas`/`camera`, not `web-view`) when embedded inside `main.wxml`'s absolutely-positioned tab-switching containers; confirmed by live testing, not just platform docs. `main.wxml`'s `store-tab` section itself has no aeviva-specific branching — `tab` is simply never set to `'store'` for aeviva users, so it always renders the native dots/credits store underneath (harmlessly unused for them).
+The `aeviva` nano channel's partner storefront, wholesale/resale inventory, and manual-QR checkout live in a separate sibling repo, `/Users/pin/waven/gcn`. Nano stays the source of truth for partner identity, MLM tier, and referral/commission math; GCN owns its own commerce engine and settlement rules. Full contract — cross-repo endpoints, SSO bridges, provisioning flow, admin-panel embed, miniapp entry point: `gcn-integration` skill — load it before touching any GCN-linked endpoint, the sibling repo, or aeviva storefront/inventory code.

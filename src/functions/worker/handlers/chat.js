@@ -313,6 +313,10 @@ const BIOMARKER_LABEL_PATTERNS = [
     { key: 'IL6', re: /IL-?6/gi },
     { key: 'CD38', re: /CD38/gi },
     { key: 'GA', re: /\bGA\b|糖化白蛋白/gi },
+    // Not a Kino biomarker, but the same "<label> <number>" prose pattern applies, and it's a
+    // number the model has no precomputed-and-verified value for otherwise (see BMI precompute
+    // in handlePostChat, added after the 2026-07-16 wrong-age bug).
+    { key: 'BMI', re: /\bBMI\b/gi },
 ];
 
 // Pulls "<label> ... <number>" pairs out of free-text (label and number within ~12 chars of
@@ -351,7 +355,30 @@ function extractDateMentions(text) {
     return dates;
 }
 
-// Cross-checks any biomarker figures / dates the model actually wrote against the ground-truth
+// Pulls the patient's OWN stated age out of free-text — "73岁", "73 岁", "age 73", "73-year-old",
+// "73 years old" — deliberately scoped to a short window right after their name, because every
+// prompt template opens with "<nickname>, <age> 岁/years old" and that's the only position we can
+// trust as "the patient's age" rather than an unrelated population statistic the model cites
+// elsewhere in the reply (e.g. "60岁以上女性…" demographic trivia, which is NOT a misstatement).
+// Even though user_profile.age is handed to the model directly, raw birth-date text riding along in
+// questionnaire_context gives it material to (wrongly) re-derive age from instead of trusting the
+// given figure — this is how the 2026-07-16 wrong-age bug happened.
+function extractAgeMentions(text, nickname) {
+    const ages = [];
+    const nameIdx = nickname ? text.indexOf(nickname) : -1;
+    const window = nameIdx >= 0
+        ? text.slice(nameIdx, nameIdx + nickname.length + 20)
+        : text.slice(0, 30);
+    for (const m of window.matchAll(/(\d{1,3})\s*岁/g)) {
+        ages.push(parseInt(m[1], 10));
+    }
+    for (const m of window.matchAll(/\bage[d]?\s+(\d{1,3})\b|\b(\d{1,3})[- ]year[- ]old\b/gi)) {
+        ages.push(parseInt(m[1] || m[2], 10));
+    }
+    return ages;
+}
+
+// Cross-checks any biomarker figures / dates / age the model actually wrote against the ground-truth
 // row already fetched server-side. Only flags values the model chose to state — silence on a key
 // is fine, a wrong number or date next to a known label is not.
 function verifyBiomarkerGrounding(text, groundTruth) {
@@ -369,6 +396,13 @@ function verifyBiomarkerGrounding(text, groundTruth) {
         for (const stated of extractDateMentions(text)) {
             if (stated !== groundTruth.tested_at) {
                 mismatches.push({ key: 'tested_at', stated, actual: groundTruth.tested_at });
+            }
+        }
+    }
+    if (groundTruth.age != null) {
+        for (const stated of extractAgeMentions(text, groundTruth.nickname)) {
+            if (stated !== groundTruth.age) {
+                mismatches.push({ key: 'age', stated, actual: groundTruth.age });
             }
         }
     }
@@ -461,7 +495,12 @@ async function handlePostChat(body) {
                 [user_id]
             );
 
-            // Always fetch completed questionnaire responses — coach-collected data enriches all intents
+            // Always fetch completed questionnaire responses — coach-collected data enriches all intents.
+            // Excludes the birth-date question (save_field = 'birth_date') and the height/weight
+            // question (save_biomarker_type = 'body_composition'): those raw values are redundant with
+            // the pre-computed llmContext.user_profile.age/bmi, and having both the raw and derived
+            // figure in context lets the model re-derive age/BMI itself instead of trusting the given
+            // number — exactly how the 2026-07-16 wrong-age bug happened.
             fetches.questionnaire_responses = pool.query(
                 `SELECT q.name, q.name_zh, qq.prompt_en, qq.prompt_zh, qr.answer
                  FROM questionnaire_responses qr
@@ -469,6 +508,8 @@ async function handlePostChat(body) {
                  JOIN questionnaire_assignments qa ON qa.id = qr.assignment_id
                  JOIN questionnaires q ON q.id = qa.questionnaire_id
                  WHERE qa.user_id = $1 AND qa.status = 'completed'
+                   AND qq.save_field IS DISTINCT FROM 'birth_date'
+                   AND qq.save_biomarker_type IS DISTINCT FROM 'body_composition'
                  ORDER BY qa.completed_at ASC, qq.sort_order ASC`,
                 [user_id]
             );
@@ -490,11 +531,24 @@ async function handlePostChat(body) {
             fetchKeys.forEach((k, i) => { fetched[k] = fetchResults[i]; });
 
             const biomarkerRow = fetched.biomarker?.rows[0] || {};
+            const twinRow = fetched.health_twin?.rows[0] || null;
+            // Precompute BMI server-side (prefer a real scale/wearable reading over onboarding
+            // self-report) rather than leaving the model to derive it itself from raw height/weight —
+            // that's exactly the pattern that produced a hallucinated wrong age (2026-07-16): a
+            // derived number left ungrounded, with only raw source data for the model to (mis)compute
+            // from. See the questionnaire_responses query below, which excludes the raw height/weight
+            // answer for the same reason.
+            const heightCm = user.bio_data?.height;
+            const weightKg = twinRow?.latest_weight_kg ?? user.bio_data?.weight;
+            const bmi = twinRow?.latest_bmi != null
+                ? Math.round(twinRow.latest_bmi * 10) / 10
+                : (heightCm && weightKg ? Math.round((weightKg / ((heightCm / 100) ** 2)) * 10) / 10 : null);
             const llmContext = {
                 user_profile: {
                     nickname: user.nickname,
                     gender: user.gender,
                     age: calculateAge(user.birth_date),
+                    bmi,
                     language: user.language,
                 },
                 biomarkers: biomarkerRow.data?.validated || {},
@@ -505,7 +559,7 @@ async function handlePostChat(body) {
                 dots: fetched.dots?.rows || [],
                 plan: fetched.plan?.rows[0]?.content || null,
                 last_weight: fetched.weight?.rows[0]?.data?.actual?.weight ?? null,
-                health_twin: fetched.health_twin?.rows[0] || null,
+                health_twin: twinRow,
                 now_iso: getNowShanghai().toISO(),
                 questionnaire_context: formatQuestionnaireContext(
                     fetched.questionnaire_responses?.rows || [],
@@ -650,18 +704,30 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                 }
             }
 
-            // Grounding check: the model can still misstate biomarker figures/dates from conversation
-            // history even when correct data is right there in its own system prompt (this is exactly
-            // how the 2026-07-14 stale-data bug happened). Cross-check what it actually wrote against
-            // the ground-truth row fetched above, and retry once with an explicit correction if it drifted.
-            if (Object.keys(llmContext.biomarkers).length > 0) {
-                const groundTruth = { validated: llmContext.biomarkers, tested_at: llmContext.biomarkers_tested_at };
+            // Grounding check: the model can still misstate biomarker figures/BMI/dates/age from
+            // conversation history or from raw birth-date/height/weight text riding along in
+            // questionnaire_context, even when the correct values are right there in its own system
+            // prompt (this is exactly how the 2026-07-14 stale-data bug and the 2026-07-16 wrong-age
+            // bug happened). Cross-check what it actually wrote against the ground-truth data fetched
+            // above, and retry once with an explicit correction if it drifted.
+            const hasKnownAge = user.birth_date != null;
+            const hasKnownBmi = llmContext.user_profile.bmi != null;
+            if (Object.keys(llmContext.biomarkers).length > 0 || hasKnownAge || hasKnownBmi) {
+                const groundTruth = {
+                    validated: {
+                        ...llmContext.biomarkers,
+                        ...(hasKnownBmi ? { BMI: llmContext.user_profile.bmi } : {}),
+                    },
+                    tested_at: llmContext.biomarkers_tested_at,
+                    age: hasKnownAge ? llmContext.user_profile.age : null,
+                    nickname: llmContext.user_profile.nickname,
+                };
                 const verification = verifyBiomarkerGrounding(rawReply, groundTruth);
                 if (!verification.ok) {
                     console.log(JSON.stringify({ level: 'WARN', msg: 'biomarker_grounding_mismatch', user_id, mismatches: verification.mismatches }));
-                    const correctionPrompt = `Your previous reply stated biomarker figures and/or a test date that do not match the patient's actual record.
-Ground truth — test date: ${groundTruth.tested_at || 'unknown'}, values: ${JSON.stringify(groundTruth.validated)}.
-Rewrite your previous reply using ONLY these exact values and this exact date. Keep the same language, tone, and structure otherwise.`;
+                    const correctionPrompt = `Your previous reply stated biomarker figures, BMI, a test date, and/or the patient's age that do not match their actual record.
+Ground truth — test date: ${groundTruth.tested_at || 'unknown'}, values: ${JSON.stringify(groundTruth.validated)}, age: ${groundTruth.age ?? 'unknown'}.
+Rewrite your previous reply using ONLY these exact values, this exact date, and this exact age. Keep the same language, tone, and structure otherwise.`;
                     chatMessages.push({ role: 'assistant', content: rawReply });
                     chatMessages.push({ role: 'user', content: correctionPrompt });
                     const retryCompletion = await client.chat.completions.create({

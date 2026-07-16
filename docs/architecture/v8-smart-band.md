@@ -1,13 +1,18 @@
-# V8 Smart Band — BLE Protocol Reference (CLI validation phase)
+# V8 Smart Band — BLE Protocol Reference
 
 > **Status (2026-07-16):** V8 is a smart band from the same hardware team as
-> Halo (§CLAUDE.md §18), currently **CLI-only** — it has no adapter in the
-> miniapp (`src/mini/nano-miniapp/utils/wearable/`) yet. All code lives in
-> `tools/halo/` (`src/v8-protocol.js` + `src/v8.js`), reachable via
-> `node bin/cli.js --device v8`. Core commands (listed in §4) have been
-> confirmed against a real band, firmware `0.0.8.8`, advertised name
-> `JCV8B DBE34D`. If/when V8 gets promoted into the miniapp, these two files
-> are the porting reference — see §7.
+> Halo (§CLAUDE.md §18). Protocol validated against real hardware via the
+> `tools/halo --device v8` CLI (firmware `0.0.8.8`, advertised name
+> `JCV8B DBE34D`), then ported into the miniapp as a full `WearableDevice`
+> adapter — `src/mini/nano-miniapp/utils/wearable/v8/` (`protocol.js` +
+> `index.js`), registered as brand `'v8'` in
+> `utils/wearable/index.js`'s `createWearable()` factory and wired into
+> `components/user-health/user-health.js`'s bind/scan/sync/interval-settings
+> flow the same way Halo is. The CLI code at `tools/halo/src/v8-protocol.js` /
+> `src/v8.js` remains the standalone debugging tool (`node bin/cli.js
+> --device v8`) — it now has a sibling in production rather than being the
+> only home for this protocol. See §7 for what did and didn't carry over
+> exactly.
 
 Source material: vendor Android SDK dropped at `temp/V8_SDK/` (package
 `com.jstyle.blesdkv8`; readable Java source under
@@ -339,25 +344,51 @@ per-notification, per §3), except `0x53` which uses the 2-byte
 
 ---
 
-## 7. Path to Miniapp Integration (Not Yet Started)
+## 7. Miniapp Integration
 
-V8 has no adapter under `src/mini/nano-miniapp/utils/wearable/` — this is
-deliberate: the user wanted CLI validation against real hardware first,
-mirroring how the original Halo protocol was proven out with a live
-debugging script before being productionized into
-`utils/wearable/halo/`. If/when that happens:
+Ported from the CLI-validated `tools/halo/src/v8-protocol.js` / `src/v8.js`
+into `src/mini/nano-miniapp/utils/wearable/v8/`:
 
-- `tools/halo/src/v8-protocol.js` → port to `utils/wearable/v8/protocol.js`
-  (same shape as `utils/wearable/halo/protocol.js`).
-- `tools/halo/src/v8.js`'s `V8Client` → port to a `V8Band` class extending
-  `WearableDevice`, following `HaloRing`'s structure — including the
-  per-notification streaming model from §3, which is genuinely different
-  from `HaloRing._stream()` and should not be copy-pasted uncritically.
-- `V8_NAME_PREFIXES = ['JCV8B']` → wire into brand detection in
-  `user-health.js` alongside `HALO_NAME_PREFIXES` (see
-  `halo-smart-ring.md` §7's brand detection snippet for the pattern).
-- Close the gaps in §6 as needed by the health tab UI's requirements,
-  the same way Halo's doc §7 tracks "not yet wired into `handleSyncWearable`".
+- `protocol.js` — builders + BCD/checksum helpers only, mirroring
+  `utils/wearable/halo/protocol.js`'s shape exactly (parsers moved out, per
+  Halo's own convention of keeping protocol.js low-level).
+- `index.js` — `V8Band extends WearableDevice`, with all response parsing as
+  private `_parseXXX` helpers (mirroring `HaloRing`'s structure). Uses its
+  own `_streamRecords()` / `_streamSleepChunks()` — **not** a copy of
+  `HaloRing._stream()`, because of the per-notification reassembly
+  difference in §3.
+- Registered as brand `'v8'` in `utils/wearable/index.js`'s
+  `createWearable()` factory.
+- Wired into `components/user-health/user-health.js`: `V8_NAME_PREFIXES`
+  added to brand-detection scanning, default auto-monitoring setup on first
+  bind, and the single-phase sync branch (previously gated on
+  `brand === 'halo'`, now on a shared `_hasIntervalSettings(brand)` helper
+  covering both — their sync shapes are identical, so this reuses Halo's
+  existing sync/interval-settings code paths rather than duplicating them).
+  Same treatment in `user-health.wxml`'s interval-settings panel condition.
+
+**What did NOT carry over 1:1 from the CLI phase** — these are the same
+gaps as §6, restated in terms of what the miniapp adapter actually returns
+to `syncWearableData()`:
+
+- `getHrvHistory()` omits a `breath` field entirely (V8's byte position for
+  it is `vascularAging`, a different metric — see §6). `sync.js`'s
+  `breath_rate` will be `null` for V8 users; the raw value is still exposed
+  as `vascularAging` on each record for future use, just not synced yet.
+- `getTemperatureHistory()` sets `status: null` always — V8's 0x62 record is
+  a single value, not Halo's 3-sensor NTC delta that `_estimateBodyTemp()`
+  needs.
+- `getSleepHistory()` returns `deep/light/rem/awake: null` and empty
+  `periods` for every session — **deliberately**, not a bug. V8's raw
+  per-minute stage codes (`1,2,3,4,6,10` observed live) don't match Halo's
+  confirmed `0=awake/1=deep/2=light/3=rem` enum, and guessing the mapping
+  risks silently mislabeling real sleep data, which is worse than a gap.
+  `totalMinutes`/`onset`/`sleepStart`/`sleepEnd` are still computed (pure
+  arithmetic on block/timestamp data, no semantic assumption about
+  individual stage values) and do sync correctly.
+- Everything listed "not implemented" in §4 (alarms, ECG, blood glucose,
+  OTA, etc.) still isn't — `V8Band` only implements what §4 marks
+  "implemented, confirmed".
 
 ---
 

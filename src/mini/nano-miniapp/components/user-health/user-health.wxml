@@ -301,7 +301,7 @@
               </view>
             </view>
             <view wx:if="{{ringSettingsOpen}}" class="wd-settings-panel">
-              <view wx:if="{{wearableBrand === 'halo'}}" class="wd-interval-section">
+              <view wx:if="{{wearableBrand === 'halo' || wearableBrand === 'v8'}}" class="wd-interval-section">
                 <view wx:if="{{ringSettingsBusy}}" class="wd-settings-loading-row">
                   <text class="wd-settings-loading-txt">{{t.haloIntervalLoading}}</text>
                 </view>
