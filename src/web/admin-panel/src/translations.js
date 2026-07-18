@@ -383,6 +383,7 @@ const T = {
     partners: {
       addPartner: 'Add Partner', editPartner: 'Edit Partner', deactivatePartner: 'Deactivate',
       provisionGcnStore: 'Provision GCN Store', gcnProvisioned: 'GCN store provisioned',
+      inviteLink: 'Invite Link', inviteLinkCopied: 'Invite link copied to clipboard:',
       partnersTab: 'Partners', commissionsTab: 'Commissions', payoutsTab: 'Payouts', rulesTab: 'Commission Rules',
       realName: 'Real Name *', phone: 'Phone *', tier: 'Tier *', entryFee: 'Entry Fee (¥) *',
       channel: 'Channel', referredBy: 'Referred By', contractedAt: 'Contracted', status: 'Status', notes: 'Notes',
@@ -1165,6 +1166,7 @@ const T = {
     partners: {
       addPartner: '新增合伙人', editPartner: '编辑合伙人', deactivatePartner: '停用',
       provisionGcnStore: '开通 GCN 店铺', gcnProvisioned: 'GCN 店铺已开通',
+      inviteLink: '邀请链接', inviteLinkCopied: '邀请链接已复制到剪贴板：',
       partnersTab: '合伙人列表', commissionsTab: '佣金记录', payoutsTab: '结算单', rulesTab: '佣金规则',
       realName: '真实姓名 *', phone: '手机号 *', tier: '级别 *', entryFee: '入伙费 (¥) *',
       channel: '渠道', referredBy: '推荐人', contractedAt: '签约时间', status: '状态', notes: '备注',

@@ -5,6 +5,7 @@
     <image class="login-logo-img" src="{{channel.logo_url || '/assets/waven-logo-icon.png'}}" mode="aspectFit" />
     <text class="login-title">{{channel.name || 'NANO'}}</text>
     <text class="login-subtitle">您的精准健康伴侣</text>
+    <text wx:if="{{version}}" class="login-version">v{{version}}</text>
   </view>
 
   <!-- Checking / auto-login -->
@@ -44,12 +45,53 @@
       bindgetphonenumber="handleGetPhone"
       disabled="{{phoneLoading}}"
     ><text>📱 授权手机号</text></button>
+
+    <view class="phone-skip-btn" bindtap="openSkipPass">
+      <text>暂时跳过</text>
+    </view>
   </view>
 
   <view wx:elif="{{step === 'error'}}" class="status-wrap">
     <text class="error-text">{{error}}</text>
     <view class="retry-btn" bindtap="retry">
       <text>重试</text>
+    </view>
+  </view>
+
+  <!-- ── Phone-Skip Passcode Overlay ── -->
+  <view wx:if="{{skipPassOpen}}" class="skip-pass-overlay">
+    <view class="skip-pass-box">
+
+      <text class="skip-pass-title">输入密码跳过</text>
+
+      <!-- 4-dot indicator -->
+      <view class="skip-pass-dots">
+        <view class="skip-pass-dot {{skipPassInput.length > 0 ? 'skip-pass-dot-filled' : ''}} {{skipPassError ? 'skip-pass-dot-error' : ''}}"></view>
+        <view class="skip-pass-dot {{skipPassInput.length > 1 ? 'skip-pass-dot-filled' : ''}} {{skipPassError ? 'skip-pass-dot-error' : ''}}"></view>
+        <view class="skip-pass-dot {{skipPassInput.length > 2 ? 'skip-pass-dot-filled' : ''}} {{skipPassError ? 'skip-pass-dot-error' : ''}}"></view>
+        <view class="skip-pass-dot {{skipPassInput.length > 3 ? 'skip-pass-dot-filled' : ''}} {{skipPassError ? 'skip-pass-dot-error' : ''}}"></view>
+      </view>
+
+      <text wx:if="{{skipPassError}}" class="skip-pass-error">密码错误</text>
+      <view wx:else style="height: 36rpx;"></view>
+
+      <!-- Numpad -->
+      <view class="skip-pass-numpad">
+        <view wx:for="{{[1,2,3,4,5,6,7,8,9]}}" wx:key="*this"
+          class="skip-pass-key" bindtap="handleSkipPassKey" data-digit="{{item}}">
+          <text>{{item}}</text>
+        </view>
+        <view class="skip-pass-key skip-pass-key-empty"></view>
+        <view class="skip-pass-key" bindtap="handleSkipPassKey" data-digit="0"><text>0</text></view>
+        <view class="skip-pass-key skip-pass-key-del" bindtap="handleSkipPassDelete">
+          <text class="skip-pass-del-icon">⌫</text>
+        </view>
+      </view>
+
+      <view class="skip-pass-cancel" bindtap="closeSkipPass">
+        <text>取消</text>
+      </view>
+
     </view>
   </view>
 

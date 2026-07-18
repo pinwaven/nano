@@ -19,9 +19,9 @@ App({
       const user = wx.getStorageSync('nano_user')
       const channel = wx.getStorageSync('nano_channel')
       const coach = wx.getStorageSync('nano_coach')
-      // Only restore session if the profile is complete (phone bound).
-      // Accept both legacy format (user.phone) and trimmed format (user.phoneSet).
-      if (user && (user.phone || user.phoneSet)) {
+      // Restore any stored account regardless of phone completeness — phone is optional
+      // (see guest sign-up password-skip). Missing-phone nudging is handled in-chat instead.
+      if (user) {
         this.globalData.user = user
         this.globalData.channel = channel || null
         this.globalData.coach = coach || null

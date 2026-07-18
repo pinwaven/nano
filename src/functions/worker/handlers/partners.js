@@ -1,5 +1,5 @@
 const { pool } = require('../lib/db');
-const { requirePermission, verifySubchannelOwnership } = require('../lib/auth');
+const { requirePermission, verifySubchannelOwnership, generatePartnerInviteCode } = require('../lib/auth');
 const { recordReferralCommission, recordSalesCommission, generatePartnerPayouts, getCommissionRules, resolveRate } = require('../lib/partnerCommissions');
 const { gcnFetch } = require('../lib/gcnClient');
 
@@ -179,6 +179,83 @@ async function handlePostPartnerGcnProvision(partnerId) {
     }
 }
 
+// POST /api/partners/:id/invite-code  (nano admin panel — "Invite Link" button)
+// Lazily generates and persists this partner's self-service invite code, or returns the
+// existing one — idempotent, same shape as handlePostPartnerGcnProvision above. The code
+// is shared as https://aeviva(-dev).gcn.net/partner-apply.html?code=<code>, letting a new
+// applicant apply pre-linked to this partner as upline (see handleGcnPartnerApply below)
+// without an admin manually creating the record.
+async function handlePostPartnerInviteCode(partnerId) {
+    if (!partnerId) return { success: false, error: 'partner id required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query(`SELECT invite_code FROM partners WHERE id = $1`, [partnerId]);
+        if (rows.length === 0) return { success: false, error: 'Partner not found', statusCode: 404 };
+        if (rows[0].invite_code) return { success: true, invite_code: rows[0].invite_code };
+
+        const code = await generatePartnerInviteCode();
+        await pool.query(`UPDATE partners SET invite_code = $1, updated_at = NOW() WHERE id = $2`, [code, partnerId]);
+        return { success: true, invite_code: code };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// POST /partner-invite-code-gcn  (GCN service-token only, see GCN_ALLOWED_PATHS in index.js)
+// Body: { nano_partner_id }
+// Same lazy-generate-or-return as handlePostPartnerInviteCode above, keyed by body field
+// instead of a URL param so GCN's dashboard-channel.html can let a logged-in partner see
+// their own invite link (GET /api/auth/partners/me/invite-code on GCN's side, resolving
+// its own local partners.nano_partner_id and relaying here).
+async function handleGcnPartnerInviteCode(body) {
+    const { nano_partner_id } = body || {};
+    if (!nano_partner_id) return { success: false, error: 'nano_partner_id required', statusCode: 400 };
+    return handlePostPartnerInviteCode(nano_partner_id);
+}
+
+// POST /partner-applications  (GCN service-token only, see GCN_ALLOWED_PATHS in index.js)
+// Body: { invite_code, tier, real_name, phone }
+// Public self-service application, relayed here by GCN's POST /api/auth/partners/aeviva/apply
+// (GCN itself has no auth requirement on that endpoint — anyone with a shared invite link can
+// apply). Resolves invite_code to the inviting partner (must be active) and creates the new
+// partner as 'pending', pre-linked via referred_by_partner_id — mirroring the manual
+// admin-panel flow's upline linkage, but without requiring an admin to search/select it.
+// Deliberately does NOT call recordReferralCommission() here (unlike handlePostPartner) —
+// a spam or fraudulent application must never mint a real commission ledger entry. The
+// commission fires later, when an admin actually activates this partner (see the
+// pending->active transition logic in handlePutPartner below), after they've verified the
+// real entry fee was paid.
+async function handleGcnPartnerApply(body) {
+    const { invite_code, tier, real_name, phone } = body || {};
+    if (!invite_code || !tier || !real_name || !phone) {
+        return { success: false, error: 'invite_code, tier, real_name, phone are required', statusCode: 400 };
+    }
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+        const typeCheck = await pool.query(`SELECT key FROM partner_types WHERE key=$1 AND is_active=TRUE`, [tier]);
+        if (typeCheck.rows.length === 0) return { success: false, error: `Invalid partner tier: ${tier}`, statusCode: 400 };
+
+        const inviterRes = await pool.query(
+            `SELECT id, channel_id FROM partners WHERE invite_code = $1 AND status = 'active'`,
+            [invite_code]
+        );
+        if (inviterRes.rows.length === 0) return { success: false, error: 'Invalid or inactive invite code', statusCode: 404 };
+        const inviter = inviterRes.rows[0];
+
+        const { rows } = await pool.query(`
+            INSERT INTO partners (tier, real_name, phone, entry_fee_paid, channel_id,
+                                  referred_by_partner_id, status)
+            VALUES ($1,$2,$3,0,$4,$5,'pending')
+            RETURNING id, status
+        `, [tier, real_name, phone, inviter.channel_id, inviter.id]);
+
+        return { success: true, partner_id: rows[0].id, status: rows[0].status };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handlePostPartner(body, adminCtx) {
     const { tier, real_name, phone, entry_fee_paid, channel_id, user_id, referred_by_partner_id, contracted_at, notes, status } = body;
     if (!tier || !real_name || !phone || !entry_fee_paid) {
@@ -223,15 +300,38 @@ async function handlePutPartner(partnerId, body) {
             const typeCheck = await pool.query(`SELECT key FROM partner_types WHERE key=$1 AND is_active=TRUE`, [tier]);
             if (typeCheck.rows.length === 0) return { success: false, error: `Invalid partner tier: ${tier}`, statusCode: 400 };
         }
-        await pool.query(`
+
+        // Capture prior status to detect a pending->active activation below — self-applied
+        // invite partners (handleGcnPartnerApply) land as 'pending' with no commission fired
+        // yet; this is where that deferred referral commission actually gets recorded, once
+        // an admin has verified the real entry fee and approves them through this same
+        // Edit Partner save (no separate "approve" endpoint needed).
+        const priorRes = await pool.query(`SELECT status FROM partners WHERE id = $1`, [partnerId]);
+        if (priorRes.rows.length === 0) return { success: false, error: 'Partner not found', statusCode: 404 };
+        const priorStatus = priorRes.rows[0].status;
+
+        const { rows } = await pool.query(`
             UPDATE partners SET
                 tier=$1, real_name=$2, phone=$3, entry_fee_paid=$4,
                 channel_id=$5, user_id=$6, referred_by_partner_id=$7,
                 contracted_at=$8, notes=$9, status=$10, updated_at=NOW()
             WHERE id=$11
+            RETURNING *
         `, [tier, real_name, phone, entry_fee_paid, channel_id || null, user_id || null,
             referred_by_partner_id || null, contracted_at || null, notes || null,
             status || 'active', partnerId]);
+        const updatedPartner = rows[0];
+
+        if (priorStatus === 'pending' && updatedPartner.status === 'active' && updatedPartner.referred_by_partner_id) {
+            const existing = await pool.query(
+                `SELECT 1 FROM partner_commissions WHERE source_partner_id = $1 AND source_type = 'referral'`,
+                [updatedPartner.id]
+            );
+            if (existing.rows.length === 0) {
+                await recordReferralCommission(updatedPartner);
+            }
+        }
+
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -899,6 +999,9 @@ module.exports = {
     handleGetPartnerByPhone,
     handlePostPartner,
     handlePostPartnerGcnProvision,
+    handlePostPartnerInviteCode,
+    handleGcnPartnerInviteCode,
+    handleGcnPartnerApply,
     handlePostPartnerSale,
     handlePutPartner,
     handleDeletePartner,

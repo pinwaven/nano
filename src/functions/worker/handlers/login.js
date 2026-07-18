@@ -242,10 +242,8 @@ async function handleWxLogin(body) {
             );
             if (coachRes.rows.length > 0) coach = coachRes.rows[0];
         }
-        // Profile incomplete — phone not bound yet; re-show the signup screen
-        if (!user.phone) {
-            return { success: true, new_user: true, user, channel, coach };
-        }
+        // Account already exists — log in regardless of whether a phone is on file.
+        // Missing phone is nudged via an in-chat prompt, not by re-forcing the signup screen.
         return { success: true, user, channel, coach };
     }
 
@@ -444,8 +442,7 @@ async function handleWxAppLogin(body) {
             );
             if (coachRes.rows.length > 0) coach = coachRes.rows[0];
         }
-        // Profile incomplete — phone not bound yet; the app shows the phone form
-        if (!user.phone) return { success: true, new_user: true, user, channel, coach };
+        // Account already exists — log in regardless of whether a phone is on file.
         return { success: true, user, channel, coach };
     };
 

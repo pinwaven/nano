@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Users, Coins, Settings2, Plus, Pencil, Trash2, X, Check, ChevronDown, Store } from 'lucide-react';
+import { Users, Coins, Settings2, Plus, Pencil, Trash2, X, Check, ChevronDown, Store, Link2 } from 'lucide-react';
 
 const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
 import { useLang, fmtDate, StatCard, Badge } from '../shared.jsx';
@@ -163,6 +163,26 @@ function PartnersTab({ users = [], session }) {
     }
   }
 
+  const [inviteLinkId, setInviteLinkId] = useState(null);
+
+  // Same GCN-domain-detection pattern as GcnInventoryEmbed.jsx, but pointed at the direct
+  // aeviva(-dev).gcn.net domain (not the fros.cc miniapp web-view proxy) since this link is
+  // meant to be shared externally (WeChat message, etc.) and opened in a normal browser.
+  async function generateInviteLink(id) {
+    setInviteLinkId(id);
+    try {
+      const res = await axios.post(`/api/partners/${id}/invite-code`);
+      const host = window.location.hostname.includes('nano-dev') ? 'https://aeviva-dev.gcn.net' : 'https://aeviva.gcn.net';
+      const url = `${host}/partner-apply.html?code=${res.data.invite_code}`;
+      try { await navigator.clipboard.writeText(url); } catch {}
+      alert(`${p.inviteLinkCopied}\n${url}`);
+    } catch (err) {
+      alert(err?.response?.data?.error || p.saveFailed);
+    } finally {
+      setInviteLinkId(null);
+    }
+  }
+
   async function saveCommission() {
     if (!commForm.partner_id || !commForm.source_type || !commForm.amount_cny) { setCommError(p.saveFailed); return; }
     setCommBusy(true); setCommError('');
@@ -253,6 +273,14 @@ function PartnersTab({ users = [], session }) {
                               disabled={pt.status !== 'active' || provisioningId === pt.id}
                               onClick={() => provisionGcnStore(pt.id)}
                             ><Store size={14} /></button>
+                      )}
+                      {pt.status === 'active' && (
+                        <button
+                          className="icon-btn"
+                          title={p.inviteLink}
+                          disabled={inviteLinkId === pt.id}
+                          onClick={() => generateInviteLink(pt.id)}
+                        ><Link2 size={14} /></button>
                       )}
                     </div>
                   </td>

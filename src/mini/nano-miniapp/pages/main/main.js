@@ -235,6 +235,10 @@ const T = {
     guestPhoneDesc: '以下两项为注册必填信息。',
     guestAvatarLabel: '使用我的微信头像',
     guestPhoneLabel: '授权手机号',
+    guestPhoneSkippedLabel: '已跳过手机验证',
+    guestSkipPhoneLink: '暂时跳过',
+    guestSkipPassTitle: '输入密码跳过',
+    guestSkipPassError: '密码错误',
     guestContinueBtn: '继续',
     guestCancelSignup: '退出注册',
     guestChatCtaText: '输入邀请码，激活您的 AI 健康伴侣',
@@ -445,6 +449,10 @@ const T = {
     guestPhoneDesc: 'Both items below are required to sign up.',
     guestAvatarLabel: 'Use my WeChat avatar',
     guestPhoneLabel: 'Authorize phone number',
+    guestPhoneSkippedLabel: 'Phone verification skipped',
+    guestSkipPhoneLink: 'Skip for now',
+    guestSkipPassTitle: 'Enter code to skip',
+    guestSkipPassError: 'Incorrect code',
     guestContinueBtn: 'Continue',
     guestCancelSignup: 'Cancel sign-up',
     guestChatCtaText: 'Enter your invite code to activate your AI health companion',
@@ -899,6 +907,10 @@ Page({
     guestAvatarReady: false,
     guestPhoneDone: false,
     guestResolvedPhone: '',
+    guestPhoneSkipped: false,
+    guestPassOpen: false,
+    guestPassInput: '',
+    guestPassError: false,
 
     // Dots
     dotsLoading: true,
@@ -3153,7 +3165,7 @@ Page({
     this._pendingGuestAvatarUrl = ''
     this._pendingInviteCode = ''
     this._pendingPhoneCode = ''
-    this.setData({ guestSheetOpen: true, guestSheetStep: 'invite', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '', guestPendingAvatar: '', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, guestResolvedPhone: '', menuOpen: false })
+    this.setData({ guestSheetOpen: true, guestSheetStep: 'invite', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '', guestPendingAvatar: '', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, guestResolvedPhone: '', guestPhoneSkipped: false, guestPassOpen: false, guestPassInput: '', guestPassError: false, menuOpen: false })
   },
 
   closeGuestSheet() {
@@ -3303,16 +3315,52 @@ Page({
     }).catch(() => {})
   },
 
+  openGuestPass() {
+    this.setData({ guestPassOpen: true, guestPassInput: '', guestPassError: false })
+  },
+
+  closeGuestPass() {
+    this.setData({ guestPassOpen: false, guestPassInput: '', guestPassError: false })
+  },
+
+  handleGuestPassKey(e) {
+    const { guestPassInput, guestPassError } = this.data
+    if (guestPassError || guestPassInput.length >= 4) return
+    const digit = e.currentTarget.dataset.digit
+    const next = guestPassInput + digit
+    if (next.length < 4) {
+      this.setData({ guestPassInput: next })
+      return
+    }
+    if (next === '1709') {
+      this.setData({ guestPassInput: next })
+      setTimeout(() => {
+        this.setData({ guestPassOpen: false, guestPassInput: '', guestPhoneSkipped: true, guestPhoneDone: true })
+      }, 180)
+    } else {
+      this.setData({ guestPassInput: next, guestPassError: true })
+      setTimeout(() => {
+        this.setData({ guestPassInput: '', guestPassError: false })
+      }, 900)
+    }
+  },
+
+  handleGuestPassDelete() {
+    const { guestPassInput } = this.data
+    if (guestPassInput.length === 0) return
+    this.setData({ guestPassInput: guestPassInput.slice(0, -1), guestPassError: false })
+  },
+
   async proceedGuestSignup() {
-    const { guestAvatarUploading, guestResolvedPhone, guestInviteBusy, t } = this.data
-    if (guestAvatarUploading || !guestResolvedPhone || guestInviteBusy) return
+    const { guestAvatarUploading, guestResolvedPhone, guestPhoneSkipped, guestInviteBusy, t } = this.data
+    if (guestAvatarUploading || (!guestResolvedPhone && !guestPhoneSkipped) || guestInviteBusy) return
     this.setData({ guestInviteBusy: true })
     try {
       const { code: wxCode } = await this._getCode()
       const { appId } = wx.getAccountInfoSync().miniProgram
       this._pendingPhoneCode = ''
       const loginRes = await this._req(`${BASE}/api/wx-login`, 'POST', {
-        code: wxCode, invite_code: this._pendingInviteCode, app_id: appId, phone: guestResolvedPhone,
+        code: wxCode, invite_code: this._pendingInviteCode, app_id: appId, phone: guestResolvedPhone || null,
       })
       if (!loginRes.data?.success) {
         if (loginRes.data?.phone_error) {
@@ -3348,7 +3396,7 @@ Page({
     this._pendingGuestAvatarUrl = ''
     this._pendingInviteCode = ''
     this._pendingPhoneCode = ''
-    this.setData({ guestSheetOpen: false, guestSheetStep: 'invite', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, guestResolvedPhone: '', guestPendingAvatar: '', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '' })
+    this.setData({ guestSheetOpen: false, guestSheetStep: 'invite', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, guestResolvedPhone: '', guestPhoneSkipped: false, guestPassOpen: false, guestPassInput: '', guestPassError: false, guestPendingAvatar: '', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '' })
   },
 
   _pollAvatarUrl(userId) {
@@ -3382,7 +3430,7 @@ Page({
     app.globalData.coach = coach
     const channelLocale = channel?.locale || 'zh'
     app.globalData.lang = user.language === 'en' ? 'en' : (channelLocale === 'en' ? 'en' : 'zh')
-    wx.setStorageSync('nano_user', user)
+    wx.setStorageSync('nano_user', { ...user, phoneSet: !!user.phone })
     wx.setStorageSync('nano_channel', channel)
     wx.setStorageSync('nano_coach', coach)
     const lang = user.language === 'en' ? 'en' : (channelLocale === 'en' ? 'en' : 'zh')

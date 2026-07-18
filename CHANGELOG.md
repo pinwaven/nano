@@ -23,6 +23,10 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 
+- **`tools/infinity` — standalone Infinity/Aizo ring BLE CLI** (`tools/infinity/`)
+
+  Added a Node/`noble` debug CLI for scanning and reading an Infinity/Aizo ring directly over Bluetooth without wiring anything into the miniapp. The checked demo under `temp/aizoring_sdk_demo` does **not** expose the raw protocol; it lazy-loads the closed WeChat `RingPlug` plugin (`provider: wxfd42c6749120cf46`, version `1.0.2`). The CLI therefore keeps an isolated copy of the previously captured Infinity/Aizo BLE framing, UUIDs, bind handshake, and known reads (battery/status, steps, sleep, stress, heart-rate, SpO2 best-effort parsing), plus a `raw` command for exploring plugin/protocol gaps against real hardware.
+
 - **Miniapp menu — "Aeviva Store" entry into the GCN storefront** (`mini/nano-miniapp/pages/main/main.{js,wxml}`, `pages/appview/appview.js`)
 
   Aeviva channel users had no in-app way to reach the GCN storefront (`aeviva.gcn.net`), a separate serverless store/ERP platform being integrated as the sales engine for nano's existing Aeviva partner program. Added a menu item (aeviva channels only, hidden for guests) that opens it as an embedded `<web-view>` via the existing appview page.

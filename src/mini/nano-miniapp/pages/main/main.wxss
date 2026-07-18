@@ -1952,6 +1952,10 @@
   align-items: center;
 }
 
+/* Opened on top of the guest-sheet-mask (z-index: 300), unlike the Kino passcode
+   overlay which only ever opens while the guest sheet is closed. */
+.guest-pass-overlay { z-index: 400; }
+
 .kpass-box {
   display: flex;
   flex-direction: column;
