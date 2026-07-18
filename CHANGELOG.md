@@ -39,6 +39,10 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 
+- **`POST /partner-descendants-gcn` — full downline for GCN's stock-rollup panel** (`functions/worker/handlers/partners.js`, `functions/worker/index.js`)
+
+  GCN wanted a parent aeviva store to see a per-store inventory rollup across its *entire* downline, not just one tree level at a time like the existing Network panel (`handleGcnPartnerChildren`/`/partner-children-gcn`). A per-node fetch doesn't fit a stock aggregate — GCN needs the complete set of descendant partner ids up front to run a single grouped query against its own `partner_inventory` table. Added `handleGcnPartnerDescendants`, a recursive `referred_by_partner_id` query returning every descendant of `requesting_partner_id` at any depth as a flat id list. Always rooted at the caller's own id (never an arbitrary target), so unlike `handleGcnPartnerChildren` it needs no ancestry check. Registered at `/partner-descendants-gcn` and added to `GCN_ALLOWED_PATHS`, gated by the same scoped `GCN_API_TOKEN` as the rest of the nano↔GCN bridge. Seeded/verified against `nano_db_dev`'s existing sandbox tree (`temp/seed-sandbox-partner-tree.js`, 990001→990002/990006/990009→...). See GCN `CHANGELOG.md` same date for the consuming endpoint/UI.
+
 - **`tools/infinity` — standalone Infinity/Aizo ring BLE CLI** (`tools/infinity/`)
 
   Added a Node/`noble` debug CLI for scanning and reading an Infinity/Aizo ring directly over Bluetooth without wiring anything into the miniapp. The checked demo under `temp/aizoring_sdk_demo` does **not** expose the raw protocol; it lazy-loads the closed WeChat `RingPlug` plugin (`provider: wxfd42c6749120cf46`, version `1.0.2`). The CLI therefore keeps an isolated copy of the previously captured Infinity/Aizo BLE framing, UUIDs, bind handshake, and known reads (battery/status, steps, sleep, stress, heart-rate, SpO2 best-effort parsing), plus a `raw` command for exploring plugin/protocol gaps against real hardware.

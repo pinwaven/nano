@@ -504,6 +504,36 @@ async function handleGcnPartnerChildren(body) {
     }
 }
 
+// POST /partner-descendants-gcn  (GCN service-token only, see GCN_ALLOWED_PATHS in index.js)
+// Body: { requesting_partner_id }
+// Returns the FULL flat downline (every descendant, any depth) of requesting_partner_id —
+// unlike handleGcnPartnerChildren above (one level, lazy-expand, for rendering the tree UI),
+// this backs a stock-rollup aggregate query on GCN's side where GCN needs the complete set of
+// partner ids up front to run one grouped SQL query, not a per-node fetch. Always rooted at the
+// caller's own id, so (unlike handleGcnPartnerChildren) no ancestry check is needed — a partner
+// can only ever ask for their own subtree, never an arbitrary target.
+async function handleGcnPartnerDescendants(body) {
+    const { requesting_partner_id } = body || {};
+    if (!requesting_partner_id) return { success: false, error: 'requesting_partner_id required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+        const { rows: descendants } = await pool.query(
+            `WITH RECURSIVE descendants AS (
+                SELECT id FROM partners WHERE referred_by_partner_id = $1
+                UNION ALL
+                SELECT p.id FROM partners p JOIN descendants d ON p.referred_by_partner_id = d.id
+             )
+             SELECT id FROM descendants`,
+            [requesting_partner_id]
+        );
+
+        return { success: true, partner_ids: descendants.map((r) => r.id) };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleGetChannelReferralNetwork(channelId) {
     if (!channelId) return { success: false, error: 'channel_id is required', statusCode: 400 };
     try {
@@ -1023,6 +1053,7 @@ module.exports = {
     handlePostGeneratePartnerPayouts,
     handlePutPartnerPayout,
     handleGcnPartnerChildren,
+    handleGcnPartnerDescendants,
     handleGetChannelReferralNetwork,
     handleGetPartnerCommissionConfig,
     handlePutPartnerCommissionConfig,
