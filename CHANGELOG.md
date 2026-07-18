@@ -14,7 +14,13 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
   **Fix:** `handlePostKinoScan` now returns `{ success: false, status: 'claimed_by_other' }` when a chip has a pending scan owned by a different user, instead of reassigning it. Also tightened the insert's `ON CONFLICT` from `DO UPDATE` to `DO NOTHING` (with a `claimed_by_other` response when zero rows come back) to close the same hole for two concurrent first-time scans racing on a brand-new chip. Added the `claimed_by_other` status to the miniapp's chat-tool scan flow (`tool-actions.js`) and zh/en copy in both `main.js` and `coach.js`. A chip legitimately stuck in this state can still be freed via the existing admin "Reset Chip" action.
 
-  **Not yet fixed:** `web/user-app/src/tabs/HealthTab.jsx`'s `KinoScanModal` posts `chip_code` instead of `chip_id` to `/kino-scan` and treats any non-throwing response — including `used`/`already_linked`/`claimed_by_other` — as blanket success. Pre-existing, separate from this bug.
+  A separate, pre-existing bug in the web admin's own scan modal (`HealthTab.jsx`) was found during this investigation and fixed below.
+
+- **Web admin Kino chip scan modal sent the wrong field and reported every soft-failure status as success** (`src/web/user-app/src/tabs/HealthTab.jsx`, `src/web/user-app/src/i18n.js`)
+
+  `KinoScanModal`'s `handleScan` POSTed `{ chip_code: code, openid }` to `/kino-scan`, but `handlePostKinoScan` (see entry above) reads `chip_id` from the body — the field never actually arrived, so every scan through this modal was hitting the `if (!chip_id) throw new Error('chip_id is required')` guard and only "succeeding" by accident of `handleScan` never checking `response.data.status` in the first place: it treated any non-throwing (HTTP 200) response as success, which is what all of this handler's soft-failure statuses (`invalid_chip`, `used`, `already_linked`, `claimed_by_other`) return — none of them throw or set a non-2xx status.
+
+  **Fix:** send `chip_id` instead of `chip_code`. `handleScan` now branches on `response.data.status` with a status→message/ok map (`registered`/`already_linked` → success styling and copy; `used`/`invalid_chip`/`claimed_by_other` → error styling with a status-specific message; unrecognized status → generic `scanError` fallback). Only a truthy `ok` outcome closes the modal via `onDone`. Added `scanAlreadyLinked`/`scanUsed`/`scanInvalidChip`/`scanClaimedByOther` zh/en strings to `i18n.js`.
 
 ### Changed
 

@@ -25,10 +25,17 @@ function KinoScanModal({ user, onClose, onDone }) {
     setStatus('loading');
     setMsg('');
     try {
-      await axios.post(`${API}/kino-scan`, { chip_code: code, openid: user.user_id });
-      setStatus('success');
-      setMsg(t.scanSuccess);
-      onDone && setTimeout(onDone, 1800);
+      const res = await axios.post(`${API}/kino-scan`, { chip_id: code, openid: user.user_id });
+      const outcome = {
+        registered:      { ok: true,  msg: t.scanSuccess },
+        already_linked:  { ok: true,  msg: t.scanAlreadyLinked },
+        used:            { ok: false, msg: t.scanUsed },
+        invalid_chip:    { ok: false, msg: t.scanInvalidChip },
+        claimed_by_other:{ ok: false, msg: t.scanClaimedByOther },
+      }[res.data?.status] || { ok: false, msg: t.scanError };
+      setStatus(outcome.ok ? 'success' : 'error');
+      setMsg(outcome.msg);
+      if (outcome.ok) onDone && setTimeout(onDone, 1800);
     } catch (err) {
       setStatus('error');
       setMsg(t.scanError);

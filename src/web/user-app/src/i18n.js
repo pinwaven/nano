@@ -105,6 +105,10 @@ export const T = {
     scanPlaceholder:   'e.g. KNC12345678-0001',
     scanSubmit:        'Link Chip',
     scanSuccess:       'Chip linked! Your results will appear here once the test is complete.',
+    scanAlreadyLinked: 'This chip is already linked to your account and is awaiting analysis.',
+    scanUsed:          'This chip has already been analyzed and cannot be linked again.',
+    scanInvalidChip:   'This chip code is not valid. Double-check the code on the chip.',
+    scanClaimedByOther:'This chip is already registered to another account and is awaiting analysis. Ask an admin to reset it if you need to reuse it.',
     scanError:         'Invalid chip code or chip already used.',
     // Health – Reports
     genReport:         'Generate Report',
@@ -318,6 +322,10 @@ export const T = {
     scanPlaceholder:   '例如 KNC12345678-0001',
     scanSubmit:        '关联',
     scanSuccess:       '芯片已关联！检测完成后结果将显示在这里。',
+    scanAlreadyLinked: '此芯片已关联到您的账户，正在等待检测结果。',
+    scanUsed:          '此芯片已完成检测，无法重复关联。',
+    scanInvalidChip:   '此芯片编码无效，请核对芯片上的编码。',
+    scanClaimedByOther:'此芯片已被其他账户关联，正在等待检测结果。如需重新使用，请联系管理员重置该芯片。',
     scanError:         '芯片编码无效或已被使用。',
     // Health – Reports
     genReport:         '生成报告',

@@ -1,9 +1,5 @@
 # Waven Nano — TODO
 
-## Bugs
-
-- [ ] **Web admin `KinoScanModal` posts the wrong field and misreports soft failures as success** (`src/web/user-app/src/tabs/HealthTab.jsx`) — `handleScan` POSTs `{ chip_code: code, openid }` to `/kino-scan`, but `handlePostKinoScan` (`src/functions/worker/handlers/kino.js`) expects `chip_id`, so the chip code never actually reaches the handler correctly. Separately, `handleScan` only distinguishes success/failure by whether the request threw — it never reads `response.data.status`, so any non-throwing response (`invalid_chip`, `used`, `already_linked`, and now `claimed_by_other`, see CHANGELOG "Kino chip scan silently reassigned ownership...") is shown to the admin as a generic success message. Found while fixing the related chip-ownership-reassignment bug; left unfixed since it's a separate, pre-existing defect in a different component.
-
 ## Security
 
 - [ ] **Read-only DB user for worker/agent in production** — the NL2SQL `query_database` tool call in `handlePostChat` executes LLM-generated SQL against PolarDB. The application DB user should be granted `SELECT`-only on user-facing tables so a prompt injection or LLM error can't mutate data. Create a read-only PolarDB account, grant `SELECT` on `biomarkers`, `nutrition_schedules`, `reminders`, `chat_messages`, `dots`, `questionnaire_*`, and set it as `DB_USER` / `DB_PASS` for the worker and agent functions. The dispatcher and worker mutation paths (INSERT/UPDATE) should use a separate write-capable account.
