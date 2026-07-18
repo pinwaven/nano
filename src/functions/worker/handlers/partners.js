@@ -458,35 +458,47 @@ async function handlePutPartnerPayout(payoutId, body) {
     }
 }
 
-async function handleGetPartnerTree(partnerId) {
-    if (!partnerId) return { success: false, error: 'partner id required', statusCode: 400 };
+// POST /partner-children-gcn  (GCN service-token only, see GCN_ALLOWED_PATHS in index.js)
+// Body: { requesting_partner_id, target_partner_id? }
+// Returns ONE level of direct downline (`referred_by_partner_id = target_partner_id`), each
+// row flagged with `has_children` so GCN's dashboard-channel.html can render a lazy,
+// expand-on-demand tree instead of eagerly fetching a whole (unbounded-depth) subtree.
+// `target_partner_id` defaults to `requesting_partner_id` for the initial root-level call;
+// deeper calls pass the id of whichever row the store owner just expanded. `target_partner_id`
+// must be `requesting_partner_id` itself or a genuine descendant of it — verified by walking
+// the `referred_by_partner_id` chain up from the target — so a store owner can't page into an
+// unrelated branch of the network by guessing another partner's id.
+async function handleGcnPartnerChildren(body) {
+    const { requesting_partner_id, target_partner_id } = body || {};
+    if (!requesting_partner_id) return { success: false, error: 'requesting_partner_id required', statusCode: 400 };
+    const targetId = target_partner_id || requesting_partner_id;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const { rows: root } = await pool.query(
-            `SELECT id, real_name, tier, status FROM partners WHERE id=$1`, [partnerId]
-        );
-        if (!root[0]) return { success: false, error: 'Partner not found', statusCode: 404 };
 
-        const { rows: children } = await pool.query(
-            `SELECT id, real_name, tier, status FROM partners WHERE referred_by_partner_id=$1`, [partnerId]
-        );
-        const childIds = children.map(c => c.id);
-        let grandchildren = [];
-        if (childIds.length > 0) {
-            const { rows } = await pool.query(
-                `SELECT id, real_name, tier, status, referred_by_partner_id
-                 FROM partners WHERE referred_by_partner_id = ANY($1::int[])`,
-                [childIds]
+        if (String(targetId) !== String(requesting_partner_id)) {
+            const { rows: ancestry } = await pool.query(
+                `WITH RECURSIVE ancestors AS (
+                    SELECT id, referred_by_partner_id FROM partners WHERE id = $1
+                    UNION ALL
+                    SELECT p.id, p.referred_by_partner_id
+                    FROM partners p JOIN ancestors a ON p.id = a.referred_by_partner_id
+                 )
+                 SELECT 1 FROM ancestors WHERE id = $2 LIMIT 1`,
+                [targetId, requesting_partner_id]
             );
-            grandchildren = rows;
+            if (ancestry.length === 0) return { success: false, error: 'Forbidden', statusCode: 403 };
         }
 
-        const tree = children.map(child => ({
-            ...child,
-            children: grandchildren.filter(gc => gc.referred_by_partner_id === child.id),
-        }));
+        const { rows: children } = await pool.query(
+            `SELECT id, real_name, tier, status, invite_code,
+                    EXISTS (SELECT 1 FROM partners c2 WHERE c2.referred_by_partner_id = c.id) AS has_children
+             FROM partners c
+             WHERE c.referred_by_partner_id = $1
+             ORDER BY c.created_at ASC`,
+            [targetId]
+        );
 
-        return { success: true, partner: root[0], tree };
+        return { success: true, target_partner_id: targetId, children };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -1010,7 +1022,7 @@ module.exports = {
     handleGetPartnerPayouts,
     handlePostGeneratePartnerPayouts,
     handlePutPartnerPayout,
-    handleGetPartnerTree,
+    handleGcnPartnerChildren,
     handleGetChannelReferralNetwork,
     handleGetPartnerCommissionConfig,
     handlePutPartnerCommissionConfig,

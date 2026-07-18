@@ -6,6 +6,16 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Fixed
+
+- **Kino chip scan silently reassigned ownership when a second user re-scanned an already-claimed chip** (`functions/worker/handlers/kino.js`, `mini/nano-miniapp/utils/tool-actions.js`, `mini/nano-miniapp/pages/main/main.js`, `mini/nano-miniapp/pages/coach/coach.js`)
+
+  Reported: a chip scanned by user A, then scanned again by user B, ended up registered to B in the database. Root cause was in `handlePostKinoScan` — `kino_chips.status` only flips to `'used'` once a scan *completes* (`handlePostKinoResult`), so a chip with a still-`pending` scan (someone mid-test) still looks scannable to anyone else. The existing-row check only special-cased `scan_status === 'completed'` and `row.user_id === user_id`; any other case (a different user, still pending) fell through to `INSERT ... ON CONFLICT (chip_id) DO UPDATE SET user_id = EXCLUDED.user_id`, which silently overwrote the row's owner and returned a normal `status: 'registered'` success to the second scanner — no warning to either user. Since `handlePostKinoResult` looks up the scan's owner by `chip_id` alone at the moment the physical reader posts results (not who owned it when the physical test started), a re-scan mid-test could also misattribute the eventual biomarker result to the second user instead of the one who actually ran the chip.
+
+  **Fix:** `handlePostKinoScan` now returns `{ success: false, status: 'claimed_by_other' }` when a chip has a pending scan owned by a different user, instead of reassigning it. Also tightened the insert's `ON CONFLICT` from `DO UPDATE` to `DO NOTHING` (with a `claimed_by_other` response when zero rows come back) to close the same hole for two concurrent first-time scans racing on a brand-new chip. Added the `claimed_by_other` status to the miniapp's chat-tool scan flow (`tool-actions.js`) and zh/en copy in both `main.js` and `coach.js`. A chip legitimately stuck in this state can still be freed via the existing admin "Reset Chip" action.
+
+  **Not yet fixed:** `web/user-app/src/tabs/HealthTab.jsx`'s `KinoScanModal` posts `chip_code` instead of `chip_id` to `/kino-scan` and treats any non-throwing response — including `used`/`already_linked`/`claimed_by_other` — as blanket success. Pre-existing, separate from this bug.
+
 ### Changed
 
 - **X3 → Halo rename** (`src/mini/nano-miniapp/utils/wearable/{x3→halo}/`, `tools/{x3-ring→halo}/`, `components/user-health/user-health.{js,wxml}`, `utils/wearable/{index,sync}.js`, `docs/architecture/`, `CLAUDE.md`)

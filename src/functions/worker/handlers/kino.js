@@ -408,15 +408,23 @@ async function handlePostKinoScan(body) {
         if (row.user_id === user_id) {
             return { success: true, status: 'already_linked', scan_id: row.id };
         }
+        // Chip already has a pending scan claimed by a different user — refuse
+        // rather than silently reassigning ownership (ON CONFLICT below would
+        // otherwise overwrite row.user_id, misattributing the eventual result).
+        return { success: false, status: 'claimed_by_other', scan_id: row.id };
     }
 
     const result = await pool.query(
         `INSERT INTO scans (user_id, chip_id, scan_status, scan_results)
          VALUES ($1, $2, 'pending', $3)
-         ON CONFLICT (chip_id) WHERE chip_id IS NOT NULL DO UPDATE SET user_id = EXCLUDED.user_id, scan_status = 'pending', updated_at = NOW()
+         ON CONFLICT (chip_id) WHERE chip_id IS NOT NULL DO NOTHING
          RETURNING id`,
         [user_id, chip_id, JSON.stringify({ chip_id })]
     );
+    if (result.rows.length === 0) {
+        // Lost a race against a concurrent first-time scan of the same chip.
+        return { success: false, status: 'claimed_by_other' };
+    }
     return { success: true, status: 'registered', scan_id: result.rows[0].id };
 }
 
