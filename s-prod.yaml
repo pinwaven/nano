@@ -89,6 +89,10 @@ resources:
         KONE_APK_CNAME_DOMAIN: ${env(KONE_APK_CNAME_DOMAIN)}
         OSS_CNAME_DOMAIN: ${env(OSS_CNAME_DOMAIN)}
         MEDIA_URL: "https://nano-media-napllanrqp.cn-shanghai-vpc.fcapp.run"
+        # Phone+OTP login (PNVS/dypnsapi) — same account as OSS, already has dypnsapi
+        # permission (see gcn's docs/pnvs.md). No separate SMS credential provisioned.
+        SMS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
+        SMS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
       triggers:
         - triggerName: http-webhook
           triggerType: http

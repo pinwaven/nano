@@ -70,6 +70,7 @@ const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomark
 const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
 const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm } = require('./handlers/login');
+const { handlePhoneOtpSend, handlePhoneOtpVerify } = require('./handlers/phone-otp');
 const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign } = require('./handlers/chat');
 
 
@@ -198,7 +199,7 @@ exports.handler = async (req, resp, context) => {
 
     const adminCtx = { role: 'superadmin', username: 'superadmin', channelId: null, accountId: null, canManageSubchannels: false };
     const expectedBearer = process.env.API_BEARER_TOKEN;
-    if (expectedBearer && rawPath && path !== '/admin/login' && !path.startsWith('/qr-login/')) {
+    if (expectedBearer && rawPath && path !== '/admin/login' && !path.startsWith('/qr-login/') && !path.startsWith('/phone-otp/')) {
         const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
         const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
         if (token === expectedBearer) {
@@ -564,6 +565,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostQrLoginInit(parsedBody);
             } else if (path === '/qr-login/confirm') {
                 result = await handlePostQrLoginConfirm(parsedBody);
+            } else if (path === '/phone-otp/send') {
+                result = await handlePhoneOtpSend(parsedBody);
+            } else if (path === '/phone-otp/verify') {
+                result = await handlePhoneOtpVerify(parsedBody);
             } else if (path === '/resolve-phone') {
                 const { code, app_id } = parsedBody;
                 result = await handleResolvePhone(code, app_id);
