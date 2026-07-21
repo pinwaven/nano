@@ -3,7 +3,9 @@ import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import { useLang } from '../i18n.js';
 import Sparkline from '../components/Sparkline.jsx';
-import { BM_META, chronoAge, fmtDate, bioAgeColor } from '../utils.js';
+import GaugeBar from '../components/GaugeBar.jsx';
+import MetricChartModal from '../components/MetricChartModal.jsx';
+import { BM_META, chronoAge, fmtDate, bioAgeColor, buildTwinVisuals, buildLabPanel, USER_UPLOADED_BP_SOURCES } from '../utils.js';
 
 const API = '/api';
 
@@ -25,10 +27,17 @@ function KinoScanModal({ user, onClose, onDone }) {
     setStatus('loading');
     setMsg('');
     try {
-      await axios.post(`${API}/kino-scan`, { chip_code: code, openid: user.user_id });
-      setStatus('success');
-      setMsg(t.scanSuccess);
-      onDone && setTimeout(onDone, 1800);
+      const res = await axios.post(`${API}/kino-scan`, { chip_id: code, openid: user.user_id });
+      const outcome = {
+        registered:      { ok: true,  msg: t.scanSuccess },
+        already_linked:  { ok: true,  msg: t.scanAlreadyLinked },
+        used:            { ok: false, msg: t.scanUsed },
+        invalid_chip:    { ok: false, msg: t.scanInvalidChip },
+        claimed_by_other:{ ok: false, msg: t.scanClaimedByOther },
+      }[res.data?.status] || { ok: false, msg: t.scanError };
+      setStatus(outcome.ok ? 'success' : 'error');
+      setMsg(outcome.msg);
+      if (outcome.ok) onDone && setTimeout(onDone, 1800);
     } catch (err) {
       setStatus('error');
       setMsg(t.scanError);
@@ -129,11 +138,179 @@ function ReportSection({ user, lang }) {
   );
 }
 
+function DigitalTwinSection({ user, lang }) {
+  const { t } = useLang();
+  const [twin, setTwin] = useState(null);
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [openModal, setOpenModal] = useState(null);
+  const isZh = lang === 'zh';
+
+  useEffect(() => {
+    if (!user?.user_id) return;
+    Promise.all([
+      axios.get(`${API}/health-twin?openid=${encodeURIComponent(user.user_id)}`),
+      axios.get(`${API}/health-events?openid=${encodeURIComponent(user.user_id)}&limit=60`),
+    ]).then(([twinRes, eventsRes]) => {
+      setTwin(twinRes.data.twin || null);
+      setEvents(eventsRes.data.events || []);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [user?.user_id]);
+
+  if (loading) return <div className="health-loading"><span /><span /><span /></div>;
+  if (!twin) return null;
+
+  const visuals = buildTwinVisuals(twin, t, isZh);
+  const { labPanel, labPanelDate, labPanelAbnormal } = buildLabPanel(twin, lang);
+
+  const eventDate = ev => (ev.data_date || '').toString().slice(0, 10);
+  const seriesFor = (field, category) => events
+    .filter(ev => category ? ev.category === category : true)
+    .filter(ev => ev.data?.[field] != null)
+    .map(ev => ({ date: eventDate(ev), value: Number(ev.data[field]) }))
+    .filter(p => p.date)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const bpSeries = () => {
+    const sys = [], dia = [];
+    events
+      .filter(ev => USER_UPLOADED_BP_SOURCES.has(ev.source) && ev.data?.bp_systolic != null && ev.data?.bp_diastolic != null)
+      .sort((a, b) => eventDate(a).localeCompare(eventDate(b)))
+      .forEach(ev => {
+        sys.push({ date: eventDate(ev), value: Number(ev.data.bp_systolic) });
+        dia.push({ date: eventDate(ev), value: Number(ev.data.bp_diastolic) });
+      });
+    return [sys, dia];
+  };
+
+  const glucoseSeries = () => events
+    .filter(ev => USER_UPLOADED_BP_SOURCES.has(ev.source) && ev.data?.glucose_mmol != null)
+    .map(ev => ({ date: eventDate(ev), value: Number(ev.data.glucose_mmol) }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const [bpSys, bpDia] = bpSeries();
+
+  const trendCards = [
+    { key: 'steps',  label: t.metricSteps,  unit: '',     color: '#0ea5e9', points: seriesFor('steps', 'activity') },
+    { key: 'hrv',    label: t.metricHrv,    unit: 'ms',   color: '#10b981', points: seriesFor('hrv_sdnn_ms', 'vitals') },
+    { key: 'hr',     label: t.metricRestHr, unit: 'bpm',  color: '#f97316', points: seriesFor('resting_hr', 'vitals') },
+    { key: 'glucose',label: t.metricGlucose,unit: 'mmol/L',color: '#a855f7', points: glucoseSeries() },
+  ].filter(c => c.points.length > 0);
+
+  return (
+    <div className="health-section dt-section">
+      <div className="health-section-title">{t.digitalTwin}</div>
+
+      {visuals.healthScore != null && (
+        <div className="dt-score-row">
+          <div className="dt-score-ring" style={{ borderColor: visuals.healthScoreColor }}>
+            <span className="dt-score-val" style={{ color: visuals.healthScoreColor }}>{visuals.healthScore}</span>
+          </div>
+          <div className="dt-score-info">
+            <span className="dt-score-label">{t.healthScore}</span>
+            <span className="dt-score-grade" style={{ color: visuals.healthScoreColor }}>{visuals.healthScoreGrade}</span>
+          </div>
+        </div>
+      )}
+
+      {visuals.healthDomains.length > 0 && (
+        <div className="dt-domains-row">
+          {visuals.healthDomains.map(d => (
+            <div key={d.key} className="dt-domain-chip">
+              <span className="dt-domain-score" style={{ color: d.color }}>{d.score}</span>
+              <span className="dt-domain-label">{d.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {visuals.vitalGauges.length > 0 && (
+        <div className="dt-gauges">
+          <div className="dt-subtitle">{t.dtSevenDay}</div>
+          {visuals.vitalGauges.map(g => <GaugeBar key={g.key} gauge={g} />)}
+        </div>
+      )}
+
+      {visuals.twinBodyBar && (
+        <div className="dt-body-section">
+          <div className="dt-subtitle">{t.dtBody}</div>
+          <div className="dt-body-bar">
+            <div className="dt-body-bar-fat" style={{ width: `${visuals.twinBodyBar.fatPct}%` }} />
+          </div>
+          <div className="dt-body-legend">
+            <span><span className="dt-body-dot dt-body-dot--fat" />{t.dtFat} {visuals.twinBodyBar.fatPct}%</span>
+            <span><span className="dt-body-dot dt-body-dot--lean" />{t.dtLean} {visuals.twinBodyBar.leanPct}%</span>
+          </div>
+        </div>
+      )}
+
+      {labPanel.length > 0 && (
+        <div className="dt-lab-section">
+          <div className="dt-subtitle">{t.dtLabPanel} · {labPanelDate}</div>
+          <div className="dt-lab-abnormal">
+            {labPanelAbnormal > 0
+              ? `${labPanelAbnormal} ${t.dtLabAbnormal}`
+              : t.dtLabAllNormal}
+          </div>
+          <div className="dt-lab-grid">
+            {labPanel.map(item => (
+              <div key={item.key} className="dt-lab-item">
+                <span className="dt-lab-name">{item.displayName}</span>
+                <span className="dt-lab-val" style={{ color: item.statusColor }}>{item.value}</span>
+                <span className="dt-lab-unit">{item.unit}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(bpSys.length > 0 || trendCards.length > 0) && (
+        <div className="dt-trend-cards">
+          {bpSys.length > 0 && (
+            <button className="dt-trend-card" onClick={() => setOpenModal('bp')}>
+              <span className="dt-trend-card-label">{t.metricBp}</span>
+              <span className="dt-trend-card-val" style={{ color: '#ef4444' }}>
+                {bpSys[bpSys.length - 1].value}/{bpDia[bpDia.length - 1].value}
+              </span>
+            </button>
+          )}
+          {trendCards.map(c => (
+            <button key={c.key} className="dt-trend-card" onClick={() => setOpenModal(c.key)}>
+              <span className="dt-trend-card-label">{c.label}</span>
+              <span className="dt-trend-card-val" style={{ color: c.color }}>{c.points[c.points.length - 1].value}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {openModal === 'bp' && (
+        <MetricChartModal
+          title={t.metricBp}
+          lang={lang}
+          legend
+          series={[{ label: 'SYS', color: '#ef4444', points: bpSys }, { label: 'DIA', color: '#f97316', points: bpDia }]}
+          onClose={() => setOpenModal(null)}
+        />
+      )}
+      {trendCards.filter(c => c.key === openModal).map(c => (
+        <MetricChartModal
+          key={c.key}
+          title={c.label}
+          lang={lang}
+          series={[{ label: c.label, color: c.color, points: c.points }]}
+          onClose={() => setOpenModal(null)}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function HealthTab({ user }) {
   const { t, lang } = useLang();
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showScan, setShowScan] = useState(false);
+  const [openModal, setOpenModal] = useState(null);
 
   const loadRecords = () => {
     if (!user?.user_id) return;
@@ -146,11 +323,36 @@ export default function HealthTab({ user }) {
 
   useEffect(loadRecords, [user?.user_id]);
 
-  const latestRecord = records.length > 0 ? records[records.length - 1] : null;
+  const kinoRecordsAll = records.filter(r => r.test_type === 'kino_chip');
+  const latestRecord = kinoRecordsAll.length > 0 ? kinoRecordsAll[kinoRecordsAll.length - 1] : null;
   const latestBm     = latestRecord?.data?.validated || null;
   const subAges      = latestRecord?.data?.bioage_profile?.SubAges || null;
-  const trendFor     = key => records.map(r => r.data?.validated?.[key]).filter(v => v != null);
+  const trendFor     = key => kinoRecordsAll.map(r => r.data?.validated?.[key]).filter(v => v != null);
   const age          = chronoAge(user.birth_date);
+
+  const kinoRecords = kinoRecordsAll.filter(r => r.bio_age != null);
+  const bioAgeSeries = kinoRecords
+    .map(r => ({ date: (r.tested_at || '').slice(0, 10), value: Number(r.bio_age) }))
+    .filter(p => p.date);
+
+  const bodyRecords = records.filter(r => r.test_type === 'body_composition');
+  const weightSeries = bodyRecords
+    .filter(r => r.data?.actual?.weight != null)
+    .map(r => ({ date: (r.tested_at || '').slice(0, 10), value: Number(r.data.actual.weight) }))
+    .filter(p => p.date);
+  const heightVal = bodyRecords.find(r => r.data?.actual?.height != null)?.data?.actual?.height
+    ?? user.bio_data?.height ?? null;
+  const bmiSeries = heightVal
+    ? weightSeries.map(p => ({ date: p.date, value: Number((p.value / Math.pow(heightVal / 100, 2)).toFixed(1)) }))
+    : [];
+
+  const conditions = user.bio_data?.health_conditions || [];
+
+  const bioAgeTrendCards = [
+    { key: 'bioage', label: t.metricBioAge, color: '#6375EC', points: bioAgeSeries },
+    { key: 'weight', label: t.metricWeight, color: '#10b981', points: weightSeries },
+    { key: 'bmi',    label: t.metricBmi,    color: '#f97316', points: bmiSeries },
+  ].filter(c => c.points.length > 0);
 
   return (
     <div className="health-tab">
@@ -203,6 +405,42 @@ export default function HealthTab({ user }) {
           </div>
         )}
       </div>
+
+      <DigitalTwinSection user={user} lang={lang} />
+
+      {bioAgeTrendCards.length > 0 && (
+        <div className="health-section">
+          <div className="health-section-title">{t.trends}</div>
+          <div className="dt-trend-cards">
+            {bioAgeTrendCards.map(c => (
+              <button key={c.key} className="dt-trend-card" onClick={() => setOpenModal(c.key)}>
+                <span className="dt-trend-card-label">{c.label}</span>
+                <span className="dt-trend-card-val" style={{ color: c.color }}>{c.points[c.points.length - 1].value}</span>
+              </button>
+            ))}
+          </div>
+          {bioAgeTrendCards.filter(c => c.key === openModal).map(c => (
+            <MetricChartModal
+              key={c.key}
+              title={c.label}
+              lang={lang}
+              series={[{ label: c.label, color: c.color, points: c.points }]}
+              onClose={() => setOpenModal(null)}
+            />
+          ))}
+        </div>
+      )}
+
+      {conditions.length > 0 && (
+        <div className="health-section">
+          <div className="health-section-title">{t.healthConditions}</div>
+          <div className="plan-chips-row">
+            {conditions.map((c, i) => (
+              <span key={i} className="plan-chip">{t.conditionLabels[c] || c}</span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="health-section">
         <div className="health-section-title">{t.profile}</div>

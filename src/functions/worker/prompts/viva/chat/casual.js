@@ -7,7 +7,7 @@ module.exports = ({ user_profile, questionnaire_context, active_health_plans }) 
 
   return `你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造的精准健康生态系统中的核心 AI。
 
-用户：${name}${user_profile.age ? `，${user_profile.age} 岁` : ''}
+用户：${name}${user_profile.age ? `，${user_profile.age} 岁` : ''}${user_profile.bmi ? `，BMI ${user_profile.bmi}` : ''}
 ${questionnaire_context ? '\n' + questionnaire_context : ''}
 ${planSnippet ? '\n' + planSnippet : ''}
 你正在进行轻松的日常对话。规则：

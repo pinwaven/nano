@@ -1,9 +1,26 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useLang } from '../i18n.js';
-import { MONTH_EN } from '../utils.js';
+import { MONTH_EN, fmtDate } from '../utils.js';
 
 const API = '/api';
+
+function mapStructuredSchedules(schedules, lang) {
+  const dayGroups = {};
+  schedules.forEach(s => {
+    const datePart = typeof s.scheduled_date === 'string' ? s.scheduled_date.split('T')[0] : s.scheduled_date;
+    if (!datePart) return;
+    const [, m, d] = datePart.split('-').map(Number);
+    if (!dayGroups[datePart]) {
+      dayGroups[datePart] = { dateStr: datePart, dateText: fmtDate(datePart, lang), month: m, day: d, morning: [], evening: [] };
+    }
+    const dots = s.recipe?.dots || {};
+    const parsed = Object.entries(dots).map(([key, count]) => ({ key, dotKey: key, count }));
+    if (s.slot_name === 'morning_cup') dayGroups[datePart].morning = parsed;
+    else if (s.slot_name === 'evening_cup') dayGroups[datePart].evening = parsed;
+  });
+  return Object.values(dayGroups).sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+}
 
 function parsePlan(text) {
   if (!text) return [];
@@ -31,7 +48,7 @@ function parsePlan(text) {
 
 function DotChip({ dotKey, count, dotsMap }) {
   const dot = dotsMap[dotKey];
-  const color = dot?.color || '#6375EC';
+  const color = dot?.color_hex || '#6375EC';
   const label = dot?.name_zh || dot?.name || dotKey;
   return (
     <div className="dot-chip" title={label}>
@@ -42,8 +59,8 @@ function DotChip({ dotKey, count, dotsMap }) {
   );
 }
 
-export default function DotsTab({ user }) {
-  const { t } = useLang();
+export default function DotsView({ user }) {
+  const { t, lang } = useLang();
   const [plan, setPlan] = useState(null);
   const [days, setDays] = useState([]);
   const [dotsMap, setDotsMap] = useState({});
@@ -57,11 +74,18 @@ export default function DotsTab({ user }) {
         const dotMap = {};
         (r.data.dots || []).forEach(d => { dotMap[d.key_name] = d; });
         setDotsMap(dotMap);
-        setPlan(r.data.plan);
-        setDays(parsePlan(r.data.plan));
+        const structured = r.data.structured_plan || null;
+        const schedules = r.data.schedules || [];
+        if (structured && schedules.length > 0) {
+          setPlan(structured);
+          setDays(mapStructuredSchedules(schedules, lang));
+        } else {
+          setPlan(r.data.plan);
+          setDays(parsePlan(r.data.plan));
+        }
       } catch { /* silent */ } finally { setLoading(false); }
     })();
-  }, [user?.user_id]);
+  }, [user?.user_id, lang]);
 
   const now = new Date();
   const todayM = now.getMonth() + 1;
@@ -76,45 +100,41 @@ export default function DotsTab({ user }) {
     return d.dateText;
   };
 
-  return (
-    <div className="dots-tab">
-      <div className="dots-header">
-        <span className="dots-title">{t.dotsTitle}</span>
+  if (loading) {
+    return (
+      <div className="dots-empty">
+        <span className="dots-loading-dot" /><span className="dots-loading-dot" /><span className="dots-loading-dot" />
       </div>
-      {loading ? (
-        <div className="dots-empty">
-          <span className="dots-loading-dot" /><span className="dots-loading-dot" /><span className="dots-loading-dot" />
-        </div>
-      ) : !plan ? (
-        <div className="dots-empty">{t.noPlan}</div>
-      ) : (
-        <div className="dots-days">
-          {days.map((d, i) => {
-            const isToday = d.month === todayM && d.day === todayD;
-            return (
-              <div key={i} className={`dots-day-card${isToday ? ' is-today' : ''}`}>
-                <div className="dots-day-label">{dayLabel(d)}</div>
-                {d.morning.length > 0 && (
-                  <div className="dots-slot">
-                    <span className="dots-slot-name">{t.morning}</span>
-                    <div className="dots-chips">
-                      {d.morning.map(dc => <DotChip key={dc.key} dotKey={dc.dotKey} count={dc.count} dotsMap={dotsMap} />)}
-                    </div>
-                  </div>
-                )}
-                {d.evening.length > 0 && (
-                  <div className="dots-slot">
-                    <span className="dots-slot-name">{t.evening}</span>
-                    <div className="dots-chips">
-                      {d.evening.map(dc => <DotChip key={dc.key} dotKey={dc.dotKey} count={dc.count} dotsMap={dotsMap} />)}
-                    </div>
-                  </div>
-                )}
+    );
+  }
+  if (!plan) return <div className="dots-empty">{t.noPlan}</div>;
+
+  return (
+    <div className="dots-days">
+      {days.map((d, i) => {
+        const isToday = d.month === todayM && d.day === todayD;
+        return (
+          <div key={i} className={`dots-day-card${isToday ? ' is-today' : ''}`}>
+            <div className="dots-day-label">{dayLabel(d)}</div>
+            {d.morning.length > 0 && (
+              <div className="dots-slot">
+                <span className="dots-slot-name">{t.morning}</span>
+                <div className="dots-chips">
+                  {d.morning.map(dc => <DotChip key={dc.key} dotKey={dc.dotKey} count={dc.count} dotsMap={dotsMap} />)}
+                </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            )}
+            {d.evening.length > 0 && (
+              <div className="dots-slot">
+                <span className="dots-slot-name">{t.evening}</span>
+                <div className="dots-chips">
+                  {d.evening.map(dc => <DotChip key={dc.key} dotKey={dc.dotKey} count={dc.count} dotsMap={dotsMap} />)}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

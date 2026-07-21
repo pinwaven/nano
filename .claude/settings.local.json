@@ -1,4 +1,7 @@
 {
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": false
+  },
   "permissions": {
     "allow": [
       "Bash(psql *)",
@@ -12,7 +15,11 @@
       "Bash(node bin/cli.js --address 4dd20ec90c43ddf59d1c630dfd17d865 get-sleep)",
       "Bash(node *)",
       "WebSearch",
-      "Bash(brew --version)"
+      "Bash(brew --version)",
+      "Bash(gh auth *)",
+      "Bash(jobs)",
+      "Skill(update-config)",
+      "mcp__claude-in-chrome__get_page_text"
     ]
   }
 }

@@ -408,15 +408,23 @@ async function handlePostKinoScan(body) {
         if (row.user_id === user_id) {
             return { success: true, status: 'already_linked', scan_id: row.id };
         }
+        // Chip already has a pending scan claimed by a different user — refuse
+        // rather than silently reassigning ownership (ON CONFLICT below would
+        // otherwise overwrite row.user_id, misattributing the eventual result).
+        return { success: false, status: 'claimed_by_other', scan_id: row.id };
     }
 
     const result = await pool.query(
         `INSERT INTO scans (user_id, chip_id, scan_status, scan_results)
          VALUES ($1, $2, 'pending', $3)
-         ON CONFLICT (chip_id) WHERE chip_id IS NOT NULL DO UPDATE SET user_id = EXCLUDED.user_id, scan_status = 'pending', updated_at = NOW()
+         ON CONFLICT (chip_id) WHERE chip_id IS NOT NULL DO NOTHING
          RETURNING id`,
         [user_id, chip_id, JSON.stringify({ chip_id })]
     );
+    if (result.rows.length === 0) {
+        // Lost a race against a concurrent first-time scan of the same chip.
+        return { success: false, status: 'claimed_by_other' };
+    }
     return { success: true, status: 'registered', scan_id: result.rows[0].id };
 }
 
@@ -506,7 +514,131 @@ async function handlePostKinoResult(body) {
         }
     }
 
+    if (finalBiomarkerId) {
+        await pool.query(
+            `UPDATE scans SET biomarker_id = $1 WHERE id = $2`,
+            [finalBiomarkerId, scan_id]
+        );
+    }
+
     return { success: true, scan_id, biomarker_id: finalBiomarkerId, user_id };
+}
+
+async function handleGetKinoTestedChips(query) {
+    try {
+        const page  = Math.max(1, parseInt(query.page  || '1'));
+        const limit = Math.min(100, parseInt(query.limit || '20'));
+        const offset = (page - 1) * limit;
+        const search = (query.search || '').trim();
+
+        const params = [];
+        let searchClause = '';
+        if (search) {
+            params.push(`%${search}%`);
+            searchClause = `AND (s.chip_id ILIKE $${params.length} OR u.nickname ILIKE $${params.length})`;
+        }
+
+        const rows = await pool.query(
+            `SELECT s.id AS scan_id, s.chip_id AS chip_code, s.scan_status,
+                    s.created_at AS scanned_at, s.updated_at,
+                    cb.id AS batch_id, cb.prefix AS batch_prefix, cb.model,
+                    u.user_id, u.nickname,
+                    b.id AS biomarker_id, b.bio_age, b.tested_at,
+                    kd.id AS kino_device_id, kd.name AS device_name, kd.serial_number AS device_serial
+             FROM scans s
+             JOIN kino_chips c ON c.chip_code = s.chip_id
+             JOIN kino_chip_batches cb ON cb.id = c.batch_id
+             JOIN users u ON u.user_id = s.user_id
+             LEFT JOIN biomarkers b ON b.id = COALESCE(s.biomarker_id, (
+                 SELECT b2.id FROM biomarkers b2
+                 WHERE b2.user_id = s.user_id AND b2.test_type = 'kino_chip'
+                 ORDER BY ABS(EXTRACT(EPOCH FROM (b2.tested_at - s.updated_at))) ASC
+                 LIMIT 1
+             ))
+             LEFT JOIN kino_devices kd ON kd.id = b.kino_device_id
+             WHERE s.scan_status = 'completed' ${searchClause}
+             ORDER BY COALESCE(b.tested_at, s.updated_at) DESC
+             LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+            [...params, limit, offset]
+        );
+
+        const cnt = await pool.query(
+            `SELECT COUNT(*)
+             FROM scans s
+             JOIN kino_chips c ON c.chip_code = s.chip_id
+             JOIN users u ON u.user_id = s.user_id
+             WHERE s.scan_status = 'completed' ${searchClause}`,
+            params
+        );
+
+        return { success: true, chips: rows.rows, total: parseInt(cnt.rows[0].count), page, limit };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handlePostKinoChipReset(scanId) {
+    try {
+        const scanResult = await pool.query(
+            'SELECT id, chip_id FROM scans WHERE id = $1',
+            [parseInt(scanId)]
+        );
+        if (scanResult.rows.length === 0) return { success: false, error: 'Scan not found' };
+        const { chip_id } = scanResult.rows[0];
+        if (!chip_id) return { success: false, error: 'Scan has no linked chip' };
+
+        await pool.query(
+            `UPDATE kino_chips SET status = 'available' WHERE chip_code = $1`,
+            [chip_id]
+        );
+        // Deleting (rather than un-linking) frees the chip_id unique index so the
+        // chip can be scanned and registered again exactly like a fresh chip.
+        await pool.query('DELETE FROM scans WHERE id = $1', [parseInt(scanId)]);
+
+        return { success: true, chip_code: chip_id };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleGetKinoTestedChipDetail(scanId) {
+    try {
+        const result = await pool.query(
+            `SELECT s.id AS scan_id, s.chip_id AS chip_code, s.scan_status, s.scan_results, s.error_message,
+                    s.created_at AS scan_created_at, s.updated_at AS scan_updated_at,
+                    cb.id AS batch_id, cb.prefix AS batch_prefix, cb.model, cb.status AS batch_status,
+                    cm.name AS model_name, cm.biomarker_keys, cm.config AS chip_config,
+                    u.user_id, u.nickname, u.gender, u.birth_date, u.phone, u.email,
+                    b.id AS biomarker_id, b.data AS biomarker_data, b.bio_age, b.tested_at,
+                    b.created_at AS biomarker_created_at,
+                    kd.id AS kino_device_id, kd.name AS device_name, kd.serial_number AS device_serial
+             FROM scans s
+             JOIN kino_chips c ON c.chip_code = s.chip_id
+             JOIN kino_chip_batches cb ON cb.id = c.batch_id
+             LEFT JOIN kino_chip_models cm ON cm.code = cb.model
+             JOIN users u ON u.user_id = s.user_id
+             LEFT JOIN biomarkers b ON b.id = COALESCE(s.biomarker_id, (
+                 SELECT b2.id FROM biomarkers b2
+                 WHERE b2.user_id = s.user_id AND b2.test_type = 'kino_chip'
+                 ORDER BY ABS(EXTRACT(EPOCH FROM (b2.tested_at - s.updated_at))) ASC
+                 LIMIT 1
+             ))
+             LEFT JOIN kino_devices kd ON kd.id = b.kino_device_id
+             WHERE s.id = $1`,
+            [parseInt(scanId)]
+        );
+        if (result.rows.length === 0) return { success: false, error: 'Not found' };
+        const row = result.rows[0];
+        return {
+            success: true,
+            chip: {
+                ...row,
+                chrono_age: row.birth_date ? calculateAge(row.birth_date) : null,
+            },
+        };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
 }
 
 module.exports = {
@@ -526,4 +658,7 @@ module.exports = {
     handleGetKinoChip,
     handlePostKinoScan,
     handlePostKinoResult,
+    handleGetKinoTestedChips,
+    handleGetKinoTestedChipDetail,
+    handlePostKinoChipReset,
 };

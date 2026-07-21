@@ -19,6 +19,12 @@ const SUB_AGE_META = [
 
 const SUB_AGE_KEYS = SUB_AGE_META.map(m => m.key)
 
+// health_events.source values that represent a real BP-device reading the user
+// supplied themselves. Ring-derived sources (e.g. 'smart_ring') are excluded —
+// the Halo ring estimates BP from HRV pulse-wave data, not a cuff, and is not
+// accurate until calibrated against an actual BP device.
+const USER_UPLOADED_BP_SOURCES = new Set(['manual_photo'])
+
 function buildSubAgeLabels(base, overrides, lang) {
   if (!overrides) return base
   const result = { ...base }
@@ -46,6 +52,14 @@ function _scoreSleep(h) {
 // in local storage / server rows for anyone bound before this change shipped.
 function _normalizeBrand(brand) {
   return brand === 'x3' ? 'halo' : brand
+}
+
+// Halo and V8 share the same auto-monitoring config surface (0x2A/0x2B,
+// confirmed identical) and the same single-phase "all historical, no
+// realtime measurement" sync shape — see docs/architecture/v8-smart-band.md.
+// Colmi and Aizo don't have either.
+function _hasIntervalSettings(brand) {
+  return brand === 'halo' || brand === 'v8'
 }
 
 // --- Sleep session helpers (shared by BLE-live sync, server hydration, and display prep) ---
@@ -1028,7 +1042,7 @@ Component({
     // Wearable device
     wearableId: '',
     wearableName: '',
-    wearableBrand: '',   // 'halo' | 'colmi' (legacy stored value: 'x3')
+    wearableBrand: '',   // 'halo' | 'v8' | 'aizo' | 'colmi' (legacy stored value: 'x3')
     wearableConnected: false,
     wearableBattery: 0,
     wearableBusy: false,
@@ -1567,7 +1581,10 @@ Component({
             if (!seenStress.has(date) && d?.stress != null) {
               stressHistory.push({ date, stress: d.stress }); seenStress.add(date)
             }
-            if (!seenBp.has(date) && d?.bp_systolic != null && d?.bp_diastolic != null) {
+            // Ring-derived BP (source 'smart_ring') is inferred from HRV pulse-wave data,
+            // not a real cuff reading, and is unreliable until calibrated against an actual
+            // BP device — only surface BP the user uploaded themselves (e.g. a cuff photo).
+            if (!seenBp.has(date) && USER_UPLOADED_BP_SOURCES.has(ev.source) && d?.bp_systolic != null && d?.bp_diastolic != null) {
               bpHistory.push({ date, systolic: d.bp_systolic, diastolic: d.bp_diastolic, pulse: d.bp_pulse || null })
               seenBp.add(date)
             }
@@ -2274,7 +2291,7 @@ Component({
         const hasLocalDevice = !!(saved && saved.deviceId)
         if (hasLocalDevice) {
           const brand = _normalizeBrand(saved.brand) || 'colmi'
-          const fallbackName = brand === 'halo' ? 'Halo Ring' : brand === 'aizo' ? 'Aizo Ring' : 'Colmi Ring'
+          const fallbackName = brand === 'halo' ? 'Halo Ring' : brand === 'aizo' ? 'Aizo Ring' : brand === 'v8' ? 'V8 Band' : 'Colmi Ring'
           const haloSaved = wx.getStorageSync('halo_interval_settings') || wx.getStorageSync('x3_interval_settings')
           const haloIntervals = haloSaved ? { ...this.data.haloIntervals, ...haloSaved } : this.data.haloIntervals
           const haloWmSaved = wx.getStorageSync('halo_work_mode_settings') || wx.getStorageSync('x3_work_mode_settings')
@@ -2546,9 +2563,10 @@ Component({
         const { BLEManager } = require('../../utils/wearable/ble-manager.js')
         const { COLMI_NAME_PREFIXES } = require('../../utils/wearable/colmi/protocol.js')
         const { HALO_NAME_PREFIXES } = require('../../utils/wearable/halo/protocol.js')
+        const { V8_NAME_PREFIXES } = require('../../utils/wearable/v8/protocol.js')
         const { BLE_SERVICE_UUID: AIZO_SVC_UUID, AIZO_NAME_PREFIXES } = require('../../utils/wearable/aizo/protocol.js')
         const { createWearable } = require('../../utils/wearable/index.js')
-        const ALL_PREFIXES = [...COLMI_NAME_PREFIXES, ...HALO_NAME_PREFIXES]
+        const ALL_PREFIXES = [...COLMI_NAME_PREFIXES, ...HALO_NAME_PREFIXES, ...V8_NAME_PREFIXES]
         const AIZO_SVC_NORM = AIZO_SVC_UUID.replace(/-/g, '').toLowerCase()
 
         // Open BLE adapter — this prompts the user to enable Bluetooth if off
@@ -2571,8 +2589,10 @@ Component({
               const isNamed    = nameLower && ALL_PREFIXES.some((p) => nameLower.startsWith(p.toLowerCase()))
               if (!isAizo && !isNamed) continue
               const isHalo = nameLower && HALO_NAME_PREFIXES.some((p) => nameLower.startsWith(p.toLowerCase()))
-              const brand = isAizo ? 'aizo' : (isHalo ? 'halo' : 'colmi')
-              found.set(d.deviceId, { deviceId: d.deviceId, name: name || (brand === 'aizo' ? 'Aizo Ring' : brand === 'halo' ? 'Halo Ring' : 'Colmi Ring'), rssi: d.RSSI, brand })
+              const isV8   = nameLower && V8_NAME_PREFIXES.some((p) => nameLower.startsWith(p.toLowerCase()))
+              const brand = isAizo ? 'aizo' : (isHalo ? 'halo' : (isV8 ? 'v8' : 'colmi'))
+              const fallbackNames = { aizo: 'Aizo Ring', halo: 'Halo Ring', v8: 'V8 Band', colmi: 'Colmi Ring' }
+              found.set(d.deviceId, { deviceId: d.deviceId, name: name || fallbackNames[brand], rssi: d.RSSI, brand })
             }
           })
           wx.startBluetoothDevicesDiscovery({
@@ -2613,10 +2633,10 @@ Component({
         // is a per-OS/per-scan BLE handle) — only Halo currently exposes it.
         const mac = typeof ring.getMac === 'function' ? await ring.getMac().catch(() => null) : null
 
-        // Halo: apply default scheduled monitoring immediately on first bind
+        // Halo/V8: apply default scheduled monitoring immediately on first bind
         const defaultIvals = { hr: 30, spo2: 60, temp: 60, hrv: 120 }
         const defaultWms   = { hr: 2, spo2: 2, temp: 2, hrv: 2 }
-        if (brand === 'halo') {
+        if (_hasIntervalSettings(brand)) {
           const _opts = { workMode: 2, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
           await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.hr,   type: 1 }).catch(() => {})
           await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.spo2, type: 2 }).catch(() => {})
@@ -2639,7 +2659,7 @@ Component({
           wearableBattery: battery.level,
           wearableBusy: false,
           wearableServerHint: null,
-          ...(brand === 'halo' ? { haloIntervals: defaultIvals, haloWorkModes: defaultWms } : {}),
+          ...(_hasIntervalSettings(brand) ? { haloIntervals: defaultIvals, haloWorkModes: defaultWms } : {}),
         })
         // Best-effort — so other client apps (Android/iOS builds of this same
         // codebase, or a miniapp reinstall) can discover the same ring later.
@@ -2663,8 +2683,8 @@ Component({
       const brand = _normalizeBrand(_savedDev.brand) || 'colmi'
       const ring = createWearable(brand)
 
-      // ── Halo: single-phase sync — all data is historical, no real-time measurement needed ──
-      if (brand === 'halo') {
+      // ── Halo / V8: single-phase sync — all data is historical, no real-time measurement needed ──
+      if (_hasIntervalSettings(brand)) {
         try {
           await ring.connect(this.data.wearableId, { syncTime: true })
           // Apply background measurement intervals. Track failures so we can detect
@@ -2680,13 +2700,13 @@ Component({
           // Read back HRV (type 4) to verify the ring accepted the schedule.
           try {
             const _s4 = await ring.getAutoMonitoring(4)
-            if (IS_DEV) console.log(JSON.stringify({ level: 'DEBUG', msg: 'halo HRV monitor readback', config: _s4 }))
+            if (IS_DEV) console.log(JSON.stringify({ level: 'DEBUG', msg: 'HRV monitor readback', brand, config: _s4 }))
             if (_s4.workMode === 0 || _s4.intervalMinutes === 0) {
-              console.log(JSON.stringify({ level: 'WARN', msg: 'halo HRV auto-monitor not active after sync', config: _s4 }))
+              console.log(JSON.stringify({ level: 'WARN', msg: 'HRV auto-monitor not active after sync', brand, config: _s4 }))
             }
           } catch (_) {}
           if (_monitorFailed > 0) {
-            console.log(JSON.stringify({ level: 'WARN', msg: 'halo setAutoMonitoring partial failure', failed: _monitorFailed }))
+            console.log(JSON.stringify({ level: 'WARN', msg: 'setAutoMonitoring partial failure', brand, failed: _monitorFailed }))
           }
           const battery   = await ring.getBattery()
           const steps     = await ring.getSteps().catch(() => null)
@@ -2754,7 +2774,7 @@ Component({
           this._commitRingData(raw, battery.level, isZh, false)
         } catch (e) {
           await ring.disconnect().catch(() => {})
-          if (IS_DEV) console.error('[BLE][sync:halo]', e?.message || e?.errMsg || e)
+          if (IS_DEV) console.error(`[BLE][sync:${brand}]`, e?.message || e?.errMsg || e)
           if (!_isPrivacyError(e)) wx.showToast({ title: t.wearableSyncFail, icon: 'none' })
           this.setData({ wearableConnected: false, wearableBusy: false })
         } finally {
@@ -2913,15 +2933,15 @@ Component({
       }
       if (this.data.wearableBusy || this.data.ringSettingsBusy) return
 
-      // Non-Halo brands have no interval settings — just open the panel
-      if (this.data.wearableBrand !== 'halo') {
+      // Brands without interval settings — just open the panel
+      if (!_hasIntervalSettings(this.data.wearableBrand)) {
         this.setData({ ringSettingsOpen: true })
         return
       }
 
       this.setData({ ringSettingsOpen: true, ringSettingsBusy: true })
       const { createWearable } = require('../../utils/wearable/index.js')
-      const ring = createWearable('halo')
+      const ring = createWearable(this.data.wearableBrand)
       try {
         await ring.connect(this.data.wearableId)
         const s1 = await ring.getAutoMonitoring(1)
@@ -2969,7 +2989,7 @@ Component({
       const wms   = this.data.haloWorkModes
       const baseOpts = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
       const { createWearable } = require('../../utils/wearable/index.js')
-      const ring = createWearable('halo')
+      const ring = createWearable(this.data.wearableBrand)
       try {
         await ring.connect(this.data.wearableId)
         // Sync ring clock if it drifts more than 1 minute from host time

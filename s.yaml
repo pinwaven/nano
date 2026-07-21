@@ -81,6 +81,9 @@ resources:
         WX_SECRET_WAVEN: ${env(WX_SECRET_WAVEN)}
         WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
+        GCN_API_BASE_URL: "https://gcn-dev.fros.cc"
+        GCN_SERVICE_TOKEN: ${env(GCN_SERVICE_TOKEN)}
         OSS_REGION: "oss-cn-shanghai"
         OSS_BUCKET: "waven-nano"
         OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
@@ -88,6 +91,12 @@ resources:
         KONE_APK_CNAME_DOMAIN: ${env(KONE_APK_CNAME_DOMAIN)}
         OSS_CNAME_DOMAIN: ${env(OSS_CNAME_DOMAIN)}
         MEDIA_URL: "https://nano-media-napllanrqp.cn-shanghai-vpc.fcapp.run"
+        # Phone+OTP login (PNVS/dypnsapi) — same account as OSS, already has dypnsapi
+        # permission (see gcn's docs/pnvs.md). No separate SMS credential provisioned.
+        SMS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
+        SMS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
+        # PNVS_SIGN_NAME/PNVS_TEMPLATE_CODE are optional — lib/sms.js defaults to the
+        # verified system-provided pair (恒创联众 / 100001).
       triggers:
         - triggerName: http-webhook
           triggerType: http

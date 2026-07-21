@@ -378,8 +378,8 @@ function UserDetailModal({ user, onClose }) {
 
   const bioData      = user.user_bio_data || {};
   const kinoRecs     = records.filter(r => r.test_type === 'kino_chip');
-  const latestRec    = [...kinoRecs].reverse().find(r => r.data?.estimated) || null;
-  const latestBm     = latestRec?.data?.estimated || null;
+  const latestRec    = [...kinoRecs].reverse().find(r => r.data?.validated) || null;
+  const latestBm     = latestRec?.data?.validated || null;
   const subAgesRaw   = latestRec?.data?.bioage_profile?.SubAges || null;
   const rawBioAge    = latestRec?.bio_age
     ?? (kinoRecs.length > 0 ? kinoRecs[kinoRecs.length - 1]?.bio_age : null)
@@ -400,7 +400,7 @@ function UserDetailModal({ user, onClose }) {
     : [];
 
   const trendFor = key => kinoRecs.slice(-10)
-    .map(r => r.data?.estimated?.[key]).filter(v => v != null);
+    .map(r => r.data?.validated?.[key]).filter(v => v != null);
 
   const TABS = [
     { id: 'health', label: t.userDetail.tabHealth },

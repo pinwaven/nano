@@ -14,6 +14,12 @@
     <text wx:if="{{version}}" class="header-version">v{{version}}</text>
   </view>
 
+  <!-- ── Sandbox banner ── -->
+  <view wx:if="{{sandboxMode}}" class="sandbox-banner" catchtap="exitSandbox">
+    <text class="sandbox-banner-text">{{sandboxBannerText}}</text>
+    <text class="sandbox-banner-exit">{{t.exitSandbox}}</text>
+  </view>
+
   <!-- ── Logo menu ── -->
   <view wx:if="{{menuOpen}}" class="menu-mask" bindtap="closeMenu">
     <view class="menu-dropdown" catchtap="noop" style="top: {{menuTop}}px;">
@@ -63,7 +69,7 @@
       <view class="menu-divider"></view>
       <view wx:if="{{!isGuest}}" class="menu-item" bindtap="handleLogout">
         <text class="menu-item-icon">↪</text>
-        <text class="menu-item-label">{{t.logout}}</text>
+        <text class="menu-item-label">{{sandboxMode ? t.exitSandbox : t.logout}}</text>
       </view>
       <view wx:if="{{isGuest}}" class="menu-item" bindtap="openGuestSheet">
         <text class="menu-item-icon">✦</text>
@@ -286,6 +292,10 @@
       <!-- Normal chat input -->
       <view wx:if="{{obStep === 'done'}}" class="input-container">
         <toolbox wx:if="{{toolboxOpen}}" tools="{{toolList}}" disabled="{{typing}}" bind:toolaction="handleToolAction" />
+        <view wx:if="{{isRecording}}" class="mic-recording-banner">
+          <text class="mic-recording-dot"></text>
+          <text class="mic-recording-text">{{t.micRecording}}</text>
+        </view>
         <view class="input-area">
           <view class="plus-btn {{toolboxOpen ? 'plus-btn-open' : ''}}" bindtap="toggleToolbox">
             <text class="plus-icon">+</text>
@@ -303,7 +313,16 @@
             cursor-spacing="12"
             show-confirm-bar="false"
           />
-          <view class="send-btn {{chatInput ? 'send-active' : ''}}" bindtap="handleSend">
+          <view
+            wx:if="{{!chatInput}}"
+            class="mic-btn {{isRecording ? 'mic-btn-active' : ''}} {{typing || isSending ? 'mic-btn-disabled' : ''}}"
+            bindtouchstart="onMicTouchStart"
+            bindtouchend="onMicTouchEnd"
+            bindtouchcancel="onMicTouchEnd"
+          >
+            <image class="mic-icon" src="/assets/icons/mic.svg" mode="aspectFit" />
+          </view>
+          <view wx:else class="send-btn {{chatInput ? 'send-active' : ''}}" bindtap="handleSend">
             <text class="send-icon">↑</text>
           </view>
         </view>
@@ -762,6 +781,14 @@
 
     <!-- ════ STORE ════ -->
     <view class="store-tab{{tab !== 'store' ? ' tab-hidden' : ''}}">
+
+      <!-- Aeviva channel: tapping the Store tab button opens the GCN partner storefront
+           as a separate navigated page instead (see main.js switchTab/_openAevivaStore)
+           rather than showing it here inline — <web-view> doesn't reliably support an
+           overlay back button when embedded inside this absolutely-positioned
+           tab-switching container (confirmed by testing, not just theory), so `tab` is
+           never actually set to 'store' for aeviva users and this section always renders
+           the native store below for everyone. -->
 
       <view class="store-header">
         <text class="store-title">{{t.storeTitle}}</text>
@@ -1455,6 +1482,44 @@
     </view>
   </view>
 
+  <!-- ── Guest Phone-Skip Passcode Overlay ── -->
+  <view wx:if="{{guestPassOpen}}" class="kpass-overlay guest-pass-overlay">
+    <view class="kpass-box" style="margin-top: {{statusBarHeight + 44}}px;">
+
+      <view class="kpass-logo">⬡</view>
+      <text class="kpass-title">{{t.guestSkipPassTitle}}</text>
+
+      <!-- 4-dot indicator -->
+      <view class="kpass-dots">
+        <view class="kpass-dot {{guestPassInput.length > 0 ? 'kpass-dot-filled' : ''}} {{guestPassError ? 'kpass-dot-error' : ''}}"></view>
+        <view class="kpass-dot {{guestPassInput.length > 1 ? 'kpass-dot-filled' : ''}} {{guestPassError ? 'kpass-dot-error' : ''}}"></view>
+        <view class="kpass-dot {{guestPassInput.length > 2 ? 'kpass-dot-filled' : ''}} {{guestPassError ? 'kpass-dot-error' : ''}}"></view>
+        <view class="kpass-dot {{guestPassInput.length > 3 ? 'kpass-dot-filled' : ''}} {{guestPassError ? 'kpass-dot-error' : ''}}"></view>
+      </view>
+
+      <text wx:if="{{guestPassError}}" class="kpass-error">{{t.guestSkipPassError}}</text>
+      <view wx:else style="height: 36rpx;"></view>
+
+      <!-- Numpad -->
+      <view class="kpass-numpad">
+        <view wx:for="{{[1,2,3,4,5,6,7,8,9]}}" wx:key="*this"
+          class="kpass-key" bindtap="handleGuestPassKey" data-digit="{{item}}">
+          <text>{{item}}</text>
+        </view>
+        <view class="kpass-key kpass-key-empty"></view>
+        <view class="kpass-key" bindtap="handleGuestPassKey" data-digit="0"><text>0</text></view>
+        <view class="kpass-key kpass-key-del" bindtap="handleGuestPassDelete">
+          <text class="kpass-del-icon">⌫</text>
+        </view>
+      </view>
+
+      <view class="kpass-cancel" bindtap="closeGuestPass">
+        <text>{{t.guestCancelSignup}}</text>
+      </view>
+
+    </view>
+  </view>
+
   <!-- ── Kino Simulator Overlay ── -->
   <view wx:if="{{kinoSimOpen}}" class="ksm-overlay">
     <view class="ksm-container">
@@ -1584,15 +1649,15 @@
       <image class="tab-icon-img" src="/assets/icons/plans.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabPlans}}</text>
     </view>
-    <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'store' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="store">
-      <view wx:if="{{tab === 'store'}}" class="tab-line"></view>
-      <image class="tab-icon-img" src="/assets/icons/store.svg" mode="aspectFit" />
-      <text class="tab-label">{{t.tabStore}}</text>
-    </view>
     <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'learn' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="learn">
       <view wx:if="{{tab === 'learn'}}" class="tab-line"></view>
       <image class="tab-icon-img" src="/assets/icons/training.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabLearn}}</text>
+    </view>
+    <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'store' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="store">
+      <view wx:if="{{tab === 'store'}}" class="tab-line"></view>
+      <image class="tab-icon-img" src="/assets/icons/store.svg" mode="aspectFit" />
+      <text class="tab-label">{{t.tabStore}}</text>
     </view>
   </view>
 
@@ -1623,15 +1688,15 @@
 
         <!-- Phone consent row -->
         <button
-          class="consent-row {{guestPhoneDone ? 'consent-row-done' : ''}}"
+          class="consent-row {{(guestPhoneDone || guestPhoneSkipped) ? 'consent-row-done' : ''}}"
           open-type="getPhoneNumber"
           bindgetphonenumber="handleGuestPhone"
-          disabled="{{guestInviteBusy || guestPhoneDone}}"
+          disabled="{{guestInviteBusy || guestPhoneDone || guestPhoneSkipped}}"
         >
-          <view class="consent-check {{guestPhoneDone ? 'consent-check-done' : ''}}">
-            <text wx:if="{{guestPhoneDone}}" class="consent-check-icon">✓</text>
+          <view class="consent-check {{(guestPhoneDone || guestPhoneSkipped) ? 'consent-check-done' : ''}}">
+            <text wx:if="{{guestPhoneDone || guestPhoneSkipped}}" class="consent-check-icon">✓</text>
           </view>
-          <text class="consent-label">{{guestResolvedPhone || t.guestPhoneLabel}}</text>
+          <text class="consent-label">{{guestPhoneSkipped ? t.guestPhoneSkippedLabel : (guestResolvedPhone || t.guestPhoneLabel)}}</text>
         </button>
 
         <!-- Error -->
@@ -1641,10 +1706,15 @@
 
         <!-- Continue -->
         <view
-          class="guest-sheet-btn {{(guestAvatarUploading || !guestResolvedPhone || guestInviteBusy) ? 'guest-sheet-btn-disabled' : ''}}"
+          class="guest-sheet-btn {{(guestAvatarUploading || (!guestResolvedPhone && !guestPhoneSkipped) || guestInviteBusy) ? 'guest-sheet-btn-disabled' : ''}}"
           bindtap="proceedGuestSignup"
         >
           <text>{{guestInviteBusy ? t.guestActivating : t.guestContinueBtn}}</text>
+        </view>
+
+        <!-- Skip phone verification (password-protected) -->
+        <view wx:if="{{!guestPhoneSkipped}}" class="guest-sheet-skip" bindtap="openGuestPass">
+          <text>{{t.guestSkipPhoneLink}}</text>
         </view>
 
       </block>

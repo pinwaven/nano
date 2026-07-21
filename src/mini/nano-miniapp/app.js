@@ -6,6 +6,7 @@ App({
     lang: 'zh',
     theme: 'dark',
     apiToken: 'tokenData-gh9bc7917115bid72c68c8c4693g',
+    sandboxMode: false,
   },
 
   // Holds the resolve fn WeChat passes to onNeedPrivacyAuthorization.
@@ -18,15 +19,16 @@ App({
       const user = wx.getStorageSync('nano_user')
       const channel = wx.getStorageSync('nano_channel')
       const coach = wx.getStorageSync('nano_coach')
-      // Only restore session if the profile is complete (phone bound).
-      // Accept both legacy format (user.phone) and trimmed format (user.phoneSet).
-      if (user && (user.phone || user.phoneSet)) {
+      // Restore any stored account regardless of phone completeness — phone is optional
+      // (see guest sign-up password-skip). Missing-phone nudging is handled in-chat instead.
+      if (user) {
         this.globalData.user = user
         this.globalData.channel = channel || null
         this.globalData.coach = coach || null
         this.globalData.lang = user.language === 'en' ? 'en' : ((channel?.locale === 'en') ? 'en' : 'zh')
         const savedTheme = wx.getStorageSync('nano_theme')
         this.globalData.theme = savedTheme || user.theme || 'dark'
+        this.globalData.sandboxMode = !!wx.getStorageSync('nano_sandbox_active')
       }
     } catch (e) {}
 

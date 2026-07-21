@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Users, Coins, Settings2, Plus, Pencil, Trash2, X, Check, ChevronDown } from 'lucide-react';
+import { Users, Coins, Settings2, Plus, Pencil, Trash2, X, Check, ChevronDown, Store, Link2 } from 'lucide-react';
+
+const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
 import { useLang, fmtDate, StatCard, Badge } from '../shared.jsx';
 
 function PartnersTab({ users = [], session }) {
@@ -17,6 +19,7 @@ function PartnersTab({ users = [], session }) {
   const [formBusy, setFormBusy] = useState(false);
   const [formError, setFormError] = useState('');
   const [userSearch, setUserSearch] = useState('');
+  const [referrerSearch, setReferrerSearch] = useState('');
   const [commForm, setCommForm] = useState({});
   const [showCommForm, setShowCommForm] = useState(false);
   const [commBusy, setCommBusy] = useState(false);
@@ -119,8 +122,8 @@ function PartnersTab({ users = [], session }) {
     } catch (err) { alert(err.response?.data?.error || 'Failed'); }
   }
 
-  function openAdd() { setEditing(null); setForm({ status: 'active' }); setFormError(''); setUserSearch(''); setShowForm(true); }
-  function openEdit(partner) { setEditing(partner); setForm({ ...partner }); setFormError(''); setShowForm(true); }
+  function openAdd() { setEditing(null); setForm({ status: 'active' }); setFormError(''); setUserSearch(''); setReferrerSearch(''); setShowForm(true); }
+  function openEdit(partner) { setEditing(partner); setForm({ ...partner }); setFormError(''); setReferrerSearch(''); setShowForm(true); }
 
   async function savePartner() {
     if (!editing && !form.user_id) { setFormError('A linked user is required'); return; }
@@ -144,6 +147,40 @@ function PartnersTab({ users = [], session }) {
       await axios.delete(`/api/partners/${id}`);
       await load();
     } catch { alert(p.saveFailed); }
+  }
+
+  const [provisioningId, setProvisioningId] = useState(null);
+
+  async function provisionGcnStore(id) {
+    setProvisioningId(id);
+    try {
+      await axios.post(`/api/partners/${id}/gcn-provision`);
+      await load();
+    } catch (err) {
+      alert(err?.response?.data?.error || p.saveFailed);
+    } finally {
+      setProvisioningId(null);
+    }
+  }
+
+  const [inviteLinkId, setInviteLinkId] = useState(null);
+
+  // Same GCN-domain-detection pattern as GcnInventoryEmbed.jsx, but pointed at the direct
+  // aeviva(-dev).gcn.net domain (not the fros.cc miniapp web-view proxy) since this link is
+  // meant to be shared externally (WeChat message, etc.) and opened in a normal browser.
+  async function generateInviteLink(id) {
+    setInviteLinkId(id);
+    try {
+      const res = await axios.post(`/api/partners/${id}/invite-code`);
+      const host = window.location.hostname.includes('nano-dev') ? 'https://aeviva-dev.gcn.net' : 'https://aeviva.gcn.net';
+      const url = `${host}/partner-apply.html?code=${res.data.invite_code}`;
+      try { await navigator.clipboard.writeText(url); } catch {}
+      alert(`${p.inviteLinkCopied}\n${url}`);
+    } catch (err) {
+      alert(err?.response?.data?.error || p.saveFailed);
+    } finally {
+      setInviteLinkId(null);
+    }
   }
 
   async function saveCommission() {
@@ -227,6 +264,24 @@ function PartnersTab({ users = [], session }) {
                       <button className="icon-btn" title={p.editPartner} onClick={() => openEdit(pt)}><Pencil size={14} /></button>
                       {pt.status !== 'inactive' &&
                         <button className="icon-btn" title={p.deactivatePartner} onClick={() => deactivatePartner(pt.id)}><Trash2 size={14} /></button>}
+                      {GCN_LINKED_CHANNEL_KEYS.has(pt.channel_key) && (
+                        pt.gcn_partner_id
+                          ? <Badge color="green" title={p.gcnProvisioned}>{p.gcnProvisioned}</Badge>
+                          : <button
+                              className="icon-btn"
+                              title={p.provisionGcnStore}
+                              disabled={pt.status !== 'active' || provisioningId === pt.id}
+                              onClick={() => provisionGcnStore(pt.id)}
+                            ><Store size={14} /></button>
+                      )}
+                      {pt.status === 'active' && (
+                        <button
+                          className="icon-btn"
+                          title={p.inviteLink}
+                          disabled={inviteLinkId === pt.id}
+                          onClick={() => generateInviteLink(pt.id)}
+                        ><Link2 size={14} /></button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -489,7 +544,7 @@ function PartnersTab({ users = [], session }) {
                               <div style={{ fontWeight: 600 }}>{selectedUser.nickname || '—'}</div>
                               <div style={{ fontSize: 11, color: '#64748b' }}>{selectedUser.user_id}</div>
                             </div>
-                            <button type="button" className="icon-btn" onClick={() => { setForm(f => ({ ...f, user_id: null, real_name: '' })); setUserSearch(''); }}><X size={14} /></button>
+                            <button type="button" className="icon-btn" onClick={() => { setForm(f => ({ ...f, user_id: null, real_name: '', phone: '' })); setUserSearch(''); }}><X size={14} /></button>
                           </div>
                         ) : (
                           <>
@@ -503,7 +558,7 @@ function PartnersTab({ users = [], session }) {
                               <div className="coach-user-dropdown">
                                 {filteredUsers.map(u => (
                                   <div key={u.user_id} className="coach-user-option" onClick={() => {
-                                    setForm(f => ({ ...f, user_id: u.user_id, real_name: f.real_name || u.nickname || '' }));
+                                    setForm(f => ({ ...f, user_id: u.user_id, real_name: f.real_name || u.nickname || '', phone: f.phone || u.phone || '' }));
                                     setUserSearch('');
                                   }}>
                                     <div className="avatar" style={{ background: '#6366f120', color: '#6366f1', width: 24, height: 24, fontSize: 11, flexShrink: 0 }}>{(u.nickname || 'U')[0].toUpperCase()}</div>
@@ -542,10 +597,56 @@ function PartnersTab({ users = [], session }) {
                     <span>{p.entryFee}</span>
                     <input type="number" value={form.entry_fee_paid || ''} onChange={e => setForm(f => ({ ...f, entry_fee_paid: e.target.value }))} />
                   </label>
-                  <label className="form-field">
-                    <span>{p.referredBy} (ID)</span>
-                    <input type="number" value={form.referred_by_partner_id || ''} onChange={e => setForm(f => ({ ...f, referred_by_partner_id: e.target.value || null }))} placeholder="Partner ID" />
-                  </label>
+                  {(() => {
+                    const selectedReferrer = partners.find(pt => pt.id === Number(form.referred_by_partner_id)) || null;
+                    const filteredReferrers = referrerSearch.trim().length > 0
+                      ? partners.filter(pt => {
+                          if (editing && pt.id === editing.id) return false;
+                          const q = referrerSearch.toLowerCase();
+                          return (pt.real_name || '').toLowerCase().includes(q) || (pt.phone || '').toLowerCase().includes(q) || String(pt.id).includes(q);
+                        }).slice(0, 8)
+                      : [];
+                    return (
+                      <div className="form-field" style={{ gridColumn: '1 / -1', position: 'relative' }}>
+                        <span>{p.referredBy}</span>
+                        {selectedReferrer ? (
+                          <div className="coach-user-selected">
+                            <div className="avatar" style={{ background: '#6366f120', color: '#6366f1', width: 28, height: 28, fontSize: 13, flexShrink: 0 }}>{(selectedReferrer.real_name || 'U')[0].toUpperCase()}</div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 600 }}>{selectedReferrer.real_name} <Badge color={tierColor(selectedReferrer.tier)} style={{ fontSize: 10 }}>{tierLabel(selectedReferrer.tier)}</Badge></div>
+                              <div style={{ fontSize: 11, color: '#64748b' }}>#{selectedReferrer.id} · {selectedReferrer.phone || '—'}</div>
+                            </div>
+                            <button type="button" className="icon-btn" onClick={() => { setForm(f => ({ ...f, referred_by_partner_id: null })); setReferrerSearch(''); }}><X size={14} /></button>
+                          </div>
+                        ) : (
+                          <>
+                            <input
+                              value={referrerSearch}
+                              onChange={e => setReferrerSearch(e.target.value)}
+                              placeholder="Search by name, phone or ID…"
+                              autoComplete="off"
+                            />
+                            {filteredReferrers.length > 0 && (
+                              <div className="coach-user-dropdown">
+                                {filteredReferrers.map(pt => (
+                                  <div key={pt.id} className="coach-user-option" onClick={() => {
+                                    setForm(f => ({ ...f, referred_by_partner_id: pt.id }));
+                                    setReferrerSearch('');
+                                  }}>
+                                    <div className="avatar" style={{ background: '#6366f120', color: '#6366f1', width: 24, height: 24, fontSize: 11, flexShrink: 0 }}>{(pt.real_name || 'U')[0].toUpperCase()}</div>
+                                    <div>
+                                      <div style={{ fontWeight: 500 }}>{pt.real_name} <Badge color={tierColor(pt.tier)} style={{ fontSize: 10 }}>{tierLabel(pt.tier)}</Badge></div>
+                                      <div style={{ fontSize: 11, color: '#64748b' }}>#{pt.id} · {pt.phone || '—'}</div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <label className="form-field">
                     <span>{p.status}</span>
                     <div className="select-wrap" style={{ width: '100%' }}>

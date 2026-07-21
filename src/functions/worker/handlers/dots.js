@@ -255,6 +255,38 @@ async function handleGetChannelInventory(query, adminCtx) {
     }
 }
 
+// GET /store-items/by-channel?channel=<key_name>
+// Server-to-server read-only listing of a channel's storefront-visible items, keyed by
+// channel key_name (not numeric id) — same lookup-by-key pattern as handleGetPartnerByPhone,
+// so callers (e.g. GCN's aeviva integration) never need to know nano's internal channel ids.
+// Recurses through parent_channel_id so a parent channel key (e.g. "aeviva") also picks up
+// items scoped to its sub-channels (e.g. "aeviva-china").
+async function handleGetStoreItemsByChannel(query = {}) {
+    const channelKey = query.channel;
+    if (!channelKey) return { success: false, error: 'channel query param required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query(
+            `WITH RECURSIVE subtree AS (
+                SELECT id FROM channels WHERE key_name = $1
+                UNION ALL
+                SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
+            )
+            SELECT ci.*,
+                   COALESCE(ist.quantity, ci.stock_quantity) AS stock_quantity
+            FROM channel_inventory_items ci
+            LEFT JOIN inventory_stock ist ON ci.sku_id = ist.sku_id AND ist.location_type = 'channel' AND ist.channel_id = ci.channel_id
+            WHERE ci.channel_id IN (SELECT id FROM subtree)
+              AND ci.active = TRUE AND ci.show_in_store = TRUE AND ci.parent_item_id IS NULL
+            ORDER BY ci.sort_order, ci.created_at`,
+            [channelKey]
+        );
+        return { success: true, items: rows };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handlePostChannelInventory(body, adminCtx) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -1080,6 +1112,7 @@ module.exports = {
     handlePostCartridgeRemove,
     handlePostDispense,
     handleGetStoreItems,
+    handleGetStoreItemsByChannel,
     handleGetChannelInventory,
     handlePostChannelInventory,
     handlePutChannelInventory,

@@ -1,5 +1,5 @@
 const app = getApp()
-const { BASE, CHANNEL_SLUG, CHANNEL_DISPLAY, IS_DEV } = require('../../utils/config.js')
+const { BASE, CHANNEL_SLUG, CHANNEL_DISPLAY, IS_DEV, VERSION, WX_VERSION } = require('../../utils/config.js')
 
 Page({
   data: {
@@ -11,6 +11,12 @@ Page({
     codeLoading: false,
     pendingAvatar: '',
     channel: null,
+    version: IS_DEV ? VERSION : WX_VERSION,
+
+    // Phone-skip passcode overlay
+    skipPassOpen: false,
+    skipPassInput: '',
+    skipPassError: false,
   },
 
   _coachId: null,
@@ -144,6 +150,43 @@ Page({
 
   retry() {
     this.wxLogin()
+  },
+
+  openSkipPass() {
+    this.setData({ skipPassOpen: true, skipPassInput: '', skipPassError: false })
+  },
+
+  closeSkipPass() {
+    this.setData({ skipPassOpen: false, skipPassInput: '', skipPassError: false })
+  },
+
+  handleSkipPassKey(e) {
+    const { skipPassInput, skipPassError } = this.data
+    if (skipPassError || skipPassInput.length >= 4) return
+    const digit = e.currentTarget.dataset.digit
+    const next = skipPassInput + digit
+    if (next.length < 4) {
+      this.setData({ skipPassInput: next })
+      return
+    }
+    if (next === '1709') {
+      this.setData({ skipPassInput: next })
+      setTimeout(() => {
+        this.setData({ skipPassOpen: false, skipPassInput: '' })
+        this._finishLogin(this._pendingLogin)
+      }, 180)
+    } else {
+      this.setData({ skipPassInput: next, skipPassError: true })
+      setTimeout(() => {
+        this.setData({ skipPassInput: '', skipPassError: false })
+      }, 900)
+    }
+  },
+
+  handleSkipPassDelete() {
+    const { skipPassInput } = this.data
+    if (skipPassInput.length === 0) return
+    this.setData({ skipPassInput: skipPassInput.slice(0, -1), skipPassError: false })
   },
 
   onCodeInput(e) {

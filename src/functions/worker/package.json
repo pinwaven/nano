@@ -7,6 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
+    "@alicloud/dypnsapi20170525": "^2.0.0",
     "@alicloud/eventbridge20200401": "^6.0.7",
     "@alicloud/openapi-client": "^0.4.15",
     "@alicloud/tea-util": "^1.4.11",

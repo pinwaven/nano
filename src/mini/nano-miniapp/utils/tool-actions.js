@@ -31,6 +31,7 @@ async function runTestChip(openid, t, ctx) {
           if (status === 'invalid_chip')    addMsg('ai', t.kinoScanInvalidChip, true)
           else if (status === 'already_linked') addMsg('ai', t.kinoScanAlreadyLinked, true)
           else if (status === 'used')       addMsg('ai', t.kinoScanUsed, true)
+          else if (status === 'claimed_by_other') addMsg('ai', t.kinoScanClaimedByOther, true)
           else {
             addMsg('ai', t.kinoScanSuccess, true)
             addMsg('ai', t.kinoScanInstruction, true)

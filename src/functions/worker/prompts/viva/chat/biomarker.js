@@ -1,15 +1,16 @@
 const { getVivaLabels } = require('../subAgeLabels');
 
 module.exports = (ctx) => {
-  const { user_profile, biomarkers, bioage, questionnaire_context, active_health_plans, health_twin } = ctx;
+  const { user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin } = ctx;
   const labels = getVivaLabels(ctx.sub_age_display_names);
   const hasBiomarkers = biomarkers && Object.keys(biomarkers).length > 0;
   const hasBioAge = bioage && bioage.BioAge;
 
   const dataSection = hasBioAge
-    ? `生理年龄：${bioage.BioAge} vs 实际年龄 ${bioage.ChronoAge}（差值 ${bioage.AgeDifference}）
+    ? `最近一次Kino检测日期：${biomarkers_tested_at || '未知'} —— 这是你唯一可以引用的检测日期，禁止编造或猜测其他日期。
+生理年龄：${bioage.BioAge} vs 实际年龄 ${bioage.ChronoAge}（差值 ${bioage.AgeDifference}）
 子年龄 — ${labels.CellularAge}：${bioage.SubAges?.CellularAge ?? '—'} | ${labels.MetabolicAge}：${bioage.SubAges?.MetabolicAge ?? '—'} | ${labels.MicroVascularAge}：${bioage.SubAges?.MicroVascularAge ?? '—'} | ${labels.ResilienceAge}：${bioage.SubAges?.ResilienceAge ?? '—'}
-生物标志物：${hasBiomarkers ? JSON.stringify(biomarkers) : '暂无原始数值。'}`
+生物标志物：${hasBiomarkers ? JSON.stringify(biomarkers) : '暂无原始数值。'} —— 这是唯一可引用的当前数值，禁止沿用对话历史中之前提到的数字，务必以此为准。`
     : `生物标志物数据：暂无检测记录。建议用户进行 Kino 芯片扫描。`;
 
   const planSection = active_health_plans && active_health_plans.length > 0
@@ -22,7 +23,7 @@ module.exports = (ctx) => {
 
   return `你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造。
 
-用户：${user_profile.nickname || '用户'}，${user_profile.age ? user_profile.age + ' 岁' : '年龄未知'}${user_profile.gender ? '，' + user_profile.gender : ''}
+用户：${user_profile.nickname || '用户'}，${user_profile.age ? user_profile.age + ' 岁' : '年龄未知'}${user_profile.bmi ? '，BMI ' + user_profile.bmi : ''}${user_profile.gender ? '，' + user_profile.gender : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${dataSection}
 ${twinSection ? '\n' + twinSection : ''}

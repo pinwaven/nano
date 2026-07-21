@@ -38,6 +38,34 @@
   gap: 16rpx;
 }
 
+.sandbox-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 14rpx 28rpx;
+  background: rgba(245, 158, 11, 0.16);
+  border-bottom: 1rpx solid rgba(245, 158, 11, 0.4);
+}
+
+.sandbox-banner-text {
+  flex: 1;
+  font-size: 22rpx;
+  color: #f59e0b;
+  font-weight: 500;
+}
+
+.sandbox-banner-exit {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  font-weight: 700;
+  color: #f59e0b;
+  text-decoration: underline;
+}
+
+.theme-light .sandbox-banner { background: rgba(245, 158, 11, 0.12); border-bottom-color: rgba(245, 158, 11, 0.35); }
+
 .header-logo-img {
   width: 56rpx;
   height: 40rpx;
@@ -644,6 +672,54 @@
 .send-icon {
   font-size: 36rpx;
   color: #fff;
+}
+
+.mic-btn {
+  width: 80rpx;
+  height: 80rpx;
+  flex-shrink: 0;
+  border-radius: 24rpx;
+  background: rgba(99, 117, 236, 0.12);
+  border: 1rpx solid rgba(99, 117, 236, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mic-btn-active {
+  background: linear-gradient(135deg, #E25858 0%, #FF7A7A 100%);
+  border-color: transparent;
+  box-shadow: 0 4rpx 20rpx rgba(226, 88, 88, 0.45);
+}
+
+.mic-btn-disabled {
+  opacity: 0.4;
+}
+
+.mic-icon {
+  width: 36rpx;
+  height: 36rpx;
+}
+
+.mic-recording-banner {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  background: rgba(226, 88, 88, 0.12);
+  border-top: 1rpx solid rgba(226, 88, 88, 0.3);
+  padding: 14rpx 24rpx;
+}
+
+.mic-recording-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #E25858;
+}
+
+.mic-recording-text {
+  font-size: 24rpx;
+  color: #FFB3B3;
 }
 
 /* ── Loading states (used across tabs) ── */
@@ -1876,6 +1952,10 @@
   align-items: center;
 }
 
+/* Opened on top of the guest-sheet-mask (z-index: 300), unlike the Kino passcode
+   overlay which only ever opens while the guest sheet is closed. */
+.guest-pass-overlay { z-index: 400; }
+
 .kpass-box {
   display: flex;
   flex-direction: column;
@@ -2542,10 +2622,6 @@
   color: var(--text);
 }
 /* ── Chat input area ── */
-.theme-light .toolbox-panel {
-  background: var(--bg-input);
-  border-top-color: var(--navy-border);
-}
 .theme-light .tool-item {
   background: rgba(201, 149, 106, 0.08);
   border-color: rgba(201, 149, 106, 0.25);
@@ -2569,6 +2645,16 @@
 .theme-light .plus-icon          { color: var(--text-sub); }
 .theme-light .plus-btn-open      { background: rgba(201, 149, 106, 0.25); border-color: var(--blue); }
 .theme-light .plus-btn-open .plus-icon { color: var(--blue); }
+.theme-light .mic-btn {
+  background: rgba(201, 149, 106, 0.1);
+  border-color: rgba(201, 149, 106, 0.25);
+}
+.theme-light .mic-recording-banner {
+  background: rgba(226, 88, 88, 0.08);
+  border-top-color: rgba(226, 88, 88, 0.25);
+}
+.theme-light .mic-icon { filter: brightness(0); opacity: 0.55; }
+.theme-light .mic-btn-active .mic-icon { filter: none; opacity: 1; }
 .theme-light .kino-scan-bar {
   background: var(--bg-input);
   border-top-color: var(--navy-border);
@@ -2615,6 +2701,100 @@
 .theme-light .order-price         { color: var(--text); }
 .theme-light .order-meta          { color: var(--text-muted); }
 .theme-light .order-date          { color: var(--text-muted); }
+
+/* ── Cart bar & sheet ── */
+.theme-light .cart-bar        { background: var(--bg-input); border-top-color: var(--navy-border); }
+.theme-light .cart-bar-label  { color: var(--text-muted); }
+.theme-light .cart-bar-total  { color: var(--text); }
+.theme-light .cart-sheet      { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.2); }
+.theme-light .cart-sheet-header { border-bottom-color: rgba(201, 149, 106, 0.12); }
+.theme-light .cart-sheet-title  { color: var(--text); }
+.theme-light .cart-close-sym    { color: var(--text-muted); }
+.theme-light .cart-empty-text   { color: var(--text-muted); }
+.theme-light .cart-item-row     { border-bottom-color: rgba(201, 149, 106, 0.08); }
+.theme-light .cart-item-name    { color: var(--text); }
+.theme-light .cart-item-price   { color: var(--text-muted); }
+.theme-light .cart-sheet-footer { border-top-color: rgba(201, 149, 106, 0.12); }
+.theme-light .cart-total-text   { color: var(--text); }
+.theme-light .checkout-addr-title { color: var(--text-sub); }
+.theme-light .checkout-wx-addr-btn {
+  background: rgba(201, 149, 106, 0.12);
+  border-color: rgba(201, 149, 106, 0.35);
+}
+.theme-light .checkout-wx-addr-text { color: var(--blue); }
+.theme-light .checkout-addr-label   { color: var(--text-muted); }
+.theme-light .checkout-addr-input,
+.theme-light .checkout-addr-textarea {
+  color: var(--text);
+  background: rgba(201, 149, 106, 0.06);
+  border-color: rgba(201, 149, 106, 0.18);
+}
+
+/* ── Kino chip scan ── */
+.theme-light .kino-scan-close { color: var(--text-muted); }
+
+/* ── Cartridge Sim overlay ── */
+.theme-light .csim-sheet      { background: var(--navy-card); }
+.theme-light .csim-handle     { background: rgba(201, 149, 106, 0.25); }
+.theme-light .csim-title      { color: var(--text); }
+.theme-light .csim-subtitle   { color: var(--text-muted); }
+.theme-light .csim-set-card   { background: rgba(0, 0, 0, 0.03); }
+.theme-light .csim-set-name   { color: var(--text); }
+.theme-light .csim-set-desc   { color: var(--text-muted); }
+.theme-light .csim-dot-badge  { background: rgba(0, 0, 0, 0.04); }
+.theme-light .csim-badge-name { color: var(--text-muted); }
+.theme-light .csim-cancel     { color: var(--text-muted); }
+
+/* ── Kino Passcode overlay ── */
+.theme-light .kpass-overlay  { background: var(--bg-gradient); }
+.theme-light .kpass-title    { color: var(--text-sub); }
+.theme-light .kpass-dot      { border-color: rgba(201, 149, 106, 0.5); }
+.theme-light .kpass-key {
+  background: rgba(201, 149, 106, 0.08);
+  border-color: rgba(201, 149, 106, 0.22);
+  color: var(--text);
+}
+.theme-light .kpass-key-del  { background: rgba(201, 149, 106, 0.05); }
+.theme-light .kpass-del-icon { color: var(--text-sub); }
+.theme-light .kpass-cancel   { color: var(--text-muted); }
+
+/* ── Kino Simulator overlay ── */
+.theme-light .ksm-overlay  { background: var(--bg-gradient); }
+.theme-light .ksm-header   { background: var(--bg-surface); border-bottom-color: var(--navy-border); }
+.theme-light .ksm-title    { color: var(--text); }
+.theme-light .ksm-serial   { color: var(--text-muted); }
+.theme-light .ksm-close {
+  border-color: rgba(201, 149, 106, 0.3);
+  background: rgba(201, 149, 106, 0.1);
+  color: var(--text-sub);
+}
+.theme-light .ksm-results  { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .ksm-tabs     { border-bottom-color: rgba(201, 149, 106, 0.18); }
+.theme-light .ksm-tab      { color: var(--text-muted); }
+.theme-light .ksm-tab-active {
+  color: var(--blue);
+  background: rgba(201, 149, 106, 0.08);
+  border-bottom-color: var(--blue);
+}
+.theme-light .ksm-bioage-chip     { background: var(--navy-lift); border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .ksm-bioage-chip-dim { background: rgba(250, 247, 242, 0.5); }
+.theme-light .ksm-bioage-chip-label { color: var(--text-muted); }
+.theme-light .ksm-sub-row,
+.theme-light .ksm-bm-row   { border-bottom-color: rgba(201, 149, 106, 0.08); }
+.theme-light .ksm-sub-label,
+.theme-light .ksm-bm-label { color: var(--text-sub); }
+.theme-light .ksm-bm-val   { color: var(--text); }
+.theme-light .ksm-bm-unit  { color: var(--text-muted); }
+.theme-light .ksm-quit-btn { color: var(--text-muted); }
+
+/* ── Certificate modal ── */
+.theme-light .cert-field { border-bottom-color: rgba(201, 149, 106, 0.1); }
+
+/* ── Page-level privacy modal ── */
+.theme-light .page-privacy-box   { background: var(--navy-card); }
+.theme-light .page-privacy-title { color: var(--text); }
+.theme-light .page-privacy-body  { color: var(--text-muted); }
+.theme-light .page-privacy-cancel-btn text { color: var(--text-muted); }
 
 /* ── Guest UI ── */
 
@@ -3747,21 +3927,21 @@ button.consent-row::after { border: none; }
 .training-cert-info { flex: 1; }
 .training-cert-title { display: block; font-size: 27rpx; font-weight: 600; color: var(--text); }
 .training-cert-tier { display: block; font-size: 22rpx; color: #f59e0b; margin-top: 4rpx; text-transform: capitalize; }
-.training-cert-chevron { font-size: 36rpx; color: var(--muted); flex-shrink: 0; }
+.training-cert-chevron { font-size: 36rpx; color: var(--text-muted); flex-shrink: 0; }
 
 /* ── Certificate detail overlay ───────────────────────────────────────────── */
 .cert-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.65); z-index: 2000; display: flex; align-items: flex-end; justify-content: center; }
-.cert-detail-card { background: var(--card-bg, #0f1f35); border-radius: 28rpx 28rpx 0 0; width: 100%; max-height: 90vh; overflow-y: auto; padding: 32rpx 32rpx 60rpx; box-sizing: border-box; }
+.cert-detail-card { background: var(--navy-card); border-radius: 28rpx 28rpx 0 0; width: 100%; max-height: 90vh; overflow-y: auto; padding: 32rpx 32rpx 60rpx; box-sizing: border-box; }
 .cert-detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24rpx; }
 .cert-status-badge { display: flex; align-items: center; gap: 10rpx; background: rgba(16,185,129,0.15); border: 1rpx solid #10b981; border-radius: 32rpx; padding: 8rpx 22rpx; }
 .cert-status-check { font-size: 28rpx; color: #10b981; font-weight: 700; }
 .cert-status-text { font-size: 26rpx; color: #10b981; font-weight: 600; }
-.cert-close-btn { font-size: 36rpx; color: var(--muted); padding: 8rpx 16rpx; }
+.cert-close-btn { font-size: 36rpx; color: var(--text-muted); padding: 8rpx 16rpx; }
 .cert-bg-wrap { margin-bottom: 24rpx; border-radius: 16rpx; overflow: hidden; }
 .cert-bg-preview { width: 100%; border-radius: 16rpx; }
 .cert-field-list { display: flex; flex-direction: column; gap: 0; }
 .cert-field { display: flex; align-items: flex-start; padding: 16rpx 0; border-bottom: 1rpx solid rgba(255,255,255,0.06); }
-.cert-label { font-size: 24rpx; color: var(--muted); min-width: 180rpx; flex-shrink: 0; padding-top: 2rpx; }
+.cert-label { font-size: 24rpx; color: var(--text-muted); min-width: 180rpx; flex-shrink: 0; padding-top: 2rpx; }
 .cert-value { font-size: 26rpx; color: var(--text); flex: 1; line-height: 1.5; }
 .cert-valid { color: #10b981 !important; font-weight: 600; }
 .cert-number { color: #6366f1 !important; }

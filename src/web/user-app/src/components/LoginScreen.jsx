@@ -11,30 +11,70 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
   const { t } = useLang();
   const [tab, setTab] = useState('qr'); // 'phone' | 'qr'
 
-  // ── Phone login ────────────────────────────────────────────────
+  // ── Phone + OTP login ─────────────────────────────────────────
   const [phone, setPhone] = useState('');
+  const [otpStep, setOtpStep] = useState('phone'); // 'phone' | 'code'
+  const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const cooldownRef = useRef(null);
 
-  const handleLogin = async () => {
+  const startCooldown = (seconds) => {
+    setResendCooldown(seconds);
+    clearInterval(cooldownRef.current);
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown(s => {
+        if (s <= 1) { clearInterval(cooldownRef.current); return 0; }
+        return s - 1;
+      });
+    }, 1000);
+  };
+
+  useEffect(() => () => clearInterval(cooldownRef.current), []);
+
+  const handleSendCode = async () => {
     const cleaned = phone.trim().replace(/[\s\-()]/g, '');
-    if (!cleaned) return;
+    if (!/^1\d{10}$/.test(cleaned)) { setError(t.errInvalidPhone); return; }
     setLoading(true);
     setError('');
     try {
-      const r = await axios.get(`${API}/users`);
-      const users = r.data.users || [];
-      const found = users.find(u => u.phone && u.phone.replace(/[\s\-()]/g, '') === cleaned);
-      if (found) {
-        onLogin(found);
-      } else {
-        setError(t.errNotFound);
+      const r = await axios.post(`${API}/phone-otp/send`, { phone: cleaned });
+      if (!r.data.success) {
+        setError(r.data.error === 'rate_limited' ? t.errRateLimited : t.errSendFailed);
+        return;
       }
+      setOtpStep('code');
+      startCooldown(60);
     } catch {
       setError(t.errNetwork);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleVerifyCode = async () => {
+    if (!code.trim()) return;
+    setLoading(true);
+    setError('');
+    try {
+      const cleaned = phone.trim().replace(/[\s\-()]/g, '');
+      const r = await axios.post(`${API}/phone-otp/verify`, { phone: cleaned, code: code.trim() });
+      if (!r.data.success) { setError(t.errInvalidCode); return; }
+      onLogin(r.data.user);
+    } catch {
+      setError(t.errNetwork);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChangeNumber = () => {
+    setOtpStep('phone');
+    setCode('');
+    setError('');
+    clearInterval(cooldownRef.current);
+    setResendCooldown(0);
   };
 
   // ── QR login ───────────────────────────────────────────────────
@@ -119,6 +159,12 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
       {/* Tab switcher */}
       <div className="login-tab-bar">
         <button
+          className={`login-tab-btn${tab === 'phone' ? ' login-tab-btn--active' : ''}`}
+          onClick={() => setTab('phone')}
+        >
+          {t.loginTabPhone}
+        </button>
+        <button
           className={`login-tab-btn${tab === 'qr' ? ' login-tab-btn--active' : ''}`}
           onClick={() => setTab('qr')}
         >
@@ -126,28 +172,66 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
         </button>
       </div>
 
-      {/* Phone login card — disabled */}
+      {/* Phone + OTP login card */}
       {tab === 'phone' && (
         <div className="login-card">
           <div className="login-card-label">{t.signIn}</div>
-          <div className="login-field">
-            <label className="login-label">{t.phoneLabel}</label>
-            <input
-              className="login-input"
-              type="tel"
-              inputMode="tel"
-              placeholder={t.phonePlaceholder}
-              value={phone}
-              onChange={e => { setPhone(e.target.value); setError(''); }}
-              onKeyDown={e => { if (e.key === 'Enter') handleLogin(); }}
-              autoFocus
-            />
-          </div>
-          {error && <div className="login-error">{error}</div>}
-          <button className="login-btn" onClick={handleLogin} disabled={!phone.trim() || loading}>
-            {loading && <span className="login-btn-spinner" />}
-            {loading ? t.verifying : t.continue}
-          </button>
+
+          {otpStep === 'phone' && (
+            <>
+              <div className="login-field">
+                <label className="login-label">{t.phoneLabel}</label>
+                <input
+                  className="login-input"
+                  type="tel"
+                  inputMode="tel"
+                  placeholder={t.phonePlaceholder}
+                  value={phone}
+                  onChange={e => { setPhone(e.target.value); setError(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSendCode(); }}
+                  autoFocus
+                />
+              </div>
+              {error && <div className="login-error">{error}</div>}
+              <button className="login-btn" onClick={handleSendCode} disabled={!phone.trim() || loading}>
+                {loading && <span className="login-btn-spinner" />}
+                {loading ? t.verifying : t.sendCode}
+              </button>
+            </>
+          )}
+
+          {otpStep === 'code' && (
+            <>
+              <div className="login-field">
+                <label className="login-label">{t.codeLabel}</label>
+                <input
+                  className="login-input"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder={t.codePlaceholder}
+                  value={code}
+                  onChange={e => { setCode(e.target.value.replace(/\D/g, '')); setError(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter') handleVerifyCode(); }}
+                  autoFocus
+                />
+              </div>
+              {error && <div className="login-error">{error}</div>}
+              <button className="login-btn" onClick={handleVerifyCode} disabled={!code.trim() || loading}>
+                {loading && <span className="login-btn-spinner" />}
+                {loading ? t.verifying : t.confirm}
+              </button>
+              <div className="login-qr-hint">
+                {resendCooldown > 0 ? (
+                  t.resendIn(resendCooldown)
+                ) : (
+                  <button className="login-link-btn" onClick={handleSendCode} disabled={loading}>{t.resendCode}</button>
+                )}
+                <span className="login-footer-dot">·</span>
+                <button className="login-link-btn" onClick={handleChangeNumber} disabled={loading}>{t.changeNumber}</button>
+              </div>
+            </>
+          )}
         </div>
       )}
 

@@ -33,6 +33,10 @@ The WeChat Mini Program (`src/mini/nano-miniapp/`) automatically selects the bac
 
 This ensures that only developers in the IDE touch the dev environment, while all uploaded versions (including previews) use the production backend. Logic resides in `src/mini/nano-miniapp/utils/config.js`.
 
+### Miniapp VERSION Marker
+
+`src/mini/nano-miniapp/utils/config.js` exports a `VERSION` string (format `MMDD-N` — month+day, build number that day). **Bump it on every code change under `src/mini/nano-miniapp/`** (WXML/WXSS/JS, any page or util), no matter how small — the miniapp has no build pipeline and no other way to confirm a WeChat DevTools preview/upload is actually running the latest code versus a stale cached compile. Increment `N` for another change the same day; reset to `-1` on a new date. This is a bare `const`, no build step reads it — just edit the literal.
+
 ### WeChat Domain Setup
 
 See [docs/wechat-domain-setup.md](docs/wechat-domain-setup.md) for request domain whitelist troubleshooting and business domain verification steps.
@@ -198,108 +202,7 @@ Kino chip scan
 
 ## 12. Aliyun Function Compute 3.0 (FC 3.0) Runtime Behavior
 
-When writing or modifying FC handler code, use these facts. They were confirmed by live debugging against the deployed function.
-
-### Handler invocation model
-
-FC 3.0 invokes HTTP trigger functions as **event functions**, not as Node.js HTTP server functions. The handler receives:
-
-```
-exports.handler = async (req, resp, context) => { ... }
-```
-
-- `req` — a plain JS object (already parsed from the raw event Buffer). It is **not** a Node.js `http.IncomingMessage`.
-- `resp` — the FC context object. It does **not** have `.send()`, `.setStatusCode()`, or `.setHeader()`. Do not test for `resp.send` to detect HTTP mode.
-- Response is sent by **returning** a payload object (see below), not by calling `resp`.
-
-### Event object shape (FC 3.0 HTTP trigger)
-
-```js
-{
-  version: "v1",
-  rawPath: "/notifications",          // ← URL path. NOT event.path
-  headers: { "Host": "...", ... },
-  queryParameters: { openid: "xxx" }, // ← query string. NOT queryStringParameters
-  body: "",                           // base64-encoded if isBase64Encoded: true
-  isBase64Encoded: true,
-  requestContext: {
-    accountId: "...",
-    domainName: "...",
-    http: {
-      method: "GET",                  // ← HTTP method lives here
-      ...
-    },
-    ...
-  }
-}
-```
-
-Key differences from AWS Lambda / FC 2.0 / Express conventions:
-
-| Correct (FC 3.0)                     | Wrong (will be undefined)                                       |
-| ------------------------------------ | --------------------------------------------------------------- |
-| `event.rawPath`                    | `event.path`, `req.path`, `req.url`                       |
-| `event.queryParameters`            | `event.queryStringParameters`, `req.queries`, `req.query` |
-| `event.requestContext.http.method` | `event.httpMethod`, `event.method`, `req.method`          |
-| `event.headers`                    | `req.headers`                                                 |
-
-### Canonical way to extract path, method, query in a handler
-
-```js
-exports.handler = async (req, resp, context) => {
-    const event = req; // req IS the event object in FC 3.0
- 
-    const path    = event.rawPath || '';
-    const method  = event.requestContext?.http?.method || 'POST';
-    const query   = event.queryParameters || {};
- 
-    let body = event.body || '';
-    if (event.isBase64Encoded && body) {
-        body = Buffer.from(body, 'base64').toString('utf8');
-    }
-    let parsedBody = {};
-    if (body) {
-        try { parsedBody = JSON.parse(body); } catch (e) {}
-    }
- 
-    // ... routing logic ...
- 
-    // Send response by returning a payload object
-    return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(result),
-        isBase64Encoded: false,
-    };
-};
-```
-
-### Response format
-
-Return a plain object — do NOT call `resp.send()`:
-
-```js
-return {
-    statusCode: 200,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(result),
-    isBase64Encoded: false,
-};
-```
-
-### Deployment
-
-- **Always source `.env` before deploying** — `s.yaml` uses `${env(VAR)}` references for all secrets (DB_PASS, DASHSCOPE_API_KEY, WX_SECRET, API_BEARER_TOKEN, OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET). Without sourcing, those vars resolve to empty strings and the deployed function breaks.
-- Preferred commands (handle sourcing automatically):
-  - `npm run deploy:worker` — deploys only the worker
-  - `npm run deploy:dispatcher` — deploys only the dispatcher
-- Manual equivalent: `source .env && s worker deploy -y`
-- `s deploy` — deploys all functions; prefix with `source .env &&` if used directly
-- FC 3.0 does not hot-reload; each deploy takes ~15 s before changes are live
-
-### Local dev vs FC 3.0 parity
-
-`scripts/local-dev.js` bridges Express → FC handler format by wrapping `req.body` in a Buffer and providing a minimal `resp` shim (`setStatusCode`, `setHeader`, `send`). Keep this shim in sync with any response API changes in the worker handler.
+FC 3.0's HTTP-trigger handler invocation model, event object shape, and response format differ from Express/Lambda conventions in ways that are easy to get wrong. Full reference (confirmed by live debugging): `fc3-handler-reference` skill — load it before writing or modifying an FC handler.
 
 ## 13. Kino Hardware System
 
@@ -451,13 +354,18 @@ const biomarkers = { ...latestBio?.data?.validated, ...latestBio?.data?.actual }
 
 `data.actual` is for audit/debug purposes only. Do not use it to override `data.validated` in any user-facing output.
 
-## 18. Wearable Ring System — Halo Only
+## 18. Wearable Ring System — Halo + V8 Only
 
-**As of 2026-07, only the Halo ring series (`brand === 'halo'`) is actively supported.** Halo is our product name for the X3/X6/X9/V4 hardware family — X3, X6, and X9 are rings, V4 is a wrist-worn band; all four share the identical BLE protocol (confirmed, not assumed). BLE-advertised names literally start with these prefixes (`HALO_NAME_PREFIXES` in `halo/protocol.js`) — that's the manufacturer's own model designation, not something we control or rename. Colmi and Aizo adapters (`src/mini/nano-miniapp/utils/wearable/colmi/`, `.../aizo/`) still exist in the codebase and must keep working for any users already bound to them, but **do not extend, "improve," or bug-fix their protocol/parsing code** — no new features, no refactors, no reuse-driven cleanups that touch `colmi/` or `aizo/`. All new wearable work (protocol changes, new data types, sync/backend changes, HealthTab UI) targets Halo only.
+**As of 2026-07, only Halo (`brand === 'halo'`) and V8 (`brand === 'v8'`) are actively supported.** Halo is our product name for the X3/X6/X9/V4 hardware family — X3, X6, and X9 are rings, V4 is a wrist-worn band; all four share the identical BLE protocol (confirmed, not assumed). V8 is a smart band from the same hardware team — a close protocol relative of Halo (same GATT UUIDs, same frame format, ~20 shared opcodes) but not identical (e.g. opcode `0x57` means something different on each) — see `docs/architecture/v8-smart-band.md`. BLE-advertised names literally start with the manufacturer's own model prefixes (`HALO_NAME_PREFIXES` in `halo/protocol.js`, `V8_NAME_PREFIXES` in `v8/protocol.js`) — not something we control or rename. Colmi and Aizo adapters (`src/mini/nano-miniapp/utils/wearable/colmi/`, `.../aizo/`) still exist in the codebase and must keep working for any users already bound to them, but **do not extend, "improve," or bug-fix their protocol/parsing code** — no new features, no refactors, no reuse-driven cleanups that touch `colmi/` or `aizo/`. All new wearable work (protocol changes, new data types, sync/backend changes, HealthTab UI) targets Halo and V8 only.
 
 - `'x3'` is a legacy brand value from before the X3→Halo rename (2026-07) — still present in local storage / server rows for anyone bound before the rename shipped. `createWearable()` and the miniapp's `_normalizeBrand()` helper accept it as an alias for `'halo'`; don't remove that compat path without a data migration for existing bindings.
 - Canonical Halo protocol + BLE implementation: `src/mini/nano-miniapp/utils/wearable/halo/` (`protocol.js` for packet builders/BCD parsing, `index.js` for the BLE-driven `HaloRing` class — also exports pure parsing helpers as `HaloRing.parsers` for reuse outside the wx.* BLE stack). The literal hardware name prefixes (`HALO_NAME_PREFIXES = ['X3', 'X6', 'X9', 'V4']`) must stay as-is — only the internal identifiers around them were renamed. Brand detection during scan (`user-health.js`) checks against this array directly rather than hardcoding individual prefixes, so adding a future model line is a one-line change there.
-- Standalone debugging CLI for the Halo protocol (Node/noble, no phone required): `tools/halo/` — run with no arguments to dump every stored data type from a nearby ring. See its README for usage.
+- Standalone debugging CLI for the Halo protocol (Node/noble, no phone required): `tools/halo/` — run with no arguments to dump every stored data type from a nearby ring. See its README for usage. `--device v8` targets V8 instead.
+- V8 adapter: `src/mini/nano-miniapp/utils/wearable/v8/` (`protocol.js` + `index.js` for the `V8Band` class), registered as brand `'v8'` in `utils/wearable/index.js`. Wired into `user-health.js`'s bind/sync/interval-settings flow alongside Halo via a shared `_hasIntervalSettings(brand)` helper — their sync shapes are identical so this reuses Halo's code paths rather than duplicating them. Some fields are deliberately left `null` rather than guessed — notably sleep stage (deep/light/rem/awake) breakdown, since V8's raw stage codes don't match Halo's confirmed enum and mislabeling would be worse than a gap. Full protocol reference and the complete list of what didn't carry over 1:1 from Halo: `docs/architecture/v8-smart-band.md` §6–7.
 - `HaloRing._stream()` resolves with whatever data has accumulated on timeout rather than rejecting — rings with a large unsynced backlog (sleep, HR log, temperature history) can take well over the 8–15s per-command timeout to fully stream. Do not revert this to a hard reject; every caller already expects partial results over a full failure.
-- Server-side ring binding (`users.wearable_brand/wearable_mac/wearable_name/wearable_bound_at`, migration `migration_wearable_binding.sql`) is brand-agnostic in the DB/API layer, but in practice `wearable_mac` is only ever populated for Halo (the only brand implementing `getMac()`).
+- Server-side ring binding (`users.wearable_brand/wearable_mac/wearable_name/wearable_bound_at`, migration `migration_wearable_binding.sql`) is brand-agnostic in the DB/API layer, but in practice `wearable_mac` is only populated for Halo and V8 (the only brands implementing `getMac()`).
 - Full Halo BLE protocol reference: `docs/architecture/halo-smart-ring.md`. The Colmi-focused `docs/architecture/wearable-system.md` predates Halo/Aizo and is kept for historical/OEM-transition context only — don't treat it as current guidance for new work.
+
+## 19. GCN Integration (Aeviva Partner Storefront)
+
+The `aeviva` nano channel's partner storefront, wholesale/resale inventory, and manual-QR checkout live in a separate sibling repo, `/Users/pin/waven/gcn`. Nano stays the source of truth for partner identity, MLM tier, and referral/commission math; GCN owns its own commerce engine and settlement rules. Full contract — cross-repo endpoints, SSO bridges, provisioning flow, admin-panel embed, miniapp entry point: `gcn-integration` skill — load it before touching any GCN-linked endpoint, the sibling repo, or aeviva storefront/inventory code.

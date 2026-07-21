@@ -22,7 +22,7 @@ const {
   getSleepHrvHistoryPacket, getTemperatureHistoryPacket,
   getExerciseSessionsPacket, getOxygenVariationPacket, getSleepApneaPacket,
   getSleepTemperatureHistoryPacket,
-  getAutoMonitoringPacket,
+  setAutoMonitoringPacket, getAutoMonitoringPacket,
   parseBcdDate, bcdToString, readLEInt,
 } = protocol;
 
@@ -159,6 +159,12 @@ class HaloClient {
   async getFirmwareVersion() {
     const r = await this._send(getVersionPacket(), 0x27);
     return `${r[1]}.${r[2]}.${r[3]}.${r[4]}`;
+  }
+
+  // settings: { workMode, startHour, startMinute, endHour, endMinute, weekdays, intervalMinutes, type }
+  // type: 1=HR, 2=SpO2, 3=Temperature, 4=HRV
+  async setAutoMonitoring(settings) {
+    await this._send(setAutoMonitoringPacket(settings), 0x2A);
   }
 
   // type: 1=HR, 2=SpO2, 3=Temperature, 4=HRV

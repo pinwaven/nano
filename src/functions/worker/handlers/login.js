@@ -112,7 +112,7 @@ async function handleWxLogin(body) {
                 u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
                 u.referred_by_user_id, b.bio_age,
                 cu.nickname AS coach_name,
-                c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
+                c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                 c.config->'sub_age_display_names' AS channel_sub_age_names,
                 c.config->>'locale' AS channel_locale
          FROM users u
@@ -169,7 +169,7 @@ async function handleWxLogin(body) {
                                 u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
                                 u.referral_code, u.referred_by_user_id, b.bio_age,
                                 cu.nickname AS coach_name,
-                                c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
+                                c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                                 c.config->'sub_age_display_names' AS channel_sub_age_names,
                 c.config->>'locale' AS channel_locale
                          FROM users u
@@ -229,9 +229,9 @@ async function handleWxLogin(body) {
             await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [resolvedPhone, existingRow.user_id]);
             existingRow.phone = resolvedPhone;
         }
-        const { channel_name, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = existingRow;
+        const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = existingRow;
         const channel = channel_name
-            ? { name: channel_name, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
+            ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
             : null;
         // If user is a coach, fetch their coach record
         let coach = null;
@@ -242,10 +242,8 @@ async function handleWxLogin(body) {
             );
             if (coachRes.rows.length > 0) coach = coachRes.rows[0];
         }
-        // Profile incomplete — phone not bound yet; re-show the signup screen
-        if (!user.phone) {
-            return { success: true, new_user: true, user, channel, coach };
-        }
+        // Account already exists — log in regardless of whether a phone is on file.
+        // Missing phone is nudged via an in-chat prompt, not by re-forcing the signup screen.
         return { success: true, user, channel, coach };
     }
 
@@ -255,7 +253,7 @@ async function handleWxLogin(body) {
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                     u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
                     cu.nickname AS coach_name,
-                    c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
+                    c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                     c.config->'sub_age_display_names' AS channel_sub_age_names,
                 c.config->>'locale' AS channel_locale
              FROM users u
@@ -272,9 +270,9 @@ async function handleWxLogin(body) {
         if (phoneMatch.rows.length > 0) {
             const row = phoneMatch.rows[0];
             await pool.query('UPDATE users SET external_id = $1, wx_unionid = COALESCE(wx_unionid, $2) WHERE user_id = $3', [openid, unionid, row.user_id]);
-            const { channel_name, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = row;
+            const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = row;
             const channel = channel_name
-                ? { name: channel_name, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
+                ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
                 : null;
             let coach = null;
             if (user.roles && user.roles.includes('coach')) {
@@ -380,11 +378,12 @@ async function handleWxLogin(body) {
     let channel = null;
     if (channelId) {
         const chanRes = await pool.query(
-            `SELECT name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
+            `SELECT name, key_name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
             [channelId]
         );
         if (chanRes.rows.length > 0) channel = {
             name: chanRes.rows[0].name,
+            key_name: chanRes.rows[0].key_name,
             logo_url: chanRes.rows[0].logo_url,
             sub_age_display_names: chanRes.rows[0].sub_age_display_names || null,
         };
@@ -419,7 +418,7 @@ async function handleWxAppLogin(body) {
                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
                u.referred_by_user_id, b.bio_age,
                cu.nickname AS coach_name,
-               c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
+               c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                c.config->'sub_age_display_names' AS channel_sub_age_names
         FROM users u
         LEFT JOIN coaches p ON u.coach_id = p.id
@@ -431,9 +430,9 @@ async function handleWxAppLogin(body) {
         ) b ON u.user_id = b.user_id`;
 
     const shapeResult = async (row) => {
-        const { channel_name, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = row;
+        const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = row;
         const channel = channel_name
-            ? { name: channel_name, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
+            ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
             : null;
         let coach = null;
         if (user.roles && user.roles.includes('coach')) {
@@ -443,8 +442,7 @@ async function handleWxAppLogin(body) {
             );
             if (coachRes.rows.length > 0) coach = coachRes.rows[0];
         }
-        // Profile incomplete — phone not bound yet; the app shows the phone form
-        if (!user.phone) return { success: true, new_user: true, user, channel, coach };
+        // Account already exists — log in regardless of whether a phone is on file.
         return { success: true, user, channel, coach };
     };
 
@@ -554,11 +552,12 @@ async function handleWxAppLogin(body) {
     let channel = null;
     if (channelId) {
         const chanRes = await pool.query(
-            `SELECT name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
+            `SELECT name, key_name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
             [channelId]
         );
         if (chanRes.rows.length > 0) channel = {
             name: chanRes.rows[0].name,
+            key_name: chanRes.rows[0].key_name,
             logo_url: chanRes.rows[0].logo_url,
             sub_age_display_names: chanRes.rows[0].sub_age_display_names || null,
         };
@@ -581,15 +580,15 @@ async function handleValidateInvite(body) {
         const channelId = invRes.rows[0].channel_id;
         let channel = null;
         if (channelId) {
-            const chanRes = await pool.query('SELECT name, effective_channel_logo(id) AS logo_url FROM channels WHERE id = $1', [channelId]);
-            if (chanRes.rows.length > 0) channel = { name: chanRes.rows[0].name, logo_url: chanRes.rows[0].logo_url };
+            const chanRes = await pool.query('SELECT name, key_name, effective_channel_logo(id) AS logo_url FROM channels WHERE id = $1', [channelId]);
+            if (chanRes.rows.length > 0) channel = { name: chanRes.rows[0].name, key_name: chanRes.rows[0].key_name, logo_url: chanRes.rows[0].logo_url };
         }
         return { success: true, channel };
     }
 
     // Fall back to user referral code
     const refRes = await pool.query(
-        `SELECT u.user_id, u.channel_id, c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url
+        `SELECT u.user_id, u.channel_id, c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url
          FROM users u
          LEFT JOIN channels c ON c.id = u.channel_id
          WHERE u.referral_code = $1 LIMIT 1`,
@@ -597,7 +596,7 @@ async function handleValidateInvite(body) {
     );
     if (refRes.rows.length > 0) {
         const row = refRes.rows[0];
-        const channel = row.channel_name ? { name: row.channel_name, logo_url: row.channel_logo_url } : null;
+        const channel = row.channel_name ? { name: row.channel_name, key_name: row.channel_key, logo_url: row.channel_logo_url } : null;
         return { success: true, channel };
     }
 
@@ -687,7 +686,7 @@ async function handleExchangeWebviewToken(body) {
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                     u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
                     cu.nickname AS coach_name,
-                    c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
+                    c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                     c.config->'sub_age_display_names' AS channel_sub_age_names,
                     c.config->>'locale' AS channel_locale
              FROM users u
@@ -705,12 +704,74 @@ async function handleExchangeWebviewToken(body) {
 
         if (userRes.rows.length === 0) return { success: false, error: 'User not found' };
 
-        const { channel_name, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = userRes.rows[0];
+        const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = userRes.rows[0];
         const channel = channel_name
-            ? { name: channel_name, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
+            ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
             : null;
 
         return { success: true, user, channel };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ── Admin webview token (web admin panel → GCN admin console SSO handoff) ────
+//
+// Mirrors handlePostWebviewToken/handleExchangeWebviewToken above, but for the
+// Inventory tab's embedded GCN console rather than a miniapp consumer webview.
+// Gating is channel-based, not role-based: any channel with a GCN sector (aeviva
+// today) can be bridged, for either a superadmin or that channel's own admin.
+const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
+
+async function handlePostAdminWebviewToken(body, adminCtx) {
+    try {
+        let channelId;
+        if (adminCtx.role === 'channel') {
+            // Real per-account identity — ignore any channel_id the client sent.
+            channelId = adminCtx.channelId;
+        } else if (adminCtx.role === 'superadmin') {
+            channelId = body?.channel_id;
+            if (!channelId) return { success: false, error: 'channel_id is required' };
+        } else {
+            return { success: false, error: 'Unauthorized', statusCode: 403 };
+        }
+
+        const chRes = await pool.query('SELECT key_name FROM channels WHERE id = $1', [channelId]);
+        const keyName = chRes.rows[0]?.key_name;
+        if (!keyName || !GCN_LINKED_CHANNEL_KEYS.has(keyName)) {
+            return { success: false, error: 'Channel is not GCN-linked', statusCode: 403 };
+        }
+
+        const token = require('crypto').randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 60_000);
+        await pool.query(
+            `INSERT INTO admin_webview_tokens (token, admin_role, admin_account_id, channel_id, expires_at)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [token, adminCtx.role, adminCtx.accountId ?? null, channelId, expiresAt]
+        );
+
+        return { success: true, wvt: token, expires_in: 60 };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleExchangeAdminWebviewToken(body) {
+    try {
+        const { wvt } = body || {};
+        if (!wvt) return { success: false, error: 'wvt is required' };
+
+        const { rows } = await pool.query(
+            `UPDATE admin_webview_tokens
+             SET used = TRUE
+             WHERE token = $1 AND used = FALSE AND expires_at > NOW()
+             RETURNING admin_role, admin_account_id, channel_id`,
+            [wvt]
+        );
+        if (rows.length === 0) return { success: false, error: 'Invalid or expired token' };
+
+        const { admin_role, admin_account_id, channel_id } = rows[0];
+        return { success: true, admin_role, admin_account_id, channel_id };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -845,6 +906,8 @@ module.exports = {
     handleGetMyReferrals,
     handlePostWebviewToken,
     handleExchangeWebviewToken,
+    handlePostAdminWebviewToken,
+    handleExchangeAdminWebviewToken,
     handlePostQrLoginInit,
     handleGetQrLoginStatus,
     handlePostQrLoginConfirm,

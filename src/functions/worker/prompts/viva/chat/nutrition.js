@@ -40,7 +40,7 @@ module.exports = (ctx) => {
 
   return `你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造。
 
-用户：${user_profile.nickname || '用户'}，${user_profile.age ? user_profile.age + ' 岁' : '年龄未知'}
+用户：${user_profile.nickname || '用户'}，${user_profile.age ? user_profile.age + ' 岁' : '年龄未知'}${user_profile.bmi ? '，BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
 ${twinSection ? twinSection + '\n' : ''}

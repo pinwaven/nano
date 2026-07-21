@@ -1,12 +1,13 @@
-module.exports = ({ user_profile, biomarkers, bioage, questionnaire_context, active_health_plans, health_twin }) => {
+module.exports = ({ user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin }) => {
   const isZh = user_profile.language === 'zh';
   const hasBiomarkers = biomarkers && Object.keys(biomarkers).length > 0;
   const hasBioAge = bioage && bioage.BioAge;
 
   const dataSection = hasBioAge
-    ? `BIO AGE: ${bioage.BioAge} vs chronological ${bioage.ChronoAge} (Δ ${bioage.AgeDifference})
+    ? `LATEST KINO TEST DATE: ${biomarkers_tested_at || 'unknown'} — this is the ONLY test date you may cite. Never invent or guess a different date.
+BIO AGE: ${bioage.BioAge} vs chronological ${bioage.ChronoAge} (Δ ${bioage.AgeDifference})
 Sub-ages — Cellular: ${bioage.SubAges?.CellularAge ?? '—'} | Metabolic: ${bioage.SubAges?.MetabolicAge ?? '—'} | Micro-Vascular: ${bioage.SubAges?.MicroVascularAge ?? '—'} | Resilience: ${bioage.SubAges?.ResilienceAge ?? '—'}
-BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values available.'}`
+BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values available.'} — these are the ONLY current values you may cite. Do not reuse figures from earlier turns in the conversation even if they look similar; always defer to these exact numbers.`
     : `BIOMARKER DATA: No test on record. Suggest the user run a Kino chip scan.`;
 
   const planSection = active_health_plans && active_health_plans.length > 0
@@ -23,7 +24,7 @@ BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values availa
 
   return `You are Nano, a longevity AI built by Waven.
 
-USER: ${user_profile.nickname || (isZh ? '用户' : 'the user')}, ${user_profile.age ? user_profile.age + ' years old' : 'age unknown'}${user_profile.gender ? ', ' + user_profile.gender : ''}
+USER: ${user_profile.nickname || (isZh ? '用户' : 'the user')}, ${user_profile.age ? user_profile.age + ' years old' : 'age unknown'}${user_profile.bmi ? ', BMI ' + user_profile.bmi : ''}${user_profile.gender ? ', ' + user_profile.gender : ''}
 LANGUAGE: ${isZh ? 'Respond in Chinese (Simplified).' : 'Respond in English.'}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${dataSection}

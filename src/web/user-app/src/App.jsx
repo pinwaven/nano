@@ -5,10 +5,10 @@ import { T, LangContext } from './i18n.js';
 import LoginScreen from './components/LoginScreen.jsx';
 import ChatTab from './tabs/ChatTab.jsx';
 import HealthTab from './tabs/HealthTab.jsx';
-import DotsTab from './tabs/DotsTab.jsx';
 import PlansTab from './tabs/PlansTab.jsx';
 import StoreTab from './tabs/StoreTab.jsx';
 import AcademyTab from './tabs/AcademyTab.jsx';
+import ReferralTab from './tabs/ReferralTab.jsx';
 
 const API = '/api';
 
@@ -19,6 +19,7 @@ function App() {
   const [tab, setTab] = useState('chat');
   const [lang, setLang] = useState(() => user?.language || 'zh');
   const [wvtLoading, setWvtLoading] = useState(false);
+  const [showReferral, setShowReferral] = useState(false);
 
   const t = T[lang] || T.zh;
 
@@ -105,15 +106,6 @@ function App() {
       ),
     },
     {
-      id: 'dots', label: t.tabDots,
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="8" cy="8" r="2.2" /><circle cx="16" cy="8" r="2.2" />
-          <circle cx="8" cy="16" r="2.2" /><circle cx="16" cy="16" r="2.2" />
-        </svg>
-      ),
-    },
-    {
       id: 'plans', label: t.tabPlans,
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -125,21 +117,21 @@ function App() {
       ),
     },
     {
+      id: 'learn', label: t.tabLearn,
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+        </svg>
+      ),
+    },
+    {
       id: 'store', label: t.tabStore,
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
           <line x1="3" y1="6" x2="21" y2="6"/>
           <path d="M16 10a4 4 0 0 1-8 0"/>
-        </svg>
-      ),
-    },
-    {
-      id: 'learn', label: t.tabLearn,
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
         </svg>
       ),
     },
@@ -156,6 +148,13 @@ function App() {
             </div>
             <div className="header-right">
               <div className="header-user">{user.nickname || 'User'}</div>
+              <button className="referral-header-btn" onClick={() => setShowReferral(true)} title={t.referralTitle}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <line x1="19" y1="8" x2="19" y2="14" /><line x1="16" y1="11" x2="22" y2="11" />
+                </svg>
+              </button>
               <button className="logout-btn" onClick={handleLogout} title="Sign out">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -167,13 +166,16 @@ function App() {
           </div>
 
           <div className="tab-content">
-            <div style={{ display: tab === 'chat'   ? 'contents' : 'none' }}><ChatTab user={user} onUserUpdate={handleUserUpdate} /></div>
+            <div style={{ display: tab === 'chat'   ? 'contents' : 'none' }}><ChatTab user={user} onUserUpdate={handleUserUpdate} onNavigateTab={setTab} /></div>
             <div style={{ display: tab === 'health' ? 'contents' : 'none' }}><HealthTab user={user} /></div>
-            <div style={{ display: tab === 'dots'   ? 'contents' : 'none' }}><DotsTab user={user} /></div>
             <div style={{ display: tab === 'plans'  ? 'contents' : 'none' }}><PlansTab user={user} /></div>
-            <div style={{ display: tab === 'store'  ? 'contents' : 'none' }}><StoreTab user={user} /></div>
             <div style={{ display: tab === 'learn'  ? 'contents' : 'none' }}><AcademyTab user={user} /></div>
+            <div style={{ display: tab === 'store'  ? 'contents' : 'none' }}><StoreTab user={user} /></div>
           </div>
+
+          {showReferral && (
+            <ReferralTab user={user} lang={lang} onClose={() => setShowReferral(false)} />
+          )}
 
           <nav className="tab-bar">
             {TABS.map(tb => (

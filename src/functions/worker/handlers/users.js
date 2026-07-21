@@ -14,7 +14,7 @@ async function handleGetUsers(channelId, query = {}) {
             const params = [];
             const channelFilter = channelId ? `AND u.channel_id = $${params.push(channelId)}` : '';
             const res = await pool.query(
-                `SELECT u.user_id, u.nickname, u.coach_id, u.channel_id
+                `SELECT u.user_id, u.nickname, u.phone, u.coach_id, u.channel_id
                  FROM users u WHERE 1=1 ${channelFilter}
                  ORDER BY u.created_at DESC`,
                 params

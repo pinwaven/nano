@@ -1,0 +1,19 @@
+{
+  "name": "infinity-ring",
+  "version": "0.1.0",
+  "description": "CLI tool for reading Infinity/Aizo ring data over BLE",
+  "main": "src/client.js",
+  "bin": {
+    "infinity": "./bin/cli.js"
+  },
+  "scripts": {
+    "start": "node bin/cli.js",
+    "check": "node --check bin/cli.js && node --check src/ble.js && node --check src/client.js && node --check src/protocol.js && node --check src/report.js"
+  },
+  "dependencies": {
+    "@abandonware/noble": "^1.9.2-20"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

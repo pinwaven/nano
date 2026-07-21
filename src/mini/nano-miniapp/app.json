@@ -23,9 +23,18 @@
   "sitemapLocation": "sitemap.json",
   "requiredPrivateInfos": ["chooseAddress"],
   "requiredBackgroundModes": ["audio"],
+  "plugins": {
+    "WechatSI": {
+      "version": "0.3.5",
+      "provider": "wx069ba97219f66d99"
+    }
+  },
   "permission": {
     "scope.bluetooth": {
       "desc": "用于连接您的健康戒指，读取健康数据"
+    },
+    "scope.record": {
+      "desc": "用于语音输入转文字"
     }
   }
 }

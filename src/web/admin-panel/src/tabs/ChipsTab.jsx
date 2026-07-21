@@ -1,7 +1,23 @@
 import React, { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
-import { X, Plus, Pencil, Trash2, QrCode, Printer, Download, Layers, Package, Check, Activity, Cpu } from 'lucide-react';
-import { LangCtx, StatCard } from '../shared.jsx';
+import { X, Plus, Pencil, Trash2, QrCode, Printer, Download, Layers, Package, Check, Activity, Cpu, ClipboardList, Search, RotateCcw } from 'lucide-react';
+import { LangCtx, StatCard, fmt, bioAgeColor } from '../shared.jsx';
+
+const TESTED_BM_META = [
+  { key: 'hsCRP',     label: 'hsCRP',            unit: 'mg/L' },
+  { key: 'GDF15',     label: 'GDF-15',           unit: 'pg/mL' },
+  { key: 'IL6',       label: 'IL-6',             unit: 'pg/mL' },
+  { key: 'GA',        label: 'Glycated Albumin',  unit: '%' },
+  { key: 'CystatinC', label: 'Cystatin C',        unit: 'mg/L' },
+  { key: 'CD38',      label: 'CD38',             unit: 'xBaseline' },
+];
+
+const TESTED_SUB_AGE_META = [
+  { key: 'ResilienceAge',    label: 'Resilience Age',     color: '#c084d4' },
+  { key: 'CellularAge',      label: 'Cellular Age',       color: '#10b981' },
+  { key: 'MetabolicAge',     label: 'Metabolic Age',      color: '#6375EC' },
+  { key: 'MicroVascularAge', label: 'Micro-Vascular Age', color: '#0ea5e9' },
+];
 
 function ChipBatchModal({ batch, models, onClose, onSave }) {
   const { t } = useContext(LangCtx);
@@ -340,10 +356,14 @@ function ChipsTab({ batches, models, onRefresh }) {
         <button className={`subtab-btn${subTab === 'models' ? ' active' : ''}`} onClick={() => setSubTab('models')}>
           <Cpu size={13} />{tc.modelsTab}
         </button>
+        <button className={`subtab-btn${subTab === 'tested' ? ' active' : ''}`} onClick={() => setSubTab('tested')}>
+          <ClipboardList size={13} />{tc.testedTab}
+        </button>
       </div>
 
       {subTab === 'batches' && <ChipBatchesPanel batches={batches} models={models} onRefresh={onRefresh} />}
       {subTab === 'models'  && <ChipModelsPanel  models={models} onRefresh={onRefresh} />}
+      {subTab === 'tested'  && <TestedChipsPanel />}
     </>
   );
 }
@@ -680,6 +700,347 @@ function DeleteChipModelConfirm({ model, onClose, onConfirm }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function TestedChipsPanel() {
+  const { t } = useContext(LangCtx);
+  const tc = t.chips;
+  const [chips, setChips]       = useState([]);
+  const [total, setTotal]       = useState(0);
+  const [page, setPage]         = useState(1);
+  const [search, setSearch]     = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [detailScanId, setDetailScanId] = useState(null);
+  const limit = 20;
+
+  const load = async (p = page, q = search) => {
+    setLoading(true);
+    try {
+      const res = await axios.get('/api/kino-tested-chips', { params: { page: p, limit, search: q || undefined } });
+      setChips(res.data.chips || []);
+      setTotal(res.data.total || 0);
+    } catch (e) { console.error(e); setChips([]); setTotal(0); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(1, search); setPage(1); /* eslint-disable-next-line */ }, []);
+
+  const handleSearchSubmit = (e) => { e.preventDefault(); load(1, search); setPage(1); };
+  const goToPage = (p) => { setPage(p); load(p, search); };
+
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  return (
+    <>
+      <div className="stat-row">
+        <StatCard icon={ClipboardList} label={tc.countTested(total)} value={total} color="#3b82f6" />
+      </div>
+      <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count">{tc.countTested(total)}</span>
+          <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: 6 }}>
+            <input value={search} onChange={e => setSearch(e.target.value)}
+                   placeholder={tc.searchChipOrUser} style={{ fontSize: 13, padding: '6px 10px' }} />
+            <button type="submit" className="btn-secondary" style={{ padding: '6px 10px' }}><Search size={14} /></button>
+          </form>
+        </div>
+        <table className="data-table">
+          <thead><tr>
+            <th>{tc.chipCode}</th>
+            <th>{tc.batch}</th>
+            <th>Nickname</th>
+            <th>Bio Age</th>
+            <th>{tc.device}</th>
+            <th>{tc.testedAt}</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+            {!loading && chips.length === 0 && <tr><td colSpan={7} className="empty-row">{tc.noTestedChips}</td></tr>}
+            {chips.map(c => (
+              <tr key={c.scan_id} style={{ cursor: 'pointer' }} onClick={() => setDetailScanId(c.scan_id)}>
+                <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.chip_code}</td>
+                <td>{c.batch_prefix} <span style={{ color: '#94a3b8', fontSize: 11 }}>({c.model})</span></td>
+                <td>{fmt(c.nickname)}</td>
+                <td style={{ fontWeight: 700, color: bioAgeColor(c.bio_age, null) }}>{c.bio_age != null ? Number(c.bio_age).toFixed(1) : '—'}</td>
+                <td>{fmt(c.device_name || c.device_serial)}</td>
+                <td style={{ fontSize: 11, color: '#94a3b8' }}>{c.tested_at ? new Date(c.tested_at).toLocaleString() : (c.updated_at ? new Date(c.updated_at).toLocaleString() : '—')}</td>
+                <td>
+                  <button className="icon-btn" title={tc.viewDetail} onClick={(e) => { e.stopPropagation(); setDetailScanId(c.scan_id); }}>
+                    <ClipboardList size={14} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 6, padding: '12px 0' }}>
+            <button className="btn-secondary" disabled={page <= 1} onClick={() => goToPage(page - 1)}>‹</button>
+            <span style={{ fontSize: 12, color: '#94a3b8', alignSelf: 'center' }}>{tc.page} {page} {tc.of} {totalPages}</span>
+            <button className="btn-secondary" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}>›</button>
+          </div>
+        )}
+      </div>
+
+      {detailScanId && (
+        <TestedChipDetailModal
+          scanId={detailScanId}
+          onClose={() => setDetailScanId(null)}
+          onReset={() => { setDetailScanId(null); load(page, search); }}
+        />
+      )}
+    </>
+  );
+}
+
+function ResetChipConfirm({ scanId, chipCode, onClose, onConfirm }) {
+  const { t } = useContext(LangCtx);
+  const tc = t.chips;
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState('');
+
+  const handleReset = async () => {
+    setBusy(true); setError('');
+    try {
+      const res = await axios.post(`/api/kino-tested-chips/${scanId}/reset`);
+      if (res.data?.success === false) { setError(res.data.error || t.modal.saveFailed); return; }
+      onConfirm();
+    } catch (err) { setError(err.response?.data?.error || t.modal.saveFailed); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header"><span>{tc.resetChip}</span><button className="icon-btn" onClick={onClose}><X size={16} /></button></div>
+        <div className="modal-body">
+          <p>{tc.resetChipWarning(chipCode)}</p>
+          {error && <p className="form-error">{error}</p>}
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            <button className="btn-primary danger" onClick={handleReset} disabled={busy}>
+              {busy ? tc.resetting : tc.resetChip}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TestedChipDetailModal({ scanId, onClose, onReset }) {
+  const { t } = useContext(LangCtx);
+  const tc = t.chips;
+  const [chip, setChip]         = useState(null);
+  const [loading, setLoading]   = useState(true);
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    axios.get(`/api/kino-tested-chips/${scanId}`)
+      .then(res => { if (!cancelled) setChip(res.data.chip || null); })
+      .catch(() => { if (!cancelled) setChip(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [scanId]);
+
+  const bmData      = chip?.biomarker_data || null;
+  const actualBm     = bmData?.actual || null;
+  const validatedBm  = bmData?.validated || null;
+  const subAgesRaw   = bmData?.bioage_profile?.SubAges || null;
+  const cAge         = chip?.chrono_age;
+  const bAge         = chip?.bio_age;
+
+  return (
+    <>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-user-detail" onClick={e => e.stopPropagation()}>
+        <div className="udm-header">
+          <div className="udm-identity">
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.2 }}>{tc.chipDetail}</div>
+              <div style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace', marginTop: 2 }}>{chip?.chip_code || '…'}</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {chip && (
+              <button className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                onClick={() => setConfirmReset(true)}>
+                <RotateCcw size={13} />{tc.resetChip}
+              </button>
+            )}
+            <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+          </div>
+        </div>
+
+        <div className="modal-body">
+          {loading && <p style={{ textAlign: 'center', color: '#64748b', padding: '32px 0' }}>{t.topbar.loading}</p>}
+          {!loading && !chip && <p style={{ textAlign: 'center', color: '#475569', padding: '32px 0' }}>Not found</p>}
+          {!loading && chip && (
+            <div className="udm-health">
+              <div className="udm-col-left">
+                <div className="udm-section">
+                  <div className="udm-section-title">{tc.sectionChip}</div>
+                  <div className="drawer-info-grid">
+                    <span className="drawer-info-key">{tc.chipCode}</span>
+                    <span className="drawer-info-val mono">{fmt(chip.chip_code)}</span>
+                    <span className="drawer-info-key">{tc.batch}</span>
+                    <span className="drawer-info-val">{fmt(chip.batch_prefix)}</span>
+                    <span className="drawer-info-key">{tc.batchModel}</span>
+                    <span className="drawer-info-val">{fmt(chip.model)}</span>
+                    <span className="drawer-info-key">{tc.chipModelName}</span>
+                    <span className="drawer-info-val">{fmt(chip.model_name)}</span>
+                    <span className="drawer-info-key">{tc.batchStatusLabel}</span>
+                    <span className="drawer-info-val">{fmt(chip.batch_status)}</span>
+                  </div>
+                </div>
+
+                <div className="udm-section">
+                  <div className="udm-section-title">{tc.sectionScan}</div>
+                  <div className="drawer-info-grid">
+                    <span className="drawer-info-key">Nickname</span>
+                    <span className="drawer-info-val">{fmt(chip.nickname)}</span>
+                    <span className="drawer-info-key">User ID</span>
+                    <span className="drawer-info-val mono">{fmt(chip.user_id)}</span>
+                    <span className="drawer-info-key">{tc.scanStatus}</span>
+                    <span className="drawer-info-val">{fmt(chip.scan_status)}</span>
+                    <span className="drawer-info-key">{tc.scannedAt}</span>
+                    <span className="drawer-info-val">{chip.scan_created_at ? new Date(chip.scan_created_at).toLocaleString() : '—'}</span>
+                    <span className="drawer-info-key">{tc.updatedAt}</span>
+                    <span className="drawer-info-val">{chip.scan_updated_at ? new Date(chip.scan_updated_at).toLocaleString() : '—'}</span>
+                  </div>
+                </div>
+
+                <div className="udm-section">
+                  <div className="udm-section-title">{tc.sectionDevice}</div>
+                  {chip.kino_device_id ? (
+                    <div className="drawer-info-grid">
+                      <span className="drawer-info-key">{tc.device}</span>
+                      <span className="drawer-info-val">{fmt(chip.device_name)}</span>
+                      <span className="drawer-info-key">{tc.deviceSerial}</span>
+                      <span className="drawer-info-val mono">{fmt(chip.device_serial)}</span>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 12, color: '#64748b' }}>{tc.noDeviceLinked}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="udm-col-right">
+                {!chip.biomarker_id && (
+                  <div className="udm-section">
+                    <p style={{ fontSize: 12, color: '#64748b' }}>{tc.noBiomarkerLinked}</p>
+                  </div>
+                )}
+
+                {chip.biomarker_id && (
+                  <>
+                    <div className="udm-section">
+                      <div className="udm-bioage-row">
+                        <div className="udm-age-chip">
+                          <div className="udm-age-val">{cAge ?? '—'}</div>
+                          <div className="udm-age-label">{t.userDetail.chronoAge}</div>
+                        </div>
+                        <div className="udm-age-chip udm-age-chip-primary">
+                          <div className="udm-age-val udm-bio-val" style={{ color: bioAgeColor(bAge, cAge) }}>
+                            {bAge != null ? Number(bAge).toFixed(1) : '—'}
+                          </div>
+                          <div className="udm-age-label">{t.userDetail.bioAge}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {subAgesRaw && (
+                      <div className="udm-section">
+                        <div className="udm-section-title">{t.userDetail.subAges}</div>
+                        <div className="udm-subages">
+                          {TESTED_SUB_AGE_META.map(({ key, label, color }) => {
+                            const v = subAgesRaw[key];
+                            const score = v != null && cAge != null
+                              ? Math.max(5, Math.min(95, Math.round((cAge + 15 - v) / 30 * 100)))
+                              : 50;
+                            return (
+                              <div key={key} className="udm-subage-row">
+                                <span className="udm-subage-label">{label}</span>
+                                <div className="udm-bar-wrap">
+                                  <div className="udm-bar-fill" style={{ width: `${score}%`, background: color }} />
+                                </div>
+                                <span className="udm-subage-val" style={{ color }}>{v != null ? Number(v).toFixed(1) : '—'}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="udm-section">
+                      <div className="udm-section-title">{tc.sectionValidatedBiomarkers}</div>
+                      {validatedBm ? (
+                        <div className="bm-table">
+                          {TESTED_BM_META.map(({ key, label, unit }) => (
+                            <div key={key} className="bm-table-row">
+                              <span className="bm-table-label">{label}</span>
+                              <span className="bm-table-val">{validatedBm[key] ?? '—'}</span>
+                              <span className="bm-table-unit">{unit}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <p style={{ fontSize: 12, color: '#64748b' }}>—</p>}
+                    </div>
+
+                    <div className="udm-section">
+                      <div className="udm-section-title">{tc.sectionRawBiomarkers}</div>
+                      {actualBm && Object.keys(actualBm).length > 0 ? (
+                        <div className="bm-table">
+                          {TESTED_BM_META.map(({ key, label, unit }) => (
+                            actualBm[key] != null && (
+                              <div key={key} className="bm-table-row">
+                                <span className="bm-table-label">{label}</span>
+                                <span className="bm-table-val">{actualBm[key]}</span>
+                                <span className="bm-table-unit">{unit}</span>
+                              </div>
+                            )
+                          ))}
+                        </div>
+                      ) : <p style={{ fontSize: 12, color: '#64748b' }}>—</p>}
+                    </div>
+
+                    {bmData?.context && (
+                      <div className="udm-section">
+                        <div className="udm-section-title">{tc.sectionContext}</div>
+                        <p style={{ fontSize: 12, color: '#334155', whiteSpace: 'pre-wrap' }}>{bmData.context}</p>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <div className="udm-section">
+                  <div className="udm-section-title">{tc.sectionRawResults}</div>
+                  <pre style={{
+                    fontSize: 11, background: '#0f172a', color: '#cbd5e1', borderRadius: 6,
+                    padding: 10, overflowX: 'auto', maxHeight: 220, margin: 0,
+                  }}>
+                    {JSON.stringify(chip.scan_results || {}, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+
+    {confirmReset && chip && (
+      <ResetChipConfirm
+        scanId={scanId}
+        chipCode={chip.chip_code}
+        onClose={() => setConfirmReset(false)}
+        onConfirm={() => { setConfirmReset(false); onReset(); }}
+      />
+    )}
+    </>
   );
 }
 
