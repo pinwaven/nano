@@ -13,7 +13,7 @@ const ci = require('miniprogram-ci');
   // 2. 执行上传操作
   const uploadResult = await ci.upload({
     project,
-    version: '1.1.16',     // 版本号，请根据实际情况更新
+    version: '1.1.17',     // 版本号，请根据实际情况更新
     desc: '这是通过CI上传的版本',  // 版本描述
     setting: {
       es6: true,          // 启用ES6转ES5
