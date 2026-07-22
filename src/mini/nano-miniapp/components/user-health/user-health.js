@@ -2783,33 +2783,76 @@ Component({
         return
       }
 
-      // ── Aizo: single-phase sync — historical data via syncAll() ──
+      // ── Aizo: single-phase sync — all data is historical, sourced from the
+      // 0xCC health-history sync (which carries HR+HRV+SpO2+stress+temp per
+      // sample — richer per-reading detail than Halo needs separate endpoints
+      // for) plus the sleep summary/detail sync. Built the same way as the
+      // Halo branch above (individual getters, not syncAll()) for parity. ──
       if (brand === 'aizo') {
         try {
           const savedDev = wx.getStorageSync('wearable_device') || {}
           await ring.connect(this.data.wearableId, { name: savedDev.name || '' })
-          const battery  = await ring.getBattery()
-          const snapshot = await ring.syncAll()
+          const battery   = await ring.getBattery()
+          const steps     = await ring.getSteps().catch(() => null)
+          const sleepHist = await ring.getSleepHistory().catch(() => [])
+          const sleepHistoryNorm = sleepHist.filter(n => n.totalMinutes > 0).map(n => ({
+            date: n.date,
+            onset: n.onset ?? null,
+            totalMinutes: n.totalMinutes,
+            deep: n.deep ?? null,
+            light: n.light ?? null,
+            rem: n.rem ?? null,
+            awake: n.awake ?? null,
+            sleepStart: n.sleepStart ?? null,
+            sleepEnd: n.sleepEnd ?? null,
+            slots: n.periods?.map(p => ({ type: p.typeName, min: p.minutes })) ?? null,
+          }))
+          const sleep = _selectLastNight(sleepHistoryNorm)
+          const hrLog   = await ring.getHeartRateLog().catch(() => null)
+          const hrvLog  = await ring.getHrvHistory().catch(() => [])           // [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}]
+          const spo2Log = await ring.getAutoSpo2History().catch(() => [])     // [{timestamp, spo2}]
+          const tempLog = await ring.getTemperatureHistory().catch(() => [])  // [{timestamp, estimatedBodyTemp, skinTemp, status}]
           await ring.disconnect()
+
+          const hrEntries  = (hrLog || []).filter(r => r.value > 0)
+          const restingHr  = hrEntries.length ? Math.min(...hrEntries.map(r => r.value)) : null
+          const latestHrv  = hrvLog.length  ? hrvLog[hrvLog.length - 1]   : {}
+          const latestSpo2 = spo2Log.length ? spo2Log[spo2Log.length - 1] : {}
+          const validTemps = (tempLog || []).filter(r => r.estimatedBodyTemp != null && r.estimatedBodyTemp > 34)
+          const latestTemp = validTemps.length ? validTemps[validTemps.length - 1] : {}
           const raw = {
-            steps:        snapshot.steps        ?? null,
-            calories:     snapshot.calories     ?? null,
-            distance:     snapshot.distance     ?? null,
-            stepSlots:    snapshot.stepSlots    ?? null,
-            sleepMinutes: (snapshot.sleepMinutes > 0) ? snapshot.sleepMinutes : null,
-            sleepDeep:    snapshot.sleepDeep    ?? null,
-            sleepLight:   snapshot.sleepLight   ?? null,
-            sleepRem:     snapshot.sleepRem     ?? null,
-            sleepAwake:   snapshot.sleepAwake   ?? null,
-            sleepStart:   snapshot.sleepStart   ?? null,
-            sleepEnd:     snapshot.sleepEnd     ?? null,
-            sleepSlots:   snapshot.sleepSlots?.map(p => ({ type: p.typeName, min: p.minutes })) ?? null,
-            hrSlots:      [],
-            restingHr:    null,
-            hrv:          null,
-            stress:       snapshot.stress       ?? null,
-            spo2:         null,
-            syncedAt:     Date.now(),
+            steps:        steps?.steps       ?? null,
+            calories:     steps?.calories    ?? null,
+            distance:     steps?.distance    ?? null,
+            stepSlots:    null,
+            sleepMinutes: (sleep?.totalMinutes > 0) ? sleep.totalMinutes : null,
+            sleepDeep:    sleep?.deep        ?? null,
+            sleepLight:   sleep?.light       ?? null,
+            sleepRem:     sleep?.rem         ?? null,
+            sleepAwake:   sleep?.awake       ?? null,
+            sleepStart:   sleep?.sleepStart  ?? null,
+            sleepEnd:     sleep?.sleepEnd    ?? null,
+            sleepSlots:   sleep?.slots       ?? null,
+            sleepOnset:   sleep?.onset       ?? null,
+            sleepDate:    sleep?.date        ?? null,
+            sleepHistory: sleepHistoryNorm,
+            // Aizo timestamps are already "YYYY-MM-DD HH:MM:SS" strings (not
+            // Date objects like Halo's hrLog) — pass through as-is.
+            hrSlots:         hrEntries.map(r => ({ t: r.timestamp, bpm: r.value })),
+            restingHr,
+            hrv:             latestHrv.hrv       ?? null,
+            stress:          latestHrv.stress    ?? null,
+            spo2:            latestSpo2.spo2     ?? null,
+            breathRate:      latestHrv.breath    ?? null,
+            heartRateFromHrv: latestHrv.heartRate ?? null,
+            systolicBP:      latestHrv.highBP   ?? null,
+            diastolicBP:     latestHrv.lowBP    ?? null,
+            hrvMeasuredAt:   latestHrv.timestamp ?? null,
+            hrvSlots:    hrvLog.length       > 0 ? hrvLog       : null,
+            spo2Slots:   spo2Log.length      > 0 ? spo2Log      : null,
+            tempSlots:   validTemps.length   > 0 ? validTemps   : null,
+            bodyTempC:   latestTemp.estimatedBodyTemp ?? null,
+            syncedAt: Date.now(),
           }
           this._commitRingData(raw, battery.level, isZh, false)
         } catch (e) {
