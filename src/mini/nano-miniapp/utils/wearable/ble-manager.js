@@ -88,6 +88,17 @@ class BLEManager {
       })
     })
 
+    // Negotiate a larger MTU. Without this, writes are capped at the default
+    // unnegotiated ATT MTU (~20 bytes usable) — fine for brands whose packets
+    // are always small (Halo's are a fixed 16 bytes), but Aizo's bind request
+    // alone is ~65 bytes and silently fails (or times out with no response)
+    // without this. Android requires the explicit call; iOS negotiates MTU on
+    // its own and doesn't support setBLEMTU, so failures here are expected
+    // and harmless — best-effort only.
+    await new Promise((resolve) => {
+      wx.setBLEMTU({ deviceId, mtu: 247, success: resolve, fail: resolve, complete: resolve })
+    })
+
     // Delay after connection before discovering services — R10 needs ~800ms
     await _delay(800)
 
