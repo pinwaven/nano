@@ -456,7 +456,18 @@ class AizoRing extends WearableDevice {
     const sleep = sleepHistory.length ? sleepHistory[sleepHistory.length - 1] : null
     const hrEntries = hrLog.filter((r) => r.value > 0)
     const restingHr = hrEntries.length ? Math.min(...hrEntries.map((r) => r.value)) : null
-    const latestHrv = hrvSlots.length ? hrvSlots[hrvSlots.length - 1] : {}
+    // HR and stress are on independent auto-monitor schedules (spec §6.0.1),
+    // so a single health-history sample often has one field populated and the
+    // other 0/null — taking the chronologically *last* record for both (as if
+    // they always arrive together, which they don't here) can show a blank
+    // "current stress" even though an earlier same-day sample has one. Scan
+    // backward per-field instead.
+    const latestWith = (arr, field) => {
+      for (let i = arr.length - 1; i >= 0; i--) if (arr[i][field] != null) return arr[i]
+      return {}
+    }
+    const latestHrvEntry = latestWith(hrvSlots, 'hrv')
+    const latestStressEntry = latestWith(hrvSlots, 'stress')
     const latestSpo2 = spo2Slots.length ? spo2Slots[spo2Slots.length - 1] : {}
 
     return {
@@ -476,14 +487,14 @@ class AizoRing extends WearableDevice {
       sleepHistory,
       hrSlots: hrEntries.map((r) => ({ t: r.timestamp, bpm: r.value })),
       restingHr,
-      hrv: latestHrv.hrv ?? null,
-      stress: latestHrv.stress ?? null,
+      hrv: latestHrvEntry.hrv ?? null,
+      stress: latestStressEntry.stress ?? null,
       spo2: latestSpo2.spo2 ?? null,
       breathRate: null,
-      heartRateFromHrv: latestHrv.heartRate ?? null,
+      heartRateFromHrv: latestHrvEntry.heartRate ?? null,
       systolicBP: null,
       diastolicBP: null,
-      hrvMeasuredAt: latestHrv.timestamp ?? null,
+      hrvMeasuredAt: latestHrvEntry.timestamp ?? null,
       hrvSlots: hrvSlots.length ? hrvSlots : null,
       spo2Slots: spo2Slots.length ? spo2Slots : null,
       tempSlots: tempSlots.length ? tempSlots : null,

@@ -2816,7 +2816,22 @@ Component({
 
           const hrEntries  = (hrLog || []).filter(r => r.value > 0)
           const restingHr  = hrEntries.length ? Math.min(...hrEntries.map(r => r.value)) : null
-          const latestHrv  = hrvLog.length  ? hrvLog[hrvLog.length - 1]   : {}
+          // HR and stress are on independent auto-monitor schedules on Aizo (HR
+          // ticks roughly every 20min, stress every 45min — see protocol spec
+          // §6.0.1), so a single health-history sample often has one field
+          // populated and the other 0/null. Taking the chronologically *last*
+          // record (as Halo's single-endpoint HRV reading safely can, since
+          // hrv+stress+breath+bp always arrive together there) would pick
+          // whichever field that particular tick happened to measure and show
+          // "—" for the other even though an earlier same-day sample has it —
+          // this is exactly what showed a stress trend but a blank "current
+          // stress" reading. Scan backward per-field instead.
+          const latestWith = (arr, field) => {
+            for (let i = arr.length - 1; i >= 0; i--) if (arr[i][field] != null) return arr[i]
+            return {}
+          }
+          const latestHrvEntry    = latestWith(hrvLog, 'hrv')
+          const latestStressEntry = latestWith(hrvLog, 'stress')
           const latestSpo2 = spo2Log.length ? spo2Log[spo2Log.length - 1] : {}
           const validTemps = (tempLog || []).filter(r => r.estimatedBodyTemp != null && r.estimatedBodyTemp > 34)
           const latestTemp = validTemps.length ? validTemps[validTemps.length - 1] : {}
@@ -2840,14 +2855,14 @@ Component({
             // Date objects like Halo's hrLog) — pass through as-is.
             hrSlots:         hrEntries.map(r => ({ t: r.timestamp, bpm: r.value })),
             restingHr,
-            hrv:             latestHrv.hrv       ?? null,
-            stress:          latestHrv.stress    ?? null,
-            spo2:            latestSpo2.spo2     ?? null,
-            breathRate:      latestHrv.breath    ?? null,
-            heartRateFromHrv: latestHrv.heartRate ?? null,
-            systolicBP:      latestHrv.highBP   ?? null,
-            diastolicBP:     latestHrv.lowBP    ?? null,
-            hrvMeasuredAt:   latestHrv.timestamp ?? null,
+            hrv:             latestHrvEntry.hrv       ?? null,
+            stress:          latestStressEntry.stress ?? null,
+            spo2:            latestSpo2.spo2          ?? null,
+            breathRate:      null,
+            heartRateFromHrv: latestHrvEntry.heartRate ?? null,
+            systolicBP:      null,
+            diastolicBP:     null,
+            hrvMeasuredAt:   latestHrvEntry.timestamp ?? null,
             hrvSlots:    hrvLog.length       > 0 ? hrvLog       : null,
             spo2Slots:   spo2Log.length      > 0 ? spo2Log      : null,
             tempSlots:   validTemps.length   > 0 ? validTemps   : null,
