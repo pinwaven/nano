@@ -3,16 +3,25 @@
 const { pool } = require('../lib/db');
 const { generateUserId, generateReferralCode, getWxAccessToken } = require('../lib/auth');
 
+// 根据APP_ID获取APP_SECRET，如果没找到用默认的APPID
+function get_secret_by_app_id(app_id) {
+    if (process.env.WX_APPID && process.env.WX_SECRET && app_id === process.env.WX_APPID) {
+        return { appid: app_id, secret: process.env.WX_SECRET };
+    }
+    if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN && app_id === process.env.WX_APPID_WAVEN) {
+        return { appid: app_id, secret: process.env.WX_SECRET_WAVEN };
+    }
+    if (process.env.WX_APPID_AEVIVA && process.env.WX_SECRET_AEVIVA && app_id === process.env.WX_APPID_AEVIVA) {
+        return { appid: app_id, secret: process.env.WX_SECRET_AEVIVA };
+    }
+    return { appid: process.env.WX_APPID, appsecret: process.env.WX_SECRET };
+}
+
 async function handleResolvePhone(code, app_id = null) {
     try {
         if (!code) return { success: false, error: 'code is required' };
-        const credMap = {};
-        if (process.env.WX_APPID && process.env.WX_SECRET)
-            credMap[process.env.WX_APPID] = process.env.WX_SECRET;
-        if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN)
-            credMap[process.env.WX_APPID_WAVEN] = process.env.WX_SECRET_WAVEN;
-        const appid = (app_id && credMap[app_id]) ? app_id : process.env.WX_APPID;
-        const token = await getWxAccessToken(appid, credMap[appid]);
+        const { appid, secret } = get_secret_by_app_id(app_id);
+        const token = await getWxAccessToken(appid, secret);
         const wxRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -30,31 +39,38 @@ async function handleResolvePhone(code, app_id = null) {
 
 async function handleBindPhone(user_id, code, app_id = null, rawPhone = null) {
     try {
-        // Raw-phone mode: Flutter app sends phone directly (no WeChat phone code available)
-        if (!code && rawPhone) {
-            if (!/^1\d{10}$/.test(rawPhone)) return { success: false, error: 'Invalid phone number' };
-            if (!user_id) return { success: false, error: 'user_id is required' };
-            await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [rawPhone, user_id]);
-            return { success: true, phone: rawPhone };
+        console.log(JSON.stringify({ level: 'INFO', msg: 'wx-bind-phone', user_id, phone_present: !!rawPhone, phone_code_present: !!code, app_id }));
+        if (!user_id) return { success: false, error: 'user_id is required' };
+
+        // Raw-phone mode (Flutter sends phone directly) vs WeChat phone-code mode.
+        let phone = rawPhone;
+        if (code) {
+            const { appid, secret } = get_secret_by_app_id(app_id);
+            const token = await getWxAccessToken(appid, secret);
+            const wxRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code }),
+            });
+            const wxData = await wxRes.json();
+            if (wxData.errcode) return { success: false, error: `WeChat: ${wxData.errmsg} (${wxData.errcode})` };
+            phone = wxData.phone_info?.purePhoneNumber;
+        } else if (!rawPhone) {
+            return { success: false, error: 'code or phone is required' };
         }
-        if (!code) return { success: false, error: 'code is required' };
-        const credMap = {};
-        if (process.env.WX_APPID && process.env.WX_SECRET)
-            credMap[process.env.WX_APPID] = process.env.WX_SECRET;
-        if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN)
-            credMap[process.env.WX_APPID_WAVEN] = process.env.WX_SECRET_WAVEN;
-        const appid = (app_id && credMap[app_id]) ? app_id : process.env.WX_APPID;
-        const token = await getWxAccessToken(appid, credMap[appid]);
-        const wxRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code }),
-        });
-        const wxData = await wxRes.json();
-        if (wxData.errcode) return { success: false, error: `WeChat: ${wxData.errmsg} (${wxData.errcode})` };
-        const phone = wxData.phone_info?.purePhoneNumber;
+
         if (!phone) return { success: false, error: 'No phone number returned' };
-        await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [phone, user_id]);
+        if (!/^1\d{10}$/.test(phone)) return { success: false, error: 'Invalid phone number' };
+
+        // Match on internal user_id OR WeChat openid — clients send either as user_id.
+        const { rowCount } = await pool.query(
+            'UPDATE users SET phone = $1 WHERE user_id = $2 OR external_id = $2',
+            [phone, user_id]
+        );
+        if (rowCount === 0) {
+            console.log(JSON.stringify({ level: 'ERROR', msg: 'wx-bind-phone-no-match', user_id }));
+            return { success: false, error: 'User not found' };
+        }
         return { success: true, phone };
     } catch (err) {
         return { success: false, error: err.message };
@@ -66,16 +82,7 @@ async function handleWxLogin(body) {
     const { code, coach_id, invite_code, ref, app_id, phone_code, phone, channel_slug } = body;
     if (!code) return { success: false, error: 'code is required' };
 
-    const credMap = {};
-    if (process.env.WX_APPID && process.env.WX_SECRET)
-        credMap[process.env.WX_APPID] = process.env.WX_SECRET;
-    if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN)
-        credMap[process.env.WX_APPID_WAVEN] = process.env.WX_SECRET_WAVEN;
-    if (process.env.WX_APPID_AEVIVA && process.env.WX_SECRET_AEVIVA)
-        credMap[process.env.WX_APPID_AEVIVA] = process.env.WX_SECRET_AEVIVA;
-
-    const appid  = (app_id && credMap[app_id]) ? app_id : process.env.WX_APPID;
-    const secret = credMap[appid];
+    const { appid, secret } = get_secret_by_app_id(app_id);
     if (!appid || !secret) return { success: false, error: 'WX_APPID / WX_SECRET not configured' };
 
     const wxRes = await fetch(
@@ -93,7 +100,7 @@ async function handleWxLogin(body) {
     console.log(JSON.stringify({ level: 'INFO', msg: 'wx-login-phone', phone_present: !!phone, phone_code_present: !!phone_code, phone_val: phone }));
     let resolvedPhone = phone || null;
     if (!resolvedPhone && phone_code) {
-        const token = await getWxAccessToken(appid, credMap[appid]);
+        const token = await getWxAccessToken(appid, secret);
         const phoneRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -788,17 +795,7 @@ async function handleExchangeAdminWebviewToken(body) {
 async function handlePostQrLoginInit(body) {
     try {
         const { app_id } = body || {};
-        const credMap = {};
-        if (process.env.WX_APPID && process.env.WX_SECRET)
-            credMap[process.env.WX_APPID] = process.env.WX_SECRET;
-        if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN)
-            credMap[process.env.WX_APPID_WAVEN] = process.env.WX_SECRET_WAVEN;
-        if (process.env.WX_APPID_AEVIVA && process.env.WX_SECRET_AEVIVA)
-            credMap[process.env.WX_APPID_AEVIVA] = process.env.WX_SECRET_AEVIVA;
-
-        const appid  = (app_id && credMap[app_id]) ? app_id
-            : (process.env.WX_APPID_WAVEN || process.env.WX_APPID);
-        const secret = credMap[appid];
+        const { appid, secret } = get_secret_by_app_id(app_id);
         if (!appid || !secret) return { success: false, error: 'WX_APPID_WAVEN / WX_SECRET_WAVEN not configured' };
 
         // session_id = 32 hex chars, matches wxacode.getunlimited scene max (32 UTF-8 chars)
