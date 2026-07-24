@@ -167,6 +167,13 @@ exports.handler = async (req, resp, context) => {
         return wxVerifyPayload;
     }
 
+    // WeChat business domain verification file for Aeviva — no auth required
+    if (method === 'GET' && rawPath === '/y8OA62rIU4.txt') {
+        const wxVerifyPayload = { isBase64Encoded: false, statusCode: 200, headers: { 'Content-Type': 'text/plain' }, body: 'e11d7813414b959e5a6440f6c2cd2b30' };
+        if (isStandardHttp) { resp.setStatusCode(200); resp.setHeader('Content-Type', 'text/plain'); resp.send('e11d7813414b959e5a6440f6c2cd2b30'); return; }
+        return wxVerifyPayload;
+    }
+
     // Public certificate verification — no auth required
     if (method === 'GET' && path.match(/^\/academy\/verify\/(.+)/)) {
         const certNumber = decodeURIComponent(path.match(/^\/academy\/verify\/(.+)/)[1]);
