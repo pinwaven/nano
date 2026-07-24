@@ -2123,7 +2123,12 @@ Page({
     const { t, user } = this.data
     const { code, errMsg } = e.detail
     this._removePhonePrompt()
-    if (errMsg !== 'getPhoneNumber:ok' || !code) return
+    if (errMsg !== 'getPhoneNumber:ok' || !code) {
+      if (errMsg && errMsg.includes('frequently')) {
+        wx.showToast({ title: '操作太频繁，请稍后再试', icon: 'none' })
+      }
+      return
+    }
     try {
       const { appId } = wx.getAccountInfoSync().miniProgram
       const res = await this._req(`${BASE}/api/bind-phone`, 'POST', { user_id: user.user_id, code, app_id: appId })
@@ -3241,17 +3246,27 @@ Page({
     }).catch(() => this.setData({ guestAvatarUploading: false }))
   },
 
+  _isRemoteNetworkUrl(url) {
+    if (!url || typeof url !== 'string') return false
+    if (url.startsWith('wxfile://') || url.startsWith('content://')) return false
+    if (url.startsWith('http://tmp') || url.startsWith('https://tmp')) return false
+    if (url.startsWith('http://usr') || url.startsWith('https://usr')) return false
+    if (url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost')) return false
+    return url.startsWith('http://') || url.startsWith('https://')
+  },
+
   handleGuestChooseAvatar(e) {
     const avatarUrl = e.detail?.avatarUrl
     if (!avatarUrl) return
-    if (avatarUrl.startsWith('http')) {
+    if (this._isRemoteNetworkUrl(avatarUrl)) {
       this.setData({ guestPendingAvatar: avatarUrl })
       wx.downloadFile({
         url: avatarUrl,
         success: (res) => this._uploadGuestAvatar(avatarUrl, res.tempFilePath),
-        fail: () => this.setData({ guestAvatarUploading: false }),
+        fail: () => this._uploadGuestAvatar(avatarUrl, avatarUrl),
       })
     } else {
+      this.setData({ guestPendingAvatar: avatarUrl })
       this._uploadGuestAvatar(avatarUrl, avatarUrl)
     }
   },
@@ -3287,11 +3302,11 @@ Page({
         })
       }).catch(done)
     }
-    if (avatarUrl.startsWith('http')) {
+    if (this._isRemoteNetworkUrl(avatarUrl)) {
       wx.downloadFile({
         url: avatarUrl,
         success: (res) => upload(res.tempFilePath),
-        fail: done,
+        fail: () => upload(avatarUrl),
       })
     } else {
       upload(avatarUrl)

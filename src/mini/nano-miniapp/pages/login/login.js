@@ -17,6 +17,9 @@ Page({
     skipPassOpen: false,
     skipPassInput: '',
     skipPassError: false,
+
+    // Privacy consent popup
+    showPrivacyPopup: false,
   },
 
   _coachId: null,
@@ -24,6 +27,38 @@ Page({
   _refCode: null,
   _pendingLogin: null,
   _pendingAvatarPath: '',
+
+  onShow() {
+    app._onPrivacyRequest = () => {
+      this.setData({ showPrivacyPopup: true })
+    }
+  },
+
+  onHide() {
+    if (app._onPrivacyRequest) app._onPrivacyRequest = null
+  },
+
+  onUnload() {
+    if (app._onPrivacyRequest) app._onPrivacyRequest = null
+  },
+
+  noop() {},
+
+  onPrivacyAgree() {
+    if (app._privacyResolve) {
+      app._privacyResolve({ event: 'agree', buttonId: 'login-privacy-agree-btn' })
+      app._privacyResolve = null
+    }
+    this.setData({ showPrivacyPopup: false })
+  },
+
+  onPrivacyCancel() {
+    if (app._privacyResolve) {
+      app._privacyResolve({ event: null })
+      app._privacyResolve = null
+    }
+    this.setData({ showPrivacyPopup: false })
+  },
 
   onLoad(options) {
     if (options.coach_id) this._coachId = options.coach_id
@@ -112,17 +147,39 @@ Page({
                     })
                   }
                 },
+                fail: (err) => {
+                  if (IS_DEV) console.error('avatar PUT upload failed:', err)
+                },
               })
             },
+            fail: (err) => {
+              if (IS_DEV) console.error('avatar readFile failed:', err)
+            },
           })
+        },
+        fail: (err) => {
+          if (IS_DEV) console.error('avatar presign failed:', err)
         },
       })
     }
 
-    if (avatarUrl.startsWith('http')) {
+    const isRemoteNetworkUrl = (url) => {
+      if (!url || typeof url !== 'string') return false
+      if (url.startsWith('wxfile://') || url.startsWith('content://')) return false
+      if (url.startsWith('http://tmp') || url.startsWith('https://tmp')) return false
+      if (url.startsWith('http://usr') || url.startsWith('https://usr')) return false
+      if (url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost')) return false
+      return url.startsWith('http://') || url.startsWith('https://')
+    }
+
+    if (isRemoteNetworkUrl(avatarUrl)) {
       wx.downloadFile({
         url: avatarUrl,
         success: (res) => upload(res.tempFilePath),
+        fail: (err) => {
+          if (IS_DEV) console.error('downloadFile failed, fallback to upload direct:', err)
+          upload(avatarUrl)
+        },
       })
     } else {
       upload(avatarUrl)
@@ -132,20 +189,36 @@ Page({
   async handleGetPhone(e) {
     const { code, errMsg } = e.detail
     if (errMsg !== 'getPhoneNumber:ok' || !code) {
-      wx.showToast({ title: '需要授权手机号才能继续', icon: 'none', duration: 2000 })
+      if (IS_DEV) console.error('getPhoneNumber error detail:', e.detail)
+      if (errMsg && errMsg.includes('frequently')) {
+        wx.showToast({ title: '操作太频繁，请稍后再试', icon: 'none', duration: 2500 })
+      } else if (errMsg && (errMsg.includes('deny') || errMsg.includes('cancel'))) {
+        wx.showToast({ title: '需要授权手机号才能继续', icon: 'none', duration: 2000 })
+      } else {
+        wx.showToast({ title: errMsg || '授权失败，请重试', icon: 'none', duration: 2500 })
+      }
       return
     }
+    if (this.data.phoneLoading) return
     this.setData({ phoneLoading: true })
     try {
-      const user = this._pendingLogin.user
-      await wx.request({
-        url: `${BASE}/api/bind-phone`,
-        method: 'POST',
-        header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
-        data: { user_id: user.user_id, code, app_id: wx.getAccountInfoSync().miniProgram.appId },
+      const user = this._pendingLogin?.user || {}
+      await new Promise((resolve, reject) => {
+        wx.request({
+          url: `${BASE}/api/bind-phone`,
+          method: 'POST',
+          header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
+          data: { user_id: user.user_id, code, app_id: wx.getAccountInfoSync().miniProgram.appId },
+          success: (res) => resolve(res),
+          fail: (err) => reject(err),
+        })
       })
-    } catch (e) {}
-    this._finishLogin(this._pendingLogin)
+      this._finishLogin(this._pendingLogin)
+    } catch (err) {
+      if (IS_DEV) console.error('bind-phone failed:', err)
+      this.setData({ phoneLoading: false })
+      wx.showToast({ title: '手机号绑定失败，请重试', icon: 'none', duration: 2000 })
+    }
   },
 
   retry() {

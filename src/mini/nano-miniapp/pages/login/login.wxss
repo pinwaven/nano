@@ -453,3 +453,61 @@ button.avatar-pick-btn::after { border: none; }
   20%       { transform: translateX(-8rpx); }
   60%       { transform: translateX(8rpx); }
 }
+
+/* Privacy consent popup */
+.privacy-mask {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.privacy-box {
+  background: #132236;
+  border: 1rpx solid rgba(99, 117, 236, 0.25);
+  border-radius: 24rpx;
+  padding: 48rpx 40rpx 36rpx;
+  margin: 0 48rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.privacy-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+  text-align: center;
+}
+
+.privacy-body {
+  font-size: 26rpx;
+  color: rgba(166, 196, 229, 0.8);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.privacy-agree-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #6375EC 0%, #8B9FFF 100%);
+  color: #fff;
+  border-radius: 100rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  padding: 20rpx 0;
+  margin-top: 8rpx;
+  border: none;
+}
+
+.privacy-cancel-btn {
+  padding: 8rpx 0;
+}
+
+.privacy-cancel-btn text {
+  font-size: 26rpx;
+  color: rgba(166, 196, 229, 0.5);
+}

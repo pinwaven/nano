@@ -95,6 +95,23 @@
     </view>
   </view>
 
+  <!-- ── Privacy consent popup ── -->
+  <view wx:if="{{showPrivacyPopup}}" class="privacy-mask" catchtap="noop">
+    <view class="privacy-box">
+      <text class="privacy-title">{{lang === 'en' ? 'Privacy Notice' : '隐私保护提示'}}</text>
+      <text class="privacy-body">{{lang === 'en' ? 'To provide you with complete health services and account features, we need access to your phone number and related information. Please read and agree to our Privacy Policy before continuing.' : '为您提供完整的健康服务与账号功能，需要使用您的手机号及相关信息。请阅读并同意我们的隐私保护指引后继续。'}}</text>
+      <button class="privacy-agree-btn"
+              id="login-privacy-agree-btn"
+              open-type="agreePrivacyAuthorization"
+              bindagreeprivacyauthorization="onPrivacyAgree">
+        {{lang === 'en' ? 'Agree & Continue' : '同意并继续'}}
+      </button>
+      <view class="privacy-cancel-btn" bindtap="onPrivacyCancel">
+        <text>{{lang === 'en' ? 'Decline' : '拒绝'}}</text>
+      </view>
+    </view>
+  </view>
+
   <view class="login-footer">
     <text>哈佛大学创新实验室</text>
     <text class="login-footer-dot">·</text>
