@@ -79,6 +79,8 @@ resources:
         WX_SECRET: ${env(WX_SECRET)}
         WX_APPID_WAVEN: "wx84bd7d00a6fd626e"
         WX_SECRET_WAVEN: ${env(WX_SECRET_WAVEN)}
+        WX_APPID_AEVIVA: "wxd19a1403c4fea89d"
+        WX_SECRET_AEVIVA: ${env(WX_SECRET_AEVIVA)}
         NODE_ENV: "production"
         WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
@@ -333,6 +335,8 @@ resources:
       routeConfig:
         routes:
           - path: /QJaeMN3iR8.txt
+            functionName: nano-worker
+          - path: /y8OA62rIU4.txt
             functionName: nano-worker
           - path: /api/*
             functionName: nano-worker
