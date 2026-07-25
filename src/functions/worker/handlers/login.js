@@ -110,7 +110,7 @@ async function handleWxLogin(body) {
     const existing = await pool.query(
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                 u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
-                u.referred_by_user_id, b.bio_age,
+                u.referred_by_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                 cu.nickname AS coach_name,
                 c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                 c.config->'sub_age_display_names' AS channel_sub_age_names,
@@ -167,7 +167,7 @@ async function handleWxLogin(body) {
                     const refreshed = await pool.query(
                         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                                 u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
-                                u.referral_code, u.referred_by_user_id, b.bio_age,
+                                u.referral_code, u.referred_by_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                                 cu.nickname AS coach_name,
                                 c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                                 c.config->'sub_age_display_names' AS channel_sub_age_names,
@@ -251,7 +251,8 @@ async function handleWxLogin(body) {
     if (resolvedPhone) {
         const phoneMatch = await pool.query(
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                    u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
+                    u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
+                    (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                     cu.nickname AS coach_name,
                     c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                     c.config->'sub_age_display_names' AS channel_sub_age_names,
@@ -416,7 +417,7 @@ async function handleWxAppLogin(body) {
     const bundleSelect = `
         SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
-               u.referred_by_user_id, b.bio_age,
+               u.referred_by_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                cu.nickname AS coach_name,
                c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                c.config->'sub_age_display_names' AS channel_sub_age_names
@@ -684,7 +685,8 @@ async function handleExchangeWebviewToken(body) {
         const openid = rows[0].openid;
         const userRes = await pool.query(
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                    u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
+                    u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
+                    (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                     cu.nickname AS coach_name,
                     c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                     c.config->'sub_age_display_names' AS channel_sub_age_names,
