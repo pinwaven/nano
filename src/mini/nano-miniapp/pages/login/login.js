@@ -1,6 +1,11 @@
 const app = getApp()
 const { BASE, CHANNEL_SLUG, CHANNEL_DISPLAY, IS_DEV, VERSION, WX_VERSION } = require('../../utils/config.js')
 
+// Real (non-guest) accounts must have an SMS-OTP-proven phone before using the miniapp.
+function needsPhoneVerification(user) {
+  return !!user && !user.guest && !user.phone_verified
+}
+
 Page({
   data: {
     step: 'checking',
@@ -33,8 +38,10 @@ Page({
       wx.setStorageSync('nano_ref', options.ref)
     }
     // If already have a valid session and no invite/coach params, go straight to main
+    // — unless the phone is still unverified, in which case the verify-phone gate
+    // takes priority over anything else.
     if (app.globalData.user && !options.invite && !options.coach_id) {
-      wx.reLaunch({ url: '/pages/main/main' })
+      wx.reLaunch({ url: needsPhoneVerification(app.globalData.user) ? '/pages/verify-phone/verify-phone' : '/pages/main/main' })
       return
     }
     const storedChannel = wx.getStorageSync('nano_channel')
@@ -242,10 +249,10 @@ Page({
     // Store a trimmed user object: omit phone/email (sensitive PII); keep phoneSet flag
     // for session-restore and phone-prompt checks. Full data is re-fetched as needed.
     const { phone: _ph, email: _em, ...userToStore } = user
-    wx.setStorageSync('nano_user', { ...userToStore, phoneSet: !!_ph })
+    wx.setStorageSync('nano_user', { ...userToStore, phoneSet: !!_ph, phone_verified: !!user.phone_verified })
     wx.setStorageSync('nano_channel', channel)
     wx.setStorageSync('nano_coach', coach)
-    wx.reLaunch({ url: '/pages/main/main' })
+    wx.reLaunch({ url: needsPhoneVerification(user) ? '/pages/verify-phone/verify-phone' : '/pages/main/main' })
   },
 
   _getCode() {

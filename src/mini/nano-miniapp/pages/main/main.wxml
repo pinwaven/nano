@@ -122,14 +122,7 @@
             class="msg-row {{item.role === 'user' ? 'msg-row-user' : 'msg-row-ai'}}"
           >
             <block wx:if="{{item.role === 'action'}}">
-              <button
-                wx:if="{{item.action === 'bind_phone'}}"
-                class="msg-action-card msg-phone-btn"
-                open-type="getPhoneNumber"
-                bindgetphonenumber="handleBindPhone"
-              ><text class="msg-action-label">{{item.label}}</text><text class="msg-action-arrow">›</text></button>
               <view
-                wx:else
                 class="msg-action-card"
                 bindtap="handleMsgAction"
                 data-action="{{item.action}}"

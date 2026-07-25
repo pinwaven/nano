@@ -6,6 +6,20 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Added
+
+- **Forced SMS-OTP phone verification in the miniapp** (`schemas/migration_users_phone_verified.sql`, `handlers/phone-otp.js`, `handlers/login.js`, `index.js`, `mini/nano-miniapp/pages/verify-phone/`, `pages/login/login.js`, `pages/main/main.js`)
+
+  Users could previously end up with an unverified or missing phone number: WeChat's `getPhoneNumber` consent proves the number came from WeChat but was never separately confirmed by us, a raw-phone fallback (Flutter app) accepted any 11-digit string with zero proof, and the phone step could be skipped entirely (including via a hidden QA passcode). A missing phone was only nudged once via a dismissible in-chat message.
+
+  **What changed:**
+  - Added `users.phone_verified_at` (nullable `TIMESTAMPTZ`) — `NULL` means unverified. No backfill: every phone already on file, however it was obtained, is treated as unverified.
+  - New `handlePhoneOtpBind` (`POST /phone-otp/bind`) attaches + proves a phone for an already-logged-in (WeChat openid) user via Aliyun PNVS SMS-OTP (`verifyOTP` from `lib/sms.js`), rejecting with `phone_in_use` if the number is already bound to a different account. Distinct from `handlePhoneOtpVerify`, which looks up/creates a user *by* phone for the web `user-app`'s login screen — the miniapp needs to bind a phone to an existing identity, not switch identity.
+  - `phone_verified` (derived from `phone_verified_at IS NOT NULL`) is now returned alongside every user row the client can receive (`handleWxLogin`, `handleWxAppLogin`, `handleExchangeWebviewToken`, `phone-otp.js`'s shared `USER_SELECT`).
+  - New miniapp page `pages/verify-phone/verify-phone`: phone entry (prefillable via the existing no-write `resolve-phone` WeChat-consent decrypt, or manual entry) → 6-digit OTP entry with 60s resend cooldown → binds via `/phone-otp/bind`. WeChat consent is now only a convenience prefill — SMS-OTP is always required afterward regardless of how the number was obtained.
+  - Hard gate added at every point a session becomes active — `login.js` (session restore and post-login) and `main.js` (`onLoad`, defense in depth) — redirecting any non-guest account with `!phone_verified` to `verify-phone` before `main`. Anonymous guest browsing (`user.guest === true`) is exempt.
+  - Retired the old passive in-chat nudge (`bind_phone` action in `_onAllQuestionnaireDone`, `nano_phone_prompted` flag, `handleBindPhone`/`_removePhonePrompt` in `main.js`) — unreachable now that the gate gets there first.
+
 ### Fixed
 
 - **Kino chip scan silently reassigned ownership when a second user re-scanned an already-claimed chip** (`functions/worker/handlers/kino.js`, `mini/nano-miniapp/utils/tool-actions.js`, `mini/nano-miniapp/pages/main/main.js`, `mini/nano-miniapp/pages/coach/coach.js`)

@@ -2,6 +2,7 @@
   "__usePrivacyCheck__": true,
   "pages": [
     "pages/login/login",
+    "pages/verify-phone/verify-phone",
     "pages/main/main",
     "pages/admin/admin",
     "pages/coach/coach",

@@ -220,11 +220,6 @@ const T = {
     subAgeLabels: { ResilienceAge: '抗压年龄', CellularAge: '细胞年龄', MetabolicAge: '代谢年龄', MicroVascularAge: '微血管年龄' },
     lightMode: '浅色模式',
     darkMode: '深色模式',
-    phonePromptMsg: '最后一步！绑定手机号，让您的健康教练可以随时联系到您。',
-    phonePromptBtn: '📱 绑定手机号',
-    phoneMaybeLater: '稍后再说',
-    phoneBindSuccess: '手机号绑定成功！',
-    phoneBindError: '绑定失败，请稍后重试。',
     guestHeaderName: '游客',
     guestJoinTitle: '激活健康账户',
     guestJoinDesc: '输入您的邀请码，解锁 AI 健康教练、生物标志物检测与精准营养方案。',
@@ -435,11 +430,6 @@ const T = {
     subAgeLabels: { ResilienceAge: 'Resilience Age', CellularAge: 'Cellular Age', MetabolicAge: 'Metabolic Age', MicroVascularAge: 'Micro-Vascular Age' },
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
-    phonePromptMsg: 'One last thing — link your phone number so your health advisor can reach you when needed.',
-    phonePromptBtn: '📱 Link Phone Number',
-    phoneMaybeLater: 'Maybe later',
-    phoneBindSuccess: 'Phone number linked successfully!',
-    phoneBindError: 'Failed to link phone number. Please try again.',
     guestHeaderName: 'Guest',
     guestJoinTitle: 'Activate Your Account',
     guestJoinDesc: 'Enter your invite code to unlock AI health coaching, biomarker testing, and precision nutrition.',
@@ -1026,6 +1016,13 @@ Page({
     const user = app.globalData.user
     if (!user) {
       wx.reLaunch({ url: '/pages/login/login' })
+      return
+    }
+    // Defense in depth: enforce the phone-verification gate here too, independent of
+    // how the user arrived at this page (login.js already redirects unverified
+    // accounts, but this page shouldn't trust that alone).
+    if (!user.guest && !user.phone_verified) {
+      wx.reLaunch({ url: '/pages/verify-phone/verify-phone' })
       return
     }
     this._recordManager = speechPlugin.getRecordRecognitionManager()
@@ -1788,13 +1785,8 @@ Page({
     const { t } = this.data
     if (!silent) this._addMsg('ai', t.questionnaireThanks, true)
     this.setData({ obStep: 'done' })
-    if (!user.phone && !user.phoneSet && !wx.getStorageSync('nano_phone_prompted')) {
-      wx.setStorageSync('nano_phone_prompted', '1')
-      setTimeout(() => {
-        this._addMsg('ai', t.phonePromptMsg)
-        this._addActionMsg('bind_phone', t.phonePromptBtn)
-      }, 800)
-    }
+    // Phone verification is now enforced as a hard gate before reaching this page
+    // (see onLoad) — no in-chat nudge needed anymore.
     this._startPolling(user)
   },
 
@@ -1858,11 +1850,6 @@ Page({
   },
 
   // ── Chat messaging ──────────────────────────────────────────────────────────
-
-  _removePhonePrompt() {
-    const messages = this.data.messages.filter(m => m.action !== 'bind_phone' && m.action !== 'maybe_later')
-    this.setData({ messages })
-  },
 
   _addMsg(role, rawContent, persist = false) {
     const content = role === 'ai' ? mdToHtml(rawContent) : rawContent
@@ -2116,28 +2103,6 @@ Page({
       this._addMsg('ai', t.hrSaveError)
     } finally {
       this.setData({ typing: false })
-    }
-  },
-
-  async handleBindPhone(e) {
-    const { t, user } = this.data
-    const { code, errMsg } = e.detail
-    this._removePhonePrompt()
-    if (errMsg !== 'getPhoneNumber:ok' || !code) return
-    try {
-      const { appId } = wx.getAccountInfoSync().miniProgram
-      const res = await this._req(`${BASE}/api/bind-phone`, 'POST', { user_id: user.user_id, code, app_id: appId })
-      if (res.data?.success) {
-        const updatedUser = { ...user, phoneSet: true }
-        app.globalData.user = updatedUser
-        wx.setStorageSync('nano_user', updatedUser)
-        this.setData({ user: updatedUser })
-        this._addMsg('ai', t.phoneBindSuccess)
-      } else {
-        this._addMsg('ai', t.phoneBindError)
-      }
-    } catch (err) {
-      this._addMsg('ai', t.phoneBindError)
     }
   },
 

@@ -1,0 +1,17 @@
+@import "../login/login.wxss";
+
+.verify-phone-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16rpx;
+  font-size: 24rpx;
+}
+
+.verify-phone-link {
+  color: #6375EC;
+}
+
+.verify-phone-link-dim {
+  color: rgba(166, 196, 229, 0.4);
+}
