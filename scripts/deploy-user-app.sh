@@ -9,4 +9,4 @@ echo "Deploying user-app function (dev)..."
 cd ../../..
 source .env && s user-app deploy -y
 
-echo "Done! User App is live at https://nano-dev.fros.cc/app/"
+echo "Done! User App is live at https://nano-dev.gcn.net/app/"

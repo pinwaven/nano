@@ -22,7 +22,7 @@ export default function GcnInventoryEmbed({ channelId }) {
         if (cancelled) return;
         const wvt = res.data?.wvt;
         if (!wvt) { setError(t.inventory.gcnLoadFailed); return; }
-        const host = window.location.hostname.includes('nano-dev') ? 'https://gcn-dev.fros.cc' : 'https://gcn.fros.cc';
+        const host = window.location.hostname.includes('nano-dev') ? 'https://edge-dev.gcn.net' : 'https://edge.gcn.net';
         setUrl(`${host}/aeviva/dashboard-admin.html?wvt=${wvt}`);
       })
       .catch(() => { if (!cancelled) setError(t.inventory.gcnLoadFailed); });

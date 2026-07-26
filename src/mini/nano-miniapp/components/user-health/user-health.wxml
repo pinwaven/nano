@@ -22,16 +22,14 @@
 
         <!-- Avatar with side pills -->
         <view class="avatar-area">
-          <button wx:if="{{mode === 'self' && !editing}}"
-                  class="avatar-side-pill {{avatarPillsVisible ? 'avatar-pill-show' : ''}}"
-                  open-type="chooseAvatar"
-                  disabled="{{!avatarPillsVisible}}"
-                  bindchooseavatar="onChooseAvatar">
+          <view wx:if="{{mode === 'self' && !editing}}"
+                class="avatar-side-pill {{avatarPillsVisible ? 'avatar-pill-show' : ''}}"
+                catchtap="onOpenAvatarPicker">
             <text class="avatar-pill-text">{{t.changeAvatar}}</text>
-          </button>
+          </view>
           <view class="health-avatar-container" bindtap="onAvatarTap">
             <view class="health-avatar-wrap">
-              <image wx:if="{{user.avatar_url}}" class="health-avatar-img" src="{{user.avatar_url}}" mode="aspectFill" />
+              <image wx:if="{{avatarDisplayUrl || user.avatar_url}}" class="health-avatar-img" src="{{avatarDisplayUrl || user.avatar_url}}" mode="aspectFill" />
               <view wx:else class="health-avatar-placeholder">
                 <text class="health-avatar-letter">{{avatarLetter}}</text>
               </view>
@@ -46,6 +44,15 @@
         </view>
 
       </view>
+
+      <avatar-picker
+        visible="{{avatarPickerVisible}}"
+        selected-id="{{user.avatar_character}}"
+        lang="{{isZh ? 'zh' : 'en'}}"
+        theme="{{theme}}"
+        bind:select="onAvatarSelect"
+        bind:close="onAvatarPickerClose"
+      />
 
       <!-- Edit form (appears right below avatar, pushes DT card down) -->
       <view wx:if="{{(mode === 'self' || mode === 'coach') && editing}}" class="health-section">

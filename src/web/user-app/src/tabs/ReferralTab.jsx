@@ -20,7 +20,7 @@ export default function ReferralModal({ user, lang, onClose }) {
   }, [user?.user_id]);
 
   const code = data?.referral_code || user?.referral_code || '';
-  const inviteUrl = code ? `https://nano.fros.cc/app/?ref=${encodeURIComponent(code)}` : '';
+  const inviteUrl = code ? `https://nano.gcn.net/app/?ref=${encodeURIComponent(code)}` : '';
 
   const copyCode = () => {
     if (!code) return;

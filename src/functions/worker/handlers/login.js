@@ -110,10 +110,10 @@ async function handleWxLogin(body) {
     resolvedPhone = normalizeCnPhone(resolvedPhone);
 
     // Look up existing user — return with channel info and roles
-    const existing = await pool.query(
+    const WX_LOGIN_USER_SELECT =
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
-                u.referred_by_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
+                u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
+                u.referred_by_user_id, u.merged_into_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                 cu.nickname AS coach_name,
                 c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                 c.config->'sub_age_display_names' AS channel_sub_age_names,
@@ -127,12 +127,20 @@ async function handleWxLogin(body) {
              FROM biomarkers ORDER BY user_id, tested_at DESC
          ) b ON u.user_id = b.user_id
          WHERE u.external_id = $1 OR u.user_id = $1
-         LIMIT 1`,
-        [openid]
-    );
+         LIMIT 1`;
+    const existing = await pool.query(WX_LOGIN_USER_SELECT, [openid]);
 
     if (existing.rows.length > 0) {
         let existingRow = existing.rows[0];
+        // Follows a same-system account merge (handlers/user-merge.js) transparently — the
+        // WeChat openid on file may belong to an account that lost a merge, in which case
+        // every downstream side effect below (channel assignment, invite tracking, etc.)
+        // must apply to the surviving winner, not the now-defunct loser.
+        while (existingRow.merged_into_user_id) {
+            const winnerRes = await pool.query(WX_LOGIN_USER_SELECT, [existingRow.merged_into_user_id]);
+            if (winnerRes.rows.length === 0) break;
+            existingRow = winnerRes.rows[0];
+        }
 
         // Backfill unionid so the mobile app can match this account later
         if (unionid) {
@@ -169,7 +177,7 @@ async function handleWxLogin(body) {
                     // Re-fetch with updated channel info
                     const refreshed = await pool.query(
                         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
+                                u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
                                 u.referral_code, u.referred_by_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                                 cu.nickname AS coach_name,
                                 c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
@@ -254,7 +262,7 @@ async function handleWxLogin(body) {
     if (resolvedPhone) {
         const phoneMatch = await pool.query(
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                    u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
+                    u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
                     (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                     cu.nickname AS coach_name,
                     c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
@@ -363,7 +371,7 @@ async function handleWxLogin(body) {
     const created = await pool.query(
         `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, referral_code, phone, wx_unionid)
          VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5, $6, $7, $8, $9)
-         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
+         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
         [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, resolvedPhone, unionid]
     );
 
@@ -420,7 +428,7 @@ async function handleWxAppLogin(body) {
 
     const bundleSelect = `
         SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-               u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
+               u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
                u.referred_by_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                cu.nickname AS coach_name,
                c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
@@ -538,7 +546,7 @@ async function handleWxAppLogin(body) {
     const created = await pool.query(
         `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, referral_code, phone, wx_app_openid, wx_unionid)
          VALUES ($1, NULL, 'wechat_app', 'zh', $2, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
+         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
         [newUserId, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, phone || null, appOpenid, unionid]
     );
 
@@ -687,10 +695,10 @@ async function handleExchangeWebviewToken(body) {
         if (rows.length === 0) return { success: false, error: 'Invalid or expired token' };
 
         const openid = rows[0].openid;
-        const userRes = await pool.query(
+        const WEBVIEW_USER_SELECT =
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                    u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
-                    (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
+                    u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
+                    u.merged_into_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                     cu.nickname AS coach_name,
                     c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                     c.config->'sub_age_display_names' AS channel_sub_age_names,
@@ -704,13 +712,20 @@ async function handleExchangeWebviewToken(body) {
                  FROM biomarkers ORDER BY user_id, tested_at DESC
              ) b ON u.user_id = b.user_id
              WHERE u.external_id = $1 OR u.user_id = $1
-             LIMIT 1`,
-            [openid]
-        );
+             LIMIT 1`;
+        const userRes = await pool.query(WEBVIEW_USER_SELECT, [openid]);
 
         if (userRes.rows.length === 0) return { success: false, error: 'User not found' };
 
-        const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = userRes.rows[0];
+        let resolvedRow = userRes.rows[0];
+        // See the wx-login resolve loop above — same reasoning applies to the GCN SSO handoff.
+        while (resolvedRow.merged_into_user_id) {
+            const winnerRes = await pool.query(WEBVIEW_USER_SELECT, [resolvedRow.merged_into_user_id]);
+            if (winnerRes.rows.length === 0) break;
+            resolvedRow = winnerRes.rows[0];
+        }
+
+        const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = resolvedRow;
         const channel = channel_name
             ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
             : null;

@@ -82,7 +82,7 @@ resources:
         WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
         GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
-        GCN_API_BASE_URL: "https://gcn-dev.fros.cc"
+        GCN_API_BASE_URL: "https://edge-dev.gcn.net"
         GCN_SERVICE_TOKEN: ${env(GCN_SERVICE_TOKEN)}
         OSS_REGION: "oss-cn-shanghai"
         OSS_BUCKET: "waven-nano"
@@ -315,7 +315,7 @@ resources:
         vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
         vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
       environmentVariables:
-        WORKER_URL: "https://nano-dev.fros.cc/api"
+        WORKER_URL: "https://nano-dev.gcn.net/api"
         TZ: "Asia/Shanghai"
       triggers:
         - triggerName: http-admin
@@ -328,7 +328,7 @@ resources:
     component: fc3-domain
     props:
       region: ${vars.region}
-      domainName: nano-dev.fros.cc
+      domainName: nano-dev.gcn.net
       protocol: HTTP,HTTPS
       certConfig:
         certName: nano-custom-cert
@@ -336,6 +336,8 @@ resources:
         privateKey: ./certs/key.pem
       routeConfig:
         routes:
+          - path: /QJaeMN3iR8.txt
+            functionName: nano-worker-dev
           - path: /api/*
             functionName: nano-worker-dev
           - path: /api

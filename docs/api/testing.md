@@ -32,8 +32,8 @@ All three simulators are Electron apps with Vite dev servers. They proxy `/api/*
 ## Simulators in the admin panel
 
 The simulators are also available in production via the main domain:
-- **Chat**: `https://nano.fros.cc/admin/sim/chat/`
-- **Coach**: `https://nano.fros.cc/admin/sim/coach/`
+- **Chat**: `https://nano.gcn.net/admin/sim/chat/`
+- **Coach**: `https://nano.gcn.net/admin/sim/coach/`
 
 In production, these simulators use the public `/api` path to talk directly to the worker, ensuring better performance and lower overhead. See [Simulator Build & Deploy](../simulator-build-deploy.md) for how to rebuild and redeploy them.
 

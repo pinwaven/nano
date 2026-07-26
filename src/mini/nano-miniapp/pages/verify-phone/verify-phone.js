@@ -1,5 +1,6 @@
 const app = getApp()
 const { BASE } = require('../../utils/config.js')
+const { resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
 
 const PHONE_RE = /^1\d{10}$/
 
@@ -17,6 +18,8 @@ Page({
     // no reason to be asked for an avatar again.
     showAvatarStep: false,
     pendingAvatar: '',
+    avatarCharacter: '',
+    avatarPickerVisible: false,
     // Only China (`otpSupported: true`) goes through real SMS-OTP — PHONE_RE and
     // PNVS's countryCode are both hardcoded to '86' server-side, and Aliyun PNVS
     // isn't confirmed to support delivery/signature approval outside China. The
@@ -37,7 +40,6 @@ Page({
   },
 
   _cooldownTimer: null,
-  _pendingAvatarPath: '',
 
   onLoad(options) {
     const user = app.globalData.user
@@ -74,73 +76,30 @@ Page({
     if (val.length === 6) this.verifyCode()
   },
 
-  // Fires on every tap regardless of whether the native chooseAvatar sheet
-  // actually opens — lets us tell (via remote debug console) whether the tap
-  // reached the button at all vs. the picker opening then failing/cancelling.
-  handleAvatarTap() {
-    console.log('[verify-phone] avatar button tapped')
+  openAvatarPicker() {
+    this.setData({ avatarPickerVisible: true })
   },
 
-  handleChooseAvatar(e) {
-    console.log('[verify-phone] chooseavatar event', e.detail)
-    const avatarUrl = e.detail?.avatarUrl
-    if (!avatarUrl) {
-      if (e.detail?.errMsg && !/cancel/i.test(e.detail.errMsg)) {
-        wx.showToast({ title: '头像获取失败，请重试', icon: 'none' })
-      }
-      return
-    }
-    // Show immediately so the user sees feedback while uploading
-    this.setData({ pendingAvatar: avatarUrl })
+  onAvatarPickerClose() {
+    this.setData({ avatarPickerVisible: false })
+  },
 
-    const upload = (localPath) => {
-      wx.request({
-        url: `${BASE}/api/oss/presign?type=avatar&filename=avatar.jpg&category=users`,
-        method: 'GET',
-        header: { 'Authorization': `Bearer ${app.globalData.apiToken}` },
-        success: (presignRes) => {
-          const { put_url, get_url } = presignRes.data || {}
-          if (!put_url) return
-          wx.getFileSystemManager().readFile({
-            filePath: localPath,
-            success: (fileRes) => {
-              wx.request({
-                url: put_url,
-                method: 'PUT',
-                data: fileRes.data,
-                header: { 'Content-Type': 'application/octet-stream' },
-                responseType: 'text',
-                success: () => {
-                  this._pendingAvatarPath = get_url
-                  this.setData({ pendingAvatar: get_url })
-                  // If verifyCode already ran and moved on to main.js by the time this
-                  // upload finishes, patch the saved user directly here — verifyCode's
-                  // own PUT (below) only fires when the upload finished before it did.
-                  const gUser = app.globalData.user
-                  if (gUser && !gUser.guest) {
-                    gUser.avatar_url = get_url
-                    wx.setStorageSync('nano_user', gUser)
-                    this._req(`${BASE}/api/users/${gUser.user_id}`, 'PUT', {
-                      nickname: gUser.nickname, phone: gUser.phone, email: gUser.email,
-                      gender: gUser.gender, birth_date: gUser.birth_date, language: gUser.language,
-                      coach_id: gUser.coach_id, avatar_url: get_url,
-                    }).catch(() => {})
-                  }
-                },
-              })
-            },
-          })
-        },
-      })
-    }
+  onAvatarSelect(e) {
+    const { avatarId } = e.detail
+    const url = resolveAvatarUrl(avatarId, DEFAULT_MOOD)
+    if (!url) return
+    this.setData({ avatarPickerVisible: false, avatarCharacter: avatarId, pendingAvatar: url })
 
-    if (avatarUrl.startsWith('http')) {
-      wx.downloadFile({
-        url: avatarUrl,
-        success: (res) => upload(res.tempFilePath),
-      })
-    } else {
-      upload(avatarUrl)
+    const gUser = app.globalData.user
+    if (gUser && !gUser.guest) {
+      gUser.avatar_url = url
+      gUser.avatar_character = avatarId
+      wx.setStorageSync('nano_user', gUser)
+      this._req(`${BASE}/api/users/${gUser.user_id}`, 'PUT', {
+        nickname: gUser.nickname, phone: gUser.phone, email: gUser.email,
+        gender: gUser.gender, birth_date: gUser.birth_date, language: gUser.language,
+        coach_id: gUser.coach_id, avatar_url: url, avatar_character: avatarId,
+      }).catch(() => {})
     }
   },
 

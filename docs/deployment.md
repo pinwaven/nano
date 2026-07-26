@@ -31,7 +31,7 @@ Always deploy and test on dev first. See [Database Migrations](architecture/data
 | `nano-dispatcher` | `dispatcher` | Cron-triggered user scanner |
 | `nano-worker` | `worker` | AI processing + HTTP API |
 | `nano-admin-panel` | `admin-panel` | Admin SPA + simulator host |
-| Domain config | `nano-domain` | Custom domain routing for `nano.fros.cc` |
+| Domain config | `nano-domain` | Custom domain routing for `nano.gcn.net` |
 
 ## Deploy commands
 
@@ -66,7 +66,7 @@ All sensitive values are set in `s.yaml` under each function's `environmentVaria
 | `WORKER_URL` | dispatcher, admin-panel | Internal VPC URL of `nano-worker` |
 | `WORKER_FUNCTION_NAME` | dispatcher | FC function name of the worker |
 
-## Domain routing (`nano.fros.cc`)
+## Domain routing (`nano.gcn.net`)
 
 Defined in `s.yaml` under `nano-domain`. Current routes:
 
@@ -111,7 +111,7 @@ The miniapp makes outbound network requests to two distinct external services. B
 
 | 类型 | Domain | Why |
 |---|---|---|
-| request合法域名 | `nano.fros.cc` | All API calls (`wx.request` to the FC worker) |
+| request合法域名 | `nano.gcn.net` | All API calls (`wx.request` to the FC worker) |
 | request合法域名 | `waven-nano.oss-cn-shanghai.aliyuncs.com` | Presigned PUT uploads for user avatars |
 | downloadFile合法域名 | `wx.qlogo.cn` | WeChat profile picture downloads (older WeChat versions where `chooseAvatar` returns an HTTP URL instead of a local temp path) |
 

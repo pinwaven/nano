@@ -9,14 +9,22 @@
   <view wx:if="{{step === 'phone'}}" class="login-card">
     <!-- Avatar picker — only shown right after brand-new account creation -->
     <view wx:if="{{showAvatarStep}}" class="avatar-pick-wrap">
-      <button class="avatar-pick-btn" open-type="chooseAvatar" bindtap="handleAvatarTap" bindchooseavatar="handleChooseAvatar">
+      <view class="avatar-pick-btn" bindtap="openAvatarPicker">
         <image wx:if="{{pendingAvatar}}" class="avatar-pick-img" src="{{pendingAvatar}}" mode="aspectFill" />
         <view wx:else class="avatar-pick-default">
           <text class="avatar-pick-icon">+</text>
         </view>
-      </button>
-      <text class="avatar-pick-hint">点击设置头像（可选）</text>
+      </view>
+      <text class="avatar-pick-hint">点击选择头像（可选）</text>
     </view>
+
+    <avatar-picker
+      visible="{{avatarPickerVisible}}"
+      selected-id="{{avatarCharacter}}"
+      lang="zh"
+      bind:select="onAvatarSelect"
+      bind:close="onAvatarPickerClose"
+    />
 
     <text class="login-card-label">手机号</text>
     <view class="phone-input-row">

@@ -6,11 +6,11 @@ The `nano-worker` function handles all functional logic for the ecosystem.
 
 ### 1. Public API (Preferred)
 Accessible directly via the main domain. This is the fastest route for external clients like simulators, mobile apps, or WeChat mini-programs.
-*   **Base URL:** `https://nano.fros.cc/api`
+*   **Base URL:** `https://nano.gcn.net/api`
 
 ### 2. Internal Legacy Proxy
 Available for the Admin Dashboard to avoid CORS issues and leverage internal VPC performance.
-*   **Base URL:** `https://nano.fros.cc/admin/api`
+*   **Base URL:** `https://nano.gcn.net/admin/api`
 
 ## Authentication
 

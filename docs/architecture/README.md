@@ -12,7 +12,7 @@ Nano AI is built on a serverless event-driven architecture using Aliyun Function
 | `nano-admin-panel` | HTTP | Serves the admin SPA and proxies API calls to the worker |
 | `nano-lab` | HTTP + Timer (4 h) | Ingests clinical lab results via webhook (push) or polling (pull); triggers BioAge recalc |
 
-## Public Domain (`nano.fros.cc`)
+## Public Domain (`nano.gcn.net`)
 
 All traffic enters through a single custom domain managed by `fc3-domain`. Routes:
 

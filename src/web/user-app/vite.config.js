@@ -15,7 +15,7 @@ export default defineConfig(({ command }) => {
       open: true,
       proxy: {
         '/api': {
-          target: 'https://nano.fros.cc',
+          target: 'https://nano.gcn.net',
           changeOrigin: true,
           secure: true,
         },

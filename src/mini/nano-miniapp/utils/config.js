@@ -1,15 +1,15 @@
 const accountInfo = wx.getAccountInfoSync();
 const envVersion = accountInfo.miniProgram.envVersion;
 
-let BASE = 'https://nano.fros.cc';
+let BASE = 'https://nano.gcn.net';
 
 switch (envVersion) {
   case 'develop':
-    BASE = 'https://nano-dev.fros.cc';
+    BASE = 'https://nano-dev.gcn.net';
     break;
   case 'trial':
   case 'release':
-    BASE = 'https://nano.fros.cc';
+    BASE = 'https://nano.gcn.net';
     break;
 }
 
@@ -17,7 +17,7 @@ switch (envVersion) {
 // uploads — no build pipeline exists, so this is the only way to confirm WeChat DevTools
 // is actually running the latest code rather than a stale cached compile. See CLAUDE.md
 // "Miniapp VERSION Marker". Format: MMDD-N (month+day, build number that day).
-const VERSION = '0725-15';
+const VERSION = '0727-2';
 const WX_VERSION = accountInfo.miniProgram.version || '';
 const IS_DEV = envVersion === 'develop' || envVersion === 'trial';
 

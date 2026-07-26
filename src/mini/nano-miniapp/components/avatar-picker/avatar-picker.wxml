@@ -1,0 +1,23 @@
+<view wx:if="{{visible}}" class="ap-overlay {{theme === 'light' ? 'theme-light' : ''}}" bindtap="onBackdropTap">
+  <view class="ap-sheet" catchtap="onSheetTap">
+    <view class="ap-header">
+      <text class="ap-title">{{lang === 'en' ? 'Choose an Avatar' : '选择头像'}}</text>
+      <view class="ap-close" bindtap="onBackdropTap">
+        <text class="ap-close-icon">✕</text>
+      </view>
+    </view>
+    <scroll-view class="ap-grid-scroll" scroll-y="true">
+      <view class="ap-grid">
+        <view
+          wx:for="{{gallery}}"
+          wx:key="id"
+          class="ap-item {{item.id === selectedId ? 'ap-item-selected' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="onPick"
+        >
+          <image class="ap-item-img" src="{{item.thumb}}" mode="aspectFill" />
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+</view>

@@ -1,5 +1,5 @@
 const { BASE: PROD_BASE } = require('../../utils/config');
-const DEV_BASE = 'https://nano-dev.fros.cc';
+const DEV_BASE = 'https://nano-dev.gcn.net';
 const app = getApp();
 
 Page({

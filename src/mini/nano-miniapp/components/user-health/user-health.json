@@ -1,4 +1,6 @@
 {
   "component": true,
-  "usingComponents": {}
+  "usingComponents": {
+    "avatar-picker": "../avatar-picker/avatar-picker"
+  }
 }

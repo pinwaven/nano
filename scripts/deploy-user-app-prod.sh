@@ -9,4 +9,4 @@ echo "Deploying user-app function (prod)..."
 cd ../../..
 source .env && s user-app deploy -t s-prod.yaml -y
 
-echo "Done! User App is live at https://nano.fros.cc/app/"
+echo "Done! User App is live at https://nano.gcn.net/app/"

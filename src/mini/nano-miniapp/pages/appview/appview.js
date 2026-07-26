@@ -21,11 +21,12 @@ Page({
     this.setData({ lang, t: T[lang] || T.zh, statusBarHeight })
 
     // options.url: either a /app/... path (relative to nano's own domain) or an absolute
-    // external URL (e.g. a gcn.fros.cc storefront page). Either way we generate a webview
+    // external URL (e.g. an aeviva.gcn.net storefront page — must be a WeChat-verified
+    // business domain, see docs/wechat-domain-setup.md). Either way we generate a webview
     // token so the target page can identify this user without its own login.
     // WeChat's onLoad options are supposed to auto-decode, but in practice a value that's
     // itself a full URL (with its own '://', '?', '&') isn't reliably decoded before this
-    // fires — leaving e.g. "https%3A%2F%2Fgcn-dev.fros.cc%2F..." intact, which then fails
+    // fires — leaving e.g. "https%3A%2F%2Faeviva-dev.gcn.net%2F..." intact, which then fails
     // the isExternal check below and gets mistaken for a relative path. Decode explicitly.
     let rawUrl = options.url || '/app'
     try { rawUrl = decodeURIComponent(rawUrl) } catch (e) {}

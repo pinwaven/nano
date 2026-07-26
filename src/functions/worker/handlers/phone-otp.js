@@ -9,7 +9,7 @@ const PHONE_RE = /^1\d{10}$/;
 
 const USER_SELECT = `
     SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-           u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
+           u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
            u.referred_by_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
            cu.nickname AS coach_name,
            c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
@@ -32,8 +32,16 @@ function shapeUserRow(row) {
     return { user, channel };
 }
 
+// Joins through user_phones (source of truth for phone -> user_id) rather than
+// u.phone directly, so a user can log in with any phone they've attached, not
+// just their primary. u.phone stays as a denormalized primary-phone cache read
+// by other call sites (gcnClient.js, partners.phone, etc.) — see
+// migration_users_phone_verified_multi.sql.
 async function findUserByPhone(phone) {
-    const { rows } = await pool.query(`${USER_SELECT} WHERE u.phone = $1 LIMIT 1`, [phone]);
+    const { rows } = await pool.query(
+        `${USER_SELECT} JOIN user_phones up ON up.user_id = u.user_id WHERE up.phone = $1 LIMIT 1`,
+        [phone]
+    );
     return rows[0] || null;
 }
 
@@ -73,20 +81,29 @@ async function handlePhoneOtpVerify(body) {
 
         const user_id = generateUserId();
         const referral_code = await generateReferralCode();
+        const client = await pool.connect();
         try {
-            const created = await pool.query(
+            await client.query('BEGIN');
+            const created = await client.query(
                 `INSERT INTO users (user_id, phone, external_app, language, referral_code, created_at, phone_verified_at)
                  VALUES ($1, $2, 'phone', 'zh', $3, NOW(), NOW())
-                 RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url,
+                 RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character,
                            coach_id, channel_id, roles, created_at, bio_data, referral_code, referred_by_user_id,
                            (phone_verified_at IS NOT NULL) AS phone_verified`,
                 [user_id, fullPhone, referral_code]
             );
+            await client.query(
+                `INSERT INTO user_phones (user_id, phone, verified_at, is_primary) VALUES ($1, $2, NOW(), true)`,
+                [user_id, fullPhone]
+            );
+            await client.query('COMMIT');
             console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-new-user', data: { phone: fullPhone, user_id } }));
             return { success: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel: null };
         } catch (err) {
-            // Unique-violation on users.phone — two concurrent verifies for the same
-            // brand-new number raced the insert. Re-fetch the row the other one created.
+            await client.query('ROLLBACK');
+            // Unique-violation on users.phone / user_phones.phone — two concurrent
+            // verifies for the same brand-new number raced the insert. Re-fetch the
+            // row the other one created.
             if (err.code === '23505') {
                 const raced = await findUserByPhone(fullPhone);
                 if (raced) {
@@ -95,6 +112,8 @@ async function handlePhoneOtpVerify(body) {
                 }
             }
             throw err;
+        } finally {
+            client.release();
         }
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'phone-otp-verify-error', data: { err: err.message } }));
@@ -105,7 +124,13 @@ async function handlePhoneOtpVerify(body) {
 // Attaches + proves a phone number for an EXISTING (already-logged-in-via-WeChat)
 // user, unlike handlePhoneOtpVerify which looks up/creates a user BY phone (that
 // endpoint is for the web user-app's phone-login surface, not the miniapp — see plan).
+//
+// A user's FIRST bound phone becomes their primary (users.phone cache is set,
+// same as this endpoint's old replace-only behavior). Any phone bound after that
+// is added as an additional login phone rather than overwriting the primary —
+// see handlePhoneSetPrimary to change which one is primary.
 async function handlePhoneOtpBind(body) {
+    const client = await pool.connect();
     try {
         const { user_id, phone, code } = body || {};
         if (!user_id) return { success: false, error: 'user_id is required' };
@@ -117,22 +142,84 @@ async function handlePhoneOtpBind(body) {
 
         const fullPhone = normalizeCnPhone(phone);
 
-        const conflict = await pool.query('SELECT user_id FROM users WHERE phone = $1 AND user_id != $2', [fullPhone, user_id]);
+        const conflict = await client.query('SELECT user_id FROM user_phones WHERE phone = $1 AND user_id != $2', [fullPhone, user_id]);
         if (conflict.rows.length > 0) return { success: false, error: 'phone_in_use' };
 
-        const updated = await pool.query(
-            `UPDATE users SET phone = $1, phone_verified_at = NOW() WHERE user_id = $2 RETURNING user_id`,
-            [fullPhone, user_id]
-        );
-        if (updated.rows.length === 0) return { success: false, error: 'user_not_found' };
+        await client.query('BEGIN');
+        const existingPrimary = await client.query('SELECT 1 FROM user_phones WHERE user_id = $1 AND is_primary', [user_id]);
+        const isFirstPhone = existingPrimary.rows.length === 0;
 
-        const { rows } = await pool.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [user_id]);
+        // WHERE clause on the DO UPDATE guards the race window between the conflict
+        // check above and this statement: if another request attached this exact
+        // phone to a DIFFERENT user in between, the update is skipped (0 rows) rather
+        // than silently refreshing verified_at on a row we don't own.
+        const attach = await client.query(
+            `INSERT INTO user_phones (user_id, phone, verified_at, is_primary) VALUES ($1, $2, NOW(), $3)
+             ON CONFLICT (phone) DO UPDATE SET verified_at = NOW() WHERE user_phones.user_id = EXCLUDED.user_id
+             RETURNING user_id`,
+            [user_id, fullPhone, isFirstPhone]
+        );
+        if (attach.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return { success: false, error: 'phone_in_use' };
+        }
+        if (isFirstPhone) {
+            const updated = await client.query(
+                `UPDATE users SET phone = $1, phone_verified_at = NOW() WHERE user_id = $2 RETURNING user_id`,
+                [fullPhone, user_id]
+            );
+            if (updated.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return { success: false, error: 'user_not_found' };
+            }
+        }
+        await client.query('COMMIT');
+
+        const { rows } = await client.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [user_id]);
         const { user, channel } = shapeUserRow(rows[0]);
-        console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-bind', data: { phone: fullPhone, user_id } }));
+        console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-bind', data: { phone: fullPhone, user_id, is_primary: isFirstPhone } }));
         return { success: true, user, channel };
     } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
         console.log(JSON.stringify({ level: 'ERROR', msg: 'phone-otp-bind-error', data: { err: err.message } }));
         return { success: false, error: err.message };
+    } finally {
+        client.release();
+    }
+}
+
+// Switches which of a user's already-verified phones is primary (the one cached
+// on users.phone and used by other call sites that still read u.phone directly —
+// gcnClient.js, partners.phone, etc.). Does not itself verify anything; the phone
+// must already be in user_phones via handlePhoneOtpVerify/handlePhoneOtpBind.
+async function handlePhoneSetPrimary(body) {
+    const client = await pool.connect();
+    try {
+        const { user_id, phone } = body || {};
+        if (!user_id) return { success: false, error: 'user_id is required' };
+        if (!phone) return { success: false, error: 'phone is required' };
+
+        await client.query('BEGIN');
+        const owned = await client.query('SELECT 1 FROM user_phones WHERE user_id = $1 AND phone = $2', [user_id, phone]);
+        if (owned.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return { success: false, error: 'phone_not_attached' };
+        }
+
+        await client.query('UPDATE user_phones SET is_primary = false WHERE user_id = $1 AND is_primary', [user_id]);
+        await client.query('UPDATE user_phones SET is_primary = true WHERE user_id = $1 AND phone = $2', [user_id, phone]);
+        const primaryRow = await client.query('SELECT verified_at FROM user_phones WHERE user_id = $1 AND phone = $2', [user_id, phone]);
+        await client.query('UPDATE users SET phone = $1, phone_verified_at = $2 WHERE user_id = $3', [phone, primaryRow.rows[0].verified_at, user_id]);
+        await client.query('COMMIT');
+
+        console.log(JSON.stringify({ level: 'INFO', msg: 'phone-set-primary', data: { phone, user_id } }));
+        return { success: true };
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'phone-set-primary-error', data: { err: err.message } }));
+        return { success: false, error: err.message };
+    } finally {
+        client.release();
     }
 }
 
@@ -173,4 +260,4 @@ async function handlePhoneAcceptUnverified(body) {
     }
 }
 
-module.exports = { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneAcceptUnverified };
+module.exports = { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified };

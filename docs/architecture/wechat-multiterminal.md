@@ -158,7 +158,7 @@ Multiterminal applications compiled with the Donut framework support **built-in 
 If Waven Nano packages its WeChat Mini Program (`src/mini/nano-miniapp/`) as a native mobile app using Donut:
 
 1. **Domain Whitelist & Networking**:
-   * As detailed in `GEMINI.md`, the miniapp dynamically targets `https://nano-dev.fros.cc` for local development (`envVersion: develop`) and `https://nano.fros.cc` for preview/release versions.
+   * As detailed in `GEMINI.md`, the miniapp dynamically targets `https://nano-dev.gcn.net` for local development (`envVersion: develop`) and `https://nano.gcn.net` for preview/release versions.
    * Multiterminal native apps must ensure network permissions allow communication with these domains, and the corresponding `Package Name` / `Bundle ID` must be registered properly.
 2. **Kino Simulator & Scan Integration**:
    * The Kino Simulator lives as a native WXML overlay in `pages/main/`. It does not rely on externally-loaded iframes, which makes it 100% compatible with Donut's compilation engine.

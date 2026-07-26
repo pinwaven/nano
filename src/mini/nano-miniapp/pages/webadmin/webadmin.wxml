@@ -7,5 +7,5 @@
     </view>
     <text class="header-title">{{t.title}}</text>
   </view>
-  <web-view src="https://nano.fros.cc/admin"></web-view>
+  <web-view src="https://nano.gcn.net/admin"></web-view>
 </view>

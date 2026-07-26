@@ -165,8 +165,8 @@ function PartnersTab({ users = [], session }) {
 
   const [inviteLinkId, setInviteLinkId] = useState(null);
 
-  // Same GCN-domain-detection pattern as GcnInventoryEmbed.jsx, but pointed at the direct
-  // aeviva(-dev).gcn.net domain (not the fros.cc miniapp web-view proxy) since this link is
+  // Same GCN-domain-detection pattern as GcnInventoryEmbed.jsx, but pointed at the
+  // aeviva(-dev).gcn.net sector domain rather than edge(-dev).gcn.net, since this link is
   // meant to be shared externally (WeChat message, etc.) and opened in a normal browser.
   async function generateInviteLink(id) {
     setInviteLinkId(id);

@@ -241,7 +241,7 @@ resources:
         vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
         vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
       environmentVariables:
-        WORKER_URL: "https://nano-test.fros.cc/api"
+        WORKER_URL: "https://nano-test.gcn.net/api"
         TZ: "Asia/Shanghai"
       triggers:
         - triggerName: http-admin
@@ -254,7 +254,7 @@ resources:
     component: fc3-domain
     props:
       region: ${vars.region}
-      domainName: nano-test.fros.cc
+      domainName: nano-test.gcn.net
       protocol: HTTP,HTTPS
       certConfig:
         certName: nano-custom-cert

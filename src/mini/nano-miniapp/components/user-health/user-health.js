@@ -1,5 +1,6 @@
 const app = getApp()
 const { BASE, IS_DEV } = require('../../utils/config.js')
+const { computeMood, resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
 
 const BM_META = [
   { key: 'hsCRP',     unit: 'mg/L',      color: '#f472b6' },
@@ -1000,6 +1001,9 @@ Component({
     avatarUpdating: false,
     avatarLetter: 'U',
     avatarPillsVisible: false,
+    avatarPickerVisible: false,
+    avatarDisplayUrl: '',
+    mood: DEFAULT_MOOD,
     rawHeight: null,
     rawWeight: null,
     rawBmi: null,
@@ -1085,6 +1089,10 @@ Component({
         const letter = (newUser.nickname || 'U').slice(-1).toUpperCase()
         this.setData({ avatarLetter: letter })
       }
+      this._refreshAvatarDisplay()
+    },
+    'mood': function() {
+      this._refreshAvatarDisplay()
     },
   },
 
@@ -1740,11 +1748,32 @@ Component({
     },
     closeGlucoseChart() { this.setData({ glucoseChartOpen: false }) },
 
-    onChooseAvatar(e) {
-      const avatarUrl = e.detail?.avatarUrl
-      if (!avatarUrl) return
-      this.setData({ avatarUpdating: true })
-      this.triggerEvent('chooseavatar', { avatarUrl })
+    onOpenAvatarPicker() {
+      if (this._avatarPillTimer) { clearTimeout(this._avatarPillTimer); this._avatarPillTimer = null }
+      this.setData({ avatarPillsVisible: false, avatarPickerVisible: true })
+    },
+
+    onAvatarPickerClose() {
+      this.setData({ avatarPickerVisible: false })
+    },
+
+    onAvatarSelect(e) {
+      const { avatarId } = e.detail
+      if (!avatarId) return
+      this.setData({ avatarPickerVisible: false, avatarUpdating: true })
+      this.triggerEvent('chooseavatar', { avatarId })
+    },
+
+    // Resolves the currently-displayed avatar image from the selected character
+    // + live mood — self view only; mood is derived purely client-side from
+    // synced ring data (see 'mood' data field) and never round-trips to the
+    // server, so a coach viewing a client's health tab still just sees
+    // whatever avatar_url that client last saved (the relaxed default).
+    _refreshAvatarDisplay() {
+      const character = this.properties.user?.avatar_character
+      if (!character) { this.setData({ avatarDisplayUrl: '' }); return }
+      const url = resolveAvatarUrl(character, this.data.mood)
+      this.setData({ avatarDisplayUrl: url || '' })
     },
 
     onGuestTap() {
@@ -2333,6 +2362,7 @@ Component({
           this.setData({
             wearableConnected: recentSync,
             ringData,
+            mood: computeMood(ringData),
             hasTwinData: visuals.vitalGauges.length > 0,
             twinLoading: false,
             ...visuals,
@@ -2528,6 +2558,7 @@ Component({
           wearableId: '__server__',
           wearableConnected: recentSync,
           ringData,
+          mood: computeMood(ringData),
           twinLoading: false,
         })
       } catch (e) {
@@ -2978,6 +3009,7 @@ Component({
         wearableConnected: true,
         wearableBattery: batteryLevel,
         ringData,
+        mood: computeMood(ringData),
         hasTwinData: visuals.vitalGauges.length > 0,
         twinLoading: false,
         ...visuals,
@@ -3088,7 +3120,7 @@ Component({
             wx.removeStorageSync('halo_work_mode_settings')
             wx.removeStorageSync('x3_interval_settings')
             wx.removeStorageSync('x3_work_mode_settings')
-            this.setData({ wearableId: '', wearableName: '', wearableBrand: '', wearableConnected: false, wearableBattery: 0, ringData: null, wearableServerHint: null })
+            this.setData({ wearableId: '', wearableName: '', wearableBrand: '', wearableConnected: false, wearableBattery: 0, ringData: null, mood: DEFAULT_MOOD, wearableServerHint: null })
             this._syncWearableBindingToServer(null)
           }
         },

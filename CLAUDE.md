@@ -27,9 +27,9 @@ There are two separate PolarDB databases. Both share the same Aliyun account and
 
 The WeChat Mini Program (`src/mini/nano-miniapp/`) automatically selects the backend URL based on its `envVersion`:
 
-- **`develop`** (IDE/Local Dev): `https://nano-dev.fros.cc`
-- **`trial`** (Preview/Experience): `https://nano.fros.cc`
-- **`release`** (Production): `https://nano.fros.cc`
+- **`develop`** (IDE/Local Dev): `https://nano-dev.gcn.net`
+- **`trial`** (Preview/Experience): `https://nano.gcn.net`
+- **`release`** (Production): `https://nano.gcn.net`
 
 This ensures that only developers in the IDE touch the dev environment, while all uploaded versions (including previews) use the production backend. Logic resides in `src/mini/nano-miniapp/utils/config.js`.
 
@@ -369,3 +369,7 @@ const biomarkers = { ...latestBio?.data?.validated, ...latestBio?.data?.actual }
 ## 19. GCN Integration (Aeviva Partner Storefront)
 
 The `aeviva` nano channel's partner storefront, wholesale/resale inventory, and manual-QR checkout live in a separate sibling repo, `/Users/pin/waven/gcn`. Nano stays the source of truth for partner identity, MLM tier, and referral/commission math; GCN owns its own commerce engine and settlement rules. Full contract — cross-repo endpoints, SSO bridges, provisioning flow, admin-panel embed, miniapp entry point: `gcn-integration` skill — load it before touching any GCN-linked endpoint, the sibling repo, or aeviva storefront/inventory code.
+
+## 20. Avatar Gallery System
+
+Users pick a profile avatar from a gallery of 40 pregenerated characters (`components/avatar-picker/`) instead of uploading a real photo — WeChat's native `chooseAvatar` upload flow was removed entirely. Each character has 4 mood variants (engaged/relaxed/restored/stressed); `users.avatar_character` (migration `migration_avatar_character.sql`) records which character was picked, while `avatar_url` keeps storing a single resolved image URL exactly as before (now the character's `relaxed` variant) so every other read site is unaffected. In the health tab's self view only, `utils/mood.js`'s `computeMood()` derives a live mood client-side from already-synced wearable data and swaps the displayed image — purely client-rendered, never written back to the server. Gallery images live on the `waven-nano` OSS bucket; regenerate via `temp/upload-avatar-gallery.js` (rewrites `utils/avatar-gallery.js`). Full details: `docs/architecture/avatar-gallery.md`.

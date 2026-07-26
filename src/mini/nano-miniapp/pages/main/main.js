@@ -1,6 +1,7 @@
 const app = getApp()
 const { BASE, VERSION, WX_VERSION, IS_DEV } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
+const { resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
 const speechPlugin = requirePlugin('WechatSI')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
@@ -98,6 +99,8 @@ const T = {
     exitSandbox: '退出沙盒',
     sandboxBanner: '沙盒模式：正在以「{name}」的身份查看，任何操作都不会保存',
     initMsg: '您好！我是 Nano，您的AI健康伴侣。今天有什么可以帮您的？',
+    verifyPhonePrompt: '为了确保您的健康数据准确关联到您本人，请验证您的手机号码。',
+    verifyPhoneCta: '验证手机号 →',
     inputPh: '输入消息…',
     micRecording: '正在录音…松开结束',
     errServer: '无法连接服务器，请重试。',
@@ -297,6 +300,8 @@ const T = {
     exitSandbox: 'Exit Sandbox',
     sandboxBanner: 'Sandbox: viewing as "{name}" — nothing is saved',
     initMsg: 'Hello! I am Nano, your AI health companion. How can I help you today?',
+    verifyPhonePrompt: 'To make sure your health data is accurately linked to you, please verify your phone number.',
+    verifyPhoneCta: 'Verify Phone Number →',
     inputPh: 'Type a message…',
     micRecording: 'Recording… release to finish',
     errServer: 'Could not reach the server. Please try again.',
@@ -1113,6 +1118,24 @@ Page({
     if (tab === 'store' && !this.data.isGuest) {
       const { channel } = this.data
       if (channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china') {
+        // The GCN handoff (handleNanoSSO) hard-requires a verified phone and 403s
+        // otherwise — opening the webview anyway just dead-ends on GCN's login page with
+        // no explanation. Catch it here instead, before minting a wvt nobody can use.
+        if (!this.data.user.phone_verified) {
+          const { lang } = this.data
+          wx.showModal({
+            title: lang === 'zh' ? '需要验证手机号' : 'Phone verification needed',
+            content: lang === 'zh'
+              ? '进入商城前，请先验证您的手机号码'
+              : 'Please verify your phone number before entering the store.',
+            confirmText: lang === 'zh' ? '去验证' : 'Verify',
+            cancelText: lang === 'zh' ? '取消' : 'Cancel',
+            success: (r) => {
+              if (r.confirm) wx.navigateTo({ url: '/pages/verify-phone/verify-phone' })
+            },
+          })
+          return
+        }
         // Aeviva's GCN store opens as a separate navigated page (pages/appview — its own
         // header/back button, a plain page layout) rather than an inline tab section:
         // <web-view> doesn't reliably support any overlay button (cover-view is only
@@ -1267,15 +1290,16 @@ Page({
 
   // Aeviva channel's Store tab tap opens the GCN storefront via appview.js (which mints
   // its own wvt internally) instead of the native dots/credits store — see switchTab.
-  // gcn.net itself isn't ICP-filed, so it fails WeChat's <web-view> business-domain check
-  // — gcn(-dev).fros.cc is the ICP-filed proxy (Nginx → edge(-dev).gcn.net, path-prefixed
-  // by sector) set up specifically for miniapp webview access; see gcn/docs/deploy.md
-  // "gcn.fros.cc — WeChat mini-program webview access". Mirror BASE's own
-  // develop-vs-trial/release split (CLAUDE.md §"Miniapp Backend Selection") rather than
-  // IS_DEV, which also covers trial builds.
+  // Uses the direct aeviva(-dev).gcn.net hostname, not edge(-dev).gcn.net's path-prefixed
+  // routing (both serve the identical site/aeviva/dashboard.html) — WeChat's <web-view>
+  // business-domain verification is per-exact-domain, and only aeviva(-dev).gcn.net has a
+  // verification file hosted/verified (see nano/docs/wechat-domain-setup.md); edge(-dev)
+  // was never verified and 不支持打开's with it. Mirror BASE's own develop-vs-trial/release
+  // split (CLAUDE.md §"Miniapp Backend Selection") rather than IS_DEV, which also covers
+  // trial builds.
   _openAevivaStore() {
-    const host = BASE.includes('-dev.') ? 'https://gcn-dev.fros.cc' : 'https://gcn.fros.cc'
-    this.openUserApp(`${host}/aeviva/dashboard.html`)
+    const host = BASE.includes('-dev.') ? 'https://aeviva-dev.gcn.net' : 'https://aeviva.gcn.net'
+    this.openUserApp(`${host}/dashboard.html`)
   },
 
   // ── Kino Simulator ──────────────────────────────────────────────────────────
@@ -1547,6 +1571,16 @@ Page({
       if (IS_DEV) console.error('History load failed', e)
     }
     if (!historyLoaded) { this.setData({ messages: [initMsg] }) }
+
+    // Advisory nudge, not a blocking gate — WeChat mini-program review requires free
+    // browsing, so phone verification can never stand in the way of using the app (see
+    // login.js's _finishNewUser comment). Shown client-side only (not persisted to
+    // chat_messages) so it naturally reappears every session until phone_verified flips
+    // true, without accumulating duplicate rows in chat history.
+    if (!user.phone_verified) {
+      this._addMsg('ai', t.verifyPhonePrompt)
+      this._addActionMsg('verify_phone', t.verifyPhoneCta)
+    }
 
     // Fetch pending questionnaires + biomarkers in parallel
     let pendingAssignments = []
@@ -2000,6 +2034,11 @@ Page({
       this.setData({ tab: 'dots', dotsLoading: true, cartridgesLoading: true })
       this._loadDots(user, lang)
       this._loadCartridges(user, lang)
+    } else if (action === 'verify_phone') {
+      // No `?new=1` — this is an existing account being prompted later, not the
+      // brand-new-signup flow, so verify-phone.js skips the avatar step and its
+      // cancel/logout link won't delete the account (see verify-phone.js's own guards).
+      wx.navigateTo({ url: '/pages/verify-phone/verify-phone' })
     } else if (action === 'hr_own_yes') {
       this._removeHrActions()
       this._addMsg('ai', t.hrAskSave)
@@ -3140,45 +3179,15 @@ Page({
   },
 
   handleHealthChooseAvatar(e) {
-    const avatarUrl = e.detail?.avatarUrl
-    if (!avatarUrl) return
+    const { avatarId } = e.detail
     const comp = this.selectComponent('#health-comp')
-    const { user } = this.data
     const done = () => comp?.setData({ avatarUpdating: false })
-    const upload = (localPath) => {
-      this._req(`${BASE}/api/oss/presign?type=avatar&filename=avatar.jpg&category=users`, 'GET').then(presignRes => {
-        const { put_url, get_url } = presignRes.data || {}
-        if (!put_url) { done(); return }
-        wx.getFileSystemManager().readFile({
-          filePath: localPath,
-          success: (fileRes) => {
-            wx.request({
-              url: put_url,
-              method: 'PUT',
-              data: fileRes.data,
-              header: { 'Content-Type': 'application/octet-stream' },
-              responseType: 'text',
-              success: () => {
-                this._saveUser(user, { avatar_url: get_url }).then(() => {
-                  this._updateUser({ ...user, avatar_url: get_url })
-                }).catch(() => {}).finally(done)
-              },
-              fail: done,
-            })
-          },
-          fail: done,
-        })
-      }).catch(done)
-    }
-    if (avatarUrl.startsWith('http')) {
-      wx.downloadFile({
-        url: avatarUrl,
-        success: (res) => upload(res.tempFilePath),
-        fail: done,
-      })
-    } else {
-      upload(avatarUrl)
-    }
+    const url = avatarId ? resolveAvatarUrl(avatarId, DEFAULT_MOOD) : null
+    if (!url) { done(); return }
+    const { user } = this.data
+    this._saveUser(user, { avatar_url: url, avatar_character: avatarId }).then(() => {
+      this._updateUser({ ...user, avatar_url: url, avatar_character: avatarId })
+    }).catch(() => {}).finally(done)
   },
 
   onProfileUpdated(e) {

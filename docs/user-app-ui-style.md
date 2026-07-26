@@ -1,7 +1,7 @@
 # Nano User App — UI Style Guide
 
 **Source:** `src/web/user-app/`  
-**Live URL:** `https://nano.fros.cc/app/`  
+**Live URL:** `https://nano.gcn.net/app/`  
 **Stack:** React 18 + Vite, plain CSS (no CSS framework)
 
 ---
@@ -238,5 +238,5 @@ All transitions use `0.18–0.2s` duration for a snappy, responsive feel.
 | `src/web/user-app/src/main.jsx` | React root entry |
 | `src/web/user-app/index.html` | HTML shell, viewport meta, Inter font |
 | `src/web/user-app/public/favicon.png` | Browser tab icon (Waven logo) |
-| `src/web/user-app/vite.config.js` | Build config, dev proxy to `nano.fros.cc` |
+| `src/web/user-app/vite.config.js` | Build config, dev proxy to `nano.gcn.net` |
 | `src/functions/user-app/index.js` | FC 3.0 static file server for production |

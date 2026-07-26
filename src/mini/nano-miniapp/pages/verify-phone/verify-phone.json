@@ -1,5 +1,7 @@
 {
   "navigationStyle": "custom",
   "disableSwipeBack": true,
-  "usingComponents": {}
+  "usingComponents": {
+    "avatar-picker": "../../components/avatar-picker/avatar-picker"
+  }
 }

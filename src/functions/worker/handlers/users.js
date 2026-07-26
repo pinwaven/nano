@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { pool } = require('../lib/db');
 const { generateUserId, verifySubchannelOwnership } = require('../lib/auth');
 const { calculateAge } = require('../lib/time-utils');
+const { findAndMergeDuplicateAccount } = require('./user-merge');
 
 async function handleGetUsers(channelId, query = {}) {
     try {
@@ -327,7 +328,7 @@ async function handleGetUser(user_id) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const res = await pool.query(
-            `SELECT u.user_id, u.nickname, u.avatar_url, u.phone, u.email, u.language, u.gender,
+            `SELECT u.user_id, u.nickname, u.avatar_url, u.avatar_character, u.phone, u.email, u.language, u.gender,
                     u.birth_date, u.roles, u.coach_id, u.channel_id, u.created_at,
                     u.bio_data as user_bio_data,
                     u.wearable_brand, u.wearable_mac, u.wearable_name, u.wearable_bound_at,
@@ -406,29 +407,29 @@ async function handlePostUsers(body) {
 }
 
 async function handlePutUser(user_id, body) {
-    const { nickname, phone, email, gender, birth_date, language, coach_id, channel_id, bio_data, roles, avatar_url } = body;
+    const { nickname, phone, email, gender, birth_date, language, coach_id, channel_id, bio_data, roles, avatar_url, avatar_character } = body;
     // channel_id uses COALESCE so a missing/null value in the request never overwrites an existing assignment
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (bio_data && roles) {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), bio_data = bio_data || $9, roles=$10, avatar_url=COALESCE($11, avatar_url) WHERE user_id=$12`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), roles, avatar_url || null, user_id]
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), bio_data = bio_data || $9, roles=$10, avatar_url=COALESCE($11, avatar_url), avatar_character=COALESCE($12, avatar_character) WHERE user_id=$13`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), roles, avatar_url || null, avatar_character || null, user_id]
             );
         } else if (bio_data) {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), bio_data = bio_data || $9, avatar_url=COALESCE($10, avatar_url) WHERE user_id=$11`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), avatar_url || null, user_id]
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), bio_data = bio_data || $9, avatar_url=COALESCE($10, avatar_url), avatar_character=COALESCE($11, avatar_character) WHERE user_id=$12`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), avatar_url || null, avatar_character || null, user_id]
             );
         } else if (roles) {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), roles=$9, avatar_url=COALESCE($10, avatar_url) WHERE user_id=$11`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, roles, avatar_url || null, user_id]
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), roles=$9, avatar_url=COALESCE($10, avatar_url), avatar_character=COALESCE($11, avatar_character) WHERE user_id=$12`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, roles, avatar_url || null, avatar_character || null, user_id]
             );
         } else {
             await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), avatar_url=COALESCE($9, avatar_url) WHERE user_id=$10`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, avatar_url || null, user_id]
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), avatar_url=COALESCE($9, avatar_url), avatar_character=COALESCE($10, avatar_character) WHERE user_id=$11`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, avatar_url || null, avatar_character || null, user_id]
             );
         }
         // Sync coaches table when roles change
@@ -487,6 +488,38 @@ async function handlePatchUser(user_id, body) {
         params.push(user_id);
         await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE user_id = $${params.length}`, params);
         return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// PATCH-style identity capture, separate from handlePatchUser (theme/wearable only) since
+// this is the one write path with real consequences: it's also the trigger point for the
+// same-system duplicate-account merge (see handlers/user-merge.js). No general profile-
+// update endpoint existed for these fields before this — government_id/first_name/last_name
+// were previously only ever set via a one-time academy backfill script
+// (migration_users_government_id_backfill.sql), and birth_date only via the chat
+// questionnaire, so this is the first live path a user can set all four through directly.
+async function handleSetIdentity(user_id, body) {
+    const { first_name, last_name, birth_date, government_id } = body || {};
+    if (!user_id) return { success: false, error: 'user_id is required' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+        const updates = [];
+        const params = [];
+        if (first_name !== undefined) { params.push(first_name); updates.push(`first_name = $${params.length}`); }
+        if (last_name !== undefined) { params.push(last_name); updates.push(`last_name = $${params.length}`); }
+        if (birth_date !== undefined) { params.push(birth_date); updates.push(`birth_date = $${params.length}`); }
+        if (government_id !== undefined) { params.push(government_id); updates.push(`government_id = $${params.length}`); }
+        if (updates.length === 0) return { success: true };
+
+        params.push(user_id);
+        const updated = await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE user_id = $${params.length} RETURNING user_id`, params);
+        if (updated.rows.length === 0) return { success: false, error: 'user_not_found' };
+
+        const mergedIntoUserId = await findAndMergeDuplicateAccount(user_id);
+        return { success: true, merged_into_user_id: mergedIntoUserId };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -589,6 +622,7 @@ module.exports = {
     handlePostUsers,
     handlePutUser,
     handlePatchUser,
+    handleSetIdentity,
     handleDeleteUser,
     handleGetInvitations,
     handlePostInvitation,
