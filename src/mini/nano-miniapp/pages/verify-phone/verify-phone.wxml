@@ -7,12 +7,33 @@
   </view>
 
   <view wx:if="{{step === 'phone'}}" class="login-card">
+    <!-- Avatar picker — only shown right after brand-new account creation -->
+    <view wx:if="{{showAvatarStep}}" class="avatar-pick-wrap">
+      <button class="avatar-pick-btn" open-type="chooseAvatar" bindtap="handleAvatarTap" bindchooseavatar="handleChooseAvatar">
+        <image wx:if="{{pendingAvatar}}" class="avatar-pick-img" src="{{pendingAvatar}}" mode="aspectFill" />
+        <view wx:else class="avatar-pick-default">
+          <text class="avatar-pick-icon">+</text>
+        </view>
+      </button>
+      <text class="avatar-pick-hint">点击设置头像（可选）</text>
+    </view>
+
     <text class="login-card-label">手机号</text>
-    <input class="login-input" value="{{phone}}" bindinput="onPhoneInput"
-      placeholder="请输入手机号" maxlength="11" type="number" />
+    <view class="phone-input-row">
+      <picker mode="selector" range="{{countryOptions}}" range-key="label" value="{{countryIndex}}" bindchange="onCountryChange">
+        <view class="country-code-select">
+          <text>{{countryOptions[countryIndex].code}}</text>
+          <text class="country-code-arrow">▾</text>
+        </view>
+      </picker>
+      <input class="login-input phone-input" value="{{phone}}" bindinput="onPhoneInput"
+        placeholder="请输入手机号" placeholder-style="line-height: 96rpx; color: rgba(166, 196, 229, 0.4);"
+        maxlength="{{countryOptions[countryIndex].otpSupported ? 11 : 15}}" type="number" />
+    </view>
 
     <button
-      class="login-btn"
+      wx:if="{{countryOptions[countryIndex].otpSupported}}"
+      class="login-btn-secondary"
       open-type="getPhoneNumber"
       bindgetphonenumber="handleGetPhone"
       disabled="{{loading}}"
@@ -20,16 +41,38 @@
 
     <text wx:if="{{error}}" class="error-text">{{error}}</text>
 
-    <view class="login-btn {{loading ? 'disabled' : ''}}" bindtap="sendCode">
+    <view wx:if="{{countryOptions[countryIndex].otpSupported && phone.length === 11}}" class="login-btn {{loading ? 'disabled' : ''}}" bindtap="sendCode">
       <text>{{loading ? '发送中…' : '发送验证码'}}</text>
+    </view>
+
+    <view wx:if="{{!countryOptions[countryIndex].otpSupported && phone.length >= 4}}" class="login-btn {{loading ? 'disabled' : ''}}" bindtap="acceptUnverifiedPhone">
+      <text>{{loading ? '提交中…' : '确认'}}</text>
     </view>
   </view>
 
   <view wx:elif="{{step === 'code'}}" class="login-card">
     <text class="login-card-label">输入验证码</text>
     <text class="phone-step-desc">验证码已发送至 {{phone}}</text>
-    <input class="login-input" value="{{code}}" bindinput="onCodeInput"
-      placeholder="6位验证码" maxlength="6" type="number" />
+    <view class="pin-field">
+      <view class="pin-boxes">
+        <view
+          wx:for="{{codeDigits}}"
+          wx:key="index"
+          class="pin-box {{item ? 'pin-filled' : ''}} {{!item && index === code.length ? 'pin-active' : ''}}"
+        >
+          <text class="pin-digit">{{item}}</text>
+        </view>
+      </view>
+      <input
+        class="pin-capture"
+        type="number"
+        value="{{code}}"
+        bindinput="onCodeInput"
+        focus="{{step === 'code'}}"
+        adjust-position="{{false}}"
+        maxlength="6"
+      />
+    </view>
 
     <text wx:if="{{error}}" class="error-text">{{error}}</text>
 
@@ -43,6 +86,10 @@
       <text class="login-footer-dot">·</text>
       <text class="verify-phone-link" bindtap="changeNumber">更换手机号</text>
     </view>
+  </view>
+
+  <view class="verify-phone-links">
+    <text class="verify-phone-link" bindtap="handleLogout">退出登录</text>
   </view>
 
   <view class="login-footer">

@@ -3,12 +3,17 @@
  * Generates a structured, personalized health analysis with dot recommendations.
  * Called by handlePostHealthAdvice — context includes all 4 sub-ages + relevant dots.
  */
+const { classifyBiomarkers, LABELS_ZH: STATUS_LABELS_ZH, LABELS_EN: STATUS_LABELS_EN } = require('../../lib/biomarkerStatus');
+
 module.exports = (context) => {
   const {
     isZh, nickname, age, gender, bioAge, chronoAge,
     subAges, biomarkers, dotsByDimension, healthConditions, healthConditionsOther,
     health_twin, active_health_plans, plan_templates,
   } = context;
+
+  const bmStatus = classifyBiomarkers(biomarkers || {});
+  const statusTag = key => bmStatus[key] ? ` (${isZh ? STATUS_LABELS_ZH[bmStatus[key]] : STATUS_LABELS_EN[bmStatus[key]]})` : '';
 
   const hasBio = bioAge !== null && subAges && Object.keys(subAges).length > 0;
 
@@ -22,8 +27,8 @@ module.exports = (context) => {
       subAgeKey: 'ResilienceAge',
       labelZh: '抗压年龄',
       labelEn: 'Resilience Age',
-      bmZh: 'hsCRP、IL-6',
-      bmEn: 'hsCRP, IL-6',
+      bmZh: `hsCRP${statusTag('hsCRP')}、IL-6${statusTag('IL6')}`,
+      bmEn: `hsCRP${statusTag('hsCRP')}, IL-6${statusTag('IL6')}`,
       whyZh: '慢性炎症与抗压能力',
       whyEn: 'chronic inflammation & stress buffering capacity',
       normalZh: 'hsCRP <1 mg/L、IL-6 <3 pg/mL',
@@ -34,8 +39,8 @@ module.exports = (context) => {
       subAgeKey: 'CellularAge',
       labelZh: '细胞年龄',
       labelEn: 'Cellular Age',
-      bmZh: 'GDF-15、CD38',
-      bmEn: 'GDF-15, CD38',
+      bmZh: `GDF-15${statusTag('GDF15')}、CD38${statusTag('CD38')}`,
+      bmEn: `GDF-15${statusTag('GDF15')}, CD38${statusTag('CD38')}`,
       whyZh: '细胞衰老负担与NAD+消耗',
       whyEn: 'cellular senescence burden & NAD+ depletion',
       normalZh: 'GDF-15 <750 pg/mL、CD38 ~1.0x',
@@ -46,8 +51,8 @@ module.exports = (context) => {
       subAgeKey: 'MetabolicAge',
       labelZh: '代谢年龄',
       labelEn: 'Metabolic Age',
-      bmZh: '糖化白蛋白 (GA)',
-      bmEn: 'Glycated Albumin (GA)',
+      bmZh: `糖化白蛋白 (GA)${statusTag('GA')}`,
+      bmEn: `Glycated Albumin (GA)${statusTag('GA')}`,
       whyZh: '短期血糖代谢效率',
       whyEn: 'short-term glucose metabolism efficiency',
       normalZh: 'GA <15%',
@@ -58,8 +63,8 @@ module.exports = (context) => {
       subAgeKey: 'MicroVascularAge',
       labelZh: '微血管年龄',
       labelEn: 'Micro-Vascular Age',
-      bmZh: '胱抑素 C (Cystatin C)',
-      bmEn: 'Cystatin C',
+      bmZh: `胱抑素 C (Cystatin C)${statusTag('CystatinC')}`,
+      bmEn: `Cystatin C${statusTag('CystatinC')}`,
       whyZh: '毛细血管健康与营养/氧气输送',
       whyEn: 'capillary health & nutrient/oxygen delivery',
       normalZh: 'Cystatin C <0.9 mg/L',
@@ -79,12 +84,12 @@ module.exports = (context) => {
   }).join('\n\n');
 
   const bmLines = [
-    `hsCRP: ${biomarkers.hsCRP != null ? biomarkers.hsCRP + ' mg/L' : '—'}`,
-    `IL-6: ${biomarkers.IL6 != null ? biomarkers.IL6 + ' pg/mL' : '—'}`,
-    `GDF-15: ${biomarkers.GDF15 != null ? biomarkers.GDF15 + ' pg/mL' : '—'}`,
-    `CD38: ${biomarkers.CD38 != null ? biomarkers.CD38 + 'x baseline' : '—'}`,
-    `GA: ${biomarkers.GA != null ? biomarkers.GA + '%' : '—'}`,
-    `Cystatin C: ${biomarkers.CystatinC != null ? biomarkers.CystatinC + ' mg/L' : '—'}`,
+    `hsCRP: ${biomarkers.hsCRP != null ? biomarkers.hsCRP + ' mg/L' + statusTag('hsCRP') : '—'}`,
+    `IL-6: ${biomarkers.IL6 != null ? biomarkers.IL6 + ' pg/mL' + statusTag('IL6') : '—'}`,
+    `GDF-15: ${biomarkers.GDF15 != null ? biomarkers.GDF15 + ' pg/mL' + statusTag('GDF15') : '—'}`,
+    `CD38: ${biomarkers.CD38 != null ? biomarkers.CD38 + 'x baseline' + statusTag('CD38') : '—'}`,
+    `GA: ${biomarkers.GA != null ? biomarkers.GA + '%' + statusTag('GA') : '—'}`,
+    `Cystatin C: ${biomarkers.CystatinC != null ? biomarkers.CystatinC + ' mg/L' + statusTag('CystatinC') : '—'}`,
   ].join('\n');
 
   const condStr = healthConditions.length > 0
@@ -142,6 +147,8 @@ module.exports = (context) => {
 3. **生活方式关联** — 如有可穿戴数据（睡眠、HRV、步数），结合 Kino 生物标志物数据说明两者的关联（例如：睡眠不足→炎症升高→抗压年龄偏高）。
 4. **健康状况关联** — 如用户有申报的健康问题，结合生物标志物数据进行说明${planTaskZhExtra}
 
+生物标志物的状态（正常/偏高/高）已在数据中直接标注，请严格使用该标注，不得自行根据数值判断状态或与之矛盾。解释某维度时，只能将标注为"偏高"或"高"的标志物描述为驱动因素，标注为"正常"的标志物不得被暗示为导致异常的原因。严禁引入任何未在本提示词中提供的具体机制、暴露因素或基因/族群遗传学细节。
+
 语言要温暖、有科学依据、可操作。使用 Markdown 格式。结尾不要提问或引导用户进行下一步操作，干净收尾即可。全程用简体中文回复。`;
 
   const taskEn = `Based on the data below, generate a detailed, warm health analysis message for the user. Structure it as follows:
@@ -153,6 +160,8 @@ module.exports = (context) => {
    - Name 1–2 relevant Dots and briefly explain what they do
 3. **Lifestyle Connection** — If wearable data is available (sleep, HRV, steps), cross-reference it with the Kino biomarkers to reveal lifestyle-biology connections (e.g. poor sleep → elevated CRP → higher Resilience Age).
 4. **Health Conditions Connection** — If the user has declared health conditions, connect them to the biomarker findings${planTaskEnExtra}
+
+Biomarker status (normal/elevated/high) is already labeled directly in the data below — use that label as-is; do not judge status from the raw value yourself or contradict the given label. When explaining a dimension, only describe markers labeled elevated/high as drivers — never imply a marker labeled normal is contributing to the abnormal result. Do not introduce any specific mechanism, exposure factor, or genetic/population-genetics detail that isn't already provided in this prompt.
 
 Keep it warm, evidence-based, and actionable. Use Markdown formatting. Do not ask a follow-up question or prompt the user for any further action — end the message cleanly. Write in English.`;
 

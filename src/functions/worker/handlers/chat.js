@@ -32,6 +32,9 @@ const vivaPrompts = {
 const systemNutritionTemplate = require('../prompts/nano/systemNutrition');
 const vivaSystemNutritionTemplate = require('../prompts/viva/systemNutrition');
 const systemHealthAdviceTemplate = require('../prompts/nano/systemHealthAdvice');
+const vivaSystemHealthAdviceTemplate = require('../prompts/viva/systemHealthAdvice');
+const { getCurrentSolarTerm } = require('../lib/solarTerms');
+const { detectFabricationRisk, detectDotNameMismatch, detectFakeProductName, detectDotIngredientMismatch } = require('../lib/factCheck');
 const systemHealthReportTemplate = require('../prompts/nano/systemHealthReport');
 
 const getLlmClient = () => new OpenAI({
@@ -409,6 +412,73 @@ function verifyBiomarkerGrounding(text, groundTruth) {
     return { ok: mismatches.length === 0, mismatches };
 }
 
+// Backstop against the fabrication patterns (fake citations, external-ingredient
+// recommendations, fake BioAge dimensions) that testing showed slipping past the
+// prompt-level rules in viva/factConstraint.js (2026-07-25). One retry only -- if
+// the retry also trips the detector, log it and use it anyway rather than looping.
+//
+// The correction instruction is built from *which* risk categories actually fired --
+// an earlier version always sent a citation-only correction regardless of cause, so a
+// reply flagged only for external-ingredient recommendations got a retry instruction
+// that never mentioned the actual problem, and predictably repeated it.
+const _CITATION_RISKS = new Set(['pValue', 'geneRsId', 'cohortMention', 'fakeInstitution', 'journalYearCitation', 'bookTitleCitation']);
+const _INGREDIENT_RISKS = new Set(['knownExternalIngredient', 'standaloneDosage']);
+const _DIMENSION_RISKS = new Set(['fakeDimensionValue', 'fakeDimensionAssertion']);
+const _NAME_RISKS = new Set(['dotNameMismatch', 'fakeProductName', 'dotIngredientMismatch']);
+
+function _buildCorrectionPrompt(risk) {
+    const parts = ['你上一条回复违反了【事实约束】规则，请重新回答同一个问题，保持相同的语言、语气与整体结构，但修正以下问题：'];
+    if (risk.some(r => _CITATION_RISKS.has(r))) {
+        parts.push('- 你捏造了具体的研究引用、p值、基因位点编号、队列数据或机构/数据库名称——这类内容严禁出现，除非确实来自本提示词中提供的信息。只使用标准循证等级表述（如"有随机对照试验（RCT）支持"），不附加任何虚构细节。');
+    }
+    if (risk.some(r => _INGREDIENT_RISKS.has(r))) {
+        parts.push('- 你推荐了配方库之外的补充剂/成分（如硫辛酸、葡萄籽提取物/原花青素、元素铁、黄连素，或任何带有具体mg剂量但未标注"X号原粒"的成分）——这严禁出现。任何具体成分建议都必须来自提示词中提供的原粒配方库，并明确点名"X号原粒"，不得推荐配方库之外的任何补充剂、草本或单体成分。');
+    }
+    if (risk.some(r => _DIMENSION_RISKS.has(r))) {
+        parts.push('- 你为一个本系统不存在的"年龄"维度（如排毒年龄、肠道年龄等）编造了具体数值，或暗示/声称本系统能输出该维度——本系统只有四个真实维度（细胞年龄、代谢年龄、微血管年龄、抗压年龄），必须明确告知该维度不存在，不得编造其数值或方法论。');
+    }
+    if (risk.some(r => _NAME_RISKS.has(r))) {
+        parts.push('- 你提到的某个原粒的编号、名称或成分列表，与提示词中提供的原粒配方库不匹配（可能用了旧版名称/成分，或整个产品/成分列表都是编造的）。任何原粒的编号、名称、成分都必须逐字复制提示词中原粒配方库里给出的原文，不得凭记忆改写、替换或编造。如果不确定某个编号对应的准确名称或成分，宁可只说编号（如"12号原粒"）不描述名称或成分，也不要猜测或凭记忆填写。');
+    }
+    parts.push('保持原有的回答风格与格式约定（如是否允许列表、是否禁止标题等），不要因为重新生成而改用 Markdown 标题（#、##、###）或"总体状态/逐维度分析"式的分段编号报告结构，除非提示词本身就要求这种格式。');
+    return parts.join('\n');
+}
+
+// dotsFormulary (llmContext.dots / dotsByDimension-sourced rows), when available, additionally
+// cross-checks any "X号原粒 NAME" / "DOTX（NAME）" reference in the reply against the real
+// catalog — catches stale pre-migration dot names reused against post-migration numbers, and
+// fully invented product names, neither of which a text-only regex can see.
+function _detectAllRisks(reply, dotsFormulary) {
+    const risk = detectFabricationRisk(reply);
+    if (dotsFormulary && dotsFormulary.length > 0) {
+        if (detectDotNameMismatch(reply, dotsFormulary).length > 0) risk.push('dotNameMismatch');
+        if (detectFakeProductName(reply, dotsFormulary).length > 0) risk.push('fakeProductName');
+        if (detectDotIngredientMismatch(reply, dotsFormulary).length > 0) risk.push('dotIngredientMismatch');
+    }
+    return risk;
+}
+
+async function _regenerateIfFabricationRisk(client, model, messages, reply, logContext, dotsFormulary) {
+    const risk = _detectAllRisks(reply, dotsFormulary);
+    if (risk.length === 0) return reply;
+    console.log(JSON.stringify({ level: 'WARN', msg: 'fabrication_risk_detected', context: logContext, risk }));
+    const correctionPrompt = _buildCorrectionPrompt(risk);
+    try {
+        const retryCompletion = await client.chat.completions.create({
+            model,
+            messages: [...messages, { role: 'assistant', content: reply }, { role: 'user', content: correctionPrompt }],
+            temperature: 0.2,
+        });
+        const retryReply = retryCompletion.choices[0].message.content || reply;
+        const retryRisk = _detectAllRisks(retryReply, dotsFormulary);
+        console.log(JSON.stringify({ level: retryRisk.length === 0 ? 'INFO' : 'WARN', msg: 'fabrication_risk_retry', context: logContext, ok: retryRisk.length === 0, risk: retryRisk }));
+        return retryReply;
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'fabrication_risk_retry_failed', context: logContext, error: err.message }));
+        return reply;
+    }
+}
+
 async function handlePostChat(body) {
     const { openid, message, sandbox } = body;
     if (!openid) throw new Error('openid is required');
@@ -430,6 +500,7 @@ async function handlePostChat(body) {
         }
     }
     console.log(JSON.stringify({ level: 'INFO', msg: 'Persona resolved', user_id: user.user_id, channel_id: user.channel_id, personaType }));
+    const currentSolarTerm = personaType === 'viva' ? getCurrentSolarTerm(getNowShanghai().toJSDate()) : null;
 
     if (message) {
         // Intent-routed chat message handling
@@ -462,14 +533,17 @@ async function handlePostChat(body) {
             // single source of truth the model must be grounded on for every intent, not just ones
             // the classifier happens to tag (classifier misses are exactly what caused the 2026-07-14 bug).
             fetches.biomarker = pool.query(
-                `SELECT data, tested_at FROM biomarkers WHERE user_id = $1 AND test_type = 'kino_chip' ORDER BY tested_at DESC LIMIT 1`,
+                `SELECT data, tested_at FROM biomarkers WHERE user_id = $1 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
                 [user_id]
             );
-            if (required_data.includes('dots')) {
-                fetches.dots = pool.query(
-                    `SELECT id, key_name, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh FROM dots ORDER BY id ASC`
-                );
-            }
+            // Always fetch dots too (small table, cheap query) — same rationale as biomarker
+            // above. Gating this behind required_data.includes('dots') meant intents like
+            // biomarker_question never saw the real formulary, so when told to give a concrete
+            // next step, the model reached for generic external supplement knowledge instead
+            // of an actual dot (found via real-user testing 2026-07-25).
+            fetches.dots = pool.query(
+                `SELECT id, key_name, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`
+            );
             if (required_data.includes('plan')) {
                 fetches.plan = pool.query(
                     `SELECT content FROM notifications WHERE user_id = $1 AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1`,
@@ -576,6 +650,7 @@ async function handlePostChat(body) {
                     milestones_done: parseInt(p.milestones_done || 0, 10),
                 })),
                 sub_age_display_names: channelSubAgeNames,
+                current_solar_term: currentSolarTerm,
             };
 
             const activePrompts = personaType === 'viva' ? vivaPrompts : nanoPrompts;
@@ -742,6 +817,14 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
                 }
             }
 
+            if (personaType === 'viva') {
+                rawReply = await _regenerateIfFabricationRisk(
+                    client, model,
+                    [{ role: 'system', content: systemPrompt }, ...cleanHistory],
+                    rawReply, 'handlePostChat', llmContext.dots
+                );
+            }
+
             // Detect weight-recording action embedded by the LLM
             const weightActionMatch = rawReply.match(/\{"action"\s*:\s*"record_weight"\s*,\s*"value_kg"\s*:\s*([\d.]+)\}/);
             if (weightActionMatch) {
@@ -859,7 +942,7 @@ async function handlePostHealthAdvice(body) {
 
     try {
         const userResult = await pool.query(
-            `SELECT user_id, nickname, gender, birth_date, language, bio_data
+            `SELECT user_id, nickname, gender, birth_date, language, bio_data, channel_id
              FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
             [openid]
         );
@@ -867,15 +950,24 @@ async function handlePostHealthAdvice(body) {
         const user = userResult.rows[0];
         const user_id = user.user_id;
 
+        let personaType = 'nano';
+        if (user.channel_id) {
+            try {
+                const chResult = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
+                personaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
+            } catch (_) {}
+        }
+        const currentSolarTerm = personaType === 'viva' ? getCurrentSolarTerm(getNowShanghai().toJSDate()) : null;
+
         const [bioResult, dotsResult, plansResult, twinResult] = await Promise.all([
             pool.query(
                 `SELECT bio_age, data FROM biomarkers
-                 WHERE user_id = $1 AND test_type = 'kino_chip'
+                 WHERE user_id = $1 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL
                  ORDER BY tested_at DESC LIMIT 1`,
                 [user_id]
             ),
             pool.query(
-                `SELECT key_name, name, name_zh, sub_age_target, description, timing
+                `SELECT id, key_name, name, name_zh, sub_age_target, description, timing, ingredients, ingredients_zh
                  FROM dots ORDER BY id ASC`
             ),
             pool.query(
@@ -938,7 +1030,8 @@ async function handlePostHealthAdvice(body) {
         const healthConditionsOther = user.bio_data?.health_conditions_other || '';
         const isZh = (user.language || 'zh') !== 'en';
 
-        const systemPrompt = systemHealthAdviceTemplate({
+        const healthAdviceTemplate = personaType === 'viva' ? vivaSystemHealthAdviceTemplate : systemHealthAdviceTemplate;
+        const systemPrompt = healthAdviceTemplate({
             isZh,
             nickname: user.nickname,
             age,
@@ -951,6 +1044,7 @@ async function handlePostHealthAdvice(body) {
             healthConditions,
             healthConditionsOther,
             health_twin: healthTwin,
+            current_solar_term: currentSolarTerm,
             active_health_plans: activePlans.map(p => ({
                 plan_type: p.plan_type,
                 name: isZh ? p.name_zh : p.name_en,
@@ -987,7 +1081,14 @@ async function handlePostHealthAdvice(body) {
             temperature: 0.3,
         });
 
-        const reply = completion.choices[0].message.content;
+        let reply = completion.choices[0].message.content;
+        if (personaType === 'viva') {
+            reply = await _regenerateIfFabricationRisk(
+                llmClient, model,
+                [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMsg }],
+                reply, 'handlePostHealthAdvice', dotsResult.rows
+            );
+        }
         await saveChatMessage(user_id, 'ai', reply);
 
         return { success: true, message: reply };

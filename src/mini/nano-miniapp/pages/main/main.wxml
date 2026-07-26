@@ -269,21 +269,14 @@
         <view class="kino-scan-close" bindtap="cancelKinoScan">✕</view>
       </view>
 
-      <!-- Guest CTA bar -->
-      <view wx:if="{{isGuest}}" class="guest-cta-bar" bindtap="openGuestSheet">
-        <text class="guest-cta-text">{{t.guestChatCtaText}}</text>
-        <view class="guest-cta-btn">
-          <text>{{t.guestChatCtaBtn}}</text>
-        </view>
-      </view>
-
       <!-- AI disclaimer -->
       <view wx:if="{{obStep === 'done' || isGuest}}" class="ai-disclaimer">
         <text class="ai-disclaimer-text">{{t.aiDisclaimer}}</text>
       </view>
 
-      <!-- Normal chat input -->
-      <view wx:if="{{obStep === 'done'}}" class="input-container">
+      <!-- Normal chat input — also shown to guests, with the mic button replaced by
+           a Sign-up CTA and send routed to the sign-up sheet instead of _req'ing chat -->
+      <view wx:if="{{obStep === 'done' || isGuest}}" class="input-container">
         <toolbox wx:if="{{toolboxOpen}}" tools="{{toolList}}" disabled="{{typing}}" bind:toolaction="handleToolAction" />
         <view wx:if="{{isRecording}}" class="mic-recording-banner">
           <text class="mic-recording-dot"></text>
@@ -307,13 +300,19 @@
             show-confirm-bar="false"
           />
           <view
-            wx:if="{{!chatInput}}"
+            wx:if="{{!chatInput && !isGuest}}"
             class="mic-btn {{isRecording ? 'mic-btn-active' : ''}} {{typing || isSending ? 'mic-btn-disabled' : ''}}"
             bindtouchstart="onMicTouchStart"
             bindtouchend="onMicTouchEnd"
             bindtouchcancel="onMicTouchEnd"
           >
             <image class="mic-icon" src="/assets/icons/mic.svg" mode="aspectFit" />
+          </view>
+          <view wx:elif="{{!chatInput && isGuest}}" class="mic-btn guest-signup-btn" bindtap="openGuestSheet">
+            <text class="guest-signup-btn-text">{{t.guestSignupBtn}}</text>
+          </view>
+          <view wx:elif="{{isGuest}}" class="send-btn send-active" bindtap="openGuestSheet">
+            <text class="send-icon">↑</text>
           </view>
           <view wx:else class="send-btn {{chatInput ? 'send-active' : ''}}" bindtap="handleSend">
             <text class="send-icon">↑</text>
@@ -1475,44 +1474,6 @@
     </view>
   </view>
 
-  <!-- ── Guest Phone-Skip Passcode Overlay ── -->
-  <view wx:if="{{guestPassOpen}}" class="kpass-overlay guest-pass-overlay">
-    <view class="kpass-box" style="margin-top: {{statusBarHeight + 44}}px;">
-
-      <view class="kpass-logo">⬡</view>
-      <text class="kpass-title">{{t.guestSkipPassTitle}}</text>
-
-      <!-- 4-dot indicator -->
-      <view class="kpass-dots">
-        <view class="kpass-dot {{guestPassInput.length > 0 ? 'kpass-dot-filled' : ''}} {{guestPassError ? 'kpass-dot-error' : ''}}"></view>
-        <view class="kpass-dot {{guestPassInput.length > 1 ? 'kpass-dot-filled' : ''}} {{guestPassError ? 'kpass-dot-error' : ''}}"></view>
-        <view class="kpass-dot {{guestPassInput.length > 2 ? 'kpass-dot-filled' : ''}} {{guestPassError ? 'kpass-dot-error' : ''}}"></view>
-        <view class="kpass-dot {{guestPassInput.length > 3 ? 'kpass-dot-filled' : ''}} {{guestPassError ? 'kpass-dot-error' : ''}}"></view>
-      </view>
-
-      <text wx:if="{{guestPassError}}" class="kpass-error">{{t.guestSkipPassError}}</text>
-      <view wx:else style="height: 36rpx;"></view>
-
-      <!-- Numpad -->
-      <view class="kpass-numpad">
-        <view wx:for="{{[1,2,3,4,5,6,7,8,9]}}" wx:key="*this"
-          class="kpass-key" bindtap="handleGuestPassKey" data-digit="{{item}}">
-          <text>{{item}}</text>
-        </view>
-        <view class="kpass-key kpass-key-empty"></view>
-        <view class="kpass-key" bindtap="handleGuestPassKey" data-digit="0"><text>0</text></view>
-        <view class="kpass-key kpass-key-del" bindtap="handleGuestPassDelete">
-          <text class="kpass-del-icon">⌫</text>
-        </view>
-      </view>
-
-      <view class="kpass-cancel" bindtap="closeGuestPass">
-        <text>{{t.guestCancelSignup}}</text>
-      </view>
-
-    </view>
-  </view>
-
   <!-- ── Kino Simulator Overlay ── -->
   <view wx:if="{{kinoSimOpen}}" class="ksm-overlay">
     <view class="ksm-container">
@@ -1659,90 +1620,35 @@
     <view class="guest-sheet" catchtap="noop" style="{{guestKeyboardHeight > 0 ? 'padding-bottom:' + guestKeyboardHeight + 'px;' : ''}}">
       <view class="guest-sheet-handle"></view>
 
-      <block wx:if="{{guestSheetStep === 'phone'}}">
-        <text class="guest-sheet-title">{{t.guestPhoneTitle}}</text>
-        <text class="guest-sheet-desc">{{t.guestPhoneDesc}}</text>
-
-        <!-- Avatar consent row -->
-        <button
-          class="consent-row {{guestAvatarReady ? 'consent-row-done' : ''}}"
-          open-type="chooseAvatar"
-          bindchooseavatar="handleGuestChooseAvatar"
-        >
-          <view class="consent-check {{guestAvatarReady ? 'consent-check-done' : ''}}">
-            <text wx:if="{{guestAvatarReady}}" class="consent-check-icon">✓</text>
+      <text class="guest-sheet-title">{{t.guestJoinTitle}}</text>
+      <text class="guest-sheet-desc">{{t.guestJoinDesc}}</text>
+      <view class="pin-field">
+        <view class="pin-boxes">
+          <view
+            wx:for="{{guestInviteDigits}}"
+            wx:key="index"
+            class="pin-box {{item ? 'pin-filled' : ''}} {{!item && index === guestInviteCode.length ? 'pin-active' : ''}}"
+          >
+            <text class="pin-digit">{{item}}</text>
           </view>
-          <text class="consent-label">{{t.guestAvatarLabel}}<text class="consent-label-optional"> ({{lang === 'en' ? 'optional' : '可选'}})</text></text>
-          <view wx:if="{{guestPendingAvatar}}" class="consent-avatar-wrap">
-            <image class="consent-avatar-preview" src="{{guestPendingAvatar}}" mode="aspectFill" />
-            <view wx:if="{{guestAvatarUploading || (guestAvatarReady && guestInviteBusy)}}" class="avatar-saving-ring"></view>
-          </view>
-        </button>
-
-        <!-- Phone consent row -->
-        <button
-          class="consent-row {{(guestPhoneDone || guestPhoneSkipped) ? 'consent-row-done' : ''}}"
-          open-type="getPhoneNumber"
-          bindgetphonenumber="handleGuestPhone"
-          disabled="{{guestInviteBusy || guestPhoneDone || guestPhoneSkipped}}"
-        >
-          <view class="consent-check {{(guestPhoneDone || guestPhoneSkipped) ? 'consent-check-done' : ''}}">
-            <text wx:if="{{guestPhoneDone || guestPhoneSkipped}}" class="consent-check-icon">✓</text>
-          </view>
-          <text class="consent-label">{{guestPhoneSkipped ? t.guestPhoneSkippedLabel : (guestResolvedPhone || t.guestPhoneLabel)}}</text>
-        </button>
-
-        <!-- Error -->
-        <view wx:if="{{guestInviteError}}" class="guest-sheet-error">
-          <text>{{guestInviteError}}</text>
         </view>
-
-        <!-- Continue -->
-        <view
-          class="guest-sheet-btn {{(guestAvatarUploading || (!guestResolvedPhone && !guestPhoneSkipped) || guestInviteBusy) ? 'guest-sheet-btn-disabled' : ''}}"
-          bindtap="proceedGuestSignup"
-        >
-          <text>{{guestInviteBusy ? t.guestActivating : t.guestContinueBtn}}</text>
-        </view>
-
-        <!-- Skip phone verification (password-protected) -->
-        <view wx:if="{{!guestPhoneSkipped}}" class="guest-sheet-skip" bindtap="openGuestPass">
-          <text>{{t.guestSkipPhoneLink}}</text>
-        </view>
-
-      </block>
-
-      <block wx:else>
-        <text class="guest-sheet-title">{{t.guestJoinTitle}}</text>
-        <text class="guest-sheet-desc">{{t.guestJoinDesc}}</text>
-        <view class="pin-field">
-          <view class="pin-boxes">
-            <view
-              wx:for="{{guestInviteDigits}}"
-              wx:key="index"
-              class="pin-box {{item ? 'pin-filled' : ''}} {{!item && index === guestInviteCode.length ? 'pin-active' : ''}}"
-            >
-              <text class="pin-digit">{{item}}</text>
-            </view>
-          </view>
-          <input
-            class="pin-capture"
-            type="number"
-            value="{{guestInviteCode}}"
-            bindinput="onGuestInviteInput"
-            bindkeyboardheightchange="onGuestKeyboardHeightChange"
-            focus="{{guestSheetOpen}}"
-            adjust-position="{{false}}"
-            maxlength="6"
-          />
-        </view>
-        <view wx:if="{{guestInviteError}}" class="guest-sheet-error">
-          <text>{{guestInviteError}}</text>
-        </view>
-        <view class="guest-sheet-btn {{guestInviteBusy ? 'guest-sheet-btn-disabled' : ''}}" bindtap="submitGuestInvite">
-          <text>{{guestInviteBusy ? t.guestActivating : t.guestJoinBtn}}</text>
-        </view>
-      </block>
+        <input
+          class="pin-capture"
+          type="number"
+          value="{{guestInviteCode}}"
+          bindinput="onGuestInviteInput"
+          bindkeyboardheightchange="onGuestKeyboardHeightChange"
+          focus="{{guestSheetOpen}}"
+          adjust-position="{{false}}"
+          maxlength="6"
+        />
+      </view>
+      <view wx:if="{{guestInviteError}}" class="guest-sheet-error">
+        <text>{{guestInviteError}}</text>
+      </view>
+      <view class="guest-sheet-btn {{guestInviteBusy ? 'guest-sheet-btn-disabled' : ''}}" bindtap="submitGuestInvite">
+        <text>{{guestInviteBusy ? t.guestActivating : t.guestJoinBtn}}</text>
+      </view>
     </view>
   </view>
 

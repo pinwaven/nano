@@ -70,7 +70,7 @@ const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomark
 const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
 const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm } = require('./handlers/login');
-const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind } = require('./handlers/phone-otp');
+const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneAcceptUnverified } = require('./handlers/phone-otp');
 const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign } = require('./handlers/chat');
 
 
@@ -571,6 +571,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePhoneOtpVerify(parsedBody);
             } else if (path === '/phone-otp/bind') {
                 result = await handlePhoneOtpBind(parsedBody);
+            } else if (path === '/phone-otp/accept-unverified') {
+                result = await handlePhoneAcceptUnverified(parsedBody);
             } else if (path === '/resolve-phone') {
                 const { code, app_id } = parsedBody;
                 result = await handleResolvePhone(code, app_id);

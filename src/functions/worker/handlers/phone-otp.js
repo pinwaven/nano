@@ -129,4 +129,40 @@ async function handlePhoneOtpBind(body) {
     }
 }
 
-module.exports = { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind };
+// Loose E.164-ish check for non-China numbers submitted with their dial code
+// (e.g. "+18005551234") — no per-country format validation exists yet, so this
+// only guards against obvious garbage, not correctness.
+const INTL_PHONE_RE = /^\+[1-9]\d{5,14}$/;
+
+// Non-China phone numbers are accepted as-is, with no OTP proof — Aliyun PNVS
+// (this backend's only SMS provider) is not confirmed to support delivery/signature
+// approval outside China. Distinct from handlePhoneOtpBind: this never calls
+// verifyOTP and phone_verified_at is intentionally left NULL, since nothing was
+// actually verified. Stored WITH the leading "+<dialcode>" so it can never collide
+// with a bare 11-digit China number (which never starts with "+").
+async function handlePhoneAcceptUnverified(body) {
+    try {
+        const { user_id, phone } = body || {};
+        if (!user_id) return { success: false, error: 'user_id is required' };
+        if (!phone || !INTL_PHONE_RE.test(phone)) return { success: false, error: 'Invalid phone number' };
+
+        const conflict = await pool.query('SELECT user_id FROM users WHERE phone = $1 AND user_id != $2', [phone, user_id]);
+        if (conflict.rows.length > 0) return { success: false, error: 'phone_in_use' };
+
+        const updated = await pool.query(
+            `UPDATE users SET phone = $1 WHERE user_id = $2 RETURNING user_id`,
+            [phone, user_id]
+        );
+        if (updated.rows.length === 0) return { success: false, error: 'user_not_found' };
+
+        const { rows } = await pool.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [user_id]);
+        const { user, channel } = shapeUserRow(rows[0]);
+        console.log(JSON.stringify({ level: 'INFO', msg: 'phone-accept-unverified', data: { phone, user_id } }));
+        return { success: true, user, channel };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'phone-accept-unverified-error', data: { err: err.message } }));
+        return { success: false, error: err.message };
+    }
+}
+
+module.exports = { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneAcceptUnverified };

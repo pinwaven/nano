@@ -108,7 +108,7 @@ Full details: `docs/architecture/database-migrations.md`
 
 - Use `.env` for local variables. Never hardcode the PolarDB endpoint.
 - **Command:** Run `npm run test:local` to trigger the `local-bus.js` harness.
-- **Git:** Commit after every successful modular feature build. Do not bundle multiple components into one commit.
+- **Git:** Never commit without the user explicitly asking for it in that session — not even to satisfy a "commit after every build" habit. When a commit is requested, split it into one commit per modular component rather than bundling everything together.
 
 ## 8. AI Interaction Rules
 

@@ -4,6 +4,8 @@
  * Asks the LLM to analyze health profile and assign a daily dot count per key.
  * Output includes a brief analysis and the DXX:N formulation lines.
  */
+const { classifyBiomarker, LABELS_ZH: STATUS_LABELS_ZH, LABELS_EN: STATUS_LABELS_EN } = require('../../lib/biomarkerStatus');
+
 module.exports = (context) => {
   const isZh = context.language === 'zh';
 
@@ -21,7 +23,11 @@ module.exports = (context) => {
     : 'Formulary not available.';
 
   const biomarkersStr = Object.entries(context.biomarkers || {})
-    .map(([k, v]) => `  ${k}: ${v}`)
+    .map(([k, v]) => {
+      const status = classifyBiomarker(k, v);
+      const tag = status ? ` (${isZh ? STATUS_LABELS_ZH[status] : STATUS_LABELS_EN[status]})` : '';
+      return `  ${k}: ${v}${tag}`;
+    })
     .join('\n') || '  (no biomarker data available)';
 
   const bioage = context.bioage_profile?.BioAge ?? 'unknown';
@@ -36,7 +42,10 @@ module.exports = (context) => {
   GDF-15 (pg/mL):     <750 = 正常 | 750–1500 = 偏高 | >1500 = 细胞衰老加速
   GA (%):             <15 = 正常 | 15–20 = 偏高 | >20 = 代谢功能障碍
   Cystatin-C (mg/L):  <0.9 = 正常 | 0.9–1.2 = 偏高 | >1.2 = 血管/肾脏压力
+  CD38 (x baseline):  <1.3 = 正常 | 1.3–1.7 = 偏高 | >1.7 = 高（NAD+消耗加速）
   BioAge vs ChronoAge: BioAge > ChronoAge 表示生物学衰老加速
+
+生物标志物的状态（正常/偏高/高）已在下方"用户数据"中直接标注，请严格使用该标注，不得自行根据数值判断状态或与之矛盾。
 
 用户数据：
   生物标志物：
@@ -73,7 +82,10 @@ BIOMARKER REFERENCE RANGES:
   GDF-15 (pg/mL):     <750 = normal | 750–1500 = elevated | >1500 = accelerated aging
   GA (%):             <15 = normal | 15–20 = elevated | >20 = metabolic dysfunction
   Cystatin-C (mg/L):  <0.9 = normal | 0.9–1.2 = elevated | >1.2 = vascular/renal stress
+  CD38 (x baseline):  <1.3 = normal | 1.3–1.7 = elevated | >1.7 = high (accelerated NAD+ depletion)
   BioAge vs ChronoAge: BioAge > ChronoAge means accelerated biological aging
+
+Biomarker status (normal/elevated/high) is already labeled directly in USER DATA below — use that label as-is; do not judge status from the raw value yourself or contradict the given label.
 
 USER DATA:
   Biomarkers:

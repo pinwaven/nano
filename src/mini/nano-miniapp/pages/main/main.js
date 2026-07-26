@@ -7,45 +7,45 @@ const KINO_SIM_SERIAL = 'KNA2-00000'
 
 const CART_SETS = [
   {
-    key: 'set-bioage-reducing',
-    nameZh: '逆龄还原套装', nameEn: 'BioAge Reducing',
-    descZh: '细胞年龄 · 代谢韧性', descEn: 'Cellular Age · Metabolic Resilience',
+    key: 'set-foundation',
+    nameZh: '基础方阵套装', nameEn: 'Foundation Set',
+    descZh: '甲基化 · 骨脉 · 静心 · 精力 · 迷走 · 线粒体', descEn: 'Methylation · Bone-Vascular · Sleep · Energy · Vagal · Mito',
     color: '#6375EC',
     dotItems: [
-      { key: 'DOT01', zhName: '细胞原力', enName: 'Cellular Fuel' },
-      { key: 'DOT02', zhName: '细胞守护', enName: 'Cellular Guard' },
-      { key: 'DOT03', zhName: '细胞催化', enName: 'Cellular Catalyst' },
-      { key: 'DOT04', zhName: '细胞净化', enName: 'Cellular Cleanup' },
-      { key: 'DOT05', zhName: '代谢韧性', enName: 'Metabolic Resilience' },
-      { key: 'DOT06', zhName: '紧致焕颜', enName: 'Dermal Radiance' },
+      { key: 'DOT-N1', zhName: '甲基平衡', enName: 'Methyl Balance' },
+      { key: 'DOT-N2', zhName: '骨脉同步', enName: 'Bone-Vascular Sync' },
+      { key: 'DOT-N3', zhName: '静心夜', enName: 'Quiet Mind' },
+      { key: 'DOT-N4', zhName: '持续精力', enName: 'Steady Energy' },
+      { key: 'DOT-N5', zhName: '迷走张力', enName: 'Vagal Tone' },
+      { key: 'DOT-N6', zhName: '线粒体焕新', enName: 'Mito Renew' },
     ],
   },
   {
-    key: 'set-energy-boost',
-    nameZh: '能量提升套装', nameEn: 'Energy Boost',
-    descZh: '代谢 · 微血管 · 抗压 · 睡眠', descEn: 'Metabolic · Vascular · Resilience · Sleep',
+    key: 'set-renewal',
+    nameZh: '焕新方阵套装', nameEn: 'Renewal Set',
+    descZh: '衰老清除 · 明眸 · NAD · 肌光 · 代谢 · 心智', descEn: 'Senescence · Eyes · NAD · Skin · Metabolic · Mind',
     color: '#10b981',
     dotItems: [
-      { key: 'DOT07', zhName: '代谢动力', enName: 'Metabolic Power' },
-      { key: 'DOT08', zhName: '血管唤醒', enName: 'Vascular Awakening' },
-      { key: 'DOT09', zhName: '抗压支持', enName: 'Resilience Support' },
-      { key: 'DOT10', zhName: '晨间引擎', enName: 'Morning Ignition' },
-      { key: 'DOT11', zhName: '巅峰体能', enName: 'Athletic Peak' },
-      { key: 'DOT12', zhName: '深度睡眠', enName: 'Deep Sleep' },
+      { key: 'DOT-N7', zhName: '衰老清除', enName: 'Senescence Clear' },
+      { key: 'DOT-N8', zhName: '明眸', enName: 'Macular Guard' },
+      { key: 'DOT-N9', zhName: 'NAD焕新', enName: 'NAD Renew' },
+      { key: 'DOT-N10', zhName: '肌光焕采', enName: 'Radiant Skin' },
+      { key: 'DOT-N11', zhName: '代谢焕新', enName: 'Metabolic Renew' },
+      { key: 'DOT-N12', zhName: '敏锐心智', enName: 'Sharp Mind' },
     ],
   },
   {
-    key: 'set-system-optimization',
-    nameZh: '系统调优套装', nameEn: 'System Optimization',
-    descZh: '微血管 · 抗压年龄 · 肠道 · 免疫', descEn: 'Vascular · Resilience · Gut · Immunity',
+    key: 'set-defense',
+    nameZh: '防御方阵套装', nameEn: 'Defense Set',
+    descZh: '肠道 · 免疫 · 抗糖化 · 心血管 · 血脂 · 抗氧化', descEn: 'Gut · Immune · Glycation · Cardio · Cholesterol · Antioxidant',
     color: '#f59e0b',
     dotItems: [
-      { key: 'DOT13', zhName: '微血管通流', enName: 'Vascular Flow' },
-      { key: 'DOT14', zhName: '微血管保护', enName: 'Vascular Protection' },
-      { key: 'DOT15', zhName: '禅意共振', enName: 'Zen Resonance' },
-      { key: 'DOT16', zhName: '抗压防御', enName: 'Resilience Defense' },
-      { key: 'DOT17', zhName: '肠道微生态', enName: 'Gut & Microbiome' },
-      { key: 'DOT18', zhName: '免疫防御', enName: 'Immunity & Gastric' },
+      { key: 'DOT-N13', zhName: '肠道焕新', enName: 'Gut Renew' },
+      { key: 'DOT-N14', zhName: '免疫韧性', enName: 'Immune Resilience' },
+      { key: 'DOT-N15', zhName: '抗糖化防护', enName: 'Glycation Guard' },
+      { key: 'DOT-N16', zhName: '心血管信号', enName: 'Cardio Signal' },
+      { key: 'DOT-N17', zhName: '血脂平衡', enName: 'Cholesterol Balance' },
+      { key: 'DOT-N18', zhName: '抗氧化盾', enName: 'Antioxidant Shield' },
     ],
   },
 ]
@@ -227,18 +227,7 @@ const T = {
     guestActivating: '注册中…',
     guestInviteRequired: '请输入邀请码',
     guestInviteInvalid: '邀请码无效或已失效，请重新输入',
-    guestPhoneTitle: '完善您的资料',
-    guestPhoneDesc: '以下两项为注册必填信息。',
-    guestAvatarLabel: '使用我的微信头像',
-    guestPhoneLabel: '授权手机号',
-    guestPhoneSkippedLabel: '已跳过手机验证',
-    guestSkipPhoneLink: '暂时跳过',
-    guestSkipPassTitle: '输入密码跳过',
-    guestSkipPassError: '密码错误',
-    guestContinueBtn: '继续',
-    guestCancelSignup: '退出注册',
-    guestChatCtaText: '输入邀请码，激活您的 AI 健康伴侣',
-    guestChatCtaBtn: '立即加入',
+    guestSignupBtn: '注册',
     guestDotsCta: '激活账户后，获取您的专属营养方案',
     guestMenuSignUp: '注册账户',
     aiDisclaimer: '本服务为AI生成内容，结果仅供参考',
@@ -437,18 +426,7 @@ const T = {
     guestActivating: 'Activating…',
     guestInviteRequired: 'Please enter an invite code',
     guestInviteInvalid: 'Invalid or expired invite code. Please try again.',
-    guestPhoneTitle: 'Complete Your Profile',
-    guestPhoneDesc: 'Both items below are required to sign up.',
-    guestAvatarLabel: 'Use my WeChat avatar',
-    guestPhoneLabel: 'Authorize phone number',
-    guestPhoneSkippedLabel: 'Phone verification skipped',
-    guestSkipPhoneLink: 'Skip for now',
-    guestSkipPassTitle: 'Enter code to skip',
-    guestSkipPassError: 'Incorrect code',
-    guestContinueBtn: 'Continue',
-    guestCancelSignup: 'Cancel sign-up',
-    guestChatCtaText: 'Enter your invite code to activate your AI health companion',
-    guestChatCtaBtn: 'Join Now',
+    guestSignupBtn: 'Sign up',
     guestDotsCta: 'Activate your account to get your personalized nutrition plan',
     guestMenuSignUp: 'Sign Up',
     aiDisclaimer: 'AI-generated content — for reference only',
@@ -885,24 +863,15 @@ Page({
     creditBalance: 0,
     creditCurrency: 'CNY',
 
-    // Guest join sheet
+    // Guest join sheet — invite-code entry only; a valid code hands off to
+    // login.js, which owns account creation, avatar capture, and the
+    // phone/OTP verify-phone gate (see submitGuestInvite).
     guestSheetOpen: false,
     guestInviteCode: '',
     guestInviteDigits: ['', '', '', '', '', ''],
     guestInviteBusy: false,
     guestInviteError: '',
-    guestSheetStep: 'invite',
     guestKeyboardHeight: 0,
-    guestPendingAvatar: '',
-    guestAvatarDone: false,
-    guestAvatarUploading: false,
-    guestAvatarReady: false,
-    guestPhoneDone: false,
-    guestResolvedPhone: '',
-    guestPhoneSkipped: false,
-    guestPassOpen: false,
-    guestPassInput: '',
-    guestPassError: false,
 
     // Dots
     dotsLoading: true,
@@ -1003,10 +972,6 @@ Page({
   _rawStoreOrders: null,
   _dotsLoadedAt: 0,
   _plansLoadedAt: 0,
-  _pendingGuestSignup: null,
-  _pendingGuestAvatarUrl: '',
-  _pendingInviteCode: '',
-  _pendingPhoneCode: '',
   _lastMsgId: null,
   _touchX: 0,
   _touchY: 0,
@@ -1018,11 +983,12 @@ Page({
       wx.reLaunch({ url: '/pages/login/login' })
       return
     }
-    // Defense in depth: enforce the phone-verification gate here too, independent of
-    // how the user arrived at this page (login.js already redirects unverified
-    // accounts, but this page shouldn't trust that alone).
-    if (!user.guest && !user.phone_verified) {
-      wx.reLaunch({ url: '/pages/verify-phone/verify-phone' })
+    // Defense in depth: an interrupted sign-up (app closed/reopened right after
+    // login.js's _finishNewUser, before verify-phone ran) shouldn't land here —
+    // login.js's own session-restore already redirects this case, but this page
+    // shouldn't trust that alone.
+    if (user.pendingPhoneVerification) {
+      wx.reLaunch({ url: '/pages/verify-phone/verify-phone?new=1' })
       return
     }
     this._recordManager = speechPlugin.getRecordRecognitionManager()
@@ -3129,14 +3095,10 @@ Page({
   },
 
   openGuestSheet() {
-    this._pendingGuestAvatarUrl = ''
-    this._pendingInviteCode = ''
-    this._pendingPhoneCode = ''
-    this.setData({ guestSheetOpen: true, guestSheetStep: 'invite', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '', guestPendingAvatar: '', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, guestResolvedPhone: '', guestPhoneSkipped: false, guestPassOpen: false, guestPassInput: '', guestPassError: false, menuOpen: false })
+    this.setData({ guestSheetOpen: true, guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '', menuOpen: false })
   },
 
   closeGuestSheet() {
-    if (this.data.guestSheetStep === 'phone') return
     this.setData({ guestSheetOpen: false, guestKeyboardHeight: 0 })
   },
 
@@ -3168,56 +3130,12 @@ Page({
         this.setData({ guestInviteError: res.data?.error || t.errServer, guestInviteBusy: false })
         return
       }
-      this._pendingInviteCode = code
-      this._pendingGuestSignup = { channel: res.data.channel }
-      this.setData({ guestSheetStep: 'phone', guestInviteBusy: false })
-      // Pre-trigger privacy authorization so both avatar and phone buttons work on first tap.
-      // wx.requirePrivacyAuthorize routes through onNeedPrivacyAuthorization → our modal.
-      // If consent is already recorded by WeChat, success fires immediately and no modal appears.
-      if (wx.requirePrivacyAuthorize) wx.requirePrivacyAuthorize({ success() {}, fail() {} })
+      // Valid invite code confirmed — hand off to login.js, which owns account
+      // creation, avatar capture, and the phone/OTP verify-phone gate. Keeps a
+      // single implementation of "new account" instead of a second copy here.
+      wx.reLaunch({ url: `/pages/login/login?invite=${encodeURIComponent(code)}` })
     } catch (e) {
       this.setData({ guestInviteError: this.data.t.errServer, guestInviteBusy: false })
-    }
-  },
-
-  _uploadGuestAvatar(previewPath, localPath) {
-    this.setData({ guestPendingAvatar: previewPath, guestAvatarDone: true, guestAvatarUploading: true })
-    this._req(`${BASE}/api/oss/presign?type=avatar&filename=avatar.jpg&category=users`, 'GET').then(presignRes => {
-      const { put_url, get_url } = presignRes.data || {}
-      if (!put_url) { this.setData({ guestAvatarUploading: false }); return }
-      wx.getFileSystemManager().readFile({
-        filePath: localPath,
-        success: (fileRes) => {
-          wx.request({
-            url: put_url,
-            method: 'PUT',
-            data: fileRes.data,
-            header: { 'Content-Type': 'application/octet-stream' },
-            responseType: 'text',
-            success: () => {
-              this._pendingGuestAvatarUrl = get_url
-              this.setData({ guestPendingAvatar: get_url, guestAvatarUploading: false, guestAvatarReady: true })
-            },
-            fail: () => this.setData({ guestAvatarUploading: false }),
-          })
-        },
-        fail: () => this.setData({ guestAvatarUploading: false }),
-      })
-    }).catch(() => this.setData({ guestAvatarUploading: false }))
-  },
-
-  handleGuestChooseAvatar(e) {
-    const avatarUrl = e.detail?.avatarUrl
-    if (!avatarUrl) return
-    if (avatarUrl.startsWith('http')) {
-      this.setData({ guestPendingAvatar: avatarUrl })
-      wx.downloadFile({
-        url: avatarUrl,
-        success: (res) => this._uploadGuestAvatar(avatarUrl, res.tempFilePath),
-        fail: () => this.setData({ guestAvatarUploading: false }),
-      })
-    } else {
-      this._uploadGuestAvatar(avatarUrl, avatarUrl)
     }
   },
 
@@ -3267,155 +3185,6 @@ Page({
     const updated = e.detail
     if (!updated) return
     this._updateUser(updated)
-  },
-
-  handleGuestPhone(e) {
-    const { code, errMsg } = e.detail
-    if (errMsg !== 'getPhoneNumber:ok' || !code) return
-    this._pendingPhoneCode = code
-    this.setData({ guestPhoneDone: true, guestInviteError: '', guestResolvedPhone: '' })
-    const { appId } = wx.getAccountInfoSync().miniProgram
-    this._req(`${BASE}/api/resolve-phone`, 'POST', { code, app_id: appId }).then(res => {
-      if (res.data?.success && res.data.phone) {
-        this.setData({ guestResolvedPhone: res.data.phone })
-      }
-    }).catch(() => {})
-  },
-
-  openGuestPass() {
-    this.setData({ guestPassOpen: true, guestPassInput: '', guestPassError: false })
-  },
-
-  closeGuestPass() {
-    this.setData({ guestPassOpen: false, guestPassInput: '', guestPassError: false })
-  },
-
-  handleGuestPassKey(e) {
-    const { guestPassInput, guestPassError } = this.data
-    if (guestPassError || guestPassInput.length >= 4) return
-    const digit = e.currentTarget.dataset.digit
-    const next = guestPassInput + digit
-    if (next.length < 4) {
-      this.setData({ guestPassInput: next })
-      return
-    }
-    if (next === '1709') {
-      this.setData({ guestPassInput: next })
-      setTimeout(() => {
-        this.setData({ guestPassOpen: false, guestPassInput: '', guestPhoneSkipped: true, guestPhoneDone: true })
-      }, 180)
-    } else {
-      this.setData({ guestPassInput: next, guestPassError: true })
-      setTimeout(() => {
-        this.setData({ guestPassInput: '', guestPassError: false })
-      }, 900)
-    }
-  },
-
-  handleGuestPassDelete() {
-    const { guestPassInput } = this.data
-    if (guestPassInput.length === 0) return
-    this.setData({ guestPassInput: guestPassInput.slice(0, -1), guestPassError: false })
-  },
-
-  async proceedGuestSignup() {
-    const { guestAvatarUploading, guestResolvedPhone, guestPhoneSkipped, guestInviteBusy, t } = this.data
-    if (guestAvatarUploading || (!guestResolvedPhone && !guestPhoneSkipped) || guestInviteBusy) return
-    this.setData({ guestInviteBusy: true })
-    try {
-      const { code: wxCode } = await this._getCode()
-      const { appId } = wx.getAccountInfoSync().miniProgram
-      this._pendingPhoneCode = ''
-      const loginRes = await this._req(`${BASE}/api/wx-login`, 'POST', {
-        code: wxCode, invite_code: this._pendingInviteCode, app_id: appId, phone: guestResolvedPhone || null,
-      })
-      if (!loginRes.data?.success) {
-        if (loginRes.data?.phone_error) {
-          this.setData({ guestInviteError: loginRes.data.error || t.errServer, guestInviteBusy: false, guestPhoneDone: false })
-        } else {
-          this.setData({ guestInviteError: loginRes.data?.error || t.errServer, guestInviteBusy: false })
-        }
-        return
-      }
-      this._pendingGuestSignup = loginRes.data
-      const u = loginRes.data.user
-      if (this._pendingGuestAvatarUrl) {
-        try {
-          await this._req(`${BASE}/api/users/${u.user_id}`, 'PUT', {
-            nickname: u.nickname, phone: u.phone,
-            email: u.email, gender: u.gender, birth_date: u.birth_date,
-            language: u.language, coach_id: u.coach_id, avatar_url: this._pendingGuestAvatarUrl,
-          })
-          const confirmedUrl = await this._pollAvatarUrl(u.user_id)
-          const finalUrl = confirmedUrl || this._pendingGuestAvatarUrl
-          this._pendingGuestSignup.user = { ...u, avatar_url: finalUrl }
-        } catch (err) {}
-        this._pendingGuestAvatarUrl = ''
-      }
-      this._completeGuestSignup()
-    } catch (e) {
-      this.setData({ guestInviteError: t.errServer, guestInviteBusy: false })
-    }
-  },
-
-  cancelGuestSignup() {
-    this._pendingGuestSignup = null
-    this._pendingGuestAvatarUrl = ''
-    this._pendingInviteCode = ''
-    this._pendingPhoneCode = ''
-    this.setData({ guestSheetOpen: false, guestSheetStep: 'invite', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, guestResolvedPhone: '', guestPhoneSkipped: false, guestPassOpen: false, guestPassInput: '', guestPassError: false, guestPendingAvatar: '', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '' })
-  },
-
-  _pollAvatarUrl(userId) {
-    return new Promise((resolve) => {
-      let attempts = 0
-      const poll = () => {
-        this._req(`${BASE}/api/users/${userId}`, 'GET').then(res => {
-          const url = res.data?.user?.avatar_url
-          if (url) { resolve(url); return }
-          if (++attempts < 8) setTimeout(poll, 1500)
-          else resolve(null)
-        }).catch(() => {
-          if (++attempts < 8) setTimeout(poll, 1500)
-          else resolve(null)
-        })
-      }
-      poll()
-    })
-  },
-
-  _completeGuestSignup() {
-    const data = this._pendingGuestSignup
-    if (!data) return
-    this._pendingGuestSignup = null
-    const user = data.user
-    const channel = data.channel || null
-    const coach = data.coach || null
-    this.setData({ guestPendingAvatar: '' })
-    app.globalData.user = user
-    app.globalData.channel = channel
-    app.globalData.coach = coach
-    const channelLocale = channel?.locale || 'zh'
-    app.globalData.lang = user.language === 'en' ? 'en' : (channelLocale === 'en' ? 'en' : 'zh')
-    wx.setStorageSync('nano_user', { ...user, phoneSet: !!user.phone })
-    wx.setStorageSync('nano_channel', channel)
-    wx.setStorageSync('nano_coach', coach)
-    const lang = user.language === 'en' ? 'en' : (channelLocale === 'en' ? 'en' : 'zh')
-    const roles = user.roles || ['user']
-    const isCoach = roles.includes('coach')
-    const isAdmin = roles.includes('admin') || roles.includes('superadmin')
-    const isSuperadmin = roles.includes('superadmin')
-    const userAvatarLetter = (user.nickname || 'U').slice(-1).toUpperCase()
-    const channelOverridesGuest = channel?.sub_age_display_names || null
-    const guestT = { ...T[lang], subAgeLabels: buildSubAgeLabels(T[lang].subAgeLabels, channelOverridesGuest, lang) }
-    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t: guestT, isGuest: false, guestSheetOpen: false, guestSheetStep: 'invite', guestInviteBusy: false, isCoach, isAdmin, isSuperadmin })
-    this._initChat(user, lang)
-    this._loadDots(user, lang)
-    this._loadCartridges(user, lang)
-    // See onLoad's comment — aeviva's store URL is minted lazily in switchTab, not here.
-    if (!(channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china')) {
-      this._loadStore(user, lang)
-    }
   },
 
   _getCode() {

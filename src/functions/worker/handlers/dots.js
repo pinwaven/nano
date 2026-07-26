@@ -5,6 +5,7 @@ const { recordOrderCommissions, recordUserReferralCommission } = require('../lib
 const { applyPartnerDiscount, getPartnerProductDiscount } = require('../lib/partnerCommissions');
 const { debitUser } = require('../lib/credits');
 const { getNowShanghai } = require('../lib/time-utils');
+const { getCurrentSolarTerm } = require('../lib/solarTerms');
 const OpenAI = require('openai');
 const systemNutritionTemplate = require('../prompts/nano/systemNutrition');
 const vivaSystemNutritionTemplate = require('../prompts/viva/systemNutrition');
@@ -810,47 +811,15 @@ async function handleGetNutritionPlan(openid) {
     }
 }
 
-function _scoreMarker(value, normalMax, elevatedMax) {
-    const v = parseFloat(value);
-    if (isNaN(v)) return 0;
-    if (v <= normalMax) return 1;
-    if (v <= elevatedMax) return 2;
-    return 3;
-}
-
-function _calcDotCounts(biomarkers, bioageProfile) {
-    const hsCRP = _scoreMarker(biomarkers.hsCRP, 1, 3);
-    const il6   = _scoreMarker(biomarkers.IL6, 3, 6);
-    const gdf15 = _scoreMarker(biomarkers.GDF15, 750, 1500);
-    const ga    = _scoreMarker(biomarkers.GA, 15, 20);
-    const cysC  = _scoreMarker(biomarkers.CystatinC, 0.9, 1.2);
-    const bioOver = (bioageProfile.BioAge || 0) > (bioageProfile.ChronoAge || 999) ? 2 : 0;
-
-    const base = 3;
-    const raw = {
-        D01: base + gdf15 + bioOver,
-        D02: base + gdf15,
-        D03: base + Math.max(gdf15, bioOver),
-        D04: base + hsCRP + il6,
-        D05: base + gdf15,
-        D06: base + 1,
-        D07: base + ga,
-        D08: base + cysC,
-        D09: base + 1,
-        D10: base + 1,
-        D11: base + ga,
-        D12: base + hsCRP,
-        D13: base + gdf15 + bioOver,
-        D14: base + gdf15,
-        D15: base + il6 + hsCRP,
-        D16: base + il6,
-        D17: base + cysC,
-        D18: base + 1,
-    };
-
+// Flat neutral fallback (base=4, matching the prompt's own "3-4 for unrelated dots"
+// framing) for any DOT-Nxx key the LLM's FORMULATION output happens to omit — the
+// per-dot biomarker-specific heuristics this used to carry were tuned for the old
+// DOT01-18 lineup's biology and don't map onto the new formulas (dots-new.md,
+// migrated 2026-07-25); re-deriving 18 new heuristics is out of scope for this pass.
+function _calcDotCounts() {
     const counts = {};
-    for (const [k, v] of Object.entries(raw)) {
-        counts[k] = Math.min(10, Math.max(1, v));
+    for (let i = 1; i <= 18; i++) {
+        counts[`D-N${i}`] = 4;
     }
     return counts;
 }
@@ -897,7 +866,7 @@ async function handlePostFormulaDots(body) {
             pool.query('SELECT * FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]),
             pool.query(
                 `SELECT bio_age, data FROM biomarkers WHERE user_id = (SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1)
-                 AND test_type = 'kino_chip' ORDER BY tested_at DESC LIMIT 1`,
+                 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
                 [openid]
             ),
             pool.query(`SELECT id, key_name, name, name_zh, timing, ingredients, ingredients_zh FROM dots ORDER BY id ASC`),
@@ -907,7 +876,7 @@ async function handlePostFormulaDots(body) {
         const user = userResult.rows[0];
         const latestBio = bioResult.rows[0] || {};
         const data = latestBio.data || {};
-        const biomarkers = data.biomarkers || data.validated || {};
+        const biomarkers = data.validated || {};
         const bioageProfile = data.bioage_profile || {};
 
         let personaType = 'nano';
@@ -920,6 +889,7 @@ async function handlePostFormulaDots(body) {
 
         const startDate = getNowShanghai().toISODate();
         const lang = user.language || 'zh';
+        const currentSolarTerm = personaType === 'viva' ? getCurrentSolarTerm(getNowShanghai().toJSDate()) : null;
 
         // Ask LLM to assign per-dot counts based on biomarkers
         const nutritionContext = {
@@ -929,6 +899,7 @@ async function handlePostFormulaDots(body) {
             dots_formulary: dotsResult.rows,
             start_date: startDate,
             days_needed: 7,
+            current_solar_term: currentSolarTerm,
         };
         const llmClient = getLlmClient();
         const model = process.env.MODEL || 'qwen3.6-plus';
@@ -964,7 +935,7 @@ async function handlePostFormulaDots(body) {
             }
 
             if (currentSection === 'formulation') {
-                const m = trimmed.match(/^(D\d{2}):\s*(\d+)$/);
+                const m = trimmed.match(/^(D-N\d+):\s*(\d+)$/);
                 if (m) {
                     dotCounts[m[1]] = Math.min(10, Math.max(1, parseInt(m[2], 10)));
                 }

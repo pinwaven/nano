@@ -24,74 +24,10 @@
     </view>
   </view>
 
-  <view wx:elif="{{step === 'phone'}}" class="login-card">
-    <text class="login-card-label">最后一步</text>
-
-    <!-- Avatar picker -->
-    <view class="avatar-pick-wrap">
-      <button class="avatar-pick-btn" open-type="chooseAvatar" bindchooseavatar="handleChooseAvatar">
-        <image wx:if="{{pendingAvatar}}" class="avatar-pick-img" src="{{pendingAvatar}}" mode="aspectFill" />
-        <view wx:else class="avatar-pick-default">
-          <text class="avatar-pick-icon">+</text>
-        </view>
-      </button>
-      <text class="avatar-pick-hint">点击设置头像</text>
-    </view>
-
-    <text class="phone-step-desc">绑定手机号，让您的健康教练可以随时联系到您。</text>
-    <button
-      class="login-btn"
-      open-type="getPhoneNumber"
-      bindgetphonenumber="handleGetPhone"
-      disabled="{{phoneLoading}}"
-    ><text>📱 授权手机号</text></button>
-
-    <view class="phone-skip-btn" bindtap="openSkipPass">
-      <text>暂时跳过</text>
-    </view>
-  </view>
-
   <view wx:elif="{{step === 'error'}}" class="status-wrap">
     <text class="error-text">{{error}}</text>
     <view class="retry-btn" bindtap="retry">
       <text>重试</text>
-    </view>
-  </view>
-
-  <!-- ── Phone-Skip Passcode Overlay ── -->
-  <view wx:if="{{skipPassOpen}}" class="skip-pass-overlay">
-    <view class="skip-pass-box">
-
-      <text class="skip-pass-title">输入密码跳过</text>
-
-      <!-- 4-dot indicator -->
-      <view class="skip-pass-dots">
-        <view class="skip-pass-dot {{skipPassInput.length > 0 ? 'skip-pass-dot-filled' : ''}} {{skipPassError ? 'skip-pass-dot-error' : ''}}"></view>
-        <view class="skip-pass-dot {{skipPassInput.length > 1 ? 'skip-pass-dot-filled' : ''}} {{skipPassError ? 'skip-pass-dot-error' : ''}}"></view>
-        <view class="skip-pass-dot {{skipPassInput.length > 2 ? 'skip-pass-dot-filled' : ''}} {{skipPassError ? 'skip-pass-dot-error' : ''}}"></view>
-        <view class="skip-pass-dot {{skipPassInput.length > 3 ? 'skip-pass-dot-filled' : ''}} {{skipPassError ? 'skip-pass-dot-error' : ''}}"></view>
-      </view>
-
-      <text wx:if="{{skipPassError}}" class="skip-pass-error">密码错误</text>
-      <view wx:else style="height: 36rpx;"></view>
-
-      <!-- Numpad -->
-      <view class="skip-pass-numpad">
-        <view wx:for="{{[1,2,3,4,5,6,7,8,9]}}" wx:key="*this"
-          class="skip-pass-key" bindtap="handleSkipPassKey" data-digit="{{item}}">
-          <text>{{item}}</text>
-        </view>
-        <view class="skip-pass-key skip-pass-key-empty"></view>
-        <view class="skip-pass-key" bindtap="handleSkipPassKey" data-digit="0"><text>0</text></view>
-        <view class="skip-pass-key skip-pass-key-del" bindtap="handleSkipPassDelete">
-          <text class="skip-pass-del-icon">⌫</text>
-        </view>
-      </view>
-
-      <view class="skip-pass-cancel" bindtap="closeSkipPass">
-        <text>取消</text>
-      </view>
-
     </view>
   </view>
 
