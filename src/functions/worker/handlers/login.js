@@ -2,6 +2,7 @@
 
 const { pool } = require('../lib/db');
 const { generateUserId, generateReferralCode, getWxAccessToken } = require('../lib/auth');
+const { normalizeCnPhone } = require('../lib/phone');
 
 async function handleResolvePhone(code, app_id = null) {
     try {
@@ -34,8 +35,9 @@ async function handleBindPhone(user_id, code, app_id = null, rawPhone = null) {
         if (!code && rawPhone) {
             if (!/^1\d{10}$/.test(rawPhone)) return { success: false, error: 'Invalid phone number' };
             if (!user_id) return { success: false, error: 'user_id is required' };
-            await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [rawPhone, user_id]);
-            return { success: true, phone: rawPhone };
+            const fullRawPhone = normalizeCnPhone(rawPhone);
+            await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [fullRawPhone, user_id]);
+            return { success: true, phone: fullRawPhone };
         }
         if (!code) return { success: false, error: 'code is required' };
         const credMap = {};
@@ -52,7 +54,7 @@ async function handleBindPhone(user_id, code, app_id = null, rawPhone = null) {
         });
         const wxData = await wxRes.json();
         if (wxData.errcode) return { success: false, error: `WeChat: ${wxData.errmsg} (${wxData.errcode})` };
-        const phone = wxData.phone_info?.purePhoneNumber;
+        const phone = normalizeCnPhone(wxData.phone_info?.purePhoneNumber);
         if (!phone) return { success: false, error: 'No phone number returned' };
         await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [phone, user_id]);
         return { success: true, phone };
@@ -105,6 +107,7 @@ async function handleWxLogin(body) {
         }
         resolvedPhone = phoneData.phone_info.purePhoneNumber;
     }
+    resolvedPhone = normalizeCnPhone(resolvedPhone);
 
     // Look up existing user — return with channel info and roles
     const existing = await pool.query(
@@ -398,7 +401,8 @@ async function handleWxLogin(body) {
 // yields a DIFFERENT openid (stored in users.wx_app_openid). Cross-client
 // account matching: wx_app_openid → wx_unionid → phone.
 async function handleWxAppLogin(body) {
-    const { code, coach_id, invite_code, ref, phone, channel_slug } = body;
+    const { code, coach_id, invite_code, ref, channel_slug } = body;
+    const phone = normalizeCnPhone(body.phone);
     if (!code) return { success: false, error: 'code is required' };
 
     const appid  = process.env.WX_APP_APPID;

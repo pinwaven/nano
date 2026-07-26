@@ -32,8 +32,11 @@ function client() {
     return new Dypnsapi.default(config);
 }
 
-// nano's users.phone is already the bare 11-digit national number (no +86 prefix,
-// unlike gcn's `phone` column) — no bareCnPhone() conversion needed before calling PNVS.
+// Callers (phone-otp.js) always pass the bare 11-digit national number here —
+// PNVS wants it bare, and phone_otp_codes is keyed on it. users.phone itself is
+// now stored as E.164 (+86...); the +86 is added only once OTP verification
+// succeeds and the phone is about to be written to/looked up in users.phone
+// (see lib/phone.js normalizeCnPhone), never passed down to sendOTP/verifyOTP.
 async function sendOTP(phone) {
     if (!process.env.SMS_ACCESS_KEY_ID) {
         // Dev bypass: no SMS credentials configured, log instead of paying for a real

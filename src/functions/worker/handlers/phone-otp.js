@@ -3,6 +3,7 @@
 const { pool } = require('../lib/db');
 const { generateUserId, generateReferralCode } = require('../lib/auth');
 const { sendOTP, verifyOTP } = require('../lib/sms');
+const { normalizeCnPhone } = require('../lib/phone');
 
 const PHONE_RE = /^1\d{10}$/;
 
@@ -59,9 +60,13 @@ async function handlePhoneOtpVerify(body) {
         const valid = await verifyOTP(phone, code);
         if (!valid) return { success: false, error: 'invalid_code' };
 
-        const existing = await findUserByPhone(phone);
+        // phone stays bare for sendOTP/verifyOTP (matches phone_otp_codes and PNVS's
+        // expected format); users.phone is canonicalized to E.164 (+86...).
+        const fullPhone = normalizeCnPhone(phone);
+
+        const existing = await findUserByPhone(fullPhone);
         if (existing) {
-            console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-existing', data: { phone, user_id: existing.user_id } }));
+            console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-existing', data: { phone: fullPhone, user_id: existing.user_id } }));
             const { user, channel } = shapeUserRow(existing);
             return { success: true, user, channel };
         }
@@ -75,15 +80,15 @@ async function handlePhoneOtpVerify(body) {
                  RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url,
                            coach_id, channel_id, roles, created_at, bio_data, referral_code, referred_by_user_id,
                            (phone_verified_at IS NOT NULL) AS phone_verified`,
-                [user_id, phone, referral_code]
+                [user_id, fullPhone, referral_code]
             );
-            console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-new-user', data: { phone, user_id } }));
+            console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-new-user', data: { phone: fullPhone, user_id } }));
             return { success: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel: null };
         } catch (err) {
             // Unique-violation on users.phone — two concurrent verifies for the same
             // brand-new number raced the insert. Re-fetch the row the other one created.
             if (err.code === '23505') {
-                const raced = await findUserByPhone(phone);
+                const raced = await findUserByPhone(fullPhone);
                 if (raced) {
                     const { user, channel } = shapeUserRow(raced);
                     return { success: true, user, channel };
@@ -110,18 +115,20 @@ async function handlePhoneOtpBind(body) {
         const valid = await verifyOTP(phone, code);
         if (!valid) return { success: false, error: 'invalid_code' };
 
-        const conflict = await pool.query('SELECT user_id FROM users WHERE phone = $1 AND user_id != $2', [phone, user_id]);
+        const fullPhone = normalizeCnPhone(phone);
+
+        const conflict = await pool.query('SELECT user_id FROM users WHERE phone = $1 AND user_id != $2', [fullPhone, user_id]);
         if (conflict.rows.length > 0) return { success: false, error: 'phone_in_use' };
 
         const updated = await pool.query(
             `UPDATE users SET phone = $1, phone_verified_at = NOW() WHERE user_id = $2 RETURNING user_id`,
-            [phone, user_id]
+            [fullPhone, user_id]
         );
         if (updated.rows.length === 0) return { success: false, error: 'user_not_found' };
 
         const { rows } = await pool.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [user_id]);
         const { user, channel } = shapeUserRow(rows[0]);
-        console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-bind', data: { phone, user_id } }));
+        console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-bind', data: { phone: fullPhone, user_id } }));
         return { success: true, user, channel };
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'phone-otp-bind-error', data: { err: err.message } }));
@@ -138,8 +145,9 @@ const INTL_PHONE_RE = /^\+[1-9]\d{5,14}$/;
 // (this backend's only SMS provider) is not confirmed to support delivery/signature
 // approval outside China. Distinct from handlePhoneOtpBind: this never calls
 // verifyOTP and phone_verified_at is intentionally left NULL, since nothing was
-// actually verified. Stored WITH the leading "+<dialcode>" so it can never collide
-// with a bare 11-digit China number (which never starts with "+").
+// actually verified. Stored WITH the submitted "+<dialcode>" — same E.164 shape
+// China numbers now use (see lib/phone.js normalizeCnPhone), just a different
+// dial code, so no separate collision handling is needed here.
 async function handlePhoneAcceptUnverified(body) {
     try {
         const { user_id, phone } = body || {};

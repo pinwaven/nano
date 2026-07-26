@@ -47,7 +47,9 @@ Page({
       return
     }
     this.setData({ showAvatarStep: options.new === '1' })
-    if (user.phone) this.setData({ phone: user.phone })
+    // user.phone is stored as E.164 (+86...) for China numbers — this input only
+    // ever collects/displays the bare 11-digit form, so strip the prefix back off.
+    if (user.phone) this.setData({ phone: user.phone.replace(/^\+86/, '') })
   },
 
   onUnload() {
