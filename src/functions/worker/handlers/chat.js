@@ -458,8 +458,8 @@ function _detectAllRisks(reply, dotsFormulary) {
     return risk;
 }
 
-async function _regenerateIfFabricationRisk(client, model, messages, reply, logContext, dotsFormulary) {
-    const risk = _detectAllRisks(reply, dotsFormulary);
+async function _regenerateIfFabricationRisk(client, model, messages, reply, logContext, dotsFormulary, textForDetection) {
+    const risk = _detectAllRisks(textForDetection ?? reply, dotsFormulary);
     if (risk.length === 0) return reply;
     console.log(JSON.stringify({ level: 'WARN', msg: 'fabrication_risk_detected', context: logContext, risk }));
     const correctionPrompt = _buildCorrectionPrompt(risk);
@@ -785,6 +785,17 @@ SQL must be a SELECT statement. $1 is always user_id.`,
             // prompt (this is exactly how the 2026-07-14 stale-data bug and the 2026-07-16 wrong-age
             // bug happened). Cross-check what it actually wrote against the ground-truth data fetched
             // above, and retry once with an explicit correction if it drifted.
+            //
+            // Strip the record_weight/set_reminder action JSON before checking: its "scheduled_for"
+            // is a future reminder timestamp, not a claim about the biomarker test date, but
+            // extractDateMentions() matches any YYYY-MM-DD blindly and doesn't know the difference.
+            // Left unstripped, every set_reminder reply guaranteed-false-positived a "date mismatch"
+            // against tested_at, which fed unrelated biomarker ground-truth values into the
+            // correction prompt and told the model to "rewrite using ONLY these values" -- hijacking
+            // reminder confirmations into unrelated biomarker essays (found 2026-07-26).
+            const stripActionJson = (text) => text
+                .replace(/\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
+                .replace(/\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '');
             const hasKnownAge = user.birth_date != null;
             const hasKnownBmi = llmContext.user_profile.bmi != null;
             if (Object.keys(llmContext.biomarkers).length > 0 || hasKnownAge || hasKnownBmi) {
@@ -797,7 +808,7 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                     age: hasKnownAge ? llmContext.user_profile.age : null,
                     nickname: llmContext.user_profile.nickname,
                 };
-                const verification = verifyBiomarkerGrounding(rawReply, groundTruth);
+                const verification = verifyBiomarkerGrounding(stripActionJson(rawReply), groundTruth);
                 if (!verification.ok) {
                     console.log(JSON.stringify({ level: 'WARN', msg: 'biomarker_grounding_mismatch', user_id, mismatches: verification.mismatches }));
                     const correctionPrompt = `Your previous reply stated biomarker figures, BMI, a test date, and/or the patient's age that do not match their actual record.
@@ -811,7 +822,7 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
                         temperature: 0.2,
                     });
                     const retryReply = retryCompletion.choices[0].message.content || rawReply;
-                    const retryVerification = verifyBiomarkerGrounding(retryReply, groundTruth);
+                    const retryVerification = verifyBiomarkerGrounding(stripActionJson(retryReply), groundTruth);
                     console.log(JSON.stringify({ level: retryVerification.ok ? 'INFO' : 'WARN', msg: 'biomarker_grounding_retry', user_id, ok: retryVerification.ok, mismatches: retryVerification.mismatches }));
                     rawReply = retryReply;
                 }
@@ -821,7 +832,7 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
                 rawReply = await _regenerateIfFabricationRisk(
                     client, model,
                     [{ role: 'system', content: systemPrompt }, ...cleanHistory],
-                    rawReply, 'handlePostChat', llmContext.dots
+                    rawReply, 'handlePostChat', llmContext.dots, stripActionJson(rawReply)
                 );
             }
 
