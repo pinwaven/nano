@@ -258,7 +258,7 @@ async function handleGcnPartnerApply(body) {
 
 async function handlePostPartner(body, adminCtx) {
     const { tier, real_name, phone, entry_fee_paid, channel_id, user_id, referred_by_partner_id, contracted_at, notes, status } = body;
-    if (!tier || !real_name || !phone || !entry_fee_paid) {
+    if (!tier || !real_name || !phone || entry_fee_paid === undefined || entry_fee_paid === null) {
         return { success: false, error: 'tier, real_name, phone, entry_fee_paid are required', statusCode: 400 };
     }
     try {

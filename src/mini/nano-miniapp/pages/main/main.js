@@ -1113,7 +1113,7 @@ Page({
 
   // ── Tab navigation ──────────────────────────────────────────────────────────
 
-  switchTab(e) {
+  async switchTab(e) {
     const tab = e.currentTarget.dataset.tab
     if (tab === 'store' && !this.data.isGuest) {
       const { channel } = this.data
@@ -1121,7 +1121,13 @@ Page({
         // The GCN handoff (handleNanoSSO) hard-requires a verified phone and 403s
         // otherwise — opening the webview anyway just dead-ends on GCN's login page with
         // no explanation. Catch it here instead, before minting a wvt nobody can use.
-        if (!this.data.user.phone_verified) {
+        // Checked fresh against the server rather than trusting the cached flag: a
+        // returning session restores `user.phone_verified` straight from local storage
+        // (app.js onLaunch) and never re-syncs it against the server, so a pre-migration
+        // account whose cache still says `true` from before phone verification existed
+        // would otherwise sail past this gate and land on GCN's dead end anyway.
+        const verified = await this._checkPhoneVerified()
+        if (!verified) {
           const { lang } = this.data
           wx.showModal({
             title: lang === 'zh' ? '需要验证手机号' : 'Phone verification needed',
@@ -3540,5 +3546,26 @@ Page({
       if (data) opts.data = data
       wx.request(opts)
     })
+  },
+
+  // Fetches the authoritative phone_verified state from the server rather than trusting
+  // the locally cached flag on this.data.user, which is only ever refreshed on a fresh
+  // wx-login — a returning session (app.js onLaunch restoring from
+  // wx.getStorageSync('nano_user')) never re-syncs it. Falls back to the cached value on
+  // a network error so a flaky connection doesn't block store access outright.
+  async _checkPhoneVerified() {
+    const user = this.data.user
+    if (!user || user.guest) return false
+    try {
+      const res = await this._req(`${BASE}/api/users/${user.user_id}`)
+      const verified = !!res.data?.user?.phone_verified
+      this.setData({ 'user.phone_verified': verified })
+      if (app.globalData.user) app.globalData.user.phone_verified = verified
+      const cached = wx.getStorageSync('nano_user')
+      if (cached) wx.setStorageSync('nano_user', { ...cached, phone_verified: verified })
+      return verified
+    } catch (e) {
+      return !!user.phone_verified
+    }
   },
 })

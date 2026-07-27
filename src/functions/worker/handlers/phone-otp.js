@@ -156,14 +156,20 @@ async function handlePhoneOtpBind(body) {
         const attach = await client.query(
             `INSERT INTO user_phones (user_id, phone, verified_at, is_primary) VALUES ($1, $2, NOW(), $3)
              ON CONFLICT (phone) DO UPDATE SET verified_at = NOW() WHERE user_phones.user_id = EXCLUDED.user_id
-             RETURNING user_id`,
+             RETURNING user_id, is_primary`,
             [user_id, fullPhone, isFirstPhone]
         );
         if (attach.rows.length === 0) {
             await client.query('ROLLBACK');
             return { success: false, error: 'phone_in_use' };
         }
-        if (isFirstPhone) {
+        // Synced off the row's actual is_primary, not isFirstPhone: an orphaned primary
+        // user_phones row from an earlier interrupted attempt (isFirstPhone would read
+        // false since that row already exists) must still resync users.phone_verified_at
+        // if it drifted out of sync with it — otherwise a user in that state can never
+        // get users.phone_verified_at set again through this endpoint, even though the
+        // OTP genuinely verifies and user_phones.verified_at genuinely refreshes each time.
+        if (attach.rows[0].is_primary) {
             const updated = await client.query(
                 `UPDATE users SET phone = $1, phone_verified_at = NOW() WHERE user_id = $2 RETURNING user_id`,
                 [fullPhone, user_id]
@@ -177,7 +183,7 @@ async function handlePhoneOtpBind(body) {
 
         const { rows } = await client.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [user_id]);
         const { user, channel } = shapeUserRow(rows[0]);
-        console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-bind', data: { phone: fullPhone, user_id, is_primary: isFirstPhone } }));
+        console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-bind', data: { phone: fullPhone, user_id, is_primary: attach.rows[0].is_primary } }));
         return { success: true, user, channel };
     } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
