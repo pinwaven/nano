@@ -6,26 +6,15 @@
     <text class="login-subtitle">为保障账号安全，请验证您的手机号</text>
   </view>
 
+  <avatar-picker
+    visible="{{avatarPickerVisible}}"
+    selected-id="{{avatarCharacter}}"
+    lang="zh"
+    bind:select="onAvatarSelect"
+    bind:close="onAvatarPickerClose"
+  />
+
   <view wx:if="{{step === 'phone'}}" class="login-card">
-    <!-- Avatar picker — only shown right after brand-new account creation -->
-    <view wx:if="{{showAvatarStep}}" class="avatar-pick-wrap">
-      <view class="avatar-pick-btn" bindtap="openAvatarPicker">
-        <image wx:if="{{pendingAvatar}}" class="avatar-pick-img" src="{{pendingAvatar}}" mode="aspectFill" />
-        <view wx:else class="avatar-pick-default">
-          <text class="avatar-pick-icon">+</text>
-        </view>
-      </view>
-      <text class="avatar-pick-hint">点击选择头像（可选）</text>
-    </view>
-
-    <avatar-picker
-      visible="{{avatarPickerVisible}}"
-      selected-id="{{avatarCharacter}}"
-      lang="zh"
-      bind:select="onAvatarSelect"
-      bind:close="onAvatarPickerClose"
-    />
-
     <text class="login-card-label">手机号</text>
     <view class="phone-input-row">
       <picker mode="selector" range="{{countryOptions}}" range-key="label" value="{{countryIndex}}" bindchange="onCountryChange">
@@ -93,6 +82,25 @@
       <text wx:else class="verify-phone-link" bindtap="sendCode">重新发送验证码</text>
       <text class="login-footer-dot">·</text>
       <text class="verify-phone-link" bindtap="changeNumber">更换手机号</text>
+    </view>
+  </view>
+
+  <view wx:elif="{{step === 'avatar'}}" class="login-card">
+    <text class="login-card-label">选择头像</text>
+    <text class="phone-step-desc">为您的账号选择一个专属头像</text>
+
+    <view class="avatar-pick-wrap">
+      <view class="avatar-pick-btn" bindtap="openAvatarPicker">
+        <image wx:if="{{pendingAvatar}}" class="avatar-pick-img" src="{{pendingAvatar}}" mode="aspectFill" />
+        <view wx:else class="avatar-pick-default">
+          <text class="avatar-pick-icon">+</text>
+        </view>
+      </view>
+      <text class="avatar-pick-hint">点击选择头像</text>
+    </view>
+
+    <view class="login-btn" bindtap="skipAvatar">
+      <text>跳过</text>
     </view>
   </view>
 

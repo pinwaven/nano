@@ -6,7 +6,7 @@ const PHONE_RE = /^1\d{10}$/
 
 Page({
   data: {
-    step: 'phone', // 'phone' | 'code'
+    step: 'phone', // 'phone' | 'code' | 'avatar'
     phone: '',
     code: '',
     codeDigits: ['', '', '', '', '', ''],
@@ -14,8 +14,9 @@ Page({
     error: '',
     resendCooldown: 0,
     // Only shown right after brand-new account creation (login.js passes ?new=1) —
-    // an already-existing account being retroactively forced through this gate has
-    // no reason to be asked for an avatar again.
+    // gates the post-verification 'avatar' step. An already-existing account being
+    // retroactively forced through this gate has no reason to be asked for an
+    // avatar again, so it skips straight to main after verifying.
     showAvatarStep: false,
     pendingAvatar: '',
     avatarCharacter: '',
@@ -101,6 +102,13 @@ Page({
         coach_id: gUser.coach_id, avatar_url: url, avatar_character: avatarId,
       }).catch(() => {})
     }
+
+    wx.reLaunch({ url: '/pages/main/main' })
+  },
+
+  // Avatar selection is optional — bail straight to main without one.
+  skipAvatar() {
+    wx.reLaunch({ url: '/pages/main/main' })
   },
 
   async handleGetPhone(e) {
@@ -172,7 +180,11 @@ Page({
       if (res.data.channel) app.globalData.channel = res.data.channel
       const { phone: _ph, email: _em, ...userToStore } = updatedUser
       wx.setStorageSync('nano_user', { ...userToStore, phoneSet: true, phone_verified: true })
-      wx.reLaunch({ url: '/pages/main/main' })
+      if (this.data.showAvatarStep) {
+        this.setData({ loading: false, step: 'avatar', avatarPickerVisible: true })
+      } else {
+        wx.reLaunch({ url: '/pages/main/main' })
+      }
     } catch (e) {
       this.setData({ loading: false, error: '网络错误，请重试' })
     }
@@ -200,7 +212,11 @@ Page({
       if (res.data.channel) app.globalData.channel = res.data.channel
       const { phone: _ph, email: _em, ...userToStore } = updatedUser
       wx.setStorageSync('nano_user', { ...userToStore, phoneSet: true, phone_verified: !!updatedUser.phone_verified })
-      wx.reLaunch({ url: '/pages/main/main' })
+      if (this.data.showAvatarStep) {
+        this.setData({ loading: false, step: 'avatar', avatarPickerVisible: true })
+      } else {
+        wx.reLaunch({ url: '/pages/main/main' })
+      }
     } catch (e) {
       this.setData({ loading: false, error: '网络错误，请重试' })
     }
