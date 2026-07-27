@@ -1765,10 +1765,10 @@ Component({
     },
 
     // Resolves the currently-displayed avatar image from the selected character
-    // + live mood — self view only; mood is derived purely client-side from
-    // synced ring data (see 'mood' data field) and never round-trips to the
-    // server, so a coach viewing a client's health tab still just sees
-    // whatever avatar_url that client last saved (the relaxed default).
+    // + live mood ('mood' data field). Runs for both self and coach mode: self
+    // view computes mood from local BLE-synced ring data (_loadWearableFromStorage),
+    // coach view computes it from that client's server-synced health-events
+    // (_loadRingDataFromServer) — same computeMood()/resolveAvatarUrl() path either way.
     _refreshAvatarDisplay() {
       const character = this.properties.user?.avatar_character
       if (!character) { this.setData({ avatarDisplayUrl: '' }); return }
