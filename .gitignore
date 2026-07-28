@@ -11,3 +11,4 @@ backup/
 backups/
 .antigravitycli/*.json
 *.key
+scripts/keys/

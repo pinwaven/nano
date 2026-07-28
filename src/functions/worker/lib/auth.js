@@ -12,6 +12,21 @@ async function generateReferralCode() {
     throw new Error('Failed to generate unique referral code');
 }
 
+// 6-digit numeric SMS OTP code — no DB uniqueness check needed (unlike referral/invite
+// codes), since it's scoped per-phone within a short expiry window, not a permanent key.
+const generatePhoneOtpCode = () => String(100000 + (parseInt(crypto.randomBytes(3).toString('hex'), 16) % 900000));
+
+// Same scheme as generateReferralCode, scoped to partners.invite_code instead of
+// users.referral_code — used by the partner self-service invite-link feature.
+async function generatePartnerInviteCode() {
+    for (let i = 0; i < 10; i++) {
+        const code = String(100000 + (parseInt(crypto.randomBytes(3).toString('hex'), 16) % 900000));
+        const { rows } = await pool.query('SELECT 1 FROM partners WHERE invite_code = $1', [code]);
+        if (rows.length === 0) return code;
+    }
+    throw new Error('Failed to generate unique partner invite code');
+}
+
 function signChannelAdminToken({ sub, username, cid, tabs, perms, cms, cmw, auto }) {
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + 86400;
@@ -47,6 +62,7 @@ const CHANNEL_ADMIN_FULL_PERMS = [
     'rewards:read','rewards:write','rewards:delete',
     'partners:read','partners:write','partners:delete',
     'finance:read','finance:write',
+    'content:read',
     'academy:read','academy:write',
     'questionnaires:read',
     'health-plans:read',
@@ -66,6 +82,7 @@ const LEGACY_TAB_EXPANSION = {
     inventory:        ['inventory:read','inventory:write'],
     rewards:          ['rewards:read','rewards:write','rewards:delete'],
     partners:         ['partners:read','partners:write','partners:delete'],
+    content:          ['content:read'],
     academy:          ['academy:read','academy:write'],
     questionnaires:   ['questionnaires:read'],
     'health-plans':   ['health-plans:read'],
@@ -137,6 +154,8 @@ async function verifySubchannelOwnership(channelId, adminCtx) {
 module.exports = {
     generateUserId,
     generateReferralCode,
+    generatePhoneOtpCode,
+    generatePartnerInviteCode,
     signChannelAdminToken,
     verifyChannelAdminToken,
     CHANNEL_ADMIN_FULL_PERMS,

@@ -1238,6 +1238,30 @@
 .theme-light .ht-body-bar         { background: rgba(201, 149, 106, 0.08); }
 .theme-light .ht-body-lbl         { color: var(--text-muted); }
 
+/* ── Report Detail Bottom Sheet ── */
+.theme-light .rpt-sheet-header     { border-bottom-color: rgba(201, 149, 106, 0.1); }
+.theme-light .rpt-sheet-institution { color: var(--text); }
+.theme-light .rpt-sheet-date       { color: var(--text-muted); }
+.theme-light .rpt-close-x          { color: var(--text-muted); }
+.theme-light .rpt-ev-row           { border-bottom-color: rgba(201, 149, 106, 0.07); }
+.theme-light .rpt-ev-ref           { color: var(--text-muted); }
+.theme-light .rpt-ev-val           { color: var(--text); }
+.theme-light .rpt-ev-unit          { color: var(--text-muted); }
+.theme-light .rpt-section-header   { border-bottom-color: rgba(201, 149, 106, 0.1); }
+.theme-light .rpt-section-title    { color: var(--text-muted); }
+.theme-light .rpt-diag-text        { color: var(--text-sub); }
+.theme-light .rpt-advice-text      { color: var(--text-sub); }
+.theme-light .rpt-dn-key           { color: var(--text-muted); }
+.theme-light .rpt-vital-item       { background: rgba(0, 0, 0, 0.03); border-color: rgba(201, 149, 106, 0.15); }
+.theme-light .rpt-vital-key        { color: var(--text-muted); }
+.theme-light .rpt-vital-val        { color: var(--text); }
+.theme-light .rpt-clinical-label   { color: var(--text-muted); }
+.theme-light .ht-lab-card          { background: rgba(255, 255, 255, 0.6); border-color: rgba(201, 149, 106, 0.15); }
+.theme-light .ht-lab-title         { color: var(--text-muted); }
+.theme-light .ht-lab-snapshot-wrap { border-bottom-color: rgba(201, 149, 106, 0.1); }
+.theme-light .ht-lab-snapshot-title { color: var(--text-muted); }
+.theme-light .ht-lab-date          { color: var(--text-muted); }
+
 /* === Digital Twin Body Figure === */
 /* ── Digital Twin Hero Card ── */
 .dt-hero-card {
@@ -2170,6 +2194,12 @@
   color: rgba(166, 196, 229, 0.5);
 }
 
+.wd-server-hint {
+  font-size: 20rpx;
+  color: rgba(99, 117, 236, 0.65);
+  font-weight: 500;
+}
+
 .wd-chevron {
   font-size: 36rpx;
   color: rgba(99, 117, 236, 0.5);
@@ -2617,6 +2647,18 @@
   font-weight: 600;
 }
 
+.ring-chart-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.ring-chart-date {
+  font-size: 17rpx;
+  color: rgba(166, 196, 229, 0.4);
+  font-weight: 500;
+}
+
 /* Bar chart: 24 columns side-by-side, bars grow upward */
 .ring-chart-bars {
   display: flex;
@@ -2816,6 +2858,85 @@
 .ring-linechart-count {
   font-size: 18rpx;
   color: rgba(166, 196, 229, 0.25);
+}
+
+/* Weekly sleep timeline: 7 columns, each a noon→noon 24h vertical track with
+   positioned blocks — naps and night-sleep segments shown distinctly. */
+.ring-sleepweek-wrap {
+  display: flex;
+  gap: 10rpx;
+}
+
+.ring-sleepweek-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 34rpx;
+  flex-shrink: 0;
+  padding-bottom: 34rpx; /* aligns with the total/day labels under each track */
+}
+
+.ring-sleepweek-axis-lbl {
+  font-size: 14rpx;
+  color: rgba(166, 196, 229, 0.3);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring-sleepweek-days {
+  flex: 1;
+  display: flex;
+  gap: 6rpx;
+}
+
+.ring-sleepweek-daycol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+}
+
+.ring-sleepweek-track {
+  position: relative;
+  width: 100%;
+  border-radius: 8rpx;
+  background: rgba(99, 117, 236, 0.06);
+  overflow: hidden;
+}
+
+.ring-sleepweek-gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1rpx;
+  background: rgba(166, 196, 229, 0.1);
+}
+
+.ring-sleepweek-block {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  border-radius: 4rpx;
+  min-height: 6rpx;
+}
+
+.ring-sleepweek-block-nap {
+  opacity: 0.9;
+}
+
+.ring-sleepweek-total {
+  font-size: 15rpx;
+  font-weight: 600;
+  color: rgba(166, 196, 229, 0.55);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring-sleepweek-daylabel {
+  font-size: 14rpx;
+  color: rgba(166, 196, 229, 0.3);
+  line-height: 1;
 }
 
 /* Sleep timeline */

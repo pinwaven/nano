@@ -1,5 +1,7 @@
 # Wearable System
 
+> **Support status:** as of 2026-07, only the Halo ring series (X3/X6 hardware) is actively supported — see `docs/architecture/halo-smart-ring.md` and CLAUDE.md §18. This document predates the Halo/Aizo adapters and describes the original Colmi-only architecture; it's kept for historical/OEM-transition context, not as current guidance. Colmi and Aizo adapters still exist for already-bound users but should not be extended.
+
 Connects Bluetooth smart rings (starting with Colmi) to the WeChat Mini Program and syncs health data to the backend.
 
 ## Directory layout

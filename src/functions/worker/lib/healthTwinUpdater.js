@@ -11,7 +11,7 @@ async function updateHealthTwin(userId, pool) {
         // 7-day rolling aggregates across all categories in one pass
         const aggResult = await pool.query(`
             SELECT
-              AVG(CASE WHEN category = 'vitals' THEN (data->>'hrv_sdnn_ms')::FLOAT END)    AS avg_hrv_ms,
+              AVG(CASE WHEN category = 'vitals' THEN (data->>'hrv_ms')::FLOAT END)    AS avg_hrv_ms,
               AVG(CASE WHEN category = 'vitals' THEN (data->>'resting_hr')::FLOAT END)     AS avg_resting_hr,
               AVG(CASE WHEN category = 'vitals' THEN (data->>'spo2')::FLOAT END)           AS avg_spo2,
               AVG(CASE WHEN category = 'sleep'  THEN (data->>'duration_minutes')::FLOAT / 60 END) AS avg_sleep_hours,
@@ -93,7 +93,7 @@ async function updateHealthTwin(userId, pool) {
         // 30-day trend: compare current 7-day avg to the 7-day period ending 30 days ago
         const trendResult = await pool.query(`
             SELECT
-              AVG(CASE WHEN category = 'vitals' THEN (data->>'hrv_sdnn_ms')::FLOAT END)           AS old_hrv,
+              AVG(CASE WHEN category = 'vitals' THEN (data->>'hrv_ms')::FLOAT END)           AS old_hrv,
               AVG(CASE WHEN category = 'sleep'  THEN (data->>'duration_minutes')::FLOAT / 60 END) AS old_sleep_hours
             FROM health_events
             WHERE user_id = $1

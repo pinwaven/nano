@@ -1,0 +1,116 @@
+<view class="login-screen">
+  <view class="login-glow" />
+
+  <view class="login-brand">
+    <text class="login-title">验证手机号</text>
+    <text class="login-subtitle">为保障账号安全，请验证您的手机号</text>
+  </view>
+
+  <avatar-picker
+    visible="{{avatarPickerVisible}}"
+    selected-id="{{avatarCharacter}}"
+    lang="zh"
+    bind:select="onAvatarSelect"
+    bind:close="onAvatarPickerClose"
+  />
+
+  <view wx:if="{{step === 'phone'}}" class="login-card">
+    <text class="login-card-label">手机号</text>
+    <view class="phone-input-row">
+      <picker mode="selector" range="{{countryOptions}}" range-key="label" value="{{countryIndex}}" bindchange="onCountryChange">
+        <view class="country-code-select">
+          <text>{{countryOptions[countryIndex].code}}</text>
+          <text class="country-code-arrow">▾</text>
+        </view>
+      </picker>
+      <input class="login-input phone-input" value="{{phone}}" bindinput="onPhoneInput"
+        placeholder="请输入手机号" placeholder-style="line-height: 96rpx; color: rgba(166, 196, 229, 0.4);"
+        maxlength="{{countryOptions[countryIndex].otpSupported ? 11 : 15}}" type="number" />
+    </view>
+
+    <button
+      wx:if="{{countryOptions[countryIndex].otpSupported}}"
+      class="login-btn-secondary"
+      open-type="getPhoneNumber"
+      bindgetphonenumber="handleGetPhone"
+      disabled="{{loading}}"
+    ><text>📱 使用微信手机号</text></button>
+
+    <text wx:if="{{error}}" class="error-text">{{error}}</text>
+
+    <view wx:if="{{countryOptions[countryIndex].otpSupported && phone.length === 11}}" class="login-btn {{loading ? 'disabled' : ''}}" bindtap="sendCode">
+      <text>{{loading ? '发送中…' : '发送验证码'}}</text>
+    </view>
+
+    <view wx:if="{{!countryOptions[countryIndex].otpSupported && phone.length >= 4}}" class="login-btn {{loading ? 'disabled' : ''}}" bindtap="acceptUnverifiedPhone">
+      <text>{{loading ? '提交中…' : '确认'}}</text>
+    </view>
+  </view>
+
+  <view wx:elif="{{step === 'code'}}" class="login-card">
+    <text class="login-card-label">输入验证码</text>
+    <text class="phone-step-desc">验证码已发送至 {{phone}}</text>
+    <view class="pin-field">
+      <view class="pin-boxes">
+        <view
+          wx:for="{{codeDigits}}"
+          wx:key="index"
+          class="pin-box {{item ? 'pin-filled' : ''}} {{!item && index === code.length ? 'pin-active' : ''}}"
+        >
+          <text class="pin-digit">{{item}}</text>
+        </view>
+      </view>
+      <input
+        class="pin-capture"
+        type="number"
+        value="{{code}}"
+        bindinput="onCodeInput"
+        focus="{{step === 'code'}}"
+        adjust-position="{{false}}"
+        maxlength="6"
+      />
+    </view>
+
+    <text wx:if="{{error}}" class="error-text">{{error}}</text>
+
+    <view class="login-btn {{loading ? 'disabled' : ''}}" bindtap="verifyCode">
+      <text>{{loading ? '验证中…' : '验证'}}</text>
+    </view>
+
+    <view class="verify-phone-links">
+      <text wx:if="{{resendCooldown > 0}}" class="verify-phone-link-dim">{{resendCooldown}}秒后可重新发送</text>
+      <text wx:else class="verify-phone-link" bindtap="sendCode">重新发送验证码</text>
+      <text class="login-footer-dot">·</text>
+      <text class="verify-phone-link" bindtap="changeNumber">更换手机号</text>
+    </view>
+  </view>
+
+  <view wx:elif="{{step === 'avatar'}}" class="login-card">
+    <text class="login-card-label">选择头像</text>
+    <text class="phone-step-desc">为您的账号选择一个专属头像</text>
+
+    <view class="avatar-pick-wrap">
+      <view class="avatar-pick-btn" bindtap="openAvatarPicker">
+        <image wx:if="{{pendingAvatar}}" class="avatar-pick-img" src="{{pendingAvatar}}" mode="aspectFill" />
+        <view wx:else class="avatar-pick-default">
+          <text class="avatar-pick-icon">+</text>
+        </view>
+      </view>
+      <text class="avatar-pick-hint">点击选择头像</text>
+    </view>
+
+    <view class="login-btn" bindtap="skipAvatar">
+      <text>跳过</text>
+    </view>
+  </view>
+
+  <view class="verify-phone-links">
+    <text class="verify-phone-link" bindtap="handleLogout">退出登录</text>
+  </view>
+
+  <view class="login-footer">
+    <text>哈佛大学创新实验室</text>
+    <text class="login-footer-dot">·</text>
+    <text>成员企业</text>
+  </view>
+</view>

@@ -1,0 +1,17 @@
+{
+  "name": "nano-media",
+  "version": "1.0.0",
+  "description": "Nano image/media rendering on Aliyun FC 3.0 (kept separate from the worker so heavy native deps like @napi-rs/canvas don't bloat the worker's deploy package)",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.100",
+    "ali-oss": "^6.23.0",
+    "pinyin-pro": "^3.28.1"
+  },
+  "optionalDependencies": {
+    "@napi-rs/canvas-linux-x64-gnu": "^0.1.100"
+  }
+}

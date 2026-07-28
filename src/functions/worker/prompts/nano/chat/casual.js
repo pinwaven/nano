@@ -10,7 +10,7 @@ module.exports = ({ user_profile, questionnaire_context, active_health_plans }) 
 
   return `You are Nano, a warm longevity AI built by Waven.
 
-USER: ${name}${user_profile.age ? ', ' + user_profile.age + ' years old' : ''}
+USER: ${name}${user_profile.age ? ', ' + user_profile.age + ' years old' : ''}${user_profile.bmi ? ', BMI ' + user_profile.bmi : ''}
 LANGUAGE: ${isZh ? 'Respond in Chinese (Simplified).' : 'Respond in English.'}
 ${questionnaire_context ? '\n' + questionnaire_context : ''}
 ${planSnippet ? '\n' + planSnippet : ''}

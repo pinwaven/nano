@@ -48,8 +48,12 @@ function collectMigrationFiles() {
             }
         }
     }
-    // Sort alphabetically — consistent ordering across runs
-    files.sort((a, b) => a.name.localeCompare(b.name));
+    // Plain ASCII sort — consistent ordering across runs. localeCompare() is
+    // locale-aware and treats "_" as ignorable relative to other punctuation,
+    // which sorted migration_academy_enrollments_course_id.sql (an ALTER TABLE)
+    // ahead of migration_academy_enrollments.sql (the CREATE TABLE it depends
+    // on) and broke a prod migration run.
+    files.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     return files;
 }
 

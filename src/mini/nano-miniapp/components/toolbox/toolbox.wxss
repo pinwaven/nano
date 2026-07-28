@@ -1,5 +1,5 @@
 .toolbox-panel {
-  background: rgba(11, 28, 46, 0.96);
+  background: var(--bg-input);
   border-top: 1rpx solid var(--navy-border);
   padding: 20rpx 24rpx 16rpx;
 }

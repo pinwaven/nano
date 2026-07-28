@@ -1,21 +1,23 @@
 const accountInfo = wx.getAccountInfoSync();
 const envVersion = accountInfo.miniProgram.envVersion;
 
-let BASE = 'https://nano.fros.cc';
+let BASE = 'https://nano.gcn.net';
 
 switch (envVersion) {
   case 'develop':
-    BASE = 'https://nano-dev.fros.cc';
+    BASE = 'https://nano-dev.gcn.net';
     break;
   case 'trial':
   case 'release':
-    BASE = 'https://nano.fros.cc';
+    BASE = 'https://nano.gcn.net';
     break;
 }
 
-// Bump this before each preview upload so you can confirm the newest build is on device.
-// Format: MMDD-N (month+day, build number that day)
-const VERSION = '0625-13';
+// Bump on every change anywhere under src/mini/nano-miniapp/, not just before preview
+// uploads — no build pipeline exists, so this is the only way to confirm WeChat DevTools
+// is actually running the latest code rather than a stale cached compile. See CLAUDE.md
+// "Miniapp VERSION Marker". Format: MMDD-N (month+day, build number that day).
+const VERSION = '0727-3';
 const WX_VERSION = accountInfo.miniProgram.version || '';
 const IS_DEV = envVersion === 'develop' || envVersion === 'trial';
 

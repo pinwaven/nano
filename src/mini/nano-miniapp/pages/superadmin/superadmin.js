@@ -36,6 +36,11 @@ const T = {
     user: {
       nickname: '昵称', channel: '渠道', roles: '角色', bioAge: '生理年龄',
       joined: '注册时间', noPermission: '无权限',
+      searchPlaceholder: '按昵称或手机号搜索…', noMatch: '无匹配用户', resultsFound: '条匹配结果',
+      loginAs: '登录为', loginAsConfirmTitle: '进入沙盒模式？',
+      loginAsConfirmContent: '您将以「{name}」的身份查看小程序。此期间的所有操作（聊天、生物标志物记录等）都不会真正保存到该用户账户。',
+      loginAsFailed: '登录失败', exitSandboxFirst: '请先退出沙盒模式',
+      sandboxBanner: '沙盒模式：正在以「{name}」的身份查看', exitSandbox: '退出',
     },
     coach: {
       name: '姓名', channel: '渠道', linkedUser: '关联用户 ID', users: '客户数',
@@ -85,6 +90,11 @@ const T = {
     user: {
       nickname: 'Nickname', channel: 'Channel', roles: 'Roles', bioAge: 'Bio Age',
       joined: 'Joined', noPermission: 'No permission',
+      searchPlaceholder: 'Search by name or phone…', noMatch: 'No matching users', resultsFound: 'matching results',
+      loginAs: 'Login as', loginAsConfirmTitle: 'Enter sandbox mode?',
+      loginAsConfirmContent: 'You will view the app as "{name}". Nothing done during this session (chat, biomarker recording, etc.) will actually be saved to their account.',
+      loginAsFailed: 'Login failed', exitSandboxFirst: 'Exit sandbox mode first',
+      sandboxBanner: 'Sandbox: viewing as "{name}"', exitSandbox: 'Exit',
     },
     coach: {
       name: 'Name', channel: 'Channel', linkedUser: 'Linked User ID', users: 'Clients',
@@ -150,6 +160,9 @@ Page({
     statusBarHeight: 0,
     channels: [],
     users: [],
+    filteredUsers: [],
+    userSearch: '',
+    userSearchLoading: false,
     coaches: [],
     dots: [],
     invites: [],
@@ -239,6 +252,7 @@ Page({
       const dots = (dRes.data?.dots || []).map(d => decorateDot(d, lang))
 
       this.setData({ channels, users, coaches, dots, invites: iRes.data?.invitations || [], channelPickerOptions, channelPickerValues })
+      this._refreshUserSearch()
     } catch (e) {
       wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' })
     } finally {
@@ -250,6 +264,63 @@ Page({
   handleBack() { wx.navigateBack() },
   noop() {},
   switchTab(e) { this.setData({ tab: e.currentTarget.dataset.tab }) },
+
+  // ── User search ─────────────────────────────────────────────────────────────
+  // The Users tab only loads the 50 most-recently-created users (backend default),
+  // so searching must hit GET /api/users?q=... server-side rather than filtering
+  // the already-loaded page — otherwise search would silently miss anyone outside
+  // that initial batch.
+
+  _decorateUsers(rawUsers) {
+    const channelMap = {}
+    this.data.channels.forEach(c => { channelMap[c.id] = c.name })
+    return rawUsers.map(u => ({
+      ...u,
+      _joinedFmt: fmtDate(u.created_at),
+      _rolesLabel: (u.roles || ['user']).join(', '),
+      _avatar: (u.nickname || 'U')[0].toUpperCase(),
+      _channelName: channelMap[u.channel_id] || '—',
+    }))
+  },
+
+  _refreshUserSearch() {
+    const q = (this.data.userSearch || '').trim()
+    if (!q) {
+      this.setData({ filteredUsers: this.data.users, userSearchLoading: false })
+    } else {
+      this._searchUsers(q)
+    }
+  },
+
+  async _searchUsers(q) {
+    this.setData({ userSearchLoading: true })
+    try {
+      const res = await this._req(`${BASE}/api/users?q=${encodeURIComponent(q)}`)
+      // Stale-response guard: drop results for a query the user has since changed/cleared.
+      if ((this.data.userSearch || '').trim() !== q) return
+      this.setData({ filteredUsers: this._decorateUsers(res.data?.users || []), userSearchLoading: false })
+    } catch (e) {
+      this.setData({ userSearchLoading: false })
+      wx.showToast({ title: T[this.data.lang].error.networkError, icon: 'none' })
+    }
+  },
+
+  onUserSearchInput(e) {
+    const userSearch = e.detail.value
+    this.setData({ userSearch })
+    clearTimeout(this._userSearchTimer)
+    const q = userSearch.trim()
+    if (!q) {
+      this.setData({ filteredUsers: this.data.users, userSearchLoading: false })
+      return
+    }
+    this._userSearchTimer = setTimeout(() => this._searchUsers(q), 300)
+  },
+
+  clearUserSearch() {
+    clearTimeout(this._userSearchTimer)
+    this.setData({ userSearch: '', filteredUsers: this.data.users, userSearchLoading: false })
+  },
 
   // ── Channel CRUD ────────────────────────────────────────────────────────────
 
@@ -354,6 +425,51 @@ Page({
           await this._req(`${BASE}/api/channels/${channel.id}`, 'DELETE')
           this._loadAll()
         } catch (e) { wx.showToast({ title: t.error.networkError, icon: 'none' }) }
+      },
+    })
+  },
+
+  // ── Login as (sandbox impersonation) ────────────────────────────────────────
+
+  loginAsUser(e) {
+    const target = e.currentTarget.dataset.user
+    const { lang } = this.data
+    const t = T[lang]
+    if (app.globalData.sandboxMode) {
+      wx.showToast({ title: t.user.exitSandboxFirst, icon: 'none' })
+      return
+    }
+    wx.showModal({
+      title: t.user.loginAsConfirmTitle,
+      content: t.user.loginAsConfirmContent.replace('{name}', target.nickname || '—'),
+      confirmText: t.user.loginAs,
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          const uRes = await this._req(`${BASE}/api/users/${target.user_id}`)
+          const user = uRes.data?.user
+          if (!user) throw new Error('not found')
+          const channel = this.data.channels.find(c => c.id === user.channel_id) || null
+          const coach = this.data.coaches.find(c => c.id === user.coach_id) || null
+
+          const originUser = app.globalData.user
+          const originChannel = app.globalData.channel
+          const originCoach = app.globalData.coach
+          wx.setStorageSync('nano_sandbox_origin', { user: originUser, channel: originChannel, coach: originCoach })
+          wx.setStorageSync('nano_sandbox_active', true)
+
+          app.globalData.user = user
+          app.globalData.channel = channel
+          app.globalData.coach = coach
+          app.globalData.sandboxMode = true
+          wx.setStorageSync('nano_user', { ...user, phoneSet: !!user.phone })
+          wx.setStorageSync('nano_channel', channel)
+          wx.setStorageSync('nano_coach', coach)
+
+          wx.reLaunch({ url: '/pages/main/main' })
+        } catch (ex) {
+          wx.showToast({ title: t.user.loginAsFailed, icon: 'none' })
+        }
       },
     })
   },
@@ -631,6 +747,7 @@ Page({
   _req(url, method = 'GET', data = null) {
     return new Promise((resolve, reject) => {
       const opts = { url, method, header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` }, success: resolve, fail: reject }
+      if (app.globalData.sandboxMode && method !== 'GET') data = { ...(data || {}), sandbox: true }
       if (data) opts.data = data
       wx.request(opts)
     })

@@ -1021,6 +1021,7 @@ Page({
         },
         fail: reject,
       }
+      if (app.globalData.sandboxMode && method !== 'GET') data = { ...(data || {}), sandbox: true }
       if (data) opts.data = data
       wx.request(opts)
     })

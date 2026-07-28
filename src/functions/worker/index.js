@@ -48,7 +48,7 @@ const getLlmClient = () => new OpenAI({
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
 });
 
-const { handleGetAcademyCourses, handlePostAcademyCourse, handlePutAcademyCourse, handleDeleteAcademyCourse, handleGetAcademyLibrary, handlePostAcademyLibraryItem, handlePutAcademyLibraryItem, handleDeleteAcademyLibraryItem, handleGetAcademyLessons, handlePostAcademyLesson, handlePutAcademyLesson, handleDeleteAcademyLesson, handleGetAcademyProgress, handlePostAcademyProgress, handleGetAcademyCourseProgress, handleGetAcademyLibraryContent, handleGetAcademyLessonById, handlePostQuizAttempt, handleGetCoachCredits, handleGetCoachDashboard, handleGetAcademyLeaderboard, handleGetAcademyCertifications, handlePostAcademyCertification, handlePutAcademyCertification, handleDeleteAcademyCertification, handleGetCoachCertifications, handleGetAcademyLearningPaths, handlePostAcademyLearningPath, handlePutAcademyLearningPath, handleDeleteAcademyLearningPath, handlePostAcademyQuizQuestion, handlePutAcademyQuizQuestion, handleDeleteAcademyQuizQuestion, handleGetAcademyCourseProgressAll } = require('./handlers/academy');
+const { handleGetAcademyCourses, handlePostAcademyCourse, handlePutAcademyCourse, handleDeleteAcademyCourse, handleGetAcademyLibrary, handlePostAcademyLibraryItem, handlePutAcademyLibraryItem, handleDeleteAcademyLibraryItem, handleGetAcademyLessons, handlePostAcademyLesson, handlePutAcademyLesson, handleDeleteAcademyLesson, handleGetAcademyProgress, handlePostAcademyProgress, handleGetAcademyCourseProgress, handleGetAcademyLibraryContent, handleGetAcademyLessonById, handlePostQuizAttempt, handleGetCoachCredits, handleGetCoachDashboard, handleGetAcademyLeaderboard, handleGetAcademyCertifications, handlePostAcademyCertification, handlePutAcademyCertification, handleDeleteAcademyCertification, handleGetCoachCertifications, handleGetAcademyTemplateImage, handleGetIssuedCertifications, handlePostCoachCertification, handlePutCoachCertification, handleVerifyCertificate, handleVerifyCertificatesByGovernmentId, handleGetCertImageUrl, handleGetAcademyLearningPaths, handlePostAcademyLearningPath, handlePutAcademyLearningPath, handleDeleteAcademyLearningPath, handlePostAcademyQuizQuestion, handlePutAcademyQuizQuestion, handleDeleteAcademyQuizQuestion, handleGetAcademyCourseProgressAll, handleGetAcademyEnrollments, handlePostAcademyEnrollment, handlePutAcademyEnrollment, handleDeleteAcademyEnrollment } = require('./handlers/academy');
 const { handleGetTickets, handlePostTicket, handlePutTicket, handleDeleteTicket } = require('./handlers/tickets');
 const { getNestedPath, formatQuestionnaireContext, handleGetPendingQuestionnaires, handlePostQuestionnaireResponse, handlePatchQuestionnaireAssignment, handleGetQuestionnaires, handleGenerateQuestionnaire, handleAiFillSku, handlePostQuestionnaire, handlePutQuestionnaire, handleDeleteQuestionnaire, handleGetQuestionnaireQuestions, handlePostQuestionnaireQuestion, handlePutQuestionnaireQuestion, handleDeleteQuestionnaireQuestion, handlePutQuestionnaireQuestionsReorder, handlePostQuestionnaireAssignment, handleGetQuestionnaireAssignments, handleGetQuestionnaireResponses } = require('./handlers/questionnaires');
 const { handleGetSavedReports, handlePostSavedReport, handlePutSavedReport, handleDeleteSavedReport, handlePostAdminReport } = require('./handlers/reports');
@@ -57,19 +57,20 @@ const { handleGetLabProviders, handlePostLabProvider, handlePutLabProvider, hand
 const { handleGetInventoryStock, handlePostInventoryStock, handleGetWarehouses, handlePostWarehouse, handlePutWarehouse, handleDeleteWarehouse } = require('./handlers/inventory');
 const { handleGetOrders, handleGetMyOrders, handlePostStoreItem, handlePutStoreItem, handleDeleteStoreItem, handleGetSkus, handlePostSku, handlePutSku, handleDeleteSku } = require('./handlers/store');
 const { handleGetCommissionSettings, handlePutCommissionSetting, handleGetCoachCommissions, handleGetChannelCommissions, handleGetCoachEarnings, handleGetCoachPayouts, handleGetChannelPayouts, handlePostGenerateCoachPayouts, handlePostGenerateChannelPayouts, handlePutCoachPayout, handlePutChannelPayout } = require('./handlers/commissions');
-const { handleGetPartners, handleGetPartner, handlePostPartner, handlePutPartner, handleDeletePartner, handleGetPartnerCommissions, handlePostPartnerCommission, handleGetPartnerPayouts, handlePostGeneratePartnerPayouts, handlePutPartnerPayout, handleGetPartnerTree, handleGetChannelReferralNetwork, handleGetPartnerCommissionConfig, handlePutPartnerCommissionConfig, handleGetPartnerTypes, handlePostPartnerType, handlePutPartnerType, handleDeletePartnerType, handleGetPartnerCommissionRules, handlePostPartnerCommissionRule, handlePutPartnerCommissionRule, handleDeletePartnerCommissionRule, handlePutChannelPartnerSystemPermission, handleGetChannelRewardsSummary } = require('./handlers/partners');
+const { handleGetPartners, handleGetPartner, handleGetPartnerByPhone, handlePostPartner, handlePostPartnerGcnProvision, handlePostPartnerInviteCode, handleGcnPartnerInviteCode, handleGcnPartnerApply, handlePostPartnerSale, handlePutPartner, handleDeletePartner, handleGetPartnerCommissions, handlePostPartnerCommission, handleGetPartnerPayouts, handlePostGeneratePartnerPayouts, handlePutPartnerPayout, handleGcnPartnerChildren, handleGcnPartnerDescendants, handleGetChannelReferralNetwork, handleGetPartnerCommissionConfig, handlePutPartnerCommissionConfig, handleGetPartnerTypes, handlePostPartnerType, handlePutPartnerType, handleDeletePartnerType, handleGetPartnerCommissionRules, handlePostPartnerCommissionRule, handlePutPartnerCommissionRule, handleDeletePartnerCommissionRule, handlePutChannelPartnerSystemPermission, handleGetChannelRewardsSummary } = require('./handlers/partners');
 const { handleGetEvents, handlePostEvent, handlePutEvent, handleDeleteEvent, handleGetEventSignups, handlePostEventSignup, handleDeleteEventSignup, handleGetMyEventSignups } = require('./handlers/events');
 const { handleGetCoachGroups, handlePostCoachGroup, handlePutCoachGroup, handleDeleteCoachGroup, handleGetCoachGroupKpis } = require('./handlers/coach-groups');
 const { handleGetKoneApkReleases, handlePostKoneApkRelease, handlePutKoneApkRelease, handleDeleteKoneApkRelease, handleGetKoneApkPresign, handleGetDigitalAssets, handlePostDigitalAsset, handlePutDigitalAsset, handleDeleteDigitalAsset, handleGetDigitalAssetsPresign, handleGetKinoUpgrade } = require('./handlers/digital-assets');
 const { logActivity, handleGetCoachTags, handlePostCoachTag, handlePutCoachTag, handleDeleteCoachTag, handlePostCoachTagAssignments, handleDeleteCoachTagAssignment, handleGetClientPipeline, handlePostClientPipeline, handleGetCoachNotes, handlePostCoachNote, handlePutCoachNote, handleDeleteCoachNote, handleGetClientActivity, handleGetCoachActivityFeed, handleGetMessageTemplates, handlePostMessageTemplate, handlePutMessageTemplate, handleDeleteMessageTemplate, handlePostMessageTemplatePreview, resolveBulkRecipients, handlePostBulkCampaign, handlePostBulkCampaignSend, handleGetBulkCampaigns, handleGetBulkCampaignRecipients, handleGetAppointments, handlePostAppointment, handlePutAppointment, handleDeleteAppointment, handleGetUpcomingAppointments, handleGetClientGoals, handlePostClientGoal, handlePutClientGoal, handleDeleteClientGoal, refreshGoalProgress, handlePostNpsSurvey, handlePatchNpsSurvey, handleGetNpsSurveys, handleGetCoachKpis, handlePostCoachKpisCompute, handleGetFollowUpRules, handlePostFollowUpRule, handlePutFollowUpRule, handleDeleteFollowUpRule, handlePostFollowUpRulesEvaluate } = require('./handlers/crm');
-const { handleGetKinoDevices, handlePostKinoDevice, handlePutKinoDevice, handleDeleteKinoDevice, handleGetKinoChipBatches, handleGetKinoChipBatchChips, handlePostKinoChipBatch, handlePutKinoChipBatch, handleDeleteKinoChipBatch, handleGetKinoChipModels, handlePostKinoChipModel, handlePutKinoChipModel, handleDeleteKinoChipModel, handleGetKinoChip, handlePostKinoScan, handlePostKinoResult } = require('./handlers/kino');
+const { handleGetKinoDevices, handlePostKinoDevice, handlePutKinoDevice, handleDeleteKinoDevice, handleGetKinoChipBatches, handleGetKinoChipBatchChips, handlePostKinoChipBatch, handlePutKinoChipBatch, handleDeleteKinoChipBatch, handleGetKinoChipModels, handlePostKinoChipModel, handlePutKinoChipModel, handleDeleteKinoChipModel, handleGetKinoChip, handlePostKinoScan, handlePostKinoResult, handleGetKinoTestedChips, handleGetKinoTestedChipDetail, handlePostKinoChipReset } = require('./handlers/kino');
 const { handleGetCreditBalance, handleGetCreditHistory, handlePostCreditWithdraw, handleGetUserWithdrawals, handleGetAdminWithdrawals, handlePutAdminWithdrawal, handleGetAdminUserCreditHistory, handlePostAdminUserCreditAdjustment } = require('./handlers/credits');
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
 const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
-const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation } = require('./handlers/users');
-const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
+const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleSetIdentity, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation } = require('./handlers/users');
+const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
-const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals } = require('./handlers/login');
+const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm } = require('./handlers/login');
+const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified } = require('./handlers/phone-otp');
 const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign } = require('./handlers/chat');
 
 
@@ -159,13 +160,62 @@ exports.handler = async (req, resp, context) => {
         return optionsPayload;
     }
 
+    // WeChat business domain verification file — no auth required
+    if (method === 'GET' && rawPath === '/QJaeMN3iR8.txt') {
+        const wxVerifyPayload = { isBase64Encoded: false, statusCode: 200, headers: { 'Content-Type': 'text/plain' }, body: 'e038f3e1651b72fc26feaf9eb6cf30e7' };
+        if (isStandardHttp) { resp.setStatusCode(200); resp.setHeader('Content-Type', 'text/plain'); resp.send('e038f3e1651b72fc26feaf9eb6cf30e7'); return; }
+        return wxVerifyPayload;
+    }
+
+    // Public certificate verification — no auth required
+    if (method === 'GET' && path.match(/^\/academy\/verify\/(.+)/)) {
+        const certNumber = decodeURIComponent(path.match(/^\/academy\/verify\/(.+)/)[1]);
+        const verifyResult = await handleVerifyCertificate(certNumber);
+        const sc = verifyResult.statusCode || (verifyResult.success ? 200 : 404);
+        const verifyPayload = { isBase64Encoded: false, statusCode: sc, headers: corsHeaders, body: JSON.stringify(verifyResult) };
+        if (isStandardHttp) { resp.setStatusCode(sc); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify(verifyResult)); return; }
+        return verifyPayload;
+    }
+
+    // Public certificate verification by government ID — no auth required, exact match only
+    if (method === 'GET' && path.match(/^\/academy\/verify-by-id\/(.+)/)) {
+        const governmentId = decodeURIComponent(path.match(/^\/academy\/verify-by-id\/(.+)/)[1]);
+        const byIdResult = await handleVerifyCertificatesByGovernmentId(governmentId);
+        const sc = byIdResult.statusCode || (byIdResult.success ? 200 : 404);
+        const byIdPayload = { isBase64Encoded: false, statusCode: sc, headers: corsHeaders, body: JSON.stringify(byIdResult) };
+        if (isStandardHttp) { resp.setStatusCode(sc); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify(byIdResult)); return; }
+        return byIdPayload;
+    }
+
+    // Public certificate image URL — no auth required (same visibility as verify)
+    if (method === 'GET' && path.match(/^\/academy\/cert-image\/(.+)/)) {
+        const certNumber = decodeURIComponent(path.match(/^\/academy\/cert-image\/(.+)/)[1]);
+        const imageResult = await handleGetCertImageUrl(certNumber);
+        const sc = imageResult.statusCode || (imageResult.success ? 200 : 404);
+        const imagePayload = { isBase64Encoded: false, statusCode: sc, headers: corsHeaders, body: JSON.stringify(imageResult) };
+        if (isStandardHttp) { resp.setStatusCode(sc); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify(imageResult)); return; }
+        return imagePayload;
+    }
+
     const adminCtx = { role: 'superadmin', username: 'superadmin', channelId: null, accountId: null, canManageSubchannels: false };
     const expectedBearer = process.env.API_BEARER_TOKEN;
-    if (expectedBearer && rawPath && path !== '/admin/login') {
+    if (expectedBearer && rawPath && path !== '/admin/login' && !path.startsWith('/qr-login/') && !path.startsWith('/phone-otp/')) {
         const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
         const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
         if (token === expectedBearer) {
             adminCtx.role = 'superadmin';
+        } else if (process.env.GCN_API_TOKEN && token === process.env.GCN_API_TOKEN) {
+            // Scoped nano<-GCN service credential — distinct from API_BEARER_TOKEN (nano's
+            // full superadmin bearer). Authenticated but restricted to the exact paths GCN's
+            // nanoClient.js actually calls; anything else 403s even with a valid token.
+            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn']);
+            if (!GCN_ALLOWED_PATHS.has(path)) {
+                const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
+                if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
+                return forbiddenPayload;
+            }
+            adminCtx.role = 'superadmin';
+            adminCtx.username = 'gcn-service';
         } else if (token.startsWith('ch.')) {
             const payload = verifyChannelAdminToken(token);
             if (!payload) {
@@ -203,7 +253,15 @@ exports.handler = async (req, resp, context) => {
             }
         }
 
-        if (method === 'GET') {
+        // Superadmin "login as" sandbox sessions tag every mutating request with
+        // sandbox:true so nothing they do persists against the impersonated user's
+        // real account. /chat is excluded — it needs to still call the LLM and
+        // return a reply; its own writes are suppressed inside handlePostChat.
+        const sandbox = (parsedBody && parsedBody.sandbox === true) || query.sandbox === 'true';
+
+        if (sandbox && method !== 'GET' && path !== '/chat') {
+            result = { success: true, sandbox: true };
+        } else if (method === 'GET') {
             if (path === '/kino-upgrade') {
                 result = await handleGetKinoUpgrade();
             } else if (path.includes('/kone-apk-releases')) {
@@ -223,6 +281,11 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetKinoChipBatches();
             } else if (path.includes('/kino-chip-models')) {
                 result = await handleGetKinoChipModels();
+            } else if (path.match(/\/kino-tested-chips\/(\d+)/)) {
+                const scanId = path.match(/\/kino-tested-chips\/(\d+)/)[1];
+                result = await handleGetKinoTestedChipDetail(scanId);
+            } else if (path.includes('/kino-tested-chips')) {
+                result = await handleGetKinoTestedChips(query);
             } else if (path.includes('/kino-chip')) {
                 result = await handleGetKinoChip(query.chip_id);
             } else if (path.includes('/coach-sent-messages')) {
@@ -277,6 +340,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetInventoryStock(query, adminCtx);
             } else if (path === '/warehouses') {
                 result = await handleGetWarehouses();
+            } else if (path.includes('/store-items/by-channel')) {
+                result = await handleGetStoreItemsByChannel(query);
             } else if (path.includes('/store-items')) {
                 result = await handleGetStoreItems(query);
             } else if (path.includes('/my-orders')) {
@@ -293,6 +358,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetCoachUsers(path.match(/\/coach-users\/(\d+)/)[1], query);
             } else if (path.includes('/my-referrals')) {
                 result = await handleGetMyReferrals(query);
+            } else if (path === '/qr-login/status') {
+                result = await handleGetQrLoginStatus(query.session_id);
             } else if (path === '/credits/balance') {
                 result = await handleGetCreditBalance(query);
             } else if (path === '/credits/history') {
@@ -317,8 +384,8 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/channel-referral-network')) {
                 const cid = adminCtx.role === 'superadmin' ? query.channel_id : adminCtx.channelId;
                 result = requirePermission(adminCtx, 'users:read') || await handleGetChannelReferralNetwork(cid);
-            } else if (path.match(/\/partner-tree\/(\d+)/)) {
-                result = await handleGetPartnerTree(path.match(/\/partner-tree\/(\d+)/)[1]);
+            } else if (path.match(/\/partners\/by-phone\/([^/]+)/)) {
+                result = await handleGetPartnerByPhone(decodeURIComponent(path.match(/\/partners\/by-phone\/([^/]+)/)[1]), query.channel);
             } else if (path.match(/\/partners\/(\d+)/)) {
                 result = await handleGetPartner(path.match(/\/partners\/(\d+)/)[1]);
             } else if (path.includes('/partner-commissions')) {
@@ -361,6 +428,13 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetCoachCredits(query.user_id);
             } else if (path.includes('/academy/coach-certifications')) {
                 result = await handleGetCoachCertifications(query.user_id);
+            } else if (path.includes('/academy/issued-certifications')) {
+                result = await handleGetIssuedCertifications(adminCtx);
+            } else if (path.includes('/academy/enrollments')) {
+                result = await handleGetAcademyEnrollments(adminCtx);
+            } else if (path.match(/\/academy\/certifications\/(\d+)\/template-image/)) {
+                const certId = path.match(/\/academy\/certifications\/(\d+)\/template-image/)[1];
+                result = await handleGetAcademyTemplateImage(certId);
             } else if (path.includes('/academy/certifications')) {
                 result = await handleGetAcademyCertifications();
             } else if (path.includes('/academy/learning-paths')) {
@@ -459,7 +533,10 @@ exports.handler = async (req, resp, context) => {
                 const evId = path.match(/\/events\/(\d+)\/signups/)[1];
                 result = requirePermission(adminCtx, 'events:read') || await handleGetEventSignups(evId);
             } else if (path.includes('/events')) {
-                result = requirePermission(adminCtx, 'events:read') || await handleGetEvents(query, adminCtx);
+                // Allow user-level access when openid is present (browsing channel events)
+                result = query.openid
+                    ? await handleGetEvents({ ...query, user_id: query.openid }, adminCtx)
+                    : requirePermission(adminCtx, 'events:read') || await handleGetEvents(query, adminCtx);
             } else {
                 result = { success: false, error: `Unknown GET route: ${path}` };
             }
@@ -476,6 +553,28 @@ exports.handler = async (req, resp, context) => {
                 result = await handleWxAppLogin(parsedBody);
             } else if (path === '/wx-login') {
                 result = await handleWxLogin(parsedBody);
+            } else if (path === '/webview-token') {
+                result = await handlePostWebviewToken(parsedBody);
+            } else if (path === '/exchange-webview-token') {
+                result = await handleExchangeWebviewToken(parsedBody);
+            } else if (path === '/admin-webview-token') {
+                result = await handlePostAdminWebviewToken(parsedBody, adminCtx);
+            } else if (path === '/exchange-admin-webview-token') {
+                result = await handleExchangeAdminWebviewToken(parsedBody);
+            } else if (path === '/qr-login/init') {
+                result = await handlePostQrLoginInit(parsedBody);
+            } else if (path === '/qr-login/confirm') {
+                result = await handlePostQrLoginConfirm(parsedBody);
+            } else if (path === '/phone-otp/send') {
+                result = await handlePhoneOtpSend(parsedBody);
+            } else if (path === '/phone-otp/verify') {
+                result = await handlePhoneOtpVerify(parsedBody);
+            } else if (path === '/phone-otp/bind') {
+                result = await handlePhoneOtpBind(parsedBody);
+            } else if (path === '/phone-otp/set-primary') {
+                result = await handlePhoneSetPrimary(parsedBody);
+            } else if (path === '/phone-otp/accept-unverified') {
+                result = await handlePhoneAcceptUnverified(parsedBody);
             } else if (path === '/resolve-phone') {
                 const { code, app_id } = parsedBody;
                 result = await handleResolvePhone(code, app_id);
@@ -526,6 +625,9 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostKinoChipBatch(parsedBody);
             } else if (path.includes('/kino-chip-models')) {
                 result = await handlePostKinoChipModel(parsedBody);
+            } else if (path.match(/\/kino-tested-chips\/(\d+)\/reset/)) {
+                const scanId = path.match(/\/kino-tested-chips\/(\d+)\/reset/)[1];
+                result = await handlePostKinoChipReset(scanId);
             } else if (path.includes('/kino-devices')) {
                 result = await handlePostKinoDevice(parsedBody);
             } else if (path.includes('/kino-result')) {
@@ -589,10 +691,24 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostPartnerType(parsedBody, adminCtx);
             } else if (path === '/partner-commission-rules') {
                 result = await handlePostPartnerCommissionRule(parsedBody, adminCtx);
+            } else if (path.match(/\/partners\/(\d+)\/gcn-provision/)) {
+                result = await handlePostPartnerGcnProvision(path.match(/\/partners\/(\d+)\/gcn-provision/)[1]);
+            } else if (path.match(/\/partners\/(\d+)\/invite-code/)) {
+                result = await handlePostPartnerInviteCode(path.match(/\/partners\/(\d+)\/invite-code/)[1]);
+            } else if (path.includes('/partner-invite-code-gcn')) {
+                result = await handleGcnPartnerInviteCode(parsedBody);
+            } else if (path.includes('/partner-children-gcn')) {
+                result = await handleGcnPartnerChildren(parsedBody);
+            } else if (path.includes('/partner-descendants-gcn')) {
+                result = await handleGcnPartnerDescendants(parsedBody);
+            } else if (path.includes('/partner-applications')) {
+                result = await handleGcnPartnerApply(parsedBody);
+            } else if (path.includes('/partner-sales')) {
+                result = await handlePostPartnerSale(parsedBody);
             } else if (path.includes('/partner-commissions')) {
                 result = await handlePostPartnerCommission(parsedBody);
             } else if (path.includes('/partners')) {
-                result = await handlePostPartner(parsedBody);
+                result = await handlePostPartner(parsedBody, adminCtx);
             } else if (path === '/academy/courses') {
                 result = await handlePostAcademyCourse(parsedBody);
             } else if (path === '/academy/library') {
@@ -607,6 +723,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostAcademyQuizQuestion(parsedBody);
             } else if (path === '/academy/certifications') {
                 result = await handlePostAcademyCertification(parsedBody);
+            } else if (path === '/academy/enrollments') {
+                result = await handlePostAcademyEnrollment(parsedBody, adminCtx);
+            } else if (path === '/academy/coach-certifications') {
+                result = await handlePostCoachCertification(parsedBody, adminCtx);
             } else if (path === '/academy/learning-paths') {
                 result = await handlePostAcademyLearningPath(parsedBody);
             } else if (path === '/tickets') {
@@ -786,6 +906,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/academy\/lesson-quizzes\/(\d+)/)) {
                 const qId = path.match(/\/academy\/lesson-quizzes\/(\d+)/)[1];
                 result = await handlePutAcademyQuizQuestion(qId, parsedBody);
+            } else if (path.match(/\/academy\/enrollments\/(\d+)/)) {
+                const enrollId = path.match(/\/academy\/enrollments\/(\d+)/)[1];
+                result = await handlePutAcademyEnrollment(enrollId, parsedBody, adminCtx);
+            } else if (path.match(/\/academy\/coach-certifications\/(\d+)/)) {
+                const issuedId = path.match(/\/academy\/coach-certifications\/(\d+)/)[1];
+                result = await handlePutCoachCertification(issuedId, parsedBody, adminCtx);
             } else if (path.match(/\/academy\/certifications\/(\d+)/)) {
                 const certId = path.match(/\/academy\/certifications\/(\d+)/)[1];
                 result = await handlePutAcademyCertification(certId, parsedBody);
@@ -916,6 +1042,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/academy\/lesson-quizzes\/(\d+)/)) {
                 const qId = path.match(/\/academy\/lesson-quizzes\/(\d+)/)[1];
                 result = await handleDeleteAcademyQuizQuestion(qId);
+            } else if (path.match(/\/academy\/enrollments\/(\d+)/)) {
+                const enrollId = path.match(/\/academy\/enrollments\/(\d+)/)[1];
+                result = await handleDeleteAcademyEnrollment(enrollId, adminCtx);
             } else if (path.match(/\/academy\/certifications\/(\d+)/)) {
                 const certId = path.match(/\/academy\/certifications\/(\d+)/)[1];
                 result = await handleDeleteAcademyCertification(certId);
@@ -979,7 +1108,10 @@ exports.handler = async (req, resp, context) => {
                 result = { success: false, error: `Unknown DELETE route: ${path}` };
             }
         } else if (method === 'PATCH') {
-            if (path.includes('/users/')) {
+            if (path.match(/\/users\/([^/]+)\/identity$/)) {
+                const user_id = path.match(/\/users\/([^/]+)\/identity$/)[1];
+                result = await handleSetIdentity(user_id, parsedBody);
+            } else if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
                 result = await handlePatchUser(user_id, parsedBody);
             } else if (path.includes('/invitations/')) {
@@ -1002,22 +1134,25 @@ exports.handler = async (req, resp, context) => {
         }
 
         const statusCode = result.statusCode || 200;
-        const { statusCode: _sc, _rawText, content, ...resultBody } = result;
+        const { statusCode: _sc, _rawText, _rawBinary, contentType, content, ...resultBody } = result;
         const isText = _rawText === true;
-        const responseHeaders = isText
-            ? { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' }
-            : corsHeaders;
+        const isBinary = _rawBinary === true;
+        const responseHeaders = isBinary
+            ? { ...corsHeaders, 'Content-Type': contentType || 'application/octet-stream' }
+            : isText
+              ? { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' }
+              : corsHeaders;
         const responsePayload = {
-            isBase64Encoded: false,
+            isBase64Encoded: isBinary,
             statusCode,
             headers: responseHeaders,
-            body: isText ? (content || '') : JSON.stringify(resultBody)
+            body: isBinary ? (content || '') : (isText ? (content || '') : JSON.stringify(resultBody))
         };
 
         if (isStandardHttp) {
             resp.setStatusCode(statusCode);
             Object.entries(responseHeaders).forEach(([k, v]) => resp.setHeader(k, v));
-            resp.send(responsePayload.body);
+            resp.send(isBinary ? Buffer.from(responsePayload.body, 'base64') : responsePayload.body);
             return;
         }
 

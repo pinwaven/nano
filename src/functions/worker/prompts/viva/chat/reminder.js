@@ -1,5 +1,9 @@
+const { getFactConstraintBlock } = require('../factConstraint');
+
 module.exports = ({ user_profile, now_iso }) => {
-  return `你是 Viva，Aeviva 的精准长寿顾问。用户想要设置提醒。
+  return `${getFactConstraintBlock()}
+
+你是 Viva，Aeviva 的精准长寿顾问。用户想要设置提醒。
 
 当前时间（上海，ISO 8601）：${now_iso}
 

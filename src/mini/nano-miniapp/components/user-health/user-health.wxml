@@ -22,16 +22,14 @@
 
         <!-- Avatar with side pills -->
         <view class="avatar-area">
-          <button wx:if="{{mode === 'self' && !editing}}"
-                  class="avatar-side-pill {{avatarPillsVisible ? 'avatar-pill-show' : ''}}"
-                  open-type="chooseAvatar"
-                  disabled="{{!avatarPillsVisible}}"
-                  bindchooseavatar="onChooseAvatar">
+          <view wx:if="{{mode === 'self' && !editing}}"
+                class="avatar-side-pill {{avatarPillsVisible ? 'avatar-pill-show' : ''}}"
+                catchtap="onOpenAvatarPicker">
             <text class="avatar-pill-text">{{t.changeAvatar}}</text>
-          </button>
+          </view>
           <view class="health-avatar-container" bindtap="onAvatarTap">
             <view class="health-avatar-wrap">
-              <image wx:if="{{user.avatar_url}}" class="health-avatar-img" src="{{user.avatar_url}}" mode="aspectFill" />
+              <image wx:if="{{avatarDisplayUrl || user.avatar_url}}" class="health-avatar-img" src="{{avatarDisplayUrl || user.avatar_url}}" mode="aspectFill" />
               <view wx:else class="health-avatar-placeholder">
                 <text class="health-avatar-letter">{{avatarLetter}}</text>
               </view>
@@ -46,6 +44,15 @@
         </view>
 
       </view>
+
+      <avatar-picker
+        visible="{{avatarPickerVisible}}"
+        selected-id="{{user.avatar_character}}"
+        lang="{{isZh ? 'zh' : 'en'}}"
+        theme="{{theme}}"
+        bind:select="onAvatarSelect"
+        bind:close="onAvatarPickerClose"
+      />
 
       <!-- Edit form (appears right below avatar, pushes DT card down) -->
       <view wx:if="{{(mode === 'self' || mode === 'coach') && editing}}" class="health-section">
@@ -276,6 +283,7 @@
             <view class="wd-ring-icon">◉</view>
             <view class="wd-empty-text-wrap">
               <text class="wd-bind-label">{{t.bindSmartRing}}</text>
+              <text wx:if="{{wearableServerHint}}" class="wd-server-hint">{{t.wearableAlreadyBound}} {{wearableServerHint.name || wearableServerHint.brand}}</text>
             </view>
             <text class="wd-chevron">›</text>
           </view>
@@ -300,57 +308,57 @@
               </view>
             </view>
             <view wx:if="{{ringSettingsOpen}}" class="wd-settings-panel">
-              <view wx:if="{{wearableBrand === 'x3'}}" class="wd-interval-section">
+              <view wx:if="{{wearableBrand === 'halo' || wearableBrand === 'v8'}}" class="wd-interval-section">
                 <view wx:if="{{ringSettingsBusy}}" class="wd-settings-loading-row">
-                  <text class="wd-settings-loading-txt">{{t.x3IntervalLoading}}</text>
+                  <text class="wd-settings-loading-txt">{{t.haloIntervalLoading}}</text>
                 </view>
                 <block wx:else>
                   <view class="wd-ring-time-row">
-                    <text class="wd-ring-time-label">{{t.x3RingTimeLabel}}</text>
-                    <text class="wd-ring-time-val">{{x3RingTime || '—'}}</text>
+                    <text class="wd-ring-time-label">{{t.haloRingTimeLabel}}</text>
+                    <text class="wd-ring-time-val">{{haloRingTime || '—'}}</text>
                   </view>
-                  <text class="wd-interval-title">{{t.x3IntervalTitle}}</text>
+                  <text class="wd-interval-title">{{t.haloIntervalTitle}}</text>
                   <view class="wd-interval-row">
                     <view class="wd-interval-label-col">
                       <text class="wd-interval-label">{{t.metricHr}}</text>
-                      <text class="wd-wm-badge {{x3WorkModes.hr === 0 ? 'wd-wm-off' : 'wd-wm-on'}}" bindtap="handleWorkModeChange" data-type="hr">{{x3WorkModes.hr === 0 ? t.x3WorkModeOff : x3WorkModes.hr === 2 ? t.x3WorkModeSched : t.x3WorkModeAuto}}</text>
+                      <text class="wd-wm-badge {{haloWorkModes.hr === 0 ? 'wd-wm-off' : 'wd-wm-on'}}" bindtap="handleWorkModeChange" data-type="hr">{{haloWorkModes.hr === 0 ? t.haloWorkModeOff : haloWorkModes.hr === 2 ? t.haloWorkModeSched : t.haloWorkModeAuto}}</text>
                     </view>
                     <view class="wd-interval-opts">
-                      <view wx:for="{{x3IntervalOpts.hr}}" wx:key="index" bindtap="handleIntervalChange" data-type="hr" data-min="{{item}}" class="wd-int-btn {{x3Intervals.hr === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.x3IntervalUnit}}</view>
+                      <view wx:for="{{haloIntervalOpts.hr}}" wx:key="index" bindtap="handleIntervalChange" data-type="hr" data-min="{{item}}" class="wd-int-btn {{haloIntervals.hr === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.haloIntervalUnit}}</view>
                     </view>
                   </view>
                   <view class="wd-interval-row">
                     <view class="wd-interval-label-col">
                       <text class="wd-interval-label">{{t.metricSpo2}}</text>
-                      <text class="wd-wm-badge {{x3WorkModes.spo2 === 0 ? 'wd-wm-off' : 'wd-wm-on'}}" bindtap="handleWorkModeChange" data-type="spo2">{{x3WorkModes.spo2 === 0 ? t.x3WorkModeOff : x3WorkModes.spo2 === 2 ? t.x3WorkModeSched : t.x3WorkModeAuto}}</text>
+                      <text class="wd-wm-badge {{haloWorkModes.spo2 === 0 ? 'wd-wm-off' : 'wd-wm-on'}}" bindtap="handleWorkModeChange" data-type="spo2">{{haloWorkModes.spo2 === 0 ? t.haloWorkModeOff : haloWorkModes.spo2 === 2 ? t.haloWorkModeSched : t.haloWorkModeAuto}}</text>
                     </view>
                     <view class="wd-interval-opts">
-                      <view wx:for="{{x3IntervalOpts.spo2}}" wx:key="index" bindtap="handleIntervalChange" data-type="spo2" data-min="{{item}}" class="wd-int-btn {{x3Intervals.spo2 === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.x3IntervalUnit}}</view>
+                      <view wx:for="{{haloIntervalOpts.spo2}}" wx:key="index" bindtap="handleIntervalChange" data-type="spo2" data-min="{{item}}" class="wd-int-btn {{haloIntervals.spo2 === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.haloIntervalUnit}}</view>
                     </view>
                   </view>
                   <view class="wd-interval-row">
                     <view class="wd-interval-label-col">
                       <text class="wd-interval-label">{{t.metricTemp}}</text>
-                      <text class="wd-wm-badge {{x3WorkModes.temp === 0 ? 'wd-wm-off' : 'wd-wm-on'}}" bindtap="handleWorkModeChange" data-type="temp">{{x3WorkModes.temp === 0 ? t.x3WorkModeOff : x3WorkModes.temp === 2 ? t.x3WorkModeSched : t.x3WorkModeAuto}}</text>
+                      <text class="wd-wm-badge {{haloWorkModes.temp === 0 ? 'wd-wm-off' : 'wd-wm-on'}}" bindtap="handleWorkModeChange" data-type="temp">{{haloWorkModes.temp === 0 ? t.haloWorkModeOff : haloWorkModes.temp === 2 ? t.haloWorkModeSched : t.haloWorkModeAuto}}</text>
                     </view>
                     <view class="wd-interval-opts">
-                      <view wx:for="{{x3IntervalOpts.temp}}" wx:key="index" bindtap="handleIntervalChange" data-type="temp" data-min="{{item}}" class="wd-int-btn {{x3Intervals.temp === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.x3IntervalUnit}}</view>
+                      <view wx:for="{{haloIntervalOpts.temp}}" wx:key="index" bindtap="handleIntervalChange" data-type="temp" data-min="{{item}}" class="wd-int-btn {{haloIntervals.temp === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.haloIntervalUnit}}</view>
                     </view>
                   </view>
                   <view class="wd-interval-row">
                     <view class="wd-interval-label-col">
                       <text class="wd-interval-label">{{t.metricHrv}}</text>
-                      <text class="wd-wm-badge {{x3WorkModes.hrv === 0 ? 'wd-wm-off' : 'wd-wm-on'}}" bindtap="handleWorkModeChange" data-type="hrv">{{x3WorkModes.hrv === 0 ? t.x3WorkModeOff : x3WorkModes.hrv === 2 ? t.x3WorkModeSched : t.x3WorkModeAuto}}</text>
+                      <text class="wd-wm-badge {{haloWorkModes.hrv === 0 ? 'wd-wm-off' : 'wd-wm-on'}}" bindtap="handleWorkModeChange" data-type="hrv">{{haloWorkModes.hrv === 0 ? t.haloWorkModeOff : haloWorkModes.hrv === 2 ? t.haloWorkModeSched : t.haloWorkModeAuto}}</text>
                     </view>
                     <view class="wd-interval-opts">
-                      <view wx:for="{{x3IntervalOpts.hrv}}" wx:key="index" bindtap="handleIntervalChange" data-type="hrv" data-min="{{item}}" class="wd-int-btn {{x3Intervals.hrv === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.x3IntervalUnit}}</view>
+                      <view wx:for="{{haloIntervalOpts.hrv}}" wx:key="index" bindtap="handleIntervalChange" data-type="hrv" data-min="{{item}}" class="wd-int-btn {{haloIntervals.hrv === item ? 'wd-int-btn-on' : ''}}">{{item}}{{t.haloIntervalUnit}}</view>
                     </view>
                   </view>
                 </block>
               </view>
               <view class="wd-settings-footer">
-                <view wx:if="{{x3IntervalsChanged}}" class="wd-save-btn {{ringSettingsBusy ? 'wd-btn-disabled' : ''}}" bindtap="saveRingIntervals">
-                  <text class="wd-save-txt">{{t.x3SaveIntervals}}</text>
+                <view wx:if="{{haloIntervalsChanged}}" class="wd-save-btn {{ringSettingsBusy ? 'wd-btn-disabled' : ''}}" bindtap="saveRingIntervals">
+                  <text class="wd-save-txt">{{t.haloSaveIntervals}}</text>
                 </view>
                 <view class="wd-unbind-btn" bindtap="handleUnbindWearable">
                   <text class="wd-unbind-txt">{{t.wearableUnbind}}</text>
@@ -503,15 +511,43 @@
             </view>
           </view>
 
-          <!-- Sleep daily trend -->
-          <view wx:if="{{ringData.sleepDayBars}}" class="ring-chart-block">
-            <text class="ring-chart-label">{{t.ringSleepTrend}}</text>
-            <view class="ring-chart-bars">
-              <view wx:for="{{ringData.sleepDayBars}}" wx:key="label" class="ring-chart-day-col">
-                <text class="ring-chart-day-avg">{{item.avg}}</text>
-                <view class="ring-chart-bar"
-                      style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
-                <text class="ring-chart-day-label">{{item.label}}</text>
+          <!-- Weekly sleep timeline: every night + nap as a distinct block, -->
+          <!-- positioned on a noon-to-noon 24h axis so overnight sleep isn't split by midnight -->
+          <view wx:if="{{ringData.sleepWeek}}" class="ring-chart-block">
+            <text class="ring-chart-label">{{t.ringSleepWeek}}</text>
+            <view class="ring-sleepweek-wrap">
+              <view class="ring-sleepweek-axis" style="height:{{ringData.sleepAxisHeightRpx}}rpx;">
+                <text class="ring-sleepweek-axis-lbl">12</text>
+                <text class="ring-sleepweek-axis-lbl">18</text>
+                <text class="ring-sleepweek-axis-lbl">24</text>
+                <text class="ring-sleepweek-axis-lbl">06</text>
+                <text class="ring-sleepweek-axis-lbl">12</text>
+              </view>
+              <view class="ring-sleepweek-days">
+                <view wx:for="{{ringData.sleepWeek}}" wx:for-item="day" wx:key="date" class="ring-sleepweek-daycol">
+                  <view class="ring-sleepweek-track" style="height:{{ringData.sleepAxisHeightRpx}}rpx;">
+                    <view class="ring-sleepweek-gridline" style="top:0%;"></view>
+                    <view class="ring-sleepweek-gridline" style="top:25%;"></view>
+                    <view class="ring-sleepweek-gridline" style="top:50%;"></view>
+                    <view class="ring-sleepweek-gridline" style="top:75%;"></view>
+                    <view wx:for="{{day.blocks}}" wx:for-item="blk" wx:key="key"
+                          class="ring-sleepweek-block {{blk.isNap ? 'ring-sleepweek-block-nap' : ''}}"
+                          style="top:{{blk.topRpx}}rpx; height:{{blk.heightRpx}}rpx; background:{{blk.color}};">
+                    </view>
+                  </view>
+                  <text class="ring-sleepweek-total">{{day.totalLabel}}</text>
+                  <text class="ring-sleepweek-daylabel">{{day.label}}</text>
+                </view>
+              </view>
+            </view>
+            <view class="ring-sleep-legend">
+              <view class="ring-sleep-leg-item">
+                <view class="ring-sleep-leg-dot" style="background:#10b981;"></view>
+                <text class="ring-sleep-leg-txt">{{t.ringNightSleep}}</text>
+              </view>
+              <view class="ring-sleep-leg-item">
+                <view class="ring-sleep-leg-dot" style="background:#f59e0b;"></view>
+                <text class="ring-sleep-leg-txt">{{t.ringNap}}</text>
               </view>
             </view>
           </view>
@@ -578,11 +614,14 @@
             </view>
           </view>
 
-          <!-- Sleep stage timeline -->
+          <!-- Sleep stage timeline (most recent night, detailed) -->
           <view wx:if="{{ringData.sleepSegs}}" class="ring-chart-block">
             <view class="ring-chart-header">
               <text class="ring-chart-label">{{t.ringSleepChart}}</text>
-              <text wx:if="{{ringData.sleepTimeRange}}" class="ring-chart-time">{{ringData.sleepTimeRange}}</text>
+              <view class="ring-chart-header-right">
+                <text wx:if="{{ringData.sleepDateLabel}}" class="ring-chart-date">{{ringData.sleepDateLabel}}</text>
+                <text wx:if="{{ringData.sleepTimeRange}}" class="ring-chart-time">{{ringData.sleepTimeRange}}</text>
+              </view>
             </view>
             <view class="ring-sleep-timeline">
               <view wx:for="{{ringData.sleepSegs}}" wx:key="index"
@@ -593,19 +632,19 @@
             <view class="ring-sleep-legend">
               <view class="ring-sleep-leg-item">
                 <view class="ring-sleep-leg-dot" style="background:#6375EC;"></view>
-                <text class="ring-sleep-leg-txt">{{t.ringDeep}}</text>
+                <text class="ring-sleep-leg-txt">{{t.ringDeep}} {{ringData.sleepDeep}}m</text>
               </view>
               <view class="ring-sleep-leg-item">
                 <view class="ring-sleep-leg-dot" style="background:#a855f7;"></view>
-                <text class="ring-sleep-leg-txt">{{t.ringRem}}</text>
+                <text class="ring-sleep-leg-txt">{{t.ringRem}} {{ringData.sleepRem}}m</text>
               </view>
               <view class="ring-sleep-leg-item">
                 <view class="ring-sleep-leg-dot" style="background:#0ea5e9;"></view>
-                <text class="ring-sleep-leg-txt">{{t.ringLight}}</text>
+                <text class="ring-sleep-leg-txt">{{t.ringLight}} {{ringData.sleepLight}}m</text>
               </view>
               <view class="ring-sleep-leg-item">
                 <view class="ring-sleep-leg-dot" style="background:rgba(166,196,229,0.4);"></view>
-                <text class="ring-sleep-leg-txt">{{t.ringAwake}}</text>
+                <text class="ring-sleep-leg-txt">{{t.ringAwake}} {{ringData.sleepAwake}}m</text>
               </view>
             </view>
           </view>

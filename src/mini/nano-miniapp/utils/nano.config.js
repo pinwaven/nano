@@ -1,15 +1,15 @@
 const accountInfo = wx.getAccountInfoSync();
 const envVersion = accountInfo.miniProgram.envVersion;
 
-let BASE = 'https://nano.fros.cc';
+let BASE = 'https://nano.gcn.net';
 
 switch (envVersion) {
   case 'develop':
-    BASE = 'https://nano-dev.fros.cc';
+    BASE = 'https://nano-dev.gcn.net';
     break;
   case 'trial':
   case 'release':
-    BASE = 'https://nano.fros.cc';
+    BASE = 'https://nano.gcn.net';
     break;
 }
 

@@ -6,9 +6,10 @@
   "scripts": {
     "start:backend": "node scripts/local-dev.js",
     "start:admin": "node scripts/local-admin.js",
-    "start:user-app": "cd src/web/user-app && npm run dev",
-    "build:user-app": "cd src/web/user-app && npm run build",
-    "deploy:user-app": "./scripts/deploy-user-app.sh",
+    "start:user": "cd src/web/user-app && npm run dev",
+    "build:user": "cd src/web/user-app && npm run build",
+    "deploy:user": "./scripts/deploy-user-app.sh",
+    "deploy:user:prod": "./scripts/deploy-user-app-prod.sh",
     "prepare:lab": "npm ci --omit=dev --prefix src/functions/lab",
     "deploy:worker": "source .env && s worker deploy -y",
     "deploy:dispatcher": "source .env && s dispatcher deploy -y",
@@ -23,7 +24,10 @@
     "deploy:admin:prod": "./scripts/deploy-admin-prod.sh",
     "deploy:all": "./scripts/deploy-all.sh",
     "deploy:admin": "./scripts/deploy-admin.sh",
-    "deploy:kino": "./scripts/deploy-kino.sh",
+    "deploy:kino": "source .env && s kino deploy -y",
+    "deploy:kino:prod": "source .env && s kino deploy -t s-prod.yaml -y",
+    "deploy:media": "source .env && s media deploy -y",
+    "deploy:media:prod": "source .env && s media deploy -t s-prod.yaml -y",
     "deploy:chat": "./scripts/deploy-chat.sh",
     "deploy:coach": "./scripts/deploy-coach.sh",
     "migrate:dev": "node scripts/migrate.js --env dev",
@@ -40,6 +44,9 @@
     "backup:dev": "./tools/backup-dev-db.sh",
     "backup:prod": "./tools/backup-prod-db.sh",
     "miniapp:channel": "./scripts/switch-miniapp-channel.sh",
+    "upload:waven": "node scripts/upload-miniapp.js waven",
+    "upload:aeviva": "node scripts/upload-miniapp.js aeviva",
+    "upload:fusion": "node scripts/upload-miniapp.js fusion",
     "update:changelog": "node scripts/update-changelog.js"
   },
   "dependencies": {
@@ -47,6 +54,8 @@
     "@alicloud/eventbridge20200401": "^6.0.7",
     "@alicloud/openapi-client": "^0.4.15",
     "@alicloud/tea-util": "^1.4.11",
+    "@serverless-devs/s": "^3.1.10",
+    "ali-oss": "^6.23.0",
     "axios": "^1.15.0",
     "body-parser": "^1.20.4",
     "cors": "^2.8.6",
@@ -54,10 +63,10 @@
     "express": "^4.22.1",
     "luxon": "^3.7.2",
     "mammoth": "^1.8.0",
+    "miniprogram-ci": "^2.1.31",
     "openai": "^4.104.0",
     "pdf-parse": "^1.1.1",
     "pg": "^8.20.0",
-    "uuid": "^8.3.2",
-    "ali-oss": "^6.23.0"
+    "uuid": "^8.3.2"
   }
 }

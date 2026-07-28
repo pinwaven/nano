@@ -17,6 +17,8 @@ const T = {
     adminMenu: '渠道管理',
     superadminMenu: '超管面板',
     logout: '退出',
+    exitSandbox: '退出沙盒',
+    sandboxBanner: '沙盒模式：正在以「{name}」的身份查看，任何操作都不会保存',
     noClients: '暂无分配的客户',
     searchPlaceholder: '搜索客户姓名…',
     filterAll: '全部',
@@ -131,6 +133,7 @@ const T = {
     kinoScanInstruction: '请将芯片插入 Kino 分析仪，开始检测。',
     kinoScanAlreadyLinked: '此芯片已绑定到该客户账户，正在等待检测结果。',
     kinoScanUsed: '此芯片已完成检测，无法重复登记。',
+    kinoScanClaimedByOther: '此芯片已被其他账户登记，正在等待检测结果。如需重新使用，请联系管理员重置该芯片。',
     kinoScanInvalidChip: '此二维码不是有效的 Kino 芯片，请扫描芯片上的二维码。',
     kinoScanError: '登记失败，请重试。',
   },
@@ -148,6 +151,8 @@ const T = {
     adminMenu: 'Channel Admin',
     superadminMenu: 'Super Admin',
     logout: 'Logout',
+    exitSandbox: 'Exit Sandbox',
+    sandboxBanner: 'Sandbox: viewing as "{name}" — nothing is saved',
     noClients: 'No clients assigned yet',
     searchPlaceholder: 'Search by name…',
     filterAll: 'All',
@@ -262,6 +267,7 @@ const T = {
     kinoScanInstruction: 'Now insert the chip into the Kino Analyzer to begin the test.',
     kinoScanAlreadyLinked: 'This chip is already linked to the client account and is awaiting analysis.',
     kinoScanUsed: 'This chip has already been analyzed and cannot be registered again.',
+    kinoScanClaimedByOther: 'This chip is already registered to another account and is awaiting analysis. Ask an admin to reset it if you need to reuse it.',
     kinoScanInvalidChip: 'This QR code is not a valid Kino chip. Please scan the QR code on the chip.',
     kinoScanError: 'Registration failed. Please try again.',
   },
@@ -453,7 +459,9 @@ Page({
     const theme = user.theme || app.globalData.theme || 'dark'
     const lang = app.globalData.lang || 'zh'
     const t = T[lang]
-    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t) })
+    const sandboxMode = !!app.globalData.sandboxMode
+    const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', nickname || '—') : ''
+    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
     this._loadAll()
   },
 
@@ -536,10 +544,10 @@ Page({
     _app._onPrivacyRequest = () => this.setData({ showPrivacyModal: true })
   },
 
-  onPrivacyAgree(e) {
+  onPrivacyAgree() {
     const _app = getApp()
     if (_app._privacyResolve) {
-      _app._privacyResolve({ event: e, buttonId: 'privacy-agree-btn' })
+      _app._privacyResolve({ event: 'agree', buttonId: 'privacy-agree-btn' })
       _app._privacyResolve = null
     }
     this.setData({ showPrivacyModal: false })
@@ -594,8 +602,29 @@ Page({
     wx.navigateTo({ url: '/pages/superadmin/superadmin' })
   },
 
+  exitSandbox() {
+    const origin = wx.getStorageSync('nano_sandbox_origin')
+    wx.removeStorageSync('nano_sandbox_origin')
+    wx.removeStorageSync('nano_sandbox_active')
+    app.globalData.sandboxMode = false
+    if (origin && origin.user) {
+      app.globalData.user = origin.user
+      app.globalData.channel = origin.channel || null
+      app.globalData.coach = origin.coach || null
+      wx.setStorageSync('nano_user', origin.user)
+      wx.setStorageSync('nano_channel', origin.channel || null)
+      wx.setStorageSync('nano_coach', origin.coach || null)
+      wx.reLaunch({ url: '/pages/main/main' })
+    } else {
+      wx.removeStorageSync('nano_user')
+      app.globalData.user = null
+      wx.reLaunch({ url: '/pages/login/login' })
+    }
+  },
+
   handleLogout() {
     this.setData({ menuOpen: false })
+    if (app.globalData.sandboxMode) { this.exitSandbox(); return }
     wx.removeStorageSync('nano_user')
     app.globalData.user = null
     wx.reLaunch({ url: '/pages/login/login' })
@@ -1393,6 +1422,7 @@ Page({
   _req(url, method = 'GET', data = null) {
     return new Promise((resolve, reject) => {
       const opts = { url, method, header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` }, success: resolve, fail: reject }
+      if (app.globalData.sandboxMode && method !== 'GET') data = { ...(data || {}), sandbox: true }
       if (data) opts.data = data
       wx.request(opts)
     })

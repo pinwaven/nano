@@ -1,5 +1,9 @@
+const { getFactConstraintBlock } = require('../factConstraint');
+
 module.exports = ({ user_profile, last_weight }) => {
-  return `你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造。用户想要记录个人数据。
+  return `${getFactConstraintBlock()}
+
+你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造。用户想要记录个人数据。
 
 ${last_weight != null ? `上次记录体重：${last_weight} kg` : '上次记录体重：暂无记录。'}
 

@@ -14,6 +14,12 @@
     <text wx:if="{{version}}" class="header-version">v{{version}}</text>
   </view>
 
+  <!-- ── Sandbox banner ── -->
+  <view wx:if="{{sandboxMode}}" class="sandbox-banner" catchtap="exitSandbox">
+    <text class="sandbox-banner-text">{{sandboxBannerText}}</text>
+    <text class="sandbox-banner-exit">{{t.exitSandbox}}</text>
+  </view>
+
   <!-- ── Logo menu ── -->
   <view wx:if="{{menuOpen}}" class="menu-mask" bindtap="closeMenu">
     <view class="menu-dropdown" catchtap="noop" style="top: {{menuTop}}px;">
@@ -35,6 +41,10 @@
       <view wx:if="{{isSuperadmin}}" class="menu-item" bindtap="openSuperadmin">
         <text class="menu-item-icon">🌐</text>
         <text class="menu-item-label">{{t.superadminMenu}}</text>
+      </view>
+      <view wx:if="{{isSuperadmin}}" class="menu-item" bindtap="openWebAdmin">
+        <text class="menu-item-icon">🖥</text>
+        <text class="menu-item-label">{{t.webAdminMenu}}</text>
       </view>
       <view wx:if="{{!isGuest}}" class="menu-divider"></view>
       <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openReferral">
@@ -59,7 +69,7 @@
       <view class="menu-divider"></view>
       <view wx:if="{{!isGuest}}" class="menu-item" bindtap="handleLogout">
         <text class="menu-item-icon">↪</text>
-        <text class="menu-item-label">{{t.logout}}</text>
+        <text class="menu-item-label">{{sandboxMode ? t.exitSandbox : t.logout}}</text>
       </view>
       <view wx:if="{{isGuest}}" class="menu-item" bindtap="openGuestSheet">
         <text class="menu-item-icon">✦</text>
@@ -112,14 +122,7 @@
             class="msg-row {{item.role === 'user' ? 'msg-row-user' : 'msg-row-ai'}}"
           >
             <block wx:if="{{item.role === 'action'}}">
-              <button
-                wx:if="{{item.action === 'bind_phone'}}"
-                class="msg-action-card msg-phone-btn"
-                open-type="getPhoneNumber"
-                bindgetphonenumber="handleBindPhone"
-              ><text class="msg-action-label">{{item.label}}</text><text class="msg-action-arrow">›</text></button>
               <view
-                wx:else
                 class="msg-action-card"
                 bindtap="handleMsgAction"
                 data-action="{{item.action}}"
@@ -266,22 +269,19 @@
         <view class="kino-scan-close" bindtap="cancelKinoScan">✕</view>
       </view>
 
-      <!-- Guest CTA bar -->
-      <view wx:if="{{isGuest}}" class="guest-cta-bar" bindtap="openGuestSheet">
-        <text class="guest-cta-text">{{t.guestChatCtaText}}</text>
-        <view class="guest-cta-btn">
-          <text>{{t.guestChatCtaBtn}}</text>
-        </view>
-      </view>
-
       <!-- AI disclaimer -->
       <view wx:if="{{obStep === 'done' || isGuest}}" class="ai-disclaimer">
         <text class="ai-disclaimer-text">{{t.aiDisclaimer}}</text>
       </view>
 
-      <!-- Normal chat input -->
-      <view wx:if="{{obStep === 'done'}}" class="input-container">
+      <!-- Normal chat input — also shown to guests, with the mic button replaced by
+           a Sign-up CTA and send routed to the sign-up sheet instead of _req'ing chat -->
+      <view wx:if="{{obStep === 'done' || isGuest}}" class="input-container">
         <toolbox wx:if="{{toolboxOpen}}" tools="{{toolList}}" disabled="{{typing}}" bind:toolaction="handleToolAction" />
+        <view wx:if="{{isRecording}}" class="mic-recording-banner">
+          <text class="mic-recording-dot"></text>
+          <text class="mic-recording-text">{{t.micRecording}}</text>
+        </view>
         <view class="input-area">
           <view class="plus-btn {{toolboxOpen ? 'plus-btn-open' : ''}}" bindtap="toggleToolbox">
             <text class="plus-icon">+</text>
@@ -299,7 +299,22 @@
             cursor-spacing="12"
             show-confirm-bar="false"
           />
-          <view class="send-btn {{chatInput ? 'send-active' : ''}}" bindtap="handleSend">
+          <view
+            wx:if="{{!chatInput && !isGuest}}"
+            class="mic-btn {{isRecording ? 'mic-btn-active' : ''}} {{typing || isSending ? 'mic-btn-disabled' : ''}}"
+            bindtouchstart="onMicTouchStart"
+            bindtouchend="onMicTouchEnd"
+            bindtouchcancel="onMicTouchEnd"
+          >
+            <image class="mic-icon" src="/assets/icons/mic.svg" mode="aspectFit" />
+          </view>
+          <view wx:elif="{{!chatInput && isGuest}}" class="mic-btn guest-signup-btn" bindtap="openGuestSheet">
+            <text class="guest-signup-btn-text">{{t.guestSignupBtn}}</text>
+          </view>
+          <view wx:elif="{{isGuest}}" class="send-btn send-active" bindtap="openGuestSheet">
+            <text class="send-icon">↑</text>
+          </view>
+          <view wx:else class="send-btn {{chatInput ? 'send-active' : ''}}" bindtap="handleSend">
             <text class="send-icon">↑</text>
           </view>
         </view>
@@ -759,6 +774,14 @@
     <!-- ════ STORE ════ -->
     <view class="store-tab{{tab !== 'store' ? ' tab-hidden' : ''}}">
 
+      <!-- Aeviva channel: tapping the Store tab button opens the GCN partner storefront
+           as a separate navigated page instead (see main.js switchTab/_openAevivaStore)
+           rather than showing it here inline — <web-view> doesn't reliably support an
+           overlay back button when embedded inside this absolutely-positioned
+           tab-switching container (confirmed by testing, not just theory), so `tab` is
+           never actually set to 'store' for aeviva users and this section always renders
+           the native store below for everyone. -->
+
       <view class="store-header">
         <text class="store-title">{{t.storeTitle}}</text>
         <view class="store-header-right">
@@ -1074,11 +1097,84 @@
           <view wx:if="{{trainingCertifications.length > 0}}" class="training-section-header" style="margin-top: 28rpx;">
             <text class="training-section-title">{{lang === 'zh' ? '我的证书' : 'My Certifications'}}</text>
           </view>
-          <view wx:for="{{trainingCertifications}}" wx:key="id" class="training-cert-card">
+          <view wx:for="{{trainingCertifications}}" wx:key="id" class="training-cert-card" bindtap="showCertDetail" data-cert="{{item}}">
             <text class="training-cert-icon">🏅</text>
             <view class="training-cert-info">
               <text class="training-cert-title">{{item.title}}</text>
-              <text class="training-cert-tier">{{item.tier}}</text>
+              <text wx:if="{{item.tier}}" class="training-cert-tier">{{item.tier}}</text>
+            </view>
+            <text class="training-cert-chevron">›</text>
+          </view>
+
+          <!-- Certificate detail overlay -->
+          <view wx:if="{{showCertDetail}}" class="cert-overlay" catchtap="hideCertDetail">
+            <view class="cert-detail-card" catchtap="noop">
+              <view class="cert-detail-header">
+                <view class="cert-status-badge">
+                  <text class="cert-status-check">✓</text>
+                  <text class="cert-status-text">{{lang === 'zh' ? '证书有效' : 'Certificate Valid'}}</text>
+                </view>
+                <view class="cert-close-btn" bindtap="hideCertDetail">✕</view>
+              </view>
+
+              <view wx:if="{{certDetailItem.templateImageUrl}}" class="cert-bg-wrap">
+                <image src="{{certDetailItem.templateImageUrl}}" class="cert-bg-preview" mode="widthFix" />
+              </view>
+
+              <view class="cert-field-list">
+                <view class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '姓名' : 'Name'}}</text>
+                  <text class="cert-value">{{certDetailItem._userName || user.nickname || '—'}}</text>
+                </view>
+                <view class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '学员编号' : 'Student ID'}}</text>
+                  <text class="cert-value cert-mono">{{certDetailItem.user_id || '—'}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.course_display_name}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '课程名称' : 'Course'}}</text>
+                  <text class="cert-value">{{certDetailItem.course_display_name}}</text>
+                </view>
+                <view class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '证书名称' : 'Certificate'}}</text>
+                  <text class="cert-value">{{certDetailItem.title}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.certificate_number}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '证书编号' : 'Cert No.'}}</text>
+                  <text class="cert-value cert-mono cert-number">{{certDetailItem.certificate_number}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.assessment_period}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '考核时间' : 'Assessment'}}</text>
+                  <text class="cert-value">{{certDetailItem.assessment_period}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.score != null}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '考试分数' : 'Score'}}</text>
+                  <text class="cert-value">{{certDetailItem.score}}</text>
+                </view>
+                <view class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '证书状态' : 'Status'}}</text>
+                  <text class="cert-value cert-valid">{{lang === 'zh' ? '有效' : 'Valid'}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.issuing_org}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '颁发机构' : 'Issuing Org'}}</text>
+                  <text class="cert-value">{{certDetailItem.issuing_org}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.school_org}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '办学机构' : 'Institute'}}</text>
+                  <text class="cert-value">{{certDetailItem.school_org}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.issueDateDisplay}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '颁发时间' : 'Issue Date'}}</text>
+                  <text class="cert-value">{{certDetailItem.issueDateDisplay}}</text>
+                </view>
+                <view wx:if="{{certDetailItem.expiryDateDisplay}}" class="cert-field">
+                  <text class="cert-label">{{lang === 'zh' ? '有效期至' : 'Expires'}}</text>
+                  <text class="cert-value">{{certDetailItem.expiryDateDisplay}}</text>
+                </view>
+              </view>
+
+              <view wx:if="{{certDetailItem.cert_oss_key}}" class="cert-download-btn" bindtap="downloadCert" data-key="{{certDetailItem.cert_oss_key}}">
+                <text>↓ {{lang === 'zh' ? '下载电子证书' : 'Download Certificate'}}</text>
+              </view>
             </view>
           </view>
 
@@ -1507,15 +1603,15 @@
       <image class="tab-icon-img" src="/assets/icons/plans.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabPlans}}</text>
     </view>
-    <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'store' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="store">
-      <view wx:if="{{tab === 'store'}}" class="tab-line"></view>
-      <image class="tab-icon-img" src="/assets/icons/store.svg" mode="aspectFit" />
-      <text class="tab-label">{{t.tabStore}}</text>
-    </view>
     <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'learn' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="learn">
       <view wx:if="{{tab === 'learn'}}" class="tab-line"></view>
       <image class="tab-icon-img" src="/assets/icons/training.svg" mode="aspectFit" />
       <text class="tab-label">{{t.tabLearn}}</text>
+    </view>
+    <view wx:if="{{!isGuest}}" class="tab-btn {{tab === 'store' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="store">
+      <view wx:if="{{tab === 'store'}}" class="tab-line"></view>
+      <image class="tab-icon-img" src="/assets/icons/store.svg" mode="aspectFit" />
+      <text class="tab-label">{{t.tabStore}}</text>
     </view>
   </view>
 
@@ -1524,86 +1620,35 @@
     <view class="guest-sheet" catchtap="noop" style="{{guestKeyboardHeight > 0 ? 'padding-bottom:' + guestKeyboardHeight + 'px;' : ''}}">
       <view class="guest-sheet-handle"></view>
 
-      <block wx:if="{{guestSheetStep === 'phone'}}">
-        <text class="guest-sheet-title">{{t.guestPhoneTitle}}</text>
-        <text class="guest-sheet-desc">{{t.guestPhoneDesc}}</text>
-
-        <!-- Avatar consent row -->
-        <button
-          class="consent-row {{guestAvatarReady ? 'consent-row-done' : ''}}"
-          open-type="chooseAvatar"
-          bindchooseavatar="handleGuestChooseAvatar"
-          bindtap="handleGuestAvatarButtonTap"
-        >
-          <view class="consent-check {{guestAvatarReady ? 'consent-check-done' : ''}}">
-            <text wx:if="{{guestAvatarReady}}" class="consent-check-icon">✓</text>
+      <text class="guest-sheet-title">{{t.guestJoinTitle}}</text>
+      <text class="guest-sheet-desc">{{t.guestJoinDesc}}</text>
+      <view class="pin-field">
+        <view class="pin-boxes">
+          <view
+            wx:for="{{guestInviteDigits}}"
+            wx:key="index"
+            class="pin-box {{item ? 'pin-filled' : ''}} {{!item && index === guestInviteCode.length ? 'pin-active' : ''}}"
+          >
+            <text class="pin-digit">{{item}}</text>
           </view>
-          <text class="consent-label">{{t.guestAvatarLabel}}<text class="consent-label-optional"> ({{lang === 'en' ? 'optional' : '可选'}})</text></text>
-          <view wx:if="{{guestPendingAvatar}}" class="consent-avatar-wrap">
-            <image class="consent-avatar-preview" src="{{guestPendingAvatar}}" mode="aspectFill" />
-            <view wx:if="{{guestAvatarUploading || (guestAvatarReady && guestInviteBusy)}}" class="avatar-saving-ring"></view>
-          </view>
-        </button>
-
-        <!-- Phone consent row -->
-        <button
-          class="consent-row {{guestPhoneDone ? 'consent-row-done' : ''}}"
-          open-type="getPhoneNumber"
-          bindgetphonenumber="handleGuestPhone"
-          disabled="{{guestInviteBusy || guestPhoneDone}}"
-        >
-          <view class="consent-check {{guestPhoneDone ? 'consent-check-done' : ''}}">
-            <text wx:if="{{guestPhoneDone}}" class="consent-check-icon">✓</text>
-          </view>
-          <text class="consent-label">{{guestResolvedPhone || t.guestPhoneLabel}}</text>
-        </button>
-
-        <!-- Error -->
-        <view wx:if="{{guestInviteError}}" class="guest-sheet-error">
-          <text>{{guestInviteError}}</text>
         </view>
-
-        <!-- Continue -->
-        <view
-          class="guest-sheet-btn {{(guestAvatarUploading || !guestResolvedPhone || guestInviteBusy) ? 'guest-sheet-btn-disabled' : ''}}"
-          bindtap="proceedGuestSignup"
-        >
-          <text>{{guestInviteBusy ? t.guestActivating : t.guestContinueBtn}}</text>
-        </view>
-
-      </block>
-
-      <block wx:else>
-        <text class="guest-sheet-title">{{t.guestJoinTitle}}</text>
-        <text class="guest-sheet-desc">{{t.guestJoinDesc}}</text>
-        <view class="pin-field">
-          <view class="pin-boxes">
-            <view
-              wx:for="{{guestInviteDigits}}"
-              wx:key="index"
-              class="pin-box {{item ? 'pin-filled' : ''}} {{!item && index === guestInviteCode.length ? 'pin-active' : ''}}"
-            >
-              <text class="pin-digit">{{item}}</text>
-            </view>
-          </view>
-          <input
-            class="pin-capture"
-            type="number"
-            value="{{guestInviteCode}}"
-            bindinput="onGuestInviteInput"
-            bindkeyboardheightchange="onGuestKeyboardHeightChange"
-            focus="{{guestSheetOpen}}"
-            adjust-position="{{false}}"
-            maxlength="6"
-          />
-        </view>
-        <view wx:if="{{guestInviteError}}" class="guest-sheet-error">
-          <text>{{guestInviteError}}</text>
-        </view>
-        <view class="guest-sheet-btn {{guestInviteBusy ? 'guest-sheet-btn-disabled' : ''}}" bindtap="submitGuestInvite">
-          <text>{{guestInviteBusy ? t.guestActivating : t.guestJoinBtn}}</text>
-        </view>
-      </block>
+        <input
+          class="pin-capture"
+          type="number"
+          value="{{guestInviteCode}}"
+          bindinput="onGuestInviteInput"
+          bindkeyboardheightchange="onGuestKeyboardHeightChange"
+          focus="{{guestSheetOpen}}"
+          adjust-position="{{false}}"
+          maxlength="6"
+        />
+      </view>
+      <view wx:if="{{guestInviteError}}" class="guest-sheet-error">
+        <text>{{guestInviteError}}</text>
+      </view>
+      <view class="guest-sheet-btn {{guestInviteBusy ? 'guest-sheet-btn-disabled' : ''}}" bindtap="submitGuestInvite">
+        <text>{{guestInviteBusy ? t.guestActivating : t.guestJoinBtn}}</text>
+      </view>
     </view>
   </view>
 

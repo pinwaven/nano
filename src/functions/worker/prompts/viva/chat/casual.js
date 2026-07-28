@@ -1,3 +1,5 @@
+const { getFactConstraintBlock } = require('../factConstraint');
+
 module.exports = ({ user_profile, questionnaire_context, active_health_plans }) => {
   const name = user_profile.nickname || '你';
 
@@ -5,9 +7,11 @@ module.exports = ({ user_profile, questionnaire_context, active_health_plans }) 
     ? `用户当前方案：${active_health_plans.map(p => `${p.plan_type === 'primary' ? '主' : '辅'}方案「${p.name}」第 ${p.weeks_elapsed}/${p.total_weeks} 周，已打卡 ${p.checkin_count} 次`).join('；')}`
     : '';
 
-  return `你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造的精准健康生态系统中的核心 AI。
+  return `${getFactConstraintBlock()}
 
-用户：${name}${user_profile.age ? `，${user_profile.age} 岁` : ''}
+你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造的精准健康生态系统中的核心 AI。
+
+用户：${name}${user_profile.age ? `，${user_profile.age} 岁` : ''}${user_profile.bmi ? `，BMI ${user_profile.bmi}` : ''}
 ${questionnaire_context ? '\n' + questionnaire_context : ''}
 ${planSnippet ? '\n' + planSnippet : ''}
 你正在进行轻松的日常对话。规则：

@@ -5,6 +5,7 @@
     <image class="login-logo-img" src="{{channel.logo_url || '/assets/waven-logo-icon.png'}}" mode="aspectFit" />
     <text class="login-title">{{channel.name || 'NANO'}}</text>
     <text class="login-subtitle">您的精准健康伴侣</text>
+    <text wx:if="{{version}}" class="login-version">v{{version}}</text>
   </view>
 
   <!-- Checking / auto-login -->
@@ -21,29 +22,6 @@
     <view class="login-btn {{codeLoading ? 'disabled' : ''}}" bindtap="submitCode">
       <text>{{codeLoading ? '验证中…' : '确认加入'}}</text>
     </view>
-  </view>
-
-  <view wx:elif="{{step === 'phone'}}" class="login-card">
-    <text class="login-card-label">最后一步</text>
-
-    <!-- Avatar picker -->
-    <view class="avatar-pick-wrap">
-      <button class="avatar-pick-btn" open-type="chooseAvatar" bindchooseavatar="handleChooseAvatar">
-        <image wx:if="{{pendingAvatar}}" class="avatar-pick-img" src="{{pendingAvatar}}" mode="aspectFill" />
-        <view wx:else class="avatar-pick-default">
-          <text class="avatar-pick-icon">+</text>
-        </view>
-      </button>
-      <text class="avatar-pick-hint">点击设置头像</text>
-    </view>
-
-    <text class="phone-step-desc">绑定手机号，让您的健康教练可以随时联系到您。</text>
-    <button
-      class="login-btn"
-      open-type="getPhoneNumber"
-      bindgetphonenumber="handleGetPhone"
-      disabled="{{phoneLoading}}"
-    ><text>📱 授权手机号</text></button>
   </view>
 
   <view wx:elif="{{step === 'error'}}" class="status-wrap">

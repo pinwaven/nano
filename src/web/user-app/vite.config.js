@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ command }) => {
   return {
     plugins: [react()],
+    envDir: '../../../',
     base: command === 'build' ? '/app/' : '/',
     build: {
       outDir: '../../../src/functions/user-app/dist',
@@ -14,7 +15,7 @@ export default defineConfig(({ command }) => {
       open: true,
       proxy: {
         '/api': {
-          target: 'https://nano.fros.cc',
+          target: 'https://nano.gcn.net',
           changeOrigin: true,
           secure: true,
         },

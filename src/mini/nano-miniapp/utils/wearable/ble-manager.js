@@ -18,7 +18,17 @@ class BLEManager {
     return new Promise((resolve, reject) => {
       wx.openBluetoothAdapter({
         success: resolve,
-        fail: (err) => reject(new Error(err.errMsg || 'openBluetoothAdapter failed')),
+        fail: (err) => {
+          // "already opened" means the adapter is already usable (e.g. a prior
+          // BLEManager instance opened it, like handleBindWearable's own scan
+          // phase does before handing off to ring.connect()'s separate
+          // BLEManager) — not a real failure, so don't fail the whole flow.
+          if ((err.errMsg || '').includes('already opened')) {
+            resolve(err)
+          } else {
+            reject(new Error(err.errMsg || 'openBluetoothAdapter failed'))
+          }
+        },
       })
     })
   }
@@ -76,6 +86,17 @@ class BLEManager {
         success: resolve,
         fail: (err) => reject(new Error(err.errMsg || 'createBLEConnection failed')),
       })
+    })
+
+    // Negotiate a larger MTU. Without this, writes are capped at the default
+    // unnegotiated ATT MTU (~20 bytes usable) — fine for brands whose packets
+    // are always small (Halo's are a fixed 16 bytes), but Aizo's bind request
+    // alone is ~65 bytes and silently fails (or times out with no response)
+    // without this. Android requires the explicit call; iOS negotiates MTU on
+    // its own and doesn't support setBLEMTU, so failures here are expected
+    // and harmless — best-effort only.
+    await new Promise((resolve) => {
+      wx.setBLEMTU({ deviceId, mtu: 247, success: resolve, fail: resolve, complete: resolve })
     })
 
     // Delay after connection before discovering services — R10 needs ~800ms

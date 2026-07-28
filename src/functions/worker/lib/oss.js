@@ -72,4 +72,11 @@ async function getObjectBuffer(key) {
     return result.content;
 }
 
-module.exports = { generateKey, generatePresignedPutUrl, generatePresignedGetUrl, putBuffer, deleteObject, getObjectBuffer };
+// Uploads a Buffer directly from the server (no presigned round-trip needed).
+async function putObjectBuffer(key, buffer, contentType = 'application/octet-stream') {
+    const client = getClient();
+    await client.put(key, buffer, { mime: contentType });
+    return key;
+}
+
+module.exports = { generateKey, generatePresignedPutUrl, generatePresignedGetUrl, putBuffer, deleteObject, getObjectBuffer, putObjectBuffer };

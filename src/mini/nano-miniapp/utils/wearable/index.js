@@ -30,19 +30,25 @@ class WearableDevice {
 }
 
 // Factory — returns the right adapter for the given brand string.
-// brand: 'colmi' | 'x3' | 'aizo'
+// brand: 'colmi' | 'halo' | 'aizo' | 'v8'
+// 'x3' is accepted as a legacy alias for 'halo' — existing local storage /
+// server rows saved before the X3→Halo rename still use 'x3'.
 function createWearable(brand) {
   if (brand === 'colmi') {
     const ColmiRing = require('./colmi/index.js')
     return new ColmiRing()
   }
-  if (brand === 'x3') {
-    const X3Ring = require('./x3/index.js')
-    return new X3Ring()
+  if (brand === 'halo' || brand === 'x3') {
+    const HaloRing = require('./halo/index.js')
+    return new HaloRing()
   }
   if (brand === 'aizo') {
     const AizoRing = require('./aizo/index.js')
     return new AizoRing()
+  }
+  if (brand === 'v8') {
+    const V8Band = require('./v8/index.js')
+    return new V8Band()
   }
   throw new Error(`Unknown wearable brand: ${brand}`)
 }

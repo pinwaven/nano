@@ -1,50 +1,52 @@
 const app = getApp()
 const { BASE, VERSION, WX_VERSION, IS_DEV } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
+const { resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
+const speechPlugin = requirePlugin('WechatSI')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
 
 const CART_SETS = [
   {
-    key: 'set-bioage-reducing',
-    nameZh: '逆龄还原套装', nameEn: 'BioAge Reducing',
-    descZh: '细胞年龄 · 代谢韧性', descEn: 'Cellular Age · Metabolic Resilience',
+    key: 'set-foundation',
+    nameZh: '基础方阵套装', nameEn: 'Foundation Set',
+    descZh: '甲基化 · 骨脉 · 静心 · 精力 · 迷走 · 线粒体', descEn: 'Methylation · Bone-Vascular · Sleep · Energy · Vagal · Mito',
     color: '#6375EC',
     dotItems: [
-      { key: 'DOT01', zhName: '细胞原力', enName: 'Cellular Fuel' },
-      { key: 'DOT02', zhName: '细胞守护', enName: 'Cellular Guard' },
-      { key: 'DOT03', zhName: '细胞催化', enName: 'Cellular Catalyst' },
-      { key: 'DOT04', zhName: '细胞净化', enName: 'Cellular Cleanup' },
-      { key: 'DOT05', zhName: '代谢韧性', enName: 'Metabolic Resilience' },
-      { key: 'DOT06', zhName: '紧致焕颜', enName: 'Dermal Radiance' },
+      { key: 'DOT-N1', zhName: '甲基平衡', enName: 'Methyl Balance' },
+      { key: 'DOT-N2', zhName: '骨脉同步', enName: 'Bone-Vascular Sync' },
+      { key: 'DOT-N3', zhName: '静心夜', enName: 'Quiet Mind' },
+      { key: 'DOT-N4', zhName: '持续精力', enName: 'Steady Energy' },
+      { key: 'DOT-N5', zhName: '迷走张力', enName: 'Vagal Tone' },
+      { key: 'DOT-N6', zhName: '线粒体焕新', enName: 'Mito Renew' },
     ],
   },
   {
-    key: 'set-energy-boost',
-    nameZh: '能量提升套装', nameEn: 'Energy Boost',
-    descZh: '代谢 · 微血管 · 抗压 · 睡眠', descEn: 'Metabolic · Vascular · Resilience · Sleep',
+    key: 'set-renewal',
+    nameZh: '焕新方阵套装', nameEn: 'Renewal Set',
+    descZh: '衰老清除 · 明眸 · NAD · 肌光 · 代谢 · 心智', descEn: 'Senescence · Eyes · NAD · Skin · Metabolic · Mind',
     color: '#10b981',
     dotItems: [
-      { key: 'DOT07', zhName: '代谢动力', enName: 'Metabolic Power' },
-      { key: 'DOT08', zhName: '血管唤醒', enName: 'Vascular Awakening' },
-      { key: 'DOT09', zhName: '抗压支持', enName: 'Resilience Support' },
-      { key: 'DOT10', zhName: '晨间引擎', enName: 'Morning Ignition' },
-      { key: 'DOT11', zhName: '巅峰体能', enName: 'Athletic Peak' },
-      { key: 'DOT12', zhName: '深度睡眠', enName: 'Deep Sleep' },
+      { key: 'DOT-N7', zhName: '衰老清除', enName: 'Senescence Clear' },
+      { key: 'DOT-N8', zhName: '明眸', enName: 'Macular Guard' },
+      { key: 'DOT-N9', zhName: 'NAD焕新', enName: 'NAD Renew' },
+      { key: 'DOT-N10', zhName: '肌光焕采', enName: 'Radiant Skin' },
+      { key: 'DOT-N11', zhName: '代谢焕新', enName: 'Metabolic Renew' },
+      { key: 'DOT-N12', zhName: '敏锐心智', enName: 'Sharp Mind' },
     ],
   },
   {
-    key: 'set-system-optimization',
-    nameZh: '系统调优套装', nameEn: 'System Optimization',
-    descZh: '微血管 · 抗压年龄 · 肠道 · 免疫', descEn: 'Vascular · Resilience · Gut · Immunity',
+    key: 'set-defense',
+    nameZh: '防御方阵套装', nameEn: 'Defense Set',
+    descZh: '肠道 · 免疫 · 抗糖化 · 心血管 · 血脂 · 抗氧化', descEn: 'Gut · Immune · Glycation · Cardio · Cholesterol · Antioxidant',
     color: '#f59e0b',
     dotItems: [
-      { key: 'DOT13', zhName: '微血管通流', enName: 'Vascular Flow' },
-      { key: 'DOT14', zhName: '微血管保护', enName: 'Vascular Protection' },
-      { key: 'DOT15', zhName: '禅意共振', enName: 'Zen Resonance' },
-      { key: 'DOT16', zhName: '抗压防御', enName: 'Resilience Defense' },
-      { key: 'DOT17', zhName: '肠道微生态', enName: 'Gut & Microbiome' },
-      { key: 'DOT18', zhName: '免疫防御', enName: 'Immunity & Gastric' },
+      { key: 'DOT-N13', zhName: '肠道焕新', enName: 'Gut Renew' },
+      { key: 'DOT-N14', zhName: '免疫韧性', enName: 'Immune Resilience' },
+      { key: 'DOT-N15', zhName: '抗糖化防护', enName: 'Glycation Guard' },
+      { key: 'DOT-N16', zhName: '心血管信号', enName: 'Cardio Signal' },
+      { key: 'DOT-N17', zhName: '血脂平衡', enName: 'Cholesterol Balance' },
+      { key: 'DOT-N18', zhName: '抗氧化盾', enName: 'Antioxidant Shield' },
     ],
   },
 ]
@@ -53,7 +55,7 @@ const CART_SETS = [
 
 const T = {
   zh: {
-    tabChat: '对话', tabHealth: '健康', tabPlans: '方案', tabStore: '补给', tabLearn: '学院',
+    tabChat: '对话', tabHealth: '健康', tabPlans: '方案', tabStore: '补给', tabLearn: '学习',
     plansDotsPlanTab: '方案', plansDotsDotsTab: '原粒', learnAcademyTab: '学院', learnBoxTab: '魔盒',
     wellnessEmpty: '暂无内容',
     wellnessDeviceTitle: '智能戒指', wellnessDeviceDownload: '复制下载链接', wellnessDeviceNoApk: '暂无可用版本',
@@ -94,8 +96,13 @@ const T = {
     taskQSubmit: '提交', taskQCancel: '取消',
     todayProgress: '今日进度',
     logout: '退出',
+    exitSandbox: '退出沙盒',
+    sandboxBanner: '沙盒模式：正在以「{name}」的身份查看，任何操作都不会保存',
     initMsg: '您好！我是 Nano，您的AI健康伴侣。今天有什么可以帮您的？',
+    verifyPhonePrompt: '为了确保您的健康数据准确关联到您本人，请验证您的手机号码。',
+    verifyPhoneCta: '验证手机号 →',
     inputPh: '输入消息…',
+    micRecording: '正在录音…松开结束',
     errServer: '无法连接服务器，请重试。',
     obNamePrompt: '在开始之前，需要了解一些基本信息来个性化您的健康洞察。请问您的姓名是？',
     obNameOnly: '有一件小事——请问您叫什么名字？',
@@ -183,6 +190,7 @@ const T = {
     adminMenu: '渠道管理',
     coachMenu: '教练面板',
     superadminMenu: '超管面板',
+    webAdminMenu: '网页后台',
     kinoSimMenu: 'Kino 模拟器',
     referralMenu: '邀请好友',
     kinoSimPassTitle: '输入密码',
@@ -208,17 +216,13 @@ const T = {
     kinoScanInstruction: '请将芯片插入 Kino 分析仪，开始检测。',
     kinoScanAlreadyLinked: '此芯片已绑定到您的账户，正在等待检测结果。',
     kinoScanUsed: '此芯片已完成检测，无法重复登记。',
+    kinoScanClaimedByOther: '此芯片已被其他账户登记，正在等待检测结果。如需重新使用，请联系管理员重置该芯片。',
     kinoScanInvalidChip: '此二维码不是有效的 Kino 芯片，请扫描芯片上的二维码。',
     kinoScanError: '登记失败，请重试。',
     bmLabels: { hsCRP: 'hs-CRP', GDF15: 'GDF-15', IL6: 'IL-6', GA: '糖化白蛋白', CystatinC: '胱抑素 C', CD38: 'CD38' },
     subAgeLabels: { ResilienceAge: '抗压年龄', CellularAge: '细胞年龄', MetabolicAge: '代谢年龄', MicroVascularAge: '微血管年龄' },
     lightMode: '浅色模式',
     darkMode: '深色模式',
-    phonePromptMsg: '最后一步！绑定手机号，让您的健康教练可以随时联系到您。',
-    phonePromptBtn: '📱 绑定手机号',
-    phoneMaybeLater: '稍后再说',
-    phoneBindSuccess: '手机号绑定成功！',
-    phoneBindError: '绑定失败，请稍后重试。',
     guestHeaderName: '游客',
     guestJoinTitle: '激活健康账户',
     guestJoinDesc: '输入您的邀请码，解锁 AI 健康教练、生物标志物检测与精准营养方案。',
@@ -226,14 +230,7 @@ const T = {
     guestActivating: '注册中…',
     guestInviteRequired: '请输入邀请码',
     guestInviteInvalid: '邀请码无效或已失效，请重新输入',
-    guestPhoneTitle: '完善您的资料',
-    guestPhoneDesc: '以下两项为注册必填信息。',
-    guestAvatarLabel: '使用我的微信头像',
-    guestPhoneLabel: '授权手机号',
-    guestContinueBtn: '继续',
-    guestCancelSignup: '退出注册',
-    guestChatCtaText: '输入邀请码，激活您的 AI 健康伴侣',
-    guestChatCtaBtn: '立即加入',
+    guestSignupBtn: '注册',
     guestDotsCta: '激活账户后，获取您的专属营养方案',
     guestMenuSignUp: '注册账户',
     aiDisclaimer: '本服务为AI生成内容，结果仅供参考',
@@ -300,8 +297,13 @@ const T = {
     taskQSubmit: 'Submit', taskQCancel: 'Cancel',
     todayProgress: 'Today',
     logout: 'Logout',
+    exitSandbox: 'Exit Sandbox',
+    sandboxBanner: 'Sandbox: viewing as "{name}" — nothing is saved',
     initMsg: 'Hello! I am Nano, your AI health companion. How can I help you today?',
+    verifyPhonePrompt: 'To make sure your health data is accurately linked to you, please verify your phone number.',
+    verifyPhoneCta: 'Verify Phone Number →',
     inputPh: 'Type a message…',
+    micRecording: 'Recording… release to finish',
     errServer: 'Could not reach the server. Please try again.',
     obNamePrompt: 'Before we start, I need a couple of quick details to personalize your health insights. What should I call you?',
     obNameOnly: 'One quick thing — what is your name?',
@@ -389,6 +391,7 @@ const T = {
     adminMenu: 'Channel Admin',
     coachMenu: 'Coach Panel',
     superadminMenu: 'Super Admin',
+    webAdminMenu: 'Web Admin',
     kinoSimMenu: 'Kino Simulator',
     referralMenu: 'Invite Friends',
     kinoSimPassTitle: 'Enter Passcode',
@@ -414,17 +417,13 @@ const T = {
     kinoScanInstruction: 'Now insert the chip into the Kino Analyzer to begin the test.',
     kinoScanAlreadyLinked: 'This chip is already linked to your account and is awaiting analysis.',
     kinoScanUsed: 'This chip has already been analyzed and cannot be registered again.',
+    kinoScanClaimedByOther: 'This chip is already registered to another account and is awaiting analysis. Ask an admin to reset it if you need to reuse it.',
     kinoScanInvalidChip: 'This QR code is not a valid Kino chip. Please scan the QR code on your chip.',
     kinoScanError: 'Registration failed. Please try again.',
     bmLabels: { hsCRP: 'hs-CRP', GDF15: 'GDF-15', IL6: 'IL-6', GA: 'Glycated Albumin', CystatinC: 'Cystatin C', CD38: 'CD38' },
     subAgeLabels: { ResilienceAge: 'Resilience Age', CellularAge: 'Cellular Age', MetabolicAge: 'Metabolic Age', MicroVascularAge: 'Micro-Vascular Age' },
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
-    phonePromptMsg: 'One last thing — link your phone number so your health advisor can reach you when needed.',
-    phonePromptBtn: '📱 Link Phone Number',
-    phoneMaybeLater: 'Maybe later',
-    phoneBindSuccess: 'Phone number linked successfully!',
-    phoneBindError: 'Failed to link phone number. Please try again.',
     guestHeaderName: 'Guest',
     guestJoinTitle: 'Activate Your Account',
     guestJoinDesc: 'Enter your invite code to unlock AI health coaching, biomarker testing, and precision nutrition.',
@@ -432,14 +431,7 @@ const T = {
     guestActivating: 'Activating…',
     guestInviteRequired: 'Please enter an invite code',
     guestInviteInvalid: 'Invalid or expired invite code. Please try again.',
-    guestPhoneTitle: 'Complete Your Profile',
-    guestPhoneDesc: 'Both items below are required to sign up.',
-    guestAvatarLabel: 'Use my WeChat avatar',
-    guestPhoneLabel: 'Authorize phone number',
-    guestContinueBtn: 'Continue',
-    guestCancelSignup: 'Cancel sign-up',
-    guestChatCtaText: 'Enter your invite code to activate your AI health companion',
-    guestChatCtaBtn: 'Join Now',
+    guestSignupBtn: 'Sign up',
     guestDotsCta: 'Activate your account to get your personalized nutrition plan',
     guestMenuSignUp: 'Sign Up',
     aiDisclaimer: 'AI-generated content — for reference only',
@@ -811,6 +803,7 @@ Page({
     // Chat
     messages: [],
     chatInput: '',
+    isRecording: false,
     typing: false,
     isSending: false,
     toolboxOpen: false,
@@ -875,20 +868,15 @@ Page({
     creditBalance: 0,
     creditCurrency: 'CNY',
 
-    // Guest join sheet
+    // Guest join sheet — invite-code entry only; a valid code hands off to
+    // login.js, which owns account creation, avatar capture, and the
+    // phone/OTP verify-phone gate (see submitGuestInvite).
     guestSheetOpen: false,
     guestInviteCode: '',
     guestInviteDigits: ['', '', '', '', '', ''],
     guestInviteBusy: false,
     guestInviteError: '',
-    guestSheetStep: 'invite',
     guestKeyboardHeight: 0,
-    guestPendingAvatar: '',
-    guestAvatarDone: false,
-    guestAvatarUploading: false,
-    guestAvatarReady: false,
-    guestPhoneDone: false,
-    guestResolvedPhone: '',
 
     // Dots
     dotsLoading: true,
@@ -973,6 +961,8 @@ Page({
     trainingDashboard: null,
     trainingPaths: [],
     trainingCertifications: [],
+    showCertDetail: false,
+    certDetailItem: null,
     trainingQuizQuestions: [],
     trainingQuizAnswers: {},
     trainingQuizResult: null,
@@ -987,10 +977,6 @@ Page({
   _rawStoreOrders: null,
   _dotsLoadedAt: 0,
   _plansLoadedAt: 0,
-  _pendingGuestSignup: null,
-  _pendingGuestAvatarUrl: '',
-  _pendingInviteCode: '',
-  _pendingPhoneCode: '',
   _lastMsgId: null,
   _touchX: 0,
   _touchY: 0,
@@ -1001,6 +987,20 @@ Page({
     if (!user) {
       wx.reLaunch({ url: '/pages/login/login' })
       return
+    }
+    // Defense in depth: an interrupted sign-up (app closed/reopened right after
+    // login.js's _finishNewUser, before verify-phone ran) shouldn't land here —
+    // login.js's own session-restore already redirects this case, but this page
+    // shouldn't trust that alone.
+    if (user.pendingPhoneVerification) {
+      wx.reLaunch({ url: '/pages/verify-phone/verify-phone?new=1' })
+      return
+    }
+    this._recordManager = speechPlugin.getRecordRecognitionManager()
+    this._recordManager.onStop = (res) => this._onMicStop(res)
+    this._recordManager.onError = (res) => {
+      console.log(JSON.stringify({ level: 'WARN', msg: '[mic] recognition error', data: res }))
+      this.setData({ isRecording: false })
     }
     const { statusBarHeight = 0, windowWidth = 375 } = wx.getSystemInfoSync()
     this._screenW = windowWidth
@@ -1019,7 +1019,9 @@ Page({
     const userAvatarLetter = (user.nickname || 'U').slice(-1).toUpperCase()
     const channelOverrides = channel?.sub_age_display_names || null
     const t = { ...T[lang], subAgeLabels: buildSubAgeLabels(T[lang].subAgeLabels, channelOverrides, lang) }
-    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, toolList: toolActions.getToolList(t) })
+    const sandboxMode = !!app.globalData.sandboxMode
+    const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', user.nickname || '—') : ''
+    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
     if (isGuest) {
       this.setData({ messages: [{ id: 'init', role: 'ai', content: T[lang].initMsg }], obStep: null, storeLoading: true })
       this._loadGuestStore(lang)
@@ -1028,7 +1030,13 @@ Page({
     this._initChat(user, lang)
     this._loadDots(user, lang)
     this._loadCartridges(user, lang)
-    this._loadStore(user, lang)
+    const isAeviva = channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china'
+    // Aeviva's GCN store URL is minted lazily in switchTab (wvt is one-time/60s-TTL —
+    // minting it here on page load, before the user has even looked at Store, risks it
+    // being stale by the time they tap the tab).
+    if (!isAeviva) {
+      this._loadStore(user, lang)
+    }
     this._loadCreditBalance(user)
     // Restore persisted cart
     try {
@@ -1057,6 +1065,10 @@ Page({
   onHide() {
     this._stopPolling()
     this._stopKinoSlide()
+    if (this.data.isRecording) {
+      this._recordManager && this._recordManager.stop()
+      this.setData({ isRecording: false })
+    }
   },
 
   onReady() {
@@ -1074,6 +1086,9 @@ Page({
   onUnload() {
     this._stopPolling()
     this._stopKinoSlide()
+    if (this.data.isRecording) {
+      this._recordManager && this._recordManager.stop()
+    }
     const _app = getApp()
     if (_app._onPrivacyRequest) _app._onPrivacyRequest = null
   },
@@ -1098,8 +1113,45 @@ Page({
 
   // ── Tab navigation ──────────────────────────────────────────────────────────
 
-  switchTab(e) {
+  async switchTab(e) {
     const tab = e.currentTarget.dataset.tab
+    if (tab === 'store' && !this.data.isGuest) {
+      const { channel } = this.data
+      if (channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china') {
+        // The GCN handoff (handleNanoSSO) hard-requires a verified phone and 403s
+        // otherwise — opening the webview anyway just dead-ends on GCN's login page with
+        // no explanation. Catch it here instead, before minting a wvt nobody can use.
+        // Checked fresh against the server rather than trusting the cached flag: a
+        // returning session restores `user.phone_verified` straight from local storage
+        // (app.js onLaunch) and never re-syncs it against the server, so a pre-migration
+        // account whose cache still says `true` from before phone verification existed
+        // would otherwise sail past this gate and land on GCN's dead end anyway.
+        const verified = await this._checkPhoneVerified()
+        if (!verified) {
+          const { lang } = this.data
+          wx.showModal({
+            title: lang === 'zh' ? '需要验证手机号' : 'Phone verification needed',
+            content: lang === 'zh'
+              ? '进入商城前，请先验证您的手机号码'
+              : 'Please verify your phone number before entering the store.',
+            confirmText: lang === 'zh' ? '去验证' : 'Verify',
+            cancelText: lang === 'zh' ? '取消' : 'Cancel',
+            success: (r) => {
+              if (r.confirm) wx.navigateTo({ url: '/pages/verify-phone/verify-phone' })
+            },
+          })
+          return
+        }
+        // Aeviva's GCN store opens as a separate navigated page (pages/appview — its own
+        // header/back button, a plain page layout) rather than an inline tab section:
+        // <web-view> doesn't reliably support any overlay button (cover-view is only
+        // documented for map/video/canvas/camera, not web-view) when embedded inside this
+        // page's absolutely-positioned tab-switching containers — confirmed by testing,
+        // not just theory. Don't change `tab` at all; stay on whatever tab was active.
+        this._openAevivaStore()
+        return
+      }
+    }
     this.setData({ tab })
     if (tab === 'health') {
       this.selectComponent('#health-comp')?._maybeAutoSync()
@@ -1151,10 +1203,10 @@ Page({
   closeMenu()  { this.setData({ menuOpen: false }) },
   noop()       {},
 
-  onPrivacyAgree(e) {
+  onPrivacyAgree() {
     const _app = getApp()
     if (_app._privacyResolve) {
-      _app._privacyResolve({ event: e, buttonId: 'privacy-agree-btn' })
+      _app._privacyResolve({ event: 'agree', buttonId: 'privacy-agree-btn' })
       _app._privacyResolve = null
     }
     this.setData({ showPrivacyModal: false })
@@ -1230,6 +1282,30 @@ Page({
   openSuperadmin() {
     this.setData({ menuOpen: false })
     wx.navigateTo({ url: '/pages/superadmin/superadmin' })
+  },
+
+  openWebAdmin() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/webadmin/webadmin' })
+  },
+
+  openUserApp(path = '/app') {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: `/pages/appview/appview?url=${encodeURIComponent(path)}` })
+  },
+
+  // Aeviva channel's Store tab tap opens the GCN storefront via appview.js (which mints
+  // its own wvt internally) instead of the native dots/credits store — see switchTab.
+  // Uses the direct aeviva(-dev).gcn.net hostname, not edge(-dev).gcn.net's path-prefixed
+  // routing (both serve the identical site/aeviva/dashboard.html) — WeChat's <web-view>
+  // business-domain verification is per-exact-domain, and only aeviva(-dev).gcn.net has a
+  // verification file hosted/verified (see nano/docs/wechat-domain-setup.md); edge(-dev)
+  // was never verified and 不支持打开's with it. Mirror BASE's own develop-vs-trial/release
+  // split (CLAUDE.md §"Miniapp Backend Selection") rather than IS_DEV, which also covers
+  // trial builds.
+  _openAevivaStore() {
+    const host = BASE.includes('-dev.') ? 'https://aeviva-dev.gcn.net' : 'https://aeviva.gcn.net'
+    this.openUserApp(`${host}/dashboard.html`)
   },
 
   // ── Kino Simulator ──────────────────────────────────────────────────────────
@@ -1430,8 +1506,31 @@ Page({
 
   // ── Logout ──────────────────────────────────────────────────────────────────
 
+  exitSandbox() {
+    this._stopPolling()
+    const origin = wx.getStorageSync('nano_sandbox_origin')
+    wx.removeStorageSync('nano_sandbox_origin')
+    wx.removeStorageSync('nano_sandbox_active')
+    app.globalData.sandboxMode = false
+    if (origin && origin.user) {
+      app.globalData.user = origin.user
+      app.globalData.channel = origin.channel || null
+      app.globalData.coach = origin.coach || null
+      wx.setStorageSync('nano_user', origin.user)
+      wx.setStorageSync('nano_channel', origin.channel || null)
+      wx.setStorageSync('nano_coach', origin.coach || null)
+      wx.reLaunch({ url: '/pages/main/main' })
+    } else {
+      // No origin snapshot (unexpected) — fall back to a full logout.
+      wx.removeStorageSync('nano_user')
+      app.globalData.user = null
+      wx.reLaunch({ url: '/pages/login/login' })
+    }
+  },
+
   handleLogout() {
     this.setData({ menuOpen: false })
+    if (app.globalData.sandboxMode) { this.exitSandbox(); return }
     this._stopPolling()
     wx.removeStorageSync('nano_user')
     app.globalData.user = null
@@ -1478,6 +1577,16 @@ Page({
       if (IS_DEV) console.error('History load failed', e)
     }
     if (!historyLoaded) { this.setData({ messages: [initMsg] }) }
+
+    // Advisory nudge, not a blocking gate — WeChat mini-program review requires free
+    // browsing, so phone verification can never stand in the way of using the app (see
+    // login.js's _finishNewUser comment). Shown client-side only (not persisted to
+    // chat_messages) so it naturally reappears every session until phone_verified flips
+    // true, without accumulating duplicate rows in chat history.
+    if (!user.phone_verified) {
+      this._addMsg('ai', t.verifyPhonePrompt)
+      this._addActionMsg('verify_phone', t.verifyPhoneCta)
+    }
 
     // Fetch pending questionnaires + biomarkers in parallel
     let pendingAssignments = []
@@ -1682,13 +1791,8 @@ Page({
     const { t } = this.data
     if (!silent) this._addMsg('ai', t.questionnaireThanks, true)
     this.setData({ obStep: 'done' })
-    if (!user.phone && !user.phoneSet && !wx.getStorageSync('nano_phone_prompted')) {
-      wx.setStorageSync('nano_phone_prompted', '1')
-      setTimeout(() => {
-        this._addMsg('ai', t.phonePromptMsg)
-        this._addActionMsg('bind_phone', t.phonePromptBtn)
-      }, 800)
-    }
+    // Phone verification is now enforced as a hard gate before reaching this page
+    // (see onLoad) — no in-chat nudge needed anymore.
     this._startPolling(user)
   },
 
@@ -1753,11 +1857,6 @@ Page({
 
   // ── Chat messaging ──────────────────────────────────────────────────────────
 
-  _removePhonePrompt() {
-    const messages = this.data.messages.filter(m => m.action !== 'bind_phone' && m.action !== 'maybe_later')
-    this.setData({ messages })
-  },
-
   _addMsg(role, rawContent, persist = false) {
     const content = role === 'ai' ? mdToHtml(rawContent) : rawContent
     const msg = { id: `${role}-${Date.now()}`, role, content }
@@ -1790,6 +1889,90 @@ Page({
     const { typing, toolboxOpen } = this.data
     if (typing && !toolboxOpen) return
     this.setData({ toolboxOpen: !toolboxOpen })
+  },
+
+  // ── Voice input (mic) ──────────────────────────────────────────────────────
+
+  onMicTouchStart() {
+    const { typing, isSending, isRecording, lang } = this.data
+    if (typing || isSending || isRecording) return
+    this._micStartTs = Date.now()
+    this._micReleased = false
+    this._checkRecordAuth().then((granted) => {
+      if (!granted) return
+      // Fast tap-and-release can finish before this async auth check resolves —
+      // skip starting the recorder if the user already lifted their finger.
+      if (this._micReleased) return
+      this.setData({ isRecording: true })
+      this._recordManager.start({
+        duration: 60000,
+        lang: lang === 'zh' ? 'zh_CN' : 'en_US',
+      })
+    })
+  },
+
+  onMicTouchEnd() {
+    this._micReleased = true
+    if (!this.data.isRecording) return
+    this.setData({ isRecording: false })
+    this._recordManager.stop()
+  },
+
+  _onMicStop(res) {
+    const heldMs = Date.now() - (this._micStartTs || 0)
+    const result = ((res && res.result) || '').trim()
+    // Accidental tap or silence — fail quietly, no error toast.
+    if (heldMs < 500 || !result) return
+    const current = this.data.chatInput
+    const merged = current
+      ? `${current}${/\s$/.test(current) ? '' : ' '}${result}`
+      : result
+    this.setData({ chatInput: merged })
+  },
+
+  _checkRecordAuth() {
+    return new Promise((resolve) => {
+      wx.getSetting({
+        success: (res) => {
+          if (res.authSetting['scope.record'] === true) {
+            resolve(true)
+            return
+          }
+          if (res.authSetting['scope.record'] === false) {
+            // Previously denied — wx.authorize would just fail silently again; must
+            // route through Settings per WeChat's documented pattern.
+            this._promptOpenSetting()
+            resolve(false)
+            return
+          }
+          // Never asked — trigger the native one-time authorize prompt.
+          wx.authorize({
+            scope: 'scope.record',
+            success: () => resolve(true),
+            fail: () => {
+              this._promptOpenSetting()
+              resolve(false)
+            },
+          })
+        },
+        fail: () => resolve(false),
+      })
+    })
+  },
+
+  _promptOpenSetting() {
+    const { lang } = this.data
+    wx.showModal({
+      title: lang === 'zh' ? '需要麦克风权限' : 'Microphone access needed',
+      content: lang === 'zh'
+        ? '请在设置中开启麦克风权限，以使用语音输入功能'
+        : 'Please enable microphone access in Settings to use voice input.',
+      confirmText: lang === 'zh' ? '去设置' : 'Settings',
+      cancelText: lang === 'zh' ? '取消' : 'Cancel',
+      success: (r) => {
+        if (r.confirm) wx.openSetting()
+      },
+    })
   },
 
   handleToolAction(e) {
@@ -1857,6 +2040,11 @@ Page({
       this.setData({ tab: 'dots', dotsLoading: true, cartridgesLoading: true })
       this._loadDots(user, lang)
       this._loadCartridges(user, lang)
+    } else if (action === 'verify_phone') {
+      // No `?new=1` — this is an existing account being prompted later, not the
+      // brand-new-signup flow, so verify-phone.js skips the avatar step and its
+      // cancel/logout link won't delete the account (see verify-phone.js's own guards).
+      wx.navigateTo({ url: '/pages/verify-phone/verify-phone' })
     } else if (action === 'hr_own_yes') {
       this._removeHrActions()
       this._addMsg('ai', t.hrAskSave)
@@ -1929,28 +2117,6 @@ Page({
     }
   },
 
-  async handleBindPhone(e) {
-    const { t, user } = this.data
-    const { code, errMsg } = e.detail
-    this._removePhonePrompt()
-    if (errMsg !== 'getPhoneNumber:ok' || !code) return
-    try {
-      const { appId } = wx.getAccountInfoSync().miniProgram
-      const res = await this._req(`${BASE}/api/bind-phone`, 'POST', { user_id: user.user_id, code, app_id: appId })
-      if (res.data?.success) {
-        const updatedUser = { ...user, phoneSet: true }
-        app.globalData.user = updatedUser
-        wx.setStorageSync('nano_user', updatedUser)
-        this.setData({ user: updatedUser })
-        this._addMsg('ai', t.phoneBindSuccess)
-      } else {
-        this._addMsg('ai', t.phoneBindError)
-      }
-    } catch (err) {
-      this._addMsg('ai', t.phoneBindError)
-    }
-  },
-
   cancelKinoScan() {
     this.setData({ kinoScanPending: false })
   },
@@ -1982,6 +2148,11 @@ Page({
       const res = await this._req(`${BASE}/api/chat`, 'POST', { openid: user.user_id, message: text })
       if (res.data?.recorded_weight != null) {
         this.selectComponent('#health-comp')?.refresh()
+      }
+      // Sandbox sessions get the reply directly in the response (nothing was persisted
+      // to notifications for polling to pick up).
+      if (app.globalData.sandboxMode && res.data?.reply) {
+        this._addMsg('ai', res.data.reply)
       }
     } catch (e) {
       this._addMsg('ai', this.data.t.errServer)
@@ -2969,14 +3140,10 @@ Page({
   },
 
   openGuestSheet() {
-    this._pendingGuestAvatarUrl = ''
-    this._pendingInviteCode = ''
-    this._pendingPhoneCode = ''
-    this.setData({ guestSheetOpen: true, guestSheetStep: 'invite', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '', guestPendingAvatar: '', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, guestResolvedPhone: '', menuOpen: false })
+    this.setData({ guestSheetOpen: true, guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '', menuOpen: false })
   },
 
   closeGuestSheet() {
-    if (this.data.guestSheetStep === 'phone') return
     this.setData({ guestSheetOpen: false, guestKeyboardHeight: 0 })
   },
 
@@ -3008,237 +3175,31 @@ Page({
         this.setData({ guestInviteError: res.data?.error || t.errServer, guestInviteBusy: false })
         return
       }
-      this._pendingInviteCode = code
-      this._pendingGuestSignup = { channel: res.data.channel }
-      this.setData({ guestSheetStep: 'phone', guestInviteBusy: false })
-      // Pre-trigger privacy authorization so both avatar and phone buttons work on first tap.
-      // wx.requirePrivacyAuthorize routes through onNeedPrivacyAuthorization → our modal.
-      // If consent is already recorded by WeChat, success fires immediately and no modal appears.
-      if (wx.requirePrivacyAuthorize) wx.requirePrivacyAuthorize({ success() {}, fail() {} })
+      // Valid invite code confirmed — hand off to login.js, which owns account
+      // creation, avatar capture, and the phone/OTP verify-phone gate. Keeps a
+      // single implementation of "new account" instead of a second copy here.
+      wx.reLaunch({ url: `/pages/login/login?invite=${encodeURIComponent(code)}` })
     } catch (e) {
       this.setData({ guestInviteError: this.data.t.errServer, guestInviteBusy: false })
     }
   },
 
-  _uploadGuestAvatar(previewPath, localPath) {
-    this.setData({ guestPendingAvatar: previewPath, guestAvatarDone: true, guestAvatarUploading: true })
-    this._req(`${BASE}/api/oss/presign?type=avatar&filename=avatar.jpg&category=users`, 'GET').then(presignRes => {
-      const { put_url, get_url } = presignRes.data || {}
-      if (!put_url) { this.setData({ guestAvatarUploading: false }); return }
-      wx.getFileSystemManager().readFile({
-        filePath: localPath,
-        success: (fileRes) => {
-          wx.request({
-            url: put_url,
-            method: 'PUT',
-            data: fileRes.data,
-            header: { 'Content-Type': 'application/octet-stream' },
-            responseType: 'text',
-            success: () => {
-              this._pendingGuestAvatarUrl = get_url
-              this.setData({ guestPendingAvatar: get_url, guestAvatarUploading: false, guestAvatarReady: true })
-            },
-            fail: () => this.setData({ guestAvatarUploading: false }),
-          })
-        },
-        fail: () => this.setData({ guestAvatarUploading: false }),
-      })
-    }).catch(() => this.setData({ guestAvatarUploading: false }))
-  },
-
-  handleGuestAvatarButtonTap() {
-    // Give open-type="chooseAvatar" 500 ms to fire bindchooseavatar.
-    // If it doesn't respond (unsupported context or WeChat version), fall back to wx.chooseMedia.
-    if (this._avatarFallbackTimer) clearTimeout(this._avatarFallbackTimer)
-    this._avatarFallbackTimer = setTimeout(() => {
-      this._avatarFallbackTimer = null
-      if (!this.data.guestAvatarReady && !this.data.guestAvatarUploading) this._openGuestAvatarFallback()
-    }, 500)
-  },
-
-  handleGuestChooseAvatar(e) {
-    // open-type="chooseAvatar" responded — cancel the fallback timer
-    if (this._avatarFallbackTimer) { clearTimeout(this._avatarFallbackTimer); this._avatarFallbackTimer = null }
-    const avatarUrl = e.detail?.avatarUrl
-    if (!avatarUrl) return
-    if (avatarUrl.startsWith('http')) {
-      this.setData({ guestPendingAvatar: avatarUrl })
-      wx.downloadFile({
-        url: avatarUrl,
-        success: (res) => this._uploadGuestAvatar(avatarUrl, res.tempFilePath),
-        fail: () => this.setData({ guestAvatarUploading: false }),
-      })
-    } else {
-      this._uploadGuestAvatar(avatarUrl, avatarUrl)
-    }
-  },
-
-  _openGuestAvatarFallback() {
-    const onPath = (p) => { if (p) this._uploadGuestAvatar(p, p) }
-    if (wx.chooseMedia) {
-      wx.chooseMedia({ count: 1, mediaType: ['image'], sourceType: ['album', 'camera'], success: (res) => onPath(res.tempFiles[0]?.tempFilePath), fail: () => {} })
-    } else {
-      wx.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'], success: (res) => onPath(res.tempFilePaths[0]), fail: () => {} })
-    }
-  },
-
   handleHealthChooseAvatar(e) {
-    const avatarUrl = e.detail?.avatarUrl
-    if (!avatarUrl) return
+    const { avatarId } = e.detail
     const comp = this.selectComponent('#health-comp')
-    const { user } = this.data
     const done = () => comp?.setData({ avatarUpdating: false })
-    const upload = (localPath) => {
-      this._req(`${BASE}/api/oss/presign?type=avatar&filename=avatar.jpg&category=users`, 'GET').then(presignRes => {
-        const { put_url, get_url } = presignRes.data || {}
-        if (!put_url) { done(); return }
-        wx.getFileSystemManager().readFile({
-          filePath: localPath,
-          success: (fileRes) => {
-            wx.request({
-              url: put_url,
-              method: 'PUT',
-              data: fileRes.data,
-              header: { 'Content-Type': 'application/octet-stream' },
-              responseType: 'text',
-              success: () => {
-                this._saveUser(user, { avatar_url: get_url }).then(() => {
-                  this._updateUser({ ...user, avatar_url: get_url })
-                }).catch(() => {}).finally(done)
-              },
-              fail: done,
-            })
-          },
-          fail: done,
-        })
-      }).catch(done)
-    }
-    if (avatarUrl.startsWith('http')) {
-      wx.downloadFile({
-        url: avatarUrl,
-        success: (res) => upload(res.tempFilePath),
-        fail: done,
-      })
-    } else {
-      upload(avatarUrl)
-    }
+    const url = avatarId ? resolveAvatarUrl(avatarId, DEFAULT_MOOD) : null
+    if (!url) { done(); return }
+    const { user } = this.data
+    this._saveUser(user, { avatar_url: url, avatar_character: avatarId }).then(() => {
+      this._updateUser({ ...user, avatar_url: url, avatar_character: avatarId })
+    }).catch(() => {}).finally(done)
   },
 
   onProfileUpdated(e) {
     const updated = e.detail
     if (!updated) return
     this._updateUser(updated)
-  },
-
-  handleGuestPhone(e) {
-    const { code, errMsg } = e.detail
-    if (errMsg !== 'getPhoneNumber:ok' || !code) return
-    this._pendingPhoneCode = code
-    this.setData({ guestPhoneDone: true, guestInviteError: '', guestResolvedPhone: '' })
-    const { appId } = wx.getAccountInfoSync().miniProgram
-    this._req(`${BASE}/api/resolve-phone`, 'POST', { code, app_id: appId }).then(res => {
-      if (res.data?.success && res.data.phone) {
-        this.setData({ guestResolvedPhone: res.data.phone })
-      }
-    }).catch(() => {})
-  },
-
-  async proceedGuestSignup() {
-    const { guestAvatarUploading, guestResolvedPhone, guestInviteBusy, t } = this.data
-    if (guestAvatarUploading || !guestResolvedPhone || guestInviteBusy) return
-    this.setData({ guestInviteBusy: true })
-    try {
-      const { code: wxCode } = await this._getCode()
-      const { appId } = wx.getAccountInfoSync().miniProgram
-      this._pendingPhoneCode = ''
-      const loginRes = await this._req(`${BASE}/api/wx-login`, 'POST', {
-        code: wxCode, invite_code: this._pendingInviteCode, app_id: appId, phone: guestResolvedPhone,
-      })
-      if (!loginRes.data?.success) {
-        if (loginRes.data?.phone_error) {
-          this.setData({ guestInviteError: loginRes.data.error || t.errServer, guestInviteBusy: false, guestPhoneDone: false })
-        } else {
-          this.setData({ guestInviteError: loginRes.data?.error || t.errServer, guestInviteBusy: false })
-        }
-        return
-      }
-      this._pendingGuestSignup = loginRes.data
-      const u = loginRes.data.user
-      if (this._pendingGuestAvatarUrl) {
-        try {
-          await this._req(`${BASE}/api/users/${u.user_id}`, 'PUT', {
-            nickname: u.nickname, phone: u.phone,
-            email: u.email, gender: u.gender, birth_date: u.birth_date,
-            language: u.language, coach_id: u.coach_id, avatar_url: this._pendingGuestAvatarUrl,
-          })
-          const confirmedUrl = await this._pollAvatarUrl(u.user_id)
-          const finalUrl = confirmedUrl || this._pendingGuestAvatarUrl
-          this._pendingGuestSignup.user = { ...u, avatar_url: finalUrl }
-        } catch (err) {}
-        this._pendingGuestAvatarUrl = ''
-      }
-      this._completeGuestSignup()
-    } catch (e) {
-      this.setData({ guestInviteError: t.errServer, guestInviteBusy: false })
-    }
-  },
-
-  cancelGuestSignup() {
-    if (this._avatarFallbackTimer) { clearTimeout(this._avatarFallbackTimer); this._avatarFallbackTimer = null }
-    this._pendingGuestSignup = null
-    this._pendingGuestAvatarUrl = ''
-    this._pendingInviteCode = ''
-    this._pendingPhoneCode = ''
-    this.setData({ guestSheetOpen: false, guestSheetStep: 'invite', guestAvatarDone: false, guestAvatarUploading: false, guestAvatarReady: false, guestPhoneDone: false, guestResolvedPhone: '', guestPendingAvatar: '', guestInviteCode: '', guestInviteDigits: Array(6).fill(''), guestInviteError: '' })
-  },
-
-  _pollAvatarUrl(userId) {
-    return new Promise((resolve) => {
-      let attempts = 0
-      const poll = () => {
-        this._req(`${BASE}/api/users/${userId}`, 'GET').then(res => {
-          const url = res.data?.user?.avatar_url
-          if (url) { resolve(url); return }
-          if (++attempts < 8) setTimeout(poll, 1500)
-          else resolve(null)
-        }).catch(() => {
-          if (++attempts < 8) setTimeout(poll, 1500)
-          else resolve(null)
-        })
-      }
-      poll()
-    })
-  },
-
-  _completeGuestSignup() {
-    const data = this._pendingGuestSignup
-    if (!data) return
-    this._pendingGuestSignup = null
-    const user = data.user
-    const channel = data.channel || null
-    const coach = data.coach || null
-    this.setData({ guestPendingAvatar: '' })
-    app.globalData.user = user
-    app.globalData.channel = channel
-    app.globalData.coach = coach
-    const channelLocale = channel?.locale || 'zh'
-    app.globalData.lang = user.language === 'en' ? 'en' : (channelLocale === 'en' ? 'en' : 'zh')
-    wx.setStorageSync('nano_user', user)
-    wx.setStorageSync('nano_channel', channel)
-    wx.setStorageSync('nano_coach', coach)
-    const lang = user.language === 'en' ? 'en' : (channelLocale === 'en' ? 'en' : 'zh')
-    const roles = user.roles || ['user']
-    const isCoach = roles.includes('coach')
-    const isAdmin = roles.includes('admin') || roles.includes('superadmin')
-    const isSuperadmin = roles.includes('superadmin')
-    const userAvatarLetter = (user.nickname || 'U').slice(-1).toUpperCase()
-    const channelOverridesGuest = channel?.sub_age_display_names || null
-    const guestT = { ...T[lang], subAgeLabels: buildSubAgeLabels(T[lang].subAgeLabels, channelOverridesGuest, lang) }
-    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t: guestT, isGuest: false, guestSheetOpen: false, guestSheetStep: 'invite', guestInviteBusy: false, isCoach, isAdmin, isSuperadmin })
-    this._initChat(user, lang)
-    this._loadDots(user, lang)
-    this._loadCartridges(user, lang)
-    this._loadStore(user, lang)
   },
 
   _getCode() {
@@ -3505,6 +3466,68 @@ Page({
     this.setData({ trainingView: 'list', trainingCurrentCourse: null, trainingCurrentLesson: null, trainingVideoUrl: '', trainingQuizQuestions: [], trainingQuizAnswers: {}, trainingQuizResult: null, trainingQuizReview: [] })
   },
 
+  // API responses serialize DATE columns as full ISO datetimes, e.g.
+  // "2026-07-05T16:00:00.000Z" for what the DB actually stores as 2026-07-06 — the
+  // backend parses DATE columns using its process timezone (Asia/Shanghai, set on
+  // every FC function), so by the time it's JSON, the value is one calendar day
+  // "behind" in UTC terms. Shift by the fixed +8h Shanghai offset (no DST in China)
+  // before reading fields, so the day comes out right regardless of the device's
+  // own local timezone.
+  _formatCertDate(dateStr) {
+    if (!dateStr) return ''
+    const d = new Date(dateStr)
+    if (Number.isNaN(d.getTime())) return dateStr
+    const shanghai = new Date(d.getTime() + 8 * 60 * 60 * 1000)
+    const y = shanghai.getUTCFullYear()
+    const day = shanghai.getUTCDate()
+    if (this.data.lang === 'zh') return `${y}年${shanghai.getUTCMonth() + 1}月${day}日`
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+    return `${months[shanghai.getUTCMonth()]} ${day}, ${y}`
+  },
+
+  async showCertDetail(e) {
+    const cert = e.currentTarget.dataset.cert
+    // cert_oss_key is the backend-composited image (name/dates burned in) — prefer
+    // it for the preview. template_image_oss_key is the blank template, only used
+    // as a fallback for the rare case a cert exists but generation hasn't run yet.
+    const displayKey = cert.cert_oss_key || cert.template_image_oss_key
+    let templateImageUrl = ''
+    if (displayKey) {
+      try {
+        const res = await this._req(`${BASE}/api/oss/presign?action=get&key=${encodeURIComponent(displayKey)}`)
+        templateImageUrl = res.data?.url || ''
+      } catch (_) {}
+    }
+    const issueDateDisplay = this._formatCertDate(cert.issue_date)
+    const expiryDateDisplay = this._formatCertDate(cert.expiry_date)
+    this.setData({ showCertDetail: true, certDetailItem: { ...cert, templateImageUrl, issueDateDisplay, expiryDateDisplay } })
+  },
+
+  hideCertDetail() {
+    this.setData({ showCertDetail: false, certDetailItem: null })
+  },
+
+  noop() {},
+
+  async downloadCert(e) {
+    const key = e.currentTarget.dataset.key
+    if (!key) return
+    wx.showLoading({ title: this.data.lang === 'zh' ? '准备中…' : 'Loading…' })
+    try {
+      const res = await this._req(`${BASE}/api/oss/presign?action=get&key=${encodeURIComponent(key)}`)
+      const url = res.data?.url
+      if (!url) throw new Error('No URL')
+      wx.hideLoading()
+      const dlRes = await new Promise((resolve, reject) => {
+        wx.downloadFile({ url, success: resolve, fail: reject })
+      })
+      wx.openDocument({ filePath: dlRes.tempFilePath, showMenu: true })
+    } catch (_) {
+      wx.hideLoading()
+      wx.showToast({ title: this.data.lang === 'zh' ? '下载失败' : 'Download failed', icon: 'none' })
+    }
+  },
+
   trainingBackToLessons() {
     this.setData({ trainingView: 'lessons', trainingCurrentLesson: null, trainingVideoUrl: '', trainingCurrentLibraryItem: null, trainingLibraryContent: '', trainingQuizQuestions: [], trainingQuizAnswers: {}, trainingQuizResult: null, trainingQuizReview: [] })
   },
@@ -3519,8 +3542,30 @@ Page({
         success: resolve,
         fail: reject,
       }
+      if (app.globalData.sandboxMode && method !== 'GET') data = { ...(data || {}), sandbox: true }
       if (data) opts.data = data
       wx.request(opts)
     })
+  },
+
+  // Fetches the authoritative phone_verified state from the server rather than trusting
+  // the locally cached flag on this.data.user, which is only ever refreshed on a fresh
+  // wx-login — a returning session (app.js onLaunch restoring from
+  // wx.getStorageSync('nano_user')) never re-syncs it. Falls back to the cached value on
+  // a network error so a flaky connection doesn't block store access outright.
+  async _checkPhoneVerified() {
+    const user = this.data.user
+    if (!user || user.guest) return false
+    try {
+      const res = await this._req(`${BASE}/api/users/${user.user_id}`)
+      const verified = !!res.data?.user?.phone_verified
+      this.setData({ 'user.phone_verified': verified })
+      if (app.globalData.user) app.globalData.user.phone_verified = verified
+      const cached = wx.getStorageSync('nano_user')
+      if (cached) wx.setStorageSync('nano_user', { ...cached, phone_verified: verified })
+      return verified
+    } catch (e) {
+      return !!user.phone_verified
+    }
   },
 })

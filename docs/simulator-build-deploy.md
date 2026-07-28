@@ -1,19 +1,17 @@
 # Simulator Build & Deploy
 
-The three simulators (Chat, Kino, Coach) are built from source in `tests/` and served as static files inside the `admin-panel` FC function at `/admin/sim/{name}/`.
+The two simulators (Chat, Coach) are built from source in `tests/` and served as static files inside the `admin-panel` FC function at `/admin/sim/{name}/`.
 
 ## Directory layout
 
 ```
 tests/
   chat-simulator/   ← source (React + Vite)
-  kino-simulator/   ← source (React + Vite)
   coach-simulator/    ← source (React + Vite)
 
 src/functions/admin-panel/
   sim/
     chat/           ← build output (served at /admin/sim/chat/)
-    kino/           ← build output (served at /admin/sim/kino/)
     coach/            ← build output (served at /admin/sim/coach/)
 ```
 
@@ -27,8 +25,6 @@ The `outDir` in each simulator's `vite.config.js` points directly to the corresp
 ```bash
 cd tests/chat-simulator && npx vite build
 # or
-cd tests/kino-simulator && npx vite build
-# or
 cd tests/coach-simulator && npx vite build
 ```
 
@@ -38,11 +34,10 @@ cd tests/coach-simulator && npx vite build
 s deploy admin-panel -y
 ```
 
-## Rebuild all three at once
+## Rebuild both at once
 
 ```bash
 cd tests/chat-simulator && npx vite build && \
-cd ../kino-simulator   && npx vite build && \
 cd ../coach-simulator    && npx vite build && \
 cd ../.. && s deploy admin-panel -y
 ```
@@ -53,14 +48,13 @@ cd ../.. && s deploy admin-panel -y
 - The build output in `src/functions/admin-panel/sim/` is independent of the source — the two are only connected by the build step.
 - Each simulator's `index.html` contains an XHR interceptor that rewrites `/api/*` → `/admin/api/*` so API calls route correctly through the FC domain.
 - The simulators are accessible at:
-  - `/admin/simulators` — all three side by side
+  - `/admin/simulators` — both side by side
   - `/admin/sim/chat/` — Chat simulator standalone
-  - `/admin/sim/kino/` — Kino simulator standalone
   - `/admin/sim/coach/` — Coach simulator standalone
 
 ## Kino Simulator in the WeChat Mini Program
 
-The **web Kino Simulator** (`tests/kino-simulator/`) described above is **not** the same as the Kino Simulator feature inside the WeChat Mini Program.
+The Kino Simulator feature inside the WeChat Mini Program is unrelated to the web simulators above. (The old web Kino Simulator under `tests/kino-simulator/` has been removed.)
 
 The miniapp's Kino Simulator is a **native WXML overlay** implemented entirely within `src/mini/nano-miniapp/pages/main/`:
 

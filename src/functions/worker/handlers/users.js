@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { pool } = require('../lib/db');
 const { generateUserId, verifySubchannelOwnership } = require('../lib/auth');
 const { calculateAge } = require('../lib/time-utils');
+const { findAndMergeDuplicateAccount } = require('./user-merge');
 
 async function handleGetUsers(channelId, query = {}) {
     try {
@@ -14,7 +15,7 @@ async function handleGetUsers(channelId, query = {}) {
             const params = [];
             const channelFilter = channelId ? `AND u.channel_id = $${params.push(channelId)}` : '';
             const res = await pool.query(
-                `SELECT u.user_id, u.nickname, u.coach_id, u.channel_id
+                `SELECT u.user_id, u.nickname, u.phone, u.coach_id, u.channel_id
                  FROM users u WHERE 1=1 ${channelFilter}
                  ORDER BY u.created_at DESC`,
                 params
@@ -71,6 +72,7 @@ async function handleGetUsers(channelId, query = {}) {
         const sql = `
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
                     u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
+                    (u.phone_verified_at IS NOT NULL) AS phone_verified,
                     u.referred_by_user_id, u.invited_by_invitation_id,
                     u.bio_data as user_bio_data,
                     ru.nickname as referrer_nickname,
@@ -327,9 +329,11 @@ async function handleGetUser(user_id) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const res = await pool.query(
-            `SELECT u.user_id, u.nickname, u.avatar_url, u.phone, u.email, u.language, u.gender,
+            `SELECT u.user_id, u.nickname, u.avatar_url, u.avatar_character, u.phone, u.email, u.language, u.gender,
                     u.birth_date, u.roles, u.coach_id, u.channel_id, u.created_at,
+                    (u.phone_verified_at IS NOT NULL) AS phone_verified,
                     u.bio_data as user_bio_data,
+                    u.wearable_brand, u.wearable_mac, u.wearable_name, u.wearable_bound_at,
                     u.referred_by_user_id, u.invited_by_invitation_id,
                     ru.nickname as referrer_nickname,
                     inv.code as invite_code,
@@ -404,36 +408,75 @@ async function handlePostUsers(body) {
     }
 }
 
+// Keeps user_phones (the actual source of truth for phone/OTP login — see phone-otp.js)
+// in sync whenever the admin panel writes users.phone directly. Without this, an
+// admin-edited phone never reaches user_phones: the new number can't be used to log in,
+// and the next time this user re-verifies or switches their primary phone through the
+// OTP flow, users.phone gets silently overwritten back to whatever user_phones says,
+// erasing the manual edit with no warning.
+async function syncPrimaryPhone(client, user_id, phone) {
+    if (!phone) {
+        await client.query(`UPDATE user_phones SET is_primary = false WHERE user_id = $1`, [user_id]);
+        return { success: true };
+    }
+    const conflict = await client.query(
+        `SELECT user_id FROM user_phones WHERE phone = $1 AND user_id != $2`,
+        [phone, user_id]
+    );
+    if (conflict.rows.length > 0) return { success: false, error: 'phone_in_use' };
+
+    // Demote any other phone this user holds before promoting the new one — user_phones
+    // has a partial unique index enforcing one primary per user_id, so both can never be
+    // true at once. verified_at is intentionally left NULL on insert: a manually-typed
+    // admin edit isn't an OTP verification, so it shouldn't read as one.
+    await client.query(`UPDATE user_phones SET is_primary = false WHERE user_id = $1 AND phone != $2`, [user_id, phone]);
+    await client.query(
+        `INSERT INTO user_phones (user_id, phone, is_primary) VALUES ($1, $2, true)
+         ON CONFLICT (phone) DO UPDATE SET is_primary = true WHERE user_phones.user_id = EXCLUDED.user_id`,
+        [user_id, phone]
+    );
+    return { success: true };
+}
+
 async function handlePutUser(user_id, body) {
-    const { nickname, phone, email, gender, birth_date, language, coach_id, channel_id, bio_data, roles, avatar_url } = body;
+    const { nickname, phone, email, gender, birth_date, language, coach_id, channel_id, bio_data, roles, avatar_url, avatar_character } = body;
     // channel_id uses COALESCE so a missing/null value in the request never overwrites an existing assignment
+    if (!pool) return { success: false, error: 'Database pool not initialized' };
+    const client = await pool.connect();
     try {
-        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await client.query('BEGIN');
+
+        const phoneSync = await syncPrimaryPhone(client, user_id, phone || null);
+        if (!phoneSync.success) {
+            await client.query('ROLLBACK');
+            return { success: false, statusCode: 409, error: phoneSync.error };
+        }
+
         if (bio_data && roles) {
-            await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), bio_data = bio_data || $9, roles=$10, avatar_url=COALESCE($11, avatar_url) WHERE user_id=$12`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), roles, avatar_url || null, user_id]
+            await client.query(
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), bio_data = bio_data || $9, roles=$10, avatar_url=COALESCE($11, avatar_url), avatar_character=COALESCE($12, avatar_character) WHERE user_id=$13`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), roles, avatar_url || null, avatar_character || null, user_id]
             );
         } else if (bio_data) {
-            await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), bio_data = bio_data || $9, avatar_url=COALESCE($10, avatar_url) WHERE user_id=$11`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), avatar_url || null, user_id]
+            await client.query(
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), bio_data = bio_data || $9, avatar_url=COALESCE($10, avatar_url), avatar_character=COALESCE($11, avatar_character) WHERE user_id=$12`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), avatar_url || null, avatar_character || null, user_id]
             );
         } else if (roles) {
-            await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), roles=$9, avatar_url=COALESCE($10, avatar_url) WHERE user_id=$11`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, roles, avatar_url || null, user_id]
+            await client.query(
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), roles=$9, avatar_url=COALESCE($10, avatar_url), avatar_character=COALESCE($11, avatar_character) WHERE user_id=$12`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, roles, avatar_url || null, avatar_character || null, user_id]
             );
         } else {
-            await pool.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), avatar_url=COALESCE($9, avatar_url) WHERE user_id=$10`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, avatar_url || null, user_id]
+            await client.query(
+                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), avatar_url=COALESCE($9, avatar_url), avatar_character=COALESCE($10, avatar_character) WHERE user_id=$11`,
+                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, avatar_url || null, avatar_character || null, user_id]
             );
         }
         // Sync coaches table when roles change
         if (roles) {
             if (roles.includes('coach')) {
-                await pool.query(
+                await client.query(
                     `INSERT INTO coaches (user_id)
                      SELECT $1 FROM users WHERE user_id = $1
                      AND NOT EXISTS (SELECT 1 FROM coaches WHERE user_id = $1)`,
@@ -441,25 +484,30 @@ async function handlePutUser(user_id, body) {
                 );
             } else {
                 // Block removal if coach still has assigned users
-                const coachRow = await pool.query('SELECT id FROM coaches WHERE user_id = $1', [user_id]);
+                const coachRow = await client.query('SELECT id FROM coaches WHERE user_id = $1', [user_id]);
                 if (coachRow.rows.length > 0) {
                     const coachId = coachRow.rows[0].id;
-                    const assigned = await pool.query('SELECT COUNT(*) FROM users WHERE coach_id = $1', [coachId]);
+                    const assigned = await client.query('SELECT COUNT(*) FROM users WHERE coach_id = $1', [coachId]);
                     if (parseInt(assigned.rows[0].count) > 0) {
+                        await client.query('ROLLBACK');
                         return { success: false, statusCode: 409, error: `Cannot remove coach role: ${assigned.rows[0].count} user(s) are still assigned to this coach.` };
                     }
-                    await pool.query('DELETE FROM coaches WHERE id = $1', [coachId]);
+                    await client.query('DELETE FROM coaches WHERE id = $1', [coachId]);
                 }
             }
         }
+        await client.query('COMMIT');
         return { success: true };
     } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
         return { success: false, statusCode: 500, error: err.message };
+    } finally {
+        client.release();
     }
 }
 
 async function handlePatchUser(user_id, body) {
-    const { theme } = body;
+    const { theme, wearable } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const updates = [];
@@ -468,10 +516,56 @@ async function handlePatchUser(user_id, body) {
             params.push(theme === 'light' ? 'light' : 'dark');
             updates.push(`theme = $${params.length}`);
         }
+        // wearable: { brand, mac, name } to bind/update, or null to unbind.
+        if (wearable !== undefined) {
+            if (wearable === null) {
+                updates.push('wearable_brand = NULL', 'wearable_mac = NULL', 'wearable_name = NULL', 'wearable_bound_at = NULL');
+            } else {
+                params.push(wearable.brand ?? null);
+                updates.push(`wearable_brand = $${params.length}`);
+                params.push(wearable.mac ?? null);
+                updates.push(`wearable_mac = $${params.length}`);
+                params.push(wearable.name ?? null);
+                updates.push(`wearable_name = $${params.length}`);
+                updates.push('wearable_bound_at = NOW()');
+            }
+        }
         if (updates.length === 0) return { success: true };
         params.push(user_id);
         await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE user_id = $${params.length}`, params);
         return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// PATCH-style identity capture, separate from handlePatchUser (theme/wearable only) since
+// this is the one write path with real consequences: it's also the trigger point for the
+// same-system duplicate-account merge (see handlers/user-merge.js). No general profile-
+// update endpoint existed for these fields before this — government_id/first_name/last_name
+// were previously only ever set via a one-time academy backfill script
+// (migration_users_government_id_backfill.sql), and birth_date only via the chat
+// questionnaire, so this is the first live path a user can set all four through directly.
+async function handleSetIdentity(user_id, body) {
+    const { first_name, last_name, birth_date, government_id } = body || {};
+    if (!user_id) return { success: false, error: 'user_id is required' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+        const updates = [];
+        const params = [];
+        if (first_name !== undefined) { params.push(first_name); updates.push(`first_name = $${params.length}`); }
+        if (last_name !== undefined) { params.push(last_name); updates.push(`last_name = $${params.length}`); }
+        if (birth_date !== undefined) { params.push(birth_date); updates.push(`birth_date = $${params.length}`); }
+        if (government_id !== undefined) { params.push(government_id); updates.push(`government_id = $${params.length}`); }
+        if (updates.length === 0) return { success: true };
+
+        params.push(user_id);
+        const updated = await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE user_id = $${params.length} RETURNING user_id`, params);
+        if (updated.rows.length === 0) return { success: false, error: 'user_not_found' };
+
+        const mergedIntoUserId = await findAndMergeDuplicateAccount(user_id);
+        return { success: true, merged_into_user_id: mergedIntoUserId };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -574,6 +668,7 @@ module.exports = {
     handlePostUsers,
     handlePutUser,
     handlePatchUser,
+    handleSetIdentity,
     handleDeleteUser,
     handleGetInvitations,
     handlePostInvitation,

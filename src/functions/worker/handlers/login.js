@@ -2,6 +2,7 @@
 
 const { pool } = require('../lib/db');
 const { generateUserId, generateReferralCode, getWxAccessToken } = require('../lib/auth');
+const { normalizeCnPhone } = require('../lib/phone');
 
 async function handleResolvePhone(code, app_id = null) {
     try {
@@ -9,8 +10,8 @@ async function handleResolvePhone(code, app_id = null) {
         const credMap = {};
         if (process.env.WX_APPID && process.env.WX_SECRET)
             credMap[process.env.WX_APPID] = process.env.WX_SECRET;
-        if (process.env.WX_APPID_NANOVATE && process.env.WX_SECRET_NANOVATE)
-            credMap[process.env.WX_APPID_NANOVATE] = process.env.WX_SECRET_NANOVATE;
+        if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN)
+            credMap[process.env.WX_APPID_WAVEN] = process.env.WX_SECRET_WAVEN;
         const appid = (app_id && credMap[app_id]) ? app_id : process.env.WX_APPID;
         const token = await getWxAccessToken(appid, credMap[appid]);
         const wxRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
@@ -34,15 +35,16 @@ async function handleBindPhone(user_id, code, app_id = null, rawPhone = null) {
         if (!code && rawPhone) {
             if (!/^1\d{10}$/.test(rawPhone)) return { success: false, error: 'Invalid phone number' };
             if (!user_id) return { success: false, error: 'user_id is required' };
-            await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [rawPhone, user_id]);
-            return { success: true, phone: rawPhone };
+            const fullRawPhone = normalizeCnPhone(rawPhone);
+            await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [fullRawPhone, user_id]);
+            return { success: true, phone: fullRawPhone };
         }
         if (!code) return { success: false, error: 'code is required' };
         const credMap = {};
         if (process.env.WX_APPID && process.env.WX_SECRET)
             credMap[process.env.WX_APPID] = process.env.WX_SECRET;
-        if (process.env.WX_APPID_NANOVATE && process.env.WX_SECRET_NANOVATE)
-            credMap[process.env.WX_APPID_NANOVATE] = process.env.WX_SECRET_NANOVATE;
+        if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN)
+            credMap[process.env.WX_APPID_WAVEN] = process.env.WX_SECRET_WAVEN;
         const appid = (app_id && credMap[app_id]) ? app_id : process.env.WX_APPID;
         const token = await getWxAccessToken(appid, credMap[appid]);
         const wxRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
@@ -52,7 +54,7 @@ async function handleBindPhone(user_id, code, app_id = null, rawPhone = null) {
         });
         const wxData = await wxRes.json();
         if (wxData.errcode) return { success: false, error: `WeChat: ${wxData.errmsg} (${wxData.errcode})` };
-        const phone = wxData.phone_info?.purePhoneNumber;
+        const phone = normalizeCnPhone(wxData.phone_info?.purePhoneNumber);
         if (!phone) return { success: false, error: 'No phone number returned' };
         await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [phone, user_id]);
         return { success: true, phone };
@@ -69,8 +71,8 @@ async function handleWxLogin(body) {
     const credMap = {};
     if (process.env.WX_APPID && process.env.WX_SECRET)
         credMap[process.env.WX_APPID] = process.env.WX_SECRET;
-    if (process.env.WX_APPID_NANOVATE && process.env.WX_SECRET_NANOVATE)
-        credMap[process.env.WX_APPID_NANOVATE] = process.env.WX_SECRET_NANOVATE;
+    if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN)
+        credMap[process.env.WX_APPID_WAVEN] = process.env.WX_SECRET_WAVEN;
     if (process.env.WX_APPID_AEVIVA && process.env.WX_SECRET_AEVIVA)
         credMap[process.env.WX_APPID_AEVIVA] = process.env.WX_SECRET_AEVIVA;
 
@@ -105,14 +107,15 @@ async function handleWxLogin(body) {
         }
         resolvedPhone = phoneData.phone_info.purePhoneNumber;
     }
+    resolvedPhone = normalizeCnPhone(resolvedPhone);
 
     // Look up existing user — return with channel info and roles
-    const existing = await pool.query(
+    const WX_LOGIN_USER_SELECT =
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
-                u.referred_by_user_id, b.bio_age,
+                u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
+                u.referred_by_user_id, u.merged_into_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                 cu.nickname AS coach_name,
-                c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
+                c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                 c.config->'sub_age_display_names' AS channel_sub_age_names,
                 c.config->>'locale' AS channel_locale
          FROM users u
@@ -124,12 +127,20 @@ async function handleWxLogin(body) {
              FROM biomarkers ORDER BY user_id, tested_at DESC
          ) b ON u.user_id = b.user_id
          WHERE u.external_id = $1 OR u.user_id = $1
-         LIMIT 1`,
-        [openid]
-    );
+         LIMIT 1`;
+    const existing = await pool.query(WX_LOGIN_USER_SELECT, [openid]);
 
     if (existing.rows.length > 0) {
         let existingRow = existing.rows[0];
+        // Follows a same-system account merge (handlers/user-merge.js) transparently — the
+        // WeChat openid on file may belong to an account that lost a merge, in which case
+        // every downstream side effect below (channel assignment, invite tracking, etc.)
+        // must apply to the surviving winner, not the now-defunct loser.
+        while (existingRow.merged_into_user_id) {
+            const winnerRes = await pool.query(WX_LOGIN_USER_SELECT, [existingRow.merged_into_user_id]);
+            if (winnerRes.rows.length === 0) break;
+            existingRow = winnerRes.rows[0];
+        }
 
         // Backfill unionid so the mobile app can match this account later
         if (unionid) {
@@ -166,10 +177,10 @@ async function handleWxLogin(body) {
                     // Re-fetch with updated channel info
                     const refreshed = await pool.query(
                         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                                u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
-                                u.referral_code, u.referred_by_user_id, b.bio_age,
+                                u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
+                                u.referral_code, u.referred_by_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                                 cu.nickname AS coach_name,
-                                c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
+                                c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                                 c.config->'sub_age_display_names' AS channel_sub_age_names,
                 c.config->>'locale' AS channel_locale
                          FROM users u
@@ -229,9 +240,9 @@ async function handleWxLogin(body) {
             await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [resolvedPhone, existingRow.user_id]);
             existingRow.phone = resolvedPhone;
         }
-        const { channel_name, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = existingRow;
+        const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = existingRow;
         const channel = channel_name
-            ? { name: channel_name, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
+            ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
             : null;
         // If user is a coach, fetch their coach record
         let coach = null;
@@ -242,10 +253,8 @@ async function handleWxLogin(body) {
             );
             if (coachRes.rows.length > 0) coach = coachRes.rows[0];
         }
-        // Profile incomplete — phone not bound yet; re-show the signup screen
-        if (!user.phone) {
-            return { success: true, new_user: true, user, channel, coach };
-        }
+        // Account already exists — log in regardless of whether a phone is on file.
+        // Missing phone is nudged via an in-chat prompt, not by re-forcing the signup screen.
         return { success: true, user, channel, coach };
     }
 
@@ -253,9 +262,10 @@ async function handleWxLogin(body) {
     if (resolvedPhone) {
         const phoneMatch = await pool.query(
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                    u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, b.bio_age,
+                    u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
+                    (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                     cu.nickname AS coach_name,
-                    c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
+                    c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                     c.config->'sub_age_display_names' AS channel_sub_age_names,
                 c.config->>'locale' AS channel_locale
              FROM users u
@@ -272,9 +282,9 @@ async function handleWxLogin(body) {
         if (phoneMatch.rows.length > 0) {
             const row = phoneMatch.rows[0];
             await pool.query('UPDATE users SET external_id = $1, wx_unionid = COALESCE(wx_unionid, $2) WHERE user_id = $3', [openid, unionid, row.user_id]);
-            const { channel_name, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = row;
+            const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = row;
             const channel = channel_name
-                ? { name: channel_name, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
+                ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
                 : null;
             let coach = null;
             if (user.roles && user.roles.includes('coach')) {
@@ -361,7 +371,7 @@ async function handleWxLogin(body) {
     const created = await pool.query(
         `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, referral_code, phone, wx_unionid)
          VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5, $6, $7, $8, $9)
-         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
+         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
         [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, resolvedPhone, unionid]
     );
 
@@ -380,11 +390,12 @@ async function handleWxLogin(body) {
     let channel = null;
     if (channelId) {
         const chanRes = await pool.query(
-            `SELECT name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
+            `SELECT name, key_name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
             [channelId]
         );
         if (chanRes.rows.length > 0) channel = {
             name: chanRes.rows[0].name,
+            key_name: chanRes.rows[0].key_name,
             logo_url: chanRes.rows[0].logo_url,
             sub_age_display_names: chanRes.rows[0].sub_age_display_names || null,
         };
@@ -398,7 +409,8 @@ async function handleWxLogin(body) {
 // yields a DIFFERENT openid (stored in users.wx_app_openid). Cross-client
 // account matching: wx_app_openid → wx_unionid → phone.
 async function handleWxAppLogin(body) {
-    const { code, coach_id, invite_code, ref, phone, channel_slug } = body;
+    const { code, coach_id, invite_code, ref, channel_slug } = body;
+    const phone = normalizeCnPhone(body.phone);
     if (!code) return { success: false, error: 'code is required' };
 
     const appid  = process.env.WX_APP_APPID;
@@ -416,10 +428,10 @@ async function handleWxAppLogin(body) {
 
     const bundleSelect = `
         SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-               u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
-               u.referred_by_user_id, b.bio_age,
+               u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
+               u.referred_by_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
                cu.nickname AS coach_name,
-               c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url,
+               c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                c.config->'sub_age_display_names' AS channel_sub_age_names
         FROM users u
         LEFT JOIN coaches p ON u.coach_id = p.id
@@ -431,9 +443,9 @@ async function handleWxAppLogin(body) {
         ) b ON u.user_id = b.user_id`;
 
     const shapeResult = async (row) => {
-        const { channel_name, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = row;
+        const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = row;
         const channel = channel_name
-            ? { name: channel_name, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
+            ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
             : null;
         let coach = null;
         if (user.roles && user.roles.includes('coach')) {
@@ -443,8 +455,7 @@ async function handleWxAppLogin(body) {
             );
             if (coachRes.rows.length > 0) coach = coachRes.rows[0];
         }
-        // Profile incomplete — phone not bound yet; the app shows the phone form
-        if (!user.phone) return { success: true, new_user: true, user, channel, coach };
+        // Account already exists — log in regardless of whether a phone is on file.
         return { success: true, user, channel, coach };
     };
 
@@ -535,7 +546,7 @@ async function handleWxAppLogin(body) {
     const created = await pool.query(
         `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, referral_code, phone, wx_app_openid, wx_unionid)
          VALUES ($1, NULL, 'wechat_app', 'zh', $2, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
+         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
         [newUserId, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, phone || null, appOpenid, unionid]
     );
 
@@ -554,11 +565,12 @@ async function handleWxAppLogin(body) {
     let channel = null;
     if (channelId) {
         const chanRes = await pool.query(
-            `SELECT name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
+            `SELECT name, key_name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
             [channelId]
         );
         if (chanRes.rows.length > 0) channel = {
             name: chanRes.rows[0].name,
+            key_name: chanRes.rows[0].key_name,
             logo_url: chanRes.rows[0].logo_url,
             sub_age_display_names: chanRes.rows[0].sub_age_display_names || null,
         };
@@ -581,15 +593,15 @@ async function handleValidateInvite(body) {
         const channelId = invRes.rows[0].channel_id;
         let channel = null;
         if (channelId) {
-            const chanRes = await pool.query('SELECT name, effective_channel_logo(id) AS logo_url FROM channels WHERE id = $1', [channelId]);
-            if (chanRes.rows.length > 0) channel = { name: chanRes.rows[0].name, logo_url: chanRes.rows[0].logo_url };
+            const chanRes = await pool.query('SELECT name, key_name, effective_channel_logo(id) AS logo_url FROM channels WHERE id = $1', [channelId]);
+            if (chanRes.rows.length > 0) channel = { name: chanRes.rows[0].name, key_name: chanRes.rows[0].key_name, logo_url: chanRes.rows[0].logo_url };
         }
         return { success: true, channel };
     }
 
     // Fall back to user referral code
     const refRes = await pool.query(
-        `SELECT u.user_id, u.channel_id, c.name AS channel_name, effective_channel_logo(c.id) AS channel_logo_url
+        `SELECT u.user_id, u.channel_id, c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url
          FROM users u
          LEFT JOIN channels c ON c.id = u.channel_id
          WHERE u.referral_code = $1 LIMIT 1`,
@@ -597,7 +609,7 @@ async function handleValidateInvite(body) {
     );
     if (refRes.rows.length > 0) {
         const row = refRes.rows[0];
-        const channel = row.channel_name ? { name: row.channel_name, logo_url: row.channel_logo_url } : null;
+        const channel = row.channel_name ? { name: row.channel_name, key_name: row.channel_key, logo_url: row.channel_logo_url } : null;
         return { success: true, channel };
     }
 
@@ -645,6 +657,267 @@ async function handleGetMyReferrals(query) {
     }
 }
 
+// Generates a short-lived one-time token so the miniapp can open the user web
+// app with the user pre-authenticated (no phone login required in the webview).
+async function handlePostWebviewToken(body) {
+    try {
+        const { openid } = body || {};
+        if (!openid) return { success: false, error: 'openid is required' };
+
+        const token = require('crypto').randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 60_000); // 60 seconds
+
+        await pool.query(
+            `INSERT INTO webview_tokens (token, openid, expires_at) VALUES ($1, $2, $3)`,
+            [token, openid, expiresAt]
+        );
+
+        return { success: true, wvt: token, expires_in: 60 };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// Exchanges a one-time webview token for the user's profile.
+// Called by the web app immediately on load when ?wvt= is present in the URL.
+async function handleExchangeWebviewToken(body) {
+    try {
+        const { wvt } = body || {};
+        if (!wvt) return { success: false, error: 'wvt is required' };
+
+        const { rows } = await pool.query(
+            `UPDATE webview_tokens
+             SET used = TRUE
+             WHERE token = $1 AND used = FALSE AND expires_at > NOW()
+             RETURNING openid`,
+            [wvt]
+        );
+        if (rows.length === 0) return { success: false, error: 'Invalid or expired token' };
+
+        const openid = rows[0].openid;
+        const WEBVIEW_USER_SELECT =
+            `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
+                    u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
+                    u.merged_into_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
+                    cu.nickname AS coach_name,
+                    c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
+                    c.config->'sub_age_display_names' AS channel_sub_age_names,
+                    c.config->>'locale' AS channel_locale
+             FROM users u
+             LEFT JOIN coaches p ON u.coach_id = p.id
+             LEFT JOIN users cu ON p.user_id = cu.user_id
+             LEFT JOIN channels c ON u.channel_id = c.id
+             LEFT JOIN (
+                 SELECT DISTINCT ON (user_id) user_id, bio_age
+                 FROM biomarkers ORDER BY user_id, tested_at DESC
+             ) b ON u.user_id = b.user_id
+             WHERE u.external_id = $1 OR u.user_id = $1
+             LIMIT 1`;
+        const userRes = await pool.query(WEBVIEW_USER_SELECT, [openid]);
+
+        if (userRes.rows.length === 0) return { success: false, error: 'User not found' };
+
+        let resolvedRow = userRes.rows[0];
+        // See the wx-login resolve loop above — same reasoning applies to the GCN SSO handoff.
+        while (resolvedRow.merged_into_user_id) {
+            const winnerRes = await pool.query(WEBVIEW_USER_SELECT, [resolvedRow.merged_into_user_id]);
+            if (winnerRes.rows.length === 0) break;
+            resolvedRow = winnerRes.rows[0];
+        }
+
+        const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = resolvedRow;
+        const channel = channel_name
+            ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
+            : null;
+
+        return { success: true, user, channel };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ── Admin webview token (web admin panel → GCN admin console SSO handoff) ────
+//
+// Mirrors handlePostWebviewToken/handleExchangeWebviewToken above, but for the
+// Inventory tab's embedded GCN console rather than a miniapp consumer webview.
+// Gating is channel-based, not role-based: any channel with a GCN sector (aeviva
+// today) can be bridged, for either a superadmin or that channel's own admin.
+const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
+
+async function handlePostAdminWebviewToken(body, adminCtx) {
+    try {
+        let channelId;
+        if (adminCtx.role === 'channel') {
+            // Real per-account identity — ignore any channel_id the client sent.
+            channelId = adminCtx.channelId;
+        } else if (adminCtx.role === 'superadmin') {
+            channelId = body?.channel_id;
+            if (!channelId) return { success: false, error: 'channel_id is required' };
+        } else {
+            return { success: false, error: 'Unauthorized', statusCode: 403 };
+        }
+
+        const chRes = await pool.query('SELECT key_name FROM channels WHERE id = $1', [channelId]);
+        const keyName = chRes.rows[0]?.key_name;
+        if (!keyName || !GCN_LINKED_CHANNEL_KEYS.has(keyName)) {
+            return { success: false, error: 'Channel is not GCN-linked', statusCode: 403 };
+        }
+
+        const token = require('crypto').randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 60_000);
+        await pool.query(
+            `INSERT INTO admin_webview_tokens (token, admin_role, admin_account_id, channel_id, expires_at)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [token, adminCtx.role, adminCtx.accountId ?? null, channelId, expiresAt]
+        );
+
+        return { success: true, wvt: token, expires_in: 60 };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleExchangeAdminWebviewToken(body) {
+    try {
+        const { wvt } = body || {};
+        if (!wvt) return { success: false, error: 'wvt is required' };
+
+        const { rows } = await pool.query(
+            `UPDATE admin_webview_tokens
+             SET used = TRUE
+             WHERE token = $1 AND used = FALSE AND expires_at > NOW()
+             RETURNING admin_role, admin_account_id, channel_id`,
+            [wvt]
+        );
+        if (rows.length === 0) return { success: false, error: 'Invalid or expired token' };
+
+        const { admin_role, admin_account_id, channel_id } = rows[0];
+        return { success: true, admin_role, admin_account_id, channel_id };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ── QR Login (web app QR → miniapp scan → auto-login) ────────────────────────
+//
+// Flow:
+//   1. Web app calls POST /qr-login/init  → gets session_id + QR image (base64 PNG)
+//   2. User scans QR with WeChat → miniapp opens pages/qrlogin/qrlogin
+//   3. Miniapp calls POST /qr-login/confirm with { session_id, openid }
+//   4. Web app polls GET /qr-login/status?session_id=  → detects "confirmed" → logs in
+
+async function handlePostQrLoginInit(body) {
+    try {
+        const { app_id } = body || {};
+        const credMap = {};
+        if (process.env.WX_APPID && process.env.WX_SECRET)
+            credMap[process.env.WX_APPID] = process.env.WX_SECRET;
+        if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN)
+            credMap[process.env.WX_APPID_WAVEN] = process.env.WX_SECRET_WAVEN;
+        if (process.env.WX_APPID_AEVIVA && process.env.WX_SECRET_AEVIVA)
+            credMap[process.env.WX_APPID_AEVIVA] = process.env.WX_SECRET_AEVIVA;
+
+        const appid  = (app_id && credMap[app_id]) ? app_id
+            : (process.env.WX_APPID_WAVEN || process.env.WX_APPID);
+        const secret = credMap[appid];
+        if (!appid || !secret) return { success: false, error: 'WX_APPID_WAVEN / WX_SECRET_WAVEN not configured' };
+
+        // session_id = 32 hex chars, matches wxacode.getunlimited scene max (32 UTF-8 chars)
+        const sessionId = require('crypto').randomBytes(14).toString('hex'); // 28 hex chars, stored in DB
+        const isdev = process.env.NODE_ENV !== 'production';
+        // scene encodes the backend env so the miniapp routes confirm to the right host.
+        // DB always stores the bare sessionId; the 'd:' prefix is only in the QR scene.
+        const scene = isdev ? `d:${sessionId}` : sessionId;
+        await pool.query(
+            `INSERT INTO qr_login_sessions (session_id, status, expires_at)
+             VALUES ($1, 'pending', NOW() + INTERVAL '5 minutes')`,
+            [sessionId]
+        );
+
+        const token = await getWxAccessToken(appid, secret);
+        const wxRes = await fetch(
+            `https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=${token}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    scene: scene,
+                    page: 'pages/qrlogin/qrlogin',
+                    width: 280,
+                    check_path: false,
+                    env_version: process.env.NODE_ENV === 'production' ? 'release' : 'trial',
+                }),
+            }
+        );
+        const contentType = wxRes.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            const errData = await wxRes.json();
+            console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostQrLoginInit wx error', errData }));
+            return { statusCode: 500, success: false, error: `WeChat: ${errData.errmsg} (${errData.errcode})` };
+        }
+        const imgBuf = await wxRes.arrayBuffer();
+        const base64 = Buffer.from(imgBuf).toString('base64');
+        console.log(JSON.stringify({ level: 'INFO', msg: 'handlePostQrLoginInit', sessionId, appid }));
+        return { success: true, session_id: sessionId, qr_image: `data:image/png;base64,${base64}`, expires_in: 300 };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostQrLoginInit', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handleGetQrLoginStatus(sessionId) {
+    if (!sessionId) return { statusCode: 400, success: false, error: 'session_id required' };
+    try {
+        const r = await pool.query(
+            `SELECT session_id, status, openid, expires_at FROM qr_login_sessions WHERE session_id = $1`,
+            [sessionId]
+        );
+        if (!r.rows.length) return { statusCode: 404, success: false, error: 'Session not found' };
+        const sess = r.rows[0];
+        if (new Date(sess.expires_at) < new Date()) {
+            return { success: true, status: 'expired' };
+        }
+        if (sess.status === 'confirmed' && sess.openid) {
+            const uRes = await pool.query(
+                `SELECT u.*,
+                        ch.name AS channel_name, ch.logo_url AS channel_logo_url,
+                        co_u.nickname AS coach_name
+                 FROM users u
+                 LEFT JOIN channels ch ON ch.id = u.channel_id
+                 LEFT JOIN coaches co ON co.user_id = u.user_id
+                 LEFT JOIN users co_u ON co_u.user_id = co.user_id
+                 WHERE u.user_id = $1`,
+                [sess.openid]
+            );
+            if (uRes.rows.length) {
+                return { success: true, status: 'confirmed', user: uRes.rows[0] };
+            }
+        }
+        return { success: true, status: sess.status };
+    } catch (err) {
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
+async function handlePostQrLoginConfirm(body) {
+    const { session_id, openid } = body || {};
+    if (!session_id || !openid) return { statusCode: 400, success: false, error: 'session_id and openid required' };
+    try {
+        const r = await pool.query(
+            `UPDATE qr_login_sessions
+             SET status = 'confirmed', openid = $2, confirmed_at = NOW()
+             WHERE session_id = $1 AND status = 'pending' AND expires_at > NOW()
+             RETURNING session_id`,
+            [session_id, openid]
+        );
+        if (!r.rows.length) return { statusCode: 409, success: false, error: 'Session expired or already confirmed' };
+        console.log(JSON.stringify({ level: 'INFO', msg: 'handlePostQrLoginConfirm', session_id, openid }));
+        return { success: true };
+    } catch (err) {
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
 module.exports = {
     handleResolvePhone,
     handleBindPhone,
@@ -652,4 +925,11 @@ module.exports = {
     handleWxAppLogin,
     handleValidateInvite,
     handleGetMyReferrals,
+    handlePostWebviewToken,
+    handleExchangeWebviewToken,
+    handlePostAdminWebviewToken,
+    handleExchangeAdminWebviewToken,
+    handlePostQrLoginInit,
+    handleGetQrLoginStatus,
+    handlePostQrLoginConfirm,
 };

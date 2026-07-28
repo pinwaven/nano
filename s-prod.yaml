@@ -77,16 +77,25 @@ resources:
         MODEL: "qwen-plus-latest"
         WX_APPID: "wxecbcf00ce480fcf2"
         WX_SECRET: ${env(WX_SECRET)}
-        WX_APPID_NANOVATE: "wx84bd7d00a6fd626e"
-        WX_SECRET_NANOVATE: ${env(WX_SECRET_NANOVATE)}
+        WX_APPID_WAVEN: "wx84bd7d00a6fd626e"
+        WX_SECRET_WAVEN: ${env(WX_SECRET_WAVEN)}
+        NODE_ENV: "production"
         WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
+        GCN_API_BASE_URL: "https://edge.gcn.net"
+        GCN_SERVICE_TOKEN: ${env(GCN_SERVICE_TOKEN)}
         OSS_REGION: "oss-cn-shanghai"
         OSS_BUCKET: "waven-nano"
         OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
         OSS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
         KONE_APK_CNAME_DOMAIN: ${env(KONE_APK_CNAME_DOMAIN)}
         OSS_CNAME_DOMAIN: ${env(OSS_CNAME_DOMAIN)}
+        MEDIA_URL: "https://nano-media-napllanrqp.cn-shanghai-vpc.fcapp.run"
+        # Phone+OTP login (PNVS/dypnsapi) — same account as OSS, already has dypnsapi
+        # permission (see gcn's docs/pnvs.md). No separate SMS credential provisioned.
+        SMS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
+        SMS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
       triggers:
         - triggerName: http-webhook
           triggerType: http
@@ -222,6 +231,40 @@ resources:
             authType: anonymous
             methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 
+  media:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-media
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 1024
+      timeout: 60
+      code: ./src/functions/media
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        TZ: "Asia/Shanghai"
+        API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        OSS_REGION: "oss-cn-shanghai"
+        OSS_BUCKET: "waven-nano"
+        OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
+        OSS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
+      triggers:
+        - triggerName: media-http
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["POST", "OPTIONS"]
+
   admin-panel:
     component: fc3
     props:
@@ -285,7 +328,7 @@ resources:
     component: fc3-domain
     props:
       region: ${vars.region}
-      domainName: nano.fros.cc
+      domainName: nano.gcn.net
       protocol: HTTP,HTTPS
       certConfig:
         certName: nano-custom-cert
@@ -293,6 +336,8 @@ resources:
         privateKey: ./certs/key.pem
       routeConfig:
         routes:
+          - path: /QJaeMN3iR8.txt
+            functionName: nano-worker
           - path: /api/*
             functionName: nano-worker
           - path: /api

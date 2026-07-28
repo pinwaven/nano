@@ -1,0 +1,11 @@
+<view class="appview-page">
+  <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
+  <view class="app-header">
+    <view class="back-btn" bindtap="goBack">
+      <text class="back-icon">‹</text>
+      <text class="back-label">{{t.back}}</text>
+    </view>
+    <text class="header-title">{{t.title}}</text>
+  </view>
+  <web-view wx:if="{{url}}" src="{{url}}"></web-view>
+</view>

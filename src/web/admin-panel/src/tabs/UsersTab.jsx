@@ -4,7 +4,7 @@ import DigitalBodyFigure from '../DigitalBodyFigure.jsx';
 import axios from 'axios';
 import {
   Users, UserCog, Activity, Calendar, Plus, Pencil, Trash2, X, Check,
-  ChevronDown, ChevronRight, Coins, FileText,
+  ChevronDown, ChevronRight, Coins, FileText, BadgeCheck,
 } from 'lucide-react';
 import { useLang, fmt, fmtDate, bioAgeColor, Badge, StatCard, RichStatCard, ALL_ROLES, EMPTY_USER, PERMS, hasPermission } from '../shared.jsx';
 import { Sparkline } from './DotsTab.jsx';
@@ -302,9 +302,10 @@ const bmLabelsZh = {
 
 // ── UserDetailModal ───────────────────────────────────────────────────────────
 
-function UserDetailModal({ user, onClose }) {
+function UserDetailModal({ user, onClose, session, onDeleted }) {
   const { t, lang } = useLang();
   const isZh = lang === 'zh';
+  const [showDelete, setShowDelete]       = useState(false);
   const [tab, setTab]                     = useState('health');
   const [records, setRecords]             = useState([]);
   const [bmLoading, setBmLoading]         = useState(true);
@@ -378,8 +379,8 @@ function UserDetailModal({ user, onClose }) {
 
   const bioData      = user.user_bio_data || {};
   const kinoRecs     = records.filter(r => r.test_type === 'kino_chip');
-  const latestRec    = [...kinoRecs].reverse().find(r => r.data?.estimated) || null;
-  const latestBm     = latestRec?.data?.estimated || null;
+  const latestRec    = [...kinoRecs].reverse().find(r => r.data?.validated) || null;
+  const latestBm     = latestRec?.data?.validated || null;
   const subAgesRaw   = latestRec?.data?.bioage_profile?.SubAges || null;
   const rawBioAge    = latestRec?.bio_age
     ?? (kinoRecs.length > 0 ? kinoRecs[kinoRecs.length - 1]?.bio_age : null)
@@ -400,7 +401,7 @@ function UserDetailModal({ user, onClose }) {
     : [];
 
   const trendFor = key => kinoRecs.slice(-10)
-    .map(r => r.data?.estimated?.[key]).filter(v => v != null);
+    .map(r => r.data?.validated?.[key]).filter(v => v != null);
 
   const TABS = [
     { id: 'health', label: t.userDetail.tabHealth },
@@ -409,6 +410,7 @@ function UserDetailModal({ user, onClose }) {
   ];
 
   return (
+    <>
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-user-detail modal-tabbed" onClick={e => e.stopPropagation()}>
 
@@ -426,7 +428,12 @@ function UserDetailModal({ user, onClose }) {
               <div style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace', marginTop: 2 }}>{openid}</div>
             </div>
           </div>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {hasPermission(session, PERMS.USERS_DELETE) && (
+              <button className="icon-btn danger" title={t.modal.deleteUser} onClick={() => setShowDelete(true)}><Trash2 size={16} /></button>
+            )}
+            <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+          </div>
         </div>
 
         {/* Tab nav */}
@@ -481,7 +488,10 @@ function UserDetailModal({ user, onClose }) {
                     <span className="drawer-info-key">{t.table.joined}</span>
                     <span className="drawer-info-val">{fmtDate(user.created_at)}</span>
                     <span className="drawer-info-key">{t.modal.phone}</span>
-                    <span className="drawer-info-val">{fmt(user.phone)}</span>
+                    <span className="drawer-info-val" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }} title={user.phone_verified ? (isZh ? '已验证' : 'Verified') : undefined}>
+                      {fmt(user.phone)}
+                      {user.phone_verified && <BadgeCheck size={14} color="#16a34a" />}
+                    </span>
                     <span className="drawer-info-key">{t.modal.email}</span>
                     <span className="drawer-info-val">{fmt(user.email)}</span>
                     <span className="drawer-info-key">{t.table.roles}</span>
@@ -911,6 +921,14 @@ function UserDetailModal({ user, onClose }) {
 
       </div>
     </div>
+    {showDelete && (
+      <DeleteConfirm
+        user={user}
+        onClose={() => setShowDelete(false)}
+        onConfirm={() => { setShowDelete(false); onDeleted ? onDeleted() : onClose(); }}
+      />
+    )}
+    </>
   );
 }
 
@@ -1556,7 +1574,12 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
                   <CoachSelect userId={u.user_id} currentCoachId={u.coach_id} coaches={coaches} onAssign={refreshCurrentView} />
                 </td>
                 <td className="muted">{fmtDate(u.created_at)}</td>
-                <td className="muted">{fmt(u.phone)}</td>
+                <td className="muted">
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }} title={u.phone_verified ? (isZh ? '已验证' : 'Verified') : undefined}>
+                    {fmt(u.phone)}
+                    {u.phone_verified && <BadgeCheck size={14} color="#16a34a" />}
+                  </span>
+                </td>
                 <td className="muted">{fmt(u.email)}</td>
                 <td onClick={e => e.stopPropagation()}>
                   <div className="row-actions">
@@ -1608,7 +1631,14 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
       {modal?.type === 'edit'    && <UserModal user={modal.user} coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete'  && <DeleteConfirm user={modal.user} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
       {modal?.type === 'credits' && <UserCreditModal user={modal.user} onClose={() => setModal(null)} />}
-      {detailUser && <UserDetailModal user={detailUser} onClose={() => setDetailUser(null)} />}
+      {detailUser && (
+        <UserDetailModal
+          user={detailUser}
+          session={session}
+          onClose={() => setDetailUser(null)}
+          onDeleted={() => { setDetailUser(null); refreshCurrentView(); }}
+        />
+      )}
     </>
   );
 }

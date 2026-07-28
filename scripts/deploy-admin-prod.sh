@@ -11,4 +11,4 @@ echo "Deploying Admin Panel..."
 cd ../../..
 s admin-panel deploy -t s-prod.yaml -y
 
-echo "Done! Admin Panel has been built and deployed to https://nano.fros.cc/admin/"
+echo "Done! Admin Panel has been built and deployed to https://nano.gcn.net/admin/"

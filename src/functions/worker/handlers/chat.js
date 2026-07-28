@@ -1,7 +1,7 @@
 const { pool } = require('../lib/db');
 const ossLib = require('../lib/oss');
 const { generateUserId, getWxAccessToken } = require('../lib/auth');
-const { getNowShanghai, calculateAge } = require('../lib/time-utils');
+const { getNowShanghai, calculateAge, formatToShanghai } = require('../lib/time-utils');
 const { updateHealthTwin } = require('../lib/healthTwinUpdater');
 const { BiomarkerEstimator } = require('../lib/estimator/BiomarkerEstimator');
 const { deriveTags } = require('../lib/estimator/tagDerivation');
@@ -32,6 +32,9 @@ const vivaPrompts = {
 const systemNutritionTemplate = require('../prompts/nano/systemNutrition');
 const vivaSystemNutritionTemplate = require('../prompts/viva/systemNutrition');
 const systemHealthAdviceTemplate = require('../prompts/nano/systemHealthAdvice');
+const vivaSystemHealthAdviceTemplate = require('../prompts/viva/systemHealthAdvice');
+const { getCurrentSolarTerm } = require('../lib/solarTerms');
+const { detectFabricationRisk, detectDotNameMismatch, detectFakeProductName, detectDotIngredientMismatch } = require('../lib/factCheck');
 const systemHealthReportTemplate = require('../prompts/nano/systemHealthReport');
 
 const getLlmClient = () => new OpenAI({
@@ -303,8 +306,181 @@ async function sendWeightSubscribeMsg(openid, weightKg, accessToken) {
     }
 }
 
+// Known biomarker labels as they tend to appear in LLM prose (English + Chinese variants),
+// mapped to the key in data.validated. Order matters: longer/more specific labels first so
+// e.g. "GDF-15" doesn't get swallowed by a looser "GA" pattern.
+const BIOMARKER_LABEL_PATTERNS = [
+    { key: 'GDF15', re: /GDF-?15/gi },
+    { key: 'CystatinC', re: /Cystatin[- ]?C|胱抑素\s*C/gi },
+    { key: 'hsCRP', re: /hs-?CRP/gi },
+    { key: 'IL6', re: /IL-?6/gi },
+    { key: 'CD38', re: /CD38/gi },
+    { key: 'GA', re: /\bGA\b|糖化白蛋白/gi },
+    // Not a Kino biomarker, but the same "<label> <number>" prose pattern applies, and it's a
+    // number the model has no precomputed-and-verified value for otherwise (see BMI precompute
+    // in handlePostChat, added after the 2026-07-16 wrong-age bug).
+    { key: 'BMI', re: /\bBMI\b/gi },
+];
+
+// Pulls "<label> ... <number>" pairs out of free-text (label and number within ~12 chars of
+// each other, matching how the prompt templates and model both tend to phrase it: "hsCRP 1.16 mg/L",
+// "GA（糖化白蛋白）13.29%", etc).
+function extractBiomarkerMentions(text) {
+    const mentions = [];
+    for (const { key, re } of BIOMARKER_LABEL_PATTERNS) {
+        // Only the first occurrence of a label counts as its stated value. Labels like GA are
+        // often mentioned twice in one sentence — "GA 13.5%（糖化白蛋白，反映近2-3周血糖控制）" — where
+        // the second (gloss) occurrence has no number of its own and would otherwise grab an
+        // unrelated number from the explanatory clause that follows it.
+        for (const m of text.matchAll(re)) {
+            // Start scanning AFTER the label match itself — labels like "GDF-15" and "CD38"
+            // contain digits, so slicing from m.index would grab the label's own number.
+            const start = m.index + m[0].length;
+            const after = text.slice(start, start + 20);
+            const numMatch = after.match(/([\d]+\.?\d*)/);
+            if (numMatch) {
+                mentions.push({ key, value: parseFloat(numMatch[1]) });
+                break;
+            }
+        }
+    }
+    return mentions;
+}
+
+function extractDateMentions(text) {
+    const dates = [];
+    for (const m of text.matchAll(/(\d{4})-(\d{2})-(\d{2})/g)) {
+        dates.push(`${m[1]}-${m[2]}-${m[3]}`);
+    }
+    for (const m of text.matchAll(/(\d{4})年(\d{1,2})月(\d{1,2})日/g)) {
+        dates.push(`${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`);
+    }
+    return dates;
+}
+
+// Pulls the patient's OWN stated age out of free-text — "73岁", "73 岁", "age 73", "73-year-old",
+// "73 years old" — deliberately scoped to a short window right after their name, because every
+// prompt template opens with "<nickname>, <age> 岁/years old" and that's the only position we can
+// trust as "the patient's age" rather than an unrelated population statistic the model cites
+// elsewhere in the reply (e.g. "60岁以上女性…" demographic trivia, which is NOT a misstatement).
+// Even though user_profile.age is handed to the model directly, raw birth-date text riding along in
+// questionnaire_context gives it material to (wrongly) re-derive age from instead of trusting the
+// given figure — this is how the 2026-07-16 wrong-age bug happened.
+function extractAgeMentions(text, nickname) {
+    const ages = [];
+    const nameIdx = nickname ? text.indexOf(nickname) : -1;
+    const window = nameIdx >= 0
+        ? text.slice(nameIdx, nameIdx + nickname.length + 20)
+        : text.slice(0, 30);
+    for (const m of window.matchAll(/(\d{1,3})\s*岁/g)) {
+        ages.push(parseInt(m[1], 10));
+    }
+    for (const m of window.matchAll(/\bage[d]?\s+(\d{1,3})\b|\b(\d{1,3})[- ]year[- ]old\b/gi)) {
+        ages.push(parseInt(m[1] || m[2], 10));
+    }
+    return ages;
+}
+
+// Cross-checks any biomarker figures / dates / age the model actually wrote against the ground-truth
+// row already fetched server-side. Only flags values the model chose to state — silence on a key
+// is fine, a wrong number or date next to a known label is not.
+function verifyBiomarkerGrounding(text, groundTruth) {
+    const mismatches = [];
+    const mentions = extractBiomarkerMentions(text);
+    for (const { key, value } of mentions) {
+        const truth = groundTruth.validated?.[key];
+        if (truth == null) continue;
+        const tolerance = Math.max(0.05, Math.abs(truth) * 0.02);
+        if (Math.abs(value - truth) > tolerance) {
+            mismatches.push({ key, stated: value, actual: truth });
+        }
+    }
+    if (groundTruth.tested_at) {
+        for (const stated of extractDateMentions(text)) {
+            if (stated !== groundTruth.tested_at) {
+                mismatches.push({ key: 'tested_at', stated, actual: groundTruth.tested_at });
+            }
+        }
+    }
+    if (groundTruth.age != null) {
+        for (const stated of extractAgeMentions(text, groundTruth.nickname)) {
+            if (stated !== groundTruth.age) {
+                mismatches.push({ key: 'age', stated, actual: groundTruth.age });
+            }
+        }
+    }
+    return { ok: mismatches.length === 0, mismatches };
+}
+
+// Backstop against the fabrication patterns (fake citations, external-ingredient
+// recommendations, fake BioAge dimensions) that testing showed slipping past the
+// prompt-level rules in viva/factConstraint.js (2026-07-25). One retry only -- if
+// the retry also trips the detector, log it and use it anyway rather than looping.
+//
+// The correction instruction is built from *which* risk categories actually fired --
+// an earlier version always sent a citation-only correction regardless of cause, so a
+// reply flagged only for external-ingredient recommendations got a retry instruction
+// that never mentioned the actual problem, and predictably repeated it.
+const _CITATION_RISKS = new Set(['pValue', 'geneRsId', 'cohortMention', 'fakeInstitution', 'journalYearCitation', 'bookTitleCitation']);
+const _INGREDIENT_RISKS = new Set(['knownExternalIngredient', 'standaloneDosage']);
+const _DIMENSION_RISKS = new Set(['fakeDimensionValue', 'fakeDimensionAssertion']);
+const _NAME_RISKS = new Set(['dotNameMismatch', 'fakeProductName', 'dotIngredientMismatch']);
+
+function _buildCorrectionPrompt(risk) {
+    const parts = ['你上一条回复违反了【事实约束】规则，请重新回答同一个问题，保持相同的语言、语气与整体结构，但修正以下问题：'];
+    if (risk.some(r => _CITATION_RISKS.has(r))) {
+        parts.push('- 你捏造了具体的研究引用、p值、基因位点编号、队列数据或机构/数据库名称——这类内容严禁出现，除非确实来自本提示词中提供的信息。只使用标准循证等级表述（如"有随机对照试验（RCT）支持"），不附加任何虚构细节。');
+    }
+    if (risk.some(r => _INGREDIENT_RISKS.has(r))) {
+        parts.push('- 你推荐了配方库之外的补充剂/成分（如硫辛酸、葡萄籽提取物/原花青素、元素铁、黄连素，或任何带有具体mg剂量但未标注"X号原粒"的成分）——这严禁出现。任何具体成分建议都必须来自提示词中提供的原粒配方库，并明确点名"X号原粒"，不得推荐配方库之外的任何补充剂、草本或单体成分。');
+    }
+    if (risk.some(r => _DIMENSION_RISKS.has(r))) {
+        parts.push('- 你为一个本系统不存在的"年龄"维度（如排毒年龄、肠道年龄等）编造了具体数值，或暗示/声称本系统能输出该维度——本系统只有四个真实维度（细胞年龄、代谢年龄、微血管年龄、抗压年龄），必须明确告知该维度不存在，不得编造其数值或方法论。');
+    }
+    if (risk.some(r => _NAME_RISKS.has(r))) {
+        parts.push('- 你提到的某个原粒的编号、名称或成分列表，与提示词中提供的原粒配方库不匹配（可能用了旧版名称/成分，或整个产品/成分列表都是编造的）。任何原粒的编号、名称、成分都必须逐字复制提示词中原粒配方库里给出的原文，不得凭记忆改写、替换或编造。如果不确定某个编号对应的准确名称或成分，宁可只说编号（如"12号原粒"）不描述名称或成分，也不要猜测或凭记忆填写。');
+    }
+    parts.push('保持原有的回答风格与格式约定（如是否允许列表、是否禁止标题等），不要因为重新生成而改用 Markdown 标题（#、##、###）或"总体状态/逐维度分析"式的分段编号报告结构，除非提示词本身就要求这种格式。');
+    return parts.join('\n');
+}
+
+// dotsFormulary (llmContext.dots / dotsByDimension-sourced rows), when available, additionally
+// cross-checks any "X号原粒 NAME" / "DOTX（NAME）" reference in the reply against the real
+// catalog — catches stale pre-migration dot names reused against post-migration numbers, and
+// fully invented product names, neither of which a text-only regex can see.
+function _detectAllRisks(reply, dotsFormulary) {
+    const risk = detectFabricationRisk(reply);
+    if (dotsFormulary && dotsFormulary.length > 0) {
+        if (detectDotNameMismatch(reply, dotsFormulary).length > 0) risk.push('dotNameMismatch');
+        if (detectFakeProductName(reply, dotsFormulary).length > 0) risk.push('fakeProductName');
+        if (detectDotIngredientMismatch(reply, dotsFormulary).length > 0) risk.push('dotIngredientMismatch');
+    }
+    return risk;
+}
+
+async function _regenerateIfFabricationRisk(client, model, messages, reply, logContext, dotsFormulary, textForDetection) {
+    const risk = _detectAllRisks(textForDetection ?? reply, dotsFormulary);
+    if (risk.length === 0) return reply;
+    console.log(JSON.stringify({ level: 'WARN', msg: 'fabrication_risk_detected', context: logContext, risk }));
+    const correctionPrompt = _buildCorrectionPrompt(risk);
+    try {
+        const retryCompletion = await client.chat.completions.create({
+            model,
+            messages: [...messages, { role: 'assistant', content: reply }, { role: 'user', content: correctionPrompt }],
+            temperature: 0.2,
+        });
+        const retryReply = retryCompletion.choices[0].message.content || reply;
+        const retryRisk = _detectAllRisks(retryReply, dotsFormulary);
+        console.log(JSON.stringify({ level: retryRisk.length === 0 ? 'INFO' : 'WARN', msg: 'fabrication_risk_retry', context: logContext, ok: retryRisk.length === 0, risk: retryRisk }));
+        return retryReply;
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'fabrication_risk_retry_failed', context: logContext, error: err.message }));
+        return reply;
+    }
+}
+
 async function handlePostChat(body) {
-    const { openid, message } = body;
+    const { openid, message, sandbox } = body;
     if (!openid) throw new Error('openid is required');
 
     const user = await resolveOrUpsertUser(body);
@@ -324,6 +500,7 @@ async function handlePostChat(body) {
         }
     }
     console.log(JSON.stringify({ level: 'INFO', msg: 'Persona resolved', user_id: user.user_id, channel_id: user.channel_id, personaType }));
+    const currentSolarTerm = personaType === 'viva' ? getCurrentSolarTerm(getNowShanghai().toJSDate()) : null;
 
     if (message) {
         // Intent-routed chat message handling
@@ -352,17 +529,21 @@ async function handlePostChat(body) {
 
             // Step 2: Fetch only the data the intent actually needs
             const fetches = {};
-            if (required_data.includes('biomarkers') || required_data.includes('bioage')) {
-                fetches.biomarker = pool.query(
-                    `SELECT data FROM biomarkers WHERE user_id = $1 AND test_type = 'kino_chip' ORDER BY tested_at DESC LIMIT 1`,
-                    [user_id]
-                );
-            }
-            if (required_data.includes('dots')) {
-                fetches.dots = pool.query(
-                    `SELECT id, key_name, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh FROM dots ORDER BY id ASC`
-                );
-            }
+            // Always fetch the latest biomarker/bioage snapshot — cheap indexed query, and it's the
+            // single source of truth the model must be grounded on for every intent, not just ones
+            // the classifier happens to tag (classifier misses are exactly what caused the 2026-07-14 bug).
+            fetches.biomarker = pool.query(
+                `SELECT data, tested_at FROM biomarkers WHERE user_id = $1 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
+                [user_id]
+            );
+            // Always fetch dots too (small table, cheap query) — same rationale as biomarker
+            // above. Gating this behind required_data.includes('dots') meant intents like
+            // biomarker_question never saw the real formulary, so when told to give a concrete
+            // next step, the model reached for generic external supplement knowledge instead
+            // of an actual dot (found via real-user testing 2026-07-25).
+            fetches.dots = pool.query(
+                `SELECT id, key_name, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`
+            );
             if (required_data.includes('plan')) {
                 fetches.plan = pool.query(
                     `SELECT content FROM notifications WHERE user_id = $1 AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1`,
@@ -388,7 +569,12 @@ async function handlePostChat(body) {
                 [user_id]
             );
 
-            // Always fetch completed questionnaire responses — coach-collected data enriches all intents
+            // Always fetch completed questionnaire responses — coach-collected data enriches all intents.
+            // Excludes the birth-date question (save_field = 'birth_date') and the height/weight
+            // question (save_biomarker_type = 'body_composition'): those raw values are redundant with
+            // the pre-computed llmContext.user_profile.age/bmi, and having both the raw and derived
+            // figure in context lets the model re-derive age/BMI itself instead of trusting the given
+            // number — exactly how the 2026-07-16 wrong-age bug happened.
             fetches.questionnaire_responses = pool.query(
                 `SELECT q.name, q.name_zh, qq.prompt_en, qq.prompt_zh, qr.answer
                  FROM questionnaire_responses qr
@@ -396,6 +582,8 @@ async function handlePostChat(body) {
                  JOIN questionnaire_assignments qa ON qa.id = qr.assignment_id
                  JOIN questionnaires q ON q.id = qa.questionnaire_id
                  WHERE qa.user_id = $1 AND qa.status = 'completed'
+                   AND qq.save_field IS DISTINCT FROM 'birth_date'
+                   AND qq.save_biomarker_type IS DISTINCT FROM 'body_composition'
                  ORDER BY qa.completed_at ASC, qq.sort_order ASC`,
                 [user_id]
             );
@@ -417,19 +605,35 @@ async function handlePostChat(body) {
             fetchKeys.forEach((k, i) => { fetched[k] = fetchResults[i]; });
 
             const biomarkerRow = fetched.biomarker?.rows[0] || {};
+            const twinRow = fetched.health_twin?.rows[0] || null;
+            // Precompute BMI server-side (prefer a real scale/wearable reading over onboarding
+            // self-report) rather than leaving the model to derive it itself from raw height/weight —
+            // that's exactly the pattern that produced a hallucinated wrong age (2026-07-16): a
+            // derived number left ungrounded, with only raw source data for the model to (mis)compute
+            // from. See the questionnaire_responses query below, which excludes the raw height/weight
+            // answer for the same reason.
+            const heightCm = user.bio_data?.height;
+            const weightKg = twinRow?.latest_weight_kg ?? user.bio_data?.weight;
+            const bmi = twinRow?.latest_bmi != null
+                ? Math.round(twinRow.latest_bmi * 10) / 10
+                : (heightCm && weightKg ? Math.round((weightKg / ((heightCm / 100) ** 2)) * 10) / 10 : null);
             const llmContext = {
                 user_profile: {
                     nickname: user.nickname,
                     gender: user.gender,
                     age: calculateAge(user.birth_date),
+                    bmi,
                     language: user.language,
                 },
                 biomarkers: biomarkerRow.data?.validated || {},
+                biomarkers_tested_at: biomarkerRow.tested_at
+                    ? formatToShanghai(new Date(biomarkerRow.tested_at)).slice(0, 10)
+                    : null,
                 bioage: biomarkerRow.data?.bioage_profile || {},
                 dots: fetched.dots?.rows || [],
                 plan: fetched.plan?.rows[0]?.content || null,
                 last_weight: fetched.weight?.rows[0]?.data?.actual?.weight ?? null,
-                health_twin: fetched.health_twin?.rows[0] || null,
+                health_twin: twinRow,
                 now_iso: getNowShanghai().toISO(),
                 questionnaire_context: formatQuestionnaireContext(
                     fetched.questionnaire_responses?.rows || [],
@@ -446,17 +650,22 @@ async function handlePostChat(body) {
                     milestones_done: parseInt(p.milestones_done || 0, 10),
                 })),
                 sub_age_display_names: channelSubAgeNames,
+                current_solar_term: currentSolarTerm,
             };
 
             const activePrompts = personaType === 'viva' ? vivaPrompts : nanoPrompts;
             const promptBuilder = activePrompts[intent] || activePrompts.casual_chat;
             const systemPrompt = promptBuilder(llmContext);
 
-            // Save the incoming user message to the conversation log
-            await pool.query(
-                'INSERT INTO chat_messages (user_id, role, content, persona_type) VALUES ($1, $2, $3, $4)',
-                [user_id, 'user', message, personaType]
-            );
+            // Save the incoming user message to the conversation log — skipped in sandbox
+            // mode (superadmin "login as" sessions), which never persist against the
+            // impersonated user's real account.
+            if (!sandbox) {
+                await pool.query(
+                    'INSERT INTO chat_messages (user_id, role, content, persona_type) VALUES ($1, $2, $3, $4)',
+                    [user_id, 'user', message, personaType]
+                );
+            }
 
             // Fetch recent conversation history scoped to the current persona
             const historyLimit = parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10);
@@ -486,17 +695,23 @@ async function handlePostChat(body) {
             while (cleanHistory.length > 0 && cleanHistory[0].role !== 'user') {
                 cleanHistory.shift();
             }
+            // The current sandboxed turn was never persisted above, so splice it into
+            // the in-memory history the model sees — otherwise it has no idea what was
+            // just asked.
+            if (sandbox) {
+                const lastTurn = cleanHistory[cleanHistory.length - 1];
+                if (lastTurn && lastTurn.role === 'user') lastTurn.content = message;
+                else cleanHistory.push({ role: 'user', content: message });
+            }
 
             const dbQueryTool = {
                 type: 'function',
                 function: {
                     name: 'query_database',
                     description: `Run a read-only SQL SELECT to retrieve this user's health data when it isn't already in context.
+The user's latest Kino biomarkers, bio age, and test date are ALWAYS already provided above in your system context —
+querying the biomarkers table is blocked and will be rejected. Never attempt it; use the values already given to you.
 Tables (always filter by user_id = $1):
-- biomarkers(tested_at TIMESTAMPTZ, test_type TEXT, data JSONB)
-    data.validated: {hsCRP, GDF15, GA, CystatinC, IL6, CD38}  (kino_chip only — always use this for reasoning)
-    data.actual.weight: number  (body_composition only)
-    data.bioage_profile: {BioAge, ChronoAge, SubAges:{CellularAge,MetabolicAge,MicroVascularAge,ResilienceAge}}
 - nutrition_schedules(scheduled_date DATE, dot_id INT, dot_name TEXT, timing TEXT, quantity INT)
 - reminders(content TEXT, scheduled_for TIMESTAMPTZ, recurrence TEXT, status TEXT)
 - chat_messages(role TEXT, content TEXT, created_at TIMESTAMPTZ)
@@ -540,6 +755,12 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                                 const extraParams = Array.isArray(args.extra_params) ? args.extra_params : [];
                                 if (!/^\s*(SELECT|WITH)\s/i.test(sql) || !/\$1\b/.test(sql)) {
                                     toolResult = { error: 'Rejected: must be SELECT with $1 for user_id' };
+                                } else if (/\bbiomarkers\b/i.test(sql)) {
+                                    // The latest kino biomarkers/bioage/test-date are already in system context
+                                    // (see llmContext.biomarkers/biomarkers_tested_at above) — self-authored queries
+                                    // against this table are how the 2026-07-14 stale-data bug happened, so this is
+                                    // enforced here rather than just requested in the tool description.
+                                    toolResult = { error: 'Rejected: biomarkers table is not queryable — use the values already provided in your context.' };
                                 } else {
                                     const qr = await pool.query(sql, [user_id, ...extraParams]);
                                     toolResult = { rows: qr.rows, count: qr.rowCount };
@@ -547,7 +768,7 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                             } catch (qErr) {
                                 toolResult = { error: qErr.message };
                             }
-                            console.log(JSON.stringify({ level: 'INFO', msg: 'DB tool call', rows: toolResult.rows?.length ?? 0 }));
+                            console.log(JSON.stringify({ level: 'INFO', msg: 'DB tool call', sql: tc.function.arguments, rows: toolResult.rows?.length ?? 0, error: toolResult.error }));
                             toolResults.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(toolResult) });
                         }
                     }
@@ -556,6 +777,63 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                     rawReply = choice.message.content || '';
                     break;
                 }
+            }
+
+            // Grounding check: the model can still misstate biomarker figures/BMI/dates/age from
+            // conversation history or from raw birth-date/height/weight text riding along in
+            // questionnaire_context, even when the correct values are right there in its own system
+            // prompt (this is exactly how the 2026-07-14 stale-data bug and the 2026-07-16 wrong-age
+            // bug happened). Cross-check what it actually wrote against the ground-truth data fetched
+            // above, and retry once with an explicit correction if it drifted.
+            //
+            // Strip the record_weight/set_reminder action JSON before checking: its "scheduled_for"
+            // is a future reminder timestamp, not a claim about the biomarker test date, but
+            // extractDateMentions() matches any YYYY-MM-DD blindly and doesn't know the difference.
+            // Left unstripped, every set_reminder reply guaranteed-false-positived a "date mismatch"
+            // against tested_at, which fed unrelated biomarker ground-truth values into the
+            // correction prompt and told the model to "rewrite using ONLY these values" -- hijacking
+            // reminder confirmations into unrelated biomarker essays (found 2026-07-26).
+            const stripActionJson = (text) => text
+                .replace(/\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
+                .replace(/\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '');
+            const hasKnownAge = user.birth_date != null;
+            const hasKnownBmi = llmContext.user_profile.bmi != null;
+            if (Object.keys(llmContext.biomarkers).length > 0 || hasKnownAge || hasKnownBmi) {
+                const groundTruth = {
+                    validated: {
+                        ...llmContext.biomarkers,
+                        ...(hasKnownBmi ? { BMI: llmContext.user_profile.bmi } : {}),
+                    },
+                    tested_at: llmContext.biomarkers_tested_at,
+                    age: hasKnownAge ? llmContext.user_profile.age : null,
+                    nickname: llmContext.user_profile.nickname,
+                };
+                const verification = verifyBiomarkerGrounding(stripActionJson(rawReply), groundTruth);
+                if (!verification.ok) {
+                    console.log(JSON.stringify({ level: 'WARN', msg: 'biomarker_grounding_mismatch', user_id, mismatches: verification.mismatches }));
+                    const correctionPrompt = `Your previous reply stated biomarker figures, BMI, a test date, and/or the patient's age that do not match their actual record.
+Ground truth — test date: ${groundTruth.tested_at || 'unknown'}, values: ${JSON.stringify(groundTruth.validated)}, age: ${groundTruth.age ?? 'unknown'}.
+Rewrite your previous reply using ONLY these exact values, this exact date, and this exact age. Keep the same language, tone, and structure otherwise.`;
+                    chatMessages.push({ role: 'assistant', content: rawReply });
+                    chatMessages.push({ role: 'user', content: correctionPrompt });
+                    const retryCompletion = await client.chat.completions.create({
+                        model,
+                        messages: chatMessages,
+                        temperature: 0.2,
+                    });
+                    const retryReply = retryCompletion.choices[0].message.content || rawReply;
+                    const retryVerification = verifyBiomarkerGrounding(stripActionJson(retryReply), groundTruth);
+                    console.log(JSON.stringify({ level: retryVerification.ok ? 'INFO' : 'WARN', msg: 'biomarker_grounding_retry', user_id, ok: retryVerification.ok, mismatches: retryVerification.mismatches }));
+                    rawReply = retryReply;
+                }
+            }
+
+            if (personaType === 'viva') {
+                rawReply = await _regenerateIfFabricationRisk(
+                    client, model,
+                    [{ role: 'system', content: systemPrompt }, ...cleanHistory],
+                    rawReply, 'handlePostChat', llmContext.dots, stripActionJson(rawReply)
+                );
             }
 
             // Detect weight-recording action embedded by the LLM
@@ -579,16 +857,21 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                             ? `⚠️ 您上次记录的体重是 **${lastWeight} kg**，与本次输入（**${weightKg} kg**）相差较大，请核对后重新发送。`
                             : `⚠️ Your last recorded weight was **${lastWeight} kg**. The new value **${weightKg} kg** looks quite different — please double-check and resend if it's correct.`;
                     } else {
-                        await pool.query(
-                            'INSERT INTO biomarkers (user_id, test_type, data, tested_at) VALUES ($1, $2, $3, $4)',
-                            [user_id, 'body_composition', JSON.stringify({ actual: { weight: weightKg } }), new Date().toISOString()]
-                        );
-                        recordedWeight = weightKg;
+                        if (!sandbox) {
+                            await pool.query(
+                                'INSERT INTO biomarkers (user_id, test_type, data, tested_at) VALUES ($1, $2, $3, $4)',
+                                [user_id, 'body_composition', JSON.stringify({ actual: { weight: weightKg } }), new Date().toISOString()]
+                            );
+                            recordedWeight = weightKg;
+                        }
                         simpleReply = isZh
                             ? `✅ 已记录您的体重：**${weightKg} kg**`
                             : `✅ Weight recorded: **${weightKg} kg**`;
                     }
 
+                    if (sandbox) {
+                        return { success: true, user_id, sandbox: true, reply: simpleReply };
+                    }
                     await saveChatMessage(user_id, 'ai', simpleReply, null, personaType);
                     await pool.query(
                         'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
@@ -603,7 +886,7 @@ SQL must be a SELECT statement. $1 is always user_id.`,
             if (reminderActionMatch) {
                 try {
                     const reminderAction = JSON.parse(reminderActionMatch[0]);
-                    if (reminderAction.content && reminderAction.scheduled_for) {
+                    if (reminderAction.content && reminderAction.scheduled_for && !sandbox) {
                         await handlePostReminder({ user_id, content: reminderAction.content, scheduled_for: reminderAction.scheduled_for });
                     }
                 } catch (e) {
@@ -616,6 +899,12 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                 .replace(/\n?\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
                 .trim();
 
+            if (sandbox) {
+                // Sandbox sessions have no notification-polling side channel to rely on —
+                // hand the reply back directly instead of persisting it.
+                return { success: true, user_id, sandbox: true, reply };
+            }
+
             // Save assistant reply to the conversation log
             await saveChatMessage(user_id, 'ai', reply, null, personaType);
 
@@ -626,10 +915,14 @@ SQL must be a SELECT statement. $1 is always user_id.`,
             );
         } catch (err) {
             console.error('LLM Chat Error:', err);
+            const fallbackText = "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.";
+            if (sandbox) {
+                return { success: true, user_id, sandbox: true, reply: fallbackText };
+            }
             // Fallback for demo if LLM fails
             await pool.query(
                 'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                [user_id, 'chat_reply', "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.", 'pending']
+                [user_id, 'chat_reply', fallbackText, 'pending']
             );
         }
     }
@@ -660,7 +953,7 @@ async function handlePostHealthAdvice(body) {
 
     try {
         const userResult = await pool.query(
-            `SELECT user_id, nickname, gender, birth_date, language, bio_data
+            `SELECT user_id, nickname, gender, birth_date, language, bio_data, channel_id
              FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
             [openid]
         );
@@ -668,15 +961,24 @@ async function handlePostHealthAdvice(body) {
         const user = userResult.rows[0];
         const user_id = user.user_id;
 
+        let personaType = 'nano';
+        if (user.channel_id) {
+            try {
+                const chResult = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
+                personaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
+            } catch (_) {}
+        }
+        const currentSolarTerm = personaType === 'viva' ? getCurrentSolarTerm(getNowShanghai().toJSDate()) : null;
+
         const [bioResult, dotsResult, plansResult, twinResult] = await Promise.all([
             pool.query(
                 `SELECT bio_age, data FROM biomarkers
-                 WHERE user_id = $1 AND test_type = 'kino_chip'
+                 WHERE user_id = $1 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL
                  ORDER BY tested_at DESC LIMIT 1`,
                 [user_id]
             ),
             pool.query(
-                `SELECT key_name, name, name_zh, sub_age_target, description, timing
+                `SELECT id, key_name, name, name_zh, sub_age_target, description, timing, ingredients, ingredients_zh
                  FROM dots ORDER BY id ASC`
             ),
             pool.query(
@@ -739,7 +1041,8 @@ async function handlePostHealthAdvice(body) {
         const healthConditionsOther = user.bio_data?.health_conditions_other || '';
         const isZh = (user.language || 'zh') !== 'en';
 
-        const systemPrompt = systemHealthAdviceTemplate({
+        const healthAdviceTemplate = personaType === 'viva' ? vivaSystemHealthAdviceTemplate : systemHealthAdviceTemplate;
+        const systemPrompt = healthAdviceTemplate({
             isZh,
             nickname: user.nickname,
             age,
@@ -752,6 +1055,7 @@ async function handlePostHealthAdvice(body) {
             healthConditions,
             healthConditionsOther,
             health_twin: healthTwin,
+            current_solar_term: currentSolarTerm,
             active_health_plans: activePlans.map(p => ({
                 plan_type: p.plan_type,
                 name: isZh ? p.name_zh : p.name_en,
@@ -788,7 +1092,14 @@ async function handlePostHealthAdvice(body) {
             temperature: 0.3,
         });
 
-        const reply = completion.choices[0].message.content;
+        let reply = completion.choices[0].message.content;
+        if (personaType === 'viva') {
+            reply = await _regenerateIfFabricationRisk(
+                llmClient, model,
+                [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMsg }],
+                reply, 'handlePostHealthAdvice', dotsResult.rows
+            );
+        }
         await saveChatMessage(user_id, 'ai', reply);
 
         return { success: true, message: reply };
@@ -1168,7 +1479,7 @@ async function handleGetHealthEvents(query) {
         params.push(rowLimit);
 
         const result = await pool.query(
-            `SELECT id, source, category, data_date, recorded_at, data, ingested_at
+            `SELECT id, source, category, data_date, recorded_at, data, ingested_at, external_id
              FROM health_events
              WHERE ${conditions.join(' AND ')}
              ORDER BY data_date DESC, recorded_at DESC

@@ -57,10 +57,27 @@
   </view>
 
   <view wx:elif="{{tab === 'users'}}" class="tab-content">
-    <view wx:if="{{users.length === 0}}" class="empty-state">
-      <text class="empty-text">{{t.empty.users}}</text>
+    <view class="clients-search-wrap">
+      <view class="clients-search-bar">
+        <text class="search-icon-txt">🔍</text>
+        <input class="clients-search-input"
+               placeholder="{{t.user.searchPlaceholder}}"
+               value="{{userSearch}}"
+               bindinput="onUserSearchInput"
+               confirm-type="search" />
+        <view wx:if="{{userSearch}}" class="search-clear-btn" catchtap="clearUserSearch">
+          <text class="search-clear-icon">✕</text>
+        </view>
+      </view>
     </view>
-    <view wx:for="{{users}}" wx:key="user_id" class="list-card">
+    <view wx:if="{{userSearch}}" class="search-result-row">
+      <text wx:if="{{userSearchLoading}}" class="search-result-txt">{{t.loading}}</text>
+      <text wx:else class="search-result-txt">{{filteredUsers.length}} {{t.user.resultsFound}}</text>
+    </view>
+    <view wx:if="{{!userSearchLoading && filteredUsers.length === 0}}" class="empty-state">
+      <text class="empty-text">{{users.length === 0 && !userSearch ? t.empty.users : t.user.noMatch}}</text>
+    </view>
+    <view wx:for="{{filteredUsers}}" wx:key="user_id" class="list-card">
       <view class="card-main">
         <view class="user-avatar">
           <text class="avatar-letter">{{item._avatar}}</text>
@@ -71,6 +88,9 @@
           <text class="card-sub2">{{t.user.joined}}: {{item._joinedFmt}}</text>
         </view>
         <view class="card-actions">
+          <view class="action-btn sandbox-btn" bindtap="loginAsUser" data-user="{{item}}">
+            <text class="action-text">{{t.user.loginAs}}</text>
+          </view>
           <view class="action-btn role-btn" bindtap="openRoles" data-user="{{item}}">
             <text class="action-text">{{t.user.roles}}</text>
           </view>

@@ -2,11 +2,15 @@
   "__usePrivacyCheck__": true,
   "pages": [
     "pages/login/login",
+    "pages/verify-phone/verify-phone",
     "pages/main/main",
     "pages/admin/admin",
     "pages/coach/coach",
     "pages/superadmin/superadmin",
-    "pages/referral/referral"
+    "pages/referral/referral",
+    "pages/webadmin/webadmin",
+    "pages/appview/appview",
+    "pages/qrlogin/qrlogin"
   ],
   "window": {
     "backgroundTextStyle": "light",
@@ -18,11 +22,20 @@
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",
-  "requiredPrivateInfos": [],
+  "requiredPrivateInfos": ["chooseAddress"],
   "requiredBackgroundModes": ["audio"],
+  "plugins": {
+    "WechatSI": {
+      "version": "0.3.5",
+      "provider": "wx069ba97219f66d99"
+    }
+  },
   "permission": {
     "scope.bluetooth": {
       "desc": "用于连接您的健康戒指，读取健康数据"
+    },
+    "scope.record": {
+      "desc": "用于语音输入转文字"
     }
   }
 }
