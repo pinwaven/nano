@@ -95,7 +95,8 @@ async function handleGetPartnerByPhone(phone, channelKey) {
             SELECT p.id, p.tier, p.status, p.real_name, p.phone, p.channel_id,
                    p.referred_by_partner_id
             FROM partners p
-            WHERE p.phone = $1 AND p.channel_id IN (SELECT id FROM subtree)
+            WHERE right(regexp_replace(p.phone, '\D', '', 'g'), 11) = right(regexp_replace($1, '\D', '', 'g'), 11)
+              AND p.channel_id IN (SELECT id FROM subtree)
             ORDER BY p.created_at DESC
             LIMIT 1
         `, [phone, channelKey]);
@@ -104,6 +105,20 @@ async function handleGetPartnerByPhone(phone, channelKey) {
     } catch (err) {
         return { success: false, error: err.message };
     }
+}
+
+// POST /partner-lookup-gcn  (GCN service-token only, see GCN_ALLOWED_PATHS in index.js)
+// Body: { phone, channel }
+// Thin POST wrapper around handleGetPartnerByPhone — needed because GCN_ALLOWED_PATHS
+// matches on an exact literal path; a GET route with the phone baked into the URL segment
+// can't be allow-listed that way, unlike every other *-gcn cross-repo endpoint (fixed path,
+// params in body). Used by GCN's login-time direct-store auto-provisioning (finalizeSectorLogin
+// / handleNanoSSO) to check whether a phone is a real nano direct-store partner before
+// deciding whether to auto-create a tiered partner row or fall back to a plain consumer.
+async function handleGcnPartnerLookup(body) {
+    const { phone, channel } = body || {};
+    if (!phone || !channel) return { success: false, error: 'phone, channel required', statusCode: 400 };
+    return handleGetPartnerByPhone(phone, channel);
 }
 
 // POST /api/partner-sales
@@ -1039,6 +1054,7 @@ module.exports = {
     handleGetPartners,
     handleGetPartner,
     handleGetPartnerByPhone,
+    handleGcnPartnerLookup,
     handlePostPartner,
     handlePostPartnerGcnProvision,
     handlePostPartnerInviteCode,

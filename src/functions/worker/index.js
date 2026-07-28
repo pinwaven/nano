@@ -57,7 +57,7 @@ const { handleGetLabProviders, handlePostLabProvider, handlePutLabProvider, hand
 const { handleGetInventoryStock, handlePostInventoryStock, handleGetWarehouses, handlePostWarehouse, handlePutWarehouse, handleDeleteWarehouse } = require('./handlers/inventory');
 const { handleGetOrders, handleGetMyOrders, handlePostStoreItem, handlePutStoreItem, handleDeleteStoreItem, handleGetSkus, handlePostSku, handlePutSku, handleDeleteSku } = require('./handlers/store');
 const { handleGetCommissionSettings, handlePutCommissionSetting, handleGetCoachCommissions, handleGetChannelCommissions, handleGetCoachEarnings, handleGetCoachPayouts, handleGetChannelPayouts, handlePostGenerateCoachPayouts, handlePostGenerateChannelPayouts, handlePutCoachPayout, handlePutChannelPayout } = require('./handlers/commissions');
-const { handleGetPartners, handleGetPartner, handleGetPartnerByPhone, handlePostPartner, handlePostPartnerGcnProvision, handlePostPartnerInviteCode, handleGcnPartnerInviteCode, handleGcnPartnerApply, handlePostPartnerSale, handlePutPartner, handleDeletePartner, handleGetPartnerCommissions, handlePostPartnerCommission, handleGetPartnerPayouts, handlePostGeneratePartnerPayouts, handlePutPartnerPayout, handleGcnPartnerChildren, handleGcnPartnerDescendants, handleGetChannelReferralNetwork, handleGetPartnerCommissionConfig, handlePutPartnerCommissionConfig, handleGetPartnerTypes, handlePostPartnerType, handlePutPartnerType, handleDeletePartnerType, handleGetPartnerCommissionRules, handlePostPartnerCommissionRule, handlePutPartnerCommissionRule, handleDeletePartnerCommissionRule, handlePutChannelPartnerSystemPermission, handleGetChannelRewardsSummary } = require('./handlers/partners');
+const { handleGetPartners, handleGetPartner, handleGetPartnerByPhone, handleGcnPartnerLookup, handlePostPartner, handlePostPartnerGcnProvision, handlePostPartnerInviteCode, handleGcnPartnerInviteCode, handleGcnPartnerApply, handlePostPartnerSale, handlePutPartner, handleDeletePartner, handleGetPartnerCommissions, handlePostPartnerCommission, handleGetPartnerPayouts, handlePostGeneratePartnerPayouts, handlePutPartnerPayout, handleGcnPartnerChildren, handleGcnPartnerDescendants, handleGetChannelReferralNetwork, handleGetPartnerCommissionConfig, handlePutPartnerCommissionConfig, handleGetPartnerTypes, handlePostPartnerType, handlePutPartnerType, handleDeletePartnerType, handleGetPartnerCommissionRules, handlePostPartnerCommissionRule, handlePutPartnerCommissionRule, handleDeletePartnerCommissionRule, handlePutChannelPartnerSystemPermission, handleGetChannelRewardsSummary } = require('./handlers/partners');
 const { handleGetEvents, handlePostEvent, handlePutEvent, handleDeleteEvent, handleGetEventSignups, handlePostEventSignup, handleDeleteEventSignup, handleGetMyEventSignups } = require('./handlers/events');
 const { handleGetCoachGroups, handlePostCoachGroup, handlePutCoachGroup, handleDeleteCoachGroup, handleGetCoachGroupKpis } = require('./handlers/coach-groups');
 const { handleGetKoneApkReleases, handlePostKoneApkRelease, handlePutKoneApkRelease, handleDeleteKoneApkRelease, handleGetKoneApkPresign, handleGetDigitalAssets, handlePostDigitalAsset, handlePutDigitalAsset, handleDeleteDigitalAsset, handleGetDigitalAssetsPresign, handleGetKinoUpgrade } = require('./handlers/digital-assets');
@@ -208,7 +208,7 @@ exports.handler = async (req, resp, context) => {
             // Scoped nano<-GCN service credential — distinct from API_BEARER_TOKEN (nano's
             // full superadmin bearer). Authenticated but restricted to the exact paths GCN's
             // nanoClient.js actually calls; anything else 403s even with a valid token.
-            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn']);
+            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn']);
             if (!GCN_ALLOWED_PATHS.has(path)) {
                 const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
                 if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
@@ -695,6 +695,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostPartnerGcnProvision(path.match(/\/partners\/(\d+)\/gcn-provision/)[1]);
             } else if (path.match(/\/partners\/(\d+)\/invite-code/)) {
                 result = await handlePostPartnerInviteCode(path.match(/\/partners\/(\d+)\/invite-code/)[1]);
+            } else if (path.includes('/partner-lookup-gcn')) {
+                result = await handleGcnPartnerLookup(parsedBody);
             } else if (path.includes('/partner-invite-code-gcn')) {
                 result = await handleGcnPartnerInviteCode(parsedBody);
             } else if (path.includes('/partner-children-gcn')) {
