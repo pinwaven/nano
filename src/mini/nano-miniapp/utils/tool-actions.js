@@ -54,29 +54,60 @@ async function runFormulaDs(openid, t, ctx) {
   addMsg('ai', t.formulaGenerating, true)
   setTyping(true)
   try {
-    await req(`${BASE}/api/formula-dots`, 'POST', { openid })
+    const res = await req(`${BASE}/api/formula-dots`, 'POST', { openid })
+    if (res.data?.processing) {
+      // Viva's dot-count decision now runs through the full agentic loop asynchronously (can
+      // take up to ~180s) — the schedule is NOT committed yet at this point, so showing
+      // formulaComplete + a working "view plan" button here would be misleading (found via a
+      // real device report, 2026-07-29: complete/view-plan showed within a second, but the
+      // actual plan wasn't ready for minutes). main.js's ctx defines onAsyncStart (it has a
+      // notification-polling loop that can deliver a follow-up message) — keep the
+      // typing/status UI alive for it. Callers without one (coach.js) get an honest
+      // "still working" message instead of a premature "done".
+      if (ctx.onAsyncStart) {
+        ctx.onAsyncStart()
+        return
+      }
+      addMsg('ai', t.formulaProcessing, true)
+      setTyping(false)
+      return
+    }
     addMsg('ai', t.formulaComplete, true)
     if (addActionMsg) addActionMsg('view_dots', t.formulaViewDots, true)
+    setTyping(false)
   } catch (e) {
     addMsg('ai', t.formulaError)
-  } finally {
     setTyping(false)
   }
 }
 
-async function runHealthAdvice(openid, t, ctx) {
+// opts.async — only main.js's ctx sets this (it has onAsyncStart + a polling loop that can
+// deliver the reply later). coach.js and the web ChatTab.jsx callers omit it, so they keep
+// getting a synchronous reply exactly as before, unaffected by this.
+async function runHealthAdvice(openid, t, ctx, opts = {}) {
   const { addMsg, req, setTyping } = ctx
+  const wantAsync = !!opts.async
   addMsg('user', t.toolHealthAdviceMsg)
   setTyping(true)
   try {
-    const res = await req(`${BASE}/api/health-advice`, 'POST', { openid })
+    // 180s: for a Viva-persona user, this can run the full agentic plan/generate/judge/revise
+    // loop (measured up to ~167s worst case) — matters most for callers without `opts.async`
+    // (coach.js), which have no polling fallback and would otherwise trip wx.request's default
+    // 60s timeout, canceling the in-progress server-side work rather than just delaying it.
+    const res = await req(`${BASE}/api/health-advice`, 'POST', { openid, async: wantAsync }, 180000)
     if (res.statusCode !== 200 && res.statusCode !== 201) throw new Error('server error')
+    if (wantAsync && res.data?.processing) {
+      // Real reply arrives later via the caller's own notification-polling loop — leave the
+      // typing/waiting state up to it (see main.js's onAsyncStart) rather than clearing it here.
+      ctx.onAsyncStart?.()
+      return
+    }
     const reply = res.data?.message
     if (!reply) throw new Error('empty response')
     addMsg('ai', reply, true)
+    setTyping(false)
   } catch (e) {
     addMsg('ai', t.healthAdviceError)
-  } finally {
     setTyping(false)
   }
 }

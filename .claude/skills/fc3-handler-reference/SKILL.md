@@ -105,3 +105,20 @@ return {
 ### Local dev vs FC 3.0 parity
 
 `scripts/local-dev.js` bridges Express → FC handler format by wrapping `req.body` in a Buffer and providing a minimal `resp` shim (`setStatusCode`, `setHeader`, `send`). Keep this shim in sync with any response API changes in the worker handler.
+
+### `context` is empty for HTTP-triggered invocations — use env vars for credentials
+
+Confirmed by live probe (2026-07-28) against the deployed HTTP-triggered worker: the third handler argument (`context` in `(req, resp, context)`) is an **empty object** — no `.credentials`, no `.region`, nothing. This differs from a Cron-triggered function (e.g. `dispatcher/index.js`, signature `(event, context)`), which reportedly reads `context.credentials.accessKeyId/accessKeySecret/securityToken` and `context.region` successfully — don't assume that pattern carries over to an HTTP trigger without checking.
+
+If a handler needs Aliyun credentials (e.g. to call another Aliyun SDK like EventBridge's `putEvents`) from an HTTP-triggered function, use the runtime role's temporary STS credentials injected as plain env vars instead — confirmed present on every invocation regardless of trigger type:
+
+```js
+const ebConfig = new OpenApi.Config({
+    accessKeyId: process.env.ALIBABA_CLOUD_ACCESS_KEY_ID,
+    accessKeySecret: process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET,
+    securityToken: process.env.ALIBABA_CLOUD_SECURITY_TOKEN,
+    endpoint: `eventbridge.${process.env.FC_REGION}.aliyuncs.com`,
+});
+```
+
+If in doubt for a new use case, don't guess — add a one-line temporary debug log (`console.log(JSON.stringify({keys: Object.keys(context||{})}))`), deploy, hit the endpoint once, check the log, then remove the probe. That's how this was confirmed.

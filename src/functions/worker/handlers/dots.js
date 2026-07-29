@@ -4,11 +4,16 @@ const { pool } = require('../lib/db');
 const { recordOrderCommissions, recordUserReferralCommission } = require('../lib/commissions');
 const { applyPartnerDiscount, getPartnerProductDiscount } = require('../lib/partnerCommissions');
 const { debitUser } = require('../lib/credits');
-const { getNowShanghai } = require('../lib/time-utils');
+const { getNowShanghai, calculateAge, formatToShanghai } = require('../lib/time-utils');
 const { getCurrentSolarTerm } = require('../lib/solarTerms');
 const OpenAI = require('openai');
 const systemNutritionTemplate = require('../prompts/nano/systemNutrition');
 const vivaSystemNutritionTemplate = require('../prompts/viva/systemNutrition');
+const systemFormulaGenerateTemplate = require('../prompts/viva/systemFormulaGenerate');
+const { v4: uuidv4 } = require('uuid');
+const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
+const { getEssentialBlock } = require('../lib/knowledgeBase');
+const { formatQuestionnaireContext } = require('./questionnaires');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
@@ -764,11 +769,13 @@ async function handleGetNutritionPlan(openid) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (!openid) return { success: true, plan: null, dots: [] };
 
-        // 1. Get latest structured plan
+        // 1. Get latest ACTIVE structured plan — while a new Viva formulation is still
+        // 'pending' (async agentic decision in flight), this naturally keeps returning the
+        // previous plan rather than an empty/half-formed one.
         const planResult = await pool.query(
             `SELECT id, start_date, end_date, goal, created_at
              FROM nutrition_plans
-             WHERE user_id = $1
+             WHERE user_id = $1 AND status = 'active'
              ORDER BY created_at DESC LIMIT 1`,
             [openid]
         );
@@ -811,49 +818,152 @@ async function handleGetNutritionPlan(openid) {
     }
 }
 
-// Flat neutral fallback (base=4, matching the prompt's own "3-4 for unrelated dots"
-// framing) for any DOT-Nxx key the LLM's FORMULATION output happens to omit — the
-// per-dot biomarker-specific heuristics this used to carry were tuned for the old
-// DOT01-18 lineup's biology and don't map onto the new formulas (dots-new.md,
-// migrated 2026-07-25); re-deriving 18 new heuristics is out of scope for this pass.
-function _calcDotCounts() {
-    const counts = {};
-    for (let i = 1; i <= 18; i++) {
-        counts[`D-N${i}`] = 4;
+// Per-dot fallback when the LLM's FORMULATION output omits a key entirely — midpoint of that
+// dot's own target_dots_min/max (added by migration_dots_new_lineup.sql; ranges vary wildly,
+// e.g. 1-2 for DOT-N1 vs 56-100 for DOT-N15, so a flat constant made no sense). Falls back to
+// 4 only if a dot has no min/max configured.
+function _fallbackCountForDot(dot) {
+    if (dot.target_dots_min != null && dot.target_dots_max != null) {
+        return Math.round((dot.target_dots_min + dot.target_dots_max) / 2);
     }
-    return counts;
+    return 4;
 }
 
-// Derived from dots.timing column at formulation time — do not hardcode here
-const MONTH_EN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const WEEKDAY_EN = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const WEEKDAY_ZH = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+// The original (2026-07 and earlier) formulation path: one non-agentic LLM completion over the
+// latest biomarker snapshot, parsed into per-dot morning/evening counts. Used directly for Nano
+// (unchanged), and as the deterministic fallback for Viva when the richer async agentic path
+// (handleChatGenerateEvent's 'formula_dots_generate' kind) can't run — EventBridge publish
+// failure, or the agentic turn itself throwing — so a formulation request never ends with the
+// user getting nothing. Does NOT touch the DB; callers own the transaction.
+async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFormulary, personaType, lang, currentSolarTerm, essentialKnowledge, userFacts }) {
+    const nutritionContext = {
+        language: lang,
+        biomarkers,
+        bioage_profile: bioageProfile,
+        dots_formulary: dotsFormulary,
+        start_date: getNowShanghai().toISODate(),
+        days_needed: 7,
+        current_solar_term: currentSolarTerm,
+        essential_knowledge: essentialKnowledge,
+        user_facts: userFacts,
+    };
+    const llmClient = getLlmClient();
+    const model = process.env.MODEL || 'qwen3.6-plus';
+    const nutritionTemplate = personaType === 'viva' ? vivaSystemNutritionTemplate : systemNutritionTemplate;
+    const prompt = nutritionTemplate(nutritionContext);
+    console.log(JSON.stringify({ level: 'INFO', msg: 'Formula DOTS Context', data: nutritionContext }));
 
-function _generatePlanText(dotCounts, availableDotKeys, lang, startDate, days, morningKeys, eveningKeys) {
-    const lines = [];
-    const start = new Date(startDate + 'T00:00:00+08:00');
+    const completion = await llmClient.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+    });
 
-    for (let i = 0; i < days; i++) {
-        const d = new Date(start.getTime() + i * 86400000);
-        const dow = d.getDay();
-        const month = d.getMonth();
-        const day = d.getDate();
+    const llmText = completion.choices[0].message.content || '';
+    console.log(JSON.stringify({ level: 'INFO', msg: 'LLM Response', text: llmText }));
+    let analysis = '';
+    const dotCounts = {};
+    const dotsByKey = new Map(dotsFormulary.map(d => [d.key_name.replace(/^DOT/, 'D'), d]));
 
-        const mParts = morningKeys
-            .filter(k => availableDotKeys.has(k))
-            .map(k => `${k}x${dotCounts[k] || 3}`);
-        const eParts = eveningKeys
-            .filter(k => availableDotKeys.has(k))
-            .map(k => `${k}x${dotCounts[k] || 3}`);
+    // Improved parsing for ANALYSIS and FORMULATION sections
+    const lines = llmText.split('\n');
+    let currentSection = '';
 
-        if (lang === 'zh') {
-            lines.push(`${month + 1}月${day}日 (${WEEKDAY_ZH[dow]}): 早上 ${mParts.join(' ')} 晚上 ${eParts.join(' ')}`);
-        } else {
-            lines.push(`${MONTH_EN[month]} ${day}, ${WEEKDAY_EN[dow]}: Morning ${mParts.join(' ')} Evening ${eParts.join(' ')}`);
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        if (trimmed.startsWith('ANALYSIS:')) {
+            analysis = trimmed.replace('ANALYSIS:', '').trim();
+            currentSection = 'analysis';
+            continue;
+        } else if (trimmed.startsWith('FORMULATION:')) {
+            currentSection = 'formulation';
+            continue;
+        }
+
+        if (currentSection === 'formulation') {
+            const m = trimmed.match(/^(D-N\d+):\s*(\d+)$/);
+            if (m) {
+                const dot = dotsByKey.get(m[1]);
+                const min = dot?.target_dots_min ?? 1;
+                const max = dot?.target_dots_max ?? 10;
+                dotCounts[m[1]] = Math.min(max, Math.max(min, parseInt(m[2], 10)));
+            }
+        } else if (currentSection === 'analysis' && !analysis) {
+            // In case it's multi-line (though prompt says brief)
+            analysis = trimmed;
         }
     }
 
-    return lines.join('\n');
+    // Build morning/evening splits from DB timing column
+    const morningKeys = dotsFormulary.filter(r => r.timing === 'Morning').map(r => r.key_name.replace(/^DOT/, 'D'));
+    const eveningKeys = dotsFormulary.filter(r => r.timing === 'Evening').map(r => r.key_name.replace(/^DOT/, 'D'));
+
+    // Fill any missing keys with the deterministic per-dot fallback
+    const availableDotKeys = new Set(dotsFormulary.map(r => r.key_name.replace(/^DOT/, 'D')));
+    for (const dot of dotsFormulary) {
+        const k = dot.key_name.replace(/^DOT/, 'D');
+        if (!dotCounts[k]) dotCounts[k] = _fallbackCountForDot(dot);
+    }
+
+    // The chat message deliberately does NOT include a raw per-dot text dump (previously
+    // _generatePlanText's D-N1x3 D-N2x3 ... breakdown, repeated once per identical day) —
+    // found 2026-07-29 that this read as confusing technical noise; the "查看方案" (view
+    // plan) action button is the actual place users should see exact per-dot numbers.
+    const finalContent = analysis || (lang === 'zh' ? '您的专属原粒方案已生成，点击下方"查看方案"了解详情。' : 'Your personalized dot plan has been generated — tap "View Plan" below for the details.');
+
+    const morningRecipe = { dots: {} };
+    morningKeys.forEach(k => {
+        if (availableDotKeys.has(k) && dotCounts[k] > 0) {
+            morningRecipe.dots[k.replace('D', 'DOT')] = dotCounts[k];
+        }
+    });
+
+    const eveningRecipe = { dots: {} };
+    eveningKeys.forEach(k => {
+        if (availableDotKeys.has(k) && dotCounts[k] > 0) {
+            eveningRecipe.dots[k.replace('D', 'DOT')] = dotCounts[k];
+        }
+    });
+
+    return { analysis, finalContent, morningRecipe, eveningRecipe, dotCounts, morningKeys, eveningKeys };
+}
+
+// Commits a deterministic-formulation result as the one active plan for a user: supersedes any
+// existing active plan, inserts a fresh 'active' nutrition_plans row (or activates an existing
+// pending one when planId is given), and writes 7 identical days of morning/evening schedules.
+async function _commitNutritionPlan(client, { userId, analysis, morningRecipe, eveningRecipe, planId }) {
+    const startDateObj = getNowShanghai();
+    const endDateObj = startDateObj.plus({ days: 6 });
+
+    await client.query(`UPDATE nutrition_plans SET status = 'superseded' WHERE user_id = $1 AND status = 'active'`, [userId]);
+
+    let finalPlanId = planId;
+    if (finalPlanId) {
+        await client.query(
+            `UPDATE nutrition_plans SET status = 'active', start_date = $1, end_date = $2, goal = $3 WHERE id = $4`,
+            [startDateObj.toISODate(), endDateObj.toISODate(), analysis || 'Personalized Formulation', finalPlanId]
+        );
+    } else {
+        const planInsert = await client.query(
+            `INSERT INTO nutrition_plans (user_id, start_date, end_date, goal, status) VALUES ($1, $2, $3, $4, 'active') RETURNING id`,
+            [userId, startDateObj.toISODate(), endDateObj.toISODate(), analysis || 'Personalized Formulation']
+        );
+        finalPlanId = planInsert.rows[0].id;
+    }
+
+    for (let i = 0; i < 7; i++) {
+        const currentDate = startDateObj.plus({ days: i }).toISODate();
+        await client.query(
+            'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
+            [finalPlanId, userId, currentDate, 'morning_cup', morningRecipe]
+        );
+        await client.query(
+            'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
+            [finalPlanId, userId, currentDate, 'evening_cup', eveningRecipe]
+        );
+    }
+    return finalPlanId;
 }
 
 async function handlePostFormulaDots(body) {
@@ -865,11 +975,11 @@ async function handlePostFormulaDots(body) {
         const [userResult, bioResult, dotsResult] = await Promise.all([
             pool.query('SELECT * FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]),
             pool.query(
-                `SELECT bio_age, data FROM biomarkers WHERE user_id = (SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1)
+                `SELECT bio_age, data, tested_at FROM biomarkers WHERE user_id = (SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1)
                  AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
                 [openid]
             ),
-            pool.query(`SELECT id, key_name, name, name_zh, timing, ingredients, ingredients_zh FROM dots ORDER BY id ASC`),
+            pool.query(`SELECT id, key_name, name, name_zh, timing, ingredients, ingredients_zh, sub_age_target, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`),
         ]);
 
         if (userResult.rows.length === 0) return { success: false, error: 'User not found' };
@@ -887,126 +997,28 @@ async function handlePostFormulaDots(body) {
             } catch (_) {}
         }
 
-        const startDate = getNowShanghai().toISODate();
         const lang = user.language || 'zh';
         const currentSolarTerm = personaType === 'viva' ? getCurrentSolarTerm(getNowShanghai().toJSDate()) : null;
+        const essentialKnowledge = personaType === 'viva' ? await getEssentialBlock('viva') : null;
+        const userFactsResult = await pool.query(
+            `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
+            [user.user_id]
+        );
 
-        // Ask LLM to assign per-dot counts based on biomarkers
-        const nutritionContext = {
-            language: lang,
-            biomarkers,
-            bioage_profile: bioageProfile,
-            dots_formulary: dotsResult.rows,
-            start_date: startDate,
-            days_needed: 7,
-            current_solar_term: currentSolarTerm,
-        };
-        const llmClient = getLlmClient();
-        const model = process.env.MODEL || 'qwen3.6-plus';
-        const nutritionTemplate = personaType === 'viva' ? vivaSystemNutritionTemplate : systemNutritionTemplate;
-        const prompt = nutritionTemplate(nutritionContext);
-        console.log(JSON.stringify({ level: 'INFO', msg: 'Formula DOTS Context', data: nutritionContext }));
+        if (personaType === 'viva') {
+            return await _handleFormulaDotsViva({ user, biomarkers, bioageProfile, dotsFormulary: dotsResult.rows, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts: userFactsResult.rows, personaType });
+        }
 
-        const completion = await llmClient.chat.completions.create({
-            model,
-            messages: [{ role: 'user', content: prompt }],
+        // Nano — unchanged fast synchronous path (now benefiting from the shared bug fixes in
+        // _runDeterministicFormulation: correct D-N key format, real per-dot min/max clamping).
+        const { analysis, finalContent, morningRecipe, eveningRecipe } = await _runDeterministicFormulation({
+            biomarkers, bioageProfile, dotsFormulary: dotsResult.rows, personaType, lang, currentSolarTerm, essentialKnowledge, userFacts: userFactsResult.rows,
         });
-
-        const llmText = completion.choices[0].message.content || '';
-        console.log(JSON.stringify({ level: 'INFO', msg: 'LLM Response', text: llmText }));
-        let analysis = '';
-        const dotCounts = {};
-
-        // Improved parsing for ANALYSIS and FORMULATION sections
-        const lines = llmText.split('\n');
-        let currentSection = '';
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-
-            if (trimmed.startsWith('ANALYSIS:')) {
-                analysis = trimmed.replace('ANALYSIS:', '').trim();
-                currentSection = 'analysis';
-                continue;
-            } else if (trimmed.startsWith('FORMULATION:')) {
-                currentSection = 'formulation';
-                continue;
-            }
-
-            if (currentSection === 'formulation') {
-                const m = trimmed.match(/^(D-N\d+):\s*(\d+)$/);
-                if (m) {
-                    dotCounts[m[1]] = Math.min(10, Math.max(1, parseInt(m[2], 10)));
-                }
-            } else if (currentSection === 'analysis' && !analysis) {
-                // In case it's multi-line (though prompt says brief)
-                analysis = trimmed;
-            }
-        }
-
-        // Build morning/evening splits from DB timing column
-        const morningKeys = dotsResult.rows.filter(r => r.timing === 'Morning').map(r => r.key_name.replace(/^DOT/, 'D'));
-        const eveningKeys = dotsResult.rows.filter(r => r.timing === 'Evening').map(r => r.key_name.replace(/^DOT/, 'D'));
-
-        // Fill any missing keys with deterministic fallback
-        const availableDotKeys = new Set(dotsResult.rows.map(r => r.key_name.replace(/^DOT/, 'D')));
-        const fallbackCounts = _calcDotCounts(biomarkers, bioageProfile);
-        for (const k of availableDotKeys) {
-            if (!dotCounts[k]) dotCounts[k] = fallbackCounts[k] || 4;
-        }
-
-        const planText = _generatePlanText(dotCounts, availableDotKeys, lang, startDate, 7, morningKeys, eveningKeys);
-        const finalContent = analysis ? `${analysis}\n\n${planText}` : planText;
-
-        const startDateObj = getNowShanghai();
-        const endDateObj = startDateObj.plus({ days: 6 });
 
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
-
-            const planInsert = await client.query(
-                'INSERT INTO nutrition_plans (user_id, start_date, end_date, goal) VALUES ($1, $2, $3, $4) RETURNING id',
-                [user.user_id, startDateObj.toISODate(), endDateObj.toISODate(), analysis || 'Personalized Formulation']
-            );
-            const planId = planInsert.rows[0].id;
-
-            for (let i = 0; i < 7; i++) {
-                const currentDate = startDateObj.plus({ days: i }).toISODate();
-
-                const morningRecipe = { dots: {} };
-                morningKeys.forEach(k => {
-                    if (availableDotKeys.has(k) && dotCounts[k] > 0) {
-                        morningRecipe.dots[k.replace('D', 'DOT')] = dotCounts[k];
-                    }
-                });
-
-                const eveningRecipe = { dots: {} };
-                eveningKeys.forEach(k => {
-                    if (availableDotKeys.has(k) && dotCounts[k] > 0) {
-                        eveningRecipe.dots[k.replace('D', 'DOT')] = dotCounts[k];
-                    }
-                });
-
-                await client.query(
-                    'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
-                    [planId, user.user_id, currentDate, 'morning_cup', morningRecipe]
-                );
-                await client.query(
-                    'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
-                    [planId, user.user_id, currentDate, 'evening_cup', eveningRecipe]
-                );
-            }
-
-            await client.query(
-                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                [user.user_id, 'nutrition_plan', finalContent, 'pending']
-            );
-
-            // Also save to chat history for persistence
-            await _saveChatMessage(user.user_id, 'ai', finalContent);
-
+            await _commitNutritionPlan(client, { userId: user.user_id, analysis, morningRecipe, eveningRecipe });
             await client.query('COMMIT');
         } catch (e) {
             await client.query('ROLLBACK');
@@ -1015,10 +1027,148 @@ async function handlePostFormulaDots(body) {
             client.release();
         }
 
+        await pool.query(
+            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+            [user.user_id, 'nutrition_plan', finalContent, 'pending']
+        );
+        // Also save to chat history for persistence — personaType passed explicitly here
+        // (2026-07-29 fix): this previously always defaulted to 'nano', so a viva user's
+        // formula-dots confirmation was invisible in their (persona-scoped) chat history on
+        // reload, even though it briefly appeared via the one-time notification poll.
+        await _saveChatMessage(user.user_id, 'ai', finalContent, null, personaType);
+
         return { success: true };
     } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostFormulaDots failed', error: err.message }));
         return { success: false, error: err.message };
+    }
+}
+
+// Viva branch — the actual dot-count decision is made by the full agentic PLAN→GENERATE→JUDGE
+// →REVISE loop, using the user's full digital twin (health_twin, questionnaire history, active
+// health-plan goals) plus tool access to biomarker history / dot inventory / prior schedules,
+// not just the latest biomarker snapshot. Because that loop can take 10s-180s+, and Aliyun FC
+// cancels an invocation the instant the HTTP client disconnects (CLAUDE.md §22), the decision
+// itself runs asynchronously via the same chat.generate event → notifications-poll pipeline
+// already shipped for chat/health-advice — this handler only inserts a 'pending' plan row and
+// publishes the event, returning immediately.
+async function _handleFormulaDotsViva({ user, biomarkers, bioageProfile, dotsFormulary, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts, personaType }) {
+    const startDateObj = getNowShanghai();
+    const endDateObj = startDateObj.plus({ days: 6 });
+
+    const pendingClient = await pool.connect();
+    let pendingPlanId;
+    try {
+        await pendingClient.query('BEGIN');
+        await pendingClient.query(`UPDATE nutrition_plans SET status = 'superseded' WHERE user_id = $1 AND status = 'pending'`, [user.user_id]);
+        const pendingInsert = await pendingClient.query(
+            `INSERT INTO nutrition_plans (user_id, start_date, end_date, goal, status) VALUES ($1, $2, $3, NULL, 'pending') RETURNING id`,
+            [user.user_id, startDateObj.toISODate(), endDateObj.toISODate()]
+        );
+        pendingPlanId = pendingInsert.rows[0].id;
+        await pendingClient.query('COMMIT');
+    } catch (e) {
+        await pendingClient.query('ROLLBACK');
+        throw e;
+    } finally {
+        pendingClient.release();
+    }
+
+    const age = calculateAge(user.birth_date);
+    const heightCm = user.bio_data?.height;
+    const weightKg = user.bio_data?.weight;
+    const bmi = heightCm && weightKg ? Math.round((weightKg / ((heightCm / 100) ** 2)) * 10) / 10 : null;
+
+    const [healthTwinResult, questionnaireResult, activePlansResult] = await Promise.all([
+        pool.query(
+            `SELECT avg_hrv_ms, avg_resting_hr, avg_spo2, avg_sleep_hours, avg_sleep_score, avg_deep_sleep_pct,
+                    avg_daily_steps, avg_active_minutes, latest_weight_kg, latest_bmi, latest_body_fat_pct,
+                    latest_lab_data, latest_lab_date, trend_data, data_coverage
+             FROM health_twin WHERE user_id = $1`,
+            [user.user_id]
+        ),
+        pool.query(
+            `SELECT q.name, q.name_zh, qq.prompt_en, qq.prompt_zh, qr.answer
+             FROM questionnaire_responses qr
+             JOIN questionnaire_questions qq ON qq.id = qr.question_id
+             JOIN questionnaire_assignments qa ON qa.id = qr.assignment_id
+             JOIN questionnaires q ON q.id = qa.questionnaire_id
+             WHERE qa.user_id = $1 AND qa.status = 'completed'
+               AND qq.save_field IS DISTINCT FROM 'birth_date'
+               AND qq.save_biomarker_type IS DISTINCT FROM 'body_composition'
+             ORDER BY qa.completed_at ASC, qq.sort_order ASC`,
+            [user.user_id]
+        ),
+        pool.query(
+            `SELECT hp.id, hp.plan_type, hp.status, hp.start_date, hp.duration_weeks,
+                    hpt.name_en, hpt.name_zh, hpt.goal_en, hpt.goal_zh, hpt.target_sub_ages
+             FROM health_plans hp
+             LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
+             WHERE hp.user_id = $1 AND hp.status = 'active'
+             ORDER BY hp.start_date DESC LIMIT 5`,
+            [user.user_id]
+        ),
+    ]);
+
+    const llmContext = {
+        user_profile: { nickname: user.nickname, gender: user.gender, age, bmi, language: lang },
+        biomarkers,
+        biomarkers_tested_at: latestBio?.tested_at ? formatToShanghai(new Date(latestBio.tested_at)).slice(0, 10) : null,
+        bioage: bioageProfile || {},
+        dots: dotsFormulary,
+        plan: null,
+        health_twin: healthTwinResult.rows[0] || null,
+        now_iso: getNowShanghai().toISO(),
+        questionnaire_context: formatQuestionnaireContext(questionnaireResult.rows, lang),
+        active_health_plans: activePlansResult.rows.map(p => ({
+            name: lang === 'zh' ? p.name_zh : p.name_en,
+            goal: lang === 'zh' ? p.goal_zh : p.goal_en,
+            target_sub_ages: p.target_sub_ages || [],
+            weeks_elapsed: Math.max(0, Math.floor((Date.now() - new Date(p.start_date).getTime()) / (7 * 86400000))),
+            total_weeks: p.duration_weeks,
+        })),
+        sub_age_display_names: null,
+        current_solar_term: currentSolarTerm,
+        essential_knowledge: essentialKnowledge,
+        user_facts: userFacts,
+        pending_plan_id: pendingPlanId,
+    };
+    const systemPrompt = systemFormulaGenerateTemplate(llmContext);
+    const triggerMsg = '请根据我的完整健康数据配置本周的原粒方案。';
+
+    try {
+        await publishChatGenerateEvent({
+            event_id: uuidv4(), user_id: user.user_id, kind: 'formula_dots_generate',
+            message: triggerMsg, intent: 'nutrition_question', llmContext,
+            systemPrompt, cleanHistory: [], language: lang, personaType,
+        });
+        return { success: true, processing: true };
+    } catch (ebErr) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'chat_generate_publish_failed_fallback_sync', user_id: user.user_id, handler: 'handlePostFormulaDots', error: ebErr.message }));
+        // Fail open: publish itself failed, so run the deterministic formulator synchronously
+        // end-to-end and commit it directly as 'active' — the pending row from above gets
+        // superseded by _commitNutritionPlan's own supersede-then-activate step.
+        const { analysis, finalContent, morningRecipe, eveningRecipe } = await _runDeterministicFormulation({
+            biomarkers, bioageProfile, dotsFormulary, personaType, lang, currentSolarTerm, essentialKnowledge, userFacts,
+        });
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            await client.query(`UPDATE nutrition_plans SET status = 'superseded' WHERE id = $1 AND status = 'pending'`, [pendingPlanId]);
+            await _commitNutritionPlan(client, { userId: user.user_id, analysis, morningRecipe, eveningRecipe });
+            await client.query('COMMIT');
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+        await pool.query(
+            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+            [user.user_id, 'nutrition_plan', finalContent, 'pending']
+        );
+        await _saveChatMessage(user.user_id, 'ai', finalContent, null, personaType);
+        return { success: true };
     }
 }
 
@@ -1096,4 +1246,7 @@ module.exports = {
     handlePostDots,
     handlePutDot,
     handleDeleteDot,
+    _runDeterministicFormulation,
+    _commitNutritionPlan,
+    _fallbackCountForDot,
 };

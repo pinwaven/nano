@@ -34,8 +34,20 @@ const vivaSystemNutritionTemplate = require('../prompts/viva/systemNutrition');
 const systemHealthAdviceTemplate = require('../prompts/nano/systemHealthAdvice');
 const vivaSystemHealthAdviceTemplate = require('../prompts/viva/systemHealthAdvice');
 const { getCurrentSolarTerm } = require('../lib/solarTerms');
-const { detectFabricationRisk, detectDotNameMismatch, detectFakeProductName, detectDotIngredientMismatch } = require('../lib/factCheck');
+const { detectAllRisks } = require('../lib/factCheck');
 const systemHealthReportTemplate = require('../prompts/nano/systemHealthReport');
+const { runAgenticTurn } = require('../lib/agenticChat');
+const { v4: uuidv4 } = require('uuid');
+const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
+const { getEssentialBlock } = require('../lib/knowledgeBase');
+const { _runDeterministicFormulation, _commitNutritionPlan, _fallbackCountForDot } = require('./dots');
+
+// Intents where factual claims (biomarker values, dot recommendations, science/protocol
+// assertions) are common enough to warrant the fuller plan->generate->judge->revise loop
+// (lib/agenticChat.js) instead of the default single-pass generation + retry-on-failure path.
+// casual_chat/emotional_support stay on the fast path regardless of persona, to bound
+// latency/cost (see 2026-07-28 planning discussion).
+const HIGH_RISK_INTENTS = new Set(['biomarker_question', 'nutrition_question', 'longevity_science', 'record_action']);
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
@@ -392,12 +404,17 @@ function verifyBiomarkerGrounding(text, groundTruth) {
         if (truth == null) continue;
         const tolerance = Math.max(0.05, Math.abs(truth) * 0.02);
         if (Math.abs(value - truth) > tolerance) {
-            mismatches.push({ key, stated: value, actual: truth });
+            const historicalValues = groundTruth.extraValidValues?.[key] || [];
+            const matchesHistory = historicalValues.some(v => Math.abs(value - v) <= Math.max(0.05, Math.abs(v) * 0.02));
+            if (!matchesHistory) {
+                mismatches.push({ key, stated: value, actual: truth });
+            }
         }
     }
     if (groundTruth.tested_at) {
+        const extraValidDates = new Set(groundTruth.extraValidDates || []);
         for (const stated of extractDateMentions(text)) {
-            if (stated !== groundTruth.tested_at) {
+            if (stated !== groundTruth.tested_at && !extraValidDates.has(stated)) {
                 mismatches.push({ key: 'tested_at', stated, actual: groundTruth.tested_at });
             }
         }
@@ -444,22 +461,8 @@ function _buildCorrectionPrompt(risk) {
     return parts.join('\n');
 }
 
-// dotsFormulary (llmContext.dots / dotsByDimension-sourced rows), when available, additionally
-// cross-checks any "X号原粒 NAME" / "DOTX（NAME）" reference in the reply against the real
-// catalog — catches stale pre-migration dot names reused against post-migration numbers, and
-// fully invented product names, neither of which a text-only regex can see.
-function _detectAllRisks(reply, dotsFormulary) {
-    const risk = detectFabricationRisk(reply);
-    if (dotsFormulary && dotsFormulary.length > 0) {
-        if (detectDotNameMismatch(reply, dotsFormulary).length > 0) risk.push('dotNameMismatch');
-        if (detectFakeProductName(reply, dotsFormulary).length > 0) risk.push('fakeProductName');
-        if (detectDotIngredientMismatch(reply, dotsFormulary).length > 0) risk.push('dotIngredientMismatch');
-    }
-    return risk;
-}
-
 async function _regenerateIfFabricationRisk(client, model, messages, reply, logContext, dotsFormulary, textForDetection) {
-    const risk = _detectAllRisks(textForDetection ?? reply, dotsFormulary);
+    const risk = detectAllRisks(textForDetection ?? reply, dotsFormulary);
     if (risk.length === 0) return reply;
     console.log(JSON.stringify({ level: 'WARN', msg: 'fabrication_risk_detected', context: logContext, risk }));
     const correctionPrompt = _buildCorrectionPrompt(risk);
@@ -470,13 +473,233 @@ async function _regenerateIfFabricationRisk(client, model, messages, reply, logC
             temperature: 0.2,
         });
         const retryReply = retryCompletion.choices[0].message.content || reply;
-        const retryRisk = _detectAllRisks(retryReply, dotsFormulary);
+        const retryRisk = detectAllRisks(retryReply, dotsFormulary);
         console.log(JSON.stringify({ level: retryRisk.length === 0 ? 'INFO' : 'WARN', msg: 'fabrication_risk_retry', context: logContext, ok: retryRisk.length === 0, risk: retryRisk }));
         return retryReply;
     } catch (err) {
         console.log(JSON.stringify({ level: 'WARN', msg: 'fabrication_risk_retry_failed', context: logContext, error: err.message }));
         return reply;
     }
+}
+
+// Short "what I'm doing" captions shown in place of a static typing indicator while the
+// agentic loop (lib/agenticChat.js) runs asynchronously — see runAgenticTurn's onStatus
+// checkpoints. Calm, brief, no exclamation marks, matching Viva's existing prompt tone.
+const STATUS_COPY = {
+    understanding: { zh: '正在构建研究计划…', en: 'Building your research plan…' },
+    checking_data: { zh: '正在同步你的数字孪生数据…', en: 'Syncing your digital twin data…' },
+    verifying: { zh: '正在执行深度研究…', en: 'Running deep research…' },
+};
+
+// Returns an onStatus callback that inserts a lightweight 'chat_status' notification —
+// reuses the existing notifications table/polling mechanism with zero schema change
+// ('notification_type' is already free-text; 'chat_reply'/'coach_reminder' already coexist
+// there). The miniapp routes 'chat_status' rows to a status caption instead of a chat bubble.
+function makeStatusNotifier(user_id, language) {
+    const isZh = (language || 'zh') === 'zh';
+    return async (key) => {
+        const copy = STATUS_COPY[key];
+        if (!copy) return;
+        await pool.query(
+            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+            [user_id, 'chat_status', isZh ? copy.zh : copy.en, 'pending']
+        );
+    };
+}
+
+// Shared tail run after rawReply is produced, regardless of which path produced it (classic
+// tool loop, sandbox-agentic, EventBridge-triggered agentic, or the sync fallback when
+// publishing the chat.generate event fails) — grounding check, fabrication-risk-guard skip,
+// weight/reminder action detection, reply cleanup, and save+notify. Extracted 2026-07-28 so
+// the new async agentic path (handleChatGenerateEvent) and every synchronous caller share one
+// implementation instead of drifting apart over time.
+async function finalizeChatReply({ rawReply, extraValidDates, extraValidValues, llmContext, systemPrompt, cleanHistory, chatMessages, user, user_id, personaType, sandbox, useAgenticLoop, client, model }) {
+    // Grounding check: the model can still misstate biomarker figures/BMI/dates/age from
+    // conversation history or from raw birth-date/height/weight text riding along in
+    // questionnaire_context, even when the correct values are right there in its own system
+    // prompt (this is exactly how the 2026-07-14 stale-data bug and the 2026-07-16 wrong-age
+    // bug happened). Cross-check what it actually wrote against the ground-truth data fetched
+    // above, and retry once with an explicit correction if it drifted.
+    //
+    // Strip the record_weight/set_reminder action JSON before checking: its "scheduled_for"
+    // is a future reminder timestamp, not a claim about the biomarker test date, but
+    // extractDateMentions() matches any YYYY-MM-DD blindly and doesn't know the difference.
+    // Left unstripped, every set_reminder reply guaranteed-false-positived a "date mismatch"
+    // against tested_at, which fed unrelated biomarker ground-truth values into the
+    // correction prompt and told the model to "rewrite using ONLY these values" -- hijacking
+    // reminder confirmations into unrelated biomarker essays (found 2026-07-26).
+    const stripActionJson = (text) => text
+        .replace(/\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
+        .replace(/\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
+        .replace(/\{"action"\s*:\s*"remember_fact"[^}]*\}/g, '');
+    const hasKnownAge = user.birth_date != null;
+    const hasKnownBmi = llmContext.user_profile.bmi != null;
+    if (Object.keys(llmContext.biomarkers).length > 0 || hasKnownAge || hasKnownBmi) {
+        const groundTruth = {
+            validated: {
+                ...llmContext.biomarkers,
+                ...(hasKnownBmi ? { BMI: llmContext.user_profile.bmi } : {}),
+            },
+            tested_at: llmContext.biomarkers_tested_at,
+            age: hasKnownAge ? llmContext.user_profile.age : null,
+            nickname: llmContext.user_profile.nickname,
+            // Real historical dates AND historical per-biomarker values the agentic loop
+            // actually fetched via its dedicated tools — a date or value matching one of
+            // these is legitimate, not a fabrication, even though it isn't the single
+            // latest snapshot this check otherwise compares against. Empty for the
+            // non-agentic path, which has no such tool history to draw from.
+            extraValidDates,
+            extraValidValues,
+        };
+        const verification = verifyBiomarkerGrounding(stripActionJson(rawReply), groundTruth);
+        if (!verification.ok) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'biomarker_grounding_mismatch', user_id, mismatches: verification.mismatches }));
+            const correctionPrompt = `Your previous reply stated biomarker figures, BMI, a test date, and/or the patient's age that do not match their actual record.
+Ground truth — test date: ${groundTruth.tested_at || 'unknown'}, values: ${JSON.stringify(groundTruth.validated)}, age: ${groundTruth.age ?? 'unknown'}.
+Rewrite your previous reply using ONLY these exact values, this exact date, and this exact age. Keep the same language, tone, and structure otherwise.`;
+            chatMessages.push({ role: 'assistant', content: rawReply });
+            chatMessages.push({ role: 'user', content: correctionPrompt });
+            const retryCompletion = await client.chat.completions.create({
+                model,
+                messages: chatMessages,
+                temperature: 0.2,
+            });
+            const retryReply = retryCompletion.choices[0].message.content || rawReply;
+            const retryVerification = verifyBiomarkerGrounding(stripActionJson(retryReply), groundTruth);
+            console.log(JSON.stringify({ level: retryVerification.ok ? 'INFO' : 'WARN', msg: 'biomarker_grounding_retry', user_id, ok: retryVerification.ok, mismatches: retryVerification.mismatches }));
+            rawReply = retryReply;
+        }
+    }
+
+    // Superseded by the JUDGE step inside runAgenticTurn for the high-risk/agentic
+    // branch (it already runs detectAllRisks against the draft) — running this too
+    // would just be a redundant second single-retry cycle on top of that loop's own.
+    if (personaType === 'viva' && !useAgenticLoop) {
+        rawReply = await _regenerateIfFabricationRisk(
+            client, model,
+            [{ role: 'system', content: systemPrompt }, ...cleanHistory],
+            rawReply, 'handlePostChat', llmContext.dots, stripActionJson(rawReply)
+        );
+    }
+
+    // Detect weight-recording action embedded by the LLM
+    const weightActionMatch = rawReply.match(/\{"action"\s*:\s*"record_weight"\s*,\s*"value_kg"\s*:\s*([\d.]+)\}/);
+    if (weightActionMatch) {
+        const weightKg = parseFloat(weightActionMatch[1]);
+        const isZh = (user.language || 'zh') === 'zh';
+
+        if (!isNaN(weightKg) && weightKg >= 20 && weightKg <= 300) {
+            const lastRecord = await pool.query(
+                `SELECT data FROM biomarkers WHERE user_id = $1 AND test_type = 'body_composition' ORDER BY tested_at DESC LIMIT 1`,
+                [user_id]
+            );
+            const lastWeight = lastRecord.rows[0]?.data?.actual?.weight ?? null;
+
+            let simpleReply;
+            let recordedWeight = null;
+
+            if (lastWeight !== null && Math.abs(weightKg - lastWeight) > 15) {
+                simpleReply = isZh
+                    ? `⚠️ 您上次记录的体重是 **${lastWeight} kg**，与本次输入（**${weightKg} kg**）相差较大，请核对后重新发送。`
+                    : `⚠️ Your last recorded weight was **${lastWeight} kg**. The new value **${weightKg} kg** looks quite different — please double-check and resend if it's correct.`;
+            } else {
+                if (!sandbox) {
+                    await pool.query(
+                        'INSERT INTO biomarkers (user_id, test_type, data, tested_at) VALUES ($1, $2, $3, $4)',
+                        [user_id, 'body_composition', JSON.stringify({ actual: { weight: weightKg } }), new Date().toISOString()]
+                    );
+                    recordedWeight = weightKg;
+                }
+                simpleReply = isZh
+                    ? `✅ 已记录您的体重：**${weightKg} kg**`
+                    : `✅ Weight recorded: **${weightKg} kg**`;
+            }
+
+            if (sandbox) {
+                return { success: true, user_id, sandbox: true, reply: simpleReply };
+            }
+            await saveChatMessage(user_id, 'ai', simpleReply, null, personaType);
+            await pool.query(
+                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                [user_id, 'chat_reply', simpleReply, 'pending']
+            );
+            return { success: true, user_id, ...(recordedWeight !== null && { recorded_weight: recordedWeight }) };
+        }
+    }
+
+    // Detect reminder-setting action embedded by the LLM
+    const reminderActionMatch = rawReply.match(/\{"action"\s*:\s*"set_reminder"[^}]*\}/);
+    if (reminderActionMatch) {
+        try {
+            const reminderAction = JSON.parse(reminderActionMatch[0]);
+            if (reminderAction.content && reminderAction.scheduled_for && !sandbox) {
+                await handlePostReminder({ user_id, content: reminderAction.content, scheduled_for: reminderAction.scheduled_for });
+            }
+        } catch (e) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'set_reminder action parse failed', error: e.message }));
+        }
+    }
+
+    // Detect personal-fact action embedded by the LLM (dietary restrictions, allergies,
+    // preferences, goals stated in conversation). Same risk-acceptance level as
+    // record_weight/set_reminder above: regex + fixed-enum validation only, no semantic
+    // verification — never trust the LLM's category field blindly, same principle as
+    // weight's numeric bounds check.
+    const factActionMatch = rawReply.match(/\{"action"\s*:\s*"remember_fact"[^}]*\}/);
+    let recordedFactText = null;
+    if (factActionMatch) {
+        try {
+            const factAction = JSON.parse(factActionMatch[0]);
+            const VALID_FACT_CATEGORIES = new Set(['dietary_restriction', 'allergy', 'preference', 'goal', 'other']);
+            if (factAction.fact && typeof factAction.fact === 'string' && VALID_FACT_CATEGORIES.has(factAction.category)) {
+                recordedFactText = factAction.fact.trim();
+                if (!sandbox) {
+                    await pool.query(
+                        `INSERT INTO user_memory_facts (user_id, category, fact_zh, source)
+                         VALUES ($1, $2, $3, 'chat_extracted')
+                         ON CONFLICT (user_id, category, fact_zh) WHERE status = 'active'
+                         DO UPDATE SET last_mentioned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP`,
+                        [user_id, factAction.category, recordedFactText]
+                    );
+                }
+            }
+        } catch (e) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'remember_fact action parse failed', error: e.message }));
+        }
+    }
+
+    // A REVISE-round completion can occasionally consist of ONLY the corrected action JSON
+    // with no surrounding prose (the model over-focuses on fixing the flagged action param
+    // and drops the conversational reply) — stripping it then would ship a blank message.
+    // Never let that happen; fall back to an acknowledgment referencing the actual recorded
+    // fact when we have one (already validated above, so safe to echo back), otherwise a
+    // minimal generic acknowledgment.
+    const strippedReply = rawReply
+        .replace(/\n?\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
+        .replace(/\n?\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
+        .replace(/\n?\{"action"\s*:\s*"remember_fact"[^}]*\}/g, '')
+        .trim();
+    const isZhReply = (user.language || 'zh') === 'zh';
+    const fallbackReply = recordedFactText
+        ? (isZhReply ? `好的，已记录：${recordedFactText}` : `Got it — noted: ${recordedFactText}`)
+        : (isZhReply ? '好的，已记录。' : 'Got it — noted.');
+    const reply = strippedReply || fallbackReply;
+
+    if (sandbox) {
+        // Sandbox sessions have no notification-polling side channel to rely on —
+        // hand the reply back directly instead of persisting it.
+        return { success: true, user_id, sandbox: true, reply };
+    }
+
+    // Save assistant reply to the conversation log
+    await saveChatMessage(user_id, 'ai', reply, null, personaType);
+
+    // Save reply as a notification (existing delivery mechanism for frontend poll)
+    await pool.query(
+        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+        [user_id, 'chat_reply', reply, 'pending']
+    );
+    return { success: true, user_id };
 }
 
 async function handlePostChat(body) {
@@ -501,6 +724,7 @@ async function handlePostChat(body) {
     }
     console.log(JSON.stringify({ level: 'INFO', msg: 'Persona resolved', user_id: user.user_id, channel_id: user.channel_id, personaType }));
     const currentSolarTerm = personaType === 'viva' ? getCurrentSolarTerm(getNowShanghai().toJSDate()) : null;
+    const essentialKnowledge = personaType === 'viva' ? await getEssentialBlock('viva') : null;
 
     if (message) {
         // Intent-routed chat message handling
@@ -543,6 +767,14 @@ async function handlePostChat(body) {
             // of an actual dot (found via real-user testing 2026-07-25).
             fetches.dots = pool.query(
                 `SELECT id, key_name, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`
+            );
+            // Always fetch active personal memory facts (dietary restrictions, allergies,
+            // preferences, goals stated in prior conversations) — same unconditional
+            // treatment as biomarker/dots above, not gated behind required_data, since an
+            // allergy needs to be visible on every turn regardless of intent.
+            fetches.user_facts = pool.query(
+                `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
+                [user_id]
             );
             if (required_data.includes('plan')) {
                 fetches.plan = pool.query(
@@ -651,11 +883,14 @@ async function handlePostChat(body) {
                 })),
                 sub_age_display_names: channelSubAgeNames,
                 current_solar_term: currentSolarTerm,
+                essential_knowledge: essentialKnowledge,
+                user_facts: fetched.user_facts?.rows || [],
             };
 
             const activePrompts = personaType === 'viva' ? vivaPrompts : nanoPrompts;
             const promptBuilder = activePrompts[intent] || activePrompts.casual_chat;
             const systemPrompt = promptBuilder(llmContext);
+            const useAgenticLoop = personaType === 'viva' && HIGH_RISK_INTENTS.has(intent);
 
             // Save the incoming user message to the conversation log — skipped in sandbox
             // mode (superadmin "login as" sessions), which never persist against the
@@ -704,11 +939,60 @@ async function handlePostChat(body) {
                 else cleanHistory.push({ role: 'user', content: message });
             }
 
-            const dbQueryTool = {
-                type: 'function',
-                function: {
-                    name: 'query_database',
-                    description: `Run a read-only SQL SELECT to retrieve this user's health data when it isn't already in context.
+            // The shared grounding-retry check below (verifyBiomarkerGrounding) rebuilds its
+            // correction attempt from this plain system+history message list regardless of
+            // which branch produced rawReply — matches how _regenerateIfFabricationRisk
+            // already reconstructs a fresh message list rather than reusing tool-call debris.
+            let chatMessages = [
+                { role: 'system', content: systemPrompt },
+                ...cleanHistory,
+            ];
+
+            // Viva's agentic loop can take 60-180+ seconds worst case (plan/generate/judge/
+            // revise). Aliyun FC cancels the function invocation the moment the miniapp's
+            // client disconnects (confirmed via live logs 2026-07-28: "Invocation canceled by
+            // client") — so awaiting the loop inline here means a client timeout destroys real
+            // work, not just delays it. Publish it as a chat.generate event instead and ack
+            // immediately; the EventBridge-triggered handleChatGenerateEvent below does the
+            // actual generation on a separate invocation a client disconnect can't reach.
+            // sandbox (admin "login as" / chat-simulator) has no polling side channel and
+            // must keep getting the reply synchronously, so it never takes this branch.
+            if (useAgenticLoop && !sandbox) {
+                const eventId = uuidv4();
+                try {
+                    await publishChatGenerateEvent({
+                        event_id: eventId, user_id, message, intent, llmContext, systemPrompt,
+                        cleanHistory, language: user.language, personaType, birth_date: user.birth_date,
+                    });
+                    return { success: true, user_id, processing: true };
+                } catch (ebErr) {
+                    console.log(JSON.stringify({ level: 'WARN', msg: 'chat_generate_publish_failed_fallback_sync', user_id, intent, error: ebErr.message }));
+                    // Fail open (same principle as dispatcher/index.js's EventBridge fallback,
+                    // and this session's grounding fixes): never silently drop the user's
+                    // message just because EventBridge is unavailable — fall through and run
+                    // the agentic loop inline below instead.
+                }
+            }
+
+            let rawReply = '';
+            let extraValidDates = [];
+            let extraValidValues = {};
+            if (useAgenticLoop) {
+                const agenticResult = await runAgenticTurn({
+                    client, model, message, intent, llmContext, systemPrompt, cleanHistory,
+                    pool, user_id, language: user.language, personaType,
+                    logContext: { user_id, intent, handler: 'handlePostChat' },
+                    onStatus: sandbox ? undefined : makeStatusNotifier(user_id, user.language),
+                });
+                rawReply = agenticResult.reply;
+                extraValidDates = agenticResult.extraValidDates;
+                extraValidValues = agenticResult.extraValidValues;
+            } else {
+                const dbQueryTool = {
+                    type: 'function',
+                    function: {
+                        name: 'query_database',
+                        description: `Run a read-only SQL SELECT to retrieve this user's health data when it isn't already in context.
 The user's latest Kino biomarkers, bio age, and test date are ALWAYS already provided above in your system context —
 querying the biomarkers table is blocked and will be rejected. Never attempt it; use the values already given to you.
 Tables (always filter by user_id = $1):
@@ -716,203 +1000,68 @@ Tables (always filter by user_id = $1):
 - reminders(content TEXT, scheduled_for TIMESTAMPTZ, recurrence TEXT, status TEXT)
 - chat_messages(role TEXT, content TEXT, created_at TIMESTAMPTZ)
 SQL must be a SELECT statement. $1 is always user_id.`,
-                    parameters: {
-                        type: 'object',
-                        properties: {
-                            sql: { type: 'string', description: 'SELECT statement; use $1 for user_id, $2+ for extra params' },
-                            extra_params: { type: 'array', items: {}, description: 'Values for $2, $3, … (optional)' }
-                        },
-                        required: ['sql']
-                    }
-                }
-            };
-
-            const chatMessages = [
-                { role: 'system', content: systemPrompt },
-                ...cleanHistory,
-            ];
-
-            let rawReply = '';
-            for (let _iter = 0; _iter < 4; _iter++) {
-                const completion = await client.chat.completions.create({
-                    model,
-                    messages: chatMessages,
-                    tools: [dbQueryTool],
-                    tool_choice: 'auto',
-                    temperature: 0.3,
-                });
-                const choice = completion.choices[0];
-
-                if (choice.finish_reason === 'tool_calls') {
-                    chatMessages.push(choice.message);
-                    const toolResults = [];
-                    for (const tc of choice.message.tool_calls || []) {
-                        if (tc.function.name === 'query_database') {
-                            let toolResult;
-                            try {
-                                const args = JSON.parse(tc.function.arguments);
-                                const sql = (args.sql || '').trim();
-                                const extraParams = Array.isArray(args.extra_params) ? args.extra_params : [];
-                                if (!/^\s*(SELECT|WITH)\s/i.test(sql) || !/\$1\b/.test(sql)) {
-                                    toolResult = { error: 'Rejected: must be SELECT with $1 for user_id' };
-                                } else if (/\bbiomarkers\b/i.test(sql)) {
-                                    // The latest kino biomarkers/bioage/test-date are already in system context
-                                    // (see llmContext.biomarkers/biomarkers_tested_at above) — self-authored queries
-                                    // against this table are how the 2026-07-14 stale-data bug happened, so this is
-                                    // enforced here rather than just requested in the tool description.
-                                    toolResult = { error: 'Rejected: biomarkers table is not queryable — use the values already provided in your context.' };
-                                } else {
-                                    const qr = await pool.query(sql, [user_id, ...extraParams]);
-                                    toolResult = { rows: qr.rows, count: qr.rowCount };
-                                }
-                            } catch (qErr) {
-                                toolResult = { error: qErr.message };
-                            }
-                            console.log(JSON.stringify({ level: 'INFO', msg: 'DB tool call', sql: tc.function.arguments, rows: toolResult.rows?.length ?? 0, error: toolResult.error }));
-                            toolResults.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(toolResult) });
+                        parameters: {
+                            type: 'object',
+                            properties: {
+                                sql: { type: 'string', description: 'SELECT statement; use $1 for user_id, $2+ for extra params' },
+                                extra_params: { type: 'array', items: {}, description: 'Values for $2, $3, … (optional)' }
+                            },
+                            required: ['sql']
                         }
                     }
-                    chatMessages.push(...toolResults);
-                } else {
-                    rawReply = choice.message.content || '';
-                    break;
-                }
-            }
-
-            // Grounding check: the model can still misstate biomarker figures/BMI/dates/age from
-            // conversation history or from raw birth-date/height/weight text riding along in
-            // questionnaire_context, even when the correct values are right there in its own system
-            // prompt (this is exactly how the 2026-07-14 stale-data bug and the 2026-07-16 wrong-age
-            // bug happened). Cross-check what it actually wrote against the ground-truth data fetched
-            // above, and retry once with an explicit correction if it drifted.
-            //
-            // Strip the record_weight/set_reminder action JSON before checking: its "scheduled_for"
-            // is a future reminder timestamp, not a claim about the biomarker test date, but
-            // extractDateMentions() matches any YYYY-MM-DD blindly and doesn't know the difference.
-            // Left unstripped, every set_reminder reply guaranteed-false-positived a "date mismatch"
-            // against tested_at, which fed unrelated biomarker ground-truth values into the
-            // correction prompt and told the model to "rewrite using ONLY these values" -- hijacking
-            // reminder confirmations into unrelated biomarker essays (found 2026-07-26).
-            const stripActionJson = (text) => text
-                .replace(/\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
-                .replace(/\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '');
-            const hasKnownAge = user.birth_date != null;
-            const hasKnownBmi = llmContext.user_profile.bmi != null;
-            if (Object.keys(llmContext.biomarkers).length > 0 || hasKnownAge || hasKnownBmi) {
-                const groundTruth = {
-                    validated: {
-                        ...llmContext.biomarkers,
-                        ...(hasKnownBmi ? { BMI: llmContext.user_profile.bmi } : {}),
-                    },
-                    tested_at: llmContext.biomarkers_tested_at,
-                    age: hasKnownAge ? llmContext.user_profile.age : null,
-                    nickname: llmContext.user_profile.nickname,
                 };
-                const verification = verifyBiomarkerGrounding(stripActionJson(rawReply), groundTruth);
-                if (!verification.ok) {
-                    console.log(JSON.stringify({ level: 'WARN', msg: 'biomarker_grounding_mismatch', user_id, mismatches: verification.mismatches }));
-                    const correctionPrompt = `Your previous reply stated biomarker figures, BMI, a test date, and/or the patient's age that do not match their actual record.
-Ground truth — test date: ${groundTruth.tested_at || 'unknown'}, values: ${JSON.stringify(groundTruth.validated)}, age: ${groundTruth.age ?? 'unknown'}.
-Rewrite your previous reply using ONLY these exact values, this exact date, and this exact age. Keep the same language, tone, and structure otherwise.`;
-                    chatMessages.push({ role: 'assistant', content: rawReply });
-                    chatMessages.push({ role: 'user', content: correctionPrompt });
-                    const retryCompletion = await client.chat.completions.create({
+
+                for (let _iter = 0; _iter < 4; _iter++) {
+                    const completion = await client.chat.completions.create({
                         model,
                         messages: chatMessages,
-                        temperature: 0.2,
+                        tools: [dbQueryTool],
+                        tool_choice: 'auto',
+                        temperature: 0.3,
                     });
-                    const retryReply = retryCompletion.choices[0].message.content || rawReply;
-                    const retryVerification = verifyBiomarkerGrounding(stripActionJson(retryReply), groundTruth);
-                    console.log(JSON.stringify({ level: retryVerification.ok ? 'INFO' : 'WARN', msg: 'biomarker_grounding_retry', user_id, ok: retryVerification.ok, mismatches: retryVerification.mismatches }));
-                    rawReply = retryReply;
-                }
-            }
+                    const choice = completion.choices[0];
 
-            if (personaType === 'viva') {
-                rawReply = await _regenerateIfFabricationRisk(
-                    client, model,
-                    [{ role: 'system', content: systemPrompt }, ...cleanHistory],
-                    rawReply, 'handlePostChat', llmContext.dots, stripActionJson(rawReply)
-                );
-            }
-
-            // Detect weight-recording action embedded by the LLM
-            const weightActionMatch = rawReply.match(/\{"action"\s*:\s*"record_weight"\s*,\s*"value_kg"\s*:\s*([\d.]+)\}/);
-            if (weightActionMatch) {
-                const weightKg = parseFloat(weightActionMatch[1]);
-                const isZh = (user.language || 'zh') === 'zh';
-
-                if (!isNaN(weightKg) && weightKg >= 20 && weightKg <= 300) {
-                    const lastRecord = await pool.query(
-                        `SELECT data FROM biomarkers WHERE user_id = $1 AND test_type = 'body_composition' ORDER BY tested_at DESC LIMIT 1`,
-                        [user_id]
-                    );
-                    const lastWeight = lastRecord.rows[0]?.data?.actual?.weight ?? null;
-
-                    let simpleReply;
-                    let recordedWeight = null;
-
-                    if (lastWeight !== null && Math.abs(weightKg - lastWeight) > 15) {
-                        simpleReply = isZh
-                            ? `⚠️ 您上次记录的体重是 **${lastWeight} kg**，与本次输入（**${weightKg} kg**）相差较大，请核对后重新发送。`
-                            : `⚠️ Your last recorded weight was **${lastWeight} kg**. The new value **${weightKg} kg** looks quite different — please double-check and resend if it's correct.`;
-                    } else {
-                        if (!sandbox) {
-                            await pool.query(
-                                'INSERT INTO biomarkers (user_id, test_type, data, tested_at) VALUES ($1, $2, $3, $4)',
-                                [user_id, 'body_composition', JSON.stringify({ actual: { weight: weightKg } }), new Date().toISOString()]
-                            );
-                            recordedWeight = weightKg;
+                    if (choice.finish_reason === 'tool_calls') {
+                        chatMessages.push(choice.message);
+                        const toolResults = [];
+                        for (const tc of choice.message.tool_calls || []) {
+                            if (tc.function.name === 'query_database') {
+                                let toolResult;
+                                try {
+                                    const args = JSON.parse(tc.function.arguments);
+                                    const sql = (args.sql || '').trim();
+                                    const extraParams = Array.isArray(args.extra_params) ? args.extra_params : [];
+                                    if (!/^\s*(SELECT|WITH)\s/i.test(sql) || !/\$1\b/.test(sql)) {
+                                        toolResult = { error: 'Rejected: must be SELECT with $1 for user_id' };
+                                    } else if (/\bbiomarkers\b/i.test(sql)) {
+                                        // The latest kino biomarkers/bioage/test-date are already in system context
+                                        // (see llmContext.biomarkers/biomarkers_tested_at above) — self-authored queries
+                                        // against this table are how the 2026-07-14 stale-data bug happened, so this is
+                                        // enforced here rather than just requested in the tool description.
+                                        toolResult = { error: 'Rejected: biomarkers table is not queryable — use the values already provided in your context.' };
+                                    } else {
+                                        const qr = await pool.query(sql, [user_id, ...extraParams]);
+                                        toolResult = { rows: qr.rows, count: qr.rowCount };
+                                    }
+                                } catch (qErr) {
+                                    toolResult = { error: qErr.message };
+                                }
+                                console.log(JSON.stringify({ level: 'INFO', msg: 'DB tool call', sql: tc.function.arguments, rows: toolResult.rows?.length ?? 0, error: toolResult.error }));
+                                toolResults.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(toolResult) });
+                            }
                         }
-                        simpleReply = isZh
-                            ? `✅ 已记录您的体重：**${weightKg} kg**`
-                            : `✅ Weight recorded: **${weightKg} kg**`;
+                        chatMessages.push(...toolResults);
+                    } else {
+                        rawReply = choice.message.content || '';
+                        break;
                     }
-
-                    if (sandbox) {
-                        return { success: true, user_id, sandbox: true, reply: simpleReply };
-                    }
-                    await saveChatMessage(user_id, 'ai', simpleReply, null, personaType);
-                    await pool.query(
-                        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                        [user_id, 'chat_reply', simpleReply, 'pending']
-                    );
-                    return { success: true, user_id, ...(recordedWeight !== null && { recorded_weight: recordedWeight }) };
                 }
             }
 
-            // Detect reminder-setting action embedded by the LLM
-            const reminderActionMatch = rawReply.match(/\{"action"\s*:\s*"set_reminder"[^}]*\}/);
-            if (reminderActionMatch) {
-                try {
-                    const reminderAction = JSON.parse(reminderActionMatch[0]);
-                    if (reminderAction.content && reminderAction.scheduled_for && !sandbox) {
-                        await handlePostReminder({ user_id, content: reminderAction.content, scheduled_for: reminderAction.scheduled_for });
-                    }
-                } catch (e) {
-                    console.log(JSON.stringify({ level: 'WARN', msg: 'set_reminder action parse failed', error: e.message }));
-                }
-            }
-
-            const reply = rawReply
-                .replace(/\n?\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
-                .replace(/\n?\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
-                .trim();
-
-            if (sandbox) {
-                // Sandbox sessions have no notification-polling side channel to rely on —
-                // hand the reply back directly instead of persisting it.
-                return { success: true, user_id, sandbox: true, reply };
-            }
-
-            // Save assistant reply to the conversation log
-            await saveChatMessage(user_id, 'ai', reply, null, personaType);
-
-            // Save reply as a notification (existing delivery mechanism for frontend poll)
-            await pool.query(
-                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                [user_id, 'chat_reply', reply, 'pending']
-            );
+            return await finalizeChatReply({
+                rawReply, extraValidDates, extraValidValues, llmContext, systemPrompt, cleanHistory,
+                chatMessages, user, user_id, personaType, sandbox, useAgenticLoop, client, model,
+            });
         } catch (err) {
             console.error('LLM Chat Error:', err);
             const fallbackText = "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.";
@@ -927,6 +1076,283 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
         }
     }
     return { success: true, user_id };
+}
+
+// Finishing tail for the formula_dots kind of chat.generate event — explains an ALREADY
+// COMMITTED dot allocation (handlePostFormulaDots's schedule was written to the DB before this
+// ever ran), not a fresh chat reply. Reuses the same grounding-check-with-one-retry pattern as
+// finalizeChatReply/finalizeHealthAdviceReply for consistency, but delivers via a 'nutrition_plan'
+// notification (matching what this endpoint has always used) rather than 'chat_reply'.
+//
+// planText (the raw D-N1x3 D-N2x3 ... per-day breakdown, still passed through the event payload)
+// is deliberately NOT appended to the message shown to the user — found 2026-07-29 that dumping
+// the same 18-dot raw listing 7 times (once per identical day) alongside the narrative read as
+// confusing technical noise; the "查看方案" action button is where users see exact numbers.
+// Extracts a trailing action-JSON object that (unlike record_weight/set_reminder/remember_fact's
+// flat shape) contains nested braces — {"action":"formulate_dots","formulation":[{...}, ...]} —
+// so the simple "no closing brace inside" regex the other actions use can't bound it. Finds the
+// last occurrence of `marker` and scans forward tracking brace depth to find its true end.
+function _extractTrailingJson(text, marker) {
+    const idx = text.lastIndexOf(marker);
+    if (idx === -1) return null;
+    let depth = 0;
+    let end = -1;
+    for (let i = idx; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') {
+            depth--;
+            if (depth === 0) { end = i; break; }
+        }
+    }
+    if (end === -1) return null;
+    try {
+        return { parsed: JSON.parse(text.slice(idx, end + 1)), start: idx, end: end + 1 };
+    } catch (e) {
+        return null;
+    }
+}
+
+// Parses/validates/commits the LLM's formulate_dots action tail (produced by the agentic
+// GENERATE step against systemFormulaGenerate.js's prompt), then delivers the accompanying
+// prose as the user-facing explanation — the agentic reply doubles as its own narrative, no
+// second LLM call needed (unlike the old two-hop decide-then-explain design this supersedes).
+async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraValidValues, llmContext, message, user_id, personaType, lang }) {
+    const hasKnownAge = llmContext.user_profile.age != null;
+    const hasKnownBmi = llmContext.user_profile.bmi != null;
+    if (Object.keys(llmContext.biomarkers).length > 0 || hasKnownAge || hasKnownBmi) {
+        const groundTruth = {
+            validated: { ...llmContext.biomarkers, ...(hasKnownBmi ? { BMI: llmContext.user_profile.bmi } : {}) },
+            tested_at: llmContext.biomarkers_tested_at,
+            age: hasKnownAge ? llmContext.user_profile.age : null,
+            nickname: llmContext.user_profile.nickname,
+            extraValidDates, extraValidValues,
+        };
+        const strippedForCheck = rawReply.replace(/\{"action"\s*:\s*"formulate_dots"[\s\S]*$/, '');
+        const verification = verifyBiomarkerGrounding(strippedForCheck, groundTruth);
+        if (!verification.ok) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'biomarker_grounding_mismatch', user_id, handler: 'finalizeFormulaDotsGenerate', mismatches: verification.mismatches }));
+            // Note: unlike finalizeChatReply/finalizeFormulaDotsNarrative's retry, there's no
+            // cheap correction call wired here — the action JSON tail makes a "rewrite using
+            // ONLY these values" retry risky (the model could rewrite the numbers too). The
+            // mismatch is logged for visibility; the reply still ships since the *numeric plan*
+            // (validated deterministically below) is the part that actually matters here.
+        }
+    }
+
+    const dotsByKey = new Map((llmContext.dots || []).map(d => [d.key_name.replace(/^DOT/, 'D'), d]));
+    const extracted = _extractTrailingJson(rawReply, '{"action":"formulate_dots"');
+    let entries = null;
+    if (extracted && extracted.parsed?.action === 'formulate_dots' && Array.isArray(extracted.parsed.formulation)) {
+        entries = new Map();
+        for (const item of extracted.parsed.formulation) {
+            const dot = dotsByKey.get(item?.dot_key);
+            if (!dot) continue; // unknown key — never trust the LLM's key blindly
+            const morning = Number.isFinite(item.morning) ? Math.max(0, Math.round(item.morning)) : 0;
+            const evening = Number.isFinite(item.evening) ? Math.max(0, Math.round(item.evening)) : 0;
+            entries.set(item.dot_key, { morning, evening, dot });
+        }
+        if (entries.size === 0) entries = null;
+    }
+
+    let analysis, finalContent, morningRecipe, eveningRecipe;
+
+    if (entries) {
+        // Fill any dot the model omitted with the same deterministic per-dot fallback used
+        // elsewhere, split entirely into its default timing slot (conservative — no balancing
+        // guess for a dot the agentic step never actually reasoned about).
+        for (const dot of llmContext.dots || []) {
+            const key = dot.key_name.replace(/^DOT/, 'D');
+            if (entries.has(key)) continue;
+            const count = _fallbackCountForDot(dot);
+            entries.set(key, dot.timing === 'Evening' ? { morning: 0, evening: count, dot } : { morning: count, evening: 0, dot });
+        }
+
+        // Deterministic clamp: each dot's morning+evening total must land inside its own
+        // target_dots_min/max — never trust the LLM's numbers blindly, same principle as every
+        // other action (record_weight's bounds check, etc.). A total of 0 is a legitimate
+        // "not included this week" choice and is left alone rather than forced up to the min.
+        // If clamping changes the total, scale morning/evening to preserve the model's ratio.
+        for (const v of entries.values()) {
+            const total = v.morning + v.evening;
+            if (total === 0) continue;
+            const min = v.dot.target_dots_min ?? 1;
+            const max = v.dot.target_dots_max ?? 10;
+            if (total < min || total > max) {
+                const clampedTotal = Math.min(max, Math.max(min, total));
+                v.morning = Math.round(v.morning * (clampedTotal / total));
+                v.evening = clampedTotal - v.morning;
+            }
+        }
+
+        morningRecipe = { dots: {} };
+        eveningRecipe = { dots: {} };
+        let morningTotal = 0, eveningTotal = 0;
+        for (const [key, v] of entries) {
+            const dbKey = key.replace('D', 'DOT');
+            if (v.morning > 0) morningRecipe.dots[dbKey] = v.morning;
+            if (v.evening > 0) eveningRecipe.dots[dbKey] = v.evening;
+            morningTotal += v.morning;
+            eveningTotal += v.evening;
+        }
+        // Observability only — the model is instructed to redistribute when lopsided
+        // (systemFormulaGenerate.js), but respecting stimulant/sedative timing can legitimately
+        // still leave some skew. Not enforced/overridden here: a purely numeric rebalance can't
+        // tell a stimulant dot from a sleep dot, so this is a signal to watch, not a hard clamp.
+        if (eveningTotal < morningTotal * 0.15 && morningTotal > 20) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'formula_dots_am_pm_imbalanced', user_id, morningTotal, eveningTotal }));
+        }
+
+        const strippedReply = rawReply.slice(0, extracted.start).trim();
+        analysis = strippedReply;
+        finalContent = strippedReply || (lang === 'zh'
+            ? '您的专属原粒方案已生成，点击下方"查看方案"了解详情。'
+            : 'Your personalized dot plan has been generated — tap "View Plan" below for the details.');
+    } else {
+        // No usable action JSON — fall back to the deterministic single-shot formulator so the
+        // user is never left with nothing (same resilience principle as the 2026-07-29
+        // remember_fact blank-reply fix).
+        console.log(JSON.stringify({ level: 'WARN', msg: 'formulate_dots_action_missing_or_invalid', user_id, handler: 'finalizeFormulaDotsGenerate' }));
+        const fallback = await _runDeterministicFormulation({
+            biomarkers: llmContext.biomarkers,
+            bioageProfile: llmContext.bioage,
+            dotsFormulary: llmContext.dots,
+            personaType,
+            lang,
+            currentSolarTerm: llmContext.current_solar_term,
+            essentialKnowledge: llmContext.essential_knowledge,
+            userFacts: llmContext.user_facts,
+        });
+        ({ analysis, finalContent, morningRecipe, eveningRecipe } = fallback);
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        await _commitNutritionPlan(client, {
+            userId: user_id, analysis, morningRecipe, eveningRecipe,
+            planId: llmContext.pending_plan_id,
+        });
+        await client.query('COMMIT');
+    } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+    } finally {
+        client.release();
+    }
+
+    await saveChatMessage(user_id, 'ai', finalContent, null, personaType);
+    await pool.query(
+        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+        [user_id, 'nutrition_plan', finalContent, 'pending']
+    );
+}
+
+// EventBridge-triggered counterpart to handlePostChat's synchronous agentic branch — runs on
+// a separate invocation a client disconnect can't cancel (see the chat.generate publish point
+// above). Dedupes first (EventBridge is at-least-once delivery, and this pipeline has real
+// side effects — chat_messages insert, weight recording, reminder creation), then runs the
+// same runAgenticTurn + finalizeChatReply pipeline the synchronous callers use, in its own
+// try/catch mirroring handlePostChat's fallback (no outer HTTP try/catch exists here).
+//
+// payload.kind distinguishes the finishing step: default (unset) is a normal chat turn
+// (finalizeChatReply, 'chat_reply' notification); 'formula_dots_generate' makes and commits the
+// actual weekly dot allocation instead (finalizeFormulaDotsGenerate, 'nutrition_plan'
+// notification) — see _handleFormulaDotsViva in handlers/dots.js, which publishes this kind
+// with a 'pending' nutrition_plans row already inserted for this event to fill in.
+async function handleChatGenerateEvent(payload) {
+    const { event_id, user_id, message, intent, llmContext, systemPrompt, cleanHistory, language, personaType, birth_date, kind } = payload;
+
+    const dedupe = await pool.query(
+        `INSERT INTO chat_generate_events (event_id) VALUES ($1) ON CONFLICT (event_id) DO NOTHING RETURNING event_id`,
+        [event_id]
+    );
+    if (dedupe.rows.length === 0) {
+        console.log(JSON.stringify({ level: 'INFO', msg: 'chat_generate_event_duplicate_skipped', event_id, user_id }));
+        return;
+    }
+
+    const client = getLlmClient();
+    const model = process.env.MODEL || 'qwen3.6-plus';
+    const user = { birth_date, language };
+    const chatMessages = [
+        { role: 'system', content: systemPrompt },
+        ...cleanHistory,
+    ];
+
+    try {
+        const agenticResult = await runAgenticTurn({
+            client, model, message, intent, llmContext, systemPrompt, cleanHistory,
+            pool, user_id, language, personaType,
+            logContext: { user_id, intent, handler: 'handleChatGenerateEvent', kind: kind || 'chat' },
+            onStatus: makeStatusNotifier(user_id, language),
+        });
+        if (kind === 'formula_dots_generate') {
+            await finalizeFormulaDotsGenerate({
+                rawReply: agenticResult.reply,
+                extraValidDates: agenticResult.extraValidDates,
+                extraValidValues: agenticResult.extraValidValues,
+                llmContext, message, user_id, personaType, lang: language,
+            });
+        } else {
+            await finalizeChatReply({
+                rawReply: agenticResult.reply,
+                extraValidDates: agenticResult.extraValidDates,
+                extraValidValues: agenticResult.extraValidValues,
+                llmContext, systemPrompt, cleanHistory, chatMessages,
+                user, user_id, personaType, sandbox: false, useAgenticLoop: true, client, model,
+            });
+        }
+    } catch (err) {
+        console.error('LLM Chat Error (async):', err);
+        if (kind === 'formula_dots_generate') {
+            // Never leave the pending plan row orphaned or the user with nothing — commit the
+            // deterministic fallback formulation directly, same as the publish-failure fail-open
+            // path in handlers/dots.js.
+            try {
+                const fallback = await _runDeterministicFormulation({
+                    biomarkers: llmContext.biomarkers,
+                    bioageProfile: llmContext.bioage,
+                    dotsFormulary: llmContext.dots,
+                    personaType, lang: language,
+                    currentSolarTerm: llmContext.current_solar_term,
+                    essentialKnowledge: llmContext.essential_knowledge,
+                    userFacts: llmContext.user_facts,
+                });
+                const fbClient = await pool.connect();
+                try {
+                    await fbClient.query('BEGIN');
+                    await _commitNutritionPlan(fbClient, {
+                        userId: user_id, analysis: fallback.analysis,
+                        morningRecipe: fallback.morningRecipe, eveningRecipe: fallback.eveningRecipe,
+                        planId: llmContext.pending_plan_id,
+                    });
+                    await fbClient.query('COMMIT');
+                } catch (e) {
+                    await fbClient.query('ROLLBACK');
+                    throw e;
+                } finally {
+                    fbClient.release();
+                }
+                await saveChatMessage(user_id, 'ai', fallback.finalContent, null, personaType);
+                await pool.query(
+                    'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                    [user_id, 'nutrition_plan', fallback.finalContent, 'pending']
+                );
+            } catch (fbErr) {
+                console.error('Formula dots fallback also failed:', fbErr);
+                await pool.query(
+                    'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                    [user_id, 'nutrition_plan', "I'm sorry, I'm having trouble generating your dot plan right now. Please try again later.", 'pending']
+                );
+            }
+        } else {
+            const fallbackText = "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.";
+            await pool.query(
+                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                [user_id, 'chat_reply', fallbackText, 'pending']
+            );
+        }
+    }
 }
 
 async function handlePostChatMessages(body) {
@@ -947,8 +1373,65 @@ async function handlePostHeartbeat(body) {
     return { success: true, phone };
 }
 
+// Shared tail for handlePostHealthAdvice's synchronous callers (nano always; viva when
+// sandbox, or when the caller didn't opt into async, or when the chat.generate publish
+// failed and we fell back to sync). The async/viva/non-sandbox case never reaches this —
+// it's finished off by finalizeChatReply inside handleChatGenerateEvent instead, via the
+// SAME notification-based delivery /chat already uses.
+async function finalizeHealthAdviceReply({ rawReply, extraValidDates, extraValidValues, llmContext, systemPrompt, userMsg, user, user_id, personaType, sandbox, client, model }) {
+    // Same grounding check handlePostChat's finalizeChatReply runs, applied here too (not just
+    // for the agentic/viva path) — it's a cheap, deterministic, already-proven check (catches
+    // the 2026-07-14 stale-data / 2026-07-16 wrong-age bug classes), so there's no reason to
+    // scope it to viva only the way the heavier PLAN/JUDGE loop is.
+    const hasKnownAge = user.birth_date != null;
+    const hasKnownBmi = llmContext.user_profile.bmi != null;
+    if (Object.keys(llmContext.biomarkers).length > 0 || hasKnownAge || hasKnownBmi) {
+        const groundTruth = {
+            validated: {
+                ...llmContext.biomarkers,
+                ...(hasKnownBmi ? { BMI: llmContext.user_profile.bmi } : {}),
+            },
+            tested_at: llmContext.biomarkers_tested_at,
+            age: hasKnownAge ? llmContext.user_profile.age : null,
+            nickname: llmContext.user_profile.nickname,
+            extraValidDates,
+            extraValidValues,
+        };
+        const verification = verifyBiomarkerGrounding(rawReply, groundTruth);
+        if (!verification.ok) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'biomarker_grounding_mismatch', user_id, handler: 'handlePostHealthAdvice', mismatches: verification.mismatches }));
+            const correctionPrompt = `Your previous reply stated biomarker figures, BMI, a test date, and/or the patient's age that do not match their actual record.
+Ground truth — test date: ${groundTruth.tested_at || 'unknown'}, values: ${JSON.stringify(groundTruth.validated)}, age: ${groundTruth.age ?? 'unknown'}.
+Rewrite your previous reply using ONLY these exact values, this exact date, and this exact age. Keep the same language, tone, and structure otherwise.`;
+            try {
+                const retryCompletion = await client.chat.completions.create({
+                    model,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userMsg },
+                        { role: 'assistant', content: rawReply },
+                        { role: 'user', content: correctionPrompt },
+                    ],
+                    temperature: 0.2,
+                });
+                const retryReply = retryCompletion.choices[0].message.content || rawReply;
+                const retryVerification = verifyBiomarkerGrounding(retryReply, groundTruth);
+                console.log(JSON.stringify({ level: retryVerification.ok ? 'INFO' : 'WARN', msg: 'biomarker_grounding_retry', user_id, handler: 'handlePostHealthAdvice', ok: retryVerification.ok, mismatches: retryVerification.mismatches }));
+                rawReply = retryReply;
+            } catch (err) {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'biomarker_grounding_retry_failed', user_id, handler: 'handlePostHealthAdvice', error: err.message }));
+            }
+        }
+    }
+
+    if (!sandbox) {
+        await saveChatMessage(user_id, 'ai', rawReply, null, personaType);
+    }
+    return { success: true, message: rawReply, ...(sandbox && { sandbox: true }) };
+}
+
 async function handlePostHealthAdvice(body) {
-    const { openid } = body;
+    const { openid, sandbox, async: wantAsyncFlag } = body;
     if (!openid) return { success: false, error: 'openid required', statusCode: 400 };
 
     try {
@@ -969,16 +1452,17 @@ async function handlePostHealthAdvice(body) {
             } catch (_) {}
         }
         const currentSolarTerm = personaType === 'viva' ? getCurrentSolarTerm(getNowShanghai().toJSDate()) : null;
+        const essentialKnowledge = personaType === 'viva' ? await getEssentialBlock('viva') : null;
 
-        const [bioResult, dotsResult, plansResult, twinResult] = await Promise.all([
+        const [bioResult, dotsResult, plansResult, twinResult, factsResult] = await Promise.all([
             pool.query(
-                `SELECT bio_age, data FROM biomarkers
+                `SELECT bio_age, data, tested_at FROM biomarkers
                  WHERE user_id = $1 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL
                  ORDER BY tested_at DESC LIMIT 1`,
                 [user_id]
             ),
             pool.query(
-                `SELECT id, key_name, name, name_zh, sub_age_target, description, timing, ingredients, ingredients_zh
+                `SELECT id, key_name, name, name_zh, sub_age_target, description, timing, ingredients, ingredients_zh, target_dots_min, target_dots_max
                  FROM dots ORDER BY id ASC`
             ),
             pool.query(
@@ -988,7 +1472,8 @@ async function handlePostHealthAdvice(body) {
                         COALESCE(hpt.goal_en, hp.custom_goal_en) AS goal_en,
                         COALESCE(hpt.goal_zh, hp.custom_goal_zh) AS goal_zh,
                         COALESCE(hpt.target_sub_ages, '{}') AS target_sub_ages,
-                        (SELECT COUNT(*) FROM health_plan_checkins WHERE plan_id = hp.id) AS checkin_count
+                        (SELECT COUNT(*) FROM health_plan_checkins WHERE plan_id = hp.id) AS checkin_count,
+                        (SELECT COUNT(*) FROM health_plan_milestones WHERE plan_id = hp.id) AS milestones_done
                  FROM health_plans hp
                  LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
                  WHERE hp.user_id = $1 AND hp.status = 'active'
@@ -1003,6 +1488,10 @@ async function handlePostHealthAdvice(body) {
                         latest_lab_data, latest_lab_date,
                         trend_data, data_coverage
                  FROM health_twin WHERE user_id = $1`,
+                [user_id]
+            ),
+            pool.query(
+                `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
                 [user_id]
             ),
         ]);
@@ -1041,6 +1530,26 @@ async function handlePostHealthAdvice(body) {
         const healthConditionsOther = user.bio_data?.health_conditions_other || '';
         const isZh = (user.language || 'zh') !== 'en';
 
+        // Same BMI precedence rule as handlePostChat's llmContext (prefer a real scale/wearable
+        // reading over onboarding self-report) — kept in sync so both handlers ground the same
+        // user against the same BMI figure.
+        const heightCm = user.bio_data?.height;
+        const weightKg = healthTwin?.latest_weight_kg ?? user.bio_data?.weight;
+        const bmi = healthTwin?.latest_bmi != null
+            ? Math.round(healthTwin.latest_bmi * 10) / 10
+            : (heightCm && weightKg ? Math.round((weightKg / ((heightCm / 100) ** 2)) * 10) / 10 : null);
+
+        const activeHealthPlansShaped = activePlans.map(p => ({
+            plan_type: p.plan_type,
+            name: isZh ? p.name_zh : p.name_en,
+            goal: isZh ? p.goal_zh : p.goal_en,
+            target_sub_ages: p.target_sub_ages || [],
+            weeks_elapsed: Math.max(0, Math.floor((Date.now() - new Date(p.start_date).getTime()) / (7 * 86400000))),
+            total_weeks: p.duration_weeks,
+            checkin_count: parseInt(p.checkin_count || 0, 10),
+            milestones_done: parseInt(p.milestones_done || 0, 10),
+        }));
+
         const healthAdviceTemplate = personaType === 'viva' ? vivaSystemHealthAdviceTemplate : systemHealthAdviceTemplate;
         const systemPrompt = healthAdviceTemplate({
             isZh,
@@ -1056,15 +1565,7 @@ async function handlePostHealthAdvice(body) {
             healthConditionsOther,
             health_twin: healthTwin,
             current_solar_term: currentSolarTerm,
-            active_health_plans: activePlans.map(p => ({
-                plan_type: p.plan_type,
-                name: isZh ? p.name_zh : p.name_en,
-                goal: isZh ? p.goal_zh : p.goal_en,
-                target_sub_ages: p.target_sub_ages || [],
-                weeks_elapsed: Math.max(0, Math.floor((Date.now() - new Date(p.start_date).getTime()) / (7 * 86400000))),
-                total_weeks: p.duration_weeks,
-                checkin_count: parseInt(p.checkin_count || 0, 10),
-            })),
+            active_health_plans: activeHealthPlansShaped,
             plan_templates: planTemplates.map(t => ({
                 name: isZh ? t.name_zh : t.name_en,
                 goal: isZh ? t.goal_zh : t.goal_en,
@@ -1078,31 +1579,92 @@ async function handlePostHealthAdvice(body) {
             ? '请分析我目前的健康状态，并给我专业的健康建议。'
             : 'Please analyze my current health status and give me personalized health advice.';
 
-        // Save user trigger to keep conversation history well-formed (no consecutive AI turns)
-        await saveChatMessage(user_id, 'user', userMsg);
+        // Reshaped to the SAME llmContext contract handlePostChat produces (chat.js §22), so
+        // runAgenticTurn, its dedicated tools, and JUDGE — all built against that contract —
+        // work here unchanged. `plan`/`questionnaire_context`/`sub_age_display_names` aren't
+        // fetched by this handler; left null rather than faked (2026-07-29 scope: Phase A only —
+        // these are supplementary/display fields, not correctness-critical for grounding).
+        const llmContext = {
+            user_profile: { nickname: user.nickname, gender: user.gender, age, bmi, language: user.language },
+            biomarkers,
+            biomarkers_tested_at: latestBio?.tested_at
+                ? formatToShanghai(new Date(latestBio.tested_at)).slice(0, 10)
+                : null,
+            bioage: bioageProfile || {},
+            dots: dotsResult.rows,
+            plan: null,
+            health_twin: healthTwin,
+            now_iso: getNowShanghai().toISO(),
+            questionnaire_context: null,
+            active_health_plans: activeHealthPlansShaped,
+            sub_age_display_names: null,
+            current_solar_term: currentSolarTerm,
+            essential_knowledge: essentialKnowledge,
+            user_facts: factsResult.rows,
+        };
 
         const llmClient = getLlmClient();
         const model = process.env.MODEL || 'qwen3.6-plus';
-        const completion = await llmClient.chat.completions.create({
-            model,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userMsg },
-            ],
-            temperature: 0.3,
-        });
+        const useAgenticLoop = personaType === 'viva';
 
-        let reply = completion.choices[0].message.content;
-        if (personaType === 'viva') {
-            reply = await _regenerateIfFabricationRisk(
-                llmClient, model,
-                [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMsg }],
-                reply, 'handlePostHealthAdvice', dotsResult.rows
-            );
+        // Save user trigger to keep conversation history well-formed (no consecutive AI turns) —
+        // done here, before the async fork, exactly like handlePostChat: the async event handler
+        // (handleChatGenerateEvent) doesn't save the user's own message itself, it's assumed
+        // already persisted by the time the event fires.
+        if (!sandbox) {
+            await saveChatMessage(user_id, 'user', userMsg, null, personaType);
         }
-        await saveChatMessage(user_id, 'ai', reply);
 
-        return { success: true, message: reply };
+        // Same rationale as handlePostChat's fork (CLAUDE.md §22): the agentic loop can take
+        // 60-180s+, and FC cancels the invocation if the client disconnects mid-request. Only
+        // the miniapp's own chat tab opts in via body.async — the coach app and the web
+        // ChatTab.jsx callers never send it, so they keep getting a synchronous reply exactly as
+        // before, unaffected by this change (2026-07-29 scope: async wired for main.js only).
+        if (useAgenticLoop && !sandbox && wantAsyncFlag) {
+            const eventId = uuidv4();
+            try {
+                await publishChatGenerateEvent({
+                    event_id: eventId, user_id, message: userMsg, intent: 'biomarker_question',
+                    llmContext, systemPrompt, cleanHistory: [], language: user.language, personaType,
+                    birth_date: user.birth_date,
+                });
+                return { success: true, user_id, processing: true };
+            } catch (ebErr) {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'chat_generate_publish_failed_fallback_sync', user_id, handler: 'handlePostHealthAdvice', error: ebErr.message }));
+                // Fail open — fall through to the synchronous path below rather than dropping
+                // the request just because EventBridge is unavailable.
+            }
+        }
+
+        let rawReply;
+        let extraValidDates = [];
+        let extraValidValues = {};
+        if (useAgenticLoop) {
+            const agenticResult = await runAgenticTurn({
+                client: llmClient, model, message: userMsg, intent: 'biomarker_question', llmContext,
+                systemPrompt, cleanHistory: [], pool, user_id, language: user.language, personaType,
+                logContext: { user_id, intent: 'biomarker_question', handler: 'handlePostHealthAdvice' },
+                onStatus: sandbox ? undefined : makeStatusNotifier(user_id, user.language),
+            });
+            rawReply = agenticResult.reply;
+            extraValidDates = agenticResult.extraValidDates;
+            extraValidValues = agenticResult.extraValidValues;
+        } else {
+            const completion = await llmClient.chat.completions.create({
+                model,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userMsg },
+                ],
+                temperature: 0.3,
+            });
+            rawReply = completion.choices[0].message.content;
+        }
+
+        return await finalizeHealthAdviceReply({
+            rawReply, extraValidDates, extraValidValues, llmContext, systemPrompt, userMsg,
+            user, user_id, personaType, sandbox, client: llmClient, model,
+        });
     } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostHealthAdvice failed', error: err.message }));
         return { success: false, error: err.message, statusCode: 500 };
@@ -1603,6 +2165,7 @@ module.exports = {
     handleGetChatHistory,
     handlePostBiomarkers,
     handlePostChat,
+    handleChatGenerateEvent,
     handlePostChatMessages,
     handlePostHeartbeat,
     handlePostHealthAdvice,

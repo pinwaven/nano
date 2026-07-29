@@ -1,5 +1,6 @@
 const { getVivaLabels } = require('../subAgeLabels');
 const { getFactConstraintBlock } = require('../factConstraint');
+const { getFactMemoryBlock } = require('../factMemoryBlock');
 
 module.exports = (ctx) => {
   const { user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, current_solar_term } = ctx;
@@ -46,7 +47,9 @@ module.exports = (ctx) => {
     ? `当前节气：${current_solar_term.name_zh}（${current_solar_term.season_zh}季 · ${current_solar_term.organ_zh}）— ${current_solar_term.theme_zh}（传统节气养生视角，非临床证据）`
     : '';
 
-  return `${getFactConstraintBlock()}
+  return `${getFactConstraintBlock(ctx.essential_knowledge)}
+
+${getFactMemoryBlock(ctx.user_facts)}
 
 你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造。
 
@@ -62,6 +65,7 @@ ${dotsSection}
 ${planSection}
 
 回复规则：
+- **直接回应用户的具体消息**：如果用户陈述的是饮食限制/过敏/偏好等个人信息，或询问某个具体问题，必须在第一句话直接回应该内容本身（如确认已了解其饮食情况、说明这会如何影响你的建议），不得跳过直接给出一份通用的"生理年龄+原粒配置总览"总结。仅当用户明确要求整体状态总结或方案概览时，才给出完整总览。
 - 具体、可操作。点名原粒的名称、服用时间、原因。
 - **原粒摄入量**：如涉及每日服用粒数，必须使用配方库中该原粒标注的"建议摄入"范围，不得凭经验猜测或默认为1粒——不同原粒的建议摄入量差异很大（从1粒到上百粒不等），务必逐一核对。
 - **东亚饮食视角**：如${labels.MetabolicAge}偏高或 GA 升高，主动关联东亚精制碳水饮食背景，提示进食顺序法（蔬菜→蛋白质→碳水），并从上方配方库中挑选含 AMPK 激活或代谢相关成分的原粒推荐给用户。

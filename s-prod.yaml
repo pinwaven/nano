@@ -107,7 +107,7 @@ resources:
           triggerConfig:
             eventSourceConfig:
               eventSourceType: Default
-            eventRuleFilterPattern: '{"source":["acs.dispatcher","acs.lab"]}'
+            eventRuleFilterPattern: '{"source":["acs.dispatcher","acs.lab","acs.chat"]}'
 
   agent:
     component: fc3

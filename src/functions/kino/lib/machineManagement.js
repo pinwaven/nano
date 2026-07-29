@@ -48,8 +48,7 @@ function normalizeMachineUpdate(body = {}) {
 
   if (Object.prototype.hasOwnProperty.call(body, 'machine_name')) {
     const machineName = String(body.machine_name || '').trim();
-    if (!machineName) throw new Error('machine_name cannot be empty');
-    updates.machine_name = machineName;
+    updates.machine_name = machineName || null;
   }
 
   if (Object.prototype.hasOwnProperty.call(body, 'status')) {

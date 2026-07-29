@@ -1,24 +1,24 @@
-/**
- * Shared anti-hallucination guardrail block for every Viva prompt.
- *
- * Single source of truth — require() this everywhere instead of duplicating
- * the text, so a fix here reaches every intent at once. Added 2026-07-25
- * after testing surfaced fabricated cohort studies/p-values/gene frequencies,
- * a fabricated non-existent "detox age" dimension, and external-supplement
- * recommendations leaking through the 6 of 7 viva/chat/*.js intent files
- * that had never had any fact-constraint text at all (only nutrition.js did).
- *
- * As of 2026-07-29 the canonical text lives in the `knowledge_entries` DB table
- * (tier='essential', id='fact-constraint-core') so it's admin-editable without a
- * deploy — see lib/knowledgeBase.js's getEssentialBlock(). Each handler fetches it
- * once per request and passes it in as `preloaded`; the string below is kept only
- * as a last-resort fallback if that DB fetch ever fails.
- */
 'use strict';
 
-function getFactConstraintBlock(preloaded) {
-  if (preloaded) return preloaded;
-  return `【事实约束 — 最高优先级，不得违反】
+/**
+ * DB-backed replacement for Viva's two static knowledge layers (see CLAUDE.md):
+ *   - getEssentialBlock(): always-injected guardrail/domain text (was factConstraint.js's
+ *     hard-coded string) — every active 'essential' row for the persona, concatenated.
+ *   - findRelevantEntries(): matched-on-request science/protocol claims (was the 3 static
+ *     files under prompts/viva/knowledge/) — every active 'optional' row for the persona,
+ *     substring/tag-matched in-process exactly as before. No RAG/embeddings, by design.
+ *
+ * No caching: the table is small (~15 rows) and each function runs at most a couple of
+ * times per chat turn, negligible next to the LLM call latency it sits beside. Add a TTL
+ * cache later only if this is ever shown to matter.
+ */
+const { pool } = require('./db');
+
+// Last-resort fallback if the DB is unreachable — never ship a Viva reply with zero
+// anti-hallucination guardrails just because of a transient DB error. Kept in sync with
+// the 'fact-constraint-core' seed row in migration_knowledge_entries.sql; if that row is
+// edited via the admin panel, this constant intentionally stays as the original baseline.
+const FALLBACK_ESSENTIAL_BLOCK = `【事实约束 — 最高优先级，不得违反】
 严禁捏造以下内容：具体研究名称、期刊名称、发表年份、临床试验编号、受试者人数、统计百分比、具体起效时间窗口（如"72小时内""2周后"）、预期改善幅度或数值预测、作者姓名或机构名称、具体p值、基因位点编号（如rs开头的SNP编号）、等位基因频率、参考数据库名称。
 错误示例（绝对禁止此类编造，即使内容听起来合理）：
 • "上海瑞金医院队列研究显示，每周红肉摄入超过300g的人群，细胞年龄平均加速1.9岁（p=0.002）" —— 编造了机构、队列、具体数值与p值
@@ -38,6 +38,37 @@ function getFactConstraintBlock(preloaded) {
 仅推荐原粒，不建议外购：任何具体成分/补充剂/剂量建议都必须来自 Waven 原粒配方库，绝不建议用户额外购买配方库之外的补充剂、草本、单体营养素或食材提取物（如"牛磺酸粉""硫辛酸""葡萄籽提取物"等）。若配方库中没有对应产品，直接说明"目前的原粒配方库中没有针对这一点的产品"，不得给出品牌、剂量或购买渠道建议。日常整体饮食/餐食建议不受此限制，但不得在饮食建议中夹带具体分离出的营养补充剂成分与剂量。
 
 提及具体原粒时，编号、名称、成分必须逐字复制提示词中原粒配方库里给出的原文，不得凭记忆改写、替换或编造——配方库内容可能随产品迭代更新，你训练数据中记忆的旧版名称/成分可能已不准确。如果不确定某个编号对应的准确名称，宁可只说编号（如"12号原粒"）而不描述名称，也不要猜测或凭记忆填写名称。`;
+
+async function getEssentialBlock(personaType) {
+    try {
+        const { rows } = await pool.query(
+            `SELECT content_zh FROM knowledge_entries
+             WHERE persona_type = $1 AND tier = 'essential' AND status = 'active'
+             ORDER BY sort_order, id`,
+            [personaType]
+        );
+        const joined = rows.map(r => r.content_zh).join('\n\n');
+        return joined || FALLBACK_ESSENTIAL_BLOCK;
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'essential_knowledge_fetch_failed_fallback', personaType, error: err.message }));
+        return FALLBACK_ESSENTIAL_BLOCK;
+    }
 }
 
-module.exports = { getFactConstraintBlock };
+async function findRelevantEntries(personaType, text, limit = 8) {
+    if (!text || typeof text !== 'string') return [];
+    try {
+        const { rows } = await pool.query(
+            `SELECT id, topic, content_zh AS claim_zh, evidence_level FROM knowledge_entries
+             WHERE persona_type = $1 AND tier = 'optional' AND status = 'active'`,
+            [personaType]
+        );
+        const hits = rows.filter(entry => (entry.topic || []).some(tag => text.includes(tag)));
+        return hits.slice(0, limit);
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'optional_knowledge_fetch_failed', personaType, error: err.message }));
+        return [];
+    }
+}
+
+module.exports = { getEssentialBlock, findRelevantEntries, FALLBACK_ESSENTIAL_BLOCK };

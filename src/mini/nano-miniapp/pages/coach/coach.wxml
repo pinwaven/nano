@@ -435,6 +435,9 @@
         <view class="detail-tab {{detailTab === 'goals' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="goals">
           <text class="detail-tab-text">{{t.tabGoals}}</text>
         </view>
+        <view class="detail-tab {{detailTab === 'facts' ? 'detail-tab-active' : ''}}" bindtap="switchDetailTab" data-tab="facts">
+          <text class="detail-tab-text">{{t.tabFacts}}</text>
+        </view>
       </view>
 
       <!-- Health panel -->
@@ -589,6 +592,37 @@
           <textarea class="note-input" placeholder="{{t.addNotePh}}" value="{{noteText}}" bindinput="onNoteTextInput" maxlength="1000" auto-height />
           <view class="note-save-btn {{notesBusy ? 'btn-busy' : ''}}" bindtap="saveNote">
             <text class="note-save-text">{{notesBusy ? '…' : t.saveNote}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- Personal memory facts panel -->
+      <view wx:if="{{detailTab === 'facts'}}" class="overlay-scroll-full">
+        <view wx:if="{{clientFactsLoading}}" class="panel-center">
+          <text class="loading-text">{{t.loading}}</text>
+        </view>
+        <block wx:else>
+          <view wx:if="{{clientFacts.length === 0}}" class="panel-center">
+            <text class="empty-text">{{t.noFacts}}</text>
+          </view>
+          <view wx:for="{{clientFacts}}" wx:key="id" class="note-item">
+            <text class="note-content">[{{t.factCategories[item.category]}}] {{item.fact_zh}}</text>
+            <view class="note-footer">
+              <text class="note-date">{{item.last_mentioned_at}}</text>
+              <view class="note-actions">
+                <text class="note-action-btn note-delete-btn" catchtap="deleteFact" data-id="{{item.id}}">{{t.factDelete}}</text>
+              </view>
+            </view>
+          </view>
+        </block>
+        <!-- Compose area -->
+        <view class="note-compose">
+          <picker mode="selector" range="{{factCategoryLabels}}" value="{{factCategoryIndex}}" bindchange="onFactCategoryChange">
+            <view class="note-action-btn" style="display:inline-block;margin-bottom:8px;">{{factCategoryLabels[factCategoryIndex]}} ▾</view>
+          </picker>
+          <textarea class="note-input" placeholder="{{t.addFactPh}}" value="{{factText}}" bindinput="onFactTextInput" maxlength="500" auto-height />
+          <view class="note-save-btn {{factsBusy ? 'btn-busy' : ''}}" bindtap="saveFact">
+            <text class="note-save-text">{{factsBusy ? '…' : t.saveFact}}</text>
           </view>
         </view>
       </view>

@@ -30,7 +30,7 @@ module.exports = (context) => {
     ? `用户当前营养方案：\n${nutrition_plan}`
     : `营养方案：尚未生成。完成 Kino 生物标志物检测后将自动创建。`;
 
-  return `${getFactConstraintBlock()}
+  return `${getFactConstraintBlock(context.essential_knowledge)}
 
 你是 **Viva**——Aeviva 精准健康生态系统中的**精准长寿顾问 (Precision Longevity Advisor)**。你不是传统临床医生，也不是泛泛的健身教练，而是一位专攻系统生物学、功能营养、慢性炎症与生物衰老的高阶健康专家。
 

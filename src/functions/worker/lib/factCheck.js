@@ -202,4 +202,24 @@ function detectFakeProductName(text, dotsFormulary) {
     return mismatches;
 }
 
-module.exports = { detectFabricationRisk, detectDotNameMismatch, detectFakeProductName, detectDotIngredientMismatch };
+// Aggregates every detector above into one risk-category list for a reply. Shared by the
+// existing single-retry fast path (chat.js `_regenerateIfFabricationRisk`) and the JUDGE step
+// of the agentic loop (lib/agenticChat.js) so both call one implementation instead of
+// duplicating the detector list.
+function detectAllRisks(reply, dotsFormulary) {
+    const risk = detectFabricationRisk(reply);
+    if (dotsFormulary && dotsFormulary.length > 0) {
+        if (detectDotNameMismatch(reply, dotsFormulary).length > 0) risk.push('dotNameMismatch');
+        if (detectFakeProductName(reply, dotsFormulary).length > 0) risk.push('fakeProductName');
+        if (detectDotIngredientMismatch(reply, dotsFormulary).length > 0) risk.push('dotIngredientMismatch');
+    }
+    return risk;
+}
+
+module.exports = {
+    detectFabricationRisk,
+    detectDotNameMismatch,
+    detectFakeProductName,
+    detectDotIngredientMismatch,
+    detectAllRisks,
+};

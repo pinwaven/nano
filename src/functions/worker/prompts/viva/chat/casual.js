@@ -1,13 +1,16 @@
 const { getFactConstraintBlock } = require('../factConstraint');
+const { getFactMemoryBlock } = require('../factMemoryBlock');
 
-module.exports = ({ user_profile, questionnaire_context, active_health_plans }) => {
+module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, user_facts }) => {
   const name = user_profile.nickname || '你';
 
   const planSnippet = active_health_plans && active_health_plans.length > 0
     ? `用户当前方案：${active_health_plans.map(p => `${p.plan_type === 'primary' ? '主' : '辅'}方案「${p.name}」第 ${p.weeks_elapsed}/${p.total_weeks} 周，已打卡 ${p.checkin_count} 次`).join('；')}`
     : '';
 
-  return `${getFactConstraintBlock()}
+  return `${getFactConstraintBlock(essential_knowledge)}
+
+${getFactMemoryBlock(user_facts)}
 
 你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造的精准健康生态系统中的核心 AI。
 

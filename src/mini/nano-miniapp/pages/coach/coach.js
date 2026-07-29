@@ -101,8 +101,10 @@ const T = {
       responsesTitle: '问卷回答',
       noResponses: '暂无回答记录',
     },
-    tabNotes: '笔记', tabGoals: '目标',
+    tabNotes: '笔记', tabGoals: '目标', tabFacts: '个人信息',
     noNotes: '暂无笔记', addNotePh: '添加笔记…', saveNote: '保存', notePin: '置顶', noteUnpin: '取消置顶', noteDelete: '删除',
+    noFacts: '暂无记录的个人信息', addFactPh: '记录饮食限制、过敏、偏好或目标…', saveFact: '保存', factDelete: '删除', confirmDeleteFact: '确认删除此条记录？',
+    factCategories: { dietary_restriction: '饮食限制', allergy: '过敏', preference: '偏好', goal: '目标', other: '其他' },
     noGoals: '暂无目标', setGoal: '+ 设定目标', goalAchieved: '✓ 已达成', goalActive: '进行中', goalMissed: '未完成',
     goalTypeLabel: '目标类型', goalTargetLabel: '目标值', goalDateLabel: '目标日期',
     goalTypes: { bio_age: '生理年龄', sub_age: '生理维度', weight: '体重', steps: '步数', sleep_score: '睡眠分', hrv: 'HRV', custom: '自定义' },
@@ -121,8 +123,9 @@ const T = {
     toolUploadImage: '上传图片',
     toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
     toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
-    formulaGenerating: '正在根据您的生物标志物生成7天营养方案…',
+    formulaGenerating: '正在为你定制营养方案…',
     formulaComplete: '您的7天营养方案已生成！',
+    formulaProcessing: '正在深度分析并配置本周方案，请稍后在方案页查看…',
     formulaViewDots: '查看营养方案 →',
     formulaError: '方案生成失败，请重试。',
     healthAdviceError: '健康分析请求失败，请重试。',
@@ -235,8 +238,10 @@ const T = {
       responsesTitle: 'Questionnaire Responses',
       noResponses: 'No responses yet',
     },
-    tabNotes: 'Notes', tabGoals: 'Goals',
+    tabNotes: 'Notes', tabGoals: 'Goals', tabFacts: 'Facts',
     noNotes: 'No notes yet', addNotePh: 'Add a note…', saveNote: 'Save', notePin: 'Pin', noteUnpin: 'Unpin', noteDelete: 'Delete',
+    noFacts: 'No personal facts recorded yet', addFactPh: 'Record a dietary restriction, allergy, preference, or goal…', saveFact: 'Save', factDelete: 'Delete', confirmDeleteFact: 'Delete this fact?',
+    factCategories: { dietary_restriction: 'Diet', allergy: 'Allergy', preference: 'Preference', goal: 'Goal', other: 'Other' },
     noGoals: 'No goals yet', setGoal: '+ Set Goal', goalAchieved: '✓ Achieved', goalActive: 'Active', goalMissed: 'Missed',
     goalTypeLabel: 'Goal Type', goalTargetLabel: 'Target Value', goalDateLabel: 'Target Date',
     goalTypes: { bio_age: 'Bio Age', sub_age: 'Sub Age', weight: 'Weight', steps: 'Steps', sleep_score: 'Sleep Score', hrv: 'HRV', custom: 'Custom' },
@@ -257,6 +262,7 @@ const T = {
     toolHealthAdviceMsg: 'Please analyze my current health status and give me personalized health advice.',
     formulaGenerating: 'Generating your 7-day nutrition plan from your biomarkers…',
     formulaComplete: 'Your 7-day nutrition plan is ready!',
+    formulaProcessing: "Deeply analyzing and formulating this week's plan — check the Plan page shortly…",
     formulaViewDots: 'View Dots Plan →',
     formulaError: 'Plan generation failed. Please try again.',
     healthAdviceError: 'Health analysis request failed. Please try again.',
@@ -389,6 +395,12 @@ Page({
     clientNotesLoading: false,
     noteText: '',
     notesBusy: false,
+    // Personal memory facts tab (inside client detail)
+    clientFacts: [],
+    clientFactsLoading: false,
+    factCategoryIndex: 2,
+    factText: '',
+    factsBusy: false,
     // CRM: Goals tab (inside client detail)
     clientGoals: [],
     clientGoalsLoading: false,
@@ -461,7 +473,8 @@ Page({
     const t = T[lang]
     const sandboxMode = !!app.globalData.sandboxMode
     const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', nickname || '—') : ''
-    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
+    const factCategoryLabels = ['dietary_restriction', 'allergy', 'preference', 'goal', 'other'].map(c => t.factCategories[c])
+    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText, factCategoryLabels })
     this._loadAll()
   },
 
@@ -569,7 +582,8 @@ Page({
     const lang = this.data.lang === 'zh' ? 'en' : 'zh'
     app.globalData.lang = lang
     const clientFilterStages = this._buildFilterStages(this.data.clients)
-    this.setData({ lang, t: T[lang], menuOpen: false, chatToolList: toolActions.getToolList(T[lang]), clientFilterStages })
+    const factCategoryLabels = ['dietary_restriction', 'allergy', 'preference', 'goal', 'other'].map(c => T[lang].factCategories[c])
+    this.setData({ lang, t: T[lang], menuOpen: false, chatToolList: toolActions.getToolList(T[lang]), clientFilterStages, factCategoryLabels })
   },
 
   async toggleTheme() {
@@ -680,6 +694,7 @@ Page({
     if (tab === 'plans') this._loadClientPlans()
     if (tab === 'notes') this._loadClientNotes()
     if (tab === 'goals') this._loadClientGoals()
+    if (tab === 'facts') this._loadClientFacts()
   },
 
   async _loadClientPlans() {
@@ -817,7 +832,7 @@ Page({
       addMsg: (role, content, persist) => this._addChatMsg(role, content, persist),
       addImageMsg: (url) => this._addChatImageMsg(url),
       updateImageMsg: (id, url) => this._updateChatImageMsg(id, url),
-      req: (url, method, data) => this._req(url, method, data),
+      req: (url, method, data, timeoutMs) => this._req(url, method, data, timeoutMs),
       setTyping: (v) => this.setData({ chatToolBusy: v }),
     }
     if (action === 'test_chip') {
@@ -1189,6 +1204,59 @@ Page({
     })
   },
 
+  // ─── Personal memory facts ──────────────────────────────────────────────────
+
+  async _loadClientFacts() {
+    const { detailClient } = this.data
+    if (!detailClient) return
+    this.setData({ clientFactsLoading: true })
+    try {
+      const qs = `openid=${encodeURIComponent(detailClient.user_id)}${this._coachId ? `&coach_id=${this._coachId}` : ''}`
+      const res = await this._req(`${BASE}/api/user-facts?${qs}`)
+      this.setData({ clientFacts: res.data?.facts || [] })
+    } catch (e) {
+      wx.showToast({ title: this.data.t.networkError, icon: 'none' })
+    } finally {
+      this.setData({ clientFactsLoading: false })
+    }
+  },
+
+  onFactCategoryChange(e) { this.setData({ factCategoryIndex: parseInt(e.detail.value, 10) }) },
+  onFactTextInput(e) { this.setData({ factText: e.detail.value }) },
+
+  async saveFact() {
+    const { factText, factCategoryIndex, detailClient } = this.data
+    if (!factText.trim() || !detailClient) return
+    const FACT_CATEGORIES = ['dietary_restriction', 'allergy', 'preference', 'goal', 'other']
+    this.setData({ factsBusy: true })
+    try {
+      await this._req(`${BASE}/api/user-facts`, 'POST', {
+        openid: detailClient.user_id,
+        category: FACT_CATEGORIES[factCategoryIndex] || 'other',
+        fact_zh: factText.trim(),
+      })
+      this.setData({ factText: '' })
+      await this._loadClientFacts()
+    } catch (e) {
+      wx.showToast({ title: this.data.t.networkError, icon: 'none' })
+    } finally {
+      this.setData({ factsBusy: false })
+    }
+  },
+
+  async deleteFact(e) {
+    const factId = e.currentTarget.dataset.id
+    wx.showModal({
+      title: this.data.t.factDelete, content: this.data.t.confirmDeleteFact, success: async (res) => {
+        if (!res.confirm) return
+        try {
+          await this._req(`${BASE}/api/user-facts/${factId}`, 'DELETE')
+          await this._loadClientFacts()
+        } catch (e) {}
+      }
+    })
+  },
+
   // ─── CRM: Goals ─────────────────────────────────────────────────────────────
 
   async _loadClientGoals() {
@@ -1419,11 +1487,18 @@ Page({
 
   // ─────────────────────────────────────────────────────────────────────────────
 
-  _req(url, method = 'GET', data = null) {
+  _req(url, method = 'GET', data = null, timeoutMs = null) {
     return new Promise((resolve, reject) => {
       const opts = { url, method, header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` }, success: resolve, fail: reject }
       if (app.globalData.sandboxMode && method !== 'GET') data = { ...(data || {}), sandbox: true }
       if (data) opts.data = data
+      // Default (unset) falls back to wx.request's built-in 60s timeout. /api/health-advice for
+      // a Viva-persona client now runs the full agentic plan/generate/judge/revise loop
+      // synchronously here (coach.js has no polling/async delivery path, unlike main.js) —
+      // measured up to ~167s worst case, so it needs its own longer override (see
+      // tool-actions.js's runHealthAdvice) or it trips the client timeout, which cancels the
+      // in-progress server-side work rather than just delaying the reply (2026-07-29).
+      if (timeoutMs) opts.timeout = timeoutMs
       wx.request(opts)
     })
   },

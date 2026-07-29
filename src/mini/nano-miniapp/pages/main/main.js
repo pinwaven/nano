@@ -104,6 +104,8 @@ const T = {
     inputPh: '输入消息…',
     micRecording: '正在录音…松开结束',
     errServer: '无法连接服务器，请重试。',
+    chatThinking: '正在构建研究计划…',
+    chatStillWorking: '还在处理中，请稍后回来看看～',
     obNamePrompt: '在开始之前，需要了解一些基本信息来个性化您的健康洞察。请问您的姓名是？',
     obNameOnly: '有一件小事——请问您叫什么名字？',
     obNamePh: '您的姓名',
@@ -180,8 +182,9 @@ const T = {
     toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
     healthAdviceGenerating: '正在分析您的健康数据，请稍候…',
     healthAdviceError: '健康分析请求失败，请重试。',
-    formulaGenerating: '正在根据您的生物标志物生成7天营养方案…',
+    formulaGenerating: '正在为你定制营养方案…',
     formulaComplete: '您的7天营养方案已生成！',
+    formulaProcessing: '正在为您深度分析并配置本周方案，完成后会发送通知，请稍候…',
     formulaViewDots: '查看营养方案 →',
     formulaError: '方案生成失败，请重试。',
     chatHistoryLoadMore: '下拉或点此加载更早消息',
@@ -305,6 +308,8 @@ const T = {
     inputPh: 'Type a message…',
     micRecording: 'Recording… release to finish',
     errServer: 'Could not reach the server. Please try again.',
+    chatThinking: 'Building your research plan…',
+    chatStillWorking: 'Still working on it — please check back in a bit.',
     obNamePrompt: 'Before we start, I need a couple of quick details to personalize your health insights. What should I call you?',
     obNameOnly: 'One quick thing — what is your name?',
     obNamePh: 'Your name',
@@ -383,6 +388,7 @@ const T = {
     healthAdviceError: 'Health analysis request failed. Please try again.',
     formulaGenerating: 'Generating your 7-day nutrition plan from your biomarkers…',
     formulaComplete: 'Your 7-day nutrition plan is ready!',
+    formulaProcessing: "Deeply analyzing your data and formulating this week's plan — you'll get a notification when it's ready…",
     formulaViewDots: 'View Dots Plan →',
     formulaError: 'Plan generation failed. Please try again.',
     chatHistoryLoadMore: 'Pull or tap to load older messages',
@@ -805,6 +811,7 @@ Page({
     chatInput: '',
     isRecording: false,
     typing: false,
+    chatStatusText: '',
     isSending: false,
     toolboxOpen: false,
     toolList: [],
@@ -1875,10 +1882,44 @@ Page({
   _scrollBottom() {
     if (this.data.messages.length === 0) return
     if (this._scrollTimer) clearTimeout(this._scrollTimer)
-    this._scrollTimer = setTimeout(() => {
+    if (this._scrollTimer2) clearTimeout(this._scrollTimer2)
+    if (this._scrollAnchorTimer) clearTimeout(this._scrollAnchorTimer)
+    const doScrollTop = () => {
       this._scrollFlip = !this._scrollFlip
       this.setData({ scrollTop: this._scrollFlip ? 999998 : 999999 })
-    }, 50)
+    }
+    // wx.nextTick fires right after this setData's render actually commits — more reliable
+    // than a blind delay for ordinary text reflow. The two follow-up timers catch slower
+    // devices/longer markdown re-layout that hasn't settled by the first tick — a single
+    // ~50ms guess wasn't always enough, which is exactly why the last message sometimes
+    // wasn't fully scrolled into view (found 2026-07-29). See also _onChatImageLoad for the
+    // <image> case, whose height isn't known until the image itself finishes loading.
+    wx.nextTick(doScrollTop)
+    this._scrollTimer = setTimeout(doScrollTop, 150)
+    this._scrollTimer2 = setTimeout(doScrollTop, 500)
+
+    // scrollTop is a raw pixel offset that assumes the scroll-view's total content height (and
+    // the scroll-view's OWN layout) is already settled — on a real phone's cold app launch, the
+    // page/scroll-view can still be settling its own layout, and scrollTop alone still missed
+    // the true bottom (found 2026-07-29, reported from a real-device cold-start screenshot).
+    // scroll-into-view instead asks the renderer to scroll a specific element into view against
+    // whatever the current layout actually is, which is more robust for exactly that case.
+    // Only re-fires when the target value changes, so clear it after a delay (mirrors the
+    // existing history-pagination anchor pattern above) rather than re-setting the same value.
+    const lastId = this.data.messages[this.data.messages.length - 1].id
+    this.setData({ scrollAnchor: `m${lastId}` })
+    this._scrollAnchorTimer = setTimeout(() => this.setData({ scrollAnchor: '' }), 700)
+  },
+
+  // <image mode="widthFix"> bubbles (msg-image) only reach their final height once the image
+  // itself has loaded — well after the setData/nextTick-driven scroll above already fired.
+  // Only re-snap to bottom if the image that just loaded belongs to the LAST message, so this
+  // doesn't yank the view away from the user's current position when an older/history image
+  // (e.g. from _loadMoreHistory) finishes loading instead.
+  _onChatImageLoad(e) {
+    const id = e.currentTarget.dataset.id
+    const last = this.data.messages[this.data.messages.length - 1]
+    if (last && last.id === id) this._scrollBottom()
   },
 
   onChatInput(e) {
@@ -1987,9 +2028,16 @@ Page({
       addActionMsg: (action, label, persist) => this._addActionMsg(action, label, persist),
       addImageMsg: (url) => this._addImageMsg(url),
       updateImageMsg: (id, url) => this._updateImageMsg(id, url),
-      req: (url, method, data) => this._req(url, method, data),
+      req: (url, method, data, timeoutMs) => this._req(url, method, data, timeoutMs),
       setTyping: (v) => this.setData({ typing: v }),
       onHealthReportPending: (payload) => this._startHealthReportConsent(payload),
+      // Fires when the backend acks with {processing:true} instead of the reply itself (Viva's
+      // agentic loop running async — see chat.generate) — mirrors _sendMessage's handling so the
+      // same status-caption/safety-timeout machinery in _poll covers this path too.
+      onAsyncStart: () => {
+        this._chatWaitStartedAt = Date.now()
+        this.setData({ typing: true, chatStatusText: this.data.t.chatThinking })
+      },
     }
     if (action === 'test_chip') {
       this._addMsg('ai', t.kinoScanPrompt)
@@ -1997,7 +2045,7 @@ Page({
     } else if (action === 'formula_dots') {
       toolActions.runFormulaDs(user.user_id, t, ctx)
     } else if (action === 'health_advice') {
-      toolActions.runHealthAdvice(user.user_id, t, ctx)
+      toolActions.runHealthAdvice(user.user_id, t, ctx, { async: true })
     } else if (action === 'upload_image') {
       const tempFilePath = e.detail?.tempFilePath
       if (tempFilePath) toolActions.runUploadImage(user.user_id, t, ctx, tempFilePath)
@@ -2037,7 +2085,11 @@ Page({
     const { t } = this.data
     if (action === 'view_dots') {
       const { user, lang } = this.data
-      this.setData({ tab: 'dots', dotsLoading: true, cartridgesLoading: true })
+      // Dots lives as a sub-tab ('plansDotsSubTab') under the main 'plans' tab, not as its own
+      // top-level tab value — setting tab:'dots' directly matches none of the WXML's tab==='...'
+      // blocks (chat/health/plans/learn/store), rendering a blank page. Found via a real-device
+      // report, 2026-07-29.
+      this.setData({ tab: 'plans', plansDotsSubTab: 'dots', dotsLoading: true, cartridgesLoading: true })
       this._loadDots(user, lang)
       this._loadCartridges(user, lang)
     } else if (action === 'verify_phone') {
@@ -2141,23 +2193,33 @@ Page({
   },
 
   async _sendMessage(text) {
-    const { user } = this.data
+    const { user, t } = this.data
     this._addMsg('user', text)
-    this.setData({ typing: true, toolboxOpen: false })
+    this.setData({ typing: true, chatStatusText: '', toolboxOpen: false })
     try {
-      const res = await this._req(`${BASE}/api/chat`, 'POST', { openid: user.user_id, message: text })
+      const res = await this._req(`${BASE}/api/chat`, 'POST', { openid: user.user_id, message: text }, 30000)
       if (res.data?.recorded_weight != null) {
         this.selectComponent('#health-comp')?.refresh()
+      }
+      if (res.data?.processing) {
+        // Viva's agentic loop is running asynchronously (see backend chat.generate event) —
+        // the real reply isn't ready yet. Keep the typing indicator up with an evolving
+        // status caption; _poll clears it when the actual reply (or the safety timeout)
+        // arrives. Set an immediate local caption so there's no gap before the first
+        // server-sent status notification lands on the next 3s poll tick.
+        this._chatWaitStartedAt = Date.now()
+        this.setData({ chatStatusText: t.chatThinking })
+        return
       }
       // Sandbox sessions get the reply directly in the response (nothing was persisted
       // to notifications for polling to pick up).
       if (app.globalData.sandboxMode && res.data?.reply) {
         this._addMsg('ai', res.data.reply)
       }
+      this.setData({ typing: false, chatStatusText: '' })
     } catch (e) {
       this._addMsg('ai', this.data.t.errServer)
-    } finally {
-      this.setData({ typing: false })
+      this.setData({ typing: false, chatStatusText: '' })
     }
   },
 
@@ -2181,12 +2243,42 @@ Page({
       const unseen = notifications.filter(n => !this._seenIds.has(n.id))
       if (unseen.length > 0) {
         unseen.forEach(n => this._seenIds.add(n.id))
-        const newMsgs = unseen.map(n => ({ id: `n-${n.id}`, role: 'ai', content: mdToHtml(n.content || '') }))
-        const messages = [...this.data.messages, ...newMsgs]
-        this.setData({ messages, typing: false })
-        this._scrollBottom()
+        // 'chat_status' rows are transient "what I'm doing" captions from the async agentic
+        // loop (see backend makeStatusNotifier) — update the status caption only, never add
+        // them as chat bubbles. Everything else (chat_reply, coach_reminder, ...) behaves as
+        // before, and additionally clears the status caption / wait timer since a real reply
+        // means the wait is over.
+        const statusRows = unseen.filter(n => n.notification_type === 'chat_status')
+        const realRows = unseen.filter(n => n.notification_type !== 'chat_status')
+        if (statusRows.length > 0) {
+          this.setData({ chatStatusText: statusRows[statusRows.length - 1].content })
+        }
+        if (realRows.length > 0) {
+          const newMsgs = realRows.map(n => ({ id: `n-${n.id}`, role: 'ai', content: mdToHtml(n.content || '') }))
+          // A 'nutrition_plan' row means Viva's async dot formulation just committed — add the
+          // "view plan" action button here (it used to be added synchronously right after the
+          // POST, back when the schedule was committed inline; now the commit itself happens
+          // async, so the button must wait for this same completion signal instead of appearing
+          // before the plan actually exists).
+          if (realRows.some(n => n.notification_type === 'nutrition_plan')) {
+            newMsgs.push({ id: `action-view_dots-${Date.now()}`, role: 'action', action: 'view_dots', label: this.data.t.formulaViewDots })
+          }
+          const messages = [...this.data.messages, ...newMsgs]
+          this._chatWaitStartedAt = null
+          this.setData({ messages, typing: false, chatStatusText: '' })
+          this._scrollBottom()
+        }
       }
     } catch (e) {}
+    // Safety net: if the agentic loop's async reply never arrives, don't leave the typing/
+    // status UI stuck indefinitely — after a generous wait, clear it with a gentle note.
+    // Server-side work may still be running and could still deliver via a later poll; this
+    // is purely a client-side UX bound, not an assumption that the turn failed.
+    if (this.data.typing && this._chatWaitStartedAt && Date.now() - this._chatWaitStartedAt > 180000) {
+      this._chatWaitStartedAt = null
+      this._addMsg('ai', this.data.t.chatStillWorking)
+      this.setData({ typing: false, chatStatusText: '' })
+    }
     // Check for new coach messages
     if (this._lastMsgId !== null) {
       try {
@@ -3534,7 +3626,7 @@ Page({
 
   // ── HTTP helper ─────────────────────────────────────────────────────────────
 
-  _req(url, method = 'GET', data = null) {
+  _req(url, method = 'GET', data = null, timeoutMs = null) {
     return new Promise((resolve, reject) => {
       const opts = {
         url, method,
@@ -3544,6 +3636,13 @@ Page({
       }
       if (app.globalData.sandboxMode && method !== 'GET') data = { ...(data || {}), sandbox: true }
       if (data) opts.data = data
+      // Default (unset) falls back to wx.request's built-in 60s timeout — fine for every
+      // other call, but /api/chat holds the request open for Viva's full agentic
+      // plan/generate/judge/revise loop, which we've measured at 60-120s+ worst case, so it
+      // needs its own longer override (see _sendMessage) or it trips the client timeout
+      // before the worker responds, even though the reply still arrives moments later via
+      // the separate notification poller.
+      if (timeoutMs) opts.timeout = timeoutMs
       wx.request(opts)
     })
   },

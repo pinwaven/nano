@@ -450,7 +450,7 @@ Page({
           const user = uRes.data?.user
           if (!user) throw new Error('not found')
           const channel = this.data.channels.find(c => c.id === user.channel_id) || null
-          const coach = this.data.coaches.find(c => c.id === user.coach_id) || null
+          const coach = this.data.coaches.find(c => c.user_id === user.user_id) || null
 
           const originUser = app.globalData.user
           const originChannel = app.globalData.channel

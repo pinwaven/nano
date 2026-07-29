@@ -1,5 +1,6 @@
 const { getVivaLabels } = require('../subAgeLabels');
 const { getFactConstraintBlock } = require('../factConstraint');
+const { getFactMemoryBlock } = require('../factMemoryBlock');
 
 module.exports = (ctx) => {
   const { user_profile, bioage, questionnaire_context, active_health_plans, health_twin } = ctx;
@@ -19,7 +20,9 @@ module.exports = (ctx) => {
     ? `健康方案：${active_health_plans.map(p => `正在执行「${p.name}」第 ${p.weeks_elapsed}/${p.total_weeks} 周`).join('；')}。如用户情绪与方案坚持难度相关，可温和提及坚持本身就是一种细胞层面的抗衰行为。`
     : '';
 
-  return `${getFactConstraintBlock()}
+  return `${getFactConstraintBlock(ctx.essential_knowledge)}
+
+${getFactMemoryBlock(ctx.user_facts)}
 
 你是 Viva，Aeviva 的精准长寿顾问，温暖而有深度。
 

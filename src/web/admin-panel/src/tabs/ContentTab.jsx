@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { GraduationCap, ClipboardList, Activity, Calendar } from 'lucide-react';
+import { GraduationCap, ClipboardList, Activity, Calendar, BookOpen } from 'lucide-react';
 import { useLang } from '../shared.jsx';
 import { AcademyTab } from './AcademyTab.jsx';
 import { QuestionnairesTab } from './QuestionnairesTab.jsx';
 import { HealthPlansTab } from './HealthPlansTab.jsx';
 import { EventsTab } from './EventsTab.jsx';
+import { KnowledgeTab } from './KnowledgeTab.jsx';
 
 function ContentTab({ channels, users, coaches, dots, healthPlanTemplates, session, isSuperadmin, onRefresh }) {
   const { t } = useLang();
@@ -25,12 +26,16 @@ function ContentTab({ channels, users, coaches, dots, healthPlanTemplates, sessi
         <button className={`subtab-btn${subTab === 'events' ? ' active' : ''}`} onClick={() => setSubTab('events')}>
           <Calendar size={13} /> {t.nav.events}
         </button>
+        <button className={`subtab-btn${subTab === 'knowledge' ? ' active' : ''}`} onClick={() => setSubTab('knowledge')}>
+          <BookOpen size={13} /> {t.nav.knowledge || 'Knowledge'}
+        </button>
       </div>
 
       {subTab === 'academy'        && <AcademyTab />}
       {subTab === 'questionnaires' && <QuestionnairesTab channels={channels} users={users} coaches={coaches} />}
       {subTab === 'health-plans'   && <HealthPlansTab dots={dots} healthPlanTemplates={healthPlanTemplates} onRefresh={onRefresh} />}
       {subTab === 'events'         && <EventsTab channels={channels} session={session} isSuperadmin={isSuperadmin} onRefresh={onRefresh} />}
+      {subTab === 'knowledge'      && <KnowledgeTab isSuperadmin={isSuperadmin} />}
     </>
   );
 }
