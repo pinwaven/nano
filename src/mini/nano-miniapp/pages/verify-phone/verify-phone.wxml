@@ -29,7 +29,7 @@
     </view>
 
     <button
-      wx:if="{{countryOptions[countryIndex].otpSupported}}"
+      wx:if="{{false}}"
       class="login-btn-secondary"
       open-type="getPhoneNumber"
       bindgetphonenumber="handleGetPhone"
