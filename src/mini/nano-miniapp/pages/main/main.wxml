@@ -142,6 +142,8 @@
                 src="{{item.imageUrl}}"
                 mode="widthFix"
                 show-menu-by-longpress="{{true}}"
+                data-id="{{item.id}}"
+                bindload="_onChatImageLoad"
               />
               <text wx:elif="{{item.role === 'user'}}" class="msg-text" selectable="true">{{item.content}}</text>
               <mp-html wx:elif="{{item.content}}" content="{{item.content}}" selectable="{{true}}" class="msg-html" /></view>
@@ -152,6 +154,7 @@
               <view class="typing-dot"></view>
               <view class="typing-dot"></view>
               <view class="typing-dot"></view>
+              <text wx:if="{{chatStatusText}}" class="typing-status-text">{{chatStatusText}}</text>
             </view>
           </view>
 

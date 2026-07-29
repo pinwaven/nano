@@ -6,6 +6,12 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Added
+
+- **`POST /partner-lookup-gcn`** (`functions/worker/handlers/partners.js` `handleGcnPartnerLookup`, wired in `functions/worker/index.js`, added to the `GCN_ALLOWED_PATHS` service-token allowlist)
+
+  GCN's `lookupNanoDirectStore` (`gcn`'s `auth/index.js`) has called this exact path at login/webview-SSO time since the aeviva provisioning refactor, to decide whether to auto-create an unprovisioned GCN partner row at the caller's real nano tier instead of defaulting to plain `member` — but the endpoint was never actually implemented on nano's side, and wasn't allow-listed either. Every call 403'd/404'd, was swallowed by `lookupNanoDirectStore`'s `catch` (resolves to `null` on any failure, by design), and silently downgraded every not-yet-provisioned real partner to `member` on their first Store-tab visit. Found investigating a report of a real `leader_partner` showing up as plain `member` in GCN — see gcn's own `CHANGELOG.md` for the matching fix on its side (a second, compounding bug in how GCN ranks multiple partner rows for the same account). Thin wrapper around the existing `handleGetPartnerByPhone` logic (same phone/channel-subtree scoping), just exposed as a fixed POST path so it's allow-listable under the scoped `GCN_API_TOKEN`.
+
 ### Changed
 
 - **Aeviva Store tab now re-checks `phone_verified` against the server instead of trusting the cached flag** (`mini/nano-miniapp/pages/main/main.js` `switchTab`/new `_checkPhoneVerified()`, `functions/worker/handlers/users.js` `handleGetUser`)

@@ -264,7 +264,17 @@
 }
 
 .chat-inner {
-  padding: 24rpx 28rpx 8rpx;
+  /* Generous bottom padding is a deliberate safety margin, not decorative — real WeChat
+     clients (unlike the DevTools simulator) sometimes don't fully repaint a newly-appended
+     LAST message into the scroll-view's content box until something forces a relayout, which
+     an actual overflowing scroll does but a short message that fits within the viewport never
+     triggers. scrollTop/scroll-into-view are no-ops when there's nothing to scroll, so they
+     can't compensate for this — found 2026-07-29 via a real-device screenshot showing a short
+     reply clipped almost entirely, while long (overflowing, actively-scrolled) messages
+     rendered fine. Padding this much larger than the disclaimer+input bar's own height gives
+     enough buffer that the last line of any message clears the clipping edge regardless.
+     Do not shrink this back down without confirming the underlying repaint bug is fixed. */
+  padding: 24rpx 28rpx 200rpx;
   display: flex;
   flex-direction: column;
   gap: 16rpx;
@@ -399,6 +409,12 @@
 
 .typing-dot:nth-child(2) { animation-delay: 0.2s; }
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+.typing-status-text {
+  font-size: 24rpx;
+  opacity: 0.75;
+  margin-left: 12rpx;
+}
 
 @keyframes dot-bounce {
   0%, 80%, 100% { transform: scale(0.7); opacity: 0.35; }

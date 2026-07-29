@@ -106,6 +106,22 @@ async function handleGetPartnerByPhone(phone, channelKey) {
     }
 }
 
+// POST /partner-lookup-gcn  (GCN service-token only, see GCN_ALLOWED_PATHS in index.js)
+// Body: { phone, channel }
+// Same lookup as GET /api/partners/by-phone/:phone (phone scoped to a channel key_name and
+// its sub-channels), exposed as a POST for GCN's service-token caller — GCN's own
+// lookupNanoDirectStore/finalizeSectorLogin/handleNanoSSO call this at login/webview-SSO time
+// to decide whether an unprovisioned GCN partner row should be auto-created at the caller's
+// real nano tier instead of defaulting to plain 'member'. Was missing entirely until
+// 2026-07-28 (never implemented, not in GCN_ALLOWED_PATHS), so every such call failed silently
+// and every not-yet-provisioned partner landed on GCN as 'member' — see partner-system.md.
+async function handleGcnPartnerLookup(body) {
+    const { phone, channel } = body || {};
+    const result = await handleGetPartnerByPhone(phone, channel);
+    if (!result.success) return result;
+    return { success: true, partner: result.partner };
+}
+
 // POST /api/partner-sales
 // Body: { partner_id, sale_amount_cny, description? }
 // Reports a completed sale for an existing partner and triggers nano's own commission
@@ -1039,6 +1055,7 @@ module.exports = {
     handleGetPartners,
     handleGetPartner,
     handleGetPartnerByPhone,
+    handleGcnPartnerLookup,
     handlePostPartner,
     handlePostPartnerGcnProvision,
     handlePostPartnerInviteCode,
