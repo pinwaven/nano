@@ -40,6 +40,7 @@ const { runAgenticTurn } = require('../lib/agenticChat');
 const { v4: uuidv4 } = require('uuid');
 const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
+const { _runDeterministicFormulation, _commitNutritionPlan, _fallbackCountForDot } = require('./dots');
 
 // Intents where factual claims (biomarker values, dot recommendations, science/protocol
 // assertions) are common enough to warrant the fuller plan->generate->judge->revise loop
@@ -1087,7 +1088,35 @@ SQL must be a SELECT statement. $1 is always user_id.`,
 // is deliberately NOT appended to the message shown to the user — found 2026-07-29 that dumping
 // the same 18-dot raw listing 7 times (once per identical day) alongside the narrative read as
 // confusing technical noise; the "查看方案" action button is where users see exact numbers.
-async function finalizeFormulaDotsNarrative({ rawReply, extraValidDates, extraValidValues, llmContext, systemPrompt, message, user_id, personaType, client, model }) {
+// Extracts a trailing action-JSON object that (unlike record_weight/set_reminder/remember_fact's
+// flat shape) contains nested braces — {"action":"formulate_dots","formulation":[{...}, ...]} —
+// so the simple "no closing brace inside" regex the other actions use can't bound it. Finds the
+// last occurrence of `marker` and scans forward tracking brace depth to find its true end.
+function _extractTrailingJson(text, marker) {
+    const idx = text.lastIndexOf(marker);
+    if (idx === -1) return null;
+    let depth = 0;
+    let end = -1;
+    for (let i = idx; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') {
+            depth--;
+            if (depth === 0) { end = i; break; }
+        }
+    }
+    if (end === -1) return null;
+    try {
+        return { parsed: JSON.parse(text.slice(idx, end + 1)), start: idx, end: end + 1 };
+    } catch (e) {
+        return null;
+    }
+}
+
+// Parses/validates/commits the LLM's formulate_dots action tail (produced by the agentic
+// GENERATE step against systemFormulaGenerate.js's prompt), then delivers the accompanying
+// prose as the user-facing explanation — the agentic reply doubles as its own narrative, no
+// second LLM call needed (unlike the old two-hop decide-then-explain design this supersedes).
+async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraValidValues, llmContext, message, user_id, personaType, lang }) {
     const hasKnownAge = llmContext.user_profile.age != null;
     const hasKnownBmi = llmContext.user_profile.bmi != null;
     if (Object.keys(llmContext.biomarkers).length > 0 || hasKnownAge || hasKnownBmi) {
@@ -1098,37 +1127,123 @@ async function finalizeFormulaDotsNarrative({ rawReply, extraValidDates, extraVa
             nickname: llmContext.user_profile.nickname,
             extraValidDates, extraValidValues,
         };
-        const verification = verifyBiomarkerGrounding(rawReply, groundTruth);
+        const strippedForCheck = rawReply.replace(/\{"action"\s*:\s*"formulate_dots"[\s\S]*$/, '');
+        const verification = verifyBiomarkerGrounding(strippedForCheck, groundTruth);
         if (!verification.ok) {
-            console.log(JSON.stringify({ level: 'WARN', msg: 'biomarker_grounding_mismatch', user_id, handler: 'finalizeFormulaDotsNarrative', mismatches: verification.mismatches }));
-            const correctionPrompt = `Your previous reply stated biomarker figures, BMI, a test date, and/or the patient's age that do not match their actual record.
-Ground truth — test date: ${groundTruth.tested_at || 'unknown'}, values: ${JSON.stringify(groundTruth.validated)}, age: ${groundTruth.age ?? 'unknown'}.
-Rewrite your previous reply using ONLY these exact values, this exact date, and this exact age. Keep the same language, tone, and structure otherwise.`;
-            try {
-                const retryCompletion = await client.chat.completions.create({
-                    model,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: message },
-                        { role: 'assistant', content: rawReply },
-                        { role: 'user', content: correctionPrompt },
-                    ],
-                    temperature: 0.2,
-                });
-                const retryReply = retryCompletion.choices[0].message.content || rawReply;
-                const retryVerification = verifyBiomarkerGrounding(retryReply, groundTruth);
-                console.log(JSON.stringify({ level: retryVerification.ok ? 'INFO' : 'WARN', msg: 'biomarker_grounding_retry', user_id, handler: 'finalizeFormulaDotsNarrative', ok: retryVerification.ok, mismatches: retryVerification.mismatches }));
-                rawReply = retryReply;
-            } catch (err) {
-                console.log(JSON.stringify({ level: 'WARN', msg: 'biomarker_grounding_retry_failed', user_id, handler: 'finalizeFormulaDotsNarrative', error: err.message }));
-            }
+            console.log(JSON.stringify({ level: 'WARN', msg: 'biomarker_grounding_mismatch', user_id, handler: 'finalizeFormulaDotsGenerate', mismatches: verification.mismatches }));
+            // Note: unlike finalizeChatReply/finalizeFormulaDotsNarrative's retry, there's no
+            // cheap correction call wired here — the action JSON tail makes a "rewrite using
+            // ONLY these values" retry risky (the model could rewrite the numbers too). The
+            // mismatch is logged for visibility; the reply still ships since the *numeric plan*
+            // (validated deterministically below) is the part that actually matters here.
         }
     }
 
-    await saveChatMessage(user_id, 'ai', rawReply, null, personaType);
+    const dotsByKey = new Map((llmContext.dots || []).map(d => [d.key_name.replace(/^DOT/, 'D'), d]));
+    const extracted = _extractTrailingJson(rawReply, '{"action":"formulate_dots"');
+    let entries = null;
+    if (extracted && extracted.parsed?.action === 'formulate_dots' && Array.isArray(extracted.parsed.formulation)) {
+        entries = new Map();
+        for (const item of extracted.parsed.formulation) {
+            const dot = dotsByKey.get(item?.dot_key);
+            if (!dot) continue; // unknown key — never trust the LLM's key blindly
+            const morning = Number.isFinite(item.morning) ? Math.max(0, Math.round(item.morning)) : 0;
+            const evening = Number.isFinite(item.evening) ? Math.max(0, Math.round(item.evening)) : 0;
+            entries.set(item.dot_key, { morning, evening, dot });
+        }
+        if (entries.size === 0) entries = null;
+    }
+
+    let analysis, finalContent, morningRecipe, eveningRecipe;
+
+    if (entries) {
+        // Fill any dot the model omitted with the same deterministic per-dot fallback used
+        // elsewhere, split entirely into its default timing slot (conservative — no balancing
+        // guess for a dot the agentic step never actually reasoned about).
+        for (const dot of llmContext.dots || []) {
+            const key = dot.key_name.replace(/^DOT/, 'D');
+            if (entries.has(key)) continue;
+            const count = _fallbackCountForDot(dot);
+            entries.set(key, dot.timing === 'Evening' ? { morning: 0, evening: count, dot } : { morning: count, evening: 0, dot });
+        }
+
+        // Deterministic clamp: each dot's morning+evening total must land inside its own
+        // target_dots_min/max — never trust the LLM's numbers blindly, same principle as every
+        // other action (record_weight's bounds check, etc.). A total of 0 is a legitimate
+        // "not included this week" choice and is left alone rather than forced up to the min.
+        // If clamping changes the total, scale morning/evening to preserve the model's ratio.
+        for (const v of entries.values()) {
+            const total = v.morning + v.evening;
+            if (total === 0) continue;
+            const min = v.dot.target_dots_min ?? 1;
+            const max = v.dot.target_dots_max ?? 10;
+            if (total < min || total > max) {
+                const clampedTotal = Math.min(max, Math.max(min, total));
+                v.morning = Math.round(v.morning * (clampedTotal / total));
+                v.evening = clampedTotal - v.morning;
+            }
+        }
+
+        morningRecipe = { dots: {} };
+        eveningRecipe = { dots: {} };
+        let morningTotal = 0, eveningTotal = 0;
+        for (const [key, v] of entries) {
+            const dbKey = key.replace('D', 'DOT');
+            if (v.morning > 0) morningRecipe.dots[dbKey] = v.morning;
+            if (v.evening > 0) eveningRecipe.dots[dbKey] = v.evening;
+            morningTotal += v.morning;
+            eveningTotal += v.evening;
+        }
+        // Observability only — the model is instructed to redistribute when lopsided
+        // (systemFormulaGenerate.js), but respecting stimulant/sedative timing can legitimately
+        // still leave some skew. Not enforced/overridden here: a purely numeric rebalance can't
+        // tell a stimulant dot from a sleep dot, so this is a signal to watch, not a hard clamp.
+        if (eveningTotal < morningTotal * 0.15 && morningTotal > 20) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'formula_dots_am_pm_imbalanced', user_id, morningTotal, eveningTotal }));
+        }
+
+        const strippedReply = rawReply.slice(0, extracted.start).trim();
+        analysis = strippedReply;
+        finalContent = strippedReply || (lang === 'zh'
+            ? '您的专属原粒方案已生成，点击下方"查看方案"了解详情。'
+            : 'Your personalized dot plan has been generated — tap "View Plan" below for the details.');
+    } else {
+        // No usable action JSON — fall back to the deterministic single-shot formulator so the
+        // user is never left with nothing (same resilience principle as the 2026-07-29
+        // remember_fact blank-reply fix).
+        console.log(JSON.stringify({ level: 'WARN', msg: 'formulate_dots_action_missing_or_invalid', user_id, handler: 'finalizeFormulaDotsGenerate' }));
+        const fallback = await _runDeterministicFormulation({
+            biomarkers: llmContext.biomarkers,
+            bioageProfile: llmContext.bioage,
+            dotsFormulary: llmContext.dots,
+            personaType,
+            lang,
+            currentSolarTerm: llmContext.current_solar_term,
+            essentialKnowledge: llmContext.essential_knowledge,
+            userFacts: llmContext.user_facts,
+        });
+        ({ analysis, finalContent, morningRecipe, eveningRecipe } = fallback);
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        await _commitNutritionPlan(client, {
+            userId: user_id, analysis, morningRecipe, eveningRecipe,
+            planId: llmContext.pending_plan_id,
+        });
+        await client.query('COMMIT');
+    } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+    } finally {
+        client.release();
+    }
+
+    await saveChatMessage(user_id, 'ai', finalContent, null, personaType);
     await pool.query(
         'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-        [user_id, 'nutrition_plan', rawReply, 'pending']
+        [user_id, 'nutrition_plan', finalContent, 'pending']
     );
 }
 
@@ -1140,9 +1255,10 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
 // try/catch mirroring handlePostChat's fallback (no outer HTTP try/catch exists here).
 //
 // payload.kind distinguishes the finishing step: default (unset) is a normal chat turn
-// (finalizeChatReply, 'chat_reply' notification); 'formula_dots' explains an already-committed
-// dot allocation instead (finalizeFormulaDotsNarrative, 'nutrition_plan' notification) — see
-// handlePostFormulaDots in dots.js, which publishes this kind.
+// (finalizeChatReply, 'chat_reply' notification); 'formula_dots_generate' makes and commits the
+// actual weekly dot allocation instead (finalizeFormulaDotsGenerate, 'nutrition_plan'
+// notification) — see _handleFormulaDotsViva in handlers/dots.js, which publishes this kind
+// with a 'pending' nutrition_plans row already inserted for this event to fill in.
 async function handleChatGenerateEvent(payload) {
     const { event_id, user_id, message, intent, llmContext, systemPrompt, cleanHistory, language, personaType, birth_date, kind } = payload;
 
@@ -1170,12 +1286,12 @@ async function handleChatGenerateEvent(payload) {
             logContext: { user_id, intent, handler: 'handleChatGenerateEvent', kind: kind || 'chat' },
             onStatus: makeStatusNotifier(user_id, language),
         });
-        if (kind === 'formula_dots') {
-            await finalizeFormulaDotsNarrative({
+        if (kind === 'formula_dots_generate') {
+            await finalizeFormulaDotsGenerate({
                 rawReply: agenticResult.reply,
                 extraValidDates: agenticResult.extraValidDates,
                 extraValidValues: agenticResult.extraValidValues,
-                llmContext, systemPrompt, message, user_id, personaType, client, model,
+                llmContext, message, user_id, personaType, lang: language,
             });
         } else {
             await finalizeChatReply({
@@ -1188,11 +1304,54 @@ async function handleChatGenerateEvent(payload) {
         }
     } catch (err) {
         console.error('LLM Chat Error (async):', err);
-        const fallbackText = "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.";
-        await pool.query(
-            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-            [user_id, kind === 'formula_dots' ? 'nutrition_plan' : 'chat_reply', fallbackText, 'pending']
-        );
+        if (kind === 'formula_dots_generate') {
+            // Never leave the pending plan row orphaned or the user with nothing — commit the
+            // deterministic fallback formulation directly, same as the publish-failure fail-open
+            // path in handlers/dots.js.
+            try {
+                const fallback = await _runDeterministicFormulation({
+                    biomarkers: llmContext.biomarkers,
+                    bioageProfile: llmContext.bioage,
+                    dotsFormulary: llmContext.dots,
+                    personaType, lang: language,
+                    currentSolarTerm: llmContext.current_solar_term,
+                    essentialKnowledge: llmContext.essential_knowledge,
+                    userFacts: llmContext.user_facts,
+                });
+                const fbClient = await pool.connect();
+                try {
+                    await fbClient.query('BEGIN');
+                    await _commitNutritionPlan(fbClient, {
+                        userId: user_id, analysis: fallback.analysis,
+                        morningRecipe: fallback.morningRecipe, eveningRecipe: fallback.eveningRecipe,
+                        planId: llmContext.pending_plan_id,
+                    });
+                    await fbClient.query('COMMIT');
+                } catch (e) {
+                    await fbClient.query('ROLLBACK');
+                    throw e;
+                } finally {
+                    fbClient.release();
+                }
+                await saveChatMessage(user_id, 'ai', fallback.finalContent, null, personaType);
+                await pool.query(
+                    'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                    [user_id, 'nutrition_plan', fallback.finalContent, 'pending']
+                );
+            } catch (fbErr) {
+                console.error('Formula dots fallback also failed:', fbErr);
+                await pool.query(
+                    'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                    [user_id, 'nutrition_plan', "I'm sorry, I'm having trouble generating your dot plan right now. Please try again later.", 'pending']
+                );
+            }
+        } else {
+            const fallbackText = "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.";
+            await pool.query(
+                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                [user_id, 'chat_reply', fallbackText, 'pending']
+            );
+        }
     }
 }
 

@@ -59,11 +59,11 @@ ${formularyLines}
 1. 分析 (Analysis): 用两三句话简要说明基于上述数据的核心健康洞察。
 2. 配方 (Formulation): 为配方库中的每个短代码分配每日数量 (1-10)。
 
-输出格式 (必须严格遵守):
+输出格式 (必须严格遵守，短代码必须与上方配方库中出现的完全一致，如 D-N1、D-N2)：
 ANALYSIS: [你的简短分析]
 FORMULATION:
-D01:N
-D02:N
+D-N1:N
+D-N2:N
 ... (以此类推)
 
 规则：
@@ -99,11 +99,11 @@ TASK:
 1. Analysis: Provide a 2-3 sentence summary of core health insights based on the data.
 2. Formulation: Assign a daily count (1-10) for every dot key in the formulary.
 
-OUTPUT FORMAT (Strictly follow this):
+OUTPUT FORMAT (strictly follow this — short keys MUST match the formulary above exactly, e.g. D-N1, D-N2):
 ANALYSIS: [Your brief analysis]
 FORMULATION:
-D01:N
-D02:N
+D-N1:N
+D-N2:N
 ... (etc.)
 
 Rules:

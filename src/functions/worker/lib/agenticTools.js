@@ -312,23 +312,42 @@ function createAgenticToolHandlers({ pool, user_id, language }) {
         },
 
         async get_nutrition_schedule(args = {}) {
+            // recipe is JSONB ({dots: {"DOT-N1": count, ...}}), not per-dot columns — flatten in
+            // JS here rather than in SQL. np.status lets the model tell an active week's schedule
+            // apart from a superseded/pending one instead of treating every past row as current.
             const limit = clampInt(args.limit, 20, 1, 50);
-            const clauses = ['user_id = $1'];
+            const clauses = ['ns.user_id = $1'];
             const params = [user_id];
             if (args.from_date) {
                 params.push(args.from_date);
-                clauses.push(`scheduled_date >= $${params.length}`);
+                clauses.push(`ns.scheduled_date >= $${params.length}`);
             }
             if (args.to_date) {
                 params.push(args.to_date);
-                clauses.push(`scheduled_date <= $${params.length}`);
+                clauses.push(`ns.scheduled_date <= $${params.length}`);
             }
             params.push(limit);
             const { rows } = await pool.query(
-                `SELECT scheduled_date, dot_id, dot_name, timing, quantity FROM nutrition_schedules WHERE ${clauses.join(' AND ')} ORDER BY scheduled_date DESC LIMIT $${params.length}`,
+                `SELECT ns.scheduled_date, ns.slot_name, ns.recipe, ns.is_taken, np.status AS plan_status
+                 FROM nutrition_schedules ns JOIN nutrition_plans np ON np.id = ns.plan_id
+                 WHERE ${clauses.join(' AND ')} ORDER BY ns.scheduled_date DESC LIMIT $${params.length}`,
                 params
             );
-            return { ok: true, data: rows };
+            const flattened = [];
+            for (const row of rows) {
+                const dots = row.recipe?.dots || {};
+                for (const [dotKey, count] of Object.entries(dots)) {
+                    flattened.push({
+                        scheduled_date: row.scheduled_date,
+                        slot_name: row.slot_name,
+                        dot_key: dotKey,
+                        count,
+                        is_taken: row.is_taken,
+                        plan_status: row.plan_status,
+                    });
+                }
+            }
+            return { ok: true, data: flattened };
         },
 
         async get_reminders(args = {}) {

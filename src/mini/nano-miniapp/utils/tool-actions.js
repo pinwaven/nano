@@ -54,12 +54,29 @@ async function runFormulaDs(openid, t, ctx) {
   addMsg('ai', t.formulaGenerating, true)
   setTyping(true)
   try {
-    await req(`${BASE}/api/formula-dots`, 'POST', { openid })
+    const res = await req(`${BASE}/api/formula-dots`, 'POST', { openid })
+    if (res.data?.processing) {
+      // Viva's dot-count decision now runs through the full agentic loop asynchronously (can
+      // take up to ~180s) — the schedule is NOT committed yet at this point, so showing
+      // formulaComplete + a working "view plan" button here would be misleading (found via a
+      // real device report, 2026-07-29: complete/view-plan showed within a second, but the
+      // actual plan wasn't ready for minutes). main.js's ctx defines onAsyncStart (it has a
+      // notification-polling loop that can deliver a follow-up message) — keep the
+      // typing/status UI alive for it. Callers without one (coach.js) get an honest
+      // "still working" message instead of a premature "done".
+      if (ctx.onAsyncStart) {
+        ctx.onAsyncStart()
+        return
+      }
+      addMsg('ai', t.formulaProcessing, true)
+      setTyping(false)
+      return
+    }
     addMsg('ai', t.formulaComplete, true)
     if (addActionMsg) addActionMsg('view_dots', t.formulaViewDots, true)
+    setTyping(false)
   } catch (e) {
     addMsg('ai', t.formulaError)
-  } finally {
     setTyping(false)
   }
 }

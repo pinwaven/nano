@@ -55,8 +55,10 @@ function KinoModal({ device, coaches, channels, onClose, onSave }) {
       let res;
       if (isEdit) {
         const machineNo = form.serial_number.trim().toUpperCase();
+        const { name, ...rest } = form;
         const payload = {
-          ...form,
+          ...rest,
+          machine_name: name,
           serial_number: machineNo,
           coach_id:   form.coach_id   !== '' ? parseInt(form.coach_id)   : null,
           channel_id: form.channel_id !== '' ? parseInt(form.channel_id) : null,

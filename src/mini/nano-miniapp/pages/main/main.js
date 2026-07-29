@@ -182,8 +182,9 @@ const T = {
     toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
     healthAdviceGenerating: '正在分析您的健康数据，请稍候…',
     healthAdviceError: '健康分析请求失败，请重试。',
-    formulaGenerating: '正在根据您的生物标志物生成7天营养方案…',
+    formulaGenerating: '正在为你定制营养方案…',
     formulaComplete: '您的7天营养方案已生成！',
+    formulaProcessing: '正在为您深度分析并配置本周方案，完成后会发送通知，请稍候…',
     formulaViewDots: '查看营养方案 →',
     formulaError: '方案生成失败，请重试。',
     chatHistoryLoadMore: '下拉或点此加载更早消息',
@@ -387,6 +388,7 @@ const T = {
     healthAdviceError: 'Health analysis request failed. Please try again.',
     formulaGenerating: 'Generating your 7-day nutrition plan from your biomarkers…',
     formulaComplete: 'Your 7-day nutrition plan is ready!',
+    formulaProcessing: "Deeply analyzing your data and formulating this week's plan — you'll get a notification when it's ready…",
     formulaViewDots: 'View Dots Plan →',
     formulaError: 'Plan generation failed. Please try again.',
     chatHistoryLoadMore: 'Pull or tap to load older messages',
@@ -2083,7 +2085,11 @@ Page({
     const { t } = this.data
     if (action === 'view_dots') {
       const { user, lang } = this.data
-      this.setData({ tab: 'dots', dotsLoading: true, cartridgesLoading: true })
+      // Dots lives as a sub-tab ('plansDotsSubTab') under the main 'plans' tab, not as its own
+      // top-level tab value — setting tab:'dots' directly matches none of the WXML's tab==='...'
+      // blocks (chat/health/plans/learn/store), rendering a blank page. Found via a real-device
+      // report, 2026-07-29.
+      this.setData({ tab: 'plans', plansDotsSubTab: 'dots', dotsLoading: true, cartridgesLoading: true })
       this._loadDots(user, lang)
       this._loadCartridges(user, lang)
     } else if (action === 'verify_phone') {
@@ -2249,6 +2255,14 @@ Page({
         }
         if (realRows.length > 0) {
           const newMsgs = realRows.map(n => ({ id: `n-${n.id}`, role: 'ai', content: mdToHtml(n.content || '') }))
+          // A 'nutrition_plan' row means Viva's async dot formulation just committed — add the
+          // "view plan" action button here (it used to be added synchronously right after the
+          // POST, back when the schedule was committed inline; now the commit itself happens
+          // async, so the button must wait for this same completion signal instead of appearing
+          // before the plan actually exists).
+          if (realRows.some(n => n.notification_type === 'nutrition_plan')) {
+            newMsgs.push({ id: `action-view_dots-${Date.now()}`, role: 'action', action: 'view_dots', label: this.data.t.formulaViewDots })
+          }
           const messages = [...this.data.messages, ...newMsgs]
           this._chatWaitStartedAt = null
           this.setData({ messages, typing: false, chatStatusText: '' })
