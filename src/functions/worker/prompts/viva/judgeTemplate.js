@@ -3,16 +3,20 @@
 /**
  * JUDGE step for the Viva agentic loop (lib/agenticChat.js) — grades a drafted reply against
  * the PLAN's intended claims, freshly re-fetched ground truth, the curated knowledge source
- * (prompts/viva/knowledge/), and the deterministic factCheck.js detectors, before the reply
+ * (lib/knowledgeBase.js, DB-backed as of 2026-07-29), and the deterministic factCheck.js
+ * detectors, before the reply
  * ships. An internal grading task, not user-facing content, so this stays in English like
  * intentClassifier.js/planTemplate.js.
  */
-module.exports = (draftReply, plan, groundTruth, knowledgeExcerpts, detectorHits) => {
+module.exports = (draftReply, plan, groundTruth, knowledgeExcerpts, detectorHits, message) => {
     const kbList = (knowledgeExcerpts || [])
         .map(e => `${e.id}: ${e.claim_zh} [${e.evidence_level}]`)
         .join('\n') || '(none matched)';
 
     return `Grade the DRAFT REPLY below for factual accuracy. You are a strict fact-checker, not a writing coach — ignore style/tone/language, only check claims against the provided ground truth.
+
+CURRENT USER MESSAGE (the user's own words this turn — anything the draft merely restates or acknowledges from this text is self-evidently true and must NOT be flagged as unsupported, even if it doesn't yet appear in "user_facts" below. "user_facts" only reflects facts saved from PRIOR turns; a personal fact the user is stating for the very first time right now — e.g. via a {"action":"remember_fact",...} tail in the draft — is grounded by this message itself, not by a database record that can't exist yet):
+${message || '(not provided)'}
 
 DRAFT REPLY:
 ${draftReply}

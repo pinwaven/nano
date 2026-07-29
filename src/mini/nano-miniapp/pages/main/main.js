@@ -2026,9 +2026,16 @@ Page({
       addActionMsg: (action, label, persist) => this._addActionMsg(action, label, persist),
       addImageMsg: (url) => this._addImageMsg(url),
       updateImageMsg: (id, url) => this._updateImageMsg(id, url),
-      req: (url, method, data) => this._req(url, method, data),
+      req: (url, method, data, timeoutMs) => this._req(url, method, data, timeoutMs),
       setTyping: (v) => this.setData({ typing: v }),
       onHealthReportPending: (payload) => this._startHealthReportConsent(payload),
+      // Fires when the backend acks with {processing:true} instead of the reply itself (Viva's
+      // agentic loop running async — see chat.generate) — mirrors _sendMessage's handling so the
+      // same status-caption/safety-timeout machinery in _poll covers this path too.
+      onAsyncStart: () => {
+        this._chatWaitStartedAt = Date.now()
+        this.setData({ typing: true, chatStatusText: this.data.t.chatThinking })
+      },
     }
     if (action === 'test_chip') {
       this._addMsg('ai', t.kinoScanPrompt)
@@ -2036,7 +2043,7 @@ Page({
     } else if (action === 'formula_dots') {
       toolActions.runFormulaDs(user.user_id, t, ctx)
     } else if (action === 'health_advice') {
-      toolActions.runHealthAdvice(user.user_id, t, ctx)
+      toolActions.runHealthAdvice(user.user_id, t, ctx, { async: true })
     } else if (action === 'upload_image') {
       const tempFilePath = e.detail?.tempFilePath
       if (tempFilePath) toolActions.runUploadImage(user.user_id, t, ctx, tempFilePath)

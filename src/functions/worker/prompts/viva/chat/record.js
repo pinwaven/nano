@@ -1,7 +1,10 @@
 const { getFactConstraintBlock } = require('../factConstraint');
+const { getFactMemoryBlock } = require('../factMemoryBlock');
 
-module.exports = ({ user_profile, last_weight }) => {
-  return `${getFactConstraintBlock()}
+module.exports = ({ user_profile, last_weight, essential_knowledge, user_facts }) => {
+  return `${getFactConstraintBlock(essential_knowledge)}
+
+${getFactMemoryBlock(user_facts)}
 
 你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造。用户想要记录个人数据。
 

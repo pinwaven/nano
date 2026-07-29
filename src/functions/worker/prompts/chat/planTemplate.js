@@ -37,6 +37,8 @@ ${JSON.stringify({ biomarkers: llmContext.biomarkers, bioage: llmContext.bioage 
 
 List every specific, checkable factual claim you plan to make: biomarker values, dot recommendations, science/protocol facts, dimension references, or evidence-level statements. Do not list general conversational content, only checkable facts.
 
+Do NOT list a user's own self-reported personal fact (diet, allergy, preference, goal — anything they just stated about themselves in USER MESSAGE above) as a claim needing evidence-level backing or knowledge-base grounding. Acknowledging what the user just told you is not a scientific claim; it doesn't need a citation or evidence-level phrase, and a lack of a matching knowledge-base entry is not a gap to flag.
+
 RESPOND WITH ONLY VALID JSON, NO OTHER TEXT:
 {
   "intended_claims": [

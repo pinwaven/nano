@@ -4,11 +4,15 @@ const { pool } = require('../lib/db');
 const { recordOrderCommissions, recordUserReferralCommission } = require('../lib/commissions');
 const { applyPartnerDiscount, getPartnerProductDiscount } = require('../lib/partnerCommissions');
 const { debitUser } = require('../lib/credits');
-const { getNowShanghai } = require('../lib/time-utils');
+const { getNowShanghai, calculateAge, formatToShanghai } = require('../lib/time-utils');
 const { getCurrentSolarTerm } = require('../lib/solarTerms');
 const OpenAI = require('openai');
 const systemNutritionTemplate = require('../prompts/nano/systemNutrition');
 const vivaSystemNutritionTemplate = require('../prompts/viva/systemNutrition');
+const systemFormulaExplainTemplate = require('../prompts/viva/systemFormulaExplain');
+const { v4: uuidv4 } = require('uuid');
+const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
+const { getEssentialBlock } = require('../lib/knowledgeBase');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
@@ -824,38 +828,6 @@ function _calcDotCounts() {
     return counts;
 }
 
-// Derived from dots.timing column at formulation time — do not hardcode here
-const MONTH_EN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const WEEKDAY_EN = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const WEEKDAY_ZH = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
-
-function _generatePlanText(dotCounts, availableDotKeys, lang, startDate, days, morningKeys, eveningKeys) {
-    const lines = [];
-    const start = new Date(startDate + 'T00:00:00+08:00');
-
-    for (let i = 0; i < days; i++) {
-        const d = new Date(start.getTime() + i * 86400000);
-        const dow = d.getDay();
-        const month = d.getMonth();
-        const day = d.getDate();
-
-        const mParts = morningKeys
-            .filter(k => availableDotKeys.has(k))
-            .map(k => `${k}x${dotCounts[k] || 3}`);
-        const eParts = eveningKeys
-            .filter(k => availableDotKeys.has(k))
-            .map(k => `${k}x${dotCounts[k] || 3}`);
-
-        if (lang === 'zh') {
-            lines.push(`${month + 1}月${day}日 (${WEEKDAY_ZH[dow]}): 早上 ${mParts.join(' ')} 晚上 ${eParts.join(' ')}`);
-        } else {
-            lines.push(`${MONTH_EN[month]} ${day}, ${WEEKDAY_EN[dow]}: Morning ${mParts.join(' ')} Evening ${eParts.join(' ')}`);
-        }
-    }
-
-    return lines.join('\n');
-}
-
 async function handlePostFormulaDots(body) {
     const { openid } = body;
     if (!openid) return { success: false, error: 'openid is required' };
@@ -865,11 +837,11 @@ async function handlePostFormulaDots(body) {
         const [userResult, bioResult, dotsResult] = await Promise.all([
             pool.query('SELECT * FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]),
             pool.query(
-                `SELECT bio_age, data FROM biomarkers WHERE user_id = (SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1)
+                `SELECT bio_age, data, tested_at FROM biomarkers WHERE user_id = (SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1)
                  AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
                 [openid]
             ),
-            pool.query(`SELECT id, key_name, name, name_zh, timing, ingredients, ingredients_zh FROM dots ORDER BY id ASC`),
+            pool.query(`SELECT id, key_name, name, name_zh, timing, ingredients, ingredients_zh, sub_age_target FROM dots ORDER BY id ASC`),
         ]);
 
         if (userResult.rows.length === 0) return { success: false, error: 'User not found' };
@@ -890,6 +862,11 @@ async function handlePostFormulaDots(body) {
         const startDate = getNowShanghai().toISODate();
         const lang = user.language || 'zh';
         const currentSolarTerm = personaType === 'viva' ? getCurrentSolarTerm(getNowShanghai().toJSDate()) : null;
+        const essentialKnowledge = personaType === 'viva' ? await getEssentialBlock('viva') : null;
+        const userFactsResult = await pool.query(
+            `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
+            [user.user_id]
+        );
 
         // Ask LLM to assign per-dot counts based on biomarkers
         const nutritionContext = {
@@ -900,6 +877,8 @@ async function handlePostFormulaDots(body) {
             start_date: startDate,
             days_needed: 7,
             current_solar_term: currentSolarTerm,
+            essential_knowledge: essentialKnowledge,
+            user_facts: userFactsResult.rows,
         };
         const llmClient = getLlmClient();
         const model = process.env.MODEL || 'qwen3.6-plus';
@@ -956,8 +935,11 @@ async function handlePostFormulaDots(body) {
             if (!dotCounts[k]) dotCounts[k] = fallbackCounts[k] || 4;
         }
 
-        const planText = _generatePlanText(dotCounts, availableDotKeys, lang, startDate, 7, morningKeys, eveningKeys);
-        const finalContent = analysis ? `${analysis}\n\n${planText}` : planText;
+        // The chat message deliberately does NOT include a raw per-dot text dump (previously
+        // _generatePlanText's D-N1x3 D-N2x3 ... breakdown, repeated once per identical day) —
+        // found 2026-07-29 that this read as confusing technical noise; the "查看方案" (view
+        // plan) action button is the actual place users should see exact per-dot numbers.
+        const finalContent = analysis || (lang === 'zh' ? '您的专属原粒方案已生成，点击下方"查看方案"了解详情。' : 'Your personalized dot plan has been generated — tap "View Plan" below for the details.');
 
         const startDateObj = getNowShanghai();
         const endDateObj = startDateObj.plus({ days: 6 });
@@ -999,20 +981,91 @@ async function handlePostFormulaDots(body) {
                 );
             }
 
-            await client.query(
-                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                [user.user_id, 'nutrition_plan', finalContent, 'pending']
-            );
-
-            // Also save to chat history for persistence
-            await _saveChatMessage(user.user_id, 'ai', finalContent);
-
             await client.query('COMMIT');
         } catch (e) {
             await client.query('ROLLBACK');
             throw e;
         } finally {
             client.release();
+        }
+
+        // Schedule is now committed — everything below is about DELIVERING the user-facing
+        // explanation, decoupled from the transaction above. Nano keeps today's exact
+        // behavior (synchronous insert of the Phase-1 blurb). Viva gets a richer explanation,
+        // generated asynchronously via the agentic loop (2026-07-29) — grounded against the
+        // REAL committed allocation below (formulatedPlan), not re-derived from scratch, so
+        // JUDGE's job here is unusually precise: does the narrative match what was actually
+        // scheduled, not "is this claim generally plausible."
+        if (personaType === 'viva') {
+            const formulatedPlan = Object.entries(dotCounts)
+                .filter(([key, count]) => availableDotKeys.has(key) && count > 0)
+                .map(([key]) => {
+                    const dot = dotsResult.rows.find(d => d.key_name.replace(/^DOT/, 'D') === key);
+                    return {
+                        dot_id: dot?.id,
+                        key_name: dot?.key_name,
+                        name_zh: dot?.name_zh,
+                        name: dot?.name,
+                        count: dotCounts[key],
+                        timing: morningKeys.includes(key) ? 'Morning' : (eveningKeys.includes(key) ? 'Evening' : (dot?.timing || null)),
+                        target_dimension: dot?.sub_age_target || null,
+                    };
+                });
+
+            const age = calculateAge(user.birth_date);
+            const heightCm = user.bio_data?.height;
+            const weightKg = user.bio_data?.weight;
+            const bmi = heightCm && weightKg ? Math.round((weightKg / ((heightCm / 100) ** 2)) * 10) / 10 : null;
+
+            const llmContext = {
+                user_profile: { nickname: user.nickname, gender: user.gender, age, bmi, language: lang },
+                biomarkers,
+                biomarkers_tested_at: latestBio?.tested_at
+                    ? formatToShanghai(new Date(latestBio.tested_at)).slice(0, 10)
+                    : null,
+                bioage: bioageProfile || {},
+                dots: dotsResult.rows,
+                plan: null,
+                health_twin: null,
+                now_iso: getNowShanghai().toISO(),
+                questionnaire_context: null,
+                active_health_plans: [],
+                sub_age_display_names: null,
+                current_solar_term: currentSolarTerm,
+                formulated_plan: formulatedPlan,
+                essential_knowledge: essentialKnowledge,
+                user_facts: userFactsResult.rows,
+            };
+            const explainSystemPrompt = systemFormulaExplainTemplate(llmContext);
+            const triggerMsg = '请解释一下我刚配置的原粒方案。';
+
+            try {
+                await publishChatGenerateEvent({
+                    event_id: uuidv4(), user_id: user.user_id, kind: 'formula_dots',
+                    message: triggerMsg, intent: 'nutrition_question', llmContext,
+                    systemPrompt: explainSystemPrompt, cleanHistory: [], language: lang, personaType,
+                });
+            } catch (ebErr) {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'chat_generate_publish_failed_fallback_sync', user_id: user.user_id, handler: 'handlePostFormulaDots', error: ebErr.message }));
+                // Fail open: the schedule is already committed above, so the only thing at risk
+                // here is the explanation — fall back to today's plain blurb rather than losing
+                // it entirely.
+                await pool.query(
+                    'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                    [user.user_id, 'nutrition_plan', finalContent, 'pending']
+                );
+                await _saveChatMessage(user.user_id, 'ai', finalContent, null, personaType);
+            }
+        } else {
+            await pool.query(
+                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                [user.user_id, 'nutrition_plan', finalContent, 'pending']
+            );
+            // Also save to chat history for persistence — personaType passed explicitly here
+            // (2026-07-29 fix): this previously always defaulted to 'nano', so a viva user's
+            // formula-dots confirmation was invisible in their (persona-scoped) chat history on
+            // reload, even though it briefly appeared via the one-time notification poll.
+            await _saveChatMessage(user.user_id, 'ai', finalContent, null, personaType);
         }
 
         return { success: true };

@@ -321,6 +321,10 @@ function UserDetailModal({ user, onClose, session, onDeleted }) {
   const [reportDetail, setReportDetail]                 = useState(null);
   const [reportDetailLoading, setReportDetailLoading]   = useState(false);
 
+  const [facts, setFacts]               = useState(null);
+  const [factsLoading, setFactsLoading] = useState(false);
+  const [factModal, setFactModal]       = useState(null);
+
   const openid = user?.user_id || user?.id;
 
   useEffect(() => {
@@ -357,6 +361,14 @@ function UserDetailModal({ user, onClose, session, onDeleted }) {
     }
   };
 
+  const fetchFacts = () => {
+    setFactsLoading(true);
+    axios.get(`/api/user-facts?openid=${encodeURIComponent(openid)}`)
+      .then(r => setFacts(r.data.facts || []))
+      .catch(() => setFacts([]))
+      .finally(() => setFactsLoading(false));
+  };
+
   const switchTab = (next) => {
     setTab(next);
     if (next === 'plans' && plans === null && !plansLoading) {
@@ -372,6 +384,9 @@ function UserDetailModal({ user, onClose, session, onDeleted }) {
         .then(r => setMessages(r.data.messages || []))
         .catch(() => setMessages([]))
         .finally(() => setChatLoading(false));
+    }
+    if (next === 'facts' && facts === null && !factsLoading) {
+      fetchFacts();
     }
   };
 
@@ -407,6 +422,7 @@ function UserDetailModal({ user, onClose, session, onDeleted }) {
     { id: 'health', label: t.userDetail.tabHealth },
     { id: 'plans',  label: t.userDetail.tabPlans  },
     { id: 'chat',   label: t.userDetail.tabChat   },
+    { id: 'facts',  label: t.userDetail.tabFacts || 'Facts' },
   ];
 
   return (
@@ -756,6 +772,54 @@ function UserDetailModal({ user, onClose, session, onDeleted }) {
             </div>
           )}
 
+          {/* ── FACTS ── */}
+          {tab === 'facts' && (
+            <div className="udm-chat-fill">
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                <button className="btn-primary" onClick={() => setFactModal({ type: 'add' })}>
+                  <Plus size={14} />{t.userDetail.addFact || 'Add Fact'}
+                </button>
+              </div>
+              {factsLoading ? (
+                <div className="drawer-empty">{t.topbar.loading}</div>
+              ) : !facts || facts.length === 0 ? (
+                <div className="drawer-empty">{t.userDetail.noFacts || 'No personal facts recorded yet'}</div>
+              ) : (
+                <table className="data-table">
+                  <thead><tr>
+                    <th>{t.userDetail.factCategory || 'Category'}</th>
+                    <th>{t.userDetail.factText || 'Fact'}</th>
+                    <th>{t.userDetail.factStatus || 'Status'}</th>
+                    <th>{t.userDetail.factSource || 'Source'}</th>
+                    <th>{t.userDetail.factLastMentioned || 'Last Mentioned'}</th>
+                    <th></th>
+                  </tr></thead>
+                  <tbody>
+                    {facts.map(f => (
+                      <tr key={f.id}>
+                        <td><Badge color="#8b5cf6">{f.category}</Badge></td>
+                        <td style={{ fontSize: 13 }}>{f.fact_zh}</td>
+                        <td><Badge color={f.status === 'active' ? '#10b981' : '#94a3b8'}>{f.status}</Badge></td>
+                        <td className="muted" style={{ fontSize: 11 }}>{f.source}</td>
+                        <td className="muted" style={{ fontSize: 11 }}>{f.last_mentioned_at ? new Date(f.last_mentioned_at).toLocaleDateString(isZh ? 'zh-CN' : 'en-US') : '—'}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button className="icon-btn" onClick={() => setFactModal({ type: 'edit', fact: f })}><Pencil size={14} /></button>
+                            <button className="icon-btn danger" onClick={async () => {
+                              if (!window.confirm(t.userDetail.confirmDeleteFact || 'Delete this fact?')) return;
+                              await axios.delete(`/api/user-facts/${f.id}`);
+                              fetchFacts();
+                            }}><Trash2 size={14} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
         </div>
 
         {/* Detail Modal Overlay */}
@@ -928,7 +992,91 @@ function UserDetailModal({ user, onClose, session, onDeleted }) {
         onConfirm={() => { setShowDelete(false); onDeleted ? onDeleted() : onClose(); }}
       />
     )}
+    {(factModal?.type === 'add' || factModal?.type === 'edit') && (
+      <UserFactModal
+        openid={openid}
+        fact={factModal.type === 'edit' ? factModal.fact : null}
+        onClose={() => setFactModal(null)}
+        onSave={() => { setFactModal(null); fetchFacts(); }}
+      />
+    )}
     </>
+  );
+}
+
+// ── UserFactModal ─────────────────────────────────────────────────────────────
+
+const FACT_CATEGORIES = ['dietary_restriction', 'allergy', 'preference', 'goal', 'other'];
+
+function UserFactModal({ openid, fact, onClose, onSave }) {
+  const { t } = useLang();
+  const isEdit = !!fact;
+  const [category, setCategory] = useState(fact?.category || 'preference');
+  const [factZh, setFactZh]     = useState(fact?.fact_zh || '');
+  const [status, setStatus]     = useState(fact?.status || 'active');
+  const [busy, setBusy]         = useState(false);
+  const [error, setError]       = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!factZh.trim()) { setError(t.userDetail.factTextRequired || 'Fact text is required'); return; }
+    setBusy(true);
+    try {
+      let res;
+      if (isEdit) {
+        res = await axios.put(`/api/user-facts/${fact.id}`, { category, fact_zh: factZh.trim(), status });
+      } else {
+        res = await axios.post('/api/user-facts', { openid, category, fact_zh: factZh.trim(), status });
+      }
+      if (res.data?.success === false) { setError(res.data.error || t.modal.saveFailed); return; }
+      onSave();
+    } catch (err) {
+      setError(err.response?.data?.error || t.modal.saveFailed);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" style={{ zIndex: 120 }} onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{isEdit ? (t.userDetail.editFact || 'Edit Fact') : (t.userDetail.addFact || 'Add Fact')}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field">
+              <span>{t.userDetail.factCategory || 'Category'}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={category} onChange={e => setCategory(e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  {FACT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field">
+              <span>{t.userDetail.factStatus || 'Status'}</span>
+              <div className="select-wrap" style={{ width: '100%' }}>
+                <select value={status} onChange={e => setStatus(e.target.value)} className="inline-select" style={{ width: '100%' }}>
+                  <option value="active">active</option>
+                  <option value="inactive">inactive</option>
+                </select>
+                <ChevronDown size={11} className="select-chevron" />
+              </div>
+            </label>
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.userDetail.factText || 'Fact'}</span>
+              <textarea rows={3} value={factZh} onChange={e => setFactZh(e.target.value)} placeholder="对海鲜过敏" required />
+            </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal?.cancel || 'Cancel'}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>{busy ? (t.modal?.saving || '…') : (t.modal?.save || 'Save')}</button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 

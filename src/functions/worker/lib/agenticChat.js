@@ -22,7 +22,7 @@ const { detectAllRisks } = require('./factCheck');
 const { formatToShanghai } = require('./time-utils');
 const planTemplate = require('../prompts/chat/planTemplate');
 const judgeTemplate = require('../prompts/viva/judgeTemplate');
-const { findRelevantEntries } = require('../prompts/viva/knowledge');
+const { findRelevantEntries } = require('./knowledgeBase');
 
 const GENERATE_MAX_ITERS = 3;
 const REVISE_MAX_ROUNDS = 2;
@@ -113,10 +113,10 @@ function validatePlan(plan, dots) {
     return warnings;
 }
 
-async function runAgenticTurn({ client, model, message, intent, llmContext, systemPrompt, cleanHistory, pool, user_id, language, logContext, onStatus }) {
+async function runAgenticTurn({ client, model, message, intent, llmContext, systemPrompt, cleanHistory, pool, user_id, language, personaType, logContext, onStatus }) {
     const budget = { plan: 0, generateIters: 0, judge: 0, revise: 0, rejudge: 0 };
     const toolHandlers = createAgenticToolHandlers({ pool, user_id, language });
-    const knowledgeExcerpts = findRelevantEntries(message);
+    const knowledgeExcerpts = await findRelevantEntries(personaType || 'viva', message);
     // Fires a short "what I'm doing" status update at 3 phase-transition checkpoints (not on
     // every REVISE/RE-JUDGE round — re-narrating a retry as new activity would just look odd).
     // Never lets a notification-write failure abort the turn.
@@ -221,12 +221,26 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         const detectorHits = detectAllRisks(replyText, llmContext.dots);
         const verdict = await callJson(
             client, model,
-            judgeTemplate(replyText, plan, groundTruth, knowledgeExcerpts, detectorHits),
+            judgeTemplate(replyText, plan, groundTruth, knowledgeExcerpts, detectorHits, message),
             0.1, logContext, 'judge'
         );
         // Fail open on a broken/unparseable judge call — ship the draft rather than block the
         // turn, matching the intent-classifier's "default and move on" precedent (chat.js:525-527).
-        return verdict || { verdict: 'PASS', violations: [] };
+        if (!verdict) return { verdict: 'PASS', violations: [] };
+        // Self-contradiction guard: on a long/complex ground truth object the judge model
+        // occasionally reasons its way to "no real issue found" in its own analysis text but
+        // still emits a structured REJECT out of habit — the one reliable signal for this is
+        // every violation's correction_hint coming back empty (a real violation always names a
+        // concrete fix; "found nothing to fix" is exactly what an empty hint means). Found via
+        // live testing 2026-07-29: this produced an unnecessary REVISE cycle that then
+        // regenerated an unrelated, hallucinated reply from scratch. Downgrade to PASS rather
+        // than let a judge that couldn't articulate a fix still force a rewrite.
+        if (verdict.verdict === 'REJECT' && (verdict.violations || []).length > 0
+            && verdict.violations.every(v => !v.correction_hint || !v.correction_hint.trim())) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_judge_self_contradiction_downgraded', context: logContext, violations: verdict.violations }));
+            return { verdict: 'PASS', violations: [] };
+        }
+        return verdict;
     }
 
     await notify('verifying');
@@ -239,7 +253,7 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     let latestResult = judgeResult;
     for (let round = 0; round < REVISE_MAX_ROUNDS && latestResult.verdict === 'REJECT'; round++) {
         budget.revise += 1;
-        const correctionPrompt = `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}`;
+        const correctionPrompt = `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
         try {
             const retryCompletion = await client.chat.completions.create({
                 model,

@@ -1,5 +1,6 @@
 const { getVivaLabels } = require('../subAgeLabels');
 const { getFactConstraintBlock } = require('../factConstraint');
+const { getFactMemoryBlock } = require('../factMemoryBlock');
 
 module.exports = (ctx) => {
   const { user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin, dots } = ctx;
@@ -31,7 +32,9 @@ module.exports = (ctx) => {
       }).join('\n')}`
     : '';
 
-  return `${getFactConstraintBlock()}
+  return `${getFactConstraintBlock(ctx.essential_knowledge)}
+
+${getFactMemoryBlock(ctx.user_facts)}
 
 你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造。
 

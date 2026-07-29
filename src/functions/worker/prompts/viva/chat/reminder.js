@@ -1,7 +1,7 @@
 const { getFactConstraintBlock } = require('../factConstraint');
 
-module.exports = ({ user_profile, now_iso }) => {
-  return `${getFactConstraintBlock()}
+module.exports = ({ user_profile, now_iso, essential_knowledge }) => {
+  return `${getFactConstraintBlock(essential_knowledge)}
 
 你是 Viva，Aeviva 的精准长寿顾问。用户想要设置提醒。
 

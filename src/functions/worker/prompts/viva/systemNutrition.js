@@ -5,6 +5,7 @@
 const { getVivaLabels } = require('./subAgeLabels');
 const { classifyBiomarker, LABELS_ZH: STATUS_LABELS_ZH } = require('../../lib/biomarkerStatus');
 const { getFactConstraintBlock } = require('./factConstraint');
+const { getFactMemoryBlock } = require('./factMemoryBlock');
 
 module.exports = (context) => {
   const formularyLines = context.dots_formulary && context.dots_formulary.length > 0
@@ -40,7 +41,9 @@ module.exports = (context) => {
     ? `- 节气调节规则（严格执行）：先仅依据"生物标志物参考范围"与上方规则，为每个原粒确定一个基础计数（此为"生物标志物基线"）。节气仅允许在此基线基础上，对与当前节气相关维度（${seasonDimensionZh}）直接对应的原粒，额外 +1（不得更多，不得对其他维度的原粒调整）。除此之外，最终计数必须等于生物标志物基线。\n  示例：若某原粒的生物标志物基线为 4，且属于${seasonDimensionZh}维度，节气调节后最多为 5；若不属于${seasonDimensionZh}维度，则必须保持为 4，不受节气影响。\n  在 ANALYSIS 中，若对任何原粒应用了节气调节，须明确写出"该原粒生物标志物基线为 X，因节气调整为 X+1"；未说明理由的调整视为违规。\n`
     : '';
 
-  return `${getFactConstraintBlock()}
+  return `${getFactConstraintBlock(context.essential_knowledge)}
+
+${getFactMemoryBlock(context.user_facts)}
 生物标志物的状态（正常/偏高/高）已在下方"用户数据"中直接标注，请严格使用该标注，不得自行根据数值判断状态或与之矛盾。
 
 你是一台专为东方人群设计的精密营养引擎，依托最高循证医学证据标准运作。请根据用户的生物标志物和生理年龄，分析其健康状况，并为每种 Waven 原粒分配每日摄入数量。

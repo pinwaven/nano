@@ -63,6 +63,8 @@ const { handleGetCoachGroups, handlePostCoachGroup, handlePutCoachGroup, handleD
 const { handleGetKoneApkReleases, handlePostKoneApkRelease, handlePutKoneApkRelease, handleDeleteKoneApkRelease, handleGetKoneApkPresign, handleGetDigitalAssets, handlePostDigitalAsset, handlePutDigitalAsset, handleDeleteDigitalAsset, handleGetDigitalAssetsPresign, handleGetKinoUpgrade } = require('./handlers/digital-assets');
 const { logActivity, handleGetCoachTags, handlePostCoachTag, handlePutCoachTag, handleDeleteCoachTag, handlePostCoachTagAssignments, handleDeleteCoachTagAssignment, handleGetClientPipeline, handlePostClientPipeline, handleGetCoachNotes, handlePostCoachNote, handlePutCoachNote, handleDeleteCoachNote, handleGetClientActivity, handleGetCoachActivityFeed, handleGetMessageTemplates, handlePostMessageTemplate, handlePutMessageTemplate, handleDeleteMessageTemplate, handlePostMessageTemplatePreview, resolveBulkRecipients, handlePostBulkCampaign, handlePostBulkCampaignSend, handleGetBulkCampaigns, handleGetBulkCampaignRecipients, handleGetAppointments, handlePostAppointment, handlePutAppointment, handleDeleteAppointment, handleGetUpcomingAppointments, handleGetClientGoals, handlePostClientGoal, handlePutClientGoal, handleDeleteClientGoal, refreshGoalProgress, handlePostNpsSurvey, handlePatchNpsSurvey, handleGetNpsSurveys, handleGetCoachKpis, handlePostCoachKpisCompute, handleGetFollowUpRules, handlePostFollowUpRule, handlePutFollowUpRule, handleDeleteFollowUpRule, handlePostFollowUpRulesEvaluate } = require('./handlers/crm');
 const { handleGetKinoDevices, handlePostKinoDevice, handlePutKinoDevice, handleDeleteKinoDevice, handleGetKinoChipBatches, handleGetKinoChipBatchChips, handlePostKinoChipBatch, handlePutKinoChipBatch, handleDeleteKinoChipBatch, handleGetKinoChipModels, handlePostKinoChipModel, handlePutKinoChipModel, handleDeleteKinoChipModel, handleGetKinoChip, handlePostKinoScan, handlePostKinoResult, handleGetKinoTestedChips, handleGetKinoTestedChipDetail, handlePostKinoChipReset } = require('./handlers/kino');
+const { handleGetKnowledgeEntries, handlePostKnowledgeEntry, handlePutKnowledgeEntry, handleDeleteKnowledgeEntry } = require('./handlers/knowledge');
+const { handleGetUserFacts, handlePostUserFact, handlePutUserFact, handleDeleteUserFact } = require('./handlers/userFacts');
 const { handleGetCreditBalance, handleGetCreditHistory, handlePostCreditWithdraw, handleGetUserWithdrawals, handleGetAdminWithdrawals, handlePutAdminWithdrawal, handleGetAdminUserCreditHistory, handlePostAdminUserCreditAdjustment } = require('./handlers/credits');
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
 const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
@@ -261,11 +263,16 @@ exports.handler = async (req, resp, context) => {
 
         // Superadmin "login as" sandbox sessions tag every mutating request with
         // sandbox:true so nothing they do persists against the impersonated user's
-        // real account. /chat is excluded — it needs to still call the LLM and
-        // return a reply; its own writes are suppressed inside handlePostChat.
+        // real account. /chat and /health-advice are excluded — both need to still call the
+        // LLM and return a reply; their own writes are suppressed inside their handlers.
+        // Found 2026-07-29: /health-advice was missing from this exemption, so a sandbox
+        // request never reached handlePostHealthAdvice at all — the toolbox's "Health Advice"
+        // button has never actually worked in sandbox/admin-preview mode, always showing a
+        // generic error, since the frontend expects a `message` field this short-circuit
+        // never provides.
         const sandbox = (parsedBody && parsedBody.sandbox === true) || query.sandbox === 'true';
 
-        if (sandbox && method !== 'GET' && path !== '/chat') {
+        if (sandbox && method !== 'GET' && path !== '/chat' && path !== '/health-advice') {
             result = { success: true, sandbox: true };
         } else if (method === 'GET') {
             if (path === '/kino-upgrade') {
@@ -287,6 +294,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetKinoChipBatches();
             } else if (path.includes('/kino-chip-models')) {
                 result = await handleGetKinoChipModels();
+            } else if (path.includes('/knowledge-entries')) {
+                result = await handleGetKnowledgeEntries();
+            } else if (path.includes('/user-facts')) {
+                result = await handleGetUserFacts(query.openid, query.coach_id);
             } else if (path.match(/\/kino-tested-chips\/(\d+)/)) {
                 const scanId = path.match(/\/kino-tested-chips\/(\d+)/)[1];
                 result = await handleGetKinoTestedChipDetail(scanId);
@@ -631,6 +642,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostKinoChipBatch(parsedBody);
             } else if (path.includes('/kino-chip-models')) {
                 result = await handlePostKinoChipModel(parsedBody);
+            } else if (path.includes('/knowledge-entries')) {
+                result = await handlePostKnowledgeEntry(parsedBody);
+            } else if (path.includes('/user-facts')) {
+                result = await handlePostUserFact(parsedBody);
             } else if (path.match(/\/kino-tested-chips\/(\d+)\/reset/)) {
                 const scanId = path.match(/\/kino-tested-chips\/(\d+)\/reset/)[1];
                 result = await handlePostKinoChipReset(scanId);
@@ -806,6 +821,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)) {
                 const code = path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)[1];
                 result = await handlePutKinoChipModel(code, parsedBody);
+            } else if (path.match(/\/knowledge-entries\/([a-z0-9-]+)/i)) {
+                const entryId = path.match(/\/knowledge-entries\/([a-z0-9-]+)/i)[1];
+                result = await handlePutKnowledgeEntry(entryId, parsedBody);
+            } else if (path.match(/\/user-facts\/(\d+)/)) {
+                const factId = path.match(/\/user-facts\/(\d+)/)[1];
+                result = await handlePutUserFact(factId, parsedBody);
             } else if (path.includes('/kino-devices/')) {
                 const deviceId = path.split('/kino-devices/')[1];
                 result = await handlePutKinoDevice(deviceId, parsedBody);
@@ -992,6 +1013,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)) {
                 const code = path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)[1];
                 result = await handleDeleteKinoChipModel(code);
+            } else if (path.match(/\/knowledge-entries\/([a-z0-9-]+)/i)) {
+                const entryId = path.match(/\/knowledge-entries\/([a-z0-9-]+)/i)[1];
+                result = await handleDeleteKnowledgeEntry(entryId);
+            } else if (path.match(/\/user-facts\/(\d+)/)) {
+                const factId = path.match(/\/user-facts\/(\d+)/)[1];
+                result = await handleDeleteUserFact(factId);
             } else if (path.includes('/kino-devices/')) {
                 const deviceId = path.split('/kino-devices/')[1];
                 result = await handleDeleteKinoDevice(deviceId);

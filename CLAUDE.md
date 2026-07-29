@@ -440,3 +440,131 @@ Both were reasonable and are still in place (real, if secondary, improvements fo
 `.chat-inner`'s (the scrollable content wrapper) bottom padding was bumped from `8rpx` to `200rpx` (`main.wxss`) — generous buffer well past the disclaimer + input bar's own height, so the last line of any message clears the clipping edge regardless of whether the underlying repaint quirk fires. This is the standard, low-risk mitigation for this bug class in WeChat Mini Programs — chasing the exact real-device relayout behavior further wasn't worth it once a reliable, cheap fix was in hand. **Do not shrink this padding back down** without confirming the underlying repaint issue is actually fixed, not just untested.
 
 Files: `pages/main/main.wxss` (`.chat-inner` padding), `pages/main/main.js` (`_scrollBottom`/`_onChatImageLoad`, kept from the earlier rounds), `pages/main/main.wxml` (`scroll-into-view`/`data-id`, kept from the earlier rounds), `utils/config.js` (VERSION bump).
+
+## 24. Health Advice Tool: Agentic Viva + Async (Phase A)
+
+Added 2026-07-29. The toolbox's "Health Advice" button (`utils/tool-actions.js`'s `runHealthAdvice`) never went through §21/§22's work — it calls a completely separate handler, `handlePostHealthAdvice` (`chat.js`), which historically ran a single completion + (viva-only) `_regenerateIfFabricationRisk` retry, not `runAgenticTurn`. Fixed for Viva: the same PLAN→GENERATE→JUDGE→REVISE loop, and (for the miniapp's own chat tab only) the same async `chat.generate` delivery §22 built for `/chat`.
+
+### Scope decision (confirmed via discussion)
+
+`handlePostHealthAdvice` has **3 callers**, only one of which had a landing spot for async replies:
+- `pages/main/main.js` (end user's own chat) — has `_poll`, so this is the only caller wired for async (`opts.async: true` passed to `runHealthAdvice`).
+- `pages/coach/coach.js` (coach viewing a client's chat) — confirmed via investigation: **no polling mechanism at all** (no `setInterval`/`/api/notifications` anywhere in that file). Stays fully synchronous by design; building async delivery here would require new polling infrastructure from scratch, out of scope for this pass.
+- `src/web/user-app`'s `ChatTab.jsx` — a separate browser app, also synchronous, also out of scope.
+
+### Backend reuse — no new event type needed
+
+`handlePostHealthAdvice`'s fetched data is reshaped into the *same* `llmContext` contract `handlePostChat` produces (`user_profile`, `biomarkers`, `biomarkers_tested_at`, `dots`, `active_health_plans`, ... — `plan`/`questionnaire_context`/`sub_age_display_names` left `null`, not fetched by this handler, flagged as a known Phase-A gap rather than faked). Because the shape matches, the handler can publish through the **exact same** `publishChatGenerateEvent`/`handleChatGenerateEvent`/`finalizeChatReply` pipeline §22 already built — no new CloudEvent type, no new EventBridge routing. The synchronous tail (nano always; viva when sandbox, no `async` flag, or EventBridge-publish-failure fallback) uses a new small `finalizeHealthAdviceReply()` instead — same grounding-check-with-one-retry logic, but returns `{success:true, message}` directly rather than writing to `notifications` (this endpoint's synchronous callers expect the reply inline, not via polling).
+
+### Two real bugs found during verification, fixed same pass
+
+1. **`coach.js`'s call site had no timeout override** and the agentic loop measured up to **~167s** synchronously (vs. ~15-25s for the old single completion) — without a fix this would have made the FC-cancellation-on-client-timeout bug (§22's original motivation) *more* likely to hit here, not less. Fixed: `coach.js`'s `_req` gained the same optional `timeoutMs` param `main.js`'s already had; `runHealthAdvice` now requests 180s specifically for this call.
+2. **The sandbox router short-circuit was missing `/health-advice`** — `index.js`'s blanket `if (sandbox && method !== 'GET' && path !== '/chat')` rule meant a sandbox request to `/health-advice` never reached the handler at all (confirmed live: instant `{success:true,sandbox:true}` with no `message`), so the toolbox's Health Advice button has **never actually worked in sandbox/admin-preview mode** — always showed a generic error. This predates this session's changes entirely. Fixed by adding `/health-advice` to the same exemption `/chat` already has.
+
+### Files
+
+Modified: `handlers/chat.js` (`finalizeHealthAdviceReply`, `handlePostHealthAdvice` rewrite), `index.js` (sandbox router exemption), `utils/tool-actions.js` (`runHealthAdvice` async + timeout), `pages/main/main.js` (`onAsyncStart`, `{async:true}`), `pages/coach/coach.js` (`_req` timeout param — behavior otherwise unchanged), `utils/config.js` (VERSION bump).
+
+## 25. Formulate Dots Tool: Agentic Narrative for an Already-Committed Plan
+
+Added 2026-07-29. The toolbox's "Formulate Dots" button (`handlePostFormulaDots`, `handlers/dots.js`) computes a 7-day per-dot dose allocation — this stayed **out of scope** for the agentic-loop treatment (§21/§24) because the numeric decision itself doesn't need it: dot counts are clamped (`Math.min(10,Math.max(1,...))`) and backed by a deterministic fallback (`_calcDotCounts`) regardless of what the LLM returns, so there's very little free-text surface for the hallucination classes this work targets to occur on. What *was* missing: the short `analysis` blurb shown to the user was un-grounded, ungraded LLM prose.
+
+### Design: two decoupled phases, not one slower endpoint
+
+**Phase 1 (unchanged, stays fast and synchronous)**: the existing single completion → parse `ANALYSIS:`/`FORMULATION:` → clamp/fallback → DB transaction (`nutrition_plans` + `nutrition_schedules`). `handlePostFormulaDots` still returns `{success:true}` in seconds, exactly as before.
+
+**Phase 2 (new, Viva only, fully async)**: right after Phase 1's transaction commits, publish a `chat.generate` event (reusing `publishChatGenerateEvent`/`handleChatGenerateEvent` — §22's machinery, unmodified) with a new `kind: 'formula_dots'` field and `formulated_plan` — the *real, already-committed* allocation (`{dot_id, name_zh, count, timing, target_dimension}[]`), not a fresh recommendation request. `handleChatGenerateEvent` branches on `kind`: default runs `finalizeChatReply` as before; `'formula_dots'` runs the new `finalizeFormulaDotsNarrative` instead (same grounding-check-with-one-retry pattern, but delivers via a `'nutrition_plan'` notification, and appends the deterministic `planText` — computed once in Phase 1, passed through the event, never regenerated or restated by the model).
+
+`runAgenticTurn` itself needed **zero changes** — `intent: 'nutrition_question'`, a dedicated prompt (`prompts/viva/systemFormulaExplain.js` — explicitly instructed to explain the given allocation, not re-recommend one), and `llmContext.formulated_plan` as the grounding target. Because that target is the literal data structure Phase 1 just produced (not a general claim checked against a database that could have drifted), JUDGE's job here is unusually precise: "does this narrative match what was actually scheduled."
+
+**No frontend changes were needed at all** — `runFormulaDs` (`utils/tool-actions.js`) has never displayed `finalContent` directly; it shows its own canned "generating…"/"complete" messages and always relied on the `notifications`/polling mechanism to deliver the plan text whenever it was ready. That mechanism already tolerated arbitrary delay; Phase 2 just uses that slack instead of computing everything before Phase 1 returns.
+
+### A second real bug found and fixed along the way
+
+`_saveChatMessage(user.user_id, 'ai', finalContent)` never passed `persona_type` (defaulting to `'nano'`) — so a Viva user's formula-dots confirmation was saved under the wrong persona, invisible in their (persona-scoped) chat history on reload even though it briefly appeared via the one-time notification poll. Fixed for both the nano path (unchanged content, now correctly tagged) and the new viva async path (correct from the start).
+
+### Files
+
+New: `prompts/viva/systemFormulaExplain.js`. Modified: `handlers/dots.js` (`handlePostFormulaDots` persona branch + event publish + persona_type fix), `handlers/chat.js` (`finalizeFormulaDotsNarrative`, `handleChatGenerateEvent`'s `kind` branch).
+
+### Follow-up (2026-07-29): dropped the raw per-dot text dump from the message
+
+The chat message (both the nano blurb and the viva agentic narrative) originally had the raw `_generatePlanText()` output appended — an 18-dot `D-N1x3 D-N2x3 ...` listing repeated once per identical day for all 7 days. This read as confusing technical noise, not something a user should parse in a chat bubble; the "查看方案" (view plan) action button is the actual place to see exact per-dot numbers (reads `nutrition_schedules` directly). Removed the concatenation from both the nano/fail-open path (`dots.js`) and the viva async narrative (`finalizeFormulaDotsNarrative`, `chat.js`) — nano's message is now just its short `analysis` blurb (with a canned fallback if empty), and viva's is just the agentic narrative on its own. `_generatePlanText()` and its `MONTH_EN`/`WEEKDAY_EN`/`WEEKDAY_ZH` constants had no other callers, so removed entirely rather than left dead.
+
+## 26. Knowledge Base Moved to DB — `knowledge_entries` (Essential + Optional Tiers)
+
+Added 2026-07-29. Viva's two static, code-only knowledge layers (§21) — the always-injected `factConstraint.js` guardrail block and the 13-entry, keyword-matched-on-request curated KB (`prompts/viva/knowledge/*.js`) — are now backed by a single DB table, `knowledge_entries`, editable from the web admin panel without a deploy. This also resolves §21's open question about who vets new KB entries: `reviewed_by` is now a real, enforced field (an entry cannot be set to `status='active'` without one), not a hardcoded `'placeholder'`.
+
+### Why one table, not two
+
+Essential and optional entries share an identical shape (id, content, evidence/review-tracking) and differ only in which consumption path reads them — a `tier` column (`'essential' | 'optional'`) does this split within one table, the same way `kino_chip_models.status` already splits active/inactive without a second table. `persona_type` (default `'viva'`) is included from the start even though only Viva populates it today, so Nano could plug into the same table later with zero schema change.
+
+### Schema
+
+`knowledge_entries` (migration `src/schemas/migration_knowledge_entries.sql`): `id` (PK, lowercase kebab-case slug), `persona_type`, `tier`, `category`, `topic` (`TEXT[]`, tag list — unused for essential rows), `content_zh`, `evidence_level` (optional-tier only), `status` (`active`/`inactive`), `sort_order` (essential-row concatenation order), `last_reviewed`, `reviewed_by`, `created_at`/`updated_at`. Seeded once with the prior static content: the 13 optional entries (unchanged content, `category` set per source file) plus one essential row (`id='fact-constraint-core'`, `content_zh` = factConstraint.js's original guardrail text verbatim).
+
+### Loading layer — `lib/knowledgeBase.js`
+
+Replaces the static `require()`-based merge:
+- `getEssentialBlock(personaType)` — `SELECT content_zh ... WHERE tier='essential' AND status='active' ORDER BY sort_order, id`, joined with `\n\n`. On any DB error, or if the table has zero matching rows, falls back to `FALLBACK_ESSENTIAL_BLOCK` — a hardcoded copy of the original guardrail text kept in code for exactly this case, so a transient DB error can never ship a Viva reply with zero anti-hallucination guardrails.
+- `findRelevantEntries(personaType, text, limit=8)` — fetches all active optional-tier rows for the persona, then runs the **exact same in-process substring/tag match** `findRelevantEntries` always used (`entry.topic.some(tag => text.includes(tag))`) — only the source of the entry list changed from `require()` to a query. Still no RAG/embeddings, per the existing by-design constraint.
+- No caching: the table is small (~15 rows today) and each function runs at most once or twice per chat turn, negligible next to the LLM call latency it sits beside. Add a TTL cache later only if this is ever shown to matter.
+
+### Call-site plumbing — fetched once per request, not re-fetched per template
+
+`factConstraint.js`'s `getFactConstraintBlock()` is called inline inside a template literal in 12 Viva prompt files, all synchronous. Rather than making all 12 async, each handler (`handlers/chat.js`'s `handlePostChat`/`handlePostHealthAdvice`, `handlers/dots.js`'s `handlePostFormulaDots`) fetches `essentialKnowledge` once via `await getEssentialBlock('viva')` right where it already resolves `personaType`, and threads it through as `llmContext.essential_knowledge` (or the equivalent `context`/`ctx` field each of the 12 templates already receives) — `getFactConstraintBlock(preloaded)` now returns `preloaded || FALLBACK_ESSENTIAL_BLOCK`, a one-line change at each of the 12 call sites, no async propagation needed. `handleChatGenerateEvent` (the EventBridge-triggered async path, §22) needs no separate fetch — `llmContext` (already carrying `essential_knowledge`) travels whole through the published event payload. `runAgenticTurn`'s only `findRelevantEntries` call site was already inside an async function, so it became a one-line `await` plus a new `personaType` param threaded from all 3 of its call sites in `chat.js`.
+
+### Admin panel — Knowledge sub-tab under Content
+
+Full CRUD (`handlers/knowledge.js`, routes mirroring `kino_chip_models`'s pattern in `index.js`) plus a new **Knowledge** sub-tab under the Content tab (`ContentTab.jsx` → `KnowledgeTab.jsx`), superadmin-only. Add/edit form: tier and persona selects, topic tags as a comma-separated input, content textarea, evidence-level select (optional-tier only), and a `reviewed_by` field the backend rejects `status='active'` without.
+
+### Files
+
+New: `src/schemas/migration_knowledge_entries.sql`, `src/functions/worker/lib/knowledgeBase.js`, `src/functions/worker/handlers/knowledge.js`, `src/web/admin-panel/src/tabs/KnowledgeTab.jsx`. Modified: `prompts/viva/factConstraint.js` (`getFactConstraintBlock(preloaded)` + `FALLBACK_ESSENTIAL_BLOCK`), all 12 Viva prompt template files (one-line call-site change each), `lib/agenticChat.js` (`findRelevantEntries` now async + `personaType` param), `handlers/chat.js`/`handlers/dots.js` (essential-knowledge prefetch + `personaType` threading into `runAgenticTurn`), `index.js` (`/knowledge-entries[/:id]` routes), `ContentTab.jsx` (new sub-tab). Deleted (superseded): `prompts/viva/knowledge/{index,tcmGeneVariants,nutritionProtocols,longevityScience}.js`.
+
+## 27. Personal Memory Facts — `user_memory_facts` (Dietary Restrictions, Allergies, Preferences, Goals)
+
+Added 2026-07-29. Viva previously had no way to remember durable personal facts a user states in conversation ("I don't eat pork," "I'm allergic to shellfish"). This is distinct from `users.bio_data` (fixed onboarding checklist — height/weight/`health_conditions`) and from §26's `knowledge_entries` (persona-scoped curated *general* science KB, not user-specific facts). A `users.preferences JSONB` column already existed in the schema but was confirmed to have **zero read/write call sites anywhere in the codebase** — dead column, not reused here in favor of a real table with per-fact metadata (category, source, timestamps) the admin panel and coach app can list/edit/audit.
+
+### Design: reuses the existing action-JSON mechanism, not a new one
+
+The codebase already had a proven pattern for "the LLM detects an explicit statement, emits a trailing action JSON, the server parses/persists/strips it" — `record_weight` and `set_reminder`, both handled in `handlers/chat.js`'s `finalizeChatReply()`. This adds a third action, `remember_fact`, following the identical mechanism and the same risk-acceptance level (regex + fixed-enum validation only, no semantic/JUDGE verification — consistent with the existing two, not a new gap).
+
+### Schema
+
+`user_memory_facts` (migration `src/schemas/migration_user_memory_facts.sql`): `id`, `user_id` (FK, **not** persona-scoped — an allergy is true regardless of which persona the user talks to, intentionally diverging from `knowledge_entries`' persona scoping), `category` (fixed enum: `dietary_restriction`/`allergy`/`preference`/`goal`/`other`), `fact_zh`, `status` (`active`/`inactive`), `source` (`chat_extracted`/`admin_added`), `first_mentioned_at`, `last_mentioned_at`. A partial unique index on `(user_id, category, fact_zh) WHERE status='active'` powers an `ON CONFLICT ... DO UPDATE` upsert — a repeated exact restatement just bumps `last_mentioned_at` instead of creating a duplicate row. No fuzzy-dedup/contradiction-resolution ("vegetarian" superseding "no pork") — explicitly out of scope, left for manual cleanup via the CRUD UI.
+
+### Extraction (write) — 5 templates, not all 7
+
+New shared prompt block `prompts/viva/factMemoryBlock.js`'s `getFactMemoryBlock(existingFacts)` combines recall (lists known facts) + the extraction instruction (`{"action":"remember_fact","category":"...","fact":"..."}`) in one block, injected the same way `getFactConstraintBlock(context.essential_knowledge)` is — called right after it in each template. Wired into `chat/{casual,biomarker,nutrition,record,emotional}.js` (where personal facts realistically surface) plus `systemHealthAdvice.js`, `systemNutrition.js`, and `systemFormulaExplain.js` (report/formulation prompts — recall-only there, since those flows have no free-form user message to extract a *new* fact from). Deliberately excludes `chat/science.js` (pure science Q&A, low signal) and `chat/reminder.js` (scheduling, unrelated). Nano is out of scope for this pass; nothing in the table design blocks adding nano's equivalent templates later since the table isn't persona-scoped.
+
+`finalizeChatReply()` gained a `remember_fact` regex-extract/`JSON.parse`/validate block (category checked against a fixed `Set`, never trusted blindly from the LLM — same principle as `record_weight`'s numeric bounds check) alongside the existing weight/reminder blocks, plus the upsert `INSERT ... ON CONFLICT`. `stripActionJson()` and the final reply-cleanup `.replace()` chain were both extended with the new pattern so it never leaks into the biomarker-grounding check or the user-visible reply (same rationale as the 2026-07-26 `set_reminder` strip fix).
+
+### Recall (read) — always-fetched, not matched-on-request
+
+Mirrors how `biomarkers`/`dots`/`health_twin` are unconditionally fetched every turn, not gated behind the intent classifier's `required_data` — an allergy needs to be visible regardless of intent. `fetches.user_facts` added to the existing `Promise.all` bundle in `handlePostChat`, plus separate fetches in `handlePostHealthAdvice` and `handlePostFormulaDots` (both `nutritionContext`/Phase-1 and `llmContext`/Phase-2, since ingredient-conflict awareness matters for the dot-count decision itself, not just the narrative explaining it).
+
+### Admin/coach visibility
+
+New `handlers/userFacts.js` (CRUD, mirrors `handlers/knowledge.js`'s shape but scoped by `user_id`), routed at `/api/user-facts[?openid=/coach_id=][/:id]` in `index.js` — follows the existing `?openid=`-scoped fan-out pattern the admin panel/coach app already use per-section (`/api/biomarkers?openid=`, `/api/health-reports?openid=`), rather than one big nested user-detail endpoint. `handleGetUserFacts` takes an optional `coachId` and enforces the same coarse ownership check `handleGetCoachUserChat` already does (`SELECT 1 FROM users WHERE user_id=$1 AND coach_id=$2`) — only when the caller supplies its own `coach_id`; the admin panel omits it and sees everyone.
+
+- Admin panel: new "Facts" tab in `UserDetailModal` (`UsersTab.jsx`), lazy-fetched on tab click exactly like the existing `chat`/`plans` tabs, with a `UserFactModal` add/edit form (category select, status select, fact textarea).
+- Coach app: new "Facts" tab in the client detail sheet (`pages/coach/coach.js`/`.wxml`), mirroring the existing Notes tab's compose-area pattern (category `<picker>` + textarea + save button, list with delete).
+
+### Files
+
+New: `src/schemas/migration_user_memory_facts.sql`, `src/functions/worker/prompts/viva/factMemoryBlock.js`, `src/functions/worker/handlers/userFacts.js`. Modified: `handlers/chat.js` (`remember_fact` action parsing/upsert in `finalizeChatReply()`, `user_facts` fetch + `llmContext` field in `handlePostChat`/`handlePostHealthAdvice`), `handlers/dots.js` (same in `handlePostFormulaDots`), `prompts/viva/{systemHealthAdvice,systemNutrition,systemFormulaExplain}.js` + `chat/{casual,biomarker,nutrition,record,emotional}.js` (one `getFactMemoryBlock()` call site each), `index.js` (`/user-facts` routes), `src/web/admin-panel/src/tabs/UsersTab.jsx` (Facts tab + `UserFactModal`), `src/mini/nano-miniapp/pages/coach/{coach.js,coach.wxml}` (Facts tab, `utils/config.js` VERSION bump).
+
+### Follow-up (2026-07-29): real-user bug report — Viva replied with an unrelated bioage/dots recap instead of acknowledging a stated food preference
+
+Found via a live dev report (user "Pin", channel `aeviva`): stating "我吃素，也吃鸡蛋和牛奶" (a food preference) got back a completely unrelated ~200-word BioAge/dot-formulation summary. Root-caused via direct log inspection (`s worker logs`) and local reproduction (`handlePostChat({...}, {sandbox:true})` run directly against the dev DB, bypassing FC/EventBridge to iterate fast) — **three separate, compounding bugs**, all in code shipped earlier the same day as part of §27:
+
+1. **JUDGE had no visibility into the current user message.** `judgeTemplate.js` only received pre-fetched DB ground truth (`llmContext` + fresh biomarkers/dots + `tool_calls_made`) — never the raw `message` the user just sent. A `remember_fact` action recording a fact for the very first time is, by definition, not yet in `user_facts` (that only reflects facts saved from *prior* turns), so JUDGE flagged the model's correct acknowledgment of what the user just said as an unsupported `biomarker_mismatch`/fabrication and forced a REVISE cycle. **Fix:** `judgeTemplate.js` now takes a `message` param and is told explicitly that content merely restating the user's own current message (including a `remember_fact` tail) is self-evidently grounded, not a claim requiring a database record. `planTemplate.js` got a parallel one-line clarification (PLAN was separately flagging self-reported diet facts as needing knowledge-base "evidence_level" backing, which they don't).
+2. **A REVISE-round completion could ship as a blank reply.** When forced into an unnecessary REVISE cycle by bug #1, the model sometimes complied with "remove the unsupported claim" so literally that its rewritten completion was *only* the corrected `remember_fact` JSON tail with no prose — `finalizeChatReply()`'s action-stripping `.replace()` chain then removed everything, shipping an empty string. **Fix:** the stripped result now falls back to an acknowledgment referencing the actual recorded fact (`好的，已记录：<fact>`) rather than ever shipping blank — the fact text is already validated (fixed-enum category) by that point, so it's safe to echo back. `agenticChat.js`'s REVISE correction prompt also now explicitly forbids a bare-JSON-only rewrite, to reduce how often the fallback is needed at all.
+3. **`chat/nutrition.js` was missing the "answer what was actually asked" guardrail `chat/biomarker.js` already had.** Even after fixing #1, GENERATE would still sometimes default to a generic BioAge/dots status recap for `nutrition_question` regardless of the actual message — and since that canned content is factually accurate, JUDGE has no basis to flag it (JUDGE checks facts, not relevance/topicality, so a correct-but-irrelevant answer passes clean). **Fix:** added the same "directly address the user's specific message first; don't default to a generic status overview unless one was actually requested" rule `chat/biomarker.js` already carried, to `chat/nutrition.js`.
+
+A fourth, smaller issue was also caught and fixed along the way: on a long/complex ground-truth payload, JUDGE would occasionally reason its own way to "no real issue found" in its analysis text but still emit a structured `REJECT` (a JSON self-consistency failure, not specific to this feature) — `runJudge()` in `agenticChat.js` now downgrades a `REJECT` to `PASS` when every violation's `correction_hint` comes back empty (a real violation always names a concrete fix; an empty hint is the reliable signal that the judge itself found nothing fixable).
+
+**Verified via repeated local trials** (`sandbox:true` runs against dev, bypassing async delivery for fast iteration): before these fixes the canned-recap failure reproduced consistently; after, the large majority of trials correctly acknowledge the stated fact, with the fallback text (`好的，已记录：...`) as an honest, on-topic minimum whenever GENERATE still doesn't produce full prose. **Known residual risk, explicitly out of scope for this pass:** JUDGE is separately prone to rejecting on purely cosmetic wording differences (e.g. "41.0岁" vs "41岁", "已验证" vs "validated") — a pre-existing, systemic over-strictness issue affecting the whole agentic loop, not specific to personal facts, and too large a retuning to take on as part of a targeted bug fix. Revisit if this keeps surfacing as user-visible unnecessary REVISE churn.
+
+Files: `prompts/viva/judgeTemplate.js` (`message` param), `prompts/chat/planTemplate.js` (self-reported-fact clarification), `lib/agenticChat.js` (`message` threaded into `runJudge`, REVISE correction prompt strengthened, self-contradiction downgrade), `handlers/chat.js` (`recordedFactText`-aware fallback, replacing the old bare-generic fallback), `prompts/viva/chat/nutrition.js` (relevance-first rule, mirroring `chat/biomarker.js`).
