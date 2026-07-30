@@ -6,6 +6,24 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Fixed
+
+- **Miniapp light theme: dozens of elements stayed dark-mode-tuned regardless of the user's theme setting** (`mini/nano-miniapp/pages/{main,coach,referral}/*.wxss`, `mini/nano-miniapp/components/{user-health,avatar-picker}/*.wxss`, `components/user-health/user-health.js`)
+
+  Theming works via CSS custom properties (`--blue`, `--text`, `--navy-card`, etc.) defined as dark defaults on `page` in `app.wxss`, fully overridden to a warm cream/gold palette by a `.theme-light` class applied at each theme-aware root view. Any rule written with a literal hex/rgba instead of `var(...)` never participated in that swap and stayed frozen at its dark-tuned value. Audited and fixed all five theme-aware WXSS files:
+
+  - `pages/main/main.wxss` — ~245 selectors fixed; the entire Academy/training tab and the guest signup/login sheet had **zero** light-theme coverage at all (dark navy cards, near-white text, blue accents all stayed frozen), plus scattered gaps elsewhere including a signup-flow error message at ~1.5:1 contrast on white (functionally unreadable, not just off-brand).
+  - `pages/coach/coach.wxss` — ~85 selectors fixed; the Training tab (course cards, library/lesson rows, video player) had no light coverage at all, and the client search bar was a dark island on an otherwise light page.
+  - `components/user-health/user-health.wxss` (shared by both the main app's Health tab and coach's client-detail view) — ~185 fixes; light coverage stopped partway through the file, so everything past that point (BioAge dashboard internals, wearable sync UI, report cards) was dark-only.
+  - `pages/referral/referral.wxss` — 20 fixes, including low-contrast status/success/error text.
+  - `components/avatar-picker/avatar-picker.wxss` — the selected-avatar ring was hardcoded brand-blue instead of `var(--blue)`, so it never re-tinted gold in light mode.
+
+  A second, distinct bug found in the same pass: the Health tab's BioAge chart, weight chart, and per-metric trend charts (BMI/steps/HRV/stress/glucose) are drawn via `wx.createCanvasContext`, which paints literal colors — CSS custom properties never reach canvas draw calls, so none of the above WXSS fixes touch them. The BioAge chart in particular explicitly filled its whole canvas with a hardcoded near-black background (`#0a1228`) every render, so it would have stayed a dark box floating on an otherwise light-themed page regardless of any container-level fix. Added a `_chartPalette()` helper (`user-health.js`) keyed off `this.data.theme` and rewired `_drawWeightSparkline`, `_drawBioAgeChart`, `_drawWeightFullChart`, and `_drawGenericChart` to pull background/grid/text/dot colors from it; left each metric's own semantic line color (e.g. steps' sky blue, HRV's green) untouched since those are saturated, self-contained accents rather than text needing contrast correction.
+
+  Left deliberately unconverted, matching this codebase's own established pattern: solid brand-gradient CTA buttons and their glow shadows, full-screen dark modal scrims, and the Kino device-mockup UI (`.ksm-*`) — these are meant to stay visually fixed in both themes. Admin, superadmin, login, and a few other pages have no theme toggle at all and were left out of scope (confirmed with the user) — a separate, larger feature to add if ever wanted.
+
+  Not verified on-device/in-simulator (no WeChat DevTools automation available in this environment) — this is a thorough static contrast/coverage review, not a confirmed visual pass.
+
 ### Added
 
 - **Viva proactive daily check-ins — morning/midday/evening** (`functions/dispatcher/index.js` new `getCheckinPeriod()`/Scan 0/`dispatchToWorker()`, `functions/worker/index.js` new `checkin.daily` EventBridge case, `functions/worker/handlers/checkin.js` new `handleDailyCheckinEvent`, `functions/worker/prompts/viva/systemDailyCheckin.js`)

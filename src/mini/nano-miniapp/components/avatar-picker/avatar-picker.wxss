@@ -70,8 +70,8 @@
 }
 
 .ap-item-selected {
-  border-color: #6375EC;
-  box-shadow: 0 0 0 4rpx rgba(99, 117, 236, 0.25);
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4rpx rgba(var(--blue-rgb), 0.25);
 }
 
 .ap-item-img {

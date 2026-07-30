@@ -1342,6 +1342,76 @@
 .theme-light .q-resp-answer       { color: var(--text); }
 .theme-light .q-resp-time         { color: var(--text-muted); }
 
+/* ── Misc small accents ── */
+.theme-light .swipe-back-hint { color: var(--text-muted); }
+.theme-light .reminder-trigger-text { color: var(--blue); }
+
+/* ── Client search + stage filter chips ── */
+.theme-light .clients-search-bar   { background: var(--navy-card); border-color: var(--navy-border); }
+.theme-light .clients-search-input { color: var(--text); }
+.theme-light .search-clear-icon    { color: var(--text-muted); }
+.theme-light .stage-chip           { border-color: rgba(var(--wave-rgb), 0.2); background: rgba(var(--wave-rgb), 0.05); }
+.theme-light .stage-chip-active    { border-color: var(--blue); background: rgba(var(--blue-rgb), 0.15); }
+.theme-light .stage-chip-active .stage-chip-text { color: var(--blue); }
+.theme-light .stage-chip-text      { color: var(--text-sub); }
+.theme-light .stage-chip-count     { color: var(--text-muted); background: rgba(var(--wave-rgb), 0.08); }
+.theme-light .search-result-txt    { color: var(--text-muted); }
+.theme-light .age-chip             { border-color: var(--navy-border); }
+.theme-light .last-msg-time        { color: var(--text-muted); }
+
+/* ── Invite status pill ── */
+.theme-light .invite-active      { background: rgba(var(--blue-rgb), 0.15); }
+.theme-light .invite-status-text { color: var(--blue); }
+.theme-light .invite-inactive .invite-status-text { color: var(--text-muted); }
+.theme-light .invite-note-edit   { color: var(--blue); }
+
+/* ── Reminder recurrence toggle (active state) ── */
+.theme-light .recurrence-active { background: rgba(var(--blue-rgb), 0.2); border-color: var(--blue); }
+
+/* ── Chat plus/attach button ── */
+.theme-light .chat-plus-btn  { background: rgba(var(--blue-rgb), 0.12); border-color: rgba(var(--blue-rgb), 0.25); }
+.theme-light .chat-plus-open { background: rgba(var(--blue-rgb), 0.3); border-color: var(--blue); }
+.theme-light .chat-plus-icon { color: var(--text-sub); }
+.theme-light .chat-plus-open .chat-plus-icon { color: var(--blue); }
+
+/* ── Training Tab ── */
+.theme-light .training-section-title       { color: var(--text-muted); }
+.theme-light .training-course-card         { background: var(--navy-card); border-color: var(--navy-border); }
+.theme-light .training-course-cover        { background: linear-gradient(135deg, var(--navy-lift) 0%, var(--navy-card) 100%); border-bottom-color: var(--navy-border); }
+.theme-light .training-course-cover-text   { color: var(--text); }
+.theme-light .training-lesson-badge        { background: rgba(var(--blue-rgb), 0.2); border-color: rgba(var(--blue-rgb), 0.4); }
+.theme-light .training-lesson-badge-text   { color: var(--blue); }
+.theme-light .training-course-title        { color: var(--text); }
+.theme-light .training-course-desc         { color: var(--text-muted); }
+.theme-light .training-library-row         { background: var(--navy-card); border-color: var(--navy-border); }
+.theme-light .training-library-title       { color: var(--text); }
+.theme-light .training-library-chevron     { color: var(--text-muted); }
+.theme-light .training-back-text           { color: var(--blue); }
+.theme-light .training-course-header       { border-bottom-color: var(--navy-border); }
+.theme-light .training-course-header-title { color: var(--text); }
+.theme-light .training-course-header-desc  { color: var(--text-muted); }
+.theme-light .training-lesson-row          { background: var(--navy-card); border-color: var(--navy-border); }
+.theme-light .training-lesson-num          { background: rgba(var(--blue-rgb), 0.15); border-color: rgba(var(--blue-rgb), 0.3); }
+.theme-light .training-lesson-num-text     { color: var(--blue); }
+.theme-light .training-lesson-title        { color: var(--text); }
+.theme-light .training-lesson-desc         { color: var(--text-muted); }
+.theme-light .training-lesson-no-video     { color: var(--text-muted); }
+.theme-light .training-lesson-chevron      { color: var(--text-muted); }
+.theme-light .training-video-loading       { background: var(--navy-lift); }
+.theme-light .training-video-loading-text  { color: var(--text-muted); }
+.theme-light .training-lesson-detail-title { color: var(--text); }
+.theme-light .training-lesson-detail-desc  { color: var(--text-muted); }
+.theme-light .training-library-header        { border-bottom-color: var(--navy-border); }
+.theme-light .training-library-header-title  { color: var(--text); }
+.theme-light .training-library-content-text  { color: var(--text-sub); }
+.theme-light .training-dashboard               { background: linear-gradient(135deg, var(--navy-lift), var(--bg-surface)); border-color: var(--navy-border); }
+.theme-light .training-dashboard-credits-label { color: var(--text-muted); }
+.theme-light .training-dashboard-stat          { color: var(--text-sub); }
+.theme-light .training-text-body     { color: var(--text-sub); }
+.theme-light .training-quiz-scenario { color: var(--text-sub); }
+.theme-light .training-quiz-option-radio         { border-color: var(--text-muted); }
+.theme-light .training-quiz-option-radio-checked { border-color: var(--blue); background: var(--blue); }
+
 
 /* ── Plans tab (client detail) ── */
 .plans-coach-header { padding: 24rpx 28rpx 8rpx; }
@@ -1479,6 +1549,27 @@
 .overlay-cancel-btn  { flex: 1; padding: 22rpx; background: var(--navy-lift); border-radius: 14rpx; text-align: center; font-size: 26rpx; color: var(--text-muted); }
 .overlay-confirm-btn { flex: 2; padding: 22rpx; background: linear-gradient(90deg,#6375EC,#8B9FFF); border-radius: 14rpx; text-align: center; font-size: 26rpx; font-weight: 600; color: #fff; }
 
+/* ── Plans / CRM / Goals accent fixes (light theme) ── */
+.theme-light .coach-plan-primary { background: rgba(var(--blue-rgb), 0.2); color: var(--blue); }
+.theme-light .note-pinned        { background: rgba(var(--blue-rgb), 0.06); }
+.theme-light .note-action-btn    { color: var(--blue); }
+.theme-light .goal-status-active { background: rgba(var(--blue-rgb), 0.2); color: var(--blue); }
+.theme-light .goal-form-card     { background: var(--navy-card); }
+.theme-light .crm-section-btn      { border-color: var(--blue); }
+.theme-light .crm-section-btn-text { color: var(--blue); }
+.theme-light .improver-avatar    { background: var(--navy-lift); }
+.theme-light .appt-format-badge  { background: rgba(var(--blue-rgb), 0.15); }
+.theme-light .appt-format-text   { color: var(--blue); }
+
+/* ── White-tint overlays that go invisible on a light/white surface ── */
+.theme-light .pipeline-card              { background: rgba(44, 44, 44, 0.04); }
+.theme-light .activity-item              { border-bottom-color: rgba(44, 44, 44, 0.06); }
+.theme-light .form-input                 { background: rgba(44, 44, 44, 0.05); }
+.theme-light .note-input                 { background: rgba(44, 44, 44, 0.05); }
+.theme-light .training-quiz-option       { background: rgba(44, 44, 44, 0.04); }
+.theme-light .goal-bar-bg                { background: rgba(44, 44, 44, 0.1); }
+.theme-light .training-path-progress-bar { background: rgba(44, 44, 44, 0.1); }
+
 
 /* Page-level privacy authorization modal */
 .page-privacy-mask {
@@ -1530,3 +1621,9 @@
   font-size: 26rpx;
   color: rgba(166, 196, 229, 0.5);
 }
+
+/* ── Page-level privacy modal (light theme) ── */
+.theme-light .page-privacy-box   { background: var(--navy-card); }
+.theme-light .page-privacy-title { color: var(--text); }
+.theme-light .page-privacy-body  { color: var(--text-sub); }
+.theme-light .page-privacy-cancel-btn text { color: var(--text-muted); }

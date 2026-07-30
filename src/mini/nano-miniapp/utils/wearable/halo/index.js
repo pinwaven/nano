@@ -168,11 +168,14 @@ class HaloRing extends WearableDevice {
 
   // --- History: already-implemented data types ---
 
-  // Returns [{ value: bpm, timestamp: Date }] for today (or the given date)
-  async getHeartRateLog(date) {
+  // Returns [{ value: bpm, timestamp: Date }] for today (or the given date).
+  // sinceDate (optional): when given, requests protocol mode 0x01 (records
+  // from this date on) instead of the default mode 0x00 (latest) — see
+  // docs/architecture/halo-smart-ring.md §9 for the incremental-sync design.
+  async getHeartRateLog(date, sinceDate) {
     const todayStr = _isoDateStr(date || new Date())
     const buf = await this._stream(
-      getStaticHeartRateHistoryPacket(),
+      getStaticHeartRateHistoryPacket(sinceDate ? 0x01 : 0, sinceDate || null),
       0x55,
       (acc) => acc.length > 0 && acc[acc.length - 1] === 0xFF,
       8000,
@@ -180,12 +183,13 @@ class HaloRing extends WearableDevice {
     return _parseHrLog55(buf, todayStr)
   }
 
-  // Returns all HRV records across all cached days as
+  // Returns HRV records across all cached days (or, with sinceDate, only
+  // records from that date on — protocol mode 0x01) as
   // [{ timestamp, hrv, stress, breath, heartRate, highBP, lowBP }], sorted oldest-first.
   // The ring caches ~3 days of 15-min interval readings.
-  async getHrvHistory() {
+  async getHrvHistory(sinceDate) {
     const buf = await this._stream(
-      getHrvHistoryPacket(),
+      getHrvHistoryPacket(sinceDate ? 0x01 : 0, sinceDate || null),
       0x56,
       (acc) => acc.length > 0 && acc[acc.length - 1] === 0xFF,
       8000,
@@ -210,11 +214,12 @@ class HaloRing extends WearableDevice {
       .map(r => ({ timestamp: r.timestamp, stress: r.stress }))
   }
 
-  // Returns all auto-SpO2 records across all cached days as
+  // Returns auto-SpO2 records across all cached days (or, with sinceDate,
+  // only records from that date on — protocol mode 0x01) as
   // [{ timestamp, spo2 }], sorted oldest-first.
-  async getAutoSpo2History() {
+  async getAutoSpo2History(sinceDate) {
     const buf = await this._stream(
-      getAutoSpo2HistoryPacket(),
+      getAutoSpo2HistoryPacket(sinceDate ? 0x01 : 0, sinceDate || null),
       0x66,
       (acc) => acc.length > 0 && acc[acc.length - 1] === 0xFF,
       8000,
@@ -229,8 +234,12 @@ class HaloRing extends WearableDevice {
     return history.filter(r => r.timestamp.startsWith(dayStr))
   }
 
-  // Returns { steps, calories, distance (metres), slots: [{ t, steps, cal, dist }] }
-  async getSteps(date) {
+  // Returns { steps, calories, distance (metres), slots: [{ t, steps, cal, dist }] }.
+  // sinceDate (optional): applies to the 0x52 detail-block stream only (mode
+  // 0x01) — the 0x51 daily summary is always a fresh full read since it's a
+  // small, continuously-updating running total for the day, not append-only
+  // history. See docs/architecture/halo-smart-ring.md §9.
+  async getSteps(date, sinceDate) {
     const todayStr = _isoDateStr(date || new Date())
     const buf51 = await this._stream(
       getDailyActivitySummaryPacket(),
@@ -239,7 +248,7 @@ class HaloRing extends WearableDevice {
       8000,
     )
     const buf52 = await this._stream(
-      getDetailActivityPacket(),
+      getDetailActivityPacket(sinceDate ? 0x01 : 0, sinceDate || null),
       0x52,
       (acc) => acc.length > 0 && acc[acc.length - 1] === 0xFF,
       8000,
@@ -262,6 +271,27 @@ class HaloRing extends WearableDevice {
       15000,
     )
     return _parseSleepHistory(buf)
+  }
+
+  // Returns raw, unsummarized blocks — [{ dateStr, unitMin, stages }], one
+  // per 1-min (130-byte) or 5-min (34-byte) record the ring sent, NOT grouped
+  // into nights/sessions. For incremental sync: the night/session-grouping
+  // algorithm (_summariseSleepBlocks) needs the full set of a night's blocks
+  // to reconstruct it correctly, so callers merge these raw blocks with the
+  // previous sync's raw blocks (keyed by dateStr) before re-deriving night
+  // summaries — see docs/architecture/halo-smart-ring.md §9. sinceDate
+  // (optional): requests protocol mode 0x01 instead of the default 0x00.
+  async getSleepBlocks(sinceDate) {
+    const buf = await this._stream(
+      getSleepHistoryPacket(sinceDate ? 0x01 : 0, sinceDate || null),
+      0x53,
+      (acc) => {
+        const n = acc.length
+        return n >= 2 && acc[n - 2] === 0x53 && acc[n - 1] === 0xFF
+      },
+      15000,
+    )
+    return _parseSleepBlocks(buf)
   }
 
   // Returns the most recent night's summary (same shape as one getSleepHistory() element).
@@ -323,10 +353,11 @@ class HaloRing extends WearableDevice {
     return _parseTempLog62(buf, todayStr)
   }
 
-  // All cached temperature records across all stored days (no date filter).
-  async getTemperatureHistory() {
+  // All cached temperature records across all stored days, or (with
+  // sinceDate) only records from that date on — protocol mode 0x01.
+  async getTemperatureHistory(sinceDate) {
     const buf = await this._stream(
-      getTemperatureHistoryPacket(),
+      getTemperatureHistoryPacket(sinceDate ? 0x01 : 0, sinceDate || null),
       0x62,
       (acc) => acc.length > 0 && acc[acc.length - 1] === 0xFF,
       8000,
@@ -759,16 +790,21 @@ function _parseSleepHrv60(buf, todayStr) {
 
 // 0x62 — temperature: 15-byte records, 3 NTC sensors (×0.1 °C each)
 // [cmd][?][?][y][mo][d][h][mi][s][ntc1-lo][ntc1-hi][ntc2-lo][ntc2-hi][ntc3-lo][ntc3-hi]
+// Deduped by timestamp (same rationale as _parseHrvRecords56/_parseSpo2Records66 —
+// the ring sends the same batch twice in a single response).
 function _parseTempLog62(buf, todayStr) {
   if (!buf || buf.length < 15) return []
   const recSize = 15
   const size = Math.floor(buf.length / recSize)
+  const seen = new Set()
   const results = []
   for (let i = 0; i < size; i++) {
     const off = i * recSize
     if (buf[off] !== 0x62) continue
     const dateStr = parseBcdDate(buf, 3 + off, true)
     if (todayStr && !dateStr.startsWith(todayStr)) continue
+    if (seen.has(dateStr)) continue
+    seen.add(dateStr)
     const skinTemp    = readLEInt(buf, 9 + off, 2) * 0.1
     const ambientTemp = readLEInt(buf, 11 + off, 2) * 0.1
     const shellTemp   = readLEInt(buf, 13 + off, 2) * 0.1
@@ -993,11 +1029,16 @@ function _dateStrToAbsMins(dateStr) {
 // Blocks separated by more than this are treated as separate sleep sessions.
 const SPLIT_GAP_MINS = 90
 
-// Parse a raw 0x53 buffer into per-session summaries, oldest first.
+// Groups already-parsed raw blocks (see _parseSleepBlocks) into per-session
+// summaries, oldest first. Split out from _parseSleepHistory so incremental
+// sync can merge newly-fetched blocks with previously-stored ones (keyed by
+// each block's own dateStr, via the same _mergeRingSlots helper used for
+// HRV/SpO2/temperature — see docs/architecture/halo-smart-ring.md §9) and
+// re-derive night summaries from the merged set, rather than only ever
+// seeing whatever blocks happened to arrive in one particular fetch.
 // Multiple sessions on the same calendar night (e.g. an afternoon nap and a
 // separate night sleep) are kept as distinct entries rather than merged.
-function _parseSleepHistory(buf) {
-  const records = _parseSleepBlocks(buf)
+function _summariseSleepBlocks(records) {
   if (!records.length) return []
   const nightMap = {}
   for (const rec of records) {
@@ -1027,6 +1068,12 @@ function _parseSleepHistory(buf) {
   }
   // Sort by session onset so the most recent session is last (caller uses .last).
   return nights.sort((a, b) => (a.onset < b.onset ? -1 : 1))
+}
+
+// Parse a raw 0x53 buffer directly into per-session summaries (full-fetch
+// path — unchanged from before the incremental-sync refactor above).
+function _parseSleepHistory(buf) {
+  return _summariseSleepBlocks(_parseSleepBlocks(buf))
 }
 
 // 0x09 — real-time activity broadcast (25 bytes)
@@ -1147,6 +1194,8 @@ HaloRing.parsers = {
   parseOxygenVariation5D: _parseOxygenVariation5D,
   parseSteps: _parseSteps,
   parseSleepHistory: _parseSleepHistory,
+  parseSleepBlocks: _parseSleepBlocks,
+  summariseSleepBlocks: _summariseSleepBlocks,
   isoDateStr: _isoDateStr,
 }
 

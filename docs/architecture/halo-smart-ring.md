@@ -664,21 +664,155 @@ await ring.stopPpgStream()
 
 ---
 
-## 9. Incremental Sync (Not Yet Implemented)
+## 9. Incremental Sync
 
-To avoid re-downloading all history on every connection, pass mode `0x01` with a BCD date filter:
+Implemented 2026-07-30 for HRV (`0x56`), SpO2 (`0x66`), and temperature
+(`0x62`). Extended 2026-07-31 to steps detail (`0x52`) and sleep (`0x53`)
+after a real end-to-end sync on a live ring still took ~30s post-fix — the
+original assumption that steps/sleep were "cheap, a handful of records" was
+wrong on real hardware; they were the actual remaining bottleneck once
+HRV/SpO2/temp dropped to ~180ms combined. Static HR (`0x55`) stays on full
+fetch — see the dedicated note at the end of this section, it's a different
+kind of problem than the others.
+
+`getHeartRateLog(date, sinceDate)`, `getHrvHistory(sinceDate)`,
+`getAutoSpo2History(sinceDate)`, `getTemperatureHistory(sinceDate)`
+(`utils/wearable/halo/index.js`) now accept an optional trailing `sinceDate`
+— when given, the packet builder is called with `(0x01, sinceDate)` instead
+of the default `()` (mode `0x00`):
 
 ```js
-// buildHistorySyncPayload in protocol.js supports this:
-// mode = 0x01, dateFilter = Date object
-function getDailyActivitySummaryPacket(mode, dateFilter) {
-  return buildCommand(0x51, buildHistorySyncPayload(mode || 0, dateFilter || null))
+function getHrvHistoryPacket(mode, dateFilter) {
+  return buildCommand(0x56, buildHistorySyncPayload(mode || 0, dateFilter || null))
 }
-
-// Usage:
-const lastSync = wx.getStorageSync('halo_last_sync')  // Date | null
-const mode = lastSync ? 0x01 : 0x00
-const packet = getDailyActivitySummaryPacket(mode, lastSync ? new Date(lastSync) : null)
+async getHrvHistory(sinceDate) {
+  const buf = await this._stream(getHrvHistoryPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x56, ...)
+  return _parseHrvRecords56(buf)
+}
 ```
 
-After a successful sync, store the timestamp of the latest record as `halo_last_sync`.
+No dedicated `halo_last_sync` storage key: `handleSyncWearable()`
+(`components/user-health/user-health.js`) derives each type's cursor from
+the max timestamp already present in the previously stored
+`wearable_ring_data` slot array (`hrSlots[].t`, `hrvSlots[].timestamp`,
+`spo2Slots[].timestamp`, `tempSlots[].date`), so the cursor's lifecycle
+automatically matches the data's own (cleared on unbind, advanced only on a
+successful commit). A cursor older than ~4 days or a fresh bind (no previous
+data) skips the incremental attempt and falls back to full fetch (heuristic
+only, not a correctness requirement — see below). Newly-fetched records are
+merged into the previous snapshot (`_mergeRingSlots()`, keyed by each type's
+natural timestamp field, new wins on collision) and trimmed to a 7-day local
+retention window — this also fixes a latent bug where a failed or empty
+per-type fetch used to overwrite the whole previous snapshot with `null`.
+
+**Critical, live-confirmed constraint — no safety margin, exact timestamp
+only.** Validated 2026-07-30 against a real V8 band (`tools/halo --device v8
+history`, see `docs/architecture/v8-smart-band.md` §"History sync mode
+byte" for the full test matrix): mode `0x01` requires `since` to *exactly*
+match one of the device's own stored record timestamps, to the second. The
+matched record is included (inclusive boundary), but any other value —
+including a deliberately "conservative" offset like 5 minutes earlier —
+makes the device silently return its **entire** history instead, exactly
+like mode `0x00`, defeating the optimization. `_deriveSinceDate()` therefore
+passes the exact last-known timestamp with no margin; this is safe because
+it's a real value the ring itself produced, not an independently-derived
+"now" subject to clock drift. A stale/purged cursor degrades gracefully to
+the same full-history fallback rather than losing data, which is why the
+4-day staleness check above is only a "don't bother attempting" heuristic.
+
+**Support is per-command, confirmed live on both a V8 band and a real Halo
+X3 ring (2026-07-31, `tools/halo history` against unit `X3B 53687`).** HRV
+(`0x56`), SpO2 (`0x66`), and temperature (`0x62`) all honor mode `0x01`
+under the same exact-timestamp requirement described above — verified with
+the same test matrix as the V8 run: `since` = the exact latest record
+returns `count=1` (that record, inclusive); `since` = that same timestamp
+minus one second falls back to full history every time (600 HRV / 1200 SpO2
+/ 800 temp records on this unit — SpO2 and temperature's full fetches were
+themselves hitting the 8s stream timeout, returning a truncated 50-packet
+partial result, exactly the case this feature avoids by never requesting
+the untruncated backlog); `since` = an exact record from 24h earlier
+correctly returned a 23-record window. Static HR (`0x55`) was inconclusive
+on this unit too (zero records in any mode) — both the Halo and V8 test
+units happened to have no static HR log data, so this one command remains
+unverified pending a unit that actually has some. To re-run this validation
+against a different unit or after a protocol change:
+
+```bash
+node bin/cli.js history --type hrv --json                              # baseline, mode 0x00
+node bin/cli.js history --type hrv --since <baseline's exact "last" value> --json  # mode 0x01, expect count=1
+```
+
+### Steps (`0x52`) — confirmed working, one open reliability question
+
+`getSteps(date, sinceDate)` applies `sinceDate` to the `0x52` detail-block
+stream only — `0x51` (the daily summary) always stays a full fresh read
+since it's a small, continuously-updating running total for the day, not
+append-only history. Same exact-match mechanism as HRV/SpO2/temp, confirmed
+on the Halo X3 unit: a clean isolated request with the fresh exact cursor
+returned in 36-64ms (vs. an 8s timeout on the 450-record full fetch).
+
+**Not yet fully explained**: in one combined two-sync test (full baseline
+sync immediately followed by an incremental sync using cursors derived from
+that baseline), the `0x52` incremental request fell back to the full 8s
+timeout despite using what should have been a valid exact-match cursor —
+even though two separate isolated tests (fresh connection, cursor fetched
+immediately beforehand) both succeeded cleanly. Two plausible causes,
+neither confirmed: (a) BLE session/notification-handler strain carrying over
+from the immediately-preceding heavy 5-command baseline sync (all five of
+HRV/SpO2/temp/steps-detail/sleep hit their timeout ceilings in that same
+baseline pass), or (b) `0x52`'s buffer may rotate/evict faster than
+HRV/SpO2/temp's, so a cursor that was exactly correct at capture time could
+already be stale by the time it's used, if a lot of new detail-block data
+landed in between (steps/sleep testing round-trips on this unit routinely
+took 30-45s+ end to end, plenty of time for this). This degrades gracefully
+either way — worst case is identical to pre-fix behavior (full fetch, no
+data loss) — but don't assume 0x52 incremental is as consistently fast as
+HRV/SpO2/temp without more testing across a range of real sync intervals.
+
+### Sleep (`0x53`) — confirmed working, refactored around raw blocks
+
+Unlike the flat per-reading types, sleep's night/session-grouping algorithm
+(gap-based session splitting, multi-block night reconstruction) needs the
+*complete* set of a night's raw blocks to produce a correct summary — a
+"only this sync's new blocks" fetch can't be summarized in isolation.
+`_parseSleepHistory(buf)` was split into `_parseSleepBlocks(buf)` (already
+existed) and a new `_summariseSleepBlocks(blocks)` (the extracted
+grouping/session-split/summarize logic); `_parseSleepHistory` is now just
+`_summariseSleepBlocks(_parseSleepBlocks(buf))`, unchanged behavior for
+existing full-fetch callers. A new `getSleepBlocks(sinceDate)` returns raw
+blocks only; `handleSyncWearable()` merges these with the previous sync's
+raw blocks (`wearable_ring_data.sleepBlocks`, a new local-only field — never
+sent to the server, `sync.js` only reads the existing summarized fields)
+via the same generic `_mergeRingSlots()` used elsewhere (keyed by each
+block's own `dateStr`), then re-derives night summaries from the merged set.
+
+Confirmed on the Halo X3 unit: an isolated exact-match request returned in
+64ms (132 bytes = one 130-byte block + terminator) vs. 15s (the full
+timeout ceiling) for the baseline fetch. One flaky run produced a full
+"zero data received" failure on both an exact-match and a mismatched
+request in the same connection — traced to BLE session strain from stacking
+three heavy `0x53` requests back-to-back (the app only ever issues one
+`0x53` request per sync, so this specific failure mode shouldn't reproduce
+in real usage), not a genuine protocol difference; a clean single request as
+the first operation on a fresh connection worked correctly both for an
+exact match and for a deliberate mismatch (correctly falling back to full
+history), matching every other type's behavior.
+
+**Halo only** — V8's sleep reassembly model is structurally different
+(per-notification parsed chunks, not Halo's concatenated-raw-buffer model;
+see `docs/architecture/v8-smart-band.md` §3) and mode `0x01` hasn't been
+tested against it at all. V8 sleep stays on full fetch
+(`INCREMENTAL_SUPPORT.v8.sleep = false`) until that validation is done.
+
+### Static HR (`0x55`) — a different, unsolved problem
+
+Both the V8 and Halo X3 test units returned **zero static-HR records in
+every test, including full mode-`0x00` fetches** — and critically, that
+empty result still took the full 8s timeout to arrive rather than returning
+quickly. This means static HR's slowness isn't a "too much data" problem
+incremental fetch could fix — it looks like the terminator notification
+itself never arrives when there's nothing to send, so `_stream()` has no
+way to know it's done early. Making this command incremental wouldn't help;
+the underlying issue (an empty stream still costing a full timeout) would
+need its own fix, and is out of scope for this change. `getHeartRateLog()`
+stays on full fetch, unresolved, on both brands.

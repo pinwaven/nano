@@ -204,20 +204,26 @@ class V8Client {
     return this._streamRecords(getDynamicHrDataPacket(), 0x54, parseDynamicHrChunk, 25000);
   }
 
-  async getHeartRateLog() {
-    return this._streamRecords(getStaticHrDataPacket(), 0x55, parseStaticHrChunk, 8000);
+  // sinceDate (optional): validates the incremental-sync design (mode 0x01 +
+  // BCD date filter) — see tools/halo/README.md's "Incremental sync
+  // validation" section. Omit for the normal mode 0x00 (latest) fetch.
+  // V8's mode 0x01 support is UNCONFIRMED (docs/architecture/v8-smart-band.md
+  // §6-7's vendor-source trace found no distinct 0x01 branch) — this exists
+  // so that fact can actually be tested against real hardware.
+  async getHeartRateLog(sinceDate) {
+    return this._streamRecords(getStaticHrDataPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x55, parseStaticHrChunk, 8000);
   }
 
-  async getHrvHistory() {
-    return this._streamRecords(getHrvTestDataPacket(), 0x56, parseHrvChunk, 8000);
+  async getHrvHistory(sinceDate) {
+    return this._streamRecords(getHrvTestDataPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x56, parseHrvChunk, 8000);
   }
 
-  async getTemperatureHistory() {
-    return this._streamRecords(getTemperatureHistoryPacket(), 0x62, parseTemperatureChunk, 8000);
+  async getTemperatureHistory(sinceDate) {
+    return this._streamRecords(getTemperatureHistoryPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x62, parseTemperatureChunk, 8000);
   }
 
-  async getSpo2History() {
-    return this._streamRecords(getOxygenDataPacket(), 0x66, parseOxygenChunk, 8000);
+  async getSpo2History(sinceDate) {
+    return this._streamRecords(getOxygenDataPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x66, parseOxygenChunk, 8000);
   }
 }
 

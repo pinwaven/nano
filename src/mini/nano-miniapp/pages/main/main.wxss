@@ -4051,3 +4051,249 @@ button.consent-row::after { border: none; }
   font-size: 26rpx;
   color: rgba(166, 196, 229, 0.5);
 }
+
+/* ════════════════════════════════════════════════════════
+   LIGHT THEME OVERRIDES — PART 2 (bug-fix pass)
+   Selectors below had no .theme-light coverage at all, or an
+   incomplete one, and were frozen at dark-tuned literal colors.
+   ════════════════════════════════════════════════════════ */
+
+/* ── Header / menu / chat input misc ── */
+.theme-light .coach-back-pill      { color: rgba(var(--blue-rgb), 0.6); }
+.theme-light .header-version {
+  color: rgba(var(--blue-rgb), 0.7);
+  background: rgba(var(--blue-rgb), 0.12);
+  border-color: rgba(var(--blue-rgb), 0.25);
+}
+.theme-light .menu-credit-label    { color: var(--text-sub); }
+.theme-light .ai-disclaimer-text   { color: var(--text-muted); }
+.theme-light .toolbox-panel {
+  background: var(--bg-sheet);
+  border-top-color: var(--navy-border);
+}
+.theme-light .send-btn             { background: rgba(var(--blue-rgb), 0.12); }
+.theme-light .send-icon            { color: var(--text-muted); }
+.theme-light .send-active .send-icon { color: #fff; }
+.theme-light .mic-recording-text   { color: #C0392B; }
+.theme-light .copy-badge           { color: var(--blue); }
+.theme-light .stepper-btn {
+  border-color: rgba(var(--blue-rgb), 0.5);
+  background: rgba(var(--blue-rgb), 0.08);
+}
+.theme-light .stepper-sym          { color: var(--blue); }
+.theme-light .stepper-qty          { color: var(--text); }
+.theme-light .store-variant-pill {
+  border-color: rgba(var(--blue-rgb), 0.35);
+  background: rgba(var(--blue-rgb), 0.06);
+}
+.theme-light .store-variant-pill-active {
+  border-color: var(--blue);
+  background: rgba(var(--blue-rgb), 0.22);
+}
+.theme-light .store-variant-label  { color: var(--text-sub); }
+.theme-light .store-variant-pill-active .store-variant-label { color: var(--text); }
+.theme-light .order-status-confirmed { color: #1d4ed8; }
+.theme-light .order-status-shipped   { color: #6d28d9; }
+.theme-light .order-status-delivered { color: #059669; }
+.theme-light .order-status-cancelled { color: #475569; }
+.theme-light .delivery-label       { color: var(--text-muted); }
+.theme-light .delivery-val         { color: var(--text); }
+.theme-light .checkout-addr-form   { border-top-color: rgba(var(--blue-rgb), 0.12); }
+.theme-light .order-delivery-info  { background: rgba(var(--blue-rgb), 0.05); }
+.theme-light .tracking-section     { border-top-color: rgba(var(--blue-rgb), 0.1); }
+.theme-light .kpass-logo           { color: var(--blue); }
+.theme-light .kpass-dot-filled     { background: var(--blue); border-color: var(--blue); }
+.theme-light .ksm-dot              { background: var(--blue); }
+
+/* ── Guest UI (signup / login sheet) ── */
+.theme-light .guest-lock-card {
+  background: rgba(var(--blue-rgb), 0.06);
+  border-color: rgba(var(--blue-rgb), 0.18);
+}
+.theme-light .guest-lock-title     { color: var(--text-sub); }
+.theme-light .avatar-pick-btn {
+  background: rgba(var(--blue-rgb), 0.12);
+  border-color: rgba(var(--blue-rgb), 0.5);
+}
+.theme-light .avatar-pick-icon     { color: rgba(var(--blue-rgb), 0.7); }
+.theme-light .avatar-pick-hint     { color: var(--text-muted); }
+.theme-light .guest-sheet {
+  background: var(--navy-card);
+  border-top-color: var(--navy-border);
+}
+.theme-light .guest-sheet-handle   { background: rgba(var(--blue-rgb), 0.25); }
+.theme-light .guest-sheet-title    { color: var(--text); }
+.theme-light .guest-sheet-desc     { color: var(--text-sub); }
+.theme-light .guest-sheet-error    { color: #dc2626; }
+.theme-light .guest-sheet-skip     { color: var(--text-muted); }
+.theme-light .consent-row {
+  background: rgba(var(--blue-rgb), 0.07);
+  border-color: rgba(var(--blue-rgb), 0.2);
+}
+.theme-light .consent-row-done {
+  background: rgba(var(--blue-rgb), 0.14);
+  border-color: rgba(var(--blue-rgb), 0.45);
+}
+.theme-light .consent-check        { border-color: rgba(var(--blue-rgb), 0.35); }
+.theme-light .consent-check-done   { background: var(--blue); border-color: var(--blue); }
+.theme-light .consent-label        { color: var(--text); }
+.theme-light .avatar-saving-ring   { border-top-color: var(--blue); border-right-color: var(--blue); }
+.theme-light .pin-box {
+  border-color: rgba(var(--blue-rgb), 0.25);
+  background: var(--navy-lift);
+}
+.theme-light .pin-active {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4rpx rgba(var(--blue-rgb), 0.15);
+}
+.theme-light .pin-filled           { border-color: rgba(var(--blue-rgb), 0.5); }
+.theme-light .pin-digit            { color: var(--text); }
+.theme-light .msg-phone-btn {
+  background: linear-gradient(135deg, rgba(var(--blue-rgb), 0.18), rgba(var(--blue-rgb), 0.08));
+  border-color: rgba(var(--blue-rgb), 0.45) !important;
+  color: var(--blue);
+}
+
+/* ── Plans / Reminders / Events tab (keeps its established cool-navy palette) ── */
+.theme-light .plans-browse-btn-text   { color: #4f5fcc; }
+.theme-light .plans-empty-text        { color: #607090; }
+.theme-light .plan-type-primary   .plan-type-text { color: #4f5fcc; }
+.theme-light .plan-type-secondary .plan-type-text { color: #059669; }
+.theme-light .plan-progress-bar-track { background: rgba(0, 0, 0, 0.06); }
+.theme-light .plan-checkin-done .plan-checkin-text { color: #059669; }
+.theme-light .plan-detail-section     { border-bottom-color: rgba(0, 0, 0, 0.08); }
+.theme-light .plan-chip-text          { color: #4f5fcc; }
+.theme-light .plan-chip-dot .plan-chip-text { color: #059669; }
+.theme-light .plan-action-switch text { color: #4f5fcc; }
+.theme-light .browse-tpl-card         { border-bottom-color: rgba(0, 0, 0, 0.08); }
+.theme-light .browse-enrolled-badge   { color: #4f5fcc; }
+.theme-light .browse-join-secondary text { color: #4f5fcc; }
+.theme-light .reminder-active text    { color: #4f5fcc; }
+.theme-light .reminder-paused text    { color: #607090; }
+.theme-light .plan-empty-hint text    { color: #607090; }
+.theme-light .reminders-section-title { color: #607090; }
+.theme-light .reminder-source-coach .reminder-source-text { color: #059669; }
+.theme-light .reminder-source-ai    .reminder-source-text { color: #4f5fcc; }
+.theme-light .event-badge-signed text { color: #059669; }
+.theme-light .event-btn-cancel text   { color: #4f5fcc; }
+
+/* ── Academy tab (had zero light-theme coverage) ── */
+.theme-light .training-section-title       { color: var(--text-sub); }
+.theme-light .training-course-card {
+  background: var(--navy-card);
+  border-color: var(--navy-border);
+}
+.theme-light .training-course-cover {
+  background: linear-gradient(135deg, rgba(var(--blue-rgb), 0.14) 0%, rgba(var(--blue-rgb), 0.05) 100%);
+  border-bottom-color: rgba(var(--blue-rgb), 0.15);
+}
+.theme-light .training-course-cover-text   { color: var(--text); }
+.theme-light .training-lesson-badge {
+  background: rgba(var(--blue-rgb), 0.2);
+  border-color: rgba(var(--blue-rgb), 0.4);
+}
+.theme-light .training-lesson-badge-text   { color: var(--blue); }
+.theme-light .training-course-title        { color: var(--text); }
+.theme-light .training-course-desc         { color: var(--text-sub); }
+.theme-light .training-library-row {
+  background: var(--navy-card);
+  border-color: var(--navy-border);
+}
+.theme-light .training-library-title       { color: var(--text); }
+.theme-light .training-library-chevron     { color: var(--text-muted); }
+.theme-light .training-back-text           { color: var(--blue); }
+.theme-light .training-course-header       { border-bottom-color: rgba(var(--blue-rgb), 0.15); }
+.theme-light .training-course-header-title { color: var(--text); }
+.theme-light .training-course-header-desc  { color: var(--text-sub); }
+.theme-light .training-lesson-row {
+  background: var(--navy-card);
+  border-color: var(--navy-border);
+}
+.theme-light .training-lesson-num {
+  background: rgba(var(--blue-rgb), 0.15);
+  border-color: rgba(var(--blue-rgb), 0.3);
+}
+.theme-light .training-lesson-num-text     { color: var(--blue); }
+.theme-light .training-lesson-title        { color: var(--text); }
+.theme-light .training-lesson-desc         { color: var(--text-sub); }
+.theme-light .training-lesson-no-video     { color: var(--text-muted); }
+.theme-light .training-lesson-done-text    { color: #059669; }
+.theme-light .training-lesson-chevron      { color: var(--text-muted); }
+.theme-light .training-lesson-detail-title { color: var(--text); }
+.theme-light .training-lesson-detail-desc  { color: var(--text-sub); }
+.theme-light .training-completed-badge-text { color: #059669; }
+.theme-light .training-library-header      { border-bottom-color: rgba(var(--blue-rgb), 0.15); }
+.theme-light .training-library-header-title { color: var(--text); }
+.theme-light .library-float-back {
+  background: var(--bg-input);
+  border-color: rgba(var(--blue-rgb), 0.5);
+}
+.theme-light .library-float-back-arrow     { color: var(--blue); }
+.theme-light .library-float-back-label     { color: var(--blue); }
+.theme-light .training-library-content-text { color: var(--text-sub); }
+
+/* ── Academy Credit Dashboard ── */
+.theme-light .academy-status-card {
+  background: linear-gradient(150deg, rgba(var(--blue-rgb), 0.16) 0%, rgba(var(--blue-rgb), 0.08) 50%, var(--navy-lift) 100%);
+  border-color: rgba(var(--blue-rgb), 0.35);
+  box-shadow: 0 12rpx 40rpx rgba(var(--blue-rgb), 0.18), inset 0 1rpx 0 rgba(255, 255, 255, 0.6);
+}
+.theme-light .academy-card-glow-tl { background: radial-gradient(circle, rgba(var(--blue-rgb), 0.18) 0%, transparent 70%); }
+.theme-light .academy-card-glow-br { background: radial-gradient(circle, rgba(var(--blue-rgb), 0.12) 0%, transparent 70%); }
+.theme-light .academy-card-header-label,
+.theme-light .academy-card-credits-label,
+.theme-light .academy-card-stat-label { color: var(--text-muted); }
+.theme-light .academy-card-tier-badge {
+  background: linear-gradient(135deg, rgba(var(--blue-rgb), 0.22), rgba(var(--blue-rgb), 0.12));
+  border-color: rgba(var(--blue-rgb), 0.38);
+}
+.theme-light .academy-card-tier-text { color: var(--blue); }
+.theme-light .academy-card-credits-num,
+.theme-light .academy-card-stat-num  { color: var(--text); }
+.theme-light .academy-card-divider   { background: linear-gradient(90deg, transparent, rgba(var(--blue-rgb), 0.3), transparent); }
+.theme-light .academy-card-stat-sep  { background: rgba(var(--blue-rgb), 0.18); }
+
+/* ── Learning paths / quiz / certifications ── */
+.theme-light .training-path-tier,
+.theme-light .training-course-level  { color: #4f46e5; background: rgba(79, 70, 229, 0.12); }
+.theme-light .training-path-progress-bar { background: rgba(0, 0, 0, 0.06); }
+.theme-light .training-course-credits    { color: #059669; }
+.theme-light .training-lesson-credits-label { color: #059669; }
+.theme-light .training-text-body     { color: var(--text-sub); }
+.theme-light .training-quiz-scenario { color: var(--text-sub); }
+.theme-light .training-quiz-option   { background: rgba(0, 0, 0, 0.03); }
+.theme-light .training-quiz-option-radio { border-color: var(--text-muted); }
+.theme-light .training-quiz-option-radio-checked { border-color: var(--blue); background: var(--blue); }
+.theme-light .training-quiz-result-credits { color: #059669; }
+.theme-light .training-quiz-review        { border-top-color: rgba(0, 0, 0, 0.08); }
+.theme-light .training-quiz-review-item   { border-bottom-color: rgba(0, 0, 0, 0.06); }
+.theme-light .training-quiz-review-correct .training-quiz-review-icon { color: #059669; }
+.theme-light .training-quiz-review-q          { color: var(--text); }
+.theme-light .training-quiz-review-correct-ans { color: #059669; }
+.theme-light .training-quiz-review-explanation { color: var(--text-sub); }
+.theme-light .cert-status-check { color: #059669; }
+.theme-light .cert-status-text  { color: #059669; }
+.theme-light .cert-valid  { color: #059669 !important; }
+.theme-light .cert-number { color: #4338ca !important; }
+.theme-light .cert-download-btn text { color: #4338ca; }
+
+/* ── Wellness tab ── */
+.theme-light .sleep-track-card,
+.theme-light .media-asset-card,
+.theme-light .device-apk-card { border-color: rgba(var(--wave-rgb), 0.1); }
+.theme-light .sleep-track-icon      { background: rgba(var(--blue-rgb), 0.18); }
+.theme-light .sleep-icon-glyph      { color: var(--blue); }
+.theme-light .sleep-track-active-dot { background: var(--blue); }
+.theme-light .sleep-now-playing {
+  background: rgba(var(--blue-rgb), 0.15);
+  border-color: rgba(var(--blue-rgb), 0.3);
+}
+.theme-light .sleep-np-label   { color: var(--blue); }
+.theme-light .sleep-np-btn     { background: rgba(var(--blue-rgb), 0.2); }
+.theme-light .sleep-np-btn-icon { color: var(--blue); }
+.theme-light .media-asset-glyph { color: var(--text); }
+.theme-light .media-asset-btn {
+  background: rgba(var(--wave-rgb), 0.1);
+  border-color: rgba(var(--wave-rgb), 0.2);
+}
+.theme-light .device-apk-btn-text { color: #059669; }

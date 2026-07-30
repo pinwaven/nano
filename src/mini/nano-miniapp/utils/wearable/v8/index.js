@@ -136,10 +136,12 @@ class V8Band extends WearableDevice {
   // Returns { steps, calories, distance (metres), slots: [{ t, steps, cal, dist }] }
   // for the given date (defaults to today). Combines the daily-totals (0x51)
   // and per-minute-detail (0x52) streams, matching HaloRing.getSteps()'s shape.
-  async getSteps(date) {
+  // sinceDate (optional): applies to the 0x52 detail stream only — see
+  // Halo's getSteps() comment for why 0x51 (daily total) always stays full-fetch.
+  async getSteps(date, sinceDate) {
     const todayStr = _isoDateStr(date || new Date())
     const totals = await this._streamRecords(getTotalStepDataPacket(), 0x51, _parseTotalStepChunk, 8000)
-    const detail = await this._streamRecords(getDetailActivityDataPacket(), 0x52, _parseDetailActivityChunk, 8000).catch(() => [])
+    const detail = await this._streamRecords(getDetailActivityDataPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x52, _parseDetailActivityChunk, 8000).catch(() => [])
     const today = totals.find(r => r.date === todayStr)
     const slots = detail
       .filter(r => r.date.startsWith(todayStr) && r.step > 0)
@@ -153,9 +155,15 @@ class V8Band extends WearableDevice {
   }
 
   // Returns [{ value: bpm, timestamp: Date }] for the given date (defaults to today).
-  async getHeartRateLog(date) {
+  // sinceDate (optional): when given, requests protocol mode 0x01 (records
+  // from this date on) instead of the default mode 0x00 (latest) — see
+  // docs/architecture/halo-smart-ring.md §9 for the incremental-sync design.
+  // V8's mode 0x01 support is UNCONFIRMED against real hardware — see
+  // docs/architecture/v8-smart-band.md §6-7 — do not pass sinceDate here
+  // until that's been validated live (tools/halo --device v8 history).
+  async getHeartRateLog(date, sinceDate) {
     const todayStr = _isoDateStr(date || new Date())
-    const records = await this._streamRecords(getStaticHrDataPacket(), 0x55, _parseStaticHrChunk, 8000)
+    const records = await this._streamRecords(getStaticHrDataPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x55, _parseStaticHrChunk, 8000)
     return records
       .filter(r => r.date.startsWith(todayStr) && r.heartRate > 0 && r.heartRate !== 0xFF)
       .map(r => ({ value: r.heartRate, timestamp: new Date(r.date.replace(' ', 'T') + '+08:00') }))
@@ -177,8 +185,9 @@ class V8Band extends WearableDevice {
   // any health_events field by sync.js (it has no `breath` equivalent for
   // V8 — the byte position Halo uses for breath rate carries a different
   // metric on V8) — exposed for completeness, not synced to the backend yet.
-  async getHrvHistory() {
-    const records = await this._streamRecords(getHrvTestDataPacket(), 0x56, _parseHrvChunk, 8000)
+  // sinceDate (optional): see getHeartRateLog's comment above — same caveat.
+  async getHrvHistory(sinceDate) {
+    const records = await this._streamRecords(getHrvTestDataPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x56, _parseHrvChunk, 8000)
     return records.map(r => ({
       timestamp:     r.date,
       hrv:           r.hrv || null,
@@ -191,8 +200,9 @@ class V8Band extends WearableDevice {
   }
 
   // Returns all auto-SpO2 records across cached days as [{ timestamp, spo2 }], oldest-first.
-  async getAutoSpo2History() {
-    const records = await this._streamRecords(getOxygenDataPacket(), 0x66, _parseOxygenChunk, 8000)
+  // sinceDate (optional): see getHeartRateLog's comment above — same caveat.
+  async getAutoSpo2History(sinceDate) {
+    const records = await this._streamRecords(getOxygenDataPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x66, _parseOxygenChunk, 8000)
     return records
       .filter(r => r.spo2 > 0 && r.spo2 !== 0xFF)
       .map(r => ({ timestamp: r.date, spo2: r.spo2 }))
@@ -203,8 +213,9 @@ class V8Band extends WearableDevice {
   // Halo's 3-sensor NTC breakdown — there is no ambient/shell delta to
   // compute a status level from, so `status` is always null here (Halo's
   // _estimateBodyTemp() algorithm genuinely does not apply).
-  async getTemperatureHistory() {
-    const records = await this._streamRecords(getTemperatureHistoryPacket(), 0x62, _parseTemperatureChunk, 8000)
+  // sinceDate (optional): see getHeartRateLog's comment above — same caveat.
+  async getTemperatureHistory(sinceDate) {
+    const records = await this._streamRecords(getTemperatureHistoryPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x62, _parseTemperatureChunk, 8000)
     return records.map(r => ({
       date: r.date,
       estimatedBodyTemp: r.temperature,

@@ -138,6 +138,67 @@ program
     process.exit(0);
   });
 
+// --- history: incremental-sync (mode 0x01) validation ---
+// See docs/architecture/halo-smart-ring.md §9 and tools/halo/README.md.
+// Usage pattern to validate the "since last sync" design before it's wired
+// into the Mini Program:
+//   1. node bin/cli.js history --type hrv --json         (baseline, mode 0x00)
+//   2. (let a new auto-monitor sample land, or trigger one)
+//   3. node bin/cli.js history --type hrv --since <max timestamp from step 1> --json
+//   4. Compare: step 3 should return strictly fewer records than step 1,
+//      all with timestamps on the correct side of --since.
+const HISTORY_TYPES = {
+  halo: {
+    hr:   (c, since) => c.getHeartRateLog(undefined, since),
+    hrv:  (c, since) => c.getHrvHistory(since),
+    spo2: (c, since) => c.getAutoSpo2History(since),
+    temp: (c, since) => c.getTemperatureHistory(since),
+  },
+  v8: {
+    hr:   (c, since) => c.getHeartRateLog(since),
+    hrv:  (c, since) => c.getHrvHistory(since),
+    spo2: (c, since) => c.getSpo2History(since),
+    temp: (c, since) => c.getTemperatureHistory(since),
+  },
+};
+
+// Records use different key fields across type/device: Halo's hr uses a Date
+// object at `.timestamp`; Halo's hrv/spo2 use a string `.timestamp`; every
+// other combination (Halo temp, all of V8) uses a string `.date`.
+function recordKey(rec) {
+  const v = rec.timestamp != null ? rec.timestamp : rec.date;
+  return v instanceof Date ? v.toISOString() : v;
+}
+
+program
+  .command('history')
+  .description('Fetch one history stream (hr/hrv/spo2/temp) with an optional --since date filter, to validate the incremental-sync (mode 0x01) design against real hardware')
+  .requiredOption('--type <type>', 'hr, hrv, spo2, or temp')
+  .option('--since <iso>', 'ISO date filter — request mode 0x01 from this date instead of the default mode 0x00 (latest/full)')
+  .action(async (cmdOpts) => {
+    const opts = program.opts();
+    const fns = HISTORY_TYPES[opts.device];
+    const fn = fns && fns[cmdOpts.type];
+    if (!fn) {
+      console.error(`Unknown --type "${cmdOpts.type}" for --device "${opts.device}". Expected one of: ${Object.keys(fns || {}).join(', ')}`);
+      process.exit(1);
+    }
+    const sinceDate = cmdOpts.since ? new Date(cmdOpts.since) : undefined;
+    const client = await makeClient(opts);
+    console.error(sinceDate
+      ? `Fetching ${cmdOpts.type} (mode 0x01, since ${sinceDate.toISOString()})...`
+      : `Fetching ${cmdOpts.type} (mode 0x00, latest/full)...`);
+    const records = await client.run((c) => fn(c, sinceDate));
+    const keys = records.map(recordKey).filter(Boolean).sort();
+
+    if (opts.json) {
+      console.log(JSON.stringify({ mode: sinceDate ? '0x01' : '0x00', since: sinceDate ? sinceDate.toISOString() : null, count: records.length, first: keys[0] || null, last: keys[keys.length - 1] || null, records }, null, 2));
+    } else {
+      console.log(`type=${cmdOpts.type}  mode=${sinceDate ? '0x01' : '0x00'}  count=${records.length}  first=${keys[0] || '-'}  last=${keys[keys.length - 1] || '-'}`);
+    }
+    process.exit(0);
+  });
+
 // --- scan ---
 program
   .command('scan')

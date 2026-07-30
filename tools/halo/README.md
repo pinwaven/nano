@@ -101,6 +101,11 @@ node bin/cli.js set-time --device v8
 # Read the background measurement schedule (HR/SpO2/Temperature/HRV)
 node bin/cli.js get-auto-monitoring
 node bin/cli.js get-auto-monitoring --device v8
+
+# Fetch one history stream (hr/hrv/spo2/temp), optionally with a --since
+# date filter — used to validate the incremental-sync design, see below
+node bin/cli.js history --type hrv --json
+node bin/cli.js history --type hrv --since 2026-07-30T10:00:00 --json
 ```
 
 With no arguments, `halo` scans for a nearby X3/X6/X9/V4 device, connects, and
@@ -110,6 +115,54 @@ sleep history, heart rate (log + continuous history), HRV history, SpO2
 sessions, sleep apnea risk, and elevated oxygen variation. `--device v8`
 scans for `JCV8B` instead and dumps the narrower first-pass task list
 described above.
+
+## Incremental sync validation
+
+The Mini Program used to re-fetch full history (protocol mode `0x00`) for
+static HR, HRV, SpO2, and temperature on every sync, even though the protocol
+supports mode `0x01` ("read from a given BCD date") — see
+`docs/architecture/halo-smart-ring.md` §9, now implemented. That mode is
+wired into `HaloClient`/`V8Client` here (`getHeartRateLog`/`getHrvHistory`/
+`getAutoSpo2History`(Halo)/`getSpo2History`(V8)/`getTemperatureHistory`, all
+taking an optional trailing `sinceDate`) — originally added to validate
+against real hardware before the Mini Program relied on it, still useful for
+re-validating after any protocol change.
+
+**Confirmed live 2026-07-30 against a real V8 band, and load-bearing for
+anyone re-testing this**: mode `0x01` only returns a filtered result when
+`since` *exactly* matches one of the device's own stored record timestamps
+(to the second, inclusive of that record). Any other value — even one
+second off, in either direction — makes the device silently fall back to
+returning its **entire** history, indistinguishable from mode `0x00`. A
+naive "N minutes/hours ago" test value will almost never hit this exactly
+and will misleadingly look like `0x01` "doesn't work." See
+`docs/architecture/v8-smart-band.md` §"History sync mode byte" for the full
+test matrix (HRV, SpO2, and temperature all confirmed working under this
+constraint; static HR inconclusive — no data on the test unit to filter).
+
+Validation procedure (repeat once for Halo, once for V8 — substitute
+`--type hr|spo2|temp` for `hrv` below):
+
+```bash
+# 1. Baseline — mode 0x00, note the exact `last` timestamp
+node bin/cli.js history --type hrv --json
+
+# 2. Re-request using that EXACT timestamp as --since (copy it verbatim —
+#    do not compute your own "N minutes ago" offset, it will not match):
+node bin/cli.js history --type hrv --since <baseline's exact "last" value> --json
+# Expect: count=1, matching just that one record (inclusive boundary) — this
+# is the "nothing new since last sync" case and is the correct/expected
+# result, not a failure.
+
+# 3. Let a new auto-monitor sample land (or trigger one), then repeat step 2
+#    with the SAME --since value from step 1:
+# Expect: count > 1 now — the original record plus the new one(s).
+
+# 4. Sanity-check the exact-match requirement by deliberately using a
+#    mismatched --since (e.g. the step 1 timestamp shifted by 1 second):
+# Expect: the full baseline count comes back — confirms this device/command
+# needs an exact match, not a >= range filter.
+```
 
 ## Notes
 
