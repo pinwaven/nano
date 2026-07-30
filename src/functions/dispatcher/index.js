@@ -5,6 +5,18 @@ const OpenApi = require('@alicloud/openapi-client');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 
+// Viva proactive daily check-ins: the day is split into three non-overlapping Shanghai-time
+// periods; at most one applies to any given moment, and 00:00-04:59 has no period at all (no
+// "good morning" at 2am). Which period is "current" only matters at the instant a user's first
+// app-open of that period is detected (see the check-in scan below) — the actual once-per-day
+// guarantee comes from a NOT EXISTS check against `notifications`, not from this boundary.
+function getCheckinPeriod(hour) {
+    if (hour >= 5 && hour < 11) return 'morning';
+    if (hour >= 11 && hour < 17) return 'midday';
+    if (hour >= 17) return 'evening';
+    return null;
+}
+
 /**
  * Nano Dispatcher (Aliyun FC 3.0 Cron Trigger)
  */
@@ -118,6 +130,75 @@ exports.handler = async (event, context) => {
             }
         };
 
+        // Helper: dispatch a payload to the worker function via EventBridge with HTTP fallback —
+        // same pattern as the inline nutrition_topup dispatch above, factored out since the
+        // Viva check-in scan below needs the identical shape.
+        const dispatchToWorker = async (payload, type, subject) => {
+            const cloudEvent = new EventBridge.CloudEvent({
+                id: uuidv4(),
+                source: 'acs.dispatcher',
+                specversion: '1.0',
+                type,
+                subject,
+                datacontenttype: 'application/json',
+                data: Buffer.from(JSON.stringify(payload)),
+                time: new Date().toISOString(),
+                extensions: { aliyuneventbusname: 'default' }
+            });
+            try {
+                await ebClient.putEvents([cloudEvent]);
+                console.log(JSON.stringify({ level: 'INFO', msg: '[EventBridge] Worker event published', type, user_id: payload.user_id }));
+            } catch (ebErr) {
+                console.warn(JSON.stringify({ level: 'WARN', msg: '[EventBridge] Fallback to HTTP for worker event', error: ebErr.message }));
+                try {
+                    await axios.post(workerUrl, payload, {
+                        headers: { 'Content-Type': 'application/json', 'x-fc-invocation-type': 'Async' },
+                        timeout: 10000
+                    });
+                    console.log(JSON.stringify({ level: 'INFO', msg: '[HTTP Fallback] Worker event dispatched', type, user_id: payload.user_id }));
+                } catch (httpErr) {
+                    console.error(JSON.stringify({ level: 'ERROR', msg: '[HTTP Fallback] Worker event failed', type, user_id: payload.user_id, error: httpErr.message }));
+                }
+            }
+        };
+
+        // Scan 0: Viva proactive daily check-in — fires on a user's own first app-open within
+        // whichever time-of-day period is currently active (see getCheckinPeriod above), not a
+        // fixed clock slot. `checkinUserIds` is collected here and consulted by the user_online
+        // scan directly below, so a Viva user's first open of a period doesn't also trigger the
+        // legacy (persona-agnostic, "You are Nano"-branded) proactive-coach nudge in the same tick.
+        const checkinUserIds = new Set();
+        const nowShanghai = getNowShanghai();
+        const checkinPeriod = getCheckinPeriod(nowShanghai.hour);
+        if (checkinPeriod) {
+            try {
+                const checkinResult = await pool.query(
+                    `SELECT u.user_id
+                     FROM users u
+                     JOIN channels c ON c.id = u.channel_id
+                     JOIN nutrition_plans np ON np.user_id = u.user_id AND np.status = 'active'
+                     WHERE c.config->>'persona_type' = 'viva'
+                       AND 'user' = ANY(u.roles)
+                       AND COALESCE((u.preferences->>'daily_checkin_enabled')::boolean, true) = true
+                       AND u.last_active_at > NOW() - INTERVAL '2 minutes'
+                       AND EXISTS (SELECT 1 FROM nutrition_schedules s WHERE s.plan_id = np.id AND s.scheduled_date = CURRENT_DATE)
+                       AND NOT EXISTS (
+                         SELECT 1 FROM notifications n
+                         WHERE n.user_id = u.user_id AND n.notification_type = $1
+                           AND n.sent_at::date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date
+                       )`,
+                    [`${checkinPeriod}_checkin`]
+                );
+                console.log(JSON.stringify({ level: 'INFO', msg: `Coaching scan: ${checkinResult.rows.length} daily_checkin (${checkinPeriod})` }));
+                for (const user of checkinResult.rows) {
+                    checkinUserIds.add(user.user_id);
+                    await dispatchToWorker({ user_id: user.user_id, period: checkinPeriod }, 'checkin.daily', `daily_checkin_${checkinPeriod}`);
+                }
+            } catch (checkinErr) {
+                console.warn(JSON.stringify({ level: 'WARN', msg: 'daily_checkin scan skipped', error: checkinErr.message }));
+            }
+        }
+
         // Scan 1: user_online — conversation-aware.
         // Only fire if the user has replied since the last agent message
         // (last chat message is not 'assistant', or no messages yet).
@@ -136,6 +217,7 @@ exports.handler = async (event, context) => {
             `);
             console.log(JSON.stringify({ level: 'INFO', msg: `Coaching scan: ${onlineResult.rows.length} user_online` }));
             for (const user of onlineResult.rows) {
+                if (checkinUserIds.has(user.user_id)) continue;
                 await dispatchToAgent({ user_id: user.user_id, trigger_reason: 'user_online' });
             }
         } catch (coachErr) {

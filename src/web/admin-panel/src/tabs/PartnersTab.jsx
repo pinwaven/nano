@@ -36,6 +36,7 @@ function PartnersTab({ users = [], session }) {
   const [typeError, setTypeError] = useState('');
 
   const TIER_KEYS = partnerTypes.map(t => t.key);
+  const isGcnManagedEdit = !!editingType?.managed_by_gcn;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -133,8 +134,12 @@ function PartnersTab({ users = [], session }) {
     if (!form.entry_fee_paid) { setFormError(p.entryFeeRequired); return; }
     setFormBusy(true); setFormError('');
     try {
-      if (editing) await axios.put(`/api/partners/${editing.id}`, form);
-      else         await axios.post('/api/partners', form);
+      if (editing) {
+        const res = await axios.put(`/api/partners/${editing.id}`, form);
+        if (res.data?.gcnSyncError) alert(`Saved, but GCN re-sync failed: ${res.data.gcnSyncError}`);
+      } else {
+        await axios.post('/api/partners', form);
+      }
       setShowForm(false);
       await load();
     } catch (err) { setFormError(err.response?.data?.error || p.saveFailed); }
@@ -144,7 +149,8 @@ function PartnersTab({ users = [], session }) {
   async function deactivatePartner(id) {
     if (!confirm(p.confirmDeactivate)) return;
     try {
-      await axios.delete(`/api/partners/${id}`);
+      const res = await axios.delete(`/api/partners/${id}`);
+      if (res.data?.gcnSyncError) alert(`Deactivated, but GCN re-sync failed: ${res.data.gcnSyncError}`);
       await load();
     } catch { alert(p.saveFailed); }
   }
@@ -337,7 +343,18 @@ function PartnersTab({ users = [], session }) {
               {partnerTypes.length === 0 && <tr><td colSpan={8} className="empty-row">{p.noTypes}</td></tr>}
               {partnerTypes.map(t => (
                 <tr key={t.key}>
-                  <td><code className="code-tag">{t.key}</code></td>
+                  <td>
+                    <code className="code-tag">{t.key}</code>
+                    {t.managed_by_gcn && (
+                      <span
+                        className="badge"
+                        title={p.typeManagedByGcnNote}
+                        style={{ background: '#2563eb1a', color: '#2563eb', marginLeft: 6 }}
+                      >
+                        {p.typeManagedByGcn}
+                      </span>
+                    )}
+                  </td>
                   <td className="bold"><Badge color={t.color || '#64748b'}>{t.label}</Badge></td>
                   <td>{t.label_zh || <span className="muted">—</span>}</td>
                   <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 14, height: 14, borderRadius: '50%', background: t.color, border: '1px solid rgba(255,255,255,0.2)', display: 'inline-block' }} />{t.color}</span></td>
@@ -347,7 +364,7 @@ function PartnersTab({ users = [], session }) {
                   <td>
                     <div className="row-actions">
                       <button className="icon-btn" title={p.editType} onClick={() => openEditType(t)}><Pencil size={14} /></button>
-                      {t.is_active && <button className="icon-btn" title={p.deactivatePartner} onClick={() => deactivatePartnerType(t.key)}><Trash2 size={14} /></button>}
+                      {t.is_active && !t.managed_by_gcn && <button className="icon-btn" title={p.deactivatePartner} onClick={() => deactivatePartnerType(t.key)}><Trash2 size={14} /></button>}
                     </div>
                   </td>
                 </tr>
@@ -462,6 +479,7 @@ function PartnersTab({ users = [], session }) {
             </div>
             <form onSubmit={e => { e.preventDefault(); savePartnerType(); }}>
               <div className="modal-body">
+                {isGcnManagedEdit && <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>{p.typeManagedByGcnNote}</div>}
                 <div className="form-grid">
                   {!editingType && (
                     <label className="form-field">
@@ -469,13 +487,23 @@ function PartnersTab({ users = [], session }) {
                       <input value={typeForm.key || ''} onChange={e => setTypeForm(f => ({ ...f, key: e.target.value }))} placeholder="e.g. gold_partner" />
                     </label>
                   )}
+                  {editingType && isGcnManagedEdit ? (
+                    <label className="form-field">
+                      <span>{p.typeKey}</span>
+                      <code className="code-tag">{typeForm.key}</code>
+                    </label>
+                  ) : null}
                   <label className="form-field">
                     <span>{p.typeLabelEn}</span>
-                    <input value={typeForm.label || ''} onChange={e => setTypeForm(f => ({ ...f, label: e.target.value }))} />
+                    {isGcnManagedEdit
+                      ? <span>{typeForm.label}</span>
+                      : <input value={typeForm.label || ''} onChange={e => setTypeForm(f => ({ ...f, label: e.target.value }))} />}
                   </label>
                   <label className="form-field">
                     <span>{p.typeLabelZh}</span>
-                    <input value={typeForm.label_zh || ''} onChange={e => setTypeForm(f => ({ ...f, label_zh: e.target.value }))} />
+                    {isGcnManagedEdit
+                      ? <span>{typeForm.label_zh || <span className="muted">—</span>}</span>
+                      : <input value={typeForm.label_zh || ''} onChange={e => setTypeForm(f => ({ ...f, label_zh: e.target.value }))} />}
                   </label>
                   <label className="form-field">
                     <span>{p.typeColor}</span>

@@ -418,6 +418,7 @@ const T = {
       typeKeyLabel: 'Key (snake_case) *', typeLabelEn: 'Label (EN) *', typeDesc: 'Description',
       keyRequired: 'Key is required', labelRequired: 'Label is required',
       confirmDeactivateType: (key) => `Deactivate partner type "${key}"? Active partners with this type will not be affected.`,
+      typeManagedByGcn: 'GCN', typeManagedByGcnNote: "Key and labels are managed in GCN's Wholesale Rules panel — edit entry fee, color, sort order, or status here instead.",
     },
     addBatch: 'Add Batch', countBatch: (n) => `${n} batch${n !== 1 ? 'es' : ''}`,
     chips: {
@@ -1201,6 +1202,7 @@ const T = {
       typeKeyLabel: '标识符（snake_case）*', typeLabelEn: '英文名称 *', typeDesc: '描述',
       keyRequired: '标识符为必填项', labelRequired: '英文名称为必填项',
       confirmDeactivateType: (key) => `确认停用合伙人级别 "${key}"？已有该级别的合伙人不受影响。`,
+      typeManagedByGcn: 'GCN', typeManagedByGcnNote: '标识符与名称由 GCN 批发规则面板管理 — 请在此处编辑入伙费、颜色、排序或启用状态。',
     },
     academy: {
       coursesTab: '课程', libraryTab: '文库', certificationsTab: '证书管理',
