@@ -671,9 +671,9 @@ Implemented 2026-07-30 for HRV (`0x56`), SpO2 (`0x66`), and temperature
 after a real end-to-end sync on a live ring still took ~30s post-fix — the
 original assumption that steps/sleep were "cheap, a handful of records" was
 wrong on real hardware; they were the actual remaining bottleneck once
-HRV/SpO2/temp dropped to ~180ms combined. Static HR (`0x55`) stays on full
-fetch — see the dedicated note at the end of this section, it's a different
-kind of problem than the others.
+HRV/SpO2/temp dropped to ~180ms combined. Static HR (`0x55`) enabled for
+Halo the same day, after an initial "inconclusive/broken" misdiagnosis was
+corrected — see the dedicated note at the end of this section.
 
 `getHeartRateLog(date, sinceDate)`, `getHrvHistory(sinceDate)`,
 `getAutoSpo2History(sinceDate)`, `getTemperatureHistory(sinceDate)`
@@ -798,21 +798,47 @@ the first operation on a fresh connection worked correctly both for an
 exact match and for a deliberate mismatch (correctly falling back to full
 history), matching every other type's behavior.
 
-**Halo only** — V8's sleep reassembly model is structurally different
-(per-notification parsed chunks, not Halo's concatenated-raw-buffer model;
-see `docs/architecture/v8-smart-band.md` §3) and mode `0x01` hasn't been
-tested against it at all. V8 sleep stays on full fetch
-(`INCREMENTAL_SUPPORT.v8.sleep = false`) until that validation is done.
+**Extended to V8 on 2026-07-31.** V8's sleep reassembly model is
+structurally different (per-notification parsed chunks, not Halo's
+concatenated-raw-buffer model; see `docs/architecture/v8-smart-band.md` §3),
+so `v8/index.js`'s existing inline grouping/session-split logic (previously
+only reachable via the full-fetch `getSleepHistory()`) was split the same
+way as Halo's: a new `getSleepBlocks(sinceDate)` returns raw blocks, and the
+grouping logic was extracted into a static `V8Band.summariseSleepBlocks()`.
+`handleSyncWearable()` picks whichever brand's summarizer function to call
+at runtime; both feed the same shared `_mergeRingSlots()` merge. Validated
+live via `tools/halo --device v8` (direct `getSleepDataPacket(0x01, ...)`
+calls, not yet through the miniapp's own `wx.*`-based `v8/index.js`, which
+can't run outside the Mini Program runtime): exact-match `since` → 62ms,
+count=1, identical pattern to every other confirmed command.
+`INCREMENTAL_SUPPORT.v8.sleep = true`.
 
-### Static HR (`0x55`) — a different, unsolved problem
+### Static HR (`0x55`) — resolved 2026-07-31, was a test-timing artifact, not a real problem
 
-Both the V8 and Halo X3 test units returned **zero static-HR records in
-every test, including full mode-`0x00` fetches** — and critically, that
-empty result still took the full 8s timeout to arrive rather than returning
-quickly. This means static HR's slowness isn't a "too much data" problem
-incremental fetch could fix — it looks like the terminator notification
-itself never arrives when there's nothing to send, so `_stream()` has no
-way to know it's done early. Making this command incremental wouldn't help;
-the underlying issue (an empty stream still costing a full timeout) would
-need its own fix, and is out of scope for this change. `getHeartRateLog()`
-stays on full fetch, unresolved, on both brands.
+Both the V8 and Halo X3 test units initially returned **zero static-HR
+records in every test, including full mode-`0x00` fetches**, despite each
+still costing the full 8s timeout — which looked at the time like the
+terminator notification never arriving for an empty stream. **That
+diagnosis was wrong.** Inspecting the *raw, unfiltered* bytes on a re-test
+(bypassing `_parseHrLog55`'s day-scope filter) showed the Halo X3 unit
+actually had **1200 real records with valid HR values, spanning 12 days,
+streamed newest-first** — the same shape as every other confirmed type.
+Both original "zero record" test rounds simply happened to run before the
+ring had logged its first static-HR sample of the *current calendar day* —
+`getHeartRateLog()`'s `todayStr` filter (matching its documented purpose:
+return only today's readings) correctly zeroed out an otherwise-full
+multi-day backlog every time, an artifact of *when* the test ran, unrelated
+to the command, protocol, or timeout mechanism.
+
+Re-tested with real same-day data present: exact-match `since` → 64ms,
+`count=1` (inclusive boundary, identical to HRV/SpO2/temp/steps); a 1-second
+mismatch → full 8s timeout, 1200-record fallback (same pattern as
+everywhere else). **Enabled for Halo** (`INCREMENTAL_SUPPORT.halo.hr =
+true`) — `_sinceHr` is only derived when the previous sync's `hrSlots` are
+from *today* (same day-scoping the type already needed, per
+`getHeartRateLog(date, sinceDate)`'s existing `date` param), consistent with
+how `_parseHrLog55` only ever returns today's readings anyway. **V8 was not
+re-tested this round** — its original "zero records" result is presumed to
+be the same test-timing artifact given the identical underlying mechanism,
+but that's an inference, not a confirmed result; `INCREMENTAL_SUPPORT.v8.hr`
+stays `false` until it's actually re-checked with real hardware.

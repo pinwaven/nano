@@ -137,7 +137,20 @@ against all three commands with consistent results. Confirmed on all three:
 
 Static HR (`0x55`) was inconclusive — the test unit had zero static-HR
 records in either mode, so filtering couldn't be exercised; re-test against
-a device with data before trusting it.
+a device with data before trusting it. **Important precedent, don't
+re-diagnose this as broken**: the identical "zero records, still costs the
+full timeout" result on a Halo X3 unit initially looked the same way and
+was wrongly written off as inconclusive/broken — it turned out the ring
+simply hadn't logged its first static-HR sample of the *current calendar
+day* yet at test time, so `getHeartRateLog()`'s "today only" filter zeroed
+out an otherwise-full 1200-record, 12-day backlog (confirmed via raw
+unfiltered bytes). Once re-tested with a real same-day sample present, Halo
+X3's 0x55 behaved identically to every other command (exact match → 1
+record, mismatch → full fallback) — see
+`docs/architecture/halo-smart-ring.md` §9. Before concluding V8's 0x55 is
+actually different, re-test at a time when the unit is known to have logged
+at least one static-HR sample that day, and inspect raw unfiltered bytes
+rather than trusting the day-filtered `getHeartRateLog()` result.
 
 **Practical implication:** a client can only get real incremental-sync value
 out of `mode = 0x01` by requesting the exact last-known timestamp for each

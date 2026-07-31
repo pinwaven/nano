@@ -224,10 +224,29 @@ class V8Band extends WearableDevice {
     }))
   }
 
-  // Returns [{ date, onset, totalMinutes, deep: null, light: null, rem: null,
-  //   awake: null, sleepStart, sleepEnd, periods: [] }], sorted oldest-first,
-  // one entry per sleep session (same session-splitting rule as Halo:
-  // a gap > 90 min between blocks starts a new session).
+  // Returns raw, unsummarized blocks (one per notification-derived record,
+  // same shape _parseSleepBlocks produces) — NOT grouped into nights. Split
+  // out from getSleepHistory() so incremental sync can merge newly-fetched
+  // blocks with previously-stored ones (keyed by dateStr, via the same
+  // _mergeRingSlots helper Halo's incremental sleep uses — see
+  // docs/architecture/halo-smart-ring.md §9) before re-deriving night
+  // summaries from the merged set, mirroring Halo's getSleepBlocks(). Live-
+  // validated against real V8 hardware 2026-07-31 (tools/halo --device v8):
+  // exact-match since → 62ms, count=1; full baseline for comparison also
+  // exercised via the same script. sinceDate (optional): protocol mode 0x01
+  // instead of the default 0x00.
+  async getSleepBlocks(sinceDate) {
+    const chunks = await this._streamSleepChunks(15000, sinceDate)
+    const blocks = []
+    for (const buf of chunks) blocks.push(..._parseSleepBlocks(buf))
+    return blocks
+  }
+
+  // Groups already-parsed raw blocks (see getSleepBlocks/_parseSleepBlocks)
+  // into per-session summaries — [{ date, onset, totalMinutes, deep: null,
+  // light: null, rem: null, awake: null, sleepStart, sleepEnd, periods: [] }],
+  // sorted oldest-first, one entry per sleep session (same session-splitting
+  // rule as Halo: a gap > 90 min between blocks starts a new session).
   //
   // deep/light/rem/awake breakdown is deliberately NOT computed: V8's raw
   // per-minute stage codes (1,2,3,4,6,10 observed live) don't match Halo's
@@ -236,12 +255,8 @@ class V8Band extends WearableDevice {
   // mislabel real sleep-stage data — worse than leaving it null. Only
   // totalMinutes/onset/timing (pure arithmetic on block count, no semantic
   // assumption about individual stage values) are computed.
-  async getSleepHistory() {
-    const chunks = await this._streamSleepChunks(15000)
-    const blocks = []
-    for (const buf of chunks) blocks.push(..._parseSleepBlocks(buf))
+  static summariseSleepBlocks(blocks) {
     if (!blocks.length) return []
-
     const nightMap = {}
     for (const rec of blocks) {
       const key = _nightKey(rec.dateStr)
@@ -262,6 +277,12 @@ class V8Band extends WearableDevice {
       for (const session of sessions) nights.push(_summariseNightDurationOnly(date, session))
     }
     return nights.sort((a, b) => (a.onset < b.onset ? -1 : 1))
+  }
+
+  // Full-fetch path (unchanged behavior from before the incremental-sync split above).
+  async getSleepHistory() {
+    const blocks = await this.getSleepBlocks()
+    return V8Band.summariseSleepBlocks(blocks)
   }
 
   async getSleep() {
@@ -340,8 +361,9 @@ class V8Band extends WearableDevice {
   // because block extraction depends on whether a notification is the
   // single 130-byte 1-min-record shape or stacked 34-byte 5-min records —
   // see _parseSleepBlocks(). Terminator: last 2 bytes of a notification are
-  // [0x53, 0xFF] (same convention as Halo).
-  _streamSleepChunks(timeoutMs) {
+  // [0x53, 0xFF] (same convention as Halo). sinceDate (optional): protocol
+  // mode 0x01 instead of the default 0x00 — see getSleepBlocks() above.
+  _streamSleepChunks(timeoutMs, sinceDate) {
     return new Promise((resolve, reject) => {
       const chunks = []
 
@@ -366,7 +388,7 @@ class V8Band extends WearableDevice {
         }
       })
 
-      this._ble.write(this._deviceId, SERVICE_UUID, WRITE_UUID, getSleepDataPacket())
+      this._ble.write(this._deviceId, SERVICE_UUID, WRITE_UUID, getSleepDataPacket(sinceDate ? 0x01 : 0, sinceDate || null))
         .catch((err) => { clearTimeout(timer); this._ble.onNotify(NOTIFY_UUID, null); reject(err) })
     })
   }

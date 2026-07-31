@@ -2853,10 +2853,7 @@ Component({
           // timestamp for this reason. SpO2/temperature's full fetches had
           // in fact already been hitting the 8s stream timeout on both test
           // units before this change — exactly the case incremental fetch
-          // fixes outright. Static HR (0x55) was inconclusive on BOTH test
-          // units (zero records in any mode on either device) — it stays on
-          // full fetch on both brands until re-tested against a unit that
-          // actually has static HR log data.
+          // fixes outright.
           //
           // steps (0x52 detail blocks) and sleep (0x53) — added 2026-07-31
           // after a real end-to-end sync still took ~30s post-fix: HRV/SpO2/
@@ -2869,16 +2866,40 @@ Component({
           // flaky "zero data" result turned out to be BLE session strain
           // from stacking three heavy requests on one connection in the test
           // rig, not a real protocol limit — a clean single fresh-connection
-          // request behaved identically to HRV/SpO2/temp). Halo only for
-          // sleep — V8's sleep reassembly model is structurally different
-          // (per-notification chunks, not Halo's concatenated-buffer model)
-          // and mode 0x01 hasn't been tested against it; V8 sleep stays on
-          // full fetch until that's done. Steps is enabled for both brands
-          // (same simple per-record shape as HRV/SpO2/temp, no reassembly
-          // model dependency).
+          // request behaved identically to HRV/SpO2/temp). Steps enabled for
+          // both brands from the start (same simple per-record shape as
+          // HRV/SpO2/temp, no reassembly-model dependency).
+          //
+          // V8 sleep — enabled 2026-07-31 after live validation
+          // (tools/halo --device v8, raw getSleepDataPacket(0x01, ...) calls):
+          // exact-match since → 62ms, count=1, same pattern as every other
+          // command. V8's per-notification reassembly model (see
+          // docs/architecture/v8-smart-band.md §3) meant the raw-block
+          // extraction couldn't just reuse Halo's code, but the split mirrors
+          // it: v8/index.js's getSleepHistory() (grouping/session-split logic
+          // previously inline) was extracted into a static
+          // V8Band.summariseSleepBlocks(), paired with a new
+          // getSleepBlocks(sinceDate) — same shape as Halo's equivalents,
+          // wired through the same _mergeRingSlots() merge below.
+          //
+          // static HR (0x55) — enabled for Halo 2026-07-31 after re-testing.
+          // Earlier "inconclusive, zero records" verdict was wrong: it was a
+          // time-of-day test artifact, not a real limitation. 0x55 streams
+          // newest-first same as the others; both test rounds happened to
+          // run before the ring had logged its first static-HR sample of the
+          // current calendar day, so an otherwise-full multi-day backlog
+          // (1200 real records spanning 12 days, confirmed via raw
+          // unfiltered bytes) got entirely zeroed out by the client-side
+          // "today only" filter every time — nothing wrong with the fetch,
+          // command, or parser. Re-tested once the ring had a real today
+          // sample: exact match → 64ms, count=1 (inclusive boundary, same as
+          // every other type); 1-second mismatch → full 8s timeout, 1200
+          // records (same fallback pattern). V8 static HR was NOT retested
+          // this round (same original test-timing artifact likely applies,
+          // but unconfirmed) — stays on full fetch for V8 until re-checked.
           const INCREMENTAL_SUPPORT = {
-            halo: { hr: false, hrv: true, spo2: true, temp: true, steps: true, sleep: true },
-            v8:   { hr: false, hrv: true, spo2: true, temp: true, steps: true, sleep: false },
+            halo: { hr: true,  hrv: true, spo2: true, temp: true, steps: true, sleep: true },
+            v8:   { hr: false, hrv: true, spo2: true, temp: true, steps: true, sleep: true },
           }
           const _support = INCREMENTAL_SUPPORT[brand] || {}
           const _prevRing = wx.getStorageSync('wearable_ring_data') || {}
@@ -2915,19 +2936,24 @@ Component({
           const battery = await ring.getBattery()
           const steps   = await ring.getSteps(undefined, _sinceSteps).catch(() => null)
 
-          // Sleep: incremental path (Halo only, see comment above) fetches raw
-          // blocks and merges them with the previous sync's raw blocks before
-          // re-deriving night summaries — the night/session-grouping algorithm
-          // needs the full set of a night's blocks, not just this sync's new
-          // slice. Non-incremental path (V8, or a stale/no cursor) is the
-          // original full-fetch-then-summarize call, unchanged.
+          // Sleep: incremental path (see comment above) fetches raw blocks and
+          // merges them with the previous sync's raw blocks before re-deriving
+          // night summaries — the night/session-grouping algorithm needs the
+          // full set of a night's blocks, not just this sync's new slice.
+          // Both brands expose getSleepBlocks(sinceDate)/a summarize function
+          // with the same shape (Halo: HaloRing.parsers.summariseSleepBlocks;
+          // V8: the static V8Band.summariseSleepBlocks) — only which module
+          // to pull the summarizer from differs. Non-incremental path (stale/
+          // no cursor) is the original full-fetch-then-summarize call, unchanged.
           let mergedSleepBlocks = null
           let sleepHist
           if (_support.sleep) {
-            const HaloRing = require('../../utils/wearable/halo/index.js')
+            const summariseSleepBlocks = brand === 'halo'
+              ? require('../../utils/wearable/halo/index.js').parsers.summariseSleepBlocks
+              : require('../../utils/wearable/v8/index.js').summariseSleepBlocks
             const newSleepBlocks = await ring.getSleepBlocks(_sinceSleep).catch(() => [])
             mergedSleepBlocks = _mergeRingSlots(_prevRing.sleepBlocks || [], newSleepBlocks || [], 'dateStr', RING_SLOT_RETENTION_DAYS)
-            sleepHist = HaloRing.parsers.summariseSleepBlocks(mergedSleepBlocks)
+            sleepHist = summariseSleepBlocks(mergedSleepBlocks)
           } else {
             sleepHist = await ring.getSleepHistory().catch(() => [])
           }
