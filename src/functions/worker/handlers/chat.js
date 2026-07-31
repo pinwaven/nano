@@ -431,7 +431,7 @@ function verifyBiomarkerGrounding(text, groundTruth) {
 
 // Backstop against the fabrication patterns (fake citations, external-ingredient
 // recommendations, fake BioAge dimensions) that testing showed slipping past the
-// prompt-level rules in viva/factConstraint.js (2026-07-25). One retry only -- if
+// prompt-level rules in chat/factConstraint.js (2026-07-25, shared by both personas). One retry only -- if
 // the retry also trips the detector, log it and use it anyway rather than looping.
 //
 // The correction instruction is built from *which* risk categories actually fired --
@@ -723,8 +723,11 @@ async function handlePostChat(body) {
         }
     }
     console.log(JSON.stringify({ level: 'INFO', msg: 'Persona resolved', user_id: user.user_id, channel_id: user.channel_id, personaType }));
-    const currentSolarTerm = personaType === 'viva' ? getCurrentSolarTerm(getNowShanghai().toJSDate()) : null;
-    const essentialKnowledge = personaType === 'viva' ? await getEssentialBlock('viva') : null;
+    // Both personas now run the same agentic engine (CLAUDE.md — Nano adopted Viva's core),
+    // so both get a solar-term accent and a persona-scoped knowledge_entries essential block —
+    // Nano's own prompt files simply won't reference current_solar_term unless it's natural to.
+    const currentSolarTerm = getCurrentSolarTerm(getNowShanghai().toJSDate());
+    const essentialKnowledge = await getEssentialBlock(personaType);
 
     if (message) {
         // Intent-routed chat message handling
@@ -890,7 +893,7 @@ async function handlePostChat(body) {
             const activePrompts = personaType === 'viva' ? vivaPrompts : nanoPrompts;
             const promptBuilder = activePrompts[intent] || activePrompts.casual_chat;
             const systemPrompt = promptBuilder(llmContext);
-            const useAgenticLoop = personaType === 'viva' && HIGH_RISK_INTENTS.has(intent);
+            const useAgenticLoop = HIGH_RISK_INTENTS.has(intent);
 
             // Save the incoming user message to the conversation log — skipped in sandbox
             // mode (superadmin "login as" sessions), which never persist against the
@@ -1257,7 +1260,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
 // payload.kind distinguishes the finishing step: default (unset) is a normal chat turn
 // (finalizeChatReply, 'chat_reply' notification); 'formula_dots_generate' makes and commits the
 // actual weekly dot allocation instead (finalizeFormulaDotsGenerate, 'nutrition_plan'
-// notification) — see _handleFormulaDotsViva in handlers/dots.js, which publishes this kind
+// notification) — see _handleFormulaDotsAgentic in handlers/dots.js, which publishes this kind
 // with a 'pending' nutrition_plans row already inserted for this event to fill in.
 async function handleChatGenerateEvent(payload) {
     const { event_id, user_id, message, intent, llmContext, systemPrompt, cleanHistory, language, personaType, birth_date, kind } = payload;
@@ -1451,8 +1454,8 @@ async function handlePostHealthAdvice(body) {
                 personaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
             } catch (_) {}
         }
-        const currentSolarTerm = personaType === 'viva' ? getCurrentSolarTerm(getNowShanghai().toJSDate()) : null;
-        const essentialKnowledge = personaType === 'viva' ? await getEssentialBlock('viva') : null;
+        const currentSolarTerm = getCurrentSolarTerm(getNowShanghai().toJSDate());
+        const essentialKnowledge = await getEssentialBlock(personaType);
 
         const [bioResult, dotsResult, plansResult, twinResult, factsResult] = await Promise.all([
             pool.query(
@@ -1573,6 +1576,8 @@ async function handlePostHealthAdvice(body) {
                 target_sub_ages: t.target_sub_ages || [],
                 duration_weeks: t.duration_weeks,
             })),
+            essential_knowledge: essentialKnowledge,
+            user_facts: factsResult.rows,
         });
 
         const userMsg = isZh
@@ -1605,7 +1610,7 @@ async function handlePostHealthAdvice(body) {
 
         const llmClient = getLlmClient();
         const model = process.env.MODEL || 'qwen3.6-plus';
-        const useAgenticLoop = personaType === 'viva';
+        const useAgenticLoop = true;
 
         // Save user trigger to keep conversation history well-formed (no consecutive AI turns) —
         // done here, before the async fork, exactly like handlePostChat: the async event handler

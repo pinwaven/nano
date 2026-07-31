@@ -162,23 +162,23 @@ exports.handler = async (event, context) => {
             }
         };
 
-        // Scan 0: Viva proactive daily check-in — fires on a user's own first app-open within
-        // whichever time-of-day period is currently active (see getCheckinPeriod above), not a
-        // fixed clock slot. `checkinUserIds` is collected here and consulted by the user_online
-        // scan directly below, so a Viva user's first open of a period doesn't also trigger the
-        // legacy (persona-agnostic, "You are Nano"-branded) proactive-coach nudge in the same tick.
+        // Scan 0: proactive daily check-in (both personas — Nano adopted Viva's agentic core,
+        // CLAUDE.md) — fires on a user's own first app-open within whichever time-of-day period
+        // is currently active (see getCheckinPeriod above), not a fixed clock slot.
+        // `checkinUserIds` is collected here and consulted by the user_online scan directly
+        // below, so a user's first open of a period doesn't also trigger the legacy
+        // (persona-agnostic, "You are Nano"-branded) proactive-coach nudge in the same tick.
         const checkinUserIds = new Set();
         const nowShanghai = getNowShanghai();
         const checkinPeriod = getCheckinPeriod(nowShanghai.hour);
         if (checkinPeriod) {
             try {
                 const checkinResult = await pool.query(
-                    `SELECT u.user_id
+                    `SELECT u.user_id, COALESCE(c.config->>'persona_type', 'nano') AS persona_type
                      FROM users u
                      JOIN channels c ON c.id = u.channel_id
                      JOIN nutrition_plans np ON np.user_id = u.user_id AND np.status = 'active'
-                     WHERE c.config->>'persona_type' = 'viva'
-                       AND 'user' = ANY(u.roles)
+                     WHERE 'user' = ANY(u.roles)
                        AND COALESCE((u.preferences->>'daily_checkin_enabled')::boolean, true) = true
                        AND u.last_active_at > NOW() - INTERVAL '2 minutes'
                        AND EXISTS (SELECT 1 FROM nutrition_schedules s WHERE s.plan_id = np.id AND s.scheduled_date = CURRENT_DATE)
@@ -192,7 +192,7 @@ exports.handler = async (event, context) => {
                 console.log(JSON.stringify({ level: 'INFO', msg: `Coaching scan: ${checkinResult.rows.length} daily_checkin (${checkinPeriod})` }));
                 for (const user of checkinResult.rows) {
                     checkinUserIds.add(user.user_id);
-                    await dispatchToWorker({ user_id: user.user_id, period: checkinPeriod }, 'checkin.daily', `daily_checkin_${checkinPeriod}`);
+                    await dispatchToWorker({ user_id: user.user_id, period: checkinPeriod, persona_type: user.persona_type }, 'checkin.daily', `daily_checkin_${checkinPeriod}`);
                 }
             } catch (checkinErr) {
                 console.warn(JSON.stringify({ level: 'WARN', msg: 'daily_checkin scan skipped', error: checkinErr.message }));

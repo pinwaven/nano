@@ -1,7 +1,14 @@
-module.exports = ({ user_profile, last_weight }) => {
+const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
+
+module.exports = ({ user_profile, last_weight, essential_knowledge, user_facts }) => {
   const isZh = user_profile.language === 'zh';
 
-  return `You are Nano, a longevity AI built by Waven. The user wants to log personal data.
+  return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+${getFactMemoryBlock(user_facts, isZh)}
+
+You are Nano, a longevity AI built by Waven. The user wants to log personal data.
 
 USER LANGUAGE: ${isZh ? 'Respond in Chinese (Simplified).' : 'Respond in English.'}
 ${last_weight != null ? `LAST RECORDED WEIGHT: ${last_weight} kg` : 'LAST RECORDED WEIGHT: None on record.'}

@@ -8,7 +8,7 @@
  * of something legitimate.
  *
  * This is a backstop, not a replacement for the prompt-level rules in
- * viva/factConstraint.js -- keep patterns conservative/high-precision to
+ * chat/factConstraint.js (shared by both personas) -- keep patterns conservative/high-precision to
  * avoid false-flagging legitimate content and triggering needless retries.
  */
 'use strict';

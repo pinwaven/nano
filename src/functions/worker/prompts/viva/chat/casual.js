@@ -1,5 +1,5 @@
-const { getFactConstraintBlock } = require('../factConstraint');
-const { getFactMemoryBlock } = require('../factMemoryBlock');
+const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 
 module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, user_facts }) => {
   const name = user_profile.nickname || '你';

@@ -1,4 +1,4 @@
-const { getFactConstraintBlock } = require('../factConstraint');
+const { getFactConstraintBlock } = require('../../chat/factConstraint');
 
 module.exports = ({ user_profile, now_iso, essential_knowledge }) => {
   return `${getFactConstraintBlock(essential_knowledge)}

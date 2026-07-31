@@ -1,4 +1,7 @@
-module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin }) => {
+const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
+
+module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts }) => {
   const isZh = user_profile.language === 'zh';
   const hasBioAge = bioage && bioage.BioAge;
 
@@ -32,7 +35,11 @@ Elevated dimensions: ${
         : `7-day avg: Sleep ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | Steps ${health_twin.avg_daily_steps ?? '—'}${health_twin.latest_weight_kg ? ' | Weight ' + health_twin.latest_weight_kg + ' kg' : ''}`)
     : '';
 
-  return `You are Nano, a longevity AI built by Waven.
+  return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+${getFactMemoryBlock(user_facts, isZh)}
+
+You are Nano, a longevity AI built by Waven.
 
 USER: ${user_profile.nickname || (isZh ? '用户' : 'the user')}, ${user_profile.age ? user_profile.age + ' years old' : 'age unknown'}${user_profile.bmi ? ', BMI ' + user_profile.bmi : ''}
 LANGUAGE: ${isZh ? 'Respond in Chinese (Simplified).' : 'Respond in English.'}

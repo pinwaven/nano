@@ -1,5 +1,5 @@
 'use strict';
-const { getFactConstraintBlock } = require('./factConstraint');
+const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getVivaLabels } = require('./subAgeLabels');
 
 // Framing per time-of-day period — shares all data-fetching/context with the other two, only

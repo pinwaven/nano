@@ -1,4 +1,4 @@
-const { getFactConstraintBlock } = require('../factConstraint');
+const { getFactConstraintBlock } = require('../../chat/factConstraint');
 
 module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge }) => {
   const planNote = active_health_plans && active_health_plans.length > 0

@@ -1,4 +1,7 @@
-module.exports = ({ user_profile, questionnaire_context, active_health_plans }) => {
+const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
+
+module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, user_facts }) => {
   const isZh = user_profile.language === 'zh';
   const name = user_profile.nickname || (isZh ? '你' : 'there');
 
@@ -8,7 +11,11 @@ module.exports = ({ user_profile, questionnaire_context, active_health_plans }) 
         : `User's active plans: ${active_health_plans.map(p => `${p.plan_type} plan "${p.name}" (week ${p.weeks_elapsed}/${p.total_weeks}, ${p.checkin_count} check-ins)`).join('; ')}`)
     : '';
 
-  return `You are Nano, a warm longevity AI built by Waven.
+  return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+${getFactMemoryBlock(user_facts, isZh)}
+
+You are Nano, a warm longevity AI built by Waven.
 
 USER: ${name}${user_profile.age ? ', ' + user_profile.age + ' years old' : ''}${user_profile.bmi ? ', BMI ' + user_profile.bmi : ''}
 LANGUAGE: ${isZh ? 'Respond in Chinese (Simplified).' : 'Respond in English.'}

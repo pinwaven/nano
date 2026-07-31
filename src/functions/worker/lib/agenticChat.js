@@ -116,7 +116,7 @@ function validatePlan(plan, dots) {
 async function runAgenticTurn({ client, model, message, intent, llmContext, systemPrompt, cleanHistory, pool, user_id, language, personaType, logContext, onStatus }) {
     const budget = { plan: 0, generateIters: 0, judge: 0, revise: 0, rejudge: 0 };
     const toolHandlers = createAgenticToolHandlers({ pool, user_id, language });
-    const knowledgeExcerpts = await findRelevantEntries(personaType || 'viva', message);
+    const knowledgeExcerpts = await findRelevantEntries(personaType || 'nano', message);
     // Fires a short "what I'm doing" status update at 3 phase-transition checkpoints (not on
     // every REVISE/RE-JUDGE round — re-narrating a retry as new activity would just look odd).
     // Never lets a notification-write failure abort the turn.

@@ -4,8 +4,8 @@
  */
 const { getVivaLabels } = require('./subAgeLabels');
 const { classifyBiomarker, LABELS_ZH: STATUS_LABELS_ZH } = require('../../lib/biomarkerStatus');
-const { getFactConstraintBlock } = require('./factConstraint');
-const { getFactMemoryBlock } = require('./factMemoryBlock');
+const { getFactConstraintBlock } = require('../chat/factConstraint');
+const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 
 module.exports = (context) => {
   const formularyLines = context.dots_formulary && context.dots_formulary.length > 0

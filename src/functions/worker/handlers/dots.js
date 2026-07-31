@@ -9,7 +9,8 @@ const { getCurrentSolarTerm } = require('../lib/solarTerms');
 const OpenAI = require('openai');
 const systemNutritionTemplate = require('../prompts/nano/systemNutrition');
 const vivaSystemNutritionTemplate = require('../prompts/viva/systemNutrition');
-const systemFormulaGenerateTemplate = require('../prompts/viva/systemFormulaGenerate');
+const systemFormulaGenerateTemplate = require('../prompts/nano/systemFormulaGenerate');
+const vivaSystemFormulaGenerateTemplate = require('../prompts/viva/systemFormulaGenerate');
 const { v4: uuidv4 } = require('uuid');
 const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
@@ -998,61 +999,36 @@ async function handlePostFormulaDots(body) {
         }
 
         const lang = user.language || 'zh';
-        const currentSolarTerm = personaType === 'viva' ? getCurrentSolarTerm(getNowShanghai().toJSDate()) : null;
-        const essentialKnowledge = personaType === 'viva' ? await getEssentialBlock('viva') : null;
+        const currentSolarTerm = getCurrentSolarTerm(getNowShanghai().toJSDate());
+        const essentialKnowledge = await getEssentialBlock(personaType);
         const userFactsResult = await pool.query(
             `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
             [user.user_id]
         );
 
-        if (personaType === 'viva') {
-            return await _handleFormulaDotsViva({ user, biomarkers, bioageProfile, dotsFormulary: dotsResult.rows, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts: userFactsResult.rows, personaType });
-        }
-
-        // Nano — unchanged fast synchronous path (now benefiting from the shared bug fixes in
-        // _runDeterministicFormulation: correct D-N key format, real per-dot min/max clamping).
-        const { analysis, finalContent, morningRecipe, eveningRecipe } = await _runDeterministicFormulation({
-            biomarkers, bioageProfile, dotsFormulary: dotsResult.rows, personaType, lang, currentSolarTerm, essentialKnowledge, userFacts: userFactsResult.rows,
-        });
-
-        const client = await pool.connect();
-        try {
-            await client.query('BEGIN');
-            await _commitNutritionPlan(client, { userId: user.user_id, analysis, morningRecipe, eveningRecipe });
-            await client.query('COMMIT');
-        } catch (e) {
-            await client.query('ROLLBACK');
-            throw e;
-        } finally {
-            client.release();
-        }
-
-        await pool.query(
-            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-            [user.user_id, 'nutrition_plan', finalContent, 'pending']
-        );
-        // Also save to chat history for persistence — personaType passed explicitly here
-        // (2026-07-29 fix): this previously always defaulted to 'nano', so a viva user's
-        // formula-dots confirmation was invisible in their (persona-scoped) chat history on
-        // reload, even though it briefly appeared via the one-time notification poll.
-        await _saveChatMessage(user.user_id, 'ai', finalContent, null, personaType);
-
-        return { success: true };
+        // Both personas now run the actual dot-count decision through the agentic
+        // PLAN→GENERATE→JUDGE→REVISE loop, delivered async (see _handleFormulaDotsAgentic) —
+        // Nano and Viva share the engine, differing only in prompt wording/branding and
+        // knowledge_entries rows. _runDeterministicFormulation below is no longer the primary
+        // entry point for either persona, but stays as the deterministic fallback used on
+        // agentic failure (handleChatGenerateEvent's catch block) and EventBridge publish
+        // failure (this function's own fail-open path, below).
+        return await _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dotsFormulary: dotsResult.rows, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts: userFactsResult.rows, personaType });
     } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostFormulaDots failed', error: err.message }));
         return { success: false, error: err.message };
     }
 }
 
-// Viva branch — the actual dot-count decision is made by the full agentic PLAN→GENERATE→JUDGE
-// →REVISE loop, using the user's full digital twin (health_twin, questionnaire history, active
-// health-plan goals) plus tool access to biomarker history / dot inventory / prior schedules,
-// not just the latest biomarker snapshot. Because that loop can take 10s-180s+, and Aliyun FC
-// cancels an invocation the instant the HTTP client disconnects (CLAUDE.md §22), the decision
-// itself runs asynchronously via the same chat.generate event → notifications-poll pipeline
-// already shipped for chat/health-advice — this handler only inserts a 'pending' plan row and
-// publishes the event, returning immediately.
-async function _handleFormulaDotsViva({ user, biomarkers, bioageProfile, dotsFormulary, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts, personaType }) {
+// Shared by both personas — the actual dot-count decision is made by the full agentic
+// PLAN→GENERATE→JUDGE→REVISE loop, using the user's full digital twin (health_twin,
+// questionnaire history, active health-plan goals) plus tool access to biomarker history /
+// dot inventory / prior schedules, not just the latest biomarker snapshot. Because that loop
+// can take 10s-180s+, and Aliyun FC cancels an invocation the instant the HTTP client
+// disconnects (CLAUDE.md §22), the decision itself runs asynchronously via the same
+// chat.generate event → notifications-poll pipeline already shipped for chat/health-advice —
+// this handler only inserts a 'pending' plan row and publishes the event, returning immediately.
+async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dotsFormulary, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts, personaType }) {
     const startDateObj = getNowShanghai();
     const endDateObj = startDateObj.plus({ days: 6 });
 
@@ -1133,8 +1109,11 @@ async function _handleFormulaDotsViva({ user, biomarkers, bioageProfile, dotsFor
         user_facts: userFacts,
         pending_plan_id: pendingPlanId,
     };
-    const systemPrompt = systemFormulaGenerateTemplate(llmContext);
-    const triggerMsg = '请根据我的完整健康数据配置本周的原粒方案。';
+    const formulaGenerateTemplate = personaType === 'viva' ? vivaSystemFormulaGenerateTemplate : systemFormulaGenerateTemplate;
+    const systemPrompt = formulaGenerateTemplate(llmContext);
+    const triggerMsg = lang === 'zh'
+        ? '请根据我的完整健康数据配置本周的 Dots 方案。'
+        : "Please formulate this week's Dots plan based on my complete health data.";
 
     try {
         await publishChatGenerateEvent({
