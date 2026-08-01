@@ -791,7 +791,7 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
             // assignment invisible/orphaned against a real user record — skip the DB writes
             // entirely, same convention record_weight's `if (!sandbox)` guard already uses.
             try {
-                const allowed = await canCreateDynamicQuestionnaire(user_id);
+                const allowed = await canCreateDynamicQuestionnaire(user_id, personaType);
                 if (allowed) {
                     await createDynamicQuestionnaire(user_id, validatedAskQuestions);
                     await pool.query(

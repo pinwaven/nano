@@ -7,6 +7,15 @@ const getLlmClient = () => new OpenAI({
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
 });
 
+// Environment-scoped EventBridge source — see dispatcher/index.js's DISPATCHER_EVENT_SOURCE
+// comment for the full 2026-08-01 incident writeup (dev/prod share one EventBridge bus; this
+// function's eb-agent-trigger and the dev one had the identical unscoped "acs.dispatcher"
+// filter, so a dev-triggered coaching session could have reached a real prod user). Unlike
+// worker/index.js, this handler previously had NO in-code check of the event's source/type at
+// all — it trusted the trigger filter alone. Added here for defense-in-depth, matching the
+// check worker/index.js already had for its own events.
+const DISPATCHER_EVENT_SOURCE = 'acs.dispatcher' + (process.env.EVENT_SOURCE_SUFFIX || '');
+
 /**
  * Load all context needed to generate a personalised coaching message.
  */
@@ -124,6 +133,16 @@ exports.handler = async (req, resp, context) => {
 
         if (Buffer.isBuffer(req)) {
             const envelope = JSON.parse(req.toString('utf8'));
+            // Defense-in-depth: verify this envelope actually matches this environment's own
+            // source/type before processing it, rather than trusting the eb-agent-trigger's
+            // filter alone (see the DISPATCHER_EVENT_SOURCE comment above). A mismatch here
+            // means either a stray cross-environment delivery or an unrelated event type
+            // reaching this function — silently no-op rather than running a coaching session
+            // for it.
+            if (envelope.source && (envelope.source !== DISPATCHER_EVENT_SOURCE || envelope.type !== 'agent.coaching_session')) {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'agent_event_source_mismatch_ignored', source: envelope.source, type: envelope.type }));
+                return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, ignored: true }), isBase64Encoded: false };
+            }
             // CloudEvents 1.0: data field may be a Buffer or base64 string
             data = Buffer.isBuffer(envelope.data)
                 ? JSON.parse(envelope.data.toString('utf8'))

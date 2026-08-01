@@ -35,9 +35,15 @@ resources:
         DB_PASS: ${env(DB_PASS)}
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
-        WORKER_URL: "https://nano-worker-napllanrqp.cn-shanghai-vpc.fcapp.run"
-        WORKER_FUNCTION_NAME: "nano-worker"
-        AGENT_URL: "https://nano-agent-napllanrqp.cn-shanghai-vpc.fcapp.run"
+        # Found and fixed 2026-08-01 alongside the EventBridge source-scoping incident: this
+        # WORKER_URL/AGENT_URL pair was an exact copy of s-prod.yaml's values (the prod VPC-
+        # internal URLs), not dev's own. It's only used as dispatcher's HTTP fallback when the
+        # primary EventBridge publish itself throws — a rarer path than the EventBridge one, but
+        # a hit on it would have silently POSTed dev's dispatch payloads straight to production.
+        WORKER_URL: "https://nano-worker-dev-wvjxlgrinl.cn-shanghai-vpc.fcapp.run"
+        WORKER_FUNCTION_NAME: "nano-worker-dev"
+        AGENT_URL: "https://nano-agent-dev-fbbhyrqxpd.cn-shanghai-vpc.fcapp.run"
+        EVENT_SOURCE_SUFFIX: ".dev"
       triggers:
         - triggerName: cron-scanner
           triggerType: timer
@@ -97,6 +103,17 @@ resources:
         SMS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
         # PNVS_SIGN_NAME/PNVS_TEMPLATE_CODE are optional — lib/sms.js defaults to the
         # verified system-provided pair (恒创联众 / 100001).
+        # Dev/prod share one EventBridge bus (same Aliyun account) — nano-worker-dev and
+        # nano-worker (prod) both had eb-triggers filtering on the bare "acs.chat" source,
+        # so a dev-published chat.generate event was also picked up and processed by prod's
+        # (different) deployed code, leaking a raw unstripped LLM action tail into a real
+        # user's live chat history (found 2026-08-01). This suffix makes dev publish/consume
+        # chat.generate under "acs.chat.dev" instead — prod is left unset (defaults to the
+        # original "acs.chat"), so this is a dev-only opt-in requiring no prod change. Renamed
+        # from CHAT_EVENT_SOURCE_SUFFIX and extended the same day to also scope acs.lab (from
+        # lab/index.js) and acs.dispatcher (from dispatcher/index.js), which had the identical
+        # unscoped-filter exposure — see dispatcher/index.js's DISPATCHER_EVENT_SOURCE comment.
+        EVENT_SOURCE_SUFFIX: ".dev"
       triggers:
         - triggerName: http-webhook
           triggerType: http
@@ -108,7 +125,7 @@ resources:
           triggerConfig:
             eventSourceConfig:
               eventSourceType: Default
-            eventRuleFilterPattern: '{"source":["acs.dispatcher","acs.lab","acs.chat"]}'
+            eventRuleFilterPattern: '{"source":["acs.dispatcher.dev","acs.lab.dev","acs.chat.dev"]}'
 
   agent:
     component: fc3
@@ -139,6 +156,9 @@ resources:
         TZ: "Asia/Shanghai"
         DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
         MODEL: "qwen-plus-latest"
+        # See worker's EVENT_SOURCE_SUFFIX comment — same 2026-08-01 fix, applied here since
+        # nano-agent/nano-agent-dev's eb-agent-triggers had the identical unscoped filter.
+        EVENT_SOURCE_SUFFIX: ".dev"
       triggers:
         - triggerName: http-agent
           triggerType: http
@@ -150,7 +170,7 @@ resources:
           triggerConfig:
             eventSourceConfig:
               eventSourceType: Default
-            eventRuleFilterPattern: '{"source":["acs.dispatcher"],"type":["agent.coaching_session"]}'
+            eventRuleFilterPattern: '{"source":["acs.dispatcher.dev"],"type":["agent.coaching_session"]}'
 
   lab:
     component: fc3
@@ -180,6 +200,9 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         LAB_WEBHOOK_SECRET: ${env(LAB_WEBHOOK_SECRET)}
+        # See worker's EVENT_SOURCE_SUFFIX comment — same 2026-08-01 fix. lab only publishes
+        # (no eb-trigger of its own), so this just changes what source string it emits.
+        EVENT_SOURCE_SUFFIX: ".dev"
       triggers:
         - triggerName: lab-http
           triggerType: http

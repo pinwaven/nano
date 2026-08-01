@@ -5,6 +5,18 @@ const OpenApi = require('@alicloud/openapi-client');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 
+// Environment-scoped EventBridge source (added 2026-08-01 after a real incident: dev and prod
+// share one Aliyun account/EventBridge bus, and nano-worker-dev's/nano-worker's (prod)
+// eb-triggers both filtered on the bare "acs.chat" source with no per-environment distinction,
+// so a dev-published chat.generate event was also picked up and processed by prod, leaking a
+// raw LLM action tail into a real user's live chat history — see chatEventBridge.js for the
+// full writeup. The same shared-bus risk applies to every event this function publishes
+// (nutrition.topup / agent.coaching_session / checkin.daily, all under source "acs.dispatcher")
+// since nano-agent/nano-agent-dev's and nano-worker/nano-worker-dev's eb-triggers had the
+// identical unscoped filter. EVENT_SOURCE_SUFFIX is set to ".dev" in s.yaml and left unset in
+// s-prod.yaml (defaults to "", i.e. prod's original unsuffixed source — no prod change needed).
+const DISPATCHER_EVENT_SOURCE = 'acs.dispatcher' + (process.env.EVENT_SOURCE_SUFFIX || '');
+
 // Viva proactive daily check-ins: the day is split into three non-overlapping Shanghai-time
 // periods; at most one applies to any given moment, and 00:00-04:59 has no period at all (no
 // "good morning" at 2am). Which period is "current" only matters at the instant a user's first
@@ -64,7 +76,7 @@ exports.handler = async (event, context) => {
             // 1. Try EventBridge (Preferred)
             const cloudEvent = new EventBridge.CloudEvent({
                 id: uuidv4(),
-                source: 'acs.dispatcher',
+                source: DISPATCHER_EVENT_SOURCE,
                 specversion: '1.0',
                 type: 'nutrition.topup',
                 subject: 'user_nutrition_needed',
@@ -104,7 +116,7 @@ exports.handler = async (event, context) => {
         const dispatchToAgent = async (payload) => {
             const cloudEvent = new EventBridge.CloudEvent({
                 id: uuidv4(),
-                source: 'acs.dispatcher',
+                source: DISPATCHER_EVENT_SOURCE,
                 specversion: '1.0',
                 type: 'agent.coaching_session',
                 subject: payload.trigger_reason,
@@ -136,7 +148,7 @@ exports.handler = async (event, context) => {
         const dispatchToWorker = async (payload, type, subject) => {
             const cloudEvent = new EventBridge.CloudEvent({
                 id: uuidv4(),
-                source: 'acs.dispatcher',
+                source: DISPATCHER_EVENT_SOURCE,
                 specversion: '1.0',
                 type,
                 subject,

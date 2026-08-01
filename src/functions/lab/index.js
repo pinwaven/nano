@@ -9,6 +9,12 @@ const EventBridge = require('@alicloud/eventbridge');
 const OpenApi = require('@alicloud/openapi-client');
 const { v4: uuidv4 } = require('uuid');
 
+// Environment-scoped EventBridge source — see dispatcher/index.js's DISPATCHER_EVENT_SOURCE
+// comment for the full 2026-08-01 incident writeup this fixes (dev/prod share one EventBridge
+// bus; nano-worker/nano-worker-dev's eb-triggers both matched the bare "acs.lab" source with no
+// per-environment distinction). Unset in s-prod.yaml, so prod's source stays "acs.lab" unchanged.
+const LAB_EVENT_SOURCE = 'acs.lab' + (process.env.EVENT_SOURCE_SUFFIX || '');
+
 // ─── EventBridge publisher ────────────────────────────────────────────────────
 
 async function publishLabComplete(reportId, userId, fcContext) {
@@ -25,7 +31,7 @@ async function publishLabComplete(reportId, userId, fcContext) {
 
         const cloudEvent = new EventBridge.CloudEvent({
             id:              uuidv4(),
-            source:          'acs.lab',
+            source:          LAB_EVENT_SOURCE,
             specversion:     '1.0',
             type:            'biomarker.lab_complete',
             datacontenttype: 'application/json',

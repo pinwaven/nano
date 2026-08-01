@@ -1,5 +1,6 @@
 const { pool } = require('../lib/db');
 const OpenAI = require('openai');
+const { getPersonaSettings } = require('./personaSettings');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
@@ -289,22 +290,24 @@ async function handlePatchQuestionnaireAssignment(id, body) {
 // ── Dynamic questionnaires (Viva-generated mid-conversation) ─────────────────
 
 // Checked from handlers/chat.js's finalizeChatReply() before committing a new
-// ask_questions action tail. Blocks a new dynamic questionnaire if the user already has
-// one incomplete, or received one within the cooldown window — a plain check-then-insert
-// (not an atomic claim row like the daily-checkin dedup) because the only possible race is
-// two near-simultaneous turns from one user, not concurrent cron ticks across many users.
-const DYNAMIC_QUESTIONNAIRE_COOLDOWN = '24 hours';
-
-async function canCreateDynamicQuestionnaire(userId) {
+// ask_questions action tail. Blocks a new dynamic questionnaire if the feature is disabled
+// for this persona (persona_settings, admin-editable via the "AI Persona" tab), or if the
+// user already has one incomplete, or received one within the cooldown window — a plain
+// check-then-insert (not an atomic claim row like the daily-checkin dedup) because the only
+// possible race is two near-simultaneous turns from one user, not concurrent cron ticks
+// across many users.
+async function canCreateDynamicQuestionnaire(userId, personaType) {
     if (!pool) return false;
+    const settings = await getPersonaSettings(personaType);
+    if (!settings.dynamic_questionnaires_enabled) return false;
     const res = await pool.query(
         `SELECT 1 FROM questionnaire_assignments qa
          JOIN questionnaires q ON qa.questionnaire_id = q.id
          WHERE qa.user_id = $1 AND q.type = 'dynamic'
            AND (qa.status IN ('pending', 'in_progress')
-                OR qa.assigned_at > NOW() - INTERVAL '${DYNAMIC_QUESTIONNAIRE_COOLDOWN}')
+                OR qa.assigned_at > NOW() - (INTERVAL '1 hour' * $2))
          LIMIT 1`,
-        [userId]
+        [userId, settings.dynamic_questionnaire_cooldown_hours]
     );
     return res.rows.length === 0;
 }

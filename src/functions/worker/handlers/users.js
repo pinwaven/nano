@@ -373,19 +373,24 @@ async function handleGetNotifications(openid) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (!openid) return { success: true, notifications: [] };
-        const query = `
-            SELECT n.id, n.content, n.notification_type
-            FROM notifications n
-            JOIN users u ON n.user_id = u.user_id
-            WHERE u.user_id = $1 AND n.status = 'pending'
-            ORDER BY n.sent_at ASC;
-        `;
-        const result = await pool.query(query, [openid]);
-        if (result.rows.length > 0) {
-            const ids = result.rows.map(r => r.id);
-            await pool.query('UPDATE notifications SET status = $1 WHERE id = ANY($2)', ['sent', ids]);
-        }
-        return { success: true, notifications: result.rows };
+        // Atomic claim-and-mark-sent in a single statement (fixed 2026-08-01 after a real
+        // duplicate-bubble report). The previous version ran a separate SELECT ... WHERE
+        // status='pending' followed by an UPDATE — two near-simultaneous polls (e.g. onLoad and
+        // onShow both kicking off _startPolling on a cold app launch) could both SELECT the
+        // same row while it was still 'pending', before either UPDATE committed, delivering
+        // (and rendering) the same notification twice even though it only exists once. A single
+        // UPDATE ... RETURNING row-locks each matched row for the duration of the statement, so
+        // a second concurrent call simply can't see a row the first has already claimed.
+        const result = await pool.query(
+            `UPDATE notifications SET status = 'sent'
+             WHERE user_id = $1 AND status = 'pending'
+             RETURNING id, content, notification_type, sent_at`,
+            [openid]
+        );
+        const notifications = result.rows
+            .sort((a, b) => new Date(a.sent_at) - new Date(b.sent_at))
+            .map(({ id, content, notification_type }) => ({ id, content, notification_type }));
+        return { success: true, notifications };
     } catch (err) {
         return { success: false, error: err.message };
     }
