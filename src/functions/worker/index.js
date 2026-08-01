@@ -73,7 +73,7 @@ const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
 const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm } = require('./handlers/login');
 const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified } = require('./handlers/phone-otp');
-const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handleChatGenerateEvent, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign } = require('./handlers/chat');
+const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handleChatGenerateEvent, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign, _fireQuestionnaireAnsweredFollowup } = require('./handlers/chat');
 const { handleDailyCheckinEvent } = require('./handlers/checkin');
 
 
@@ -773,7 +773,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path === '/questionnaires') {
                 result = await handlePostQuestionnaire(parsedBody);
             } else if (path === '/questionnaire-responses') {
-                result = await handlePostQuestionnaireResponse(parsedBody, saveChatMessage);
+                result = await handlePostQuestionnaireResponse(parsedBody, saveChatMessage, _fireQuestionnaireAnsweredFollowup);
             } else if (path === '/questionnaire-assignments') {
                 result = await handlePostQuestionnaireAssignment(parsedBody);
             } else if (path === '/admin/saved-reports') {

@@ -39,6 +39,8 @@ List every specific, checkable factual claim you plan to make: biomarker values,
 
 Do NOT list a user's own self-reported personal fact (diet, allergy, preference, goal — anything they just stated about themselves in USER MESSAGE above) as a claim needing evidence-level backing or knowledge-base grounding. Acknowledging what the user just told you is not a scientific claim; it doesn't need a citation or evidence-level phrase, and a lack of a matching knowledge-base entry is not a gap to flag.
 
+Do NOT list a proposed follow-up questionnaire (an {"action":"ask_questions",...} tail you intend to append, and the question text within it) as a claim needing evidence-level backing. A question is not an assertion — it needs no citation, ground-truth match, or knowledge-base entry.
+
 RESPOND WITH ONLY VALID JSON, NO OTHER TEXT:
 {
   "intended_claims": [

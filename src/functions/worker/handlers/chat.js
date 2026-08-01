@@ -7,7 +7,7 @@ const { BiomarkerEstimator } = require('../lib/estimator/BiomarkerEstimator');
 const { deriveTags } = require('../lib/estimator/tagDerivation');
 const { BioAgeCalculator } = require('../lib/bioage/BioAgeCalculator');
 const { refreshGoalProgress } = require('./crm');
-const { formatQuestionnaireContext } = require('./questionnaires');
+const { formatQuestionnaireContext, canCreateDynamicQuestionnaire, createDynamicQuestionnaire } = require('./questionnaires');
 const { handlePostReminder } = require('./coaches');
 const OpenAI = require('openai');
 const intentClassifierTemplate = require('../prompts/chat/intentClassifier');
@@ -507,6 +507,109 @@ function makeStatusNotifier(user_id, language) {
     };
 }
 
+// Validation for the ask_questions action tail (Viva only, via askQuestionsBlock.js's prompt
+// instruction) — never trust the LLM's shape blindly, same discipline as every other action.
+// A malformed individual question is dropped, never repaired or fabricated; a malformed
+// question-set-level field (name/name_zh) gets a generic fallback since the questions
+// themselves are the substance, not the title.
+const ASK_QUESTIONS_KEY_RE = /^[a-z][a-z0-9_]*$/;
+const ASK_QUESTIONS_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ASK_QUESTIONS_INPUT_TYPES = new Set(['text', 'button_select', 'date_picker', 'slider_group', 'multi_select']);
+
+function _validateAskQuestionsQuestion(q, seenKeys) {
+    if (!q || typeof q !== 'object') return null;
+    const key = typeof q.key === 'string' ? q.key : null;
+    if (!key || !ASK_QUESTIONS_KEY_RE.test(key) || seenKeys.has(key)) return null;
+    if (typeof q.prompt_en !== 'string' || !q.prompt_en.trim()) return null;
+    if (typeof q.prompt_zh !== 'string' || !q.prompt_zh.trim()) return null;
+    if (!ASK_QUESTIONS_INPUT_TYPES.has(q.input_type)) return null;
+
+    const rawConfig = (q.config && typeof q.config === 'object') ? q.config : {};
+    let config;
+
+    if (q.input_type === 'text') {
+        config = {};
+        if (typeof rawConfig.placeholder_en === 'string') config.placeholder_en = rawConfig.placeholder_en;
+        if (typeof rawConfig.placeholder_zh === 'string') config.placeholder_zh = rawConfig.placeholder_zh;
+    } else if (q.input_type === 'date_picker') {
+        config = {};
+        // A malformed bound is dropped on its own (fall back to no bound) — a date picker
+        // with no min/max still works, so this doesn't need to fail the whole question.
+        if (typeof rawConfig.min_date === 'string' && ASK_QUESTIONS_DATE_RE.test(rawConfig.min_date) && !isNaN(Date.parse(rawConfig.min_date))) {
+            config.min_date = rawConfig.min_date;
+        }
+        if (typeof rawConfig.max_date === 'string' && ASK_QUESTIONS_DATE_RE.test(rawConfig.max_date) && !isNaN(Date.parse(rawConfig.max_date))) {
+            config.max_date = rawConfig.max_date;
+        }
+    } else if (q.input_type === 'button_select' || q.input_type === 'multi_select') {
+        if (!Array.isArray(rawConfig.options)) return null;
+        const seenOptionValues = new Set();
+        const options = [];
+        for (const opt of rawConfig.options) {
+            if (!opt || typeof opt !== 'object') continue;
+            const value = typeof opt.value === 'string' ? opt.value : (typeof opt.key === 'string' ? opt.key : null);
+            if (!value || seenOptionValues.has(value)) continue;
+            if (typeof opt.label_en !== 'string' || !opt.label_en.trim()) continue;
+            if (typeof opt.label_zh !== 'string' || !opt.label_zh.trim()) continue;
+            seenOptionValues.add(value);
+            options.push(q.input_type === 'multi_select'
+                ? { key: value, label_en: opt.label_en, label_zh: opt.label_zh }
+                : { value, label_en: opt.label_en, label_zh: opt.label_zh });
+        }
+        if (options.length < 2 || options.length > 7) return null;
+        config = { options };
+        if (q.input_type === 'multi_select' && rawConfig.allow_other === true
+            && typeof rawConfig.other_key === 'string' && ASK_QUESTIONS_KEY_RE.test(rawConfig.other_key)) {
+            config.allow_other = true;
+            config.other_key = rawConfig.other_key;
+        }
+    } else { // slider_group
+        if (!Array.isArray(rawConfig.sliders)) return null;
+        const seenSliderKeys = new Set();
+        const sliders = [];
+        for (const s of rawConfig.sliders) {
+            if (!s || typeof s !== 'object') continue;
+            const sKey = typeof s.key === 'string' ? s.key : null;
+            if (!sKey || !ASK_QUESTIONS_KEY_RE.test(sKey) || seenSliderKeys.has(sKey)) continue;
+            if (typeof s.label_en !== 'string' || !s.label_en.trim()) continue;
+            if (typeof s.label_zh !== 'string' || !s.label_zh.trim()) continue;
+            const min = Number(s.min), max = Number(s.max), step = Number(s.step), def = Number(s.default);
+            if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(step) || !Number.isFinite(def)) continue;
+            if (!(min < max) || !(step > 0) || def < min || def > max) continue;
+            seenSliderKeys.add(sKey);
+            sliders.push({
+                key: sKey, label_en: s.label_en, label_zh: s.label_zh, min, max, step, default: def,
+                ...(typeof s.unit === 'string' ? { unit: s.unit } : {}),
+            });
+        }
+        // A bad slider is dropped from the array, not the whole question — but if none
+        // survive, there's nothing left to render, so the whole question is dropped.
+        if (sliders.length === 0 || sliders.length > 4) return null;
+        config = { sliders };
+    }
+
+    seenKeys.add(key);
+    return { key, prompt_en: q.prompt_en.trim(), prompt_zh: q.prompt_zh.trim(), input_type: q.input_type, config };
+}
+
+// Question-set-level: require 1-5 surviving questions (tighter than the admin questionnaire
+// generator's 3-8 — this is a short in-conversation follow-up, not a full intake). Returns
+// null (never partially-invalid) if the tail is missing/unparseable or nothing survives.
+function _validateAskQuestionsPayload(parsed) {
+    if (!parsed || parsed.action !== 'ask_questions' || !Array.isArray(parsed.questions)) return null;
+    const seenKeys = new Set();
+    const questions = [];
+    for (const q of parsed.questions) {
+        const valid = _validateAskQuestionsQuestion(q, seenKeys);
+        if (valid) questions.push(valid);
+        if (questions.length >= 5) break;
+    }
+    if (questions.length < 1) return null;
+    const name = (typeof parsed.name === 'string' && parsed.name.trim()) ? parsed.name.trim() : 'Follow-up Questions';
+    const name_zh = (typeof parsed.name_zh === 'string' && parsed.name_zh.trim()) ? parsed.name_zh.trim() : '补充问题';
+    return { name, name_zh, questions };
+}
+
 // Shared tail run after rawReply is produced, regardless of which path produced it (classic
 // tool loop, sandbox-agentic, EventBridge-triggered agentic, or the sync fallback when
 // publishing the chat.generate event fails) — grounding check, fabrication-risk-guard skip,
@@ -531,7 +634,12 @@ async function finalizeChatReply({ rawReply, extraValidDates, extraValidValues, 
     const stripActionJson = (text) => text
         .replace(/\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
         .replace(/\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
-        .replace(/\{"action"\s*:\s*"remember_fact"[^}]*\}/g, '');
+        .replace(/\{"action"\s*:\s*"remember_fact"[^}]*\}/g, '')
+        // ask_questions nests braces (an array of question objects), like formulate_dots's own
+        // action tail, so it can't be bounded by the flat [^}]* pattern the other three use —
+        // greedy-to-end-of-string is safe since the model is always instructed to put this
+        // tail last.
+        .replace(/\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '');
     const hasKnownAge = user.birth_date != null;
     const hasKnownBmi = llmContext.user_profile.bmi != null;
     if (Object.keys(llmContext.biomarkers).length > 0 || hasKnownAge || hasKnownBmi) {
@@ -668,6 +776,41 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
         }
     }
 
+    // Detect ask_questions action embedded by the LLM (Viva only, via askQuestionsBlock.js's
+    // prompt instruction) — a short follow-up questionnaire the model wants the miniapp to
+    // render natively. A missing/unparseable/invalid tail is never a failure: the model was
+    // only ever instructed to include one conditionally, so continue with the normal reply.
+    let askQuestionsCommitted = null;
+    const askQuestionsExtracted = _extractTrailingJson(rawReply, '{"action":"ask_questions"');
+    if (askQuestionsExtracted) {
+        const validatedAskQuestions = _validateAskQuestionsPayload(askQuestionsExtracted.parsed);
+        if (!validatedAskQuestions) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'ask_questions_action_missing_or_invalid', user_id }));
+        } else if (!sandbox) {
+            // Sandbox sessions have no notification-polling side channel and would leave the
+            // assignment invisible/orphaned against a real user record — skip the DB writes
+            // entirely, same convention record_weight's `if (!sandbox)` guard already uses.
+            try {
+                const allowed = await canCreateDynamicQuestionnaire(user_id);
+                if (allowed) {
+                    await createDynamicQuestionnaire(user_id, validatedAskQuestions);
+                    await pool.query(
+                        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                        [user_id, 'questionnaire_ready', (user.language || 'zh') === 'zh' ? '有几个问题想了解一下' : 'A couple of quick questions for you', 'pending']
+                    );
+                    askQuestionsCommitted = validatedAskQuestions;
+                } else {
+                    console.log(JSON.stringify({ level: 'INFO', msg: 'ask_questions_rate_limited', user_id }));
+                }
+            } catch (e) {
+                // Fail open: the questionnaire didn't get created, but the chat reply itself
+                // must still ship — never let this throw block the turn (same principle as
+                // every other action's try/catch in this function).
+                console.log(JSON.stringify({ level: 'WARN', msg: 'ask_questions_commit_failed', user_id, error: e.message }));
+            }
+        }
+    }
+
     // A REVISE-round completion can occasionally consist of ONLY the corrected action JSON
     // with no surrounding prose (the model over-focuses on fixing the flagged action param
     // and drops the conversational reply) — stripping it then would ship a blank message.
@@ -678,10 +821,13 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
         .replace(/\n?\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
         .replace(/\n?\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
         .replace(/\n?\{"action"\s*:\s*"remember_fact"[^}]*\}/g, '')
+        .replace(/\n?\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '')
         .trim();
     const isZhReply = (user.language || 'zh') === 'zh';
     const fallbackReply = recordedFactText
         ? (isZhReply ? `好的，已记录：${recordedFactText}` : `Got it — noted: ${recordedFactText}`)
+        : askQuestionsCommitted
+        ? (isZhReply ? `好的，我想先了解几个问题：${askQuestionsCommitted.name_zh}` : `Sure — I have a couple of quick questions first: ${askQuestionsCommitted.name}`)
         : (isZhReply ? '好的，已记录。' : 'Got it — noted.');
     const reply = strippedReply || fallbackReply;
 
@@ -700,6 +846,118 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
         [user_id, 'chat_reply', reply, 'pending']
     );
     return { success: true, user_id };
+}
+
+// Called (awaited — see questionnaires.js's call site for why fire-and-forget doesn't work on
+// FC 3.0) from handlePostQuestionnaireResponse (questionnaires.js) the moment a dynamically-
+// created (type='dynamic') questionnaire assignment completes — injected there as a dependency
+// parameter (mirroring the existing saveChatMessage injection) rather than imported directly,
+// since questionnaires.js already exports formatQuestionnaireContext for chat.js to consume
+// and importing the other direction would be circular.
+//
+// Publishes through the same publishChatGenerateEvent/handleChatGenerateEvent pipeline every
+// other agentic feature uses, with NO new `kind` — lands on handleChatGenerateEvent's default
+// branch (finalizeChatReply), same as any normal chat turn. Unlike formulate_dots, there's no
+// FK-threading/placeholder-row need here, so the two-phase split isn't warranted.
+async function _fireQuestionnaireAnsweredFollowup(userId, assignmentId) {
+    const userRes = await pool.query(
+        `SELECT user_id, nickname, gender, birth_date, language, channel_id FROM users WHERE user_id = $1`,
+        [userId]
+    );
+    if (!userRes.rows.length) return;
+    const user = userRes.rows[0];
+
+    let personaType = 'nano';
+    if (user.channel_id) {
+        try {
+            const chRes = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
+            personaType = chRes.rows[0]?.config?.persona_type ?? 'nano';
+        } catch (e) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'questionnaire_answered_followup_persona_lookup_failed', user_id: userId, error: e.message }));
+        }
+    }
+    if (personaType !== 'viva') return; // ask_questions is Viva-only for now — nothing to react to on Nano's path
+
+    const [biomarkerRes, dotsRes, factsRes, responsesRes] = await Promise.all([
+        pool.query(
+            `SELECT data, tested_at FROM biomarkers WHERE user_id = $1 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
+            [userId]
+        ),
+        pool.query(
+            `SELECT id, key_name, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`
+        ),
+        pool.query(
+            `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
+            [userId]
+        ),
+        pool.query(
+            `SELECT q.name, q.name_zh, qq.prompt_en, qq.prompt_zh, qr.answer
+             FROM questionnaire_responses qr
+             JOIN questionnaire_questions qq ON qq.id = qr.question_id
+             JOIN questionnaire_assignments qa ON qa.id = qr.assignment_id
+             JOIN questionnaires q ON q.id = qa.questionnaire_id
+             WHERE qr.assignment_id = $1
+             ORDER BY qq.sort_order ASC`,
+            [assignmentId]
+        ),
+    ]);
+
+    const biomarkerRow = biomarkerRes.rows[0] || {};
+    const essentialKnowledge = await getEssentialBlock(personaType);
+    const currentSolarTerm = getCurrentSolarTerm(getNowShanghai().toJSDate());
+    const qaContext = formatQuestionnaireContext(responsesRes.rows, user.language);
+
+    // Scoped to what viva/chat/casual.js's template actually reads (user_profile,
+    // questionnaire_context, active_health_plans, essential_knowledge, user_facts) plus
+    // biomarkers/dots for finalizeChatReply's own grounding check / fabrication-risk guard —
+    // not the full handlePostChat context (health_twin, active_health_plans, etc. omitted;
+    // casual_chat's reaction to "here's what you just told me" doesn't need them).
+    const llmContext = {
+        user_profile: {
+            nickname: user.nickname,
+            gender: user.gender,
+            age: calculateAge(user.birth_date),
+            bmi: null,
+            language: user.language,
+        },
+        biomarkers: biomarkerRow.data?.validated || {},
+        biomarkers_tested_at: biomarkerRow.tested_at
+            ? formatToShanghai(new Date(biomarkerRow.tested_at)).slice(0, 10)
+            : null,
+        bioage: biomarkerRow.data?.bioage_profile || {},
+        dots: dotsRes.rows,
+        questionnaire_context: qaContext,
+        active_health_plans: [],
+        current_solar_term: currentSolarTerm,
+        essential_knowledge: essentialKnowledge,
+        user_facts: factsRes.rows,
+    };
+
+    const systemPrompt = vivaPrompts.casual_chat(llmContext);
+    const triggerMsg = user.language === 'zh'
+        ? '（用户刚完成了一份补充问卷）'
+        : '(The user just completed a follow-up questionnaire.)';
+
+    try {
+        await publishChatGenerateEvent({
+            event_id: uuidv4(),
+            user_id: userId,
+            message: triggerMsg,
+            intent: 'casual_chat',
+            llmContext,
+            systemPrompt,
+            cleanHistory: [],
+            language: user.language,
+            personaType,
+            birth_date: user.birth_date,
+        });
+    } catch (ebErr) {
+        // Fail open: unlike handlePostChat, no HTTP caller is waiting on this specific reply
+        // (handlePostQuestionnaireResponse's own response has already been decided regardless
+        // of this call) — a publish failure just means a missed reaction; log and drop rather
+        // than building a synchronous inline-generate fallback for this v1.
+        console.log(JSON.stringify({ level: 'WARN', msg: 'questionnaire_answered_followup_publish_failed', user_id: userId, error: ebErr.message }));
+    }
 }
 
 async function handlePostChat(body) {
@@ -2167,6 +2425,7 @@ module.exports = {
     saveChatMessage,
     fetchTagDerivationContext,
     resolveOrUpsertUser,
+    _fireQuestionnaireAnsweredFollowup,
     handleGetChatHistory,
     handlePostBiomarkers,
     handlePostChat,

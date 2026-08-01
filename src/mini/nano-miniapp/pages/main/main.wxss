@@ -560,6 +560,45 @@
   color: rgba(166, 196, 229, 0.4);
 }
 
+.slider-value-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 6rpx;
+}
+
+.slider-val-input {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+  text-align: right;
+  min-width: 70rpx;
+}
+
+.slider-control-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.slider-input { flex: 1; }
+
+.slider-step-btn {
+  flex-shrink: 0;
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  background: rgba(99, 117, 236, 0.16);
+  border: 1rpx solid rgba(99, 117, 236, 0.4);
+  color: #6375EC;
+  font-size: 32rpx;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slider-step-btn:active { background: rgba(99, 117, 236, 0.32); }
+
 /* ── Chat input area ── */
 
 .ai-disclaimer {
@@ -2616,6 +2655,8 @@
 .theme-light .slider-key   { color: var(--text-muted); }
 .theme-light .slider-val   { color: var(--text); }
 .theme-light .slider-unit  { color: var(--text-muted); }
+.theme-light .slider-val-input { color: var(--text); }
+.theme-light .slider-step-btn  { background: rgba(99, 117, 236, 0.1); border-color: rgba(99, 117, 236, 0.3); }
 .theme-light .quick-btn {
   border-color: rgba(201, 149, 106, 0.35);
   background: rgba(201, 149, 106, 0.1);

@@ -134,7 +134,7 @@ async function handleGetPendingQuestionnaires(openid) {
 // Saves one answer. If question has save_target, also writes to user profile.
 // Marks assignment completed when all questions answered.
 // saveChatMessage is passed as a dependency from index.js
-async function handlePostQuestionnaireResponse(body, saveChatMessage) {
+async function handlePostQuestionnaireResponse(body, saveChatMessage, fireQuestionnaireAnsweredFollowup) {
     const { assignment_id, question_id, answer } = body || {};
     if (!assignment_id || !question_id || answer === undefined) {
         return { statusCode: 400, success: false, error: 'assignment_id, question_id and answer required' };
@@ -142,13 +142,17 @@ async function handlePostQuestionnaireResponse(body, saveChatMessage) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
 
-        // Validate assignment exists and get user_id
+        // Validate assignment exists and get user_id (+ questionnaire type, to know whether a
+        // completion should trigger Viva's dynamic-questionnaire proactive follow-up below)
         const assignRes = await pool.query(
-            `SELECT qa.user_id, qa.questionnaire_id FROM questionnaire_assignments qa WHERE qa.id = $1`,
+            `SELECT qa.user_id, qa.questionnaire_id, q.type AS questionnaire_type
+             FROM questionnaire_assignments qa
+             JOIN questionnaires q ON q.id = qa.questionnaire_id
+             WHERE qa.id = $1`,
             [assignment_id]
         );
         if (!assignRes.rows.length) return { statusCode: 404, success: false, error: 'Assignment not found' };
-        const { user_id, questionnaire_id } = assignRes.rows[0];
+        const { user_id, questionnaire_id, questionnaire_type } = assignRes.rows[0];
 
         // Get question config for save_target handling + prompt text for chat history
         const qRes = await pool.query(
@@ -225,14 +229,37 @@ async function handlePostQuestionnaireResponse(body, saveChatMessage) {
         );
         const total = parseInt(totalRes.rows[0].count);
         const answered = parseInt(answeredRes.rows[0].count);
-        if (answered >= total) {
+        const justCompleted = answered >= total;
+        if (justCompleted) {
             await pool.query(
                 `UPDATE questionnaire_assignments SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = $1`,
                 [assignment_id]
             );
+            // Only Viva-generated ('dynamic') questionnaires get a proactive chat reaction —
+            // onboarding has its own completion UX, and there's no precedent for reacting to a
+            // coach-assigned ('custom') form.
+            //
+            // MUST be awaited, not fire-and-forget: FC 3.0 is an event-function model, not a
+            // long-lived Node HTTP server — the runtime freezes/reclaims the execution context
+            // once the handler returns its response, so an un-awaited promise here has no
+            // guarantee of ever completing its DB queries or reaching publishChatGenerateEvent's
+            // EventBridge call (confirmed live: an earlier fire-and-forget version never
+            // published the event at all, even though the questionnaire-response request itself
+            // succeeded). This is the same class of platform behavior §22 documented for client
+            // disconnects, just triggered by the handler's own return instead — see the
+            // fc3-handler-reference skill. Still fails open via the try/catch below: any error
+            // is logged and swallowed so a missed reaction never breaks the (already-succeeded)
+            // questionnaire-completion response.
+            if (questionnaire_type === 'dynamic' && typeof fireQuestionnaireAnsweredFollowup === 'function') {
+                try {
+                    await fireQuestionnaireAnsweredFollowup(user_id, assignment_id);
+                } catch (e) {
+                    console.log(JSON.stringify({ level: 'WARN', msg: 'questionnaire_answered_followup_failed', user_id, assignment_id, error: e.message }));
+                }
+            }
         }
 
-        return { success: true, completed: answered >= total };
+        return { success: true, completed: justCompleted };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -256,6 +283,67 @@ async function handlePatchQuestionnaireAssignment(id, body) {
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
+    }
+}
+
+// ── Dynamic questionnaires (Viva-generated mid-conversation) ─────────────────
+
+// Checked from handlers/chat.js's finalizeChatReply() before committing a new
+// ask_questions action tail. Blocks a new dynamic questionnaire if the user already has
+// one incomplete, or received one within the cooldown window — a plain check-then-insert
+// (not an atomic claim row like the daily-checkin dedup) because the only possible race is
+// two near-simultaneous turns from one user, not concurrent cron ticks across many users.
+const DYNAMIC_QUESTIONNAIRE_COOLDOWN = '24 hours';
+
+async function canCreateDynamicQuestionnaire(userId) {
+    if (!pool) return false;
+    const res = await pool.query(
+        `SELECT 1 FROM questionnaire_assignments qa
+         JOIN questionnaires q ON qa.questionnaire_id = q.id
+         WHERE qa.user_id = $1 AND q.type = 'dynamic'
+           AND (qa.status IN ('pending', 'in_progress')
+                OR qa.assigned_at > NOW() - INTERVAL '${DYNAMIC_QUESTIONNAIRE_COOLDOWN}')
+         LIMIT 1`,
+        [userId]
+    );
+    return res.rows.length === 0;
+}
+
+// Creates a fresh one-off questionnaire + its questions + a single assignment for userId,
+// atomically. `generated` is the already-validated { name, name_zh, questions: [...] }
+// shape produced by chat.js's ask_questions action-tail parser — never raw LLM output.
+async function createDynamicQuestionnaire(userId, generated) {
+    if (!pool) throw new Error('Database pool not initialized');
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const qRes = await client.query(
+            `INSERT INTO questionnaires (channel_id, name, name_zh, type, created_by, is_active)
+             VALUES (NULL, $1, $2, 'dynamic', NULL, true) RETURNING id`,
+            [generated.name, generated.name_zh]
+        );
+        const questionnaireId = qRes.rows[0].id;
+        for (let i = 0; i < generated.questions.length; i++) {
+            const q = generated.questions[i];
+            await client.query(
+                `INSERT INTO questionnaire_questions
+                 (questionnaire_id, key, sort_order, input_type, prompt_zh, prompt_en, completion_check, config)
+                 VALUES ($1, $2, $3, $4, $5, $6, '{}', $7)`,
+                [questionnaireId, q.key, i, q.input_type, q.prompt_zh, q.prompt_en, JSON.stringify(q.config)]
+            );
+        }
+        const aRes = await client.query(
+            `INSERT INTO questionnaire_assignments (questionnaire_id, user_id, assigned_by, status)
+             VALUES ($1, $2, NULL, 'pending') RETURNING id`,
+            [questionnaireId, userId]
+        );
+        await client.query('COMMIT');
+        return { questionnaireId, assignmentId: aRes.rows[0].id };
+    } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+    } finally {
+        client.release();
     }
 }
 
@@ -619,6 +707,8 @@ async function handleGetQuestionnaireResponses(query) {
 module.exports = {
     getNestedPath,
     formatQuestionnaireContext,
+    canCreateDynamicQuestionnaire,
+    createDynamicQuestionnaire,
     handleGetPendingQuestionnaires,
     handlePostQuestionnaireResponse,
     handlePatchQuestionnaireAssignment,
