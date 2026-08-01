@@ -849,7 +849,7 @@ async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFor
         user_facts: userFacts,
     };
     const llmClient = getLlmClient();
-    const model = process.env.MODEL || 'qwen3.6-plus';
+    const model = process.env.MODEL || 'qwen-plus-latest';
     const nutritionTemplate = personaType === 'viva' ? vivaSystemNutritionTemplate : systemNutritionTemplate;
     const prompt = nutritionTemplate(nutritionContext);
     console.log(JSON.stringify({ level: 'INFO', msg: 'Formula DOTS Context', data: nutritionContext }));

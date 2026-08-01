@@ -37,7 +37,7 @@ function getClient() {
  * @returns {Promise<string>}
  */
 async function callLLM(systemPrompt, userMessage) {
-  const model = process.env.MODEL || 'qwen-turbo';
+  const model = process.env.MODEL || 'qwen-plus-latest';
   const response = await getClient().chat.completions.create({
     model,
     messages: [

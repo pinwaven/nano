@@ -991,7 +991,7 @@ async function handlePostChat(body) {
         // Intent-routed chat message handling
         try {
             const client = getLlmClient();
-            const model = process.env.MODEL || 'qwen3.6-plus';
+            const model = process.env.MODEL || 'qwen-plus-latest';
 
             // Step 1: Classify the user's intent
             let intent = 'casual_chat';
@@ -1533,7 +1533,7 @@ async function handleChatGenerateEvent(payload) {
     }
 
     const client = getLlmClient();
-    const model = process.env.MODEL || 'qwen3.6-plus';
+    const model = process.env.MODEL || 'qwen-plus-latest';
     const user = { birth_date, language };
     const chatMessages = [
         { role: 'system', content: systemPrompt },
@@ -1867,7 +1867,7 @@ async function handlePostHealthAdvice(body) {
         };
 
         const llmClient = getLlmClient();
-        const model = process.env.MODEL || 'qwen3.6-plus';
+        const model = process.env.MODEL || 'qwen-plus-latest';
         const useAgenticLoop = true;
 
         // Save user trigger to keep conversation history well-formed (no consecutive AI turns) —
