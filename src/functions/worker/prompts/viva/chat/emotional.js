@@ -1,6 +1,7 @@
 const { getVivaLabels } = require('../subAgeLabels');
-const { getFactConstraintBlock } = require('../factConstraint');
-const { getFactMemoryBlock } = require('../factMemoryBlock');
+const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
+const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
 
 module.exports = (ctx) => {
   const { user_profile, bioage, questionnaire_context, active_health_plans, health_twin } = ctx;
@@ -23,6 +24,8 @@ module.exports = (ctx) => {
   return `${getFactConstraintBlock(ctx.essential_knowledge)}
 
 ${getFactMemoryBlock(ctx.user_facts)}
+
+${getAskQuestionsBlock()}
 
 你是 Viva，Aeviva 的精准长寿顾问，温暖而有深度。
 

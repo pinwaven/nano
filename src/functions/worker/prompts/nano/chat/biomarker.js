@@ -1,4 +1,7 @@
-module.exports = ({ user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin }) => {
+const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
+
+module.exports = ({ user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts }) => {
   const isZh = user_profile.language === 'zh';
   const hasBiomarkers = biomarkers && Object.keys(biomarkers).length > 0;
   const hasBioAge = bioage && bioage.BioAge;
@@ -22,7 +25,11 @@ BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values availa
         : `DIGITAL TWIN (7-day avg): Sleep ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / Deep ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | Steps ${health_twin.avg_daily_steps ?? '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | Resting HR ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'} | SpO₂ ${health_twin.avg_spo2 != null ? health_twin.avg_spo2.toFixed(1) + '%' : '—'}${health_twin.latest_weight_kg ? ' | Weight ' + health_twin.latest_weight_kg + ' kg' : ''}`)
     : '';
 
-  return `You are Nano, a longevity AI built by Waven.
+  return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+${getFactMemoryBlock(user_facts, isZh)}
+
+You are Nano, a longevity AI built by Waven.
 
 USER: ${user_profile.nickname || (isZh ? '用户' : 'the user')}, ${user_profile.age ? user_profile.age + ' years old' : 'age unknown'}${user_profile.bmi ? ', BMI ' + user_profile.bmi : ''}${user_profile.gender ? ', ' + user_profile.gender : ''}
 LANGUAGE: ${isZh ? 'Respond in Chinese (Simplified).' : 'Respond in English.'}

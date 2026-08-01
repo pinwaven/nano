@@ -3,7 +3,7 @@
  * Pure Chinese, optimised for Alibaba Qwen Plus
  */
 const { getVivaLabels } = require('./subAgeLabels');
-const { getFactConstraintBlock } = require('./factConstraint');
+const { getFactConstraintBlock } = require('../chat/factConstraint');
 
 module.exports = (context) => {
   const { user_profile, latest_biomarkers, bioage_profile, dots_formulary, nutrition_plan, message } = context;

@@ -57,13 +57,14 @@ const { handleGetLabProviders, handlePostLabProvider, handlePutLabProvider, hand
 const { handleGetInventoryStock, handlePostInventoryStock, handleGetWarehouses, handlePostWarehouse, handlePutWarehouse, handleDeleteWarehouse } = require('./handlers/inventory');
 const { handleGetOrders, handleGetMyOrders, handlePostStoreItem, handlePutStoreItem, handleDeleteStoreItem, handleGetSkus, handlePostSku, handlePutSku, handleDeleteSku } = require('./handlers/store');
 const { handleGetCommissionSettings, handlePutCommissionSetting, handleGetCoachCommissions, handleGetChannelCommissions, handleGetCoachEarnings, handleGetCoachPayouts, handleGetChannelPayouts, handlePostGenerateCoachPayouts, handlePostGenerateChannelPayouts, handlePutCoachPayout, handlePutChannelPayout } = require('./handlers/commissions');
-const { handleGetPartners, handleGetPartner, handleGetPartnerByPhone, handleGcnPartnerLookup, handlePostPartner, handlePostPartnerGcnProvision, handlePostPartnerInviteCode, handleGcnPartnerInviteCode, handleGcnPartnerApply, handlePostPartnerSale, handlePutPartner, handleDeletePartner, handleGetPartnerCommissions, handlePostPartnerCommission, handleGetPartnerPayouts, handlePostGeneratePartnerPayouts, handlePutPartnerPayout, handleGcnPartnerChildren, handleGcnPartnerDescendants, handleGetChannelReferralNetwork, handleGetPartnerCommissionConfig, handlePutPartnerCommissionConfig, handleGetPartnerTypes, handlePostPartnerType, handlePutPartnerType, handleDeletePartnerType, handleGetPartnerCommissionRules, handlePostPartnerCommissionRule, handlePutPartnerCommissionRule, handleDeletePartnerCommissionRule, handlePutChannelPartnerSystemPermission, handleGetChannelRewardsSummary } = require('./handlers/partners');
+const { handleGetPartners, handleGetPartner, handleGetPartnerByPhone, handleGcnPartnerLookup, handlePostPartner, handlePostPartnerGcnProvision, handlePostPartnerInviteCode, handleGcnPartnerInviteCode, handleGcnPartnerApply, handlePostPartnerSale, handlePutPartner, handleDeletePartner, handleGetPartnerCommissions, handlePostPartnerCommission, handleGetPartnerPayouts, handlePostGeneratePartnerPayouts, handlePutPartnerPayout, handleGcnPartnerChildren, handleGcnPartnerDescendants, handleGetChannelReferralNetwork, handleGetPartnerCommissionConfig, handlePutPartnerCommissionConfig, handleGetPartnerTypes, handlePostPartnerType, handlePutPartnerType, handleDeletePartnerType, handleGcnSyncPartnerType, handleGetPartnerCommissionRules, handlePostPartnerCommissionRule, handlePutPartnerCommissionRule, handleDeletePartnerCommissionRule, handlePutChannelPartnerSystemPermission, handleGetChannelRewardsSummary } = require('./handlers/partners');
 const { handleGetEvents, handlePostEvent, handlePutEvent, handleDeleteEvent, handleGetEventSignups, handlePostEventSignup, handleDeleteEventSignup, handleGetMyEventSignups } = require('./handlers/events');
 const { handleGetCoachGroups, handlePostCoachGroup, handlePutCoachGroup, handleDeleteCoachGroup, handleGetCoachGroupKpis } = require('./handlers/coach-groups');
 const { handleGetKoneApkReleases, handlePostKoneApkRelease, handlePutKoneApkRelease, handleDeleteKoneApkRelease, handleGetKoneApkPresign, handleGetDigitalAssets, handlePostDigitalAsset, handlePutDigitalAsset, handleDeleteDigitalAsset, handleGetDigitalAssetsPresign, handleGetKinoUpgrade } = require('./handlers/digital-assets');
 const { logActivity, handleGetCoachTags, handlePostCoachTag, handlePutCoachTag, handleDeleteCoachTag, handlePostCoachTagAssignments, handleDeleteCoachTagAssignment, handleGetClientPipeline, handlePostClientPipeline, handleGetCoachNotes, handlePostCoachNote, handlePutCoachNote, handleDeleteCoachNote, handleGetClientActivity, handleGetCoachActivityFeed, handleGetMessageTemplates, handlePostMessageTemplate, handlePutMessageTemplate, handleDeleteMessageTemplate, handlePostMessageTemplatePreview, resolveBulkRecipients, handlePostBulkCampaign, handlePostBulkCampaignSend, handleGetBulkCampaigns, handleGetBulkCampaignRecipients, handleGetAppointments, handlePostAppointment, handlePutAppointment, handleDeleteAppointment, handleGetUpcomingAppointments, handleGetClientGoals, handlePostClientGoal, handlePutClientGoal, handleDeleteClientGoal, refreshGoalProgress, handlePostNpsSurvey, handlePatchNpsSurvey, handleGetNpsSurveys, handleGetCoachKpis, handlePostCoachKpisCompute, handleGetFollowUpRules, handlePostFollowUpRule, handlePutFollowUpRule, handleDeleteFollowUpRule, handlePostFollowUpRulesEvaluate } = require('./handlers/crm');
 const { handleGetKinoDevices, handlePostKinoDevice, handlePutKinoDevice, handleDeleteKinoDevice, handleGetKinoChipBatches, handleGetKinoChipBatchChips, handlePostKinoChipBatch, handlePutKinoChipBatch, handleDeleteKinoChipBatch, handleGetKinoChipModels, handlePostKinoChipModel, handlePutKinoChipModel, handleDeleteKinoChipModel, handleGetKinoChip, handlePostKinoScan, handlePostKinoResult, handleGetKinoTestedChips, handleGetKinoTestedChipDetail, handlePostKinoChipReset } = require('./handlers/kino');
 const { handleGetKnowledgeEntries, handlePostKnowledgeEntry, handlePutKnowledgeEntry, handleDeleteKnowledgeEntry } = require('./handlers/knowledge');
+const { handleGetPersonaSettings, handlePutPersonaSettings } = require('./handlers/personaSettings');
 const { handleGetUserFacts, handlePostUserFact, handlePutUserFact, handleDeleteUserFact } = require('./handlers/userFacts');
 const { handleGetCreditBalance, handleGetCreditHistory, handlePostCreditWithdraw, handleGetUserWithdrawals, handleGetAdminWithdrawals, handlePutAdminWithdrawal, handleGetAdminUserCreditHistory, handlePostAdminUserCreditAdjustment } = require('./handlers/credits');
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
@@ -73,7 +74,17 @@ const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
 const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm } = require('./handlers/login');
 const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified } = require('./handlers/phone-otp');
-const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handleChatGenerateEvent, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign } = require('./handlers/chat');
+const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handleChatGenerateEvent, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign, _fireQuestionnaireAnsweredFollowup } = require('./handlers/chat');
+const { CHAT_EVENT_SOURCE } = require('./lib/chatEventBridge');
+// Same environment-scoping fix as CHAT_EVENT_SOURCE (see chatEventBridge.js's comment for the
+// full 2026-08-01 incident writeup), applied to the other two EventBridge sources this function
+// consumes — acs.lab (from lab/index.js) and acs.dispatcher (from dispatcher/index.js). Each
+// function is deployed independently (no cross-function imports), so these are computed inline
+// here rather than shared via a module, mirroring dispatcher/index.js's and lab/index.js's own
+// DISPATCHER_EVENT_SOURCE/LAB_EVENT_SOURCE constants.
+const LAB_EVENT_SOURCE = 'acs.lab' + (process.env.EVENT_SOURCE_SUFFIX || '');
+const DISPATCHER_EVENT_SOURCE = 'acs.dispatcher' + (process.env.EVENT_SOURCE_SUFFIX || '');
+const { handleDailyCheckinEvent } = require('./handlers/checkin');
 
 
 // ── Admin dashboard stats (time series + distributions) ─────────────────────
@@ -117,17 +128,23 @@ exports.handler = async (req, resp, context) => {
             try { cloudData = JSON.parse(Buffer.from(cloudData, 'base64').toString('utf8')); }
             catch (e) { try { cloudData = JSON.parse(cloudData); } catch (e2) {} }
         }
-        if (event.source === 'acs.lab' && event.type === 'biomarker.lab_complete') {
+        if (event.source === LAB_EVENT_SOURCE && event.type === 'biomarker.lab_complete') {
             try {
                 await handleLabImportEvent(cloudData, fetchTagDerivationContext);
             } catch (err) {
                 console.error(JSON.stringify({ level: 'ERROR', msg: 'handleLabImportEvent failed', error: err.message }));
             }
-        } else if (event.source === 'acs.chat' && event.type === 'chat.generate') {
+        } else if (event.source === CHAT_EVENT_SOURCE && event.type === 'chat.generate') {
             try {
                 await handleChatGenerateEvent(cloudData);
             } catch (err) {
                 console.error(JSON.stringify({ level: 'ERROR', msg: 'handleChatGenerateEvent failed', error: err.message }));
+            }
+        } else if (event.source === DISPATCHER_EVENT_SOURCE && event.type === 'checkin.daily') {
+            try {
+                await handleDailyCheckinEvent(cloudData);
+            } catch (err) {
+                console.error(JSON.stringify({ level: 'ERROR', msg: 'handleDailyCheckinEvent failed', error: err.message }));
             }
         }
         return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true }), isBase64Encoded: false };
@@ -216,7 +233,7 @@ exports.handler = async (req, resp, context) => {
             // Scoped nano<-GCN service credential — distinct from API_BEARER_TOKEN (nano's
             // full superadmin bearer). Authenticated but restricted to the exact paths GCN's
             // nanoClient.js actually calls; anything else 403s even with a valid token.
-            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn']);
+            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn', '/partner-types-gcn-sync']);
             if (!GCN_ALLOWED_PATHS.has(path)) {
                 const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
                 if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
@@ -294,8 +311,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetKinoChipBatches();
             } else if (path.includes('/kino-chip-models')) {
                 result = await handleGetKinoChipModels();
+            } else if (path.includes('/persona-settings')) {
+                result = requirePermission(adminCtx, 'content:read') || await handleGetPersonaSettings();
             } else if (path.includes('/knowledge-entries')) {
-                result = await handleGetKnowledgeEntries();
+                result = requirePermission(adminCtx, 'content:read') || await handleGetKnowledgeEntries();
             } else if (path.includes('/user-facts')) {
                 result = await handleGetUserFacts(query.openid, query.coach_id);
             } else if (path.match(/\/kino-tested-chips\/(\d+)/)) {
@@ -643,7 +662,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/kino-chip-models')) {
                 result = await handlePostKinoChipModel(parsedBody);
             } else if (path.includes('/knowledge-entries')) {
-                result = await handlePostKnowledgeEntry(parsedBody);
+                result = requireAdminTab(adminCtx, 'content') || await handlePostKnowledgeEntry(parsedBody);
             } else if (path.includes('/user-facts')) {
                 result = await handlePostUserFact(parsedBody);
             } else if (path.match(/\/kino-tested-chips\/(\d+)\/reset/)) {
@@ -710,6 +729,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostGeneratePartnerPayouts(gpBody);
             } else if (path === '/partner-types') {
                 result = await handlePostPartnerType(parsedBody, adminCtx);
+            } else if (path === '/partner-types-gcn-sync') {
+                result = await handleGcnSyncPartnerType(parsedBody);
             } else if (path === '/partner-commission-rules') {
                 result = await handlePostPartnerCommissionRule(parsedBody, adminCtx);
             } else if (path.match(/\/partners\/(\d+)\/gcn-provision/)) {
@@ -764,7 +785,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path === '/questionnaires') {
                 result = await handlePostQuestionnaire(parsedBody);
             } else if (path === '/questionnaire-responses') {
-                result = await handlePostQuestionnaireResponse(parsedBody, saveChatMessage);
+                result = await handlePostQuestionnaireResponse(parsedBody, saveChatMessage, _fireQuestionnaireAnsweredFollowup);
             } else if (path === '/questionnaire-assignments') {
                 result = await handlePostQuestionnaireAssignment(parsedBody);
             } else if (path === '/admin/saved-reports') {
@@ -821,9 +842,12 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)) {
                 const code = path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)[1];
                 result = await handlePutKinoChipModel(code, parsedBody);
+            } else if (path.match(/\/persona-settings\/([a-z0-9-]+)/i)) {
+                const personaType = path.match(/\/persona-settings\/([a-z0-9-]+)/i)[1];
+                result = requireAdminTab(adminCtx, 'content') || await handlePutPersonaSettings(personaType, parsedBody, adminCtx.username);
             } else if (path.match(/\/knowledge-entries\/([a-z0-9-]+)/i)) {
                 const entryId = path.match(/\/knowledge-entries\/([a-z0-9-]+)/i)[1];
-                result = await handlePutKnowledgeEntry(entryId, parsedBody);
+                result = requireAdminTab(adminCtx, 'content') || await handlePutKnowledgeEntry(entryId, parsedBody);
             } else if (path.match(/\/user-facts\/(\d+)/)) {
                 const factId = path.match(/\/user-facts\/(\d+)/)[1];
                 result = await handlePutUserFact(factId, parsedBody);
@@ -1015,7 +1039,7 @@ exports.handler = async (req, resp, context) => {
                 result = await handleDeleteKinoChipModel(code);
             } else if (path.match(/\/knowledge-entries\/([a-z0-9-]+)/i)) {
                 const entryId = path.match(/\/knowledge-entries\/([a-z0-9-]+)/i)[1];
-                result = await handleDeleteKnowledgeEntry(entryId);
+                result = requireAdminTab(adminCtx, 'content') || await handleDeleteKnowledgeEntry(entryId);
             } else if (path.match(/\/user-facts\/(\d+)/)) {
                 const factId = path.match(/\/user-facts\/(\d+)/)[1];
                 result = await handleDeleteUserFact(factId);

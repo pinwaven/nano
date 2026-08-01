@@ -2254,7 +2254,14 @@ Page({
           this.setData({ chatStatusText: statusRows[statusRows.length - 1].content })
         }
         if (realRows.length > 0) {
-          const newMsgs = realRows.map(n => ({ id: `n-${n.id}`, role: 'ai', content: mdToHtml(n.content || '') }))
+          // A 'questionnaire_ready' row means Viva just generated a short follow-up
+          // questionnaire — its content is just a placeholder caption, not the real payload
+          // (the form itself, fetched below via _checkForPendingQuestionnaire). Skip the
+          // generic bubble for it so the user doesn't see a redundant one-liner immediately
+          // followed by the form's own first question as a second bubble.
+          const hasQuestionnaireReady = realRows.some(n => n.notification_type === 'questionnaire_ready')
+          const bubbleRows = realRows.filter(n => n.notification_type !== 'questionnaire_ready')
+          const newMsgs = bubbleRows.map(n => ({ id: `n-${n.id}`, role: 'ai', content: mdToHtml(n.content || '') }))
           // A 'nutrition_plan' row means Viva's async dot formulation just committed — add the
           // "view plan" action button here (it used to be added synchronously right after the
           // POST, back when the schedule was committed inline; now the commit itself happens
@@ -2267,6 +2274,10 @@ Page({
           this._chatWaitStartedAt = null
           this.setData({ messages, typing: false, chatStatusText: '' })
           this._scrollBottom()
+          // _checkForPendingQuestionnaire() is idempotent — re-fetches pending assignments and
+          // only starts one if an unanswered question actually exists — so it's safe to call
+          // unconditionally here even on a duplicate/racing notification.
+          if (hasQuestionnaireReady) this._checkForPendingQuestionnaire()
         }
       }
     } catch (e) {}
@@ -2330,17 +2341,42 @@ Page({
     await this._saveAnswer(obBirthday, obBirthday)
   },
 
-  onSliderChange(e) {
-    const key = e.currentTarget.dataset.key
-    const step = parseFloat(e.currentTarget.dataset.step) || 1
-    const val = e.detail.value
-    const display = step < 1 ? Number(val).toFixed(1) : String(val)
+  _applySliderValue(key, rawVal, step, min, max) {
+    let val = rawVal
+    if (min != null && !isNaN(min) && max != null && !isNaN(max)) val = Math.min(max, Math.max(min, val))
+    if (step) val = Math.round(val / step) * step
+    const display = step < 1 ? val.toFixed(1) : String(val)
     const obSliders = { ...this.data.obSliders, [key]: val }
     const obSliderDisplay = { ...this.data.obSliderDisplay, [key]: display }
     const update = { obSliders, obSliderDisplay }
     if (key === 'height') { update.obHeight = val }
     if (key === 'weight') { update.obWeight = val; update.obWeightDisplay = display }
     this.setData(update)
+  },
+
+  onSliderChange(e) {
+    const key = e.currentTarget.dataset.key
+    const step = parseFloat(e.currentTarget.dataset.step) || 1
+    this._applySliderValue(key, e.detail.value, step, null, null)
+  },
+
+  onSliderValueBlur(e) {
+    const { key } = e.currentTarget.dataset
+    const step = parseFloat(e.currentTarget.dataset.step) || 1
+    const min = parseFloat(e.currentTarget.dataset.min)
+    const max = parseFloat(e.currentTarget.dataset.max)
+    let val = parseFloat(e.detail.value)
+    if (isNaN(val)) val = this.data.obSliders[key]
+    this._applySliderValue(key, val, step, min, max)
+  },
+
+  onSliderStep(e) {
+    const { key, dir } = e.currentTarget.dataset
+    const step = parseFloat(e.currentTarget.dataset.step) || 1
+    const min = parseFloat(e.currentTarget.dataset.min)
+    const max = parseFloat(e.currentTarget.dataset.max)
+    const current = this.data.obSliders[key] || 0
+    this._applySliderValue(key, current + Number(dir) * step, step, min, max)
   },
 
   async handleSubmitBody() {

@@ -101,13 +101,67 @@ the same offsets as Halo's `buildHistorySyncPayload`):
 | Value | Meaning |
 |---|---|
 | `0x00` | Read latest |
+| `0x01` | Read from a specific BCD date filter (`value[4..9]`) — **exact match required, see below** |
 | `0x02` | Continue from last read position |
 | `0x99` | Delete all historical data for this type |
 
-> `mode = 0x01` ("read from a specific date", per Halo's doc) was not found
-> as a distinct branch in the V8 dispatch code — only `0x99` is checked
-> explicitly (`(byte)0x99 == mode`); anything else falls through to "read".
-> Unverified against real hardware.
+`mode = 0x01` was not found as a distinct branch in the vendor Java dispatch
+code — only `0x99` is checked explicitly (`(byte)0x99 == mode`); everything
+else, including `0x01`, falls through to the same "read" path as `0x00` in
+that source. That static-analysis finding turned out to be an incomplete
+predictor of real firmware behavior — **confirmed live 2026-07-30** via
+`tools/halo --device v8 history --type <hr|hrv|spo2|temp> --since <iso>`
+(firmware `0.0.8.8`, same unit as the original §7 validation run) against a
+409-record HRV history, an 813-record SpO2 history, and a 1100+-record
+temperature history spanning ~19 days:
+
+**`mode = 0x01` is honored by HRV (`0x56`), SpO2 (`0x66`), and temperature
+(`0x62`) — but only when `since` exactly matches one of the device's own
+stored record timestamps, to the second.** The matched record itself is
+included (inclusive boundary) along with everything newer. Any `since` value
+that doesn't exactly match an existing record — even by one second, in
+either direction, past or future — makes the device silently fall back to
+returning its entire history for that command, identical to `mode = 0x00`.
+This was missed on the first pass through this data: an initial "24h ago"
+test on SpO2 happened to use a timestamp that didn't line up with that
+command's actual record cadence, was misread as "SpO2 doesn't support
+`0x01` at all," and was corrected once exact-timestamp tests were run
+against all three commands with consistent results. Confirmed on all three:
+
+| Test | HRV | SpO2 | Temperature |
+|---|---|---|---|
+| `since` = exact latest record timestamp | 1 record returned (itself) | 1 record returned (itself) | 1 record returned (itself) |
+| `since` = exact record from 1h/24h earlier | correct window (2 / 25 records) | — | — |
+| `since` = latest record ± 1 second (no exact match) | full history (409) | full history (813) | full history (1100+, and re-triggers the stream timeout this feature exists to avoid) |
+| `since` = far out of range (year 2020) | full history (409) | — | — |
+
+Static HR (`0x55`) was inconclusive — the test unit had zero static-HR
+records in either mode, so filtering couldn't be exercised; re-test against
+a device with data before trusting it. **Important precedent, don't
+re-diagnose this as broken**: the identical "zero records, still costs the
+full timeout" result on a Halo X3 unit initially looked the same way and
+was wrongly written off as inconclusive/broken — it turned out the ring
+simply hadn't logged its first static-HR sample of the *current calendar
+day* yet at test time, so `getHeartRateLog()`'s "today only" filter zeroed
+out an otherwise-full 1200-record, 12-day backlog (confirmed via raw
+unfiltered bytes). Once re-tested with a real same-day sample present, Halo
+X3's 0x55 behaved identically to every other command (exact match → 1
+record, mismatch → full fallback) — see
+`docs/architecture/halo-smart-ring.md` §9. Before concluding V8's 0x55 is
+actually different, re-test at a time when the unit is known to have logged
+at least one static-HR sample that day, and inspect raw unfiltered bytes
+rather than trusting the day-filtered `getHeartRateLog()` result.
+
+**Practical implication:** a client can only get real incremental-sync value
+out of `mode = 0x01` by requesting the exact last-known timestamp for each
+type (no "safety margin" offset — any offset guarantees a mismatch and
+triggers the full-history fallback, actively defeating the optimization).
+`src/mini/nano-miniapp/components/user-health/user-health.js`'s
+`_deriveSinceDate()` does exactly this (see
+`docs/architecture/halo-smart-ring.md` §9). `src/mini/nano-miniapp/utils/
+wearable/v8/index.js`'s incremental-sync getters gate per-command, not per
+brand: HRV, SpO2, and temperature request `mode 0x01` when a cursor exists;
+static HR stays on `mode 0x00` pending a proper re-test.
 
 ### Reassembly: per-notification, not concatenated (key difference from Halo)
 

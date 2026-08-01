@@ -4,12 +4,14 @@
  * Called by handlePostHealthAdvice — context includes all 4 sub-ages + relevant dots.
  */
 const { classifyBiomarkers, LABELS_ZH: STATUS_LABELS_ZH, LABELS_EN: STATUS_LABELS_EN } = require('../../lib/biomarkerStatus');
+const { getFactConstraintBlock } = require('../chat/factConstraint');
+const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 
 module.exports = (context) => {
   const {
     isZh, nickname, age, gender, bioAge, chronoAge,
     subAges, biomarkers, dotsByDimension, healthConditions, healthConditionsOther,
-    health_twin, active_health_plans, plan_templates,
+    health_twin, active_health_plans, plan_templates, essential_knowledge, user_facts,
   } = context;
 
   const bmStatus = classifyBiomarkers(biomarkers || {});
@@ -175,7 +177,11 @@ Keep it warm, evidence-based, and actionable. Use Markdown formatting. Do not as
       ].filter(Boolean).join('\n')
     : (isZh ? '暂无可穿戴设备 / 生活方式数据。' : 'No wearable or lifestyle data yet.');
 
-  return `You are Nano — a warm, expert longevity AI built by Waven. You have deep expertise in biological aging, functional nutrition, inflammation biology, and longevity science.
+  return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+${getFactMemoryBlock(user_facts, isZh)}
+
+You are Nano — a warm, expert longevity AI built by Waven. You have deep expertise in biological aging, functional nutrition, inflammation biology, and longevity science.
 
 ━━━ USER PROFILE ━━━
 Name: ${nickname || 'the user'}

@@ -9,6 +9,12 @@ const { gcnFetch } = require('../lib/gcnClient');
 // coupling for one small constant).
 const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
 
+// Nano's partner.status enum ('pending'|'active'|'inactive') has no 1:1 match in GCN's
+// ('pending'|'active'|'suspended'|'exited') — 'inactive' maps to 'suspended' rather than
+// 'exited' since a nano-side deactivation is meant to block store/login access, not permanently
+// sever the record (see handlePutPartner's re-sync below).
+const NANO_TO_GCN_STATUS = { pending: 'pending', active: 'active', inactive: 'suspended' };
+
 // ── Partner system handlers ──────────────────────────────────────────────────
 
 async function handleGetPartners(query, adminCtx) {
@@ -307,6 +313,35 @@ async function handlePostPartner(body, adminCtx) {
     }
 }
 
+// Re-sync a partner's tier/status/name to GCN once a store already exists there for them
+// (gcn_partner_id set) — otherwise a change made via handlePutPartner or handleDeletePartner
+// never reaches GCN, since the "Provision GCN Store" button is a one-time initial action,
+// hidden from the admin UI the moment gcn_partner_id is set (see PartnersTab.jsx). Best-effort:
+// GCN being unreachable must not fail the nano-side write that already committed. Returns an
+// error message string on failure, or null on success/skip.
+async function syncGcnPartnerStatus(partner) {
+    if (!partner.gcn_partner_id) return null;
+    try {
+        const chRes = await pool.query(`SELECT key_name FROM channels WHERE id = $1`, [partner.channel_id]);
+        const channelKey = chRes.rows[0]?.key_name;
+        if (!GCN_LINKED_CHANNEL_KEYS.has(channelKey)) return null;
+        await gcnFetch('/api/auth/partners/nano/provision', {
+            method: 'POST',
+            body: {
+                nano_partner_id: partner.id,
+                phone: partner.phone,
+                tier: partner.tier,
+                real_name: partner.real_name,
+                status: NANO_TO_GCN_STATUS[partner.status] || 'active',
+                sector_id: 'aeviva',
+            },
+        });
+        return null;
+    } catch (err) {
+        return err.message;
+    }
+}
+
 async function handlePutPartner(partnerId, body) {
     if (!partnerId) return { success: false, error: 'partner id required', statusCode: 400 };
     const { tier, real_name, phone, entry_fee_paid, channel_id, user_id,
@@ -349,7 +384,9 @@ async function handlePutPartner(partnerId, body) {
             }
         }
 
-        return { success: true };
+        const gcnSyncError = await syncGcnPartnerStatus(updatedPartner);
+
+        return gcnSyncError ? { success: true, gcnSyncError } : { success: true };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -359,8 +396,15 @@ async function handleDeletePartner(partnerId) {
     if (!partnerId) return { success: false, error: 'partner id required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        await pool.query(`UPDATE partners SET status='inactive', updated_at=NOW() WHERE id=$1`, [partnerId]);
-        return { success: true };
+        const { rows } = await pool.query(
+            `UPDATE partners SET status='inactive', updated_at=NOW() WHERE id=$1 RETURNING *`,
+            [partnerId]
+        );
+        if (rows.length === 0) return { success: false, error: 'Partner not found', statusCode: 404 };
+
+        const gcnSyncError = await syncGcnPartnerStatus(rows[0]);
+
+        return gcnSyncError ? { success: true, gcnSyncError } : { success: true };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -794,9 +838,20 @@ async function handlePostPartnerType(body, adminCtx) {
 
 async function handlePutPartnerType(typeKey, body, adminCtx) {
     if (!typeKey) return { success: false, error: 'type key required', statusCode: 400 };
-    const { label, label_zh, color, entry_fee, sort_order, description, is_active } = body;
+    let { label, label_zh, color, entry_fee, sort_order, description, is_active } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        // Identity fields (label/label_zh) are owned by GCN for GCN-managed tiers — silently
+        // drop any attempt to change them here rather than trusting the frontend to withhold
+        // them. Only entry_fee/color/sort_order/description/is_active (nano-only concerns) may
+        // still be edited locally for these rows.
+        const { rows: managedRows } = await pool.query(
+            `SELECT managed_by_gcn FROM partner_types WHERE key = $1`, [typeKey]
+        );
+        if (managedRows[0]?.managed_by_gcn) {
+            label = null;
+            label_zh = null;
+        }
         let channelFilter, params;
         if (adminCtx?.role === 'channel') {
             const { rows: permRows } = await pool.query(
@@ -833,6 +888,12 @@ async function handleDeletePartnerType(typeKey, adminCtx) {
     if (!typeKey) return { success: false, error: 'type key required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows: managedRows } = await pool.query(
+            `SELECT managed_by_gcn FROM partner_types WHERE key = $1`, [typeKey]
+        );
+        if (managedRows[0]?.managed_by_gcn) {
+            return { success: false, error: "tier is managed in GCN — delete it from GCN's Wholesale Rules panel", statusCode: 409 };
+        }
         let channelFilter, params;
         if (adminCtx?.role === 'channel') {
             const { rows: permRows } = await pool.query(
@@ -858,6 +919,45 @@ async function handleDeletePartnerType(typeKey, adminCtx) {
             params
         );
         return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// POST /partner-types-gcn-sync  (GCN service token only, see worker/index.js GCN_ALLOWED_PATHS)
+// Push target for GCN's Wholesale Rules panel (handlePostPartnerType/handlePutPartnerType/
+// handleDeletePartnerType in gcn/src/functions/mall/index.js) — GCN owns a GCN-linked tier's
+// identity (key/label/label_zh), nano keeps local ownership of entry_fee/color/sort_order/
+// description/is_active, which have no GCN-side equivalent. Body: { type_id, label_zh, label_en,
+// tier_rank, action }, action: 'upsert' | 'deactivate'.
+async function handleGcnSyncPartnerType(body) {
+    const { type_id, label_zh, label_en, tier_rank, action } = body || {};
+    if (!type_id) return { success: false, error: 'type_id required', statusCode: 400 };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+        if (action === 'deactivate') {
+            await pool.query(
+                `UPDATE partner_types SET is_active = FALSE, updated_at = NOW() WHERE key = $1`,
+                [type_id]
+            );
+            return { success: true };
+        }
+
+        // Only label/label_zh/managed_by_gcn are overwritten on conflict — entry_fee/color/
+        // sort_order/description are nano-owned and must survive repeated syncs from GCN.
+        // sort_order is seeded from tier_rank on first insert only, as a starting default nano
+        // admins remain free to reorder locally afterward.
+        const { rows } = await pool.query(
+            `INSERT INTO partner_types (key, label, label_zh, sort_order, managed_by_gcn)
+             VALUES ($1, $2, $3, $4, TRUE)
+             ON CONFLICT (COALESCE(channel_id, 0), key) DO UPDATE SET
+                 label = EXCLUDED.label, label_zh = EXCLUDED.label_zh,
+                 managed_by_gcn = TRUE, updated_at = NOW()
+             RETURNING *`,
+            [type_id, label_en || type_id, label_zh || null, Number.isFinite(Number(tier_rank)) ? Number(tier_rank) : 0]
+        );
+        return { success: true, type: rows[0] };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -1079,6 +1179,7 @@ module.exports = {
     handlePostPartnerType,
     handlePutPartnerType,
     handleDeletePartnerType,
+    handleGcnSyncPartnerType,
     handleGetPartnerCommissionRules,
     handlePostPartnerCommissionRule,
     handlePutPartnerCommissionRule,

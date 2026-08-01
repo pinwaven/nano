@@ -220,15 +220,31 @@
         >
           <view class="slider-labels">
             <text class="slider-key">{{lang === 'zh' ? item.label_zh : item.label_en}}</text>
-            <text class="slider-val">{{obSliderDisplay[item.key] || obSliders[item.key]}} <text class="slider-unit">{{item.unit}}</text></text>
+            <view class="slider-value-wrap">
+              <input
+                class="slider-val-input"
+                type="digit"
+                value="{{obSliderDisplay[item.key] || obSliders[item.key]}}"
+                bindblur="onSliderValueBlur"
+                data-key="{{item.key}}" data-step="{{item.step}}" data-min="{{item.min}}" data-max="{{item.max}}"
+              />
+              <text class="slider-unit">{{item.unit}}</text>
+            </view>
           </view>
-          <slider
-            min="{{item.min}}" max="{{item.max}}" value="{{obSliders[item.key]}}" step="{{item.step}}"
-            activeColor="#6375EC" backgroundColor="#162E4A" block-color="#6375EC"
-            bindchange="onSliderChange" bindchanging="onSliderChange"
-            data-key="{{item.key}}" data-step="{{item.step}}"
-            block-size="20"
-          />
+          <view class="slider-control-row">
+            <view class="slider-step-btn" bindtap="onSliderStep"
+              data-key="{{item.key}}" data-step="{{item.step}}" data-min="{{item.min}}" data-max="{{item.max}}" data-dir="-1">−</view>
+            <slider
+              class="slider-input"
+              min="{{item.min}}" max="{{item.max}}" value="{{obSliders[item.key]}}" step="{{item.step}}"
+              activeColor="#6375EC" backgroundColor="#162E4A" block-color="#6375EC"
+              bindchange="onSliderChange" bindchanging="onSliderChange"
+              data-key="{{item.key}}" data-step="{{item.step}}"
+              block-size="24"
+            />
+            <view class="slider-step-btn" bindtap="onSliderStep"
+              data-key="{{item.key}}" data-step="{{item.step}}" data-min="{{item.min}}" data-max="{{item.max}}" data-dir="1">+</view>
+          </view>
         </view>
         <view class="ob-confirm" bindtap="handleSubmitBody">
           <text>{{t.confirm}}</text>

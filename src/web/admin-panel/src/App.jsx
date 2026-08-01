@@ -18,6 +18,7 @@ import {
 } from 'recharts';
 
 import { T, LoginScreen, LangCtx, useLang, PERMS, hasPermission, StatCard, RichStatCard, Badge, normalizeKinoMachinesPayload, buildKinoMachinesUrl } from './shared.jsx';
+import { AIPersonaTab } from './tabs/AIPersonaTab.jsx';
 import { ContentTab } from './tabs/ContentTab.jsx';
 import { AdminAccountsTab } from './tabs/AdminAccountsTab.jsx';
 import { ChannelTab } from './tabs/ChannelTab.jsx';
@@ -66,7 +67,7 @@ function AdminPanel({ session, onLogout }) {
 
   const isSuperadmin = !session || session.role === 'superadmin';
   const isCmsAdmin = session?.role === 'channel' && session?.canManageSubchannels;
-  const SUPERADMIN_ONLY = new Set(['changelog']);
+  const SUPERADMIN_ONLY = new Set(['changelog', 'ai-persona']);
 
   const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], kinoMachinePagination: null, chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [], skus: [], inventoryStock: [] });
   const [loading, setLoading] = useState(true);
@@ -149,6 +150,7 @@ function AdminPanel({ session, onLogout }) {
     { id: 'partners',  label: t.nav.partners,  icon: Award          },
     { id: 'finance',   label: t.nav.finance,   icon: Landmark       },
     { id: 'content',   label: t.nav.content,   icon: GraduationCap  },
+    { id: 'ai-persona', label: t.nav.aiPersona, icon: Sparkles       },
     { id: 'reports',        label: t.nav.reports,        icon: BarChart2     },
     { id: 'tickets',  label: t.nav.tickets,  icon: Bug            },
     { id: 'admin-accounts', label: t.nav.adminAccounts, icon: Settings2 },
@@ -247,6 +249,7 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'partners'  && <PartnersTab users={data.users} session={session} />}
           {tab === 'finance'   && <FinanceTab />}
           {tab === 'content' && <ContentTab channels={data.channels} users={data.users} coaches={data.coaches} dots={data.dots} healthPlanTemplates={data.healthPlanTemplates || []} session={session} isSuperadmin={isSuperadmin} onRefresh={fetchData} />}
+          {tab === 'ai-persona' && <AIPersonaTab channels={data.channels} />}
           {tab === 'reports'        && <ReportsTab />}
           {tab === 'tickets'  && <TicketsTab tickets={data.tickets} onRefresh={fetchData} />}
           {tab === 'admin-accounts' && <AdminAccountsTab accounts={data.adminAccounts} channels={data.channels} session={session} onRefresh={fetchData} />}

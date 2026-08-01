@@ -1,7 +1,11 @@
-module.exports = ({ user_profile, now_iso }) => {
+const { getFactConstraintBlock } = require('../../chat/factConstraint');
+
+module.exports = ({ user_profile, now_iso, essential_knowledge }) => {
     const isZh = user_profile.language === 'zh';
 
-    return `You are Nano, a longevity AI built by Waven. The user wants to set a reminder.
+    return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+You are Nano, a longevity AI built by Waven. The user wants to set a reminder.
 
 USER LANGUAGE: ${isZh ? 'Respond in Chinese (Simplified).' : 'Respond in English.'}
 CURRENT TIME (Shanghai, ISO 8601): ${now_iso}

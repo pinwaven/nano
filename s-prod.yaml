@@ -38,6 +38,9 @@ resources:
         WORKER_URL: "https://nano-worker-napllanrqp.cn-shanghai-vpc.fcapp.run"
         WORKER_FUNCTION_NAME: "nano-worker"
         AGENT_URL: "https://nano-agent-napllanrqp.cn-shanghai-vpc.fcapp.run"
+        # EVENT_SOURCE_SUFFIX intentionally left unset here — see worker's own comment below
+        # for the 2026-08-01 EventBridge cross-contamination fix this is part of. Unset means
+        # this function keeps publishing under the original unsuffixed "acs.dispatcher".
       triggers:
         - triggerName: cron-scanner
           triggerType: timer
@@ -96,6 +99,12 @@ resources:
         # permission (see gcn's docs/pnvs.md). No separate SMS credential provisioned.
         SMS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
         SMS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
+        # EVENT_SOURCE_SUFFIX (renamed from CHAT_EVENT_SOURCE_SUFFIX) intentionally left unset
+        # here — chatEventBridge.js/dispatcher/lab/agent all default to their original
+        # unsuffixed "acs.*" sources when the var is absent, which is prod's correct/unchanged
+        # behavior. See s.yaml's own comment on this var for the 2026-08-01 dev/prod EventBridge
+        # cross-contamination incident this fixes (originally found on acs.chat, then extended
+        # to acs.dispatcher/acs.lab, which had the identical unscoped-filter exposure).
       triggers:
         - triggerName: http-webhook
           triggerType: http
@@ -138,6 +147,7 @@ resources:
         TZ: "Asia/Shanghai"
         DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
         MODEL: "qwen-plus-latest"
+        # EVENT_SOURCE_SUFFIX intentionally left unset — see worker's comment above.
       triggers:
         - triggerName: http-agent
           triggerType: http
@@ -179,6 +189,7 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         LAB_WEBHOOK_SECRET: ${env(LAB_WEBHOOK_SECRET)}
+        # EVENT_SOURCE_SUFFIX intentionally left unset — see worker's comment above.
       triggers:
         - triggerName: lab-http
           triggerType: http

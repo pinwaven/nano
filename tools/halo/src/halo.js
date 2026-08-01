@@ -216,9 +216,12 @@ class HaloClient {
     return parsers.parseSleepHistory(buf);
   }
 
-  async getHeartRateLog(date) {
+  // sinceDate (optional): validates the incremental-sync design (mode 0x01 +
+  // BCD date filter) — see tools/halo/README.md's "Incremental sync
+  // validation" section. Omit for the normal mode 0x00 (latest) fetch.
+  async getHeartRateLog(date, sinceDate) {
     const todayStr = isoDateStr(date || new Date());
-    const buf = await this._stream(getStaticHeartRateHistoryPacket(), 0x55, endsFF, 8000);
+    const buf = await this._stream(getStaticHeartRateHistoryPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x55, endsFF, 8000);
     return parsers.parseHrLog55(buf, todayStr);
   }
 
@@ -228,13 +231,13 @@ class HaloClient {
     return parsers.parseHrHistory54(buf, todayStr);
   }
 
-  async getHrvHistory() {
-    const buf = await this._stream(getHrvHistoryPacket(), 0x56, endsFF, 8000);
+  async getHrvHistory(sinceDate) {
+    const buf = await this._stream(getHrvHistoryPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x56, endsFF, 8000);
     return parsers.parseHrvRecords56(buf);
   }
 
-  async getAutoSpo2History() {
-    const buf = await this._stream(getAutoSpo2HistoryPacket(), 0x66, endsFF, 8000);
+  async getAutoSpo2History(sinceDate) {
+    const buf = await this._stream(getAutoSpo2HistoryPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x66, endsFF, 8000);
     return parsers.parseSpo2Records66(buf);
   }
 
@@ -250,8 +253,8 @@ class HaloClient {
     return parsers.parseSleepHrv60(buf, todayStr);
   }
 
-  async getTemperatureHistory() {
-    const buf = await this._stream(getTemperatureHistoryPacket(), 0x62, endsFF, 8000);
+  async getTemperatureHistory(sinceDate) {
+    const buf = await this._stream(getTemperatureHistoryPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x62, endsFF, 8000);
     return parsers.parseTempLog62(buf, null);
   }
 

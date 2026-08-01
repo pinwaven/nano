@@ -11,8 +11,8 @@
  * Pure Chinese per the existing Viva convention (no isZh branching) — see factConstraint.js.
  */
 const { classifyBiomarker, LABELS_ZH: STATUS_LABELS_ZH } = require('../../lib/biomarkerStatus');
-const { getFactConstraintBlock } = require('./factConstraint');
-const { getFactMemoryBlock } = require('./factMemoryBlock');
+const { getFactConstraintBlock } = require('../chat/factConstraint');
+const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 const { getVivaLabels } = require('./subAgeLabels');
 
 module.exports = (ctx) => {

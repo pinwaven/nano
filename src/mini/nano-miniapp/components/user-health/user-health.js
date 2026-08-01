@@ -299,10 +299,10 @@ const T = {
     haloSaveIntervals: '保存到戒指',
     haloIntervalLoading: '读取中...',
     wearableScanning: '正在搜索...',
-    wearableNoDevices: '未找到设备，请确认戒指已开机',
+    wearableNoDevices: '未找到设备，请确认戒指或手环已开机',
     wearableConnecting: '正在同步...',
     wearableConnectFail: '连接失败，请重试',
-    wearableSyncFail: '同步失败',
+    wearableSyncFail: '智能可穿戴设备同步失败',
     ringSteps: '今日步数',
     ringSleep: '昨夜睡眠',
     ringHr: '最低心率',
@@ -719,6 +719,80 @@ function _slotsToReadings(hrvSlots, spo2Slots) {
     t: new Date(ts.replace(' ', 'T') + '+08:00').getTime(),
     ...byTs[ts],
   }))
+}
+
+// --- Incremental Halo/V8 sync: cursor derivation + merge (see
+// docs/architecture/halo-smart-ring.md §9) ---
+//
+// The ring's own history commands support "since date" (protocol mode
+// 0x01), but handleSyncWearable() otherwise re-fetches full history every
+// sync. Rather than a dedicated "last sync" storage key, each type's cursor
+// is derived from the max key field already present in the previously
+// stored `wearable_ring_data` slot array — its lifecycle then automatically
+// matches the data's own (cleared on unbind, advanced only on a successful
+// commit), instead of needing separate upkeep.
+//
+// IMPORTANT — confirmed live against a real V8 band 2026-07-30 (see
+// docs/architecture/v8-smart-band.md): mode 0x01 requires the `since` date
+// to EXACTLY match one of the device's own stored record timestamps
+// (inclusive — that exact record is included in the result). Any other
+// value, even one second off, makes the device silently fall back to
+// returning its FULL history instead of an empty/partial result. There is
+// no safety margin here — subtracting any offset from the last-known
+// timestamp would almost always miss the exact match and defeat the whole
+// optimization. The cursor must be exactly the last-known timestamp, which
+// is safe to reuse as-is (it's a real value the ring itself produced, not
+// an independently-derived "now" subject to clock drift), and the inclusive
+// boundary means it always returns at least that one (harmless, deduped by
+// the merge step) record plus anything genuinely new.
+const RING_CURSOR_STALE_MS = 4 * 24 * 60 * 60 * 1000  // heuristic only (see _deriveSinceDate) — not a correctness bound
+const RING_SLOT_RETENTION_DAYS = 7                // local retention window after merging
+
+// Returns the max `keyField` value across `slots` as a comparable string, or
+// null if empty. `keyField` values are Date objects (hrSlots.t is an ISO
+// string; hrLog's raw timestamp is a Date — normalized to ISO by the caller
+// before storage) or "YYYY-MM-DD HH:MM:SS" strings, both lexicographically sortable.
+function _lastSlotTimestamp(slots, keyField) {
+  if (!slots || !slots.length) return null
+  let max = null
+  for (const s of slots) {
+    const v = s[keyField]
+    if (v != null && (max === null || v > max)) max = v
+  }
+  return max
+}
+
+// Derives a `sinceDate` (Date|null) to request incrementally from the ring,
+// given the previous sync's slot array — exactly the last-known timestamp,
+// no margin (see the block comment above for why). Returns null (→ full
+// mode-0x00 fetch) when there's no previous data. RING_CURSOR_STALE_MS is
+// purely a "don't bother attempting" heuristic to skip a fetch that's likely
+// past the ring's actual retention and would just fall back to full history
+// anyway (per the same confirmed behavior) — not a correctness requirement,
+// since an exact-but-purged timestamp degrades gracefully to that same
+// full-history fallback rather than losing or corrupting data.
+function _deriveSinceDate(prevSlots, keyField) {
+  const lastTs = _lastSlotTimestamp(prevSlots, keyField)
+  if (!lastTs) return null
+  const lastMs = new Date(String(lastTs).replace(' ', 'T') + (String(lastTs).includes('T') ? '' : '+08:00')).getTime()
+  if (!lastMs || Date.now() - lastMs > RING_CURSOR_STALE_MS) return null
+  return new Date(lastMs)
+}
+
+// Upserts `newSlots` over `prevSlots` keyed by `keyField` (new wins on
+// collision), sorted ascending, trimmed to `retentionDays`. Runs even when
+// `newSlots` is empty (incremental fetch found nothing new, or the fetch
+// failed) — in that case this returns `prevSlots` trimmed, which is what
+// keeps a single failed/empty per-type fetch from wiping out the
+// previously-synced data that _commitRingData would otherwise overwrite.
+function _mergeRingSlots(prevSlots, newSlots, keyField, retentionDays) {
+  const byKey = new Map()
+  for (const s of (prevSlots || [])) byKey.set(s[keyField], s)
+  for (const s of (newSlots || [])) byKey.set(s[keyField], s)
+  const merged = Array.from(byKey.values()).sort((a, b) => (a[keyField] < b[keyField] ? -1 : a[keyField] > b[keyField] ? 1 : 0))
+  if (!retentionDays || !merged.length) return merged
+  const cutoffStr = _shanghaiDateStr(Date.now() - retentionDays * 24 * 60 * 60 * 1000)
+  return merged.filter(s => String(s[keyField]) >= cutoffStr)
 }
 
 function _fmtRealtimeReadings(readings) {
@@ -1295,9 +1369,53 @@ Component({
       }
     },
 
+    // wx.createCanvasContext paints literal colors — CSS custom properties (var(--blue),
+    // etc.) that theme the rest of this component don't reach canvas draw calls, so every
+    // chart needs its own light/dark palette read from this.data.theme.
+    _chartPalette() {
+      const isLight = this.data.theme === 'light'
+      return isLight ? {
+        bg: '#FFFFFF',
+        accent: '#C9956A',
+        accentRgb: '201,149,106',
+        textPrimary: '#2C2C2C',
+        textMuted55: 'rgba(139,110,78,0.65)',
+        textMuted75: 'rgba(139,110,78,0.8)',
+        textMuted45: 'rgba(139,110,78,0.5)',
+        textMuted50: 'rgba(139,110,78,0.55)',
+        textMuted28: 'rgba(139,110,78,0.35)',
+        gridLine: 'rgba(201,149,106,0.15)',
+        fillLight: 'rgba(201,149,106,0.12)',
+        fillMed: 'rgba(201,149,106,0.22)',
+        dotRing: 'rgba(255,255,255,0.9)',
+        glow10: 'rgba(201,149,106,0.12)',
+        glow22: 'rgba(201,149,106,0.28)',
+        glow60: 'rgba(201,149,106,0.7)',
+        line85: 'rgba(201,149,106,0.85)',
+      } : {
+        bg: '#0a1228',
+        accent: '#6375EC',
+        accentRgb: '99,117,236',
+        textPrimary: '#EEF2FF',
+        textMuted55: 'rgba(166,196,229,0.55)',
+        textMuted75: 'rgba(166,196,229,0.75)',
+        textMuted45: 'rgba(166,196,229,0.45)',
+        textMuted50: 'rgba(166,196,229,0.5)',
+        textMuted28: 'rgba(166,196,229,0.28)',
+        gridLine: 'rgba(99,117,236,0.12)',
+        fillLight: 'rgba(99,117,236,0.1)',
+        fillMed: 'rgba(99,117,236,0.22)',
+        dotRing: 'rgba(10,15,30,0.9)',
+        glow10: 'rgba(99,117,236,0.10)',
+        glow22: 'rgba(99,117,236,0.22)',
+        glow60: 'rgba(99,117,236,0.60)',
+      }
+    },
+
     _drawWeightSparkline() {
       const { weightHistory } = this.data
       if (weightHistory.length < 2) return
+      const c = this._chartPalette()
       const W = 60, H = 22, pad = 2
       const weights = weightHistory.map(r => r.weight)
       const minW = Math.min(...weights), maxW = Math.max(...weights)
@@ -1309,12 +1427,12 @@ Component({
       const ctx = wx.createCanvasContext('uh-weight-sparkline', this)
       ctx.clearRect(0, 0, W, H)
       ctx.beginPath()
-      ctx.setStrokeStyle('rgba(99,117,236,0.85)')
+      ctx.setStrokeStyle(c.line85)
       ctx.setLineWidth(1.5)
       ctx.moveTo(pts[0].x, pts[0].y)
       pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
       ctx.stroke()
-      ctx.setFillStyle('#6375EC')
+      ctx.setFillStyle(c.accent)
       pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2); ctx.fill() })
       ctx.draw()
     },
@@ -1324,6 +1442,7 @@ Component({
     _drawBioAgeChart() {
       const { bioAgeHistory, bioAgeChartW, bAge, cAge, bAgeColor, t } = this.data
       if (!bioAgeChartW) return
+      const c = this._chartPalette()
       const W = bioAgeChartW, H = 200
       const headerH = 62
       const pL = 28, pR = 10, pT = headerH + 12, pB = 24
@@ -1331,30 +1450,30 @@ Component({
 
       const ctx = wx.createCanvasContext('dt-bioage-chart', this)
       ctx.clearRect(0, 0, W, H)
-      ctx.setFillStyle('#0a1228')
+      ctx.setFillStyle(c.bg)
       ctx.fillRect(0, 0, W, H)
 
       // ── Header: BioAge (left) + ChronoAge (right) ──
       ctx.setTextAlign('left')
       ctx.setFontSize(30)
-      ctx.setFillStyle(bAgeColor || '#6375EC')
+      ctx.setFillStyle(bAgeColor || c.accent)
       ctx.fillText(bAge || '—', 14, 34)
       ctx.setFontSize(10)
-      ctx.setFillStyle('rgba(166,196,229,0.55)')
+      ctx.setFillStyle(c.textMuted55)
       ctx.fillText((t.bioAge || 'Bio Age').toUpperCase(), 14, 52)
 
       ctx.setTextAlign('right')
       ctx.setFontSize(22)
-      ctx.setFillStyle('rgba(166,196,229,0.75)')
+      ctx.setFillStyle(c.textMuted75)
       ctx.fillText(cAge || '—', W - 14, 32)
       ctx.setFontSize(10)
-      ctx.setFillStyle('rgba(166,196,229,0.45)')
+      ctx.setFillStyle(c.textMuted45)
       ctx.fillText((t.chronoAge || 'Chrono Age').toUpperCase(), W - 14, 52)
 
 
       // Separator
       ctx.beginPath()
-      ctx.setStrokeStyle('rgba(99,117,236,0.18)')
+      ctx.setStrokeStyle(c.gridLine)
       ctx.setLineWidth(0.5)
       ctx.moveTo(0, headerH); ctx.lineTo(W, headerH)
       ctx.stroke()
@@ -1376,9 +1495,9 @@ Component({
           ctx.arc(x + r, y + r, r, Math.PI, 3 * Math.PI / 2)
           ctx.closePath()
         }
-        rrPath(4, cr - 3); ctx.setStrokeStyle('rgba(99,117,236,0.10)'); ctx.setLineWidth(10); ctx.stroke()
-        rrPath(2, cr - 1); ctx.setStrokeStyle('rgba(99,117,236,0.22)'); ctx.setLineWidth(5);  ctx.stroke()
-        rrPath(1, cr);     ctx.setStrokeStyle('rgba(99,117,236,0.60)'); ctx.setLineWidth(1.5); ctx.stroke()
+        rrPath(4, cr - 3); ctx.setStrokeStyle(c.glow10); ctx.setLineWidth(10); ctx.stroke()
+        rrPath(2, cr - 1); ctx.setStrokeStyle(c.glow22); ctx.setLineWidth(5);  ctx.stroke()
+        rrPath(1, cr);     ctx.setStrokeStyle(c.glow60); ctx.setLineWidth(1.5); ctx.stroke()
       }
 
       if (bioAgeHistory.length < 2) { drawGlowBorder(); ctx.draw(); return }
@@ -1396,7 +1515,7 @@ Component({
 
       // Filled area
       ctx.beginPath()
-      ctx.setFillStyle('rgba(99,117,236,0.22)')
+      ctx.setFillStyle(c.fillMed)
       ctx.moveTo(pts[0].x, pT + plotH)
       pts.forEach(p => ctx.lineTo(p.x, p.y))
       ctx.lineTo(pts[pts.length - 1].x, pT + plotH)
@@ -1411,7 +1530,7 @@ Component({
         while (d < len) {
           const t1 = d / len, t2 = Math.min((d + 3) / len, 1)
           ctx.beginPath()
-          ctx.setStrokeStyle('rgba(166,196,229,0.28)')
+          ctx.setStrokeStyle(c.textMuted28)
           ctx.setLineWidth(1)
           ctx.moveTo(x1 + t1 * (x2 - x1), y1 + t1 * (y2 - y1))
           ctx.lineTo(x1 + t2 * (x2 - x1), y1 + t2 * (y2 - y1))
@@ -1422,22 +1541,22 @@ Component({
 
       // BioAge line
       ctx.beginPath()
-      ctx.setStrokeStyle('#6375EC')
+      ctx.setStrokeStyle(c.accent)
       ctx.setLineWidth(2)
       ctx.moveTo(pts[0].x, pts[0].y)
       pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
       ctx.stroke()
 
       // Dots
-      ctx.setFillStyle('#6375EC')
-      ctx.setStrokeStyle('rgba(10,15,30,0.9)')
+      ctx.setFillStyle(c.accent)
+      ctx.setStrokeStyle(c.dotRing)
       ctx.setLineWidth(1.5)
       pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke() })
 
       // X-axis labels
       const step = Math.max(1, Math.floor(bioAgeHistory.length / 4))
       ctx.setFontSize(9)
-      ctx.setFillStyle('rgba(166,196,229,0.45)')
+      ctx.setFillStyle(c.textMuted45)
       ctx.setTextAlign('center')
       bioAgeHistory.forEach((r, i) => {
         if (i % step === 0 || i === bioAgeHistory.length - 1)
@@ -1456,6 +1575,7 @@ Component({
     _drawWeightFullChart() {
       const { weightHistory, weightChartW } = this.data
       if (weightHistory.length < 1) return
+      const c = this._chartPalette()
       const W = weightChartW, H = 200
       const pL = 44, pR = 16, pT = 20, pB = 44
       const plotW = W - pL - pR, plotH = H - pT - pB
@@ -1472,38 +1592,38 @@ Component({
       for (let i = 0; i <= gridSteps; i++) {
         const y = pT + (i / gridSteps) * plotH
         const val = maxW - (i / gridSteps) * range
-        ctx.setStrokeStyle('rgba(99,117,236,0.12)')
+        ctx.setStrokeStyle(c.gridLine)
         ctx.setLineWidth(0.5)
         ctx.beginPath(); ctx.moveTo(pL, y); ctx.lineTo(pL + plotW, y); ctx.stroke()
-        ctx.setFillStyle('rgba(166,196,229,0.45)')
+        ctx.setFillStyle(c.textMuted45)
         ctx.setFontSize(10)
         ctx.fillText(val.toFixed(1), 0, y + 4)
       }
       ctx.beginPath()
-      ctx.setFillStyle('rgba(99,117,236,0.1)')
+      ctx.setFillStyle(c.fillLight)
       ctx.moveTo(pts[0].x, pT + plotH)
       pts.forEach(p => ctx.lineTo(p.x, p.y))
       ctx.lineTo(pts[pts.length - 1].x, pT + plotH)
       ctx.closePath(); ctx.fill()
       ctx.beginPath()
-      ctx.setStrokeStyle('#6375EC')
+      ctx.setStrokeStyle(c.accent)
       ctx.setLineWidth(2)
       ctx.moveTo(pts[0].x, pts[0].y)
       pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
       ctx.stroke()
       const labelStep = Math.max(1, Math.floor(weightHistory.length / 5))
       ctx.setFontSize(10)
-      ctx.setFillStyle('rgba(166,196,229,0.5)')
+      ctx.setFillStyle(c.textMuted50)
       weightHistory.forEach((r, i) => {
         if (i % labelStep === 0 || i === weightHistory.length - 1) {
           ctx.fillText(r.date.substring(5), pts[i].x - 14, H - pB + 16)
         }
       })
-      ctx.setFillStyle('#EEF2FF')
-      ctx.setStrokeStyle('#6375EC')
+      ctx.setFillStyle(c.textPrimary)
+      ctx.setStrokeStyle(c.accent)
       ctx.setLineWidth(1.5)
       pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke() })
-      ctx.setStrokeStyle('rgba(99,117,236,0.3)')
+      ctx.setStrokeStyle(c.glow22)
       ctx.setLineWidth(1)
       ctx.beginPath(); ctx.moveTo(pL, pT); ctx.lineTo(pL, pT + plotH); ctx.lineTo(pL + plotW, pT + plotH); ctx.stroke()
       ctx.draw()
@@ -1616,6 +1736,7 @@ Component({
     },
 
     _drawGenericChart(canvasId, history, valKey, unit, color) {
+      const c = this._chartPalette()
       const W = wx.getSystemInfoSync().windowWidth - 72
       const H = 200, pL = 44, pR = 16, pT = 20, pB = 44
       const plotW = W - pL - pR, plotH = H - pT - pB
@@ -1633,9 +1754,9 @@ Component({
       for (let i = 0; i <= 4; i++) {
         const y = pT + (i / 4) * plotH
         const val = maxV - (i / 4) * range
-        ctx.setStrokeStyle('rgba(99,117,236,0.12)'); ctx.setLineWidth(0.5)
+        ctx.setStrokeStyle(c.gridLine); ctx.setLineWidth(0.5)
         ctx.beginPath(); ctx.moveTo(pL, y); ctx.lineTo(pL + plotW, y); ctx.stroke()
-        ctx.setFillStyle('rgba(166,196,229,0.45)'); ctx.setFontSize(10)
+        ctx.setFillStyle(c.textMuted45); ctx.setFontSize(10)
         ctx.fillText(Number.isInteger(val) ? val : val.toFixed(1), 0, y + 4)
       }
       ctx.beginPath(); ctx.setFillStyle(`rgba(${cr},${cg},${cb},0.1)`)
@@ -1648,14 +1769,14 @@ Component({
       pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
       ctx.stroke()
       const labelStep = Math.max(1, Math.floor(history.length / 5))
-      ctx.setFontSize(10); ctx.setFillStyle('rgba(166,196,229,0.5)')
+      ctx.setFontSize(10); ctx.setFillStyle(c.textMuted50)
       history.forEach((r, i) => {
         if (i % labelStep === 0 || i === history.length - 1)
           ctx.fillText(r.date.substring(5), pts[i].x - 14, H - pB + 16)
       })
-      ctx.setFillStyle('#EEF2FF'); ctx.setStrokeStyle(color); ctx.setLineWidth(1.5)
+      ctx.setFillStyle(c.textPrimary); ctx.setStrokeStyle(color); ctx.setLineWidth(1.5)
       pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke() })
-      ctx.setStrokeStyle('rgba(99,117,236,0.3)'); ctx.setLineWidth(1)
+      ctx.setStrokeStyle(c.glow22); ctx.setLineWidth(1)
       ctx.beginPath(); ctx.moveTo(pL, pT); ctx.lineTo(pL, pT + plotH); ctx.lineTo(pL + plotW, pT + plotH); ctx.stroke()
       ctx.draw()
     },
@@ -2717,6 +2838,79 @@ Component({
       // ── Halo / V8: single-phase sync — all data is historical, no real-time measurement needed ──
       if (_hasIntervalSettings(brand)) {
         try {
+          // Incremental sync: derive a per-type "since" cursor from the previous
+          // snapshot instead of re-fetching full history every time (see
+          // docs/architecture/halo-smart-ring.md §9). Validated live on both
+          // brands via tools/halo history (V8 unit "JCV8B DBE34D" 2026-07-30,
+          // Halo X3 unit "X3B 53687" 2026-07-31 — see
+          // docs/architecture/v8-smart-band.md §6-7 and halo-smart-ring.md
+          // §9): HRV (0x56), SpO2 (0x66), and temperature (0x62) all
+          // correctly honor mode 0x01 on both brands — but ONLY when `since`
+          // exactly matches one of the device's own stored record
+          // timestamps (inclusive boundary); any other value, even one
+          // second off, silently falls back to returning full history.
+          // _deriveSinceDate above always passes the exact last-known
+          // timestamp for this reason. SpO2/temperature's full fetches had
+          // in fact already been hitting the 8s stream timeout on both test
+          // units before this change — exactly the case incremental fetch
+          // fixes outright.
+          //
+          // steps (0x52 detail blocks) and sleep (0x53) — added 2026-07-31
+          // after a real end-to-end sync still took ~30s post-fix: HRV/SpO2/
+          // temp dropped to ~180ms combined as designed, but steps and sleep
+          // (out of scope for the original pass, assumed "cheap, few
+          // records") turned out to be the actual remaining bottleneck on a
+          // real ring — steps-detail and sleep were both hitting their 8s/
+          // 15s timeouts. Live-validated the same exact-match mode 0x01
+          // mechanism works for both (0x52: 450→2 records; 0x53: a lone
+          // flaky "zero data" result turned out to be BLE session strain
+          // from stacking three heavy requests on one connection in the test
+          // rig, not a real protocol limit — a clean single fresh-connection
+          // request behaved identically to HRV/SpO2/temp). Steps enabled for
+          // both brands from the start (same simple per-record shape as
+          // HRV/SpO2/temp, no reassembly-model dependency).
+          //
+          // V8 sleep — enabled 2026-07-31 after live validation
+          // (tools/halo --device v8, raw getSleepDataPacket(0x01, ...) calls):
+          // exact-match since → 62ms, count=1, same pattern as every other
+          // command. V8's per-notification reassembly model (see
+          // docs/architecture/v8-smart-band.md §3) meant the raw-block
+          // extraction couldn't just reuse Halo's code, but the split mirrors
+          // it: v8/index.js's getSleepHistory() (grouping/session-split logic
+          // previously inline) was extracted into a static
+          // V8Band.summariseSleepBlocks(), paired with a new
+          // getSleepBlocks(sinceDate) — same shape as Halo's equivalents,
+          // wired through the same _mergeRingSlots() merge below.
+          //
+          // static HR (0x55) — enabled for Halo 2026-07-31 after re-testing.
+          // Earlier "inconclusive, zero records" verdict was wrong: it was a
+          // time-of-day test artifact, not a real limitation. 0x55 streams
+          // newest-first same as the others; both test rounds happened to
+          // run before the ring had logged its first static-HR sample of the
+          // current calendar day, so an otherwise-full multi-day backlog
+          // (1200 real records spanning 12 days, confirmed via raw
+          // unfiltered bytes) got entirely zeroed out by the client-side
+          // "today only" filter every time — nothing wrong with the fetch,
+          // command, or parser. Re-tested once the ring had a real today
+          // sample: exact match → 64ms, count=1 (inclusive boundary, same as
+          // every other type); 1-second mismatch → full 8s timeout, 1200
+          // records (same fallback pattern). V8 static HR was NOT retested
+          // this round (same original test-timing artifact likely applies,
+          // but unconfirmed) — stays on full fetch for V8 until re-checked.
+          const INCREMENTAL_SUPPORT = {
+            halo: { hr: true,  hrv: true, spo2: true, temp: true, steps: true, sleep: true },
+            v8:   { hr: false, hrv: true, spo2: true, temp: true, steps: true, sleep: true },
+          }
+          const _support = INCREMENTAL_SUPPORT[brand] || {}
+          const _prevRing = wx.getStorageSync('wearable_ring_data') || {}
+          const _prevIsToday = !!_prevRing.syncedAt && _shanghaiDateStr(_prevRing.syncedAt) === _shanghaiDateStr(Date.now())
+          const _sinceHr    = _support.hr    && _prevIsToday ? _deriveSinceDate(_prevRing.hrSlots, 't') : null
+          const _sinceHrv   = _support.hrv   ? _deriveSinceDate(_prevRing.hrvSlots, 'timestamp') : null
+          const _sinceSpo2  = _support.spo2  ? _deriveSinceDate(_prevRing.spo2Slots, 'timestamp') : null
+          const _sinceTemp  = _support.temp  ? _deriveSinceDate(_prevRing.tempSlots, 'date') : null
+          const _sinceSteps = _support.steps && _prevIsToday ? _deriveSinceDate(_prevRing.stepSlots, 't') : null
+          const _sinceSleep = _support.sleep ? _deriveSinceDate(_prevRing.sleepBlocks, 'dateStr') : null
+
           await ring.connect(this.data.wearableId, { syncTime: true })
           // Apply background measurement intervals. Track failures so we can detect
           // if the ring's schedule was wiped (e.g. after a full battery drain).
@@ -2739,9 +2933,30 @@ Component({
           if (_monitorFailed > 0) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'setAutoMonitoring partial failure', brand, failed: _monitorFailed }))
           }
-          const battery   = await ring.getBattery()
-          const steps     = await ring.getSteps().catch(() => null)
-          const sleepHist = await ring.getSleepHistory().catch(() => [])
+          const battery = await ring.getBattery()
+          const steps   = await ring.getSteps(undefined, _sinceSteps).catch(() => null)
+
+          // Sleep: incremental path (see comment above) fetches raw blocks and
+          // merges them with the previous sync's raw blocks before re-deriving
+          // night summaries — the night/session-grouping algorithm needs the
+          // full set of a night's blocks, not just this sync's new slice.
+          // Both brands expose getSleepBlocks(sinceDate)/a summarize function
+          // with the same shape (Halo: HaloRing.parsers.summariseSleepBlocks;
+          // V8: the static V8Band.summariseSleepBlocks) — only which module
+          // to pull the summarizer from differs. Non-incremental path (stale/
+          // no cursor) is the original full-fetch-then-summarize call, unchanged.
+          let mergedSleepBlocks = null
+          let sleepHist
+          if (_support.sleep) {
+            const summariseSleepBlocks = brand === 'halo'
+              ? require('../../utils/wearable/halo/index.js').parsers.summariseSleepBlocks
+              : require('../../utils/wearable/v8/index.js').summariseSleepBlocks
+            const newSleepBlocks = await ring.getSleepBlocks(_sinceSleep).catch(() => [])
+            mergedSleepBlocks = _mergeRingSlots(_prevRing.sleepBlocks || [], newSleepBlocks || [], 'dateStr', RING_SLOT_RETENTION_DAYS)
+            sleepHist = summariseSleepBlocks(mergedSleepBlocks)
+          } else {
+            sleepHist = await ring.getSleepHistory().catch(() => [])
+          }
           const sleepHistoryNorm = sleepHist.filter(n => n.totalMinutes > 0).map(n => ({
             date: n.date,
             onset: n.onset ?? null,
@@ -2758,23 +2973,37 @@ Component({
           // _selectLastNight) so "Last Night" reflects the whole night rather
           // than only its most recent wake-interrupted segment.
           const sleep = _selectLastNight(sleepHistoryNorm)
-          const hrLog   = await ring.getHeartRateLog().catch(() => null)
-          const hrvLog  = await ring.getHrvHistory().catch(() => [])            // all cached days [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}]
-          const spo2Log = await ring.getAutoSpo2History().catch(() => [])       // all cached days [{timestamp, spo2}]
-          const tempLog = await ring.getTemperatureHistory().catch(() => [])    // all cached days [{date, estimatedBodyTemp, skinTemp, status}]
+          const hrLog   = await ring.getHeartRateLog(undefined, _sinceHr).catch(() => null)
+          const hrvLog  = await ring.getHrvHistory(_sinceHrv).catch(() => [])            // new/incremental records only [{timestamp, hrv, stress, breath, heartRate, highBP, lowBP}]
+          const spo2Log = await ring.getAutoSpo2History(_sinceSpo2).catch(() => [])      // new/incremental records only [{timestamp, spo2}]
+          const tempLog = await ring.getTemperatureHistory(_sinceTemp).catch(() => [])   // new/incremental records only [{date, estimatedBodyTemp, skinTemp, status}]
           await ring.disconnect()
 
-          const hrEntries  = (hrLog || []).filter(r => r.value > 0)
-          const restingHr  = hrEntries.length ? Math.min(...hrEntries.map(r => r.value)) : null
-          const latestHrv  = hrvLog.length  ? hrvLog[hrvLog.length - 1]   : {}
-          const latestSpo2 = spo2Log.length ? spo2Log[spo2Log.length - 1] : {}
-          const validTemps = (tempLog || []).filter(r => r.estimatedBodyTemp != null && r.estimatedBodyTemp > 34)
-          const latestTemp = validTemps.length ? validTemps[validTemps.length - 1] : {}
+          // Merge each type's newly-fetched records into the previous snapshot
+          // (see _mergeRingSlots above) so an incremental fetch — which may
+          // legitimately return few or zero new records — never regresses the
+          // stored/displayed history back down to just this sync's slice, and
+          // so a per-type fetch failure (.catch above) can't wipe out
+          // previously-synced data the way an unconditional overwrite would.
+          const hrEntries      = (hrLog || []).filter(r => r.value > 0)
+          const newHrSlots      = hrEntries.map(r => ({ t: r.timestamp.toISOString(), bpm: r.value }))
+          const newTempRecords  = (tempLog || []).filter(r => r.estimatedBodyTemp != null && r.estimatedBodyTemp > 34)
+          const newStepSlots    = steps?.slots || []
+          const mergedHrSlots   = _mergeRingSlots(_prevIsToday ? (_prevRing.hrSlots || []) : [], newHrSlots, 't', null)
+          const mergedHrvSlots  = _mergeRingSlots(_prevRing.hrvSlots  || [], hrvLog  || [], 'timestamp', RING_SLOT_RETENTION_DAYS)
+          const mergedSpo2Slots = _mergeRingSlots(_prevRing.spo2Slots || [], spo2Log || [], 'timestamp', RING_SLOT_RETENTION_DAYS)
+          const mergedTempSlots = _mergeRingSlots(_prevRing.tempSlots || [], newTempRecords, 'date', RING_SLOT_RETENTION_DAYS)
+          const mergedStepSlots = _mergeRingSlots(_prevIsToday ? (_prevRing.stepSlots || []) : [], newStepSlots, 't', null)
+
+          const restingHr  = mergedHrSlots.length   ? Math.min(...mergedHrSlots.map(r => r.bpm)) : null
+          const latestHrv  = mergedHrvSlots.length  ? mergedHrvSlots[mergedHrvSlots.length - 1]   : {}
+          const latestSpo2 = mergedSpo2Slots.length ? mergedSpo2Slots[mergedSpo2Slots.length - 1] : {}
+          const latestTemp = mergedTempSlots.length ? mergedTempSlots[mergedTempSlots.length - 1] : {}
           const raw = {
             steps:        steps?.steps       ?? null,
             calories:     steps?.calories    ?? null,
             distance:     steps?.distance    ?? null,
-            stepSlots:    steps?.slots       ?? null,
+            stepSlots:    mergedStepSlots.length > 0 ? mergedStepSlots : null,
             sleepMinutes: (sleep?.totalMinutes > 0) ? sleep.totalMinutes : null,
             sleepDeep:    sleep?.deep        ?? null,
             sleepLight:   sleep?.light       ?? null,
@@ -2786,7 +3015,12 @@ Component({
             sleepOnset:   sleep?.onset       ?? null,
             sleepDate:    sleep?.date        ?? null,
             sleepHistory: sleepHistoryNorm,
-            hrSlots:         hrEntries.map(r => ({ t: r.timestamp.toISOString(), bpm: r.value })),
+            // Raw sleep blocks (Halo incremental path only — null on V8, see
+            // INCREMENTAL_SUPPORT above), kept so the next sync can merge new
+            // blocks with these before re-deriving night summaries. Not sent
+            // to the server (sync.js only reads the fields above); local-only.
+            sleepBlocks: mergedSleepBlocks,
+            hrSlots:         mergedHrSlots,
             restingHr,
             hrv:             latestHrv.hrv       ?? null,
             stress:          latestHrv.stress    ?? null,
@@ -2796,11 +3030,22 @@ Component({
             systolicBP:      latestHrv.highBP   ?? null,
             diastolicBP:     latestHrv.lowBP    ?? null,
             hrvMeasuredAt:   latestHrv.timestamp ?? null,
-            hrvSlots:    hrvLog.length       > 0 ? hrvLog       : null,
-            spo2Slots:   spo2Log.length      > 0 ? spo2Log      : null,
-            tempSlots:   validTemps.length   > 0 ? validTemps   : null,
+            hrvSlots:    mergedHrvSlots.length  > 0 ? mergedHrvSlots  : null,
+            spo2Slots:   mergedSpo2Slots.length > 0 ? mergedSpo2Slots : null,
+            tempSlots:   mergedTempSlots.length > 0 ? mergedTempSlots : null,
             bodyTempC:   latestTemp.estimatedBodyTemp ?? null,
             syncedAt: Date.now(),
+          }
+          if (IS_DEV) {
+            console.log(JSON.stringify({
+              level: 'DEBUG', msg: 'incremental sync', brand,
+              hr:    { since: _sinceHr,    fetched: newHrSlots.length,      merged: mergedHrSlots.length },
+              hrv:   { since: _sinceHrv,   fetched: (hrvLog || []).length,  merged: mergedHrvSlots.length },
+              spo2:  { since: _sinceSpo2,  fetched: (spo2Log || []).length, merged: mergedSpo2Slots.length },
+              temp:  { since: _sinceTemp,  fetched: newTempRecords.length,  merged: mergedTempSlots.length },
+              steps: { since: _sinceSteps, fetched: newStepSlots.length,    merged: mergedStepSlots.length },
+              sleep: { since: _sinceSleep, mergedBlocks: mergedSleepBlocks ? mergedSleepBlocks.length : null, nights: sleepHistoryNorm.length },
+            }))
           }
           this._commitRingData(raw, battery.level, isZh, false)
         } catch (e) {

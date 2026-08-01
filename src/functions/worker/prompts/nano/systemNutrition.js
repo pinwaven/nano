@@ -5,6 +5,8 @@
  * Output includes a brief analysis and the DXX:N formulation lines.
  */
 const { classifyBiomarker, LABELS_ZH: STATUS_LABELS_ZH, LABELS_EN: STATUS_LABELS_EN } = require('../../lib/biomarkerStatus');
+const { getFactConstraintBlock } = require('../chat/factConstraint');
+const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 
 module.exports = (context) => {
   const isZh = context.language === 'zh';
@@ -34,7 +36,11 @@ module.exports = (context) => {
   const chronoage = context.bioage_profile?.ChronoAge ?? 'unknown';
 
   if (isZh) {
-    return `你是一台精密营养引擎。请根据用户的生物标志物和生理年龄，分析其健康状况，并为每种 Waven Dot 分配每日摄入数量。
+    return `${getFactConstraintBlock(context.essential_knowledge, true)}
+
+${getFactMemoryBlock(context.user_facts, true)}
+
+你是一台精密营养引擎。请根据用户的生物标志物和生理年龄，分析其健康状况，并为每种 Waven Dot 分配每日摄入数量。
 
 生物标志物参考范围：
   hsCRP (mg/L):       <1 = 正常 | 1–3 = 偏高 | >3 = 高炎症风险
@@ -74,7 +80,11 @@ D-N2:N
 - 必须包含配方库中列出的所有 DXX 代码。
 `;
   } else {
-    return `You are a precision nutrition engine. Based on the user's biomarkers and BioAge, analyze their health profile and assign a daily dot count (1–10) for each Waven Dot.
+    return `${getFactConstraintBlock(context.essential_knowledge, false)}
+
+${getFactMemoryBlock(context.user_facts, false)}
+
+You are a precision nutrition engine. Based on the user's biomarkers and BioAge, analyze their health profile and assign a daily dot count (1–10) for each Waven Dot.
 
 BIOMARKER REFERENCE RANGES:
   hsCRP (mg/L):       <1 = normal | 1–3 = elevated | >3 = high inflammation
