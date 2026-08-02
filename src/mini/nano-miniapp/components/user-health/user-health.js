@@ -325,6 +325,7 @@ const T = {
     haloRingTimeLabel: '戒指时间',
     ringHrvTrend: 'HRV 趋势', ringSpo2Trend: 'SpO₂ 趋势', ringBodyTemp: '体温',
     ringSleepWeek: '过去7天睡眠', ringNap: '小睡', ringNightSleep: '夜间睡眠', ringSleepNoBlocks: '暂无睡眠记录',
+    ringSmoothedNote: '条读数已平滑处理',
   },
   en: {
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -439,6 +440,7 @@ const T = {
     haloRingTimeLabel: 'Ring Time',
     ringHrvTrend: 'HRV Trend', ringSpo2Trend: 'SpO₂ Trend', ringBodyTemp: 'Body Temp',
     ringSleepWeek: '7-Day Sleep', ringNap: 'Nap', ringNightSleep: 'Night Sleep', ringSleepNoBlocks: 'No sleep recorded yet',
+    ringSmoothedNote: ' readings smoothed',
   },
 }
 
@@ -619,14 +621,19 @@ function _buildRingDisplayData(raw, isZh) {
         const sessions = byDate[date].slice().sort((a, b) => (a.onset < b.onset ? -1 : 1))
         const nightMins = sessions.filter(s => _isNightSession(s.onset)).reduce((sum, s) => sum + s.totalMinutes, 0)
         const napMins = sessions.filter(s => !_isNightSession(s.onset)).reduce((sum, s) => sum + s.totalMinutes, 0)
-        const nightColor = _dayQualityColor(nightMins)
+        // Color reflects the day's combined sleep total, not each segment's own
+        // duration — a night interrupted into several short segments (or one that
+        // resumes after 6am and gets bucketed as a "nap" by the hour heuristic,
+        // see _selectLastNight's comment) previously colored red/orange per-piece
+        // even when the day's actual total sleep was good.
+        const dayColor = _dayQualityColor(nightMins + napMins)
         const blocks = sessions.map((s, i) => {
           const mins = _minutesSinceNoon(s.onset)
           return {
             key: `${date}-${i}`,
             topRpx: Math.round(mins / 1440 * SLEEP_AXIS_H),
             heightRpx: Math.max(6, Math.round(s.totalMinutes / 1440 * SLEEP_AXIS_H)),
-            color: _isNightSession(s.onset) ? nightColor : '#f59e0b',
+            color: dayColor,
             isNap: !_isNightSession(s.onset),
             timeLabel: s.onset.slice(11, 16),
             durLabel: _fmtHM(s.totalMinutes, isZh),
@@ -818,51 +825,80 @@ function _fmtRealtimeReadings(readings) {
   return sectionOrder.map(d => sectionMap[d])
 }
 
+// Bounds/MAD-multiplier per metric for signal-smoothing.flagOutliers — see
+// utils/wearable/signal-smoothing.js and docs on _buildReadingLineCharts.
+const _SMOOTHING_CONFIG = {
+  hrv:    { min: 2,  max: 220, k: 2.5, window: 7, epsilon: 2 },
+  spo2:   { min: 70, max: 100, k: 2.5, window: 7, epsilon: 0.8 },
+  stress: { min: 0,  max: 100, k: 2.5, window: 7, epsilon: 3 },
+}
+
 function _buildReadingLineCharts(readings) {
   const pts = readings.slice().reverse()  // oldest → newest
+  const { flagOutliers, interpolateFlagged } = require('../../utils/wearable/signal-smoothing.js')
 
   function _extract(key) { return pts.filter(r => r[key] != null).map(r => r[key]) }
   function _hrvColor(v)    { return v >= 80 ? '#0ea5e9' : v >= 50 ? '#10b981' : v >= 30 ? '#f97316' : '#ef4444' }
   function _spo2Color(v)   { return v >= 98 ? '#0ea5e9' : v >= 95 ? '#10b981' : v >= 90 ? '#f97316' : '#ef4444' }
   function _stressColor(v) { return v <= 25 ? '#10b981' : v <= 50 ? '#6375EC' : v <= 75 ? '#f97316' : '#ef4444' }
 
+  // Detects likely sensor errors (ring off-wrist, poor contact, byte glitch)
+  // and replaces them with an interpolated estimate for chart display only —
+  // raw vals/readings are untouched, this never feeds back into stored data.
+  function _smooth(vals, metricKey) {
+    const flags = flagOutliers(vals, _SMOOTHING_CONFIG[metricKey])
+    const corrected = interpolateFlagged(vals, flags)
+    const validCount = flags.filter(f => !f).length
+    return { corrected, validCount }
+  }
+
   const CHART_H = 72, MAX_BARS = 48
 
-  function _toBars(vals, colorFn) {
-    if (vals.length < 2) return null
-    const N = Math.min(vals.length, MAX_BARS)
+  function _toBars(corrected, colorFn) {
+    if (corrected.length < 2) return null
+    const N = Math.min(corrected.length, MAX_BARS)
     const binned = []
     for (let i = 0; i < N; i++) {
-      const s = Math.floor(i / N * vals.length)
-      const e = Math.floor((i + 1) / N * vals.length)
-      const slice = vals.slice(s, e)
-      binned.push(slice.reduce((a, b) => a + b, 0) / slice.length)
+      const s = Math.floor(i / N * corrected.length)
+      const e = Math.floor((i + 1) / N * corrected.length)
+      const slice = corrected.slice(s, e)
+      binned.push({
+        value: slice.reduce((a, b) => a + b.value, 0) / slice.length,
+        estimated: slice.some(b => b.estimated),
+      })
     }
-    const min = Math.min(...binned), max = Math.max(...binned)
+    const min = Math.min(...binned.map(b => b.value)), max = Math.max(...binned.map(b => b.value))
     const range = max - min || 1
-    return binned.map(v => ({
-      heightRpx: Math.round(Math.max(4, (v - min) / range * CHART_H)),
-      color: colorFn(v),
+    return binned.map(b => ({
+      heightRpx: Math.round(Math.max(4, (b.value - min) / range * CHART_H)),
+      color: colorFn(b.value),
+      estimated: b.estimated,
     }))
   }
 
-  function _chart(vals, colorFn, fallbackColor) {
-    const latest = vals.length ? vals[vals.length - 1] : null
+  function _chart(vals, colorFn, metricKey) {
+    const { corrected, validCount } = _smooth(vals, metricKey)
+    const correctedVals = corrected.map(c => c.value)
+    const latestRaw = vals.length ? vals[vals.length - 1] : null
+    const latestEntry = corrected.length ? corrected[corrected.length - 1] : null
+    const estimatedCount = corrected.filter(c => c.estimated).length
     return {
-      hasData:     vals.length >= 2,
-      bars:        _toBars(vals, colorFn),
-      latestVal:   latest,
-      latestColor: latest != null ? colorFn(latest) : 'rgba(166,196,229,0.5)',
-      minVal:      vals.length ? Math.min(...vals) : null,
-      maxVal:      vals.length ? Math.max(...vals) : null,
-      count:       vals.length,
+      hasData:         validCount >= 2,
+      bars:            _toBars(corrected, colorFn),
+      latestVal:       latestRaw,
+      latestColor:     latestRaw != null ? colorFn(latestRaw) : 'rgba(166,196,229,0.5)',
+      latestEstimated: !!(latestEntry && latestEntry.estimated),
+      minVal:          correctedVals.length ? Math.round(Math.min(...correctedVals) * 10) / 10 : null,
+      maxVal:          correctedVals.length ? Math.round(Math.max(...correctedVals) * 10) / 10 : null,
+      count:           vals.length,
+      estimatedCount,
     }
   }
 
   return {
-    hrvChart:    _chart(_extract('hrv'),    _hrvColor,    '#6375EC'),
-    spo2Chart:   _chart(_extract('spo2'),   _spo2Color,   '#6375EC'),
-    stressChart: _chart(_extract('stress'), _stressColor, '#6375EC'),
+    hrvChart:    _chart(_extract('hrv'),    _hrvColor,    'hrv'),
+    spo2Chart:   _chart(_extract('spo2'),   _spo2Color,   'spo2'),
+    stressChart: _chart(_extract('stress'), _stressColor, 'stress'),
   }
 }
 

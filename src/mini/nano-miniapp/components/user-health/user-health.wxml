@@ -559,11 +559,12 @@
               <view class="ring-linechart-latest-row">
                 <text class="ring-linechart-latest" style="color:{{ringData.hrvChart.latestColor}}">{{ringData.hrvChart.latestVal}}</text>
                 <text class="ring-linechart-unit">ms</text>
+                <text wx:if="{{ringData.hrvChart.latestEstimated}}" class="ring-lc-estimated-marker">~</text>
               </view>
             </view>
             <view class="ring-lc-bars">
               <view wx:for="{{ringData.hrvChart.bars}}" wx:key="index" class="ring-lc-col">
-                <view class="ring-lc-bar" style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
+                <view class="ring-lc-bar {{item.estimated ? 'ring-lc-bar-estimated' : ''}}" style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
               </view>
             </view>
             <view class="ring-linechart-range">
@@ -571,6 +572,7 @@
               <text class="ring-linechart-count">{{ringData.hrvChart.count}} 次</text>
               <text class="ring-linechart-bound">{{ringData.hrvChart.maxVal}} ms</text>
             </view>
+            <view wx:if="{{ringData.hrvChart.estimatedCount > 0}}" class="ring-lc-smoothed-note">{{ringData.hrvChart.estimatedCount}}{{t.ringSmoothedNote}}</view>
           </view>
 
           <!-- SpO₂ line chart -->
@@ -580,11 +582,12 @@
               <view class="ring-linechart-latest-row">
                 <text class="ring-linechart-latest" style="color:{{ringData.spo2Chart.latestColor}}">{{ringData.spo2Chart.latestVal}}</text>
                 <text class="ring-linechart-unit">%</text>
+                <text wx:if="{{ringData.spo2Chart.latestEstimated}}" class="ring-lc-estimated-marker">~</text>
               </view>
             </view>
             <view class="ring-lc-bars">
               <view wx:for="{{ringData.spo2Chart.bars}}" wx:key="index" class="ring-lc-col">
-                <view class="ring-lc-bar" style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
+                <view class="ring-lc-bar {{item.estimated ? 'ring-lc-bar-estimated' : ''}}" style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
               </view>
             </view>
             <view class="ring-linechart-range">
@@ -592,6 +595,7 @@
               <text class="ring-linechart-count">{{ringData.spo2Chart.count}} 次</text>
               <text class="ring-linechart-bound">{{ringData.spo2Chart.maxVal}}%</text>
             </view>
+            <view wx:if="{{ringData.spo2Chart.estimatedCount > 0}}" class="ring-lc-smoothed-note">{{ringData.spo2Chart.estimatedCount}}{{t.ringSmoothedNote}}</view>
           </view>
 
           <!-- Stress line chart -->
@@ -600,11 +604,12 @@
               <text class="ring-chart-label">{{t.ringStress}}</text>
               <view class="ring-linechart-latest-row">
                 <text class="ring-linechart-latest" style="color:{{ringData.stressChart.latestColor}}">{{ringData.stressChart.latestVal}}</text>
+                <text wx:if="{{ringData.stressChart.latestEstimated}}" class="ring-lc-estimated-marker">~</text>
               </view>
             </view>
             <view class="ring-lc-bars">
               <view wx:for="{{ringData.stressChart.bars}}" wx:key="index" class="ring-lc-col">
-                <view class="ring-lc-bar" style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
+                <view class="ring-lc-bar {{item.estimated ? 'ring-lc-bar-estimated' : ''}}" style="height:{{item.heightRpx}}rpx; background:{{item.color}};"></view>
               </view>
             </view>
             <view class="ring-linechart-range">
@@ -612,6 +617,7 @@
               <text class="ring-linechart-count">{{ringData.stressChart.count}} 次</text>
               <text class="ring-linechart-bound">{{ringData.stressChart.maxVal}}</text>
             </view>
+            <view wx:if="{{ringData.stressChart.estimatedCount > 0}}" class="ring-lc-smoothed-note">{{ringData.stressChart.estimatedCount}}{{t.ringSmoothedNote}}</view>
           </view>
 
           <!-- Sleep stage timeline (most recent night, detailed) -->
