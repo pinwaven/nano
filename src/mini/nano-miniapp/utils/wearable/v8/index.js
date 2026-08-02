@@ -488,12 +488,17 @@ function _parseHrvChunk(buf) {
   for (let i = 0; i < size; i++) {
     const base = i * count
     const date = parseBcdDate(buf, 3 + base, true)
+    // Raw byte tracks HRV upward rather than inversely — same shared-protocol
+    // quirk confirmed on Halo (see halo/index.js's _parseHrvRecords56); invert
+    // to a true stress scale. Confirmed live 2026-08-02 (Pin, real device).
+    // 0 stays 0 (downstream `r.stress || null` treats it as "no reading").
+    const rawStress = buf[12 + base]
     records.push({
       date,
       hrv: buf[9 + base],
       vascularAging: buf[10 + base],
       heartRate: buf[11 + base],
-      stress: buf[12 + base],
+      stress: rawStress === 0 ? 0 : 100 - rawStress,
       highBP: buf[13 + base],
       lowBP: buf[14 + base],
     })

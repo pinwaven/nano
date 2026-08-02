@@ -2198,7 +2198,7 @@ async function handlePostAnalyzeImage(body) {
 const VALID_CATEGORIES = new Set(['sleep', 'activity', 'vitals', 'lab_result', 'body_composition']);
 
 async function handlePostHealthEvent(body) {
-    const { openid, category, source, data_date, data, recorded_at, external_id } = body;
+    const { openid, category, source, data_date, data, recorded_at, external_id, wearable_name } = body;
     if (!openid) return { success: false, error: 'openid required', statusCode: 400 };
     if (!category || !VALID_CATEGORIES.has(category)) {
         return { success: false, error: `category must be one of: ${[...VALID_CATEGORIES].join(', ')}`, statusCode: 400 };
@@ -2217,11 +2217,11 @@ async function handlePostHealthEvent(body) {
         const user_id = userResult.rows[0].user_id;
 
         const insertResult = await pool.query(`
-            INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id, wearable_name)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING
             RETURNING id
-        `, [user_id, source, category, data_date, recorded_at, JSON.stringify(data), external_id || null]);
+        `, [user_id, source, category, data_date, recorded_at, JSON.stringify(data), external_id || null, wearable_name || null]);
 
         const inserted = insertResult.rows.length > 0;
         if (inserted) {
@@ -2254,12 +2254,12 @@ async function handlePostHealthEventsSync(body) {
         for (const ev of events) {
             if (!ev.category || !VALID_CATEGORIES.has(ev.category) || !ev.source || !ev.data_date || !ev.data || !ev.recorded_at) { skipped++; continue; }
             const r = await pool.query(`
-                INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id, wearable_name)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL
-                DO UPDATE SET data = EXCLUDED.data, recorded_at = EXCLUDED.recorded_at
+                DO UPDATE SET data = EXCLUDED.data, recorded_at = EXCLUDED.recorded_at, wearable_name = EXCLUDED.wearable_name
                 RETURNING id
-            `, [user_id, ev.source, ev.category, ev.data_date, ev.recorded_at, JSON.stringify(ev.data), ev.external_id || null]);
+            `, [user_id, ev.source, ev.category, ev.data_date, ev.recorded_at, JSON.stringify(ev.data), ev.external_id || null, ev.wearable_name || null]);
             if (r.rows.length > 0) synced++;
         }
 
@@ -2300,11 +2300,16 @@ async function handleGetHealthEvents(query) {
             params.push(to_date);
             conditions.push(`data_date <= $${params.length}`);
         }
-        const rowLimit = Math.min(parseInt(limit || '30', 10), 200);
+        // 'vitals' bundles several independently-sampled sub-streams (temp, hrv, spo2,
+        // resting_hr, realtime — see sync.js's per-slot external_id patterns) sharing
+        // one row budget. temp samples more frequently than hrv on Halo, so a low cap
+        // here silently crowds hrv/spo2 out of the "most recent N" window even though
+        // there's far more headroom needed than a typical single-category query.
+        const rowLimit = Math.min(parseInt(limit || '30', 10), 1000);
         params.push(rowLimit);
 
         const result = await pool.query(
-            `SELECT id, source, category, data_date, recorded_at, data, ingested_at, external_id
+            `SELECT id, source, category, data_date, recorded_at, data, ingested_at, external_id, wearable_name
              FROM health_events
              WHERE ${conditions.join(' AND ')}
              ORDER BY data_date DESC, recorded_at DESC

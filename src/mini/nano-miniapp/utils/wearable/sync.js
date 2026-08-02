@@ -5,6 +5,10 @@
  *
  * @typedef {Object} WearableSnapshot
  * @property {string} source         - 'smart_ring', 'apple_health', 'garmin', etc.
+ * @property {string|null} wearableName - the bound device's display name (e.g. "X3B 53687"),
+ *   attached to every event as health_events.wearable_name. `source` is brand-agnostic
+ *   ('smart_ring' for every ring brand — see halo/v8/colmi/aizo), so this is the only
+ *   per-row way to trace historical data back to which physical device synced it.
  * @property {number|null} steps
  * @property {number|null} calories
  * @property {number|null} distance  - metres
@@ -57,6 +61,7 @@ function syncWearableData(openid, snapshot, apiToken) {
     events.push({
       category: 'activity',
       source: src,
+      wearable_name: snapshot.wearableName ?? null,
       data_date: todayDate,
       recorded_at: recordedAt,
       external_id: `${src}_activity_${todayDate}`,
@@ -106,6 +111,7 @@ function syncWearableData(openid, snapshot, apiToken) {
       events.push({
         category: 'sleep',
         source: src,
+        wearable_name: snapshot.wearableName ?? null,
         data_date: date,
         recorded_at: recordedAt,
         external_id: `${src}_sleep_${date}`,
@@ -127,6 +133,7 @@ function syncWearableData(openid, snapshot, apiToken) {
     events.push({
       category: 'sleep',
       source: src,
+      wearable_name: snapshot.wearableName ?? null,
       data_date: sleepDate,
       recorded_at: recordedAt,
       external_id: `${src}_sleep_${sleepDate}`,
@@ -148,6 +155,7 @@ function syncWearableData(openid, snapshot, apiToken) {
     events.push({
       category: 'vitals',
       source: src,
+      wearable_name: snapshot.wearableName ?? null,
       data_date: todayDate,
       recorded_at: recordedAt,
       external_id: `${src}_resting_hr_${todayDate}`,
@@ -167,6 +175,7 @@ function syncWearableData(openid, snapshot, apiToken) {
       events.push({
         category: 'vitals',
         source: src,
+        wearable_name: snapshot.wearableName ?? null,
         data_date: slotDate,
         recorded_at: recordedAt,
         external_id: `${src}_hrv_${ts}`,
@@ -190,6 +199,7 @@ function syncWearableData(openid, snapshot, apiToken) {
       events.push({
         category: 'vitals',
         source: src,
+        wearable_name: snapshot.wearableName ?? null,
         data_date: slotDate,
         recorded_at: recordedAt,
         external_id: `${src}_spo2_${ts}`,
@@ -207,6 +217,7 @@ function syncWearableData(openid, snapshot, apiToken) {
       events.push({
         category: 'vitals',
         source: src,
+        wearable_name: snapshot.wearableName ?? null,
         data_date: slotDate,
         recorded_at: recordedAt,
         external_id: `${src}_temp_${ts}`,
@@ -230,6 +241,7 @@ function syncWearableData(openid, snapshot, apiToken) {
     events.push({
       category: 'vitals',
       source: src,
+      wearable_name: snapshot.wearableName ?? null,
       data_date: todayDate,
       recorded_at: recordedAt,
       external_id: `${src}_realtime_${measuredTs}`,
@@ -247,16 +259,35 @@ function syncWearableData(openid, snapshot, apiToken) {
 
   if (!events.length) return Promise.resolve({ success: true, synced: 0, skipped: 0 })
 
-  return new Promise((resolve) => {
+  const MAX_EVENTS_PER_CALL = 500  // server hard-rejects the whole call above this (handlePostHealthEventsSync)
+  const _postBatch = (batch) => new Promise((resolve) => {
     wx.request({
       url: `${BASE}/api/health-events/sync`,
       method: 'POST',
       header: { 'Content-Type': 'application/json', ...(apiToken ? { Authorization: `Bearer ${apiToken}` } : {}) },
-      data: { openid, events },
+      data: { openid, events: batch },
       success: (res) => resolve(res.data),
       fail: (err) => resolve({ success: false, error: err.errMsg }),
     })
   })
+
+  if (events.length <= MAX_EVENTS_PER_CALL) return _postBatch(events)
+
+  // A single sync can carry more than 500 events (e.g. Halo's ~3-day cached HRV/SpO2
+  // buffer after a sync gap) — the server rejects the whole call outright above the
+  // cap, so without batching a large-enough backlog fails every sync permanently
+  // (it can never shrink, since nothing ever gets through). Split into sequential
+  // batches instead.
+  return (async () => {
+    let synced = 0, skipped = 0, success = true, error = null
+    for (let i = 0; i < events.length; i += MAX_EVENTS_PER_CALL) {
+      const res = await _postBatch(events.slice(i, i + MAX_EVENTS_PER_CALL))
+      if (res?.success === false) { success = false; error = error || res.error }
+      synced += res?.synced || 0
+      skipped += res?.skipped || 0
+    }
+    return success ? { success: true, synced, skipped } : { success: false, error, synced, skipped }
+  })()
 }
 
 function _shanghaiDateStr(date, dayOffset) {

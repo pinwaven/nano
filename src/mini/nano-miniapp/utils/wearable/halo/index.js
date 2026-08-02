@@ -505,9 +505,9 @@ class HaloRing extends WearableDevice {
           value = data[3]
         } else if (type === 'hrv' && data[4] !== 0) {
           value = data[4]
-          if (data[5] !== 0) this._cachedHrvResult = { stress: data[5] }
+          if (data[5] !== 0) this._cachedHrvResult = { stress: 100 - data[5] }
         } else if (type === 'pressure' && data[5] !== 0) {
-          value = data[5]
+          value = 100 - data[5]
           if (data[4] !== 0) this._cachedHrvResult = { hrv: data[4] }
         }
 
@@ -712,12 +712,16 @@ function _parseHrvRecords56(buf) {
     if (seen.has(timestamp)) continue
     seen.add(timestamp)
     const v = (b) => (b > 0 && b !== 0xFF) ? b : null
+    // Ring firmware's raw byte tracks HRV upward rather than inversely, the
+    // opposite of the documented "higher = more stressed" label — confirmed
+    // live 2026-08-02 (Pin, real device, post-fix sync).
+    const vStress = (b) => { const val = v(b); return val == null ? null : 100 - val }
     records.push({
       timestamp,
       hrv:       v(buf[9  + off]),
       breath:    v(buf[10 + off]),
       heartRate: v(buf[11 + off]),
-      stress:    v(buf[12 + off]),
+      stress:    vStress(buf[12 + off]),
       highBP:    v(buf[13 + off]),
       lowBP:     v(buf[14 + off]),
     })
