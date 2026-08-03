@@ -9,12 +9,17 @@
  * object key stored on the row (report_pdf_key). Orders with no matching
  * user are skipped.
  *
- * Orchestration (`runImport`) takes injected deps so it can be unit-tested
- * without touching QCS, OSS, or the database. The CLI entrypoint wires the
- * real adapter + DB implementations.
+ * With --export <file.xlsx> the script switches to export mode (`runExport`):
+ * every QCS order is dumped to a spreadsheet — one row per test project — with
+ * no user matching, no lab_orders comparison, and no PDF archival.
+ *
+ * Orchestration (`runImport` / `runExport`) takes injected deps so it can be
+ * unit-tested without touching QCS, OSS, or the database. The CLI entrypoint
+ * wires the real adapter + DB implementations.
  */
 
 // node scripts/import-qcs-orders.js --base-url https://api.quantumhealth.cn/third-party/ --ak clientid --as secret
+// node scripts/import-qcs-orders.js --export temp/qcs-orders.xlsx --base-url https://api.quantumhealth.cn/third-party/ --ak clientid --as secret
 
 /**
  * @param {object} deps
@@ -218,6 +223,138 @@ function buildImportDeps({ opts, config, qcs, db, oss, httpGet, randomHex, match
 }
 
 /**
+ * Streaming .xlsx writer for the export. Streaming (rather than building one
+ * in-memory workbook) keeps a multi-thousand-order sweep flat in memory, and
+ * flushes rows as they arrive so a crash still leaves a partial file.
+ *
+ * @param {object} args
+ * @param {string} args.filePath - destination .xlsx path
+ * @param {Array<{header: string, key: string}>} args.columns
+ * @returns {{writeRows: Function, commit: Function}}
+ */
+function makeXlsxWriter({ filePath, columns }) {
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ filename: filePath, useStyles: false });
+    const sheet = workbook.addWorksheet('Orders');
+    sheet.columns = columns.map((column) => ({ header: column.header, key: column.key, width: 22 }));
+    return {
+        async writeRows(rows) {
+            for (const row of rows) sheet.addRow(row).commit();
+        },
+        async commit() {
+            sheet.commit();
+            await workbook.commit();
+        },
+    };
+}
+
+/**
+ * Export every QCS order to spreadsheet rows. Deliberately does no matching,
+ * dedup, or DB/OSS work: --export is a raw dump of what the lab holds, so it
+ * runs without credentials for anything but QCS itself.
+ *
+ * @param {object} deps
+ * @param {object} deps.config           - QCS provider config
+ * @param {Function} deps.listOrders     - ({config}) => Promise<order[]>
+ * @param {Function} deps.fetchOrder     - (id, config) => Promise<orderDetail>
+ * @param {Function} deps.phoneFromOrder - (detail) => string
+ * @param {Function} deps.writeRows      - (rows) => Promise<void>
+ * @param {Function} [deps.log]
+ * @param {Function} [deps.onProgress]   - ({index, total, orderId, rows, outcome}) => void
+ * @returns {Promise<{total:number, rows:number, errors:number}>}
+ */
+async function runExport(deps) {
+    const { config, listOrders, fetchOrder, phoneFromOrder, writeRows } = deps;
+    const log = deps.log || (() => {});
+    const onProgress = deps.onProgress || (() => {});
+    const summary = { total: 0, rows: 0, errors: 0 };
+
+    const orders = await listOrders({ config });
+    for (const [i, order] of orders.entries()) {
+        summary.total += 1;
+        let rows = [];
+        let outcome = 'error';
+        try {
+            const detail = await fetchOrder(order.id, config);
+            rows = orderExportRows(detail, phoneFromOrder(detail));
+            await writeRows(rows);
+            summary.rows += rows.length;
+            outcome = 'exported';
+        } catch (err) {
+            summary.errors += 1;
+            rows = [];
+            log(JSON.stringify({ level: 'ERROR', msg: 'QCS order export failed', orderId: order.id, error: err.message }));
+        } finally {
+            onProgress({ index: i + 1, total: orders.length, orderId: order.id, rows: rows.length, outcome });
+        }
+    }
+    return summary;
+}
+
+/**
+ * Spreadsheet layout for --export, in column order. `key` addresses the row
+ * objects produced by orderExportRows.
+ */
+const EXPORT_COLUMNS = [
+    { header: 'Name', key: 'name' },
+    { header: 'Gender', key: 'gender' },
+    { header: 'Date of Birth', key: 'dateOfBirth' },
+    { header: 'Phone Number', key: 'phoneNumber' },
+    { header: 'Order No.', key: 'orderNo' },
+    { header: 'Collection Time', key: 'collectionTime' },
+    { header: 'Project ID', key: 'projectId' },
+    { header: 'Project Name', key: 'projectName' },
+];
+
+const SHANGHAI_ZONE = 'Asia/Shanghai';
+
+/**
+ * Render a QCS unix-seconds timestamp in the given zone, or '' when absent —
+ * a blank cell is truthful where a 1970 date would read as real data.
+ * Millisecond values are accepted too so a pre-converted payload does not
+ * silently export a year-1970 date.
+ */
+function formatTimestamp(value, zone, format) {
+    const { DateTime } = require('luxon');
+    const num = Number(value);
+    if (!Number.isFinite(num) || num === 0) return '';
+    const millis = Math.abs(num) < 1e11 ? num * 1000 : num;
+    const dt = DateTime.fromMillis(millis, { zone });
+    return dt.isValid ? dt.toFormat(format) : '';
+}
+
+/**
+ * Flatten one QCS order detail into spreadsheet rows — one row per good, since
+ * an order can cover several test projects.
+ *
+ * @param {object} detail - QCS order detail
+ * @param {string} phone  - phone resolved by the caller (qcs.phoneFromOrder)
+ * @returns {object[]} export rows
+ */
+function orderExportRows(detail, phone) {
+    // Accepts a raw order or a { data: order } envelope, as QCS returns both
+    // shapes depending on endpoint.
+    const order = detail?.data || detail || {};
+    const member = order.member || {};
+    const base = {
+        name: member.name || '',
+        gender: member.gender || '',
+        dateOfBirth: formatTimestamp(member.birthday, 'utc', 'yyyy-MM-dd'),
+        phoneNumber: phone || '',
+        orderNo: order.id === undefined || order.id === null ? '' : String(order.id),
+        collectionTime: formatTimestamp(order.created_at, SHANGHAI_ZONE, 'yyyy-MM-dd HH:mm:ss'),
+    };
+    const goods = Array.isArray(order.goods) ? order.goods : [];
+    // Keep goods-less orders in the export rather than dropping the patient.
+    if (goods.length === 0) return [{ ...base, projectId: '', projectName: '' }];
+    return goods.map((good) => ({
+        ...base,
+        projectId: good?.id === undefined || good?.id === null ? '' : String(good.id),
+        projectName: good?.name || '',
+    }));
+}
+
+/**
  * OSS credential vars required for report PDF upload that are absent from the
  * given env. Empty array means uploads can proceed.
  */
@@ -243,7 +380,72 @@ function parseArgs(argv, env = process.env) {
         progress: flag('--progress') || '',
         labName: flag('--lab') || 'qcs',
         dryRun: argv.includes('--dry-run'),
+        // Non-empty switches the run to export mode: dump every order to this
+        // .xlsx file, no DB comparison and no OSS upload.
+        exportPath: flag('--export') || '',
     };
+}
+
+/**
+ * CLI entrypoint for --export. Dumps every QCS order to a spreadsheet: no user
+ * matching, no lab_orders lookup, no PDF archival. The database is touched only
+ * to resolve api_base_url from lab_providers (and to reuse the cached OAuth
+ * token); passing --base-url makes the export fully database-free.
+ */
+async function exportMain(opts) {
+    const path = require('path');
+    const fs = require('fs');
+    const qcs = require('../src/functions/lab/lib/adapters/qcs');
+
+    let baseUrl = opts.baseUrl;
+    let cache = null;
+    if (!baseUrl) {
+        const dbUrl = opts.env === 'prod' ? process.env.DATABASE_URL_PROD : process.env.DATABASE_URL;
+        if (!dbUrl) {
+            console.error('ERROR: pass --base-url, or set DATABASE_URL so the base url can be read from lab_providers.');
+            process.exit(1);
+        }
+        // Must precede the lab module requires: db.js builds its Pool from
+        // DATABASE_URL at module load.
+        process.env.DATABASE_URL = dbUrl;
+        const db = require('../src/functions/lab/lib/db');
+        cache = require('../src/functions/lab/lib/globalCache');
+        const providerRes = await db.query(
+            'SELECT api_base_url FROM lab_providers WHERE lab_name = $1 AND is_active = TRUE LIMIT 1',
+            [opts.labName]
+        );
+        baseUrl = providerRes.rows[0]?.api_base_url;
+    }
+    if (!baseUrl) {
+        console.error('ERROR: no api_base_url — pass --base-url or seed lab_providers for ' + opts.labName);
+        process.exit(1);
+    }
+
+    const config = { api_base_url: baseUrl, api_key: opts.ak, api_secret: opts.as, cache };
+    const filePath = path.resolve(opts.exportPath);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+
+    console.log(`[import-qcs-orders] export lab=${opts.labName} base=${baseUrl} file=${filePath}`);
+
+    const writer = makeXlsxWriter({ filePath, columns: EXPORT_COLUMNS });
+    const startedAt = Date.now();
+    const summary = await runExport({
+        config,
+        listOrders: ({ config: cfg }) => qcs.listOrders({ config: cfg, params: opts.progress ? { progress: opts.progress } : {} }),
+        fetchOrder: (id, cfg) => qcs.fetchOrder(id, cfg),
+        phoneFromOrder: (detail) => qcs.phoneFromOrder(detail),
+        writeRows: (rows) => writer.writeRows(rows),
+        log: (m) => console.error(m),
+        onProgress: ({ index, total, orderId, rows, outcome }) => {
+            const elapsed = Math.round((Date.now() - startedAt) / 1000);
+            const pct = total > 0 ? Math.floor((index / total) * 100) : 100;
+            console.log(`[import-qcs-orders] ${index}/${total} (${pct}%) ${elapsed}s ${orderId} ${outcome} rows=${rows}`);
+        },
+    });
+    await writer.commit();
+
+    console.log('[import-qcs-orders] export done: ' + JSON.stringify({ ...summary, file: filePath }));
+    return summary;
 }
 
 /**
@@ -261,6 +463,10 @@ async function main() {
         console.error('ERROR: QCS AK/AS required. Pass --ak/--as or set QCS_AK/QCS_AS.');
         process.exit(1);
     }
+    // Export is a standalone mode: it shares only the QCS fetch, none of the
+    // matching / persistence machinery below.
+    if (opts.exportPath) return exportMain(opts);
+
     const dbUrl = opts.env === 'prod' ? process.env.DATABASE_URL_PROD : process.env.DATABASE_URL;
     if (!dbUrl) {
         console.error(`ERROR: ${opts.env === 'prod' ? 'DATABASE_URL_PROD' : 'DATABASE_URL'} is not set in .env`);
@@ -332,7 +538,7 @@ async function main() {
     return summary;
 }
 
-module.exports = { runImport, parseArgs, missingOssEnv, makeStoreReportPdf, buildImportDeps };
+module.exports = { runImport, parseArgs, missingOssEnv, makeStoreReportPdf, buildImportDeps, runExport, makeXlsxWriter, orderExportRows, EXPORT_COLUMNS };
 
 if (require.main === module) {
     main()

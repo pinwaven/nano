@@ -486,6 +486,203 @@ describe('import-qcs-orders buildImportDeps', () => {
   });
 });
 
+describe('import-qcs-orders export rows', () => {
+  const detail = {
+    id: 'QCS-1',
+    // 534466800 is 1986-12-08T23:00:00Z; 1530859745 is 2018-07-06T06:49:05Z
+    // (= 2018-07-06 14:49:05 in Asia/Shanghai).
+    created_at: 1530859745,
+    member: { name: '张三', gender: 'male', birthday: 534466800, mobile: '13888888888' },
+    goods: [
+      { id: '415bfc38', name: '糖化血红蛋白' },
+      { id: '2053', name: 'DNA甲基化年龄检测' },
+    ],
+  };
+
+  test('expands each good into its own row carrying the member columns', () => {
+    const { orderExportRows } = require('../scripts/import-qcs-orders');
+
+    const rows = orderExportRows(detail, '13888888888');
+
+    assert.equal(rows.length, 2);
+    assert.deepEqual(rows[0], {
+      name: '张三',
+      gender: 'male',
+      dateOfBirth: '1986-12-08',
+      phoneNumber: '13888888888',
+      orderNo: 'QCS-1',
+      collectionTime: '2018-07-06 14:49:05',
+      projectId: '415bfc38',
+      projectName: '糖化血红蛋白',
+    });
+    assert.equal(rows[1].projectId, '2053');
+    assert.equal(rows[1].projectName, 'DNA甲基化年龄检测');
+    assert.equal(rows[1].name, '张三');
+  });
+
+  test('unwraps a { data: order } envelope', () => {
+    const { orderExportRows } = require('../scripts/import-qcs-orders');
+
+    const rows = orderExportRows({ data: detail }, '13888888888');
+
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].name, '张三');
+    assert.equal(rows[0].collectionTime, '2018-07-06 14:49:05');
+  });
+
+  test('emits one row with blank project columns when the order has no goods', () => {
+    const { orderExportRows } = require('../scripts/import-qcs-orders');
+
+    const rows = orderExportRows({ ...detail, goods: [] }, '');
+
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].projectId, '');
+    assert.equal(rows[0].projectName, '');
+    assert.equal(rows[0].phoneNumber, '');
+    assert.equal(rows[0].dateOfBirth, '1986-12-08');
+  });
+
+  test('leaves missing timestamps blank rather than emitting epoch dates', () => {
+    const { orderExportRows } = require('../scripts/import-qcs-orders');
+
+    const rows = orderExportRows({ member: { name: 'x' }, goods: [] }, '');
+
+    assert.equal(rows[0].dateOfBirth, '');
+    assert.equal(rows[0].collectionTime, '');
+  });
+
+  test('accepts millisecond timestamps as well as QCS seconds', () => {
+    const { orderExportRows } = require('../scripts/import-qcs-orders');
+
+    const rows = orderExportRows(
+      { created_at: 1530859745000, member: { birthday: 534466800000 }, goods: [] },
+      ''
+    );
+
+    assert.equal(rows[0].dateOfBirth, '1986-12-08');
+    assert.equal(rows[0].collectionTime, '2018-07-06 14:49:05');
+  });
+
+  test('exposes the column headers in the order the spreadsheet requires', () => {
+    const { EXPORT_COLUMNS, orderExportRows } = require('../scripts/import-qcs-orders');
+
+    assert.deepEqual(EXPORT_COLUMNS.map((c) => c.header), [
+      'Name',
+      'Gender',
+      'Date of Birth',
+      'Phone Number',
+      'Order No.',
+      'Collection Time',
+      'Project ID',
+      'Project Name',
+    ]);
+    // Every column must address a field the rows actually carry.
+    const row = orderExportRows(detail, '13888888888')[0];
+    assert.deepEqual(EXPORT_COLUMNS.map((c) => c.key).sort(), Object.keys(row).sort());
+  });
+});
+
+function exportDeps(overrides = {}) {
+  const written = [];
+  const deps = {
+    config: { api_base_url: 'https://qcs.example/third-party' },
+    async listOrders() { return [{ id: 'QCS-1' }, { id: 'QCS-2' }]; },
+    async fetchOrder(id) {
+      return {
+        id,
+        created_at: 1530859745,
+        member: { name: id, gender: 'female', birthday: 534466800, mobile: '13800000001' },
+        goods: [{ id: 'g1', name: 'p1' }, { id: 'g2', name: 'p2' }],
+      };
+    },
+    phoneFromOrder(detail) { return detail.member.mobile; },
+    async writeRows(rows) { written.push(...rows); },
+    log() {},
+    _written: written,
+  };
+  return { ...deps, ...overrides };
+}
+
+describe('import-qcs-orders runExport', () => {
+  test('writes every good of every order without touching the database', async () => {
+    const { runExport } = require('../scripts/import-qcs-orders');
+    const deps = exportDeps();
+
+    const summary = await runExport(deps);
+
+    assert.equal(summary.total, 2);
+    assert.equal(summary.rows, 4);
+    assert.equal(summary.errors, 0);
+    assert.equal(deps._written.length, 4);
+    assert.equal(deps._written[0].name, 'QCS-1');
+    assert.equal(deps._written[0].projectId, 'g1');
+    assert.equal(deps._written[0].phoneNumber, '13800000001');
+    assert.equal(deps._written[3].name, 'QCS-2');
+    assert.equal(deps._written[3].projectId, 'g2');
+  });
+
+  test('records an error and continues when one order detail fails', async () => {
+    const { runExport } = require('../scripts/import-qcs-orders');
+    const base = exportDeps();
+    const deps = exportDeps({
+      async fetchOrder(id) {
+        if (id === 'QCS-1') throw new Error('boom');
+        return base.fetchOrder(id);
+      },
+    });
+
+    const summary = await runExport(deps);
+
+    assert.equal(summary.total, 2);
+    assert.equal(summary.errors, 1);
+    assert.equal(summary.rows, 2);
+    assert.equal(deps._written.every((r) => r.name === 'QCS-2'), true);
+  });
+
+  test('reports per-order progress with position, total and row count', async () => {
+    const { runExport } = require('../scripts/import-qcs-orders');
+    const events = [];
+    const deps = exportDeps({ onProgress(event) { events.push(event); } });
+
+    await runExport(deps);
+
+    assert.equal(events.length, 2);
+    assert.deepEqual(events[0], { index: 1, total: 2, orderId: 'QCS-1', rows: 2, outcome: 'exported' });
+    assert.deepEqual(events[1], { index: 2, total: 2, orderId: 'QCS-2', rows: 2, outcome: 'exported' });
+  });
+});
+
+describe('import-qcs-orders makeXlsxWriter', () => {
+  test('writes a header row plus every appended row to a readable workbook', async () => {
+    const { makeXlsxWriter, EXPORT_COLUMNS } = require('../scripts/import-qcs-orders');
+    const os = require('node:os');
+    const path = require('node:path');
+    const fs = require('node:fs');
+    const ExcelJS = require('exceljs');
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qcs-export-'));
+    const file = path.join(dir, 'orders.xlsx');
+    try {
+      const writer = makeXlsxWriter({ filePath: file, columns: EXPORT_COLUMNS });
+      await writer.writeRows([{
+        name: '张三', gender: 'male', dateOfBirth: '1986-12-08', phoneNumber: '13888888888',
+        orderNo: 'QCS-1', collectionTime: '2018-07-06 14:49:05', projectId: 'g1', projectName: '糖化血红蛋白',
+      }]);
+      await writer.commit();
+
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(file);
+      const sheet = workbook.worksheets[0];
+      assert.deepEqual(sheet.getRow(1).values.slice(1), EXPORT_COLUMNS.map((c) => c.header));
+      assert.deepEqual(sheet.getRow(2).values.slice(1), [
+        '张三', 'male', '1986-12-08', '13888888888', 'QCS-1', '2018-07-06 14:49:05', 'g1', '糖化血红蛋白',
+      ]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('import-qcs-orders missingOssEnv', () => {
   test('lists absent OSS credential vars and is empty when all present', () => {
     const { missingOssEnv } = require('../scripts/import-qcs-orders');
@@ -519,6 +716,9 @@ describe('import-qcs-orders parseArgs', () => {
     assert.equal(fromFlags.baseUrl, 'https://q/third-party');
     assert.equal(fromFlags.progress, 'complete');
     assert.equal(fromFlags.dryRun, true);
+
+    const exporting = parseArgs(['--export', 'out/orders.xlsx'], {});
+    assert.equal(exporting.exportPath, 'out/orders.xlsx');
 
     const fromEnv = parseArgs([], { QCS_AK: 'EAK', QCS_AS: 'EAS' });
     assert.equal(fromEnv.ak, 'EAK');
