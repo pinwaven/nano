@@ -6,6 +6,24 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Added
+
+- **QCS import: `--export <file.xlsx>` dumps every order to a spreadsheet** (`scripts/import-qcs-orders.js`, `tests/import-qcs-orders.test.js`, `package.json`)
+
+  New export mode for `scripts/import-qcs-orders.js`. It fetches every QCS order and writes it to an Excel file with **no** user matching, no `lab_orders` comparison, no dedup, and no PDF archival — a raw dump of what the lab holds.
+
+  **What changed:**
+  - `--export <path.xlsx>` (parsed as `opts.exportPath`) routes `main()` to the separate `exportMain()` entrypoint; every other flag (`--ak`, `--as`, `--base-url`, `--progress`, `--lab`, `--env`) behaves as before.
+  - Columns, in order: `Name` · `Gender` · `Date of Birth` · `Phone Number` · `Order No.` (`data.id`) · `Collection Time` · `Project ID` · `Project Name`.
+  - `data.member.birthday` (unix seconds) renders as the **GMT** calendar day; `data.created_at` renders in **Asia/Shanghai** as `yyyy-MM-dd HH:mm:ss`. Missing/zero timestamps produce a blank cell rather than a 1970 date. Millisecond values are accepted alongside QCS's seconds.
+  - `data.goods` is expanded to **one row per good** (`goods[*].id` → Project ID, `goods[*].name` → Project Name). An order with no goods still emits one row with blank project columns so the patient is not dropped.
+  - Phone uses the adapter's `qcs.phoneFromOrder` (mobile / primary_mobile / telephone).
+  - Written through a streaming `exceljs` `WorkbookWriter` (new dependency, `exceljs@^4.4.0`), so a multi-thousand-order sweep stays flat in memory and rows are flushed as they arrive.
+  - Per-order progress is printed as `[import-qcs-orders] 47/1203 (3%) 89s QCS-8891 exported rows=2`; a failing order is logged, counted in `errors`, and the sweep continues.
+  - **Database-free when `--base-url` is passed.** Without it, the DB is read only to resolve `api_base_url` from `lab_providers` (and to reuse the cached OAuth token via `global_cache`). OSS credentials are never required in export mode.
+  - New npm scripts: `export:qcs-orders` / `export:qcs-orders:prod`.
+  - **No DB migration.**
+
 ### Fixed
 
 - **QCS import: report PDFs stored private, status refresh on re-run, and per-order progress output** (`scripts/import-qcs-orders.js`, `tests/import-qcs-orders.test.js`, `src/functions/lab/index.js`)
