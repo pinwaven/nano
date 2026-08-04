@@ -1052,20 +1052,37 @@ Page({
     } catch (e) {}
   },
 
-  onShow() {
+  async onShow() {
     const { user, lang, isGuest, obStep } = this.data
     if (user && !isGuest) {
+      this.selectComponent('#health-comp')?.refresh()
+      this._startPolling(user)
+      this._loadCreditBalance(user)
+      // Check for questionnaires assigned while the user was away
+      if (obStep === 'done') this._checkForPendingQuestionnaire()
+
+      // If a wearable sync is actually due (>30min stale, per _maybeAutoSync's own
+      // throttle), let it finish — BLE round trip + server health_twin update —
+      // before the heartbeat below marks this user "active". Otherwise the
+      // dispatcher's daily check-in scan (CLAUDE.md §29) can fire on stale wearable
+      // data. Capped at 90s and fail-open (never blocks the heartbeat indefinitely
+      // if the sync is slow or fails) — a full non-incremental sync can chain
+      // several 8-15s BLE command timeouts, well past the ~30s typical case, so
+      // the cap needs real headroom. Most app-opens aren't due for a sync at all,
+      // so this resolves immediately and the heartbeat fires exactly as before.
+      const syncPromise = this.selectComponent('#health-comp')?._maybeAutoSync()
+      if (syncPromise) {
+        await Promise.race([
+          syncPromise.catch(() => {}),
+          new Promise(resolve => setTimeout(resolve, 90000)),
+        ])
+      }
+
       this._req(`${BASE}/api/heartbeat`, 'POST', { user_id: user.user_id }).then(res => {
         if (res?.phone && !this.data.user.phone) {
           this.setData({ user: { ...this.data.user, phone: res.phone } })
         }
       }).catch(() => {})
-      this.selectComponent('#health-comp')?.refresh()
-      this.selectComponent('#health-comp')?._maybeAutoSync()
-      this._startPolling(user)
-      this._loadCreditBalance(user)
-      // Check for questionnaires assigned while the user was away
-      if (obStep === 'done') this._checkForPendingQuestionnaire()
     }
   },
 

@@ -67,7 +67,7 @@ async function handleDailyCheckinEvent({ user_id, period, persona_type }) {
     }
 
     try {
-        const [userResult, bioResult, dotsResult, scheduleResult, activePlansResult] = await Promise.all([
+        const [userResult, bioResult, dotsResult, scheduleResult, activePlansResult, healthTwinResult] = await Promise.all([
             pool.query('SELECT user_id, nickname, language FROM users WHERE user_id = $1', [user_id]),
             pool.query(
                 `SELECT data FROM biomarkers
@@ -92,6 +92,16 @@ async function handleDailyCheckinEvent({ user_id, period, persona_type }) {
                  LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
                  WHERE hp.user_id = $1 AND hp.status = 'active'
                  ORDER BY hp.start_date DESC LIMIT 5`,
+                [user_id]
+            ),
+            // Wearable-derived rolling averages (Halo/V8) — same column set as
+            // agenticTools.js's get_health_twin tool. Best-effort: a missing row
+            // (no device bound / no synced data yet) is handled by the prompt,
+            // not fabricated here.
+            pool.query(
+                `SELECT avg_hrv_ms, avg_resting_hr, avg_spo2, avg_sleep_hours, avg_sleep_score,
+                        avg_deep_sleep_pct, avg_daily_steps, avg_active_minutes
+                 FROM health_twin WHERE user_id = $1`,
                 [user_id]
             ),
         ]);
@@ -126,6 +136,8 @@ async function handleDailyCheckinEvent({ user_id, period, persona_type }) {
             goal: lang === 'zh' ? p.goal_zh : p.goal_en,
         }));
 
+        const healthTwin = healthTwinResult.rows[0] || null;
+
         const currentSolarTerm = getCurrentSolarTerm(getNowShanghai().toJSDate());
         const essentialKnowledge = await getEssentialBlock(personaType);
 
@@ -137,6 +149,7 @@ async function handleDailyCheckinEvent({ user_id, period, persona_type }) {
             evening_dots: eveningDots,
             most_elevated: mostElevated,
             active_health_plans: activeHealthPlans,
+            health_twin: healthTwin,
             current_solar_term: currentSolarTerm,
             essential_knowledge: essentialKnowledge,
         });

@@ -2460,15 +2460,19 @@ Component({
 
     // --- Wearable (Smart Ring) ---
 
+    // Returns the handleSyncWearable() promise when a sync is actually kicked off
+    // (so callers like onShow() can await it before establishing heartbeat
+    // eligibility), or undefined when no sync is due/possible.
     _maybeAutoSync() {
-      if (this.data.wearableBusy || !this.data.wearableId) return
+      if (this.data.wearableBusy || !this.data.wearableId) return undefined
       try {
         const raw = wx.getStorageSync('wearable_ring_data')
         const lastSync = raw?.syncedAt || 0
         if (Date.now() - lastSync > 30 * 60 * 1000) {
-          this.handleSyncWearable()
+          return this.handleSyncWearable()
         }
       } catch (_) {}
+      return undefined
     },
 
     _loadWearableFromStorage() {
@@ -2810,26 +2814,32 @@ Component({
         wx.showLoading({ title: t.wearableConnecting, mask: true })
         const brand = chosen.brand
         const ring = createWearable(brand)
-        await ring.connect(chosen.deviceId, { syncTime: true, name: chosen.name })
-        const battery = await ring.getBattery()
-        // MAC is the ring's stable hardware identifier (unlike deviceId, which
-        // is a per-OS/per-scan BLE handle) — only Halo currently exposes it.
-        const mac = typeof ring.getMac === 'function' ? await ring.getMac().catch(() => null) : null
-
         // Halo/V8: apply default scheduled monitoring immediately on first bind
         const defaultIvals = { hr: 30, spo2: 60, temp: 60, hrv: 120 }
         const defaultWms   = { hr: 2, spo2: 2, temp: 2, hrv: 2 }
-        if (_hasIntervalSettings(brand)) {
-          const _opts = { workMode: 2, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
-          await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.hr,   type: 1 }).catch(() => {})
-          await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.spo2, type: 2 }).catch(() => {})
-          await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.temp, type: 3 }).catch(() => {})
-          await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.hrv,  type: 4 }).catch(() => {})
-          wx.setStorageSync('halo_interval_settings', defaultIvals)
-          wx.setStorageSync('halo_work_mode_settings', defaultWms)
-        }
+        let battery, mac
+        try {
+          await ring.connect(chosen.deviceId, { syncTime: true, name: chosen.name })
+          battery = await ring.getBattery()
+          // MAC is the ring's stable hardware identifier (unlike deviceId, which
+          // is a per-OS/per-scan BLE handle) — only Halo currently exposes it.
+          mac = typeof ring.getMac === 'function' ? await ring.getMac().catch(() => null) : null
 
-        await ring.disconnect()
+          if (_hasIntervalSettings(brand)) {
+            const _opts = { workMode: 2, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
+            await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.hr,   type: 1 }).catch(() => {})
+            await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.spo2, type: 2 }).catch(() => {})
+            await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.temp, type: 3 }).catch(() => {})
+            await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.hrv,  type: 4 }).catch(() => {})
+            wx.setStorageSync('halo_interval_settings', defaultIvals)
+            wx.setStorageSync('halo_work_mode_settings', defaultWms)
+          }
+        } finally {
+          // Always tear down the connection, even if connect/getBattery/etc.
+          // threw — a leaked connection blocks the ring's single connection
+          // slot until it times out on its own (see halo-smart-ring.md §BLE).
+          await ring.disconnect().catch(() => {})
+        }
         wx.hideLoading()
 
         const saved = { deviceId: chosen.deviceId, name: chosen.name, brand }
@@ -3078,7 +3088,10 @@ Component({
               sleep: { since: _sinceSleep, mergedBlocks: mergedSleepBlocks ? mergedSleepBlocks.length : null, nights: sleepHistoryNorm.length },
             }))
           }
-          this._commitRingData(raw, battery.level, isZh, false)
+          // Awaited (Halo/V8 only) so handleSyncWearable() doesn't resolve until
+          // health_twin is actually updated — onShow() relies on this to sequence
+          // the check-in-eligibility heartbeat after a due sync completes.
+          await this._commitRingData(raw, battery.level, isZh, false)
         } catch (e) {
           await ring.disconnect().catch(() => {})
           if (IS_DEV) console.error(`[BLE][sync:${brand}]`, e?.message || e?.errMsg || e)
@@ -3244,6 +3257,10 @@ Component({
       }
     },
 
+    // Returns the server-sync promise (resolves once health_twin's UPSERT has
+    // landed) so callers that need the round trip to actually finish — e.g.
+    // onShow()'s pre-heartbeat wait — can await it. UI state below is applied
+    // synchronously as before, independent of this promise's timing.
     _commitRingData(raw, batteryLevel, isZh, isPartial) {
       wx.setStorageSync('wearable_ring_data', raw)
       const { syncWearableData } = require('../../utils/wearable/sync.js')
@@ -3252,7 +3269,7 @@ Component({
       // with {success:false, error} instead of throwing), so a bare .catch() here
       // can never fire and any real failure (domain block, auth, 5xx) was
       // previously discarded silently. Inspect the resolved result instead.
-      syncWearableData(this.properties.userId, { source: 'smart_ring', wearableName: this.data.wearableName || null, ...raw }, app?.globalData?.apiToken)
+      const syncPromise = syncWearableData(this.properties.userId, { source: 'smart_ring', wearableName: this.data.wearableName || null, ...raw }, app?.globalData?.apiToken)
         .then((res) => {
           if (res && res.success === false && IS_DEV) {
             console.error(JSON.stringify({ level: 'ERROR', msg: 'wearable server sync failed', error: res.error }))
@@ -3300,6 +3317,7 @@ Component({
         twinLoading: false,
         ...visuals,
       })
+      return syncPromise
     },
 
     async toggleRingSettings() {
