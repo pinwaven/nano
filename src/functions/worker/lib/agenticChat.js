@@ -133,9 +133,19 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         planTemplate(message, intent, llmContext, knowledgeExcerpts),
         0.1, logContext, 'plan'
     );
+    console.log(JSON.stringify({ level: 'INFO', msg: 'agentic_plan', context: logContext, tools_needed: plan?.tools_needed || [], intended_claims: (plan?.intended_claims || []).length }));
     const planWarnings = validatePlan(plan, llmContext.dots);
+    // Surface PLAN's own tools_needed assessment as an explicit instruction, not just a logged
+    // field — without this, GENERATE's tool_choice:'auto' had nothing steering it toward a tool
+    // PLAN itself already determined was necessary, so it could (and did) skip straight to a
+    // "no data available" answer instead of calling e.g. get_biomarker_history. Found via live
+    // dev testing 2026-07-29: a "compare my last two Kino scans" question never triggered a
+    // single tool call despite get_biomarker_history existing for exactly this.
+    const toolsNeededHint = (plan?.tools_needed || []).length
+        ? `\n\n【TOOLS NEEDED】To fully answer this, your own plan determined you need: ${plan.tools_needed.join(', ')}. Call the relevant tool(s) via the tool-calling interface BEFORE writing your reply. Do not tell the user data is unavailable or out of context without first calling the tool that could provide it.`
+        : '';
     const planConstraintBlock = plan
-        ? `\n\n【PLAN CHECK】You planned to make these claims: ${JSON.stringify(plan.intended_claims || [])}.${planWarnings.length ? ' ISSUES FOUND — correct these before writing your reply: ' + planWarnings.join(' ') : ''}`
+        ? `\n\n【PLAN CHECK】You planned to make these claims: ${JSON.stringify(plan.intended_claims || [])}.${planWarnings.length ? ' ISSUES FOUND — correct these before writing your reply: ' + planWarnings.join(' ') : ''}${toolsNeededHint}`
         : '';
 
     // 2. GENERATE — same tool-calling shape as the pre-existing loop in handlers/chat.js, but
@@ -154,17 +164,34 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     const toolCallLog = [];
     let rawReply = '';
     await notify('checking_data');
+    // A hint in the system prompt telling GENERATE which tools PLAN determined are needed
+    // (toolsNeededHint above) is not enough on its own — tool_choice:'auto' still leaves the
+    // model free to ignore it, and it did: live dev testing 2026-08-05 reproduced GENERATE
+    // skipping straight to "no data available" with zero tool calls even with the hint in
+    // place. Force the issue instead: burn the first N GENERATE iterations (one per distinct
+    // tool PLAN named, N capped by GENERATE_MAX_ITERS) with tool_choice pinned to that exact
+    // function, so the data is guaranteed to be fetched rather than merely suggested. Falls
+    // back to 'auto' once the forced queue is drained, same as before PLAN found nothing to force.
+    const validToolNames = new Set(AGENTIC_TOOL_DEFS.map(t => t.function.name));
+    const forcedToolQueue = Array.from(new Set((plan?.tools_needed || []).filter(t => validToolNames.has(t))));
     for (let iter = 0; iter < GENERATE_MAX_ITERS; iter++) {
         budget.generateIters = iter + 1;
+        const forcedTool = forcedToolQueue.shift();
         const completion = await client.chat.completions.create({
             model,
             messages: generateMessages,
             tools: AGENTIC_TOOL_DEFS,
-            tool_choice: 'auto',
+            tool_choice: forcedTool ? { type: 'function', function: { name: forcedTool } } : 'auto',
             temperature: 0.3,
         });
         const choice = completion.choices[0];
-        if (choice.finish_reason === 'tool_calls') {
+        // DashScope reports finish_reason:'stop' (not 'tool_calls') whenever tool_choice is
+        // forced to a specific function, even though message.tool_calls is populated correctly
+        // — confirmed via a direct isolated API call 2026-08-05. Checking finish_reason alone
+        // silently dropped every forced tool call (content was '""', so the loop treated it as
+        // an empty final reply and broke immediately without ever invoking the handler) — this
+        // is what made the forcedToolQueue mechanism above a no-op until this check was widened.
+        if (choice.finish_reason === 'tool_calls' || (choice.message.tool_calls || []).length > 0) {
             generateMessages.push(choice.message);
             const toolResults = [];
             for (const tc of choice.message.tool_calls || []) {

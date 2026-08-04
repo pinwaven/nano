@@ -393,6 +393,25 @@ function extractAgeMentions(text, nickname) {
     return ages;
 }
 
+// Deterministic backstop for the "never end the reply with a question" rule already stated
+// in chat/biomarker.js, chat/nutrition.js, chat/science.js (e.g. "不要在结尾提问或引导用户继续追问").
+// JUDGE only grades factual grounding, not conversational style, so a violation of this
+// purely stylistic rule is never flagged and PLAN/GENERATE/REVISE never gets a chance to fix
+// it — a draft that ends on a question can ship completely unchanged through every round.
+// Found via live dev testing 2026-08-05 ("需要我帮你把下一次脉冲日安排进日程吗？" shipped despite
+// the rule already being explicit in the prompt, and reproduced again even after making the
+// prompt wording more emphatic — confirms this needs code enforcement, not just prompting).
+// Only called for the high-risk/agentic intents where the rule is unconditional; casual_chat/
+// emotional_support explicitly permit a genuine clarifying question, so leave those alone.
+function stripTrailingQuestion(text) {
+    const trimmed = text.trimEnd();
+    if (!/[?？]$/.test(trimmed)) return text;
+    const sentences = trimmed.match(/[^。！？.!?\n]*[。！？.!?]|[^。！？.!?\n]+$/g);
+    if (!sentences || sentences.length <= 1) return text; // whole reply is one question — nothing safe to fall back to
+    sentences.pop();
+    return sentences.join('').trimEnd();
+}
+
 // Cross-checks any biomarker figures / dates / age the model actually wrote against the ground-truth
 // row already fetched server-side. Only flags values the model chose to state — silence on a key
 // is fine, a wrong number or date next to a known label is not.
@@ -817,12 +836,19 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
     // Never let that happen; fall back to an acknowledgment referencing the actual recorded
     // fact when we have one (already validated above, so safe to echo back), otherwise a
     // minimal generic acknowledgment.
-    const strippedReply = rawReply
+    let strippedReply = rawReply
         .replace(/\n?\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
         .replace(/\n?\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
         .replace(/\n?\{"action"\s*:\s*"remember_fact"[^}]*\}/g, '')
         .replace(/\n?\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '')
         .trim();
+    if (useAgenticLoop) {
+        const dequestioned = stripTrailingQuestion(strippedReply);
+        if (dequestioned !== strippedReply) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'chat_trailing_question_stripped', user_id, original_tail: strippedReply.slice(-80) }));
+            strippedReply = dequestioned;
+        }
+    }
     const isZhReply = (user.language || 'zh') === 'zh';
     const fallbackReply = recordedFactText
         ? (isZhReply ? `好的，已记录：${recordedFactText}` : `Got it — noted: ${recordedFactText}`)

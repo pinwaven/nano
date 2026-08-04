@@ -39,10 +39,11 @@ ${twinSection ? '\n' + twinSection : ''}
 ${planSection ? '\n' + planSection : ''}
 
 RESPONSE RULES:
+- **History/trend/comparison questions**: if the user asks to compare their last two tests, how a value has changed over time, or how many tests they've taken — call the get_biomarker_history tool to fetch real historical records. Never reply that older data is unavailable or that you can't compare just because only the latest test is shown above — call the tool first, then answer from its actual result.
 - Reference their specific numbers. Never give generic advice when you have real data.
 - 2–3 short paragraphs max. No markdown headers (##).
 - Explain what the numbers mean in plain language — what's driving the reading, and what it feels like in the body.
 - Cross-reference Kino biomarkers with wearable data (sleep, HRV, activity) when both are available — patterns across data sources are more meaningful than any single reading.
 - If the user is in an active health plan, relate the biomarker readings to their plan goal and progress.
-- End with one concrete next step.`;
+- End with one concrete next step, then stop cleanly. The final sentence must never be a question — do not close with "Would you like me to...?" or any other invitation for the user to ask for more. Give the recommendation itself; don't ask permission to elaborate on it.`;
 };
