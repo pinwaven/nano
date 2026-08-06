@@ -393,21 +393,76 @@ function extractAgeMentions(text, nickname) {
     return ages;
 }
 
-// Deterministic backstop for the "never end the reply with a question" rule already stated
-// in chat/biomarker.js, chat/nutrition.js, chat/science.js (e.g. "不要在结尾提问或引导用户继续追问").
-// JUDGE only grades factual grounding, not conversational style, so a violation of this
-// purely stylistic rule is never flagged and PLAN/GENERATE/REVISE never gets a chance to fix
-// it — a draft that ends on a question can ship completely unchanged through every round.
-// Found via live dev testing 2026-08-05 ("需要我帮你把下一次脉冲日安排进日程吗？" shipped despite
-// the rule already being explicit in the prompt, and reproduced again even after making the
-// prompt wording more emphatic — confirms this needs code enforcement, not just prompting).
-// Only called for the high-risk/agentic intents where the rule is unconditional; casual_chat/
-// emotional_support explicitly permit a genuine clarifying question, so leave those alone.
-function stripTrailingQuestion(text) {
+// A fixed list of common "inviting further engagement" markers that violate the same
+// "end cleanly, don't invite the user to keep asking" rule as a literal trailing "?" but
+// carry no question mark to catch — e.g. "若您希望，我可以立即为您生成一张对比图" or "随时告诉我～".
+// Found via live dev testing 2026-08-05: a Nano reply ended on exactly this pattern and
+// stripTrailingQuestion's punctuation check let it straight through. Checked against only the
+// FINAL sentence — these phrases are fine mid-reply (e.g. explaining an app feature); the rule
+// is specifically about how the reply closes.
+const TRAILING_INVITATION_PATTERNS = [
+    /如果?你?您?(?:需要|想要|希望)[，,、].{0,20}(?:我(?:可以|很乐意|随时)|随时)/,
+    /若你?您?(?:需要|想要|希望)[，,、].{0,20}(?:我(?:可以|很乐意|随时)|随时)/,
+    /随时(?:告诉我|问我|联系|沟通|反馈|说)/,
+    /有(?:任何)?需要.{0,10}随时/,
+    /欢迎随时/,
+    /我很乐意(?:为你|为您|帮你|帮您)?/,
+    /如(?:需|果).{0,20}随时(?:告诉我|问我|说)/,
+    // Covers phrasings that dodge a literal "？" by turning the solicitation into an imperative
+    // ("请确认是否需要我为您生成...") rather than a grammatical question — found via live dev
+    // testing 2026-08-05, a second escape of the original pattern list within the same session.
+    /是否(?:需要|要)我/,
+    /请确认是否/,
+    // "需要我帮你把X设上吗？" / "要不要我帮你...？" — offering to perform a specific action, phrased
+    // as a literal "吗？" yes/no question. Deliberately narrower than a blanket "ends in ?" ban
+    // (scoped to an offer-to-act opener, not any question) so a genuine disambiguation question
+    // in casual_chat/emotional_support ("你是指A还是B吗？") isn't caught by the same net — those
+    // two intents' own prompts explicitly permit a real clarifying question, unlike the four
+    // strict intents. Found via live dev testing 2026-08-05: reproduced under casual_chat,
+    // where stripTrailingQuestion previously never even ran (gated on useAgenticLoop alone).
+    /需要我.{0,25}吗[？?]?$/,
+    /要不要我.{0,25}吗?[？?]?$/,
+    /你要不要.{0,25}吗?[？?]?$/,
+    /let me know if/i,
+    /feel free to/i,
+    /i'?m happy to/i,
+    /just (?:say|ask|let me know)/i,
+    /would you like/i,
+];
+
+// Deterministic backstop for the "never end the reply with a question (or an invitation to
+// keep asking)" rule already stated in chat/biomarker.js, chat/nutrition.js, chat/science.js
+// (e.g. "不要在结尾提问或引导用户继续追问"). JUDGE only grades factual grounding, not conversational
+// style, so a violation of this purely stylistic rule is never flagged and PLAN/GENERATE/REVISE
+// never gets a chance to fix it — a draft that ends this way can ship completely unchanged
+// through every round. Found via live dev testing 2026-08-05 ("需要我帮你把下一次脉冲日安排进日程吗？"
+// shipped despite the rule already being explicit in the prompt, and reproduced again even
+// after making the prompt wording more emphatic — confirms this needs code enforcement, not
+// just prompting).
+//
+// `strict` controls how aggressively this fires: the four high-risk/agentic intents
+// (useAgenticLoop === true) have an unconditional "never end on a question" rule, so ANY
+// trailing "?"/"？" or invitation pattern gets stripped there. casual_chat/emotional_support
+// explicitly permit a genuine clarifying question ("不要在结尾提问，除非用户的话明显需要澄清才能回答"),
+// so a blanket "?" ban would break that by design — non-strict mode only strips the narrower
+// TRAILING_INVITATION_PATTERNS (offering to perform an action), never a bare trailing "?".
+function stripTrailingQuestion(text, { strict = true } = {}) {
     const trimmed = text.trimEnd();
-    if (!/[?？]$/.test(trimmed)) return text;
-    const sentences = trimmed.match(/[^。！？.!?\n]*[。！？.!?]|[^。！？.!?\n]+$/g);
-    if (!sentences || sentences.length <= 1) return text; // whole reply is one question — nothing safe to fall back to
+    // "." only counts as a sentence terminator when it isn't part of a decimal number —
+    // otherwise every reply citing a biomarker value like "12.5%" or "13.5" gets fragmented
+    // mid-number (e.g. "...12." / "5%。..."). Splitting still landed on the correct final
+    // sentence before this fix (join('') with no separator silently re-glues every spurious
+    // split), but the mid-string fragmentation left `last` sometimes pointing at a fragment
+    // rather than the true final sentence for invitation-pattern matching — found while
+    // testing the invitation patterns below against a real reply containing "12.1%"/"46.0%".
+    const sentences = trimmed.match(/[^。！？!?\n]*(?:[。！？!?]|(?<!\d)\.(?!\d))|[^。！？!?\n]+$/g);
+    if (!sentences || sentences.length === 0) return text;
+    const last = sentences[sentences.length - 1];
+    const isQuestion = /[?？]\s*$/.test(last.trimEnd());
+    const isInvitation = TRAILING_INVITATION_PATTERNS.some(re => re.test(last));
+    const violates = strict ? (isQuestion || isInvitation) : isInvitation;
+    if (!violates) return text;
+    if (sentences.length <= 1) return text; // whole reply is one sentence — nothing safe to fall back to
     sentences.pop();
     return sentences.join('').trimEnd();
 }
@@ -842,10 +897,14 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
         .replace(/\n?\{"action"\s*:\s*"remember_fact"[^}]*\}/g, '')
         .replace(/\n?\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '')
         .trim();
-    if (useAgenticLoop) {
-        const dequestioned = stripTrailingQuestion(strippedReply);
+    // Runs for every intent, not just the agentic ones — casual_chat/emotional_support still
+    // get the narrower non-strict pass (TRAILING_INVITATION_PATTERNS only, no bare "?" ban) so
+    // an "offering to act" ending like "需要我帮你...吗？" is caught there too, without breaking
+    // those two intents' own sanctioned exception for a genuine clarifying question.
+    {
+        const dequestioned = stripTrailingQuestion(strippedReply, { strict: useAgenticLoop });
         if (dequestioned !== strippedReply) {
-            console.log(JSON.stringify({ level: 'WARN', msg: 'chat_trailing_question_stripped', user_id, original_tail: strippedReply.slice(-80) }));
+            console.log(JSON.stringify({ level: 'WARN', msg: 'chat_trailing_question_stripped', user_id, strict: useAgenticLoop, original_tail: strippedReply.slice(-80) }));
             strippedReply = dequestioned;
         }
     }
@@ -1862,6 +1921,7 @@ async function handlePostHealthAdvice(body) {
             })),
             essential_knowledge: essentialKnowledge,
             user_facts: factsResult.rows,
+            now_iso: getNowShanghai().toISO(),
         });
 
         const userMsg = isZh

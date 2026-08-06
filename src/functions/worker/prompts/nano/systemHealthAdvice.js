@@ -6,12 +6,13 @@
 const { classifyBiomarkers, LABELS_ZH: STATUS_LABELS_ZH, LABELS_EN: STATUS_LABELS_EN } = require('../../lib/biomarkerStatus');
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
+const { getCurrentDateBlock } = require('../chat/currentDateBlock');
 
 module.exports = (context) => {
   const {
     isZh, nickname, age, gender, bioAge, chronoAge,
     subAges, biomarkers, dotsByDimension, healthConditions, healthConditionsOther,
-    health_twin, active_health_plans, plan_templates, essential_knowledge, user_facts,
+    health_twin, active_health_plans, plan_templates, essential_knowledge, user_facts, now_iso,
   } = context;
 
   const bmStatus = classifyBiomarkers(biomarkers || {});
@@ -178,6 +179,8 @@ Keep it warm, evidence-based, and actionable. Use Markdown formatting. Do not as
     : (isZh ? '暂无可穿戴设备 / 生活方式数据。' : 'No wearable or lifestyle data yet.');
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+${getCurrentDateBlock(now_iso, isZh)}
 
 ${getFactMemoryBlock(user_facts, isZh)}
 

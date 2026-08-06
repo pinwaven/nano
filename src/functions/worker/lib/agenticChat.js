@@ -28,6 +28,20 @@ const GENERATE_MAX_ITERS = 3;
 const REVISE_MAX_ROUNDS = 2;
 const REAL_DIMENSIONS = new Set(['CellularAge', 'MetabolicAge', 'MicroVascularAge', 'ResilienceAge']);
 
+// Deterministic backstop on top of PLAN's own (LLM-judged, unreliable) tools_needed field —
+// PLAN sometimes returns an empty tools_needed for a message that obviously needs Kino test
+// history, in which case nothing forces GENERATE toward get_biomarker_history at all and it
+// can fall back to 'auto' and skip the tool entirely. Found via live dev testing 2026-08-05:
+// "Kino测了几次？" got a confident, wrong "系统中仅存在这一份Kino检测...无其他Kino标记的检测记录"
+// (only one test exists — false, ground truth was 63) with zero tool calls made. Cheap
+// keyword match on the raw user message, same risk-acceptance level as every other
+// regex-based heuristic in this codebase (extractBiomarkerMentions, etc.) — a false positive
+// here just costs one extra harmless read-only tool call, never a wrong answer.
+const BIOMARKER_HISTORY_TRIGGER_RE = /(几次|多少次|哪几次|历次|累计.*(测|检测|检查)|一共.*(测|检测|检查)|对比|比较|历史(检测|记录|数据)?|之前的?(检测|数据|结果)|以前的?(检测|数据|结果)|上一?次|两次|每次|变化趋势|趋势)|(how many (times|tests)|compare|history|trend|previous test|last two|change over time)/i;
+function messageNeedsBiomarkerHistory(message) {
+    return BIOMARKER_HISTORY_TRIGGER_RE.test(message || '');
+}
+
 function safeParseJson(raw) {
     try {
         return JSON.parse((raw || '').replace(/```json|```/g, '').trim());
@@ -173,7 +187,10 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     // function, so the data is guaranteed to be fetched rather than merely suggested. Falls
     // back to 'auto' once the forced queue is drained, same as before PLAN found nothing to force.
     const validToolNames = new Set(AGENTIC_TOOL_DEFS.map(t => t.function.name));
-    const forcedToolQueue = Array.from(new Set((plan?.tools_needed || []).filter(t => validToolNames.has(t))));
+    const forcedToolQueue = Array.from(new Set([
+        ...(plan?.tools_needed || []).filter(t => validToolNames.has(t)),
+        ...(messageNeedsBiomarkerHistory(message) ? ['get_biomarker_history'] : []),
+    ]));
     for (let iter = 0; iter < GENERATE_MAX_ITERS; iter++) {
         budget.generateIters = iter + 1;
         const forcedTool = forcedToolQueue.shift();

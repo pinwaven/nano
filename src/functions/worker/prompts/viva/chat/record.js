@@ -1,9 +1,12 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
+const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
-module.exports = ({ user_profile, last_weight, essential_knowledge, user_facts }) => {
+module.exports = ({ user_profile, last_weight, essential_knowledge, user_facts, now_iso }) => {
   return `${getFactConstraintBlock(essential_knowledge)}
+
+${getCurrentDateBlock(now_iso)}
 
 ${getFactMemoryBlock(user_facts)}
 
