@@ -180,7 +180,11 @@ Page({
       if (res.data.channel) app.globalData.channel = res.data.channel
       const { phone: _ph, email: _em, ...userToStore } = updatedUser
       wx.setStorageSync('nano_user', { ...userToStore, phoneSet: true, phone_verified: true })
-      if (this.data.showAvatarStep) {
+      // res.data.merged means this phone was already bound to a different (older)
+      // account — the backend resolved it to that pre-existing, already-onboarded
+      // account rather than the brand-new stub this page started with, so the
+      // avatar-picker step (only meaningful for a genuinely new signup) is skipped.
+      if (this.data.showAvatarStep && !res.data.merged) {
         this.setData({ loading: false, step: 'avatar', avatarPickerVisible: true })
       } else {
         wx.reLaunch({ url: '/pages/main/main' })

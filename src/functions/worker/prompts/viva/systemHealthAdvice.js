@@ -6,6 +6,7 @@ const { getVivaLabels } = require('./subAgeLabels');
 const { classifyBiomarkers, LABELS_ZH: STATUS_LABELS_ZH } = require('../../lib/biomarkerStatus');
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
+const { getCurrentDateBlock } = require('../chat/currentDateBlock');
 
 module.exports = (context) => {
   const {
@@ -159,6 +160,8 @@ ${seasonLine ? `\n如上方标注了当前节气，可自然融入1-2句应季�
     : '暂无可穿戴设备 / 生活方式数据。';
 
   return `${getFactConstraintBlock(context.essential_knowledge)}
+
+${getCurrentDateBlock(context.now_iso)}
 
 ${getFactMemoryBlock(context.user_facts)}
 生物标志物的状态（正常/偏高/高）已在下方数据中直接标注，请严格使用该标注，不得自行根据数值判断状态或与之矛盾（例如：数据标注"正常"时不得称其为"升高"）。解释某维度的分数时，只能将标注为"偏高"或"高"的标志物描述为驱动因素；标注为"正常"的标志物只能简要说明其处于正常范围，不得暗示其导致或加重了该维度的异常。

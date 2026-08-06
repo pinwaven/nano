@@ -245,6 +245,8 @@ value[13]   = Systolic BP proxy (mmHg)
 value[14]   = Diastolic BP proxy (mmHg)
 ```
 
+> **Direction flip (2026-08-02, confirmed live):** this raw byte tracks HRV *upward* rather than inversely, the opposite of what "higher = more stressed" implies. `_parseHrvRecords56`/`getRealtime('pressure')` in `halo/index.js` now invert it (`100 - raw`) before it reaches the app. Confirmed via a real-device sync (Pin) after the fix shipped — the same inversion was also applied to V8 (`v8/index.js`'s `_parseHrvChunk`, same shared-protocol byte position), which shares this quirk.
+
 > **Deduplication:** The ring sends the full batch twice in a single BLE response. `_parseHrvRecords56` deduplicates by timestamp using a `Set` before returning.
 
 ### 4.6 Auto SpO2 History (`0x66` → 10-byte records)

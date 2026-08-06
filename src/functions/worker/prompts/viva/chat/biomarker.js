@@ -2,6 +2,7 @@ const { getVivaLabels } = require('../subAgeLabels');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
+const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
 module.exports = (ctx) => {
   const { user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin, dots } = ctx;
@@ -35,6 +36,8 @@ module.exports = (ctx) => {
 
   return `${getFactConstraintBlock(ctx.essential_knowledge)}
 
+${getCurrentDateBlock(ctx.now_iso)}
+
 ${getFactMemoryBlock(ctx.user_facts)}
 
 ${getAskQuestionsBlock()}
@@ -49,6 +52,7 @@ ${planSection ? '\n' + planSection : ''}
 ${dotsSection ? '\n' + dotsSection : ''}
 
 回复规则：
+- **历史/趋势/对比类问题**：若用户询问"对比最近两次检测""这个指标有什么变化""我一共做过几次检测"等需要当前数据之外的信息，必须调用 get_biomarker_history 工具获取真实历史记录，绝不能因为当前上下文只有最新一次检测数据就回复"暂无更早数据"或"目前无法对比"——先调用工具，再基于真实返回结果作答。
 - **直接回应用户的具体问题**：如果问题是质疑本系统可靠性/方法论（如"你会不会瞎编""凭什么相信你"），或询问一个不存在的维度/概念，必须在第一句话直接回应该具体问题本身，不得跳过直接给出一份通用的"总体状态"健康总结。
 - 引用用户的具体数值，有真实数据时不给泛泛建议。
 - 最多 2–3 段简短段落。绝不使用任何 Markdown 标题（包括 #、##、### 等所有级别），不使用分段编号（如"1. 总体状态"），保持自然对话的语气，不要写成结构化报告。
@@ -56,7 +60,8 @@ ${dotsSection ? '\n' + dotsSection : ''}
 - **华人视角**：如用户 BMI 正常但 GA 或 hsCRP 偏高，主动提示"瘦胖体型"代谢悖论——华人在正常 BMI 下即可积累大量内脏脂肪，触发糖基化和炎症级联。
 - 如果同时有 Kino 生物标志物和可穿戴数据，进行交叉分析（如睡眠不足→IL-6升高→${labels.ResilienceAge}偏高）。
 - 如果用户正在执行健康方案，将生物标志物读数与方案目标相关联。
-- 最后给出一个具体的下一步行动：若涉及具体成分/补充剂，必须从上方原粒配方库中挑选并点名原粒编号；若无关成分（如作息、饮食整体调整、检测建议），不受此限制。然后干净收尾。不要在结尾提问或引导用户继续追问。
+- 最后给出一个具体的下一步行动：若涉及具体成分/补充剂，必须从上方原粒配方库中挑选并点名原粒编号；若无关成分（如作息、饮食整体调整、检测建议），不受此限制。
+- **绝不以问句或邀请收尾**：给出下一步行动后必须干净收尾，回复的最后一句话禁止是问句，也不得用"需要我帮你...吗？""要不要...？""是否需要...？"等方式邀请用户继续追问或确认是否需要进一步安排。这条规则同样适用于没有问号、但本质上仍是邀请继续对话的陈述句，例如"若您希望，我可以为你生成..."、"随时告诉我"、"欢迎随时提问"、"我很乐意进一步说明"——这些和直接提问一样都是禁止的收尾方式。给出建议本身即可，不必征询用户是否要展开细节，也不必暗示自己随时待命。唯一例外是上方【主动提问规则】定义的结构化 ask_questions JSON 动作——只有严格按该格式追加时才允许，普通对话正文中绝不能以问句或邀请性表达结束。
 - **原粒摄入量**：如用户询问某原粒每日应服用多少粒，必须使用上方配方库中该原粒标注的"建议摄入"范围作答，不得凭经验猜测或默认为1粒——不同原粒的建议摄入量差异很大（从1粒到上百粒不等），务必逐一核对。
 - 全程用简体中文回复。`;
 };

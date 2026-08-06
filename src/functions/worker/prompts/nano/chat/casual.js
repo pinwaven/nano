@@ -1,7 +1,8 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
+const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
-module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, user_facts }) => {
+module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, user_facts, now_iso }) => {
   const isZh = user_profile.language === 'zh';
   const name = user_profile.nickname || (isZh ? '你' : 'there');
 
@@ -12,6 +13,8 @@ module.exports = ({ user_profile, questionnaire_context, active_health_plans, es
     : '';
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+${getCurrentDateBlock(now_iso, isZh)}
 
 ${getFactMemoryBlock(user_facts, isZh)}
 

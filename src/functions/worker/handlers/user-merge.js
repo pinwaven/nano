@@ -221,4 +221,4 @@ async function resolveMergedUser(client, userRow) {
     return current;
 }
 
-module.exports = { findAndMergeDuplicateAccount, resolveMergedUser, normalizeIdentity };
+module.exports = { findAndMergeDuplicateAccount, mergeUsers, resolveMergedUser, normalizeIdentity };

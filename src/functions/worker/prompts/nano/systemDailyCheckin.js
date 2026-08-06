@@ -44,7 +44,7 @@ const PERIOD_FRAMING = {
     },
 };
 
-module.exports = ({ user_profile, period, morning_dots, evening_dots, most_elevated, active_health_plans, current_solar_term, essential_knowledge }) => {
+module.exports = ({ user_profile, period, morning_dots, evening_dots, most_elevated, active_health_plans, health_twin, current_solar_term, essential_knowledge }) => {
     const isZh = user_profile?.language === 'zh';
     const name = user_profile?.nickname || (isZh ? '你' : 'there');
 
@@ -67,6 +67,28 @@ module.exports = ({ user_profile, period, morning_dots, evening_dots, most_eleva
 
     const planLine = (active_health_plans && active_health_plans.length)
         ? active_health_plans.map(p => p.goal || p.name).filter(Boolean).join(isZh ? '；' : '; ')
+        : '';
+
+    // Optional, secondary to most_elevated — a wearable (Halo/V8) trend the model MAY
+    // reference for grounding, never fabricated when no device/data exists.
+    const hasWearableData = health_twin && (
+        health_twin.avg_sleep_hours != null || health_twin.avg_daily_steps != null ||
+        health_twin.avg_hrv_ms != null || health_twin.avg_resting_hr != null
+    );
+    const wearableLine = hasWearableData
+        ? (isZh
+            ? [
+                health_twin.avg_sleep_hours != null ? `平均睡眠 ${health_twin.avg_sleep_hours.toFixed(1)} 小时` : null,
+                health_twin.avg_daily_steps != null ? `日均步数 ${Math.round(health_twin.avg_daily_steps)}` : null,
+                health_twin.avg_resting_hr != null ? `静息心率 ${Math.round(health_twin.avg_resting_hr)} bpm` : null,
+                health_twin.avg_hrv_ms != null ? `HRV ${Math.round(health_twin.avg_hrv_ms)}ms` : null,
+              ].filter(Boolean).join('，')
+            : [
+                health_twin.avg_sleep_hours != null ? `avg sleep ${health_twin.avg_sleep_hours.toFixed(1)}h` : null,
+                health_twin.avg_daily_steps != null ? `avg steps ${Math.round(health_twin.avg_daily_steps)}` : null,
+                health_twin.avg_resting_hr != null ? `resting HR ${Math.round(health_twin.avg_resting_hr)} bpm` : null,
+                health_twin.avg_hrv_ms != null ? `HRV ${Math.round(health_twin.avg_hrv_ms)}ms` : null,
+              ].filter(Boolean).join(', '))
         : '';
 
     const seasonLine = current_solar_term
@@ -93,6 +115,7 @@ ${framing}
 本周期最需关注的维度：
 ${elevatedLine}
 ${planLine ? `进行中的健康计划目标：${planLine}` : ''}
+${wearableLine ? `最近的可穿戴设备数据（仅供参考，可选择性提及，不得优先于上述维度）：${wearableLine}` : ''}
 ${seasonLine}
 
 输出要求：
@@ -118,6 +141,7 @@ Evening: ${dotsLine(evening_dots)}
 Dimension most worth watching this period:
 ${elevatedLine}
 ${planLine ? `Active health plan goal(s): ${planLine}` : ''}
+${wearableLine ? `Recent wearable data (optional context, may mention selectively — never override the dimension above): ${wearableLine}` : ''}
 ${seasonLine}
 
 Output requirements:

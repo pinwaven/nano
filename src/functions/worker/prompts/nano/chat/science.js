@@ -1,6 +1,7 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
-module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge }) => {
+module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, now_iso }) => {
   const isZh = user_profile.language === 'zh';
 
   const planNote = active_health_plans && active_health_plans.length > 0
@@ -10,6 +11,8 @@ module.exports = ({ user_profile, questionnaire_context, active_health_plans, es
     : '';
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+${getCurrentDateBlock(now_iso, isZh)}
 
 You are Nano, a longevity AI built by Waven with deep expertise in preventive medicine, inflammation biology, metabolic health, and longevity science.
 

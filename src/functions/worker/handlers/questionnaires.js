@@ -416,7 +416,7 @@ Config shape per input_type:
 Rules: 3–8 questions; choose input_type that best fits each question; button_select/multi_select must have 3–7 options; all text in both EN and ZH; keys must be unique snake_case.`;
     try {
         const llmClient = getLlmClient();
-        const model = process.env.MODEL || 'qwen3.6-plus';
+        const model = process.env.MODEL || 'qwen-plus-latest';
         const completion = await llmClient.chat.completions.create({
             model,
             messages: [
@@ -464,7 +464,7 @@ Rules:
     const userMsg = JSON.stringify({ sku_code, name_en, name_zh, desc_en, desc_zh, item_type, unit_en, unit_zh });
     try {
         const llmClient = getLlmClient();
-        const model = process.env.MODEL || 'qwen3.6-plus';
+        const model = process.env.MODEL || 'qwen-plus-latest';
         const completion = await llmClient.chat.completions.create({
             model,
             messages: [

@@ -1,7 +1,8 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
+const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
-module.exports = ({ user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts }) => {
+module.exports = ({ user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso }) => {
   const isZh = user_profile.language === 'zh';
   const hasBiomarkers = biomarkers && Object.keys(biomarkers).length > 0;
   const hasBioAge = bioage && bioage.BioAge;
@@ -27,6 +28,8 @@ BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values availa
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
 
+${getCurrentDateBlock(now_iso, isZh)}
+
 ${getFactMemoryBlock(user_facts, isZh)}
 
 You are Nano, a longevity AI built by Waven.
@@ -39,10 +42,11 @@ ${twinSection ? '\n' + twinSection : ''}
 ${planSection ? '\n' + planSection : ''}
 
 RESPONSE RULES:
+- **History/trend/comparison questions**: if the user asks to compare their last two tests, how a value has changed over time, or how many tests they've taken — call the get_biomarker_history tool to fetch real historical records. Never reply that older data is unavailable or that you can't compare just because only the latest test is shown above — call the tool first, then answer from its actual result.
 - Reference their specific numbers. Never give generic advice when you have real data.
 - 2–3 short paragraphs max. No markdown headers (##).
 - Explain what the numbers mean in plain language — what's driving the reading, and what it feels like in the body.
 - Cross-reference Kino biomarkers with wearable data (sleep, HRV, activity) when both are available — patterns across data sources are more meaningful than any single reading.
 - If the user is in an active health plan, relate the biomarker readings to their plan goal and progress.
-- End with one concrete next step.`;
+- End with one concrete next step, then stop cleanly. The final sentence must never be a question, and this applies just as much to a question-mark-free invitation to keep chatting — "Let me know if you'd like a comparison chart", "I'm happy to walk through the details", "Feel free to ask" are all forbidden closers too, not just literal "Would you like me to...?" ones. Give the recommendation itself and stop; don't offer to be available for more.`;
 };

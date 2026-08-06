@@ -325,6 +325,7 @@ const T = {
     haloRingTimeLabel: '戒指时间',
     ringHrvTrend: 'HRV 趋势', ringSpo2Trend: 'SpO₂ 趋势', ringBodyTemp: '体温',
     ringSleepWeek: '过去7天睡眠', ringNap: '小睡', ringNightSleep: '夜间睡眠', ringSleepNoBlocks: '暂无睡眠记录',
+    ringSmoothedNote: '条读数已平滑处理',
   },
   en: {
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -439,6 +440,7 @@ const T = {
     haloRingTimeLabel: 'Ring Time',
     ringHrvTrend: 'HRV Trend', ringSpo2Trend: 'SpO₂ Trend', ringBodyTemp: 'Body Temp',
     ringSleepWeek: '7-Day Sleep', ringNap: 'Nap', ringNightSleep: 'Night Sleep', ringSleepNoBlocks: 'No sleep recorded yet',
+    ringSmoothedNote: ' readings smoothed',
   },
 }
 
@@ -619,14 +621,19 @@ function _buildRingDisplayData(raw, isZh) {
         const sessions = byDate[date].slice().sort((a, b) => (a.onset < b.onset ? -1 : 1))
         const nightMins = sessions.filter(s => _isNightSession(s.onset)).reduce((sum, s) => sum + s.totalMinutes, 0)
         const napMins = sessions.filter(s => !_isNightSession(s.onset)).reduce((sum, s) => sum + s.totalMinutes, 0)
-        const nightColor = _dayQualityColor(nightMins)
+        // Color reflects the day's combined sleep total, not each segment's own
+        // duration — a night interrupted into several short segments (or one that
+        // resumes after 6am and gets bucketed as a "nap" by the hour heuristic,
+        // see _selectLastNight's comment) previously colored red/orange per-piece
+        // even when the day's actual total sleep was good.
+        const dayColor = _dayQualityColor(nightMins + napMins)
         const blocks = sessions.map((s, i) => {
           const mins = _minutesSinceNoon(s.onset)
           return {
             key: `${date}-${i}`,
             topRpx: Math.round(mins / 1440 * SLEEP_AXIS_H),
             heightRpx: Math.max(6, Math.round(s.totalMinutes / 1440 * SLEEP_AXIS_H)),
-            color: _isNightSession(s.onset) ? nightColor : '#f59e0b',
+            color: dayColor,
             isNap: !_isNightSession(s.onset),
             timeLabel: s.onset.slice(11, 16),
             durLabel: _fmtHM(s.totalMinutes, isZh),
@@ -818,51 +825,80 @@ function _fmtRealtimeReadings(readings) {
   return sectionOrder.map(d => sectionMap[d])
 }
 
+// Bounds/MAD-multiplier per metric for signal-smoothing.flagOutliers — see
+// utils/wearable/signal-smoothing.js and docs on _buildReadingLineCharts.
+const _SMOOTHING_CONFIG = {
+  hrv:    { min: 2,  max: 220, k: 2.5, window: 7, epsilon: 2 },
+  spo2:   { min: 70, max: 100, k: 2.5, window: 7, epsilon: 0.8 },
+  stress: { min: 0,  max: 100, k: 2.5, window: 7, epsilon: 3 },
+}
+
 function _buildReadingLineCharts(readings) {
   const pts = readings.slice().reverse()  // oldest → newest
+  const { flagOutliers, interpolateFlagged } = require('../../utils/wearable/signal-smoothing.js')
 
   function _extract(key) { return pts.filter(r => r[key] != null).map(r => r[key]) }
   function _hrvColor(v)    { return v >= 80 ? '#0ea5e9' : v >= 50 ? '#10b981' : v >= 30 ? '#f97316' : '#ef4444' }
   function _spo2Color(v)   { return v >= 98 ? '#0ea5e9' : v >= 95 ? '#10b981' : v >= 90 ? '#f97316' : '#ef4444' }
   function _stressColor(v) { return v <= 25 ? '#10b981' : v <= 50 ? '#6375EC' : v <= 75 ? '#f97316' : '#ef4444' }
 
+  // Detects likely sensor errors (ring off-wrist, poor contact, byte glitch)
+  // and replaces them with an interpolated estimate for chart display only —
+  // raw vals/readings are untouched, this never feeds back into stored data.
+  function _smooth(vals, metricKey) {
+    const flags = flagOutliers(vals, _SMOOTHING_CONFIG[metricKey])
+    const corrected = interpolateFlagged(vals, flags)
+    const validCount = flags.filter(f => !f).length
+    return { corrected, validCount }
+  }
+
   const CHART_H = 72, MAX_BARS = 48
 
-  function _toBars(vals, colorFn) {
-    if (vals.length < 2) return null
-    const N = Math.min(vals.length, MAX_BARS)
+  function _toBars(corrected, colorFn) {
+    if (corrected.length < 2) return null
+    const N = Math.min(corrected.length, MAX_BARS)
     const binned = []
     for (let i = 0; i < N; i++) {
-      const s = Math.floor(i / N * vals.length)
-      const e = Math.floor((i + 1) / N * vals.length)
-      const slice = vals.slice(s, e)
-      binned.push(slice.reduce((a, b) => a + b, 0) / slice.length)
+      const s = Math.floor(i / N * corrected.length)
+      const e = Math.floor((i + 1) / N * corrected.length)
+      const slice = corrected.slice(s, e)
+      binned.push({
+        value: slice.reduce((a, b) => a + b.value, 0) / slice.length,
+        estimated: slice.some(b => b.estimated),
+      })
     }
-    const min = Math.min(...binned), max = Math.max(...binned)
+    const min = Math.min(...binned.map(b => b.value)), max = Math.max(...binned.map(b => b.value))
     const range = max - min || 1
-    return binned.map(v => ({
-      heightRpx: Math.round(Math.max(4, (v - min) / range * CHART_H)),
-      color: colorFn(v),
+    return binned.map(b => ({
+      heightRpx: Math.round(Math.max(4, (b.value - min) / range * CHART_H)),
+      color: colorFn(b.value),
+      estimated: b.estimated,
     }))
   }
 
-  function _chart(vals, colorFn, fallbackColor) {
-    const latest = vals.length ? vals[vals.length - 1] : null
+  function _chart(vals, colorFn, metricKey) {
+    const { corrected, validCount } = _smooth(vals, metricKey)
+    const correctedVals = corrected.map(c => c.value)
+    const latestRaw = vals.length ? vals[vals.length - 1] : null
+    const latestEntry = corrected.length ? corrected[corrected.length - 1] : null
+    const estimatedCount = corrected.filter(c => c.estimated).length
     return {
-      hasData:     vals.length >= 2,
-      bars:        _toBars(vals, colorFn),
-      latestVal:   latest,
-      latestColor: latest != null ? colorFn(latest) : 'rgba(166,196,229,0.5)',
-      minVal:      vals.length ? Math.min(...vals) : null,
-      maxVal:      vals.length ? Math.max(...vals) : null,
-      count:       vals.length,
+      hasData:         validCount >= 2,
+      bars:            _toBars(corrected, colorFn),
+      latestVal:       latestRaw,
+      latestColor:     latestRaw != null ? colorFn(latestRaw) : 'rgba(166,196,229,0.5)',
+      latestEstimated: !!(latestEntry && latestEntry.estimated),
+      minVal:          correctedVals.length ? Math.round(Math.min(...correctedVals) * 10) / 10 : null,
+      maxVal:          correctedVals.length ? Math.round(Math.max(...correctedVals) * 10) / 10 : null,
+      count:           vals.length,
+      estimatedCount,
     }
   }
 
   return {
-    hrvChart:    _chart(_extract('hrv'),    _hrvColor,    '#6375EC'),
-    spo2Chart:   _chart(_extract('spo2'),   _spo2Color,   '#6375EC'),
-    stressChart: _chart(_extract('stress'), _stressColor, '#6375EC'),
+    hrvChart:    _chart(_extract('hrv'),    _hrvColor,    'hrv'),
+    spo2Chart:   _chart(_extract('spo2'),   _spo2Color,   'spo2'),
+    stressChart: _chart(_extract('stress'), _stressColor, 'stress'),
   }
 }
 
@@ -2424,15 +2460,19 @@ Component({
 
     // --- Wearable (Smart Ring) ---
 
+    // Returns the handleSyncWearable() promise when a sync is actually kicked off
+    // (so callers like onShow() can await it before establishing heartbeat
+    // eligibility), or undefined when no sync is due/possible.
     _maybeAutoSync() {
-      if (this.data.wearableBusy || !this.data.wearableId) return
+      if (this.data.wearableBusy || !this.data.wearableId) return undefined
       try {
         const raw = wx.getStorageSync('wearable_ring_data')
         const lastSync = raw?.syncedAt || 0
         if (Date.now() - lastSync > 30 * 60 * 1000) {
-          this.handleSyncWearable()
+          return this.handleSyncWearable()
         }
       } catch (_) {}
+      return undefined
     },
 
     _loadWearableFromStorage() {
@@ -2449,6 +2489,7 @@ Component({
           this.setData({ wearableId: saved.deviceId, wearableName: saved.name || fallbackName, wearableConnected: false, wearableBrand: brand, haloIntervals, haloWorkModes })
           // Delay auto-sync to let the BLE stack initialize on cold launch
           setTimeout(() => this._maybeAutoSync(), 2000)
+          this._ensureWearableBindingSynced({ brand, mac: saved.mac || null, name: saved.name || fallbackName })
         } else {
           // No local binding on this device/install — check if the account already
           // has a ring registered from another client app (Android/iOS builds of
@@ -2456,48 +2497,12 @@ Component({
           // instead of them thinking they've never paired a ring.
           this._loadWearableHintFromServer()
         }
-        const rawRing = wx.getStorageSync('wearable_ring_data')
-        if (rawRing && rawRing.syncedAt) {
-          const lang = this.properties.lang || 'zh'
-          const isZh = lang !== 'en'
-          const _rawReads = rawRing.hrvSlots != null
-            ? _slotsToReadings(rawRing.hrvSlots, rawRing.spo2Slots)
-            : _getRealtimeReadings(rawRing.syncedAt)
-          const realtimeReadings = _fmtRealtimeReadings(_rawReads)
-          const _charts = _buildReadingLineCharts(_rawReads)
-          if (IS_DEV) console.log(JSON.stringify({ level: 'DEBUG', msg: 'ring line charts', rawReadsLen: _rawReads.length, hrv: _charts.hrvChart.count, spo2: _charts.spo2Chart.count, stress: _charts.stressChart.count, hrvHasData: _charts.hrvChart.hasData }))
-          const _base = _buildRingDisplayData(rawRing, isZh)
-          const ringData = { ..._base, realtimeReadings, hasRealtimeReadings: realtimeReadings.length > 0, ..._charts, hasSlotCharts: _base.hasSlotCharts || _charts.hrvChart.hasData || _charts.spo2Chart.hasData || _charts.stressChart.hasData }
-          const virtualTwin = {
-            avg_daily_steps: rawRing.steps,
-            avg_sleep_hours: rawRing.sleepMinutes != null ? rawRing.sleepMinutes / 60 : null,
-            avg_resting_hr:  rawRing.restingHr,
-            avg_hrv_ms:      rawRing.hrv,
-            avg_spo2:        rawRing.spo2 ?? null,
-            latest_bmi: null, trend_data: {},
-          }
-          const visuals = this._buildTwinVisuals(virtualTwin, T[isZh ? 'zh' : 'en'], isZh)
-          // Show as connected if we have data synced within the last 24 hours —
-          // the ring is working; we just don't have an active BLE session right now.
-          const recentSync = (Date.now() - rawRing.syncedAt) < 24 * 60 * 60 * 1000
-          this.setData({
-            wearableConnected: recentSync,
-            ringData,
-            mood: computeMood(ringData),
-            hasTwinData: visuals.vitalGauges.length > 0,
-            twinLoading: false,
-            ...visuals,
-          })
-        } else if (!hasLocalDevice) {
-          // No local device bound AND no local snapshot (e.g. a fresh WeChat
-          // DevTools session, or any client/install that has never bound a
-          // ring here) — fall back to
-          // whatever was last synced to the server from any client app, same
-          // as the coach-viewing-another-user path already does. Only runs
-          // when there's no real local device, so it never clobbers a real
-          // wearableId with the server-hydration sentinel and break "Sync Now".
-          this._loadRingDataFromServer()
-        }
+        // Chart/reading data always comes from the server (single source of
+        // truth — a local wearable_ring_data snapshot can silently drift from
+        // it, e.g. after a server-side data correction, with nothing to
+        // invalidate the stale cache). Binding state above stays local since
+        // BLE pairing is inherently device-specific.
+        this._loadRingDataFromServer()
       } catch (_) {}
     },
 
@@ -2511,6 +2516,28 @@ Component({
         await this._req(`${BASE}/api/users/${userId}`, 'PATCH', { wearable })
       } catch (e) {
         if (IS_DEV) console.error('[wearable][server-sync]', e?.message || e?.errMsg || e)
+      }
+    },
+
+    // Called when this device/install DOES have a local wearable_device — the
+    // initial bind-time push to the server (_syncWearableBindingToServer,
+    // fire-and-forget) can silently fail, or the binding may predate that push
+    // existing at all (confirmed: a real account synced ring data for months
+    // with wearable_brand still NULL server-side). Self-heals by comparing
+    // against the server record and only PATCHing when it's actually out of
+    // sync — avoids bumping wearable_bound_at on every load once it matches.
+    async _ensureWearableBindingSynced(saved) {
+      const { userId } = this.properties
+      if (!userId || !saved?.brand) return
+      try {
+        const res = await this._req(`${BASE}/api/users/${userId}`)
+        const user = res.data?.user
+        if (!user) return
+        if (user.wearable_brand !== saved.brand || user.wearable_name !== saved.name) {
+          await this._syncWearableBindingToServer({ brand: saved.brand, mac: saved.mac || null, name: saved.name })
+        }
+      } catch (e) {
+        if (IS_DEV) console.error('[wearable][binding-selfheal]', e?.message || e?.errMsg || e)
       }
     },
 
@@ -2545,7 +2572,11 @@ Component({
       const isZh = (lang || 'zh') !== 'en'
       try {
         const [vitalsRes, activityRes, sleepRes] = await Promise.all([
-          this._req(`${BASE}/api/health-events?openid=${encodeURIComponent(userId)}&category=vitals&limit=200`),
+          // 'vitals' bundles temp/hrv/spo2/resting_hr/realtime sub-streams sharing one
+          // budget — temp samples more frequently than hrv on Halo, so 200 silently
+          // crowded hrv/spo2 out of the "most recent N" window (confirmed: a 135-record
+          // hrv sync only left 32 visible after reload). Matches the server's own raised cap.
+          this._req(`${BASE}/api/health-events?openid=${encodeURIComponent(userId)}&category=vitals&limit=1000`),
           this._req(`${BASE}/api/health-events?openid=${encodeURIComponent(userId)}&category=activity&limit=14`),
           this._req(`${BASE}/api/health-events?openid=${encodeURIComponent(userId)}&category=sleep&limit=14`),
         ])
@@ -2675,8 +2706,12 @@ Component({
           hasSlotCharts: _base.hasSlotCharts || _charts.hrvChart.hasData || _charts.spo2Chart.hasData || _charts.stressChart.hasData,
         }
         const recentSync = (Date.now() - rawRing.syncedAt) < 24 * 60 * 60 * 1000
+        // A real local BLE binding (set by _loadWearableFromStorage, self-view
+        // only) must win here — overwriting it with the server-hydration
+        // sentinel would break "Sync Now" for a device that's actually paired.
+        const hasRealBinding = this.data.wearableId && this.data.wearableId !== '__server__'
         this.setData({
-          wearableId: '__server__',
+          ...(hasRealBinding ? {} : { wearableId: '__server__' }),
           wearableConnected: recentSync,
           ringData,
           mood: computeMood(ringData),
@@ -2779,26 +2814,32 @@ Component({
         wx.showLoading({ title: t.wearableConnecting, mask: true })
         const brand = chosen.brand
         const ring = createWearable(brand)
-        await ring.connect(chosen.deviceId, { syncTime: true, name: chosen.name })
-        const battery = await ring.getBattery()
-        // MAC is the ring's stable hardware identifier (unlike deviceId, which
-        // is a per-OS/per-scan BLE handle) — only Halo currently exposes it.
-        const mac = typeof ring.getMac === 'function' ? await ring.getMac().catch(() => null) : null
-
         // Halo/V8: apply default scheduled monitoring immediately on first bind
         const defaultIvals = { hr: 30, spo2: 60, temp: 60, hrv: 120 }
         const defaultWms   = { hr: 2, spo2: 2, temp: 2, hrv: 2 }
-        if (_hasIntervalSettings(brand)) {
-          const _opts = { workMode: 2, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
-          await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.hr,   type: 1 }).catch(() => {})
-          await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.spo2, type: 2 }).catch(() => {})
-          await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.temp, type: 3 }).catch(() => {})
-          await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.hrv,  type: 4 }).catch(() => {})
-          wx.setStorageSync('halo_interval_settings', defaultIvals)
-          wx.setStorageSync('halo_work_mode_settings', defaultWms)
-        }
+        let battery, mac
+        try {
+          await ring.connect(chosen.deviceId, { syncTime: true, name: chosen.name })
+          battery = await ring.getBattery()
+          // MAC is the ring's stable hardware identifier (unlike deviceId, which
+          // is a per-OS/per-scan BLE handle) — only Halo currently exposes it.
+          mac = typeof ring.getMac === 'function' ? await ring.getMac().catch(() => null) : null
 
-        await ring.disconnect()
+          if (_hasIntervalSettings(brand)) {
+            const _opts = { workMode: 2, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, weekdays: 0x7F }
+            await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.hr,   type: 1 }).catch(() => {})
+            await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.spo2, type: 2 }).catch(() => {})
+            await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.temp, type: 3 }).catch(() => {})
+            await ring.setAutoMonitoring({ ..._opts, intervalMinutes: defaultIvals.hrv,  type: 4 }).catch(() => {})
+            wx.setStorageSync('halo_interval_settings', defaultIvals)
+            wx.setStorageSync('halo_work_mode_settings', defaultWms)
+          }
+        } finally {
+          // Always tear down the connection, even if connect/getBattery/etc.
+          // threw — a leaked connection blocks the ring's single connection
+          // slot until it times out on its own (see halo-smart-ring.md §BLE).
+          await ring.disconnect().catch(() => {})
+        }
         wx.hideLoading()
 
         const saved = { deviceId: chosen.deviceId, name: chosen.name, brand }
@@ -3047,7 +3088,10 @@ Component({
               sleep: { since: _sinceSleep, mergedBlocks: mergedSleepBlocks ? mergedSleepBlocks.length : null, nights: sleepHistoryNorm.length },
             }))
           }
-          this._commitRingData(raw, battery.level, isZh, false)
+          // Awaited (Halo/V8 only) so handleSyncWearable() doesn't resolve until
+          // health_twin is actually updated — onShow() relies on this to sequence
+          // the check-in-eligibility heartbeat after a due sync completes.
+          await this._commitRingData(raw, battery.level, isZh, false)
         } catch (e) {
           await ring.disconnect().catch(() => {})
           if (IS_DEV) console.error(`[BLE][sync:${brand}]`, e?.message || e?.errMsg || e)
@@ -3213,11 +3257,25 @@ Component({
       }
     },
 
+    // Returns the server-sync promise (resolves once health_twin's UPSERT has
+    // landed) so callers that need the round trip to actually finish — e.g.
+    // onShow()'s pre-heartbeat wait — can await it. UI state below is applied
+    // synchronously as before, independent of this promise's timing.
     _commitRingData(raw, batteryLevel, isZh, isPartial) {
       wx.setStorageSync('wearable_ring_data', raw)
       const { syncWearableData } = require('../../utils/wearable/sync.js')
       const app = getApp()
-      syncWearableData(this.properties.userId, { source: 'smart_ring', ...raw }, app?.globalData?.apiToken).catch(() => {})
+      // syncWearableData() never rejects (its wx.request `fail` handler resolves
+      // with {success:false, error} instead of throwing), so a bare .catch() here
+      // can never fire and any real failure (domain block, auth, 5xx) was
+      // previously discarded silently. Inspect the resolved result instead.
+      const syncPromise = syncWearableData(this.properties.userId, { source: 'smart_ring', wearableName: this.data.wearableName || null, ...raw }, app?.globalData?.apiToken)
+        .then((res) => {
+          if (res && res.success === false && IS_DEV) {
+            console.error(JSON.stringify({ level: 'ERROR', msg: 'wearable server sync failed', error: res.error }))
+          }
+        })
+        .catch((e) => { if (IS_DEV) console.error(JSON.stringify({ level: 'ERROR', msg: 'wearable server sync threw', error: e?.message || e })) })
 
       // Accumulate today's realtime (Phase 2) readings for Colmi on-demand measurements.
       // Halo uses ring.hrvSlots / spo2Slots from its auto-monitoring buffer — skip accumulation
@@ -3259,6 +3317,7 @@ Component({
         twinLoading: false,
         ...visuals,
       })
+      return syncPromise
     },
 
     async toggleRingSettings() {

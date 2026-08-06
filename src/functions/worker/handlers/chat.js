@@ -393,6 +393,80 @@ function extractAgeMentions(text, nickname) {
     return ages;
 }
 
+// A fixed list of common "inviting further engagement" markers that violate the same
+// "end cleanly, don't invite the user to keep asking" rule as a literal trailing "?" but
+// carry no question mark to catch — e.g. "若您希望，我可以立即为您生成一张对比图" or "随时告诉我～".
+// Found via live dev testing 2026-08-05: a Nano reply ended on exactly this pattern and
+// stripTrailingQuestion's punctuation check let it straight through. Checked against only the
+// FINAL sentence — these phrases are fine mid-reply (e.g. explaining an app feature); the rule
+// is specifically about how the reply closes.
+const TRAILING_INVITATION_PATTERNS = [
+    /如果?你?您?(?:需要|想要|希望)[，,、].{0,20}(?:我(?:可以|很乐意|随时)|随时)/,
+    /若你?您?(?:需要|想要|希望)[，,、].{0,20}(?:我(?:可以|很乐意|随时)|随时)/,
+    /随时(?:告诉我|问我|联系|沟通|反馈|说)/,
+    /有(?:任何)?需要.{0,10}随时/,
+    /欢迎随时/,
+    /我很乐意(?:为你|为您|帮你|帮您)?/,
+    /如(?:需|果).{0,20}随时(?:告诉我|问我|说)/,
+    // Covers phrasings that dodge a literal "？" by turning the solicitation into an imperative
+    // ("请确认是否需要我为您生成...") rather than a grammatical question — found via live dev
+    // testing 2026-08-05, a second escape of the original pattern list within the same session.
+    /是否(?:需要|要)我/,
+    /请确认是否/,
+    // "需要我帮你把X设上吗？" / "要不要我帮你...？" — offering to perform a specific action, phrased
+    // as a literal "吗？" yes/no question. Deliberately narrower than a blanket "ends in ?" ban
+    // (scoped to an offer-to-act opener, not any question) so a genuine disambiguation question
+    // in casual_chat/emotional_support ("你是指A还是B吗？") isn't caught by the same net — those
+    // two intents' own prompts explicitly permit a real clarifying question, unlike the four
+    // strict intents. Found via live dev testing 2026-08-05: reproduced under casual_chat,
+    // where stripTrailingQuestion previously never even ran (gated on useAgenticLoop alone).
+    /需要我.{0,25}吗[？?]?$/,
+    /要不要我.{0,25}吗?[？?]?$/,
+    /你要不要.{0,25}吗?[？?]?$/,
+    /let me know if/i,
+    /feel free to/i,
+    /i'?m happy to/i,
+    /just (?:say|ask|let me know)/i,
+    /would you like/i,
+];
+
+// Deterministic backstop for the "never end the reply with a question (or an invitation to
+// keep asking)" rule already stated in chat/biomarker.js, chat/nutrition.js, chat/science.js
+// (e.g. "不要在结尾提问或引导用户继续追问"). JUDGE only grades factual grounding, not conversational
+// style, so a violation of this purely stylistic rule is never flagged and PLAN/GENERATE/REVISE
+// never gets a chance to fix it — a draft that ends this way can ship completely unchanged
+// through every round. Found via live dev testing 2026-08-05 ("需要我帮你把下一次脉冲日安排进日程吗？"
+// shipped despite the rule already being explicit in the prompt, and reproduced again even
+// after making the prompt wording more emphatic — confirms this needs code enforcement, not
+// just prompting).
+//
+// `strict` controls how aggressively this fires: the four high-risk/agentic intents
+// (useAgenticLoop === true) have an unconditional "never end on a question" rule, so ANY
+// trailing "?"/"？" or invitation pattern gets stripped there. casual_chat/emotional_support
+// explicitly permit a genuine clarifying question ("不要在结尾提问，除非用户的话明显需要澄清才能回答"),
+// so a blanket "?" ban would break that by design — non-strict mode only strips the narrower
+// TRAILING_INVITATION_PATTERNS (offering to perform an action), never a bare trailing "?".
+function stripTrailingQuestion(text, { strict = true } = {}) {
+    const trimmed = text.trimEnd();
+    // "." only counts as a sentence terminator when it isn't part of a decimal number —
+    // otherwise every reply citing a biomarker value like "12.5%" or "13.5" gets fragmented
+    // mid-number (e.g. "...12." / "5%。..."). Splitting still landed on the correct final
+    // sentence before this fix (join('') with no separator silently re-glues every spurious
+    // split), but the mid-string fragmentation left `last` sometimes pointing at a fragment
+    // rather than the true final sentence for invitation-pattern matching — found while
+    // testing the invitation patterns below against a real reply containing "12.1%"/"46.0%".
+    const sentences = trimmed.match(/[^。！？!?\n]*(?:[。！？!?]|(?<!\d)\.(?!\d))|[^。！？!?\n]+$/g);
+    if (!sentences || sentences.length === 0) return text;
+    const last = sentences[sentences.length - 1];
+    const isQuestion = /[?？]\s*$/.test(last.trimEnd());
+    const isInvitation = TRAILING_INVITATION_PATTERNS.some(re => re.test(last));
+    const violates = strict ? (isQuestion || isInvitation) : isInvitation;
+    if (!violates) return text;
+    if (sentences.length <= 1) return text; // whole reply is one sentence — nothing safe to fall back to
+    sentences.pop();
+    return sentences.join('').trimEnd();
+}
+
 // Cross-checks any biomarker figures / dates / age the model actually wrote against the ground-truth
 // row already fetched server-side. Only flags values the model chose to state — silence on a key
 // is fine, a wrong number or date next to a known label is not.
@@ -817,12 +891,23 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
     // Never let that happen; fall back to an acknowledgment referencing the actual recorded
     // fact when we have one (already validated above, so safe to echo back), otherwise a
     // minimal generic acknowledgment.
-    const strippedReply = rawReply
+    let strippedReply = rawReply
         .replace(/\n?\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
         .replace(/\n?\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
         .replace(/\n?\{"action"\s*:\s*"remember_fact"[^}]*\}/g, '')
         .replace(/\n?\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '')
         .trim();
+    // Runs for every intent, not just the agentic ones — casual_chat/emotional_support still
+    // get the narrower non-strict pass (TRAILING_INVITATION_PATTERNS only, no bare "?" ban) so
+    // an "offering to act" ending like "需要我帮你...吗？" is caught there too, without breaking
+    // those two intents' own sanctioned exception for a genuine clarifying question.
+    {
+        const dequestioned = stripTrailingQuestion(strippedReply, { strict: useAgenticLoop });
+        if (dequestioned !== strippedReply) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'chat_trailing_question_stripped', user_id, strict: useAgenticLoop, original_tail: strippedReply.slice(-80) }));
+            strippedReply = dequestioned;
+        }
+    }
     const isZhReply = (user.language || 'zh') === 'zh';
     const fallbackReply = recordedFactText
         ? (isZhReply ? `好的，已记录：${recordedFactText}` : `Got it — noted: ${recordedFactText}`)
@@ -991,7 +1076,7 @@ async function handlePostChat(body) {
         // Intent-routed chat message handling
         try {
             const client = getLlmClient();
-            const model = process.env.MODEL || 'qwen3.6-plus';
+            const model = process.env.MODEL || 'qwen-plus-latest';
 
             // Step 1: Classify the user's intent
             let intent = 'casual_chat';
@@ -1533,7 +1618,7 @@ async function handleChatGenerateEvent(payload) {
     }
 
     const client = getLlmClient();
-    const model = process.env.MODEL || 'qwen3.6-plus';
+    const model = process.env.MODEL || 'qwen-plus-latest';
     const user = { birth_date, language };
     const chatMessages = [
         { role: 'system', content: systemPrompt },
@@ -1836,6 +1921,7 @@ async function handlePostHealthAdvice(body) {
             })),
             essential_knowledge: essentialKnowledge,
             user_facts: factsResult.rows,
+            now_iso: getNowShanghai().toISO(),
         });
 
         const userMsg = isZh
@@ -1867,7 +1953,7 @@ async function handlePostHealthAdvice(body) {
         };
 
         const llmClient = getLlmClient();
-        const model = process.env.MODEL || 'qwen3.6-plus';
+        const model = process.env.MODEL || 'qwen-plus-latest';
         const useAgenticLoop = true;
 
         // Save user trigger to keep conversation history well-formed (no consecutive AI turns) —
@@ -2198,7 +2284,7 @@ async function handlePostAnalyzeImage(body) {
 const VALID_CATEGORIES = new Set(['sleep', 'activity', 'vitals', 'lab_result', 'body_composition']);
 
 async function handlePostHealthEvent(body) {
-    const { openid, category, source, data_date, data, recorded_at, external_id } = body;
+    const { openid, category, source, data_date, data, recorded_at, external_id, wearable_name } = body;
     if (!openid) return { success: false, error: 'openid required', statusCode: 400 };
     if (!category || !VALID_CATEGORIES.has(category)) {
         return { success: false, error: `category must be one of: ${[...VALID_CATEGORIES].join(', ')}`, statusCode: 400 };
@@ -2217,11 +2303,11 @@ async function handlePostHealthEvent(body) {
         const user_id = userResult.rows[0].user_id;
 
         const insertResult = await pool.query(`
-            INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id, wearable_name)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING
             RETURNING id
-        `, [user_id, source, category, data_date, recorded_at, JSON.stringify(data), external_id || null]);
+        `, [user_id, source, category, data_date, recorded_at, JSON.stringify(data), external_id || null, wearable_name || null]);
 
         const inserted = insertResult.rows.length > 0;
         if (inserted) {
@@ -2254,12 +2340,12 @@ async function handlePostHealthEventsSync(body) {
         for (const ev of events) {
             if (!ev.category || !VALID_CATEGORIES.has(ev.category) || !ev.source || !ev.data_date || !ev.data || !ev.recorded_at) { skipped++; continue; }
             const r = await pool.query(`
-                INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, external_id, wearable_name)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL
-                DO UPDATE SET data = EXCLUDED.data, recorded_at = EXCLUDED.recorded_at
+                DO UPDATE SET data = EXCLUDED.data, recorded_at = EXCLUDED.recorded_at, wearable_name = EXCLUDED.wearable_name
                 RETURNING id
-            `, [user_id, ev.source, ev.category, ev.data_date, ev.recorded_at, JSON.stringify(ev.data), ev.external_id || null]);
+            `, [user_id, ev.source, ev.category, ev.data_date, ev.recorded_at, JSON.stringify(ev.data), ev.external_id || null, ev.wearable_name || null]);
             if (r.rows.length > 0) synced++;
         }
 
@@ -2300,11 +2386,16 @@ async function handleGetHealthEvents(query) {
             params.push(to_date);
             conditions.push(`data_date <= $${params.length}`);
         }
-        const rowLimit = Math.min(parseInt(limit || '30', 10), 200);
+        // 'vitals' bundles several independently-sampled sub-streams (temp, hrv, spo2,
+        // resting_hr, realtime — see sync.js's per-slot external_id patterns) sharing
+        // one row budget. temp samples more frequently than hrv on Halo, so a low cap
+        // here silently crowds hrv/spo2 out of the "most recent N" window even though
+        // there's far more headroom needed than a typical single-category query.
+        const rowLimit = Math.min(parseInt(limit || '30', 10), 1000);
         params.push(rowLimit);
 
         const result = await pool.query(
-            `SELECT id, source, category, data_date, recorded_at, data, ingested_at, external_id
+            `SELECT id, source, category, data_date, recorded_at, data, ingested_at, external_id, wearable_name
              FROM health_events
              WHERE ${conditions.join(' AND ')}
              ORDER BY data_date DESC, recorded_at DESC

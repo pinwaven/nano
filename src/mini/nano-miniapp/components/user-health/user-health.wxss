@@ -2837,6 +2837,27 @@
   min-height: 4rpx;
 }
 
+/* Marks a bar whose value was corrected from a detected sensor error (ring
+   off-wrist, poor contact, glitch) — never blended in silently, see
+   _buildReadingLineCharts in user-health.js. */
+.ring-lc-bar-estimated {
+  opacity: 0.4;
+  background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.35) 0, rgba(255,255,255,0.35) 3rpx, transparent 3rpx, transparent 6rpx);
+}
+
+.ring-lc-estimated-marker {
+  font-size: 20rpx;
+  font-weight: 700;
+  color: #f97316;
+  margin-left: 2rpx;
+}
+
+.ring-lc-smoothed-note {
+  font-size: 16rpx;
+  color: rgba(var(--wave-rgb), 0.3);
+  margin-top: 6rpx;
+}
+
 /* Line charts (HRV / SpO₂ / Stress history) */
 .ring-linechart-header {
   display: flex;

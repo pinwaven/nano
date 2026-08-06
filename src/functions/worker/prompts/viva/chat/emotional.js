@@ -2,6 +2,7 @@ const { getVivaLabels } = require('../subAgeLabels');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
+const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
 module.exports = (ctx) => {
   const { user_profile, bioage, questionnaire_context, active_health_plans, health_twin } = ctx;
@@ -22,6 +23,8 @@ module.exports = (ctx) => {
     : '';
 
   return `${getFactConstraintBlock(ctx.essential_knowledge)}
+
+${getCurrentDateBlock(ctx.now_iso)}
 
 ${getFactMemoryBlock(ctx.user_facts)}
 

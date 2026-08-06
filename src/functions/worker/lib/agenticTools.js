@@ -14,6 +14,7 @@
 'use strict';
 
 const { formatQuestionnaireContext } = require('../handlers/questionnaires');
+const { formatToShanghai } = require('./time-utils');
 
 const AGENTIC_TOOL_DEFS = [
     {
@@ -172,7 +173,14 @@ function createAgenticToolHandlers({ pool, user_id, language }) {
                 data: {
                     validated: row.data?.validated || {},
                     bioage_profile: row.data?.bioage_profile || {},
-                    tested_at: row.tested_at,
+                    // Shanghai-local, human-readable — raw pg timestamptz values serialize to
+                    // UTC ISO strings ("...T07:51:49.631Z") when JSON.stringify'd for the tool
+                    // result, and the model has been observed echoing that literally into a
+                    // user-facing reply (wrong clock time AND unreadable). Every other date the
+                    // model is given (biomarkers_tested_at in the main system prompt, etc.)
+                    // already goes through this same formatter — these tool results were the
+                    // one place that didn't. Found via live dev testing 2026-08-05.
+                    tested_at: formatToShanghai(row.tested_at),
                 },
             };
         },
@@ -193,7 +201,7 @@ function createAgenticToolHandlers({ pool, user_id, language }) {
                 ok: true,
                 data: {
                     total_count: parseInt(countResult.rows[0].count, 10),
-                    tests: rowsResult.rows.map(r => ({ tested_at: r.tested_at, validated: r.data?.validated || {} })),
+                    tests: rowsResult.rows.map(r => ({ tested_at: formatToShanghai(r.tested_at), validated: r.data?.validated || {} })),
                 },
             };
         },
@@ -257,7 +265,10 @@ function createAgenticToolHandlers({ pool, user_id, language }) {
                  ORDER BY uc.last_dispensed_at DESC NULLS LAST LIMIT 20`,
                 [user_id]
             );
-            return { ok: true, data: rows };
+            return {
+                ok: true,
+                data: rows.map(r => ({ ...r, last_dispensed_at: r.last_dispensed_at ? formatToShanghai(r.last_dispensed_at) : null })),
+            };
         },
 
         async get_health_reports(args = {}) {
@@ -293,7 +304,7 @@ function createAgenticToolHandlers({ pool, user_id, language }) {
             );
             return {
                 ok: true,
-                data: rows.map(r => ({ weight_kg: r.data?.actual?.weight ?? null, tested_at: r.tested_at })),
+                data: rows.map(r => ({ weight_kg: r.data?.actual?.weight ?? null, tested_at: formatToShanghai(r.tested_at) })),
             };
         },
 
@@ -363,7 +374,10 @@ function createAgenticToolHandlers({ pool, user_id, language }) {
                 `SELECT content, scheduled_for, recurrence, status FROM reminders WHERE ${clauses.join(' AND ')} ORDER BY scheduled_for DESC LIMIT $${params.length}`,
                 params
             );
-            return { ok: true, data: rows };
+            return {
+                ok: true,
+                data: rows.map(r => ({ ...r, scheduled_for: formatToShanghai(r.scheduled_for) })),
+            };
         },
     };
 }

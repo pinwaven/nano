@@ -1,11 +1,14 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
-module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge }) => {
+module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, now_iso }) => {
   const planNote = active_health_plans && active_health_plans.length > 0
     ? `用户当前方案：${active_health_plans.map(p => `「${p.name}」目标维度：${(p.target_sub_ages || []).join(', ')}`).join('；')}。如科学问题与方案目标相关，可简短关联。`
     : '';
 
   return `${getFactConstraintBlock(essential_knowledge)}
+
+${getCurrentDateBlock(now_iso)}
 
 你是 Viva，Aeviva 的精准长寿顾问，在预防医学、炎症生物学、代谢健康、表观遗传学和长寿科学领域拥有深厚积累，专攻东亚/东方人群的生物衰老机制。
 

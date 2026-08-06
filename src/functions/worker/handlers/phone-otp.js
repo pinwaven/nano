@@ -4,6 +4,7 @@ const { pool } = require('../lib/db');
 const { generateUserId, generateReferralCode } = require('../lib/auth');
 const { sendOTP, verifyOTP } = require('../lib/sms');
 const { normalizeCnPhone } = require('../lib/phone');
+const { mergeUsers, resolveMergedUser } = require('./user-merge');
 
 const PHONE_RE = /^1\d{10}$/;
 
@@ -143,7 +144,44 @@ async function handlePhoneOtpBind(body) {
         const fullPhone = normalizeCnPhone(phone);
 
         const conflict = await client.query('SELECT user_id FROM user_phones WHERE phone = $1 AND user_id != $2', [fullPhone, user_id]);
-        if (conflict.rows.length > 0) return { success: false, error: 'phone_in_use' };
+        if (conflict.rows.length > 0) {
+            // A valid OTP is at least as strong a "same person" signal as the
+            // government_id/name+birthday match findAndMergeDuplicateAccount uses
+            // (user-merge.js) — treat this the same way rather than hard-blocking
+            // a user who legitimately owns the number but is signing in from a
+            // different WeChat account (a fresh users row with no phone yet).
+            const phoneOwnerId = conflict.rows[0].user_id;
+            const { rows: bothRows } = await client.query(
+                'SELECT user_id, created_at, merged_into_user_id FROM users WHERE user_id = ANY($1::text[])',
+                [[user_id, phoneOwnerId]]
+            );
+            const currentRow = bothRows.find(r => r.user_id === user_id);
+            const ownerRow = bothRows.find(r => r.user_id === phoneOwnerId);
+            if (!currentRow || !ownerRow) return { success: false, error: 'user_not_found' };
+
+            // Resolve chains in case either side is itself already a merge loser
+            // (e.g. a stale session still holding an old, already-merged user_id).
+            const resolvedCurrent = await resolveMergedUser(client, currentRow);
+            const resolvedOwner = await resolveMergedUser(client, ownerRow);
+
+            let winnerId = resolvedCurrent.user_id;
+            if (resolvedCurrent.user_id !== resolvedOwner.user_id) {
+                // Earlier-created account wins — same convention mergeUsers already
+                // uses for identity-based merges.
+                const winner = new Date(resolvedCurrent.created_at) <= new Date(resolvedOwner.created_at) ? resolvedCurrent : resolvedOwner;
+                const loser = winner.user_id === resolvedCurrent.user_id ? resolvedOwner : resolvedCurrent;
+                await mergeUsers(winner.user_id, loser.user_id, 'phone_otp');
+                winnerId = winner.user_id;
+            }
+            // else: both sides already resolve to the same account through a prior
+            // merge chain — nothing new to merge, just report that account.
+
+            const { rows } = await client.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [winnerId]);
+            if (rows.length === 0) return { success: false, error: 'user_not_found' };
+            const { user, channel } = shapeUserRow(rows[0]);
+            console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-bind-merged', data: { phone: fullPhone, requested_user_id: user_id, winner_user_id: winnerId } }));
+            return { success: true, user, channel, merged: true };
+        }
 
         await client.query('BEGIN');
         const existingPrimary = await client.query('SELECT 1 FROM user_phones WHERE user_id = $1 AND is_primary', [user_id]);
