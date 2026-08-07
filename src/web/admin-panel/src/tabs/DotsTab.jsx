@@ -24,9 +24,9 @@ function mergeIngredients(en, zh) {
 }
 
 const EMPTY_DOT = {
-  key_name: '', name: '', name_zh: '', color: '', color_zh: '', color_hex: '',
+  key_name: '', key_name_zh: '', name: '', name_zh: '', color: '', color_zh: '', color_hex: '',
   group_name: GROUP_VALUES[0], sub_age_target: SUB_AGE_VALUES[0],
-  timing: 'Morning', coating: 'gastric', ingredients_summary: '', description: '', is_isolate: false,
+  timing: 'Morning', timing_flexible: false, coating: 'gastric', ingredients_summary: '', description: '', is_isolate: false,
   ingredients_combined: [],
 };
 
@@ -36,11 +36,13 @@ function DotModal({ dot, onClose, onSave }) {
 
   const initForm = () => isEdit ? {
     key_name: dot.key_name || '',
+    key_name_zh: dot.key_name_zh || '',
     name: dot.name || '', name_zh: dot.name_zh || '',
     color: dot.color || '', color_zh: dot.color_zh || '', color_hex: dot.color_hex || '',
     group_name: dot.group_name || GROUP_VALUES[0],
     sub_age_target: dot.sub_age_target || SUB_AGE_VALUES[0],
     timing: dot.timing || 'Morning',
+    timing_flexible: !!dot.timing_flexible,
     coating: dot.coating || 'gastric',
     ingredients_summary: dot.ingredients_summary || '',
     description: dot.description || '',
@@ -76,13 +78,14 @@ function DotModal({ dot, onClose, onSave }) {
       const sIdx = SUB_AGE_VALUES.indexOf(form.sub_age_target);
       const filled = form.ingredients_combined.filter(i => i.name_en.trim() || i.name_zh.trim());
       const payload = {
-        key_name: form.key_name, name: form.name, name_zh: form.name_zh,
+        key_name: form.key_name, key_name_zh: form.key_name_zh, name: form.name, name_zh: form.name_zh,
         color: form.color, color_zh: form.color_zh, color_hex: form.color_hex,
         group_name: form.group_name,
         group_name_zh: gIdx >= 0 ? GROUP_ZH[gIdx] : form.group_name,
         sub_age_target: form.sub_age_target,
         sub_age_target_zh: sIdx >= 0 ? SUB_AGE_ZH[sIdx] : form.sub_age_target,
         timing: form.timing,
+        timing_flexible: form.timing_flexible,
         coating: form.coating,
         ingredients_summary: form.ingredients_summary,
         description: form.description,
@@ -111,6 +114,10 @@ function DotModal({ dot, onClose, onSave }) {
               <input value={form.key_name} onChange={e => set('key_name', e.target.value)} disabled={isEdit} placeholder={t.modal.keyNamePlaceholder} />
             </label>
             <label className="form-field">
+              <span>{t.modal.keyNameZh}</span>
+              <input value={form.key_name_zh} onChange={e => set('key_name_zh', e.target.value)} placeholder={t.modal.keyNameZhPlaceholder} />
+            </label>
+            <label className="form-field">
               <span>{t.modal.isIsolate}</span>
               <div className="select-wrap" style={{ width: '100%' }}>
                 <select value={form.is_isolate ? 'true' : 'false'} onChange={e => set('is_isolate', e.target.value === 'true')} className="inline-select" style={{ width: '100%' }}>
@@ -137,6 +144,10 @@ function DotModal({ dot, onClose, onSave }) {
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
+            </label>
+            <label className="form-field" title={t.modal.timingFlexibleHint}>
+              <span>{t.modal.timingFlexible}</span>
+              <input type="checkbox" checked={form.timing_flexible} onChange={e => set('timing_flexible', e.target.checked)} />
             </label>
             <label className="form-field">
               <span>{t.modal.coating}</span>
@@ -311,13 +322,18 @@ export default function DotsTab({ dots, onRefresh }) {
             {dots.length === 0 && <tr><td colSpan={10} className="empty-row">{t.empty.dots}</td></tr>}
             {dots.map(d => (
               <tr key={d.id}>
-                <td><code className="code-tag">{d.key_name}</code></td>
+                <td><code className="code-tag">{d.key_name}</code>{d.key_name_zh && <div className="muted" style={{ fontSize: 11 }}>{d.key_name_zh}</div>}</td>
                 <td className="bold">{fmt(d.name)}</td>
                 <td>{fmt(d.name_zh)}</td>
                 <td>
                   <Badge color={d.timing === 'Evening' ? '#8b5cf6' : '#f59e0b'}>
                     {d.timing === 'Evening' ? t.modal.timingEvening : t.modal.timingMorning}
                   </Badge>
+                  {d.timing_flexible && (
+                    <span style={{ marginLeft: 4 }} title={t.modal.timingFlexibleHint}>
+                      <Badge color="#10b981">{t.modal.timingFlexible}</Badge>
+                    </span>
+                  )}
                 </td>
                 <td>
                   {d.coating === 'enteric' ? (

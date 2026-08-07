@@ -830,6 +830,22 @@ function _fallbackCountForDot(dot) {
     return 4;
 }
 
+// Splits a dot's total count across morning/evening for the deterministic (non-agentic) path.
+// timing_flexible (migration_dots_timing_flexible.sql) marks dots with no real diurnal
+// pharmacological constraint — those get ~30% of a total > 10 moved to their non-default slot
+// so the day's AM/PM pill counts land closer together. Non-flexible dots (e.g. DOT-N4/DOT-N12's
+// stimulating ingredients, DOT-N3's sleep support) always stay entirely in their default slot —
+// timing_flexible=false is a real reason, not a guess, so it's never overridden here.
+function _splitDotTiming(dot, count) {
+    const isEveningDefault = dot.timing === 'Evening';
+    if (!dot.timing_flexible || count <= 10) {
+        return isEveningDefault ? { morning: 0, evening: count } : { morning: count, evening: 0 };
+    }
+    const secondary = Math.max(1, Math.round(count * 0.3));
+    const primary = count - secondary;
+    return isEveningDefault ? { morning: secondary, evening: primary } : { morning: primary, evening: secondary };
+}
+
 // The original (2026-07 and earlier) formulation path: one non-agentic LLM completion over the
 // latest biomarker snapshot, parsed into per-dot morning/evening counts. Used directly for Nano
 // (unchanged), and as the deterministic fallback for Viva when the richer async agentic path
@@ -896,12 +912,7 @@ async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFor
         }
     }
 
-    // Build morning/evening splits from DB timing column
-    const morningKeys = dotsFormulary.filter(r => r.timing === 'Morning').map(r => r.key_name.replace(/^DOT/, 'D'));
-    const eveningKeys = dotsFormulary.filter(r => r.timing === 'Evening').map(r => r.key_name.replace(/^DOT/, 'D'));
-
     // Fill any missing keys with the deterministic per-dot fallback
-    const availableDotKeys = new Set(dotsFormulary.map(r => r.key_name.replace(/^DOT/, 'D')));
     for (const dot of dotsFormulary) {
         const k = dot.key_name.replace(/^DOT/, 'D');
         if (!dotCounts[k]) dotCounts[k] = _fallbackCountForDot(dot);
@@ -914,20 +925,17 @@ async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFor
     const finalContent = analysis || (lang === 'zh' ? '您的专属原粒方案已生成，点击下方"查看方案"了解详情。' : 'Your personalized dot plan has been generated — tap "View Plan" below for the details.');
 
     const morningRecipe = { dots: {} };
-    morningKeys.forEach(k => {
-        if (availableDotKeys.has(k) && dotCounts[k] > 0) {
-            morningRecipe.dots[k.replace('D', 'DOT')] = dotCounts[k];
-        }
-    });
-
     const eveningRecipe = { dots: {} };
-    eveningKeys.forEach(k => {
-        if (availableDotKeys.has(k) && dotCounts[k] > 0) {
-            eveningRecipe.dots[k.replace('D', 'DOT')] = dotCounts[k];
-        }
-    });
+    for (const dot of dotsFormulary) {
+        const k = dot.key_name.replace(/^DOT/, 'D');
+        const count = dotCounts[k];
+        if (!count || count <= 0) continue;
+        const { morning, evening } = _splitDotTiming(dot, count);
+        if (morning > 0) morningRecipe.dots[dot.key_name] = morning;
+        if (evening > 0) eveningRecipe.dots[dot.key_name] = evening;
+    }
 
-    return { analysis, finalContent, morningRecipe, eveningRecipe, dotCounts, morningKeys, eveningKeys };
+    return { analysis, finalContent, morningRecipe, eveningRecipe, dotCounts };
 }
 
 // Commits a deterministic-formulation result as the one active plan for a user: supersedes any
@@ -980,7 +988,7 @@ async function handlePostFormulaDots(body) {
                  AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
                 [openid]
             ),
-            pool.query(`SELECT id, key_name, name, name_zh, timing, ingredients, ingredients_zh, sub_age_target, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`),
+            pool.query(`SELECT id, key_name, key_name_zh, name, name_zh, timing, timing_flexible, ingredients, ingredients_zh, sub_age_target, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`),
         ]);
 
         if (userResult.rows.length === 0) return { success: false, error: 'User not found' };
@@ -1152,7 +1160,7 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
 }
 
 async function handlePostDots(body) {
-    const { key_name, name, name_zh, color, color_zh, color_hex, group_name, group_name_zh, sub_age_target, sub_age_target_zh, timing, ingredients_summary, description, is_isolate, ingredients, ingredients_zh } = body;
+    const { key_name, key_name_zh, name, name_zh, color, color_zh, color_hex, group_name, group_name_zh, sub_age_target, sub_age_target_zh, timing, timing_flexible, ingredients_summary, description, is_isolate, ingredients, ingredients_zh } = body;
     if (!key_name || !name) return { success: false, error: 'key_name and name are required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -1160,11 +1168,11 @@ async function handlePostDots(body) {
         const nextId = (maxIdResult.rows[0].max_id || 0) + 1;
 
         const result = await pool.query(
-            `INSERT INTO dots (id, key_name, name, name_zh, color, color_zh, color_hex, group_name, group_name_zh, sub_age_target, sub_age_target_zh, timing, ingredients_summary, description, is_isolate, ingredients, ingredients_zh)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
-            [nextId, key_name, name, name_zh || null, color || null, color_zh || null, color_hex || null,
+            `INSERT INTO dots (id, key_name, key_name_zh, name, name_zh, color, color_zh, color_hex, group_name, group_name_zh, sub_age_target, sub_age_target_zh, timing, timing_flexible, ingredients_summary, description, is_isolate, ingredients, ingredients_zh)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id`,
+            [nextId, key_name, key_name_zh || null, name, name_zh || null, color || null, color_zh || null, color_hex || null,
              group_name || null, group_name_zh || null, sub_age_target || null, sub_age_target_zh || null,
-             timing || null, ingredients_summary || null, description || null, !!is_isolate,
+             timing || null, !!timing_flexible, ingredients_summary || null, description || null, !!is_isolate,
              ingredients ? JSON.stringify(ingredients) : null,
              ingredients_zh ? JSON.stringify(ingredients_zh) : null]
         );
@@ -1175,16 +1183,16 @@ async function handlePostDots(body) {
 }
 
 async function handlePutDot(dotId, body) {
-    const { name, name_zh, color, color_zh, color_hex, group_name, group_name_zh, sub_age_target, sub_age_target_zh, timing, ingredients_summary, description, is_isolate, ingredients, ingredients_zh } = body;
+    const { name, name_zh, key_name_zh, color, color_zh, color_hex, group_name, group_name_zh, sub_age_target, sub_age_target_zh, timing, timing_flexible, ingredients_summary, description, is_isolate, ingredients, ingredients_zh } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         await pool.query(
-            `UPDATE dots SET name=$1, name_zh=$2, color=$3, color_zh=$4, color_hex=$5, group_name=$6, group_name_zh=$7,
-             sub_age_target=$8, sub_age_target_zh=$9, timing=$10, ingredients_summary=$11,
-             description=$12, is_isolate=$13, ingredients=$14, ingredients_zh=$15 WHERE id=$16`,
-            [name, name_zh || null, color || null, color_zh || null, color_hex || null,
+            `UPDATE dots SET name=$1, name_zh=$2, key_name_zh=$3, color=$4, color_zh=$5, color_hex=$6, group_name=$7,
+             group_name_zh=$8, sub_age_target=$9, sub_age_target_zh=$10, timing=$11, timing_flexible=$12, ingredients_summary=$13,
+             description=$14, is_isolate=$15, ingredients=$16, ingredients_zh=$17 WHERE id=$18`,
+            [name, name_zh || null, key_name_zh || null, color || null, color_zh || null, color_hex || null,
              group_name || null, group_name_zh || null, sub_age_target || null, sub_age_target_zh || null,
-             timing || null, ingredients_summary || null, description || null, !!is_isolate,
+             timing || null, !!timing_flexible, ingredients_summary || null, description || null, !!is_isolate,
              ingredients ? JSON.stringify(ingredients) : null,
              ingredients_zh ? JSON.stringify(ingredients_zh) : null,
              dotId]
@@ -1228,4 +1236,5 @@ module.exports = {
     _runDeterministicFormulation,
     _commitNutritionPlan,
     _fallbackCountForDot,
+    _splitDotTiming,
 };

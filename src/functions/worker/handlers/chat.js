@@ -40,7 +40,7 @@ const { runAgenticTurn } = require('../lib/agenticChat');
 const { v4: uuidv4 } = require('uuid');
 const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
-const { _runDeterministicFormulation, _commitNutritionPlan, _fallbackCountForDot } = require('./dots');
+const { _runDeterministicFormulation, _commitNutritionPlan, _fallbackCountForDot, _splitDotTiming } = require('./dots');
 
 // Intents where factual claims (biomarker values, dot recommendations, science/protocol
 // assertions) are common enough to warrant the fuller plan->generate->judge->revise loop
@@ -969,7 +969,7 @@ async function _fireQuestionnaireAnsweredFollowup(userId, assignmentId) {
             [userId]
         ),
         pool.query(
-            `SELECT id, key_name, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`
+            `SELECT id, key_name, key_name_zh, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`
         ),
         pool.query(
             `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
@@ -1112,7 +1112,7 @@ async function handlePostChat(body) {
             // next step, the model reached for generic external supplement knowledge instead
             // of an actual dot (found via real-user testing 2026-07-25).
             fetches.dots = pool.query(
-                `SELECT id, key_name, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`
+                `SELECT id, key_name, key_name_zh, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`
             );
             // Always fetch active personal memory facts (dietary restrictions, allergies,
             // preferences, goals stated in prior conversations) — same unconditional
@@ -1504,13 +1504,26 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
 
     if (entries) {
         // Fill any dot the model omitted with the same deterministic per-dot fallback used
-        // elsewhere, split entirely into its default timing slot (conservative — no balancing
-        // guess for a dot the agentic step never actually reasoned about).
+        // elsewhere, split via _splitDotTiming (respects timing_flexible — see below).
         for (const dot of llmContext.dots || []) {
             const key = dot.key_name.replace(/^DOT/, 'D');
             if (entries.has(key)) continue;
             const count = _fallbackCountForDot(dot);
-            entries.set(key, dot.timing === 'Evening' ? { morning: 0, evening: count, dot } : { morning: count, evening: 0, dot });
+            const { morning, evening } = _splitDotTiming(dot, count);
+            entries.set(key, { morning, evening, dot });
+        }
+
+        // Hard guarantee for non-flexible dots (migration_dots_timing_flexible.sql):
+        // timing_flexible=false is a real pharmacological reason to stay in one slot (e.g.
+        // DOT-N4/DOT-N12's stimulating ingredients, DOT-N3's sleep support) — never trust the
+        // model's morning/evening split to have honored that, collapse the total back into the
+        // dot's default slot regardless of what it returned. Flexible dots keep whatever
+        // split the model chose (that's the balancing this exists to allow).
+        for (const v of entries.values()) {
+            if (v.dot.timing_flexible) continue;
+            const total = v.morning + v.evening;
+            v.morning = v.dot.timing === 'Evening' ? 0 : total;
+            v.evening = v.dot.timing === 'Evening' ? total : 0;
         }
 
         // Deterministic clamp: each dot's morning+evening total must land inside its own
@@ -1540,10 +1553,9 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
             morningTotal += v.morning;
             eveningTotal += v.evening;
         }
-        // Observability only — the model is instructed to redistribute when lopsided
-        // (systemFormulaGenerate.js), but respecting stimulant/sedative timing can legitimately
-        // still leave some skew. Not enforced/overridden here: a purely numeric rebalance can't
-        // tell a stimulant dot from a sleep dot, so this is a signal to watch, not a hard clamp.
+        // Observability only — flexible dots may still legitimately end up skewed if the model
+        // chose not to redistribute them, and non-flexible dots are locked to their default slot
+        // by design. This is a signal to watch, not something to override here.
         if (eveningTotal < morningTotal * 0.15 && morningTotal > 20) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'formula_dots_am_pm_imbalanced', user_id, morningTotal, eveningTotal }));
         }
@@ -1808,7 +1820,7 @@ async function handlePostHealthAdvice(body) {
                 [user_id]
             ),
             pool.query(
-                `SELECT id, key_name, name, name_zh, sub_age_target, description, timing, ingredients, ingredients_zh, target_dots_min, target_dots_max
+                `SELECT id, key_name, key_name_zh, name, name_zh, sub_age_target, description, timing, ingredients, ingredients_zh, target_dots_min, target_dots_max
                  FROM dots ORDER BY id ASC`
             ),
             pool.query(

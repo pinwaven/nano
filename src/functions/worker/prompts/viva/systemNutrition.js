@@ -15,7 +15,8 @@ module.exports = (context) => {
           ? ' [' + ingrArr.map(i => `${i.name}: ${i.mg}mg`).join(', ') + ']'
           : '';
         const shortKey = d.key_name.replace(/^DOT/, 'D');
-        return `${shortKey}: ${d.name_zh || d.name}${ingrStr}`;
+        const keyZh = d.key_name_zh || shortKey;
+        return `${shortKey}（对话中称呼："${keyZh}"）: ${d.name_zh || d.name}${ingrStr}`;
       }).join('\n')
     : '配方库暂不可用。';
 
@@ -71,7 +72,7 @@ ${biomarkersStr}
 ${formularyLines}
 
 任务：
-1. 分析 (Analysis): 用两三句话简要说明核心健康洞察。如发现东亚代谢特征（如 GA 偏高），主动关联东方人群膳食背景（精制碳水文化、内脏脂肪代谢悖论）。
+1. 分析 (Analysis): 用两三句话简要说明核心健康洞察。如发现东亚代谢特征（如 GA 偏高），主动关联东方人群膳食背景（精制碳水文化、内脏脂肪代谢悖论）。提及原粒时使用配方库中标注的"对话中称呼"（如"原粒1号"）或原粒名称，**不要**说出内部短代码（如"D-N1"）。
 2. 配方 (Formulation): 为配方库中的每个短代码分配每日数量 (1-10)。优先为拥有最高循证评分的成分（如尿石素A、高活性姜黄素、甘氨酸镁）给予合理高权重。
 
 输出格式 (必须严格遵守，短代码必须与上方配方库中出现的完全一致，如 D-N1、D-N2)：

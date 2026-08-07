@@ -20,7 +20,8 @@ module.exports = (context) => {
           ? ' [' + ingrArr.map(i => `${i.name}: ${i.mg}mg`).join(', ') + ']'
           : '';
         const shortKey = d.key_name.replace(/^DOT/, 'D');
-        return `${shortKey}: ${d.name}${d.name_zh ? ' / ' + d.name_zh : ''}${ingrStr}`;
+        const zhLabel = isZh && d.key_name_zh ? `（对话中称呼："${d.key_name_zh}"）` : '';
+        return `${shortKey}${zhLabel}: ${d.name}${d.name_zh ? ' / ' + d.name_zh : ''}${ingrStr}`;
       }).join('\n')
     : 'Formulary not available.';
 
@@ -62,7 +63,7 @@ ${biomarkersStr}
 ${formularyLines}
 
 任务：
-1. 分析 (Analysis): 用两三句话简要说明基于上述数据的核心健康洞察。
+1. 分析 (Analysis): 用两三句话简要说明基于上述数据的核心健康洞察。提及 Dot 时使用配方库中标注的"对话中称呼"（如"原粒1号"）或名称，**不要**说出内部短代码（如"D-N1"）。
 2. 配方 (Formulation): 为配方库中的每个短代码分配每日数量 (1-10)。
 
 输出格式 (必须严格遵守，短代码必须与上方配方库中出现的完全一致，如 D-N1、D-N2)：

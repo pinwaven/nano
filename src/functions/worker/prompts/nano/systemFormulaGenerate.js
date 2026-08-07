@@ -39,9 +39,13 @@ module.exports = (ctx) => {
             const timing = d.timing === 'Morning' ? (isZh ? '早（默认/主时段）' : 'Morning (default slot)')
                 : d.timing === 'Evening' ? (isZh ? '晚（默认/主时段）' : 'Evening (default slot)')
                 : (isZh ? '未指定' : 'unspecified');
+            const flex = d.timing_flexible
+                ? (isZh ? '早晚皆可，可自由拆分' : 'AM/PM flexible, freely splittable')
+                : (isZh ? '固定时段，不可拆分' : 'fixed slot, do not split');
+            const keyZh = d.key_name_zh || shortKey;
             return isZh
-                ? `${shortKey}: ${name}${ingrStr} — 每日总量范围 ${range}，默认时段：${timing}${d.sub_age_target ? `，对应维度：${d.sub_age_target}` : ''}`
-                : `${shortKey}: ${name}${ingrStr} — daily total range ${range}, default slot: ${timing}${d.sub_age_target ? `, targets: ${d.sub_age_target}` : ''}`;
+                ? `${shortKey}（对话中称呼："${keyZh}"）: ${name}${ingrStr} — 每日总量范围 ${range}，默认时段：${timing}（${flex}）${d.sub_age_target ? `，对应维度：${d.sub_age_target}` : ''}`
+                : `${shortKey}: ${name}${ingrStr} — daily total range ${range}, default slot: ${timing} (${flex})${d.sub_age_target ? `, targets: ${d.sub_age_target}` : ''}`;
         }).join('\n')
         : (isZh ? '配方库暂不可用。' : 'Formulary not available.');
 
@@ -78,7 +82,9 @@ module.exports = (ctx) => {
             : `Current solar term: ${current_solar_term.name_zh} (${current_solar_term.season_zh} · ${current_solar_term.organ_zh}) — traditional seasonal-wellness framing, not clinical evidence; use only as a light accent, never override biomarker-driven priorities.`)
         : '';
 
-    const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的任务是：为用户配置本周（7天）的 Waven Dots 方案——这是一次真实的配方决策，不是解释一个已有方案。
+    const NOTE_ZH_DIALOGUE_LABEL = '提及原粒时对用户使用配方库中标注的"对话中称呼"（如"原粒1号"）或原粒名称，**不要**说出内部短代码（如"D-N1"）——那是给系统解析用的，不是给用户看的。';
+
+const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的任务是：为用户配置本周（7天）的 Waven Dots 方案——这是一次真实的配方决策，不是解释一个已有方案。
 
 生物标志物的状态（正常/偏高/高）已在下方直接标注，请严格使用该标注。
 
@@ -100,20 +106,17 @@ ${formularyLines}
 可用工具：你可以调用 get_biomarker_history 查看历史检测趋势、get_dot_inventory 查看用户当前各 Dot 的剩余库存（避免对已有大量剩余的 Dot 过度追加）、get_nutrition_schedule 查看以往的配方历史（避免与近期方案剧烈波动、了解用户的 Dot 使用习惯）。不确定时优先调用工具核实，而不是凭空假设。
 
 任务：
-1. 分析：这段文字是本次配方决策的说明，**不是**一份通用健康状态总结——绝不能只罗列生物标志物/生理年龄/穿戴设备数据而不提及任何具体 Dot。必须明确点名你在下方"配方"中实际选择或加重的至少2-3个 Dot 短代码/名称，说明"为什么选它、对应哪个生物标志物或维度"，让用户看得出这段话和下面的配方是同一个决策的两个部分。可以简短提及驱动决策的关键数据，但核心内容是解释 Dot 选择，不是复述体检报告。2-3句话，对话语气，不使用列表或标题。
+1. 分析：这段文字是本次配方决策的说明，**不是**一份通用健康状态总结——绝不能只罗列生物标志物/生理年龄/穿戴设备数据而不提及任何具体 Dot。必须明确点名你在下方"配方"中实际选择或加重的至少2-3个 Dot，说明"为什么选它、对应哪个生物标志物或维度"，让用户看得出这段话和下面的配方是同一个决策的两个部分。${NOTE_ZH_DIALOGUE_LABEL}可以简短提及驱动决策的关键数据，但核心内容是解释 Dot 选择，不是复述体检报告。2-3句话，对话语气，不使用列表或标题。
 2. 配方：为配方库中的**每一个**短代码分配「早」「晚」两个数值（可以为0）。
 
 配方规则（务必遵守）：
 - 每个 Dot 的「早+晚」总量必须落在其配方库标注的"每日总量范围"内——不同 Dot 范围差异巨大（从1粒到上百粒不等），务必逐一核对，不得套用统一标准。
 - 在该范围内，按生物标志物严重程度决定强度：与用户异常指标无关 → 取范围下限附近；针对偏高指标 → 取范围中段；针对高风险/关键指标的高循证成分 → 取范围上限附近。
-- 每个 Dot 都有一个默认/主时段（配方库中标注的"早"或"晚"）——这是起点，不是最终答案，下方"拆分规则"是每次配方都必须逐条应用的固定动作，不是需要你先判断"是否有必要"的建议。
-- **拆分规则（对每一个 Dot 逐条无条件应用，不做整体判断，不允许跳过）**：
-  对每个默认主时段为"早"的 Dot，检查你为其确定的总量：
-    - 若总量 > 10：**必须**将其中约 30%（四舍五入，至少1粒）分配到 evening，其余约 70% 分配到 morning——这一步没有例外条件，不需要先比较早晚总量是否失衡才决定要不要做，每一个总量>10的默认早间 Dot 都要做这个拆分。
-    - 若总量 ≤ 10：不拆分，全部保留在 morning。
-  默认主时段为"晚"的 Dot：全部保留在 evening，不拆分。
-  上述拆分动作的唯一豁免：该 Dot 的成分/描述中明确具有提神、兴奋、加速代谢、咖啡因类似物等不适合睡前摄入的作用——这类必须保持 evening:0，不适用30%拆分。（明确具有助眠/放松作用的 Dot 同理不适用早间拆分，但这类 Dot 默认时段本就是"晚"，不会出现在本条"早"的分支中。）
-  执行完上述逐条拆分后，任何一个默认"早"、总量>10、且没有提神/兴奋豁免的 Dot，其 evening 值都不应为 0——如果你发现自己给某个符合条件的 Dot 填了 evening:0，说明漏做了这一步，回头修正。
+- 每个 Dot 都有一个默认/主时段（配方库中标注的"早"或"晚"），以及是否"早晚皆可"（timing_flexible）——这不是你的猜测，是配方库已经标注好的真实信息，必须严格遵守。
+- **拆分规则**：
+  标注"固定时段，不可拆分"的 Dot（如含提神/兴奋成分的 Dot 只标早，含助眠成分的 Dot 只标晚）：**必须**全部保留在默认时段，另一时段填 0，任何情况下都不得移动，即使因此导致当天早晚总粒数不均衡。
+  标注"早晚皆可，可自由拆分"的 Dot：这是你平衡当天早/晚总粒数的主要手段——在该 Dot 的每日总量范围内，根据你已为其他 Dot 分配的早/晚总量差距，把这个 Dot 的量向总量较少的一侧倾斜，帮助整体早晚更均衡；不必固守默认时段，可以按任意比例（含0/全部）分配到两个时段。
+  执行完毕后检查：所有"早晚皆可"的 Dot 是否已被用来缩小早晚总粒数的差距，而不是无脑照抄默认时段——如果早晚总量差距依然很大而"早晚皆可"的 Dot 还有可调整空间，说明漏做了这一步，回头修正。
 - 不得遗漏配方库中的任何短代码——即使某个 Dot 本次分配为0，也必须在输出中明确写出 0。
 
 输出格式（严格遵守，回复正文照常撰写，然后在最后另起一行附上下方 JSON，短代码必须与配方库完全一致）：
@@ -152,14 +155,11 @@ Task:
 Formulation rules (must follow):
 - Each Dot's "morning + evening" total must land within its formulary-labeled daily total range — ranges vary enormously between Dots (from 1 to over a hundred), so check each one individually rather than applying one uniform standard.
 - Within that range, scale intensity by biomarker severity: unrelated to the user's abnormal markers → near the low end of the range; addressing an elevated marker → mid-range; addressing a high-risk/critical marker with strong evidence → near the high end of the range.
-- Every Dot has a default/primary slot (labeled "Morning" or "Evening" in the formulary) — this is a starting point, not the final answer. The "splitting rule" below is a fixed step applied to every single Dot on every formulation, not a suggestion you first judge whether to apply.
-- **Splitting rule (apply unconditionally to every Dot individually, never skip, never judge case-by-case)**:
-  For every Dot whose default slot is "Morning", check the total you assigned it:
-    - If total > 10: you **must** move roughly 30% of it (rounded, at least 1) to evening, keeping the remaining ~70% in morning — no exception condition, you do not need to first check whether morning/evening totals look imbalanced before doing this. Every default-morning Dot with a total > 10 gets this split.
-    - If total ≤ 10: do not split, keep it entirely in morning.
-  Default-evening Dots: keep entirely in evening, never split.
-  The only exemption to the splitting step above: the Dot's ingredients/description explicitly have a stimulating, energizing, metabolism-accelerating, or caffeine-analog effect unsuitable before sleep — those must stay evening:0, the 30% split does not apply. (Dots with an explicit sleep/relaxation effect are likewise exempt from a morning split, but those are already default-evening and won't appear in this "Morning" branch.)
-  After applying the splitting step to every eligible Dot, no default-Morning Dot with total > 10 and no stimulant exemption should end up with evening:0 — if you find yourself doing that, you missed this step; go back and fix it.
+- Every Dot has a default/primary slot (labeled "Morning" or "Evening" in the formulary) and a flexibility flag ("AM/PM flexible" or "fixed slot") — this is not your guess, it's real data already labeled in the formulary, and must be followed exactly.
+- **Splitting rule**:
+  Dots labeled "fixed slot, do not split" (e.g. stimulating Dots that are Morning-only, sleep-support Dots that are Evening-only): keep the **entire** total in the default slot, the other slot must be 0 — never move any of it, even if this leaves the day's morning/evening totals imbalanced.
+  Dots labeled "AM/PM flexible": this is your primary lever for balancing the day's total morning vs. evening pill counts — within that Dot's own daily total range, lean its count toward whichever slot currently has less, based on the gap you've built up from the other Dots; don't just default to its primary slot, split it in any ratio (including 0/all) as needed.
+  After doing this, check: have the "AM/PM flexible" Dots actually been used to close the morning/evening gap, rather than just mirroring their default slot? If the gap is still large and a flexible Dot still had room to adjust, you missed this step — go back and fix it.
 - Never omit any short-key from the formulary — even a Dot assigned 0 this time must appear explicitly as 0 in the output.
 
 Output format (follow strictly — write your reply normally, then append the JSON below on a new final line, short-keys must exactly match the formulary):
