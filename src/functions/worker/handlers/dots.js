@@ -853,11 +853,13 @@ function _splitDotTiming(dot, count) {
 // this, reformulating mid-cycle could shift or duplicate a dot's "2 consecutive days" window.
 const PULSE_CYCLE_EPOCH = DateTime.fromISO('2026-01-01');
 
-// True if `dateISO` falls inside a pulse-protocol dot's active window (e.g. DOT-N7: 2 consecutive
-// days out of every ~30-day rolling cycle). Non-pulse dots ('daily', the default) are always
-// active — this is the single gate _commitNutritionPlan uses to decide whether a pulse dot
-// appears in a given day's recipe at all, so "not a daily dose" is enforced in code rather than
-// left to the model to remember not to schedule it 7/7 days.
+// True if `dateISO` falls inside a pulse-protocol dot's active window. Non-pulse dots ('daily',
+// the default) are always active — this is the single gate _commitNutritionPlan uses to decide
+// whether a pulse dot appears in a given day's recipe at all, so "not a daily dose" is enforced
+// in code rather than left to the model to remember. DOT-N7 is the only pulse dot configured
+// today, but as of 2026-08-08 it's routed through the dedicated week-2 isolation-day mechanism
+// instead (see N7_KEY/N7_ISOLATION_DAY_INDEXES below) — this function/gate remains generic
+// infrastructure for any *other* future pulse dot.
 function _isPulseActiveDate(dot, dateISO) {
     if (dot.dosing_protocol !== 'pulse') return true;
     if (!dot.pulse_days_per_cycle || !dot.pulse_cycle_days) return true; // misconfigured — fail open to daily rather than silently dropping the dot entirely
@@ -867,9 +869,9 @@ function _isPulseActiveDate(dot, dateISO) {
 }
 
 // Drops any pulse-protocol dot from a day's recipe on a day outside its active window — the
-// model/deterministic formulator still decides one count per dot per week (the per-dose amount
-// taken ON an active day), _commitNutritionPlan just no longer copies that count into all 7 days
-// verbatim for dots that were never meant to be dosed daily.
+// model/deterministic formulator still decides one count per dot per cycle (the per-dose amount
+// taken ON an active day), _commitNutritionPlan just no longer copies that count into every day
+// of the plan verbatim for dots that were never meant to be dosed daily.
 function _applyPulseSchedule(recipe, pulseDotsByKey, dateISO) {
     if (!pulseDotsByKey || pulseDotsByKey.size === 0) return recipe;
     const dots = {};
@@ -879,6 +881,67 @@ function _applyPulseSchedule(recipe, pulseDotsByKey, dateISO) {
         dots[key] = count;
     }
     return { dots };
+}
+
+// Plan cycle length — 28 days (4 weeks) so one formulation run covers 56 capsules (28 days x
+// AM/PM) instead of needing a weekly re-run. Changed from 7 2026-08-08.
+const PLAN_DAYS = 28;
+
+// Physical capsule-size ceiling: a capsule holding hundreds of dots (real observed totals ran
+// into the high 300s) is impractical to swallow in one go, independent of what any individual
+// dot's own target_dots_min/max range allows. Enforced per-capsule in _commitNutritionPlan via
+// _capRecipeTotal, which scales every dot in an over-budget capsule down proportionally
+// (largest-remainder rounding) rather than dropping dots outright or capping arbitrarily.
+const MAX_DOTS_PER_CAPSULE = 72;
+
+// DOT-N7 (Senescence Clear) dosing is fully system-controlled, never blended into the everyday
+// capsule: on 2 consecutive days inside week 2 of the 28-day cycle (0-indexed day-offsets 9-10,
+// i.e. calendar days 10-11 of 28 — squarely inside days 8-14), BOTH the morning and evening
+// capsule that day contain ONLY DOT-N7, each at its own target_dots_max. It never appears on any
+// other day. Its normal epoch-based pulse window (_isPulseActiveDate) is bypassed entirely for
+// this key so it's never dosed via two different mechanisms within the same plan.
+const N7_KEY = 'DOT-N7';
+const N7_ISOLATION_DAY_INDEXES = [9, 10];
+
+// Returns a copy of `recipe` with `key` removed from its dots map — used to strip DOT-N7 out of
+// the everyday recipe before the isolation-day override takes over its dosing entirely.
+function _omitDotKey(recipe, key) {
+    const dots = { ...(recipe?.dots || {}) };
+    delete dots[key];
+    return { dots };
+}
+
+// Caps a single capsule's total dot count at maxTotal, scaling every dot down proportionally
+// (largest-remainder method: floor each scaled count, then hand out the leftover budget to the
+// entries with the largest fractional remainder) so the rounded counts still sum to exactly
+// maxTotal rather than drifting under/over from naive per-dot rounding. A dot whose scaled share
+// floors to 0 simply drops out of that capsule — an expected outcome of a ~5x reduction, not a
+// bug — relative emphasis between the surviving dots is preserved.
+function _capRecipeTotal(recipe, maxTotal) {
+    const dots = recipe?.dots || {};
+    const total = Object.values(dots).reduce((s, c) => s + c, 0);
+    if (total <= maxTotal) return recipe;
+    const scale = maxTotal / total;
+    const floors = {};
+    const remainders = [];
+    let flooredSum = 0;
+    for (const [key, count] of Object.entries(dots)) {
+        const scaled = count * scale;
+        const floor = Math.floor(scaled);
+        floors[key] = floor;
+        flooredSum += floor;
+        remainders.push([key, scaled - floor]);
+    }
+    let remaining = maxTotal - flooredSum;
+    remainders.sort((a, b) => b[1] - a[1]);
+    for (let i = 0; i < remaining && i < remainders.length; i++) {
+        floors[remainders[i][0]] += 1;
+    }
+    const result = {};
+    for (const [key, count] of Object.entries(floors)) {
+        if (count > 0) result[key] = count;
+    }
+    return { dots: result };
 }
 
 // The original (2026-07 and earlier) formulation path: one non-agentic LLM completion over the
@@ -894,7 +957,7 @@ async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFor
         bioage_profile: bioageProfile,
         dots_formulary: dotsFormulary,
         start_date: getNowShanghai().toISODate(),
-        days_needed: 7,
+        days_needed: PLAN_DAYS,
         current_solar_term: currentSolarTerm,
         essential_knowledge: essentialKnowledge,
         user_facts: userFacts,
@@ -975,26 +1038,47 @@ async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFor
 
 // Commits a deterministic-formulation result as the one active plan for a user: supersedes any
 // existing active plan, inserts a fresh 'active' nutrition_plans row (or activates an existing
-// pending one when planId is given), and writes 7 days of morning/evening schedules — identical
-// across all 7 days except for any pulse-protocol dot (dosing_protocol='pulse', e.g. DOT-N7),
-// which is only written into the days that actually fall inside its active pulse window
-// (_isPulseActiveDate) and omitted entirely from the rest, rather than dosed all 7/7 days.
+// pending one when planId is given), and writes PLAN_DAYS (28) days of morning/evening schedules.
+// Every day's capsule is capped at MAX_DOTS_PER_CAPSULE via _capRecipeTotal. DOT-N7 is stripped
+// out of the everyday recipe entirely and instead written only on the 2 dedicated week-2
+// isolation days (N7_ISOLATION_DAY_INDEXES), where it's the sole dot in both capsules at its own
+// target_dots_max — see the constants above for why. Any *other* pulse-protocol dot (none exist
+// today) still follows the older generic epoch-based pulse window (_isPulseActiveDate), included
+// only on the days that actually fall inside its active window and omitted from the rest.
 // `dotsFormulary` is optional (callers that never touch a pulse dot can omit it) — without it,
-// pulse enforcement simply doesn't run and recipes are written as given, same as before this
-// existed.
+// pulse/N7 enforcement simply doesn't run (N7 stays in the everyday recipe uncapped-by-isolation,
+// falling back to a default target_dots_max of 50 if it ever is isolated) and only the 72/capsule
+// cap still applies.
+//
+// Stale-pending guard: when `planId` is given, the current active plan is only superseded AFTER
+// confirming the pending->active flip actually landed (WHERE status='pending' on that UPDATE). A
+// formula-dots request publishes its chat.generate event with a brand-new pending row every time
+// it's called (handlers/dots.js's _handleFormulaDotsAgentic); if two calls race, or EventBridge's
+// at-least-once delivery redelivers an older event late, that older pending row may already be
+// 'superseded' by the time its event is finally processed. Without this guard, that late
+// delivery would silently supersede whatever plan is genuinely active now and resurrect stale
+// data in its place — confirmed possible via live testing 2026-08-08 (two formula-dots calls for
+// the same user produced 3 pending rows but only 1 delivered event; the other 2 remained
+// undelivered and could still land later). Returns the plan id normally, or `null` if the commit
+// was skipped as stale — callers should treat `null` as "nothing changed, don't notify the user".
 async function _commitNutritionPlan(client, { userId, analysis, morningRecipe, eveningRecipe, planId, dotsFormulary }) {
     const startDateObj = getNowShanghai();
-    const endDateObj = startDateObj.plus({ days: 6 });
-
-    await client.query(`UPDATE nutrition_plans SET status = 'superseded' WHERE user_id = $1 AND status = 'active'`, [userId]);
+    const endDateObj = startDateObj.plus({ days: PLAN_DAYS - 1 });
 
     let finalPlanId = planId;
     if (finalPlanId) {
-        await client.query(
-            `UPDATE nutrition_plans SET status = 'active', start_date = $1, end_date = $2, goal = $3 WHERE id = $4`,
+        const activated = await client.query(
+            `UPDATE nutrition_plans SET status = 'active', start_date = $1, end_date = $2, goal = $3
+             WHERE id = $4 AND status = 'pending' RETURNING id`,
             [startDateObj.toISODate(), endDateObj.toISODate(), analysis || 'Personalized Formulation', finalPlanId]
         );
+        if (activated.rows.length === 0) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'commit_nutrition_plan_stale_pending_skipped', userId, planId: finalPlanId }));
+            return null; // signals "no-op" so callers skip notifying the user about nothing
+        }
+        await client.query(`UPDATE nutrition_plans SET status = 'superseded' WHERE user_id = $1 AND status = 'active' AND id != $2`, [userId, finalPlanId]);
     } else {
+        await client.query(`UPDATE nutrition_plans SET status = 'superseded' WHERE user_id = $1 AND status = 'active'`, [userId]);
         const planInsert = await client.query(
             `INSERT INTO nutrition_plans (user_id, start_date, end_date, goal, status) VALUES ($1, $2, $3, $4, 'active') RETURNING id`,
             [userId, startDateObj.toISODate(), endDateObj.toISODate(), analysis || 'Personalized Formulation']
@@ -1002,12 +1086,26 @@ async function _commitNutritionPlan(client, { userId, analysis, morningRecipe, e
         finalPlanId = planInsert.rows[0].id;
     }
 
-    const pulseDotsByKey = new Map((dotsFormulary || []).filter(d => d.dosing_protocol === 'pulse').map(d => [d.key_name, d]));
+    const dotsByKey = new Map((dotsFormulary || []).map(d => [d.key_name, d]));
+    const n7Dot = dotsByKey.get(N7_KEY);
+    const n7MaxCount = n7Dot?.target_dots_max ?? 50;
+    const n7IsolationRecipe = { dots: { [N7_KEY]: n7MaxCount } };
 
-    for (let i = 0; i < 7; i++) {
+    const baseMorningRecipe = _omitDotKey(morningRecipe, N7_KEY);
+    const baseEveningRecipe = _omitDotKey(eveningRecipe, N7_KEY);
+    const pulseDotsByKey = new Map((dotsFormulary || []).filter(d => d.dosing_protocol === 'pulse' && d.key_name !== N7_KEY).map(d => [d.key_name, d]));
+
+    for (let i = 0; i < PLAN_DAYS; i++) {
         const currentDate = startDateObj.plus({ days: i }).toISODate();
-        const dayMorningRecipe = _applyPulseSchedule(morningRecipe, pulseDotsByKey, currentDate);
-        const dayEveningRecipe = _applyPulseSchedule(eveningRecipe, pulseDotsByKey, currentDate);
+        const isN7IsolationDay = N7_ISOLATION_DAY_INDEXES.includes(i);
+
+        const dayMorningRecipe = isN7IsolationDay
+            ? n7IsolationRecipe
+            : _capRecipeTotal(_applyPulseSchedule(baseMorningRecipe, pulseDotsByKey, currentDate), MAX_DOTS_PER_CAPSULE);
+        const dayEveningRecipe = isN7IsolationDay
+            ? n7IsolationRecipe
+            : _capRecipeTotal(_applyPulseSchedule(baseEveningRecipe, pulseDotsByKey, currentDate), MAX_DOTS_PER_CAPSULE);
+
         await client.query(
             'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
             [finalPlanId, userId, currentDate, 'morning_cup', dayMorningRecipe]
@@ -1083,7 +1181,7 @@ async function handlePostFormulaDots(body) {
 // this handler only inserts a 'pending' plan row and publishes the event, returning immediately.
 async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dotsFormulary, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts, personaType }) {
     const startDateObj = getNowShanghai();
-    const endDateObj = startDateObj.plus({ days: 6 });
+    const endDateObj = startDateObj.plus({ days: PLAN_DAYS - 1 });
 
     const pendingClient = await pool.connect();
     let pendingPlanId;

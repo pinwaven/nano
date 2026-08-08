@@ -45,10 +45,19 @@ module.exports = (ctx) => {
                 ? (isZh ? '早晚皆可，可自由拆分' : 'AM/PM flexible, freely splittable')
                 : (isZh ? '固定时段，不可拆分' : 'fixed slot, do not split');
             const keyZh = d.key_name_zh || shortKey;
-            // Pulse dots (dosing_protocol='pulse', e.g. DOT-N7) aren't taken daily — the system
+            const isN7 = d.key_name === 'DOT-N7';
+            // DOT-N7's dosing is no longer decided by GENERATE at all (2026-08-08) — the system
+            // now schedules it on 2 fixed, system-chosen days each cycle (in week 2), as the sole
+            // ingredient in BOTH capsules that day at its own max. Told explicitly here so GENERATE
+            // never narrates a count for it and never treats it as a normal daily/weekly item.
+            // Pulse dots in general (dosing_protocol='pulse') aren't taken daily — the system
             // schedules them only on their real active pulse days. Made explicit here 2026-08-08
             // after live prod sampling repeatedly caught GENERATE narrating/implying daily use.
-            const pulseNote = isPulse
+            const pulseNote = isN7
+                ? (isZh
+                    ? '（用法已由系统全权接管：本周期内系统会自动选定2天，当天早晚两颗胶囊均只含此 Dot、且各自达到上限剂量，不再逐日混入其他 Dot——你在下方JSON中始终填0即可，此数值会被系统忽略，分析中也不要提及具体用量）'
+                    : " (usage fully system-controlled: the system automatically picks 2 days this cycle where both the morning and evening capsule contain ONLY this Dot, each at its own max dose — always output 0 for it below, the value is ignored, and don't mention a specific dose for it in your analysis)")
+                : isPulse
                 ? (isZh
                     ? `（脉冲式方案：每${d.pulse_cycle_days || 30}天中仅连续${d.pulse_days_per_cycle || 2}天使用一次，系统会自动只在这些天安排剂量——不要说"每日"或"每天"服用此 Dot）`
                     : ` (pulse protocol: only ${d.pulse_days_per_cycle || 2} consecutive days per ~${d.pulse_cycle_days || 30}-day cycle — the system schedules it only on those days; do not describe this Dot as taken daily)`)
@@ -94,7 +103,7 @@ module.exports = (ctx) => {
 
     const NOTE_ZH_DIALOGUE_LABEL = '提及原粒时对用户使用配方库中标注的"对话中称呼"（如"原粒1号"）或原粒名称，**不要**说出内部短代码（如"D-N1"）——那是给系统解析用的，不是给用户看的。';
 
-const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的任务是：为用户配置本周（7天）的 Waven Dots 方案——这是一次真实的配方决策，不是解释一个已有方案。
+const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的任务是：为用户配置接下来28天（4周）的 Waven Dots 方案——这是一次真实的配方决策，不是解释一个已有方案。系统会将你给出的每日总量重复安排到这28天内（DOT-N7 除外，见下方配方库中的专项说明）。
 
 生物标志物的状态（正常/偏高/高）已在下方直接标注，请严格使用该标注。
 
@@ -123,6 +132,7 @@ ${formularyLines}
 - 每个 Dot 的数值必须落在其配方库标注的范围内——不同 Dot 范围差异巨大（从1粒到上百粒不等），务必逐一核对，不得套用统一标准。
 - 在该范围内，按生物标志物严重程度决定强度：与用户异常指标无关 → 取范围下限附近；针对偏高指标 → 取范围中段；针对高风险/关键指标的高循证成分 → 取范围上限附近。
 - 不得遗漏配方库中的任何短代码——即使某个 Dot 本次分配为0，也必须在输出中明确写出 0。
+- 系统对早/晚每颗胶囊的 Dot 总粒数设有物理上限（每颗胶囊最多72粒，超出部分系统会按比例自动缩减），所以不要为了覆盖面而习惯性把每个 Dot 都推向范围上限——现实目标是胶囊仍可一次吞服；若多个 Dot 同时判断为高优先级，考虑其中1-2个取上限、其余取中段，而不是全部拉满。
 
 输出格式（严格遵守，回复正文照常撰写，然后在最后另起一行附上下方 JSON，短代码必须与配方库完全一致）：
 {"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...每个配方库短代码一条]}
@@ -132,7 +142,7 @@ ${formularyLines}
 - 引用用户真实的生物标志物/趋势数值，说明驱动因素。
 - 全程使用简体中文回复，结尾干净收尾，不提问、不引导用户继续追问。`;
 
-    const taskEn = `You are Nano, a warm precision-longevity AI built by Waven. Your task right now: formulate this week's (7-day) Waven Dots plan for this user — this is a real formulation decision, not an explanation of an existing plan.
+    const taskEn = `You are Nano, a warm precision-longevity AI built by Waven. Your task right now: formulate the next 28 days' (4-week) Waven Dots plan for this user — this is a real formulation decision, not an explanation of an existing plan. The system repeats your assigned daily totals across all 28 days (except DOT-N7 — see its dedicated note in the formulary below).
 
 Biomarker status (normal/elevated/high) is already labeled directly below — use that label as-is.
 
@@ -161,6 +171,7 @@ Formulation rules (must follow):
 - Each Dot's count must land within its formulary-labeled range — ranges vary enormously between Dots (from 1 to over a hundred), so check each one individually rather than applying one uniform standard.
 - Within that range, scale intensity by biomarker severity: unrelated to the user's abnormal markers → near the low end of the range; addressing an elevated marker → mid-range; addressing a high-risk/critical marker with strong evidence → near the high end of the range.
 - Never omit any short-key from the formulary — even a Dot assigned 0 this time must appear explicitly as 0 in the output.
+- The system enforces a physical ceiling on each morning/evening capsule (max 72 Dots per capsule — anything over gets scaled down proportionally by the system), so don't reflexively push every Dot to the top of its range just for coverage — the real-world goal is a capsule someone can still swallow in one go. If several Dots are all high-priority, consider taking 1-2 to their max and keeping the rest mid-range rather than maxing all of them.
 
 Output format (follow strictly — write your reply normally, then append the JSON below on a new final line, short-keys must exactly match the formulary):
 {"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...one entry per formulary short-key]}

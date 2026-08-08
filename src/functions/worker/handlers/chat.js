@@ -1583,9 +1583,10 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     }
 
     const client = await pool.connect();
+    let committedPlanId;
     try {
         await client.query('BEGIN');
-        await _commitNutritionPlan(client, {
+        committedPlanId = await _commitNutritionPlan(client, {
             userId: user_id, analysis, morningRecipe, eveningRecipe,
             planId: llmContext.pending_plan_id, dotsFormulary: llmContext.dots,
         });
@@ -1596,6 +1597,11 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     } finally {
         client.release();
     }
+
+    // null means the commit was skipped as stale (a late/duplicate event for a pending plan
+    // already superseded by a newer formulation run) — nothing actually changed, so don't tell
+    // the user a plan is ready.
+    if (committedPlanId === null) return;
 
     await saveChatMessage(user_id, 'ai', finalContent, null, personaType);
     await pool.query(
@@ -1676,12 +1682,13 @@ async function handleChatGenerateEvent(payload) {
                     userFacts: llmContext.user_facts,
                 });
                 const fbClient = await pool.connect();
+                let committedPlanId;
                 try {
                     await fbClient.query('BEGIN');
-                    await _commitNutritionPlan(fbClient, {
+                    committedPlanId = await _commitNutritionPlan(fbClient, {
                         userId: user_id, analysis: fallback.analysis,
                         morningRecipe: fallback.morningRecipe, eveningRecipe: fallback.eveningRecipe,
-                        planId: llmContext.pending_plan_id,
+                        planId: llmContext.pending_plan_id, dotsFormulary: llmContext.dots,
                     });
                     await fbClient.query('COMMIT');
                 } catch (e) {
@@ -1690,11 +1697,13 @@ async function handleChatGenerateEvent(payload) {
                 } finally {
                     fbClient.release();
                 }
-                await saveChatMessage(user_id, 'ai', fallback.finalContent, null, personaType);
-                await pool.query(
-                    'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                    [user_id, 'nutrition_plan', fallback.finalContent, 'pending']
-                );
+                if (committedPlanId !== null) {
+                    await saveChatMessage(user_id, 'ai', fallback.finalContent, null, personaType);
+                    await pool.query(
+                        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                        [user_id, 'nutrition_plan', fallback.finalContent, 'pending']
+                    );
+                }
             } catch (fbErr) {
                 console.error('Formula dots fallback also failed:', fbErr);
                 await pool.query(

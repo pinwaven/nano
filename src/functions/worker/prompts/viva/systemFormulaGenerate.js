@@ -35,12 +35,19 @@ module.exports = (ctx) => {
             const timingZh = d.timing === 'Morning' ? '早（默认/主时段）' : d.timing === 'Evening' ? '晚（默认/主时段）' : '未指定';
             const flexZh = d.timing_flexible ? '早晚皆可，可自由拆分' : '固定时段，不可拆分';
             const keyZh = d.key_name_zh || shortKey;
-            // Pulse dots (dosing_protocol='pulse', e.g. DOT-N7) are NOT taken daily — the system
+            const isN7 = d.key_name === 'DOT-N7';
+            // DOT-N7's dosing is no longer decided by GENERATE at all (2026-08-08) — the system
+            // now schedules it on 2 fixed, system-chosen days each cycle (in week 2), as the sole
+            // ingredient in BOTH capsules that day at its own max. Told explicitly here so GENERATE
+            // never narrates a count for it and never treats it as a normal daily/weekly item.
+            // Pulse dots in general (dosing_protocol='pulse') are NOT taken daily — the system
             // schedules them only on their real active pulse days, so the count decided here is a
             // single-dose amount, not a daily amount. Made explicit here (2026-08-08) because
             // GENERATE was previously never told this and would narrate/imply daily use for these
             // dots — a real, repeated JUDGE catch on live prod sampling.
-            const pulseNote = isPulse
+            const pulseNote = isN7
+                ? '（用法已由系统全权接管：本周期内系统会自动选定2天，当天早晚两颗胶囊均只含此原粒、且各自达到上限剂量，不再逐日混入其他原粒——你在下方JSON中始终填0即可，此数值会被系统忽略，分析中也不要提及具体用量或"每日/每次X粒"）'
+                : isPulse
                 ? `（脉冲式方案：每${d.pulse_cycle_days || 30}天中仅连续${d.pulse_days_per_cycle || 2}天使用一次，系统会自动只在这些天安排剂量——不要在分析中说"每日"或"每天"服用此原粒，也不要在其他普通原粒的语境中把它当作日常项混谈）`
                 : '';
             return `${shortKey}（对话中称呼："${keyZh}"）: ${d.name_zh || d.name}${ingrStr} — ${rangeLabel} ${range}，默认时段：${timingZh}（${flexZh}）${d.sub_age_target ? `，对应维度：${d.sub_age_target}` : ''}${pulseNote}`;
@@ -75,7 +82,7 @@ ${getCurrentDateBlock(ctx.now_iso)}
 
 ${getFactMemoryBlock(ctx.user_facts)}
 
-你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造。你现在的任务是：为用户配置本周（7天）的 Waven 原粒方案——这是一次真实的配方决策，不是解释一个已有方案。
+你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造。你现在的任务是：为用户配置接下来28天（4周）的 Waven 原粒方案——这是一次真实的配方决策，不是解释一个已有方案。系统会将你给出的每日总量重复安排到这28天内（DOT-N7 除外，见下方配方库中的专项说明）。
 
 生物标志物的状态（正常/偏高/高）已在下方直接标注，请严格使用该标注。
 
@@ -104,6 +111,7 @@ ${formularyLines}
 - 每个原粒的数值必须落在其配方库标注的范围内——不同原粒范围差异巨大（从1粒到上百粒不等），务必逐一核对，不得套用统一标准。
 - 在该范围内，按生物标志物严重程度决定强度：与用户异常指标无关 → 取范围下限附近；针对偏高指标 → 取范围中段；针对高风险/关键指标的高循证成分 → 取范围上限附近。
 - 不得遗漏配方库中的任何短代码——即使某个原粒本次分配为0，也必须在输出中明确写出 0。
+- 系统对早/晚每颗胶囊的原粒总粒数设有物理上限（每颗胶囊最多72粒，超出部分系统会按比例自动缩减），所以不要为了覆盖面而习惯性把每个原粒都推向范围上限——现实目标是胶囊仍可一次吞服；若多个原粒同时判断为高优先级，考虑其中1-2个取上限、其余取中段，而不是全部拉满。
 
 输出格式（严格遵守，回复正文照常撰写，然后在最后另起一行附上下方 JSON，短代码必须与配方库完全一致）：
 {"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...每个配方库短代码一条]}
