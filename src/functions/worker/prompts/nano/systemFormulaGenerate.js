@@ -33,9 +33,11 @@ module.exports = (ctx) => {
                 ? ' [' + ingrArr.map(i => `${i.name}: ${i.mg}mg`).join(', ') + ']'
                 : '';
             const name = isZh ? (d.name_zh || d.name) : d.name;
+            const isPulse = d.dosing_protocol === 'pulse';
+            const rangeLabel = isZh ? (isPulse ? '单次剂量范围' : '每日总量范围') : (isPulse ? 'per-dose range' : 'daily total range');
             const range = (d.target_dots_min != null && d.target_dots_max != null)
-                ? (isZh ? `${d.target_dots_min}-${d.target_dots_max}粒/日` : `${d.target_dots_min}-${d.target_dots_max}/day`)
-                : (isZh ? '1-10粒/日 (无专属范围，谨慎使用)' : '1-10/day (no dedicated range — use cautiously)');
+                ? `${d.target_dots_min}-${d.target_dots_max}${isZh ? '粒' : ''}`
+                : (isZh ? '1-10粒 (无专属范围，谨慎使用)' : '1-10 (no dedicated range — use cautiously)');
             const timing = d.timing === 'Morning' ? (isZh ? '早（默认/主时段）' : 'Morning (default slot)')
                 : d.timing === 'Evening' ? (isZh ? '晚（默认/主时段）' : 'Evening (default slot)')
                 : (isZh ? '未指定' : 'unspecified');
@@ -43,9 +45,17 @@ module.exports = (ctx) => {
                 ? (isZh ? '早晚皆可，可自由拆分' : 'AM/PM flexible, freely splittable')
                 : (isZh ? '固定时段，不可拆分' : 'fixed slot, do not split');
             const keyZh = d.key_name_zh || shortKey;
+            // Pulse dots (dosing_protocol='pulse', e.g. DOT-N7) aren't taken daily — the system
+            // schedules them only on their real active pulse days. Made explicit here 2026-08-08
+            // after live prod sampling repeatedly caught GENERATE narrating/implying daily use.
+            const pulseNote = isPulse
+                ? (isZh
+                    ? `（脉冲式方案：每${d.pulse_cycle_days || 30}天中仅连续${d.pulse_days_per_cycle || 2}天使用一次，系统会自动只在这些天安排剂量——不要说"每日"或"每天"服用此 Dot）`
+                    : ` (pulse protocol: only ${d.pulse_days_per_cycle || 2} consecutive days per ~${d.pulse_cycle_days || 30}-day cycle — the system schedules it only on those days; do not describe this Dot as taken daily)`)
+                : '';
             return isZh
-                ? `${shortKey}（对话中称呼："${keyZh}"）: ${name}${ingrStr} — 每日总量范围 ${range}，默认时段：${timing}（${flex}）${d.sub_age_target ? `，对应维度：${d.sub_age_target}` : ''}`
-                : `${shortKey}: ${name}${ingrStr} — daily total range ${range}, default slot: ${timing} (${flex})${d.sub_age_target ? `, targets: ${d.sub_age_target}` : ''}`;
+                ? `${shortKey}（对话中称呼："${keyZh}"）: ${name}${ingrStr} — ${rangeLabel} ${range}，默认时段：${timing}（${flex}）${d.sub_age_target ? `，对应维度：${d.sub_age_target}` : ''}${pulseNote}`
+                : `${shortKey}: ${name}${ingrStr} — ${rangeLabel} ${range}, default slot: ${timing} (${flex})${d.sub_age_target ? `, targets: ${d.sub_age_target}` : ''}${pulseNote}`;
         }).join('\n')
         : (isZh ? '配方库暂不可用。' : 'Formulary not available.');
 
@@ -107,20 +117,15 @@ ${formularyLines}
 
 任务：
 1. 分析：这段文字是本次配方决策的说明，**不是**一份通用健康状态总结——绝不能只罗列生物标志物/生理年龄/穿戴设备数据而不提及任何具体 Dot。必须明确点名你在下方"配方"中实际选择或加重的至少2-3个 Dot，说明"为什么选它、对应哪个生物标志物或维度"，让用户看得出这段话和下面的配方是同一个决策的两个部分。${NOTE_ZH_DIALOGUE_LABEL}可以简短提及驱动决策的关键数据，但核心内容是解释 Dot 选择，不是复述体检报告。2-3句话，对话语气，不使用列表或标题。
-2. 配方：为配方库中的**每一个**短代码分配「早」「晚」两个数值（可以为0）。
+2. 配方：为配方库中的**每一个**短代码分配一个数值（可以为0）——对普通 Dot 是每日总量，对标注"脉冲式方案"的 Dot 是其脉冲当天的单次剂量（系统会自动只在真正的脉冲日安排该剂量，其余日期不出现）。早晚如何拆分由系统按每个 Dot 的默认时段/是否"早晚皆可"自动计算，你**不需要**、也**不应该**自己拆分早晚——只需决定数值。
 
 配方规则（务必遵守）：
-- 每个 Dot 的「早+晚」总量必须落在其配方库标注的"每日总量范围"内——不同 Dot 范围差异巨大（从1粒到上百粒不等），务必逐一核对，不得套用统一标准。
+- 每个 Dot 的数值必须落在其配方库标注的范围内——不同 Dot 范围差异巨大（从1粒到上百粒不等），务必逐一核对，不得套用统一标准。
 - 在该范围内，按生物标志物严重程度决定强度：与用户异常指标无关 → 取范围下限附近；针对偏高指标 → 取范围中段；针对高风险/关键指标的高循证成分 → 取范围上限附近。
-- 每个 Dot 都有一个默认/主时段（配方库中标注的"早"或"晚"），以及是否"早晚皆可"（timing_flexible）——这不是你的猜测，是配方库已经标注好的真实信息，必须严格遵守。
-- **拆分规则**：
-  标注"固定时段，不可拆分"的 Dot（如含提神/兴奋成分的 Dot 只标早，含助眠成分的 Dot 只标晚）：**必须**全部保留在默认时段，另一时段填 0，任何情况下都不得移动，即使因此导致当天早晚总粒数不均衡。
-  标注"早晚皆可，可自由拆分"的 Dot：这是你平衡当天早/晚总粒数的主要手段——在该 Dot 的每日总量范围内，根据你已为其他 Dot 分配的早/晚总量差距，把这个 Dot 的量向总量较少的一侧倾斜，帮助整体早晚更均衡；不必固守默认时段，可以按任意比例（含0/全部）分配到两个时段。
-  执行完毕后检查：所有"早晚皆可"的 Dot 是否已被用来缩小早晚总粒数的差距，而不是无脑照抄默认时段——如果早晚总量差距依然很大而"早晚皆可"的 Dot 还有可调整空间，说明漏做了这一步，回头修正。
 - 不得遗漏配方库中的任何短代码——即使某个 Dot 本次分配为0，也必须在输出中明确写出 0。
 
 输出格式（严格遵守，回复正文照常撰写，然后在最后另起一行附上下方 JSON，短代码必须与配方库完全一致）：
-{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","morning":0,"evening":0}, ...每个配方库短代码一条]}
+{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...每个配方库短代码一条]}
 
 回复规则：
 - 先给出对话式分析（不使用标题、不使用列表，2-3句话），再附上 JSON 行。
@@ -150,20 +155,15 @@ Available tools: call get_biomarker_history for historical test trends, get_dot_
 
 Task:
 1. Analysis: this text explains the actual formulation decision — it is **not** a generic health-status summary. Never just list biomarkers/BioAge/wearable data without naming any specific Dot. You must explicitly name at least 2-3 Dot short-keys/names you actually chose or emphasized in the "formulation" below, and explain why each was chosen and which biomarker or dimension it addresses — the reader should see this text and the formulation below as two parts of the same decision. You may briefly mention the key data driving the decision, but the core content is explaining the Dot choices, not restating the lab report. 2-3 sentences, conversational tone, no lists or headers.
-2. Formulation: assign a "morning" and "evening" value (can be 0) to **every single** short-key in the formulary.
+2. Formulation: assign a single count (can be 0) to **every single** short-key in the formulary — for a normal Dot this is a daily total; for a Dot labeled "pulse protocol" it's the single-dose amount taken on its pulse day (the system automatically schedules it only on the real pulse days and omits it the rest of the week). The AM/PM split is computed automatically by the system from each Dot's default slot and flexibility flag — you do **not** need to, and should **not**, decide the morning/evening split yourself; just decide the count.
 
 Formulation rules (must follow):
-- Each Dot's "morning + evening" total must land within its formulary-labeled daily total range — ranges vary enormously between Dots (from 1 to over a hundred), so check each one individually rather than applying one uniform standard.
+- Each Dot's count must land within its formulary-labeled range — ranges vary enormously between Dots (from 1 to over a hundred), so check each one individually rather than applying one uniform standard.
 - Within that range, scale intensity by biomarker severity: unrelated to the user's abnormal markers → near the low end of the range; addressing an elevated marker → mid-range; addressing a high-risk/critical marker with strong evidence → near the high end of the range.
-- Every Dot has a default/primary slot (labeled "Morning" or "Evening" in the formulary) and a flexibility flag ("AM/PM flexible" or "fixed slot") — this is not your guess, it's real data already labeled in the formulary, and must be followed exactly.
-- **Splitting rule**:
-  Dots labeled "fixed slot, do not split" (e.g. stimulating Dots that are Morning-only, sleep-support Dots that are Evening-only): keep the **entire** total in the default slot, the other slot must be 0 — never move any of it, even if this leaves the day's morning/evening totals imbalanced.
-  Dots labeled "AM/PM flexible": this is your primary lever for balancing the day's total morning vs. evening pill counts — within that Dot's own daily total range, lean its count toward whichever slot currently has less, based on the gap you've built up from the other Dots; don't just default to its primary slot, split it in any ratio (including 0/all) as needed.
-  After doing this, check: have the "AM/PM flexible" Dots actually been used to close the morning/evening gap, rather than just mirroring their default slot? If the gap is still large and a flexible Dot still had room to adjust, you missed this step — go back and fix it.
 - Never omit any short-key from the formulary — even a Dot assigned 0 this time must appear explicitly as 0 in the output.
 
 Output format (follow strictly — write your reply normally, then append the JSON below on a new final line, short-keys must exactly match the formulary):
-{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","morning":0,"evening":0}, ...one entry per formulary short-key]}
+{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...one entry per formulary short-key]}
 
 Reply rules:
 - Give the conversational analysis first (no headers, no lists, 2-3 sentences), then append the JSON line.

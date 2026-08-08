@@ -219,7 +219,7 @@ function createAgenticToolHandlers({ pool, user_id, language }) {
             }
             const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
             const { rows } = await pool.query(
-                `SELECT id, key_name, key_name_zh, name, name_zh, description, is_isolate, timing, timing_flexible, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max FROM dots ${where} ORDER BY id ASC`,
+                `SELECT id, key_name, key_name_zh, name, name_zh, description, is_isolate, timing, timing_flexible, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ${where} ORDER BY id ASC`,
                 params
             );
             return { ok: true, data: rows };

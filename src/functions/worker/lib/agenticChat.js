@@ -20,6 +20,7 @@
 const { AGENTIC_TOOL_DEFS, createAgenticToolHandlers } = require('./agenticTools');
 const { detectAllRisks } = require('./factCheck');
 const { formatToShanghai } = require('./time-utils');
+const { classifyBiomarkers, THRESHOLDS: BIOMARKER_THRESHOLDS } = require('./biomarkerStatus');
 const planTemplate = require('../prompts/chat/planTemplate');
 const judgeTemplate = require('../prompts/viva/judgeTemplate');
 const { findRelevantEntries } = require('./knowledgeBase');
@@ -111,6 +112,21 @@ function extractToolGroundTruth(toolCallLog) {
     return { dates: Array.from(dates), values };
 }
 
+// A dimension is "elevated" the same way every prompt template already computes and shows it
+// (e.g. systemFormulaGenerate.js's "偏高维度" line): its SubAge exceeds the user's ChronoAge.
+// Kept here so PLAN/JUDGE can check a "CellularAge is elevated"-type claim the same way
+// biomarker_status lets them check a biomarker status claim, instead of having no ground truth
+// for it at all — see the biomarker_status comment in runJudge below for why this class of gap
+// matters (found via the same 2026-08-08 live sampling: dimension-level "偏高" claims hit the
+// identical false-positive pattern as biomarker-level ones, just one level up).
+function getElevatedDimensions(bioage) {
+    const chronoAge = bioage?.ChronoAge;
+    if (chronoAge == null) return [];
+    return Object.entries(bioage?.SubAges || {})
+        .filter(([, age]) => age > chronoAge)
+        .map(([dim]) => dim);
+}
+
 // Deterministic, zero-LLM-cost check of the plan's dot/dimension references against real
 // data, so the cheapest class of fabrication is caught and corrected before generation runs.
 function validatePlan(plan, dots) {
@@ -144,7 +160,7 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     budget.plan = 1;
     const plan = await callJson(
         client, model,
-        planTemplate(message, intent, llmContext, knowledgeExcerpts),
+        planTemplate(message, intent, llmContext, knowledgeExcerpts, getElevatedDimensions(llmContext.bioage)),
         0.1, logContext, 'plan'
     );
     console.log(JSON.stringify({ level: 'INFO', msg: 'agentic_plan', context: logContext, tools_needed: plan?.tools_needed || [], intended_claims: (plan?.intended_claims || []).length }));
@@ -256,9 +272,22 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         // no visibility into health_twin at all. biomarkers/dots are still overridden with a
         // fresh re-fetch afterward, preserving the original "catch mid-conversation drift" intent
         // for those two fields specifically.
+        // biomarker_status/biomarker_reference_ranges: the same normal/elevated/high
+        // classification (lib/biomarkerStatus.js) GENERATE's own system prompt already labels
+        // each biomarker with (e.g. "hsCRP: 1.6（偏高）") — added 2026-08-08 after live sampling
+        // against 5 real prod users found this was the single largest driver of false-positive
+        // REJECTs: JUDGE's ground truth previously carried only raw values, so it had no way to
+        // confirm a "偏高"/"elevated" label was legitimate and reflexively flagged nearly every
+        // one as an "unsupported clinical interpretation — ground truth provides no reference
+        // range" (~63% of all violations across the sample matched this exact pattern). The
+        // label was never fabricated — it's the same code-computed classification GENERATE was
+        // given verbatim; JUDGE just wasn't given the same data to check it against.
         const groundTruth = {
             ...llmContext,
             biomarkers: freshBiomarkers.data,
+            biomarker_status: classifyBiomarkers(freshBiomarkers.data?.validated || {}),
+            biomarker_reference_ranges: BIOMARKER_THRESHOLDS,
+            elevated_dimensions: getElevatedDimensions(llmContext.bioage),
             dots: freshDots.data,
             tool_calls_made: toolCallLog,
         };

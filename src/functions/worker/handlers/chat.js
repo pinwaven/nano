@@ -969,7 +969,7 @@ async function _fireQuestionnaireAnsweredFollowup(userId, assignmentId) {
             [userId]
         ),
         pool.query(
-            `SELECT id, key_name, key_name_zh, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`
+            `SELECT id, key_name, key_name_zh, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ORDER BY id ASC`
         ),
         pool.query(
             `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
@@ -1112,7 +1112,7 @@ async function handlePostChat(body) {
             // next step, the model reached for generic external supplement knowledge instead
             // of an actual dot (found via real-user testing 2026-07-25).
             fetches.dots = pool.query(
-                `SELECT id, key_name, key_name_zh, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`
+                `SELECT id, key_name, key_name_zh, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ORDER BY id ASC`
             );
             // Always fetch active personal memory facts (dietary restrictions, allergies,
             // preferences, goals stated in prior conversations) — same unconditional
@@ -1493,9 +1493,21 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         for (const item of extracted.parsed.formulation) {
             const dot = dotsByKey.get(item?.dot_key);
             if (!dot) continue; // unknown key — never trust the LLM's key blindly
-            const morning = Number.isFinite(item.morning) ? Math.max(0, Math.round(item.morning)) : 0;
-            const evening = Number.isFinite(item.evening) ? Math.max(0, Math.round(item.evening)) : 0;
-            entries.set(item.dot_key, { morning, evening, dot });
+            // The model decides only a single daily total ("count") — asking it to also compute
+            // its own morning/evening split was tried first (a prompt-only "lean toward whichever
+            // slot has less" rule) and found, via live sampling against 5 real prod users
+            // 2026-08-08, to never actually redistribute anything: every flexible dot came back
+            // 100% in its default slot in every sample (PM/AM ratio ~0.01), despite explicit
+            // instructions. LLMs reliably fail at this kind of implicit running-tally arithmetic
+            // across ~18 independent JSON entries in one completion. The split is now always
+            // computed deterministically below via _splitDotTiming — the same function the
+            // non-agentic fallback path already uses — so the model is never trusted with it.
+            // A legacy 'morning'/'evening'-shaped reply (from a stale cached prompt / in-flight
+            // request during deploy) still degrades gracefully via their sum.
+            const count = Number.isFinite(item.count)
+                ? Math.max(0, Math.round(item.count))
+                : Math.max(0, Math.round((Number(item.morning) || 0) + (Number(item.evening) || 0)));
+            entries.set(item.dot_key, { count, dot });
         }
         if (entries.size === 0) entries = null;
     }
@@ -1504,43 +1516,30 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
 
     if (entries) {
         // Fill any dot the model omitted with the same deterministic per-dot fallback used
-        // elsewhere, split via _splitDotTiming (respects timing_flexible — see below).
+        // elsewhere.
         for (const dot of llmContext.dots || []) {
             const key = dot.key_name.replace(/^DOT/, 'D');
             if (entries.has(key)) continue;
-            const count = _fallbackCountForDot(dot);
-            const { morning, evening } = _splitDotTiming(dot, count);
-            entries.set(key, { morning, evening, dot });
+            entries.set(key, { count: _fallbackCountForDot(dot), dot });
         }
 
-        // Hard guarantee for non-flexible dots (migration_dots_timing_flexible.sql):
-        // timing_flexible=false is a real pharmacological reason to stay in one slot (e.g.
-        // DOT-N4/DOT-N12's stimulating ingredients, DOT-N3's sleep support) — never trust the
-        // model's morning/evening split to have honored that, collapse the total back into the
-        // dot's default slot regardless of what it returned. Flexible dots keep whatever
-        // split the model chose (that's the balancing this exists to allow).
+        // Deterministic clamp: each dot's total must land inside its own target_dots_min/max —
+        // never trust the LLM's numbers blindly, same principle as every other action
+        // (record_weight's bounds check, etc.). A total of 0 is a legitimate "not included this
+        // week" choice and is left alone rather than forced up to the min.
         for (const v of entries.values()) {
-            if (v.dot.timing_flexible) continue;
-            const total = v.morning + v.evening;
-            v.morning = v.dot.timing === 'Evening' ? 0 : total;
-            v.evening = v.dot.timing === 'Evening' ? total : 0;
-        }
-
-        // Deterministic clamp: each dot's morning+evening total must land inside its own
-        // target_dots_min/max — never trust the LLM's numbers blindly, same principle as every
-        // other action (record_weight's bounds check, etc.). A total of 0 is a legitimate
-        // "not included this week" choice and is left alone rather than forced up to the min.
-        // If clamping changes the total, scale morning/evening to preserve the model's ratio.
-        for (const v of entries.values()) {
-            const total = v.morning + v.evening;
-            if (total === 0) continue;
+            if (v.count === 0) continue;
             const min = v.dot.target_dots_min ?? 1;
             const max = v.dot.target_dots_max ?? 10;
-            if (total < min || total > max) {
-                const clampedTotal = Math.min(max, Math.max(min, total));
-                v.morning = Math.round(v.morning * (clampedTotal / total));
-                v.evening = clampedTotal - v.morning;
-            }
+            if (v.count < min || v.count > max) v.count = Math.min(max, Math.max(min, v.count));
+        }
+
+        // AM/PM split is entirely code-driven, never model-driven — see the comment above.
+        // _splitDotTiming already guarantees non-flexible dots stay 100% in their default slot.
+        for (const v of entries.values()) {
+            const { morning, evening } = _splitDotTiming(v.dot, v.count);
+            v.morning = morning;
+            v.evening = evening;
         }
 
         morningRecipe = { dots: {} };
@@ -1553,9 +1552,9 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
             morningTotal += v.morning;
             eveningTotal += v.evening;
         }
-        // Observability only — flexible dots may still legitimately end up skewed if the model
-        // chose not to redistribute them, and non-flexible dots are locked to their default slot
-        // by design. This is a signal to watch, not something to override here.
+        // Observability only — _splitDotTiming only moves ~30% of a flexible dot's count off its
+        // default slot, so a day dominated by dots defaulting to the same slot can still end up
+        // skewed by design (this is a signal to watch, not something to override here).
         if (eveningTotal < morningTotal * 0.15 && morningTotal > 20) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'formula_dots_am_pm_imbalanced', user_id, morningTotal, eveningTotal }));
         }
@@ -1588,7 +1587,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         await client.query('BEGIN');
         await _commitNutritionPlan(client, {
             userId: user_id, analysis, morningRecipe, eveningRecipe,
-            planId: llmContext.pending_plan_id,
+            planId: llmContext.pending_plan_id, dotsFormulary: llmContext.dots,
         });
         await client.query('COMMIT');
     } catch (e) {
@@ -1820,7 +1819,7 @@ async function handlePostHealthAdvice(body) {
                 [user_id]
             ),
             pool.query(
-                `SELECT id, key_name, key_name_zh, name, name_zh, sub_age_target, description, timing, ingredients, ingredients_zh, target_dots_min, target_dots_max
+                `SELECT id, key_name, key_name_zh, name, name_zh, sub_age_target, description, timing, ingredients, ingredients_zh, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days
                  FROM dots ORDER BY id ASC`
             ),
             pool.query(

@@ -6,6 +6,7 @@ const { applyPartnerDiscount, getPartnerProductDiscount } = require('../lib/part
 const { debitUser } = require('../lib/credits');
 const { getNowShanghai, calculateAge, formatToShanghai } = require('../lib/time-utils');
 const { getCurrentSolarTerm } = require('../lib/solarTerms');
+const { DateTime } = require('luxon');
 const OpenAI = require('openai');
 const systemNutritionTemplate = require('../prompts/nano/systemNutrition');
 const vivaSystemNutritionTemplate = require('../prompts/viva/systemNutrition');
@@ -846,6 +847,40 @@ function _splitDotTiming(dot, count) {
     return isEveningDefault ? { morning: secondary, evening: primary } : { morning: primary, evening: secondary };
 }
 
+// Fixed reference point for pulse-cycle math (migration_dots_dosing_protocol.sql) — arbitrary,
+// just needs to never change once dots start relying on it, so a pulse dot's active window is a
+// pure function of the calendar date, never of when a plan happens to be (re)generated. Without
+// this, reformulating mid-cycle could shift or duplicate a dot's "2 consecutive days" window.
+const PULSE_CYCLE_EPOCH = DateTime.fromISO('2026-01-01');
+
+// True if `dateISO` falls inside a pulse-protocol dot's active window (e.g. DOT-N7: 2 consecutive
+// days out of every ~30-day rolling cycle). Non-pulse dots ('daily', the default) are always
+// active — this is the single gate _commitNutritionPlan uses to decide whether a pulse dot
+// appears in a given day's recipe at all, so "not a daily dose" is enforced in code rather than
+// left to the model to remember not to schedule it 7/7 days.
+function _isPulseActiveDate(dot, dateISO) {
+    if (dot.dosing_protocol !== 'pulse') return true;
+    if (!dot.pulse_days_per_cycle || !dot.pulse_cycle_days) return true; // misconfigured — fail open to daily rather than silently dropping the dot entirely
+    const daysSinceEpoch = Math.floor(DateTime.fromISO(dateISO).diff(PULSE_CYCLE_EPOCH, 'days').days);
+    const dayInCycle = ((daysSinceEpoch % dot.pulse_cycle_days) + dot.pulse_cycle_days) % dot.pulse_cycle_days;
+    return dayInCycle < dot.pulse_days_per_cycle;
+}
+
+// Drops any pulse-protocol dot from a day's recipe on a day outside its active window — the
+// model/deterministic formulator still decides one count per dot per week (the per-dose amount
+// taken ON an active day), _commitNutritionPlan just no longer copies that count into all 7 days
+// verbatim for dots that were never meant to be dosed daily.
+function _applyPulseSchedule(recipe, pulseDotsByKey, dateISO) {
+    if (!pulseDotsByKey || pulseDotsByKey.size === 0) return recipe;
+    const dots = {};
+    for (const [key, count] of Object.entries(recipe.dots || {})) {
+        const pulseDot = pulseDotsByKey.get(key);
+        if (pulseDot && !_isPulseActiveDate(pulseDot, dateISO)) continue;
+        dots[key] = count;
+    }
+    return { dots };
+}
+
 // The original (2026-07 and earlier) formulation path: one non-agentic LLM completion over the
 // latest biomarker snapshot, parsed into per-dot morning/evening counts. Used directly for Nano
 // (unchanged), and as the deterministic fallback for Viva when the richer async agentic path
@@ -940,8 +975,14 @@ async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFor
 
 // Commits a deterministic-formulation result as the one active plan for a user: supersedes any
 // existing active plan, inserts a fresh 'active' nutrition_plans row (or activates an existing
-// pending one when planId is given), and writes 7 identical days of morning/evening schedules.
-async function _commitNutritionPlan(client, { userId, analysis, morningRecipe, eveningRecipe, planId }) {
+// pending one when planId is given), and writes 7 days of morning/evening schedules — identical
+// across all 7 days except for any pulse-protocol dot (dosing_protocol='pulse', e.g. DOT-N7),
+// which is only written into the days that actually fall inside its active pulse window
+// (_isPulseActiveDate) and omitted entirely from the rest, rather than dosed all 7/7 days.
+// `dotsFormulary` is optional (callers that never touch a pulse dot can omit it) — without it,
+// pulse enforcement simply doesn't run and recipes are written as given, same as before this
+// existed.
+async function _commitNutritionPlan(client, { userId, analysis, morningRecipe, eveningRecipe, planId, dotsFormulary }) {
     const startDateObj = getNowShanghai();
     const endDateObj = startDateObj.plus({ days: 6 });
 
@@ -961,15 +1002,19 @@ async function _commitNutritionPlan(client, { userId, analysis, morningRecipe, e
         finalPlanId = planInsert.rows[0].id;
     }
 
+    const pulseDotsByKey = new Map((dotsFormulary || []).filter(d => d.dosing_protocol === 'pulse').map(d => [d.key_name, d]));
+
     for (let i = 0; i < 7; i++) {
         const currentDate = startDateObj.plus({ days: i }).toISODate();
+        const dayMorningRecipe = _applyPulseSchedule(morningRecipe, pulseDotsByKey, currentDate);
+        const dayEveningRecipe = _applyPulseSchedule(eveningRecipe, pulseDotsByKey, currentDate);
         await client.query(
             'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
-            [finalPlanId, userId, currentDate, 'morning_cup', morningRecipe]
+            [finalPlanId, userId, currentDate, 'morning_cup', dayMorningRecipe]
         );
         await client.query(
             'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
-            [finalPlanId, userId, currentDate, 'evening_cup', eveningRecipe]
+            [finalPlanId, userId, currentDate, 'evening_cup', dayEveningRecipe]
         );
     }
     return finalPlanId;
@@ -988,7 +1033,7 @@ async function handlePostFormulaDots(body) {
                  AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
                 [openid]
             ),
-            pool.query(`SELECT id, key_name, key_name_zh, name, name_zh, timing, timing_flexible, ingredients, ingredients_zh, sub_age_target, target_dots_min, target_dots_max FROM dots ORDER BY id ASC`),
+            pool.query(`SELECT id, key_name, key_name_zh, name, name_zh, timing, timing_flexible, ingredients, ingredients_zh, sub_age_target, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ORDER BY id ASC`),
         ]);
 
         if (userResult.rows.length === 0) return { success: false, error: 'User not found' };
@@ -1142,7 +1187,7 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         try {
             await client.query('BEGIN');
             await client.query(`UPDATE nutrition_plans SET status = 'superseded' WHERE id = $1 AND status = 'pending'`, [pendingPlanId]);
-            await _commitNutritionPlan(client, { userId: user.user_id, analysis, morningRecipe, eveningRecipe });
+            await _commitNutritionPlan(client, { userId: user.user_id, analysis, morningRecipe, eveningRecipe, dotsFormulary });
             await client.query('COMMIT');
         } catch (e) {
             await client.query('ROLLBACK');
@@ -1237,4 +1282,6 @@ module.exports = {
     _commitNutritionPlan,
     _fallbackCountForDot,
     _splitDotTiming,
+    _isPulseActiveDate,
+    _applyPulseSchedule,
 };

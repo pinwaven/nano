@@ -662,3 +662,17 @@ New branch alongside the existing two:
 ### Files
 
 New: `src/functions/worker/prompts/viva/systemDailyCheckin.js`, `src/functions/worker/handlers/checkin.js`. Modified: `src/functions/dispatcher/index.js` (`getCheckinPeriod()`, `dispatchToWorker()` helper, Scan 0, `user_online` same-tick dedupe), `src/functions/worker/index.js` (new EventBridge case + `handlers/checkin` require).
+
+## 30. Deploy DNS Workaround — `scripts/dns-override.js`
+
+Ported 2026-08-08 from the sibling GCN repo (`/Users/pin/waven/gcn/scripts/dns-override.js`), which hit and fixed the identical issue for its own Aliyun FC deploys.
+
+`s <fn> deploy` can fail with `getaddrinfo ENOTFOUND resourcemanager.aliyuncs.com` (or another `*.aliyuncs.com` host Serverless Devs resolves during deploy) — confirmed 2026-08-08: the system DNS resolver returned nothing for `resourcemanager.aliyuncs.com` while `nslookup resourcemanager.aliyuncs.com 8.8.8.8` resolved it fine. This is local/ISP DNS resolver flakiness, not an actual outage or a code/config problem — safe to reach for whenever this specific error shows up, no need to diagnose further first.
+
+`scripts/dns-override.js` works around this **without touching any system/network settings** — it's a `--require`-loaded Node module that monkey-patches `dns.lookup` in that one process only, using `dns.Resolver` (Node's own c-ares client, independent of the OS resolver) pointed at `8.8.8.8`. Nothing persists after the command exits.
+
+```bash
+source .env && NODE_OPTIONS="--require ./scripts/dns-override.js" s worker deploy -t s-prod.yaml -y
+```
+
+Substitute the function name / `-t s-prod.yaml` as needed for other functions or the dev target.

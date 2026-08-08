@@ -10,7 +10,9 @@
  * any prose, so the cheapest class of fabrication (a wrong dot id, a nonexistent dimension)
  * can be caught and corrected deterministically ahead of generation, not just after.
  */
-module.exports = (message, intent, llmContext, knowledgeExcerpts) => {
+const { classifyBiomarkers, THRESHOLDS: BIOMARKER_THRESHOLDS } = require('../../lib/biomarkerStatus');
+
+module.exports = (message, intent, llmContext, knowledgeExcerpts, elevatedDimensions) => {
     const dotsList = (llmContext.dots || [])
         .map(d => `${d.id}: ${d.name_zh || d.name}${d.sub_age_target ? ` (${d.sub_age_target})` : ''}`)
         .join('\n') || '(none available)';
@@ -32,8 +34,8 @@ REAL DIMENSIONS: CellularAge, MetabolicAge, MicroVascularAge, ResilienceAge (no 
 MATCHED KNOWLEDGE BASE ENTRIES for this message (only these are pre-approved specific science/protocol claims; anything else must use a generic evidence-level phrase, not a fabricated specific detail):
 ${kbList}
 
-CURRENT BIOMARKERS/BIOAGE ALREADY IN CONTEXT (only cite these numbers, never invent or recall a different value from memory):
-${JSON.stringify({ biomarkers: llmContext.biomarkers, bioage: llmContext.bioage })}
+CURRENT BIOMARKERS/BIOAGE ALREADY IN CONTEXT (only cite these numbers, never invent or recall a different value from memory). "biomarker_status" is the system's own pre-computed normal/elevated/high classification per "biomarker_reference_ranges" — use these exact labels if you plan to call a biomarker elevated/high/normal; never threshold-compare a raw value yourself, and never claim a status a biomarker's real classification here contradicts. "elevated_dimensions" lists which of the 4 real sub-age dimensions are elevated (SubAge > ChronoAge) — a dimension not in this list must NOT be called elevated/偏高:
+${JSON.stringify({ biomarkers: llmContext.biomarkers, bioage: llmContext.bioage, biomarker_status: classifyBiomarkers(llmContext.biomarkers || {}), biomarker_reference_ranges: BIOMARKER_THRESHOLDS, elevated_dimensions: elevatedDimensions || [] })}
 
 List every specific, checkable factual claim you plan to make: biomarker values, dot recommendations, science/protocol facts, dimension references, or evidence-level statements. Do not list general conversational content, only checkable facts.
 
