@@ -1,9 +1,9 @@
 ---
 name: gcn-integration
-description: Reference for the nano<->GCN (Aeviva partner storefront) cross-repo integration — webview token exchange, partner provisioning, commission reporting, and the web/miniapp admin embed. Load when touching any of these endpoints, the GCN sibling repo, or aeviva-channel storefront/inventory code.
+description: Reference for the nano<->GCN (Aeviva partner storefront) cross-repo integration — webview token exchange, partner provisioning, the partner-system consolidation (GCN now owns tier catalog/assignment/referral-tree/commission as of 2026-08-09), and the web/miniapp admin embed. Load when touching any of these endpoints, the GCN sibling repo, or aeviva-channel storefront/inventory code.
 ---
 
-The `aeviva` nano channel has a partner/distributor program (`docs/architecture/partner-system.md`, tables `partners`/`partner_commissions`) whose storefront, wholesale/resale inventory, and manual-QR checkout are implemented in a **separate sibling repo**, `/Users/pin/waven/gcn` (GCN — see its own `CLAUDE.md`). Nano remains the single source of truth for partner identity, MLM tier, referral tree, and MLM referral/team-income commission math (this is structural — that data only exists in nano's referral graph, it does not and should not live in GCN). GCN owns its own storefronts (`partners`/`referral_codes`/`partner_inventory`), its own order/commerce engine, and — since 2026-07-16 — its own parallel, independently-configurable platform-economics settlement/dividend rules (`sector_settlement_rules`/`sector_dividend_tiers`, seeded for aeviva alongside tea). GCN reports paid aeviva sales back into nano's MLM engine via a durable outbox, but GCN's own settlement rules are a separate, additive revenue split GCN administrators configure entirely within GCN — not something nano computes or needs to know about.
+The `aeviva` nano channel has a partner/distributor program (`docs/architecture/partner-system.md`, tables `partners`/`partner_commissions`) whose storefront, wholesale/resale inventory, and manual-QR checkout are implemented in a **separate sibling repo**, `/Users/pin/waven/gcn` (GCN — see its own `CLAUDE.md`). **As of 2026-08-09 (all 5 phases of the consolidation roadmap, shipped) this is no longer accurate as a description of who owns what** — GCN, not nano, is now the source of truth for partner tier catalog/assignment, the referral tree, and referral/sales/team-income commission math. See "Partner-system consolidation" below for the full mechanics; the rest of this paragraph describes what's still true. Nano remains where new recruitment edges are actually *created* (its own admin panel / self-service apply flow) and pushes them to GCN, and nano still owns end-user identity/auth. GCN owns its own storefronts (`partners`/`referral_codes`/`partner_inventory`), its own order/commerce engine, and — since 2026-07-16 — its own parallel, independently-configurable platform-economics settlement/dividend rules (`sector_settlement_rules`/`sector_dividend_tiers`, seeded for aeviva alongside tea) — that piece was never nano's and is unaffected by the consolidation.
 
 **GCN store provisioning is explicit, not login-implicit.** A GCN `partners` row for an aeviva partner is created only via nano's admin panel ("Provision GCN Store" button in the Partners tab, gated to GCN-linked channels) calling `POST /api/auth/partners/nano/provision` on GCN — GCN's own OTP login (`handleOTPVerify`'s aeviva branch) no longer calls nano or creates/mutates a partner row itself; it only checks one was already provisioned, rejecting login otherwise. This replaced the old flow where GCN called nano's `by-phone` lookup and silently created/refreshed the partner row on every login attempt.
 
@@ -13,21 +13,131 @@ The `aeviva` nano channel has a partner/distributor program (`docs/architecture/
 |---|---|---|
 | `POST /api/webview-token` | miniapp (`appview.js`) | mints a one-time `wvt` before opening the aeviva GCN webview |
 | `POST /api/exchange-webview-token` | `gcn/src/functions/auth/index.js` `handleNanoSSO` | exchanges `wvt` → nano user identity (phone) for GCN's consumer SSO bridge |
-| `POST /api/partner-sales` | `gcn/src/functions/worker/index.js` `handleCommissionReport`, draining the `commission_reports` outbox (written by `mall/index.js`'s `confirm-payment`, no longer an inline call) | reports a completed GCN sale, triggering nano's `recordSalesCommission()` rate lookup + upline fan-out |
+| `POST /api/partner-sales` | **No longer called by GCN as of Phase 4 (2026-08-09).** Was: `handleCommissionReport` draining the `commission_reports` outbox on every confirmed GCN sale, triggering nano's `recordSalesCommission()`. GCN now computes sales-margin/team-income commission itself (`creditAevivaSalesCommission`, `mall/index.js`) instead of reporting to nano. The endpoint/handler (`handlePostPartnerSale`) and `recordSalesCommission` are left in place, just unreachable — nothing on nano's side calls `recordSalesCommission` except this one HTTP endpoint. |
 | `POST /api/exchange-admin-webview-token` | `gcn/src/functions/auth/index.js` `handleNanoAdminSSO` | exchanges an admin-panel `wvt` → `{ admin_role, admin_account_id, channel_id }` for GCN's **admin** SSO bridge (distinct from the consumer bridge above) |
-| `POST /api/partner-children-gcn` | `gcn/src/functions/auth/index.js` `handleGetNetworkChildren` (`GET /api/auth/partners/network/children`) | returns ONE level of a partner's downline (`referred_by_partner_id`), for the store-owner "substore tree" view in `dashboard-channel.html`'s Network panel — see below |
+| `POST /api/partner-children-gcn` | **Not actually called by GCN** — found stale during the Phase 3 audit. `handleGetNetworkChildren`'s own docstring (and this file, previously) described it as relaying here, but the GCN code had already become a fully local recursive query at some earlier, undocumented point — this row is kept only as a record of what the (inaccurate) contract used to claim; treat this endpoint as dead from GCN's side unless something changes that. |
+| `POST /partner-types-gcn-sync` | `gcn/src/functions/mall/index.js` `syncPartnerTypeToNano`, called from `handlePostPartnerType`/`handlePutPartnerType`/`handleDeletePartnerType` (GCN's admin Wholesale Rules panel) | pushes `{action, type_id, label_zh, label_en, tier_rank, entry_fee, is_active}` **into** nano — see "Partner-system consolidation" below, this and the row below are the only calls in this table that run GCN → nano rather than nano → GCN |
+| `POST /partner-tier-assignment-gcn-sync` | `gcn/src/functions/auth/index.js` `syncTierAssignmentToNano`, called from `handleAdminAssignAevivaTier` (`PUT /api/auth/admin/partners/:id/tier`) | pushes `{nano_partner_id, tier}` **into** nano — per-partner analog of the row above, see "Partner-system consolidation" below |
 
 These are gated by a **scoped** nano<->GCN service token (`worker/index.js`'s `GCN_ALLOWED_PATHS` allowlist, env var `GCN_API_TOKEN` on nano's side / `NANO_API_TOKEN` on GCN's — same value, different var names per side) — no longer nano's superadmin `API_BEARER_TOKEN`, which GCN previously held unscoped access via. The reverse direction (nano calling GCN's new provisioning endpoint) uses a separate scoped credential, `GCN_SERVICE_TOKEN` (nano) / `NANO_SERVICE_TOKEN` (GCN). `GET /api/partners/by-phone/:phone?channel=aeviva` still exists in nano (`handlers/partners.js`) but is no longer part of the cross-repo contract — nano's own provisioning handler reads its local `partners` table directly instead of calling its own API.
 
-### Store owner substore tree (2026-07-18)
+### Partner-system consolidation: GCN owns tier catalog, assignment, referral tree, and commission (all 5 phases, shipped 2026-08-09)
 
-Any aeviva store owner can recruit sub-stores, and each sub-store can recruit its own — an unbounded-depth downline, tracked exclusively via nano's `partners.referred_by_partner_id` (GCN's own `parent_partner_id` is never populated for aeviva partners, structurally — see GCN `CLAUDE.md`'s "Nano Integration" section). `dashboard-channel.html`'s Network panel (nav item, previously permanently hidden for aeviva since it relied on GCN's own non-existent hierarchy) now renders this as a **lazy, one-level-at-a-time collapsible tree** rather than fetching the whole subtree eagerly — real recruiting networks have no depth/width bound, so an eager fetch either needs an artificial cap or risks a huge payload.
+For the three GCN-linked tiers (`light_entrepreneur`/`leader_partner`/`operations_center`),
+`partner_types.managed_by_gcn` (`migration_partner_types_gcn_managed.sql`) is `TRUE`, and nano's
+own admin panel (`PartnersTab.jsx`) renders `label`/`label_zh`/`entry_fee`/`is_active`
+**read-only** for these rows — `handlePutPartnerType` (`handlers/partners.js`) nulls out any
+attempt to change them server-side too, pointing the operator at GCN's Wholesale Rules panel
+instead. `color`/`sort_order`/`description` remain nano-local and freely editable (cosmetic/
+local-reorder concerns with no GCN-side equivalent). GCN pushes the current
+`label_zh`/`label_en`/`tier_rank`/`entry_fee`/`is_active` on every edit via
+`handleGcnSyncPartnerType` (this file's `POST /partner-types-gcn-sync` handler), which upserts
+into nano's `partner_types` with `managed_by_gcn = TRUE`.
 
-- `handleGcnPartnerChildren` (`worker/handlers/partners.js`) replaced the old, unused `handleGetPartnerTree`/`GET /partner-tree/:id` (hardcoded to exactly 2 levels, no frontend ever called it). It takes `{ requesting_partner_id, target_partner_id? }`, returns direct children of `target_partner_id` (defaulting to `requesting_partner_id` for the root call) each flagged with `has_children` (cheap `EXISTS` subquery, so the frontend knows whether to render an expand affordance without an extra round trip).
-- **Authorization lives in nano, not GCN**: before returning anything, it verifies `target_partner_id` is `requesting_partner_id` itself or a genuine descendant — walking the `referred_by_partner_id` chain up from the target via `WITH RECURSIVE ancestors` — 403ing otherwise. This stops a store owner from paging into an unrelated branch by guessing another partner's id. Keeping the check here (rather than in GCN) avoids GCN needing N look-ups to verify ancestry itself, since nano already holds the full tree.
-- GCN's `handleGetNetworkChildren` is a thin proxy: resolve the caller's own `nano_partner_id` from their JWT-authenticated GCN `partners` row (same pattern as `handleGetMyInviteCode`), relay to nano, pass the response through. The store owner never talks to nano directly.
+**Tier *assignment*** (which tier a specific partner holds, `partners.tier`) is now also
+GCN-driven, per-partner: `handleGcnSyncPartnerTierAssignment` (this file's
+`POST /partner-tier-assignment-gcn-sync` handler) sets `partners.tier` + a new
+`tier_managed_by_gcn` column (`migration_partner_types_full_gcn_sync.sql`). `handlePutPartner`
+guards its `UPDATE` with `tier = CASE WHEN tier_managed_by_gcn THEN tier ELSE $1 END` — once GCN
+has assigned a partner's tier, nano's own Edit Partner tier `<select>` (`PartnersTab.jsx`) goes
+read-only for that row and any direct API write is silently ignored server-side too, no separate
+read-then-branch race window. `handlePostPartnerGcnProvision`/`syncGcnPartnerStatus` (below) keep
+sending `tier: partner.tier` on every provision/re-sync exactly as before — harmless, since GCN's
+own `upsertDirectStorePartner` applies the identical CASE guard on its side and simply ignores the
+incoming value once it owns that partner's tier.
 
-**Dev sandbox gotcha**: the 5-phone aeviva dev sandbox (`sandbox.html`, GCN `CLAUDE.md`'s "Aeviva development sandbox" section) hardcodes `nano_partner_id` 990001 (Parent Store) / 990002 (Child Store) on the GCN side only — it never creates matching rows in nano's own `partners` table, since the sandbox was built to test GCN's order flow, not nano's referral tree. Querying the tree for the sandbox's Parent Store returns empty against a stock dev DB (nano correctly reports no downline for a partner id that doesn't exist there). To exercise this feature against the sandbox, seed real nano partner rows at those same ids first — `nano/temp/seed-sandbox-partner-tree.js` does exactly that (990001 → 990002 → a 990003 grandchild for depth-testing), is idempotent, and is safe to re-run against dev.
+**Referral tree (Phase 3).** Nano is still where a new recruitment edge (`referred_by_partner_id`)
+actually gets created — that hasn't moved. What changed: `handlePostPartnerGcnProvision` and
+`syncGcnPartnerStatus` now also send `referred_by_partner_id` (nano's own integer id) and
+`entry_fee_paid` on every provision/re-sync call. GCN resolves that nano id to its own local
+`partner_id` (via `nano_partner_id`) and stores it in a **new** column,
+`partners.aeviva_upline_partner_id` — deliberately not GCN's `parent_partner_id`, which is already
+live for two *other* hierarchies on GCN's side (tea's dividend-pool tree, aeviva's own
+store-recruits-store self-service flow) and would have created real ambiguity if reused a third
+time. GCN's own Network panel (`handleGetNetworkChildren`/`handleGetNetworkInventory`) now queries
+this column directly for nano-tier partners instead of relaying to nano at all — see the
+`POST /api/partner-children-gcn` row above, which turned out to already be dead before this work
+even started.
+
+**Commission computation (Phase 4).** GCN ported `resolveRate()` and the live
+`partner_commission_rules` rate data verbatim into its own `partner_commission_rules` table, and
+now computes and pays both referral commission (at provisioning time, once — see
+`creditAevivaReferralCommission` in GCN's `auth/index.js`) and sales-margin + team-income
+commission (per order, inline in `handleOrderConfirmPayment` — `creditAevivaSalesCommission`,
+`mall/index.js`) itself, crediting its own `ledger` table. This is why the `POST /api/partner-sales`
+row above is now dead — GCN no longer reports sales to nano at all. **To prevent double-payment**,
+nano's own `recordReferralCommission` call sites in `handlePostPartner` and `handlePutPartner`
+(`handlers/partners.js`) are commented out, not deleted — confirmed safe first: `aeviva-china` is
+the only nano channel with any partner data, so this can't silently break some other channel's
+independent commission flow. `recordSalesCommission` needed no code change on nano's side at all,
+since its only real-world caller was the now-unreachable `/api/partner-sales` endpoint.
+
+**Known, accepted timing change**: nano's old referral-commission trigger was a partner's
+pending→active transition (self-applied invite-code partners, `handleGcnPartnerApply` →
+`handlePutPartner`). GCN's trigger is whenever that partner is actually provisioned/re-synced to
+GCN, which is a separate, later admin action (`handlePostPartnerGcnProvision`) — so a referral
+commission can now lag behind activation by however long it takes someone to click "Provision GCN
+Store." Not a bug; just worth knowing if a referral commission seems delayed.
+
+Full writeup, including the live end-to-end verification against aeviva-dev (exact rate-table
+amounts confirmed to the cent, re-sync-doesn't-double-pay confirmed, zero `commission_reports`
+rows confirmed for a test order):
+`/Users/pin/waven/gcn/docs/aeviva/10-partner-system-consolidation-roadmap.md`.
+
+**Phase 5 (shipped same day)**: originally meant to wait until Phases 3-4 had run in production
+for a while — the user chose to proceed immediately instead. Turned out "drop nano's local data"
+wasn't safe or even correctly scoped: `partners.tier` is `NOT NULL` with a live FK to
+`partner_types(key)`, so dropping the catalog rows would break nano's own schema for no benefit;
+`referred_by_partner_id` was never meant to retire (nano still creates new recruitment edges, see
+above). What actually shipped:
+
+- **Backfilled `tier_managed_by_gcn = TRUE`** (`migration_partners_tier_gcn_backfill.sql`) for
+  every partner with `gcn_partner_id IS NOT NULL` — completes Phase 2's handoff for partners
+  nobody had explicitly re-assigned via GCN's "Set Aeviva Tier" yet. A partner with no
+  `gcn_partner_id` is correctly left alone — nothing else to defer to until provisioned.
+- **Found and disabled a live, ungated commission-rules editor** — `PartnersTab.jsx`'s "Rules"
+  subtab (`GET/PUT /api/partner-commission-config`, distinct from the `/api/partner-commission-rules`
+  REST endpoints — this one is a JSON-shim UI, not those) had a fully working Save button editing
+  the exact rate data GCN's Phase 4 port was sourced from, with **zero awareness that nano's own
+  `recordReferralCommission`/`recordSalesCommission` (the only code that ever read it) are now
+  disabled.** Editing it silently did nothing to any real payout — worse than merely redundant.
+  Every input is now `disabled`, the Save button is gone, and a banner points to GCN's Wholesale
+  Rules panel. Kept visible (not hidden) for historical/reference value. `ChannelTab.jsx`'s
+  separate, generic per-channel commission-rules CRUD (`ChannelConfigModal`, gated behind
+  `channels.can_customize_partner_system`) was left alone — confirmed `FALSE` on every channel
+  including aeviva-china, so it's dormant/unreachable in practice, and it's not aeviva-specific
+  infrastructure to begin with.
+- **Deliberately not touched**: partner creation/list, commission *history* viewing, payout
+  generation (`FinanceTab.jsx`) — all still legitimately nano's.
+
+Full rationale: `/Users/pin/waven/gcn/docs/aeviva/10-partner-system-consolidation-roadmap.md`.
+
+### Store owner substore tree (2026-07-18, superseded 2026-08-09 — see Phase 3 above)
+
+**This section describes the pre-consolidation design and is kept for history only.** Any aeviva
+store owner can recruit sub-stores, and each sub-store can recruit its own — an unbounded-depth
+downline. Until Phase 3, this lived exclusively in nano's `partners.referred_by_partner_id`, with
+`handleGcnPartnerChildren` (`worker/handlers/partners.js`) doing both the tree walk and the
+ancestry-authorization check, and GCN's `handleGetNetworkChildren` acting as a thin proxy
+(`POST /api/partner-children-gcn`) that relayed every read through nano.
+
+**As of Phase 3, GCN holds its own copy of this tree** (`partners.aeviva_upline_partner_id`,
+backfilled once from nano's `referred_by_partner_id`) and answers `handleGetNetworkChildren`
+entirely locally via a recursive CTE — no call to nano for this endpoint anymore. Nano still
+creates new recruitment edges through its own admin panel / apply flow and pushes them to GCN on
+provision/re-sync; `handleGcnPartnerChildren`/`/api/partner-children-gcn` itself is dead code on
+nano's side now that GCN no longer calls it, not yet removed. `dashboard-channel.html`'s Network
+panel still renders as the same lazy, one-level-at-a-time collapsible tree — only the data source
+changed. See GCN `docs/aeviva/06-nano-integration.md`'s "Referral tree" section for the current
+mechanics.
+
+**Dev sandbox gotcha (also stale as written)**: this used to describe a 5-phone GCN sandbox with
+hardcoded `nano_partner_id`s 990001/990002 that don't exist in nano's own `partners` table by
+default. The sandbox has since grown to 10 phones (GCN `CLAUDE.md`'s "Aeviva development sandbox"
+section has the current roster); the underlying gotcha — GCN-side placeholder `nano_partner_id`s
+with no matching nano row unless separately seeded via `nano/temp/seed-sandbox-partner-tree.js` —
+still applies to the Parent Store (Operations Center) phone specifically, since it's the only
+sandbox partner GCN's `aeviva_upline_partner_id` tree actually has a downline for (Child Store).
 
 GCN sets its own `partners.partner_type` directly to the real nano tier key (`light_entrepreneur`/`leader_partner`/`operations_center`, already-seeded `partner_types` rows) at provisioning time — it no longer hardcodes `partner_type='store'` with the real tier stashed in `metadata.nano_tier`. Tier/status changes on nano's side take effect the moment an admin next saves or deactivates the partner in nano's Partners tab (not automatically on GCN login, since login no longer touches nano) — see the 2026-07-29 fix below for how that re-sync actually reaches GCN.
 
@@ -47,7 +157,7 @@ For a channel-scoped admin (not superadmin) locked into a GCN-linked channel, th
 
 `dashboard-admin.html`'s "商城商品" (Store Products) panel — the same GCN-linked-channel Inventory tab embed above — used to be a read-only mirror of nano's own **Waven Dots** cartridge line (§14, `channel_inventory_items`, via a `handleAdminNanoStoreItems` proxy to nano's `/api/store-items/by-channel`). That proxy has been removed (2026-07-16): "商城商品" is now just the label for the same GCN-native `handleAdminProductList`/create/stock-adjust surface described above — there is no nano-sourced product data anywhere in `dashboard-admin.html` anymore. Waven Dots (§14) remain a distinct, nano-owned physical product line sold through nano's own miniapp/native store — unrelated to aeviva's GCN commerce, and no longer surfaced in GCN's admin console at all.
 
-The same embed also has a "结算规则" (Settlement Rules) panel (`GET`/`PUT /api/mall/settlement/rules`, `handleSettlementRules`/`handlePutSettlementRules` in `gcn/src/functions/mall/index.js`) — GCN's own configurable platform-economics split (supplier/store/county/regional/ecosystem pool percentages + dividend tiers), admin-only, entirely GCN-native. This is **not** nano's MLM commission config (that stays in nano's Partners tab, `partner_commission_rules`) — it's a separate, parallel revenue split GCN runs on its own commerce, previously only seeded for the `tea` sector and deliberately left unseeded for aeviva.
+The same embed also has a "结算规则" (Settlement Rules) panel (`GET`/`PUT /api/mall/settlement/rules`, `handleSettlementRules`/`handlePutSettlementRules` in `gcn/src/functions/mall/index.js`) — GCN's own configurable platform-economics split (supplier/store/county/regional/ecosystem pool percentages + dividend tiers), admin-only, entirely GCN-native. This is a separate, parallel revenue split GCN runs on its own commerce (`sector_settlement_rules`/`sector_dividend_tiers`, previously only seeded for `tea`, deliberately unseeded for aeviva, then retired for aeviva entirely by migration_0029 in favor of wholesale-tier rules) — distinct from referral/sales-margin/team-income commission math. That commission math itself is, as of 2026-08-09, **also GCN-native** (`partner_commission_rules` ported into GCN, computed in `mall`/`auth` — see "Partner-system consolidation" above); nano's own `partner_commission_rules`/Partners-tab "Rules" subtab is now a disabled, read-only historical view, not a live source of truth.
 
 This uses a **separate** SSO bridge from the consumer one above (`POST /api/admin-webview-token` → `POST /api/exchange-admin-webview-token`, `src/functions/worker/handlers/login.js`), because nano's web admin panel session model differs from the miniapp's: a superadmin login returns the literal `API_BEARER_TOKEN` as its bearer (no per-user identity — every superadmin request looks identical server-side), while a channel-scoped admin's `ch.`-prefixed token does carry a real `admin_accounts.id`. GCN's `handleNanoAdminSSO` reflects this: it upserts a `users` row keyed by `nano-admin:${admin_account_id}` for a real channel admin, or the shared placeholder `nano-admin:superadmin` for the anonymous superadmin case, forcing `role='admin'` directly rather than deriving it from partner status — no `partners` row is created (an admin isn't a storefront member). Token minting itself re-validates the channel is GCN-linked server-side (`GCN_LINKED_CHANNEL_KEYS` in both `login.js` and `InventoryTab.jsx`) — the frontend gate is not trusted alone.
 

@@ -169,7 +169,8 @@ async function handlePostPartnerGcnProvision(partnerId) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const { rows } = await pool.query(`
-            SELECT p.id, p.tier, p.real_name, p.phone, p.status, p.gcn_partner_id, ch.key_name AS channel_key
+            SELECT p.id, p.tier, p.real_name, p.phone, p.status, p.gcn_partner_id, p.referred_by_partner_id,
+                   p.entry_fee_paid, ch.key_name AS channel_key
             FROM partners p
             LEFT JOIN channels ch ON ch.id = p.channel_id
             WHERE p.id = $1
@@ -191,6 +192,12 @@ async function handlePostPartnerGcnProvision(partnerId) {
                 tier: partner.tier,
                 real_name: partner.real_name,
                 sector_id: 'aeviva',
+                // Phase 3 of gcn/docs/aeviva/10-partner-system-consolidation-roadmap.md — GCN
+                // resolves referred_by_partner_id (nano's own integer id) to its own partner_id
+                // via nano_partner_id, building its own mirror of the referral tree.
+                // entry_fee_paid feeds Phase 4's referral-commission base amount.
+                referred_by_partner_id: partner.referred_by_partner_id || null,
+                entry_fee_paid: partner.entry_fee_paid,
             },
         });
 
@@ -302,9 +309,17 @@ async function handlePostPartner(body, adminCtx) {
             referred_by_partner_id || null, contracted_at || null, notes || null, status || 'active']);
         const newPartner = rows[0];
 
-        if (referred_by_partner_id) {
-            await recordReferralCommission(newPartner);
-        }
+        // Phase 4 of gcn/docs/aeviva/10-partner-system-consolidation-roadmap.md, shipped
+        // 2026-08-09: GCN now computes and credits referral commission itself, at provisioning
+        // time (upsertDirectStorePartner/creditAevivaReferralCommission), from its own mirrored
+        // upline tree and rate table. This call is intentionally disabled, not removed — nano's
+        // own admin panel is aeviva-china's only channel with real partner data (confirmed
+        // before this change), so this cannot silently double-pay a different channel's
+        // partners. recordReferralCommission itself is left intact for historical reference /
+        // in case of rollback.
+        // if (referred_by_partner_id) {
+        //     await recordReferralCommission(newPartner);
+        // }
 
         return { success: true, partner: newPartner };
     } catch (err) {
@@ -333,6 +348,11 @@ async function syncGcnPartnerStatus(partner) {
                 real_name: partner.real_name,
                 status: NANO_TO_GCN_STATUS[partner.status] || 'active',
                 sector_id: 'aeviva',
+                // Phase 3 — keep GCN's mirror of the tree edge current across edits too, not
+                // just at first provisioning (handlePutPartner allows an admin to rewrite
+                // referred_by_partner_id on an already-active partner at any time).
+                referred_by_partner_id: partner.referred_by_partner_id || null,
+                entry_fee_paid: partner.entry_fee_paid,
             },
         });
         return null;
@@ -361,9 +381,17 @@ async function handlePutPartner(partnerId, body) {
         if (priorRes.rows.length === 0) return { success: false, error: 'Partner not found', statusCode: 404 };
         const priorStatus = priorRes.rows[0].status;
 
+        // Phase 2 of gcn/docs/aeviva/10-partner-system-consolidation-roadmap.md: once GCN's own
+        // admin has explicitly assigned this partner's tier (tier_managed_by_gcn = TRUE, set by
+        // handleGcnSyncPartnerTierAssignment), the tier <select> on nano's own Edit Partner form
+        // is read-only (see PartnersTab.jsx) but this still guards it server-side too — a
+        // direct/stale API call can't silently override GCN's assignment either. Expressed as a
+        // CASE inside the UPDATE itself, same pattern as GCN's own upsertDirectStorePartner, so
+        // there's no separate-read-then-write race window.
         const { rows } = await pool.query(`
             UPDATE partners SET
-                tier=$1, real_name=$2, phone=$3, entry_fee_paid=$4,
+                tier = CASE WHEN tier_managed_by_gcn THEN tier ELSE $1 END,
+                real_name=$2, phone=$3, entry_fee_paid=$4,
                 channel_id=$5, user_id=$6, referred_by_partner_id=$7,
                 contracted_at=$8, notes=$9, status=$10, updated_at=NOW()
             WHERE id=$11
@@ -373,15 +401,24 @@ async function handlePutPartner(partnerId, body) {
             status || 'active', partnerId]);
         const updatedPartner = rows[0];
 
-        if (priorStatus === 'pending' && updatedPartner.status === 'active' && updatedPartner.referred_by_partner_id) {
-            const existing = await pool.query(
-                `SELECT 1 FROM partner_commissions WHERE source_partner_id = $1 AND source_type = 'referral'`,
-                [updatedPartner.id]
-            );
-            if (existing.rows.length === 0) {
-                await recordReferralCommission(updatedPartner);
-            }
-        }
+        // Phase 4, shipped 2026-08-09 — disabled, same rationale as handlePostPartner's
+        // identical block above. Known timing change worth remembering: this pending->active
+        // transition (self-applied invite-code partners, handleGcnPartnerApply) is *not* the
+        // same moment GCN learns about the partner — that's still the separate "Provision GCN
+        // Store" admin action (handlePostPartnerGcnProvision) or the next syncGcnPartnerStatus
+        // call below. Referral commission now fires at whichever of those actually reaches GCN
+        // first (via upsertDirectStorePartner's first-INSERT branch), not at this activation
+        // moment — a real, intentional latency change, not a bug, but worth knowing if someone
+        // asks "why hasn't this partner's referral commission shown up yet."
+        // if (priorStatus === 'pending' && updatedPartner.status === 'active' && updatedPartner.referred_by_partner_id) {
+        //     const existing = await pool.query(
+        //         `SELECT 1 FROM partner_commissions WHERE source_partner_id = $1 AND source_type = 'referral'`,
+        //         [updatedPartner.id]
+        //     );
+        //     if (existing.rows.length === 0) {
+        //         await recordReferralCommission(updatedPartner);
+        //     }
+        // }
 
         const gcnSyncError = await syncGcnPartnerStatus(updatedPartner);
 
@@ -840,16 +877,20 @@ async function handlePutPartnerType(typeKey, body, adminCtx) {
     let { label, label_zh, color, entry_fee, sort_order, description, is_active } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        // Identity fields (label/label_zh) are owned by GCN for GCN-managed tiers — silently
-        // drop any attempt to change them here rather than trusting the frontend to withhold
-        // them. Only entry_fee/color/sort_order/description/is_active (nano-only concerns) may
-        // still be edited locally for these rows.
+        // Identity fields — label/label_zh/entry_fee/is_active — are owned by GCN for
+        // GCN-managed tiers as of migration_partner_types_full_gcn_sync.sql (Phase 1 of
+        // gcn/docs/aeviva/10-partner-system-consolidation-roadmap.md) — silently drop any
+        // attempt to change them here rather than trusting the frontend to withhold them. Only
+        // color/sort_order/description (nano-only concerns, no GCN-side equivalent) may still be
+        // edited locally for these rows.
         const { rows: managedRows } = await pool.query(
             `SELECT managed_by_gcn FROM partner_types WHERE key = $1`, [typeKey]
         );
         if (managedRows[0]?.managed_by_gcn) {
             label = null;
             label_zh = null;
+            entry_fee = null;
+            is_active = null;
         }
         let channelFilter, params;
         if (adminCtx?.role === 'channel') {
@@ -926,11 +967,15 @@ async function handleDeletePartnerType(typeKey, adminCtx) {
 // POST /partner-types-gcn-sync  (GCN service token only, see worker/index.js GCN_ALLOWED_PATHS)
 // Push target for GCN's Wholesale Rules panel (handlePostPartnerType/handlePutPartnerType/
 // handleDeletePartnerType in gcn/src/functions/mall/index.js) — GCN owns a GCN-linked tier's
-// identity (key/label/label_zh), nano keeps local ownership of entry_fee/color/sort_order/
-// description/is_active, which have no GCN-side equivalent. Body: { type_id, label_zh, label_en,
-// tier_rank, action }, action: 'upsert' | 'deactivate'.
+// full identity (key/label/label_zh/entry_fee/is_active as of
+// migration_partner_types_full_gcn_sync.sql, Phase 1 of
+// gcn/docs/aeviva/10-partner-system-consolidation-roadmap.md); nano keeps local ownership only
+// of color/sort_order/description, which have no GCN-side equivalent (cosmetic/local-reorder
+// concerns only — see that migration's comment for why sort_order specifically stays nano-local
+// despite tier_rank existing on GCN's side too). Body: { type_id, label_zh, label_en, tier_rank,
+// entry_fee, is_active, action }, action: 'upsert' | 'deactivate'.
 async function handleGcnSyncPartnerType(body) {
-    const { type_id, label_zh, label_en, tier_rank, action } = body || {};
+    const { type_id, label_zh, label_en, tier_rank, entry_fee, is_active, action } = body || {};
     if (!type_id) return { success: false, error: 'type_id required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -943,20 +988,54 @@ async function handleGcnSyncPartnerType(body) {
             return { success: true };
         }
 
-        // Only label/label_zh/managed_by_gcn are overwritten on conflict — entry_fee/color/
-        // sort_order/description are nano-owned and must survive repeated syncs from GCN.
+        // label/label_zh/entry_fee/is_active/managed_by_gcn are overwritten on conflict —
+        // color/sort_order/description are nano-owned and must survive repeated syncs from GCN.
         // sort_order is seeded from tier_rank on first insert only, as a starting default nano
         // admins remain free to reorder locally afterward.
+        const fee = Number.isFinite(Number(entry_fee)) ? Number(entry_fee) : 0;
+        const active = is_active == null ? true : Boolean(is_active);
         const { rows } = await pool.query(
-            `INSERT INTO partner_types (key, label, label_zh, sort_order, managed_by_gcn)
-             VALUES ($1, $2, $3, $4, TRUE)
+            `INSERT INTO partner_types (key, label, label_zh, sort_order, entry_fee, is_active, managed_by_gcn)
+             VALUES ($1, $2, $3, $4, $5, $6, TRUE)
              ON CONFLICT (COALESCE(channel_id, 0), key) DO UPDATE SET
                  label = EXCLUDED.label, label_zh = EXCLUDED.label_zh,
+                 entry_fee = EXCLUDED.entry_fee, is_active = EXCLUDED.is_active,
                  managed_by_gcn = TRUE, updated_at = NOW()
              RETURNING *`,
-            [type_id, label_en || type_id, label_zh || null, Number.isFinite(Number(tier_rank)) ? Number(tier_rank) : 0]
+            [type_id, label_en || type_id, label_zh || null, Number.isFinite(Number(tier_rank)) ? Number(tier_rank) : 0, fee, active]
         );
         return { success: true, type: rows[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// POST /partner-tier-assignment-gcn-sync  (GCN service token only, see worker/index.js
+// GCN_ALLOWED_PATHS)
+// Phase 2 of gcn/docs/aeviva/10-partner-system-consolidation-roadmap.md — GCN's own admin
+// "Set Aeviva Tier" action (handleAdminAssignAevivaTier, gcn/src/functions/auth/index.js) pushes
+// a specific partner's tier assignment here, mirroring handleGcnSyncPartnerType's per-type
+// pattern at the per-partner level. Marks the local partners row tier_managed_by_gcn = TRUE so
+// nano's own Add/Edit Partner tier <select> (PartnersTab.jsx) goes read-only for it, exactly like
+// managed_by_gcn already does for a tier's label. Body: { nano_partner_id, tier }.
+async function handleGcnSyncPartnerTierAssignment(body) {
+    const { nano_partner_id, tier } = body || {};
+    if (!nano_partner_id || !tier) {
+        return { success: false, error: 'nano_partner_id and tier required', statusCode: 400 };
+    }
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const typeCheck = await pool.query(`SELECT key FROM partner_types WHERE key = $1 AND is_active = TRUE`, [tier]);
+        if (typeCheck.rows.length === 0) {
+            return { success: false, error: `unknown or inactive partner tier: ${tier}`, statusCode: 400 };
+        }
+        const { rows } = await pool.query(
+            `UPDATE partners SET tier = $1, tier_managed_by_gcn = TRUE, updated_at = NOW()
+             WHERE id = $2 RETURNING id, tier`,
+            [tier, nano_partner_id]
+        );
+        if (rows.length === 0) return { success: false, error: 'partner not found', statusCode: 404 };
+        return { success: true, partner: rows[0] };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -1179,6 +1258,7 @@ module.exports = {
     handlePutPartnerType,
     handleDeletePartnerType,
     handleGcnSyncPartnerType,
+    handleGcnSyncPartnerTierAssignment,
     handleGetPartnerCommissionRules,
     handlePostPartnerCommissionRule,
     handlePutPartnerCommissionRule,

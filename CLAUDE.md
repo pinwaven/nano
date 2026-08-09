@@ -368,7 +368,24 @@ const biomarkers = { ...latestBio?.data?.validated, ...latestBio?.data?.actual }
 
 ## 19. GCN Integration (Aeviva Partner Storefront)
 
-The `aeviva` nano channel's partner storefront, wholesale/resale inventory, and manual-QR checkout live in a separate sibling repo, `/Users/pin/waven/gcn`. Nano stays the source of truth for partner identity, MLM tier, and referral/commission math; GCN owns its own commerce engine and settlement rules. Full contract — cross-repo endpoints, SSO bridges, provisioning flow, admin-panel embed, miniapp entry point: `gcn-integration` skill — load it before touching any GCN-linked endpoint, the sibling repo, or aeviva storefront/inventory code.
+The `aeviva` nano channel's partner storefront, wholesale/resale inventory, and manual-QR checkout live in a separate sibling repo, `/Users/pin/waven/gcn`. **As of 2026-08-09, this is no longer "nano owns partner identity/tier/referral/commission, GCN owns commerce"** — GCN now owns the wholesale tier catalog, tier assignment, the referral tree, and commission computation too (Phases 0-4 of the consolidation roadmap below, shipped). Nano still owns end-user identity/auth (OTP, WeChat) and remains where new recruitment edges are actually created (its own admin panel / self-service apply flow), pushing them to GCN on every provision/re-sync — but nano's own `recordReferralCommission`/`recordSalesCommission` are now disabled (commented out, not removed) to avoid double-paying against GCN's ported computation. Full contract — cross-repo endpoints, SSO bridges, provisioning flow, admin-panel embed, miniapp entry point: `gcn-integration` skill — load it before touching any GCN-linked endpoint, the sibling repo, or aeviva storefront/inventory code.
+
+**All 5 phases shipped 2026-08-09**: GCN now owns aeviva's wholesale tier catalog (key/label/rank/
+entry_fee/active status), tier assignment, the referral tree
+(`partners.aeviva_upline_partner_id` on GCN's side — deliberately not `parent_partner_id`, which
+GCN already uses for two other hierarchies), and commission computation (referral + sales-margin +
+team-income, ported rate-for-rate from nano's `partner_commission_rules`). Phase 5 (retiring
+nano's redundant local surface) turned out to mean UI/logic retirement, not schema deletion —
+`partners.tier`'s `NOT NULL` FK makes dropping the catalog unsafe for no benefit, and
+`referred_by_partner_id` was never meant to retire (nano still creates new recruitment edges).
+What actually retired: `PartnersTab.jsx`'s "Rules" subtab, found to be a live ungated editor for
+the exact rate data GCN's port was sourced from — now disabled with a banner, since editing it
+did nothing to real payouts once nano's own commission functions were disabled. See the
+`gcn-integration` skill's "Partner-system consolidation" section for the full
+mechanics (`managed_by_gcn`, `tier_managed_by_gcn`, all four `*-gcn-sync` endpoints, and which
+nano call sites were disabled), and
+`/Users/pin/waven/gcn/docs/aeviva/10-partner-system-consolidation-roadmap.md` for the complete
+writeup, including the live end-to-end verification performed against aeviva-dev.
 
 ## 20. Avatar Gallery System
 
