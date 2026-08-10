@@ -70,25 +70,25 @@ test('rejects a wide noise-level bump whose peak rises less than 5 above the sta
 });
 
 test('region is clamped to the max x-distance on a long slow fall', () => {
-  // Faithful port clamps the span to MAX_REGION_X (400) from the start.
+  // Faithful port clamps the span to MAX_REGION_X (500) from the start.
   const curve = Array.from({ length: 1000 }, (_, i) => {
     if (i <= 100) return 0;                     // baseline
     if (i <= 200) return 2 * (i - 100);         // rise, slope 2 -> 200
-    if (i <= 700) return 200 - 0.4 * (i - 200); // long slow fall
+    if (i <= 700) return 200 - 0.5 * (i - 200); // long slow fall
     return 0;                                   // flat tail
   });
   const regions = findSlopeRegions(curve);
   expect(regions.length).toBeGreaterThanOrEqual(1);
   expect(regions[0].peakIndex).toBe(200);
   expect(regions[0].startIndex).toBeLessThanOrEqual(105);
-  expect(regions[0].endIndex - regions[0].startIndex).toBeLessThanOrEqual(400);
-  expect(regions[0].endIndex - regions[0].startIndex).toBeGreaterThan(380);
+  expect(regions[0].endIndex - regions[0].startIndex).toBeLessThanOrEqual(500);
+  expect(regions[0].endIndex - regions[0].startIndex).toBeGreaterThan(480);
 });
 
-test('end walks through a mid-fall shoulder when a steep drop lies ahead', () => {
+test('end stops on a mid-fall shoulder when no net drop lies ahead in the Kotlin window', () => {
   // The fall pauses on a plateau (y=100) before a second steep drop to baseline.
-  // The tail walk looks ahead, sees the steep drop, and continues past the
-  // shoulder so the end lands past the plateau.
+  // Kotlin now requires both consecutive steep points and a net drop inside the
+  // forward window, so this wide shoulder is treated as the tail.
   const curve = Array.from({ length: 1000 }, (_, i) => {
     if (i <= 100) return 0;                       // baseline
     if (i <= 200) return 2 * (i - 100);           // rise, slope 2 -> 200
@@ -100,7 +100,7 @@ test('end walks through a mid-fall shoulder when a steep drop lies ahead', () =>
   const regions = findSlopeRegions(curve);
   expect(regions.length).toBeGreaterThanOrEqual(1);
   expect(regions[0].peakIndex).toBe(200);
-  expect(regions[0].endIndex).toBeGreaterThan(300);
+  expect(regions[0].endIndex).toBeLessThan(290);
 });
 
 test('end shrinks to the violation point when the fall dips below the start-end chord', () => {
@@ -139,13 +139,13 @@ test('end is recomputed from the true peak when a taller peak follows the first 
 });
 
 test('detects a long-distance wave whose gentle rise is below the flat threshold', () => {
-  // A broad dome rising 0.3/x over 300 points (amplitude 90). isPeak fires via
+  // A broad dome rising 0.5/x over 300 points (amplitude 150). isPeak fires via
   // the wide window; findLeftFlatPoint / skipSmallWavesOnLeft slide the start to
   // the foot of the rise.
   const curve = Array.from({ length: 1000 }, (_, i) => {
     if (i <= 200) return 0;                      // baseline
-    if (i <= 500) return 0.3 * (i - 200);        // gentle rise -> 90
-    if (i <= 800) return 90 - 0.3 * (i - 500);   // gentle fall -> 0
+    if (i <= 500) return 0.5 * (i - 200);        // gentle rise -> 150
+    if (i <= 800) return 150 - 0.5 * (i - 500);  // gentle fall -> 0
     return 0;                                    // flat tail
   });
   const regions = findSlopeRegions(curve);
