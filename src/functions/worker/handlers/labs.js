@@ -204,7 +204,7 @@ async function handleLabImportEvent(data, fetchTagDerivationContext) {
         [user_id, JSON.stringify(finalData), bioAgeReport.BioAge]
     );
 
-    await updateHealthTwin(user_id);
+    await updateHealthTwin(user_id, pool);
 
     console.log(JSON.stringify({ level: 'INFO', msg: 'Lab import BioAge calculated', user_id, bio_age: bioAgeReport.BioAge, report_id }));
 }

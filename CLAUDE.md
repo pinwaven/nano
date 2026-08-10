@@ -37,6 +37,16 @@ This ensures that only developers in the IDE touch the dev environment, while al
 
 `src/mini/nano-miniapp/utils/config.js` exports a `VERSION` string (format `MMDD-N` — month+day, build number that day). **Bump it on every code change under `src/mini/nano-miniapp/`** (WXML/WXSS/JS, any page or util), no matter how small — the miniapp has no build pipeline and no other way to confirm a WeChat DevTools preview/upload is actually running the latest code versus a stale cached compile. Increment `N` for another change the same day; reset to `-1` on a new date. This is a bare `const`, no build step reads it — just edit the literal.
 
+### WeChat DevTools Automation (for driving/testing the miniapp)
+
+WeChat DevTools' "Service Port" (Settings → Security Settings) is open on **`22038`** — this is the IDE's CLI HTTP port (`cli open`/`cli preview`/etc.), not the automation websocket by itself. To actually drive the running miniapp (e.g. via the `miniprogram-automator` Node package) for testing UI changes, automation must additionally be enabled with its own port:
+
+```bash
+/Applications/wechatwebdevtools.app/Contents/MacOS/cli auto --project /Users/pin/waven/nano/src/mini/nano-miniapp --auto-port <port>
+```
+
+Then `automator.connect({ wsEndpoint: 'ws://127.0.0.1:<port>' })` (not `22038`) attaches to it. `automator.launch({ cliPath, projectPath, port })` does the open+auto+connect flow in one call and is the more reliable path from a cold start — a plain `cli auto` against an already-open project can leave the simulator's app launch hanging (`routeTo appLaunch timeout` in the IDE's `WeappLog` logs) if the project window is in a stale state; quitting (`cli quit --project <path>`) and relaunching via `automator.launch` resolves it.
+
 ### WeChat Domain Setup
 
 See [docs/wechat-domain-setup.md](docs/wechat-domain-setup.md) for request domain whitelist troubleshooting and business domain verification steps.

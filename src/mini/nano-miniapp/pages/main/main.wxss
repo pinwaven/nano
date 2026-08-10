@@ -923,6 +923,24 @@
   font-weight: 500;
 }
 
+.dots-week-nav {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.dots-week-arrow {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: rgba(166, 196, 229, 0.7);
+  padding: 0 8rpx;
+}
+
+.dots-week-arrow-disabled {
+  color: rgba(166, 196, 229, 0.2);
+}
+
 .dots-title {
   font-size: 26rpx;
   font-weight: 700;
@@ -2730,6 +2748,8 @@
 .theme-light .cart-empty          { color: var(--text-muted); }
 .theme-light .dots-title          { color: var(--text-muted); }
 .theme-light .dots-week-label     { color: var(--text-muted); }
+.theme-light .dots-week-arrow     { color: var(--text-sub); }
+.theme-light .dots-week-arrow-disabled { color: var(--text-muted); opacity: 0.4; }
 .theme-light .day-card            { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.18); }
 .theme-light .day-today           { border-color: rgba(201, 149, 106, 0.55); background: rgba(201, 149, 106, 0.06); }
 .theme-light .day-label           { color: var(--text-sub); }

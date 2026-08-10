@@ -362,11 +362,11 @@
     <view class="plans-tab{{tab !== 'plans' ? ' tab-hidden' : ''}}">
 
       <view class="inner-tab-bar">
-        <view class="inner-tab {{plansDotsSubTab==='plans'?'inner-tab-active':''}}" bindtap="switchPlansDotsSubTab" data-tab="plans">
-          <text class="inner-tab-text">{{t.plansDotsPlanTab}}</text>
-        </view>
         <view class="inner-tab {{plansDotsSubTab==='dots'?'inner-tab-active':''}}" bindtap="switchPlansDotsSubTab" data-tab="dots">
           <text class="inner-tab-text">{{t.plansDotsDotsTab}}</text>
+        </view>
+        <view class="inner-tab {{plansDotsSubTab==='plans'?'inner-tab-active':''}}" bindtap="switchPlansDotsSubTab" data-tab="plans">
+          <text class="inner-tab-text">{{t.plansDotsPlanTab}}</text>
         </view>
       </view>
 
@@ -456,6 +456,13 @@
       </block>
       <scroll-view wx:elif="{{plansDotsSubTab==='dots'}}" scroll-y class="dots-subtab-scroll">
 
+        <view wx:if="{{!neoBound}}" class="guest-lock-card" bindtap="handleBindNeoDevice">
+          <text class="guest-lock-icon">⬢</text>
+          <text class="guest-lock-title">{{t.neoBindTitle}}</text>
+          <view class="guest-lock-btn"><text>{{t.neoBindBtn}}</text></view>
+        </view>
+        <block wx:else>
+
         <view wx:if="{{!isGuest}}" class="cart-section">
           <view class="cart-section-hdr">
             <text class="cart-section-title">{{t.cartridgeTitle}}</text>
@@ -491,7 +498,11 @@
 
         <view class="dots-header">
           <text class="dots-title">{{t.dotsTitle}}</text>
-          <text wx:if="{{weekLabel}}" class="dots-week-label">{{weekLabel}}</text>
+          <view class="dots-week-nav">
+            <text class="dots-week-arrow {{!hasPrevWeek ? 'dots-week-arrow-disabled' : ''}}" catchtap="handleDotsPrevWeek">‹</text>
+            <text wx:if="{{weekLabel}}" class="dots-week-label">{{weekLabel}}</text>
+            <text class="dots-week-arrow {{!hasNextWeek ? 'dots-week-arrow-disabled' : ''}}" catchtap="handleDotsNextWeek">›</text>
+          </view>
         </view>
 
         <view wx:if="{{isGuest}}" class="guest-lock-card" bindtap="openGuestSheet">
@@ -565,6 +576,7 @@
         </view>
 
         <view style="height: 48rpx;"></view>
+        </block>
       </scroll-view>
 
     </view>

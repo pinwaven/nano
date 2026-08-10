@@ -279,12 +279,15 @@ async function handlePostBiomarkers(body) {
             'INSERT INTO biomarkers (user_id, test_type, data, tested_at) VALUES ($1, $2, $3, $4)',
             [user_id, test_type, JSON.stringify({ actual: test_data }), tested_at || new Date().toISOString()]
         );
-        if (test_type === 'body_composition' && body.send_weight_reminder && test_data.weight) {
-            try {
-                const token = await getWxAccessToken();
-                await sendWeightSubscribeMsg(user_id, test_data.weight, token);
-            } catch (e) {
-                console.log(JSON.stringify({ level: 'WARN', msg: 'weight subscribe msg failed', error: e.message }));
+        if (test_type === 'body_composition' && test_data.weight) {
+            await _syncBodyCompositionTwin(user_id, test_data.weight, user.bio_data);
+            if (body.send_weight_reminder) {
+                try {
+                    const token = await getWxAccessToken();
+                    await sendWeightSubscribeMsg(user_id, test_data.weight, token);
+                } catch (e) {
+                    console.log(JSON.stringify({ level: 'WARN', msg: 'weight subscribe msg failed', error: e.message }));
+                }
             }
         }
         return { success: true, user_id };
@@ -315,6 +318,31 @@ async function sendWeightSubscribeMsg(openid, weightKg, accessToken) {
     const result = await res.json();
     if (result.errcode && result.errcode !== 0) {
         console.log(JSON.stringify({ level: 'WARN', msg: 'wx_subscribe_send_error', data: result }));
+    }
+}
+
+// Feeds a freshly-recorded weight into health_events (category='body_composition') and
+// refreshes health_twin, so the miniapp's 体成分 twin card (health_twin.latest_weight_kg/
+// latest_bmi) reflects real data. Before this, every weight-writing path (manual entry,
+// chat's record_weight action, scale-photo AI extraction) only wrote to the legacy
+// `biomarkers` table / users.bio_data, which health_twin never reads — the twin card's
+// weight/BMI had no real writer at all and could only ever show frozen leftover/seed data.
+// Non-fatal: a failure here must never break the caller's primary weight-save.
+// Deliberately does NOT set body_fat_pct — nothing in this app measures it, so leaving it
+// out lets health_twin's COALESCE-preserving UPSERT keep whatever (possibly stale) value
+// was there rather than us fabricating one.
+async function _syncBodyCompositionTwin(user_id, weightKg, bioData) {
+    try {
+        const heightCm = bioData?.height;
+        const bmi = heightCm ? Math.round((weightKg / ((heightCm / 100) ** 2)) * 10) / 10 : null;
+        await pool.query(
+            `INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data)
+             VALUES ($1, 'manual', 'body_composition', CURRENT_DATE, NOW(), $2)`,
+            [user_id, JSON.stringify({ weight_kg: weightKg, ...(bmi != null ? { bmi } : {}) })]
+        );
+        await updateHealthTwin(user_id, pool);
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: '_syncBodyCompositionTwin failed', user_id, error: err.message }));
     }
 }
 
@@ -790,6 +818,7 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
                         'INSERT INTO biomarkers (user_id, test_type, data, tested_at) VALUES ($1, $2, $3, $4)',
                         [user_id, 'body_composition', JSON.stringify({ actual: { weight: weightKg } }), new Date().toISOString()]
                     );
+                    await _syncBodyCompositionTwin(user_id, weightKg, user.bio_data);
                     recordedWeight = weightKg;
                 }
                 simpleReply = isZh
@@ -2112,7 +2141,7 @@ async function handlePostAnalyzeImage(body) {
 
     try {
         const userResult = await pool.query(
-            `SELECT user_id, nickname, gender, birth_date, language FROM users
+            `SELECT user_id, nickname, gender, birth_date, language, bio_data FROM users
              WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
             [openid]
         );
@@ -2262,6 +2291,9 @@ async function handlePostAnalyzeImage(body) {
                 `UPDATE users SET bio_data = bio_data || $1::jsonb WHERE user_id = $2`,
                 [JSON.stringify({ weight_kg: bodyWeightKg }), user_id]
             );
+            if (isPlausible) {
+                await _syncBodyCompositionTwin(user_id, bodyWeightKg, user.bio_data);
+            }
 
             narrative = buildWeightNarrative(isZh, bodyWeightKg, historicalAvg, isPlausible);
         } else if (bodyWeightKg) {

@@ -125,6 +125,9 @@ const T = {
     dotsTitle: '营养方案',
     cartridgeTitle: '原粒盒',
     noCartridges: '未插入原粒盒。请将原粒盒插入分配器。',
+    neoBindTitle: '请先绑定 Neo 分配器以管理原粒',
+    neoBindBtn: '绑定 Neo 设备',
+    neoNotFoundMsg: '附近未找到 Neo 设备',
     simCartTitle: '选择套装',
     simCartSubtitle: '自动生成 NFC 标签并插入',
     simCartInserting: '正在插入…',
@@ -329,6 +332,9 @@ const T = {
     dotsTitle: 'Nutrition Plan',
     cartridgeTitle: 'Cartridges',
     noCartridges: 'No cartridges inserted. Insert cartridges into your dispenser.',
+    neoBindTitle: 'Bind a Neo dispenser to manage your dots',
+    neoBindBtn: 'Bind Neo Device',
+    neoNotFoundMsg: 'No Neo device found nearby',
     simCartTitle: 'Choose a Set',
     simCartSubtitle: 'Auto-generates NFC tags and inserts',
     simCartInserting: 'Inserting…',
@@ -576,12 +582,12 @@ function localISODate(d) {
   return `${y}-${m}-${day}`
 }
 
-function getWeekRange() {
+function getWeekRange(offsetWeeks = 0) {
   const now = new Date()
   const dow = now.getDay()
   const daysFromMonday = dow === 0 ? 6 : dow - 1
   const monday = new Date(now)
-  monday.setDate(now.getDate() - daysFromMonday)
+  monday.setDate(now.getDate() - daysFromMonday + offsetWeeks * 7)
   const sunday = new Date(monday)
   sunday.setDate(monday.getDate() + 6)
   return { monday: localISODate(monday), sunday: localISODate(sunday) }
@@ -898,6 +904,9 @@ Page({
     cartridges: [],
     cartridgesLoading: true,
     weekLabel: '',
+    dotsWeekOffset: 0,
+    hasPrevWeek: false,
+    hasNextWeek: false,
     simCartOpen: false,
     simCartLoading: false,
     simCartSets: [],
@@ -923,7 +932,8 @@ Page({
     planDetailOpen: false,
     planDetailData: null,
     planSubTab: 'overview',
-    plansDotsSubTab: 'plans',
+    plansDotsSubTab: 'dots',
+    neoBound: false,
     learnSubTab: 'academy',
     planBrowseOpen: false,
     events: [],
@@ -1212,6 +1222,10 @@ Page({
         this._loadCartridges(this.data.user, this.data.lang)
       }
     }
+  },
+
+  handleBindNeoDevice() {
+    wx.showToast({ title: this.data.t.neoNotFoundMsg, icon: 'none', duration: 2000 })
   },
 
   switchLearnSubTab(e) {
@@ -2480,30 +2494,15 @@ Page({
       const dotsMap = {}
       dotsArr.forEach(d => { dotsMap[d.key_name] = d })
 
-      let dotsDays = []
-      let weekLabel = ''
-      const { monday, sunday } = getWeekRange()
-      weekLabel = fmtWeekLabel(monday, sunday, lang)
-
+      let allDays = []
       if (structured && schedules.length > 0) {
-        const allDays = mapStructuredSchedules(schedules, dotsMap, lang)
-        dotsDays = allDays.filter(d => d.dateStr >= monday && d.dateStr <= sunday)
+        allDays = mapStructuredSchedules(schedules, dotsMap, lang)
       } else if (plan) {
-        dotsDays = parsePlan(plan, dotsMap, lang)
+        allDays = parsePlan(plan, dotsMap, lang)
       }
+      this._dotsAllDays = allDays
 
-      const todayIndex = dotsDays.findIndex(d => d.isToday)
-      let todayScrollLeft = 0
-      if (todayIndex >= 0) {
-        const { windowWidth } = wx.getSystemInfoSync()
-        const r = windowWidth / 750
-        const cardPx = windowWidth * 0.7
-        const gapPx = 16 * r
-        const padPx = 28 * r
-        todayScrollLeft = Math.max(0, todayIndex * (cardPx + gapPx) + padPx - (windowWidth - cardPx) / 2)
-      }
-
-      const todayDay = todayIndex >= 0 ? dotsDays[todayIndex] : null
+      const todayDay = allDays.find(d => d.isToday) || null
       const dispenseSlot = new Date().getHours() < 12 ? 'morning_cup' : 'evening_cup'
       const dispenseSlotDots = todayDay
         ? (dispenseSlot === 'morning_cup' ? todayDay.morning : todayDay.evening)
@@ -2511,9 +2510,6 @@ Page({
 
       this.setData({
         dotsLoading: false,
-        dotsDays,
-        weekLabel,
-        todayScrollLeft,
         hasPlan: (plan !== null || structured !== null),
         dispenseSlot,
         dispenseSlotDots,
@@ -2521,9 +2517,45 @@ Page({
         dispenseHasToday: !!todayDay,
         dispenseStatus: '',
       })
+      this._applyDotsWeek(0)
     } catch (e) {
       this.setData({ dotsLoading: false, hasPlan: false })
     }
+  },
+
+  // Slices the full (up to 28-day) plan already cached in this._dotsAllDays down to a single
+  // calendar Mon-Sun week for the card scroller, so paging weeks is instant and needs no refetch.
+  _applyDotsWeek(offset) {
+    const allDays = this._dotsAllDays || []
+    const { monday, sunday } = getWeekRange(offset)
+    const weekLabel = fmtWeekLabel(monday, sunday, this.data.lang)
+    const dotsDays = allDays.filter(d => d.dateStr >= monday && d.dateStr <= sunday)
+
+    const todayIndex = dotsDays.findIndex(d => d.isToday)
+    let todayScrollLeft = 0
+    if (todayIndex >= 0) {
+      const { windowWidth } = wx.getSystemInfoSync()
+      const r = windowWidth / 750
+      const cardPx = windowWidth * 0.7
+      const gapPx = 16 * r
+      const padPx = 28 * r
+      todayScrollLeft = Math.max(0, todayIndex * (cardPx + gapPx) + padPx - (windowWidth - cardPx) / 2)
+    }
+
+    const hasPrevWeek = allDays.length > 0 && allDays[0].dateStr < monday
+    const hasNextWeek = allDays.length > 0 && allDays[allDays.length - 1].dateStr > sunday
+
+    this.setData({ dotsWeekOffset: offset, dotsDays, weekLabel, todayScrollLeft, hasPrevWeek, hasNextWeek })
+  },
+
+  handleDotsPrevWeek() {
+    if (!this.data.hasPrevWeek) return
+    this._applyDotsWeek(this.data.dotsWeekOffset - 1)
+  },
+
+  handleDotsNextWeek() {
+    if (!this.data.hasNextWeek) return
+    this._applyDotsWeek(this.data.dotsWeekOffset + 1)
   },
 
   async _loadCartridges(user, lang) {
