@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { Search, Download, Activity } from 'lucide-react';
+import { Search, Download, Activity, ChevronLeft, ChevronRight, Clipboard, Check, Bug } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceArea, ReferenceDot, ReferenceLine, ResponsiveContainer,
 } from 'recharts';
-import * as XLSX from 'xlsx';
 import { findSlopeRegions, buildCurveMarkers } from '../utils/kinoCurveAnalysis.js';
 
 const MARKER_COLORS = { start: '#10b981', peak: '#ef4444', end: '#3b82f6' };
@@ -28,6 +27,9 @@ export function KinoCurveSection({ devices = [] }) {
   const [error, setError] = useState(null);
   const [searched, setSearched] = useState(false);
   const [allDevices, setAllDevices] = useState([]);
+  const [debugMode, setDebugMode] = useState(false);
+  const [debugIndex, setDebugIndex] = useState(0);
+  const [copyState, setCopyState] = useState('idle');
 
   // The `devices` prop is a client-paginated slice, so it only holds one page of
   // serials. Fetch the full device list for the filter dropdown.
@@ -50,48 +52,124 @@ export function KinoCurveSection({ devices = [] }) {
     return [...set].sort();
   }, [allDevices, devices]);
 
-  async function handleSearch() {
+  async function loadCurves(params = {}) {
     setLoading(true);
     setError(null);
     try {
-      const params = {};
-      if (serial) params.serial_number = serial;
-      if (chipCode.trim()) params.chip_code = chipCode.trim();
       const res = await axios.get('/api/kino-curves', { params });
       const rows = (res.data?.curves || []).map((r) => ({
         ...r,
         curve: Array.isArray(r.curve) ? r.curve.map(Number) : [],
       }));
       setCurves(rows);
+      setDebugIndex(0);
+      setCopyState('idle');
       setSearched(true);
+      return rows;
     } catch (e) {
       setError(e?.response?.data?.error || e.message || 'Failed to load curves');
       setCurves([]);
+      setDebugIndex(0);
+      return [];
     } finally {
       setLoading(false);
     }
   }
 
+  async function handleSearch() {
+    const params = {};
+    if (serial) params.serial_number = serial;
+    if (chipCode.trim()) params.chip_code = chipCode.trim();
+    await loadCurves(params);
+  }
+
+  async function handleDebugClick() {
+    setCopyState('idle');
+    if (debugMode) {
+      setDebugMode(false);
+      return;
+    }
+
+    let rows = curves;
+    if (rows.length === 0) {
+      rows = await loadCurves({});
+    }
+    if (rows.length > 0) {
+      setDebugIndex(0);
+      setDebugMode(true);
+    }
+  }
+
+  useEffect(() => {
+    if (debugIndex >= curves.length) {
+      setDebugIndex(Math.max(0, curves.length - 1));
+    }
+  }, [curves.length, debugIndex]);
+
+  function moveDebug(delta) {
+    if (!curves.length) return;
+    setCopyState('idle');
+    setDebugIndex((current) => Math.min(curves.length - 1, Math.max(0, current + delta)));
+  }
+
+  useEffect(() => {
+    if (!debugMode || curves.length === 0) return undefined;
+    function handleKeyDown(event) {
+      const tagName = event.target?.tagName;
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tagName) || event.target?.isContentEditable) return;
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        moveDebug(-1);
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        moveDebug(1);
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [debugMode, curves.length]);
+
+  const visibleCurves = useMemo(() => {
+    if (!debugMode) return curves;
+    const current = curves[debugIndex];
+    return current ? [current] : [];
+  }, [curves, debugMode, debugIndex]);
+
+  const activeDebugCurve = debugMode ? curves[debugIndex] : null;
+
+  async function handleCopyCurve() {
+    if (!activeDebugCurve) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(activeDebugCurve.curve));
+      setCopyState('copied');
+      window.setTimeout(() => setCopyState('idle'), 1200);
+    } catch (e) {
+      setCopyState('failed');
+      setError(e?.message || 'Failed to copy curve data');
+    }
+  }
+
   const maxLen = useMemo(
-    () => curves.reduce((m, c) => Math.max(m, c.curve.length), 0),
-    [curves],
+    () => visibleCurves.reduce((m, c) => Math.max(m, c.curve.length), 0),
+    [visibleCurves],
   );
 
   const chartData = useMemo(() => {
     const data = new Array(maxLen);
     for (let x = 0; x < maxLen; x++) {
       const row = { x };
-      curves.forEach((c, i) => {
+      visibleCurves.forEach((c, i) => {
         row[`c${i}`] = x < c.curve.length ? c.curve[x] : null;
       });
       data[x] = row;
     }
     return data;
-  }, [curves, maxLen]);
+  }, [visibleCurves, maxLen]);
 
   const regionBands = useMemo(() => {
     const bands = [];
-    curves.forEach((c, i) => {
+    visibleCurves.forEach((c, i) => {
       findSlopeRegions(c.curve).forEach((r, ri) => {
         bands.push({
           key: `${i}-${ri}`,
@@ -102,13 +180,13 @@ export function KinoCurveSection({ devices = [] }) {
       });
     });
     return bands;
-  }, [curves]);
+  }, [visibleCurves]);
 
   // One start->end chord per detected wave, colored per wave (fixed order
   // across all curves) so overlapping regions stay tellable apart.
   const chordSegments = useMemo(() => {
     const out = [];
-    curves.forEach((c, i) => {
+    visibleCurves.forEach((c, i) => {
       findSlopeRegions(c.curve).forEach((r, ri) => {
         out.push({
           key: `chord-${i}-${ri}`,
@@ -121,21 +199,23 @@ export function KinoCurveSection({ devices = [] }) {
       });
     });
     return out;
-  }, [curves]);
+  }, [visibleCurves]);
 
   const markerPoints = useMemo(() => {
     const out = [];
-    curves.forEach((c, i) => {
+    visibleCurves.forEach((c, i) => {
       buildCurveMarkers(c.curve).forEach((m, mi) => {
         out.push({ key: `${i}-${m.type}-${mi}`, x: m.x, y: m.y, color: MARKER_COLORS[m.type] });
       });
     });
     return out;
-  }, [curves]);
+  }, [visibleCurves]);
 
-  function handleExport() {
+  async function handleExport() {
     const model = buildAreaRatioMatrix(curves);
     const aoa = matrixToAoa(model);
+    const xlsxModule = 'xlsx';
+    const XLSX = await import(/* @vite-ignore */ xlsxModule);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'AreaRatio');
@@ -170,6 +250,16 @@ export function KinoCurveSection({ devices = [] }) {
           <button className="btn-secondary" type="button" onClick={handleExport} disabled={curves.length === 0}>
             <Download size={14} /> Export
           </button>
+          <button
+            className="btn-secondary"
+            type="button"
+            onClick={handleDebugClick}
+            disabled={loading}
+            aria-pressed={debugMode}
+            style={debugMode ? { borderColor: '#6366f1', color: '#4f46e5', background: '#eef2ff' } : undefined}
+          >
+            <Bug size={14} /> Debug
+          </button>
         </div>
       </div>
 
@@ -181,6 +271,40 @@ export function KinoCurveSection({ devices = [] }) {
 
       {curves.length > 0 && (
         <>
+        {debugMode && activeDebugCurve && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              flexWrap: 'wrap',
+              padding: '10px 16px',
+              borderBottom: '1px solid #e2e8f0',
+              background: '#f8fafc',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: '#475569' }}>
+              <strong style={{ color: '#0f172a' }}>Debug</strong>
+              <span>{debugIndex + 1} / {curves.length}</span>
+              <span>{curveLabel(activeDebugCurve, debugIndex)}</span>
+              {activeDebugCurve.created_at && <span>{activeDebugCurve.created_at}</span>}
+              <span>{activeDebugCurve.curve.length} points</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn-secondary" type="button" onClick={() => moveDebug(-1)} disabled={debugIndex <= 0}>
+                <ChevronLeft size={14} /> 上一条
+              </button>
+              <button className="btn-secondary" type="button" onClick={() => moveDebug(1)} disabled={debugIndex >= curves.length - 1}>
+                下一条 <ChevronRight size={14} />
+              </button>
+              <button className="btn-secondary" type="button" onClick={handleCopyCurve}>
+                {copyState === 'copied' ? <Check size={14} /> : <Clipboard size={14} />}
+                复制 curve 数据
+              </button>
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', padding: '4px 4px 0', fontSize: 12, color: '#64748b' }}>
           {[['start', 'Start'], ['peak', 'Peak'], ['end', 'End']].map(([type, label]) => (
             <span key={type} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -219,7 +343,7 @@ export function KinoCurveSection({ devices = [] }) {
               {markerPoints.map((m) => (
                 <ReferenceDot key={m.key} x={m.x} y={m.y} r={4} fill={m.color} stroke="#fff" strokeWidth={1.5} isFront />
               ))}
-              {curves.map((c, i) => (
+              {visibleCurves.map((c, i) => (
                 <Line
                   key={i}
                   type="monotone"

@@ -4,6 +4,20 @@ import axios from 'axios';
 import { KinoCurveSection } from './KinoCurveSection.jsx';
 
 vi.mock('axios', () => ({ default: { get: vi.fn() } }));
+vi.mock('xlsx', () => ({
+  utils: {
+    aoa_to_sheet: vi.fn(() => ({})),
+    book_new: vi.fn(() => ({})),
+    book_append_sheet: vi.fn(),
+  },
+  writeFile: vi.fn(),
+}));
+
+Object.assign(navigator, {
+  clipboard: {
+    writeText: vi.fn(),
+  },
+});
 
 test('renders a Search button', () => {
   render(<KinoCurveSection devices={[]} />);
@@ -95,4 +109,79 @@ test('marks start/peak/end points for each detected region', async () => {
   const chart = await screen.findByTestId('curve-chart');
   // one region -> 3 markers (start, peak, end)
   expect(Number(chart.getAttribute('data-region-markers'))).toBeGreaterThanOrEqual(3);
+});
+
+test('debug mode displays one curve at a time and switches with controls and arrow keys', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/kino-curves') {
+      return Promise.resolve({
+        data: {
+          curves: [
+            { serial_number: 'S1', chip_code: 'C1', curve: [0, 10, 0], created_at: '2026-08-01' },
+            { serial_number: 'S2', chip_code: 'C2', curve: [0, 20, 0], created_at: '2026-08-02' },
+          ],
+        },
+      });
+    }
+    return Promise.resolve({ data: { devices: [] } });
+  });
+
+  render(<KinoCurveSection devices={[]} />);
+  fireEvent.click(screen.getByRole('button', { name: /search/i }));
+  await screen.findByTestId('curve-chart');
+
+  fireEvent.click(screen.getByRole('button', { name: /debug/i }));
+  expect(screen.getByText('1 / 2')).toBeTruthy();
+  expect(screen.getByText(/S1 · C1/)).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: /下一条/i }));
+  expect(screen.getByText('2 / 2')).toBeTruthy();
+  expect(screen.getByText(/S2 · C2/)).toBeTruthy();
+
+  fireEvent.keyDown(window, { key: 'ArrowLeft' });
+  expect(screen.getByText('1 / 2')).toBeTruthy();
+});
+
+test('debug button loads all curves when no search result is present yet', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/kino-curves') {
+      return Promise.resolve({
+        data: {
+          curves: [
+            { serial_number: 'S1', chip_code: 'C1', curve: [0, 10, 0] },
+            { serial_number: 'S2', chip_code: 'C2', curve: [0, 20, 0] },
+          ],
+        },
+      });
+    }
+    return Promise.resolve({ data: { devices: [] } });
+  });
+
+  render(<KinoCurveSection devices={[]} />);
+  fireEvent.click(screen.getByRole('button', { name: /debug/i }));
+
+  expect(await screen.findByText('1 / 2')).toBeTruthy();
+  expect(screen.getByText(/S1 · C1/)).toBeTruthy();
+  expect(axios.get).toHaveBeenCalledWith('/api/kino-curves', { params: {} });
+});
+
+test('debug copy button writes the active curve data to the clipboard', async () => {
+  navigator.clipboard.writeText.mockResolvedValue();
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/kino-curves') {
+      return Promise.resolve({
+        data: { curves: [{ serial_number: 'S1', chip_code: 'C1', curve: [3, 4, 5] }] },
+      });
+    }
+    return Promise.resolve({ data: { devices: [] } });
+  });
+
+  render(<KinoCurveSection devices={[]} />);
+  fireEvent.click(screen.getByRole('button', { name: /search/i }));
+  await screen.findByTestId('curve-chart');
+
+  fireEvent.click(screen.getByRole('button', { name: /debug/i }));
+  fireEvent.click(screen.getByRole('button', { name: /复制 curve 数据/i }));
+
+  await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('[3,4,5]'));
 });
