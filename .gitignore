@@ -12,3 +12,9 @@ backups/
 .antigravitycli/*.json
 *.key
 .claude/tdd-guard/
+
+# Local-only working copies and generated reports
+*.bak/
+coverage/
+test-results/
+shared_spec
