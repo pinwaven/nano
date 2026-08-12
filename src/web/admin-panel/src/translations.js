@@ -385,6 +385,7 @@ const T = {
     partners: {
       addPartner: 'Add Partner', editPartner: 'Edit Partner', deactivatePartner: 'Deactivate',
       provisionGcnStore: 'Provision GCN Store', gcnProvisioned: 'GCN store provisioned',
+      provisionGcnRetired: 'GCN provisioning retired 2026-08-12 — new stores are onboarded directly in GCN now (tier-activation codes or its own admin panel). This partner was never linked.',
       inviteLink: 'Invite Link', inviteLinkCopied: 'Invite link copied to clipboard:',
       partnersTab: 'Partners', commissionsTab: 'Commissions', payoutsTab: 'Payouts', rulesTab: 'Commission Rules',
       realName: 'Real Name *', phone: 'Phone *', tier: 'Tier *', entryFee: 'Entry Fee (¥) *',
@@ -1173,6 +1174,7 @@ const T = {
     partners: {
       addPartner: '新增合伙人', editPartner: '编辑合伙人', deactivatePartner: '停用',
       provisionGcnStore: '开通 GCN 店铺', gcnProvisioned: 'GCN 店铺已开通',
+      provisionGcnRetired: 'GCN 开通功能已于 2026-08-12 停用——新店铺现直接在 GCN 侧开通（激活码或 GCN 后台）。该合伙人从未关联。',
       inviteLink: '邀请链接', inviteLinkCopied: '邀请链接已复制到剪贴板：',
       partnersTab: '合伙人列表', commissionsTab: '佣金记录', payoutsTab: '结算单', rulesTab: '佣金规则',
       realName: '真实姓名 *', phone: '手机号 *', tier: '级别 *', entryFee: '入伙费 (¥) *',

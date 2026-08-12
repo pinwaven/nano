@@ -273,12 +273,13 @@ function PartnersTab({ users = [], session }) {
                       {GCN_LINKED_CHANNEL_KEYS.has(pt.channel_key) && (
                         pt.gcn_partner_id
                           ? <Badge color="green" title={p.gcnProvisioned}>{p.gcnProvisioned}</Badge>
-                          : <button
-                              className="icon-btn"
-                              title={p.provisionGcnStore}
-                              disabled={pt.status !== 'active' || provisioningId === pt.id}
-                              onClick={() => provisionGcnStore(pt.id)}
-                            ><Store size={14} /></button>
+                          // GCN provisioning retired 2026-08-12 (gcn's partner-system-consolidation
+                          // roadmap, same cutover that stopped GCN from accepting/persisting new
+                          // nano_partner_id links) — new stores are onboarded directly in GCN now.
+                          // provisionGcnStore()/provisioningId above are left in place, unused,
+                          // same as saveConfig() above for the Rules tab's own 2026-08-09
+                          // retirement, rather than deleted outright.
+                          : <Store size={14} color="#cbd5e1" title={p.provisionGcnRetired} />
                       )}
                       {pt.status === 'active' && (
                         <button
