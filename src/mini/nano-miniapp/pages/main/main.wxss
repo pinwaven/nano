@@ -932,10 +932,14 @@
 }
 
 .dots-week-arrow {
-  font-size: 30rpx;
+  font-size: 40rpx;
   font-weight: 700;
   color: rgba(166, 196, 229, 0.7);
-  padding: 0 8rpx;
+  min-width: 64rpx;
+  min-height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dots-week-arrow-disabled {
