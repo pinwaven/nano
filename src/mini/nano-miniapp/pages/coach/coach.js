@@ -1,6 +1,7 @@
 const app = getApp()
 const { BASE } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
+const { maskPhone } = require('../../utils/phone.js')
 
 const T = {
   zh: {
@@ -639,9 +640,24 @@ Page({
   handleLogout() {
     this.setData({ menuOpen: false })
     if (app.globalData.sandboxMode) { this.exitSandbox(); return }
+    // Snapshot this session (minus phone/email, same PII-stripping convention as
+    // login.js's _finishLogin) so the logged-out screen can offer an instant,
+    // no-OTP "continue as previous" restore without re-deriving via WeChat openid.
+    // Prefer the already-persisted user.maskedPhone (set once at login time) over
+    // re-deriving from the raw phone — see main.js's handleLogout for why.
+    const user = app.globalData.user
+    if (user && !user.guest) {
+      const { phone, email, ...userToStore } = user
+      wx.setStorageSync('nano_last_session', {
+        user: userToStore,
+        channel: app.globalData.channel,
+        coach: app.globalData.coach,
+        maskedPhone: user.maskedPhone || maskPhone(phone) || '',
+      })
+    }
     wx.removeStorageSync('nano_user')
     app.globalData.user = null
-    wx.reLaunch({ url: '/pages/login/login' })
+    wx.reLaunch({ url: '/pages/login/login?loggedOut=1' })
   },
 
   onTouchStart(e) {

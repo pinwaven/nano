@@ -2,6 +2,7 @@ const app = getApp()
 const { BASE, VERSION, WX_VERSION, IS_DEV } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
 const { resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
+const { maskPhone } = require('../../utils/phone.js')
 const speechPlugin = requirePlugin('WechatSI')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
@@ -1584,9 +1585,28 @@ Page({
     this.setData({ menuOpen: false })
     if (app.globalData.sandboxMode) { this.exitSandbox(); return }
     this._stopPolling()
+    // Snapshot this session (minus phone/email, same PII-stripping convention as
+    // login.js's _finishLogin) so the logged-out screen can offer an instant,
+    // no-OTP "continue as previous" restore without re-deriving via WeChat openid.
+    // Prefer the already-persisted user.maskedPhone (set once at login time) over
+    // re-deriving from the raw phone — app.globalData.user almost never carries a
+    // raw .phone beyond the fleeting moment right after a fresh login, since
+    // app.onLaunch() only ever restores from the trimmed wx.storage copy. Falling
+    // back to re-deriving here would silently blank out phoneSet/maskedPhone for
+    // any session that survived even one app restart.
+    const user = app.globalData.user
+    if (user && !user.guest) {
+      const { phone, email, ...userToStore } = user
+      wx.setStorageSync('nano_last_session', {
+        user: userToStore,
+        channel: app.globalData.channel,
+        coach: app.globalData.coach,
+        maskedPhone: user.maskedPhone || maskPhone(phone) || '',
+      })
+    }
     wx.removeStorageSync('nano_user')
     app.globalData.user = null
-    wx.reLaunch({ url: '/pages/login/login' })
+    wx.reLaunch({ url: '/pages/login/login?loggedOut=1' })
   },
 
   // ── Chat init ───────────────────────────────────────────────────────────────

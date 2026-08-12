@@ -1,6 +1,7 @@
 const app = getApp()
 const { BASE } = require('../../utils/config.js')
 const { resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
+const { maskPhone } = require('../../utils/phone.js')
 
 const PHONE_RE = /^1\d{10}$/
 
@@ -176,10 +177,14 @@ Page({
         return
       }
       const updatedUser = { ...user, ...res.data.user, phoneSet: true, phone_verified: true, pendingPhoneVerification: false }
+      const { phone: _ph, email: _em, ...userToStore } = updatedUser
+      // See login.js's _finishLogin for why this is persisted (masked, not raw) —
+      // the raw phone never survives past this moment.
+      const maskedPhone = maskPhone(_ph)
+      updatedUser.maskedPhone = maskedPhone
       app.globalData.user = updatedUser
       if (res.data.channel) app.globalData.channel = res.data.channel
-      const { phone: _ph, email: _em, ...userToStore } = updatedUser
-      wx.setStorageSync('nano_user', { ...userToStore, phoneSet: true, phone_verified: true })
+      wx.setStorageSync('nano_user', { ...userToStore, phoneSet: true, phone_verified: true, maskedPhone })
       // res.data.merged means this phone was already bound to a different (older)
       // account — the backend resolved it to that pre-existing, already-onboarded
       // account rather than the brand-new stub this page started with, so the
@@ -212,10 +217,12 @@ Page({
         return
       }
       const updatedUser = { ...user, ...res.data.user, phoneSet: true, pendingPhoneVerification: false }
+      const { phone: _ph, email: _em, ...userToStore } = updatedUser
+      const maskedPhone = maskPhone(_ph)
+      updatedUser.maskedPhone = maskedPhone
       app.globalData.user = updatedUser
       if (res.data.channel) app.globalData.channel = res.data.channel
-      const { phone: _ph, email: _em, ...userToStore } = updatedUser
-      wx.setStorageSync('nano_user', { ...userToStore, phoneSet: true, phone_verified: !!updatedUser.phone_verified })
+      wx.setStorageSync('nano_user', { ...userToStore, phoneSet: true, phone_verified: !!updatedUser.phone_verified, maskedPhone })
       if (this.data.showAvatarStep) {
         this.setData({ loading: false, step: 'avatar', avatarPickerVisible: true })
       } else {
