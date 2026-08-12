@@ -193,7 +193,8 @@
 .chat-tab,
 .health-tab,
 .store-tab,
-.learn-tab {
+.learn-tab,
+.plans-tab {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   display: flex;
@@ -805,27 +806,27 @@
 /* Cartridge panel */
 .cart-section {
   flex-shrink: 0;
-  padding: 36rpx 36rpx 0;
+  padding: 18rpx 32rpx 0;
 }
 
 .cart-section-hdr {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20rpx;
+  margin-bottom: 10rpx;
 }
 
 .cart-section-title {
-  font-size: 22rpx;
+  font-size: 18rpx;
   font-weight: 700;
-  letter-spacing: 2rpx;
+  letter-spacing: 1.5rpx;
   text-transform: uppercase;
   color: rgba(166, 196, 229, 0.4);
 }
 
 .cart-sim-btn {
-  width: 48rpx;
-  height: 48rpx;
+  width: 34rpx;
+  height: 34rpx;
   border-radius: 50%;
   background: rgba(99, 117, 236, 0.15);
   border: 1rpx solid rgba(99, 117, 236, 0.35);
@@ -835,7 +836,7 @@
 }
 
 .cart-sim-btn-icon {
-  font-size: 32rpx;
+  font-size: 22rpx;
   font-weight: 300;
   color: #6375EC;
   line-height: 1;
@@ -847,25 +848,25 @@
   flex-direction: row;
   gap: 12rpx;
   align-items: center;
-  height: 160rpx;
+  height: 64rpx;
 }
 
 /* 9 slots per row, 2 rows.
-   Usable width = 750 - 72 (padding) = 678rpx.
-   8 gaps × 6rpx = 48rpx  →  slot = (678-48)/9 = 70rpx */
+   Usable width = 750 - 64 (padding) = 686rpx.
+   8 gaps × 4rpx = 32rpx  →  slot = (686-32)/9 ≈ 72rpx, capped smaller below for a compact card. */
 .cart-grid {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  gap: 6rpx;
+  gap: 4rpx;
 }
 
 .cart-slot {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6rpx;
-  width: 70rpx;
+  gap: 4rpx;
+  width: 46rpx;
 }
 
 .cart-slot-empty {
@@ -873,11 +874,11 @@
 }
 
 .ink-bar-wrap {
-  width: 44rpx;
-  height: 110rpx;
+  width: 28rpx;
+  height: 56rpx;
   background: rgba(255, 255, 255, 0.06);
   border: 1rpx solid rgba(255, 255, 255, 0.10);
-  border-radius: 10rpx;
+  border-radius: 6rpx;
   overflow: hidden;
   display: flex;
   align-items: flex-end;
@@ -885,28 +886,28 @@
 
 .ink-bar-fill {
   width: 100%;
-  border-radius: 8rpx;
-  min-height: 4rpx;
+  border-radius: 5rpx;
+  min-height: 3rpx;
   transition: height 0.4s ease;
 }
 
 .cart-key {
-  font-size: 17rpx;
+  font-size: 13rpx;
   font-weight: 700;
   color: #A6C4E5;
-  letter-spacing: 0.5rpx;
+  letter-spacing: 0.3rpx;
 }
 
 .cart-remaining {
-  font-size: 15rpx;
+  font-size: 11rpx;
   color: rgba(166, 196, 229, 0.4);
 }
 
 .cart-empty {
-  font-size: 22rpx;
+  font-size: 18rpx;
   color: rgba(166, 196, 229, 0.35);
-  padding: 16rpx 0 8rpx;
-  line-height: 1.6;
+  padding: 8rpx 0 4rpx;
+  line-height: 1.5;
 }
 
 .dots-header {
@@ -941,6 +942,46 @@
   color: rgba(166, 196, 229, 0.2);
 }
 
+.order-dots-card {
+  margin: 24rpx 36rpx 20rpx;
+  padding: 32rpx;
+  border-radius: 24rpx;
+  background: rgba(245, 197, 106, 0.08);
+  border: 2rpx solid rgba(245, 197, 106, 0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10rpx;
+}
+.order-dots-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: rgba(245, 197, 106, 0.95);
+  line-height: 1.5;
+}
+.order-dots-detail {
+  font-size: 22rpx;
+  color: rgba(245, 197, 106, 0.6);
+}
+.order-dots-btn {
+  margin-top: 14rpx;
+  height: 68rpx;
+  padding: 0 40rpx;
+  border-radius: 100rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245, 197, 106, 0.18);
+  border: 2rpx solid rgba(245, 197, 106, 0.5);
+}
+.order-dots-btn-text {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #F5C56A;
+  letter-spacing: 1rpx;
+}
+
 .dots-title {
   font-size: 26rpx;
   font-weight: 700;
@@ -950,8 +991,13 @@
 }
 
 .dots-scroll {
+  /* scroll-view (scroll-x) doesn't auto-size to its flex-row content's intrinsic height in
+     this environment — without an explicit height it silently collapses to ~10rpx, clipping
+     every day-card. Sized generously (all ~18 formulary dots active in one slot, 4 chips/row)
+     rather than to any single day's actual content, so a busier day never clips. */
   flex-shrink: 0;
   padding: 0 0 20rpx;
+  height: 640rpx;
 }
 
 .dots-days {
@@ -2919,6 +2965,28 @@
   box-shadow: 0 8rpx 40rpx rgba(99, 117, 236, 0.4);
 }
 
+/* Neo-bind prompt (dots subtab, unbound state) — most users don't own a Neo
+   dispenser, so this reuses .guest-lock-card's look but at a fraction of the
+   size; the full-size card is reserved for actual guest/signup gates. */
+.neo-bind-card {
+  margin: 20rpx 32rpx 12rpx;
+  padding: 24rpx 28rpx;
+  border-radius: 20rpx;
+  gap: 12rpx;
+}
+.neo-bind-card .guest-lock-icon { font-size: 32rpx; }
+.neo-bind-card .guest-lock-title {
+  font-size: 22rpx;
+  line-height: 1.5;
+  padding: 0;
+}
+.neo-bind-card .guest-lock-btn {
+  margin-top: 2rpx;
+  font-size: 22rpx;
+  padding: 14rpx 40rpx;
+  box-shadow: 0 4rpx 20rpx rgba(99, 117, 236, 0.35);
+}
+
 /* Avatar picker (shared between login and guest sheet) */
 .avatar-pick-wrap {
   display: flex;
@@ -3179,7 +3247,7 @@ button.consent-row::after { border: none; }
 .msg-phone-btn::after { border: none; }
 
 /* ════ PLANS TAB ════ */
-.plans-tab { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.plans-tab { overflow: hidden; }
 .plans-loading { flex: 1; display: flex; justify-content: center; align-items: center; }
 .plans-scroll  { flex: 1; }
 

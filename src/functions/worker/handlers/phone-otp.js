@@ -8,6 +8,25 @@ const { mergeUsers, resolveMergedUser } = require('./user-merge');
 
 const PHONE_RE = /^1\d{10}$/;
 
+// Admin-impersonation "super OTP" — accepting this code for ANY phone in handlePhoneOtpVerify
+// logs the caller in as that phone's account, for reproducing a specific user's issue without
+// their phone. Hardcoded, not env-configurable — SUPER_OTP_ENABLED is a pure kill switch,
+// independent of the code value. Scoped ONLY to handlePhoneOtpVerify's login path — verifyOTP()
+// itself must never accept this, since it's also called from handlePhoneOtpBind, which is
+// reachable with no auth at all and takes user_id straight from the request body: a universal
+// bypass there would let anyone attach any phone number to any account.
+const SUPER_OTP_ENABLED = process.env.SUPER_OTP_ENABLED === 'true';
+const SUPER_OTP_CODE = '761111';
+
+// Records a completed super-OTP login. Fires from all three success paths in
+// handlePhoneOtpVerify (existing user, brand-new user, race-recovery re-fetch).
+async function logSuperOtpUse(phone, userId) {
+    await pool.query(
+        'INSERT INTO super_otp_audit_log (target_phone, resolved_user_id) VALUES ($1, $2)',
+        [phone, userId]
+    );
+}
+
 const USER_SELECT = `
     SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
            u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
@@ -66,7 +85,8 @@ async function handlePhoneOtpVerify(body) {
         if (!phone || !PHONE_RE.test(phone)) return { success: false, error: 'Invalid phone number' };
         if (!code) return { success: false, error: 'code is required' };
 
-        const valid = await verifyOTP(phone, code);
+        const isSuperOtp = SUPER_OTP_ENABLED && String(code) === SUPER_OTP_CODE;
+        const valid = isSuperOtp || await verifyOTP(phone, code);
         if (!valid) return { success: false, error: 'invalid_code' };
 
         // phone stays bare for sendOTP/verifyOTP (matches phone_otp_codes and PNVS's
@@ -75,6 +95,7 @@ async function handlePhoneOtpVerify(body) {
 
         const existing = await findUserByPhone(fullPhone);
         if (existing) {
+            if (isSuperOtp) await logSuperOtpUse(fullPhone, existing.user_id);
             console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-existing', data: { phone: fullPhone, user_id: existing.user_id } }));
             const { user, channel } = shapeUserRow(existing);
             return { success: true, user, channel };
@@ -98,6 +119,7 @@ async function handlePhoneOtpVerify(body) {
                 [user_id, fullPhone]
             );
             await client.query('COMMIT');
+            if (isSuperOtp) await logSuperOtpUse(fullPhone, user_id);
             console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-new-user', data: { phone: fullPhone, user_id } }));
             return { success: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel: null };
         } catch (err) {
@@ -108,6 +130,7 @@ async function handlePhoneOtpVerify(body) {
             if (err.code === '23505') {
                 const raced = await findUserByPhone(fullPhone);
                 if (raced) {
+                    if (isSuperOtp) await logSuperOtpUse(fullPhone, raced.user_id);
                     const { user, channel } = shapeUserRow(raced);
                     return { success: true, user, channel };
                 }

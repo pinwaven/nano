@@ -456,14 +456,13 @@
       </block>
       <scroll-view wx:elif="{{plansDotsSubTab==='dots'}}" scroll-y class="dots-subtab-scroll">
 
-        <view wx:if="{{!neoBound}}" class="guest-lock-card" bindtap="handleBindNeoDevice">
+        <view wx:if="{{!neoBound && !isGuest}}" class="guest-lock-card neo-bind-card" bindtap="handleBindNeoDevice">
           <text class="guest-lock-icon">⬢</text>
           <text class="guest-lock-title">{{t.neoBindTitle}}</text>
           <view class="guest-lock-btn"><text>{{t.neoBindBtn}}</text></view>
         </view>
-        <block wx:else>
 
-        <view wx:if="{{!isGuest}}" class="cart-section">
+        <view wx:if="{{neoBound && !isGuest}}" class="cart-section">
           <view class="cart-section-hdr">
             <text class="cart-section-title">{{t.cartridgeTitle}}</text>
             <view class="cart-sim-btn" bindtap="openCartSim">
@@ -494,6 +493,12 @@
           <view wx:else class="cart-empty">
             <text>{{t.noCartridges}}</text>
           </view>
+        </view>
+
+        <view wx:if="{{!neoBound && isAeviva && !isGuest}}" class="order-dots-card" bindtap="handleOrderDots">
+          <text class="order-dots-title">{{t.orderDotsTitle}}</text>
+          <text class="order-dots-detail">{{t.orderDotsDetail}}</text>
+          <view class="order-dots-btn"><text class="order-dots-btn-text">{{t.orderDotsBtn}}</text></view>
         </view>
 
         <view class="dots-header">
@@ -561,7 +566,7 @@
             </view>
           </scroll-view>
 
-          <view wx:if="{{dispenseHasToday}}" class="dispense-section">
+          <view wx:if="{{dispenseHasToday && neoBound}}" class="dispense-section">
             <view
               class="dispense-btn{{dispenseStatus === 'done' ? ' dispense-btn-done' : dispenseStatus === 'error' ? ' dispense-btn-error' : dispenseStatus === 'loading' ? ' dispense-btn-loading' : ''}}"
               bindtap="dispenseToday"
@@ -576,7 +581,6 @@
         </view>
 
         <view style="height: 48rpx;"></view>
-        </block>
       </scroll-view>
 
     </view>

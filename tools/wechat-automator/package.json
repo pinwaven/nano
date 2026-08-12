@@ -1,0 +1,16 @@
+{
+  "name": "wechat-automator",
+  "version": "0.1.0",
+  "description": "Reusable miniprogram-automator connect/launch helper for driving nano-miniapp in WeChat DevTools",
+  "main": "connect.js",
+  "scripts": {
+    "example": "node example.js",
+    "cleanup": "node cleanup.js"
+  },
+  "dependencies": {
+    "miniprogram-automator": "^0.12.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

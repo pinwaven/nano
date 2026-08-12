@@ -101,6 +101,10 @@ resources:
         # permission (see gcn's docs/pnvs.md). No separate SMS credential provisioned.
         SMS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
         SMS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
+        # Admin-impersonation "super OTP" kill switch — see phone-otp.js's SUPER_OTP_CODE.
+        # Deliberately set "true" in BOTH dev and prod (unlike most dev-only flags in this
+        # file) since the whole point is debugging real accounts, which mostly live in prod.
+        SUPER_OTP_ENABLED: "true"
         # PNVS_SIGN_NAME/PNVS_TEMPLATE_CODE are optional — lib/sms.js defaults to the
         # verified system-provided pair (恒创联众 / 100001).
         # Dev/prod share one EventBridge bus (same Aliyun account) — nano-worker-dev and

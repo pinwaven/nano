@@ -123,11 +123,14 @@ const T = {
     male: '男', female: '女',
     selectBirthday: '选择出生日期',
     dotsTitle: '营养方案',
-    cartridgeTitle: '原粒盒',
-    noCartridges: '未插入原粒盒。请将原粒盒插入分配器。',
-    neoBindTitle: '请先绑定 Neo 分配器以管理原粒',
+    neoBindTitle: '请先绑定 Neo 分配器以管理原粒盒',
     neoBindBtn: '绑定 Neo 设备',
     neoNotFoundMsg: '附近未找到 Neo 设备',
+    orderDotsTitle: '未绑定 Neo 分配器，可直接订购原粒胶囊',
+    orderDotsDetail: '默认 4 周装 · 56 粒 · 每日 2 粒',
+    orderDotsBtn: '前往商城订购',
+    cartridgeTitle: '原粒盒',
+    noCartridges: '未插入原粒盒。请将原粒盒插入分配器。',
     simCartTitle: '选择套装',
     simCartSubtitle: '自动生成 NFC 标签并插入',
     simCartInserting: '正在插入…',
@@ -330,11 +333,14 @@ const T = {
     male: 'Male', female: 'Female',
     selectBirthday: 'Select Birthday',
     dotsTitle: 'Nutrition Plan',
-    cartridgeTitle: 'Cartridges',
-    noCartridges: 'No cartridges inserted. Insert cartridges into your dispenser.',
-    neoBindTitle: 'Bind a Neo dispenser to manage your dots',
+    neoBindTitle: 'Bind a Neo dispenser to manage your cartridges',
     neoBindBtn: 'Bind Neo Device',
     neoNotFoundMsg: 'No Neo device found nearby',
+    orderDotsTitle: 'No Neo dispenser bound — order pre-mixed capsules instead',
+    orderDotsDetail: 'Default: 4-week pack · 56 capsules · 2/day',
+    orderDotsBtn: 'Order in the Store',
+    cartridgeTitle: 'Cartridges',
+    noCartridges: 'No cartridges inserted. Insert cartridges into your dispenser.',
     simCartTitle: 'Choose a Set',
     simCartSubtitle: 'Auto-generates NFC tags and inserts',
     simCartInserting: 'Inserting…',
@@ -871,6 +877,7 @@ Page({
 
     // Channel
     channel: null,
+    isAeviva: false,
 
     // Role menu flags
     menuOpen: false,
@@ -1038,7 +1045,8 @@ Page({
     const t = { ...T[lang], subAgeLabels: buildSubAgeLabels(T[lang].subAgeLabels, channelOverrides, lang) }
     const sandboxMode = !!app.globalData.sandboxMode
     const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', user.nickname || '—') : ''
-    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
+    const isAeviva = channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china'
+    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, isAeviva, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
     if (isGuest) {
       this.setData({ messages: [{ id: 'init', role: 'ai', content: T[lang].initMsg }], obStep: null, storeLoading: true })
       this._loadGuestStore(lang)
@@ -1047,7 +1055,6 @@ Page({
     this._initChat(user, lang)
     this._loadDots(user, lang)
     this._loadCartridges(user, lang)
-    const isAeviva = channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china'
     // Aeviva's GCN store URL is minted lazily in switchTab (wvt is one-time/60s-TTL —
     // minting it here on page load, before the user has even looked at Store, risks it
     // being stale by the time they tap the tab).
@@ -1147,42 +1154,49 @@ Page({
 
   // ── Tab navigation ──────────────────────────────────────────────────────────
 
+  // Shared by the Store tab and the Dots subtab's "Order Dots" button — both need the same
+  // phone-verification gate before minting a wvt nobody can use (handleNanoSSO hard-requires
+  // a verified phone and 403s otherwise, dead-ending on GCN's login page with no explanation).
+  // Checked fresh against the server rather than trusting the cached flag: a returning session
+  // restores `user.phone_verified` straight from local storage (app.js onLaunch) and never
+  // re-syncs it against the server, so a pre-migration account whose cache still says `true`
+  // from before phone verification existed would otherwise sail past this gate.
+  async _openAevivaStoreGated() {
+    const verified = await this._checkPhoneVerified()
+    if (!verified) {
+      const { lang } = this.data
+      wx.showModal({
+        title: lang === 'zh' ? '需要验证手机号' : 'Phone verification needed',
+        content: lang === 'zh'
+          ? '进入商城前，请先验证您的手机号码'
+          : 'Please verify your phone number before entering the store.',
+        confirmText: lang === 'zh' ? '去验证' : 'Verify',
+        cancelText: lang === 'zh' ? '取消' : 'Cancel',
+        success: (r) => {
+          if (r.confirm) wx.navigateTo({ url: '/pages/verify-phone/verify-phone' })
+        },
+      })
+      return
+    }
+    this._openAevivaStore()
+  },
+
+  handleOrderDots() {
+    this._openAevivaStoreGated()
+  },
+
   async switchTab(e) {
     const tab = e.currentTarget.dataset.tab
     if (tab === 'store' && !this.data.isGuest) {
       const { channel } = this.data
       if (channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china') {
-        // The GCN handoff (handleNanoSSO) hard-requires a verified phone and 403s
-        // otherwise — opening the webview anyway just dead-ends on GCN's login page with
-        // no explanation. Catch it here instead, before minting a wvt nobody can use.
-        // Checked fresh against the server rather than trusting the cached flag: a
-        // returning session restores `user.phone_verified` straight from local storage
-        // (app.js onLaunch) and never re-syncs it against the server, so a pre-migration
-        // account whose cache still says `true` from before phone verification existed
-        // would otherwise sail past this gate and land on GCN's dead end anyway.
-        const verified = await this._checkPhoneVerified()
-        if (!verified) {
-          const { lang } = this.data
-          wx.showModal({
-            title: lang === 'zh' ? '需要验证手机号' : 'Phone verification needed',
-            content: lang === 'zh'
-              ? '进入商城前，请先验证您的手机号码'
-              : 'Please verify your phone number before entering the store.',
-            confirmText: lang === 'zh' ? '去验证' : 'Verify',
-            cancelText: lang === 'zh' ? '取消' : 'Cancel',
-            success: (r) => {
-              if (r.confirm) wx.navigateTo({ url: '/pages/verify-phone/verify-phone' })
-            },
-          })
-          return
-        }
         // Aeviva's GCN store opens as a separate navigated page (pages/appview — its own
         // header/back button, a plain page layout) rather than an inline tab section:
         // <web-view> doesn't reliably support any overlay button (cover-view is only
         // documented for map/video/canvas/camera, not web-view) when embedded inside this
         // page's absolutely-positioned tab-switching containers — confirmed by testing,
         // not just theory. Don't change `tab` at all; stay on whatever tab was active.
-        this._openAevivaStore()
+        await this._openAevivaStoreGated()
         return
       }
     }

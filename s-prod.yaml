@@ -99,6 +99,10 @@ resources:
         # permission (see gcn's docs/pnvs.md). No separate SMS credential provisioned.
         SMS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
         SMS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
+        # Admin-impersonation "super OTP" kill switch — see phone-otp.js's SUPER_OTP_CODE.
+        # Deliberately set "true" here too (unlike DEMO_MODE-style dev-only flags) since the
+        # whole point is debugging real accounts, which mostly live in prod.
+        SUPER_OTP_ENABLED: "true"
         # EVENT_SOURCE_SUFFIX (renamed from CHAT_EVENT_SOURCE_SUFFIX) intentionally left unset
         # here — chatEventBridge.js/dispatcher/lab/agent all default to their original
         # unsuffixed "acs.*" sources when the var is absent, which is prod's correct/unchanged
