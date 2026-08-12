@@ -72,7 +72,7 @@ async function handleGetUsers(channelId, query = {}) {
         const sql = `
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
                     u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
-                    (u.phone_verified_at IS NOT NULL) AS phone_verified,
+                    (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
                     u.referred_by_user_id, u.invited_by_invitation_id,
                     u.bio_data as user_bio_data,
                     ru.nickname as referrer_nickname,
@@ -325,28 +325,41 @@ async function handleGetDashboardStats(query, adminCtx) {
     } catch (err) { return { success: false, error: err.message }; }
 }
 
+const GET_USER_SELECT =
+    `SELECT u.user_id, u.nickname, u.avatar_url, u.avatar_character, u.phone, u.email, u.language, u.gender,
+            u.birth_date, u.roles, u.coach_id, u.channel_id, u.created_at, u.merged_into_user_id,
+            (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
+            u.bio_data as user_bio_data,
+            u.wearable_brand, u.wearable_mac, u.wearable_name, u.wearable_bound_at,
+            u.referred_by_user_id, u.invited_by_invitation_id,
+            ru.nickname as referrer_nickname,
+            inv.code as invite_code,
+            inv_cu.nickname as inviter_nickname
+     FROM users u
+     LEFT JOIN users ru ON ru.user_id = u.referred_by_user_id
+     LEFT JOIN invitations inv ON inv.id = u.invited_by_invitation_id
+     LEFT JOIN users inv_cu ON inv_cu.user_id = inv.created_by
+     WHERE u.user_id=$1`;
+
 async function handleGetUser(user_id) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const res = await pool.query(
-            `SELECT u.user_id, u.nickname, u.avatar_url, u.avatar_character, u.phone, u.email, u.language, u.gender,
-                    u.birth_date, u.roles, u.coach_id, u.channel_id, u.created_at,
-                    (u.phone_verified_at IS NOT NULL) AS phone_verified,
-                    u.bio_data as user_bio_data,
-                    u.wearable_brand, u.wearable_mac, u.wearable_name, u.wearable_bound_at,
-                    u.referred_by_user_id, u.invited_by_invitation_id,
-                    ru.nickname as referrer_nickname,
-                    inv.code as invite_code,
-                    inv_cu.nickname as inviter_nickname
-             FROM users u
-             LEFT JOIN users ru ON ru.user_id = u.referred_by_user_id
-             LEFT JOIN invitations inv ON inv.id = u.invited_by_invitation_id
-             LEFT JOIN users inv_cu ON inv_cu.user_id = inv.created_by
-             WHERE u.user_id=$1`,
-            [user_id]
-        );
+        const res = await pool.query(GET_USER_SELECT, [user_id]);
         if (!res.rows.length) return { success: false, error: 'User not found' };
-        return { success: true, user: res.rows[0] };
+        let row = res.rows[0];
+        // Same-system account merge (handlers/user-merge.js) transparently resolved to the
+        // surviving winner — mirrors the identical loop in handlers/login.js's
+        // WX_LOGIN_USER_SELECT/WEBVIEW_USER_SELECT. Without this, a caller holding a merged-away
+        // "loser" user_id (e.g. the miniapp's own cached session) reads that loser's own stale
+        // phone/phone_verified instead of the winner's real, current state — which is exactly
+        // what GCN's SSO exchange (WEBVIEW_USER_SELECT) already resolves through, so the two
+        // could silently disagree.
+        while (row.merged_into_user_id) {
+            const winnerRes = await pool.query(GET_USER_SELECT, [row.merged_into_user_id]);
+            if (winnerRes.rows.length === 0) break;
+            row = winnerRes.rows[0];
+        }
+        return { success: true, user: row };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -445,39 +458,92 @@ async function syncPrimaryPhone(client, user_id, phone) {
 
 async function handlePutUser(user_id, body) {
     const { nickname, phone, email, gender, birth_date, language, coach_id, channel_id, bio_data, roles, avatar_url, avatar_character } = body;
-    // channel_id uses COALESCE so a missing/null value in the request never overwrites an existing assignment
     if (!pool) return { success: false, error: 'Database pool not initialized' };
+    // Several callers (e.g. the Health tab's saveEdit, which only ever means to update
+    // nickname/gender/birth_date/bio_data) send a body with no `phone` key at all, expecting
+    // every other field to be left untouched — a plain partial update. Distinguishing "key
+    // omitted" from "key present but empty" (an admin deliberately clearing the phone field)
+    // is required so an unrelated profile edit can never silently wipe a verified phone —
+    // found via a real incident where exactly this happened. `phone || null` alone can't
+    // make that distinction (both cases evaluate the same way), so it's gated separately.
+    const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
+    const phoneProvided = has('phone');
+    const emailProvided = has('email');
+    const languageProvided = has('language');
+    const coachIdProvided = has('coach_id');
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
 
-        const phoneSync = await syncPrimaryPhone(client, user_id, phone || null);
-        if (!phoneSync.success) {
-            await client.query('ROLLBACK');
-            return { success: false, statusCode: 409, error: phoneSync.error };
+        if (phoneProvided) {
+            const phoneSync = await syncPrimaryPhone(client, user_id, phone || null);
+            if (!phoneSync.success) {
+                await client.query('ROLLBACK');
+                return { success: false, statusCode: 409, error: phoneSync.error };
+            }
+
+            // A manually-typed admin edit isn't an OTP verification (same principle
+            // syncPrimaryPhone already applies to user_phones.verified_at above) — if phone is
+            // being changed, any stale phone_verified_at from whatever the account's old phone
+            // was must not silently carry over onto the new value. Without this, an admin
+            // clearing or retyping a phone here leaves phone_verified_at stamped for a phone
+            // nobody ever actually OTP-verified, which every phone_verified read downstream
+            // (login.js, the webview/GCN SSO handoff) trusts. Re-promoting a phone this same
+            // user already OTP-verified before (switching primary back to an old, still-verified
+            // secondary number) is the one case that's exempt.
+            const currentPhoneRes = await client.query('SELECT phone FROM users WHERE user_id = $1', [user_id]);
+            const currentPhone = currentPhoneRes.rows[0]?.phone || null;
+            const newPhone = phone || null;
+            if (newPhone !== currentPhone) {
+                let keepVerified = false;
+                if (newPhone) {
+                    const verifiedRes = await client.query(
+                        `SELECT 1 FROM user_phones WHERE user_id = $1 AND phone = $2 AND verified_at IS NOT NULL`,
+                        [user_id, newPhone]
+                    );
+                    keepVerified = verifiedRes.rows.length > 0;
+                }
+                if (!keepVerified) {
+                    await client.query('UPDATE users SET phone_verified_at = NULL WHERE user_id = $1', [user_id]);
+                }
+            }
         }
 
-        if (bio_data && roles) {
-            await client.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), bio_data = bio_data || $9, roles=$10, avatar_url=COALESCE($11, avatar_url), avatar_character=COALESCE($12, avatar_character) WHERE user_id=$13`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), roles, avatar_url || null, avatar_character || null, user_id]
-            );
-        } else if (bio_data) {
-            await client.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), bio_data = bio_data || $9, avatar_url=COALESCE($10, avatar_url), avatar_character=COALESCE($11, avatar_character) WHERE user_id=$12`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, JSON.stringify(bio_data), avatar_url || null, avatar_character || null, user_id]
-            );
-        } else if (roles) {
-            await client.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), roles=$9, avatar_url=COALESCE($10, avatar_url), avatar_character=COALESCE($11, avatar_character) WHERE user_id=$12`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, roles, avatar_url || null, avatar_character || null, user_id]
-            );
-        } else {
-            await client.query(
-                `UPDATE users SET nickname=$1, phone=$2, email=$3, gender=$4, birth_date=$5, language=$6, coach_id=$7, channel_id=COALESCE($8, channel_id), avatar_url=COALESCE($9, avatar_url), avatar_character=COALESCE($10, avatar_character) WHERE user_id=$11`,
-                [nickname || null, phone || null, email || null, gender || null, birth_date || null, language || 'zh', coach_id || null, channel_id || null, avatar_url || null, avatar_character || null, user_id]
-            );
+        // Built dynamically rather than as hand-numbered positional-param variants (the
+        // previous shape here) — that pattern is exactly what let phone/email/language/
+        // coach_id silently go unprotected against partial updates in the first place; a
+        // field only added to one of four near-identical SQL strings is easy to miss adding
+        // to the others. nickname/gender/birth_date stay unconditional (every known caller
+        // that PUTs at all already means to set these); channel_id/avatar_url/avatar_character
+        // keep their existing COALESCE-on-missing behavior. phone/email/coach_id support an
+        // explicit clear (caller sends the key as empty) alongside "field omitted entirely"
+        // (leave untouched) — the two are deliberately not the same thing, per phoneProvided
+        // above. language has no real "clear" concept (falls back to 'zh' when provided-but-
+        // empty, same as before this change), only "provided" vs "omitted".
+        const sets = ['nickname=$1', 'gender=$2', 'birth_date=$3', 'channel_id=COALESCE($4, channel_id)', 'avatar_url=COALESCE($5, avatar_url)', 'avatar_character=COALESCE($6, avatar_character)'];
+        const params = [nickname || null, gender || null, birth_date || null, channel_id || null, avatar_url || null, avatar_character || null];
+        const addConditional = (column, provided, value) => {
+            if (provided) {
+                params.push(value);
+                sets.push(`${column}=$${params.length}`);
+            } else {
+                sets.push(`${column}=${column}`);
+            }
+        };
+        addConditional('phone', phoneProvided, phone || null);
+        addConditional('email', emailProvided, email || null);
+        addConditional('language', languageProvided, language || 'zh');
+        addConditional('coach_id', coachIdProvided, coach_id || null);
+        if (bio_data) {
+            params.push(JSON.stringify(bio_data));
+            sets.push(`bio_data = bio_data || $${params.length}`);
         }
+        if (roles) {
+            params.push(roles);
+            sets.push(`roles=$${params.length}`);
+        }
+        params.push(user_id);
+        await client.query(`UPDATE users SET ${sets.join(', ')} WHERE user_id=$${params.length}`, params);
         // Sync coaches table when roles change
         if (roles) {
             if (roles.includes('coach')) {

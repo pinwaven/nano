@@ -2026,6 +2026,12 @@ Component({
         if (height !== '' && height != null) bio_data_update.height = Number(height)
         if (weight !== '' && weight != null) bio_data_update.weight = Number(weight)
 
+        // Deliberately omits phone/email/language/coach_id — this form never edits them,
+        // and the backend (handlePutUser) treats an omitted key as "leave untouched," not
+        // as "clear it." Do not add them here just to "be complete": sourcing them from
+        // `user` (self mode) or `properties.user` (coach mode) risks resending a stale/
+        // stripped cached value and silently wiping a verified phone — this is exactly how
+        // a real incident happened (saving an unrelated health-profile edit nulled phone).
         await this._req(`${BASE}/api/users/${user.user_id}`, 'PUT', {
           nickname, gender, birth_date, bio_data: bio_data_update,
         })

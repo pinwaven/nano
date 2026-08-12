@@ -30,7 +30,7 @@ async function logSuperOtpUse(phone, userId) {
 const USER_SELECT = `
     SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
            u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
-           u.referred_by_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
+           u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
            cu.nickname AS coach_name,
            c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
            c.config->'sub_age_display_names' AS channel_sub_age_names,
@@ -111,7 +111,7 @@ async function handlePhoneOtpVerify(body) {
                  VALUES ($1, $2, 'phone', 'zh', $3, NOW(), NOW())
                  RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character,
                            coach_id, channel_id, roles, created_at, bio_data, referral_code, referred_by_user_id,
-                           (phone_verified_at IS NOT NULL) AS phone_verified`,
+                           (phone_verified_at IS NOT NULL AND phone IS NOT NULL) AS phone_verified`,
                 [user_id, fullPhone, referral_code]
             );
             await client.query(
@@ -207,16 +207,29 @@ async function handlePhoneOtpBind(body) {
         }
 
         await client.query('BEGIN');
-        const existingPrimary = await client.query('SELECT 1 FROM user_phones WHERE user_id = $1 AND is_primary', [user_id]);
+        // Excludes the phone being bound itself: without that, re-verifying an
+        // already-primary phone would see its own row here and wrongly compute
+        // isFirstPhone=false, which (via the ON CONFLICT below) would demote it.
+        const existingPrimary = await client.query(
+            'SELECT 1 FROM user_phones WHERE user_id = $1 AND is_primary AND phone != $2',
+            [user_id, fullPhone]
+        );
         const isFirstPhone = existingPrimary.rows.length === 0;
 
         // WHERE clause on the DO UPDATE guards the race window between the conflict
         // check above and this statement: if another request attached this exact
         // phone to a DIFFERENT user in between, the update is skipped (0 rows) rather
         // than silently refreshing verified_at on a row we don't own.
+        // is_primary is now also restored on conflict (bug fixed 2026-08-12): a phone
+        // that had been demoted to is_primary=false by a prior admin edit (see
+        // handlePutUser/syncPrimaryPhone) previously stayed demoted forever even after
+        // a fully successful real-OTP re-verification, since only verified_at refreshed —
+        // silently skipping the users.phone/phone_verified_at write below, which reads
+        // this row's actual (never-restored) is_primary rather than isFirstPhone.
         const attach = await client.query(
             `INSERT INTO user_phones (user_id, phone, verified_at, is_primary) VALUES ($1, $2, NOW(), $3)
-             ON CONFLICT (phone) DO UPDATE SET verified_at = NOW() WHERE user_phones.user_id = EXCLUDED.user_id
+             ON CONFLICT (phone) DO UPDATE SET verified_at = NOW(), is_primary = EXCLUDED.is_primary
+             WHERE user_phones.user_id = EXCLUDED.user_id
              RETURNING user_id, is_primary`,
             [user_id, fullPhone, isFirstPhone]
         );

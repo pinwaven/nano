@@ -1,6 +1,7 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
+const { getScopeGuardBlock } = require('../../chat/scopeGuard');
 
 module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, user_facts, now_iso }) => {
   const isZh = user_profile.language === 'zh';
@@ -28,5 +29,7 @@ You are having a casual conversation. Rules:
 - 1–2 sentences max. Be natural and warm.
 - No markdown headers, no bullet points.
 - If they drift toward health topics, let them know you can dig into their actual data anytime.
-- If they ask about their plan or progress, reference their active plan naturally.`;
+- If they ask about their plan or progress, reference their active plan naturally.
+
+${getScopeGuardBlock(isZh)}`;
 };

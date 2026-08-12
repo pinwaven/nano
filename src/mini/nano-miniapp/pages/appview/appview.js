@@ -2,8 +2,8 @@ const app = getApp()
 const { BASE } = require('../../utils/config')
 
 const T = {
-  zh: { title: 'NANO', back: '返回' },
-  en: { title: 'NANO', back: 'Back' },
+  zh: { title: 'NANO', back: '退出' },
+  en: { title: 'NANO', back: 'Exit' },
 }
 
 Page({

@@ -2506,11 +2506,18 @@ Page({
     this.setData({ user: { ...updated }, userAvatarLetter })
   },
 
+  // phone/email/language/coach_id are deliberately omitted from the base object here
+  // (only sent when a caller explicitly includes one via `updates`) — user.phone/email
+  // are stripped from the cached session (see login.js/verify-phone.js's PII-stripping
+  // convention) and are frequently undefined outside the fleeting moment right after a
+  // fresh login/verification, so resending them unconditionally risked silently wiping a
+  // verified phone/email on every unrelated save (found via a real incident: picking an
+  // avatar or answering a questionnaire follow-up nulled the caller's own phone number).
+  // The backend (handlePutUser) now also treats an omitted key as "leave untouched", so
+  // omitting here is the correct, safe default rather than resending a stale cached value.
   _saveUser(user, updates) {
     return this._req(`${BASE}/api/users/${user.user_id}`, 'PUT', {
-      nickname: user.nickname, phone: user.phone, email: user.email,
-      gender: user.gender, birth_date: user.birth_date,
-      language: user.language, coach_id: user.coach_id,
+      nickname: user.nickname, gender: user.gender, birth_date: user.birth_date,
       ...updates
     })
   },
