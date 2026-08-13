@@ -69,8 +69,8 @@ const { handleGetUserFacts, handlePostUserFact, handlePutUserFact, handleDeleteU
 const { handleGetCreditBalance, handleGetCreditHistory, handlePostCreditWithdraw, handleGetUserWithdrawals, handleGetAdminWithdrawals, handlePutAdminWithdrawal, handleGetAdminUserCreditHistory, handlePostAdminUserCreditAdjustment } = require('./handlers/credits');
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
 const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
-const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleSetIdentity, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation } = require('./handlers/users');
-const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
+const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleSetIdentity, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation, handlePostFormulationPurchaseConfirmed } = require('./handlers/users');
+const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handleGetFormulationCheckoutSnapshot, handleNutritionTopupEvent, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
 const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm } = require('./handlers/login');
 const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified } = require('./handlers/phone-otp');
@@ -145,6 +145,15 @@ exports.handler = async (req, resp, context) => {
                 await handleDailyCheckinEvent(cloudData);
             } catch (err) {
                 console.error(JSON.stringify({ level: 'ERROR', msg: 'handleDailyCheckinEvent failed', error: err.message }));
+            }
+        } else if (event.source === DISPATCHER_EVENT_SOURCE && event.type === 'nutrition.topup') {
+            // Previously unhandled — this case didn't exist, so the dispatcher's nutrition.topup
+            // CloudEvent was silently dropped (ok:true returned, nothing done) whenever it
+            // reached worker via EventBridge. See handleNutritionTopupEvent's own comment.
+            try {
+                await handleNutritionTopupEvent(cloudData);
+            } catch (err) {
+                console.error(JSON.stringify({ level: 'ERROR', msg: 'handleNutritionTopupEvent failed', error: err.message }));
             }
         }
         return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true }), isBase64Encoded: false };
@@ -233,7 +242,7 @@ exports.handler = async (req, resp, context) => {
             // Scoped nano<-GCN service credential — distinct from API_BEARER_TOKEN (nano's
             // full superadmin bearer). Authenticated but restricted to the exact paths GCN's
             // nanoClient.js actually calls; anything else 403s even with a valid token.
-            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn', '/partner-types-gcn-sync', '/partner-tier-assignment-gcn-sync']);
+            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn', '/partner-types-gcn-sync', '/partner-tier-assignment-gcn-sync', '/formulation-checkout-snapshot', '/formulation-purchase-confirmed', '/health-plan-templates']);
             if (!GCN_ALLOWED_PATHS.has(path)) {
                 const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
                 if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
@@ -338,6 +347,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetNotifications(query.openid);
             } else if (path.includes('/reminders')) {
                 result = await handleGetReminders(query.openid);
+            } else if (path === '/formulation-checkout-snapshot') {
+                result = await handleGetFormulationCheckoutSnapshot(query.planId, query.openid);
             } else if (path.includes('/nutrition-plan')) {
                 result = await handleGetNutritionPlan(query.openid);
             } else if (path === '/health-twin') {
@@ -749,6 +760,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGcnPartnerDescendants(parsedBody);
             } else if (path.includes('/partner-applications')) {
                 result = await handleGcnPartnerApply(parsedBody);
+            } else if (path.includes('/formulation-purchase-confirmed')) {
+                result = await handlePostFormulationPurchaseConfirmed(parsedBody);
             } else if (path.includes('/partner-sales')) {
                 result = await handlePostPartnerSale(parsedBody);
             } else if (path.includes('/partner-commissions')) {

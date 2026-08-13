@@ -661,15 +661,15 @@ async function handleGetMyReferrals(query) {
 // app with the user pre-authenticated (no phone login required in the webview).
 async function handlePostWebviewToken(body) {
     try {
-        const { openid } = body || {};
+        const { openid, context } = body || {};
         if (!openid) return { success: false, error: 'openid is required' };
 
         const token = require('crypto').randomBytes(32).toString('hex');
         const expiresAt = new Date(Date.now() + 60_000); // 60 seconds
 
         await pool.query(
-            `INSERT INTO webview_tokens (token, openid, expires_at) VALUES ($1, $2, $3)`,
-            [token, openid, expiresAt]
+            `INSERT INTO webview_tokens (token, openid, expires_at, context) VALUES ($1, $2, $3, $4)`,
+            [token, openid, expiresAt, context ? JSON.stringify(context) : null]
         );
 
         return { success: true, wvt: token, expires_in: 60 };
@@ -689,12 +689,13 @@ async function handleExchangeWebviewToken(body) {
             `UPDATE webview_tokens
              SET used = TRUE
              WHERE token = $1 AND used = FALSE AND expires_at > NOW()
-             RETURNING openid`,
+             RETURNING openid, context`,
             [wvt]
         );
         if (rows.length === 0) return { success: false, error: 'Invalid or expired token' };
 
         const openid = rows[0].openid;
+        const context = rows[0].context || null;
         const WEBVIEW_USER_SELECT =
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                     u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
@@ -730,7 +731,7 @@ async function handleExchangeWebviewToken(body) {
             ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
             : null;
 
-        return { success: true, user, channel };
+        return { success: true, user, channel, context };
     } catch (err) {
         return { success: false, error: err.message };
     }

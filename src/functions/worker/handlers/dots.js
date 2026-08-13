@@ -820,15 +820,131 @@ async function handleGetNutritionPlan(openid) {
     }
 }
 
+// Server-to-server only (GCN_ALLOWED_PATHS-gated, see worker/index.js) — lets GCN validate a
+// custom-formulation purchase against the buyer's real, currently-committed recipe before
+// creating an order line, rather than trusting a client-supplied plan id blindly. GCN calls this
+// with the openid it already resolved from its own SSO session (never a client-supplied value),
+// so `openid` here is the authenticated buyer, not user input to trust independently.
+//
+// `valid:false` covers every reason a purchase shouldn't proceed: wrong owner, not the user's
+// current active plan (stale — a newer formulation superseded it after the client cached an
+// older plan id), or plan not found at all. Never throws a 404/500 for a routine "not ready yet"
+// case — the caller (GCN's handleOrderCreate) is expected to branch on `valid`, not on HTTP status.
+//
+// The per-dot breakdown is read from day 0 of the plan (`start_date`) specifically — every day
+// in the 28-day cycle recomputes the same steady-state recipe from morningRecipe/eveningRecipe
+// EXCEPT the two DOT-N7 isolation days (day-offsets 9-10, see N7_ISOLATION_DAY_INDEXES), which
+// are a system-controlled special case (single-ingredient capsules) and would misrepresent the
+// real formulation if read instead. Day 0 is never an isolation day, so it's always safe.
+async function handleGetFormulationCheckoutSnapshot(planId, openid) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (!planId || !openid) return { valid: false, reason: 'missing_params' };
+
+        const planIdNum = parseInt(planId, 10);
+        if (!Number.isFinite(planIdNum)) return { valid: false, reason: 'invalid_plan_id' };
+
+        const planResult = await pool.query(
+            `SELECT np.id, np.user_id, np.status, np.start_date, np.created_at,
+                    np.primary_health_plan_id, np.secondary_health_plan_id,
+                    hpt.key_name AS focus_key_name, hpt.name_zh AS focus_label_zh, hpt.name_en AS focus_label_en
+             FROM nutrition_plans np
+             LEFT JOIN health_plans hp ON hp.id = np.primary_health_plan_id
+             LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
+             WHERE np.id = $1`,
+            [planIdNum]
+        );
+        if (planResult.rows.length === 0) return { valid: false, reason: 'plan_not_found' };
+
+        const plan = planResult.rows[0];
+        if (plan.user_id !== openid) return { valid: false, reason: 'plan_owner_mismatch' };
+        if (plan.status !== 'active') return { valid: false, reason: 'plan_not_active' };
+
+        const scheduleResult = await pool.query(
+            `SELECT slot_name, recipe FROM nutrition_schedules
+             WHERE plan_id = $1 AND scheduled_date = $2`,
+            [plan.id, plan.start_date]
+        );
+        if (scheduleResult.rows.length === 0) return { valid: false, reason: 'plan_has_no_schedule' };
+
+        const dotsResult = await pool.query('SELECT id, key_name, name, name_zh FROM dots ORDER BY id ASC');
+        const dotsByKey = new Map(dotsResult.rows.map(d => [d.key_name, d]));
+
+        const morningRow = scheduleResult.rows.find(r => r.slot_name === 'morning_cup');
+        const eveningRow = scheduleResult.rows.find(r => r.slot_name === 'evening_cup');
+        const morningDots = morningRow?.recipe?.dots || {};
+        const eveningDots = eveningRow?.recipe?.dots || {};
+
+        const allKeys = new Set([...Object.keys(morningDots), ...Object.keys(eveningDots)]);
+        const dotBreakdown = [...allKeys].map(key => {
+            const dot = dotsByKey.get(key);
+            const morning_count = morningDots[key] || 0;
+            const evening_count = eveningDots[key] || 0;
+            return {
+                key_name: key,
+                name: dot?.name || key,
+                name_zh: dot?.name_zh || key,
+                morning_count,
+                evening_count,
+                total_count: morning_count + evening_count,
+            };
+        }).filter(d => d.total_count > 0);
+
+        if (dotBreakdown.length === 0) return { valid: false, reason: 'plan_has_no_dots' };
+
+        return {
+            valid: true,
+            plan: {
+                id: plan.id,
+                status: plan.status,
+                committed_at: plan.created_at,
+                primary_focus: plan.focus_key_name
+                    ? { key_name: plan.focus_key_name, name_zh: plan.focus_label_zh, name_en: plan.focus_label_en }
+                    : null,
+            },
+            recipe_summary: { dot_breakdown: dotBreakdown },
+            verification_ref: uuidv4(),
+        };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetFormulationCheckoutSnapshot failed', error: err.message }));
+        return { valid: false, reason: 'internal_error' };
+    }
+}
+
 // Per-dot fallback when the LLM's FORMULATION output omits a key entirely — midpoint of that
 // dot's own target_dots_min/max (added by migration_dots_new_lineup.sql; ranges vary wildly,
 // e.g. 1-2 for DOT-N1 vs 56-100 for DOT-N15, so a flat constant made no sense). Falls back to
 // 4 only if a dot has no min/max configured.
-function _fallbackCountForDot(dot) {
+// `isRecommended` biases the fallback toward the high end of the dot's own range when it's one
+// of the user's active focus's recommended_dot_ids (true), toward the low end when a focus is
+// active but this dot isn't on its list (false), or the plain midpoint when no focus is active
+// at all (undefined/omitted) — the existing, unbiased default. Never zeroes a non-recommended
+// dot out entirely: soft weighting only, per the confirmed product decision (a real biomarker
+// need outside the chosen focus must still be able to surface).
+function _fallbackCountForDot(dot, isRecommended) {
     if (dot.target_dots_min != null && dot.target_dots_max != null) {
-        return Math.round((dot.target_dots_min + dot.target_dots_max) / 2);
+        const { target_dots_min: min, target_dots_max: max } = dot;
+        if (isRecommended === true) return Math.round(min + (max - min) * 0.75);
+        if (isRecommended === false) return Math.round(min + (max - min) * 0.25);
+        return Math.round((min + max) / 2);
     }
     return 4;
+}
+
+// Resolves the union of recommended_dot_ids across a user's active health_plans (primary +
+// secondary, if both joined) into a Set of dot key_names — the shared candidate/weighting input
+// both the deterministic and agentic formulation paths use. Returns null when no active focus
+// has any recommended dots, meaning "no narrowing" (today's default full-18-dot behavior) rather
+// than an empty set (which would read as "recommend nothing").
+function _resolveCandidateDotKeys(activeHealthPlans, dotsFormulary) {
+    const ids = new Set();
+    for (const p of activeHealthPlans || []) {
+        for (const id of (p.recommended_dot_ids || [])) ids.add(id);
+    }
+    if (ids.size === 0) return null;
+    const byId = new Map((dotsFormulary || []).map(d => [d.id, d]));
+    const keys = new Set([...ids].map(id => byId.get(id)?.key_name).filter(Boolean));
+    return keys.size > 0 ? keys : null;
 }
 
 // Splits a dot's total count across morning/evening for the deterministic (non-agentic) path.
@@ -950,7 +1066,8 @@ function _capRecipeTotal(recipe, maxTotal) {
 // (handleChatGenerateEvent's 'formula_dots_generate' kind) can't run — EventBridge publish
 // failure, or the agentic turn itself throwing — so a formulation request never ends with the
 // user getting nothing. Does NOT touch the DB; callers own the transaction.
-async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFormulary, personaType, lang, currentSolarTerm, essentialKnowledge, userFacts }) {
+async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFormulary, personaType, lang, currentSolarTerm, essentialKnowledge, userFacts, activeHealthPlans }) {
+    const recommendedKeySet = _resolveCandidateDotKeys(activeHealthPlans, dotsFormulary);
     const nutritionContext = {
         language: lang,
         biomarkers,
@@ -961,6 +1078,7 @@ async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFor
         current_solar_term: currentSolarTerm,
         essential_knowledge: essentialKnowledge,
         user_facts: userFacts,
+        recommended_dot_keys: recommendedKeySet ? [...recommendedKeySet] : null,
     };
     const llmClient = getLlmClient();
     const model = process.env.MODEL || 'qwen-plus-latest';
@@ -1010,10 +1128,14 @@ async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFor
         }
     }
 
-    // Fill any missing keys with the deterministic per-dot fallback
+    // Fill any missing keys with the deterministic per-dot fallback, biased by focus (see
+    // _fallbackCountForDot) when the user has an active health plan with recommended dots.
     for (const dot of dotsFormulary) {
         const k = dot.key_name.replace(/^DOT/, 'D');
-        if (!dotCounts[k]) dotCounts[k] = _fallbackCountForDot(dot);
+        if (!dotCounts[k]) {
+            const isRecommended = recommendedKeySet ? recommendedKeySet.has(dot.key_name) : undefined;
+            dotCounts[k] = _fallbackCountForDot(dot, isRecommended);
+        }
     }
 
     // The chat message deliberately does NOT include a raw per-dot text dump (previously
@@ -1061,16 +1183,19 @@ async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFor
 // the same user produced 3 pending rows but only 1 delivered event; the other 2 remained
 // undelivered and could still land later). Returns the plan id normally, or `null` if the commit
 // was skipped as stale — callers should treat `null` as "nothing changed, don't notify the user".
-async function _commitNutritionPlan(client, { userId, analysis, morningRecipe, eveningRecipe, planId, dotsFormulary }) {
+async function _commitNutritionPlan(client, { userId, analysis, morningRecipe, eveningRecipe, planId, dotsFormulary, activeHealthPlans }) {
     const startDateObj = getNowShanghai();
     const endDateObj = startDateObj.plus({ days: PLAN_DAYS - 1 });
+    const primaryHealthPlanId = (activeHealthPlans || []).find(p => p.plan_type === 'primary')?.id ?? null;
+    const secondaryHealthPlanId = (activeHealthPlans || []).find(p => p.plan_type === 'secondary')?.id ?? null;
 
     let finalPlanId = planId;
     if (finalPlanId) {
         const activated = await client.query(
-            `UPDATE nutrition_plans SET status = 'active', start_date = $1, end_date = $2, goal = $3
+            `UPDATE nutrition_plans SET status = 'active', start_date = $1, end_date = $2, goal = $3,
+                    primary_health_plan_id = $5, secondary_health_plan_id = $6
              WHERE id = $4 AND status = 'pending' RETURNING id`,
-            [startDateObj.toISODate(), endDateObj.toISODate(), analysis || 'Personalized Formulation', finalPlanId]
+            [startDateObj.toISODate(), endDateObj.toISODate(), analysis || 'Personalized Formulation', finalPlanId, primaryHealthPlanId, secondaryHealthPlanId]
         );
         if (activated.rows.length === 0) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'commit_nutrition_plan_stale_pending_skipped', userId, planId: finalPlanId }));
@@ -1080,8 +1205,9 @@ async function _commitNutritionPlan(client, { userId, analysis, morningRecipe, e
     } else {
         await client.query(`UPDATE nutrition_plans SET status = 'superseded' WHERE user_id = $1 AND status = 'active'`, [userId]);
         const planInsert = await client.query(
-            `INSERT INTO nutrition_plans (user_id, start_date, end_date, goal, status) VALUES ($1, $2, $3, $4, 'active') RETURNING id`,
-            [userId, startDateObj.toISODate(), endDateObj.toISODate(), analysis || 'Personalized Formulation']
+            `INSERT INTO nutrition_plans (user_id, start_date, end_date, goal, status, primary_health_plan_id, secondary_health_plan_id)
+             VALUES ($1, $2, $3, $4, 'active', $5, $6) RETURNING id`,
+            [userId, startDateObj.toISODate(), endDateObj.toISODate(), analysis || 'Personalized Formulation', primaryHealthPlanId, secondaryHealthPlanId]
         );
         finalPlanId = planInsert.rows[0].id;
     }
@@ -1116,6 +1242,103 @@ async function _commitNutritionPlan(client, { userId, analysis, morningRecipe, e
         );
     }
     return finalPlanId;
+}
+
+// Background reformulation triggered by the dispatcher's periodic nutrition.topup CloudEvent
+// (source acs.dispatcher, see dispatcher/index.js's nutritionQuery and worker/index.js's
+// EventBridge router — this case was previously missing there entirely, so the event was
+// silently dropped and this handler never ran). Runs the deterministic single-completion
+// formulator directly rather than the full agentic PLAN->GENERATE->JUDGE->REVISE loop: this is
+// an unattended background job with no user waiting on a reply, so the richer interactive loop's
+// extra latency/cost isn't warranted, mirroring the same choice already made for every other
+// fallback path in this file.
+async function handleNutritionTopupEvent(payload) {
+    const { user_id } = payload || {};
+    if (!user_id) return;
+    try {
+        if (!pool) return;
+        const [userResult, bioResult, dotsResult] = await Promise.all([
+            pool.query('SELECT * FROM users WHERE user_id = $1 LIMIT 1', [user_id]),
+            pool.query(
+                `SELECT data FROM biomarkers WHERE user_id = $1
+                 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
+                [user_id]
+            ),
+            pool.query(`SELECT id, key_name, key_name_zh, name, name_zh, timing, timing_flexible, ingredients, ingredients_zh, sub_age_target, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ORDER BY id ASC`),
+        ]);
+        if (userResult.rows.length === 0) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'nutrition_topup_user_not_found', user_id }));
+            return;
+        }
+        const user = userResult.rows[0];
+        const data = bioResult.rows[0]?.data || {};
+        const biomarkers = data.validated || {};
+        const bioageProfile = data.bioage_profile || {};
+
+        let personaType = 'nano';
+        if (user.channel_id) {
+            try {
+                const chResult = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
+                personaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
+            } catch (_) {}
+        }
+
+        const lang = user.language || 'zh';
+        const currentSolarTerm = getCurrentSolarTerm(getNowShanghai().toJSDate());
+        const essentialKnowledge = await getEssentialBlock(personaType);
+        const [userFactsResult, activePlansResult] = await Promise.all([
+            pool.query(
+                `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
+                [user.user_id]
+            ),
+            pool.query(
+                `SELECT hp.id, hp.plan_type, hpt.recommended_dot_ids
+                 FROM health_plans hp
+                 LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
+                 WHERE hp.user_id = $1 AND hp.status = 'active'
+                 ORDER BY hp.start_date DESC LIMIT 5`,
+                [user.user_id]
+            ),
+        ]);
+
+        const { analysis, finalContent, morningRecipe, eveningRecipe } = await _runDeterministicFormulation({
+            biomarkers, bioageProfile, dotsFormulary: dotsResult.rows, personaType, lang, currentSolarTerm,
+            essentialKnowledge, userFacts: userFactsResult.rows, activeHealthPlans: activePlansResult.rows,
+        });
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            await _commitNutritionPlan(client, {
+                userId: user.user_id, analysis, morningRecipe, eveningRecipe,
+                dotsFormulary: dotsResult.rows, activeHealthPlans: activePlansResult.rows,
+            });
+            await client.query('COMMIT');
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+
+        // Reorder-ready nudge: only for a user who has already bought a custom formulation at
+        // least once — handlers/users.js's handlePostFormulationPurchaseConfirmed is the only
+        // way nano learns this (GCN has no other channel to signal it back through). A user who
+        // has never purchased just gets the normal 'nutrition_plan' notification, same as today.
+        const notificationType = user.custom_formulation_purchased_at ? 'formulation_reorder_ready' : 'nutrition_plan';
+        const notificationContent = user.custom_formulation_purchased_at
+            ? (lang === 'zh'
+                ? '您的原粒方案已根据最新数据刷新，点击查看并重新购买。'
+                : 'Your dot formulation has been refreshed with your latest data — tap to view and reorder.')
+            : finalContent;
+        await pool.query(
+            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+            [user.user_id, notificationType, notificationContent, 'pending']
+        );
+        await _saveChatMessage(user.user_id, 'ai', finalContent, null, personaType);
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleNutritionTopupEvent failed', user_id, error: err.message }));
+    }
 }
 
 async function handlePostFormulaDots(body) {
@@ -1228,7 +1451,8 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         ),
         pool.query(
             `SELECT hp.id, hp.plan_type, hp.status, hp.start_date, hp.duration_weeks,
-                    hpt.name_en, hpt.name_zh, hpt.goal_en, hpt.goal_zh, hpt.target_sub_ages
+                    hpt.name_en, hpt.name_zh, hpt.goal_en, hpt.goal_zh, hpt.target_sub_ages,
+                    hpt.recommended_dot_ids
              FROM health_plans hp
              LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
              WHERE hp.user_id = $1 AND hp.status = 'active'
@@ -1248,9 +1472,12 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         now_iso: getNowShanghai().toISO(),
         questionnaire_context: formatQuestionnaireContext(questionnaireResult.rows, lang),
         active_health_plans: activePlansResult.rows.map(p => ({
+            id: p.id,
+            plan_type: p.plan_type,
             name: lang === 'zh' ? p.name_zh : p.name_en,
             goal: lang === 'zh' ? p.goal_zh : p.goal_en,
             target_sub_ages: p.target_sub_ages || [],
+            recommended_dot_ids: p.recommended_dot_ids || [],
             weeks_elapsed: Math.max(0, Math.floor((Date.now() - new Date(p.start_date).getTime()) / (7 * 86400000))),
             total_weeks: p.duration_weeks,
         })),
@@ -1280,12 +1507,13 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         // superseded by _commitNutritionPlan's own supersede-then-activate step.
         const { analysis, finalContent, morningRecipe, eveningRecipe } = await _runDeterministicFormulation({
             biomarkers, bioageProfile, dotsFormulary, personaType, lang, currentSolarTerm, essentialKnowledge, userFacts,
+            activeHealthPlans: llmContext.active_health_plans,
         });
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
             await client.query(`UPDATE nutrition_plans SET status = 'superseded' WHERE id = $1 AND status = 'pending'`, [pendingPlanId]);
-            await _commitNutritionPlan(client, { userId: user.user_id, analysis, morningRecipe, eveningRecipe, dotsFormulary });
+            await _commitNutritionPlan(client, { userId: user.user_id, analysis, morningRecipe, eveningRecipe, dotsFormulary, activeHealthPlans: llmContext.active_health_plans });
             await client.query('COMMIT');
         } catch (e) {
             await client.query('ROLLBACK');
@@ -1372,6 +1600,8 @@ module.exports = {
     handlePostOrder,
     handlePostOrderBatch,
     handleGetNutritionPlan,
+    handleGetFormulationCheckoutSnapshot,
+    handleNutritionTopupEvent,
     handlePostFormulaDots,
     handlePostDots,
     handlePutDot,
@@ -1379,6 +1609,7 @@ module.exports = {
     _runDeterministicFormulation,
     _commitNutritionPlan,
     _fallbackCountForDot,
+    _resolveCandidateDotKeys,
     _splitDotTiming,
     _isPulseActiveDate,
     _applyPulseSchedule,

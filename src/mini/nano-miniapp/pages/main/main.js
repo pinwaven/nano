@@ -83,6 +83,10 @@ const T = {
     plansConflict: '该槽位已有方案，是否替换？',
     plansConfirmAbandon: '确认放弃此方案？放弃后可重新加入。',
     plansConfirmSwitch: '确认切换主/辅方案？',
+    formulationReadyTitle: '您的专属方案已生成',
+    formulationNotReadyTitle: '尚未生成本方案的原粒配方',
+    formulationNotReadyHint: '在聊天工具箱中点击"配置原粒"，即可根据本方案生成专属配方。',
+    buyFormulationBtn: '购买此配方',
     remindersTitle: '即将提醒',
     remindersEmpty: '暂无即将到来的提醒',
     reminderSourceCoach: '教练',
@@ -293,6 +297,10 @@ const T = {
     plansConflict: 'That slot is occupied. Replace existing plan?',
     plansConfirmAbandon: 'Abandon this plan? You can rejoin anytime.',
     plansConfirmSwitch: 'Switch primary/secondary?',
+    formulationReadyTitle: 'Your personalized formulation is ready',
+    formulationNotReadyTitle: "You haven't formulated dots for this focus yet",
+    formulationNotReadyHint: 'Tap "Formulate Dots" in the chat toolbox to generate a personalized recipe for this focus.',
+    buyFormulationBtn: 'Buy This Formulation',
     remindersTitle: 'Upcoming Reminders',
     remindersEmpty: 'No upcoming reminders',
     reminderSourceCoach: 'Coach',
@@ -1162,7 +1170,7 @@ Page({
   // restores `user.phone_verified` straight from local storage (app.js onLaunch) and never
   // re-syncs it against the server, so a pre-migration account whose cache still says `true`
   // from before phone verification existed would otherwise sail past this gate.
-  async _openAevivaStoreGated() {
+  async _openAevivaStoreGated(context = null) {
     const verified = await this._checkPhoneVerified()
     if (!verified) {
       const { lang } = this.data
@@ -1179,11 +1187,22 @@ Page({
       })
       return
     }
-    this._openAevivaStore()
+    this._openAevivaStore(context)
   },
 
   handleOrderDots() {
     this._openAevivaStoreGated()
+  },
+
+  // "Buy This Formulation" CTA in the plan-detail overlay — only rendered (see main.wxml) once
+  // planDetailData.formulation is populated, i.e. a real committed nutrition_plans row exists
+  // for this focus. Passes the specific plan id through the webview-token bridge so GCN's
+  // checkout can validate/price against the exact recipe rather than a placeholder.
+  handleBuyFormulation() {
+    const { planDetailData, isAeviva } = this.data
+    const nutritionPlanId = planDetailData?.formulation?.nutrition_plan_id
+    if (!isAeviva || !nutritionPlanId) return
+    this._openAevivaStoreGated({ intent: 'buy_custom_formulation', nutrition_plan_id: nutritionPlanId })
   },
 
   async switchTab(e) {
@@ -1342,9 +1361,14 @@ Page({
     wx.navigateTo({ url: '/pages/webadmin/webadmin' })
   },
 
-  openUserApp(path = '/app') {
+  // `context` (optional) is an arbitrary JSON-serializable intent payload — e.g.
+  // { intent: 'buy_custom_formulation', nutrition_plan_id } — carried through to appview.js,
+  // which threads it into /api/webview-token so the target page (GCN's dashboard.html) can
+  // read it back after the SSO exchange. See handlers/login.js's webview_tokens.context column.
+  openUserApp(path = '/app', context = null) {
     this.setData({ menuOpen: false })
-    wx.navigateTo({ url: `/pages/appview/appview?url=${encodeURIComponent(path)}` })
+    const contextParam = context ? `&context=${encodeURIComponent(JSON.stringify(context))}` : ''
+    wx.navigateTo({ url: `/pages/appview/appview?url=${encodeURIComponent(path)}${contextParam}` })
   },
 
   // Aeviva channel's Store tab tap opens the GCN storefront via appview.js (which mints
@@ -1356,9 +1380,9 @@ Page({
   // was never verified and 不支持打开's with it. Mirror BASE's own develop-vs-trial/release
   // split (CLAUDE.md §"Miniapp Backend Selection") rather than IS_DEV, which also covers
   // trial builds.
-  _openAevivaStore() {
+  _openAevivaStore(context = null) {
     const host = BASE.includes('-dev.') ? 'https://aeviva-dev.gcn.net' : 'https://aeviva.gcn.net'
-    this.openUserApp(`${host}/dashboard.html`)
+    this.openUserApp(`${host}/dashboard.html`, context)
   },
 
   // ── Kino Simulator ──────────────────────────────────────────────────────────
@@ -3038,7 +3062,8 @@ Page({
         const d = new Date(r.scheduled_for)
         return { ...r, timeDisplay: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
       })
-      this.setData({ planDetailData: { ...plan, ...detail, reminders } })
+      const formulation = res.data?.formulation || null
+      this.setData({ planDetailData: { ...plan, ...detail, reminders, formulation } })
     } catch { /* keep existing plan data if fetch fails */ }
   },
 

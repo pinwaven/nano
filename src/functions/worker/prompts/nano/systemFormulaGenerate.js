@@ -95,6 +95,24 @@ module.exports = (ctx) => {
             : `Active health plan goals: ${active_health_plans.map(p => `"${p.name}" — ${p.goal || ''} (week ${p.weeks_elapsed}/${p.total_weeks})`).join('; ')}`)
         : '';
 
+    // Soft, non-exclusionary weighting hint derived from the union of the user's active
+    // health_plans' recommended_dot_ids — recommended dots should skew toward the higher end
+    // of their own range, but every other dot is still decided normally by biomarker severity
+    // (never forced to 0 just for being off the focus list). See §1 of the focus-formulation
+    // plan for why this stays soft rather than a hard filter.
+    const recommendedDotShortKeys = (() => {
+        const ids = new Set();
+        for (const p of active_health_plans || []) for (const id of (p.recommended_dot_ids || [])) ids.add(id);
+        if (ids.size === 0) return [];
+        const byId = new Map((dots || []).map(d => [d.id, d]));
+        return [...ids].map(id => byId.get(id)?.key_name).filter(Boolean).map(k => k.replace(/^DOT/, 'D'));
+    })();
+    const focusWeightingSection = recommendedDotShortKeys.length > 0
+        ? (isZh
+            ? `本轮聚焦方案重点推荐 Dot：${recommendedDotShortKeys.join('、')}（配方决策时可适当偏向这些 Dot 范围的较高值；但其余 Dot 仍需按生物标志物正常判断决定数值，不得因未被推荐而强行归零——若某项生物标志物明显异常但对应 Dot 不在此列表中，仍应给出合理剂量）`
+            : `This cycle's focus plan especially recommends: ${recommendedDotShortKeys.join(', ')} (you may skew these toward the higher end of their range; every other Dot is still decided normally by biomarker severity — never force one to 0 just for being off this list. If a biomarker is clearly abnormal but its Dot isn't on this list, still assign it a reasonable dose)`)
+        : '';
+
     const seasonSection = current_solar_term
         ? (isZh
             ? `当前节气：${current_solar_term.name_zh}（${current_solar_term.season_zh}季 · ${current_solar_term.organ_zh}）— ${current_solar_term.theme_zh}（传统节气养生视角，非临床证据，仅作轻微参考，不得掩盖生物标志物驱动的优先级）`
@@ -110,6 +128,7 @@ const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的�
 用户：${user_profile.nickname || '用户'}，${user_profile.age ? user_profile.age + ' 岁' : '年龄未知'}${user_profile.bmi ? '，BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
+${focusWeightingSection ? focusWeightingSection + '\n' : ''}
 ${twinSection}
 
 ${seasonSection}
@@ -149,6 +168,7 @@ Biomarker status (normal/elevated/high) is already labeled directly below — us
 User: ${user_profile.nickname || 'the user'}${user_profile.age ? ', ' + user_profile.age + ' years old' : ' (age unknown)'}${user_profile.bmi ? ', BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
+${focusWeightingSection ? focusWeightingSection + '\n' : ''}
 ${twinSection}
 
 ${seasonSection}

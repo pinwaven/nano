@@ -215,6 +215,39 @@ Prompt templates that consume plan context: `prompts/chat/casual.js`, `prompts/c
 
 ---
 
+## Health-Plan-Focus-Linked Dot Formulation
+
+*In-flight as of 2026-08-14 — not yet committed/deployed; verify against `git log`/`git status` before relying on this.*
+
+Formulate Dots (see `docs/ai-persona/08-formula-dots-and-reports.md`) now records which active focus(es) shaped a committed formulation, and the plan detail response surfaces the result back to the miniapp.
+
+### `nutrition_plans.primary_health_plan_id` / `secondary_health_plan_id`
+
+Migration: `src/schemas/migration_nutrition_plans_health_plan_link.sql` — nullable `BIGINT` FKs to `health_plans(id)` (`ON DELETE SET NULL`), each with its own index. Set by `_commitNutritionPlan` (`handlers/dots.js`) at commit time, resolved from whichever `health_plans` rows were active (`plan_type = 'primary'` / `'secondary'`) at generation time — both the update-from-`pending` branch and the fresh-insert branch. Left `NULL` when a formulation is run with no active focus at all (today's pre-existing default behavior).
+
+### `formulation` field on `GET /health-plans/:id`
+
+`handleGetHealthPlanDetail` (`handlers/health-plans.js`) now also returns a `formulation` field: the committed dot breakdown (read from day 0 of `nutrition_schedules`) for whichever *active* `nutrition_plans` row links back to this specific focus via `primary_health_plan_id`/`secondary_health_plan_id`. `null` when Formulate Dots hasn't been run since joining this focus — a normal, expected state, not an error.
+
+```json
+{
+  "formulation": {
+    "nutrition_plan_id": 123,
+    "dot_breakdown": [
+      { "key_name": "DOT01", "name": "NMN", "name_zh": "...", "morning_count": 2, "evening_count": 0, "total_count": 2 }
+    ]
+  }
+}
+```
+
+Miniapp: the Plan Detail Sheet (`pages/main/main.wxml`/`main.js`) renders this breakdown, plus — Aeviva channel only, gated on `formulation` being non-null — a "Buy This Formulation" CTA (`handleBuyFormulation`) that opens the GCN storefront with a purchase-intent payload. See the `gcn-integration` skill for the cross-repo checkout flow this feeds.
+
+### Soft weighting of formulation by focus (`recommended_dot_ids`)
+
+A user's active focus's `recommended_dot_ids` (see the Plan Template table above) now softly biases dot-count generation toward that focus's recommended dots in both the deterministic and agentic formulation paths — never a hard filter; every dot remains primarily governed by biomarker severity, and a real biomarker need outside the chosen focus can still surface. Full mechanics (per-dot fallback biasing, the agentic prompt's `focusWeightingSection`) are documented in [`docs/ai-persona/08-formula-dots-and-reports.md`](../ai-persona/08-formula-dots-and-reports.md#health-plan-focus-linked-formulation-weighting) — not duplicated here to avoid the two docs drifting apart.
+
+---
+
 ## Miniapp — Plans Tab
 
 **Tab order:** Chat → Health → **Plans** → Dots → Store
@@ -366,7 +399,7 @@ All endpoints require `Authorization: Bearer <token>`.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/health-plans` | User's active plans (`?openid=X`) or all plans (`?all=true`). Returns `today_checkin` (today's `dots_taken` + `activities_done`) and `daily_tasks` per plan for the miniapp card |
-| `GET` | `/health-plans/:id` | Full plan detail — plan row + last 30 check-ins + milestones |
+| `GET` | `/health-plans/:id` | Full plan detail — plan row + last 30 check-ins + milestones + `formulation` (committed dot breakdown for this focus, or `null`) |
 | `POST` | `/health-plans` | Join a plan — 409 `{ error: 'conflict' }` if slot occupied |
 | `PUT` | `/health-plans/:id` | Update `status` or `plan_type` |
 

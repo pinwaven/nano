@@ -40,7 +40,7 @@ const { runAgenticTurn } = require('../lib/agenticChat');
 const { v4: uuidv4 } = require('uuid');
 const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
-const { _runDeterministicFormulation, _commitNutritionPlan, _fallbackCountForDot, _splitDotTiming } = require('./dots');
+const { _runDeterministicFormulation, _commitNutritionPlan, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming } = require('./dots');
 
 // Intents where factual claims (biomarker values, dot recommendations, science/protocol
 // assertions) are common enough to warrant the fuller plan->generate->judge->revise loop
@@ -1542,14 +1542,16 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     }
 
     let analysis, finalContent, morningRecipe, eveningRecipe;
+    const recommendedKeySet = _resolveCandidateDotKeys(llmContext.active_health_plans, llmContext.dots);
 
     if (entries) {
         // Fill any dot the model omitted with the same deterministic per-dot fallback used
-        // elsewhere.
+        // elsewhere, biased toward the user's active focus (if any) the same way.
         for (const dot of llmContext.dots || []) {
             const key = dot.key_name.replace(/^DOT/, 'D');
             if (entries.has(key)) continue;
-            entries.set(key, { count: _fallbackCountForDot(dot), dot });
+            const isRecommended = recommendedKeySet ? recommendedKeySet.has(dot.key_name) : undefined;
+            entries.set(key, { count: _fallbackCountForDot(dot, isRecommended), dot });
         }
 
         // Deterministic clamp: each dot's total must land inside its own target_dots_min/max —
@@ -1607,6 +1609,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
             currentSolarTerm: llmContext.current_solar_term,
             essentialKnowledge: llmContext.essential_knowledge,
             userFacts: llmContext.user_facts,
+            activeHealthPlans: llmContext.active_health_plans,
         });
         ({ analysis, finalContent, morningRecipe, eveningRecipe } = fallback);
     }
@@ -1618,6 +1621,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         committedPlanId = await _commitNutritionPlan(client, {
             userId: user_id, analysis, morningRecipe, eveningRecipe,
             planId: llmContext.pending_plan_id, dotsFormulary: llmContext.dots,
+            activeHealthPlans: llmContext.active_health_plans,
         });
         await client.query('COMMIT');
     } catch (e) {
@@ -1709,6 +1713,7 @@ async function handleChatGenerateEvent(payload) {
                     currentSolarTerm: llmContext.current_solar_term,
                     essentialKnowledge: llmContext.essential_knowledge,
                     userFacts: llmContext.user_facts,
+                    activeHealthPlans: llmContext.active_health_plans,
                 });
                 const fbClient = await pool.connect();
                 let committedPlanId;
@@ -1718,6 +1723,7 @@ async function handleChatGenerateEvent(payload) {
                         userId: user_id, analysis: fallback.analysis,
                         morningRecipe: fallback.morningRecipe, eveningRecipe: fallback.eveningRecipe,
                         planId: llmContext.pending_plan_id, dotsFormulary: llmContext.dots,
+                        activeHealthPlans: llmContext.active_health_plans,
                     });
                     await fbClient.query('COMMIT');
                 } catch (e) {

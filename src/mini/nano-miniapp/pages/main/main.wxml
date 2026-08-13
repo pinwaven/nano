@@ -692,6 +692,25 @@
               </view>
             </view>
           </view>
+          <!-- Committed formulation for this focus (see handleGetHealthPlanDetail's `formulation`
+               field) — only present once Formulate Dots has actually run while this focus was
+               active. Aeviva-only purchase CTA; other channels see the summary with no CTA. -->
+          <view wx:if="{{planDetailData.formulation}}" class="plan-detail-section">
+            <text class="plan-detail-label plan-section-label">{{t.formulationReadyTitle}}</text>
+            <view class="plan-chips-row">
+              <view wx:for="{{planDetailData.formulation.dot_breakdown}}" wx:key="key_name" class="plan-chip plan-chip-dot">
+                <text class="plan-chip-text">{{lang === 'zh' ? item.name_zh : item.name}} ×{{item.total_count}}</text>
+              </view>
+            </view>
+            <view wx:if="{{isAeviva}}" class="plan-action-btn plan-action-buy" bindtap="handleBuyFormulation">
+              <text>{{t.buyFormulationBtn}}</text>
+            </view>
+          </view>
+          <view wx:elif="{{isAeviva}}" class="plan-detail-section">
+            <text class="plan-detail-label plan-section-label">{{t.formulationNotReadyTitle}}</text>
+            <text class="plan-empty-hint">{{t.formulationNotReadyHint}}</text>
+          </view>
+
           <!-- Actions -->
           <view class="plan-actions-row">
             <view class="plan-action-btn plan-action-switch" bindtap="handleSwitchPlanType" data-plan-id="{{planDetailData.id}}" data-current-type="{{planDetailData.plan_type}}">

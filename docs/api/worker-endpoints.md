@@ -86,6 +86,8 @@ The token is configured via the `API_BEARER_TOKEN` environment variable on the `
 | `POST` | `/cartridge-remove` | Dots | Remove cartridge |
 | `POST` | `/dispense` | Dots | Record dispensing |
 | `POST` | `/formula-dots` | Dots | Generate dots formula |
+| `GET` | `/formulation-checkout-snapshot` | Dots | **GCN-only.** Validate a purchase against the buyer's committed recipe (in-flight, 2026-08-14) |
+| `POST` | `/formulation-purchase-confirmed` | Dots | **GCN-only.** Mark first custom-formulation purchase (in-flight, 2026-08-14) |
 | `POST` | `/store-items` | E-commerce | Create store item |
 | `POST` | `/orders` | E-commerce | Create order |
 | `POST` | `/health-advice` | Engagement | AI health analysis |
@@ -291,6 +293,21 @@ Records a dispensing event, deducting counts from active cartridges.
 Triggers LLM to generate a new 7-day personalized nutrition plan based on latest biomarkers.
 **Body:** `{ "openid" }`
 
+### GET /formulation-checkout-snapshot?planId=&openid=
+*In-flight as of 2026-08-14 — not yet committed/deployed; verify it actually shipped before relying on it.*
+
+**GCN service token only** (`GCN_ALLOWED_PATHS`, see the `gcn-integration` skill). Lets GCN validate a custom-formulation purchase against the buyer's real, currently-committed recipe before creating an order line, rather than trusting a client-supplied plan id blindly. Reads day-0 (`start_date`) of the user's *active* `nutrition_plans` row and checks `plan.user_id === openid` + `status === 'active'`. Never returns a 404/500 for a routine "not ready yet" case — the caller is expected to branch on `valid`, not HTTP status.
+
+**Response (invalid):** `{ "valid": false, "reason": "missing_params" | "invalid_plan_id" | "plan_not_found" | "plan_owner_mismatch" | "plan_not_active" | "plan_has_no_schedule" | "plan_has_no_dots" | "internal_error" }`
+
+**Response (valid):** `{ "valid": true, "plan": { "id", "status", "committed_at", "primary_focus" }, "recipe_summary": { "dot_breakdown": [...] }, "verification_ref": "<uuid>" }`
+
+### POST /formulation-purchase-confirmed
+*In-flight as of 2026-08-14 — not yet committed/deployed; verify it actually shipped before relying on it.*
+
+**GCN service token only** (`GCN_ALLOWED_PATHS`). Called by GCN the moment a user's first custom-formulation order is confirmed paid. Sets `users.custom_formulation_purchased_at = NOW()` — nano's only signal that a purchase happened at all; it has no visibility into GCN's orders otherwise.
+**Body:** `{ "openid" }`
+
 ---
 
 ## 3. E-commerce & Store
@@ -430,6 +447,8 @@ See full system documentation: [`docs/architecture/health-plan-system.md`](../ar
 ### GET /health-plan-templates
 
 Returns all active plan templates. Add `?all=true` to include inactive templates (admin only). Add `?channel_id=N` to filter by channel.
+
+*In-flight as of 2026-08-14:* also added to `GCN_ALLOWED_PATHS` (see the `gcn-integration` skill), so GCN's service token can reach this endpoint too — presumably so GCN can read the focus catalog directly. Not yet committed/deployed; verify before relying on it.
 
 ### POST /health-plan-templates / PUT /health-plan-templates/:id
 

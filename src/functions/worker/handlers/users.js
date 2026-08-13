@@ -730,6 +730,27 @@ async function handleDeleteInvitation(inviteId) {
     }
 }
 
+// Server-to-server only (GCN_ALLOWED_PATHS-gated, see worker/index.js) — GCN calls this the
+// moment a custom-formulation order is confirmed paid. This one nullable timestamp is nano's
+// entire signal for "has this user ever bought a custom formulation" (nano has no visibility
+// into GCN's orders otherwise), used to gate the topup-triggered reorder-ready notification
+// (handlers/dots.js's handleNutritionTopupEvent) — no need to re-derive it on every call, so
+// this is a plain unconditional UPDATE rather than an ON CONFLICT-guarded first-write-only one.
+async function handlePostFormulationPurchaseConfirmed(body) {
+    const { openid } = body || {};
+    if (!openid) return { success: false, error: 'openid is required' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        await pool.query(
+            `UPDATE users SET custom_formulation_purchased_at = NOW() WHERE user_id = $1 OR external_id = $1`,
+            [openid]
+        );
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 module.exports = {
     handleGetUsers,
     handleGetDashboardStats,
@@ -745,4 +766,5 @@ module.exports = {
     handlePostInvitation,
     handlePatchInvitation,
     handleDeleteInvitation,
+    handlePostFormulationPurchaseConfirmed,
 };

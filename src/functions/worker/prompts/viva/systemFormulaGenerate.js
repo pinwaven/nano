@@ -72,6 +72,22 @@ module.exports = (ctx) => {
         ? `当前健康方案目标：${active_health_plans.map(p => `「${p.name}」— ${p.goal || ''}（第 ${p.weeks_elapsed}/${p.total_weeks} 周）`).join('；')}`
         : '';
 
+    // Soft, non-exclusionary weighting hint derived from the union of the user's active
+    // health_plans' recommended_dot_ids — recommended dots should skew toward the higher end
+    // of their own range, but every other dot is still decided normally by biomarker severity
+    // (never forced to 0 just for being off the focus list). See §1 of the focus-formulation
+    // plan for why this stays soft rather than a hard filter.
+    const recommendedDotShortKeys = (() => {
+        const ids = new Set();
+        for (const p of active_health_plans || []) for (const id of (p.recommended_dot_ids || [])) ids.add(id);
+        if (ids.size === 0) return [];
+        const byId = new Map((dots || []).map(d => [d.id, d]));
+        return [...ids].map(id => byId.get(id)?.key_name).filter(Boolean).map(k => k.replace(/^DOT/, 'D'));
+    })();
+    const focusWeightingSection = recommendedDotShortKeys.length > 0
+        ? `本轮聚焦方案重点推荐原粒：${recommendedDotShortKeys.join('、')}（配方决策时可适当偏向这些原粒范围的较高值；但其余原粒仍需按生物标志物正常判断决定数值，不得因未被推荐而强行归零——若某项生物标志物明显异常但对应原粒不在此列表中，仍应给出合理剂量）`
+        : '';
+
     const seasonSection = current_solar_term
         ? `当前节气：${current_solar_term.name_zh}（${current_solar_term.season_zh}季 · ${current_solar_term.organ_zh}）— ${current_solar_term.theme_zh}（传统节气养生视角，非临床证据，仅作轻微参考，不得掩盖生物标志物驱动的优先级）`
         : '';
@@ -89,6 +105,7 @@ ${getFactMemoryBlock(ctx.user_facts)}
 用户：${user_profile.nickname || '用户'}，${user_profile.age ? user_profile.age + ' 岁' : '年龄未知'}${user_profile.bmi ? '，BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
+${focusWeightingSection ? focusWeightingSection + '\n' : ''}
 ${twinSection}
 
 ${seasonSection}

@@ -2,11 +2,11 @@
 
 Nano serves two AI personas — **Nano** (the original, bilingual, "Waven"-branded coach) and **Viva** (Chinese-only, "Aeviva"-branded, Eastern-population framing) — over what is, as of this writing, **one shared agentic chat engine**. This directory documents that engine in detail: how a persona is selected, how a chat turn actually runs (intent classification → PLAN → GENERATE → JUDGE → REVISE), how fabrication is guarded against, how the knowledge base and personal-memory systems work, and how the system proactively messages users outside of a direct chat turn.
 
-## ⚠️ Documents current on-disk state, including an uncommitted in-flight refactor
+## Documents current, committed state
 
-As of 2026-07-31, `git status` on this repo shows a large **uncommitted** change touching ~30 files under `src/functions/worker/` and `src/functions/dispatcher/`. Its own code comments describe it as *"Nano adopted Viva's core"* — genericizing what was originally a Viva-only agentic loop, async delivery mechanism, fact-checking system, and daily check-in feature so both personas now share them. **CLAUDE.md has not yet been updated to reflect this** — its §16/§21/§22/§24/§25/§28/§29 still describe several of these mechanisms as Viva-only, which is no longer true of the code on disk. See [09-known-issues.md](09-known-issues.md) for the full, itemized list of where CLAUDE.md and the current code disagree.
+The large refactor genericizing what was originally a Viva-only agentic loop, async delivery mechanism, fact-checking system, and daily check-in feature — so both personas now share them — was, as of 2026-07-31, an uncommitted ~30-file change under `src/functions/worker/` and `src/functions/dispatcher/`. Its own code comments describe it as *"Nano adopted Viva's core."* **That refactor is now committed** (`e81b344 updated nano with viva core`, present in `git log` on the `work` branch) and is current, stable behavior — not an in-flight risk. CLAUDE.md's §16/§21/§22/§24/§25/§28 have likewise been updated to reflect the shared, intent-gated (not persona-gated) mechanisms; see [09-known-issues.md](09-known-issues.md) for confirmation of what's now resolved there.
 
-These docs describe **the code as it exists right now**, uncommitted changes included, since that's what actually runs when the affected functions are deployed. Once that refactor is committed and CLAUDE.md is updated to match, re-check this directory's framing against CLAUDE.md's own persona sections rather than assuming these docs stay perfectly in sync.
+These docs describe the code as it exists on disk today. This directory is a detailed companion to CLAUDE.md's persona sections, not a replacement for them — when the two disagree, treat CLAUDE.md as authoritative and this directory as due for a refresh.
 
 ## Quick facts
 
