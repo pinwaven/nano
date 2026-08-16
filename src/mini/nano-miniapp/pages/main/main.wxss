@@ -66,6 +66,31 @@
 
 .theme-light .sandbox-banner { background: rgba(245, 158, 11, 0.12); border-bottom-color: rgba(245, 158, 11, 0.35); }
 
+.viva-expired-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 14rpx 28rpx;
+  background: rgba(99, 117, 236, 0.16);
+  border-bottom: 1rpx solid rgba(99, 117, 236, 0.4);
+}
+.viva-expired-banner-text {
+  flex: 1;
+  font-size: 22rpx;
+  color: #8B9FFF;
+  font-weight: 500;
+}
+.viva-expired-banner-btn {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  font-weight: 700;
+  color: #8B9FFF;
+  text-decoration: underline;
+}
+.theme-light .viva-expired-banner { background: rgba(99, 117, 236, 0.1); border-bottom-color: rgba(99, 117, 236, 0.3); }
+
 .header-logo-img {
   width: 56rpx;
   height: 40rpx;
@@ -3088,6 +3113,22 @@ button.avatar-pick-btn::after { border: none; }
   color: #fca5a5;
   text-align: center;
   margin-top: -8rpx;
+}
+.viva-redeem-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 24rpx 28rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.06);
+  border: 2rpx solid rgba(255, 255, 255, 0.12);
+  color: #EEF2FF;
+  font-size: 30rpx;
+  letter-spacing: 1rpx;
+}
+.theme-light .viva-redeem-input {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: var(--text-main);
 }
 .guest-sheet-btn {
   width: 100%;

@@ -65,6 +65,17 @@ async function saveChatMessage(user_id, role, content, image_url = null, persona
     }
 }
 
+// Hard-block gate for the Viva subscription feature (see migration_users_viva_subscription_expiry.sql
+// and handlers/viva_subscription.js). Null/past expires_at means no active subscription.
+function _isVivaSubscriptionExpired(expiresAt) {
+    return !expiresAt || new Date(expiresAt) <= new Date();
+}
+
+function _vivaSubscriptionExpiredMessage(language) {
+    return language === 'zh'
+        ? 'Viva 订阅已过期，请前往 Aeviva 商城续订后继续对话。'
+        : 'Your Viva subscription has expired. Please renew in the Aeviva store to keep chatting.';
+}
 
 async function handleGetChatHistory(openid, sinceId = null, beforeId = null) {
     try {
@@ -118,7 +129,7 @@ async function resolveOrUpsertUser(body) {
     // If openid matches an existing user_id (admin-created or simulator users), use it directly.
     // Otherwise fall back to the external_id upsert (production WeChat flow).
     const byUserId = await pool.query(
-        'SELECT user_id, birth_date, bio_data, nickname, language, phone, email, channel_id FROM users WHERE user_id = $1',
+        'SELECT user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at FROM users WHERE user_id = $1',
         [openid]
     );
     if (byUserId.rows.length > 0) return byUserId.rows[0];
@@ -136,7 +147,7 @@ async function resolveOrUpsertUser(body) {
             language = COALESCE(EXCLUDED.language, users.language),
             bio_data = users.bio_data || EXCLUDED.bio_data,
             updated_at = CURRENT_TIMESTAMP
-        RETURNING user_id, birth_date, bio_data, nickname, language, phone, email, channel_id;
+        RETURNING user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at;
     `;
     const userResult = await pool.query(userQuery, [
         generateUserId(), openid, nickname, phone || null, email || null,
@@ -975,7 +986,7 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
 // FK-threading/placeholder-row need here, so the two-phase split isn't warranted.
 async function _fireQuestionnaireAnsweredFollowup(userId, assignmentId) {
     const userRes = await pool.query(
-        `SELECT user_id, nickname, gender, birth_date, language, channel_id FROM users WHERE user_id = $1`,
+        `SELECT user_id, nickname, gender, birth_date, language, channel_id, viva_subscription_expires_at FROM users WHERE user_id = $1`,
         [userId]
     );
     if (!userRes.rows.length) return;
@@ -991,6 +1002,7 @@ async function _fireQuestionnaireAnsweredFollowup(userId, assignmentId) {
         }
     }
     if (personaType !== 'viva') return; // ask_questions is Viva-only for now — nothing to react to on Nano's path
+    if (_isVivaSubscriptionExpired(user.viva_subscription_expires_at)) return; // lapsed subscription — silent no-op, nothing was shown to the user to trigger this
 
     const [biomarkerRes, dotsRes, factsRes, responsesRes] = await Promise.all([
         pool.query(
@@ -1095,6 +1107,13 @@ async function handlePostChat(body) {
         }
     }
     console.log(JSON.stringify({ level: 'INFO', msg: 'Persona resolved', user_id: user.user_id, channel_id: user.channel_id, personaType }));
+
+    if (personaType === 'viva' && _isVivaSubscriptionExpired(user.viva_subscription_expires_at)) {
+        const blockMessage = _vivaSubscriptionExpiredMessage(user.language);
+        await saveChatMessage(user_id, 'ai', blockMessage, null, personaType);
+        return { success: true, user_id, blocked_reason: 'subscription_expired', ...(sandbox && { sandbox: true, reply: blockMessage }) };
+    }
+
     // Both personas now run the same agentic engine (CLAUDE.md — Nano adopted Viva's core),
     // so both get a solar-term accent and a persona-scoped knowledge_entries essential block —
     // Nano's own prompt files simply won't reference current_solar_term unless it's natural to.
@@ -1837,7 +1856,7 @@ async function handlePostHealthAdvice(body) {
 
     try {
         const userResult = await pool.query(
-            `SELECT user_id, nickname, gender, birth_date, language, bio_data, channel_id
+            `SELECT user_id, nickname, gender, birth_date, language, bio_data, channel_id, viva_subscription_expires_at
              FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
             [openid]
         );
@@ -1852,6 +1871,13 @@ async function handlePostHealthAdvice(body) {
                 personaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
             } catch (_) {}
         }
+
+        if (personaType === 'viva' && _isVivaSubscriptionExpired(user.viva_subscription_expires_at)) {
+            const blockMessage = _vivaSubscriptionExpiredMessage(user.language);
+            await saveChatMessage(user_id, 'ai', blockMessage, null, personaType);
+            return { success: true, message: blockMessage, blocked_reason: 'subscription_expired', ...(sandbox && { sandbox: true }) };
+        }
+
         const currentSolarTerm = getCurrentSolarTerm(getNowShanghai().toJSDate());
         const essentialKnowledge = await getEssentialBlock(personaType);
 

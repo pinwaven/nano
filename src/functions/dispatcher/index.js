@@ -193,6 +193,7 @@ exports.handler = async (event, context) => {
                      WHERE 'user' = ANY(u.roles)
                        AND COALESCE((u.preferences->>'daily_checkin_enabled')::boolean, true) = true
                        AND u.last_active_at > NOW() - INTERVAL '2 minutes'
+                       AND (COALESCE(c.config->>'persona_type', 'nano') != 'viva' OR u.viva_subscription_expires_at > NOW())
                        AND EXISTS (SELECT 1 FROM nutrition_schedules s WHERE s.plan_id = np.id AND s.scheduled_date = CURRENT_DATE)
                        AND NOT EXISTS (
                          SELECT 1 FROM notifications n

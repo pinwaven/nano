@@ -85,6 +85,7 @@ const { CHAT_EVENT_SOURCE } = require('./lib/chatEventBridge');
 const LAB_EVENT_SOURCE = 'acs.lab' + (process.env.EVENT_SOURCE_SUFFIX || '');
 const DISPATCHER_EVENT_SOURCE = 'acs.dispatcher' + (process.env.EVENT_SOURCE_SUFFIX || '');
 const { handleDailyCheckinEvent } = require('./handlers/checkin');
+const { handleGetVivaSubscriptionStatus, handleGetVivaSubscriptionPlans, handlePostVivaSubscriptionCheckoutConfirmed, handlePostVivaSubscriptionRedeem, handleGetVivaSubscriptionCodes, handlePutVivaSubscriptionCode } = require('./handlers/viva_subscription');
 
 
 // ── Admin dashboard stats (time series + distributions) ─────────────────────
@@ -242,7 +243,7 @@ exports.handler = async (req, resp, context) => {
             // Scoped nano<-GCN service credential — distinct from API_BEARER_TOKEN (nano's
             // full superadmin bearer). Authenticated but restricted to the exact paths GCN's
             // nanoClient.js actually calls; anything else 403s even with a valid token.
-            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn', '/partner-types-gcn-sync', '/partner-tier-assignment-gcn-sync', '/formulation-checkout-snapshot', '/formulation-purchase-confirmed', '/health-plan-templates']);
+            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn', '/partner-types-gcn-sync', '/partner-tier-assignment-gcn-sync', '/formulation-checkout-snapshot', '/formulation-purchase-confirmed', '/health-plan-templates', '/viva-subscription-plans', '/viva-subscription-checkout-confirmed']);
             if (!GCN_ALLOWED_PATHS.has(path)) {
                 const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
                 if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
@@ -320,6 +321,12 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetKinoChipBatches();
             } else if (path.includes('/kino-chip-models')) {
                 result = await handleGetKinoChipModels();
+            } else if (path.includes('/viva-subscription-status')) {
+                result = await handleGetVivaSubscriptionStatus(query.openid);
+            } else if (path.includes('/viva-subscription-plans')) {
+                result = await handleGetVivaSubscriptionPlans();
+            } else if (path.includes('/viva-subscription-codes')) {
+                result = await handleGetVivaSubscriptionCodes(query);
             } else if (path.includes('/persona-settings')) {
                 result = requirePermission(adminCtx, 'content:read') || await handleGetPersonaSettings();
             } else if (path.includes('/knowledge-entries')) {
@@ -672,6 +679,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostKinoChipBatch(parsedBody);
             } else if (path.includes('/kino-chip-models')) {
                 result = await handlePostKinoChipModel(parsedBody);
+            } else if (path.includes('/viva-subscription-checkout-confirmed')) {
+                result = await handlePostVivaSubscriptionCheckoutConfirmed(parsedBody);
+            } else if (path.includes('/viva-subscription-redeem')) {
+                result = await handlePostVivaSubscriptionRedeem(parsedBody);
             } else if (path.includes('/knowledge-entries')) {
                 result = requireAdminTab(adminCtx, 'content') || await handlePostKnowledgeEntry(parsedBody);
             } else if (path.includes('/user-facts')) {
@@ -857,6 +868,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)) {
                 const code = path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)[1];
                 result = await handlePutKinoChipModel(code, parsedBody);
+            } else if (path.match(/\/viva-subscription-codes\/(\d+)/)) {
+                const codeId = path.match(/\/viva-subscription-codes\/(\d+)/)[1];
+                result = await handlePutVivaSubscriptionCode(codeId, parsedBody);
             } else if (path.match(/\/persona-settings\/([a-z0-9-]+)/i)) {
                 const personaType = path.match(/\/persona-settings\/([a-z0-9-]+)/i)[1];
                 result = requireAdminTab(adminCtx, 'content') || await handlePutPersonaSettings(personaType, parsedBody, adminCtx.username);

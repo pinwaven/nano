@@ -7,7 +7,9 @@ if (process.env.DATABASE_URL) {
   const isLocal = (connectionString || '').includes('localhost');
   pool = new Pool({
     connectionString,
-    ssl: isLocal || process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
+    ssl: isLocal || process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
+    max: 5,
+    idleTimeoutMillis: 10000
   });
 } else {
   // Use individual components (Aliyun FC style)
@@ -17,7 +19,9 @@ if (process.env.DATABASE_URL) {
     host: process.env.DB_HOST,
     database: process.env.DB_NAME,
     port: 5432,
-    ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
+    ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
+    max: 5,
+    idleTimeoutMillis: 10000
   });
 }
 

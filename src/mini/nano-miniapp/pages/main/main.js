@@ -207,6 +207,17 @@ const T = {
     webAdminMenu: '网页后台',
     kinoSimMenu: 'Kino 模拟器',
     referralMenu: '邀请好友',
+    vivaRedeemMenu: '兑换订阅码',
+    vivaRedeemTitle: '兑换 Viva 订阅码',
+    vivaRedeemPlaceholder: '请输入订阅激活码',
+    vivaRedeemBtn: '兑换',
+    vivaRedeemRequired: '请输入激活码',
+    vivaRedeemInvalid: '激活码无效或已失效',
+    vivaRedeemAlreadyUsed: '此激活码已被使用',
+    vivaRedeemExpired: '此激活码已过期',
+    vivaRedeemSuccess: '兑换成功！',
+    vivaSubscriptionExpiredBanner: 'Viva 订阅已过期，续订后即可继续对话',
+    vivaSubscriptionRenewBtn: '续订',
     kinoSimPassTitle: '输入密码',
     kinoSimPassError: '密码错误',
     kinoSimTitle: 'KINO 模拟器',
@@ -421,6 +432,17 @@ const T = {
     webAdminMenu: 'Web Admin',
     kinoSimMenu: 'Kino Simulator',
     referralMenu: 'Invite Friends',
+    vivaRedeemMenu: 'Redeem Subscription Code',
+    vivaRedeemTitle: 'Redeem Viva Subscription Code',
+    vivaRedeemPlaceholder: 'Enter your subscription code',
+    vivaRedeemBtn: 'Redeem',
+    vivaRedeemRequired: 'Please enter a code',
+    vivaRedeemInvalid: 'Invalid or expired code',
+    vivaRedeemAlreadyUsed: 'This code has already been used',
+    vivaRedeemExpired: 'This code has expired',
+    vivaRedeemSuccess: 'Redeemed successfully!',
+    vivaSubscriptionExpiredBanner: 'Your Viva subscription has expired. Renew to keep chatting.',
+    vivaSubscriptionRenewBtn: 'Renew',
     kinoSimPassTitle: 'Enter Passcode',
     kinoSimPassError: 'Incorrect passcode',
     kinoSimTitle: 'KINO SIMULATOR',
@@ -888,6 +910,16 @@ Page({
     channel: null,
     isAeviva: false,
 
+    // Viva subscription (see _loadVivaSubscriptionStatus)
+    personaType: 'nano',
+    vivaSubscriptionExpiresAt: null,
+    vivaSubscriptionExpiresAtDisplay: '',
+    vivaSubscriptionExpired: false,
+    vivaRedeemSheetOpen: false,
+    vivaRedeemCode: '',
+    vivaRedeemBusy: false,
+    vivaRedeemError: '',
+
     // Role menu flags
     menuOpen: false,
     isCoach: false,
@@ -1062,6 +1094,7 @@ Page({
       return
     }
     this._initChat(user, lang)
+    this._loadVivaSubscriptionStatus(user)
     this._loadDots(user, lang)
     this._loadCartridges(user, lang)
     // Aeviva's GCN store URL is minted lazily in switchTab (wvt is one-time/60s-TTL —
@@ -1084,6 +1117,12 @@ Page({
       this.selectComponent('#health-comp')?.refresh()
       this._startPolling(user)
       this._loadCreditBalance(user)
+      // Re-checks persona_type + subscription expiry on every foreground/return-to-page —
+      // not just onLoad — so (a) a subscription that lapsed while the app sat backgrounded
+      // clears any stale "active" state, and (b) returning from the GCN store webview after
+      // a "buy for myself" auto-redeem (handleBuyVivaSubscription) immediately reflects the
+      // new expiry instead of waiting for a full app relaunch.
+      this._loadVivaSubscriptionStatus(user)
       // Check for questionnaires assigned while the user was away
       if (obStep === 'done') this._checkForPendingQuestionnaire()
 
@@ -1343,6 +1382,68 @@ Page({
   openReferral() {
     this.setData({ menuOpen: false })
     wx.navigateTo({ url: '/pages/referral/referral' })
+  },
+
+  // ── Viva subscription redeem sheet ──────────────────────────────────────────
+  // Modeled on openGuestSheet/submitGuestInvite (same server-validated code-entry
+  // pattern), but a plain text input rather than a 6-digit grid — subscription codes
+  // are 16+ crypto-random alphanumeric chars (see handlers/viva_subscription.js), not digits.
+
+  openVivaRedeemSheet() {
+    this.setData({ vivaRedeemSheetOpen: true, vivaRedeemCode: '', vivaRedeemError: '', menuOpen: false })
+  },
+
+  closeVivaRedeemSheet() {
+    if (this.data.vivaRedeemBusy) return
+    this.setData({ vivaRedeemSheetOpen: false })
+  },
+
+  onVivaRedeemInput(e) {
+    this.setData({ vivaRedeemCode: e.detail.value || '', vivaRedeemError: '' })
+  },
+
+  async submitVivaRedeem() {
+    const { vivaRedeemCode, vivaRedeemBusy, user, t } = this.data
+    if (vivaRedeemBusy) return
+    const code = vivaRedeemCode.trim()
+    if (!code) { this.setData({ vivaRedeemError: t.vivaRedeemRequired }); return }
+    this.setData({ vivaRedeemBusy: true, vivaRedeemError: '' })
+    try {
+      const res = await this._req(`${BASE}/api/viva-subscription-redeem`, 'POST', { openid: user.user_id, code })
+      if (!res.data?.success) {
+        const errText = {
+          invalid_code: t.vivaRedeemInvalid,
+          already_used: t.vivaRedeemAlreadyUsed,
+          code_expired: t.vivaRedeemExpired,
+          revoked: t.vivaRedeemInvalid,
+        }[res.data?.status] || t.errServer
+        this.setData({ vivaRedeemError: errText, vivaRedeemBusy: false })
+        return
+      }
+      const newExpiresAtDisplay = fmtDate(res.data.new_expires_at, this.data.lang)
+      this.setData({
+        vivaRedeemSheetOpen: false,
+        vivaRedeemBusy: false,
+        vivaSubscriptionExpiresAt: res.data.new_expires_at,
+        vivaSubscriptionExpiresAtDisplay: newExpiresAtDisplay,
+        vivaSubscriptionExpired: false,
+      })
+      // Toast is ephemeral — show the actual new expiry date rather than a generic
+      // "success", since that date is the whole point of redeeming. It also now persists
+      // in the menu's status row (menu-viva-row) and the redeem sheet's status line for
+      // anyone who missed the toast.
+      wx.showToast({ title: `${t.vivaRedeemSuccess} ${newExpiresAtDisplay}`, icon: 'none', duration: 3000 })
+    } catch (e) {
+      this.setData({ vivaRedeemError: this.data.t.errServer, vivaRedeemBusy: false })
+    }
+  },
+
+  // "Renew" CTA in the expired-subscription banner and the redeem sheet's own store link —
+  // reuses the exact GCN-store webview bridge handleBuyFormulation already uses; GCN's own
+  // checkout UI owns the "for me / as a gift" choice, nano only tags the entry point.
+  handleBuyVivaSubscription() {
+    if (!this.data.isAeviva) return
+    this._openAevivaStoreGated({ intent: 'buy_viva_subscription' })
   },
 
   openAdmin() {
@@ -2719,6 +2820,24 @@ Page({
       const res = await this._req(`${BASE}/api/credits/balance?user_id=${encodeURIComponent(user.user_id)}`)
       if (res.data?.success) {
         this.setData({ creditBalance: res.data.balance || 0, creditCurrency: res.data.currency || 'CNY' })
+      }
+    } catch (e) {}
+  },
+
+  // Fetches persona_type + viva_subscription_expires_at once at init — kept as a small
+  // dedicated endpoint (handlers/viva_subscription.js's handleGetVivaSubscriptionStatus)
+  // rather than threading these two fields through login.js's many branched user-lookup
+  // queries. Drives the redeem-code menu entry and the expired-subscription banner.
+  async _loadVivaSubscriptionStatus(user) {
+    if (!user?.user_id) return
+    try {
+      const res = await this._req(`${BASE}/api/viva-subscription-status?openid=${encodeURIComponent(user.user_id)}`)
+      if (res.data?.success) {
+        const expiresAt = res.data.viva_subscription_expires_at
+        const personaType = res.data.persona_type || 'nano'
+        const vivaSubscriptionExpired = personaType === 'viva' && (!expiresAt || new Date(expiresAt) <= new Date())
+        const vivaSubscriptionExpiresAtDisplay = expiresAt ? fmtDate(expiresAt, this.data.lang) : ''
+        this.setData({ personaType, vivaSubscriptionExpiresAt: expiresAt || null, vivaSubscriptionExpired, vivaSubscriptionExpiresAtDisplay })
       }
     } catch (e) {}
   },

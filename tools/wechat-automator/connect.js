@@ -34,9 +34,20 @@ async function coldStart() {
 // running `cli auto` against an already-open, stale project window can hang
 // with `routeTo appLaunch timeout` in the IDE's WeappLog. automator.launch()
 // does open+auto+connect and is the reliable path from a cold start.
-async function launch({ port = DEFAULT_PORT, freshStart = false } = {}) {
+//
+// `servicePort`: the IDE's "Service Port" (Settings -> Security Settings), the CLI's own
+// --port option for talking to an already-running IDE instance — NOT the automation
+// websocket port (that's `port`/--auto-port above). Confirmed live: this is per-machine
+// configurable and is NOT reliably 22038 despite that being the doc'd/UI default — when
+// it's been changed, calling `cli auto` with no --port fails fast with "Failed to launch
+// wechat web devTools, please make sure http port is open" because the CLI can't find the
+// running IDE on the port it assumed. If launch() fails with that exact error, check
+// Settings -> Security Settings -> Service Port in the running IDE for the real value
+// before assuming a stale/closed project window (a different, unrelated failure mode).
+async function launch({ port = DEFAULT_PORT, servicePort = null, freshStart = false } = {}) {
   if (freshStart) await coldStart();
-  return automator.launch({ cliPath: CLI_PATH, projectPath: PROJECT_PATH, port });
+  const args = servicePort ? ['--port', String(servicePort)] : [];
+  return automator.launch({ cliPath: CLI_PATH, projectPath: PROJECT_PATH, port, args });
 }
 
 // Attaches to an already-running `cli auto`/automator.launch() instance on

@@ -52,6 +52,12 @@ node example.js
 
 ## Gotchas (confirmed live this session — don't re-debug these)
 
+- **The Service Port is not reliably 22038.** It's per-machine configurable (Settings →
+  Security Settings → Service Port) and confirmed live to sometimes be a different value —
+  `launch()` failing fast with `Failed to launch wechat web devTools, please make sure http
+  port is open` (not a timeout/hang) usually means this, not a stale project window. Check
+  the actual value in the running IDE's Security Settings and pass it as `servicePort` to
+  `launch()`, e.g. `launch({ servicePort: 37776 })`.
 - **`cli auto` against an already-open, stale project window can hang.** Symptom: `routeTo
   appLaunch timeout` in the IDE's `WeappLog` logs, and the simulator never finishes booting.
   `automator.launch()` (open + auto + connect in one call) is the reliable path from a cold start —

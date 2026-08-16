@@ -20,9 +20,20 @@
     <text class="sandbox-banner-exit">{{t.exitSandbox}}</text>
   </view>
 
+  <!-- ── Viva subscription expired banner ── -->
+  <view wx:if="{{!sandboxMode && personaType === 'viva' && vivaSubscriptionExpired}}" class="viva-expired-banner" bindtap="handleBuyVivaSubscription">
+    <text class="viva-expired-banner-text">{{t.vivaSubscriptionExpiredBanner}}</text>
+    <text class="viva-expired-banner-btn">{{t.vivaSubscriptionRenewBtn}}</text>
+  </view>
+
   <!-- ── Logo menu ── -->
   <view wx:if="{{menuOpen}}" class="menu-mask" bindtap="closeMenu">
     <view class="menu-dropdown" catchtap="noop" style="top: {{menuTop}}px;">
+      <view wx:if="{{!isGuest && isAeviva && personaType === 'viva' && !vivaSubscriptionExpired && vivaSubscriptionExpiresAtDisplay}}" class="menu-credit-row" bindtap="openVivaRedeemSheet">
+        <text class="menu-credit-label">{{lang === 'zh' ? 'Viva 订阅至' : 'Viva subscribed until'}}</text>
+        <text class="menu-credit-value">{{vivaSubscriptionExpiresAtDisplay}}</text>
+      </view>
+      <view wx:if="{{!isGuest && isAeviva && personaType === 'viva' && !vivaSubscriptionExpired && vivaSubscriptionExpiresAtDisplay && creditBalance <= 0}}" class="menu-divider"></view>
       <view wx:if="{{!isGuest && creditBalance > 0}}" class="menu-credit-row" bindtap="openReferral">
         <text class="menu-credit-label">{{lang === 'zh' ? '积分余额' : 'Credits'}}</text>
         <text class="menu-credit-value">{{creditBalance}} pts</text>
@@ -50,6 +61,10 @@
       <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openReferral">
         <text class="menu-item-icon">★</text>
         <text class="menu-item-label">{{t.referralMenu}}</text>
+      </view>
+      <view wx:if="{{!isGuest && isAeviva && personaType === 'viva'}}" class="menu-item" bindtap="openVivaRedeemSheet">
+        <text class="menu-item-icon">✧</text>
+        <text class="menu-item-label">{{t.vivaRedeemMenu}}</text>
       </view>
       <view wx:if="{{isAdmin || isSuperadmin}}" class="menu-divider"></view>
       <view wx:if="{{isAdmin || isSuperadmin}}" class="menu-item" bindtap="openKinoSim">
@@ -1702,6 +1717,34 @@
       </view>
       <view class="guest-sheet-btn {{guestInviteBusy ? 'guest-sheet-btn-disabled' : ''}}" bindtap="submitGuestInvite">
         <text>{{guestInviteBusy ? t.guestActivating : t.guestJoinBtn}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ── Viva Subscription Redeem Sheet ── -->
+  <view wx:if="{{vivaRedeemSheetOpen}}" class="guest-sheet-mask" bindtap="closeVivaRedeemSheet">
+    <view class="guest-sheet" catchtap="noop">
+      <view class="guest-sheet-handle"></view>
+      <text class="guest-sheet-title">{{t.vivaRedeemTitle}}</text>
+      <text class="guest-sheet-desc">
+        {{vivaSubscriptionExpiresAtDisplay && !vivaSubscriptionExpired
+          ? (lang === 'zh' ? '当前订阅至 ' + vivaSubscriptionExpiresAtDisplay : 'Currently active until ' + vivaSubscriptionExpiresAtDisplay)
+          : (lang === 'zh' ? '当前无有效订阅' : 'No active subscription')}}
+      </text>
+      <input
+        class="viva-redeem-input"
+        type="text"
+        value="{{vivaRedeemCode}}"
+        placeholder="{{t.vivaRedeemPlaceholder}}"
+        bindinput="onVivaRedeemInput"
+        focus="{{vivaRedeemSheetOpen}}"
+        adjust-position="{{true}}"
+      />
+      <view wx:if="{{vivaRedeemError}}" class="guest-sheet-error">
+        <text>{{vivaRedeemError}}</text>
+      </view>
+      <view class="guest-sheet-btn {{vivaRedeemBusy ? 'guest-sheet-btn-disabled' : ''}}" bindtap="submitVivaRedeem">
+        <text>{{vivaRedeemBusy ? '…' : t.vivaRedeemBtn}}</text>
       </view>
     </view>
   </view>
