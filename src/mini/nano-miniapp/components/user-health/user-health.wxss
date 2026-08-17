@@ -1477,6 +1477,14 @@
   opacity: 0.75;
 }
 
+.dt-sa-trend-hint {
+  font-size: 18rpx;
+  color: rgba(var(--blue-rgb), 0.55);
+  line-height: 1;
+  flex-shrink: 0;
+  margin-left: 4rpx;
+}
+
 @keyframes dt-sa-flash-anim {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.1; }
