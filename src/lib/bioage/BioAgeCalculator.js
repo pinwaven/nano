@@ -44,6 +44,14 @@ class BioAgeCalculator {
     // Soft-compression scales (non-hard caps)
     this.LOWER_SOFT_SCALE = 6.0;   // Controls youth-bias sensitivity
     this.UPPER_SOFT_SCALE = 12.0;  // Controls aging-acceleration sensitivity
+
+    // Rate limit: BioAge and each SubAge may move at most this many years per
+    // elapsed week versus the user's own previous scan, regardless of how far
+    // the underlying biomarker scores moved (a bad/estimated scan can still
+    // push scores around even with BiomarkerEstimator's own previous-value
+    // anchoring). Only applied when a previous scan is supplied; a user's
+    // first-ever scan is never clamped, since there's nothing to anchor to.
+    this.WEEKLY_SWING_CAP_YEARS = 0.25;
   }
 
   /**
@@ -85,6 +93,23 @@ class BioAgeCalculator {
   /** S = 10 / (1 + (val / M)^n) */
   _hillScore(value, M, n) {
     return 10.0 / (1.0 + Math.pow(value / M, n));
+  }
+
+  /**
+   * Clamp newValue's distance from previousValue to WEEKLY_SWING_CAP_YEARS
+   * per elapsed week (partial weeks get the full week's budget, not a
+   * fraction of it — so same-day retests are held to the same 0.25y cap as
+   * a scan taken 6 days later). No-op when there's no previous value/timing
+   * to anchor to.
+   */
+  _clampToWeeklyRate(newValue, previousValue, daysSincePrevious) {
+    if (typeof previousValue !== 'number' || !Number.isFinite(previousValue)) return newValue;
+    if (typeof daysSincePrevious !== 'number' || !Number.isFinite(daysSincePrevious) || daysSincePrevious < 0) return newValue;
+    const weeksElapsed = Math.max(1, Math.ceil(daysSincePrevious / 7));
+    const maxSwing = this.WEEKLY_SWING_CAP_YEARS * weeksElapsed;
+    const delta = newValue - previousValue;
+    const clampedDelta = Math.max(-maxSwing, Math.min(maxSwing, delta));
+    return parseFloat((previousValue + clampedDelta).toFixed(1));
   }
 
   /** Resilience dimension — hsCRP + IL-6: how well you buffer stress */
@@ -139,7 +164,9 @@ class BioAgeCalculator {
     const rawBioAge     = this._mfiToAge(mFI_Actual);
     const rawDeviation  = rawBioAge - chronologicalAge;
     const compressed    = this._compress(rawDeviation);
-    return parseFloat((chronologicalAge + compressed).toFixed(1));
+    const cap           = 10 + Math.random() * 2; // random hard cap [10, 12] years from chrono age
+    const clamped       = Math.max(-cap, Math.min(cap, compressed));
+    return parseFloat((chronologicalAge + clamped).toFixed(1));
   }
 
   /**
@@ -147,9 +174,10 @@ class BioAgeCalculator {
    * @param {number} chronologicalAge
    * @param {{ hsCRP, IL6, GA, CD38, GDF15, CystatinC }} biomarkers
    * @param {{ BMI, Weight, Height }} biometrics
+   * @param {{ BioAge, SubAges, daysSincePrevious } | null} previous - user's last scan, for the weekly swing cap
    * @returns {object} Full BioAge profile including sub-ages
    */
-  calculateBioAge(chronologicalAge, biomarkers, biometrics = {}) {
+  calculateBioAge(chronologicalAge, biomarkers, biometrics = {}, previous = null) {
     const BMI = biometrics.BMI || (biometrics.Weight && biometrics.Height ? biometrics.Weight / Math.pow(biometrics.Height / 100, 2) : 22);
 
     const resilience    = this._calcResilience(biomarkers.hsCRP, biomarkers.IL6);
@@ -166,16 +194,26 @@ class BioAgeCalculator {
     const rawYearDeviation   = rawBioAge - chronologicalAge;
     const compressedDeviation = this._compress(rawYearDeviation);
 
+    let bioAge = parseFloat((chronologicalAge + compressedDeviation).toFixed(1));
+    const subAges = {
+      ResilienceAge:    this._scoreToSubAge(chronologicalAge, resilience.score),
+      CellularAge:      this._scoreToSubAge(chronologicalAge, cellular.score),
+      MetabolicAge:     this._scoreToSubAge(chronologicalAge, metabolic.score),
+      MicroVascularAge: this._scoreToSubAge(chronologicalAge, microVascular.score),
+    };
+
+    if (previous) {
+      bioAge = this._clampToWeeklyRate(bioAge, previous.BioAge, previous.daysSincePrevious);
+      for (const key of Object.keys(subAges)) {
+        subAges[key] = this._clampToWeeklyRate(subAges[key], previous.SubAges && previous.SubAges[key], previous.daysSincePrevious);
+      }
+    }
+
     return {
       ChronoAge:    chronologicalAge,
-      BioAge:       parseFloat((chronologicalAge + compressedDeviation).toFixed(1)),
-      AgeDifference: parseFloat(compressedDeviation.toFixed(1)),
-      SubAges: {
-        ResilienceAge:    this._scoreToSubAge(chronologicalAge, resilience.score),
-        CellularAge:      this._scoreToSubAge(chronologicalAge, cellular.score),
-        MetabolicAge:     this._scoreToSubAge(chronologicalAge, metabolic.score),
-        MicroVascularAge: this._scoreToSubAge(chronologicalAge, microVascular.score),
-      },
+      BioAge:       bioAge,
+      AgeDifference: parseFloat((bioAge - chronologicalAge).toFixed(1)),
+      SubAges: subAges,
       mFI: {
         actual:   parseFloat(mFI_Actual.toFixed(3)),
         expected: parseFloat(mFI_Expected.toFixed(3)),

@@ -177,7 +177,7 @@ async function fetchTagDerivationContext(user_id) {
         );
         ctx.history = r.rows.map(row => {
             const d = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-            return { tested_at: row.tested_at, biomarkers: (d && d.validated) || {} };
+            return { tested_at: row.tested_at, biomarkers: (d && d.validated) || {}, bioage_profile: (d && d.bioage_profile) || null };
         });
     } catch (err) {
         console.log(JSON.stringify({ level: 'WARN', msg: 'fetchTagDerivationContext.history failed', error: err.message }));
@@ -252,10 +252,15 @@ async function handlePostBiomarkers(body) {
             data: { user_id, tags, compliance: tagContext.compliance, history_count: tagContext.history.length, weight_count: tagContext.weightHistory.length }
         }));
 
-        const estimator = new BiomarkerEstimator(age, test_data, { Weight: bioData.weight, Height: bioData.height }, tags, { seed, persistentSeed });
+        const previousValues = tagContext.history[0]?.biomarkers || {};
+        const estimator = new BiomarkerEstimator(age, test_data, { Weight: bioData.weight, Height: bioData.height }, tags, { seed, persistentSeed, previousValues });
         const estimationReport = estimator.generateReport();
         const bioAgeCalc = new BioAgeCalculator();
-        const bioAgeReport = bioAgeCalc.calculateBioAge(age, estimationReport.BiomarkerValues);
+        const prevScan = tagContext.history[0];
+        const previousBioAge = prevScan && prevScan.bioage_profile
+            ? { BioAge: prevScan.bioage_profile.BioAge, SubAges: prevScan.bioage_profile.SubAges, daysSincePrevious: (new Date(scanTimestamp) - new Date(prevScan.tested_at)) / (24 * 60 * 60 * 1000) }
+            : null;
+        const bioAgeReport = bioAgeCalc.calculateBioAge(age, estimationReport.BiomarkerValues, {}, previousBioAge);
 
         // Resolve serial number → integer FK (kino_device_id is INTEGER referencing kino_devices.id)
         let deviceFk = null;

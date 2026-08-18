@@ -93,7 +93,7 @@ async function fetchTagDerivationContext(pool, userId) {
     );
     ctx.history = r.rows.map((row) => {
       const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-      return { tested_at: row.tested_at, biomarkers: (data && data.validated) || {} };
+      return { tested_at: row.tested_at, biomarkers: (data && data.validated) || {}, bioage_profile: (data && data.bioage_profile) || null };
     });
   } catch (_) {}
 
@@ -442,16 +442,21 @@ async function handlePostBiomarkers({ pool, body = {}, machine }) {
     const seed = `${userId}:${scanTimestamp}`;
     const persistentSeed = `${userId}:w${weekBucket}`;
 
+    const previousValues = tagContext.history[0]?.biomarkers || {};
     const estimator = new BiomarkerEstimator(
       age,
       testData,
       { Weight: bioData.weight, Height: bioData.height },
       tags,
-      { seed, persistentSeed }
+      { seed, persistentSeed, previousValues }
     );
     const estimationReport = estimator.generateReport();
     const bioAgeCalc = new BioAgeCalculator();
-    const bioAgeReport = bioAgeCalc.calculateBioAge(age, estimationReport.BiomarkerValues);
+    const prevScan = tagContext.history[0];
+    const previousBioAge = prevScan && prevScan.bioage_profile
+      ? { BioAge: prevScan.bioage_profile.BioAge, SubAges: prevScan.bioage_profile.SubAges, daysSincePrevious: (new Date(scanTimestamp) - new Date(prevScan.tested_at)) / (24 * 60 * 60 * 1000) }
+      : null;
+    const bioAgeReport = bioAgeCalc.calculateBioAge(age, estimationReport.BiomarkerValues, {}, previousBioAge);
     const finalData = {
       actual: testData,
       validated: estimationReport.BiomarkerValues,
