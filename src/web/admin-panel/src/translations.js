@@ -382,6 +382,15 @@ const T = {
       balance: 'Current balance', noHistory: 'No transactions yet',
       types: { adjustment: 'Manual', referral_commission: 'Referral', coach_commission: 'Coach', channel_commission: 'Channel', withdrawal: 'Withdrawal' },
     },
+    personaSubscription: {
+      title: 'AI Persona', loading: 'Loading…', saving: 'Applying…', error: 'Error',
+      channelDefault: 'Channel default', effective: 'Effective persona',
+      activeOverride: 'Active override', expires: 'expires', noOverride: 'No active override — using channel default',
+      grantTitle: 'Grant / Extend', persona: 'Persona', duration: 'Duration',
+      note: 'Note (required)', notePlaceholder: 'e.g., VIP trial access',
+      submit: 'Grant', revoke: 'Revoke', revokeNotePrompt: 'Note for revoking this override (required):',
+      noHistory: 'No grants yet',
+    },
     partners: {
       addPartner: 'Add Partner', editPartner: 'Edit Partner', deactivatePartner: 'Deactivate',
       provisionGcnStore: 'Provision GCN Store', gcnProvisioned: 'GCN store provisioned',
@@ -1170,6 +1179,15 @@ const T = {
       submit: '确认', loading: '加载中…', saving: '提交中…', error: '错误',
       balance: '当前余额', noHistory: '暂无交易记录',
       types: { adjustment: '手动调整', referral_commission: '推荐佣金', coach_commission: '教练佣金', channel_commission: '渠道佣金', withdrawal: '提现' },
+    },
+    personaSubscription: {
+      title: 'AI 角色订阅', loading: '加载中…', saving: '提交中…', error: '错误',
+      channelDefault: '渠道默认', effective: '当前生效角色',
+      activeOverride: '当前订阅', expires: '到期时间', noOverride: '暂无订阅，使用渠道默认角色',
+      grantTitle: '开通 / 续期', persona: '角色', duration: '时长',
+      note: '备注（必填）', notePlaceholder: '例：VIP 试用',
+      submit: '开通', revoke: '撤销', revokeNotePrompt: '撤销该订阅的备注（必填）：',
+      noHistory: '暂无记录',
     },
     partners: {
       addPartner: '新增合伙人', editPartner: '编辑合伙人', deactivatePartner: '停用',

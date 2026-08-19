@@ -4,7 +4,7 @@ import DigitalBodyFigure from '../DigitalBodyFigure.jsx';
 import axios from 'axios';
 import {
   Users, UserCog, Activity, Calendar, Plus, Pencil, Trash2, X, Check,
-  ChevronDown, ChevronRight, Coins, FileText, BadgeCheck,
+  ChevronDown, ChevronRight, Coins, FileText, BadgeCheck, Sparkles,
 } from 'lucide-react';
 import { useLang, fmt, fmtDate, bioAgeColor, Badge, StatCard, RichStatCard, ALL_ROLES, EMPTY_USER, PERMS, hasPermission } from '../shared.jsx';
 import { Sparkline } from './DotsTab.jsx';
@@ -49,18 +49,32 @@ function getChannelSubtree(channels, rootId) {
 
 // ── User modal ────────────────────────────────────────────────────────────────
 
-function UserModal({ user, coaches, channels, session, onClose, onSave }) {
-  const { t } = useLang();
+function UserModal({ user, coaches, channels, session, onClose, onSave, onManagePhones }) {
+  const { t, lang } = useLang();
+  const isZh = lang === 'zh';
   const isEdit = !!(user?.user_id || user?.id);
   const userId = user?.user_id || user?.id;
   const defaultChannelId = !isEdit ? (session?.channelId ?? '') : '';
   const visibleChannels = getChannelSubtree(channels, session?.channelId);
+  // Edit mode drops `phone` from form state entirely (see the phones list below) — this
+  // modal can no longer touch users.phone at all, since handlePutUser only writes phone
+  // when the key is present in the PUT body at all. Add mode keeps it: there's no user_id
+  // yet to fetch/manage a phones list for, so the original single-value field is still how
+  // a brand-new account's initial phone gets set.
   const [form, setForm] = useState(isEdit
-    ? { nickname: user.nickname || '', gender: user.gender || '', birth_date: user.birth_date ? user.birth_date.slice(0, 10) : '', language: user.language || 'zh', external_id: user.external_id || '', external_app: user.external_app || 'wechat', coach_id: user.coach_id ?? '', channel_id: user.channel_id ?? '', phone: user.phone || '', email: user.email || '', roles: user.roles || ['user'] }
+    ? { nickname: user.nickname || '', gender: user.gender || '', birth_date: user.birth_date ? user.birth_date.slice(0, 10) : '', language: user.language || 'zh', external_id: user.external_id || '', external_app: user.external_app || 'wechat', coach_id: user.coach_id ?? '', channel_id: user.channel_id ?? '', email: user.email || '', roles: user.roles || ['user'] }
     : { ...EMPTY_USER, channel_id: defaultChannelId });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const [phones, setPhones] = useState(null);
+  useEffect(() => {
+    if (!isEdit) return;
+    axios.get(`/api/phone-otp/list?user_id=${encodeURIComponent(userId)}`)
+      .then(r => setPhones(r.data.phones || []))
+      .catch(() => setPhones([]));
+  }, [isEdit, userId]);
 
   const toggleRole = (role) => {
     if (role === 'user') return; // 'user' is always required
@@ -155,10 +169,41 @@ function UserModal({ user, coaches, channels, session, onClose, onSave }) {
                 <ChevronDown size={11} className="select-chevron" />
               </div>
             </label>
-            <label className="form-field">
-              <span>{t.modal.phone}</span>
-              <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+86 138 0000 0000" />
-            </label>
+            {isEdit ? (
+              <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                <span>{t.modal.phone}</span>
+                {phones === null ? (
+                  <span className="muted" style={{ fontSize: 12 }}>{t.topbar.loading}</span>
+                ) : phones.length === 0 ? (
+                  <span className="muted" style={{ fontSize: 12 }}>{t.userDetail.noPhones || 'No verified phone numbers'}</span>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {phones.map(p => (
+                      <div key={p.phone} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                        <span style={{ fontFamily: 'monospace' }}>{p.phone}</span>
+                        {p.is_primary
+                          ? <Badge color="#10b981">{t.userDetail.primaryPhone || 'Primary'}</Badge>
+                          : <Badge color="#94a3b8">{t.userDetail.secondaryPhone || 'Secondary'}</Badge>}
+                        {!p.verified_at && <Badge color="#f59e0b">{t.userDetail.unverifiedPhone || 'Unverified'}</Badge>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ marginTop: 8, fontSize: 12, padding: '4px 10px', alignSelf: 'flex-start' }}
+                  onClick={() => { onClose(); onManagePhones && onManagePhones(); }}
+                >
+                  {t.userDetail.managePhones || (isZh ? '在“手机号”标签页管理' : 'Manage in Phones tab')}
+                </button>
+              </div>
+            ) : (
+              <label className="form-field">
+                <span>{t.modal.phone}</span>
+                <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+86 138 0000 0000" />
+              </label>
+            )}
             <label className="form-field">
               <span>{t.modal.email}</span>
               <input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="user@example.com" />
@@ -302,7 +347,7 @@ const bmLabelsZh = {
 
 // ── UserDetailModal ───────────────────────────────────────────────────────────
 
-function UserDetailModal({ user, onClose, session, onDeleted }) {
+function UserDetailModal({ user, onClose, session, onDeleted, initialTab }) {
   const { t, lang } = useLang();
   const isZh = lang === 'zh';
   const [showDelete, setShowDelete]       = useState(false);
@@ -324,6 +369,10 @@ function UserDetailModal({ user, onClose, session, onDeleted }) {
   const [facts, setFacts]               = useState(null);
   const [factsLoading, setFactsLoading] = useState(false);
   const [factModal, setFactModal]       = useState(null);
+
+  const [phones, setPhones]               = useState(null);
+  const [phonesLoading, setPhonesLoading] = useState(false);
+  const [phoneAddOpen, setPhoneAddOpen]   = useState(false);
 
   const openid = user?.user_id || user?.id;
 
@@ -369,6 +418,26 @@ function UserDetailModal({ user, onClose, session, onDeleted }) {
       .finally(() => setFactsLoading(false));
   };
 
+  const fetchPhones = () => {
+    setPhonesLoading(true);
+    axios.get(`/api/phone-otp/list?user_id=${encodeURIComponent(openid)}`)
+      .then(r => setPhones(r.data.phones || []))
+      .catch(() => setPhones([]))
+      .finally(() => setPhonesLoading(false));
+  };
+
+  const setPhonePrimary = async (phone) => {
+    if (!window.confirm(t.userDetail.confirmSetPrimaryPhone || `Set ${phone} as primary?`)) return;
+    await axios.post('/api/phone-otp/set-primary', { user_id: openid, phone });
+    fetchPhones();
+  };
+
+  const removePhoneNumber = async (phone) => {
+    if (!window.confirm(t.userDetail.confirmRemovePhone || `Remove ${phone}?`)) return;
+    await axios.post('/api/phone-otp/remove', { user_id: openid, phone });
+    fetchPhones();
+  };
+
   const switchTab = (next) => {
     setTab(next);
     if (next === 'plans' && plans === null && !plansLoading) {
@@ -388,7 +457,18 @@ function UserDetailModal({ user, onClose, session, onDeleted }) {
     if (next === 'facts' && facts === null && !factsLoading) {
       fetchFacts();
     }
+    if (next === 'phones' && phones === null && !phonesLoading) {
+      fetchPhones();
+    }
   };
+
+  // Lets a caller (e.g. UserModal's "Manage in Phones tab" link) open this drawer
+  // straight onto a specific tab instead of always landing on 'health' — reuses
+  // switchTab's own lazy-load logic rather than duplicating a fetch here.
+  useEffect(() => {
+    if (initialTab && initialTab !== 'health') switchTab(initialTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!user) return null;
 
@@ -423,6 +503,7 @@ function UserDetailModal({ user, onClose, session, onDeleted }) {
     { id: 'plans',  label: t.userDetail.tabPlans  },
     { id: 'chat',   label: t.userDetail.tabChat   },
     { id: 'facts',  label: t.userDetail.tabFacts || 'Facts' },
+    { id: 'phones', label: t.userDetail.tabPhones || 'Phones' },
   ];
 
   return (
@@ -820,6 +901,57 @@ function UserDetailModal({ user, onClose, session, onDeleted }) {
             </div>
           )}
 
+          {/* ── PHONES ── */}
+          {tab === 'phones' && (
+            <div className="udm-chat-fill">
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                <button className="btn-primary" onClick={() => setPhoneAddOpen(true)}>
+                  <Plus size={14} />{t.userDetail.addPhone || 'Add Phone'}
+                </button>
+              </div>
+              {phonesLoading ? (
+                <div className="drawer-empty">{t.topbar.loading}</div>
+              ) : !phones || phones.length === 0 ? (
+                <div className="drawer-empty">{t.userDetail.noPhones || 'No verified phone numbers'}</div>
+              ) : (
+                <table className="data-table">
+                  <thead><tr>
+                    <th>{t.userDetail.factPhone || 'Phone'}</th>
+                    <th>{t.userDetail.factStatus || 'Status'}</th>
+                    <th>{t.userDetail.factLastMentioned || 'Verified'}</th>
+                    <th></th>
+                  </tr></thead>
+                  <tbody>
+                    {phones.map(p => (
+                      <tr key={p.phone}>
+                        <td style={{ fontFamily: 'monospace', fontSize: 13 }}>{p.phone}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {p.is_primary
+                              ? <Badge color="#10b981">{t.userDetail.primaryPhone || 'Primary'}</Badge>
+                              : <Badge color="#94a3b8">{t.userDetail.secondaryPhone || 'Secondary'}</Badge>}
+                            {!p.verified_at && <Badge color="#f59e0b">{t.userDetail.unverifiedPhone || 'Unverified'}</Badge>}
+                          </div>
+                        </td>
+                        <td className="muted" style={{ fontSize: 11 }}>{p.verified_at ? new Date(p.verified_at).toLocaleDateString(isZh ? 'zh-CN' : 'en-US') : '—'}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            {!p.is_primary && (
+                              <button className="btn-secondary" style={{ fontSize: 11, padding: '4px 8px' }} onClick={() => setPhonePrimary(p.phone)}>
+                                {t.userDetail.setPrimaryPhone || 'Set Primary'}
+                              </button>
+                            )}
+                            <button className="icon-btn danger" onClick={() => removePhoneNumber(p.phone)}><Trash2 size={14} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
         </div>
 
         {/* Detail Modal Overlay */}
@@ -1000,6 +1132,13 @@ function UserDetailModal({ user, onClose, session, onDeleted }) {
         onSave={() => { setFactModal(null); fetchFacts(); }}
       />
     )}
+    {phoneAddOpen && (
+      <PhoneAddModal
+        userId={openid}
+        onClose={() => setPhoneAddOpen(false)}
+        onSave={() => { setPhoneAddOpen(false); fetchPhones(); }}
+      />
+    )}
     </>
   );
 }
@@ -1068,6 +1207,67 @@ function UserFactModal({ openid, fact, onClose, onSave }) {
               <span>{t.userDetail.factText || 'Fact'}</span>
               <textarea rows={3} value={factZh} onChange={e => setFactZh(e.target.value)} placeholder="对海鲜过敏" required />
             </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal?.cancel || 'Cancel'}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>{busy ? (t.modal?.saving || '…') : (t.modal?.save || 'Save')}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── PhoneAddModal ─────────────────────────────────────────────────────────────
+// Admin-only "add phone" path — hits POST /admin-phone-add (handlePhoneOtpAdminAdd),
+// NOT any of the self-service /phone-otp/* endpoints. No OTP is sent or checked; the
+// number is stored unverified (phone_verified_at stays NULL) unless the user has no
+// phone at all yet, in which case it becomes primary. For staff use when a user reports
+// a number over the phone/in person but can't complete self-service verification now.
+
+function PhoneAddModal({ userId, onClose, onSave }) {
+  const { t } = useLang();
+  const [phone, setPhone] = useState('');
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!phone.trim()) { setError(t.userDetail.phoneRequired || 'Phone number is required'); return; }
+    setBusy(true);
+    try {
+      const res = await axios.post('/api/admin-phone-add', { user_id: userId, phone: phone.trim() });
+      if (res.data?.success === false) {
+        const msg = res.data.error === 'phone_in_use' ? (t.userDetail.phoneInUse || 'This number is already attached to another account')
+          : res.data.error === 'Invalid phone number' ? (t.userDetail.phoneInvalid || 'Invalid phone number')
+          : (res.data.error || t.modal.saveFailed);
+        setError(msg);
+        return;
+      }
+      onSave();
+    } catch (err) {
+      setError(err.response?.data?.error || t.modal.saveFailed);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" style={{ zIndex: 120 }} onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.userDetail.addPhone || 'Add Phone'}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.phone}</span>
+              <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+86 138 0000 0000" autoFocus />
+            </label>
+          </div>
+          <div className="drawer-empty" style={{ padding: '8px 0', textAlign: 'left', fontSize: 12 }}>
+            {t.userDetail.addPhoneUnverifiedNote || 'Added with no OTP proof — stays unverified unless this is the account’s only phone.'}
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">
@@ -1221,6 +1421,192 @@ function UserCreditModal({ user, onClose }) {
   );
 }
 
+// ── PersonaSubscriptionModal ──────────────────────────────────────────────────
+// Grant/revoke a per-user AI persona override (nano/viva), time-limited, taking
+// priority over the user's channel default persona while active. Shared between
+// UsersTab's row action and the superadmin-only cross-channel PersonaSubscriptionsTab.
+
+const PERSONA_LABELS = { nano: 'Nano', viva: 'Viva' };
+const DURATION_PRESETS = [30, 90, 365];
+
+function PersonaSubscriptionModal({ user, onClose }) {
+  const { t, lang } = useLang();
+  const ps = t.personaSubscription;
+  const isZh = lang === 'zh';
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [personaType, setPersonaType] = useState('viva');
+  const [durationDays, setDurationDays] = useState(30);
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get(`/api/admin/users/${user.user_id}/persona-subscription`);
+      setData(res.data);
+    } catch (e) {
+      setFormError(e.response?.data?.error || ps.error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user.user_id, ps.error]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleGrant(e) {
+    e.preventDefault();
+    if (!note.trim()) { setFormError(isZh ? '备注不能为空' : 'Note is required'); return; }
+    if (!durationDays || durationDays <= 0) { setFormError(isZh ? '请输入有效天数' : 'Enter a valid number of days'); return; }
+    setFormError('');
+    setSaving(true);
+    try {
+      await axios.post(`/api/admin/users/${user.user_id}/persona-subscription`, {
+        persona_type: personaType, duration_days: durationDays, note: note.trim(),
+      });
+      setNote('');
+      await load();
+    } catch (e) {
+      setFormError(e.response?.data?.error || ps.error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRevoke() {
+    const revokeNote = window.prompt(ps.revokeNotePrompt);
+    if (revokeNote === null) return;
+    if (!revokeNote.trim()) { setFormError(isZh ? '备注不能为空' : 'Note is required'); return; }
+    setSaving(true);
+    setFormError('');
+    try {
+      await axios.delete(`/api/admin/users/${user.user_id}/persona-subscription`, { data: { note: revokeNote.trim() } });
+      await load();
+    } catch (e) {
+      setFormError(e.response?.data?.error || ps.error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const fmtDateLocal = (d) => d ? new Date(d).toLocaleString(isZh ? 'zh-CN' : 'en-US', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+  const overrideActive = data && data.persona_override_type && data.persona_override_expires_at && new Date(data.persona_override_expires_at) > new Date();
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ width: 560 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{ps.title} — {user.nickname || user.user_id}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>{ps.loading}</div>
+        ) : (
+          <>
+            <div style={{ padding: '12px 20px', background: 'var(--bg)', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                <span style={{ color: 'var(--muted)' }}>{ps.channelDefault}:</span>
+                <Badge color="#64748b">{PERSONA_LABELS[data?.channel_persona_type] || data?.channel_persona_type}</Badge>
+                <span style={{ color: 'var(--muted)' }}>{ps.effective}:</span>
+                <Badge color="#10b981">{PERSONA_LABELS[data?.effective_persona_type] || data?.effective_persona_type}</Badge>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+                {overrideActive
+                  ? `${ps.activeOverride}: ${PERSONA_LABELS[data.persona_override_type]} — ${ps.expires} ${fmtDateLocal(data.persona_override_expires_at)}`
+                  : ps.noOverride}
+              </div>
+              {overrideActive && (
+                <div>
+                  <button type="button" className="btn-secondary" style={{ fontSize: 12 }} disabled={saving} onClick={handleRevoke}>
+                    {ps.revoke}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div style={{ maxHeight: 220, overflowY: 'auto', borderBottom: '1px solid var(--border)' }}>
+              {(!data?.history || data.history.length === 0) ? (
+                <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{ps.noHistory}</div>
+              ) : (
+                <table className="data-table" style={{ fontSize: 12 }}>
+                  <thead>
+                    <tr>
+                      <th>{isZh ? '日期' : 'Date'}</th>
+                      <th>{isZh ? '操作' : 'Action'}</th>
+                      <th>{isZh ? '角色' : 'Persona'}</th>
+                      <th>{isZh ? '备注' : 'Note'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.history.map(row => (
+                      <tr key={row.id}>
+                        <td className="muted" style={{ whiteSpace: 'nowrap' }}>{fmtDateLocal(row.created_at)}</td>
+                        <td><Badge color={row.action === 'revoke' ? '#ef4444' : '#8b5cf6'}>{row.action}</Badge></td>
+                        <td>{PERSONA_LABELS[row.persona_type] || row.persona_type}</td>
+                        <td className="muted" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.note || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <form onSubmit={handleGrant} style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>{ps.grantTitle}</div>
+              <div className="form-row">
+                <label className="form-label">{ps.persona}</label>
+                <select className="form-input" value={personaType} onChange={e => setPersonaType(e.target.value)}>
+                  <option value="nano">Nano</option>
+                  <option value="viva">Viva</option>
+                </select>
+              </div>
+              <div className="form-row">
+                <label className="form-label">{ps.duration}</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    value={durationDays}
+                    onChange={e => setDurationDays(parseInt(e.target.value, 10) || '')}
+                    className="form-input"
+                    style={{ width: 100 }}
+                  />
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{isZh ? '天' : 'days'}</span>
+                  {DURATION_PRESETS.map(d => (
+                    <button type="button" key={d} className="btn-secondary" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => setDurationDays(d)}>
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="form-row">
+                <label className="form-label">{ps.note}</label>
+                <input
+                  type="text"
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  placeholder={ps.notePlaceholder}
+                  className="form-input"
+                  style={{ width: '100%' }}
+                />
+              </div>
+              {formError && <div style={{ fontSize: 12, color: '#ef4444' }}>{formError}</div>}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+                <button type="button" className="btn-secondary" onClick={onClose}>{isZh ? '取消' : 'Cancel'}</button>
+                <button type="submit" className="btn-primary" disabled={saving}>
+                  {saving ? ps.saving : ps.submit}
+                </button>
+              </div>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── ReferralNetworkTab ────────────────────────────────────────────────────────
 
 function ReferralNetworkTab({ channels, session }) {
@@ -1362,6 +1748,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
   const [subTab, setSubTab] = useState('list');
   const [modal, setModal] = useState(null);
   const [detailUser, setDetailUser] = useState(null);
+  const [detailInitialTab, setDetailInitialTab] = useState('health');
   const [loadedUsers, setLoadedUsers] = useState([]);
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
@@ -1732,6 +2119,7 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
                 <td onClick={e => e.stopPropagation()}>
                   <div className="row-actions">
                     <button className="icon-btn" title={isZh ? '积分管理' : 'Manage Credits'} onClick={() => setModal({ type: 'credits', user: u })}><Coins size={14} /></button>
+                    <button className="icon-btn" title={isZh ? 'AI 角色订阅' : 'AI Persona'} onClick={() => setModal({ type: 'persona', user: u })}><Sparkles size={14} /></button>
                     {hasPermission(session, PERMS.USERS_WRITE) && <button className="icon-btn" title={t.modal.editUser} onClick={() => setModal({ type: 'edit', user: u })}><Pencil size={14} /></button>}
                     {hasPermission(session, PERMS.USERS_DELETE) && <button className="icon-btn danger" title={t.modal.deleteUser} onClick={() => setModal({ type: 'delete', user: u })}><Trash2 size={14} /></button>}
                   </div>
@@ -1776,19 +2164,27 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
       </>}
       </div>
       {modal?.type === 'add'     && <UserModal user={null}       coaches={coaches} channels={channels} session={session} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
-      {modal?.type === 'edit'    && <UserModal user={modal.user} coaches={coaches} channels={channels} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'edit'    && (
+        <UserModal
+          user={modal.user} coaches={coaches} channels={channels} session={session}
+          onClose={() => setModal(null)} onSave={closeAndRefresh}
+          onManagePhones={() => { setDetailInitialTab('phones'); setDetailUser(modal.user); }}
+        />
+      )}
       {modal?.type === 'delete'  && <DeleteConfirm user={modal.user} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
       {modal?.type === 'credits' && <UserCreditModal user={modal.user} onClose={() => setModal(null)} />}
+      {modal?.type === 'persona' && <PersonaSubscriptionModal user={modal.user} onClose={() => setModal(null)} />}
       {detailUser && (
         <UserDetailModal
           user={detailUser}
           session={session}
-          onClose={() => setDetailUser(null)}
-          onDeleted={() => { setDetailUser(null); refreshCurrentView(); }}
+          initialTab={detailInitialTab}
+          onClose={() => { setDetailUser(null); setDetailInitialTab('health'); }}
+          onDeleted={() => { setDetailUser(null); setDetailInitialTab('health'); refreshCurrentView(); }}
         />
       )}
     </>
   );
 }
 
-export { UsersTab };
+export { UsersTab, PersonaSubscriptionModal };

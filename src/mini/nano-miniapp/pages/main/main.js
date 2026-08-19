@@ -207,6 +207,7 @@ const T = {
     webAdminMenu: '网页后台',
     kinoSimMenu: 'Kino 模拟器',
     referralMenu: '邀请好友',
+    phonesMenu: '手机号管理',
     vivaRedeemMenu: '兑换订阅码',
     vivaRedeemTitle: '兑换 Viva 订阅码',
     vivaRedeemPlaceholder: '请输入订阅激活码',
@@ -432,6 +433,7 @@ const T = {
     webAdminMenu: 'Web Admin',
     kinoSimMenu: 'Kino Simulator',
     referralMenu: 'Invite Friends',
+    phonesMenu: 'Manage Phone Numbers',
     vivaRedeemMenu: 'Redeem Subscription Code',
     vivaRedeemTitle: 'Redeem Viva Subscription Code',
     vivaRedeemPlaceholder: 'Enter your subscription code',
@@ -1382,6 +1384,11 @@ Page({
   openReferral() {
     this.setData({ menuOpen: false })
     wx.navigateTo({ url: '/pages/referral/referral' })
+  },
+
+  openPhones() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/phones/phones' })
   },
 
   // ── Viva subscription redeem sheet ──────────────────────────────────────────

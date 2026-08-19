@@ -40,6 +40,8 @@ const { runAgenticTurn } = require('../lib/agenticChat');
 const { v4: uuidv4 } = require('uuid');
 const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
+const { resolveEffectivePersona, hasActiveVivaAccess } = require('../lib/persona');
+const { grantSignupTrial } = require('../lib/personaOverride');
 const { _runDeterministicFormulation, _commitNutritionPlan, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming } = require('./dots');
 
 // Intents where factual claims (biomarker values, dot recommendations, science/protocol
@@ -63,12 +65,6 @@ async function saveChatMessage(user_id, role, content, image_url = null, persona
     } catch (err) {
         console.error('Failed to save chat message:', err);
     }
-}
-
-// Hard-block gate for the Viva subscription feature (see migration_users_viva_subscription_expiry.sql
-// and handlers/viva_subscription.js). Null/past expires_at means no active subscription.
-function _isVivaSubscriptionExpired(expiresAt) {
-    return !expiresAt || new Date(expiresAt) <= new Date();
 }
 
 function _vivaSubscriptionExpiredMessage(language) {
@@ -129,7 +125,7 @@ async function resolveOrUpsertUser(body) {
     // If openid matches an existing user_id (admin-created or simulator users), use it directly.
     // Otherwise fall back to the external_id upsert (production WeChat flow).
     const byUserId = await pool.query(
-        'SELECT user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at FROM users WHERE user_id = $1',
+        'SELECT user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at FROM users WHERE user_id = $1',
         [openid]
     );
     if (byUserId.rows.length > 0) return byUserId.rows[0];
@@ -137,7 +133,7 @@ async function resolveOrUpsertUser(body) {
     const userQuery = `
         INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, bio_data, channel_id)
         VALUES ($1, $2, 'wechat', $3, $4, $5, $6, $7, $8, $9, (SELECT id FROM channels WHERE key_name = 'waven' LIMIT 1))
-        ON CONFLICT (external_id)
+        ON CONFLICT (external_id) WHERE external_id IS NOT NULL
         DO UPDATE SET
             nickname = COALESCE(EXCLUDED.nickname, users.nickname),
             phone = COALESCE(EXCLUDED.phone, users.phone),
@@ -147,13 +143,30 @@ async function resolveOrUpsertUser(body) {
             language = COALESCE(EXCLUDED.language, users.language),
             bio_data = users.bio_data || EXCLUDED.bio_data,
             updated_at = CURRENT_TIMESTAMP
-        RETURNING user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at;
+        RETURNING user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at, (xmax = 0) AS inserted;
     `;
     const userResult = await pool.query(userQuery, [
         generateUserId(), openid, nickname, phone || null, email || null,
         gender, birth_date, language || 'zh', JSON.stringify(rest)
     ]);
-    return userResult.rows[0];
+    const row = userResult.rows[0];
+    // (xmax = 0) is the standard Postgres idiom for "this row was actually INSERTed just
+    // now" vs. "the ON CONFLICT branch updated an existing row" — only a genuinely brand
+    // new signup gets the trial. Update in-memory so the very first message from this
+    // user already resolves the granted persona, not just from their second message on.
+    if (row.inserted) {
+        try {
+            const override = await grantSignupTrial(pool, row.user_id, row.channel_id);
+            if (override) {
+                row.persona_override_type = override.persona_override_type;
+                row.persona_override_expires_at = override.persona_override_expires_at;
+            }
+        } catch (err) {
+            console.error(JSON.stringify({ level: 'ERROR', msg: 'grantSignupTrial failed', user_id: row.user_id, error: err.message }));
+        }
+    }
+    delete row.inserted;
+    return row;
 }
 
 // Fetch the structured context that drives tag derivation: prior kino_chip estimates,
@@ -991,23 +1004,28 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
 // FK-threading/placeholder-row need here, so the two-phase split isn't warranted.
 async function _fireQuestionnaireAnsweredFollowup(userId, assignmentId) {
     const userRes = await pool.query(
-        `SELECT user_id, nickname, gender, birth_date, language, channel_id, viva_subscription_expires_at FROM users WHERE user_id = $1`,
+        `SELECT user_id, nickname, gender, birth_date, language, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at FROM users WHERE user_id = $1`,
         [userId]
     );
     if (!userRes.rows.length) return;
     const user = userRes.rows[0];
 
-    let personaType = 'nano';
+    let channelPersonaType = 'nano';
     if (user.channel_id) {
         try {
             const chRes = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
-            personaType = chRes.rows[0]?.config?.persona_type ?? 'nano';
+            channelPersonaType = chRes.rows[0]?.config?.persona_type ?? 'nano';
         } catch (e) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'questionnaire_answered_followup_persona_lookup_failed', user_id: userId, error: e.message }));
         }
     }
+    const personaType = resolveEffectivePersona({
+        channelPersonaType,
+        personaOverrideType: user.persona_override_type,
+        personaOverrideExpiresAt: user.persona_override_expires_at,
+    });
     if (personaType !== 'viva') return; // ask_questions is Viva-only for now — nothing to react to on Nano's path
-    if (_isVivaSubscriptionExpired(user.viva_subscription_expires_at)) return; // lapsed subscription — silent no-op, nothing was shown to the user to trigger this
+    if (!hasActiveVivaAccess(user)) return; // lapsed subscription — silent no-op, nothing was shown to the user to trigger this
 
     const [biomarkerRes, dotsRes, factsRes, responsesRes] = await Promise.all([
         pool.query(
@@ -1098,22 +1116,27 @@ async function handlePostChat(body) {
     const user = await resolveOrUpsertUser(body);
     const user_id = user.user_id;
 
-    // Resolve persona from channel config (defaults to 'nano')
-    let personaType = 'nano';
+    // Resolve persona from an active per-user override, else channel config (defaults to 'nano')
+    let channelPersonaType = 'nano';
     let channelSubAgeNames = null;
     if (user.channel_id) {
         try {
             const chRes = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
             const chConfig = chRes.rows[0]?.config || {};
-            personaType = chConfig.persona_type ?? 'nano';
+            channelPersonaType = chConfig.persona_type ?? 'nano';
             channelSubAgeNames = chConfig.sub_age_display_names || null;
         } catch (err) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'Failed to fetch channel persona, defaulting to nano', error: err.message }));
         }
     }
+    const personaType = resolveEffectivePersona({
+        channelPersonaType,
+        personaOverrideType: user.persona_override_type,
+        personaOverrideExpiresAt: user.persona_override_expires_at,
+    });
     console.log(JSON.stringify({ level: 'INFO', msg: 'Persona resolved', user_id: user.user_id, channel_id: user.channel_id, personaType }));
 
-    if (personaType === 'viva' && _isVivaSubscriptionExpired(user.viva_subscription_expires_at)) {
+    if (personaType === 'viva' && !hasActiveVivaAccess(user)) {
         const blockMessage = _vivaSubscriptionExpiredMessage(user.language);
         await saveChatMessage(user_id, 'ai', blockMessage, null, personaType);
         return { success: true, user_id, blocked_reason: 'subscription_expired', ...(sandbox && { sandbox: true, reply: blockMessage }) };
@@ -1861,7 +1884,7 @@ async function handlePostHealthAdvice(body) {
 
     try {
         const userResult = await pool.query(
-            `SELECT user_id, nickname, gender, birth_date, language, bio_data, channel_id, viva_subscription_expires_at
+            `SELECT user_id, nickname, gender, birth_date, language, bio_data, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at
              FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
             [openid]
         );
@@ -1869,15 +1892,20 @@ async function handlePostHealthAdvice(body) {
         const user = userResult.rows[0];
         const user_id = user.user_id;
 
-        let personaType = 'nano';
+        let channelPersonaType = 'nano';
         if (user.channel_id) {
             try {
                 const chResult = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
-                personaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
+                channelPersonaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
             } catch (_) {}
         }
+        const personaType = resolveEffectivePersona({
+            channelPersonaType,
+            personaOverrideType: user.persona_override_type,
+            personaOverrideExpiresAt: user.persona_override_expires_at,
+        });
 
-        if (personaType === 'viva' && _isVivaSubscriptionExpired(user.viva_subscription_expires_at)) {
+        if (personaType === 'viva' && !hasActiveVivaAccess(user)) {
             const blockMessage = _vivaSubscriptionExpiredMessage(user.language);
             await saveChatMessage(user_id, 'ai', blockMessage, null, personaType);
             return { success: true, message: blockMessage, blocked_reason: 'subscription_expired', ...(sandbox && { sandbox: true }) };

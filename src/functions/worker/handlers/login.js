@@ -3,6 +3,8 @@
 const { pool } = require('../lib/db');
 const { generateUserId, generateReferralCode, getWxAccessToken } = require('../lib/auth');
 const { normalizeCnPhone } = require('../lib/phone');
+const { grantSignupTrial } = require('../lib/personaOverride');
+const { syncPartnerPhoneFromUser } = require('./partners');
 
 async function handleResolvePhone(code, app_id = null) {
     try {
@@ -37,6 +39,7 @@ async function handleBindPhone(user_id, code, app_id = null, rawPhone = null) {
             if (!user_id) return { success: false, error: 'user_id is required' };
             const fullRawPhone = normalizeCnPhone(rawPhone);
             await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [fullRawPhone, user_id]);
+            await syncPartnerPhoneFromUser(user_id, fullRawPhone);
             return { success: true, phone: fullRawPhone };
         }
         if (!code) return { success: false, error: 'code is required' };
@@ -57,6 +60,7 @@ async function handleBindPhone(user_id, code, app_id = null, rawPhone = null) {
         const phone = normalizeCnPhone(wxData.phone_info?.purePhoneNumber);
         if (!phone) return { success: false, error: 'No phone number returned' };
         await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [phone, user_id]);
+        await syncPartnerPhoneFromUser(user_id, phone);
         return { success: true, phone };
     } catch (err) {
         return { success: false, error: err.message };
@@ -239,6 +243,7 @@ async function handleWxLogin(body) {
         if (resolvedPhone && !existingRow.phone) {
             await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [resolvedPhone, existingRow.user_id]);
             existingRow.phone = resolvedPhone;
+            await syncPartnerPhoneFromUser(existingRow.user_id, resolvedPhone);
         }
         const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = existingRow;
         const channel = channel_name
@@ -374,6 +379,10 @@ async function handleWxLogin(body) {
          RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
         [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, resolvedPhone, unionid]
     );
+
+    try { await grantSignupTrial(pool, newUserId, channelId); } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'grantSignupTrial failed', user_id: newUserId, error: err.message }));
+    }
 
     if (inviteRecord) {
         await pool.query(
@@ -550,6 +559,10 @@ async function handleWxAppLogin(body) {
         [newUserId, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, phone || null, appOpenid, unionid]
     );
 
+    try { await grantSignupTrial(pool, newUserId, channelId); } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'grantSignupTrial failed', user_id: newUserId, error: err.message }));
+    }
+
     if (inviteRecord) {
         await pool.query(
             `UPDATE invitations SET use_count = use_count + 1 WHERE id = $1
@@ -703,7 +716,10 @@ async function handleExchangeWebviewToken(body) {
                     cu.nickname AS coach_name,
                     c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                     c.config->'sub_age_display_names' AS channel_sub_age_names,
-                    c.config->>'locale' AS channel_locale
+                    c.config->>'locale' AS channel_locale,
+                    (SELECT COALESCE(json_agg(json_build_object('phone', up.phone, 'is_primary', up.is_primary, 'verified_at', up.verified_at)
+                                               ORDER BY up.is_primary DESC, up.verified_at DESC NULLS LAST), '[]'::json)
+                     FROM user_phones up WHERE up.user_id = u.user_id) AS phones
              FROM users u
              LEFT JOIN coaches p ON u.coach_id = p.id
              LEFT JOIN users cu ON p.user_id = cu.user_id

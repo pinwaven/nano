@@ -67,13 +67,14 @@ const { handleGetKnowledgeEntries, handlePostKnowledgeEntry, handlePutKnowledgeE
 const { handleGetPersonaSettings, handlePutPersonaSettings } = require('./handlers/personaSettings');
 const { handleGetUserFacts, handlePostUserFact, handlePutUserFact, handleDeleteUserFact } = require('./handlers/userFacts');
 const { handleGetCreditBalance, handleGetCreditHistory, handlePostCreditWithdraw, handleGetUserWithdrawals, handleGetAdminWithdrawals, handlePutAdminWithdrawal, handleGetAdminUserCreditHistory, handlePostAdminUserCreditAdjustment } = require('./handlers/credits');
+const { handleGetAdminUserPersonaSubscription, handlePostAdminUserPersonaSubscription, handleDeleteAdminUserPersonaSubscription, handleGetAdminPersonaSubscriptions } = require('./handlers/persona_subscriptions');
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
 const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
 const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleSetIdentity, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation, handlePostFormulationPurchaseConfirmed } = require('./handlers/users');
 const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handleGetFormulationCheckoutSnapshot, handleNutritionTopupEvent, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
 const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm } = require('./handlers/login');
-const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified } = require('./handlers/phone-otp');
+const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified, handlePhoneOtpList, handlePhoneOtpRemove, handlePhoneOtpAdminAdd } = require('./handlers/phone-otp');
 const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handleChatGenerateEvent, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign, _fireQuestionnaireAnsweredFollowup } = require('./handlers/chat');
 const { CHAT_EVENT_SOURCE } = require('./lib/chatEventBridge');
 // Same environment-scoping fix as CHAT_EVENT_SOURCE (see chatEventBridge.js's comment for the
@@ -333,6 +334,8 @@ exports.handler = async (req, resp, context) => {
                 result = requirePermission(adminCtx, 'content:read') || await handleGetKnowledgeEntries();
             } else if (path.includes('/user-facts')) {
                 result = await handleGetUserFacts(query.openid, query.coach_id);
+            } else if (path === '/phone-otp/list') {
+                result = await handlePhoneOtpList(query);
             } else if (path.match(/\/kino-tested-chips\/(\d+)/)) {
                 const scanId = path.match(/\/kino-tested-chips\/(\d+)/)[1];
                 result = await handleGetKinoTestedChipDetail(scanId);
@@ -426,6 +429,11 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/admin\/users\/([^/]+)\/credit-history/)) {
                 const uid = path.match(/\/admin\/users\/([^/]+)\/credit-history/)[1];
                 result = await handleGetAdminUserCreditHistory(uid, adminCtx);
+            } else if (path.match(/\/admin\/users\/([^/]+)\/persona-subscription/)) {
+                const uid = path.match(/\/admin\/users\/([^/]+)\/persona-subscription/)[1];
+                result = await handleGetAdminUserPersonaSubscription(uid, adminCtx);
+            } else if (path === '/admin/persona-subscriptions') {
+                result = await handleGetAdminPersonaSubscriptions(query, adminCtx);
             } else if (path.includes('/invitations')) {
                 const invQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
                 result = await handleGetInvitations(invQuery);
@@ -601,6 +609,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostAdminAccount(parsedBody, adminCtx);
             } else if (path === '/admin-channel-roles') {
                 result = await handlePostAdminChannelRole(parsedBody, adminCtx);
+            } else if (path === '/admin-phone-add') {
+                result = requireAdminTab(adminCtx, 'users') || await handlePhoneOtpAdminAdd(parsedBody);
             } else if (path === '/validate-invite') {
                 result = await handleValidateInvite(parsedBody);
             } else if (path === '/wx-app-login') {
@@ -629,6 +639,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePhoneSetPrimary(parsedBody);
             } else if (path === '/phone-otp/accept-unverified') {
                 result = await handlePhoneAcceptUnverified(parsedBody);
+            } else if (path === '/phone-otp/remove') {
+                result = await handlePhoneOtpRemove(parsedBody);
             } else if (path === '/resolve-phone') {
                 const { code, app_id } = parsedBody;
                 result = await handleResolvePhone(code, app_id);
@@ -741,6 +753,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/admin\/users\/([^/]+)\/credit-adjustments/)) {
                 const uid = path.match(/\/admin\/users\/([^/]+)\/credit-adjustments/)[1];
                 result = await handlePostAdminUserCreditAdjustment(uid, parsedBody, adminCtx);
+            } else if (path.match(/\/admin\/users\/([^/]+)\/persona-subscription/)) {
+                const uid = path.match(/\/admin\/users\/([^/]+)\/persona-subscription/)[1];
+                result = await handlePostAdminUserPersonaSubscription(uid, parsedBody, adminCtx);
             } else if (path.includes('/generate-coach-payouts')) {
                 result = await handlePostGenerateCoachPayouts(parsedBody);
             } else if (path.includes('/generate-channel-payouts')) {
@@ -1075,6 +1090,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/kino-devices/')) {
                 const deviceId = path.split('/kino-devices/')[1];
                 result = await handleDeleteKinoDevice(deviceId);
+            } else if (path.match(/\/admin\/users\/([^/]+)\/persona-subscription/)) {
+                const uid = path.match(/\/admin\/users\/([^/]+)\/persona-subscription/)[1];
+                result = await handleDeleteAdminUserPersonaSubscription(uid, parsedBody, adminCtx);
             } else if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
                 result = requirePermission(adminCtx, 'users:delete') || await handleDeleteUser(user_id);

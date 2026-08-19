@@ -3,7 +3,7 @@ import axios from 'axios';
 import { LayoutGrid, Sliders, BookOpen, Users2, MessageSquare, KeyRound } from 'lucide-react';
 import { useLang, StatCard, Badge } from '../shared.jsx';
 import { KnowledgeTab } from './KnowledgeTab.jsx';
-import { VivaSubscriptionsTab } from './VivaSubscriptionsTab.jsx';
+import { PersonaSubscriptionsTab } from './PersonaSubscriptionsTab.jsx';
 
 const PERSONAS = [
   { type: 'nano', label: 'Nano', color: '#6366f1', desc_en: 'Waven Nano — bilingual (zh/en), Kino biomarkers / BioAge / Dots nutrition.', desc_zh: 'Waven Nano — 中英双语，Kino 生物标志物 / 生理年龄 / 原粒营养。' },
@@ -37,7 +37,7 @@ function AIPersonaTab({ channels }) {
       {subTab === 'overview'       && <PersonaOverview channels={channels} isZh={isZh} />}
       {subTab === 'features'       && <PersonaFeatures isZh={isZh} />}
       {subTab === 'knowledge'      && <KnowledgeTab isSuperadmin={isSuperadmin} />}
-      {subTab === 'subscriptions'  && <VivaSubscriptionsTab />}
+      {subTab === 'subscriptions'  && <PersonaSubscriptionsTab />}
     </>
   );
 }

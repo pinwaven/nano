@@ -8,6 +8,7 @@
     "pages/coach/coach",
     "pages/superadmin/superadmin",
     "pages/referral/referral",
+    "pages/phones/phones",
     "pages/webadmin/webadmin",
     "pages/appview/appview",
     "pages/qrlogin/qrlogin"

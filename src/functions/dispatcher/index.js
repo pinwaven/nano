@@ -185,19 +185,33 @@ exports.handler = async (event, context) => {
         const checkinPeriod = getCheckinPeriod(nowShanghai.hour);
         if (checkinPeriod) {
             try {
+                // effective persona = active per-user override (migration_users_persona_override.sql)
+                // if not expired, else channel default — mirrors worker/lib/persona.js's
+                // resolveEffectivePersona/hasActiveVivaAccess, expressed inline since this FC
+                // function has its own duplicated lib/ and can't require() the worker's copy.
                 const checkinResult = await pool.query(
-                    `SELECT u.user_id, COALESCE(c.config->>'persona_type', 'nano') AS persona_type
-                     FROM users u
-                     JOIN channels c ON c.id = u.channel_id
-                     JOIN nutrition_plans np ON np.user_id = u.user_id AND np.status = 'active'
-                     WHERE 'user' = ANY(u.roles)
-                       AND COALESCE((u.preferences->>'daily_checkin_enabled')::boolean, true) = true
-                       AND u.last_active_at > NOW() - INTERVAL '2 minutes'
-                       AND (COALESCE(c.config->>'persona_type', 'nano') != 'viva' OR u.viva_subscription_expires_at > NOW())
+                    `WITH eff AS (
+                       SELECT u.*, c.config AS channel_config,
+                              CASE
+                                  WHEN u.persona_override_type IS NOT NULL AND u.persona_override_expires_at > NOW()
+                                      THEN u.persona_override_type
+                                  ELSE COALESCE(c.config->>'persona_type', 'nano')
+                              END AS effective_persona_type
+                       FROM users u
+                       JOIN channels c ON c.id = u.channel_id
+                     )
+                     SELECT eff.user_id, eff.effective_persona_type AS persona_type
+                     FROM eff
+                     JOIN nutrition_plans np ON np.user_id = eff.user_id AND np.status = 'active'
+                     WHERE 'user' = ANY(eff.roles)
+                       AND COALESCE((eff.preferences->>'daily_checkin_enabled')::boolean, true) = true
+                       AND eff.last_active_at > NOW() - INTERVAL '2 minutes'
+                       AND (eff.effective_persona_type != 'viva'
+                            OR (eff.persona_override_type = 'viva' AND eff.persona_override_expires_at > NOW()))
                        AND EXISTS (SELECT 1 FROM nutrition_schedules s WHERE s.plan_id = np.id AND s.scheduled_date = CURRENT_DATE)
                        AND NOT EXISTS (
                          SELECT 1 FROM notifications n
-                         WHERE n.user_id = u.user_id AND n.notification_type = $1
+                         WHERE n.user_id = eff.user_id AND n.notification_type = $1
                            AND n.sent_at::date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date
                        )`,
                     [`${checkinPeriod}_checkin`]

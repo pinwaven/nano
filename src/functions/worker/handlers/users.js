@@ -5,6 +5,7 @@ const { pool } = require('../lib/db');
 const { generateUserId, verifySubchannelOwnership } = require('../lib/auth');
 const { calculateAge } = require('../lib/time-utils');
 const { findAndMergeDuplicateAccount } = require('./user-merge');
+const { syncPartnerPhoneFromUser } = require('./partners');
 
 async function handleGetUsers(channelId, query = {}) {
     try {
@@ -568,6 +569,9 @@ async function handlePutUser(user_id, body) {
             }
         }
         await client.query('COMMIT');
+
+        if (phoneProvided) await syncPartnerPhoneFromUser(user_id, phone || null);
+
         return { success: true };
     } catch (err) {
         await client.query('ROLLBACK').catch(() => {});

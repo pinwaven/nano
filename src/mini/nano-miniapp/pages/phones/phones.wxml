@@ -1,0 +1,76 @@
+<view class="phones-page {{theme === 'light' ? 'theme-light' : ''}}">
+  <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
+
+  <view class="app-header">
+    <view class="back-btn" bindtap="goBack">
+      <text class="back-icon">‹</text>
+      <text class="back-label">{{t.back}}</text>
+    </view>
+    <text class="header-title">{{t.title}}</text>
+  </view>
+
+  <view class="phones-content">
+    <view wx:if="{{loading}}" class="center-msg">
+      <text class="dim-text">{{t.loading}}</text>
+    </view>
+
+    <view wx:else class="card">
+      <view wx:for="{{phones}}" wx:key="phone" class="phone-row">
+        <view class="phone-row-main">
+          <text class="phone-value">{{item.masked}}</text>
+          <text wx:if="{{item.is_primary}}" class="phone-badge">{{t.primaryBadge}}</text>
+        </view>
+        <view class="phone-row-actions">
+          <text wx:if="{{!item.is_primary}}" class="phone-action" data-phone="{{item.phone}}" bindtap="setPrimary">{{t.setPrimaryAction}}</text>
+          <text class="phone-action phone-action-danger" data-phone="{{item.phone}}" bindtap="removePhone">{{t.removeAction}}</text>
+        </view>
+      </view>
+
+      <view class="btn btn-outline add-phone-btn" bindtap="openAddPhone">
+        <text>{{t.addPhoneBtn}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{addMode}}" class="withdraw-overlay" catchtap="closeAddPhone">
+    <view class="withdraw-modal" catchtap="noop">
+      <text class="withdraw-modal-title">{{t.addPhoneBtn}}</text>
+
+      <view wx:if="{{addStep === 'phone'}}">
+        <view class="form-field">
+          <text class="form-label">{{t.phoneLabel}}</text>
+          <input class="form-input" value="{{newPhone}}" bindinput="onPhoneInput" placeholder="{{t.phonePlaceholder}}" maxlength="11" type="number" />
+        </view>
+        <text wx:if="{{addError}}" class="error-text">{{addError}}</text>
+        <view class="withdraw-btns">
+          <view class="btn btn-outline" bindtap="closeAddPhone"><text>{{t.cancelBtn}}</text></view>
+          <view class="btn btn-primary {{addLoading ? 'disabled' : ''}}" bindtap="sendCode">
+            <text>{{addLoading ? t.sending : t.sendCodeBtn}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view wx:elif="{{addStep === 'code'}}">
+        <view class="form-field">
+          <text class="form-label">{{t.codeLabel}}</text>
+          <text class="phone-step-desc">{{codeSentToText}}</text>
+          <input class="form-input" value="{{code}}" bindinput="onCodeInput" placeholder="——————" maxlength="6" type="number" />
+        </view>
+        <text wx:if="{{addError}}" class="error-text">{{addError}}</text>
+        <view class="phones-links">
+          <text wx:if="{{resendCooldown > 0}}" class="dim-text">{{resendCooldownText}}</text>
+          <text wx:else class="phones-link" bindtap="sendCode">{{t.resendCode}}</text>
+          <text class="phones-link" bindtap="changeNumber">{{t.changeNumber}}</text>
+        </view>
+        <view class="withdraw-btns">
+          <view class="btn btn-outline" bindtap="closeAddPhone"><text>{{t.cancelBtn}}</text></view>
+          <view class="btn btn-primary {{addLoading ? 'disabled' : ''}}" bindtap="verifyCode">
+            <text>{{addLoading ? t.verifying : t.verifyBtn}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="bottom-safe"></view>
+</view>

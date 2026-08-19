@@ -361,6 +361,26 @@ async function syncGcnPartnerStatus(partner) {
     }
 }
 
+// Called whenever a user's PRIMARY phone changes (OTP bind/set-primary/remove, admin edit,
+// WeChat bind/resolve) — partners.phone is a separate column from users.phone, only ever
+// touched by partner-record edits (handlePutPartner/handleDeletePartner below), so without
+// this a provisioned partner's phone silently goes stale on GCN's side the moment they
+// change their login phone anywhere else. Best-effort/non-blocking, same as
+// syncGcnPartnerStatus's existing callers — never fails the phone-change request that
+// already committed.
+async function syncPartnerPhoneFromUser(user_id, newPhone) {
+    if (!user_id) return;
+    try {
+        const { rows } = await pool.query(`SELECT * FROM partners WHERE user_id = $1`, [user_id]);
+        if (rows.length === 0) return;
+        const partner = rows[0];
+        await pool.query(`UPDATE partners SET phone = $1 WHERE id = $2`, [newPhone, partner.id]);
+        await syncGcnPartnerStatus({ ...partner, phone: newPhone });
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'syncPartnerPhoneFromUser failed', user_id, error: err.message }));
+    }
+}
+
 async function handlePutPartner(partnerId, body) {
     if (!partnerId) return { success: false, error: 'partner id required', statusCode: 400 };
     const { tier, real_name, phone, entry_fee_paid, channel_id, user_id,
@@ -1231,6 +1251,7 @@ async function handleGetChannelRewardsSummary(channelId) {
 // ── End partner system handlers ──────────────────────────────────────────────
 
 module.exports = {
+    syncPartnerPhoneFromUser,
     handleGetPartners,
     handleGetPartner,
     handleGetPartnerByPhone,

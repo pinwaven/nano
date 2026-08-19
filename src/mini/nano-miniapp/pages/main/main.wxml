@@ -62,6 +62,10 @@
         <text class="menu-item-icon">★</text>
         <text class="menu-item-label">{{t.referralMenu}}</text>
       </view>
+      <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openPhones">
+        <text class="menu-item-icon">📱</text>
+        <text class="menu-item-label">{{t.phonesMenu}}</text>
+      </view>
       <view wx:if="{{!isGuest && isAeviva && personaType === 'viva'}}" class="menu-item" bindtap="openVivaRedeemSheet">
         <text class="menu-item-icon">✧</text>
         <text class="menu-item-label">{{t.vivaRedeemMenu}}</text>

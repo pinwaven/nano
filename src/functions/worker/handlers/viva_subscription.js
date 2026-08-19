@@ -2,6 +2,8 @@
 
 const crypto = require('crypto');
 const { pool } = require('../lib/db');
+const { resolveEffectivePersona } = require('../lib/persona');
+const { grantPersonaOverride } = require('../lib/personaOverride');
 
 // High-entropy, unguessable code — unlike kino_chips.chip_code (sequential KNC{8}-{4}), a
 // subscription code is a bearer credential worth real money if guessed. 12 random bytes
@@ -19,16 +21,28 @@ async function handleGetVivaSubscriptionStatus(openid) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `SELECT u.viva_subscription_expires_at, COALESCE(c.config->>'persona_type', 'nano') AS persona_type
+            `SELECT u.viva_subscription_expires_at, u.persona_override_type, u.persona_override_expires_at,
+                    COALESCE(c.config->>'persona_type', 'nano') AS channel_persona_type
              FROM users u LEFT JOIN channels c ON c.id = u.channel_id
              WHERE u.user_id = $1 OR u.external_id = $1 LIMIT 1`,
             [openid]
         );
         if (result.rows.length === 0) return { success: false, error: 'User not found' };
+        const row = result.rows[0];
+        const effectivePersona = resolveEffectivePersona({
+            channelPersonaType: row.channel_persona_type,
+            personaOverrideType: row.persona_override_type,
+            personaOverrideExpiresAt: row.persona_override_expires_at,
+        });
+        // Prefer the generalized override's expiry once active (covers a Viva grant on a
+        // non-Viva channel too); fall back to the legacy column for any not-yet-migrated row.
+        const vivaExpiresAt = row.persona_override_type === 'viva'
+            ? row.persona_override_expires_at
+            : row.viva_subscription_expires_at;
         return {
             success: true,
-            persona_type: result.rows[0].persona_type,
-            viva_subscription_expires_at: result.rows[0].viva_subscription_expires_at,
+            persona_type: effectivePersona,
+            viva_subscription_expires_at: vivaExpiresAt,
         };
     } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetVivaSubscriptionStatus failed', error: err.message }));
@@ -50,17 +64,25 @@ async function handleGetVivaSubscriptionPlans() {
     }
 }
 
-// Extends (stacks) a user's viva_subscription_expires_at — never resets backward. Shared by
-// the redeem endpoint and checkout-confirmed's auto_redeem_openid path.
+// Legacy Viva-only entry point (GCN code redemption / checkout-confirmed auto-redeem).
+// Now a thin wrapper over the generalized override mechanism (persona_type='viva') —
+// see migration_users_persona_override.sql / lib/personaOverride.js. Still mirrors into
+// the legacy viva_subscription_expires_at column for back-compat reads, and logs a
+// persona_subscription_grants audit row so the admin UI shows one unified history
+// regardless of whether a grant came from a code redemption or a direct admin grant.
 async function _extendUserSubscription(client, userId, durationDays) {
-    const result = await client.query(
-        `UPDATE users
-         SET viva_subscription_expires_at = GREATEST(COALESCE(viva_subscription_expires_at, NOW()), NOW()) + ($2 || ' days')::interval
-         WHERE user_id = $1
-         RETURNING viva_subscription_expires_at`,
-        [userId, durationDays]
+    const override = await grantPersonaOverride(client, userId, 'viva', durationDays);
+    if (!override) return null;
+    await client.query(
+        `UPDATE users SET viva_subscription_expires_at = $2 WHERE user_id = $1`,
+        [userId, override.persona_override_expires_at]
     );
-    return result.rows[0]?.viva_subscription_expires_at || null;
+    await client.query(
+        `INSERT INTO persona_subscription_grants (user_id, persona_type, action, duration_days, new_expires_at, note, granted_by, channel_id)
+         SELECT $1, 'viva', 'code_redeemed', $2, $3, 'Code redeemed', 'gcn', channel_id FROM users WHERE user_id = $1`,
+        [userId, durationDays, override.persona_override_expires_at]
+    );
+    return override.persona_override_expires_at;
 }
 
 // GCN-allowed-path — called by GCN after payment is confirmed. Idempotent by order_ref

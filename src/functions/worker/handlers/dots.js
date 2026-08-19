@@ -16,6 +16,7 @@ const { v4: uuidv4 } = require('uuid');
 const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { formatQuestionnaireContext } = require('./questionnaires');
+const { resolveEffectivePersona } = require('../lib/persona');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
@@ -1275,13 +1276,18 @@ async function handleNutritionTopupEvent(payload) {
         const biomarkers = data.validated || {};
         const bioageProfile = data.bioage_profile || {};
 
-        let personaType = 'nano';
+        let channelPersonaType = 'nano';
         if (user.channel_id) {
             try {
                 const chResult = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
-                personaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
+                channelPersonaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
             } catch (_) {}
         }
+        const personaType = resolveEffectivePersona({
+            channelPersonaType,
+            personaOverrideType: user.persona_override_type,
+            personaOverrideExpiresAt: user.persona_override_expires_at,
+        });
 
         const lang = user.language || 'zh';
         const currentSolarTerm = getCurrentSolarTerm(getNowShanghai().toJSDate());
@@ -1364,13 +1370,18 @@ async function handlePostFormulaDots(body) {
         const biomarkers = data.validated || {};
         const bioageProfile = data.bioage_profile || {};
 
-        let personaType = 'nano';
+        let channelPersonaType = 'nano';
         if (user.channel_id) {
             try {
                 const chResult = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
-                personaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
+                channelPersonaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
             } catch (_) {}
         }
+        const personaType = resolveEffectivePersona({
+            channelPersonaType,
+            personaOverrideType: user.persona_override_type,
+            personaOverrideExpiresAt: user.persona_override_expires_at,
+        });
 
         const lang = user.language || 'zh';
         const currentSolarTerm = getCurrentSolarTerm(getNowShanghai().toJSDate());
