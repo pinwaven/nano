@@ -51,9 +51,19 @@ const { _runDeterministicFormulation, _commitNutritionPlan, _fallbackCountForDot
 // latency/cost (see 2026-07-28 planning discussion).
 const HIGH_RISK_INTENTS = new Set(['biomarker_question', 'nutrition_question', 'longevity_science', 'record_action']);
 
+// timeout/maxRetries: without an explicit cap, a single stalled DashScope call can hang up to
+// the SDK's 10-minute default — well past the worker FC function's own 300s timeout (s.yaml).
+// A hung call during the agentic loop (lib/agenticChat.js) then gets silently killed by the
+// platform (not a catchable JS error), so none of this file's try/catch fallback-notification
+// paths ever run and the user gets no reply at all. Found via a live incident 2026-08-21: a
+// biomarker_question turn hung for ~195s inside one call and was killed by FC's 300s ceiling
+// before REVISE round 2 could finish. Bounding each call lets it fail fast into the existing
+// catch/fail-open handling instead.
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    timeout: 60_000,
+    maxRetries: 1,
 });
 
 async function saveChatMessage(user_id, role, content, image_url = null, persona_type = 'nano') {
@@ -1705,14 +1715,33 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
 async function handleChatGenerateEvent(payload) {
     const { event_id, user_id, message, intent, llmContext, systemPrompt, cleanHistory, language, personaType, birth_date, kind } = payload;
 
+    // Claim the slot. A fresh event_id always wins the INSERT. A redelivered event_id only wins
+    // the UPDATE if the prior claim never reached 'done' AND is old enough (90s — well past any
+    // legitimate single call under the 60s per-call LLM timeout above) that the invocation which
+    // claimed it must have already ended, one way or another — never a live concurrent run, since
+    // FC only redelivers after the previous invocation has finished (successfully, by error, or
+    // by platform kill). This is what lets the retry after a platform-level timeout kill actually
+    // redo the work instead of being dropped as a false "duplicate" (see migration's comment).
     const dedupe = await pool.query(
-        `INSERT INTO chat_generate_events (event_id) VALUES ($1) ON CONFLICT (event_id) DO NOTHING RETURNING event_id`,
+        `INSERT INTO chat_generate_events (event_id, status, claimed_at)
+         VALUES ($1, 'claimed', NOW())
+         ON CONFLICT (event_id) DO UPDATE
+           SET status = 'claimed', claimed_at = NOW()
+           WHERE chat_generate_events.status <> 'done'
+             AND chat_generate_events.claimed_at < NOW() - INTERVAL '90 seconds'
+         RETURNING event_id`,
         [event_id]
     );
     if (dedupe.rows.length === 0) {
         console.log(JSON.stringify({ level: 'INFO', msg: 'chat_generate_event_duplicate_skipped', event_id, user_id }));
         return;
     }
+    // Marks the claim 'done' once this invocation has finished acting on it — whether that
+    // produced a real reply or (in the catch block below) a fallback error notification. Only a
+    // platform-level kill that bypasses this entirely (never runs, JS can't catch it) leaves the
+    // claim stale and eligible for the next retry to redo the work fresh.
+    const markDone = () => pool.query(`UPDATE chat_generate_events SET status = 'done' WHERE event_id = $1`, [event_id])
+        .catch(err => console.error('markDone failed:', err));
 
     const client = getLlmClient();
     const model = process.env.MODEL || 'qwen-plus-latest';
@@ -1745,6 +1774,7 @@ async function handleChatGenerateEvent(payload) {
                 user, user_id, personaType, sandbox: false, useAgenticLoop: true, client, model,
             });
         }
+        await markDone();
     } catch (err) {
         console.error('LLM Chat Error (async):', err);
         if (kind === 'formula_dots_generate') {
@@ -1800,6 +1830,7 @@ async function handleChatGenerateEvent(payload) {
                 [user_id, 'chat_reply', fallbackText, 'pending']
             );
         }
+        await markDone();
     }
 }
 

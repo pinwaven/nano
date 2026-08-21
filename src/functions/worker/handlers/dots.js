@@ -837,6 +837,60 @@ async function handleGetNutritionPlan(openid) {
 // EXCEPT the two DOT-N7 isolation days (day-offsets 9-10, see N7_ISOLATION_DAY_INDEXES), which
 // are a system-controlled special case (single-ingredient capsules) and would misrepresent the
 // real formulation if read instead. Day 0 is never an isolation day, so it's always safe.
+// Shared plan-lookup + day-0-schedule + dot-breakdown logic, used by both the GCN checkout
+// snapshot below and the box-QR feature (handlers/boxes.js). Reads day-0 of the plan's schedule
+// specifically (not any arbitrary day) to avoid the two DOT-N7 "isolation days", which would
+// misrepresent the steady-state recipe. `dotColumns` lets a caller ask for just names (checkout
+// snapshot's need) or the full ingredient/timing/coating/color payload (box QR page's need).
+async function _getCommittedPlanDay0Breakdown(planId, { dotColumns = 'id, key_name, name, name_zh' } = {}) {
+    const planResult = await pool.query(
+        `SELECT np.id, np.user_id, np.status, np.start_date, np.created_at,
+                np.primary_health_plan_id, np.secondary_health_plan_id,
+                hpt.key_name AS focus_key_name, hpt.name_zh AS focus_label_zh, hpt.name_en AS focus_label_en
+         FROM nutrition_plans np
+         LEFT JOIN health_plans hp ON hp.id = np.primary_health_plan_id
+         LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
+         WHERE np.id = $1`,
+        [planId]
+    );
+    if (planResult.rows.length === 0) return { reason: 'plan_not_found' };
+    const plan = planResult.rows[0];
+
+    const scheduleResult = await pool.query(
+        `SELECT slot_name, recipe FROM nutrition_schedules
+         WHERE plan_id = $1 AND scheduled_date = $2`,
+        [plan.id, plan.start_date]
+    );
+    if (scheduleResult.rows.length === 0) return { reason: 'plan_has_no_schedule', plan };
+
+    const dotsResult = await pool.query(`SELECT ${dotColumns} FROM dots ORDER BY id ASC`);
+    const dotsByKey = new Map(dotsResult.rows.map(d => [d.key_name, d]));
+
+    const morningRow = scheduleResult.rows.find(r => r.slot_name === 'morning_cup');
+    const eveningRow = scheduleResult.rows.find(r => r.slot_name === 'evening_cup');
+    const morningDots = morningRow?.recipe?.dots || {};
+    const eveningDots = eveningRow?.recipe?.dots || {};
+
+    const allKeys = new Set([...Object.keys(morningDots), ...Object.keys(eveningDots)]);
+    const dotBreakdown = [...allKeys].map(key => {
+        const dot = dotsByKey.get(key) || {};
+        const morning_count = morningDots[key] || 0;
+        const evening_count = eveningDots[key] || 0;
+        return {
+            ...dot,
+            key_name: key,
+            name: dot.name || key,
+            name_zh: dot.name_zh || key,
+            morning_count,
+            evening_count,
+            total_count: morning_count + evening_count,
+        };
+    }).filter(d => d.total_count > 0);
+
+    if (dotBreakdown.length === 0) return { reason: 'plan_has_no_dots', plan };
+    return { plan, dotBreakdown };
+}
+
 async function handleGetFormulationCheckoutSnapshot(planId, openid) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -845,53 +899,11 @@ async function handleGetFormulationCheckoutSnapshot(planId, openid) {
         const planIdNum = parseInt(planId, 10);
         if (!Number.isFinite(planIdNum)) return { valid: false, reason: 'invalid_plan_id' };
 
-        const planResult = await pool.query(
-            `SELECT np.id, np.user_id, np.status, np.start_date, np.created_at,
-                    np.primary_health_plan_id, np.secondary_health_plan_id,
-                    hpt.key_name AS focus_key_name, hpt.name_zh AS focus_label_zh, hpt.name_en AS focus_label_en
-             FROM nutrition_plans np
-             LEFT JOIN health_plans hp ON hp.id = np.primary_health_plan_id
-             LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
-             WHERE np.id = $1`,
-            [planIdNum]
-        );
-        if (planResult.rows.length === 0) return { valid: false, reason: 'plan_not_found' };
-
-        const plan = planResult.rows[0];
+        const { plan, dotBreakdown, reason } = await _getCommittedPlanDay0Breakdown(planIdNum);
+        if (reason === 'plan_not_found') return { valid: false, reason };
         if (plan.user_id !== openid) return { valid: false, reason: 'plan_owner_mismatch' };
         if (plan.status !== 'active') return { valid: false, reason: 'plan_not_active' };
-
-        const scheduleResult = await pool.query(
-            `SELECT slot_name, recipe FROM nutrition_schedules
-             WHERE plan_id = $1 AND scheduled_date = $2`,
-            [plan.id, plan.start_date]
-        );
-        if (scheduleResult.rows.length === 0) return { valid: false, reason: 'plan_has_no_schedule' };
-
-        const dotsResult = await pool.query('SELECT id, key_name, name, name_zh FROM dots ORDER BY id ASC');
-        const dotsByKey = new Map(dotsResult.rows.map(d => [d.key_name, d]));
-
-        const morningRow = scheduleResult.rows.find(r => r.slot_name === 'morning_cup');
-        const eveningRow = scheduleResult.rows.find(r => r.slot_name === 'evening_cup');
-        const morningDots = morningRow?.recipe?.dots || {};
-        const eveningDots = eveningRow?.recipe?.dots || {};
-
-        const allKeys = new Set([...Object.keys(morningDots), ...Object.keys(eveningDots)]);
-        const dotBreakdown = [...allKeys].map(key => {
-            const dot = dotsByKey.get(key);
-            const morning_count = morningDots[key] || 0;
-            const evening_count = eveningDots[key] || 0;
-            return {
-                key_name: key,
-                name: dot?.name || key,
-                name_zh: dot?.name_zh || key,
-                morning_count,
-                evening_count,
-                total_count: morning_count + evening_count,
-            };
-        }).filter(d => d.total_count > 0);
-
-        if (dotBreakdown.length === 0) return { valid: false, reason: 'plan_has_no_dots' };
+        if (reason) return { valid: false, reason };
 
         return {
             valid: true,
@@ -1612,6 +1624,7 @@ module.exports = {
     handlePostOrderBatch,
     handleGetNutritionPlan,
     handleGetFormulationCheckoutSnapshot,
+    _getCommittedPlanDay0Breakdown,
     handleNutritionTopupEvent,
     handlePostFormulaDots,
     handlePostDots,

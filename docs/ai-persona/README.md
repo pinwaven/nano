@@ -33,6 +33,7 @@ These docs describe the code as it exists on disk today. This directory is a det
 7. [Proactive Messaging](07-proactive-messaging.md) — the legacy `agent` function, daily check-ins, `nutrition.topup`
 8. [Formula/Dots Generation & Reports](08-formula-dots-and-reports.md) — nutrition plan generation, vision/lab reports
 9. [Known Issues](09-known-issues.md) — CLAUDE.md drift, dead code, real functional gaps
+10. [Knowledge Entries Draft — Aeviva/Viva](10-knowledge-entries-draft-aeviva.md) — ~25 candidate `knowledge_entries` rows drafted from real prod chat questions, not yet inserted
 
 ## Where to start
 

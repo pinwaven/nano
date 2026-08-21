@@ -69,7 +69,7 @@ function AdminPanel({ session, onLogout }) {
   const isCmsAdmin = session?.role === 'channel' && session?.canManageSubchannels;
   const SUPERADMIN_ONLY = new Set(['changelog', 'ai-persona']);
 
-  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], kinoMachinePagination: null, chipBatches: [], chipModels: [], tickets: [], adminAccounts: [], koneApkReleases: [], skus: [], inventoryStock: [] });
+  const [data, setData] = useState({ users: [], dots: [], coaches: [], storeItems: [], orders: [], channels: [], invitations: [], kinoDevices: [], kinoMachinePagination: null, chipBatches: [], chipModels: [], boxBatches: [], tickets: [], adminAccounts: [], koneApkReleases: [], skus: [], inventoryStock: [] });
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -80,7 +80,7 @@ function AdminPanel({ session, onLogout }) {
     const isChannel = session?.role === 'channel';
     try {
       const canManageOwnAdmins = isChannel && hasPermission(session, PERMS.ADMIN_ACCTS_READ);
-    const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, tkRes, aaRes, hptRes, apkRes, skuRes, stockRes] = await Promise.allSettled([
+    const [uRes, dRes, pRes, sRes, oRes, chRes, invRes, kinoRes, cbRes, cmRes, bxRes, tkRes, aaRes, hptRes, apkRes, skuRes, stockRes] = await Promise.allSettled([
         axios.get(isChannel ? `/api/channel-users/${cid}?minimal=true` : '/api/users?minimal=true'),
         axios.get('/api/dots-inventory'),
         axios.get(isChannel ? `/api/channel-coaches/${cid}?include_subchannels=true` : '/api/coach-list'),
@@ -91,6 +91,7 @@ function AdminPanel({ session, onLogout }) {
         axios.get('/kino/kino-machines?page=1&limit=10'),
         axios.get('/api/kino-chip-batches'),
         axios.get('/api/kino-chip-models'),
+        axios.get('/api/box-batches'),
         axios.get('/api/tickets'),
         (isChannel && !isCmsAdmin && !canManageOwnAdmins) ? Promise.resolve({ data: {} }) : axios.get('/api/admin-accounts'),
         axios.get('/api/health-plan-templates?all=true'),
@@ -111,6 +112,7 @@ function AdminPanel({ session, onLogout }) {
         kinoMachinePagination: kinoMachines.pagination,
         chipBatches:         ok(cbRes).batches           || [],
         chipModels:          ok(cmRes).models            || [],
+        boxBatches:          ok(bxRes).batches           || [],
         tickets:             ok(tkRes).tickets           || [],
         adminAccounts:       ok(aaRes).accounts          || [],
         healthPlanTemplates: ok(hptRes).templates        || [],
@@ -242,7 +244,7 @@ function AdminPanel({ session, onLogout }) {
           {tab === 'store'     && <StoreTab      storeItems={data.storeItems} orders={data.orders} channels={data.channels} skus={data.skus || []} inventoryStock={data.inventoryStock || []} session={session} onRefresh={fetchData} />}
           {tab === 'inventory' && <InventoryTab  channels={data.channels} session={session} isSuperadmin={isSuperadmin} />}
           {tab === 'channels'  && <ChannelTab    channels={data.channels} onRefresh={fetchData} isSuperadmin={isSuperadmin} session={session} />}
-          {tab === 'hardware' && <HardwareTab devices={data.kinoDevices} machinePagination={data.kinoMachinePagination} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} chipBatches={data.chipBatches} chipModels={data.chipModels} onRefresh={fetchData} />}
+          {tab === 'hardware' && <HardwareTab devices={data.kinoDevices} machinePagination={data.kinoMachinePagination} coaches={data.coaches} channels={data.channels} releases={data.koneApkReleases} chipBatches={data.chipBatches} chipModels={data.chipModels} boxBatches={data.boxBatches} users={data.users} onRefresh={fetchData} />}
           {tab === 'digital-assets' && <DigitalAssetsTab session={session} channels={data.channels} isSuperadmin={isSuperadmin} onRefresh={fetchData} />}
           {tab === 'invites'  && <InvitesTab  invitations={data.invitations} channels={data.channels} coaches={data.coaches} session={session} onRefresh={fetchData} />}
           {tab === 'rewards'   && <RewardsTab />}

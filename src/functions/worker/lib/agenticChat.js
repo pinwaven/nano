@@ -20,7 +20,7 @@
 const { AGENTIC_TOOL_DEFS, createAgenticToolHandlers } = require('./agenticTools');
 const { detectAllRisks } = require('./factCheck');
 const { formatToShanghai } = require('./time-utils');
-const { classifyBiomarkers, THRESHOLDS: BIOMARKER_THRESHOLDS } = require('./biomarkerStatus');
+const { classifyBiomarkers, THRESHOLDS: BIOMARKER_THRESHOLDS, DIMENSION_BIOMARKERS } = require('./biomarkerStatus');
 const planTemplate = require('../prompts/chat/planTemplate');
 const judgeTemplate = require('../prompts/viva/judgeTemplate');
 const { findRelevantEntries } = require('./knowledgeBase');
@@ -143,7 +143,23 @@ function validatePlan(plan, dots) {
     return warnings;
 }
 
+// Hard wall-clock ceiling for the whole PLAN->GENERATE->JUDGE->REVISE turn, independent of the
+// per-call LLM client timeout (handlers/chat.js's getLlmClient). The two are complementary, not
+// redundant: the per-call timeout stops a single stalled call from hanging forever, but even
+// every call individually finishing within its own cap can still sum past the worker FC
+// function's 300s invocation ceiling (s.yaml) in a worst case (PLAN + 3 GENERATE iterations +
+// JUDGE + 2 REVISE rounds x 2 calls each, each near its own per-call cap). Once TURN_DEADLINE_MS
+// has elapsed, no further GENERATE iteration, JUDGE, or REVISE round is started — the turn ships
+// whatever reply it has so far, exactly like the existing "ship the latest revision regardless"
+// behavior on REJECT-after-max-rounds. Leaves ~100s of the 300s budget for finalizeChatReply's
+// grounding check + DB writes to run afterward. Found necessary after a live incident
+// 2026-08-21 where an uncapped single call ate the whole 300s budget and the invocation was
+// killed by the platform mid-REVISE with no reply ever delivered.
+const TURN_DEADLINE_MS = 200_000;
+
 async function runAgenticTurn({ client, model, message, intent, llmContext, systemPrompt, cleanHistory, pool, user_id, language, personaType, logContext, onStatus }) {
+    const turnStartedAt = Date.now();
+    const timeLeftMs = () => TURN_DEADLINE_MS - (Date.now() - turnStartedAt);
     const budget = { plan: 0, generateIters: 0, judge: 0, revise: 0, rejudge: 0 };
     const toolHandlers = createAgenticToolHandlers({ pool, user_id, language });
     const knowledgeExcerpts = await findRelevantEntries(personaType || 'nano', message);
@@ -208,6 +224,10 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         ...(messageNeedsBiomarkerHistory(message) ? ['get_biomarker_history'] : []),
     ]));
     for (let iter = 0; iter < GENERATE_MAX_ITERS; iter++) {
+        if (timeLeftMs() <= 0) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_turn_deadline_exceeded', context: logContext, stage: 'generate', iter }));
+            break;
+        }
         budget.generateIters = iter + 1;
         const forcedTool = forcedToolQueue.shift();
         const completion = await client.chat.completions.create({
@@ -287,6 +307,7 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
             biomarkers: freshBiomarkers.data,
             biomarker_status: classifyBiomarkers(freshBiomarkers.data?.validated || {}),
             biomarker_reference_ranges: BIOMARKER_THRESHOLDS,
+            dimension_biomarker_map: DIMENSION_BIOMARKERS,
             elevated_dimensions: getElevatedDimensions(llmContext.bioage),
             dots: freshDots.data,
             tool_calls_made: toolCallLog,
@@ -317,16 +338,38 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     }
 
     await notify('verifying');
-    const judgeResult = await runJudge(rawReply);
-    console.log(JSON.stringify({ level: judgeResult.verdict === 'PASS' ? 'INFO' : 'WARN', msg: 'agentic_judge', context: logContext, verdict: judgeResult.verdict, violations: judgeResult.violations }));
+    let judgeResult;
+    if (timeLeftMs() <= 0) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_turn_deadline_exceeded', context: logContext, stage: 'judge' }));
+        judgeResult = { verdict: 'PASS', violations: [] }; // ship the draft as-is, out of budget to check it
+    } else {
+        judgeResult = await runJudge(rawReply);
+        console.log(JSON.stringify({ level: judgeResult.verdict === 'PASS' ? 'INFO' : 'WARN', msg: 'agentic_judge', context: logContext, verdict: judgeResult.verdict, violations: judgeResult.violations }));
+    }
 
     // 4. REVISE + RE-JUDGE — up to REVISE_MAX_ROUNDS rounds, stopping early the moment a
     // re-judge PASSes; ships the latest revision regardless if it still REJECTs after the
-    // last round, never looping past this bound.
+    // last round, never looping past this bound. Also stops early once TURN_DEADLINE_MS has
+    // elapsed, shipping the latest draft rather than risk exceeding the FC function's own
+    // timeout (see TURN_DEADLINE_MS comment above runAgenticTurn).
     let latestResult = judgeResult;
     for (let round = 0; round < REVISE_MAX_ROUNDS && latestResult.verdict === 'REJECT'; round++) {
+        if (timeLeftMs() <= 0) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_turn_deadline_exceeded', context: logContext, stage: 'revise', round: round + 1 }));
+            break;
+        }
         budget.revise += 1;
-        const correctionPrompt = `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
+        // A dimension_misattribution violation's free-text detail/hint alone wasn't enough to
+        // reliably fix the error across REVISE rounds in live testing 2026-08-21 (the model kept
+        // reproducing the same wrong causal framing in slightly different words rather than
+        // removing it) — give the rewrite the actual lookup table as a hard constraint instead of
+        // prose to reinterpret, and tell it to delete the offending clause outright rather than
+        // rephrase it.
+        const hasDimensionMisattribution = (latestResult.violations || []).some(v => v.category === 'dimension_misattribution');
+        const dimensionConstraintBlock = hasDimensionMisattribution
+            ? `\n\nCRITICAL CONSTRAINT — a dimension's elevation may ONLY be attributed to the biomarkers actually listed for it below. Do not name, reference, or imply any other biomarker as a cause/driver/factor for a dimension not listed here, even in passing:\n${Object.entries(DIMENSION_BIOMARKERS).map(([dim, keys]) => `- ${dim}: ${keys.join(', ')}`).join('\n')}\nIf a sentence or clause attributes a biomarker to the wrong dimension, delete that sentence/clause entirely rather than rephrasing it — swapping words while keeping the same causal claim does not fix the violation.`
+            : '';
+        const correctionPrompt = `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}${dimensionConstraintBlock}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
         try {
             const retryCompletion = await client.chat.completions.create({
                 model,

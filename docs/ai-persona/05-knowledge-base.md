@@ -23,3 +23,7 @@ If you're doing anything that depends on Nano having curated domain knowledge be
 ## Admin editability
 
 Full CRUD via the admin panel. `status = 'active'` requires a non-null `reviewed_by` — draft/unreviewed entries never reach `getEssentialBlock`/`findRelevantEntries` regardless of persona.
+
+## Real-usage content gap
+
+The 14 rows seeded by the migration (1 essential + 13 optional TCM-gene-variant/nutrition-protocol/longevity-science facts) don't cover what users actually ask about in prod — see [10-knowledge-entries-draft-aeviva.md](10-knowledge-entries-draft-aeviva.md) for ~25 candidate rows drafted from a real sample of 1,470 Viva/aeviva prod chat messages, covering biomarker/sub-age reference questions, food-compatibility rules, TCM practice questions, and several chronic-condition entries that need clinical review before activation. Proposal only — none of it is inserted yet.
