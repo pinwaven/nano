@@ -757,7 +757,7 @@ function _validateAskQuestionsPayload(parsed) {
 // weight/reminder action detection, reply cleanup, and save+notify. Extracted 2026-07-28 so
 // the new async agentic path (handleChatGenerateEvent) and every synchronous caller share one
 // implementation instead of drifting apart over time.
-async function finalizeChatReply({ rawReply, extraValidDates, extraValidValues, llmContext, systemPrompt, cleanHistory, chatMessages, user, user_id, personaType, sandbox, useAgenticLoop, client, model }) {
+async function finalizeChatReply({ rawReply, extraValidDates, extraValidValues, llmContext, systemPrompt, cleanHistory, chatMessages, user, user_id, personaType, sandbox, useAgenticLoop, client, model, intent, message }) {
     // Grounding check: the model can still misstate biomarker figures/BMI/dates/age from
     // conversation history or from raw birth-date/height/weight text riding along in
     // questionnaire_context, even when the correct values are right there in its own system
@@ -808,15 +808,53 @@ Ground truth — test date: ${groundTruth.tested_at || 'unknown'}, values: ${JSO
 Rewrite your previous reply using ONLY these exact values, this exact date, and this exact age. Keep the same language, tone, and structure otherwise.`;
             chatMessages.push({ role: 'assistant', content: rawReply });
             chatMessages.push({ role: 'user', content: correctionPrompt });
+            // TEMPORARY diagnostic logging for a live incident 2026-08-21: this retry sometimes
+            // ships content matching a PREVIOUS unrelated turn instead of a corrected rewrite of
+            // rawReply. Logging the exact message array shape/tail and the raw retry output to
+            // pin the mechanism before deciding on a permanent fix. Remove once root-caused.
+            console.log(JSON.stringify({
+                level: 'WARN', msg: 'grounding_retry_debug_input', user_id,
+                chatMessagesLength: chatMessages.length,
+                chatMessagesTail: chatMessages.slice(-5).map(m => ({ role: m.role, preview: (m.content || '').slice(0, 120) })),
+                rawReplyPreview: rawReply.slice(0, 150),
+            }));
             const retryCompletion = await client.chat.completions.create({
                 model,
                 messages: chatMessages,
                 temperature: 0.2,
             });
             const retryReply = retryCompletion.choices[0].message.content || rawReply;
+            console.log(JSON.stringify({
+                level: 'WARN', msg: 'grounding_retry_debug_output', user_id,
+                retryReplyPreview: retryReply.slice(0, 300),
+            }));
             const retryVerification = verifyBiomarkerGrounding(stripActionJson(retryReply), groundTruth);
             console.log(JSON.stringify({ level: retryVerification.ok ? 'INFO' : 'WARN', msg: 'biomarker_grounding_retry', user_id, ok: retryVerification.ok, mismatches: retryVerification.mismatches }));
-            rawReply = retryReply;
+            // Safety net for a live incident 2026-08-21 (mechanism not yet pinned despite repeated
+            // reproduction attempts with the debug logging above — the retry only reproduced the
+            // failure twice out of five live attempts, so it's a real but stochastic model failure
+            // mode, not something reliably forced): this correction-retry occasionally ships
+            // content that's a near/exact duplicate of the user's own PREVIOUS unrelated turn
+            // instead of a corrected rewrite of rawReply — completely ignoring the current
+            // question while still passing verifyBiomarkerGrounding's own numeric check (since the
+            // duplicated old reply can itself be internally consistent). Comparing against the
+            // immediately-prior assistant turn already in cleanHistory catches this class of
+            // failure directly, regardless of what causes it. A false-positive here just means
+            // keeping the pre-retry draft (accurate topic, imperfect numbers) instead of a
+            // corrected one — strictly better than risking a reply about a different topic
+            // entirely.
+            const prevAssistantReply = [...cleanHistory].reverse().find(m => m.role === 'assistant')?.content || null;
+            const retryReplyTrimmed = retryReply.trim();
+            const isSuspiciousDuplicate = !!prevAssistantReply && (
+                retryReplyTrimmed === prevAssistantReply.trim()
+                || (retryReplyTrimmed.length > 50 && retryReplyTrimmed.slice(0, 50) === prevAssistantReply.trim().slice(0, 50))
+            );
+            if (isSuspiciousDuplicate) {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'grounding_retry_discarded_duplicate', user_id, retryReplyPreview: retryReplyTrimmed.slice(0, 150) }));
+                // rawReply stays as the pre-retry draft — not overwritten.
+            } else {
+                rawReply = retryReply;
+            }
         }
     }
 
@@ -833,8 +871,26 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
 
     // Detect weight-recording action embedded by the LLM
     const weightActionMatch = rawReply.match(/\{"action"\s*:\s*"record_weight"\s*,\s*"value_kg"\s*:\s*([\d.]+)\}/);
-    if (weightActionMatch) {
-        const weightKg = parseFloat(weightActionMatch[1]);
+    // Deterministic fallback for a real incident found 2026-08-21: GENERATE would reliably omit
+    // this tag on a record_action turn once conversation history already contained an earlier
+    // weight-confirmation reply — it imitates that reply's stripped, tag-free appearance in
+    // history (the tag is always removed before saving, by design, for a clean chat log) rather
+    // than the underlying instruction to always attach a fresh one. A prompt-only fix (telling
+    // the model to keep attaching it regardless of history) was tried first and did NOT resolve
+    // this in live testing — the model kept omitting it anyway. Since intent === 'record_action'
+    // already means the classifier judged this message as an explicit personal-data log (not
+    // general weight discussion, which record.js's own prompt separately tells GENERATE to
+    // never tag), a weight number pulled straight from the user's own current message is a safe,
+    // narrowly-scoped fallback here — it never fires for any other intent, and every existing
+    // safety check below (20-300kg bounds, >15kg anomaly warning) still applies to it unchanged.
+    const fallbackWeightKg = (intent === 'record_action' && !weightActionMatch && message && /体重|weight/i.test(message))
+        ? parseFloat((message.match(/(\d{2,3}(?:\.\d+)?)\s*(?:公斤|千克|kg)/i) || [])[1])
+        : null;
+    if (intent === 'record_action' && !weightActionMatch) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'record_action_no_weight_tag', user_id, rawReply: rawReply.slice(0, 200), fallbackWeightKg: fallbackWeightKg ?? null }));
+    }
+    if (weightActionMatch || (fallbackWeightKg != null && !isNaN(fallbackWeightKg))) {
+        const weightKg = weightActionMatch ? parseFloat(weightActionMatch[1]) : fallbackWeightKg;
         const isZh = (user.language || 'zh') === 'zh';
 
         if (!isNaN(weightKg) && weightKg >= 20 && weightKg <= 300) {
@@ -1492,7 +1548,7 @@ SQL must be a SELECT statement. $1 is always user_id.`,
 
             return await finalizeChatReply({
                 rawReply, extraValidDates, extraValidValues, llmContext, systemPrompt, cleanHistory,
-                chatMessages, user, user_id, personaType, sandbox, useAgenticLoop, client, model,
+                chatMessages, user, user_id, personaType, sandbox, useAgenticLoop, client, model, intent, message,
             });
         } catch (err) {
             console.error('LLM Chat Error:', err);
@@ -1771,7 +1827,7 @@ async function handleChatGenerateEvent(payload) {
                 extraValidDates: agenticResult.extraValidDates,
                 extraValidValues: agenticResult.extraValidValues,
                 llmContext, systemPrompt, cleanHistory, chatMessages,
-                user, user_id, personaType, sandbox: false, useAgenticLoop: true, client, model,
+                user, user_id, personaType, sandbox: false, useAgenticLoop: true, client, model, intent, message,
             });
         }
         await markDone();

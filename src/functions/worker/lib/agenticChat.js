@@ -369,7 +369,21 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         const dimensionConstraintBlock = hasDimensionMisattribution
             ? `\n\nCRITICAL CONSTRAINT — a dimension's elevation may ONLY be attributed to the biomarkers actually listed for it below. Do not name, reference, or imply any other biomarker as a cause/driver/factor for a dimension not listed here, even in passing:\n${Object.entries(DIMENSION_BIOMARKERS).map(([dim, keys]) => `- ${dim}: ${keys.join(', ')}`).join('\n')}\nIf a sentence or clause attributes a biomarker to the wrong dimension, delete that sentence/clause entirely rather than rephrasing it — swapping words while keeping the same causal claim does not fix the violation.`
             : '';
-        const correctionPrompt = `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}${dimensionConstraintBlock}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
+        // Found via a live incident 2026-08-21: a record_action REVISE round correctly dropped
+        // an unsupported clinical claim JUDGE flagged, but ALSO silently dropped the trailing
+        // {"action":"record_weight",...} JSON tag along with it (the correction_hint only
+        // quoted the human-readable confirmation text, not the tag) — the rewritten reply still
+        // said "✅ 已记录您的体重" but finalizeChatReply's downstream regex had nothing left to
+        // match, so the weight was NEVER actually written to the database despite the confident
+        // success message. None of the flagged violations even mentioned the action tag; REVISE
+        // just didn't know to preserve it. Detect any of the three flat action tags in the
+        // CURRENT draft before rewriting and require it verbatim in the output, independent of
+        // whatever violations are being fixed this round.
+        const actionTagMatch = rawReply.match(/\{"action"\s*:\s*"(record_weight|set_reminder|remember_fact)"[^}]*\}/);
+        const actionPreserveBlock = actionTagMatch
+            ? `\n\nCRITICAL: your rewritten reply MUST still end with this exact JSON line, verbatim and unchanged: ${actionTagMatch[0]}\nDo not remove, reword, or omit it even though none of the violations above mention it — it is a separate control signal the system depends on to actually carry out what the user asked (e.g. recording a value), and silently dropping it while your reply still claims success would fail the user's request without them knowing.`
+            : '';
+        const correctionPrompt = `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}${dimensionConstraintBlock}${actionPreserveBlock}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
         try {
             const retryCompletion = await client.chat.completions.create({
                 model,
