@@ -1105,6 +1105,10 @@ Component({
     bioAgeHistory: [],
     bioAgeChartW: 0,
     bioAgeTrendOpen: false,
+    subAgeHistory: {},
+    subAgeChartOpen: false,
+    subAgeChartKey: '',
+    subAgeChartW: 300,
     flashSubAge: '',
     healthConditionsList: [],
     hasConditionsData: false,
@@ -1309,6 +1313,17 @@ Component({
           }))
         const bioAgeChartW = Math.round(wx.getSystemInfoSync().windowWidth * 330 / 750)
 
+        const subAgeHistory = {}
+        for (const key of SUB_AGE_KEYS) {
+          subAgeHistory[key] = [..._baDateMap.values()]
+            .filter(r => r.data?.bioage_profile?.SubAges?.[key] != null)
+            .sort((a, b) => (a.tested_at < b.tested_at ? -1 : 1))
+            .map(r => ({
+              date: (r.tested_at || '').substring(0, 10),
+              value: Number(r.data.bioage_profile.SubAges[key]),
+            }))
+        }
+
         const rawBioAge = latestAnalyzed?.bio_age ?? (kinoRecords.length > 0 ? kinoRecords[kinoRecords.length - 1]?.bio_age : null) ?? user?.bio_age
         const bAge = rawBioAge ? Number(rawBioAge).toFixed(1) : null
 
@@ -1332,7 +1347,7 @@ Component({
           bAgeColor: bioAgeColor(rawBioAge, cAge),
           recordCount: kinoRecords.length,
           hasBm: latestBm !== null,
-          bioAgeHistory, bioAgeChartW,
+          bioAgeHistory, bioAgeChartW, subAgeHistory,
         }
 
         if ((mode === 'self' || mode === 'coach') && user) {
@@ -1475,7 +1490,53 @@ Component({
 
 
 
-    _drawBioAgeChart() {
+    // Shared by _drawBioAgeChart/_drawGenericChart: a vertical crosshair line, highlighted
+    // point(s), and a small label bubble that flips to the left of the line near the right
+    // edge so it never clips off-canvas.
+    _drawCrosshairOverlay(ctx, c, { W, pT, plotH, x, dots, labelLines }) {
+      ctx.beginPath()
+      ctx.setStrokeStyle(c.textMuted45)
+      ctx.setLineWidth(1)
+      ctx.moveTo(x, pT); ctx.lineTo(x, pT + plotH)
+      ctx.stroke()
+
+      dots.forEach(d => {
+        ctx.beginPath()
+        ctx.setFillStyle(d.color)
+        ctx.setStrokeStyle(c.dotRing)
+        ctx.setLineWidth(1.5)
+        ctx.arc(d.x, d.y, 4.5, 0, Math.PI * 2)
+        ctx.fill(); ctx.stroke()
+      })
+
+      // Per-char width estimate (no ctx.measureText — untested on legacy canvas in this
+      // codebase); CJK glyphs run roughly font-size-wide vs. ~0.55x for Latin/digits, so
+      // labels mixing Chinese sub-age names with numbers (bioAge chart) size correctly too.
+      const textWidth = s => [...String(s)].reduce((w, ch) => w + (ch.charCodeAt(0) > 255 ? 11 : 6.2), 0)
+      const lineH = 14
+      const boxH = labelLines.length * lineH + 10
+      const boxW = Math.max(...labelLines.map(textWidth)) + 16
+      const flip = x > W * 0.7
+      let boxX = flip ? x - boxW - 8 : x + 8
+      boxX = Math.max(4, Math.min(W - boxW - 4, boxX))
+      const boxY = Math.max(pT, 4)
+
+      ctx.beginPath()
+      ctx.setFillStyle(c.bg)
+      ctx.setStrokeStyle(c.gridLine)
+      ctx.setLineWidth(1)
+      ctx.rect(boxX, boxY, boxW, boxH)
+      ctx.fill(); ctx.stroke()
+
+      ctx.setTextAlign('left')
+      ctx.setFontSize(11)
+      labelLines.forEach((line, i) => {
+        ctx.setFillStyle(i === 0 ? c.textMuted55 : c.textPrimary)
+        ctx.fillText(line, boxX + 8, boxY + 16 + i * lineH)
+      })
+    },
+
+    _drawBioAgeChart(crosshairIdx = null) {
       const { bioAgeHistory, bioAgeChartW, bAge, cAge, bAgeColor, t } = this.data
       if (!bioAgeChartW) return
       const c = this._chartPalette()
@@ -1536,7 +1597,10 @@ Component({
         rrPath(1, cr);     ctx.setStrokeStyle(c.glow60); ctx.setLineWidth(1.5); ctx.stroke()
       }
 
-      if (bioAgeHistory.length < 2) { drawGlowBorder(); ctx.draw(); return }
+      if (bioAgeHistory.length < 2) {
+        delete (this._chartLayouts || {})['dt-bioage-chart']
+        drawGlowBorder(); ctx.draw(); return
+      }
 
       const bioAges = bioAgeHistory.map(r => r.bioAge)
       const allVals = [...bioAges]
@@ -1605,6 +1669,25 @@ Component({
       ctx.fillText(minV, pL - 4, pT + plotH + 4)
 
       drawGlowBorder()
+
+      if (crosshairIdx != null) {
+        const idx = Math.max(0, Math.min(bioAgeHistory.length - 1, crosshairIdx))
+        const r = bioAgeHistory[idx]
+        const dots = [{ x: pts[idx].x, y: pts[idx].y, color: c.accent }]
+        const labelLines = [r.date, `${t.bioAge || 'BioAge'}: ${r.bioAge.toFixed(1)}`]
+        if (r.chronoAge != null) {
+          dots.push({ x: pts[idx].x, y: toY(r.chronoAge), color: c.textMuted75 })
+          labelLines.push(`${t.chronoAge || 'ChronoAge'}: ${Number(r.chronoAge).toFixed(1)}`)
+        }
+        this._drawCrosshairOverlay(ctx, c, { W, pT, plotH, x: pts[idx].x, dots, labelLines })
+      }
+
+      this._chartLayouts = this._chartLayouts || {}
+      this._chartLayouts['dt-bioage-chart'] = {
+        pL, plotW, len: bioAgeHistory.length,
+        redraw: i => this._drawBioAgeChart(i),
+      }
+
       ctx.draw()
     },
 
@@ -1667,6 +1750,7 @@ Component({
 
     toggleBioAgeTrend() {
       const open = !this.data.bioAgeTrendOpen
+      if (this._lastCrosshairIdx) delete this._lastCrosshairIdx['dt-bioage-chart']
       if (!open) {
         const ctx = wx.createCanvasContext('dt-bioage-chart', this)
         ctx.clearRect(0, 0, 9999, 9999)
@@ -1674,7 +1758,10 @@ Component({
       }
       this.setData({ bioAgeTrendOpen: open }, () => {
         if (open && this.data.bioAgeHistory.length > 1) {
-          setTimeout(() => this._drawBioAgeChart(), 50)
+          setTimeout(() => {
+            this._drawBioAgeChart()
+            this._cacheChartRect('dt-bioage-chart')
+          }, 50)
         }
       })
     },
@@ -1703,6 +1790,7 @@ Component({
 
     closeBioAgeTrend() {
       if (this.data.bioAgeTrendOpen) {
+        if (this._lastCrosshairIdx) delete this._lastCrosshairIdx['dt-bioage-chart']
         const ctx = wx.createCanvasContext('dt-bioage-chart', this)
         ctx.clearRect(0, 0, 9999, 9999)
         ctx.draw()
@@ -1771,7 +1859,8 @@ Component({
       } catch (e) { /* non-critical */ }
     },
 
-    _drawGenericChart(canvasId, history, valKey, unit, color) {
+    _drawGenericChart(canvasId, history, valKey, unit, color, crosshairIdx = null) {
+      if (!history.length) { delete (this._chartLayouts || {})[canvasId]; return }
       const c = this._chartPalette()
       const W = wx.getSystemInfoSync().windowWidth - 72
       const H = 200, pL = 44, pR = 16, pT = 20, pB = 44
@@ -1814,6 +1903,24 @@ Component({
       pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke() })
       ctx.setStrokeStyle(c.glow22); ctx.setLineWidth(1)
       ctx.beginPath(); ctx.moveTo(pL, pT); ctx.lineTo(pL, pT + plotH); ctx.lineTo(pL + plotW, pT + plotH); ctx.stroke()
+
+      if (crosshairIdx != null) {
+        const idx = Math.max(0, Math.min(history.length - 1, crosshairIdx))
+        const val = history[idx][valKey]
+        const valStr = Number.isInteger(val) ? String(val) : val.toFixed(1)
+        this._drawCrosshairOverlay(ctx, c, {
+          W, pT, plotH, x: pts[idx].x,
+          dots: [{ x: pts[idx].x, y: pts[idx].y, color }],
+          labelLines: [history[idx].date, unit ? `${valStr} ${unit}` : valStr],
+        })
+      }
+
+      this._chartLayouts = this._chartLayouts || {}
+      this._chartLayouts[canvasId] = {
+        pL, plotW, len: history.length,
+        redraw: i => this._drawGenericChart(canvasId, history, valKey, unit, color, i),
+      }
+
       ctx.draw()
     },
 
@@ -1904,6 +2011,57 @@ Component({
       })
     },
     closeGlucoseChart() { this.setData({ glucoseChartOpen: false }) },
+
+    openSubAgeChart(e) {
+      const key = e.currentTarget.dataset.key
+      const history = this.data.subAgeHistory[key] || []
+      if (!key || history.length < 2) return
+      if (this._lastCrosshairIdx) delete this._lastCrosshairIdx['uh-subage-chart']
+      const meta = SUB_AGE_META.find(m => m.key === key)
+      const W = wx.getSystemInfoSync().windowWidth - 72
+      this.setData({ subAgeChartOpen: true, subAgeChartKey: key, subAgeChartW: W }, () => {
+        this._drawGenericChart('uh-subage-chart', history, 'value', '', meta ? meta.color : '#6375EC')
+        this._cacheChartRect('uh-subage-chart')
+      })
+    },
+    closeSubAgeChart() { this.setData({ subAgeChartOpen: false }) },
+
+    // Shared touch handlers for the crosshair — any canvas that wants the drag-to-inspect
+    // line just needs data-canvas-id + catchtouchstart/move/end bound to these two.
+    _onChartTouch(e) {
+      const canvasId = e.currentTarget.dataset.canvasId
+      const layout = (this._chartLayouts || {})[canvasId]
+      const touch = e.touches && e.touches[0]
+      if (!layout || !touch) return
+      let x = touch.x
+      if (x == null || Number.isNaN(x)) {
+        const rect = (this._chartRects || {})[canvasId]
+        x = rect ? touch.clientX - rect.left : layout.pL
+      }
+      x = Math.max(layout.pL, Math.min(layout.pL + layout.plotW, x))
+      const idx = Math.round((x - layout.pL) / layout.plotW * Math.max(layout.len - 1, 1))
+      this._lastCrosshairIdx = this._lastCrosshairIdx || {}
+      if (this._lastCrosshairIdx[canvasId] === idx) return
+      this._lastCrosshairIdx[canvasId] = idx
+      layout.redraw(idx)
+    },
+
+    _onChartTouchEnd(e) {
+      const canvasId = e.currentTarget.dataset.canvasId
+      const layout = (this._chartLayouts || {})[canvasId]
+      if (this._lastCrosshairIdx) delete this._lastCrosshairIdx[canvasId]
+      if (layout) layout.redraw(null)
+    },
+
+    // Caches the canvas's page-relative bounding rect as a fallback for touch coordinates,
+    // in case the legacy-canvas x/y-relative-to-canvas behavior doesn't hold on a given device.
+    _cacheChartRect(canvasId) {
+      wx.createSelectorQuery().in(this).select('#' + canvasId).boundingClientRect(rect => {
+        if (!rect) return
+        this._chartRects = this._chartRects || {}
+        this._chartRects[canvasId] = rect
+      }).exec()
+    },
 
     onOpenAvatarPicker() {
       if (this._avatarPillTimer) { clearTimeout(this._avatarPillTimer); this._avatarPillTimer = null }
@@ -2026,6 +2184,12 @@ Component({
         if (height !== '' && height != null) bio_data_update.height = Number(height)
         if (weight !== '' && weight != null) bio_data_update.weight = Number(weight)
 
+        // Deliberately omits phone/email/language/coach_id — this form never edits them,
+        // and the backend (handlePutUser) treats an omitted key as "leave untouched," not
+        // as "clear it." Do not add them here just to "be complete": sourcing them from
+        // `user` (self mode) or `properties.user` (coach mode) risks resending a stale/
+        // stripped cached value and silently wiping a verified phone — this is exactly how
+        // a real incident happened (saving an unrelated health-profile edit nulled phone).
         await this._req(`${BASE}/api/users/${user.user_id}`, 'PUT', {
           nickname, gender, birth_date, bio_data: bio_data_update,
         })

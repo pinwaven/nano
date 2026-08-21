@@ -183,11 +183,16 @@ async function handleLabImportEvent(data, fetchTagDerivationContext) {
     const persistentSeed = `${user_id}:w${weekBucket}`;
 
     // Fill missing Kino core values via BiomarkerEstimator
-    const estimator = new BiomarkerEstimator(age, partialBiomarkers, { Weight: bioData.weight, Height: bioData.height }, tags, { seed, persistentSeed });
+    const previousValues = tagContext.history[0]?.biomarkers || {};
+    const estimator = new BiomarkerEstimator(age, partialBiomarkers, { Weight: bioData.weight, Height: bioData.height }, tags, { seed, persistentSeed, previousValues });
     const estimationReport = estimator.generateReport();
 
     const bioAgeCalc = new BioAgeCalculator();
-    const bioAgeReport = bioAgeCalc.calculateBioAge(age, estimationReport.BiomarkerValues);
+    const prevScan = tagContext.history[0];
+    const previousBioAge = prevScan && prevScan.bioage_profile
+        ? { BioAge: prevScan.bioage_profile.BioAge, SubAges: prevScan.bioage_profile.SubAges, daysSincePrevious: (Date.now() - new Date(prevScan.tested_at)) / (24 * 60 * 60 * 1000) }
+        : null;
+    const bioAgeReport = bioAgeCalc.calculateBioAge(age, estimationReport.BiomarkerValues, {}, previousBioAge);
 
     const finalData = {
         actual:         partialBiomarkers,
@@ -204,7 +209,7 @@ async function handleLabImportEvent(data, fetchTagDerivationContext) {
         [user_id, JSON.stringify(finalData), bioAgeReport.BioAge]
     );
 
-    await updateHealthTwin(user_id);
+    await updateHealthTwin(user_id, pool);
 
     console.log(JSON.stringify({ level: 'INFO', msg: 'Lab import BioAge calculated', user_id, bio_age: bioAgeReport.BioAge, report_id }));
 }

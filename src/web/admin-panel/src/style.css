@@ -320,8 +320,7 @@ body {
 .sortable-th:hover { background: #f8fafc; }
 
 /* ── Row actions ── */
-.row-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.15s; }
-tr:hover .row-actions { opacity: 1; }
+.row-actions { display: flex; gap: 4px; }
 
 .icon-btn {
   display: inline-flex;

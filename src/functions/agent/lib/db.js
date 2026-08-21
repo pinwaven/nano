@@ -6,7 +6,9 @@ if (process.env.DATABASE_URL) {
     const isLocal = (process.env.DATABASE_URL || '').includes('localhost');
     pool = new Pool({
         connectionString: process.env.DATABASE_URL,
-        ssl: isLocal || process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
+        ssl: isLocal || process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
+        max: 5,
+        idleTimeoutMillis: 10000
     });
 } else {
     pool = new Pool({
@@ -15,7 +17,9 @@ if (process.env.DATABASE_URL) {
         host: process.env.DB_HOST,
         database: process.env.DB_NAME,
         port: 5432,
-        ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
+        ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
+        max: 5,
+        idleTimeoutMillis: 10000
     });
 }
 

@@ -2,6 +2,7 @@ const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
+const { getScopeGuardBlock } = require('../../chat/scopeGuard');
 
 module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, user_facts, now_iso }) => {
   const name = user_profile.nickname || '你';
@@ -29,5 +30,7 @@ ${planSnippet ? '\n' + planSnippet : ''}
 - 如果话题转向健康，告知用户随时可以深入查看其数据。
 - 如果用户询问方案或进展，自然地提及其当前方案。
 - 不要在结尾提问，除非用户的话明显需要澄清才能回答。
-- 全程用简体中文回复。`;
+- 全程用简体中文回复。
+
+${getScopeGuardBlock()}`;
 };

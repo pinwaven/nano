@@ -1,0 +1,15 @@
+-- nutrition_schedules.plan_id has an ON DELETE CASCADE FK from nutrition_plans(id) but no index of
+-- its own. Deleting nutrition_plans rows (e.g. the periodic supersede-and-reformulate path in
+-- handlers/dots.js) forces Postgres to do an index-less scan of nutrition_schedules once per
+-- deleted parent row to enforce the cascade. Confirmed live 2026-08-19: cleaning up ~37.7K stray
+-- superseded plans (from the nano-dispatcher-test EventBridge-source-collision incident) against a
+-- ~2.1M-row nutrition_schedules table took 2.5+ hours and had to be cancelled before this index was
+-- added, after which the same cleanup completed in seconds.
+--
+-- Applied directly to prod as CREATE INDEX CONCURRENTLY during that same incident (to avoid
+-- blocking writes on a large live table) rather than through this file — scripts/migrate.js wraps
+-- every migration in BEGIN/COMMIT, and CONCURRENTLY cannot run inside a transaction block. This
+-- plain (non-concurrent) form is the transaction-safe equivalent for `npm run migrate:dev`; prod
+-- should be baselined (`node scripts/migrate.js --env prod --baseline`) rather than re-run, since
+-- the index already exists there.
+CREATE INDEX IF NOT EXISTS idx_nutrition_schedules_plan_id ON nutrition_schedules(plan_id);

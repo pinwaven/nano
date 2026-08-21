@@ -240,7 +240,7 @@ async function handleGetHealthPlanDetail(id, openid) {
         );
         if (planRes.rows.length === 0) return { statusCode: 404, success: false, error: 'Plan not found' };
 
-        const [checkinsRes, milestonesRes, remindersRes] = await Promise.all([
+        const [checkinsRes, milestonesRes, remindersRes, nutritionPlanRes] = await Promise.all([
             pool.query(
                 `SELECT * FROM health_plan_checkins WHERE plan_id=$1 ORDER BY checkin_date DESC LIMIT 30`, [id]
             ),
@@ -252,13 +252,54 @@ async function handleGetHealthPlanDetail(id, openid) {
                  WHERE plan_id=$1 AND status != 'sent' AND status != 'cancelled'
                  ORDER BY scheduled_for ASC`, [id]
             ),
+            // The currently-active dot formulation shaped by THIS focus (if any) — lets the
+            // miniapp show "your formulation for this focus is ready" and gate the purchase CTA
+            // (see §1/§2 of the focus-formulation plan). A joined health_plans row with no
+            // matching active nutrition_plans row just means Formulate Dots hasn't been run
+            // since joining — a normal, expected state, not an error.
+            pool.query(
+                `SELECT id, start_date FROM nutrition_plans
+                 WHERE user_id=$1 AND status='active' AND (primary_health_plan_id=$2 OR secondary_health_plan_id=$2)
+                 LIMIT 1`,
+                [openid, id]
+            ),
         ]);
+
+        let formulation = null;
+        if (nutritionPlanRes.rows.length > 0) {
+            const np = nutritionPlanRes.rows[0];
+            const scheduleRes = await pool.query(
+                `SELECT slot_name, recipe FROM nutrition_schedules WHERE plan_id=$1 AND scheduled_date=$2`,
+                [np.id, np.start_date]
+            );
+            const morningDots = scheduleRes.rows.find(r => r.slot_name === 'morning_cup')?.recipe?.dots || {};
+            const eveningDots = scheduleRes.rows.find(r => r.slot_name === 'evening_cup')?.recipe?.dots || {};
+            const allKeys = new Set([...Object.keys(morningDots), ...Object.keys(eveningDots)]);
+            if (allKeys.size > 0) {
+                const dotsRes = await pool.query('SELECT key_name, name, name_zh FROM dots WHERE key_name = ANY($1)', [[...allKeys]]);
+                const dotsByKey = new Map(dotsRes.rows.map(d => [d.key_name, d]));
+                formulation = {
+                    nutrition_plan_id: np.id,
+                    dot_breakdown: [...allKeys].map(key => {
+                        const dot = dotsByKey.get(key);
+                        const morning_count = morningDots[key] || 0;
+                        const evening_count = eveningDots[key] || 0;
+                        return {
+                            key_name: key, name: dot?.name || key, name_zh: dot?.name_zh || key,
+                            morning_count, evening_count, total_count: morning_count + evening_count,
+                        };
+                    }).filter(d => d.total_count > 0),
+                };
+            }
+        }
+
         return {
             success: true,
             plan: planRes.rows[0],
             checkins: checkinsRes.rows,
             milestones: milestonesRes.rows,
             reminders: remindersRes.rows,
+            formulation,
         };
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetHealthPlanDetail', error: err.message }));

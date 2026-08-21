@@ -2,6 +2,7 @@ const app = getApp()
 const { BASE, VERSION, WX_VERSION, IS_DEV } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
 const { resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
+const { maskPhone } = require('../../utils/phone.js')
 const speechPlugin = requirePlugin('WechatSI')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
@@ -82,6 +83,10 @@ const T = {
     plansConflict: '该槽位已有方案，是否替换？',
     plansConfirmAbandon: '确认放弃此方案？放弃后可重新加入。',
     plansConfirmSwitch: '确认切换主/辅方案？',
+    formulationReadyTitle: '您的专属方案已生成',
+    formulationNotReadyTitle: '尚未生成本方案的原粒配方',
+    formulationNotReadyHint: '在聊天工具箱中点击"配置原粒"，即可根据本方案生成专属配方。',
+    buyFormulationBtn: '购买此配方',
     remindersTitle: '即将提醒',
     remindersEmpty: '暂无即将到来的提醒',
     reminderSourceCoach: '教练',
@@ -123,6 +128,12 @@ const T = {
     male: '男', female: '女',
     selectBirthday: '选择出生日期',
     dotsTitle: '营养方案',
+    neoBindTitle: '请先绑定 Neo 分配器以管理原粒盒',
+    neoBindBtn: '绑定 Neo 设备',
+    neoNotFoundMsg: '附近未找到 Neo 设备',
+    orderDotsTitle: '未绑定 Neo 分配器，可直接订购原粒胶囊',
+    orderDotsDetail: '默认 4 周装 · 56 粒 · 每日 2 粒',
+    orderDotsBtn: '前往商城订购',
     cartridgeTitle: '原粒盒',
     noCartridges: '未插入原粒盒。请将原粒盒插入分配器。',
     simCartTitle: '选择套装',
@@ -196,6 +207,18 @@ const T = {
     webAdminMenu: '网页后台',
     kinoSimMenu: 'Kino 模拟器',
     referralMenu: '邀请好友',
+    phonesMenu: '手机号管理',
+    vivaRedeemMenu: '兑换订阅码',
+    vivaRedeemTitle: '兑换 Viva 订阅码',
+    vivaRedeemPlaceholder: '请输入订阅激活码',
+    vivaRedeemBtn: '兑换',
+    vivaRedeemRequired: '请输入激活码',
+    vivaRedeemInvalid: '激活码无效或已失效',
+    vivaRedeemAlreadyUsed: '此激活码已被使用',
+    vivaRedeemExpired: '此激活码已过期',
+    vivaRedeemSuccess: '兑换成功！',
+    vivaSubscriptionExpiredBanner: 'Viva 订阅已过期，续订后即可继续对话',
+    vivaSubscriptionRenewBtn: '续订',
     kinoSimPassTitle: '输入密码',
     kinoSimPassError: '密码错误',
     kinoSimTitle: 'KINO 模拟器',
@@ -286,6 +309,10 @@ const T = {
     plansConflict: 'That slot is occupied. Replace existing plan?',
     plansConfirmAbandon: 'Abandon this plan? You can rejoin anytime.',
     plansConfirmSwitch: 'Switch primary/secondary?',
+    formulationReadyTitle: 'Your personalized formulation is ready',
+    formulationNotReadyTitle: "You haven't formulated dots for this focus yet",
+    formulationNotReadyHint: 'Tap "Formulate Dots" in the chat toolbox to generate a personalized recipe for this focus.',
+    buyFormulationBtn: 'Buy This Formulation',
     remindersTitle: 'Upcoming Reminders',
     remindersEmpty: 'No upcoming reminders',
     reminderSourceCoach: 'Coach',
@@ -327,6 +354,12 @@ const T = {
     male: 'Male', female: 'Female',
     selectBirthday: 'Select Birthday',
     dotsTitle: 'Nutrition Plan',
+    neoBindTitle: 'Bind a Neo dispenser to manage your cartridges',
+    neoBindBtn: 'Bind Neo Device',
+    neoNotFoundMsg: 'No Neo device found nearby',
+    orderDotsTitle: 'No Neo dispenser bound — order pre-mixed capsules instead',
+    orderDotsDetail: 'Default: 4-week pack · 56 capsules · 2/day',
+    orderDotsBtn: 'Order in the Store',
     cartridgeTitle: 'Cartridges',
     noCartridges: 'No cartridges inserted. Insert cartridges into your dispenser.',
     simCartTitle: 'Choose a Set',
@@ -400,6 +433,18 @@ const T = {
     webAdminMenu: 'Web Admin',
     kinoSimMenu: 'Kino Simulator',
     referralMenu: 'Invite Friends',
+    phonesMenu: 'Manage Phone Numbers',
+    vivaRedeemMenu: 'Redeem Subscription Code',
+    vivaRedeemTitle: 'Redeem Viva Subscription Code',
+    vivaRedeemPlaceholder: 'Enter your subscription code',
+    vivaRedeemBtn: 'Redeem',
+    vivaRedeemRequired: 'Please enter a code',
+    vivaRedeemInvalid: 'Invalid or expired code',
+    vivaRedeemAlreadyUsed: 'This code has already been used',
+    vivaRedeemExpired: 'This code has expired',
+    vivaRedeemSuccess: 'Redeemed successfully!',
+    vivaSubscriptionExpiredBanner: 'Your Viva subscription has expired. Renew to keep chatting.',
+    vivaSubscriptionRenewBtn: 'Renew',
     kinoSimPassTitle: 'Enter Passcode',
     kinoSimPassError: 'Incorrect passcode',
     kinoSimTitle: 'KINO SIMULATOR',
@@ -576,12 +621,12 @@ function localISODate(d) {
   return `${y}-${m}-${day}`
 }
 
-function getWeekRange() {
+function getWeekRange(offsetWeeks = 0) {
   const now = new Date()
   const dow = now.getDay()
   const daysFromMonday = dow === 0 ? 6 : dow - 1
   const monday = new Date(now)
-  monday.setDate(now.getDate() - daysFromMonday)
+  monday.setDate(now.getDate() - daysFromMonday + offsetWeeks * 7)
   const sunday = new Date(monday)
   sunday.setDate(monday.getDate() + 6)
   return { monday: localISODate(monday), sunday: localISODate(sunday) }
@@ -865,6 +910,17 @@ Page({
 
     // Channel
     channel: null,
+    isAeviva: false,
+
+    // Viva subscription (see _loadVivaSubscriptionStatus)
+    personaType: 'nano',
+    vivaSubscriptionExpiresAt: null,
+    vivaSubscriptionExpiresAtDisplay: '',
+    vivaSubscriptionExpired: false,
+    vivaRedeemSheetOpen: false,
+    vivaRedeemCode: '',
+    vivaRedeemBusy: false,
+    vivaRedeemError: '',
 
     // Role menu flags
     menuOpen: false,
@@ -898,6 +954,9 @@ Page({
     cartridges: [],
     cartridgesLoading: true,
     weekLabel: '',
+    dotsWeekOffset: 0,
+    hasPrevWeek: false,
+    hasNextWeek: false,
     simCartOpen: false,
     simCartLoading: false,
     simCartSets: [],
@@ -923,7 +982,8 @@ Page({
     planDetailOpen: false,
     planDetailData: null,
     planSubTab: 'overview',
-    plansDotsSubTab: 'plans',
+    plansDotsSubTab: 'dots',
+    neoBound: false,
     learnSubTab: 'academy',
     planBrowseOpen: false,
     events: [],
@@ -1028,16 +1088,17 @@ Page({
     const t = { ...T[lang], subAgeLabels: buildSubAgeLabels(T[lang].subAgeLabels, channelOverrides, lang) }
     const sandboxMode = !!app.globalData.sandboxMode
     const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', user.nickname || '—') : ''
-    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
+    const isAeviva = channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china'
+    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, isAeviva, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
     if (isGuest) {
       this.setData({ messages: [{ id: 'init', role: 'ai', content: T[lang].initMsg }], obStep: null, storeLoading: true })
       this._loadGuestStore(lang)
       return
     }
     this._initChat(user, lang)
+    this._loadVivaSubscriptionStatus(user)
     this._loadDots(user, lang)
     this._loadCartridges(user, lang)
-    const isAeviva = channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china'
     // Aeviva's GCN store URL is minted lazily in switchTab (wvt is one-time/60s-TTL —
     // minting it here on page load, before the user has even looked at Store, risks it
     // being stale by the time they tap the tab).
@@ -1058,6 +1119,12 @@ Page({
       this.selectComponent('#health-comp')?.refresh()
       this._startPolling(user)
       this._loadCreditBalance(user)
+      // Re-checks persona_type + subscription expiry on every foreground/return-to-page —
+      // not just onLoad — so (a) a subscription that lapsed while the app sat backgrounded
+      // clears any stale "active" state, and (b) returning from the GCN store webview after
+      // a "buy for myself" auto-redeem (handleBuyVivaSubscription) immediately reflects the
+      // new expiry instead of waiting for a full app relaunch.
+      this._loadVivaSubscriptionStatus(user)
       // Check for questionnaires assigned while the user was away
       if (obStep === 'done') this._checkForPendingQuestionnaire()
 
@@ -1137,42 +1204,60 @@ Page({
 
   // ── Tab navigation ──────────────────────────────────────────────────────────
 
+  // Shared by the Store tab and the Dots subtab's "Order Dots" button — both need the same
+  // phone-verification gate before minting a wvt nobody can use (handleNanoSSO hard-requires
+  // a verified phone and 403s otherwise, dead-ending on GCN's login page with no explanation).
+  // Checked fresh against the server rather than trusting the cached flag: a returning session
+  // restores `user.phone_verified` straight from local storage (app.js onLaunch) and never
+  // re-syncs it against the server, so a pre-migration account whose cache still says `true`
+  // from before phone verification existed would otherwise sail past this gate.
+  async _openAevivaStoreGated(context = null) {
+    const verified = await this._checkPhoneVerified()
+    if (!verified) {
+      const { lang } = this.data
+      wx.showModal({
+        title: lang === 'zh' ? '需要验证手机号' : 'Phone verification needed',
+        content: lang === 'zh'
+          ? '进入商城前，请先验证您的手机号码'
+          : 'Please verify your phone number before entering the store.',
+        confirmText: lang === 'zh' ? '去验证' : 'Verify',
+        cancelText: lang === 'zh' ? '取消' : 'Cancel',
+        success: (r) => {
+          if (r.confirm) wx.navigateTo({ url: '/pages/verify-phone/verify-phone' })
+        },
+      })
+      return
+    }
+    this._openAevivaStore(context)
+  },
+
+  handleOrderDots() {
+    this._openAevivaStoreGated()
+  },
+
+  // "Buy This Formulation" CTA in the plan-detail overlay — only rendered (see main.wxml) once
+  // planDetailData.formulation is populated, i.e. a real committed nutrition_plans row exists
+  // for this focus. Passes the specific plan id through the webview-token bridge so GCN's
+  // checkout can validate/price against the exact recipe rather than a placeholder.
+  handleBuyFormulation() {
+    const { planDetailData, isAeviva } = this.data
+    const nutritionPlanId = planDetailData?.formulation?.nutrition_plan_id
+    if (!isAeviva || !nutritionPlanId) return
+    this._openAevivaStoreGated({ intent: 'buy_custom_formulation', nutrition_plan_id: nutritionPlanId })
+  },
+
   async switchTab(e) {
     const tab = e.currentTarget.dataset.tab
     if (tab === 'store' && !this.data.isGuest) {
       const { channel } = this.data
       if (channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china') {
-        // The GCN handoff (handleNanoSSO) hard-requires a verified phone and 403s
-        // otherwise — opening the webview anyway just dead-ends on GCN's login page with
-        // no explanation. Catch it here instead, before minting a wvt nobody can use.
-        // Checked fresh against the server rather than trusting the cached flag: a
-        // returning session restores `user.phone_verified` straight from local storage
-        // (app.js onLaunch) and never re-syncs it against the server, so a pre-migration
-        // account whose cache still says `true` from before phone verification existed
-        // would otherwise sail past this gate and land on GCN's dead end anyway.
-        const verified = await this._checkPhoneVerified()
-        if (!verified) {
-          const { lang } = this.data
-          wx.showModal({
-            title: lang === 'zh' ? '需要验证手机号' : 'Phone verification needed',
-            content: lang === 'zh'
-              ? '进入商城前，请先验证您的手机号码'
-              : 'Please verify your phone number before entering the store.',
-            confirmText: lang === 'zh' ? '去验证' : 'Verify',
-            cancelText: lang === 'zh' ? '取消' : 'Cancel',
-            success: (r) => {
-              if (r.confirm) wx.navigateTo({ url: '/pages/verify-phone/verify-phone' })
-            },
-          })
-          return
-        }
         // Aeviva's GCN store opens as a separate navigated page (pages/appview — its own
         // header/back button, a plain page layout) rather than an inline tab section:
         // <web-view> doesn't reliably support any overlay button (cover-view is only
         // documented for map/video/canvas/camera, not web-view) when embedded inside this
         // page's absolutely-positioned tab-switching containers — confirmed by testing,
         // not just theory. Don't change `tab` at all; stay on whatever tab was active.
-        this._openAevivaStore()
+        await this._openAevivaStoreGated()
         return
       }
     }
@@ -1212,6 +1297,10 @@ Page({
         this._loadCartridges(this.data.user, this.data.lang)
       }
     }
+  },
+
+  handleBindNeoDevice() {
+    wx.showToast({ title: this.data.t.neoNotFoundMsg, icon: 'none', duration: 2000 })
   },
 
   switchLearnSubTab(e) {
@@ -1297,6 +1386,73 @@ Page({
     wx.navigateTo({ url: '/pages/referral/referral' })
   },
 
+  openPhones() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/phones/phones' })
+  },
+
+  // ── Viva subscription redeem sheet ──────────────────────────────────────────
+  // Modeled on openGuestSheet/submitGuestInvite (same server-validated code-entry
+  // pattern), but a plain text input rather than a 6-digit grid — subscription codes
+  // are 16+ crypto-random alphanumeric chars (see handlers/viva_subscription.js), not digits.
+
+  openVivaRedeemSheet() {
+    this.setData({ vivaRedeemSheetOpen: true, vivaRedeemCode: '', vivaRedeemError: '', menuOpen: false })
+  },
+
+  closeVivaRedeemSheet() {
+    if (this.data.vivaRedeemBusy) return
+    this.setData({ vivaRedeemSheetOpen: false })
+  },
+
+  onVivaRedeemInput(e) {
+    this.setData({ vivaRedeemCode: e.detail.value || '', vivaRedeemError: '' })
+  },
+
+  async submitVivaRedeem() {
+    const { vivaRedeemCode, vivaRedeemBusy, user, t } = this.data
+    if (vivaRedeemBusy) return
+    const code = vivaRedeemCode.trim()
+    if (!code) { this.setData({ vivaRedeemError: t.vivaRedeemRequired }); return }
+    this.setData({ vivaRedeemBusy: true, vivaRedeemError: '' })
+    try {
+      const res = await this._req(`${BASE}/api/viva-subscription-redeem`, 'POST', { openid: user.user_id, code })
+      if (!res.data?.success) {
+        const errText = {
+          invalid_code: t.vivaRedeemInvalid,
+          already_used: t.vivaRedeemAlreadyUsed,
+          code_expired: t.vivaRedeemExpired,
+          revoked: t.vivaRedeemInvalid,
+        }[res.data?.status] || t.errServer
+        this.setData({ vivaRedeemError: errText, vivaRedeemBusy: false })
+        return
+      }
+      const newExpiresAtDisplay = fmtDate(res.data.new_expires_at, this.data.lang)
+      this.setData({
+        vivaRedeemSheetOpen: false,
+        vivaRedeemBusy: false,
+        vivaSubscriptionExpiresAt: res.data.new_expires_at,
+        vivaSubscriptionExpiresAtDisplay: newExpiresAtDisplay,
+        vivaSubscriptionExpired: false,
+      })
+      // Toast is ephemeral — show the actual new expiry date rather than a generic
+      // "success", since that date is the whole point of redeeming. It also now persists
+      // in the menu's status row (menu-viva-row) and the redeem sheet's status line for
+      // anyone who missed the toast.
+      wx.showToast({ title: `${t.vivaRedeemSuccess} ${newExpiresAtDisplay}`, icon: 'none', duration: 3000 })
+    } catch (e) {
+      this.setData({ vivaRedeemError: this.data.t.errServer, vivaRedeemBusy: false })
+    }
+  },
+
+  // "Renew" CTA in the expired-subscription banner and the redeem sheet's own store link —
+  // reuses the exact GCN-store webview bridge handleBuyFormulation already uses; GCN's own
+  // checkout UI owns the "for me / as a gift" choice, nano only tags the entry point.
+  handleBuyVivaSubscription() {
+    if (!this.data.isAeviva) return
+    this._openAevivaStoreGated({ intent: 'buy_viva_subscription' })
+  },
+
   openAdmin() {
     this.setData({ menuOpen: false })
     wx.navigateTo({ url: '/pages/admin/admin' })
@@ -1313,9 +1469,14 @@ Page({
     wx.navigateTo({ url: '/pages/webadmin/webadmin' })
   },
 
-  openUserApp(path = '/app') {
+  // `context` (optional) is an arbitrary JSON-serializable intent payload — e.g.
+  // { intent: 'buy_custom_formulation', nutrition_plan_id } — carried through to appview.js,
+  // which threads it into /api/webview-token so the target page (GCN's dashboard.html) can
+  // read it back after the SSO exchange. See handlers/login.js's webview_tokens.context column.
+  openUserApp(path = '/app', context = null) {
     this.setData({ menuOpen: false })
-    wx.navigateTo({ url: `/pages/appview/appview?url=${encodeURIComponent(path)}` })
+    const contextParam = context ? `&context=${encodeURIComponent(JSON.stringify(context))}` : ''
+    wx.navigateTo({ url: `/pages/appview/appview?url=${encodeURIComponent(path)}${contextParam}` })
   },
 
   // Aeviva channel's Store tab tap opens the GCN storefront via appview.js (which mints
@@ -1327,9 +1488,9 @@ Page({
   // was never verified and 不支持打开's with it. Mirror BASE's own develop-vs-trial/release
   // split (CLAUDE.md §"Miniapp Backend Selection") rather than IS_DEV, which also covers
   // trial builds.
-  _openAevivaStore() {
+  _openAevivaStore(context = null) {
     const host = BASE.includes('-dev.') ? 'https://aeviva-dev.gcn.net' : 'https://aeviva.gcn.net'
-    this.openUserApp(`${host}/dashboard.html`)
+    this.openUserApp(`${host}/dashboard.html`, context)
   },
 
   // ── Kino Simulator ──────────────────────────────────────────────────────────
@@ -1556,9 +1717,28 @@ Page({
     this.setData({ menuOpen: false })
     if (app.globalData.sandboxMode) { this.exitSandbox(); return }
     this._stopPolling()
+    // Snapshot this session (minus phone/email, same PII-stripping convention as
+    // login.js's _finishLogin) so the logged-out screen can offer an instant,
+    // no-OTP "continue as previous" restore without re-deriving via WeChat openid.
+    // Prefer the already-persisted user.maskedPhone (set once at login time) over
+    // re-deriving from the raw phone — app.globalData.user almost never carries a
+    // raw .phone beyond the fleeting moment right after a fresh login, since
+    // app.onLaunch() only ever restores from the trimmed wx.storage copy. Falling
+    // back to re-deriving here would silently blank out phoneSet/maskedPhone for
+    // any session that survived even one app restart.
+    const user = app.globalData.user
+    if (user && !user.guest) {
+      const { phone, email, ...userToStore } = user
+      wx.setStorageSync('nano_last_session', {
+        user: userToStore,
+        channel: app.globalData.channel,
+        coach: app.globalData.coach,
+        maskedPhone: user.maskedPhone || maskPhone(phone) || '',
+      })
+    }
     wx.removeStorageSync('nano_user')
     app.globalData.user = null
-    wx.reLaunch({ url: '/pages/login/login' })
+    wx.reLaunch({ url: '/pages/login/login?loggedOut=1' })
   },
 
   // ── Chat init ───────────────────────────────────────────────────────────────
@@ -2458,11 +2638,18 @@ Page({
     this.setData({ user: { ...updated }, userAvatarLetter })
   },
 
+  // phone/email/language/coach_id are deliberately omitted from the base object here
+  // (only sent when a caller explicitly includes one via `updates`) — user.phone/email
+  // are stripped from the cached session (see login.js/verify-phone.js's PII-stripping
+  // convention) and are frequently undefined outside the fleeting moment right after a
+  // fresh login/verification, so resending them unconditionally risked silently wiping a
+  // verified phone/email on every unrelated save (found via a real incident: picking an
+  // avatar or answering a questionnaire follow-up nulled the caller's own phone number).
+  // The backend (handlePutUser) now also treats an omitted key as "leave untouched", so
+  // omitting here is the correct, safe default rather than resending a stale cached value.
   _saveUser(user, updates) {
     return this._req(`${BASE}/api/users/${user.user_id}`, 'PUT', {
-      nickname: user.nickname, phone: user.phone, email: user.email,
-      gender: user.gender, birth_date: user.birth_date,
-      language: user.language, coach_id: user.coach_id,
+      nickname: user.nickname, gender: user.gender, birth_date: user.birth_date,
       ...updates
     })
   },
@@ -2480,30 +2667,15 @@ Page({
       const dotsMap = {}
       dotsArr.forEach(d => { dotsMap[d.key_name] = d })
 
-      let dotsDays = []
-      let weekLabel = ''
-      const { monday, sunday } = getWeekRange()
-      weekLabel = fmtWeekLabel(monday, sunday, lang)
-
+      let allDays = []
       if (structured && schedules.length > 0) {
-        const allDays = mapStructuredSchedules(schedules, dotsMap, lang)
-        dotsDays = allDays.filter(d => d.dateStr >= monday && d.dateStr <= sunday)
+        allDays = mapStructuredSchedules(schedules, dotsMap, lang)
       } else if (plan) {
-        dotsDays = parsePlan(plan, dotsMap, lang)
+        allDays = parsePlan(plan, dotsMap, lang)
       }
+      this._dotsAllDays = allDays
 
-      const todayIndex = dotsDays.findIndex(d => d.isToday)
-      let todayScrollLeft = 0
-      if (todayIndex >= 0) {
-        const { windowWidth } = wx.getSystemInfoSync()
-        const r = windowWidth / 750
-        const cardPx = windowWidth * 0.7
-        const gapPx = 16 * r
-        const padPx = 28 * r
-        todayScrollLeft = Math.max(0, todayIndex * (cardPx + gapPx) + padPx - (windowWidth - cardPx) / 2)
-      }
-
-      const todayDay = todayIndex >= 0 ? dotsDays[todayIndex] : null
+      const todayDay = allDays.find(d => d.isToday) || null
       const dispenseSlot = new Date().getHours() < 12 ? 'morning_cup' : 'evening_cup'
       const dispenseSlotDots = todayDay
         ? (dispenseSlot === 'morning_cup' ? todayDay.morning : todayDay.evening)
@@ -2511,9 +2683,6 @@ Page({
 
       this.setData({
         dotsLoading: false,
-        dotsDays,
-        weekLabel,
-        todayScrollLeft,
         hasPlan: (plan !== null || structured !== null),
         dispenseSlot,
         dispenseSlotDots,
@@ -2521,9 +2690,45 @@ Page({
         dispenseHasToday: !!todayDay,
         dispenseStatus: '',
       })
+      this._applyDotsWeek(0)
     } catch (e) {
       this.setData({ dotsLoading: false, hasPlan: false })
     }
+  },
+
+  // Slices the full (up to 28-day) plan already cached in this._dotsAllDays down to a single
+  // calendar Mon-Sun week for the card scroller, so paging weeks is instant and needs no refetch.
+  _applyDotsWeek(offset) {
+    const allDays = this._dotsAllDays || []
+    const { monday, sunday } = getWeekRange(offset)
+    const weekLabel = fmtWeekLabel(monday, sunday, this.data.lang)
+    const dotsDays = allDays.filter(d => d.dateStr >= monday && d.dateStr <= sunday)
+
+    const todayIndex = dotsDays.findIndex(d => d.isToday)
+    let todayScrollLeft = 0
+    if (todayIndex >= 0) {
+      const { windowWidth } = wx.getSystemInfoSync()
+      const r = windowWidth / 750
+      const cardPx = windowWidth * 0.7
+      const gapPx = 16 * r
+      const padPx = 28 * r
+      todayScrollLeft = Math.max(0, todayIndex * (cardPx + gapPx) + padPx - (windowWidth - cardPx) / 2)
+    }
+
+    const hasPrevWeek = allDays.length > 0 && allDays[0].dateStr < monday
+    const hasNextWeek = allDays.length > 0 && allDays[allDays.length - 1].dateStr > sunday
+
+    this.setData({ dotsWeekOffset: offset, dotsDays, weekLabel, todayScrollLeft, hasPrevWeek, hasNextWeek })
+  },
+
+  handleDotsPrevWeek() {
+    if (!this.data.hasPrevWeek) return
+    this._applyDotsWeek(this.data.dotsWeekOffset - 1)
+  },
+
+  handleDotsNextWeek() {
+    if (!this.data.hasNextWeek) return
+    this._applyDotsWeek(this.data.dotsWeekOffset + 1)
   },
 
   async _loadCartridges(user, lang) {
@@ -2622,6 +2827,24 @@ Page({
       const res = await this._req(`${BASE}/api/credits/balance?user_id=${encodeURIComponent(user.user_id)}`)
       if (res.data?.success) {
         this.setData({ creditBalance: res.data.balance || 0, creditCurrency: res.data.currency || 'CNY' })
+      }
+    } catch (e) {}
+  },
+
+  // Fetches persona_type + viva_subscription_expires_at once at init — kept as a small
+  // dedicated endpoint (handlers/viva_subscription.js's handleGetVivaSubscriptionStatus)
+  // rather than threading these two fields through login.js's many branched user-lookup
+  // queries. Drives the redeem-code menu entry and the expired-subscription banner.
+  async _loadVivaSubscriptionStatus(user) {
+    if (!user?.user_id) return
+    try {
+      const res = await this._req(`${BASE}/api/viva-subscription-status?openid=${encodeURIComponent(user.user_id)}`)
+      if (res.data?.success) {
+        const expiresAt = res.data.viva_subscription_expires_at
+        const personaType = res.data.persona_type || 'nano'
+        const vivaSubscriptionExpired = personaType === 'viva' && (!expiresAt || new Date(expiresAt) <= new Date())
+        const vivaSubscriptionExpiresAtDisplay = expiresAt ? fmtDate(expiresAt, this.data.lang) : ''
+        this.setData({ personaType, vivaSubscriptionExpiresAt: expiresAt || null, vivaSubscriptionExpired, vivaSubscriptionExpiresAtDisplay })
       }
     } catch (e) {}
   },
@@ -2965,7 +3188,8 @@ Page({
         const d = new Date(r.scheduled_for)
         return { ...r, timeDisplay: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
       })
-      this.setData({ planDetailData: { ...plan, ...detail, reminders } })
+      const formulation = res.data?.formulation || null
+      this.setData({ planDetailData: { ...plan, ...detail, reminders, formulation } })
     } catch { /* keep existing plan data if fetch fails */ }
   },
 

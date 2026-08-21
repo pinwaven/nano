@@ -80,7 +80,7 @@ module.exports = (context) => {
     const val = subAges?.[d.subAgeKey];
     const valStr = val != null ? `${Number(val).toFixed(1)} 岁` : '（暂无数据）';
     const relDots = (dotsByDimension[d.dbKey] || [])
-      .map(dot => `${parseInt(dot.key_name.replace(/^DOT-?N?/, ''), 10)}号原粒 ${dot.name_zh || dot.name}`)
+      .map(dot => `${dot.key_name_zh || dot.key_name} ${dot.name_zh || dot.name}`)
       .join(', ') || '暂无';
     const driverKeys = d.bmKeys.filter(k => bmStatus[k] === 'elevated' || bmStatus[k] === 'high');
     const normalKeys = d.bmKeys.filter(k => !driverKeys.includes(k));

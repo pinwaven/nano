@@ -23,6 +23,12 @@ class BiomarkerEstimator {
     this.biometrics = { ...biometrics };
     this.tags = tags.map(normalizeTag).filter(t => TAG_REGISTRY[t]);
     this.referenceData = {};
+    // Last scan's validated values (real or themselves previously estimated).
+    // When a value must be fabricated (missing or rejected as implausible),
+    // anchoring drift to this instead of a fresh population baseline keeps a
+    // bad/incomplete scan from swinging BioAge independently of the user's
+    // own trajectory. Absent only for a user's first-ever scan.
+    this.previousValues = { ...(options.previousValues || {}) };
     // persistentRand: weekly-stable, models the user's true biological state (~80% of variance).
     // rand: per-scan, models measurement-to-measurement variation (~20% of variance).
     // Two scans same day share persistentRand → similar results. Weeks apart differ on both.
@@ -81,17 +87,22 @@ class BiomarkerEstimator {
       this.referenceData.gdf15 = 'pg/mL';
       return;
     }
-    let val = 400 + 10 * Math.exp(0.055 * this.age);
-    const bmi = this.getBMI();
-    
-    if (bmi > 22) {
-      val *= (1 + (bmi - 22) * 0.05);
-    }
+    let val;
+    if (typeof this.previousValues.GDF15 === 'number') {
+      val = this.previousValues.GDF15;
+    } else {
+      val = 400 + 10 * Math.exp(0.055 * this.age);
+      const bmi = this.getBMI();
 
-    if (this.age > 55) {
-      val *= (1 + 0.03 * (this.age - 55));
+      if (bmi > 22) {
+        val *= (1 + (bmi - 22) * 0.05);
+      }
+
+      if (this.age > 55) {
+        val *= (1 + 0.03 * (this.age - 55));
+      }
+      val = this.applyTagAdjustments('GDF15', val);
     }
-    val = this.applyTagAdjustments('GDF15', val);
     val = this.applyBiologicalNoise(val, 0.35);
     this.estimates.gdf15 = Math.round(val);
     this.referenceData.gdf15 = 'pg/mL';
@@ -103,15 +114,20 @@ class BiomarkerEstimator {
       this.referenceData.il6 = 'pg/mL';
       return;
     }
-    let val = 0.5;
-    if (this.age > 30) val += Math.pow(this.age - 30, 2.0) / 450;
-    
-    const bmi = this.getBMI();
-    if (bmi > 23) {
-      val += 0.06 * Math.pow(bmi - 23, 1.5);
-    }
+    let val;
+    if (typeof this.previousValues.IL6 === 'number') {
+      val = this.previousValues.IL6;
+    } else {
+      val = 0.5;
+      if (this.age > 30) val += Math.pow(this.age - 30, 2.0) / 450;
 
-    val = this.applyTagAdjustments('IL6', val);
+      const bmi = this.getBMI();
+      if (bmi > 23) {
+        val += 0.06 * Math.pow(bmi - 23, 1.5);
+      }
+
+      val = this.applyTagAdjustments('IL6', val);
+    }
     val = this.applyBiologicalNoise(val, 0.40);
     val = Math.max(0.1, val);
     this.estimates.il6 = parseFloat(val.toFixed(2));
@@ -125,17 +141,22 @@ class BiomarkerEstimator {
       this.referenceData.hscrp = 'mg/L';
       return;
     }
-    const slope = (3.0 - 1.2) / 60;
-    let val = -0.3 + slope * this.age;
-    if (this.age > 65) val *= 1.35;
+    let val;
+    if (typeof this.previousValues.hsCRP === 'number') {
+      val = this.previousValues.hsCRP;
+    } else {
+      const slope = (3.0 - 1.2) / 60;
+      val = -0.3 + slope * this.age;
+      if (this.age > 65) val *= 1.35;
 
-    const bmi = this.getBMI();
-    // BMI is a strong, non-linear driver of CRP
-    if (bmi > 22) {
-      val += 0.03 * Math.pow(bmi - 22, 1.7);
+      const bmi = this.getBMI();
+      // BMI is a strong, non-linear driver of CRP
+      if (bmi > 22) {
+        val += 0.03 * Math.pow(bmi - 22, 1.7);
+      }
+
+      val = this.applyTagAdjustments('hsCRP', val);
     }
-
-    val = this.applyTagAdjustments('hsCRP', val);
     val = this.applyBiologicalNoise(val, 0.30);
     val = Math.max(0.1, val);
     this.estimates.hscrp = parseFloat(val.toFixed(2));
@@ -148,13 +169,18 @@ class BiomarkerEstimator {
       this.referenceData.ga = '%';
       return;
     }
-    let val = 13.0 + this.age * 0.02;
-    const bmi = this.getBMI();
-    if (bmi > 22) {
-      val += 0.015 * Math.pow(bmi - 22, 1.6);
-    }
+    let val;
+    if (typeof this.previousValues.GA === 'number') {
+      val = this.previousValues.GA;
+    } else {
+      val = 13.0 + this.age * 0.02;
+      const bmi = this.getBMI();
+      if (bmi > 22) {
+        val += 0.015 * Math.pow(bmi - 22, 1.6);
+      }
 
-    val = this.applyTagAdjustments('GA', val);
+      val = this.applyTagAdjustments('GA', val);
+    }
     val = this.applyBiologicalNoise(val, 0.25);
     this.estimates.ga = parseFloat(val.toFixed(1));
     this.referenceData.ga = '%';
@@ -166,15 +192,20 @@ class BiomarkerEstimator {
       this.referenceData.cystatinC = 'mg/L';
       return;
     }
-    let val = 0.70;
-    if (this.age > 70) {
-      val += (this.age - 70) * 0.05 + 30 * 0.006;
-    } else if (this.age > 50) {
-      val += (this.age - 50) * 0.012 + 30 * 0.004;
+    let val;
+    if (typeof this.previousValues.CystatinC === 'number') {
+      val = this.previousValues.CystatinC;
     } else {
-      val += (this.age - 20) * 0.002;
+      val = 0.70;
+      if (this.age > 70) {
+        val += (this.age - 70) * 0.05 + 30 * 0.006;
+      } else if (this.age > 50) {
+        val += (this.age - 50) * 0.012 + 30 * 0.004;
+      } else {
+        val += (this.age - 20) * 0.002;
+      }
+      val = this.applyTagAdjustments('CystatinC', val);
     }
-    val = this.applyTagAdjustments('CystatinC', val);
     val = this.applyBiologicalNoise(val, 0.03);
     this.estimates.cystatinC = parseFloat(val.toFixed(2));
     this.referenceData.cystatinC = 'mg/L';
@@ -186,8 +217,13 @@ class BiomarkerEstimator {
       this.referenceData.cd38 = 'xBaseline';
       return;
     }
-    let val = 1.0 + (this.age - 20) * (2.0 / 60);
-    val = this.applyTagAdjustments('CD38', val);
+    let val;
+    if (typeof this.previousValues.CD38 === 'number') {
+      val = this.previousValues.CD38;
+    } else {
+      val = 1.0 + (this.age - 20) * (2.0 / 60);
+      val = this.applyTagAdjustments('CD38', val);
+    }
     val = this.applyBiologicalNoise(val, 0.25);
     this.estimates.cd38 = parseFloat(val.toFixed(1));
     this.referenceData.cd38 = 'xBaseline';

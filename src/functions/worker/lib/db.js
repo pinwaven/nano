@@ -8,7 +8,9 @@ try {
     const isLocal = (connectionString || '').includes('localhost');
     pool = new Pool({
       connectionString,
-      ssl: isLocal || process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
+      ssl: isLocal || process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
+      max: 5,
+      idleTimeoutMillis: 10000
     });
   } else if (process.env.DB_HOST) {
     // Use individual components (Aliyun FC style)
@@ -18,7 +20,9 @@ try {
       host: process.env.DB_HOST,
       database: process.env.DB_NAME,
       port: 5432,
-      ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
+      ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
+      max: 5,
+      idleTimeoutMillis: 10000
     });
   } else {
     console.warn('[DB] No database configuration found.');

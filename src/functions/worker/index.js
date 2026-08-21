@@ -57,7 +57,7 @@ const { handleGetLabProviders, handlePostLabProvider, handlePutLabProvider, hand
 const { handleGetInventoryStock, handlePostInventoryStock, handleGetWarehouses, handlePostWarehouse, handlePutWarehouse, handleDeleteWarehouse } = require('./handlers/inventory');
 const { handleGetOrders, handleGetMyOrders, handlePostStoreItem, handlePutStoreItem, handleDeleteStoreItem, handleGetSkus, handlePostSku, handlePutSku, handleDeleteSku } = require('./handlers/store');
 const { handleGetCommissionSettings, handlePutCommissionSetting, handleGetCoachCommissions, handleGetChannelCommissions, handleGetCoachEarnings, handleGetCoachPayouts, handleGetChannelPayouts, handlePostGenerateCoachPayouts, handlePostGenerateChannelPayouts, handlePutCoachPayout, handlePutChannelPayout } = require('./handlers/commissions');
-const { handleGetPartners, handleGetPartner, handleGetPartnerByPhone, handleGcnPartnerLookup, handlePostPartner, handlePostPartnerGcnProvision, handlePostPartnerInviteCode, handleGcnPartnerInviteCode, handleGcnPartnerApply, handlePostPartnerSale, handlePutPartner, handleDeletePartner, handleGetPartnerCommissions, handlePostPartnerCommission, handleGetPartnerPayouts, handlePostGeneratePartnerPayouts, handlePutPartnerPayout, handleGcnPartnerChildren, handleGcnPartnerDescendants, handleGetChannelReferralNetwork, handleGetPartnerCommissionConfig, handlePutPartnerCommissionConfig, handleGetPartnerTypes, handlePostPartnerType, handlePutPartnerType, handleDeletePartnerType, handleGcnSyncPartnerType, handleGetPartnerCommissionRules, handlePostPartnerCommissionRule, handlePutPartnerCommissionRule, handleDeletePartnerCommissionRule, handlePutChannelPartnerSystemPermission, handleGetChannelRewardsSummary } = require('./handlers/partners');
+const { handleGetPartners, handleGetPartner, handleGetPartnerByPhone, handleGcnPartnerLookup, handlePostPartner, handlePostPartnerGcnProvision, handlePostPartnerInviteCode, handleGcnPartnerInviteCode, handleGcnPartnerApply, handlePostPartnerSale, handlePutPartner, handleDeletePartner, handleGetPartnerCommissions, handlePostPartnerCommission, handleGetPartnerPayouts, handlePostGeneratePartnerPayouts, handlePutPartnerPayout, handleGcnPartnerChildren, handleGcnPartnerDescendants, handleGetChannelReferralNetwork, handleGetPartnerCommissionConfig, handlePutPartnerCommissionConfig, handleGetPartnerTypes, handlePostPartnerType, handlePutPartnerType, handleDeletePartnerType, handleGcnSyncPartnerType, handleGcnSyncPartnerTierAssignment, handleGetPartnerCommissionRules, handlePostPartnerCommissionRule, handlePutPartnerCommissionRule, handleDeletePartnerCommissionRule, handlePutChannelPartnerSystemPermission, handleGetChannelRewardsSummary } = require('./handlers/partners');
 const { handleGetEvents, handlePostEvent, handlePutEvent, handleDeleteEvent, handleGetEventSignups, handlePostEventSignup, handleDeleteEventSignup, handleGetMyEventSignups } = require('./handlers/events');
 const { handleGetCoachGroups, handlePostCoachGroup, handlePutCoachGroup, handleDeleteCoachGroup, handleGetCoachGroupKpis } = require('./handlers/coach-groups');
 const { handleGetKoneApkReleases, handlePostKoneApkRelease, handlePutKoneApkRelease, handleDeleteKoneApkRelease, handleGetKoneApkPresign, handleGetDigitalAssets, handlePostDigitalAsset, handlePutDigitalAsset, handleDeleteDigitalAsset, handleGetDigitalAssetsPresign, handleGetKinoUpgrade } = require('./handlers/digital-assets');
@@ -67,13 +67,15 @@ const { handleGetKnowledgeEntries, handlePostKnowledgeEntry, handlePutKnowledgeE
 const { handleGetPersonaSettings, handlePutPersonaSettings } = require('./handlers/personaSettings');
 const { handleGetUserFacts, handlePostUserFact, handlePutUserFact, handleDeleteUserFact } = require('./handlers/userFacts');
 const { handleGetCreditBalance, handleGetCreditHistory, handlePostCreditWithdraw, handleGetUserWithdrawals, handleGetAdminWithdrawals, handlePutAdminWithdrawal, handleGetAdminUserCreditHistory, handlePostAdminUserCreditAdjustment } = require('./handlers/credits');
+const { handleGetAdminUserPersonaSubscription, handlePostAdminUserPersonaSubscription, handleDeleteAdminUserPersonaSubscription, handleGetAdminPersonaSubscriptions } = require('./handlers/persona_subscriptions');
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
 const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
-const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleSetIdentity, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation } = require('./handlers/users');
-const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
+const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleSetIdentity, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation, handlePostFormulationPurchaseConfirmed } = require('./handlers/users');
+const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handleGetFormulationCheckoutSnapshot, handleNutritionTopupEvent, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
+const { handlePostBoxBatch, handleGetBoxBatches, handleGetBoxBatchBoxes, handleGetBoxPage } = require('./handlers/boxes');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
 const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm } = require('./handlers/login');
-const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified } = require('./handlers/phone-otp');
+const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified, handlePhoneOtpList, handlePhoneOtpRemove, handlePhoneOtpAdminAdd } = require('./handlers/phone-otp');
 const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handleChatGenerateEvent, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign, _fireQuestionnaireAnsweredFollowup } = require('./handlers/chat');
 const { CHAT_EVENT_SOURCE } = require('./lib/chatEventBridge');
 // Same environment-scoping fix as CHAT_EVENT_SOURCE (see chatEventBridge.js's comment for the
@@ -85,6 +87,7 @@ const { CHAT_EVENT_SOURCE } = require('./lib/chatEventBridge');
 const LAB_EVENT_SOURCE = 'acs.lab' + (process.env.EVENT_SOURCE_SUFFIX || '');
 const DISPATCHER_EVENT_SOURCE = 'acs.dispatcher' + (process.env.EVENT_SOURCE_SUFFIX || '');
 const { handleDailyCheckinEvent } = require('./handlers/checkin');
+const { handleGetVivaSubscriptionStatus, handleGetVivaSubscriptionPlans, handlePostVivaSubscriptionCheckoutConfirmed, handlePostVivaSubscriptionRedeem, handleGetVivaSubscriptionCodes, handlePutVivaSubscriptionCode } = require('./handlers/viva_subscription');
 
 
 // ── Admin dashboard stats (time series + distributions) ─────────────────────
@@ -145,6 +148,15 @@ exports.handler = async (req, resp, context) => {
                 await handleDailyCheckinEvent(cloudData);
             } catch (err) {
                 console.error(JSON.stringify({ level: 'ERROR', msg: 'handleDailyCheckinEvent failed', error: err.message }));
+            }
+        } else if (event.source === DISPATCHER_EVENT_SOURCE && event.type === 'nutrition.topup') {
+            // Previously unhandled — this case didn't exist, so the dispatcher's nutrition.topup
+            // CloudEvent was silently dropped (ok:true returned, nothing done) whenever it
+            // reached worker via EventBridge. See handleNutritionTopupEvent's own comment.
+            try {
+                await handleNutritionTopupEvent(cloudData);
+            } catch (err) {
+                console.error(JSON.stringify({ level: 'ERROR', msg: 'handleNutritionTopupEvent failed', error: err.message }));
             }
         }
         return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true }), isBase64Encoded: false };
@@ -222,6 +234,16 @@ exports.handler = async (req, resp, context) => {
         return imagePayload;
     }
 
+    // Public box QR page — no auth required. QR payload is https://nano.gcn.net/api/box/{box_code}
+    if (method === 'GET' && path.match(/^\/box\/([^/]+)$/)) {
+        const boxCode = decodeURIComponent(path.match(/^\/box\/([^/]+)$/)[1]);
+        const pageResult = await handleGetBoxPage(boxCode, query);
+        const sc = pageResult.statusCode || 200;
+        const htmlHeaders = { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' };
+        if (isStandardHttp) { resp.setStatusCode(sc); Object.entries(htmlHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(pageResult.html); return; }
+        return { isBase64Encoded: false, statusCode: sc, headers: htmlHeaders, body: pageResult.html };
+    }
+
     const adminCtx = { role: 'superadmin', username: 'superadmin', channelId: null, accountId: null, canManageSubchannels: false };
     const expectedBearer = process.env.API_BEARER_TOKEN;
     if (expectedBearer && rawPath && path !== '/admin/login' && !path.startsWith('/qr-login/') && !path.startsWith('/phone-otp/')) {
@@ -233,7 +255,7 @@ exports.handler = async (req, resp, context) => {
             // Scoped nano<-GCN service credential — distinct from API_BEARER_TOKEN (nano's
             // full superadmin bearer). Authenticated but restricted to the exact paths GCN's
             // nanoClient.js actually calls; anything else 403s even with a valid token.
-            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn', '/partner-types-gcn-sync']);
+            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn', '/partner-types-gcn-sync', '/partner-tier-assignment-gcn-sync', '/formulation-checkout-snapshot', '/formulation-purchase-confirmed', '/health-plan-templates', '/viva-subscription-plans', '/viva-subscription-checkout-confirmed']);
             if (!GCN_ALLOWED_PATHS.has(path)) {
                 const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
                 if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
@@ -311,12 +333,25 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetKinoChipBatches();
             } else if (path.includes('/kino-chip-models')) {
                 result = await handleGetKinoChipModels();
+            } else if (path.match(/\/box-batches\/(\d+)\/boxes/)) {
+                const batchId = path.match(/\/box-batches\/(\d+)\/boxes/)[1];
+                result = await handleGetBoxBatchBoxes(batchId, query);
+            } else if (path.includes('/box-batches')) {
+                result = await handleGetBoxBatches(query, adminCtx);
+            } else if (path.includes('/viva-subscription-status')) {
+                result = await handleGetVivaSubscriptionStatus(query.openid);
+            } else if (path.includes('/viva-subscription-plans')) {
+                result = await handleGetVivaSubscriptionPlans();
+            } else if (path.includes('/viva-subscription-codes')) {
+                result = await handleGetVivaSubscriptionCodes(query);
             } else if (path.includes('/persona-settings')) {
                 result = requirePermission(adminCtx, 'content:read') || await handleGetPersonaSettings();
             } else if (path.includes('/knowledge-entries')) {
                 result = requirePermission(adminCtx, 'content:read') || await handleGetKnowledgeEntries();
             } else if (path.includes('/user-facts')) {
                 result = await handleGetUserFacts(query.openid, query.coach_id);
+            } else if (path === '/phone-otp/list') {
+                result = await handlePhoneOtpList(query);
             } else if (path.match(/\/kino-tested-chips\/(\d+)/)) {
                 const scanId = path.match(/\/kino-tested-chips\/(\d+)/)[1];
                 result = await handleGetKinoTestedChipDetail(scanId);
@@ -338,6 +373,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetNotifications(query.openid);
             } else if (path.includes('/reminders')) {
                 result = await handleGetReminders(query.openid);
+            } else if (path === '/formulation-checkout-snapshot') {
+                result = await handleGetFormulationCheckoutSnapshot(query.planId, query.openid);
             } else if (path.includes('/nutrition-plan')) {
                 result = await handleGetNutritionPlan(query.openid);
             } else if (path === '/health-twin') {
@@ -408,6 +445,11 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/admin\/users\/([^/]+)\/credit-history/)) {
                 const uid = path.match(/\/admin\/users\/([^/]+)\/credit-history/)[1];
                 result = await handleGetAdminUserCreditHistory(uid, adminCtx);
+            } else if (path.match(/\/admin\/users\/([^/]+)\/persona-subscription/)) {
+                const uid = path.match(/\/admin\/users\/([^/]+)\/persona-subscription/)[1];
+                result = await handleGetAdminUserPersonaSubscription(uid, adminCtx);
+            } else if (path === '/admin/persona-subscriptions') {
+                result = await handleGetAdminPersonaSubscriptions(query, adminCtx);
             } else if (path.includes('/invitations')) {
                 const invQuery = adminCtx.channelId ? { ...query, channel_id: adminCtx.channelId } : query;
                 result = await handleGetInvitations(invQuery);
@@ -583,6 +625,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostAdminAccount(parsedBody, adminCtx);
             } else if (path === '/admin-channel-roles') {
                 result = await handlePostAdminChannelRole(parsedBody, adminCtx);
+            } else if (path === '/admin-phone-add') {
+                result = requireAdminTab(adminCtx, 'users') || await handlePhoneOtpAdminAdd(parsedBody);
             } else if (path === '/validate-invite') {
                 result = await handleValidateInvite(parsedBody);
             } else if (path === '/wx-app-login') {
@@ -611,6 +655,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePhoneSetPrimary(parsedBody);
             } else if (path === '/phone-otp/accept-unverified') {
                 result = await handlePhoneAcceptUnverified(parsedBody);
+            } else if (path === '/phone-otp/remove') {
+                result = await handlePhoneOtpRemove(parsedBody);
             } else if (path === '/resolve-phone') {
                 const { code, app_id } = parsedBody;
                 result = await handleResolvePhone(code, app_id);
@@ -661,6 +707,12 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostKinoChipBatch(parsedBody);
             } else if (path.includes('/kino-chip-models')) {
                 result = await handlePostKinoChipModel(parsedBody);
+            } else if (path.includes('/box-batches')) {
+                result = await handlePostBoxBatch(parsedBody, adminCtx);
+            } else if (path.includes('/viva-subscription-checkout-confirmed')) {
+                result = await handlePostVivaSubscriptionCheckoutConfirmed(parsedBody);
+            } else if (path.includes('/viva-subscription-redeem')) {
+                result = await handlePostVivaSubscriptionRedeem(parsedBody);
             } else if (path.includes('/knowledge-entries')) {
                 result = requireAdminTab(adminCtx, 'content') || await handlePostKnowledgeEntry(parsedBody);
             } else if (path.includes('/user-facts')) {
@@ -719,6 +771,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/admin\/users\/([^/]+)\/credit-adjustments/)) {
                 const uid = path.match(/\/admin\/users\/([^/]+)\/credit-adjustments/)[1];
                 result = await handlePostAdminUserCreditAdjustment(uid, parsedBody, adminCtx);
+            } else if (path.match(/\/admin\/users\/([^/]+)\/persona-subscription/)) {
+                const uid = path.match(/\/admin\/users\/([^/]+)\/persona-subscription/)[1];
+                result = await handlePostAdminUserPersonaSubscription(uid, parsedBody, adminCtx);
             } else if (path.includes('/generate-coach-payouts')) {
                 result = await handlePostGenerateCoachPayouts(parsedBody);
             } else if (path.includes('/generate-channel-payouts')) {
@@ -731,6 +786,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostPartnerType(parsedBody, adminCtx);
             } else if (path === '/partner-types-gcn-sync') {
                 result = await handleGcnSyncPartnerType(parsedBody);
+            } else if (path === '/partner-tier-assignment-gcn-sync') {
+                result = await handleGcnSyncPartnerTierAssignment(parsedBody);
             } else if (path === '/partner-commission-rules') {
                 result = await handlePostPartnerCommissionRule(parsedBody, adminCtx);
             } else if (path.match(/\/partners\/(\d+)\/gcn-provision/)) {
@@ -747,6 +804,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGcnPartnerDescendants(parsedBody);
             } else if (path.includes('/partner-applications')) {
                 result = await handleGcnPartnerApply(parsedBody);
+            } else if (path.includes('/formulation-purchase-confirmed')) {
+                result = await handlePostFormulationPurchaseConfirmed(parsedBody);
             } else if (path.includes('/partner-sales')) {
                 result = await handlePostPartnerSale(parsedBody);
             } else if (path.includes('/partner-commissions')) {
@@ -842,6 +901,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)) {
                 const code = path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)[1];
                 result = await handlePutKinoChipModel(code, parsedBody);
+            } else if (path.match(/\/viva-subscription-codes\/(\d+)/)) {
+                const codeId = path.match(/\/viva-subscription-codes\/(\d+)/)[1];
+                result = await handlePutVivaSubscriptionCode(codeId, parsedBody);
             } else if (path.match(/\/persona-settings\/([a-z0-9-]+)/i)) {
                 const personaType = path.match(/\/persona-settings\/([a-z0-9-]+)/i)[1];
                 result = requireAdminTab(adminCtx, 'content') || await handlePutPersonaSettings(personaType, parsedBody, adminCtx.username);
@@ -1046,6 +1108,9 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/kino-devices/')) {
                 const deviceId = path.split('/kino-devices/')[1];
                 result = await handleDeleteKinoDevice(deviceId);
+            } else if (path.match(/\/admin\/users\/([^/]+)\/persona-subscription/)) {
+                const uid = path.match(/\/admin\/users\/([^/]+)\/persona-subscription/)[1];
+                result = await handleDeleteAdminUserPersonaSubscription(uid, parsedBody, adminCtx);
             } else if (path.includes('/users/')) {
                 const user_id = path.split('/users/')[1];
                 result = requirePermission(adminCtx, 'users:delete') || await handleDeleteUser(user_id);

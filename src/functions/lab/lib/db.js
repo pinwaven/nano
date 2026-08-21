@@ -11,6 +11,8 @@ try {
         pool = new Pool({
             connectionString,
             ssl: isLocal || process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
+            max: 5,
+            idleTimeoutMillis: 10000,
         });
     } else if (process.env.DB_HOST) {
         pool = new Pool({
@@ -20,6 +22,8 @@ try {
             database: process.env.DB_NAME,
             port: 5432,
             ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
+            max: 5,
+            idleTimeoutMillis: 10000,
         });
     } else {
         console.warn(JSON.stringify({ level: 'WARN', msg: '[DB] No database configuration found' }));

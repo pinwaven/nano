@@ -25,6 +25,25 @@ const THRESHOLDS = {
 const LABELS_ZH = { normal: '正常', elevated: '偏高', high: '高' };
 const LABELS_EN = { normal: 'normal', elevated: 'elevated', high: 'high' };
 
+// Canonical biomarker -> sub-age dimension mapping, per CLAUDE.md §11 ("The Four Sub Bio
+// Ages") and BioAgeCalculator.js's own _calcCellular/_calcMetabolic/_calcMicroVascular/
+// _calcResilience implementations — each dimension's score is a pure function of ONLY the
+// biomarkers listed here for it (the lone cross-dimension exception, Resilience's score
+// penalizing Metabolic's, doesn't add any biomarker to Resilience's own inputs). Exists so
+// JUDGE (lib/agenticChat.js's runJudge) can mechanically catch a reply that attributes a
+// biomarker to the wrong dimension (e.g. "GA is a core driver of your elevated Resilience
+// Age" — GA never enters _calcResilience at all) instead of only checking that individual
+// values/labels are correct in isolation. Found via live testing 2026-08-21: a biomarker_
+// question reply named GA alongside hsCRP as "core drivers" of an elevated ResilienceAge,
+// and JUDGE passed it because every individual value it cited was accurate — it had no way
+// to check the causal-attribution-to-dimension claim itself.
+const DIMENSION_BIOMARKERS = {
+    CellularAge:      ['GDF15', 'CD38'],
+    MetabolicAge:     ['GA'],
+    MicroVascularAge: ['CystatinC'],
+    ResilienceAge:    ['hsCRP', 'IL6'],
+};
+
 function classifyBiomarker(key, value) {
     const t = THRESHOLDS[key];
     if (!t || value == null || Number.isNaN(Number(value))) return null;
@@ -42,4 +61,4 @@ function classifyBiomarkers(biomarkers = {}) {
     return out;
 }
 
-module.exports = { THRESHOLDS, LABELS_ZH, LABELS_EN, classifyBiomarker, classifyBiomarkers };
+module.exports = { THRESHOLDS, LABELS_ZH, LABELS_EN, DIMENSION_BIOMARKERS, classifyBiomarker, classifyBiomarkers };

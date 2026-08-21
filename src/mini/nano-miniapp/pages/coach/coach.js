@@ -1,6 +1,7 @@
 const app = getApp()
 const { BASE } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
+const { maskPhone } = require('../../utils/phone.js')
 
 const T = {
   zh: {
@@ -124,7 +125,7 @@ const T = {
     toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
     toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
     formulaGenerating: '正在为你定制营养方案…',
-    formulaComplete: '您的7天营养方案已生成！',
+    formulaComplete: '您的28天营养方案已生成！',
     formulaProcessing: '正在深度分析并配置本周方案，请稍后在方案页查看…',
     formulaViewDots: '查看营养方案 →',
     formulaError: '方案生成失败，请重试。',
@@ -260,8 +261,8 @@ const T = {
     toolUploadImage: 'Upload Image',
     toolFormulaDotMsg: 'Please formulate my Dots plan',
     toolHealthAdviceMsg: 'Please analyze my current health status and give me personalized health advice.',
-    formulaGenerating: 'Generating your 7-day nutrition plan from your biomarkers…',
-    formulaComplete: 'Your 7-day nutrition plan is ready!',
+    formulaGenerating: 'Generating your 28-day nutrition plan from your biomarkers…',
+    formulaComplete: 'Your 28-day nutrition plan is ready!',
     formulaProcessing: "Deeply analyzing and formulating this week's plan — check the Plan page shortly…",
     formulaViewDots: 'View Dots Plan →',
     formulaError: 'Plan generation failed. Please try again.',
@@ -639,9 +640,24 @@ Page({
   handleLogout() {
     this.setData({ menuOpen: false })
     if (app.globalData.sandboxMode) { this.exitSandbox(); return }
+    // Snapshot this session (minus phone/email, same PII-stripping convention as
+    // login.js's _finishLogin) so the logged-out screen can offer an instant,
+    // no-OTP "continue as previous" restore without re-deriving via WeChat openid.
+    // Prefer the already-persisted user.maskedPhone (set once at login time) over
+    // re-deriving from the raw phone — see main.js's handleLogout for why.
+    const user = app.globalData.user
+    if (user && !user.guest) {
+      const { phone, email, ...userToStore } = user
+      wx.setStorageSync('nano_last_session', {
+        user: userToStore,
+        channel: app.globalData.channel,
+        coach: app.globalData.coach,
+        maskedPhone: user.maskedPhone || maskPhone(phone) || '',
+      })
+    }
     wx.removeStorageSync('nano_user')
     app.globalData.user = null
-    wx.reLaunch({ url: '/pages/login/login' })
+    wx.reLaunch({ url: '/pages/login/login?loggedOut=1' })
   },
 
   onTouchStart(e) {

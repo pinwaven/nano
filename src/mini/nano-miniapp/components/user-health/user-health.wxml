@@ -172,11 +172,14 @@
               </view>
               <!-- Expanded: canvas fills the entire chip -->
               <view wx:if="{{bioAgeTrendOpen}}" class="dt-bioage-open" catchtap="toggleBioAgeTrend">
-                <canvas canvas-id="dt-bioage-chart" class="dt-bioage-canvas"
-                  style="width:{{bioAgeChartW}}px;height:200px;"></canvas>
+                <canvas canvas-id="dt-bioage-chart" id="dt-bioage-chart" class="dt-bioage-canvas"
+                  style="width:{{bioAgeChartW}}px;height:200px;"
+                  data-canvas-id="dt-bioage-chart"
+                  catchtouchstart="_onChartTouch" catchtouchmove="_onChartTouch" catchtouchend="_onChartTouchEnd"></canvas>
               </view>
             </view>
-            <view wx:for="{{subAgeList}}" wx:key="key" wx:if="{{!bioAgeTrendOpen}}" class="dt-sa-row {{flashSubAge === item.key ? 'dt-sa-row-flash' : ''}}">
+            <view wx:for="{{subAgeList}}" wx:key="key" wx:if="{{!bioAgeTrendOpen}}" class="dt-sa-row {{flashSubAge === item.key ? 'dt-sa-row-flash' : ''}}"
+              catchtap="{{subAgeHistory[item.key].length > 1 ? 'openSubAgeChart' : ''}}" data-key="{{item.key}}">
               <view class="dt-sa-accent {{subAgeZ[item.key].pulse ? 'dt-fig-pulse' : ''}}"
                 style="background:{{item.color}};box-shadow:0 0 6rpx {{item.color}};"></view>
               <view class="dt-sa-info">
@@ -188,6 +191,7 @@
                   <view class="dt-sa-bar-fill" style="width:{{item.score}}%;background:{{item.color}};"></view>
                 </view>
               </view>
+              <text wx:if="{{subAgeHistory[item.key].length > 1}}" class="dt-sa-trend-hint">›</text>
             </view>
           </view>
         </view>
@@ -922,6 +926,21 @@
         <view class="wchart-close" bindtap="closeBmiChart"><text>✕</text></view>
       </view>
       <canvas canvas-id="uh-bmi-chart" class="weight-chart-full" style="width:{{bmiChartW}}px;height:200px;"></canvas>
+    </view>
+  </view>
+
+  <!-- Sub-Age Chart Modal (shared across all 4 sub-ages) -->
+  <view wx:if="{{subAgeChartOpen}}" class="wchart-overlay" bindtap="closeSubAgeChart">
+    <view class="wchart-sheet" catchtap="noop">
+      <view class="wchart-handle"></view>
+      <view class="wchart-header">
+        <text class="wchart-title">{{t.subAgeLabels[subAgeChartKey]}}</text>
+        <view class="wchart-close" bindtap="closeSubAgeChart"><text>✕</text></view>
+      </view>
+      <canvas canvas-id="uh-subage-chart" id="uh-subage-chart" class="weight-chart-full"
+        style="width:{{subAgeChartW}}px;height:200px;"
+        data-canvas-id="uh-subage-chart"
+        catchtouchstart="_onChartTouch" catchtouchmove="_onChartTouch" catchtouchend="_onChartTouchEnd"></canvas>
     </view>
   </view>
 

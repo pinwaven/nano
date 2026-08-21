@@ -20,9 +20,20 @@
     <text class="sandbox-banner-exit">{{t.exitSandbox}}</text>
   </view>
 
+  <!-- ── Viva subscription expired banner ── -->
+  <view wx:if="{{!sandboxMode && personaType === 'viva' && vivaSubscriptionExpired}}" class="viva-expired-banner" bindtap="handleBuyVivaSubscription">
+    <text class="viva-expired-banner-text">{{t.vivaSubscriptionExpiredBanner}}</text>
+    <text class="viva-expired-banner-btn">{{t.vivaSubscriptionRenewBtn}}</text>
+  </view>
+
   <!-- ── Logo menu ── -->
   <view wx:if="{{menuOpen}}" class="menu-mask" bindtap="closeMenu">
     <view class="menu-dropdown" catchtap="noop" style="top: {{menuTop}}px;">
+      <view wx:if="{{!isGuest && isAeviva && personaType === 'viva' && !vivaSubscriptionExpired && vivaSubscriptionExpiresAtDisplay}}" class="menu-credit-row" bindtap="openVivaRedeemSheet">
+        <text class="menu-credit-label">{{lang === 'zh' ? 'Viva 订阅至' : 'Viva subscribed until'}}</text>
+        <text class="menu-credit-value">{{vivaSubscriptionExpiresAtDisplay}}</text>
+      </view>
+      <view wx:if="{{!isGuest && isAeviva && personaType === 'viva' && !vivaSubscriptionExpired && vivaSubscriptionExpiresAtDisplay && creditBalance <= 0}}" class="menu-divider"></view>
       <view wx:if="{{!isGuest && creditBalance > 0}}" class="menu-credit-row" bindtap="openReferral">
         <text class="menu-credit-label">{{lang === 'zh' ? '积分余额' : 'Credits'}}</text>
         <text class="menu-credit-value">{{creditBalance}} pts</text>
@@ -50,6 +61,14 @@
       <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openReferral">
         <text class="menu-item-icon">★</text>
         <text class="menu-item-label">{{t.referralMenu}}</text>
+      </view>
+      <view wx:if="{{!isGuest}}" class="menu-item" bindtap="openPhones">
+        <text class="menu-item-icon">📱</text>
+        <text class="menu-item-label">{{t.phonesMenu}}</text>
+      </view>
+      <view wx:if="{{!isGuest && isAeviva && personaType === 'viva'}}" class="menu-item" bindtap="openVivaRedeemSheet">
+        <text class="menu-item-icon">✧</text>
+        <text class="menu-item-label">{{t.vivaRedeemMenu}}</text>
       </view>
       <view wx:if="{{isAdmin || isSuperadmin}}" class="menu-divider"></view>
       <view wx:if="{{isAdmin || isSuperadmin}}" class="menu-item" bindtap="openKinoSim">
@@ -362,11 +381,11 @@
     <view class="plans-tab{{tab !== 'plans' ? ' tab-hidden' : ''}}">
 
       <view class="inner-tab-bar">
-        <view class="inner-tab {{plansDotsSubTab==='plans'?'inner-tab-active':''}}" bindtap="switchPlansDotsSubTab" data-tab="plans">
-          <text class="inner-tab-text">{{t.plansDotsPlanTab}}</text>
-        </view>
         <view class="inner-tab {{plansDotsSubTab==='dots'?'inner-tab-active':''}}" bindtap="switchPlansDotsSubTab" data-tab="dots">
           <text class="inner-tab-text">{{t.plansDotsDotsTab}}</text>
+        </view>
+        <view class="inner-tab {{plansDotsSubTab==='plans'?'inner-tab-active':''}}" bindtap="switchPlansDotsSubTab" data-tab="plans">
+          <text class="inner-tab-text">{{t.plansDotsPlanTab}}</text>
         </view>
       </view>
 
@@ -456,7 +475,13 @@
       </block>
       <scroll-view wx:elif="{{plansDotsSubTab==='dots'}}" scroll-y class="dots-subtab-scroll">
 
-        <view wx:if="{{!isGuest}}" class="cart-section">
+        <view wx:if="{{!neoBound && !isGuest}}" class="guest-lock-card neo-bind-card" bindtap="handleBindNeoDevice">
+          <text class="guest-lock-icon">⬢</text>
+          <text class="guest-lock-title">{{t.neoBindTitle}}</text>
+          <view class="guest-lock-btn"><text>{{t.neoBindBtn}}</text></view>
+        </view>
+
+        <view wx:if="{{neoBound && !isGuest}}" class="cart-section">
           <view class="cart-section-hdr">
             <text class="cart-section-title">{{t.cartridgeTitle}}</text>
             <view class="cart-sim-btn" bindtap="openCartSim">
@@ -489,9 +514,19 @@
           </view>
         </view>
 
+        <view wx:if="{{!neoBound && isAeviva && !isGuest}}" class="order-dots-card" bindtap="handleOrderDots">
+          <text class="order-dots-title">{{t.orderDotsTitle}}</text>
+          <text class="order-dots-detail">{{t.orderDotsDetail}}</text>
+          <view class="order-dots-btn"><text class="order-dots-btn-text">{{t.orderDotsBtn}}</text></view>
+        </view>
+
         <view class="dots-header">
           <text class="dots-title">{{t.dotsTitle}}</text>
-          <text wx:if="{{weekLabel}}" class="dots-week-label">{{weekLabel}}</text>
+          <view class="dots-week-nav">
+            <text class="dots-week-arrow {{!hasPrevWeek ? 'dots-week-arrow-disabled' : ''}}" catchtap="handleDotsPrevWeek">‹</text>
+            <text wx:if="{{weekLabel}}" class="dots-week-label">{{weekLabel}}</text>
+            <text class="dots-week-arrow {{!hasNextWeek ? 'dots-week-arrow-disabled' : ''}}" catchtap="handleDotsNextWeek">›</text>
+          </view>
         </view>
 
         <view wx:if="{{isGuest}}" class="guest-lock-card" bindtap="openGuestSheet">
@@ -550,7 +585,7 @@
             </view>
           </scroll-view>
 
-          <view wx:if="{{dispenseHasToday}}" class="dispense-section">
+          <view wx:if="{{dispenseHasToday && neoBound}}" class="dispense-section">
             <view
               class="dispense-btn{{dispenseStatus === 'done' ? ' dispense-btn-done' : dispenseStatus === 'error' ? ' dispense-btn-error' : dispenseStatus === 'loading' ? ' dispense-btn-loading' : ''}}"
               bindtap="dispenseToday"
@@ -676,6 +711,25 @@
               </view>
             </view>
           </view>
+          <!-- Committed formulation for this focus (see handleGetHealthPlanDetail's `formulation`
+               field) — only present once Formulate Dots has actually run while this focus was
+               active. Aeviva-only purchase CTA; other channels see the summary with no CTA. -->
+          <view wx:if="{{planDetailData.formulation}}" class="plan-detail-section">
+            <text class="plan-detail-label plan-section-label">{{t.formulationReadyTitle}}</text>
+            <view class="plan-chips-row">
+              <view wx:for="{{planDetailData.formulation.dot_breakdown}}" wx:key="key_name" class="plan-chip plan-chip-dot">
+                <text class="plan-chip-text">{{lang === 'zh' ? item.name_zh : item.name}} ×{{item.total_count}}</text>
+              </view>
+            </view>
+            <view wx:if="{{isAeviva}}" class="plan-action-btn plan-action-buy" bindtap="handleBuyFormulation">
+              <text>{{t.buyFormulationBtn}}</text>
+            </view>
+          </view>
+          <view wx:elif="{{isAeviva}}" class="plan-detail-section">
+            <text class="plan-detail-label plan-section-label">{{t.formulationNotReadyTitle}}</text>
+            <text class="plan-empty-hint">{{t.formulationNotReadyHint}}</text>
+          </view>
+
           <!-- Actions -->
           <view class="plan-actions-row">
             <view class="plan-action-btn plan-action-switch" bindtap="handleSwitchPlanType" data-plan-id="{{planDetailData.id}}" data-current-type="{{planDetailData.plan_type}}">
@@ -1667,6 +1721,34 @@
       </view>
       <view class="guest-sheet-btn {{guestInviteBusy ? 'guest-sheet-btn-disabled' : ''}}" bindtap="submitGuestInvite">
         <text>{{guestInviteBusy ? t.guestActivating : t.guestJoinBtn}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ── Viva Subscription Redeem Sheet ── -->
+  <view wx:if="{{vivaRedeemSheetOpen}}" class="guest-sheet-mask" bindtap="closeVivaRedeemSheet">
+    <view class="guest-sheet" catchtap="noop">
+      <view class="guest-sheet-handle"></view>
+      <text class="guest-sheet-title">{{t.vivaRedeemTitle}}</text>
+      <text class="guest-sheet-desc">
+        {{vivaSubscriptionExpiresAtDisplay && !vivaSubscriptionExpired
+          ? (lang === 'zh' ? '当前订阅至 ' + vivaSubscriptionExpiresAtDisplay : 'Currently active until ' + vivaSubscriptionExpiresAtDisplay)
+          : (lang === 'zh' ? '当前无有效订阅' : 'No active subscription')}}
+      </text>
+      <input
+        class="viva-redeem-input"
+        type="text"
+        value="{{vivaRedeemCode}}"
+        placeholder="{{t.vivaRedeemPlaceholder}}"
+        bindinput="onVivaRedeemInput"
+        focus="{{vivaRedeemSheetOpen}}"
+        adjust-position="{{true}}"
+      />
+      <view wx:if="{{vivaRedeemError}}" class="guest-sheet-error">
+        <text>{{vivaRedeemError}}</text>
+      </view>
+      <view class="guest-sheet-btn {{vivaRedeemBusy ? 'guest-sheet-btn-disabled' : ''}}" bindtap="submitVivaRedeem">
+        <text>{{vivaRedeemBusy ? '…' : t.vivaRedeemBtn}}</text>
       </view>
     </view>
   </view>

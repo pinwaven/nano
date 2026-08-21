@@ -1,6 +1,8 @@
 # Known Issues
 
-## CLAUDE.md is currently out of date on the persona-unification refactor
+## CLAUDE.md is currently out of date on the persona-unification refactor (fixed 2026-08-14)
+
+**RESOLVED 2026-08-14** — CLAUDE.md §16/§21/§22/§24/§25/§28 have been updated to reflect the shared, intent-gated (not persona-gated) mechanisms described below. The itemized divergences are kept here as a historical record of exactly what was stale and why, not as an open issue.
 
 The only uncommitted edit to `CLAUDE.md` itself is a single new paragraph appended to §29 documenting the 2026-07-31 check-in dedup-race fix. **Nothing else in CLAUDE.md reflects the "Nano adopted Viva's core" refactor**, even though that refactor's own code comments repeatedly cite CLAUDE.md §21/§25/§28 as if they already describe the current shared state. Specific divergences, section by section:
 
@@ -17,7 +19,7 @@ The only uncommitted edit to `CLAUDE.md` itself is a single new paragraph append
 ## Real functional gaps (not just doc drift)
 
 1. **`knowledge_entries` has zero `persona_type = 'nano'` rows.** `getEssentialBlock('nano')` and `findRelevantEntries('nano', ...)` return nothing on every call, today — Nano always falls back to the hardcoded default block and sees no optional-knowledge matches in PLAN/JUDGE. See [05-knowledge-base.md](05-knowledge-base.md).
-2. **`nutrition.topup` CloudEvents are silently dropped.** `worker/index.js`'s CloudEvent router has no case for `acs.dispatcher`/`nutrition.topup` — a successfully-published event matches no branch and returns `{ ok: true }` having done nothing. Unrelated to persona, but affects both.
+2. **`nutrition.topup` CloudEvents were silently dropped — fixed.** `worker/index.js`'s CloudEvent router previously had no case for `acs.dispatcher`/`nutrition.topup` — a successfully-published event matched no branch and returned `{ ok: true }` having done nothing. Now handled: a new `else if (event.source === DISPATCHER_EVENT_SOURCE && event.type === 'nutrition.topup')` branch calls the new `handleNutritionTopupEvent` (`handlers/dots.js`), which runs a background reformulation via the deterministic non-agentic path (`_runDeterministicFormulation` + `_commitNutritionPlan`) rather than the full agentic loop, since this is an unattended job with no user waiting on a reply. It sends a `formulation_reorder_ready` notification instead of the generic `nutrition_plan` one when `users.custom_formulation_purchased_at` is set (i.e. the user has already bought a custom formulation at least once). Unrelated to persona, but affects both.
 3. **The legacy `agent` function is still reachable for Viva users** outside the daily check-in feature's own coverage (any `user_online`/`reminder` dispatcher hit not captured by the same-tick check-in dedupe) and always speaks as "Nano," with no `persona_type` written to the `chat_messages` row it inserts. A Viva user can end up mid-conversation with a "Nano"-voiced message they never asked for.
 4. **`_regenerateIfFabricationRisk` (the non-agentic-path fabrication retry) remains Viva-only** (`personaType === 'viva' && !useAgenticLoop`) — Nano's `casual_chat`/`emotional_support`/`set_reminder` intents get no equivalent retry, for either persona under that same gate. Appears deliberate (untouched by the broader genericization pass) but worth confirming with whoever owns this system rather than assuming it should silently stay Viva-only forever.
 
@@ -36,4 +38,4 @@ The only uncommitted edit to `CLAUDE.md` itself is a single new paragraph append
 
 ## If you're picking this up
 
-The single highest-leverage next step, if someone wants to close the gap between code and docs properly, is: (1) commit the in-flight refactor, (2) do a dedicated pass updating CLAUDE.md §16/§21/§22/§24/§25/§28 to match, (3) seed at least placeholder `knowledge_entries` rows for `persona_type = 'nano'` so it isn't silently running on the fallback block indefinitely. None of that was done as part of writing these docs — this directory only describes what's true today, not what should change.
+The single highest-leverage next step, if someone wants to close the gap between code and docs properly, was: (1) commit the in-flight refactor, (2) do a dedicated pass updating CLAUDE.md §16/§21/§22/§24/§25/§28 to match, (3) seed at least placeholder `knowledge_entries` rows for `persona_type = 'nano'` so it isn't silently running on the fallback block indefinitely. **(1) and (2) are now done** (see the resolved section above and the README banner). (3) remains open — this directory only describes what's true today, not what should change.

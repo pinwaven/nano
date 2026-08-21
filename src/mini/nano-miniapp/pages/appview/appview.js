@@ -2,8 +2,8 @@ const app = getApp()
 const { BASE } = require('../../utils/config')
 
 const T = {
-  zh: { title: 'NANO', back: '返回' },
-  en: { title: 'NANO', back: 'Back' },
+  zh: { title: 'NANO', back: '退出' },
+  en: { title: 'NANO', back: 'Exit' },
 }
 
 Page({
@@ -34,6 +34,23 @@ Page({
     const isExternal = /^https?:\/\//i.test(path)
     const target = isExternal ? path : `${BASE}${path}`
     const openid = user?.user_id || user?.openid
+
+    // Optional caller-supplied intent payload (e.g. "open the store to buy this specific
+    // committed dot formulation") — passed through navigateTo as a JSON-stringified query
+    // param, same decode-then-parse treatment as options.url above since it goes through the
+    // same unreliable auto-decode. Carried server-side via /api/webview-token's `context`
+    // field and returned verbatim to the target page on exchange (handlers/login.js).
+    let context = null
+    if (options.context) {
+      try {
+        let rawContext = options.context
+        try { rawContext = decodeURIComponent(rawContext) } catch (e) {}
+        context = JSON.parse(rawContext)
+      } catch (e) {
+        context = null
+      }
+    }
+
     if (!openid) {
       this.setData({ url: target })
       return
@@ -44,7 +61,7 @@ Page({
       url: `${BASE}/api/webview-token`,
       method: 'POST',
       header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiToken}` },
-      data: { openid },
+      data: context ? { openid, context } : { openid },
       success: (res) => {
         const wvt = res.data?.wvt
         const sep = target.includes('?') ? '&' : '?'

@@ -273,12 +273,13 @@ function PartnersTab({ users = [], session }) {
                       {GCN_LINKED_CHANNEL_KEYS.has(pt.channel_key) && (
                         pt.gcn_partner_id
                           ? <Badge color="green" title={p.gcnProvisioned}>{p.gcnProvisioned}</Badge>
-                          : <button
-                              className="icon-btn"
-                              title={p.provisionGcnStore}
-                              disabled={pt.status !== 'active' || provisioningId === pt.id}
-                              onClick={() => provisionGcnStore(pt.id)}
-                            ><Store size={14} /></button>
+                          // GCN provisioning retired 2026-08-12 (gcn's partner-system-consolidation
+                          // roadmap, same cutover that stopped GCN from accepting/persisting new
+                          // nano_partner_id links) — new stores are onboarded directly in GCN now.
+                          // provisionGcnStore()/provisioningId above are left in place, unused,
+                          // same as saveConfig() above for the Rules tab's own 2026-08-09
+                          // retirement, rather than deleted outright.
+                          : <Store size={14} color="#cbd5e1" title={p.provisionGcnRetired} />
                       )}
                       {pt.status === 'active' && (
                         <button
@@ -378,12 +379,14 @@ function PartnersTab({ users = [], session }) {
         <div className="card" style={{ padding: '24px 28px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>{p.rulesTitle}</h3>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              {configMsg && <span style={{ fontSize: 13, color: configMsg === p.rulesSaved ? '#16a34a' : '#dc2626' }}>{configMsg}</span>}
-              <button className="btn-primary" onClick={saveConfig} disabled={configBusy}>
-                <Check size={13} />{configBusy ? p.saving : p.saveRules}
-              </button>
-            </div>
+          </div>
+          {/* Phase 5 of gcn's partner-system-consolidation-roadmap.md, 2026-08-09: GCN now
+              computes and pays aeviva commissions itself, using its own copy of this same rate
+              data — nano's recordReferralCommission/recordSalesCommission (the only code that
+              ever read this config) are disabled. Editing here would silently do nothing to real
+              payouts, so this whole tab is now read-only-for-reference rather than a live editor. */}
+          <div style={{ fontSize: 13, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', marginBottom: 20 }}>
+            {p.rulesDeprecatedNote}
           </div>
 
           {/* Referral matrix */}
@@ -404,7 +407,7 @@ function PartnersTab({ users = [], session }) {
                     {TIER_KEYS.map(newTier => (
                       <td key={newTier}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <input type="number" min="0" max="100" step="1"
+                          <input type="number" min="0" max="100" step="1" disabled
                             value={config.referral_rates?.[upline]?.[newTier] != null ? Math.round(Number(config.referral_rates[upline][newTier]) * 100) : ''}
                             onChange={e => setReferralRate(upline, newTier, e.target.value)}
                             style={{ width: 60, textAlign: 'right' }} />
@@ -432,7 +435,7 @@ function PartnersTab({ users = [], session }) {
                     <label className="form-field" key={tk}>
                       <span>{tierLabel(tk)}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <input type="number" min="0" max="100" step="1"
+                        <input type="number" min="0" max="100" step="1" disabled
                           value={config[field]?.[tk] != null ? Math.round(Number(config[field][tk]) * 100) : ''}
                           onChange={e => setDiscountRate(field, tk, e.target.value)}
                           style={{ width: 80, textAlign: 'right' }} />
@@ -457,7 +460,7 @@ function PartnersTab({ users = [], session }) {
                 <label className="form-field" key={key}>
                   <span>{label}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <input type="number" min="0" max="100" step="0.1"
+                    <input type="number" min="0" max="100" step="0.1" disabled
                       value={config[key] != null ? Number((Number(config[key]) * 100).toFixed(1)) : ''}
                       onChange={e => setConfig(c => ({ ...c, [key]: e.target.value === '' ? '' : Number(e.target.value) / 100 }))}
                       style={{ width: 80, textAlign: 'right' }} />
@@ -514,7 +517,9 @@ function PartnersTab({ users = [], session }) {
                   </label>
                   <label className="form-field">
                     <span>{p.typeEntryFee}</span>
-                    <input type="number" min="0" value={typeForm.entry_fee ?? ''} onChange={e => setTypeForm(f => ({ ...f, entry_fee: e.target.value === '' ? 0 : Number(e.target.value) }))} />
+                    {isGcnManagedEdit
+                      ? <span>{typeForm.entry_fee}</span>
+                      : <input type="number" min="0" value={typeForm.entry_fee ?? ''} onChange={e => setTypeForm(f => ({ ...f, entry_fee: e.target.value === '' ? 0 : Number(e.target.value) }))} />}
                   </label>
                   <label className="form-field">
                     <span>{p.typeSort}</span>
@@ -526,7 +531,7 @@ function PartnersTab({ users = [], session }) {
                   </label>
                   {editingType && (
                     <label className="form-field" style={{ gridColumn: '1 / -1', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <input type="checkbox" checked={!!typeForm.is_active} onChange={e => setTypeForm(f => ({ ...f, is_active: e.target.checked }))} />
+                      <input type="checkbox" checked={!!typeForm.is_active} disabled={isGcnManagedEdit} onChange={e => setTypeForm(f => ({ ...f, is_active: e.target.checked }))} />
                       <span>{p.typeActive}</span>
                     </label>
                   )}
@@ -613,13 +618,20 @@ function PartnersTab({ users = [], session }) {
                   </label>
                   <label className="form-field">
                     <span>{p.tier}</span>
-                    <div className="select-wrap" style={{ width: '100%' }}>
-                      <select value={form.tier || ''} onChange={e => setForm(f => ({ ...f, tier: e.target.value }))} className="inline-select" style={{ width: '100%' }}>
-                        <option value="">—</option>
-                        {TIERS.map(tier => <option key={tier.value} value={tier.value}>{tier.label}</option>)}
-                      </select>
-                      <ChevronDown size={11} className="select-chevron" />
-                    </div>
+                    {form.tier_managed_by_gcn ? (
+                      <div>
+                        <code className="code-tag">{form.tier}</code>
+                        <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>{p.tierManagedByGcnNote}</div>
+                      </div>
+                    ) : (
+                      <div className="select-wrap" style={{ width: '100%' }}>
+                        <select value={form.tier || ''} onChange={e => setForm(f => ({ ...f, tier: e.target.value }))} className="inline-select" style={{ width: '100%' }}>
+                          <option value="">—</option>
+                          {TIERS.map(tier => <option key={tier.value} value={tier.value}>{tier.label}</option>)}
+                        </select>
+                        <ChevronDown size={11} className="select-chevron" />
+                      </div>
+                    )}
                   </label>
                   <label className="form-field">
                     <span>{p.entryFee}</span>

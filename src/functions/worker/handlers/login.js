@@ -3,6 +3,8 @@
 const { pool } = require('../lib/db');
 const { generateUserId, generateReferralCode, getWxAccessToken } = require('../lib/auth');
 const { normalizeCnPhone } = require('../lib/phone');
+const { grantSignupTrial } = require('../lib/personaOverride');
+const { syncPartnerPhoneFromUser } = require('./partners');
 
 async function handleResolvePhone(code, app_id = null) {
     try {
@@ -37,6 +39,7 @@ async function handleBindPhone(user_id, code, app_id = null, rawPhone = null) {
             if (!user_id) return { success: false, error: 'user_id is required' };
             const fullRawPhone = normalizeCnPhone(rawPhone);
             await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [fullRawPhone, user_id]);
+            await syncPartnerPhoneFromUser(user_id, fullRawPhone);
             return { success: true, phone: fullRawPhone };
         }
         if (!code) return { success: false, error: 'code is required' };
@@ -57,6 +60,7 @@ async function handleBindPhone(user_id, code, app_id = null, rawPhone = null) {
         const phone = normalizeCnPhone(wxData.phone_info?.purePhoneNumber);
         if (!phone) return { success: false, error: 'No phone number returned' };
         await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [phone, user_id]);
+        await syncPartnerPhoneFromUser(user_id, phone);
         return { success: true, phone };
     } catch (err) {
         return { success: false, error: err.message };
@@ -113,7 +117,7 @@ async function handleWxLogin(body) {
     const WX_LOGIN_USER_SELECT =
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                 u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
-                u.referred_by_user_id, u.merged_into_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
+                u.referred_by_user_id, u.merged_into_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
                 cu.nickname AS coach_name,
                 c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                 c.config->'sub_age_display_names' AS channel_sub_age_names,
@@ -178,7 +182,7 @@ async function handleWxLogin(body) {
                     const refreshed = await pool.query(
                         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                                 u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
-                                u.referral_code, u.referred_by_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
+                                u.referral_code, u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
                                 cu.nickname AS coach_name,
                                 c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                                 c.config->'sub_age_display_names' AS channel_sub_age_names,
@@ -239,6 +243,7 @@ async function handleWxLogin(body) {
         if (resolvedPhone && !existingRow.phone) {
             await pool.query('UPDATE users SET phone = $1 WHERE user_id = $2', [resolvedPhone, existingRow.user_id]);
             existingRow.phone = resolvedPhone;
+            await syncPartnerPhoneFromUser(existingRow.user_id, resolvedPhone);
         }
         const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = existingRow;
         const channel = channel_name
@@ -263,7 +268,7 @@ async function handleWxLogin(body) {
         const phoneMatch = await pool.query(
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                     u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
-                    (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
+                    (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
                     cu.nickname AS coach_name,
                     c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                     c.config->'sub_age_display_names' AS channel_sub_age_names,
@@ -375,6 +380,10 @@ async function handleWxLogin(body) {
         [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, resolvedPhone, unionid]
     );
 
+    try { await grantSignupTrial(pool, newUserId, channelId); } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'grantSignupTrial failed', user_id: newUserId, error: err.message }));
+    }
+
     if (inviteRecord) {
         await pool.query(
             `UPDATE invitations SET use_count = use_count + 1 WHERE id = $1
@@ -429,7 +438,7 @@ async function handleWxAppLogin(body) {
     const bundleSelect = `
         SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
-               u.referred_by_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
+               u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
                cu.nickname AS coach_name,
                c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                c.config->'sub_age_display_names' AS channel_sub_age_names
@@ -550,6 +559,10 @@ async function handleWxAppLogin(body) {
         [newUserId, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, phone || null, appOpenid, unionid]
     );
 
+    try { await grantSignupTrial(pool, newUserId, channelId); } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'grantSignupTrial failed', user_id: newUserId, error: err.message }));
+    }
+
     if (inviteRecord) {
         await pool.query(
             `UPDATE invitations SET use_count = use_count + 1 WHERE id = $1
@@ -661,15 +674,15 @@ async function handleGetMyReferrals(query) {
 // app with the user pre-authenticated (no phone login required in the webview).
 async function handlePostWebviewToken(body) {
     try {
-        const { openid } = body || {};
+        const { openid, context } = body || {};
         if (!openid) return { success: false, error: 'openid is required' };
 
         const token = require('crypto').randomBytes(32).toString('hex');
         const expiresAt = new Date(Date.now() + 60_000); // 60 seconds
 
         await pool.query(
-            `INSERT INTO webview_tokens (token, openid, expires_at) VALUES ($1, $2, $3)`,
-            [token, openid, expiresAt]
+            `INSERT INTO webview_tokens (token, openid, expires_at, context) VALUES ($1, $2, $3, $4)`,
+            [token, openid, expiresAt, context ? JSON.stringify(context) : null]
         );
 
         return { success: true, wvt: token, expires_in: 60 };
@@ -689,20 +702,24 @@ async function handleExchangeWebviewToken(body) {
             `UPDATE webview_tokens
              SET used = TRUE
              WHERE token = $1 AND used = FALSE AND expires_at > NOW()
-             RETURNING openid`,
+             RETURNING openid, context`,
             [wvt]
         );
         if (rows.length === 0) return { success: false, error: 'Invalid or expired token' };
 
         const openid = rows[0].openid;
+        const context = rows[0].context || null;
         const WEBVIEW_USER_SELECT =
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                     u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
-                    u.merged_into_user_id, (u.phone_verified_at IS NOT NULL) AS phone_verified, b.bio_age,
+                    u.merged_into_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
                     cu.nickname AS coach_name,
                     c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                     c.config->'sub_age_display_names' AS channel_sub_age_names,
-                    c.config->>'locale' AS channel_locale
+                    c.config->>'locale' AS channel_locale,
+                    (SELECT COALESCE(json_agg(json_build_object('phone', up.phone, 'is_primary', up.is_primary, 'verified_at', up.verified_at)
+                                               ORDER BY up.is_primary DESC, up.verified_at DESC NULLS LAST), '[]'::json)
+                     FROM user_phones up WHERE up.user_id = u.user_id) AS phones
              FROM users u
              LEFT JOIN coaches p ON u.coach_id = p.id
              LEFT JOIN users cu ON p.user_id = cu.user_id
@@ -730,7 +747,7 @@ async function handleExchangeWebviewToken(body) {
             ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
             : null;
 
-        return { success: true, user, channel };
+        return { success: true, user, channel, context };
     } catch (err) {
         return { success: false, error: err.message };
     }

@@ -79,7 +79,7 @@ module.exports = (context) => {
     const val = subAges?.[d.subAgeKey];
     const valStr = val != null ? `${Number(val).toFixed(1)} yrs` : (isZh ? '（暂无数据）' : '(no data)');
     const relDots = (dotsByDimension[d.dbKey] || [])
-      .map(dot => `${dot.key_name}: ${isZh ? (dot.name_zh || dot.name) : dot.name}`)
+      .map(dot => isZh ? `${dot.key_name_zh || dot.key_name}: ${dot.name_zh || dot.name}` : `${dot.key_name}: ${dot.name}`)
       .join(', ') || (isZh ? '暂无' : 'none');
     return isZh
       ? `• ${d.labelZh}：${valStr}  [驱动因素：${d.bmZh}（${d.whyZh}）；正常范围：${d.normalZh}]\n  → 相关 Dots：${relDots}`

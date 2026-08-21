@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { LayoutGrid, Sliders, BookOpen, Users2, MessageSquare } from 'lucide-react';
+import { LayoutGrid, Sliders, BookOpen, Users2, MessageSquare, KeyRound } from 'lucide-react';
 import { useLang, StatCard, Badge } from '../shared.jsx';
 import { KnowledgeTab } from './KnowledgeTab.jsx';
+import { PersonaSubscriptionsTab } from './PersonaSubscriptionsTab.jsx';
 
 const PERSONAS = [
   { type: 'nano', label: 'Nano', color: '#6366f1', desc_en: 'Waven Nano — bilingual (zh/en), Kino biomarkers / BioAge / Dots nutrition.', desc_zh: 'Waven Nano — 中英双语，Kino 生物标志物 / 生理年龄 / 原粒营养。' },
@@ -28,11 +29,15 @@ function AIPersonaTab({ channels }) {
         <button className={`subtab-btn${subTab === 'knowledge' ? ' active' : ''}`} onClick={() => setSubTab('knowledge')}>
           <BookOpen size={13} /> {t.nav.knowledge || (isZh ? '知识库' : 'Knowledge')}
         </button>
+        <button className={`subtab-btn${subTab === 'subscriptions' ? ' active' : ''}`} onClick={() => setSubTab('subscriptions')}>
+          <KeyRound size={13} /> {t.nav.vivaSubscriptions || (isZh ? '订阅激活码' : 'Subscriptions')}
+        </button>
       </div>
 
-      {subTab === 'overview'  && <PersonaOverview channels={channels} isZh={isZh} />}
-      {subTab === 'features'  && <PersonaFeatures isZh={isZh} />}
-      {subTab === 'knowledge' && <KnowledgeTab isSuperadmin={isSuperadmin} />}
+      {subTab === 'overview'       && <PersonaOverview channels={channels} isZh={isZh} />}
+      {subTab === 'features'       && <PersonaFeatures isZh={isZh} />}
+      {subTab === 'knowledge'      && <KnowledgeTab isSuperadmin={isSuperadmin} />}
+      {subTab === 'subscriptions'  && <PersonaSubscriptionsTab />}
     </>
   );
 }

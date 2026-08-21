@@ -95,12 +95,14 @@ async function handleDailyCheckinEvent({ user_id, period, persona_type }) {
                 [user_id]
             ),
             // Wearable-derived rolling averages (Halo/V8) — same column set as
-            // agenticTools.js's get_health_twin tool. Best-effort: a missing row
-            // (no device bound / no synced data yet) is handled by the prompt,
-            // not fabricated here.
+            // agenticTools.js's get_health_twin tool, plus trend_data (improving/declining/
+            // stable for HRV/sleep, from healthTwinUpdater.js's computeTrend()) so the
+            // check-in prompt has a real, non-fabricated positive signal to reach for.
+            // Best-effort: a missing row (no device bound / no synced data yet) is handled
+            // by the prompt, not fabricated here.
             pool.query(
                 `SELECT avg_hrv_ms, avg_resting_hr, avg_spo2, avg_sleep_hours, avg_sleep_score,
-                        avg_deep_sleep_pct, avg_daily_steps, avg_active_minutes
+                        avg_deep_sleep_pct, avg_daily_steps, avg_active_minutes, trend_data
                  FROM health_twin WHERE user_id = $1`,
                 [user_id]
             ),
@@ -122,13 +124,33 @@ async function handleDailyCheckinEvent({ user_id, period, persona_type }) {
         const bioData = bioResult.rows[0]?.data || {};
         const bioageProfile = bioData.bioage_profile || {};
         const subAges = bioageProfile.SubAges || {};
-        // Pick the single most-elevated dimension deterministically (highest sub-age relative
-        // to chrono-age) rather than asking the LLM to compare numbers itself.
-        const subAgeEntries = Object.entries(subAges).filter(([, v]) => typeof v === 'number');
+        // Pick the single most-elevated dimension deterministically (highest sub-age delta
+        // vs. chrono-age) rather than asking the LLM to compare numbers itself — but only
+        // when it clears a magnitude threshold. Per BioAgeCalculator._scoreToSubAge, a
+        // dimension's deviation is hard-clamped to roughly ±10-12 years; unconditionally
+        // flagging "the highest of 4" regardless of size meant even a barely-elevated (or
+        // objectively fine) dimension got surfaced as "worth watching" every single day.
+        // MEANINGFUL_ELEVATION_YEARS sits comfortably above compression-curve noise near
+        // zero while well below the ceiling — a deliberate "actually worth mentioning" cut.
+        const MEANINGFUL_ELEVATION_YEARS = 2.0;
+        const subAgeEntries = Object.entries(subAges)
+            .filter(([, v]) => typeof v === 'number')
+            .map(([key, v]) => ({
+                key,
+                sub_age: v,
+                delta: (typeof bioageProfile.ChronoAge === 'number') ? v - bioageProfile.ChronoAge : null,
+            }))
+            .filter(e => e.delta !== null);
         let mostElevated = null;
         if (subAgeEntries.length) {
-            subAgeEntries.sort((a, b) => b[1] - a[1]);
-            mostElevated = { key: subAgeEntries[0][0], sub_age: subAgeEntries[0][1], chrono_age: bioageProfile.ChronoAge ?? null };
+            subAgeEntries.sort((a, b) => b.delta - a.delta);
+            const top = subAgeEntries[0];
+            // Three distinguishable states: a real concern, "nothing elevated" (new — lets
+            // the prompt give a genuinely positive check-in instead of manufacturing one),
+            // and mostElevated === null (no biomarker snapshot at all, unchanged meaning).
+            mostElevated = top.delta >= MEANINGFUL_ELEVATION_YEARS
+                ? { key: top.key, sub_age: top.sub_age, chrono_age: bioageProfile.ChronoAge, delta: top.delta }
+                : { status: 'all_tracking_well', chrono_age: bioageProfile.ChronoAge };
         }
 
         const activeHealthPlans = activePlansResult.rows.map(p => ({
