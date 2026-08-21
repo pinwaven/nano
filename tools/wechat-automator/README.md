@@ -83,6 +83,26 @@ node example.js
   "Login as") stays logged in across `reLaunch`/relaunches — it's not reset per session. Use
   `page.setData({ ... })` / `page.callMethod(...)` for scoped test state instead of assuming a fresh
   login each run.
+- **Computed styles are reachable — but only via `wx.createSelectorQuery()` inside `mp.evaluate()`.**
+  automator's `Element` API has no computed-style accessor (`size()`/`offset()`/`attribute()` only),
+  so for anything colour/layout-related run a selector query in the app-service context:
+  `q.selectAll('.cls').fields({ computedStyle: ['color', 'backgroundColor'], rect: true, size: true }, cb)`
+  then `q.exec(() => resolve(out))`. Values come back as `rgb()`/`rgba()` strings. This is what makes
+  a real contrast/theme audit possible without screenshots.
+- **To reach inside a custom component, use the `>>>` deep combinator — not `.in(component)`.**
+  Both `wx.createSelectorQuery().in(comp)` and `comp.createSelectorQuery()` return *empty* here,
+  even for the component's own root node. `wx.createSelectorQuery().selectAll('#comp-id >>> .cls')`
+  from a plain page-level query is what actually crosses the boundary. Note the runtime class names
+  inside a component are prefixed by style isolation (e.g. `.uh-root` renders as
+  `health--uh-root`), which `>>>` handles for you but a hand-built selector will not.
+- **`mp.evaluate()` has a hard response timeout; batch selector queries in small chunks.** A single
+  `evaluate` issuing ~120 plain `selectAll` calls is fine, but `>>>` deep queries are far more
+  expensive — more than ~4-8 per `evaluate` reliably trips `timeout waiting for automator response`.
+  Chunk them and merge the results.
+- **A long session degrades the simulator.** After many hot recompiles, even a plain
+  `page.setData({...})` starts timing out while `page.data()` still works. That's the simulator, not
+  your script — `launch({ freshStart: true })` (a full quit + kill + relaunch) restores it, and
+  afterwards the *same* sweep that was timing out completed and probed ~3x more rendered nodes.
 
 ## Not included here
 

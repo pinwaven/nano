@@ -6,6 +6,19 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Fixed
+
+- **Light theme was largely unreadable; every text surface now meets WCAG AA (4.5:1)** (`app.wxss`, `pages/main/main.wxss`, `components/user-health/user-health.{wxss,wxml}`, `pages/coach/coach.wxss`, `pages/{referral,phones}/*.wxss`, `components/avatar-picker/avatar-picker.wxss`)
+  - **Root cause: `page` sets `color: #EEF2FF` for the dark theme, and the `.theme-light` block only ever redefined CSS *variables* — never `color` itself.** So every element without an explicit color rule inherited near-white text onto the cream background, measured live at **1.05:1**. Fixed by setting `color: var(--text)` on `.theme-light`, which re-roots inheritance for the whole light subtree (it also reaches into custom components, since inheritance is unaffected by style isolation).
+  - The light palette had been built to mirror the dark theme's *hue* and was never checked for contrast. Darkened the tokens (`--blue` 2.46→4.89:1, `--text-sub` 4.43→5.52:1, `--text-muted` 1.79→4.64:1). `--blue` doubles as the primary button fill, so white-on-button went 2.63→5.22:1 too.
+  - Added semantic **text** tokens (`--success`, `--warn`, `--danger`, `--info`, `--gold`, `--steel`, …) and swapped 126 hardcoded `color:` declarations onto them. Each token's dark value is byte-identical to the hex it replaced, so **dark theme is unchanged** (verified live). Backgrounds/borders keep their raw rgba tints.
+  - Muted text used `rgba(var(--wave-rgb), 0.25–0.6)` — alpha tuned for a bright colour on dark navy. On cream, alpha itself is the blocker (even pure black at α=0.3 tops out near 1.9:1), so light theme gets opaque values via a 4-step ramp that preserves the original faint→strong hierarchy. 72 generated `.theme-light` overrides; base rules untouched.
+  - Health tab status colours are applied as **inline** `style="color:…"` from `user-health.js`, which no class rule can override. A `<wxs>` mapper now maps each to a darker same-hue variant at render time (reactive to `theme` for free); chart fills/bars keep the bright originals since they're shapes, not text.
+  - Verified live in WeChat DevTools via the automator, reading real computed styles: across all five tabs plus the health component, low-contrast text went from **80+ failures to 0** (the 14 remaining sub-4.5 hits are chart bar segments, decorative dots, and white-on-gradient bubbles — none of them text). Health-tab examples: `ht-lab-name` 1.32→4.88, `dt-metric-label` 1.92→5.32, `dt-sa-val` 2.62→5.82.
+
+- **Status bar icons were nearly invisible in light theme** (`pages/main/main.js`, `pages/coach/coach.js`, `pages/referral/referral.js`)
+  - These pages use `navigationStyle: "custom"`, but `app.json`'s global `navigationBarTextStyle: "white"` suits only the dark navy header — it never tracked the switch to light theme's cream header, leaving white clock/battery icons on a light background. Each page now calls `wx.setNavigationBarColor()` on load and on theme toggle.
+
 ### Added
 
 - **Health tab (the Digital Twin) now refreshes when you return to it, instead of only on first attach** (`components/user-health/user-health.js` — new `refreshIfStale()`; `pages/main/main.js` — `switchTab`)

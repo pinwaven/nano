@@ -88,7 +88,7 @@
   margin-bottom: 20rpx;
 }
 
-.theme-light .card-label { color: rgba(26, 43, 60, 0.5); }
+.theme-light .card-label { color: #5F656B; }
 
 .code-row {
   margin-bottom: 28rpx;
@@ -166,7 +166,7 @@
   color: rgba(232, 240, 248, 0.55);
 }
 
-.theme-light .stat-label { color: rgba(26, 43, 60, 0.55); }
+.theme-light .stat-label { color: #5E656B; }
 
 .stat-divider {
   width: 1rpx;
@@ -221,7 +221,7 @@
   margin-bottom: 16rpx;
 }
 
-.theme-light .section-title { color: rgba(26, 43, 60, 0.45); }
+.theme-light .section-title { color: #6B7177; }
 
 /* Friend cards */
 .friend-card {
@@ -271,7 +271,7 @@
   color: rgba(232, 240, 248, 0.45);
 }
 
-.theme-light .friend-meta { color: rgba(26, 43, 60, 0.45); }
+.theme-light .friend-meta { color: #6B7177; }
 
 .friend-commission { flex-shrink: 0; }
 
@@ -302,7 +302,7 @@
   color: rgba(232, 240, 248, 0.4);
 }
 
-.theme-light .dim-text { color: rgba(26, 43, 60, 0.4); }
+.theme-light .dim-text { color: #6A7175; }
 
 .error-text {
   font-size: 26rpx;
@@ -345,7 +345,7 @@
   display: block;
 }
 
-.theme-light .credit-hint { color: rgba(26, 43, 60, 0.45); }
+.theme-light .credit-hint { color: #6B7177; }
 
 .credit-withdraw-btn {
   flex: none;
@@ -395,7 +395,7 @@
   margin-bottom: 12rpx;
 }
 
-.theme-light .form-label { color: rgba(26, 43, 60, 0.55); }
+.theme-light .form-label { color: #5E656B; }
 
 .form-input {
   width: 100%;
@@ -445,7 +445,7 @@
   color: rgba(232, 240, 248, 0.4);
 }
 
-.theme-light .wd-arrow { color: rgba(26, 43, 60, 0.4); }
+.theme-light .wd-arrow { color: #6A7175; }
 
 .wd-cash {
   font-size: 28rpx;
@@ -463,10 +463,10 @@
   font-weight: 600;
 }
 
-.wd-status-pending  { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.wd-status-pending  { background: rgba(245, 158, 11, 0.2); color: var(--warn); }
 .wd-status-approved { background: rgba(37, 99, 235, 0.2);  color: #60a5fa; }
-.wd-status-rejected { background: rgba(239, 68, 68, 0.2);  color: #f87171; }
-.wd-status-completed { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+.wd-status-rejected { background: rgba(239, 68, 68, 0.2);  color: var(--danger-soft); }
+.wd-status-completed { background: rgba(16, 185, 129, 0.2); color: var(--success); }
 
 .theme-light .wd-status-pending   { color: #B45309; }
 .theme-light .wd-status-approved  { color: #1D4ED8; }
@@ -478,4 +478,22 @@
   color: rgba(232, 240, 248, 0.4);
 }
 
-.theme-light .wd-date { color: rgba(26, 43, 60, 0.4); }
+.theme-light .wd-date { color: #6A7175; }
+
+/* ════════════════════════════════════════════════════════
+   Light theme — muted-text contrast fixes (generated)
+   The base rules above use low-alpha rgba() tuned for a bright color on dark
+   navy. On the cream light surface that same alpha washes out to 1.4-2.1:1,
+   and no alpha <= 0.6 can reach 4.5:1 on cream regardless of base color — so
+   light theme needs opaque values. Ramp preserves the faint->strong hierarchy.
+   ════════════════════════════════════════════════════════ */
+.theme-light .back-icon { color: #5D4C32; }
+.theme-light .back-label { color: #5D4C32; }
+.theme-light .code-value { color: #5D4C32; }
+.theme-light .btn-outline { color: #5D4C32; }
+.theme-light .stat-num { color: #5D4C32; }
+.theme-light .how-num { color: #5D4C32; }
+.theme-light .avatar-letter { color: #5D4C32; }
+.theme-light .credit-balance { color: #5D4C32; }
+.theme-light .credit-currency { color: #5D4C32; }
+.theme-light .wd-credits { color: #5D4C32; }

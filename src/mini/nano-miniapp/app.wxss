@@ -24,6 +24,22 @@ page {
   --bg-sheet:    #0D1E35;
   --bg-hero:     radial-gradient(ellipse at 50% 0%, rgba(99, 117, 236, 0.18) 0%, transparent 70%);
 
+  /* Semantic accent colors for TEXT. These dark-theme values are the exact hexes
+     that used to be hardcoded at each call site, so dark theme is unchanged; the
+     .theme-light block below swaps in darker variants that stay legible on cream.
+     Use these for `color:` only — background/border tints still use raw rgba(). */
+  --success:      #34d399;
+  --success-deep: #10b981;
+  --warn:         #f59e0b;
+  --danger:       #ef4444;
+  --danger-soft:  #f87171;
+  --danger-muted: #E86060;
+  --danger-pale:  #FFB3B3;
+  --info:         #818cf8;
+  --info-pale:    #8B9FFF;
+  --gold:         #F5C56A;
+  --steel:        #7A9ABF;
+
   height: 100%;
   background-color: #0B1C2E;
   color: #EEF2FF;
@@ -33,20 +49,37 @@ page {
 
 /* ── Light theme overrides (applied via .theme-light on .main root view) ── */
 .theme-light {
-  --blue:        #C9956A;
-  --blue-glow:   rgba(201, 149, 106, 0.35);
-  --blue-dim:    rgba(201, 149, 106, 0.1);
-  --wave:        #8B6E4E;
+  /* Accent/text tokens are deliberately darker than the dark theme's. The cream
+     surface below is bright (#FAF7F2), so the dark theme's airy tints land at
+     1.3-2.5:1 against it — the earlier values here were chosen to mirror the dark
+     palette's *hue* and were never checked for contrast. Every value below is
+     >= 4.5:1 on --navy (measured, see the light-theme contrast audit). */
+  --blue:        #985F33;
+  --blue-glow:   rgba(152, 95, 51, 0.35);
+  --blue-dim:    rgba(152, 95, 51, 0.1);
+  --wave:        #796044;
   --navy:        #FAF7F2;
   --navy-card:   #FFFFFF;
   --navy-lift:   #F5EDE3;
-  --navy-border: rgba(201, 149, 106, 0.2);
+  --navy-border: rgba(152, 95, 51, 0.22);
   --text:        #2C2C2C;
-  --text-sub:    #8B6E4E;
-  --text-muted:  rgba(139, 110, 78, 0.45);
+  --text-sub:    #796044;
+  --text-muted:  #856C47;
 
-  --blue-rgb:    201, 149, 106;
-  --wave-rgb:    139, 110, 78;
+  --blue-rgb:    152, 95, 51;
+  --wave-rgb:    121, 96, 68;
+
+  --success:      #0F7A52;
+  --success-deep: #0A7350;
+  --warn:         #8A5A06;
+  --danger:       #C0392B;
+  --danger-soft:  #CE3B32;
+  --danger-muted: #C0392B;
+  --danger-pale:  #C0392B;
+  --info:         #4F46E5;
+  --info-pale:    #4F46E5;
+  --gold:         #8A5D0A;
+  --steel:        #4E74A1;
 
   --bg-gradient: radial-gradient(ellipse at 50% 0%, #F5EDE3 0%, #FAF7F2 70%);
   --bg-surface:  rgba(250, 247, 242, 0.92);
@@ -54,6 +87,13 @@ page {
   --bg-tabbar:   rgba(250, 247, 242, 0.97);
   --bg-sheet:    #FFFFFF;
   --bg-hero:     radial-gradient(ellipse at 50% 0%, rgba(201, 149, 106, 0.12) 0%, transparent 70%);
+
+  /* Root cause of "text is unreadable in light theme": `page` sets
+     color: #EEF2FF for the dark theme, and this block only ever redefined
+     *variables* — never `color` itself. So every element without an explicit
+     color rule inherited near-white text onto the cream background (measured
+     1.05:1). Setting it here re-roots inheritance for the whole light subtree. */
+  color: var(--text);
 }
 
 view, text, input, textarea, button {

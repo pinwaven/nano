@@ -84,7 +84,7 @@
   margin: 12rpx 0 20rpx;
 }
 
-.theme-light .phone-step-desc { color: rgba(26, 43, 60, 0.55); }
+.theme-light .phone-step-desc { color: #5E656B; }
 
 .phones-links {
   display: flex;
@@ -97,3 +97,14 @@
   font-size: 24rpx;
   color: var(--blue);
 }
+
+/* ════════════════════════════════════════════════════════
+   Light theme — muted-text contrast fixes (generated)
+   The base rules above use low-alpha rgba() tuned for a bright color on dark
+   navy. On the cream light surface that same alpha washes out to 1.4-2.1:1,
+   and no alpha <= 0.6 can reach 4.5:1 on cream regardless of base color — so
+   light theme needs opaque values. Ramp preserves the faint->strong hierarchy.
+   ════════════════════════════════════════════════════════ */
+.theme-light .phone-badge { color: #5D4C32; }
+.theme-light .phone-action { color: #5D4C32; }
+.theme-light .phones-link { color: #5D4C32; }
