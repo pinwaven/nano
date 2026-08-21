@@ -206,9 +206,13 @@ function _scoreBp(sys, dia) {
   return 100
 }
 
-const TWIN_COV_LABELS = {
-  zh: { sleep: '睡眠', activity: '活动', vitals: '体征', lab_result: '化验', body_composition: '体成分' },
-  en: { sleep: 'Sleep', activity: 'Activity', vitals: 'Vitals', lab_result: 'Labs', body_composition: 'Body' },
+// The four Digital Twin layers (CLAUDE.md §34). Deliberately NOT the five health_events
+// categories — those are all wearable-derived and know nothing about Kino or the profile,
+// so they can't back a twin-completeness view on their own.
+const TWIN_LAYER_KEYS = ['precision', 'daily', 'medical', 'profile']
+const TWIN_LAYER_LABELS = {
+  zh: { precision: '精准检测', daily: '日常监测', medical: '医疗记录', profile: '个人档案' },
+  en: { precision: 'Precision Testing', daily: 'Daily Monitoring', medical: 'Medical Records', profile: 'Personal Profile' },
 }
 
 const T = {
@@ -221,7 +225,7 @@ const T = {
     bsKg: 'kg', bsCm: 'cm',
     healthConditions: '健康状况', noConditions: '无特殊健康状况',
     latestBm: '最新生物标志物',
-    trends: 'KINO', tests: '次检测',
+    tests: '次检测',
     noBmData: '暂无生物标志物数据。', noHistory: '暂无检测记录。',
     guestHealthCta: '激活账户后，查看您的健康数据与生物年龄',
     guestJoinBtn: '激活账户',
@@ -255,7 +259,7 @@ const T = {
       other:               '其他',
     },
     digitalTwin: '数字孪生',
-    noTwinData: '暂无可穿戴设备数据。',
+    noTwinData: '暂无日常监测数据，绑定戒指后自动同步。',
     dtSevenDay: '7天均值',
     dtSleepScore: '评分',
     dtResting: '静息',
@@ -267,9 +271,16 @@ const T = {
     healthScoreGrades: { optimal: '优秀', good: '良好', fair: '一般', low: '偏低' },
     dtRecovery: '恢复力', dtCardio: '心血管', dtActivity: '活动量', dtBodyDomain: '体态',
     dtVitals: '生命体征',
-    dtMonitoring: '实时健康数据',
-    dtLabPanel: '快照', dtLabAbnormal: '项异常', dtLabAllNormal: '所有指标正常',
-    healthReports: '实验室',
+    layerDaily: '日常监测',
+    layerPrecision: 'KINO 精准检测',
+    layerMedical: '医疗记录',
+    layerProfile: '个人档案',
+    twinComplete: '数据完整度',
+    twinLayerEmpty: '暂无',
+    factsFootnote: '这些内容来自你在对话中提到的信息。',
+    noFactsSelf: '暂无记录的个人信息。',
+    factCategories: { dietary_restriction: '饮食限制', allergy: '过敏', preference: '偏好', goal: '目标', other: '其他' },
+    labPanel: '快照', labAbnormal: '项异常', labAllNormal: '所有指标正常',
     noReports: '暂无检测报告。',
     reportTypeLabels: { annual_checkup: '年度体检', lab_panel: '化验报告', imaging: '影像检查', other: '其他' },
     reportSourceLabels: { lab_api: '实验室', manual_upload: '手动上传', fhir_import: 'FHIR' },
@@ -336,7 +347,7 @@ const T = {
     bsKg: 'kg', bsCm: 'cm',
     healthConditions: 'Health Conditions', noConditions: 'No known health conditions',
     latestBm: 'Latest Biomarkers',
-    trends: 'KINO', tests: 'tests',
+    tests: 'tests',
     noBmData: 'No biomarker data available yet.', noHistory: 'No test history yet.',
     guestHealthCta: 'Activate your account to view your health data and Bio Age',
     guestJoinBtn: 'Activate Account',
@@ -370,7 +381,7 @@ const T = {
       other:               'Other',
     },
     digitalTwin: 'Digital Twin',
-    noTwinData: 'No wearable data yet.',
+    noTwinData: 'No daily monitoring data yet — bind a ring to start syncing.',
     dtSevenDay: '7-day avg',
     dtSleepScore: 'score',
     dtResting: 'resting',
@@ -382,9 +393,16 @@ const T = {
     healthScoreGrades: { optimal: 'Optimal', good: 'Good', fair: 'Fair', low: 'Low' },
     dtRecovery: 'Recovery', dtCardio: 'Cardio', dtActivity: 'Activity', dtBodyDomain: 'Body',
     dtVitals: 'Vitals',
-    dtMonitoring: 'Real-time Health Data',
-    dtLabPanel: 'Snapshot', dtLabAbnormal: 'abnormal', dtLabAllNormal: 'All markers normal',
-    healthReports: 'Lab',
+    layerDaily: 'Daily Monitoring',
+    layerPrecision: 'KINO Precision Testing',
+    layerMedical: 'Medical Records',
+    layerProfile: 'Personal Profile',
+    twinComplete: 'Data coverage',
+    twinLayerEmpty: 'No data',
+    factsFootnote: 'Captured from things you mentioned in chat.',
+    noFactsSelf: 'No personal facts recorded yet.',
+    factCategories: { dietary_restriction: 'Diet', allergy: 'Allergy', preference: 'Preference', goal: 'Goal', other: 'Other' },
+    labPanel: 'Snapshot', labAbnormal: 'abnormal', labAllNormal: 'All markers normal',
     noReports: 'No lab reports yet.',
     reportTypeLabels: { annual_checkup: 'Annual Checkup', lab_panel: 'Lab Panel', imaging: 'Imaging', other: 'Other' },
     reportSourceLabels: { lab_api: 'Lab', manual_upload: 'Uploaded', fhir_import: 'FHIR' },
@@ -1046,6 +1064,17 @@ function _buildLabPanel(twin, lang) {
   return { labPanel: items, labPanelDate, labPanelAbnormal }
 }
 
+// Personal Profile layer — one accent per user_memory_facts category.
+function _factCategoryColor(cat) {
+  switch (cat) {
+    case 'allergy':             return '#ef4444'
+    case 'dietary_restriction': return '#f97316'
+    case 'preference':          return '#6375EC'
+    case 'goal':                return '#10b981'
+    default:                    return 'rgba(166,196,229,0.55)'
+  }
+}
+
 function _reportTypeColor(type) {
   if (type === 'annual_checkup') return '#a855f7'
   if (type === 'lab_panel')      return '#0ea5e9'
@@ -1150,7 +1179,11 @@ Component({
     hasTwinData: false,
     twinMetrics: [],
     twinBody: null,
-    twinCoverage: [],
+    twinLayers: [],
+    twinLayersDone: 0,
+    twinRaw: null,
+    userFacts: [],
+    userFactsLoaded: false,
     healthScore: null,
     healthScoreColor: '#A6C4E5',
     healthScoreGrade: '',
@@ -1241,7 +1274,29 @@ Component({
       this._loadHealth()
     },
 
+    /**
+     * Re-reads every Digital Twin layer from the server if the last load is stale.
+     *
+     * The health tab is the Twin, but the component only loaded on `attached()` and on a
+     * `userId`/`lang` change — so anything written after that (a fact the AI extracted from
+     * chat, a weight recorded in conversation, a lab report just uploaded) stayed invisible
+     * until the miniapp was restarted. Confirmed live: stating "我对海鲜过敏" in chat wrote
+     * `user_memory_facts` within seconds, but the Personal Profile section still showed the
+     * old list after switching back to the health tab.
+     *
+     * Mirrors the staleness pattern `pages/main/main.js`'s `switchTab` already uses for the
+     * plans/dots tabs, rather than refetching on every tab tap.
+     */
+    refreshIfStale(maxAgeMs = 30000) {
+      const { userId } = this.properties
+      if (!userId) return
+      if (this.data.bioLoading) return
+      if (this._twinLoadedAt && Date.now() - this._twinLoadedAt < maxAgeMs) return
+      this._loadHealth()
+    },
+
     async _loadHealth() {
+      this._twinLoadedAt = Date.now()
       const { userId, user, lang, mode } = this.properties
       if (!userId) return
       const rawT = T[lang] || T.zh
@@ -1250,6 +1305,7 @@ Component({
       this.setData({ bioLoading: true })
       this._loadHealthTwin()
       this._loadHealthReports()
+      this._loadUserFacts()
       this._loadMetricHistory()
       try {
         const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(userId)}`)
@@ -1414,6 +1470,7 @@ Component({
           if (mode === 'self' && (newData.weightHistory || []).length > 1) {
             this._drawWeightSparkline()
           }
+          this._recomputeTwinLayers()
         })
       } catch (e) {
         this.setData({ bioLoading: false })
@@ -2244,7 +2301,6 @@ Component({
       if (!userId) return
       const isZh = (lang || 'zh') !== 'en'
       const t = T[isZh ? 'zh' : 'en']
-      const covLabels = TWIN_COV_LABELS[isZh ? 'zh' : 'en']
       try {
         const res = await this._req(`${BASE}/api/health-twin?openid=${encodeURIComponent(userId)}`)
         const twin = res.data?.twin
@@ -2308,12 +2364,6 @@ Component({
         if (twin.latest_body_fat_pct != null) bodyParts.push(`${t.dtFat} ${Number(twin.latest_body_fat_pct).toFixed(1)}%`)
         const twinBody = bodyParts.length ? bodyParts.join('  ·  ') : null
 
-        const cov = twin.data_coverage || {}
-        const twinCoverage = Object.keys(covLabels).map(key => ({
-          key, label: covLabels[key],
-          hasData: !!cov[key],
-          lastDate: cov[key] ? cov[key].substring(5) : null,
-        }))
 
         // Build lab panel from latest_lab_data
         const { labPanel, labPanelDate, labPanelAbnormal } = _buildLabPanel(twin, lang)
@@ -2335,16 +2385,76 @@ Component({
           hasTwinData: !ringData ? (metrics.length > 0 || twinBody != null || labPanel.length > 0) : this.data.hasTwinData,
           twinMetrics: metrics,
           twinBody,
-          twinCoverage,
+          twinRaw: twin,
           labPanel,
           labPanelDate,
           labPanelAbnormal,
           healthTags,
           ...serverVisuals,
         })
+        this._recomputeTwinLayers()
       } catch (e) {
         this.setData({ hasTwinData: false, twinLoading: false })
+        this._recomputeTwinLayers()
       }
+    },
+
+    /**
+     * Derives the Digital Twin completeness strip — one chip per layer (CLAUDE.md §34).
+     *
+     * Deliberately re-derived from `this.data` rather than fetched: every input is already
+     * loaded by _loadHealth / _loadHealthTwin / _loadHealthReports / _loadUserFacts, and each
+     * of those setData()s independently, so whichever finishes last produces the final strip.
+     * `twin.data_coverage` alone can't back this — its five keys are all health_events-derived,
+     * so it knows nothing about the Kino scan or the self-reported profile.
+     */
+    _recomputeTwinLayers() {
+      const isZh = (this.properties.lang || 'zh') !== 'en'
+      const t = T[isZh ? 'zh' : 'en']
+      const labels = TWIN_LAYER_LABELS[isZh ? 'zh' : 'en']
+      const twin = this.data.twinRaw || {}
+      const cov = twin.data_coverage || {}
+      const short = d => (d ? String(d).substring(0, 10).substring(5) : null)
+      const newest = (...ds) => {
+        const v = ds.filter(Boolean).map(d => String(d).substring(0, 10)).sort()
+        return v.length ? v[v.length - 1] : null
+      }
+
+      const reports = this.data.healthReports || []
+
+      const state = {
+        precision: {
+          has: this.data.bAge != null,
+          date: newest(twin.latest_kino_scan_at, (this.data.bioAgeHistory || []).slice(-1)[0]?.date),
+        },
+        daily: {
+          has: !!(cov.sleep || cov.activity || cov.vitals || cov.body_composition || this.data.ringData),
+          date: newest(cov.sleep, cov.activity, cov.vitals, cov.body_composition),
+        },
+        medical: {
+          // `epigenetic_result` is a real 6th health_events category (confirmed live on dev)
+          // that predates this taxonomy and isn't in the five documented ones — it's an
+          // externally-run test, so it belongs to Medical Records. Without it, a user whose
+          // only outside test is an epigenetic panel would show this layer as empty.
+          has: reports.length > 0 || !!cov.lab_result || !!cov.epigenetic_result || !!twin.latest_lab_date,
+          date: newest(twin.latest_lab_date, cov.lab_result, cov.epigenetic_result,
+                       reports[0] && reports[0].report_date_raw),
+        },
+        profile: {
+          has: this.data.rawHeight != null && this.data.rawWeight != null,
+          date: null,
+        },
+      }
+
+      const twinLayers = TWIN_LAYER_KEYS.map(key => ({
+        key,
+        label: labels[key],
+        hasData: state[key].has,
+        lastDate: state[key].has ? short(state[key].date) : null,
+        emptyLabel: t.twinLayerEmpty,
+      }))
+
+      this.setData({ twinLayers, twinLayersDone: twinLayers.filter(l => l.hasData).length })
     },
 
     _buildTwinVisuals(twin, t, isZh) {
@@ -2529,14 +2639,47 @@ Component({
           id: r.id,
           institution: r.institution || '—',
           report_date: fmtDate(r.report_date, lang),
+          report_date_raw: r.report_date,
           report_type: t.reportTypeLabels[r.report_type] || r.report_type,
           source_label: t.reportSourceLabels[r.source] || r.source,
           type_color: _reportTypeColor(r.report_type),
           image_url: r.image_url || '',
         }))
         this.setData({ healthReports: reports, reportsLoading: false })
+        this._recomputeTwinLayers()
       } catch (_) {
         this.setData({ reportsLoading: false })
+      }
+    },
+
+    /**
+     * Personal Profile layer — the read-only view of `user_memory_facts` (dietary
+     * restrictions, allergies, preferences, goals the AI picked up in conversation).
+     * Until now these existed only in the admin panel and the coach app, so the user could
+     * never see what the system believed about them. Read-only by design this pass: who owns
+     * an AI-extracted fact is a product question, not a labeling one.
+     *
+     * Self view only — the coach app already has its own Facts tab on the client sheet.
+     */
+    async _loadUserFacts() {
+      const { userId, mode } = this.properties
+      if (!userId || mode !== 'self') return
+      try {
+        const res = await this._req(`${BASE}/api/user-facts?openid=${encodeURIComponent(userId)}`)
+        const isZh = (this.properties.lang || 'zh') !== 'en'
+        const t = T[isZh ? 'zh' : 'en']
+        const facts = (res.data?.facts || [])
+          .filter(f => f.status === 'active')
+          .map(f => ({
+            id: f.id,
+            fact: f.fact_zh,
+            category: f.category,
+            categoryLabel: t.factCategories[f.category] || t.factCategories.other,
+            color: _factCategoryColor(f.category),
+          }))
+        this.setData({ userFacts: facts, userFactsLoaded: true })
+      } catch (_) {
+        this.setData({ userFactsLoaded: true })
       }
     },
 

@@ -14,6 +14,7 @@ const { classifyBiomarker, LABELS_ZH: STATUS_LABELS_ZH } = require('../../lib/bi
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../chat/currentDateBlock');
+const { getTwinVocabBlock } = require('../chat/twinVocabulary');
 const { getVivaLabels } = require('./subAgeLabels');
 
 module.exports = (ctx) => {
@@ -65,7 +66,7 @@ module.exports = (ctx) => {
     const chronoAge = bioage?.ChronoAge ?? '未知';
 
     const twinSection = health_twin
-        ? `近7天穿戴设备均值：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 静息心率 ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}\n30天趋势：${health_twin.trend_data ? JSON.stringify(health_twin.trend_data) : '暂无'}`
+        ? `数字孪生 · 日常监测（近7天均值）：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 静息心率 ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}\n30天趋势：${health_twin.trend_data ? JSON.stringify(health_twin.trend_data) : '暂无'}`
         : '暂无穿戴设备数据。';
 
     const healthPlanSection = active_health_plans && active_health_plans.length > 0
@@ -97,6 +98,8 @@ module.exports = (ctx) => {
 ${getCurrentDateBlock(ctx.now_iso)}
 
 ${getFactMemoryBlock(ctx.user_facts)}
+
+${getTwinVocabBlock()}
 
 你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造。你现在的任务是：为用户配置接下来28天（4周）的 Waven 原粒方案——这是一次真实的配方决策，不是解释一个已有方案。系统会将你给出的每日总量重复安排到这28天内（DOT-N7 除外，见下方配方库中的专项说明）。
 

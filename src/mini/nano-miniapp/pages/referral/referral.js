@@ -45,6 +45,14 @@ Page({
     const theme = app.globalData.theme || wx.getStorageSync('nano_theme') || 'dark'
     const { statusBarHeight } = wx.getSystemInfoSync()
     this.setData({ user, lang, t: T[lang] || T.zh, theme, statusBarHeight, referralCode: user?.referral_code || user?.user_id || '' })
+    // navigationStyle is "custom" (referral.json) so this page draws its own header —
+    // the OS status bar icon color set globally in app.json (white, for the dark navy
+    // default) doesn't track that. Without this, light theme's cream header leaves the
+    // white status bar icons nearly invisible against it.
+    wx.setNavigationBarColor({
+      frontColor: theme === 'light' ? '#000000' : '#ffffff',
+      backgroundColor: theme === 'light' ? '#FAF7F2' : '#0B1C2E',
+    })
   },
 
   copyCode() {

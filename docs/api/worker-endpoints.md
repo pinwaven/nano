@@ -126,15 +126,15 @@ The token is configured via the `API_BEARER_TOKEN` environment variable on the `
 | `GET` | `/channels/:id/rewards-config` | Rewards | Fetch effective rewards overrides and settings |
 | `PUT` | `/channels/:id/rewards-config` | Rewards | Update channel rewards overrides |
 | `PUT` | `/channels/:id/rewards-permission` | Rewards | Grant/revoke sub-channel rewards customization |
-| `POST` | `/health-events` | Digital Twin | Single event ingestion (sleep, activity, manual, etc.) |
-| `POST` | `/health-events/sync` | Digital Twin | Batch event ingestion (wearable sync, max 500) |
-| `GET` | `/health-events` | Digital Twin | Query event log for user |
-| `GET` | `/health-twin` | Digital Twin | Fetch complete user twin summary row |
-| `POST` | `/health-reports` | Lab Integration | Ingest lab/health report (JSON/FHIR Bundle) |
-| `GET` | `/health-reports` | Lab Integration | List health reports by user |
-| `GET` | `/health-reports/:id` | Lab Integration | Retrieve report and linked events |
-| `POST` | `/health-events/fhir` | Lab Integration | Ingest a FHIR resource directly |
-| `POST` | `/lab/webhook/:labName` | Lab Integration | Webhook push target for external lab provider |
+| `POST` | `/health-events` | Twin · Daily Monitoring | Single event ingestion (sleep, activity, manual, etc.) |
+| `POST` | `/health-events/sync` | Twin · Daily Monitoring | Batch event ingestion (wearable sync, max 500) |
+| `GET` | `/health-events` | Twin · Daily Monitoring | Query event log for user |
+| `GET` | `/health-twin` | Twin · Summary | Materialized rolling-summary row (Daily Monitoring averages + latest Precision/Medical/body values) |
+| `POST` | `/health-reports` | Twin · Medical Records | Ingest lab/health report (JSON/FHIR Bundle) |
+| `GET` | `/health-reports` | Twin · Medical Records | List health reports by user |
+| `GET` | `/health-reports/:id` | Twin · Medical Records | Retrieve report and linked events |
+| `POST` | `/health-events/fhir` | Twin · Medical Records | Ingest a FHIR resource directly |
+| `POST` | `/lab/webhook/:labName` | Twin · Medical Records | Webhook push target for external lab provider |
 
 ---
 
@@ -576,9 +576,15 @@ Fetches aggregated CRM and performance metrics across all coaches in a group.
 
 ---
 
-## 9. Digital Twin (Wearable Ingestion)
+## 9. Digital Twin · Daily Monitoring (Wearable Ingestion)
 
-Allows time-series wearable and lifestyle metric uploads and queries the synchronized rolling twin.
+Time-series wearable and lifestyle metric uploads, plus the materialized rolling-summary row.
+
+This section covers the **Daily Monitoring** layer only. The Digital Twin's other three layers are
+served elsewhere: **Precision Testing** by `/biomarkers` and the `/kino-*` endpoints,
+**Medical Records** by `/health-reports` and `/lab/*`, and **Personal Profile** by `/users`,
+`/questionnaire-responses` and `/user-facts`. See
+[digital-twin.md](../architecture/digital-twin.md) for the layer taxonomy.
 
 ### POST /health-events
 

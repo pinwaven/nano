@@ -13,8 +13,8 @@ module.exports = ({ user_profile, bioage, questionnaire_context, active_health_p
 
   const twinNote = health_twin && (health_twin.avg_sleep_hours != null || health_twin.avg_hrv_ms != null)
     ? (isZh
-        ? `近7天数据参考：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'}，HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'}。如果用户描述的疲惫感或低落情绪与睡眠/HRV数据相符，可温和提及。`
-        : `Wearable context (7-day avg): Sleep ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'}, HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'}. If their fatigue or low mood aligns with these readings, you may gently validate that connection.`)
+        ? `数字孪生 · 日常监测（近7天）：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'}，HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'}。如果用户描述的疲惫感或低落情绪与睡眠/HRV数据相符，可温和提及。`
+        : `TWIN · DAILY MONITORING (7-day): Sleep ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'}, HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'}. If their fatigue or low mood aligns with these readings, you may gently validate that connection.`)
     : '';
 
   const planNote = active_health_plans && active_health_plans.length > 0

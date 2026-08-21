@@ -7,6 +7,7 @@ const { classifyBiomarkers, LABELS_ZH: STATUS_LABELS_ZH, LABELS_EN: STATUS_LABEL
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../chat/currentDateBlock');
+const { getTwinVocabBlock } = require('../chat/twinVocabulary');
 
 module.exports = (context) => {
   const {
@@ -147,7 +148,7 @@ module.exports = (context) => {
    - 说明该维度的值是超前、正常还是滞后
    - 用通俗语言解释是哪些生物标志物在驱动这个结果，以及背后的生物学原理
    - 介绍1-2个相关 Dots，简述其作用机制
-3. **生活方式关联** — 如有可穿戴数据（睡眠、HRV、步数），结合 Kino 生物标志物数据说明两者的关联（例如：睡眠不足→炎症升高→抗压年龄偏高）。
+3. **日常监测关联** — 如有日常监测数据（睡眠、HRV、步数），结合精准检测的生物标志物数据说明两者的关联（例如：睡眠不足→炎症升高→抗压年龄偏高）。
 4. **健康状况关联** — 如用户有申报的健康问题，结合生物标志物数据进行说明${planTaskZhExtra}
 
 生物标志物的状态（正常/偏高/高）已在数据中直接标注，请严格使用该标注，不得自行根据数值判断状态或与之矛盾。解释某维度时，只能将标注为"偏高"或"高"的标志物描述为驱动因素，标注为"正常"的标志物不得被暗示为导致异常的原因。严禁引入任何未在本提示词中提供的具体机制、暴露因素或基因/族群遗传学细节。
@@ -161,7 +162,7 @@ module.exports = (context) => {
    - State whether the value is ahead, on-track, or lagging
    - Explain in plain language which biomarkers are driving it and the underlying biology
    - Name 1–2 relevant Dots and briefly explain what they do
-3. **Lifestyle Connection** — If wearable data is available (sleep, HRV, steps), cross-reference it with the Kino biomarkers to reveal lifestyle-biology connections (e.g. poor sleep → elevated CRP → higher Resilience Age).
+3. **Daily-Monitoring Connection** — If daily-monitoring signals are available (sleep, HRV, steps), cross-reference them with the Precision Testing biomarkers to reveal lifestyle-biology connections (e.g. poor sleep → elevated CRP → higher Resilience Age).
 4. **Health Conditions Connection** — If the user has declared health conditions, connect them to the biomarker findings${planTaskEnExtra}
 
 Biomarker status (normal/elevated/high) is already labeled directly in the data below — use that label as-is; do not judge status from the raw value yourself or contradict the given label. When explaining a dimension, only describe markers labeled elevated/high as drivers — never imply a marker labeled normal is contributing to the abnormal result. Do not introduce any specific mechanism, exposure factor, or genetic/population-genetics detail that isn't already provided in this prompt.
@@ -176,31 +177,33 @@ Keep it warm, evidence-based, and actionable. Use Markdown formatting. Do not as
         health_twin.latest_weight_kg ? `Body: Weight ${health_twin.latest_weight_kg} kg${health_twin.latest_bmi ? ' | BMI ' + health_twin.latest_bmi.toFixed(1) : ''}${health_twin.latest_body_fat_pct ? ' | Body fat ' + health_twin.latest_body_fat_pct.toFixed(1) + '%' : ''}` : null,
         health_twin.trend_data?.hrv_trend ? `Trends: HRV ${health_twin.trend_data.hrv_trend} | Sleep ${health_twin.trend_data.sleep_trend ?? '—'}` : null,
       ].filter(Boolean).join('\n')
-    : (isZh ? '暂无可穿戴设备 / 生活方式数据。' : 'No wearable or lifestyle data yet.');
+    : (isZh ? '暂无日常监测数据（这是数字孪生四层之一，其他层可能仍有数据）。' : 'No daily-monitoring data yet (one of four twin layers — the others may still have data).');
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
 
 ${getCurrentDateBlock(now_iso, isZh)}
 
+${getTwinVocabBlock(isZh)}
+
 ${getFactMemoryBlock(user_facts, isZh)}
 
 You are Nano — a warm, expert longevity AI built by Waven. You have deep expertise in biological aging, functional nutrition, inflammation biology, and longevity science.
 
-━━━ USER PROFILE ━━━
+━━━ DIGITAL TWIN · PERSONAL PROFILE (SELF-REPORTED) ━━━
 Name: ${nickname || 'the user'}
 Age: ${age != null ? age + ' years old' : 'unknown'}
 Gender: ${gender || 'not specified'}
 Declared health conditions: ${condStr}
 
-━━━ BIOLOGICAL AGE OVERVIEW ━━━
+━━━ DIGITAL TWIN · PRECISION TESTING (KINO BIOMARKERS & BIOLOGICAL AGE) ━━━
 ${bioSummaryLine}
 
 ${hasBio ? `SUB-AGES & RELEVANT DOTS:\n${subAgeLines}` : (isZh ? '用户尚未完成 Kino 生物标志物检测，无法提供个性化分析。请鼓励用户完成检测。' : 'The user has not completed a Kino biomarker test yet. Encourage them to do their first scan for personalized analysis.')}
 
-━━━ RAW BIOMARKER VALUES ━━━
+RAW BIOMARKER VALUES:
 ${bmLines}
 
-━━━ DIGITAL TWIN (WEARABLE & LIFESTYLE DATA) ━━━
+━━━ DIGITAL TWIN · DAILY MONITORING (WEARABLE, SLEEP, ACTIVITY, BODY) ━━━
 ${twinLines}
 ${activePlansSection ? '\n' + activePlansSection + '\n' : ''}${planTemplatesSection ? '\n' + planTemplatesSection + '\n' : ''}
 ━━━ YOUR TASK ━━━

@@ -628,7 +628,7 @@ async function _regenerateIfFabricationRisk(client, model, messages, reply, logC
 // checkpoints. Calm, brief, no exclamation marks, matching Viva's existing prompt tone.
 const STATUS_COPY = {
     understanding: { zh: '正在构建研究计划…', en: 'Building your research plan…' },
-    checking_data: { zh: '正在同步你的数字孪生数据…', en: 'Syncing your digital twin data…' },
+    checking_data: { zh: '正在同步你的数字孪生…', en: 'Syncing your digital twin…' },
     verifying: { zh: '正在执行深度研究…', en: 'Running deep research…' },
 };
 

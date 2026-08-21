@@ -114,7 +114,7 @@ function ReportSection({ user, lang }) {
   return (
     <div className="health-section">
       <div className="health-section-title">
-        {t.genReport}
+        {t.layerMedical}
         <button className="report-gen-btn" onClick={generate} disabled={generating}>
           {generating ? t.reportGenerating : '+ ' + t.genReport}
         </button>
@@ -199,7 +199,7 @@ function DigitalTwinSection({ user, lang }) {
 
   return (
     <div className="health-section dt-section">
-      <div className="health-section-title">{t.digitalTwin}</div>
+      <div className="health-section-title">{t.layerDaily}</div>
 
       {visuals.healthScore != null && (
         <div className="dt-score-row">
@@ -246,11 +246,11 @@ function DigitalTwinSection({ user, lang }) {
 
       {labPanel.length > 0 && (
         <div className="dt-lab-section">
-          <div className="dt-subtitle">{t.dtLabPanel} · {labPanelDate}</div>
+          <div className="dt-subtitle">{t.labPanel} · {labPanelDate}</div>
           <div className="dt-lab-abnormal">
             {labPanelAbnormal > 0
-              ? `${labPanelAbnormal} ${t.dtLabAbnormal}`
-              : t.dtLabAllNormal}
+              ? `${labPanelAbnormal} ${t.labAbnormal}`
+              : t.labAllNormal}
           </div>
           <div className="dt-lab-grid">
             {labPanel.map(item => (
@@ -406,11 +406,13 @@ export default function HealthTab({ user }) {
         )}
       </div>
 
+      <div className="health-umbrella-title">{t.digitalTwin}</div>
+
       <DigitalTwinSection user={user} lang={lang} />
 
       {bioAgeTrendCards.length > 0 && (
         <div className="health-section">
-          <div className="health-section-title">{t.trends}</div>
+          <div className="health-section-title">{t.layerPrecision}</div>
           <div className="dt-trend-cards">
             {bioAgeTrendCards.map(c => (
               <button key={c.key} className="dt-trend-card" onClick={() => setOpenModal(c.key)}>

@@ -1219,6 +1219,16 @@ body {
   gap: 8px;
 }
 
+/* Digital Twin umbrella — names the whole health model above its four layer sections */
+.health-umbrella-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--text-main);
+  margin: 4px 0 10px;
+}
+
 .health-section-badge {
   font-size: 10px;
   font-weight: 600;

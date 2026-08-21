@@ -476,6 +476,7 @@ Page({
     const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', nickname || '—') : ''
     const factCategoryLabels = ['dietary_restriction', 'allergy', 'preference', 'goal', 'other'].map(c => t.factCategories[c])
     this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText, factCategoryLabels })
+    this._applyNavBarColor(theme)
     this._loadAll()
   },
 
@@ -592,9 +593,21 @@ Page({
     app.globalData.theme = theme
     wx.setStorageSync('nano_user', { ...wx.getStorageSync('nano_user'), theme })
     this.setData({ theme, menuOpen: false })
+    this._applyNavBarColor(theme)
     try {
       await this._req(`${BASE}/api/users/${this._coachUserId}`, 'PATCH', { theme })
     } catch (e) {}
+  },
+
+  _applyNavBarColor(theme) {
+    // navigationStyle is "custom" (coach.json) so this page draws its own header —
+    // the OS status bar icon color set globally in app.json (white, for the dark
+    // navy default) doesn't track that. Without this, light theme's cream header
+    // leaves the white status bar icons nearly invisible against it.
+    wx.setNavigationBarColor({
+      frontColor: theme === 'light' ? '#000000' : '#ffffff',
+      backgroundColor: theme === 'light' ? '#FAF7F2' : '#0B1C2E',
+    })
   },
 
   openUserPanel() {

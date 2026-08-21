@@ -177,7 +177,7 @@ function syncWearableData(openid, snapshot, apiToken) {
         source: src,
         wearable_name: snapshot.wearableName ?? null,
         data_date: slotDate,
-        recorded_at: recordedAt,
+        recorded_at: _shanghaiTsToIso(slot.timestamp) || recordedAt,
         external_id: `${src}_hrv_${ts}`,
         data: {
           hrv_ms:         slot.hrv       ?? null,
@@ -201,7 +201,7 @@ function syncWearableData(openid, snapshot, apiToken) {
         source: src,
         wearable_name: snapshot.wearableName ?? null,
         data_date: slotDate,
-        recorded_at: recordedAt,
+        recorded_at: _shanghaiTsToIso(slot.timestamp) || recordedAt,
         external_id: `${src}_spo2_${ts}`,
         data: { spo2: slot.spo2 ?? null },
       })
@@ -219,7 +219,7 @@ function syncWearableData(openid, snapshot, apiToken) {
         source: src,
         wearable_name: snapshot.wearableName ?? null,
         data_date: slotDate,
-        recorded_at: recordedAt,
+        recorded_at: (slot.timestamp && _shanghaiTsToIso(slot.timestamp)) || recordedAt,
         external_id: `${src}_temp_${ts}`,
         data: {
           body_temp_c: slot.estimatedBodyTemp,
@@ -243,7 +243,7 @@ function syncWearableData(openid, snapshot, apiToken) {
       source: src,
       wearable_name: snapshot.wearableName ?? null,
       data_date: todayDate,
-      recorded_at: recordedAt,
+      recorded_at: (snapshot.hrvMeasuredAt && _shanghaiTsToIso(snapshot.hrvMeasuredAt)) || recordedAt,
       external_id: `${src}_realtime_${measuredTs}`,
       data: {
         hrv_ms:         snapshot.hrv             ?? null,
@@ -295,6 +295,18 @@ function _shanghaiDateStr(date, dayOffset) {
   const d = new Date(date.getTime() + OFFSET_MS)
   d.setUTCDate(d.getUTCDate() + dayOffset)
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+}
+
+// Rings' BCD clocks report Shanghai local time (see halo/index.js's parseBcdDate usage
+// and the "pure string arithmetic — no JS Date, avoids local-timezone issues" comment
+// on _isoDateStr there). "YYYY-MM-DD HH:MM:SS" -> true-UTC ISO string, so per-reading
+// recorded_at reflects when the reading was actually taken, not when it was synced.
+function _shanghaiTsToIso(ts) {
+  const OFFSET_MS = 8 * 60 * 60 * 1000
+  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/.exec(ts)
+  if (!m) return null
+  const [, y, mo, d, h, mi, s] = m.map(Number)
+  return new Date(Date.UTC(y, mo - 1, d, h, mi, s) - OFFSET_MS).toISOString()
 }
 
 module.exports = { syncWearableData }

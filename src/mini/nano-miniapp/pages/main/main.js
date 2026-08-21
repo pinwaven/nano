@@ -1083,6 +1083,7 @@ Page({
     const isSuperadmin = roles.includes('superadmin')
     const theme = user.theme || app.globalData.theme || 'dark'
     app.globalData.theme = theme
+    this._applyNavBarColor(theme)
     const userAvatarLetter = (user.nickname || 'U').slice(-1).toUpperCase()
     const channelOverrides = channel?.sub_age_display_names || null
     const t = { ...T[lang], subAgeLabels: buildSubAgeLabels(T[lang].subAgeLabels, channelOverrides, lang) }
@@ -1262,11 +1263,16 @@ Page({
       }
     }
     this.setData({ tab })
-    if (tab === 'health') {
-      this.selectComponent('#health-comp')?._maybeAutoSync()
-    }
     const STALE_MS = 30_000
     const now = Date.now()
+    if (tab === 'health') {
+      const hc = this.selectComponent('#health-comp')
+      hc?._maybeAutoSync()
+      // The health tab is the Digital Twin, and chat writes into it (remember_fact,
+      // record_weight, report uploads). Without this it only ever showed the state
+      // captured when the component first attached.
+      hc?.refreshIfStale(STALE_MS)
+    }
     if (tab === 'plans') {
       if (now - this._plansLoadedAt > STALE_MS) {
         this.setData({ plansLoading: true, remindersLoading: true })
@@ -1354,6 +1360,7 @@ Page({
     const user = { ...this.data.user, theme }
     wx.setStorageSync('nano_user', user)
     this.setData({ theme, menuOpen: false, user })
+    this._applyNavBarColor(theme)
     try {
       await this._req(`${BASE}/api/users/${user.user_id}`, 'PATCH', { theme })
     } catch (e) {}
@@ -2074,6 +2081,17 @@ Page({
         role, content: rawContent
       }).catch(e => { if (IS_DEV) console.error('Persistent msg failed', e) })
     }
+  },
+
+  _applyNavBarColor(theme) {
+    // navigationStyle is "custom" (main.json) so this page draws its own header —
+    // the OS status bar icon color set globally in app.json (white, for the dark
+    // navy default) doesn't track that. Without this, light theme's cream header
+    // leaves the white status bar icons nearly invisible against it.
+    wx.setNavigationBarColor({
+      frontColor: theme === 'light' ? '#000000' : '#ffffff',
+      backgroundColor: theme === 'light' ? '#FAF7F2' : '#0B1C2E',
+    })
   },
 
   _scrollBottom() {

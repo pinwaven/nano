@@ -119,7 +119,23 @@
         </view>
       </view>
 
-      <!-- Digital Twin Hero Card -->
+      <!-- Digital Twin umbrella — names the whole health model, then one chip per layer -->
+      <view class="twin-umbrella">
+        <view class="twin-umbrella-row">
+          <text class="twin-umbrella-title">{{t.digitalTwin}}</text>
+          <text class="twin-umbrella-count">{{t.twinComplete}} {{twinLayersDone}}/4</text>
+        </view>
+        <view class="twin-layer-strip">
+          <view wx:for="{{twinLayers}}" wx:key="key"
+                class="twin-layer{{item.hasData ? ' twin-layer-active' : ''}}">
+            <view class="twin-layer-dot"></view>
+            <text class="twin-layer-label">{{item.label}}</text>
+            <text class="twin-layer-date">{{item.hasData ? (item.lastDate || '✓') : item.emptyLabel}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- Twin summary card — Precision Testing figure (Kino-gated) -->
       <view wx:if="{{subAgeList.length > 0}}" class="dt-hero-card" bindtap="closeBioAgeTrend">
         <view class="dt-body-row">
           <!-- Left: enlarged body figure -->
@@ -195,6 +211,11 @@
             </view>
           </view>
         </view>
+      </view>
+
+      <!-- Cross-layer strips — ungated: a ring-only user (no Kino scan yet) still has
+           tags, weight/BMI/steps/HRV and photo-captured BP/glucose worth showing -->
+      <view class="dt-hero-card dt-hero-card-strips">
         <!-- Tags strip -->
         <view class="dt-tags-strip">
           <view wx:for="{{healthTags}}" wx:key="index" class="dt-htag"
@@ -277,9 +298,9 @@
         </view>
       </view>
 
-      <!-- Health Monitoring -->
+      <!-- Twin layer: Daily Monitoring -->
       <view class="health-section">
-        <text class="section-title">{{t.dtMonitoring}}</text>
+        <text class="section-title">{{t.layerDaily}}</text>
 
         <!-- Wearable Device (always visible — ring is the data source) -->
         <view class="wd-inner">
@@ -689,10 +710,10 @@
         <text wx:elif="{{!twinLoading}}" class="health-empty">{{t.noTwinData}}</text>
       </view>
 
-      <!-- Kino Trends -->
+      <!-- Twin layer: Precision Testing -->
       <view class="health-section">
         <view class="section-title-row">
-          <text class="section-title">{{t.trends}}</text>
+          <text class="section-title">{{t.layerPrecision}}</text>
           <view wx:if="{{recordCount > 0}}" class="section-badge">
             <text>{{recordCount}} {{t.tests}}</text>
           </view>
@@ -718,20 +739,20 @@
         <text wx:else class="health-empty">{{t.noHistory}}</text>
       </view>
 
-      <!-- Lab (snapshot + reports combined) -->
+      <!-- Twin layer: Medical Records (snapshot + reports combined) -->
       <view class="health-section">
         <view class="section-title-row">
-          <text class="section-title">{{t.healthReports}}</text>
+          <text class="section-title">{{t.layerMedical}}</text>
           <view wx:if="{{labPanelAbnormal > 0}}" class="ht-lab-alert">
-            <text class="ht-lab-alert-text">{{labPanelAbnormal}} {{t.dtLabAbnormal}}</text>
+            <text class="ht-lab-alert-text">{{labPanelAbnormal}} {{t.labAbnormal}}</text>
           </view>
           <view wx:elif="{{labPanelAbnormal === 0 && labPanel.length > 0}}" class="ht-lab-ok">
-            <text class="ht-lab-ok-text">{{t.dtLabAllNormal}}</text>
+            <text class="ht-lab-ok-text">{{t.labAllNormal}}</text>
           </view>
         </view>
         <view wx:if="{{labPanel.length > 0}}" class="ht-lab-snapshot-wrap">
           <view class="ht-lab-snapshot-header">
-            <text class="ht-lab-snapshot-title">{{t.dtLabPanel}}</text>
+            <text class="ht-lab-snapshot-title">{{t.labPanel}}</text>
             <text class="ht-lab-date">{{labPanelDate}}</text>
           </view>
           <view class="ht-lab-grid">
@@ -769,6 +790,21 @@
           </view>
         </view>
         <text wx:elif="{{!reportsLoading && labPanel.length === 0}}" class="health-empty">{{t.noReports}}</text>
+      </view>
+
+      <!-- Twin layer: Personal Profile — read-only view of what the AI has recorded
+           about the user (self view only; the coach app has its own Facts tab) -->
+      <view wx:if="{{mode === 'self' && userFactsLoaded}}" class="health-section">
+        <text class="section-title">{{t.layerProfile}}</text>
+        <view wx:if="{{userFacts.length > 0}}" class="fact-list">
+          <view wx:for="{{userFacts}}" wx:key="id" class="fact-chip"
+                style="border-color:{{item.color}}44;">
+            <text class="fact-cat" style="color:{{item.color}};">{{item.categoryLabel}}</text>
+            <text class="fact-text">{{item.fact}}</text>
+          </view>
+          <text class="fact-footnote">{{t.factsFootnote}}</text>
+        </view>
+        <text wx:else class="health-empty">{{t.noFactsSelf}}</text>
       </view>
 
       <view style="height: 32px;"></view>

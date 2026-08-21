@@ -87,14 +87,31 @@ Each chip can only be used once. If the QR code shows an error (already used, al
 
 ## Your Health Tab
 
-The **Health** tab is your personal health dashboard:
+The **Health** tab is your **Digital Twin** — the complete picture of your health that Waven builds and keeps up to date. It is not any single device or test: it has four layers, and the tab is organised around them. A strip at the top shows which layers currently have data.
 
-- **Profile** — your name, gender, date of birth, height/weight/BMI, coach (if assigned), and any noted health conditions. Tap **Edit Profile** to update these, or tap your avatar to pick a new one from the [avatar gallery](#account--settings).
+### 1. Precision Testing
+
+The high-precision layer, measured by the Kino chip.
+
 - **BioAge** — your calculated biological age vs. chronological age, shown with a trend chart over time.
 - **The Four Sub-Ages** — Cellular Age, Metabolic Age, Micro-Vascular Age, and Resilience Age each get their own score and a short description of what they measure.
 - **Latest Biomarkers** — the raw values from your most recent Kino test (hs-CRP, GDF-15, IL-6, Glycated Albumin, Cystatin C, CD38), plus your test history.
-- **Digital Twin** — a rolling summary of data synced from your wearable ring: sleep, activity, vitals (heart rate, HRV, SpO₂, blood pressure, temperature), and body composition, plus an overall Health Score.
-- **Lab (Health Reports)** — any lab/checkup reports you've saved (via chat image upload) show up here, with markers flagged as normal/high/low against reference ranges.
+
+### 2. Daily Monitoring
+
+The continuous layer, synced from your wearable ring or band: sleep, activity, vitals (heart rate, HRV, SpO₂, blood pressure, temperature), and body composition, as rolling averages and trends. See [Connecting a Wearable Ring](#connecting-a-wearable-ring).
+
+### 3. Medical Records
+
+Lab and checkup reports from outside Waven — annual physicals, blood panels, imaging, doctor's notes. Markers are flagged as normal/high/low against reference ranges. Reports arrive here in three ways: photographed and uploaded in chat, imported directly from a connected lab, or imported as a FHIR record. Values that overlap with the Kino panel also feed your BioAge.
+
+### 4. Personal Profile
+
+What you've told us about yourself, rather than what a device measured.
+
+- Your name, gender, date of birth, height/weight/BMI, coach (if assigned), and any noted health conditions. Tap **Edit Profile** to update these, or tap your avatar to pick a new one from the [avatar gallery](#account--settings).
+- Your questionnaire answers.
+- **Things you've mentioned in chat** — dietary restrictions, allergies, preferences and goals the AI has noted are listed here so you can see what it remembers about you. This list is read-only; to correct something, just say so in chat.
 
 ## Connecting a Wearable Ring
 
@@ -107,7 +124,7 @@ Only **Halo** rings (also sold as X3/X6/X9, and the V4 band) and **V8** smart ba
 5. You can adjust monitoring intervals (how often the ring measures HR, SpO₂, etc.) and save them back to the ring.
 6. To disconnect, tap **Unbind**.
 
-Once connected, your steps, sleep, heart rate, HRV, stress, SpO₂, temperature, and (on supported rings) blood pressure all feed into your Digital Twin on the Health tab.
+Once connected, your steps, sleep, heart rate, HRV, stress, SpO₂, temperature, and (on supported rings) blood pressure all feed the **Daily Monitoring** layer of your Digital Twin.
 
 ## Health Plans (Focuses)
 
