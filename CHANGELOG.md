@@ -6,7 +6,35 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Fixed
+
+- **Light theme was largely unreadable; every text surface now meets WCAG AA (4.5:1)** (`app.wxss`, `pages/main/main.wxss`, `components/user-health/user-health.{wxss,wxml}`, `pages/coach/coach.wxss`, `pages/{referral,phones}/*.wxss`, `components/avatar-picker/avatar-picker.wxss`)
+  - **Root cause: `page` sets `color: #EEF2FF` for the dark theme, and the `.theme-light` block only ever redefined CSS *variables* — never `color` itself.** So every element without an explicit color rule inherited near-white text onto the cream background, measured live at **1.05:1**. Fixed by setting `color: var(--text)` on `.theme-light`, which re-roots inheritance for the whole light subtree (it also reaches into custom components, since inheritance is unaffected by style isolation).
+  - The light palette had been built to mirror the dark theme's *hue* and was never checked for contrast. Darkened the tokens (`--blue` 2.46→4.89:1, `--text-sub` 4.43→5.52:1, `--text-muted` 1.79→4.64:1). `--blue` doubles as the primary button fill, so white-on-button went 2.63→5.22:1 too.
+  - Added semantic **text** tokens (`--success`, `--warn`, `--danger`, `--info`, `--gold`, `--steel`, …) and swapped 126 hardcoded `color:` declarations onto them. Each token's dark value is byte-identical to the hex it replaced, so **dark theme is unchanged** (verified live). Backgrounds/borders keep their raw rgba tints.
+  - Muted text used `rgba(var(--wave-rgb), 0.25–0.6)` — alpha tuned for a bright colour on dark navy. On cream, alpha itself is the blocker (even pure black at α=0.3 tops out near 1.9:1), so light theme gets opaque values via a 4-step ramp that preserves the original faint→strong hierarchy. 72 generated `.theme-light` overrides; base rules untouched.
+  - Health tab status colours are applied as **inline** `style="color:…"` from `user-health.js`, which no class rule can override. A `<wxs>` mapper now maps each to a darker same-hue variant at render time (reactive to `theme` for free); chart fills/bars keep the bright originals since they're shapes, not text.
+  - Verified live in WeChat DevTools via the automator, reading real computed styles: across all five tabs plus the health component, low-contrast text went from **80+ failures to 0** (the 14 remaining sub-4.5 hits are chart bar segments, decorative dots, and white-on-gradient bubbles — none of them text). Health-tab examples: `ht-lab-name` 1.32→4.88, `dt-metric-label` 1.92→5.32, `dt-sa-val` 2.62→5.82.
+
+- **Status bar icons were nearly invisible in light theme** (`pages/main/main.js`, `pages/coach/coach.js`, `pages/referral/referral.js`)
+  - These pages use `navigationStyle: "custom"`, but `app.json`'s global `navigationBarTextStyle: "white"` suits only the dark navy header — it never tracked the switch to light theme's cream header, leaving white clock/battery icons on a light background. Each page now calls `wx.setNavigationBarColor()` on load and on theme toggle.
+
 ### Added
+
+- **Health tab (the Digital Twin) now refreshes when you return to it, instead of only on first attach** (`components/user-health/user-health.js` — new `refreshIfStale()`; `pages/main/main.js` — `switchTab`)
+  - Chat writes into the twin (`remember_fact`, `record_weight`, report uploads), but the health component only loaded on `attached()` and on a `userId`/`lang` change — so anything stated in chat stayed invisible until the miniapp was restarted. Confirmed live via the DevTools automator: saying "我对海鲜过敏" in chat wrote `user_memory_facts` within ~20s, but the Personal Profile section still showed the old list after switching back to the health tab.
+  - Uses the same 30s staleness guard `switchTab` already applies to the plans/dots tabs, rather than refetching on every tab tap.
+  - Also: `_recomputeTwinLayers()` now counts `epigenetic_result` toward the Medical Records layer. It's a real 6th `health_events` category on dev that predates the taxonomy and isn't in the five documented ones; without it a user whose only outside test is an epigenetic panel showed that layer as empty.
+
+- **Digital Twin reframed as the umbrella for a user's whole health model, with four named layers** (`prompts/chat/twinVocabulary.js` (new), `components/user-health/*`, `web/user-app/src/{i18n.js,tabs/HealthTab.jsx}`, `docs/architecture/digital-twin.md`, CLAUDE.md §34)
+  - "Digital Twin / 数字孪生" previously meant the wearable rolling-average section and nothing else — the user manual defined it that way, and every prompt rendering `health_twin` was headed `DIGITAL TWIN (WEARABLE & LIFESTYLE DATA)`. It now names the whole model, split into **精准检测 / Precision Testing**, **日常监测 / Daily Monitoring**, **医疗记录 / Medical Records**, and **个人档案 / Personal Profile**.
+  - Terminology + IA only — **zero schema change**. The `health_twin` row was never actually wearable-only (it already carried the latest lab panel and denormalized BioAge); the narrowness was in labels and layout.
+  - Miniapp Health tab: new umbrella header with a four-chip completeness strip (derived from already-loaded data, no new fetch); section titles are now the layer names; `t.digitalTwin` was a dead string and is now the umbrella.
+  - **Fixed: a user with a bound ring but no Kino scan saw none of their own data.** The health tags, weight/BMI/steps/HRV strip and photo-captured BP/glucose row were all inside a card gated on `subAgeList.length > 0`. They're now in an ungated sibling card.
+  - **`user_memory_facts` got its first end-user surface** — a read-only list of the dietary restrictions/allergies/preferences the AI has noted, in the new Personal Profile section (self view only; the coach app already has its own Facts tab). Previously visible only to admins and coaches.
+  - Prompts: new shared `getTwinVocabBlock()` teaches both personas the same four layer names the UI shows; `systemHealthAdvice.js` section headers renamed per layer; the `实时健康数据 / 近7天穿戴设备均值 / Wearable context` prefixes across `chat/{biomarker,nutrition,emotional}.js`, `systemFormulaGenerate.js` and `systemDailyCheckin.js` are now `数字孪生 · 日常监测` / `TWIN · DAILY MONITORING`.
+  - Viva's persona copy claimed the twin was built from `遗传多态性` and `昼夜节律类型` — neither has any table behind it anywhere in the schema, a fabrication risk under the codebase's own fact-constraint rules. Rewritten to the four real layers.
+  - Resolved a name collision: the legacy ILI/MFI/MRI/MVII block in the (orphaned) `prompts/systemReport.js` copies was called `数字孪生评分 / Digital Twin Scores`; it is now `生物系统评分 / Biological System Scores`.
 
 - **Admin panel: Edit User modal now shows the real phone list (read-only) instead of a raw single-value override, with a link into the Phones tab** (`web/admin-panel/src/tabs/UsersTab.jsx` — `UserModal`, `UserDetailModal`'s new `initialTab` prop, `UsersTab`'s `detailInitialTab`)
 

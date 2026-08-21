@@ -86,4 +86,4 @@
 .theme-light .ap-sheet { background: #f8f9ff; }
 .theme-light .ap-title { color: #1a2744; }
 .theme-light .ap-close { background: rgba(0, 0, 0, 0.06); }
-.theme-light .ap-close-icon { color: rgba(0, 0, 0, 0.45); }
+.theme-light .ap-close-icon { color: #72706E; }

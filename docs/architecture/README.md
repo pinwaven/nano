@@ -94,7 +94,7 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 | User Deletion | [user-deletion.md](user-deletion.md) |
 | AI Report Engine | [report-engine.md](report-engine.md) |
 | Health Plan System | [health-plan-system.md](health-plan-system.md) |
-| Digital Twin | [digital-twin.md](digital-twin.md) |
+| Digital Twin (umbrella — 4 layers) | [digital-twin.md](digital-twin.md) |
 | Reminder System | [reminder-system.md](reminder-system.md) |
 | Channel Inventory | [channel-inventory.md](channel-inventory.md) |
 | Orders & SKU Fulfillment | [orders-fulfillment.md](orders-fulfillment.md) |

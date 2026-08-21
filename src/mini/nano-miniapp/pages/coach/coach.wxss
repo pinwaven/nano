@@ -47,8 +47,8 @@
   border-bottom: 1rpx solid rgba(245, 158, 11, 0.4);
 }
 
-.sandbox-banner-text { flex: 1; font-size: 22rpx; color: #f59e0b; font-weight: 500; }
-.sandbox-banner-exit { flex-shrink: 0; font-size: 22rpx; font-weight: 700; color: #f59e0b; text-decoration: underline; }
+.sandbox-banner-text { flex: 1; font-size: 22rpx; color: var(--warn); font-weight: 500; }
+.sandbox-banner-exit { flex-shrink: 0; font-size: 22rpx; font-weight: 700; color: var(--warn); text-decoration: underline; }
 
 .header-logo-btn {
   display: flex;
@@ -181,7 +181,7 @@
   padding: 48px 0;
 }
 
-.loading-text { color: #7A9ABF; font-size: 14px; }
+.loading-text { color: var(--steel); font-size: 14px; }
 
 /* ── Client list ─────────────────────────────────────────────────────────── */
 .client-list { padding: 12px 16px; }
@@ -216,7 +216,7 @@
   align-items: center;
   justify-content: center;
 }
-.search-clear-icon { font-size: 11px; color: #7A9ABF; }
+.search-clear-icon { font-size: 11px; color: var(--steel); }
 
 /* Stage filter chips */
 .stage-filter-scroll {
@@ -246,7 +246,7 @@
   background: rgba(99, 117, 236, 0.15);
 }
 
-.stage-chip-active .stage-chip-text { color: #8B9FFF; }
+.stage-chip-active .stage-chip-text { color: var(--info-pale); }
 
 .stage-chip-text { font-size: 12px; color: #A6C4E5; font-weight: 500; }
 
@@ -268,7 +268,7 @@
   padding: 64px 0;
 }
 
-.empty-text { color: #7A9ABF; font-size: 14px; }
+.empty-text { color: var(--steel); font-size: 14px; }
 
 .client-card {
   background: #0F2540;
@@ -324,7 +324,7 @@
 
 .age-chip-text { font-size: 11px; }
 
-.client-meta { font-size: 12px; color: #7A9ABF; display: block; margin-top: 2px; }
+.client-meta { font-size: 12px; color: var(--steel); display: block; margin-top: 2px; }
 .client-meta-dim { color: #4A6A8A; }
 
 /* Last user message preview strip */
@@ -342,7 +342,7 @@
 
 .last-msg-text {
   font-size: 13px;
-  color: #7A9ABF;
+  color: var(--steel);
   line-height: 1.4;
   flex: 1;
   overflow: hidden;
@@ -399,14 +399,14 @@
 .invite-inactive { background: rgba(120,120,120,0.15); }
 .invite-status-text { font-size: 11px; font-weight: 600; color: #A0B4FF; }
 .invite-inactive .invite-status-text { color: #4A6A8A; }
-.invite-uses { font-size: 12px; color: #7A9ABF; }
+.invite-uses { font-size: 12px; color: var(--steel); }
 .invite-note-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0 8px; padding: 8px 10px; border-radius: 10px; background: rgba(99,117,236,0.08); }
 .invite-note { flex: 1; font-size: 13px; color: #C8D6F0; line-height: 1.35; word-break: break-word; }
 .invite-note-empty { color: #5E7596; font-style: italic; }
 .invite-note-edit { font-size: 13px; color: #A0B4FF; flex-shrink: 0; }
 
 .deact-btn { background: transparent; border: 1rpx solid rgba(239,68,68,0.3); }
-.deact-text { color: #ef4444; }
+.deact-text { color: var(--danger); }
 
 /* ── Overlay shell ───────────────────────────────────────────────────────── */
 .overlay-mask {
@@ -446,7 +446,7 @@
   justify-content: center;
 }
 
-.close-x { font-size: 16px; color: #7A9ABF; }
+.close-x { font-size: 16px; color: var(--steel); }
 
 /* scrollable content area for health + chat tabs */
 .overlay-scroll { flex: 1; overflow: hidden; }
@@ -467,7 +467,7 @@
   justify-content: center;
 }
 
-.detail-tab-text { font-size: 13px; color: #7A9ABF; font-weight: 500; }
+.detail-tab-text { font-size: 13px; color: var(--steel); font-weight: 500; }
 .detail-tab-active .detail-tab-text { color: #A0B4FF; font-weight: 700; }
 
 .panel-center { display: flex; justify-content: center; padding: 36px 0; }
@@ -477,7 +477,7 @@
 
 .section-label {
   font-size: 11px;
-  color: #7A9ABF;
+  color: var(--steel);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   display: block;
@@ -517,7 +517,7 @@
 }
 
 .sub-age-value { font-size: 20px; font-weight: 700; display: block; margin-bottom: 2px; }
-.sub-age-label { font-size: 11px; color: #7A9ABF; }
+.sub-age-label { font-size: 11px; color: var(--steel); }
 
 /* Biomarkers list */
 .bm-grid {
@@ -559,7 +559,7 @@
   margin-bottom: 4px;
 }
 
-.chat-role-text { font-size: 11px; color: #7A9ABF; font-weight: 600; }
+.chat-role-text { font-size: 11px; color: var(--steel); font-weight: 600; }
 .chat-time { font-size: 10px; color: #4A6A8A; }
 
 .chat-bubble {
@@ -640,7 +640,7 @@
 }
 .chat-plus-open { background: rgba(99, 117, 236, 0.3); border-color: #6375EC; }
 .chat-plus-icon { font-size: 22px; color: #A6C4E5; line-height: 1; }
-.chat-plus-open .chat-plus-icon { color: #8B9FFF; }
+.chat-plus-open .chat-plus-icon { color: var(--info-pale); }
 
 /* ── Reminder overlay ────────────────────────────────────────────────────── */
 .reminder-body {
@@ -691,7 +691,7 @@
 }
 
 .recurrence-active { background: rgba(99,117,236,0.2); border-color: #6375EC; }
-.recurrence-opt-text { font-size: 12px; color: #7A9ABF; }
+.recurrence-opt-text { font-size: 12px; color: var(--steel); }
 .recurrence-active .recurrence-opt-text { color: #A0B4FF; font-weight: 600; }
 
 .instr-send-btn {
@@ -726,7 +726,7 @@
 
 .q-card-desc {
   font-size: 12px;
-  color: #7A9ABF;
+  color: var(--steel);
   display: block;
   margin-bottom: 8px;
   line-height: 1.4;
@@ -793,7 +793,7 @@
 
 .q-resp-prompt {
   font-size: 11px;
-  color: #7A9ABF;
+  color: var(--steel);
   display: block;
   margin-bottom: 4px;
 }
@@ -824,9 +824,9 @@
   gap: 6px;
 }
 .earnings-card-green { border-color: #10b981; background: rgba(16,185,129,0.08); }
-.earnings-card-label { font-size: 11px; color: #7A9ABF; }
+.earnings-card-label { font-size: 11px; color: var(--steel); }
 .earnings-card-value { font-size: 20px; font-weight: 700; color: #E8F0F8; }
-.earnings-card-green .earnings-card-value { color: #10b981; }
+.earnings-card-green .earnings-card-value { color: var(--success-deep); }
 
 /* ── Training Tab ─────────────────────────────────────────────────────────── */
 
@@ -842,7 +842,7 @@
   font-size: 22rpx;
   font-weight: 700;
   letter-spacing: 2rpx;
-  color: #7A9ABF;
+  color: var(--steel);
   text-transform: uppercase;
 }
 
@@ -882,7 +882,7 @@
 
 .training-lesson-badge-text {
   font-size: 20rpx;
-  color: #8B9FFF;
+  color: var(--info-pale);
 }
 
 .training-course-body {
@@ -899,7 +899,7 @@
 
 .training-course-desc {
   font-size: 24rpx;
-  color: #7A9ABF;
+  color: var(--steel);
   line-height: 1.5;
 }
 
@@ -958,7 +958,7 @@
 
 .training-course-header-desc {
   font-size: 26rpx;
-  color: #7A9ABF;
+  color: var(--steel);
   line-height: 1.5;
   display: block;
 }
@@ -990,7 +990,7 @@
 .training-lesson-num-text {
   font-size: 22rpx;
   font-weight: 700;
-  color: #8B9FFF;
+  color: var(--info-pale);
 }
 
 .training-lesson-info { flex: 1; min-width: 0; }
@@ -1004,7 +1004,7 @@
 
 .training-lesson-desc {
   font-size: 24rpx;
-  color: #7A9ABF;
+  color: var(--steel);
   display: block;
   margin-top: 4rpx;
 }
@@ -1030,7 +1030,7 @@
 
 .training-lesson-done-text {
   font-size: 24rpx;
-  color: #10b981;
+  color: var(--success-deep);
 }
 
 .training-lesson-chevron {
@@ -1062,7 +1062,7 @@
   background: #0a1830;
 }
 
-.training-video-loading-text { color: #7A9ABF; font-size: 26rpx; }
+.training-video-loading-text { color: var(--steel); font-size: 26rpx; }
 
 .training-lesson-detail { padding: 8rpx 0 24rpx; }
 
@@ -1076,7 +1076,7 @@
 
 .training-lesson-detail-desc {
   font-size: 26rpx;
-  color: #7A9ABF;
+  color: var(--steel);
   line-height: 1.6;
   display: block;
   margin-bottom: 32rpx;
@@ -1095,7 +1095,7 @@
 .training-completed-badge-text {
   font-size: 28rpx;
   font-weight: 700;
-  color: #10b981;
+  color: var(--success-deep);
 }
 
 .training-mark-btn {
@@ -1150,11 +1150,11 @@
   border: 1rpx solid rgba(99,101,241,0.3);
 }
 .training-dashboard-credits { text-align: center; flex-shrink: 0; }
-.training-dashboard-credits-num { display: block; font-size: 52rpx; font-weight: 800; color: #818cf8; line-height: 1; }
-.training-dashboard-credits-label { display: block; font-size: 20rpx; color: #7A9ABF; margin-top: 4rpx; }
+.training-dashboard-credits-num { display: block; font-size: 52rpx; font-weight: 800; color: var(--info); line-height: 1; }
+.training-dashboard-credits-label { display: block; font-size: 20rpx; color: var(--steel); margin-top: 4rpx; }
 .training-dashboard-stats { flex: 1; display: flex; flex-direction: column; gap: 8rpx; }
 .training-dashboard-tier { display: inline-flex; align-items: center; background: rgba(99,101,241,0.2); border-radius: 8rpx; padding: 4rpx 14rpx; align-self: flex-start; margin-bottom: 4rpx; }
-.training-dashboard-tier-label { font-size: 22rpx; font-weight: 600; color: #818cf8; text-transform: capitalize; }
+.training-dashboard-tier-label { font-size: 22rpx; font-weight: 600; color: var(--info); text-transform: capitalize; }
 .training-dashboard-stat { font-size: 23rpx; color: #A6C4E5; }
 
 /* ── Learning Paths ───────────────────────────────────────────────────────── */
@@ -1164,7 +1164,7 @@
 }
 .training-path-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8rpx; }
 .training-path-title { font-size: 28rpx; font-weight: 600; color: var(--text); flex: 1; }
-.training-path-tier { font-size: 20rpx; color: #818cf8; background: rgba(99,101,241,0.15); padding: 3rpx 12rpx; border-radius: 20rpx; text-transform: capitalize; }
+.training-path-tier { font-size: 20rpx; color: var(--info); background: rgba(99,101,241,0.15); padding: 3rpx 12rpx; border-radius: 20rpx; text-transform: capitalize; }
 .training-path-desc { font-size: 24rpx; color: var(--text-muted); margin-bottom: 12rpx; }
 .training-path-progress-bar { height: 8rpx; background: rgba(255,255,255,0.1); border-radius: 4rpx; margin-bottom: 8rpx; overflow: hidden; }
 .training-path-progress-fill { height: 100%; background: linear-gradient(90deg,#6375EC,#8B9FFF); border-radius: 4rpx; }
@@ -1172,14 +1172,14 @@
 
 /* ── Course meta row ──────────────────────────────────────────────────────── */
 .training-course-meta-row { display: flex; align-items: center; gap: 12rpx; margin-top: 6rpx; }
-.training-course-level { font-size: 20rpx; color: #818cf8; background: rgba(99,101,241,0.15); padding: 2rpx 10rpx; border-radius: 20rpx; text-transform: capitalize; }
-.training-course-credits { font-size: 20rpx; color: #10b981; }
+.training-course-level { font-size: 20rpx; color: var(--info); background: rgba(99,101,241,0.15); padding: 2rpx 10rpx; border-radius: 20rpx; text-transform: capitalize; }
+.training-course-credits { font-size: 20rpx; color: var(--success-deep); }
 
 /* ── Lesson meta row ──────────────────────────────────────────────────────── */
 .training-lesson-meta-row { display: flex; align-items: center; gap: 10rpx; margin-top: 6rpx; flex-wrap: wrap; }
 .training-lesson-type-badge { font-size: 22rpx; }
-.training-lesson-credits-label { font-size: 20rpx; color: #10b981; }
-.training-lesson-quiz-badge { font-size: 20rpx; color: #f59e0b; background: rgba(245,158,11,0.15); padding: 2rpx 10rpx; border-radius: 20rpx; }
+.training-lesson-credits-label { font-size: 20rpx; color: var(--success-deep); }
+.training-lesson-quiz-badge { font-size: 20rpx; color: var(--warn); background: rgba(245,158,11,0.15); padding: 2rpx 10rpx; border-radius: 20rpx; }
 
 /* ── Text content view ────────────────────────────────────────────────────── */
 .training-text-content { padding: 24rpx; background: var(--navy-lift); border-radius: 16rpx; margin-bottom: 16rpx; max-height: 600rpx; overflow-y: auto; }
@@ -1202,14 +1202,14 @@
 .training-quiz-failed { background: rgba(239,68,68,0.1); border: 1rpx solid rgba(239,68,68,0.3); }
 .training-quiz-result-score { display: block; font-size: 52rpx; font-weight: 800; color: var(--text); }
 .training-quiz-result-label { display: block; font-size: 26rpx; color: var(--text-muted); margin-top: 6rpx; }
-.training-quiz-result-credits { display: block; font-size: 26rpx; color: #10b981; font-weight: 600; margin-top: 8rpx; }
+.training-quiz-result-credits { display: block; font-size: 26rpx; color: var(--success-deep); font-weight: 600; margin-top: 8rpx; }
 
 /* ── Certifications ───────────────────────────────────────────────────────── */
 .training-cert-card { display: flex; align-items: center; gap: 20rpx; background: var(--navy-lift); border-radius: 14rpx; padding: 20rpx; margin-bottom: 12rpx; border: 1rpx solid rgba(245,158,11,0.2); }
 .training-cert-icon { font-size: 44rpx; flex-shrink: 0; }
 .training-cert-info { flex: 1; }
 .training-cert-title { display: block; font-size: 27rpx; font-weight: 600; color: var(--text); }
-.training-cert-tier { display: block; font-size: 22rpx; color: #f59e0b; margin-top: 4rpx; text-transform: capitalize; }
+.training-cert-tier { display: block; font-size: 22rpx; color: var(--warn); margin-top: 4rpx; text-transform: capitalize; }
 
 /* ════════════════════════════════════════════════════════
    LIGHT THEME OVERRIDES
@@ -1418,8 +1418,8 @@
 .plans-coach-title  { font-size: 26rpx; font-weight: 600; color: var(--text); }
 .coach-plan-card    { margin: 12rpx 24rpx; padding: 20rpx; background: var(--navy-lift); border-radius: 16rpx; }
 .coach-plan-badge   { display: inline-block; padding: 4rpx 14rpx; border-radius: 20rpx; font-size: 20rpx; font-weight: 600; margin-bottom: 8rpx; }
-.coach-plan-primary   { background: rgba(99,117,236,0.2); color: #8B9FFF; }
-.coach-plan-secondary { background: rgba(16,185,129,0.15); color: #34d399; }
+.coach-plan-primary   { background: rgba(99,117,236,0.2); color: var(--info-pale); }
+.coach-plan-secondary { background: rgba(16,185,129,0.15); color: var(--success); }
 .coach-plan-name    { display: block; font-size: 26rpx; font-weight: 500; color: var(--text); margin-bottom: 4rpx; }
 .coach-plan-meta    { display: block; font-size: 22rpx; color: var(--text-muted); }
 .plans-coach-actions { display: flex; flex-direction: column; gap: 16rpx; padding: 20rpx 24rpx; }
@@ -1457,7 +1457,7 @@
 .note-date    { font-size: 20rpx; color: var(--text-muted); }
 .note-actions { display: flex; gap: 16rpx; }
 .note-action-btn { font-size: 22rpx; color: #6375EC; padding: 4rpx 8rpx; }
-.note-delete-btn { color: #ef4444; }
+.note-delete-btn { color: var(--danger); }
 .note-compose { padding: 16rpx 24rpx; border-top: 1rpx solid var(--navy-border); display: flex; gap: 12rpx; align-items: flex-end; }
 .note-input   { flex: 1; background: rgba(255,255,255,0.05); border: 1rpx solid var(--navy-border); border-radius: 12rpx; padding: 14rpx; font-size: 26rpx; color: var(--text); min-height: 72rpx; max-height: 200rpx; }
 .note-save-btn { padding: 14rpx 28rpx; background: #6375EC; border-radius: 12rpx; flex-shrink: 0; }
@@ -1472,9 +1472,9 @@
 .goal-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10rpx; }
 .goal-title     { font-size: 26rpx; font-weight: 500; color: var(--text); }
 .goal-status-badge { font-size: 20rpx; padding: 4rpx 12rpx; border-radius: 12rpx; font-weight: 600; }
-.goal-status-active   { background: rgba(99,117,236,0.2); color: #8B9FFF; }
-.goal-status-achieved { background: rgba(16,185,129,0.2); color: #34d399; }
-.goal-status-missed   { background: rgba(239,68,68,0.2); color: #ef4444; }
+.goal-status-active   { background: rgba(99,117,236,0.2); color: var(--info-pale); }
+.goal-status-achieved { background: rgba(16,185,129,0.2); color: var(--success); }
+.goal-status-missed   { background: rgba(239,68,68,0.2); color: var(--danger); }
 .goal-progress-row  { display: flex; align-items: center; gap: 10rpx; margin: 10rpx 0; }
 .goal-baseline      { font-size: 20rpx; color: var(--text-muted); min-width: 60rpx; text-align: right; }
 .goal-target        { font-size: 20rpx; color: var(--text-muted); min-width: 60rpx; }
@@ -1511,13 +1511,13 @@
 .pipeline-card    { margin: 8rpx 12rpx 0; padding: 14rpx; background: rgba(255,255,255,0.04); border-radius: 12rpx; display: flex; justify-content: space-between; align-items: center; }
 .pipeline-card-name  { font-size: 24rpx; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pipeline-card-delta { font-size: 20rpx; font-weight: 600; margin-left: 8rpx; flex-shrink: 0; }
-.delta-good { color: #34d399; }
-.delta-bad  { color: #ef4444; }
+.delta-good { color: var(--success); }
+.delta-bad  { color: var(--danger); }
 
 /* Appointment cards */
 .appt-card    { margin: 8rpx 24rpx; padding: 16rpx 20rpx; background: var(--navy-lift); border-radius: 14rpx; display: flex; gap: 14rpx; align-items: center; }
 .appt-format-badge { padding: 6rpx 14rpx; background: rgba(99,117,236,0.15); border-radius: 10rpx; flex-shrink: 0; }
-.appt-format-text  { font-size: 20rpx; color: #8B9FFF; font-weight: 600; }
+.appt-format-text  { font-size: 20rpx; color: var(--info-pale); font-weight: 600; }
 .appt-info    { flex: 1; }
 .appt-title   { display: block; font-size: 26rpx; color: var(--text); font-weight: 500; }
 .appt-client  { display: block; font-size: 22rpx; color: var(--text-muted); }
@@ -1627,3 +1627,8 @@
 .theme-light .page-privacy-title { color: var(--text); }
 .theme-light .page-privacy-body  { color: var(--text-sub); }
 .theme-light .page-privacy-cancel-btn text { color: var(--text-muted); }
+
+/* These two sit on --navy-lift (#F5EDE3), a shade darker than the page surface, which
+   drops --text-muted to 4.28:1. Step up to --text-sub for the light theme only. */
+.theme-light .goal-cancel-btn,
+.theme-light .overlay-cancel-btn { color: var(--text-sub); }

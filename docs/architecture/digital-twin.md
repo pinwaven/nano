@@ -1,11 +1,38 @@
-# Digital Twin Health Profile
+# Digital Twin
 
-The **Digital Twin** is a continuously updated model of a user's health state drawn from multiple data streams: Kino biomarker scans, wearable devices, manual self-reports, annual lab records, and activity data. It has two layers:
+The **Digital Twin** is the umbrella term for a user's entire health model — never any single
+data source. This file is the canonical definition of that vocabulary; the miniapp's `t.layer*`
+i18n keys, the prompt section headers, and the table below must change together (CLAUDE.md §34).
 
-| Layer | Table | Purpose |
+## The four layers
+
+| # | ZH | EN | Backing tables | Miniapp section | Prompt header |
+|---|---|---|---|---|---|
+| 1 | 精准检测 | Precision Testing | `biomarkers(test_type='kino_chip')`; `health_twin.latest_bio_age / latest_sub_ages / latest_kino_scan_at` | `t.layerPrecision` + the BioAge summary card | `DIGITAL TWIN · PRECISION TESTING` |
+| 2 | 日常监测 | Daily Monitoring | `health_events(sleep\|activity\|vitals\|body_composition)`; `health_twin.avg_* / latest_weight_kg / latest_bmi / latest_body_fat_pct / trend_data` | `t.layerDaily` | `DIGITAL TWIN · DAILY MONITORING` |
+| 3 | 医疗记录 | Medical Records | `health_reports`; `health_events(category='lab_result')`; `health_twin.latest_lab_data / latest_lab_date` | `t.layerMedical` | (rendered as the lab snapshot) |
+| 4 | 个人档案 | Personal Profile | `users.bio_data`; `questionnaire_responses`; `user_memory_facts` | `t.layerProfile` | `DIGITAL TWIN · PERSONAL PROFILE` |
+
+Per-layer deep dives: [kino-system.md](kino-system.md) · [wearable-system.md](wearable-system.md) /
+[halo-smart-ring.md](halo-smart-ring.md) · [lab-integration.md](lab-integration.md) /
+[photo-health-tracking.md](photo-health-tracking.md) · [questionnaire-system.md](questionnaire-system.md)
+
+**Interventions are deliberately not a layer.** `health_plans` and `nutrition_plans` are what the
+user *does*, not what they *are*, and they own the Plans tab. Folding them in would make "twin"
+mean "everything," which is exactly how the term lost its meaning before this taxonomy existed.
+
+### Storage layers (not the same as the four layers above)
+
+Separate axis, same word — worth stating explicitly because the collision caused real confusion:
+
+| Storage layer | Table | Purpose |
 |---|---|---|
 | **Raw event log** | `health_events` | Append-only, source-of-truth for all time-series health data |
 | **Materialized summary** | `health_twin` | One row per user; 7-day rolling averages + latest values; what the AI reads |
+
+Note `health_twin` spans three of the four *user-facing* layers (it carries the latest lab panel
+and the denormalized BioAge alongside the ring averages) — it is **not** a wearable-only row,
+despite the `avg_*` columns dominating it visually.
 
 ---
 
@@ -237,6 +264,17 @@ Returns the full digital twin summary for a user.
 
 ## AI Integration
 
+### Shared vocabulary block
+
+`prompts/chat/twinVocabulary.js` — `getTwinVocabBlock(isZh)`. Persona-agnostic, same pattern as
+`currentDateBlock.js` / `factConstraint.js` / `factMemoryBlock.js`. Names the umbrella and the four
+layers using the exact strings the UI shows, and forbids equating "Digital Twin" with "wearable
+data." Injected by the six heavyweight prompts: `{nano,viva}/systemHealthAdvice.js`,
+`{nano,viva}/systemFormulaGenerate.js`, `{nano,viva}/chat/biomarker.js`. The light prompts
+(`chat/nutrition.js`, `chat/emotional.js`, `systemDailyCheckin.js`) carry an inline
+`TWIN · DAILY MONITORING` prefix instead — a full taxonomy block is disproportionate for a
+one-line context injection.
+
 The digital twin feeds the AI at two entry points.
 
 ### Chat (`handlePostChat`)
@@ -251,7 +289,25 @@ The digital twin feeds the AI at two entry points.
 
 ### Health Advice (`handlePostHealthAdvice`)
 
-`health_twin` is fetched in the same `Promise.all` as biomarkers, dots, and plans. It is passed into `systemHealthAdvice.js` as `health_twin` and renders as a **DIGITAL TWIN** section in the prompt. The AI task instructions include a "Lifestyle Connection" step that asks the model to cross-reference wearable data with Kino biomarkers (e.g. poor sleep → elevated CRP → higher Resilience Age).
+`health_twin` is fetched in the same `Promise.all` as biomarkers, dots, and plans. It is passed
+into `systemHealthAdvice.js` as `health_twin`. That prompt's sections are named for the layers
+they carry:
+
+| Prompt section | Layer |
+|---|---|
+| `━━━ DIGITAL TWIN · PERSONAL PROFILE (SELF-REPORTED) ━━━` | 4 |
+| `━━━ DIGITAL TWIN · PRECISION TESTING (KINO BIOMARKERS & BIOLOGICAL AGE) ━━━` | 1 |
+| `━━━ DIGITAL TWIN · DAILY MONITORING (WEARABLE, SLEEP, ACTIVITY, BODY) ━━━` | 2 |
+
+The task instructions include a "Daily-Monitoring Connection" step asking the model to
+cross-reference daily-monitoring signals with Precision Testing biomarkers (e.g. poor sleep →
+elevated CRP → higher Resilience Age).
+
+**Known gap:** `health_twin.latest_lab_data` / `latest_lab_date` are present in the row this
+prompt already receives, and the miniapp renders them as the lab snapshot, but
+`systemHealthAdvice.js` does not show them to the model — so the AI cannot see the Medical
+Records layer the user is looking at. Rendering it is a display of in-hand data, not a new
+pipeline.
 
 ---
 
@@ -290,52 +346,41 @@ POST /health-events        POST /health-events/sync
 
 ---
 
-## Miniapp UI — Health Tab Digital Twin Section
+## Miniapp UI — the Health tab
 
-The Digital Twin section appears at the **bottom of the health tab** (`components/user-health/`) and loads concurrently with biomarker data via a fire-and-forget `_loadHealthTwin()` call. When data is present it renders four visual blocks:
+`components/user-health/` (mounted at `pages/main/main.wxml` as `mode="self"` and at
+`pages/coach/coach.wxml` as `mode="coach"`). One vertical scroll, laid out as the umbrella
+followed by the four layers:
 
-### 1. Health Score Card
-
-A composite 0–100 score derived by averaging four domain scores. Displayed inside a circular ring whose border and number color shift with the grade:
-
-| Score | Grade (zh/en) | Color |
-|---|---|---|
-| ≥ 80 | 优秀 / Optimal | Green `#10b981` |
-| ≥ 65 | 良好 / Good | Indigo `#6375EC` |
-| ≥ 50 | 一般 / Fair | Orange `#f97316` |
-| < 50 | 偏低 / Low | Red `#ef4444` |
-
-To the right: compact horizontal bars for each domain (Recovery, Cardio, Activity, Body) with their individual scores.
-
-### 2. Vital Gauge Rows
-
-Each available metric is a row containing:
-- **Label** + **colored value** + optional **trend arrow** (↑ / → / ↓)
-- A **zone track** — a 12rpx bar divided into colored segments representing clinical ranges (red/orange/green/blue)
-- A **floating dot marker** positioned absolutely at `markerPct`% along the track, matching the metric color
-- A **sublabel** showing the optimal range
-
-| Metric | Scale | Zones (left → right) |
-|---|---|---|
-| Sleep | 0–12 h | Red (0–6h), Orange (6–7h), Green (7–9h), Orange (9–10h), Red (10–12h) |
-| HRV | 0–100 ms | Red (0–20), Orange (20–40), Green (40–70), Blue (70–100) |
-| Resting HR | 40–120 bpm | Blue (40–52), Green (52–75), Orange (75–90), Red (90–120) |
-| SpO₂ | 90–100 % | Red (90–95), Orange (95–97), Green (97–98), Blue (98–100) |
-| Daily Steps | 0–12 000 | Red (0–5k), Orange (5–7.5k), Green (7.5–10k), Blue (10k+) |
-
-### 3. Body Composition Bar
-
-Shown when `latest_body_fat_pct` is available. A horizontal segmented bar splits body weight into lean mass (green gradient) and fat (orange gradient) with a legend showing exact percentages. The numeric stats (weight, BMI, fat %) appear as header text above the bar.
-
-### 4. Source Coverage Chips
-
-Chip row showing which data categories have data and their last sync date. Active sources (`.twin-source-active`) have a green dot and colored border; inactive sources are dimmed.
+1. **Umbrella** (`.twin-umbrella`) — `{{t.digitalTwin}}` plus a completeness strip: one chip per
+   layer, green with a last-updated date when that layer has data, dimmed otherwise. Derived by
+   `_recomputeTwinLayers()`, which re-reads `this.data` after each loader finishes rather than
+   fetching anything new. `data_coverage` alone can't back this — its five keys are all
+   `health_events`-derived, so it knows nothing about Kino or the profile.
+2. **Twin summary card** — body figure with four tappable sub-age zones + BioAge chip. Gated on
+   `subAgeList.length > 0` (needs a Kino scan).
+3. **Cross-layer strips** — health tags, weight/BMI/steps/HRV/stress, and photo-captured
+   BP/glucose. Deliberately **ungated**: these mix layers, and gating them behind a Kino scan
+   used to leave a ring-only user staring at an empty tab.
+4. **Daily Monitoring** (`{{t.layerDaily}}`) — ring bind/sync UI, sync summary, per-slot charts
+   (hourly steps/HR, 7-day HRV/SpO₂, weekly sleep timeline, sleep stages), body-composition bar.
+5. **Precision Testing** (`{{t.layerPrecision}}`) — Kino history and trends.
+6. **Medical Records** (`{{t.layerMedical}}`) — lab snapshot + report list → report detail sheet.
+7. **Personal Profile** (`{{t.layerProfile}}`) — read-only `user_memory_facts` list, self view
+   only (the coach app has its own Facts tab). Read-only by design: who owns an AI-extracted
+   fact is a product question, not a labeling one.
 
 ---
 
-## Health Score Computation
+## Health Score Computation — web user-app only
 
-**File:** `src/mini/nano-miniapp/components/user-health/user-health.js`
+**File:** `src/web/user-app/src/utils.js` (`buildTwinVisuals`), rendered by `tabs/HealthTab.jsx`.
+
+> The miniapp has a near-identical `_buildTwinVisuals()` in
+> `components/user-health/user-health.js`, but its output is **computed and discarded** — no
+> `.wxml` references `healthScore` / `healthDomains` / `vitalGauges`. The miniapp shows live
+> ring charts instead. Don't delete the miniapp copy without checking it against the web
+> version first; it is also called on a ring-derived `virtualTwin`.
 
 Six scoring functions map raw metric values to 0–100:
 
@@ -387,16 +432,25 @@ Health Score: **~88 (Optimal)**
 
 ---
 
-## Relationship to Existing Health Data
+## Every health table, by layer
 
-The digital twin **complements** rather than replaces the existing `biomarkers` table:
+`health_twin` is a *cache* across layers, not the twin itself. The full map:
 
-| Source | Table | What it captures |
-|---|---|---|
-| Kino chip scan | `biomarkers` (`test_type = 'kino_chip'`) | Precision blood biomarkers → BioAge sub-scores |
-| Body weight log | `biomarkers` (`test_type = 'body_composition'`) | Weight snapshots from the miniapp (legacy path) |
-| Wearable sync | `health_events` | Continuous HRV, sleep, steps, SpO₂ |
-| Annual labs | `health_events` (`category = 'lab_result'`) | Full blood panel not captured by Kino |
-| Manual lifestyle | `health_events` (`source = 'manual'`) | User-entered sleep, workouts, etc. |
+| Layer | Source | Table | What it captures |
+|---|---|---|---|
+| 1 Precision Testing | Kino chip scan | `biomarkers` (`test_type='kino_chip'`) | Precision blood biomarkers → BioAge + 4 sub-ages |
+| 2 Daily Monitoring | Wearable sync | `health_events` (`sleep`/`activity`/`vitals`) | Continuous HRV, sleep, steps, SpO₂ |
+| 2 Daily Monitoring | Body weight log | `biomarkers` (`test_type='body_composition'`), `users.bio_data`, `health_events` (`body_composition`) | Weight snapshots — **stored in three places**, hand-synced by `_syncBodyCompositionTwin()` |
+| 2 Daily Monitoring | Manual lifestyle | `health_events` (`source='manual'`) | User-entered sleep, workouts |
+| 3 Medical Records | Report upload / lab API / FHIR | `health_reports`, `health_events` (`category='lab_result'`), `biomarkers` (`test_type='lab_import'`) | Full blood panels, checkups, imaging, doctor's notes |
+| 3 Medical Records | Photo OCR | `POST /analyze-image` → `health_reports` on consent | Photographed lab reports, BP/glucose/scale readings |
+| 4 Personal Profile | Onboarding + edits | `users.bio_data`, `questionnaire_responses` | Height/weight, conditions, declared allergies & medications |
+| 4 Personal Profile | Chat extraction | `user_memory_facts` | Dietary restrictions, allergies, preferences, goals |
 
-`health_twin.latest_bio_age` and `latest_sub_ages` are denormalized from `biomarkers` by `updateHealthTwin()` so the AI can read the entire user state from a single row.
+`health_twin.latest_bio_age` / `latest_sub_ages` are denormalized from `biomarkers`, and
+`latest_lab_data` from `health_events`, by `updateHealthTwin()` — so the AI can read across
+layers from a single row.
+
+**Known duplication (labelled, not yet resolved):** weight lives in three stores and allergies in
+two (`user_memory_facts` is chat-extracted, `users.bio_data` is onboarding-declared —
+semantically different, so the fix is a merge policy rather than a schema change).

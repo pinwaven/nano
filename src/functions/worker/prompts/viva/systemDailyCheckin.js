@@ -42,9 +42,9 @@ module.exports = ({ user_profile, period, morning_dots, evening_dots, most_eleva
         ? active_health_plans.map(p => p.goal || p.name).filter(Boolean).join('；')
         : '';
 
-    // Optional, secondary to most_elevated — a wearable (Halo/V8) trend the model MAY
+    // Optional, secondary to most_elevated — a Daily Monitoring (Halo/V8) trend the model MAY
     // reference for grounding, never fabricated when no device/data exists.
-    const hasWearableData = health_twin && (
+    const hasDailyMonitoringData = health_twin && (
         health_twin.avg_sleep_hours != null || health_twin.avg_daily_steps != null ||
         health_twin.avg_hrv_ms != null || health_twin.avg_resting_hr != null
     );
@@ -55,7 +55,7 @@ module.exports = ({ user_profile, period, morning_dots, evening_dots, most_eleva
         health_twin?.trend_data?.sleep_trend && health_twin.trend_data.sleep_trend !== 'unknown'
             ? `睡眠趋势${TREND_ZH[health_twin.trend_data.sleep_trend] || health_twin.trend_data.sleep_trend}` : null,
     ].filter(Boolean);
-    const wearableLine = hasWearableData
+    const dailyMonitoringLine = hasDailyMonitoringData
         ? [
             health_twin.avg_sleep_hours != null ? `平均睡眠 ${health_twin.avg_sleep_hours.toFixed(1)} 小时` : null,
             health_twin.avg_daily_steps != null ? `日均步数 ${Math.round(health_twin.avg_daily_steps)}` : null,
@@ -84,7 +84,7 @@ ${PERIOD_FRAMING[period] || PERIOD_FRAMING.morning}
 本周期最需关注的维度：
 ${elevatedLine}
 ${planLine ? `进行中的健康计划目标：${planLine}` : ''}
-${wearableLine ? `最近的可穿戴设备数据（仅供参考，可选择性提及，不得优先于上述维度）：${wearableLine}` : ''}
+${dailyMonitoringLine ? `数字孪生 · 日常监测（仅供参考，可选择性提及，不得优先于上述维度）：${dailyMonitoringLine}` : ''}
 ${seasonLine}
 
 输出要求：

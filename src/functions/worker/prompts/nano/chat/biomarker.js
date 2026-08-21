@@ -1,6 +1,7 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
+const { getTwinVocabBlock } = require('../../chat/twinVocabulary');
 
 module.exports = ({ user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso }) => {
   const isZh = user_profile.language === 'zh';
@@ -22,8 +23,8 @@ BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values availa
 
   const twinSection = health_twin
     ? (isZh
-        ? `实时健康数据（近7天均值）：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / 深睡 ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 静息心率 ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'} | SpO₂ ${health_twin.avg_spo2 != null ? health_twin.avg_spo2.toFixed(1) + '%' : '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}`
-        : `DIGITAL TWIN (7-day avg): Sleep ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / Deep ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | Steps ${health_twin.avg_daily_steps ?? '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | Resting HR ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'} | SpO₂ ${health_twin.avg_spo2 != null ? health_twin.avg_spo2.toFixed(1) + '%' : '—'}${health_twin.latest_weight_kg ? ' | Weight ' + health_twin.latest_weight_kg + ' kg' : ''}`)
+        ? `数字孪生 · 日常监测（近7天均值）：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / 深睡 ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 静息心率 ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'} | SpO₂ ${health_twin.avg_spo2 != null ? health_twin.avg_spo2.toFixed(1) + '%' : '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}`
+        : `TWIN · DAILY MONITORING (7-day avg): Sleep ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / Deep ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | Steps ${health_twin.avg_daily_steps ?? '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | Resting HR ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'} | SpO₂ ${health_twin.avg_spo2 != null ? health_twin.avg_spo2.toFixed(1) + '%' : '—'}${health_twin.latest_weight_kg ? ' | Weight ' + health_twin.latest_weight_kg + ' kg' : ''}`)
     : '';
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
@@ -31,6 +32,8 @@ BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values availa
 ${getCurrentDateBlock(now_iso, isZh)}
 
 ${getFactMemoryBlock(user_facts, isZh)}
+
+${getTwinVocabBlock(isZh)}
 
 You are Nano, a longevity AI built by Waven.
 
@@ -46,7 +49,7 @@ RESPONSE RULES:
 - Reference their specific numbers. Never give generic advice when you have real data.
 - 2–3 short paragraphs max. No markdown headers (##).
 - Explain what the numbers mean in plain language — what's driving the reading, and what it feels like in the body.
-- Cross-reference Kino biomarkers with wearable data (sleep, HRV, activity) when both are available — patterns across data sources are more meaningful than any single reading.
+- Cross-reference Precision Testing biomarkers with daily-monitoring signals (sleep, HRV, activity) when both are available — patterns across data sources are more meaningful than any single reading.
 - If the user is in an active health plan, relate the biomarker readings to their plan goal and progress.
 - End with one concrete next step, then stop cleanly. The final sentence must never be a question, and this applies just as much to a question-mark-free invitation to keep chatting — "Let me know if you'd like a comparison chart", "I'm happy to walk through the details", "Feel free to ask" are all forbidden closers too, not just literal "Would you like me to...?" ones. Give the recommendation itself and stop; don't offer to be available for more.`;
 };

@@ -17,8 +17,8 @@ async function updateHealthTwin(userId, pool) {
               AVG(CASE WHEN category = 'sleep'  THEN (data->>'duration_minutes')::FLOAT / 60 END) AS avg_sleep_hours,
               AVG(CASE WHEN category = 'sleep'  THEN (data->>'sleep_score')::FLOAT END)    AS avg_sleep_score,
               AVG(CASE WHEN category = 'sleep' AND (data->>'duration_minutes')::FLOAT > 0
-                  THEN (COALESCE((data->'stages'->>'deep_minutes')::FLOAT, 0)
-                      + COALESCE((data->'stages'->>'rem_minutes')::FLOAT, 0))
+                  THEN (COALESCE((data->>'deep_minutes')::FLOAT, (data->'stages'->>'deep_minutes')::FLOAT, 0)
+                      + COALESCE((data->>'rem_minutes')::FLOAT, (data->'stages'->>'rem_minutes')::FLOAT, 0))
                       / (data->>'duration_minutes')::FLOAT * 100
               END)                                                                           AS avg_deep_sleep_pct,
               AVG(CASE WHEN category = 'activity' THEN (data->>'steps')::FLOAT

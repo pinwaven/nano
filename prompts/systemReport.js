@@ -22,7 +22,7 @@ module.exports = (user) => {
 
 输出格式：
 🧬 Nano 的深度生物学分析报告
-数字孪生评分 (0-10):
+生物系统评分 (0-10):
 🔥 炎性负荷 (ILI): [评分]
 🔋 线粒体机能 (MFI): [评分]
 🔄 代谢韧性 (MRI): [评分]
@@ -46,7 +46,7 @@ Core Logic:
 
 Output Format:
 🧬 Nano's Deep Biological Analysis Report
-Digital Twin Scores (0-10):
+Biological System Scores (0-10):
 🔥 Inflammatory Load (ILI): [Score]
 🔋 Mitochondrial Function (MFI): [Score]
 🔄 Metabolic Resilience (MRI): [Score]

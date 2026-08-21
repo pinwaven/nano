@@ -1,3 +1,25 @@
+<!--
+  Status colours for text are picked in user-health.js (BIOMARKER_META, _hrvColor,
+  stressColor, statusColor, …) and applied as inline `style="color:…"`. An inline
+  style beats any class rule, so the .theme-light WXSS overrides cannot reach them —
+  and those hexes are tuned for dark navy, landing at 2.4-3.7:1 on the cream light
+  surface. This maps each one to a darker same-hue variant at render time, which also
+  makes it reactive to `theme` for free. Chart fills/bars keep the original bright
+  hexes: they are shapes, not text, and read fine on light.
+-->
+<wxs module="tc">
+var LIGHT = {
+  '#0ea5e9': '#0369A1', '#10b981': '#0A7350', '#f97316': '#B45309',
+  '#ef4444': '#C0392B', '#f472b6': '#BE185D', '#c084d4': '#8B3FA8',
+  '#6375ec': '#4F46E5', '#a855f7': '#7E22CE', '#34d399': '#0F7A52',
+  '#f59e0b': '#8A5A06', '#a6c4e5': '#556F8A',
+  'rgba(166,196,229,0.55)': '#556F8A'
+};
+module.exports.c = function (hex, theme) {
+  if (theme !== 'light' || !hex) return hex;
+  return LIGHT[hex.toLowerCase()] || hex;
+};
+</wxs>
 <view class="uh-root {{theme === 'light' ? 'theme-light' : ''}}">
   <scroll-view class="health-scroll" scroll-y="true">
 
@@ -119,14 +141,30 @@
         </view>
       </view>
 
-      <!-- Digital Twin Hero Card -->
+      <!-- Digital Twin umbrella — names the whole health model, then one chip per layer -->
+      <view class="twin-umbrella">
+        <view class="twin-umbrella-row">
+          <text class="twin-umbrella-title">{{t.digitalTwin}}</text>
+          <text class="twin-umbrella-count">{{t.twinComplete}} {{twinLayersDone}}/4</text>
+        </view>
+        <view class="twin-layer-strip">
+          <view wx:for="{{twinLayers}}" wx:key="key"
+                class="twin-layer{{item.hasData ? ' twin-layer-active' : ''}}">
+            <view class="twin-layer-dot"></view>
+            <text class="twin-layer-label">{{item.label}}</text>
+            <text class="twin-layer-date">{{item.hasData ? (item.lastDate || '✓') : item.emptyLabel}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- Twin summary card — Precision Testing figure (Kino-gated) -->
       <view wx:if="{{subAgeList.length > 0}}" class="dt-hero-card" bindtap="closeBioAgeTrend">
         <view class="dt-body-row">
           <!-- Left: enlarged body figure -->
           <view class="dt-fig-col">
             <view class="dt-body-fig">
               <view class="dt-fig-head {{subAgeZ.ResilienceAge.pulse ? 'dt-fig-pulse' : ''}}"
-                style="background:{{subAgeZ.ResilienceAge.fill}};box-shadow:0 0 {{subAgeZ.ResilienceAge.glow}}rpx {{subAgeZ.ResilienceAge.color}};border-color:{{subAgeZ.ResilienceAge.color}}88;"
+                style="background:{{subAgeZ.ResilienceAge.fill}};box-shadow:0 0 {{subAgeZ.ResilienceAge.glow}}rpx {{subAgeZ.ResilienceAge.color}};border-color:{{tc.c(subAgeZ.ResilienceAge.color, theme)}}88;"
                 catchtap="onZoneTap" data-key="ResilienceAge"></view>
               <view class="dt-fig-neck" style="background:{{subAgeZ.ResilienceAge.fill}};"></view>
               <view class="dt-fig-mid-row">
@@ -134,7 +172,7 @@
                   style="background:{{subAgeZ.MicroVascularAge.fill}};box-shadow:0 0 {{subAgeZ.MicroVascularAge.glow}}rpx {{subAgeZ.MicroVascularAge.color}};"
                   catchtap="onZoneTap" data-key="MicroVascularAge"></view>
                 <view class="dt-fig-chest {{subAgeZ.CellularAge.pulse ? 'dt-fig-pulse' : ''}}"
-                  style="background:{{subAgeZ.CellularAge.fill}};box-shadow:0 0 {{subAgeZ.CellularAge.glow}}rpx {{subAgeZ.CellularAge.color}};border-color:{{subAgeZ.CellularAge.color}}88;"
+                  style="background:{{subAgeZ.CellularAge.fill}};box-shadow:0 0 {{subAgeZ.CellularAge.glow}}rpx {{subAgeZ.CellularAge.color}};border-color:{{tc.c(subAgeZ.CellularAge.color, theme)}}88;"
                   catchtap="onZoneTap" data-key="CellularAge">
                   <view class="dt-fig-heart" style="background:{{subAgeZ.CellularAge.color}};box-shadow:0 0 8rpx {{subAgeZ.CellularAge.color}};"></view>
                 </view>
@@ -143,7 +181,7 @@
                   catchtap="onZoneTap" data-key="MicroVascularAge"></view>
               </view>
               <view class="dt-fig-abdomen {{subAgeZ.MetabolicAge.pulse ? 'dt-fig-pulse' : ''}}"
-                style="background:{{subAgeZ.MetabolicAge.fill}};box-shadow:0 0 {{subAgeZ.MetabolicAge.glow}}rpx {{subAgeZ.MetabolicAge.color}};border-color:{{subAgeZ.MetabolicAge.color}}88;"
+                style="background:{{subAgeZ.MetabolicAge.fill}};box-shadow:0 0 {{subAgeZ.MetabolicAge.glow}}rpx {{subAgeZ.MetabolicAge.color}};border-color:{{tc.c(subAgeZ.MetabolicAge.color, theme)}}88;"
                 catchtap="onZoneTap" data-key="MetabolicAge"></view>
               <view class="dt-fig-hips" style="background:{{subAgeZ.MetabolicAge.fill}};"></view>
               <view class="dt-fig-leg-row">
@@ -166,7 +204,7 @@
                   <text class="bio-unit">{{t.chronoAge}}</text>
                 </view>
                 <view class="bio-chip bio-chip-primary" catchtap="toggleBioAgeTrend">
-                  <text class="bio-num bio-num-primary" style="color:{{bAgeColor}}">{{bAge || '—'}}</text>
+                  <text class="bio-num bio-num-primary" style="color:{{tc.c(bAgeColor, theme)}}">{{bAge || '—'}}</text>
                   <text class="bio-unit">{{t.bioAge}}</text>
                 </view>
               </view>
@@ -185,7 +223,7 @@
               <view class="dt-sa-info">
                 <view class="dt-sa-top">
                   <text class="dt-sa-label">{{item.label}}</text>
-                  <text class="dt-sa-val" style="color:{{item.color}}">{{item.value}}</text>
+                  <text class="dt-sa-val" style="color:{{tc.c(item.color, theme)}}">{{item.value}}</text>
                 </view>
                 <view class="dt-sa-bar">
                   <view class="dt-sa-bar-fill" style="width:{{item.score}}%;background:{{item.color}};"></view>
@@ -195,10 +233,15 @@
             </view>
           </view>
         </view>
+      </view>
+
+      <!-- Cross-layer strips — ungated: a ring-only user (no Kino scan yet) still has
+           tags, weight/BMI/steps/HRV and photo-captured BP/glucose worth showing -->
+      <view class="dt-hero-card dt-hero-card-strips">
         <!-- Tags strip -->
         <view class="dt-tags-strip">
           <view wx:for="{{healthTags}}" wx:key="index" class="dt-htag"
-                style="border-color:{{item.color}}55;color:{{item.color}};">
+                style="border-color:{{tc.c(item.color, theme)}}55;color:{{tc.c(item.color, theme)}};">
             <view class="dt-htag-dot" style="background:{{item.color}};"></view>
             <text class="dt-htag-label">{{item.label}}</text>
           </view>
@@ -277,9 +320,9 @@
         </view>
       </view>
 
-      <!-- Health Monitoring -->
+      <!-- Twin layer: Daily Monitoring -->
       <view class="health-section">
-        <text class="section-title">{{t.dtMonitoring}}</text>
+        <text class="section-title">{{t.layerDaily}}</text>
 
         <!-- Wearable Device (always visible — ring is the data source) -->
         <view class="wd-inner">
@@ -415,7 +458,7 @@
             </view>
             <view class="ring-sum-item">
               <view wx:if="{{ringData.hasHrv}}" class="ring-sum-val-row">
-                <text class="ring-sum-val" style="color: {{ringData.hrvColor}}">{{ringData.hrv}}</text>
+                <text class="ring-sum-val" style="color: {{tc.c(ringData.hrvColor, theme)}}">{{ringData.hrv}}</text>
                 <text class="ring-sum-unit">ms</text>
               </view>
               <text wx:else class="ring-sum-na">—</text>
@@ -426,18 +469,18 @@
             </view>
             <view class="ring-sum-item">
               <view wx:if="{{ringData.hasStress}}" class="ring-sum-val-row">
-                <text class="ring-sum-val" style="color: {{ringData.stressColor}}">{{ringData.stress}}</text>
+                <text class="ring-sum-val" style="color: {{tc.c(ringData.stressColor, theme)}}">{{ringData.stress}}</text>
               </view>
               <text wx:else class="ring-sum-na">—</text>
               <text class="ring-sum-sub">{{t.ringStress}}</text>
               <view wx:if="{{ringData.hasStress}}" class="ring-sum-bar">
                 <view class="ring-sum-bar-fill" style="width: {{ringData.stress}}%; background: {{ringData.stressColor}};"></view>
               </view>
-              <text wx:if="{{ringData.hasStress}}" class="ring-sum-stress-label" style="color: {{ringData.stressColor}}">{{ringData.stressLabel}}</text>
+              <text wx:if="{{ringData.hasStress}}" class="ring-sum-stress-label" style="color: {{tc.c(ringData.stressColor, theme)}}">{{ringData.stressLabel}}</text>
             </view>
             <view class="ring-sum-item">
               <view wx:if="{{ringData.hasSpo2}}" class="ring-sum-val-row">
-                <text class="ring-sum-val" style="color: {{ringData.spo2Color}}">{{ringData.spo2}}</text>
+                <text class="ring-sum-val" style="color: {{tc.c(ringData.spo2Color, theme)}}">{{ringData.spo2}}</text>
                 <text class="ring-sum-unit">%</text>
               </view>
               <text wx:else class="ring-sum-na">—</text>
@@ -448,7 +491,7 @@
             </view>
             <view wx:if="{{ringData.hasBodyTemp}}" class="ring-sum-item">
               <view class="ring-sum-val-row">
-                <text class="ring-sum-val" style="color: {{ringData.tempColor}}">{{ringData.bodyTempC}}</text>
+                <text class="ring-sum-val" style="color: {{tc.c(ringData.tempColor, theme)}}">{{ringData.bodyTempC}}</text>
                 <text class="ring-sum-unit">°C</text>
               </view>
               <text class="ring-sum-sub">{{t.ringBodyTemp}}</text>
@@ -561,7 +604,7 @@
             <view class="ring-linechart-header">
               <text class="ring-chart-label">{{t.ringHrv}}</text>
               <view class="ring-linechart-latest-row">
-                <text class="ring-linechart-latest" style="color:{{ringData.hrvChart.latestColor}}">{{ringData.hrvChart.latestVal}}</text>
+                <text class="ring-linechart-latest" style="color:{{tc.c(ringData.hrvChart.latestColor, theme)}}">{{ringData.hrvChart.latestVal}}</text>
                 <text class="ring-linechart-unit">ms</text>
                 <text wx:if="{{ringData.hrvChart.latestEstimated}}" class="ring-lc-estimated-marker">~</text>
               </view>
@@ -584,7 +627,7 @@
             <view class="ring-linechart-header">
               <text class="ring-chart-label">SpO₂</text>
               <view class="ring-linechart-latest-row">
-                <text class="ring-linechart-latest" style="color:{{ringData.spo2Chart.latestColor}}">{{ringData.spo2Chart.latestVal}}</text>
+                <text class="ring-linechart-latest" style="color:{{tc.c(ringData.spo2Chart.latestColor, theme)}}">{{ringData.spo2Chart.latestVal}}</text>
                 <text class="ring-linechart-unit">%</text>
                 <text wx:if="{{ringData.spo2Chart.latestEstimated}}" class="ring-lc-estimated-marker">~</text>
               </view>
@@ -607,7 +650,7 @@
             <view class="ring-linechart-header">
               <text class="ring-chart-label">{{t.ringStress}}</text>
               <view class="ring-linechart-latest-row">
-                <text class="ring-linechart-latest" style="color:{{ringData.stressChart.latestColor}}">{{ringData.stressChart.latestVal}}</text>
+                <text class="ring-linechart-latest" style="color:{{tc.c(ringData.stressChart.latestColor, theme)}}">{{ringData.stressChart.latestVal}}</text>
                 <text wx:if="{{ringData.stressChart.latestEstimated}}" class="ring-lc-estimated-marker">~</text>
               </view>
             </view>
@@ -689,10 +732,10 @@
         <text wx:elif="{{!twinLoading}}" class="health-empty">{{t.noTwinData}}</text>
       </view>
 
-      <!-- Kino Trends -->
+      <!-- Twin layer: Precision Testing -->
       <view class="health-section">
         <view class="section-title-row">
-          <text class="section-title">{{t.trends}}</text>
+          <text class="section-title">{{t.layerPrecision}}</text>
           <view wx:if="{{recordCount > 0}}" class="section-badge">
             <text>{{recordCount}} {{t.tests}}</text>
           </view>
@@ -701,7 +744,7 @@
           <view wx:for="{{trendList}}" wx:key="key" class="trend-card">
             <text class="trend-label">{{item.label}}</text>
             <view class="trend-val-row">
-              <text class="trend-val" style="color: {{item.color}}">{{item.lastVal !== null ? item.lastVal : '—'}}</text>
+              <text class="trend-val" style="color: {{tc.c(item.color, theme)}}">{{item.lastVal !== null ? item.lastVal : '—'}}</text>
               <text class="trend-unit">{{item.unit}}</text>
             </view>
             <view wx:if="{{item.sparkBars.length > 1}}" class="spark-row">
@@ -718,26 +761,26 @@
         <text wx:else class="health-empty">{{t.noHistory}}</text>
       </view>
 
-      <!-- Lab (snapshot + reports combined) -->
+      <!-- Twin layer: Medical Records (snapshot + reports combined) -->
       <view class="health-section">
         <view class="section-title-row">
-          <text class="section-title">{{t.healthReports}}</text>
+          <text class="section-title">{{t.layerMedical}}</text>
           <view wx:if="{{labPanelAbnormal > 0}}" class="ht-lab-alert">
-            <text class="ht-lab-alert-text">{{labPanelAbnormal}} {{t.dtLabAbnormal}}</text>
+            <text class="ht-lab-alert-text">{{labPanelAbnormal}} {{t.labAbnormal}}</text>
           </view>
           <view wx:elif="{{labPanelAbnormal === 0 && labPanel.length > 0}}" class="ht-lab-ok">
-            <text class="ht-lab-ok-text">{{t.dtLabAllNormal}}</text>
+            <text class="ht-lab-ok-text">{{t.labAllNormal}}</text>
           </view>
         </view>
         <view wx:if="{{labPanel.length > 0}}" class="ht-lab-snapshot-wrap">
           <view class="ht-lab-snapshot-header">
-            <text class="ht-lab-snapshot-title">{{t.dtLabPanel}}</text>
+            <text class="ht-lab-snapshot-title">{{t.labPanel}}</text>
             <text class="ht-lab-date">{{labPanelDate}}</text>
           </view>
           <view class="ht-lab-grid">
-            <view wx:for="{{labPanel}}" wx:key="key" class="ht-lab-item {{item.status !== 'normal' ? 'ht-lab-item-abn' : ''}}" style="border-color: {{item.statusColor}}22;">
-              <text class="ht-lab-name" style="color: {{item.status !== 'normal' ? item.statusColor : 'rgba(166,196,229,0.55)'}}">{{item.displayName}}</text>
-              <text class="ht-lab-val" style="color: {{item.statusColor}};">{{item.value}}</text>
+            <view wx:for="{{labPanel}}" wx:key="key" class="ht-lab-item {{item.status !== 'normal' ? 'ht-lab-item-abn' : ''}}" style="border-color: {{tc.c(item.statusColor, theme)}}22;">
+              <text class="ht-lab-name" style="color: {{tc.c(item.status !== 'normal' ? item.statusColor : 'rgba(166,196,229,0.55)', theme)}}">{{item.displayName}}</text>
+              <text class="ht-lab-val" style="color: {{tc.c(item.statusColor, theme)}};">{{item.value}}</text>
               <text class="ht-lab-unit">{{item.unit}}</text>
             </view>
           </view>
@@ -758,17 +801,32 @@
                    mode="aspectFill"
                    catchtap="previewReportImage"
                    data-url="{{item.image_url}}" />
-            <view class="rpt-card-left" style="border-left-color: {{item.type_color}};">
+            <view class="rpt-card-left" style="border-left-color: {{tc.c(item.type_color, theme)}};">
               <text class="rpt-institution">{{item.institution}}</text>
               <text class="rpt-date">{{item.report_date}}</text>
             </view>
-            <view class="rpt-type-badge" style="background: {{item.type_color}}18; border-color: {{item.type_color}}44;">
-              <text class="rpt-type-text" style="color: {{item.type_color}};">{{item.report_type}}</text>
+            <view class="rpt-type-badge" style="background: {{item.type_color}}18; border-color: {{tc.c(item.type_color, theme)}}44;">
+              <text class="rpt-type-text" style="color: {{tc.c(item.type_color, theme)}};">{{item.report_type}}</text>
             </view>
             <text class="rpt-arrow">›</text>
           </view>
         </view>
         <text wx:elif="{{!reportsLoading && labPanel.length === 0}}" class="health-empty">{{t.noReports}}</text>
+      </view>
+
+      <!-- Twin layer: Personal Profile — read-only view of what the AI has recorded
+           about the user (self view only; the coach app has its own Facts tab) -->
+      <view wx:if="{{mode === 'self' && userFactsLoaded}}" class="health-section">
+        <text class="section-title">{{t.layerProfile}}</text>
+        <view wx:if="{{userFacts.length > 0}}" class="fact-list">
+          <view wx:for="{{userFacts}}" wx:key="id" class="fact-chip"
+                style="border-color:{{tc.c(item.color, theme)}}44;">
+            <text class="fact-cat" style="color:{{tc.c(item.color, theme)}};">{{item.categoryLabel}}</text>
+            <text class="fact-text">{{item.fact}}</text>
+          </view>
+          <text class="fact-footnote">{{t.factsFootnote}}</text>
+        </view>
+        <text wx:else class="health-empty">{{t.noFactsSelf}}</text>
       </view>
 
       <view style="height: 32px;"></view>
@@ -785,8 +843,8 @@
           <text class="rpt-sheet-institution">{{activeReport.institution}}</text>
           <text class="rpt-sheet-date">{{activeReport.report_date}}</text>
         </view>
-        <view class="rpt-sheet-type-badge" style="background: {{activeReport.type_color}}18; border-color: {{activeReport.type_color}}44;">
-          <text style="color: {{activeReport.type_color}}; font-size: 20rpx; font-weight: 700;">{{activeReport.report_type}}</text>
+        <view class="rpt-sheet-type-badge" style="background: {{activeReport.type_color}}18; border-color: {{tc.c(activeReport.type_color, theme)}}44;">
+          <text style="color: {{tc.c(activeReport.type_color, theme)}}; font-size: 20rpx; font-weight: 700;">{{activeReport.report_type}}</text>
         </view>
         <view class="rpt-close-btn" bindtap="onCloseReport"><text class="rpt-close-x">✕</text></view>
       </view>
@@ -892,8 +950,8 @@
                 <view class="rpt-ev-right">
                   <text class="rpt-ev-val">{{item.value}}</text>
                   <text class="rpt-ev-unit"> {{item.unit}}</text>
-                  <view class="rpt-ev-status" style="background: {{item.statusColor}}18; border-color: {{item.statusColor}}44;">
-                    <text style="color: {{item.statusColor}}; font-size: 18rpx; font-weight: 700;">{{item.statusLabel}}</text>
+                  <view class="rpt-ev-status" style="background: {{item.statusColor}}18; border-color: {{tc.c(item.statusColor, theme)}}44;">
+                    <text style="color: {{tc.c(item.statusColor, theme)}}; font-size: 18rpx; font-weight: 700;">{{item.statusLabel}}</text>
                   </view>
                 </view>
               </view>

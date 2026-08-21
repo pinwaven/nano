@@ -348,6 +348,121 @@
 
 .section-title-row .section-title { margin-bottom: 0; }
 
+/* ── Digital Twin umbrella + layer strip ───────────────────────────────
+   The umbrella names the whole health model; the strip shows one chip per
+   layer (Precision Testing / Daily Monitoring / Medical Records / Personal
+   Profile) so "what my twin knows" is answerable at a glance. Note this is
+   NOT the old `.twin-*` block further down — that markup no longer exists. */
+.twin-umbrella {
+  padding: 0 32rpx;
+  margin-bottom: 20rpx;
+}
+
+.twin-umbrella-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.twin-umbrella-title {
+  font-size: 26rpx;
+  font-weight: 700;
+  letter-spacing: 4rpx;
+  text-transform: uppercase;
+  color: rgba(var(--wave-rgb), 0.72);
+}
+
+.twin-umbrella-count {
+  font-size: 20rpx;
+  letter-spacing: 1rpx;
+  color: rgba(var(--wave-rgb), 0.38);
+}
+
+.twin-layer-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.twin-layer {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  border: 1rpx solid rgba(var(--wave-rgb), 0.12);
+  opacity: 0.45;
+}
+
+.twin-layer-active {
+  border-color: rgba(16, 185, 129, 0.4);
+  opacity: 1;
+}
+
+.twin-layer-dot {
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 50%;
+  background: rgba(var(--wave-rgb), 0.3);
+}
+
+.twin-layer-active .twin-layer-dot {
+  background: #10b981;
+  box-shadow: 0 0 8rpx #10b981;
+}
+
+.twin-layer-label {
+  font-size: 20rpx;
+  color: rgba(var(--wave-rgb), 0.7);
+}
+
+.twin-layer-date {
+  font-size: 18rpx;
+  color: rgba(var(--wave-rgb), 0.35);
+}
+
+/* Cross-layer strips card — same surface as the Kino-gated summary card above it,
+   but always rendered, so a ring-only user still sees their own data. */
+.dt-hero-card-strips {
+  margin-top: 16rpx;
+}
+
+/* ── Personal Profile layer — read-only user_memory_facts ── */
+.fact-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.fact-chip {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  padding: 12rpx 20rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid rgba(var(--wave-rgb), 0.12);
+  background: rgba(var(--wave-rgb), 0.03);
+}
+
+.fact-cat {
+  font-size: 18rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+}
+
+.fact-text {
+  font-size: 24rpx;
+  color: rgba(var(--wave-rgb), 0.82);
+}
+
+.fact-footnote {
+  width: 100%;
+  margin-top: 12rpx;
+  font-size: 20rpx;
+  color: rgba(var(--wave-rgb), 0.35);
+}
+
 .section-badge {
   font-size: 20rpx;
   font-weight: 600;
@@ -1182,6 +1297,16 @@
 .theme-light .trend-label         { color: var(--text-muted); }
 .theme-light .trend-unit          { color: var(--text-muted); }
 .theme-light .health-empty        { color: var(--text-muted); }
+.theme-light .twin-umbrella-title { color: var(--text-main); }
+.theme-light .twin-umbrella-count { color: var(--text-muted); }
+.theme-light .twin-layer          { border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .twin-layer-active   { border-color: rgba(16, 185, 129, 0.45); }
+.theme-light .twin-layer-dot      { background: rgba(201, 149, 106, 0.3); }
+.theme-light .twin-layer-label    { color: var(--text-sub); }
+.theme-light .twin-layer-date     { color: var(--text-muted); }
+.theme-light .fact-chip           { border-color: rgba(201, 149, 106, 0.18); background: rgba(250, 247, 242, 0.6); }
+.theme-light .fact-text           { color: var(--text-main); }
+.theme-light .fact-footnote       { color: var(--text-muted); }
 .theme-light .health-cond-chip    { border-color: rgba(201, 149, 106, 0.35); background: rgba(201, 149, 106, 0.08); color: var(--text-sub); }
 .theme-light .wchart-sheet        { background: var(--bg-sheet); }
 .theme-light .wchart-handle       { background: rgba(139, 110, 78, 0.2); }
@@ -1209,7 +1334,7 @@
 .theme-light .twin-label          { color: var(--text-muted); }
 .theme-light .twin-unit           { color: var(--text-muted); }
 .theme-light .twin-sub            { color: var(--text-muted); }
-.theme-light .twin-sub-deep       { color: rgba(201, 149, 106, 0.6); }
+.theme-light .twin-sub-deep       { color: #885931; }
 .theme-light .twin-body-row       { background: rgba(250, 247, 242, 0.7); border-color: rgba(201, 149, 106, 0.12); }
 .theme-light .twin-body-label     { color: var(--text-muted); }
 .theme-light .twin-body-text      { color: var(--text); }
@@ -1219,7 +1344,7 @@
 .theme-light .twin-source-dot     { background: rgba(139, 110, 78, 0.2); }
 .theme-light .twin-source-label   { color: var(--text-muted); }
 .theme-light .twin-source-active .twin-source-label { color: var(--text-sub); }
-.theme-light .twin-source-date    { color: rgba(201, 149, 106, 0.7); }
+.theme-light .twin-source-date    { color: #895A32; }
 
 .theme-light .ht-score-card       { background: rgba(255, 255, 255, 0.7); border-color: rgba(201, 149, 106, 0.2); }
 .theme-light .ht-score-ring       { background: rgba(250, 247, 242, 0.8); }
@@ -1273,11 +1398,11 @@
 .theme-light .rpt-advice-num      { color: var(--blue); }
 .theme-light .rpt-followup-label  { color: #047857; }
 .theme-light .ht-lab-alert-text   { color: #dc2626; }
-.theme-light .ht-lab-ok-text      { color: #059669; }
+.theme-light .ht-lab-ok-text      { color: #036748; }
 .theme-light .wd-empty-card       { background: rgba(255, 255, 255, 0.6); }
 .theme-light .wd-card             { background: rgba(255, 255, 255, 0.7); }
-.theme-light .wd-battery-inline   { color: #059669; }
-.theme-light .wd-unbind-txt       { color: rgba(220, 38, 38, 0.85); }
+.theme-light .wd-battery-inline   { color: #036748; }
+.theme-light .wd-unbind-txt       { color: #AF1D1D; }
 .theme-light .ring-summary-card   { background: rgba(255, 255, 255, 0.6); }
 .theme-light .ring-detail-card    { background: rgba(255, 255, 255, 0.5); }
 .theme-light .privacy-box         { background: var(--navy-card); }
@@ -1959,7 +2084,7 @@
   border-radius: 50%;
   background: rgba(var(--blue-rgb), 0.15);
   border: 1rpx solid rgba(var(--blue-rgb), 0.3);
-  color: #8B9FFF;
+  color: var(--info-pale);
   font-size: 20rpx;
   font-weight: 700;
   display: flex;
@@ -2123,7 +2248,7 @@
 .ht-lab-alert-text {
   font-size: 20rpx;
   font-weight: 700;
-  color: #ef4444;
+  color: var(--danger);
 }
 
 .ht-lab-ok {
@@ -2136,7 +2261,7 @@
 .ht-lab-ok-text {
   font-size: 20rpx;
   font-weight: 700;
-  color: #10b981;
+  color: var(--success-deep);
 }
 
 .ht-lab-grid {
@@ -2271,7 +2396,7 @@
 .wd-battery-inline {
   font-size: 20rpx;
   font-weight: 600;
-  color: #10b981;
+  color: var(--success-deep);
 }
 
 .wd-status-text {
@@ -3084,3 +3209,66 @@
   font-size: 26rpx;
   color: rgba(var(--wave-rgb), 0.5);
 }
+
+/* ════════════════════════════════════════════════════════
+   Light theme — muted-text contrast fixes (generated)
+   The base rules above use low-alpha rgba() tuned for a bright color on dark
+   navy. On the cream light surface that same alpha washes out to 1.4-2.1:1,
+   and no alpha <= 0.6 can reach 4.5:1 on cream regardless of base color — so
+   light theme needs opaque values. Ramp preserves the faint->strong hierarchy.
+   ════════════════════════════════════════════════════════ */
+.theme-light .avatar-pill-text { color: #5D4C32; }
+.theme-light .guest-lock-title { color: #5D4C32; }
+.theme-light .dt-sa-label { color: #5D4C32; }
+.theme-light .dt-sa-trend-hint { color: #6B5839; }
+.theme-light .dt-bioage-chart-title { color: #7A6342; }
+.theme-light .dt-metric-unit { color: #6B5839; }
+.theme-light .dt-metric-label { color: #7A6342; }
+.theme-light .dt-metric-trend-hint { color: #6B5839; }
+.theme-light .bp-legend-label { color: #6B5839; }
+.theme-light .dt-htag-empty { color: #7A6342; }
+.theme-light .rpt-date { color: #6B5839; }
+.theme-light .rpt-arrow { color: #856C47; }
+.theme-light .ht-lab-unit { color: #7A6342; }
+.theme-light .wd-ring-icon { color: #5D4C32; }
+.theme-light .wd-bind-sub { color: #6B5839; }
+.theme-light .wd-server-hint { color: #5D4C32; }
+.theme-light .wd-chevron { color: #6B5839; }
+.theme-light .wd-status-text { color: #6B5839; }
+.theme-light .wd-gear-glyph { color: #6B5839; }
+.theme-light .wd-ring-time-label { color: #6B5839; }
+.theme-light .wd-ring-time-val { color: #5D4C32; }
+.theme-light .wd-interval-title { color: #5D4C32; }
+.theme-light .wd-interval-label { color: #6B5839; }
+.theme-light .wd-wm-on { color: var(--success); }
+.theme-light .wd-wm-off { color: var(--danger); }
+.theme-light .wd-int-btn { color: #7A6342; }
+.theme-light .wd-int-btn-on { color: #5D4C32; }
+.theme-light .wd-settings-loading-txt { color: #7A6342; }
+.theme-light .wd-save-txt { color: #5D4C32; }
+.theme-light .wd-measuring-txt { color: #5D4C32; }
+.theme-light .ring-sum-na { color: #7A6342; }
+.theme-light .ring-sum-unit { color: #6B5839; }
+.theme-light .ring-sum-sub { color: #7A6342; }
+.theme-light .ring-sum-footer { color: #856C47; }
+.theme-light .ring-chart-label { color: #7A6342; }
+.theme-light .ring-chart-time { color: #5D4C32; }
+.theme-light .ring-chart-date { color: #7A6342; }
+.theme-light .ring-chart-hlabel { color: #856C47; }
+.theme-light .ring-chart-day-avg { color: #6B5839; }
+.theme-light .ring-chart-day-label { color: #7A6342; }
+.theme-light .ring-reading-date-header { color: #7A6342; }
+.theme-light .ring-reading-date { color: #856C47; }
+.theme-light .ring-reading-time { color: #7A6342; }
+.theme-light .ring-reading-unit { color: #7A6342; }
+.theme-light .ring-lc-estimated-marker { color: #5D4C32; }
+.theme-light .ring-lc-smoothed-note { color: #856C47; }
+.theme-light .ring-linechart-unit { color: #7A6342; }
+.theme-light .ring-linechart-bound { color: #7A6342; }
+.theme-light .ring-linechart-count { color: #856C47; }
+.theme-light .ring-sleepweek-axis-lbl { color: #856C47; }
+.theme-light .ring-sleepweek-total { color: #6B5839; }
+.theme-light .ring-sleepweek-daylabel { color: #856C47; }
+.theme-light .ring-sleep-leg-txt { color: #6B5839; }
+.theme-light .privacy-body { color: #5D4C32; }
+.theme-light .privacy-cancel-btn text { color: #6B5839; }

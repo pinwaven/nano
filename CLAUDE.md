@@ -825,3 +825,60 @@ A user can hold more than one verified phone (`user_phones`, primary/secondary v
 - **GCN identity bridge (`gcn/src/functions/auth/index.js`'s `handleNanoSSO`):** previously matched a GCN consumer account by phone alone, so switching primary phone on nano's side silently forked a second GCN account. Fixed to resolve by `nano_user_id` first (phone-match only as fallback for first-time/pre-migration accounts), and to mirror nano's **full** phone list (not just primary) into GCN's own `user_phones` on every login, reconciled exactly (stale/removed numbers dropped) — this is also what lets GCN's own native OTP login recognize any of a user's nano-verified phones. `partners.phone` (the separate, single-value cache for a *provisioned partner/store* record — unrelated to the consumer-account phone above) is now kept in sync via `syncPartnerPhoneFromUser`, called from every phone-changing call site rather than only partner-record edits.
 
 Full detail: `docs/architecture/multi-phone-system.md`.
+
+## 34. Digital Twin Terminology & Layer Taxonomy (2026-08-21)
+
+"Digital Twin / 数字孪生" is the umbrella for a user's **entire** health model — never any single
+data source. Before this pass the term meant three different narrow things depending on where you
+looked: the user manual defined it as "a rolling summary of data synced from your wearable ring,"
+every prompt rendering `health_twin` was headed `DIGITAL TWIN (WEARABLE & LIFESTYLE DATA)`, and
+`dispatcher/prompts/systemReport.js` used `数字孪生评分 / Digital Twin Scores` for an unrelated
+legacy ILI/MFI/MRI/MVII block. The `health_twin` table was never actually that narrow (it already
+carries the latest lab panel, latest body composition and denormalized BioAge alongside the ring
+averages) — the narrowness was purely in labels and layout, so this was a terminology + IA pass
+with **zero schema change**.
+
+### Canonical layer names
+
+These exact strings are used in the miniapp's `t.layer*` i18n keys, the prompt section headers,
+and `prompts/chat/twinVocabulary.js`:
+
+| # | ZH | EN | Backing tables |
+|---|---|---|---|
+| 1 | `精准检测` | `Precision Testing` | `biomarkers(test_type='kino_chip')`; `health_twin.latest_bio_age / latest_sub_ages / latest_kino_scan_at` |
+| 2 | `日常监测` | `Daily Monitoring` | `health_events(sleep\|activity\|vitals\|body_composition)`; `health_twin.avg_* / latest_weight_kg / latest_bmi / latest_body_fat_pct / trend_data` |
+| 3 | `医疗记录` | `Medical Records` | `health_reports`; `health_events(category='lab_result')`; `health_twin.latest_lab_data / latest_lab_date` |
+| 4 | `个人档案` | `Personal Profile` | `users.bio_data`; `questionnaire_responses`; `user_memory_facts` |
+
+The miniapp's Precision Testing section keeps the KINO brand in its label (`KINO 精准检测` /
+`KINO Precision Testing`); the bare names above are what prompts and docs use.
+
+**Interventions are deliberately not a layer.** `health_plans` / `nutrition_plans` are what the
+user *does*, not what they *are*, and they own the Plans tab. Folding them in would make "twin"
+mean "everything," which is how the term lost its meaning in the first place.
+
+### Coupling rule
+
+Like §11's sub-age keys, these names are cross-cutting. When changing any of them, change all
+four call sites together:
+
+1. `src/mini/nano-miniapp/components/user-health/user-health.js` — `TWIN_LAYER_LABELS` and the
+   `t.layer*` keys in **both** language blocks (WXML has no compile-time key checking, so a
+   renamed key silently renders empty — verify with the key-resolve loop in §7 of the plan).
+2. `src/functions/worker/prompts/chat/twinVocabulary.js` — `getTwinVocabBlock()`, injected by the
+   six heavyweight prompts; the light prompts carry an inline `数字孪生 · 日常监测` /
+   `TWIN · DAILY MONITORING` prefix instead.
+3. `src/web/user-app/src/i18n.js` — both language blocks.
+4. The layer table in `docs/architecture/digital-twin.md`, which is the canonical definition.
+
+**Any new health data surface must declare which layer it belongs to.** If it doesn't fit one of
+the four, that's a signal to question the surface, not to add a fifth layer.
+
+### Notable behavior change
+
+The miniapp's tags strip, weight/BMI/steps/HRV strip and photo-captured BP/glucose row were all
+inside a card gated on `subAgeList.length > 0` — so a user with a bound ring but no Kino scan saw
+none of their own data. They're now in an ungated sibling card. `user_memory_facts` also got its
+first end-user surface (read-only, self view only; the coach app already has its own Facts tab).
+
+Full detail: `docs/architecture/digital-twin.md`.

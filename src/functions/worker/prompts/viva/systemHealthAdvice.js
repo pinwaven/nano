@@ -7,6 +7,7 @@ const { classifyBiomarkers, LABELS_ZH: STATUS_LABELS_ZH } = require('../../lib/b
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../chat/currentDateBlock');
+const { getTwinVocabBlock } = require('../chat/twinVocabulary');
 
 module.exports = (context) => {
   const {
@@ -144,7 +145,7 @@ module.exports = (context) => {
    - 用通俗语言解释是哪些生物标志物在驱动这个结果，以及背后的生物学原理
    - 结合上方"东方人群洞见"，说明华人在该维度的特殊风险
    - 介绍1-2个相关原粒，使用顶部【事实约束】中的标准表述说明循证等级，不捏造具体研究细节
-3. **生活方式关联** — 如有可穿戴数据（睡眠、HRV、步数），结合 Kino 生物标志物说明两者的关联（如睡眠不足→IL-6升高→${labels.ResilienceAge}偏高）。
+3. **日常监测关联** — 如有日常监测数据（睡眠、HRV、步数），结合精准检测的生物标志物说明两者的关联（如睡眠不足→IL-6升高→${labels.ResilienceAge}偏高）。
 4. **健康状况关联** — 如用户有申报的健康问题，结合生物标志物数据进行说明${planTaskExtra}
 ${seasonLine ? `\n如上方标注了当前节气，可自然融入1-2句应季养生建议（饮食、作息或情绪调节），仅作传统文化视角的补充，不得替代或凌驾于生物标志物驱动的分析之上。` : ''}
 语言要温暖、有科学依据、可操作。使用 Markdown 格式。结尾干净收尾，不要提问或引导用户进行下一步操作。全程用简体中文回复。`;
@@ -157,11 +158,13 @@ ${seasonLine ? `\n如上方标注了当前节气，可自然融入1-2句应季�
         health_twin.latest_weight_kg ? `体型：体重 ${health_twin.latest_weight_kg} kg${health_twin.latest_bmi ? ' | BMI ' + health_twin.latest_bmi.toFixed(1) : ''}${health_twin.latest_body_fat_pct ? ' | 体脂率 ' + health_twin.latest_body_fat_pct.toFixed(1) + '%' : ''}` : null,
         health_twin.trend_data?.hrv_trend ? `趋势：HRV ${health_twin.trend_data.hrv_trend} | 睡眠 ${health_twin.trend_data.sleep_trend ?? '—'}` : null,
       ].filter(Boolean).join('\n')
-    : '暂无可穿戴设备 / 生活方式数据。';
+    : '暂无日常监测数据（这是数字孪生四层之一，其他层可能仍有数据）。';
 
   return `${getFactConstraintBlock(context.essential_knowledge)}
 
 ${getCurrentDateBlock(context.now_iso)}
+
+${getTwinVocabBlock()}
 
 ${getFactMemoryBlock(context.user_facts)}
 生物标志物的状态（正常/偏高/高）已在下方数据中直接标注，请严格使用该标注，不得自行根据数值判断状态或与之矛盾（例如：数据标注"正常"时不得称其为"升高"）。解释某维度的分数时，只能将标注为"偏高"或"高"的标志物描述为驱动因素；标注为"正常"的标志物只能简要说明其处于正常范围，不得暗示其导致或加重了该维度的异常。
@@ -169,21 +172,21 @@ ${getFactMemoryBlock(context.user_facts)}
 
 你是 Viva——Aeviva 的精准长寿顾问，专为东方人群打造的精准健康生态系统的核心 AI。你在生物衰老、功能营养、炎症生物学、华人代谢特征和长寿科学领域有深厚积累。你只推荐拥有最高循证医学证据评分的干预措施。
 
-━━━ 用户档案 ━━━
+━━━ 数字孪生 · 个人档案（用户自述） ━━━
 姓名：${nickname || '用户'}
 年龄：${age != null ? age + ' 岁' : '未知'}
 性别：${gender || '未填写'}
 申报健康状况：${condStr}
 
-━━━ 生理年龄概览 ━━━
+━━━ 数字孪生 · 精准检测（KINO 生物标志物与生理年龄） ━━━
 ${bioSummaryLine}
 ${seasonLine ? seasonLine + '\n' : ''}
 ${hasBio ? `子年龄、东方人群洞见与相关原粒：\n${subAgeLines}` : '用户尚未完成 Kino 生物标志物检测，无法提供个性化分析。请鼓励用户完成检测。'}
 
-━━━ 生物标志物原始数值 ━━━
+生物标志物原始数值：
 ${bmLines}
 
-━━━ 数字健康孪生（可穿戴 & 生活方式数据） ━━━
+━━━ 数字孪生 · 日常监测（可穿戴、睡眠、活动、身体成分） ━━━
 ${twinLines}
 ${activePlansSection ? '\n' + activePlansSection + '\n' : ''}${planTemplatesSection ? '\n' + planTemplatesSection + '\n' : ''}
 ━━━ 你的任务 ━━━
