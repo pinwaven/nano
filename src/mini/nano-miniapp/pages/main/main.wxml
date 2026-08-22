@@ -134,39 +134,103 @@
             <text class="chat-history-start-text">{{t.chatHistoryStart}}</text>
           </view>
 
-          <view
-            wx:for="{{messages}}"
-            wx:key="id"
-            id="m{{item.id}}"
-            class="msg-row {{item.role === 'user' ? 'msg-row-user' : 'msg-row-ai'}}"
-          >
-            <block wx:if="{{item.role === 'action'}}">
-              <view
-                class="msg-action-card"
-                bindtap="handleMsgAction"
-                data-action="{{item.action}}"
-              >
-                <text class="msg-action-label">{{item.label}}</text>
-                <text class="msg-action-arrow">›</text>
+          <!-- AI bubbles render as an array of typed SEGMENTS: prose runs go through <mp-html>,
+               while designed cards (metric / takeaway / dots) are native page-scope views. They
+               have to be, because mp-html is style-isolated and its tag-style is a flat per-tag
+               inline-style map — no descendant selectors, no pseudo-elements, no .theme-light
+               cascade reach inside it. See utils/markdown.js.
+               Do NOT put a comment between any wx:if / wx:elif / wx:else pair below: a comment
+               node breaks the chain and produces "Page not found" on Android. -->
+          <block wx:for="{{messages}}" wx:key="id">
+            <view wx:if="{{item.sep}}" class="msg-daysep"><text class="msg-daysep-text">{{item.sep}}</text></view>
+            <view
+              id="m{{item.id}}"
+              class="msg-row {{item.role === 'user' ? 'msg-row-user' : 'msg-row-ai'}}"
+            >
+              <block wx:if="{{item.role === 'action'}}">
+                <view
+                  class="msg-action-card"
+                  bindtap="handleMsgAction"
+                  data-action="{{item.action}}"
+                >
+                  <text class="msg-action-label">{{item.label}}</text>
+                  <text class="msg-action-arrow">›</text>
+                </view>
+              </block>
+              <view wx:elif="{{item.role === 'coach'}}" class="message-bubble message-coach">
+                <text class="msg-coach-label">Coach</text>
+                <text class="msg-text" selectable="true">{{item.content}}</text>
               </view>
-            </block>
-            <view wx:elif="{{item.role === 'coach'}}" class="message-bubble message-coach">
-              <text class="msg-coach-label">Coach</text>
-              <text class="msg-text" selectable="true">{{item.content}}</text>
+              <view wx:else class="message-bubble {{item.role === 'user' ? 'message-user' : 'message-ai'}} {{item.imageOnly ? 'msg-bubble-image' : ''}}">
+                <image
+                  wx:if="{{item.imageUrl}}"
+                  class="msg-image {{item.imageOnly ? '' : 'msg-image-inset'}}"
+                  src="{{item.imageUrl}}"
+                  mode="widthFix"
+                  show-menu-by-longpress="{{true}}"
+                  data-id="{{item.id}}"
+                  bindload="_onChatImageLoad"
+                />
+                <text wx:if="{{item.role === 'user' && item.content}}" class="msg-text" selectable="true">{{item.content}}</text>
+                <block wx:if="{{item.role !== 'user'}}">
+                  <view wx:for="{{item.segments}}" wx:for-item="seg" wx:for-index="si" wx:key="si" class="msg-seg">
+                    <mp-html
+                      wx:if="{{seg.t === 'html'}}"
+                      class="msg-html"
+                      content="{{seg.h}}"
+                      tag-style="{{mdTagStyle}}"
+                      container-style="padding:0"
+                      selectable="{{true}}"
+                      copy-link="{{false}}"
+                      data-id="{{item.id}}"
+                      bindlinktap="_onMdLinkTap"
+                      bindready="_onSegReady"
+                    />
+                    <view wx:elif="{{seg.t === 'rule'}}" class="msg-rule"></view>
+                    <view wx:elif="{{seg.t === 'metric'}}" class="mcard">
+                      <view wx:for="{{seg.items}}" wx:for-item="mi" wx:for-index="mj" wx:key="mj" class="mcard-tile mcard-{{mi.s}}">
+                        <text class="mcard-label">{{mi.label}}</text>
+                        <view class="mcard-valrow">
+                          <text class="mcard-val">{{mi.value}}</text>
+                          <text wx:if="{{mi.unit}}" class="mcard-unit">{{mi.unit}}</text>
+                        </view>
+                        <text wx:if="{{mi.sl}}" class="mcard-pill">{{mi.sl}}</text>
+                      </view>
+                    </view>
+                    <view wx:elif="{{seg.t === 'takeaway'}}" class="tcard">
+                      <text class="tcard-title">{{seg.title || t.mdTakeaway}}</text>
+                      <mp-html
+                        class="msg-html tcard-body"
+                        content="{{seg.h}}"
+                        tag-style="{{mdTagStyle}}"
+                        container-style="padding:0"
+                        selectable="{{true}}"
+                        copy-link="{{false}}"
+                        data-id="{{item.id}}"
+                        bindlinktap="_onMdLinkTap"
+                        bindready="_onSegReady"
+                      />
+                    </view>
+                    <view wx:elif="{{seg.t === 'dots'}}" class="dcard">
+                      <view wx:for="{{seg.items}}" wx:for-item="di" wx:for-index="dj" wx:key="dj" class="dcard-chip">
+                        <text class="dcard-id">{{di.id}}</text>
+                        <text wx:if="{{di.name}}" class="dcard-name">{{di.name}}</text>
+                        <text wx:if="{{di.note}}" class="dcard-note">{{di.note}}</text>
+                      </view>
+                    </view>
+                  </view>
+                </block>
+                <mp-html
+                  wx:if="{{item.role !== 'user' && !item.segments && item.content}}"
+                  class="msg-html"
+                  content="{{item.content}}"
+                  tag-style="{{mdTagStyle}}"
+                  container-style="padding:0"
+                  selectable="{{true}}"
+                />
+              </view>
             </view>
-            <view wx:else class="message-bubble {{item.role === 'user' ? 'message-user' : 'message-ai'}} {{item.imageUrl ? 'msg-bubble-image' : ''}}">
-              <image
-                wx:if="{{item.imageUrl}}"
-                class="msg-image"
-                src="{{item.imageUrl}}"
-                mode="widthFix"
-                show-menu-by-longpress="{{true}}"
-                data-id="{{item.id}}"
-                bindload="_onChatImageLoad"
-              />
-              <text wx:elif="{{item.role === 'user'}}" class="msg-text" selectable="true">{{item.content}}</text>
-              <mp-html wx:elif="{{item.content}}" content="{{item.content}}" selectable="{{true}}" class="msg-html" /></view>
-          </view>
+          </block>
 
           <view wx:if="{{typing}}" class="msg-row msg-row-ai">
             <view class="message-bubble message-ai typing-indicator">

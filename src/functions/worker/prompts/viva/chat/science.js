@@ -1,12 +1,15 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getOutputFormatBlock } = require('../../chat/outputFormat');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
-module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, now_iso }) => {
+module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, now_iso, rich_format }) => {
   const planNote = active_health_plans && active_health_plans.length > 0
     ? `用户当前方案：${active_health_plans.map(p => `「${p.name}」目标维度：${(p.target_sub_ages || []).join(', ')}`).join('；')}。如科学问题与方案目标相关，可简短关联。`
     : '';
 
   return `${getFactConstraintBlock(essential_knowledge)}
+
+${getOutputFormatBlock({ isZh: true, rich: rich_format, allow: ['takeaway'] })}
 
 ${getCurrentDateBlock(now_iso)}
 

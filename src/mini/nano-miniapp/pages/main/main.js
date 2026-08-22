@@ -3,6 +3,7 @@ const { BASE, VERSION, WX_VERSION, IS_DEV } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
 const { resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
 const { maskPhone } = require('../../utils/phone.js')
+const { mdToSegments, MD_TAG_STYLE } = require('../../utils/markdown.js')
 const speechPlugin = requirePlugin('WechatSI')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
@@ -201,6 +202,9 @@ const T = {
     chatHistoryLoadMore: '下拉或点此加载更早消息',
     chatHistoryLoading: '加载中…',
     chatHistoryStart: '— 对话开始 —',
+    mdTakeaway: '关键要点',
+    mdLinkCopy: '复制链接',
+    mdLinkCopied: '链接已复制',
     adminMenu: '渠道管理',
     coachMenu: '教练面板',
     superadminMenu: '超管面板',
@@ -427,6 +431,9 @@ const T = {
     chatHistoryLoadMore: 'Pull or tap to load older messages',
     chatHistoryLoading: 'Loading…',
     chatHistoryStart: '— Beginning of conversation —',
+    mdTakeaway: 'Key takeaway',
+    mdLinkCopy: 'Copy link',
+    mdLinkCopied: 'Link copied',
     adminMenu: 'Channel Admin',
     coachMenu: 'Coach Panel',
     superadminMenu: 'Super Admin',
@@ -543,58 +550,21 @@ function buildSubAgeLabels(base, overrides, lang) {
   return result
 }
 
-function _mdEsc(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
+// Two chat messages more than this far apart get a time separator between them. The agentic
+// loop delivers replies through _poll minutes after the question, and history spans days, so
+// without this a conversation reads as one undifferentiated run.
+const MSG_SEPARATOR_GAP_MS = 30 * 60 * 1000
 
-function _mdInline(s) {
-  return _mdEsc(s)
-    .replace(/`([^`]+)`/g, (_, c) => '<code>' + c + '</code>')
-    .replace(/\*\*\*(.+?)\*\*\*/g, (_, c) => '<strong><em>' + c + '</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, (_, c) => '<strong>' + c + '</strong>')
-    .replace(/\*(.+?)\*/g, (_, c) => '<em>' + c + '</em>')
-    .replace(/_([^_\s][^_]*)_/g, (_, c) => '<em>' + c + '</em>')
-}
-
-function mdToHtml(md) {
-  if (!md) return ''
-  const lines = md.split('\n')
-  const out = []
-  let inUl = false, inOl = false, inPre = false, preLines = []
-
-  for (const line of lines) {
-    if (line.startsWith('```')) {
-      if (inPre) {
-        out.push('<pre><code>' + _mdEsc(preLines.join('\n')) + '</code></pre>')
-        preLines = []; inPre = false
-      } else { inPre = true }
-      continue
-    }
-    if (inPre) { preLines.push(line); continue }
-
-    if (inUl && !/^[-*+] /.test(line)) { out.push('</ul>'); inUl = false }
-    if (inOl && !/^\d+\. /.test(line)) { out.push('</ol>'); inOl = false }
-
-    const hm = line.match(/^(#{1,6}) (.+)/)
-    if (hm) { out.push('<h' + hm[1].length + '>' + _mdInline(hm[2]) + '</h' + hm[1].length + '>'); continue }
-
-    const ulm = line.match(/^[-*+] (.+)/)
-    if (ulm) { if (!inUl) { out.push('<ul>'); inUl = true }; out.push('<li>' + _mdInline(ulm[1]) + '</li>'); continue }
-
-    const olm = line.match(/^\d+\. (.+)/)
-    if (olm) { if (!inOl) { out.push('<ol>'); inOl = true }; out.push('<li>' + _mdInline(olm[1]) + '</li>'); continue }
-
-    if (/^-{3,}$/.test(line.trim())) { out.push('<hr>'); continue }
-    if (line.trim() === '') { out.push('<br>'); continue }
-
-    out.push('<p>' + _mdInline(line) + '</p>')
-  }
-
-  if (inUl) out.push('</ul>')
-  if (inOl) out.push('</ol>')
-  if (inPre) out.push('<pre><code>' + _mdEsc(preLines.join('\n')) + '</code></pre>')
-
-  return out.join('')
+function _msgSeparator(prevTs, ts, lang) {
+  if (!prevTs || !ts || ts - prevTs < MSG_SEPARATOR_GAP_MS) return ''
+  const d = new Date(ts)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  const now = new Date()
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+  if (sameDay) return `${hh}:${mm}`
+  const md = lang === 'zh' ? `${d.getMonth() + 1}月${d.getDate()}日` : `${d.getMonth() + 1}/${d.getDate()}`
+  return `${md} ${hh}:${mm}`
 }
 
 function chronoAge(birthDate) {
@@ -853,6 +823,11 @@ Page({
 
     // Chat
     messages: [],
+    // Static per-tag inline-style map for <mp-html>. Set once and never rebound: mp-html's
+    // `properties` declares an observer on `content` ONLY, so re-binding tagStyle would not
+    // re-parse messages that are already rendered. Everything theme-dependent is handled by
+    // inheritance (.message-ai / .theme-light .message-ai) instead. See utils/markdown.js.
+    mdTagStyle: MD_TAG_STYLE,
     chatInput: '',
     isRecording: false,
     typing: false,
@@ -1092,7 +1067,7 @@ Page({
     const isAeviva = channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china'
     this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, isAeviva, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
     if (isGuest) {
-      this.setData({ messages: [{ id: 'init', role: 'ai', content: T[lang].initMsg }], obStep: null, storeLoading: true })
+      this.setData({ messages: [this._makeMsg({ id: 'init', role: 'ai', content: T[lang].initMsg })], obStep: null, storeLoading: true })
       this._loadGuestStore(lang)
       return
     }
@@ -1752,7 +1727,7 @@ Page({
 
   async _initChat(user, lang) {
     const t = T[lang]
-    const initMsg = { id: 'init', role: 'ai', content: t.initMsg }
+    const initMsg = this._makeMsg({ id: 'init', role: 'ai', content: t.initMsg })
 
     // Load history
     let historyLoaded = false
@@ -1760,21 +1735,7 @@ Page({
       const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}`)
       const history = res.data?.messages || []
       if (history.length > 0) {
-        const msgs = history.map((m, i) => {
-          const role = (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role
-          if (role === 'action') {
-            try {
-              const data = JSON.parse(m.content)
-              return { id: `h-${i}`, role: 'action', action: data.action, label: data.label }
-            } catch (e) {
-              return { id: `h-${i}`, role: 'ai', content: mdToHtml(m.content || '') }
-            }
-          }
-          const content = role === 'coach'
-            ? (m.content || '').replace(/\n+/g, ' ')
-            : role === 'ai' ? mdToHtml(m.content || '') : m.content
-          return { id: `h-${i}`, role, content, imageUrl: m.image_url || null }
-        })
+        const msgs = this._applySeparators(history.map((m, i) => this._fromHistoryRow(m, `h-${i}`)), null)
         const ids = history.map(m => m.id).filter(id => typeof id === 'number')
         this._lastMsgId = ids.length > 0 ? Math.max(...ids) : 0
         this._oldestDbId = ids.length > 0 ? Math.min(...ids) : 0
@@ -2022,21 +1983,17 @@ Page({
       const history = res.data?.messages || []
       const hasMore = res.data?.has_more ?? false
       if (history.length > 0) {
-        const newMsgs = history.map(m => {
-          const role = (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role
-          if (role === 'action') {
-            try { const d = JSON.parse(m.content); return { id: `old-${m.id}`, role: 'action', action: d.action, label: d.label } }
-            catch (e) { return { id: `old-${m.id}`, role: 'ai', content: mdToHtml(m.content || '') } }
-          }
-          const content = role === 'coach'
-            ? (m.content || '').replace(/\n+/g, ' ')
-            : role === 'ai' ? mdToHtml(m.content || '') : m.content
-          return { id: `old-${m.id}`, role, content, imageUrl: m.image_url || null }
-        })
-        const anchorId = 'm' + (this.data.messages[0]?.id || '')
+        // Older rows are PREPENDED, so the separator pass runs over the new run alone, then the
+        // first pre-existing message is re-evaluated against the newly-arrived tail.
+        const newMsgs = this._applySeparators(history.map(m => this._fromHistoryRow(m, `old-${m.id}`)), null)
+        const existing = [...this.data.messages]
+        if (existing.length > 0 && newMsgs.length > 0) {
+          existing[0] = { ...existing[0], sep: _msgSeparator(newMsgs[newMsgs.length - 1].ts, existing[0].ts, this.data.lang) }
+        }
+        const anchorId = 'm' + (existing[0]?.id || '')
         const ids = history.map(m => m.id).filter(id => typeof id === 'number')
         this._oldestDbId = ids.length > 0 ? Math.min(...ids) : this._oldestDbId
-        this.setData({ messages: [...newMsgs, ...this.data.messages], hasMoreHistory: hasMore, scrollAnchor: anchorId })
+        this.setData({ messages: [...newMsgs, ...existing], hasMoreHistory: hasMore, scrollAnchor: anchorId })
         setTimeout(() => this.setData({ scrollAnchor: '' }), 300)
       } else {
         this.setData({ hasMoreHistory: false })
@@ -2053,13 +2010,7 @@ Page({
       const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}`)
       const history = res.data?.messages || []
       if (history.length > 0) {
-        const msgs = history.map((m, i) => {
-          const role = (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role
-          const content = role === 'coach'
-            ? (m.content || '').replace(/\n+/g, ' ')
-            : role === 'ai' ? mdToHtml(m.content || '') : m.content
-          return { id: `h-${i}`, role, content, imageUrl: m.image_url || null }
-        })
+        const msgs = this._applySeparators(history.map((m, i) => this._fromHistoryRow(m, `h-${i}`)), null)
         this.setData({ messages: msgs })
         this._scrollBottom()
       }
@@ -2068,10 +2019,90 @@ Page({
 
   // ── Chat messaging ──────────────────────────────────────────────────────────
 
+  // Single construction point for every chat message. Before this there were nine of them, each
+  // re-deriving the role normalisation and the markdown conversion slightly differently — two of
+  // them skipped the conversion entirely. `content` is always the RAW text: AI rows are segmented
+  // for display here, while the persist path (_addMsg below) still posts its own raw argument, so
+  // nothing rendered is ever written back to the server.
+  _makeMsg({ id, role, content, imageUrl, action, label, createdAt }) {
+    const r = (role === 'assistant') ? 'ai' : role
+    const msg = { id, role: r, imageUrl: imageUrl || null, ts: createdAt ? +new Date(createdAt) : Date.now(), sep: '' }
+    if (r === 'action') { msg.action = action; msg.label = label; return msg }
+    if (r === 'coach') { msg.content = (content || '').replace(/\n+/g, ' '); return msg }
+    if (r === 'ai') msg.segments = mdToSegments(content || '')
+    else msg.content = content || ''
+    // Distinguishes an image-only bubble (which drops its padding via .msg-bubble-image) from an
+    // image WITH text, which must keep it. The old wx:elif chain rendered the image and silently
+    // dropped the text for the latter.
+    msg.imageOnly = !!msg.imageUrl && !msg.content && !(msg.segments && msg.segments.length)
+    return msg
+  },
+
+  _fromHistoryRow(m, id) {
+    const role = (m.role === 'assistant' || m.role === 'ai') ? 'ai' : m.role
+    if (role === 'action') {
+      try {
+        const d = JSON.parse(m.content)
+        return this._makeMsg({ id, role: 'action', action: d.action, label: d.label, createdAt: m.created_at })
+      } catch (e) {
+        return this._makeMsg({ id, role: 'ai', content: m.content, createdAt: m.created_at })
+      }
+    }
+    return this._makeMsg({ id, role, content: m.content, imageUrl: m.image_url, createdAt: m.created_at })
+  },
+
+  // Stamps each message's time separator relative to its predecessor. `prev` is the message
+  // immediately before msgs[0] (null when msgs starts the conversation). Appends only ever pass
+  // the single new run, never the whole list — a full-array recompute on every message would be a
+  // setData on every row for a purely cosmetic label.
+  _applySeparators(msgs, prev) {
+    const lang = this.data.lang
+    let last = prev || null
+    for (const m of msgs) {
+      m.sep = _msgSeparator(last ? last.ts : 0, m.ts, lang)
+      last = m
+    }
+    return msgs
+  },
+
+  // A mini program cannot navigate to an arbitrary external URL, and mp-html's own linkTap
+  // handler copies the href behind a HARDCODED Chinese toast — wrong for an English user. Handle
+  // it here instead so the whole interaction is localised and explicit.
+  _onMdLinkTap(e) {
+    const href = e.detail?.href
+    if (!href || !/^https?:\/\//i.test(href)) return
+    const { t } = this.data
+    wx.showActionSheet({
+      itemList: [t.mdLinkCopy],
+      success: () => {
+        wx.setClipboardData({
+          data: href,
+          success: () => wx.showToast({ title: t.mdLinkCopied, icon: 'none' })
+        })
+      },
+      fail: () => {}
+    })
+  },
+
+  // Each AI message now mounts one <mp-html> per prose segment plus native card views, so its
+  // final height settles later than the single mp-html instance it replaced — _scrollBottom's
+  // nextTick/150ms/500ms ladder can under-shoot on a long multi-segment reply. mp-html fires
+  // `ready` once content is rendered AND measured, which is the real signal. Same shape as
+  // _onChatImageLoad below: only re-snap for the LAST message, so a segment in older/history
+  // content settling doesn't yank the view away from where the user is reading.
+  _onSegReady(e) {
+    const id = e.currentTarget.dataset.id
+    const last = this.data.messages[this.data.messages.length - 1]
+    if (!last || last.id !== id) return
+    // A multi-segment reply fires `ready` once per segment in quick succession — debounce so the
+    // burst collapses into a single scroll rather than N competing ones.
+    if (this._segReadyTimer) clearTimeout(this._segReadyTimer)
+    this._segReadyTimer = setTimeout(() => this._scrollBottom(), 60)
+  },
+
   _addMsg(role, rawContent, persist = false) {
-    const content = role === 'ai' ? mdToHtml(rawContent) : rawContent
-    const msg = { id: `${role}-${Date.now()}`, role, content }
-    const messages = [...this.data.messages, msg]
+    const msg = this._makeMsg({ id: `${role}-${Date.now()}`, role, content: rawContent })
+    const messages = [...this.data.messages, ...this._applySeparators([msg], this.data.messages[this.data.messages.length - 1])]
     this.setData({ messages })
     this._scrollBottom()
 
@@ -2269,8 +2300,8 @@ Page({
 
   _addImageMsg(imageUrl) {
     const id = `user-${Date.now()}`
-    const msg = { id, role: 'user', content: '', imageUrl }
-    this.setData({ messages: [...this.data.messages, msg] })
+    const msg = this._makeMsg({ id, role: 'user', content: '', imageUrl })
+    this.setData({ messages: [...this.data.messages, ...this._applySeparators([msg], this.data.messages[this.data.messages.length - 1])] })
     this._scrollBottom()
     return id
   },
@@ -2281,8 +2312,8 @@ Page({
   },
 
   _addActionMsg(action, label, persist = false) {
-    const msg = { id: `action-${action}-${Date.now()}`, role: 'action', action, label }
-    const messages = [...this.data.messages, msg]
+    const msg = this._makeMsg({ id: `action-${action}-${Date.now()}`, role: 'action', action, label })
+    const messages = [...this.data.messages, ...this._applySeparators([msg], this.data.messages[this.data.messages.length - 1])]
     this.setData({ messages })
     this._scrollBottom()
 
@@ -2412,7 +2443,9 @@ Page({
     this._addMsg('user', text)
     this.setData({ typing: true, chatStatusText: '', toolboxOpen: false })
     try {
-      const res = await this._req(`${BASE}/api/chat`, 'POST', { openid: user.user_id, message: text }, 30000)
+      // `client` gates the ::: display-card syntax server-side (see prompts/chat/outputFormat.js):
+      // this is the only surface whose renderer understands the fences.
+      const res = await this._req(`${BASE}/api/chat`, 'POST', { openid: user.user_id, message: text, client: 'miniapp' }, 30000)
       if (res.data?.recorded_weight != null) {
         this.selectComponent('#health-comp')?.refresh()
       }
@@ -2476,16 +2509,16 @@ Page({
           // followed by the form's own first question as a second bubble.
           const hasQuestionnaireReady = realRows.some(n => n.notification_type === 'questionnaire_ready')
           const bubbleRows = realRows.filter(n => n.notification_type !== 'questionnaire_ready')
-          const newMsgs = bubbleRows.map(n => ({ id: `n-${n.id}`, role: 'ai', content: mdToHtml(n.content || '') }))
+          const newMsgs = bubbleRows.map(n => this._makeMsg({ id: `n-${n.id}`, role: 'ai', content: n.content }))
           // A 'nutrition_plan' row means Viva's async dot formulation just committed — add the
           // "view plan" action button here (it used to be added synchronously right after the
           // POST, back when the schedule was committed inline; now the commit itself happens
           // async, so the button must wait for this same completion signal instead of appearing
           // before the plan actually exists).
           if (realRows.some(n => n.notification_type === 'nutrition_plan')) {
-            newMsgs.push({ id: `action-view_dots-${Date.now()}`, role: 'action', action: 'view_dots', label: this.data.t.formulaViewDots })
+            newMsgs.push(this._makeMsg({ id: `action-view_dots-${Date.now()}`, role: 'action', action: 'view_dots', label: this.data.t.formulaViewDots }))
           }
-          const messages = [...this.data.messages, ...newMsgs]
+          const messages = [...this.data.messages, ...this._applySeparators(newMsgs, this.data.messages[this.data.messages.length - 1])]
           this._chatWaitStartedAt = null
           this.setData({ messages, typing: false, chatStatusText: '' })
           this._scrollBottom()
@@ -2500,7 +2533,16 @@ Page({
     // status UI stuck indefinitely — after a generous wait, clear it with a gentle note.
     // Server-side work may still be running and could still deliver via a later poll; this
     // is purely a client-side UX bound, not an assumption that the turn failed.
-    if (this.data.typing && this._chatWaitStartedAt && Date.now() - this._chatWaitStartedAt > 180000) {
+    //
+    // Must stay ABOVE the server's own worst case or it fires on turns that were going to
+    // succeed: agenticChat's TURN_DEADLINE_MS is 200s, and finalizeChatReply's grounding check
+    // can add one more LLM call (~40-60s) after that, so a legitimate turn can run ~260s before
+    // the reply lands. At the old 180s this bound was BELOW the server's, so any turn that used
+    // its full budget showed a spurious "still working" even though the reply arrived moments
+    // later — exactly what the 健康管理 tool hit (measured 266s end-to-end on 2026-08-22).
+    // 285s keeps a margin under the worker's own 300s FC invocation ceiling (s.yaml), past which
+    // no reply can arrive at all.
+    if (this.data.typing && this._chatWaitStartedAt && Date.now() - this._chatWaitStartedAt > 285000) {
       this._chatWaitStartedAt = null
       this._addMsg('ai', this.data.t.chatStillWorking)
       this.setData({ typing: false, chatStatusText: '' })
@@ -2511,14 +2553,9 @@ Page({
         const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}&since_id=${this._lastMsgId}`)
         const newCoach = res.data?.messages || []
         if (newCoach.length > 0) {
-          const newMsgs = newCoach.map(m => ({
-            id: `c-${m.id}`,
-            role: 'coach',
-            content: (m.content || '').replace(/\n+/g, ' '),
-            imageUrl: null,
-          }))
+          const newMsgs = newCoach.map(m => this._makeMsg({ id: `c-${m.id}`, role: 'coach', content: m.content, createdAt: m.created_at }))
           this._lastMsgId = Math.max(...newCoach.map(m => m.id))
-          const messages = [...this.data.messages, ...newMsgs]
+          const messages = [...this.data.messages, ...this._applySeparators(newMsgs, this.data.messages[this.data.messages.length - 1])]
           this.setData({ messages })
           this._scrollBottom()
         }

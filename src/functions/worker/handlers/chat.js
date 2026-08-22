@@ -426,13 +426,27 @@ function extractBiomarkerMentions(text) {
     return mentions;
 }
 
+// Only dates the reply presents as the TEST date count. A date the reply introduces as TODAY is
+// skipped: getCurrentDateBlock hands the model the current date and the solar-term framing has it
+// open with "今天是<date>，正值<节气>" on essentially every turn, so an unfiltered scan reported a
+// tested_at mismatch on EVERY reply — costing a full extra grounding-retry LLM call (~40s) each
+// time, unconditionally (measured 2026-08-22). Same bug class as the set_reminder "scheduled_for"
+// false positive documented at the stripActionJson call site below, and the same reason
+// extractAgeMentions is window-scoped rather than matching every number: a bare pattern with no
+// context cannot tell whose date it is.
+const _TODAY_CUE = /(今天|今日|当前日期|现在是|today|current date)[^0-9]{0,6}$/i;
+
 function extractDateMentions(text) {
     const dates = [];
+    const push = (idx, value) => {
+        if (_TODAY_CUE.test(text.slice(Math.max(0, idx - 12), idx))) return;
+        dates.push(value);
+    };
     for (const m of text.matchAll(/(\d{4})-(\d{2})-(\d{2})/g)) {
-        dates.push(`${m[1]}-${m[2]}-${m[3]}`);
+        push(m.index, `${m[1]}-${m[2]}-${m[3]}`);
     }
     for (const m of text.matchAll(/(\d{4})年(\d{1,2})月(\d{1,2})日/g)) {
-        dates.push(`${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`);
+        push(m.index, `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`);
     }
     return dates;
 }
@@ -524,13 +538,22 @@ function stripTrailingQuestion(text, { strict = true } = {}) {
     // testing the invitation patterns below against a real reply containing "12.1%"/"46.0%".
     const sentences = trimmed.match(/[^。！？!?\n]*(?:[。！？!?]|(?<!\d)\.(?!\d))|[^。！？!?\n]+$/g);
     if (!sentences || sentences.length === 0) return text;
-    const last = sentences[sentences.length - 1];
+    // A ::: display fence (prompts/chat/outputFormat.js) is markup, not a sentence — and because
+    // the regex above excludes \n, a reply ending in one makes `last` the literal ":::" string.
+    // Without this, an invitation INSIDE a takeaway block ("需要我帮你安排复测吗？\n:::") would sail
+    // past the check entirely, defeating a backstop that exists precisely because the prompt rule
+    // alone was proven insufficient (see the 2026-08-05 note above). Walk back over the fence
+    // fragments so the real closing sentence is the one that gets graded, and strip that sentence
+    // rather than the fence around it.
+    let lastIdx = sentences.length - 1;
+    while (lastIdx > 0 && /^\s*:{3}\s*[a-z0-9_-]*\s*$/i.test(sentences[lastIdx])) lastIdx -= 1;
+    const last = sentences[lastIdx];
     const isQuestion = /[?？]\s*$/.test(last.trimEnd());
     const isInvitation = TRAILING_INVITATION_PATTERNS.some(re => re.test(last));
     const violates = strict ? (isQuestion || isInvitation) : isInvitation;
     if (!violates) return text;
     if (sentences.length <= 1) return text; // whole reply is one sentence — nothing safe to fall back to
-    sentences.pop();
+    sentences.splice(lastIdx, 1);
     return sentences.join('').trimEnd();
 }
 
@@ -1373,6 +1396,12 @@ async function handlePostChat(body) {
                 current_solar_term: currentSolarTerm,
                 essential_knowledge: essentialKnowledge,
                 user_facts: fetched.user_facts?.rows || [],
+                // Gates prompts/chat/outputFormat.js's ::: display-card syntax. Scoped to the
+                // miniapp because it's the only surface whose renderer understands the fences —
+                // the coach app shows content as a bare <text> and the web user-app uses
+                // react-markdown with no directive plugin, so a marker would show as literal
+                // ":::" lines there. CHAT_MARKERS=off is a no-deploy kill switch.
+                rich_format: body.client === 'miniapp' && process.env.CHAT_MARKERS !== 'off',
             };
 
             const activePrompts = personaType === 'viva' ? vivaPrompts : nanoPrompts;
@@ -2717,6 +2746,9 @@ async function handleGetOssPresign(query) {
 }
 
 module.exports = {
+    // exported for tests — pure helpers, no DB/LLM dependency
+    stripTrailingQuestion,
+    extractDateMentions,
     saveChatMessage,
     fetchTagDerivationContext,
     resolveOrUpsertUser,
