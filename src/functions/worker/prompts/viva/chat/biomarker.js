@@ -1,5 +1,6 @@
 const { getVivaLabels } = require('../subAgeLabels');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getOutputFormatBlock } = require('../../chat/outputFormat');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
@@ -36,6 +37,8 @@ module.exports = (ctx) => {
     : '';
 
   return `${getFactConstraintBlock(ctx.essential_knowledge)}
+
+${getOutputFormatBlock({ isZh: true, rich: ctx.rich_format, allow: ['metric', 'takeaway'] })}
 
 ${getCurrentDateBlock(ctx.now_iso)}
 

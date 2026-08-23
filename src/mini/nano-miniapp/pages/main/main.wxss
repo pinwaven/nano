@@ -1,3 +1,32 @@
+/* ── Chat card accents ───────────────────────────────────────────────────────
+   The global --success/--warn/--danger/--info/--blue tokens are audited against the PAGE
+   background (--navy), but the status pills and chip labels sit on a blue/brown-tinted surface
+   layered on top of the message bubble, which is a different (and lighter) ground. Reusing the
+   global values there measured 2.86:1 to 4.26:1 — the same failure mode as the light-theme
+   incident in commit c8aa1d6. These are the same hues re-solved against the actual composited
+   pill/chip backgrounds; every pair below clears 5.1:1 in both themes.
+   --chat-accent is #A0B4FF in dark, matching .msg-action-label, which already solved
+   "blue-family text on a blue-tinted dark surface" in this same file. */
+page {
+  --chat-accent:  #A0B4FF;
+  --chat-good:    #6EE7B7;
+  --chat-warn:    #FBBF24;
+  --chat-high:    #FFB3B3;
+  --chat-low:     #A5B4FC;
+  --chat-pill-fg: #C3D6EE;
+  --chat-sep-fg:  #7F97B5;
+}
+
+.theme-light {
+  --chat-accent:  #7A4A28;
+  --chat-good:    #0B5C3E;
+  --chat-warn:    #6E4805;
+  --chat-high:    #A32A1E;
+  --chat-low:     #3730A3;
+  --chat-pill-fg: #5A4630;
+  --chat-sep-fg:  #6B5947;
+}
+
 /* ── Layout ── */
 
 .main {
@@ -344,6 +373,9 @@
 }
 
 .message-user {
+  /* Split from .message-bubble's shared 90%: a chat one-liner reads better narrow, but a
+     long-form AI reply with cards needs the width (and makes .mcard-tile's two-up row fit). */
+  max-width: 84%;
   background: linear-gradient(135deg, #6375EC 0%, #7B8FFF 100%);
   color: #fff;
   border-bottom-right-radius: 6rpx;
@@ -351,6 +383,8 @@
 }
 
 .message-ai {
+  max-width: 100%;
+  padding: 22rpx 26rpx;
   background: #162E4A;
   color: #EEF2FF;
   border: 1rpx solid rgba(99, 117, 236, 0.18);
@@ -388,6 +422,210 @@
   line-height: 1.55;
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+/* ── AI markdown prose ───────────────────────────────────────────────────────
+   <mp-html> is a Component with no options.styleIsolation, so it defaults to `isolated`:
+   selectors in this file CANNOT reach the tags it renders. Only INHERITED properties cross the
+   boundary via this host element — which is why font-size/line-height live here and everything
+   else lives in MD_TAG_STYLE (utils/markdown.js), applied by mp-html's parser as per-tag inline
+   style. Do not add non-inherited rules here expecting them to affect the rendered markdown.
+
+   `color` is deliberately absent: it inherits from .message-ai, so .theme-light recolours the
+   prose for free. That matters because mp-html only re-parses when `content` changes — a
+   theme-driven tag-style swap would never reach messages that are already on screen. */
+.msg-html {
+  display: block;
+  font-size: 28rpx;   /* was WeChat's 32rpx page default — AI text ran visibly larger than the
+                         user's own 28rpx bubbles, with no line-height at all */
+  line-height: 1.62;
+}
+
+.msg-seg { display: block; }
+.msg-seg + .msg-seg { margin-top: 4rpx; }
+
+/* --- in markdown. Not an <hr>: that tag is absent from rich-text's whitelist, so mp-html
+   renders nothing for it (a silent no-op in the previous implementation). */
+.msg-rule {
+  height: 1rpx;
+  margin: 24rpx 0;
+  background: rgba(127, 127, 127, 0.30);
+}
+
+/* An image sharing a bubble with text keeps the bubble padding, so it needs its own gap. */
+.msg-image-inset { margin-bottom: 14rpx; }
+
+/* Time separator between messages more than 30 min apart (see MSG_SEPARATOR_GAP_MS). */
+.msg-daysep {
+  display: flex;
+  justify-content: center;
+  padding: 12rpx 0 4rpx;
+}
+.msg-daysep-text {
+  font-size: 22rpx;
+  color: var(--chat-sep-fg);
+  letter-spacing: 0.04em;
+}
+
+/* ── AI message cards ────────────────────────────────────────────────────────
+   Native page-scope views precisely BECAUSE mp-html is style-isolated and its tag-style is a
+   flat per-tag inline-style map: no descendant selectors, no pseudo-elements, no .theme-light
+   cascade. Designed chrome cannot live in there. Every colour below is a token, so the light
+   theme mostly falls out for free — see the .theme-light overrides near the end of this file. */
+
+.mcard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin: 14rpx 0 18rpx;
+}
+.mcard-tile {
+  flex: 1 1 44%;
+  min-width: 200rpx;
+  padding: 16rpx 18rpx;
+  background: rgba(var(--blue-rgb), 0.08);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.20);
+  border-left-width: 6rpx;
+  border-left-color: var(--steel);
+  border-radius: 16rpx;
+}
+.mcard-label {
+  display: block;
+  font-size: 22rpx;
+  color: var(--text-sub);
+  letter-spacing: 0.02em;
+}
+.mcard-valrow {
+  display: flex;
+  align-items: baseline;
+  gap: 6rpx;
+  margin-top: 4rpx;
+}
+.mcard-val {
+  font-size: 36rpx;
+  font-weight: 600;
+  line-height: 1.15;
+}
+.mcard-unit {
+  font-size: 22rpx;
+  color: var(--text-sub);
+}
+.mcard-footrow {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 8rpx;
+}
+.mcard-pill {
+  display: inline-block;
+  padding: 2rpx 12rpx;
+  font-size: 20rpx;
+  border-radius: 20rpx;
+  background: rgba(127, 127, 127, 0.14);
+  color: var(--chat-pill-fg);
+}
+/* border-left-color is a 6rpx decorative bar, so it keeps the global semantic token; only the
+   pill TEXT needs the re-solved value. */
+.mcard-good { border-left-color: var(--success); }
+.mcard-good .mcard-pill { color: var(--chat-good); }
+.mcard-normal { border-left-color: var(--steel); }
+.mcard-watch { border-left-color: var(--warn); }
+.mcard-watch .mcard-pill { color: var(--chat-warn); }
+.mcard-high { border-left-color: var(--danger); }
+.mcard-high .mcard-pill { color: var(--chat-high); }
+.mcard-low { border-left-color: var(--info); }
+.mcard-low .mcard-pill { color: var(--chat-low); }
+.mcard-none { border-left-color: rgba(127, 127, 127, 0.35); }
+
+/* Sparkline: the last few measurements of THIS biomarker, drawn as bars rather than a canvas
+   polyline. A <canvas type="2d"> inside a long scroll-view needs a per-instance SelectorQuery
+   to resolve its node, manual dpr scaling, and an imperative redraw on every theme toggle and
+   history append; bars are declarative, follow the theme via currentColor for free, and at this
+   size read more clearly than an 8-point line would. The series comes from the user's own
+   biomarker history (utils/biomarker-series.js), never from the model. */
+.spark {
+  display: flex;
+  align-items: flex-end;
+  align-self: flex-end;
+  gap: 4rpx;
+  height: 36rpx;
+  margin-left: auto;
+  padding-bottom: 2rpx;
+}
+.spark-bar {
+  width: 10rpx;
+  border-radius: 3rpx;
+  /* currentColor = the bubble's own text colour, so the bars invert with the theme without a
+     .theme-light override and without a token that would need its own audit. 0.55 measures
+     4.55:1 (dark) / 3.18:1 (light) against the tile — both clear the 3:1 non-text bar; 0.40
+     measured 1.8:1 and was not usable. Requires the WebView renderer, which this page uses
+     (no "renderer": "skyline" in app.json or main.json). */
+  background: currentColor;
+  opacity: 0.55;
+}
+/* The newest reading is the one the tile's own value states — full strength, and tinted by
+   whether the trend is an improvement. Bars are decorative shapes, so they answer to the 3:1
+   non-text threshold rather than the 4.5:1 text one; the delta label below is real text and
+   reuses the pill's already-audited --chat-good/--chat-high. */
+.spark-bar-last { opacity: 1; }
+.spark-t-good .spark-bar-last { background: var(--chat-good); }
+.spark-t-bad .spark-bar-last { background: var(--chat-high); }
+/* No base colour on purpose: buildSpark only emits a delta string for an up/down trend, so one
+   of the two tone classes below is always present. Inheriting the bubble text colour is the
+   correct fallback if that ever changes — --chat-sep-fg measured 4.18:1 here (it is audited
+   against the PAGE background, not the tile) and would have been a silent failure. */
+.spark-delta {
+  font-size: 20rpx;
+  letter-spacing: 0.02em;
+}
+.spark-d-good { color: var(--chat-good); }
+.spark-d-bad { color: var(--chat-high); }
+
+.tcard {
+  margin: 14rpx 0 18rpx;
+  padding: 18rpx 22rpx;
+  background: rgba(var(--blue-rgb), 0.10);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.28);
+  border-left: 6rpx solid var(--blue);
+  border-radius: 16rpx;
+}
+.tcard-title {
+  display: block;
+  font-size: 21rpx;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--chat-accent);
+  margin-bottom: 8rpx;
+}
+.tcard-body {
+  font-size: 27rpx;
+  line-height: 1.6;
+}
+
+.dcard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin: 12rpx 0 18rpx;
+}
+.dcard-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+  padding: 10rpx 18rpx;
+  border-radius: 30rpx;
+  background: rgba(var(--blue-rgb), 0.12);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.30);
+}
+.dcard-id {
+  font-size: 22rpx;
+  font-weight: 600;
+  color: var(--chat-accent);
+}
+.dcard-name { font-size: 25rpx; }
+.dcard-note {
+  font-size: 21rpx;
+  color: var(--text-sub);
 }
 
 .msg-action-card {
@@ -2812,6 +3050,26 @@
 
 .theme-light .pulse-dot           { background: var(--blue); }
 .theme-light .typing-dot          { background: var(--blue); }
+
+/* Card chrome in the light theme. The semantic border-left-color set by each .mcard-<status>
+   rule is deliberately NOT overridden — --success/--warn/--danger/--info/--steel already carry
+   the light values audited to >= 4.5:1 in commit c8aa1d6. Only the fills and the neutral
+   borders, which were tuned against the dark navy bubble, need adjusting for cream. */
+.theme-light .mcard-tile {
+  background: rgba(var(--blue-rgb), 0.06);
+  border-color: rgba(201, 149, 106, 0.28);
+}
+.theme-light .mcard-pill  { background: rgba(0, 0, 0, 0.05); }
+.theme-light .tcard {
+  background: rgba(var(--blue-rgb), 0.07);
+  border-color: rgba(201, 149, 106, 0.32);
+  border-left-color: var(--blue);
+}
+.theme-light .dcard-chip {
+  background: rgba(var(--blue-rgb), 0.08);
+  border-color: rgba(201, 149, 106, 0.32);
+}
+.theme-light .msg-rule { background: rgba(0, 0, 0, 0.12); }
 
 /* ── Dots tab ── */
 .theme-light .cart-section-title  { color: var(--text-muted); }

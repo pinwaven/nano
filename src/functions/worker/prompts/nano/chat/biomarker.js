@@ -1,9 +1,10 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getOutputFormatBlock } = require('../../chat/outputFormat');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 const { getTwinVocabBlock } = require('../../chat/twinVocabulary');
 
-module.exports = ({ user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso }) => {
+module.exports = ({ user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, rich_format }) => {
   const isZh = user_profile.language === 'zh';
   const hasBiomarkers = biomarkers && Object.keys(biomarkers).length > 0;
   const hasBioAge = bioage && bioage.BioAge;
@@ -28,6 +29,8 @@ BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values availa
     : '';
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+${getOutputFormatBlock({ isZh: isZh, rich: rich_format, allow: ['metric', 'takeaway'] })}
 
 ${getCurrentDateBlock(now_iso, isZh)}
 

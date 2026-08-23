@@ -16,6 +16,7 @@ const { v4: uuidv4 } = require('uuid');
 const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { formatQuestionnaireContext } = require('./questionnaires');
+const { buildHealthTags } = require('../lib/healthTags');
 const { resolveEffectivePersona } = require('../lib/persona');
 
 const getLlmClient = () => new OpenAI({
@@ -844,7 +845,7 @@ async function handleGetNutritionPlan(openid) {
 // snapshot's need) or the full ingredient/timing/coating/color payload (box QR page's need).
 async function _getCommittedPlanDay0Breakdown(planId, { dotColumns = 'id, key_name, name, name_zh' } = {}) {
     const planResult = await pool.query(
-        `SELECT np.id, np.user_id, np.status, np.start_date, np.created_at,
+        `SELECT np.id, np.user_id, np.status, np.start_date, np.created_at, np.goal,
                 np.primary_health_plan_id, np.secondary_health_plan_id,
                 hpt.key_name AS focus_key_name, hpt.name_zh AS focus_label_zh, hpt.name_en AS focus_label_en
          FROM nutrition_plans np
@@ -920,6 +921,145 @@ async function handleGetFormulationCheckoutSnapshot(planId, openid) {
         };
     } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetFormulationCheckoutSnapshot failed', error: err.message }));
+        return { valid: false, reason: 'internal_error' };
+    }
+}
+
+// GET /formulation-review-snapshot?planId=&openid=  (GCN service token only — see
+// GCN_ALLOWED_PATHS in ../index.js)
+//
+// The Pro-mode counterpart to handleGetFormulationCheckoutSnapshot above. GCN's aeviva sector
+// sells an expert-reviewed ("Pro") variant of the Custom Capsule Formulation, where a nutrition
+// expert reviews the AI-generated recipe against the buyer's digital twin before the processing
+// center compounds it. This returns everything that reviewer needs in one call: the same committed
+// day-0 dot breakdown the checkout snapshot returns, PLUS the health context the model itself saw
+// when it produced that recipe (_handleFormulaDotsAgentic's llmContext) — so the expert is judging
+// the AI against the same evidence, not a different slice of it.
+//
+// Deliberately a purpose-built endpoint rather than allowlisting the existing GET /health-twin:
+// GCN_ALLOWED_PATHS is per-path, not per-user, and the GCN service token resolves to
+// role='superadmin' — allowlisting /health-twin would hand GCN a blanket read over every nano
+// user's twin. This one is anchored to a specific plan id AND its owner, and returns nothing for a
+// plan the given openid doesn't own (plan_owner_mismatch), so GCN can only ever read the twin of a
+// user whose own plan it was already authorized to price at checkout.
+//
+// Same {valid, reason} contract and always-HTTP-200 convention as the checkout snapshot — the
+// caller branches on `valid`, never on status code.
+async function handleGetFormulationReviewSnapshot(planId, openid) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (!planId || !openid) return { valid: false, reason: 'missing_params' };
+
+        const planIdNum = parseInt(planId, 10);
+        if (!Number.isFinite(planIdNum)) return { valid: false, reason: 'invalid_plan_id' };
+
+        // Richer dot columns than the checkout snapshot's default — the reviewer needs to see what
+        // is actually in each cartridge (ingredients, timing, target sub-age) to judge the mix,
+        // not just its name.
+        const { plan, dotBreakdown, reason } = await _getCommittedPlanDay0Breakdown(planIdNum, {
+            dotColumns: 'id, key_name, key_name_zh, name, name_zh, ingredients, ingredients_zh, '
+                + 'timing, timing_flexible, sub_age_target, target_dots_min, target_dots_max, '
+                + 'dosing_protocol, coating',
+        });
+        if (reason === 'plan_not_found') return { valid: false, reason };
+        if (plan.user_id !== openid) return { valid: false, reason: 'plan_owner_mismatch' };
+        if (reason) return { valid: false, reason };
+        // NOTE: unlike the checkout snapshot, a non-'active' plan is NOT rejected here. By the time
+        // an expert reviews a paid order the buyer may already have re-formulated, superseding the
+        // plan that was actually purchased — the review must still show the recipe that was bought.
+
+        const userResult = await pool.query(
+            `SELECT user_id, nickname, gender, birth_date, language, bio_data FROM users WHERE user_id = $1 LIMIT 1`,
+            [plan.user_id]
+        );
+        const user = userResult.rows[0] || {};
+        const lang = user.language || 'zh';
+        const heightCm = user.bio_data?.height;
+        const weightKg = user.bio_data?.weight;
+        const bmi = heightCm && weightKg ? Math.round((weightKg / ((heightCm / 100) ** 2)) * 10) / 10 : null;
+
+        // Same four context queries _handleFormulaDotsAgentic runs to build llmContext.
+        const [twinResult, bioResult, questionnaireResult, activePlansResult] = await Promise.all([
+            pool.query(`SELECT * FROM health_twin WHERE user_id = $1`, [plan.user_id]),
+            pool.query(
+                `SELECT bio_age, data, tested_at FROM biomarkers
+                 WHERE user_id = $1 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL
+                 ORDER BY tested_at DESC LIMIT 1`,
+                [plan.user_id]
+            ),
+            pool.query(
+                `SELECT q.name, q.name_zh, qq.prompt_en, qq.prompt_zh, qr.answer
+                 FROM questionnaire_responses qr
+                 JOIN questionnaire_questions qq ON qq.id = qr.question_id
+                 JOIN questionnaire_assignments qa ON qa.id = qr.assignment_id
+                 JOIN questionnaires q ON q.id = qa.questionnaire_id
+                 WHERE qa.user_id = $1 AND qa.status = 'completed'
+                   AND qq.save_field IS DISTINCT FROM 'birth_date'
+                   AND qq.save_biomarker_type IS DISTINCT FROM 'body_composition'
+                 ORDER BY qa.completed_at ASC, qq.sort_order ASC`,
+                [plan.user_id]
+            ),
+            pool.query(
+                `SELECT hp.id, hp.plan_type, hp.status, hp.start_date, hp.duration_weeks,
+                        hpt.name_en, hpt.name_zh, hpt.goal_en, hpt.goal_zh, hpt.target_sub_ages,
+                        hpt.recommended_dot_ids
+                 FROM health_plans hp
+                 LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
+                 WHERE hp.user_id = $1 AND hp.status = 'active'
+                 ORDER BY hp.start_date DESC LIMIT 5`,
+                [plan.user_id]
+            ),
+        ]);
+
+        const twin = twinResult.rows[0] || null;
+        const latestBio = bioResult.rows[0] || {};
+        const bioData = latestBio.data || {};
+        const validated = bioData.validated || null;
+
+        return {
+            valid: true,
+            plan: {
+                id: plan.id,
+                status: plan.status,
+                committed_at: plan.created_at,
+                // The AI's own written analysis of why it formulated this way — nutrition_plans.goal
+                // is where finalizeFormulaDotsGenerate stores it. The single most useful thing for a
+                // reviewer to read before judging the numbers.
+                goal: plan.goal || null,
+                primary_focus: plan.focus_key_name
+                    ? { key_name: plan.focus_key_name, name_zh: plan.focus_label_zh, name_en: plan.focus_label_en }
+                    : null,
+            },
+            recipe_summary: { dot_breakdown: dotBreakdown },
+            user_profile: {
+                nickname: user.nickname || null,
+                gender: user.gender || null,
+                age: calculateAge(user.birth_date),
+                bmi,
+                language: lang,
+                health_conditions: user.bio_data?.health_conditions || [],
+            },
+            health_twin: twin ? { ...twin, tags: buildHealthTags(twin, validated, user.bio_data?.health_conditions || []) } : null,
+            biomarkers: {
+                validated,
+                bioage_profile: bioData.bioage_profile || null,
+                bio_age: latestBio.bio_age ?? null,
+                tested_at: latestBio.tested_at || null,
+            },
+            questionnaire_context: formatQuestionnaireContext(questionnaireResult.rows, lang),
+            active_health_plans: activePlansResult.rows.map(p => ({
+                id: p.id,
+                plan_type: p.plan_type,
+                name: lang === 'zh' ? p.name_zh : p.name_en,
+                goal: lang === 'zh' ? p.goal_zh : p.goal_en,
+                target_sub_ages: p.target_sub_ages || [],
+                recommended_dot_ids: p.recommended_dot_ids || [],
+                weeks_elapsed: Math.max(0, Math.floor((Date.now() - new Date(p.start_date).getTime()) / (7 * 86400000))),
+                total_weeks: p.duration_weeks,
+            })),
+        };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetFormulationReviewSnapshot failed', error: err.message }));
         return { valid: false, reason: 'internal_error' };
     }
 }
@@ -1624,6 +1764,7 @@ module.exports = {
     handlePostOrderBatch,
     handleGetNutritionPlan,
     handleGetFormulationCheckoutSnapshot,
+    handleGetFormulationReviewSnapshot,
     _getCommittedPlanDay0Breakdown,
     handleNutritionTopupEvent,
     handlePostFormulaDots,

@@ -458,6 +458,43 @@ For any of the 4 high-risk intents (`useAgenticLoop === true`, either persona �
 - **Dedupe:** EventBridge is at-least-once delivery, and generation has real side effects (chat_messages insert, weight recording, reminder creation). `chat_generate_events` (migration `migration_chat_generate_events.sql`) is checked via `INSERT ... ON CONFLICT (event_id) DO NOTHING RETURNING event_id` before any real work — a duplicate delivery is a no-op.
 - **Progress status, not a static "typing…":** `runAgenticTurn` (`lib/agenticChat.js`) takes an optional `onStatus(key)` callback fired at 3 phase checkpoints (before PLAN, before GENERATE, before the first JUDGE) — `makeStatusNotifier()` in `chat.js` turns each into a `notifications` row (`notification_type: 'chat_status'`, reusing the existing table/polling with zero schema change). The miniapp (`pages/main/main.js`) routes these rows to a `chatStatusText` caption instead of a chat bubble, replacing the old static 3-dot animation's lack of feedback during a long wait. A client-side 3-minute safety timeout clears the wait UI with a gentle "still working" message if nothing arrives — pure UX bound, not an assumption the turn failed (server-side work may still complete and deliver on a later poll).
 
+### Delivery is now two-channel (fixed 2026-08-22)
+
+`GET /api/notifications` is a **destructive read** — `handleGetNotifications` flips rows to
+`'sent'` inside the same `UPDATE ... RETURNING` that returns them, with no ack from the client. So
+one poll response the miniapp never receives (app backgrounded mid-request — `onHide` also clears
+the poll timer — a network blip, a request timeout) permanently consumes the only copy of the
+reply, and the user sits on the typing indicator until the client's own wait bound gives up.
+Confirmed live on dev: a health-advice reply written to `chat_messages` **and** `notifications` 81s
+after the request never reached the device.
+
+Two things now backstop it, and both must stay:
+
+1. **`chat_messages` replay.** `handleGetChatHistory`'s `since_id` poll takes a `roles` param
+   (default `'coach'`, so every other caller is unchanged). While a turn is pending — and only
+   then, gated on `_chatWaitStartedAt` in `pages/main/main.js`'s `_poll` — the miniapp asks for
+   `roles=coach,ai`, and any AI row written since the last tick is rendered from there.
+   `chat_messages` is not destructive, so this recovers the lost-notification case within one 3s
+   tick. Cross-channel de-dup is keyed on normalised text (`_aiKey`/`_markRenderedAi`) and scoped
+   to `AI_ECHO_TYPES` — notification types that genuinely also write a `chat_messages` row.
+   `coach_reminder` is deliberately excluded: it has no chat row, and two identical reminders are
+   two real messages, not a duplicate.
+2. **A 250s watchdog in `handleChatGenerateEvent`** (`DELIVER_DEADLINE_MS`). `runAgenticTurn`'s own
+   200s `TURN_DEADLINE_MS` plus `finalizeChatReply`'s grounding retry (one more ~60s LLM call) can
+   legitimately reach ~270s against the worker's hard 300s FC ceiling — and a platform kill runs no
+   JS at all, so nothing in that function's `catch` can rescue it. The work is raced against the
+   watchdog; whoever gets there first (real reply, error fallback, or watchdog) delivers exactly
+   one terminal message via `_deliverTerminalMessage` (both `chat_messages` and `notifications`),
+   guarded by a single-use `claimDelivery()`.
+
+`DELIVER_DEADLINE_MS` reads `CHAT_DELIVER_DEADLINE_MS` so the watchdog is testable without a 250s
+wall clock (`tests/chat-async-delivery.test.js`); nothing sets it in `s.yaml`.
+
+The failure text is localised by `user.language` (`_asyncFailureMessage`) — it was hardcoded
+English and shown verbatim to zh-only Viva users. The client's last-resort message at 285s now says
+the turn didn't finish rather than "还在处理中", because by then both channels and the server
+watchdog have all had their turn.
+
 ### The credentials gotcha
 
 `publishChatGenerateEvent` (`lib/chatEventBridge.js`) does **not** use `context.credentials`/`context.region` the way the Cron-triggered `dispatcher/index.js` does — a live probe found `context` is an **empty object** for this HTTP-triggered function. It uses the runtime role's env-injected STS credentials instead (`ALIBABA_CLOUD_ACCESS_KEY_ID`/`_SECRET`/`ALIBABA_CLOUD_SECURITY_TOKEN`, `FC_REGION`), confirmed present regardless of trigger type. Full details: `fc3-handler-reference` skill.

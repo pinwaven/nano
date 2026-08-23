@@ -206,6 +206,68 @@ function detectFakeProductName(text, dotsFormulary) {
 // existing single-retry fast path (chat.js `_regenerateIfFabricationRisk`) and the JUDGE step
 // of the agentic loop (lib/agenticChat.js) so both call one implementation instead of
 // duplicating the detector list.
+// ── Dimension misattribution, computed rather than asked ─────────────────────
+// biomarkerStatus.js's DIMENSION_BIOMARKERS comment says the map exists so JUDGE can
+// "mechanically catch a reply that attributes a biomarker to the wrong dimension" — but it was
+// only ever handed to the LLM as a table to reason over, and the LLM is measurably bad at it.
+// Live sampling 2026-08-22 on a draft containing ZERO real misattributions: JUDGE raised 3-7
+// dimension_misattribution violations per run, every one a false positive, several openly
+// self-contradictory ("This is factually incorrect. According to dimension_biomarker_map,
+// MicroVascularAge is indeed computed from CystatinC"). Since every REJECT costs a REVISE round
+// (~70s) and rewrites a correct reply into a worse one, that single category was the dominant
+// driver of both the latency and the quality loss.
+//
+// This does the comparison in code, in the same spirit as classifyBiomarkers replacing "ask the
+// model to threshold-compare a value". Deliberately conservative — a false positive here is
+// exactly the failure being fixed, so it only fires on an unambiguous case:
+//   * the segment names EXACTLY ONE dimension (two or more is ambiguous prose -> skip),
+//   * it contains a STRONG causal verb (not "影响"/"关联", which are everywhere and mean little),
+//   * and it names a biomarker that dimension's score genuinely does not take as input.
+// Everything softer stays JUDGE's job, but can no longer by itself force a rewrite.
+const _DIMENSION_LABELS = {
+    CellularAge:      ['细胞年龄', 'Cellular Age', 'CellularAge'],
+    MetabolicAge:     ['代谢年龄', 'Metabolic Age', 'MetabolicAge'],
+    MicroVascularAge: ['微血管年龄', 'Micro-Vascular Age', 'MicroVascular Age', 'MicroVascularAge'],
+    ResilienceAge:    ['抗压年龄', 'Resilience Age', 'ResilienceAge'],
+};
+
+const _BIOMARKER_ALIASES = {
+    hsCRP:     [/hs-?CRP/i, /超敏C反应蛋白/],
+    IL6:       [/IL-?6\b/i, /白细胞介素-?6/],
+    GDF15:     [/GDF-?15\b/i, /生长分化因子-?15/],
+    CD38:      [/CD38\b/i],
+    GA:        [/\bGA\b/, /糖化白蛋白/],
+    CystatinC: [/cystatin\s*-?c/i, /胱抑素\s*-?C?/],
+};
+
+// Strong, unambiguous causal attribution only.
+const _CAUSAL_MARKERS = /(核心驱动|主要驱动|核心因素|主导因素|驱动因素|所?驱动|主导|导致|造成|源于|决定于|由[^，。；\n]{0,12}计算得出|推高|拉高|归因于|drives?|driven by|core factor|main driver|caused by|explains?|determined by|attributable to)/i;
+
+function detectDimensionMisattribution(reply, dimensionBiomarkers, extraLabels) {
+    if (!reply || !dimensionBiomarkers) return [];
+    const labels = {};
+    for (const dim of Object.keys(dimensionBiomarkers)) {
+        labels[dim] = (_DIMENSION_LABELS[dim] || []).slice();
+        const override = extraLabels && extraLabels[dim];
+        if (override && !labels[dim].includes(override)) labels[dim].push(override);
+    }
+    const out = [];
+    const segments = String(reply).split(/[。！？!?\n]+|；|;/);
+    for (const seg of segments) {
+        if (!seg || !_CAUSAL_MARKERS.test(seg)) continue;
+        const named = Object.keys(labels).filter(dim => labels[dim].some(l => seg.includes(l)));
+        if (named.length !== 1) continue; // 0 = nothing to check, 2+ = ambiguous prose
+        const dim = named[0];
+        const own = dimensionBiomarkers[dim] || [];
+        for (const key of Object.keys(_BIOMARKER_ALIASES)) {
+            if (own.includes(key)) continue;
+            if (!_BIOMARKER_ALIASES[key].some(re => re.test(seg))) continue;
+            out.push({ dimension: dim, biomarker: key, allowed: own, quote: seg.trim().slice(0, 120) });
+        }
+    }
+    return out;
+}
+
 function detectAllRisks(reply, dotsFormulary) {
     const risk = detectFabricationRisk(reply);
     if (dotsFormulary && dotsFormulary.length > 0) {
@@ -218,6 +280,7 @@ function detectAllRisks(reply, dotsFormulary) {
 
 module.exports = {
     detectFabricationRisk,
+    detectDimensionMisattribution,
     detectDotNameMismatch,
     detectFakeProductName,
     detectDotIngredientMismatch,

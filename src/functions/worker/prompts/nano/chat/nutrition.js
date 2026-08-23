@@ -1,8 +1,9 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getOutputFormatBlock } = require('../../chat/outputFormat');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
-module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso }) => {
+module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, rich_format }) => {
   const isZh = user_profile.language === 'zh';
   const hasBioAge = bioage && bioage.BioAge;
 
@@ -37,6 +38,8 @@ Elevated dimensions: ${
     : '';
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+${getOutputFormatBlock({ isZh: isZh, rich: rich_format, allow: ['takeaway', 'dots'] })}
 
 ${getCurrentDateBlock(now_iso, isZh)}
 

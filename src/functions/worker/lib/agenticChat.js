@@ -18,7 +18,7 @@
 'use strict';
 
 const { AGENTIC_TOOL_DEFS, createAgenticToolHandlers } = require('./agenticTools');
-const { detectAllRisks } = require('./factCheck');
+const { detectAllRisks, detectDimensionMisattribution, detectDotNameMismatch } = require('./factCheck');
 const { formatToShanghai } = require('./time-utils');
 const { classifyBiomarkers, THRESHOLDS: BIOMARKER_THRESHOLDS, DIMENSION_BIOMARKERS } = require('./biomarkerStatus');
 const planTemplate = require('../prompts/chat/planTemplate');
@@ -157,9 +157,104 @@ function validatePlan(plan, dots) {
 // killed by the platform mid-REVISE with no reply ever delivered.
 const TURN_DEADLINE_MS = 200_000;
 
+// Never start a further stage without at least this much budget left, even when no stage has
+// been timed yet — a single LLM call is capped at 60s by getLlmClient (handlers/chat.js) and
+// retried once, so anything less than this cannot reliably complete.
+const MIN_STAGE_RESERVE_MS = 45_000;
+
+// Drops judge violations that must not, on their own, force a rewrite. The judge prompt asks for
+// all three of these rules, but asking measurably does not hold: after adding the severity field
+// and the detector-gating instruction, live sampling 2026-08-22 still produced 16
+// dimension_misattribution flags across 12 judged drafts that contained none. Every surviving
+// REJECT costs a ~70s REVISE round and rewrites a correct reply into a worse one, so the rules
+// are enforced here rather than merely requested. Exported for tests.
+function sanitizeJudgeVerdict(verdict, groundTruth, detectorHits) {
+    const allowed = new Set(
+        ((groundTruth && groundTruth.dimension_misattribution_found) || []).map(m => `${m.dimension}:${m.biomarker}`)
+    );
+    const dropped = [];
+    const kept = (verdict.violations || []).filter(v => {
+        // (a) The model marked it non-material itself.
+        if (v.severity === 'minor') { dropped.push('minor'); return false; }
+        // (b) The model's own dimension_misattribution flags are discarded outright — the
+        // deterministic scan owns this category entirely, and its findings are re-added below.
+        // Keeping the model's version added nothing: measured 16 flags across 12 drafts that
+        // contained none, while the scan reproduced every real one exactly.
+        if (v.category === 'dimension_misattribution') { dropped.push('llm_misattribution'); return false; }
+        // (b2) Same treatment for dots. factCheck.js already checks dot names, product names and
+        // ingredients deterministically, and those hits are in detectorHits. With none of them
+        // firing, an LLM dot_mismatch was in practice never about a wrong id/name/ingredient —
+        // it was the "the dot is correctly mapped, WHILE the described mechanism..." pattern,
+        // i.e. an objection to wording on a factually correct recommendation.
+        if (v.category === 'dot_mismatch') {
+            const dotHits = ['dotNameMismatch', 'fakeProductName', 'dotIngredientMismatch'];
+            if (!(detectorHits || []).some(h => dotHits.includes(h))) { dropped.push('uncorroborated_dot_mismatch'); return false; }
+        }
+        // (c) The judge talked itself out of it mid-sentence but still emitted the row — an
+        // observed habit on long ground truth ("...so this is grounded. No violation. (This was
+        // a false positive — disregard.)"). Requires the hint to be absent or self-disregarding
+        // too: the phrase alone is not enough, because a REAL violation's detail can discuss a
+        // neighbouring clause it decided was fine, and dropping that would hide a true error
+        // (seen live 2026-08-22 — an invented-dimension negative control slipped through when
+        // this matched on detail text alone). A genuine violation always names a concrete fix.
+        // Includes the "...matches ground truth ... Correct." shape: live sampling 2026-08-22 saw
+        // five biomarker_mismatch rows in a single verdict whose own detail confirmed the draft
+        // was right. Biomarker VALUES are in any case already verified deterministically after
+        // the turn by verifyBiomarkerGrounding (handlers/chat.js), which has its own retry — so
+        // the judge's opinion here is a redundant second pass, and dropping its self-negating
+        // rows loses no real coverage. A genuine mismatch reads "states X, but ground truth
+        // shows Y" and matches none of these.
+        const selfDisregard = /no violation|false positive|disregard|not a violation|no mismatch|matches ground truth|matches biomarker_status|is correct\b|are correct\b|[—-]\s*correct[.\s]*$/i;
+        const hint = String(v.correction_hint || '').trim();
+        if (selfDisregard.test(String(v.detail || '')) && (!hint || selfDisregard.test(hint))) {
+            dropped.push('self_disregarded');
+            return false;
+        }
+        return true;
+    });
+    // Re-add the deterministic findings as material violations. Detection for this category no
+    // longer depends on the model noticing (which it did only ~2 times in 3 on a draft with an
+    // injected misattribution) — if the scan fired, the reply is wrong, full stop.
+    for (const d of ((groundTruth && groundTruth.dot_mismatch_found) || [])) {
+        kept.push({
+            category: 'dot_mismatch',
+            severity: 'material',
+            detail: `The reply calls dot ${d.num} "${d.claimedName}", but its real name is ${d.realName === null ? '(no such dot in the formulary)' : `"${d.realName}"`}.`,
+            correction_hint: d.realName === null
+                ? `There is no dot ${d.num} in the formulary — remove the recommendation entirely.`
+                : `Dot ${d.num} is "${d.realName}" — use that name or drop the name and refer to the number only.`,
+        });
+    }
+    for (const m of ((groundTruth && groundTruth.dimension_misattribution_found) || [])) {
+        kept.push({
+            category: 'dimension_misattribution',
+            severity: 'material',
+            detail: `"${m.quote}" attributes ${m.biomarker} to ${m.dimension}, whose score is computed only from: ${(m.allowed || []).join(', ') || '(none)'}.`,
+            correction_hint: `Delete the clause linking ${m.biomarker} to ${m.dimension}. ${m.dimension} is driven only by ${(m.allowed || []).join(', ') || '(none)'} — rephrasing while keeping the same causal claim does not fix it.`,
+        });
+    }
+    const out = { verdict: kept.length === 0 ? 'PASS' : 'REJECT', violations: kept };
+    return { result: out, dropped };
+}
+
 async function runAgenticTurn({ client, model, message, intent, llmContext, systemPrompt, cleanHistory, pool, user_id, language, personaType, logContext, onStatus }) {
     const turnStartedAt = Date.now();
     const timeLeftMs = () => TURN_DEADLINE_MS - (Date.now() - turnStartedAt);
+    // `timeLeftMs() <= 0` alone only stops a stage from STARTING once the budget is already
+    // blown — it happily begins a ~70s revise round with 1ms left, so the turn routinely
+    // overran TURN_DEADLINE_MS by a full round. Measured live 2026-08-22: JUDGE finished at 81s,
+    // re-judge round 1 at 149s, and round 2 was still started (51s left) and ran to 218s, after
+    // which finalizeChatReply's grounding retry added ~39s — ~257s locally, and more on FC with
+    // a cold start, against the worker's hard 300s invocation ceiling (s.yaml). That is how a
+    // health-advice turn could be killed by the platform with no reply ever delivered, leaving
+    // chat_generate_events stuck at 'claimed'. So a stage now has to fit in the time that's
+    // actually left, using what the previous comparable stage really cost.
+    let lastStageMs = 0;
+    const stageFits = (estimateMs) => timeLeftMs() > Math.max(estimateMs, MIN_STAGE_RESERVE_MS);
+    const timeStage = async (fn) => {
+        const startedAt = Date.now();
+        try { return await fn(); } finally { lastStageMs = Date.now() - startedAt; }
+    };
     const budget = { plan: 0, generateIters: 0, judge: 0, revise: 0, rejudge: 0 };
     const toolHandlers = createAgenticToolHandlers({ pool, user_id, language });
     const knowledgeExcerpts = await findRelevantEntries(personaType || 'nano', message);
@@ -224,19 +319,19 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         ...(messageNeedsBiomarkerHistory(message) ? ['get_biomarker_history'] : []),
     ]));
     for (let iter = 0; iter < GENERATE_MAX_ITERS; iter++) {
-        if (timeLeftMs() <= 0) {
-            console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_turn_deadline_exceeded', context: logContext, stage: 'generate', iter }));
+        if (!stageFits(lastStageMs)) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_turn_deadline_exceeded', context: logContext, stage: 'generate', iter, time_left_ms: timeLeftMs(), last_stage_ms: lastStageMs }));
             break;
         }
         budget.generateIters = iter + 1;
         const forcedTool = forcedToolQueue.shift();
-        const completion = await client.chat.completions.create({
+        const completion = await timeStage(() => client.chat.completions.create({
             model,
             messages: generateMessages,
             tools: AGENTIC_TOOL_DEFS,
             tool_choice: forcedTool ? { type: 'function', function: { name: forcedTool } } : 'auto',
             temperature: 0.3,
-        });
+        }));
         const choice = completion.choices[0];
         // DashScope reports finish_reason:'stop' (not 'tool_calls') whenever tool_choice is
         // forced to a specific function, even though message.tool_calls is populated correctly
@@ -302,12 +397,41 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         // range" (~63% of all violations across the sample matched this exact pattern). The
         // label was never fabricated — it's the same code-computed classification GENERATE was
         // given verbatim; JUDGE just wasn't given the same data to check it against.
+        // health_twin.latest_lab_data is an EXTERNAL lab panel (an uploaded report — the Medical
+        // Records twin layer), keyed by the SAME names as the authoritative Kino panel but from a
+        // different, usually older test. Spreading llmContext handed JUDGE both under matching
+        // keys with no precedence rule, and it oscillated: round 1 "hsCRP is 0.35 not 1.8"
+        // (external), round 2 "hsCRP is 1.8 not 0.35" (validated), round 3 flipped again on
+        // CystatinC — REVISE dutifully complied each time, so the turn could never converge and
+        // burned its entire budget (judge 3 / revise 2 / rejudge 2) plus a grounding retry on
+        // EVERY health-advice turn. That pushed a turn to ~266s, past the miniapp's own wait, so
+        // the user saw a timeout. Found 2026-08-22 by reproducing against a real dev account
+        // whose two panels disagree on 5 of the 6 Kino-core markers.
+        //
+        // The panel can't simply be dropped: it's the only source for ~17 markers the Kino chip
+        // doesn't measure at all (ALT, HDL, HbA1c, eGFR, ...), and JUDGE needs those to verify a
+        // draft that legitimately cites them. So it moves to its own clearly-labelled key with
+        // its own date, and judgeTemplate states the precedence explicitly. Cloned rather than
+        // mutated — llmContext is shared with GENERATE and the caller.
+        const { latest_lab_data, latest_lab_date, ...twinWithoutLabPanel } = llmContext.health_twin || {};
         const groundTruth = {
             ...llmContext,
+            health_twin: llmContext.health_twin ? twinWithoutLabPanel : llmContext.health_twin,
+            external_lab_panel: latest_lab_data
+                ? { collected_on: latest_lab_date || null, markers: latest_lab_data.markers || latest_lab_data }
+                : null,
             biomarkers: freshBiomarkers.data,
             biomarker_status: classifyBiomarkers(freshBiomarkers.data?.validated || {}),
             biomarker_reference_ranges: BIOMARKER_THRESHOLDS,
             dimension_biomarker_map: DIMENSION_BIOMARKERS,
+            // Computed in code, not left to the model. See detectDimensionMisattribution's
+            // comment: asked to compare prose against the map itself, JUDGE produced 3-7 false
+            // positives per run on drafts with zero real misattributions. It is now told to
+            // treat only these pre-verified pairs as material.
+            dimension_misattribution_found: detectDimensionMisattribution(
+                replyText, DIMENSION_BIOMARKERS, llmContext.sub_age_display_names),
+            // Same reasoning: the model reported an injected wrong dot name only 1 time in 3.
+            dot_mismatch_found: detectDotNameMismatch(replyText, freshDots.data || []),
             elevated_dimensions: getElevatedDimensions(llmContext.bioage),
             dots: freshDots.data,
             tool_calls_made: toolCallLog,
@@ -320,7 +444,22 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         );
         // Fail open on a broken/unparseable judge call — ship the draft rather than block the
         // turn, matching the intent-classifier's "default and move on" precedent (chat.js:525-527).
-        if (!verdict) return { verdict: 'PASS', violations: [] };
+        // The deterministic findings still apply though: they don't depend on the judge model
+        // having answered, and silently dropping them here would let a real, code-detected error
+        // through precisely when the judge is malfunctioning (seen live 2026-08-22 — a judge
+        // response that failed to parse would have shipped an injected dimension misattribution).
+        if (!verdict) return sanitizeJudgeVerdict({ verdict: 'PASS', violations: [] }, groundTruth, detectorHits).result;
+
+        const { result: sanitized, dropped } = sanitizeJudgeVerdict(verdict, groundTruth, detectorHits);
+        if (dropped.length) {
+            console.log(JSON.stringify({ level: 'INFO', msg: 'agentic_judge_violations_filtered', context: logContext, dropped, kept: sanitized.violations.length }));
+        }
+        if (verdict.verdict === 'REJECT' && sanitized.verdict === 'PASS') {
+            console.log(JSON.stringify({ level: 'INFO', msg: 'agentic_judge_downgraded_no_material_violations', context: logContext }));
+            return sanitized;
+        }
+        verdict.violations = sanitized.violations;
+
         // Self-contradiction guard: on a long/complex ground truth object the judge model
         // occasionally reasons its way to "no real issue found" in its own analysis text but
         // still emits a structured REJECT out of habit — the one reliable signal for this is
@@ -339,11 +478,11 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
 
     await notify('verifying');
     let judgeResult;
-    if (timeLeftMs() <= 0) {
-        console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_turn_deadline_exceeded', context: logContext, stage: 'judge' }));
+    if (!stageFits(lastStageMs)) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_turn_deadline_exceeded', context: logContext, stage: 'judge', time_left_ms: timeLeftMs(), last_stage_ms: lastStageMs }));
         judgeResult = { verdict: 'PASS', violations: [] }; // ship the draft as-is, out of budget to check it
     } else {
-        judgeResult = await runJudge(rawReply);
+        judgeResult = await timeStage(() => runJudge(rawReply));
         console.log(JSON.stringify({ level: judgeResult.verdict === 'PASS' ? 'INFO' : 'WARN', msg: 'agentic_judge', context: logContext, verdict: judgeResult.verdict, violations: judgeResult.violations }));
     }
 
@@ -354,8 +493,13 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     // timeout (see TURN_DEADLINE_MS comment above runAgenticTurn).
     let latestResult = judgeResult;
     for (let round = 0; round < REVISE_MAX_ROUNDS && latestResult.verdict === 'REJECT'; round++) {
-        if (timeLeftMs() <= 0) {
-            console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_turn_deadline_exceeded', context: logContext, stage: 'revise', round: round + 1 }));
+        // A round is a REVISE completion plus a full RE-JUDGE, so it costs at least as much as
+        // the stage just measured (the JUDGE for round 1, the previous whole round after that).
+        // Requiring it to fit is what keeps the turn inside TURN_DEADLINE_MS instead of one
+        // round past it. When rounds are fast both still run, exactly as before; only a turn
+        // that is already running slow gives up its last round to protect the reply.
+        if (!stageFits(lastStageMs)) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_turn_deadline_exceeded', context: logContext, stage: 'revise', round: round + 1, time_left_ms: timeLeftMs(), last_stage_ms: lastStageMs }));
             break;
         }
         budget.revise += 1;
@@ -383,19 +527,33 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         const actionPreserveBlock = actionTagMatch
             ? `\n\nCRITICAL: your rewritten reply MUST still end with this exact JSON line, verbatim and unchanged: ${actionTagMatch[0]}\nDo not remove, reword, or omit it even though none of the violations above mention it — it is a separate control signal the system depends on to actually carry out what the user asked (e.g. recording a value), and silently dropping it while your reply still claims success would fail the user's request without them knowing.`
             : '';
-        const correctionPrompt = `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}${dimensionConstraintBlock}${actionPreserveBlock}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
+        // Same failure mode as actionPreserveBlock above, one layer out: a REVISE round fixing an
+        // unrelated violation can silently drop a ::: display block that no violation mentioned,
+        // because the correction prompt only quotes the flagged prose. The block carries real
+        // content (biomarker values, the concrete next step), so losing it degrades the reply
+        // without anything reporting a failure. Detect any fence in the CURRENT draft and require
+        // them preserved, independent of what is being fixed this round.
+        const hasDirectiveBlock = /^\s*:{3}\s*[a-z][a-z0-9_-]*\s*$/im.test(rawReply);
+        const directivePreserveBlock = hasDirectiveBlock
+            ? `\n\nCRITICAL: your previous reply contains one or more ":::" display blocks (e.g. ":::metric", ":::takeaway", ":::dots"). Keep every one of them in your rewritten reply, with the same structure and closing ":::" line. They are display markup the client renders as cards, not prose you may drop or reflow into sentences. If a violation above concerns a value INSIDE a block, correct that value in place and keep the block. Do not remove, merge, or convert a block to plain text just because the violations above don't mention it.`
+            : '';
+        const correctionPrompt = `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}${dimensionConstraintBlock}${actionPreserveBlock}${directivePreserveBlock}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
         try {
-            const retryCompletion = await client.chat.completions.create({
-                model,
-                messages: [...generateMessages, { role: 'assistant', content: rawReply }, { role: 'user', content: correctionPrompt }],
-                temperature: 0.2,
+            // Timed as one unit (REVISE completion + RE-JUDGE) — that whole cost is what the
+            // next round's fit check has to budget for.
+            await timeStage(async () => {
+                const retryCompletion = await client.chat.completions.create({
+                    model,
+                    messages: [...generateMessages, { role: 'assistant', content: rawReply }, { role: 'user', content: correctionPrompt }],
+                    temperature: 0.2,
+                });
+                const retryReply = retryCompletion.choices[0].message.content || rawReply;
+                budget.rejudge += 1;
+                const rejudgeResult = await runJudge(retryReply);
+                console.log(JSON.stringify({ level: rejudgeResult.verdict === 'PASS' ? 'INFO' : 'WARN', msg: 'agentic_rejudge', context: logContext, round: round + 1, verdict: rejudgeResult.verdict, violations: rejudgeResult.violations }));
+                rawReply = retryReply; // ship the latest revision even if this round still REJECTs
+                latestResult = rejudgeResult;
             });
-            const retryReply = retryCompletion.choices[0].message.content || rawReply;
-            budget.rejudge += 1;
-            const rejudgeResult = await runJudge(retryReply);
-            console.log(JSON.stringify({ level: rejudgeResult.verdict === 'PASS' ? 'INFO' : 'WARN', msg: 'agentic_rejudge', context: logContext, round: round + 1, verdict: rejudgeResult.verdict, violations: rejudgeResult.violations }));
-            rawReply = retryReply; // ship the latest revision even if this round still REJECTs
-            latestResult = rejudgeResult;
         } catch (err) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_revise_failed', context: logContext, round: round + 1, error: err.message }));
             break;
@@ -407,4 +565,4 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     return { reply: rawReply, extraValidDates, extraValidValues };
 }
 
-module.exports = { runAgenticTurn };
+module.exports = { runAgenticTurn, sanitizeJudgeVerdict };

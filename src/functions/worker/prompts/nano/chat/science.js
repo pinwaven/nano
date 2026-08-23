@@ -1,7 +1,8 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getOutputFormatBlock } = require('../../chat/outputFormat');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
-module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, now_iso }) => {
+module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, now_iso, rich_format }) => {
   const isZh = user_profile.language === 'zh';
 
   const planNote = active_health_plans && active_health_plans.length > 0
@@ -11,6 +12,8 @@ module.exports = ({ user_profile, questionnaire_context, active_health_plans, es
     : '';
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+${getOutputFormatBlock({ isZh: isZh, rich: rich_format, allow: ['takeaway'] })}
 
 ${getCurrentDateBlock(now_iso, isZh)}
 
