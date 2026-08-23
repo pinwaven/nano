@@ -510,9 +510,14 @@ page {
   font-size: 22rpx;
   color: var(--text-sub);
 }
+.mcard-footrow {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 8rpx;
+}
 .mcard-pill {
   display: inline-block;
-  margin-top: 8rpx;
   padding: 2rpx 12rpx;
   font-size: 20rpx;
   border-radius: 20rpx;
@@ -531,6 +536,50 @@ page {
 .mcard-low { border-left-color: var(--info); }
 .mcard-low .mcard-pill { color: var(--chat-low); }
 .mcard-none { border-left-color: rgba(127, 127, 127, 0.35); }
+
+/* Sparkline: the last few measurements of THIS biomarker, drawn as bars rather than a canvas
+   polyline. A <canvas type="2d"> inside a long scroll-view needs a per-instance SelectorQuery
+   to resolve its node, manual dpr scaling, and an imperative redraw on every theme toggle and
+   history append; bars are declarative, follow the theme via currentColor for free, and at this
+   size read more clearly than an 8-point line would. The series comes from the user's own
+   biomarker history (utils/biomarker-series.js), never from the model. */
+.spark {
+  display: flex;
+  align-items: flex-end;
+  align-self: flex-end;
+  gap: 4rpx;
+  height: 36rpx;
+  margin-left: auto;
+  padding-bottom: 2rpx;
+}
+.spark-bar {
+  width: 10rpx;
+  border-radius: 3rpx;
+  /* currentColor = the bubble's own text colour, so the bars invert with the theme without a
+     .theme-light override and without a token that would need its own audit. 0.55 measures
+     4.55:1 (dark) / 3.18:1 (light) against the tile — both clear the 3:1 non-text bar; 0.40
+     measured 1.8:1 and was not usable. Requires the WebView renderer, which this page uses
+     (no "renderer": "skyline" in app.json or main.json). */
+  background: currentColor;
+  opacity: 0.55;
+}
+/* The newest reading is the one the tile's own value states — full strength, and tinted by
+   whether the trend is an improvement. Bars are decorative shapes, so they answer to the 3:1
+   non-text threshold rather than the 4.5:1 text one; the delta label below is real text and
+   reuses the pill's already-audited --chat-good/--chat-high. */
+.spark-bar-last { opacity: 1; }
+.spark-t-good .spark-bar-last { background: var(--chat-good); }
+.spark-t-bad .spark-bar-last { background: var(--chat-high); }
+/* No base colour on purpose: buildSpark only emits a delta string for an up/down trend, so one
+   of the two tone classes below is always present. Inheriting the bubble text colour is the
+   correct fallback if that ever changes — --chat-sep-fg measured 4.18:1 here (it is audited
+   against the PAGE background, not the tile) and would have been a silent failure. */
+.spark-delta {
+  font-size: 20rpx;
+  letter-spacing: 0.02em;
+}
+.spark-d-good { color: var(--chat-good); }
+.spark-d-bad { color: var(--chat-high); }
 
 .tcard {
   margin: 14rpx 0 18rpx;

@@ -4,6 +4,7 @@ const toolActions = require('../../utils/tool-actions')
 const { resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
 const { maskPhone } = require('../../utils/phone.js')
 const { mdToSegments, MD_TAG_STYLE } = require('../../utils/markdown.js')
+const { buildSeriesIndex, sparkForLabel, appendReading } = require('../../utils/biomarker-series.js')
 const speechPlugin = requirePlugin('WechatSI')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
@@ -111,7 +112,7 @@ const T = {
     micRecording: '正在录音…松开结束',
     errServer: '无法连接服务器，请重试。',
     chatThinking: '正在构建研究计划…',
-    chatStillWorking: '还在处理中，请稍后回来看看～',
+    chatTimedOut: '这次分析没能按时完成，抱歉～ 你可以稍后再试一次。',
     obNamePrompt: '在开始之前，需要了解一些基本信息来个性化您的健康洞察。请问您的姓名是？',
     obNameOnly: '有一件小事——请问您叫什么名字？',
     obNamePh: '您的姓名',
@@ -340,7 +341,7 @@ const T = {
     micRecording: 'Recording… release to finish',
     errServer: 'Could not reach the server. Please try again.',
     chatThinking: 'Building your research plan…',
-    chatStillWorking: 'Still working on it — please check back in a bit.',
+    chatTimedOut: "This one didn't finish in time — sorry. Please try again in a moment.",
     obNamePrompt: 'Before we start, I need a couple of quick details to personalize your health insights. What should I call you?',
     obNameOnly: 'One quick thing — what is your name?',
     obNamePh: 'Your name',
@@ -549,6 +550,16 @@ function buildSubAgeLabels(base, overrides, lang) {
   }
   return result
 }
+
+// Notification types whose text is ALSO written to chat_messages by the backend, so the
+// chat_messages catch-up poll in _poll can legitimately re-deliver the same text. Only these
+// participate in the cross-channel de-duplication (_markRenderedAi/_isRenderedAi). Deliberately
+// excludes coach_reminder and questionnaire_ready, which have no chat_messages row at all —
+// registering a reminder would make two genuinely separate identical ones look like a duplicate.
+const AI_ECHO_TYPES = new Set([
+  'chat_reply', 'nutrition_plan', 'formulation_reorder_ready', 'biological_report',
+  'coach_message', 'morning_checkin', 'midday_checkin', 'evening_checkin',
+])
 
 // Two chat messages more than this far apart get a time separator between them. The agentic
 // loop delivers replies through _poll minutes after the question, and history spans days, so
@@ -1015,6 +1026,7 @@ Page({
   _pollingTimer: null,
   _kinoSlideTimer: null,
   _seenIds: null,
+  _renderedAiKeys: null,
   _rawStoreItems: null,
   _rawStoreOrders: null,
   _dotsLoadedAt: 0,
@@ -1025,6 +1037,7 @@ Page({
 
   onLoad(options) {
     this._seenIds = new Set()
+    this._renderedAiKeys = new Set()
     const user = app.globalData.user
     if (!user) {
       wx.reLaunch({ url: '/pages/login/login' })
@@ -1619,6 +1632,10 @@ Page({
       }
       const biomarkers = res.data?.biomarkers || null
       const biomarkerId = res.data?.biomarker_id || null
+      // Keep the metric-tile sparklines current without a refetch: res.data.biomarkers IS the
+      // validated set this scan just wrote to data.validated. Sparks already attached to older
+      // messages are left alone on purpose — they belong to the reading those messages describe.
+      if (biomarkers) appendReading(this._bioSeries, biomarkers)
       let bioageProfile = res.data?.bioage_profile || null
       if (!bioageProfile) {
         try {
@@ -1770,6 +1787,7 @@ Page({
       ])
       pendingAssignments = qRes.data?.assignments || []
       biomarkerRecords = bRes.data?.records || []
+      this._setBioSeries(biomarkerRecords)
     } catch (e) { if (IS_DEV) console.error('Init fetch failed', e) }
 
     // Find first assignment with an unanswered question
@@ -2029,13 +2047,49 @@ Page({
     const msg = { id, role: r, imageUrl: imageUrl || null, ts: createdAt ? +new Date(createdAt) : Date.now(), sep: '' }
     if (r === 'action') { msg.action = action; msg.label = label; return msg }
     if (r === 'coach') { msg.content = (content || '').replace(/\n+/g, ' '); return msg }
-    if (r === 'ai') msg.segments = mdToSegments(content || '')
+    if (r === 'ai') { msg.segments = mdToSegments(content || ''); this._attachSparks(msg.segments) }
     else msg.content = content || ''
     // Distinguishes an image-only bubble (which drops its padding via .msg-bubble-image) from an
     // image WITH text, which must keep it. The old wx:elif chain rendered the image and silently
     // dropped the text for the latter.
     msg.imageOnly = !!msg.imageUrl && !msg.content && !(msg.segments && msg.segments.length)
     return msg
+  },
+
+  // ── Metric-tile sparklines ──────────────────────────────────────────────────
+
+  // The trend behind a :::metric tile comes from the user's OWN biomarker history, fetched
+  // here, not from anything the model wrote — see utils/biomarker-series.js for why that
+  // separation matters. Mutates the segments in place and reports whether anything changed.
+  _attachSparks(segments) {
+    if (!this._bioSeries || !segments) return false
+    let changed = false
+    for (const seg of segments) {
+      if (seg.t !== 'metric' || !seg.items) continue
+      for (const it of seg.items) {
+        if (it.spark) continue
+        const spark = sparkForLabel(this._bioSeries, it.label)
+        if (spark) { it.spark = spark; changed = true }
+      }
+    }
+    return changed
+  },
+
+  // GET /api/biomarkers resolves AFTER _initChat has already rendered history, so the first
+  // paint of an older metric card has no sparkline. Back-fill once when the series lands. The
+  // full-list setData is gated on something actually gaining a spark, which for a conversation
+  // with no metric cards — the common case — means this costs nothing.
+  _setBioSeries(records) {
+    try {
+      this._bioSeries = buildSeriesIndex(records)
+    } catch (e) {
+      if (IS_DEV) console.error('buildSeriesIndex failed', e)
+      return
+    }
+    const msgs = this.data.messages || []
+    let changed = false
+    for (const m of msgs) { if (this._attachSparks(m.segments)) changed = true }
+    if (changed) this.setData({ messages: msgs })
   },
 
   _fromHistoryRow(m, id) {
@@ -2100,8 +2154,36 @@ Page({
     this._segReadyTimer = setTimeout(() => this._scrollBottom(), 60)
   },
 
+  // Identity of an AI bubble for cross-channel de-duplication. The same reply reaches this page
+  // through two independent channels now — the notifications poll (fast) and the chat_messages
+  // catch-up poll (durable, see _poll) — and either can win the race, so whichever renders first
+  // registers its text here and the other drops it. Keyed on normalised text because a
+  // notification row carries no chat_messages id to match on.
+  _aiKey(content) {
+    return String(content || '').replace(/\s+/g, ' ').trim().slice(0, 160)
+  },
+
+  _markRenderedAi(content) {
+    const k = this._aiKey(content)
+    if (!k || !this._renderedAiKeys) return
+    this._renderedAiKeys.add(k)
+    // Bounded — a long session must not grow this without limit. Sets iterate in insertion
+    // order, so this evicts the oldest key.
+    if (this._renderedAiKeys.size > 200) {
+      this._renderedAiKeys.delete(this._renderedAiKeys.values().next().value)
+    }
+  },
+
+  _isRenderedAi(content) {
+    const k = this._aiKey(content)
+    return !!k && !!this._renderedAiKeys && this._renderedAiKeys.has(k)
+  },
+
   _addMsg(role, rawContent, persist = false) {
     const msg = this._makeMsg({ id: `${role}-${Date.now()}`, role, content: rawContent })
+    // Locally-added AI bubbles are persisted server-side too (persist=true), so the
+    // chat_messages catch-up poll will see them come back — register them as already rendered.
+    if (msg.role === 'ai') this._markRenderedAi(rawContent)
     const messages = [...this.data.messages, ...this._applySeparators([msg], this.data.messages[this.data.messages.length - 1])]
     this.setData({ messages })
     this._scrollBottom()
@@ -2508,7 +2590,14 @@ Page({
           // generic bubble for it so the user doesn't see a redundant one-liner immediately
           // followed by the form's own first question as a second bubble.
           const hasQuestionnaireReady = realRows.some(n => n.notification_type === 'questionnaire_ready')
-          const bubbleRows = realRows.filter(n => n.notification_type !== 'questionnaire_ready')
+          // `_isRenderedAi` drops a row whose text the chat_messages catch-up below already
+          // rendered — during a pending turn both channels carry the same reply and either can
+          // win the race. Only AI_ECHO_TYPES take part: a coach_reminder has no chat_messages
+          // row, so registering it would make two genuinely separate identical reminders
+          // ("喝水" twice) look like a duplicate and swallow the second.
+          const bubbleRows = realRows.filter(n => n.notification_type !== 'questionnaire_ready'
+            && !(AI_ECHO_TYPES.has(n.notification_type) && this._isRenderedAi(n.content)))
+          bubbleRows.forEach(n => { if (AI_ECHO_TYPES.has(n.notification_type)) this._markRenderedAi(n.content) })
           const newMsgs = bubbleRows.map(n => this._makeMsg({ id: `n-${n.id}`, role: 'ai', content: n.content }))
           // A 'nutrition_plan' row means Viva's async dot formulation just committed — add the
           // "view plan" action button here (it used to be added synchronously right after the
@@ -2518,10 +2607,14 @@ Page({
           if (realRows.some(n => n.notification_type === 'nutrition_plan')) {
             newMsgs.push(this._makeMsg({ id: `action-view_dots-${Date.now()}`, role: 'action', action: 'view_dots', label: this.data.t.formulaViewDots }))
           }
-          const messages = [...this.data.messages, ...this._applySeparators(newMsgs, this.data.messages[this.data.messages.length - 1])]
           this._chatWaitStartedAt = null
-          this.setData({ messages, typing: false, chatStatusText: '' })
-          this._scrollBottom()
+          if (newMsgs.length > 0) {
+            const messages = [...this.data.messages, ...this._applySeparators(newMsgs, this.data.messages[this.data.messages.length - 1])]
+            this.setData({ messages, typing: false, chatStatusText: '' })
+            this._scrollBottom()
+          } else {
+            this.setData({ typing: false, chatStatusText: '' })
+          }
           // _checkForPendingQuestionnaire() is idempotent — re-fetches pending assignments and
           // only starts one if an unanswered question actually exists — so it's safe to call
           // unconditionally here even on a duplicate/racing notification.
@@ -2529,10 +2622,54 @@ Page({
         }
       }
     } catch (e) {}
-    // Safety net: if the agentic loop's async reply never arrives, don't leave the typing/
-    // status UI stuck indefinitely — after a generous wait, clear it with a gentle note.
-    // Server-side work may still be running and could still deliver via a later poll; this
-    // is purely a client-side UX bound, not an assumption that the turn failed.
+
+    // Catch-up on what was written to chat_messages since the last tick. Coach messages, always,
+    // as before — plus ai replies, but ONLY while a turn is actually pending.
+    //
+    // That second half is the durable backstop for the async agentic turn. GET /api/notifications
+    // is a DESTRUCTIVE read — the server marks rows 'sent' in the same statement that returns
+    // them, with no ack from us — so a single poll response this client never receives (app
+    // backgrounded mid-request, network blip, request timeout) consumes the only copy of the
+    // reply and strands the user on the typing indicator forever. Confirmed live 2026-08-22: a
+    // health-advice reply was saved to chat_messages and its notification marked 'sent' 81s after
+    // the request, and still never reached the device. chat_messages is not destructive, so
+    // replaying from it recovers exactly that case within one 3s tick.
+    //
+    // Gated on `_chatWaitStartedAt` so this stays a recovery path and not a second delivery
+    // channel: outside a pending turn, notifications (reminders, check-ins, topups) keep behaving
+    // exactly as before, and anything missed there is still picked up by the full history load on
+    // the next app open.
+    //
+    // Runs BELOW the notification block and ABOVE the wait timeout on purpose — the timeout must
+    // be the last thing considered, after both delivery channels have had their turn.
+    if (this._lastMsgId !== null) {
+      try {
+        const roles = this._chatWaitStartedAt ? 'coach,ai' : 'coach'
+        const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}&since_id=${this._lastMsgId}&roles=${roles}`)
+        const rows = res.data?.messages || []
+        if (rows.length > 0) {
+          this._lastMsgId = Math.max(...rows.map(m => m.id))
+          // An ai row normally arrives here just after the notification channel already showed
+          // the same text — drop those instead of double-rendering.
+          const fresh = rows.filter(m => m.role === 'coach' || !this._isRenderedAi(m.content))
+          const gotAi = fresh.some(m => m.role !== 'coach')
+          fresh.forEach(m => { if (m.role !== 'coach') this._markRenderedAi(m.content) })
+          if (fresh.length > 0) {
+            const newMsgs = fresh.map(m => this._fromHistoryRow(m, `c-${m.id}`))
+            const messages = [...this.data.messages, ...this._applySeparators(newMsgs, this.data.messages[this.data.messages.length - 1])]
+            // Only an ai row ends the wait — a coach message arriving mid-turn says nothing
+            // about whether the reply the user is waiting for has landed.
+            if (gotAi) this._chatWaitStartedAt = null
+            this.setData(gotAi ? { messages, typing: false, chatStatusText: '' } : { messages })
+            this._scrollBottom()
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Last resort: neither delivery channel produced anything within the whole server-side
+    // budget, so the turn is genuinely lost (e.g. the chat.generate event was never delivered at
+    // all) — tell the user plainly instead of leaving the typing indicator up forever.
     //
     // Must stay ABOVE the server's own worst case or it fires on turns that were going to
     // succeed: agenticChat's TURN_DEADLINE_MS is 200s, and finalizeChatReply's grounding check
@@ -2540,26 +2677,13 @@ Page({
     // the reply lands. At the old 180s this bound was BELOW the server's, so any turn that used
     // its full budget showed a spurious "still working" even though the reply arrived moments
     // later — exactly what the 健康管理 tool hit (measured 266s end-to-end on 2026-08-22).
-    // 285s keeps a margin under the worker's own 300s FC invocation ceiling (s.yaml), past which
-    // no reply can arrive at all.
+    // 285s also sits just past handleChatGenerateEvent's own 250s watchdog, which now guarantees
+    // an honest server-side message before the worker's 300s FC ceiling — so reaching this line
+    // means even that never made it, and "didn't finish" is the accurate thing to say.
     if (this.data.typing && this._chatWaitStartedAt && Date.now() - this._chatWaitStartedAt > 285000) {
       this._chatWaitStartedAt = null
-      this._addMsg('ai', this.data.t.chatStillWorking)
+      this._addMsg('ai', this.data.t.chatTimedOut)
       this.setData({ typing: false, chatStatusText: '' })
-    }
-    // Check for new coach messages
-    if (this._lastMsgId !== null) {
-      try {
-        const res = await this._req(`${BASE}/api/chat-history?openid=${encodeURIComponent(user.user_id)}&since_id=${this._lastMsgId}`)
-        const newCoach = res.data?.messages || []
-        if (newCoach.length > 0) {
-          const newMsgs = newCoach.map(m => this._makeMsg({ id: `c-${m.id}`, role: 'coach', content: m.content, createdAt: m.created_at }))
-          this._lastMsgId = Math.max(...newCoach.map(m => m.id))
-          const messages = [...this.data.messages, ...this._applySeparators(newMsgs, this.data.messages[this.data.messages.length - 1])]
-          this.setData({ messages })
-          this._scrollBottom()
-        }
-      } catch (e) {}
     }
   },
 

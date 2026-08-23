@@ -193,8 +193,21 @@
                         <view class="mcard-valrow">
                           <text class="mcard-val">{{mi.value}}</text>
                           <text wx:if="{{mi.unit}}" class="mcard-unit">{{mi.unit}}</text>
+                          <view wx:if="{{mi.spark}}" class="spark spark-t-{{mi.spark.tone}}">
+                            <view
+                              wx:for="{{mi.spark.bars}}"
+                              wx:for-item="sb"
+                              wx:for-index="sk"
+                              wx:key="sk"
+                              class="spark-bar {{sb.last ? 'spark-bar-last' : ''}}"
+                              style="height:{{sb.h}}%"
+                            ></view>
+                          </view>
                         </view>
-                        <text wx:if="{{mi.sl}}" class="mcard-pill">{{mi.sl}}</text>
+                        <view wx:if="{{mi.sl || mi.spark}}" class="mcard-footrow">
+                          <text wx:if="{{mi.sl}}" class="mcard-pill">{{mi.sl}}</text>
+                          <text wx:if="{{mi.spark && mi.spark.delta}}" class="spark-delta spark-d-{{mi.spark.tone}}">{{mi.spark.arrow}}{{mi.spark.delta}}</text>
+                        </view>
                       </view>
                     </view>
                     <view wx:elif="{{seg.t === 'takeaway'}}" class="tcard">

@@ -84,6 +84,11 @@ for (const [name, T] of Object.entries(THEMES)) {
       ['.tcard-title', tok('chat-accent'), tcard],
       ['.dcard-id', tok('chat-accent'), chip],
       ['.msg-daysep-text', tok('chat-sep-fg'), T.page],
+      // The sparkline delta sits in the tile's foot row, on the TILE — not on the pill and
+      // not on the page. buildSpark only emits a delta for an up/down trend, so one of these
+      // two tone colours is always the one in use.
+      ['.spark-d-good', tok('chat-good'), tile],
+      ['.spark-d-bad', tok('chat-high'), tile],
     ];
 
     for (const [label, fg, bg] of pairs) {
@@ -107,4 +112,30 @@ test('cards use the audited --chat-* tokens, not the page-audited global ones', 
     'pill text must use --chat-pill-fg; --text-sub measured 4.23:1 on the light pill background');
   assert.match(mainCss, /\.tcard-title \{[^}]*color: var\(--chat-accent\)/s);
   assert.match(mainCss, /\.dcard-id \{[^}]*color: var\(--chat-accent\)/s);
+});
+
+
+// Bars are meaningful graphics rather than text, so they answer to WCAG 1.4.11 (3:1) rather than
+// 1.4.3 (4.5:1). They are painted with currentColor — the bubble's own text colour — at a fixed
+// opacity, which is what lets one declaration work in both themes with no .theme-light override.
+test('sparkline bars clear the 3:1 non-text threshold in both themes', () => {
+  const m = mainCss.match(/\.spark-bar \{[^}]*opacity:\s*([0-9.]+)/s);
+  assert.ok(m, '.spark-bar opacity not found in main.wxss');
+  const alpha = parseFloat(m[1]);
+  assert.match(mainCss, /\.spark-bar \{[^}]*background:\s*currentColor/s,
+    'bars must ride on currentColor so they follow the theme without a second audit');
+
+  // .message-ai's colour in each theme — the value currentColor resolves to inside the bubble.
+  const BUBBLE_FG = { dark: hex('#EEF2FF'), light: hex('#2C2C2C') };
+  for (const [name, T] of Object.entries(THEMES)) {
+    const tile = over(T.accentRgb, T.tileA, T.bubble);
+    const bar = over(BUBBLE_FG[name], alpha, tile);
+    const r = contrast(bar, tile);
+    assert.ok(r >= 3, `.spark-bar is ${r.toFixed(2)}:1 on the ${name} tile, needs >= 3:1`);
+  }
+});
+
+test('the last sparkline bar uses the audited tone tokens', () => {
+  assert.match(mainCss, /\.spark-t-good \.spark-bar-last \{[^}]*background: var\(--chat-good\)/s);
+  assert.match(mainCss, /\.spark-t-bad \.spark-bar-last \{[^}]*background: var\(--chat-high\)/s);
 });

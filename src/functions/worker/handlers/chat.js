@@ -1,4 +1,5 @@
 const { pool } = require('../lib/db');
+const { buildHealthTags } = require('../lib/healthTags');
 const ossLib = require('../lib/oss');
 const { generateUserId, getWxAccessToken } = require('../lib/auth');
 const { getNowShanghai, calculateAge, formatToShanghai } = require('../lib/time-utils');
@@ -83,17 +84,37 @@ function _vivaSubscriptionExpiredMessage(language) {
         : 'Your Viva subscription has expired. Please renew in the Aeviva store to keep chatting.';
 }
 
-async function handleGetChatHistory(openid, sinceId = null, beforeId = null) {
+// Roles the `since_id` incremental poll is allowed to ask for. 'ai' also matches rows written
+// as 'assistant' by older code paths — the miniapp normalises both to 'ai' on render anyway.
+const SINCE_ROLE_SETS = {
+    coach: ['coach'],
+    ai: ['ai', 'assistant'],
+};
+
+async function handleGetChatHistory(openid, sinceId = null, beforeId = null, roles = null) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (!openid) return { success: true, messages: [] };
         if (sinceId !== null) {
+            // `roles` (comma-separated, default 'coach' so every pre-existing caller is
+            // unchanged) lets the miniapp's 3s poll ALSO pull 'ai' rows. That is the durable
+            // backstop for the async agentic reply: GET /api/notifications is a DESTRUCTIVE read
+            // (handleGetNotifications marks rows 'sent' in the same statement that returns them,
+            // with no client ack), so a poll response the client never receives — app
+            // backgrounded mid-request, network blip, request timeout — permanently consumes the
+            // reply and strands the user on "still processing" forever. Confirmed live
+            // 2026-08-22: a health-advice reply was saved to chat_messages and its notification
+            // marked 'sent' 81s after the request, yet never reached the device. chat_messages is
+            // not destructive, so replaying from it recovers exactly that case.
+            const wanted = String(roles || 'coach').split(',').map(s => s.trim()).filter(Boolean);
+            const roleList = [...new Set(wanted.flatMap(r => SINCE_ROLE_SETS[r] || []))];
+            if (roleList.length === 0) roleList.push('coach');
             const result = await pool.query(
                 `SELECT id, role, content, image_url, created_at
                  FROM chat_messages
-                 WHERE user_id = $1 AND id > $2 AND role = 'coach'
+                 WHERE user_id = $1 AND id > $2 AND role = ANY($3::text[])
                  ORDER BY created_at ASC, id ASC`,
-                [openid, sinceId]
+                [openid, sinceId, roleList]
             );
             return { success: true, messages: result.rows };
         }
@@ -1797,6 +1818,47 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
 // actual weekly dot allocation instead (finalizeFormulaDotsGenerate, 'nutrition_plan'
 // notification) — see _handleFormulaDotsAgentic in handlers/dots.js, which publishes this kind
 // with a 'pending' nutrition_plans row already inserted for this event to fill in.
+// Hard wall-clock ceiling on delivering SOMETHING to the user, measured from the start of this
+// invocation. It has to land inside the worker's own FC invocation timeout (300s, s.yaml) with
+// room to spare for the DB writes: a platform-level kill runs no JS at all, so no catch block in
+// this file can rescue a turn that overruns it — the user is simply left waiting forever. That is
+// not theoretical: runAgenticTurn's own TURN_DEADLINE_MS (200s) plus finalizeChatReply's
+// grounding-check retry (up to one more ~60s LLM call) plus a cold start can legitimately reach
+// ~270s. At 250s the watchdog below stops waiting and delivers an honest "this took too long"
+// message instead, so the wait always ends in a reply the user can see.
+// Overridable so the watchdog is testable without a 250s wall clock (same convention as
+// CHAT_HISTORY_LIMIT above); nothing sets it in s.yaml, so production uses the default.
+const DELIVER_DEADLINE_MS = parseInt(process.env.CHAT_DELIVER_DEADLINE_MS || '250000', 10);
+
+// The user-facing text for a turn that never produced a real reply. Localised by the user's own
+// language — the previous hardcoded English string was shown verbatim to zh-only Viva users.
+function _asyncFailureMessage(language, reason) {
+    const isZh = (language || 'zh') !== 'en';
+    if (reason === 'timeout') {
+        return isZh
+            ? '抱歉，这次分析花的时间比预期长，没能在限定时间内完成。请稍后再试一次～'
+            : "Sorry — this took longer than expected and didn't finish in time. Please try again in a moment.";
+    }
+    return isZh
+        ? '抱歉，刚才处理时出了点问题，这次没能完成。请稍后再试一次～'
+        : "Sorry — something went wrong on my side and I couldn't finish this one. Please try again in a moment.";
+}
+
+// Delivers a terminal message through BOTH channels the miniapp can see: the notifications row
+// (fast path, 3s poll) and chat_messages (durable backstop — see handleGetChatHistory's `roles`
+// param for why the notification alone is not enough).
+async function _deliverTerminalMessage(user_id, personaType, notificationType, text) {
+    try {
+        await saveChatMessage(user_id, 'ai', text, null, personaType);
+    } catch (err) {
+        console.error('terminal message saveChatMessage failed:', err);
+    }
+    await pool.query(
+        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+        [user_id, notificationType, text, 'pending']
+    );
+}
+
 async function handleChatGenerateEvent(payload) {
     const { event_id, user_id, message, intent, llmContext, systemPrompt, cleanHistory, language, personaType, birth_date, kind } = payload;
 
@@ -1836,84 +1898,106 @@ async function handleChatGenerateEvent(payload) {
         ...cleanHistory,
     ];
 
-    try {
-        const agenticResult = await runAgenticTurn({
-            client, model, message, intent, llmContext, systemPrompt, cleanHistory,
-            pool, user_id, language, personaType,
-            logContext: { user_id, intent, handler: 'handleChatGenerateEvent', kind: kind || 'chat' },
-            onStatus: makeStatusNotifier(user_id, language),
-        });
-        if (kind === 'formula_dots_generate') {
-            await finalizeFormulaDotsGenerate({
-                rawReply: agenticResult.reply,
-                extraValidDates: agenticResult.extraValidDates,
-                extraValidValues: agenticResult.extraValidValues,
-                llmContext, message, user_id, personaType, lang: language,
+    // Exactly one terminal message reaches the user per event, whoever gets there first: the
+    // real reply, the error fallback, or the watchdog below. Without this guard a turn that
+    // overruns DELIVER_DEADLINE_MS would post the timeout apology AND then, if the real work
+    // happened to finish moments later inside the same invocation, a second bubble.
+    let delivered = false;
+    const claimDelivery = () => (delivered ? false : (delivered = true));
+
+    const work = (async () => {
+        try {
+            const agenticResult = await runAgenticTurn({
+                client, model, message, intent, llmContext, systemPrompt, cleanHistory,
+                pool, user_id, language, personaType,
+                logContext: { user_id, intent, handler: 'handleChatGenerateEvent', kind: kind || 'chat' },
+                onStatus: makeStatusNotifier(user_id, language),
             });
-        } else {
-            await finalizeChatReply({
-                rawReply: agenticResult.reply,
-                extraValidDates: agenticResult.extraValidDates,
-                extraValidValues: agenticResult.extraValidValues,
-                llmContext, systemPrompt, cleanHistory, chatMessages,
-                user, user_id, personaType, sandbox: false, useAgenticLoop: true, client, model, intent, message,
-            });
-        }
-        await markDone();
-    } catch (err) {
-        console.error('LLM Chat Error (async):', err);
-        if (kind === 'formula_dots_generate') {
-            // Never leave the pending plan row orphaned or the user with nothing — commit the
-            // deterministic fallback formulation directly, same as the publish-failure fail-open
-            // path in handlers/dots.js.
-            try {
-                const fallback = await _runDeterministicFormulation({
-                    biomarkers: llmContext.biomarkers,
-                    bioageProfile: llmContext.bioage,
-                    dotsFormulary: llmContext.dots,
-                    personaType, lang: language,
-                    currentSolarTerm: llmContext.current_solar_term,
-                    essentialKnowledge: llmContext.essential_knowledge,
-                    userFacts: llmContext.user_facts,
-                    activeHealthPlans: llmContext.active_health_plans,
+            if (!claimDelivery()) return;
+            if (kind === 'formula_dots_generate') {
+                await finalizeFormulaDotsGenerate({
+                    rawReply: agenticResult.reply,
+                    extraValidDates: agenticResult.extraValidDates,
+                    extraValidValues: agenticResult.extraValidValues,
+                    llmContext, message, user_id, personaType, lang: language,
                 });
-                const fbClient = await pool.connect();
-                let committedPlanId;
+            } else {
+                await finalizeChatReply({
+                    rawReply: agenticResult.reply,
+                    extraValidDates: agenticResult.extraValidDates,
+                    extraValidValues: agenticResult.extraValidValues,
+                    llmContext, systemPrompt, cleanHistory, chatMessages,
+                    user, user_id, personaType, sandbox: false, useAgenticLoop: true, client, model, intent, message,
+                });
+            }
+            await markDone();
+        } catch (err) {
+            console.error('LLM Chat Error (async):', err);
+            if (!claimDelivery()) return;
+            if (kind === 'formula_dots_generate') {
+                // Never leave the pending plan row orphaned or the user with nothing — commit the
+                // deterministic fallback formulation directly, same as the publish-failure fail-open
+                // path in handlers/dots.js.
                 try {
-                    await fbClient.query('BEGIN');
-                    committedPlanId = await _commitNutritionPlan(fbClient, {
-                        userId: user_id, analysis: fallback.analysis,
-                        morningRecipe: fallback.morningRecipe, eveningRecipe: fallback.eveningRecipe,
-                        planId: llmContext.pending_plan_id, dotsFormulary: llmContext.dots,
+                    const fallback = await _runDeterministicFormulation({
+                        biomarkers: llmContext.biomarkers,
+                        bioageProfile: llmContext.bioage,
+                        dotsFormulary: llmContext.dots,
+                        personaType, lang: language,
+                        currentSolarTerm: llmContext.current_solar_term,
+                        essentialKnowledge: llmContext.essential_knowledge,
+                        userFacts: llmContext.user_facts,
                         activeHealthPlans: llmContext.active_health_plans,
                     });
-                    await fbClient.query('COMMIT');
-                } catch (e) {
-                    await fbClient.query('ROLLBACK');
-                    throw e;
-                } finally {
-                    fbClient.release();
+                    const fbClient = await pool.connect();
+                    let committedPlanId;
+                    try {
+                        await fbClient.query('BEGIN');
+                        committedPlanId = await _commitNutritionPlan(fbClient, {
+                            userId: user_id, analysis: fallback.analysis,
+                            morningRecipe: fallback.morningRecipe, eveningRecipe: fallback.eveningRecipe,
+                            planId: llmContext.pending_plan_id, dotsFormulary: llmContext.dots,
+                            activeHealthPlans: llmContext.active_health_plans,
+                        });
+                        await fbClient.query('COMMIT');
+                    } catch (e) {
+                        await fbClient.query('ROLLBACK');
+                        throw e;
+                    } finally {
+                        fbClient.release();
+                    }
+                    if (committedPlanId !== null) {
+                        await saveChatMessage(user_id, 'ai', fallback.finalContent, null, personaType);
+                        await pool.query(
+                            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                            [user_id, 'nutrition_plan', fallback.finalContent, 'pending']
+                        );
+                    }
+                } catch (fbErr) {
+                    console.error('Formula dots fallback also failed:', fbErr);
+                    await _deliverTerminalMessage(user_id, personaType, 'nutrition_plan', _asyncFailureMessage(language, 'error'));
                 }
-                if (committedPlanId !== null) {
-                    await saveChatMessage(user_id, 'ai', fallback.finalContent, null, personaType);
-                    await pool.query(
-                        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                        [user_id, 'nutrition_plan', fallback.finalContent, 'pending']
-                    );
-                }
-            } catch (fbErr) {
-                console.error('Formula dots fallback also failed:', fbErr);
-                await pool.query(
-                    'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                    [user_id, 'nutrition_plan', "I'm sorry, I'm having trouble generating your dot plan right now. Please try again later.", 'pending']
-                );
+            } else {
+                await _deliverTerminalMessage(user_id, personaType, 'chat_reply', _asyncFailureMessage(language, 'error'));
             }
-        } else {
-            const fallbackText = "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.";
-            await pool.query(
-                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                [user_id, 'chat_reply', fallbackText, 'pending']
-            );
+            await markDone();
+        }
+    })();
+
+    // Watchdog. `work` above owns the happy path and every error it can catch; this owns the one
+    // it cannot — running out of wall clock before the platform kills the invocation. Racing
+    // rather than awaiting means the handler returns (and FC ends the invocation) as soon as the
+    // apology is delivered, instead of being killed mid-flight with nothing written.
+    let watchdogTimer = null;
+    const watchdog = new Promise(resolve => { watchdogTimer = setTimeout(() => resolve('timeout'), DELIVER_DEADLINE_MS); });
+    const outcome = await Promise.race([work.then(() => 'work').catch(() => 'work'), watchdog]);
+    clearTimeout(watchdogTimer);
+    if (outcome === 'timeout' && claimDelivery()) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'chat_generate_deliver_deadline_exceeded', event_id, user_id, kind: kind || 'chat', deadline_ms: DELIVER_DEADLINE_MS }));
+        try {
+            await _deliverTerminalMessage(user_id, personaType, kind === 'formula_dots_generate' ? 'nutrition_plan' : 'chat_reply', _asyncFailureMessage(language, 'timeout'));
+        } catch (err) {
+            console.error('watchdog delivery failed:', err);
         }
         await markDone();
     }
@@ -2643,59 +2727,10 @@ async function handleGetHealthEvents(query) {
     }
 }
 
-function _buildHealthTagsBackend(twin, bm, conditionKeys) {
-    const tags = [];
-    const order = { alert: 0, warn: 1, good: 2 };
-
-    if (bm) {
-        if (bm.hsCRP > 3)            tags.push({ labelEn: 'High Inflammation',  labelZh: '炎症偏高',      severity: 'alert', color: '#ef4444' });
-        else if (bm.hsCRP > 1)       tags.push({ labelEn: 'Mild Inflammation',   labelZh: '轻微炎症',      severity: 'warn',  color: '#f97316' });
-        if (bm.IL6 > 6)              tags.push({ labelEn: 'Elevated IL-6',       labelZh: 'IL-6 升高',    severity: 'alert', color: '#ef4444' });
-        if (bm.GDF15 > 1500)         tags.push({ labelEn: 'Accelerated Aging',   labelZh: '衰老加速',      severity: 'alert', color: '#ef4444' });
-        else if (bm.GDF15 > 750)     tags.push({ labelEn: 'Elevated GDF-15',     labelZh: 'GDF-15 升高',  severity: 'warn',  color: '#f97316' });
-        if (bm.GA > 20)              tags.push({ labelEn: 'Metabolic Risk',       labelZh: '代谢功能异常',  severity: 'alert', color: '#ef4444' });
-        else if (bm.GA > 15)         tags.push({ labelEn: 'Elevated GA',          labelZh: '糖化白蛋白偏高', severity: 'warn',  color: '#f97316' });
-        if (bm.CystatinC > 1.2)      tags.push({ labelEn: 'Vascular Stress',     labelZh: '血管压力',      severity: 'alert', color: '#ef4444' });
-        else if (bm.CystatinC > 0.9) tags.push({ labelEn: 'Elevated Cystatin C', labelZh: '胱抑素C偏高',  severity: 'warn',  color: '#f97316' });
-        if (bm.CD38 > 2)             tags.push({ labelEn: 'High CD38',            labelZh: 'CD38 升高',    severity: 'warn',  color: '#f97316' });
-    }
-
-    if (twin) {
-        if (twin.avg_sleep_hours != null) {
-            if (twin.avg_sleep_hours < 6)        tags.push({ labelEn: 'Sleep Deficit',    labelZh: '睡眠严重不足', severity: 'alert', color: '#ef4444' });
-            else if (twin.avg_sleep_hours < 7)   tags.push({ labelEn: 'Low Sleep',         labelZh: '睡眠不足',    severity: 'warn',  color: '#f97316' });
-            else if (twin.avg_sleep_hours <= 9)  tags.push({ labelEn: 'Good Sleep',        labelZh: '睡眠良好',    severity: 'good',  color: '#10b981' });
-        }
-        if (twin.avg_hrv_ms != null) {
-            if (twin.avg_hrv_ms < 30)            tags.push({ labelEn: 'Low HRV',           labelZh: 'HRV 偏低',   severity: 'alert', color: '#ef4444' });
-            else if (twin.avg_hrv_ms >= 80)      tags.push({ labelEn: 'Strong Recovery',   labelZh: '恢复力强',    severity: 'good',  color: '#10b981' });
-        }
-        if (twin.avg_resting_hr != null) {
-            if (twin.avg_resting_hr > 90)        tags.push({ labelEn: 'Elevated HR',       labelZh: '心率过快',    severity: 'alert', color: '#ef4444' });
-            else if (twin.avg_resting_hr > 75)   tags.push({ labelEn: 'High Resting HR',   labelZh: '静息心率偏高', severity: 'warn',  color: '#f97316' });
-        }
-        if (twin.avg_daily_steps != null) {
-            if (twin.avg_daily_steps < 5000)     tags.push({ labelEn: 'Low Activity',      labelZh: '活动量不足',   severity: 'warn',  color: '#f97316' });
-            else if (twin.avg_daily_steps >= 10000) tags.push({ labelEn: 'Active',          labelZh: '活动达标',    severity: 'good',  color: '#10b981' });
-        }
-    }
-
-    const condTagMap = {
-        blood_sugar_high:    { en: 'High Blood Sugar',    zh: '血糖高' },
-        blood_pressure_high: { en: 'High Blood Pressure', zh: '血压高' },
-        blood_lipids_high:   { en: 'High Blood Lipids',   zh: '血脂高' },
-        cholesterol_high:    { en: 'High Cholesterol',    zh: '胆固醇高' },
-        heart_issues:        { en: 'Heart Issues',        zh: '心脏问题' },
-        kidney_disease:      { en: 'Kidney Disease',      zh: '肾病' },
-    };
-    for (const key of (conditionKeys || [])) {
-        const m = condTagMap[key];
-        if (m) tags.push({ labelEn: m.en, labelZh: m.zh, severity: 'warn', color: '#f97316' });
-    }
-
-    tags.sort((a, b) => order[a.severity] - order[b.severity]);
-    return tags.slice(0, 7);
-}
+// _buildHealthTagsBackend moved to ../lib/healthTags.js (2026-08-22) so handlers/dots.js's
+// GCN-facing formulation-review snapshot can share it — chat.js already requires dots.js, so
+// dots.js requiring chat.js back would have been a cycle. Behavior is unchanged.
+const _buildHealthTagsBackend = buildHealthTags;
 
 async function handleGetHealthTwin(openid) {
     if (!openid) return { success: false, error: 'openid required', statusCode: 400 };

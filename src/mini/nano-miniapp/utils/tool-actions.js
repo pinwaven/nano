@@ -90,11 +90,14 @@ async function runHealthAdvice(openid, t, ctx, opts = {}) {
   addMsg('user', t.toolHealthAdviceMsg)
   setTyping(true)
   try {
-    // 180s: for a Viva-persona user, this can run the full agentic plan/generate/judge/revise
-    // loop (measured up to ~167s worst case) — matters most for callers without `opts.async`
-    // (coach.js), which have no polling fallback and would otherwise trip wx.request's default
-    // 60s timeout, canceling the in-progress server-side work rather than just delaying it.
-    const res = await req(`${BASE}/api/health-advice`, 'POST', { openid, async: wantAsync }, 180000)
+    // 290s: the full agentic plan/generate/judge/revise loop is bounded at 200s server-side
+    // (agenticChat's TURN_DEADLINE_MS) and the grounding check that follows it can add one more
+    // ~60s LLM call, so a legitimate turn reaches ~260s — measured 266s end-to-end 2026-08-22.
+    // Only matters for callers without `opts.async` (coach.js, the web app), which have no
+    // polling fallback: tripping the client timeout makes FC cancel the invocation, destroying
+    // the in-progress work rather than just delaying it. The old 180s sat below the server's own
+    // worst case and so cancelled turns that were about to succeed.
+    const res = await req(`${BASE}/api/health-advice`, 'POST', { openid, async: wantAsync }, 290000)
     if (res.statusCode !== 200 && res.statusCode !== 201) throw new Error('server error')
     if (wantAsync && res.data?.processing) {
       // Real reply arrives later via the caller's own notification-polling loop — leave the
