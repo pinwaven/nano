@@ -2,7 +2,7 @@
 
 const crypto = require('crypto');
 const { pool } = require('../lib/db');
-const { resolveEffectivePersona } = require('../lib/persona');
+const { resolveEffectivePersona, hasActiveVivaAccess, hasActiveVivaAgAccess } = require('../lib/persona');
 const { grantPersonaOverride } = require('../lib/personaOverride');
 
 // High-entropy, unguessable code — unlike kino_chips.chip_code (sequential KNC{8}-{4}), a
@@ -22,6 +22,7 @@ async function handleGetVivaSubscriptionStatus(openid) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
             `SELECT u.viva_subscription_expires_at, u.persona_override_type, u.persona_override_expires_at,
+                    u.viva_ag_expires_at,
                     COALESCE(c.config->>'persona_type', 'nano') AS channel_persona_type
              FROM users u LEFT JOIN channels c ON c.id = u.channel_id
              WHERE u.user_id = $1 OR u.external_id = $1 LIMIT 1`,
@@ -39,10 +40,17 @@ async function handleGetVivaSubscriptionStatus(openid) {
         const vivaExpiresAt = row.persona_override_type === 'viva'
             ? row.persona_override_expires_at
             : row.viva_subscription_expires_at;
+        // Viva AG is an add-on, so "active" means an active Viva grant AND an active AG
+        // window — the same composite the server-side gates in handlers/viva_ag.js enforce.
+        // This field only drives whether the miniapp renders the AG subtab at all; it is
+        // cosmetic, and every AG endpoint re-checks entitlement server-side.
+        const vivaAgActive = hasActiveVivaAccess(row) && hasActiveVivaAgAccess(row);
         return {
             success: true,
             persona_type: effectivePersona,
             viva_subscription_expires_at: vivaExpiresAt,
+            viva_ag_expires_at: row.viva_ag_expires_at,
+            viva_ag_active: vivaAgActive,
         };
     } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetVivaSubscriptionStatus failed', error: err.message }));

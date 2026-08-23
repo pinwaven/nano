@@ -10,7 +10,7 @@ i18n keys, the prompt section headers, and the table below must change together 
 |---|---|---|---|---|---|
 | 1 | 精准检测 | Precision Testing | `biomarkers(test_type='kino_chip')`; `health_twin.latest_bio_age / latest_sub_ages / latest_kino_scan_at` | `t.layerPrecision` + the BioAge summary card | `DIGITAL TWIN · PRECISION TESTING` |
 | 2 | 日常监测 | Daily Monitoring | `health_events(sleep\|activity\|vitals\|body_composition)`; `health_twin.avg_* / latest_weight_kg / latest_bmi / latest_body_fat_pct / trend_data` | `t.layerDaily` | `DIGITAL TWIN · DAILY MONITORING` |
-| 3 | 医疗记录 | Medical Records | `health_reports`; `health_events(category='lab_result')`; `health_twin.latest_lab_data / latest_lab_date` | `t.layerMedical` | (rendered as the lab snapshot) |
+| 3 | 医疗记录 | Medical Records | `health_reports`; `health_documents`; `health_events(category='lab_result')`; `health_twin.latest_lab_data / latest_lab_date` | `t.layerMedical` | (rendered as the lab snapshot) |
 | 4 | 个人档案 | Personal Profile | `users.bio_data`; `questionnaire_responses`; `user_memory_facts` | `t.layerProfile` | `DIGITAL TWIN · PERSONAL PROFILE` |
 
 Per-layer deep dives: [kino-system.md](kino-system.md) · [wearable-system.md](wearable-system.md) /
@@ -444,6 +444,7 @@ Health Score: **~88 (Optimal)**
 | 2 Daily Monitoring | Manual lifestyle | `health_events` (`source='manual'`) | User-entered sleep, workouts |
 | 3 Medical Records | Report upload / lab API / FHIR | `health_reports`, `health_events` (`category='lab_result'`), `biomarkers` (`test_type='lab_import'`) | Full blood panels, checkups, imaging, doctor's notes |
 | 3 Medical Records | Photo OCR | `POST /analyze-image` → `health_reports` on consent | Photographed lab reports, BP/glucose/scale readings |
+| 3 Medical Records | Document upload (Viva AG subtab, see [viva-ag.md](viva-ag.md)) | `POST /health-documents` → `health_documents` (+ OSS) | Hospital records, discharge summaries, imaging and prescription PDFs, photos of paper records |
 | 4 Personal Profile | Onboarding + edits | `users.bio_data`, `questionnaire_responses` | Height/weight, conditions, declared allergies & medications |
 | 4 Personal Profile | Chat extraction | `user_memory_facts` | Dietary restrictions, allergies, preferences, goals |
 

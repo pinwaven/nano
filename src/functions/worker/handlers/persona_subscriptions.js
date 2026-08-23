@@ -26,7 +26,7 @@ async function handleGetAdminUserPersonaSubscription(userId, adminCtx) {
         if (error) return error;
 
         const [overrideRes, channelRes, historyRes] = await Promise.all([
-            pool.query('SELECT persona_override_type, persona_override_expires_at FROM users WHERE user_id = $1', [userId]),
+            pool.query('SELECT persona_override_type, persona_override_expires_at, viva_ag_expires_at FROM users WHERE user_id = $1', [userId]),
             pool.query(
                 `SELECT COALESCE(c.config->>'persona_type', 'nano') AS persona_type
                  FROM users u JOIN channels c ON c.id = u.channel_id WHERE u.user_id = $1`,
@@ -52,6 +52,10 @@ async function handleGetAdminUserPersonaSubscription(userId, adminCtx) {
             effective_persona_type: effectivePersona,
             persona_override_type: override.persona_override_type || null,
             persona_override_expires_at: override.persona_override_expires_at || null,
+            // Viva AG add-on, granted/revoked separately from the persona override above.
+            // The history list below needs no filtering change — persona_subscription_grants
+            // rows with persona_type='viva_ag' already come back from the same query.
+            viva_ag_expires_at: override.viva_ag_expires_at || null,
             history: historyRes.rows,
         };
     } catch (err) {
@@ -152,6 +156,102 @@ async function handleDeleteAdminUserPersonaSubscription(userId, body, adminCtx) 
     }
 }
 
+// ---------------------------------------------------------------------------------------
+// Viva AG add-on grant/revoke.
+//
+// Deliberately NOT routed through grantPersonaOverride/ALLOWED_PERSONA_TYPES: that Set guards
+// users.persona_override_type, which must stay 'nano'|'viva' (see
+// migration_users_viva_ag_expiry.sql). AG is an add-on column with its own expiry, so it gets
+// its own pair of handlers that reuse the same ownership check, the same [Admin: x] note
+// annotation, and the same persona_subscription_grants audit table with persona_type='viva_ag'.
+// ---------------------------------------------------------------------------------------
+
+async function handlePostAdminUserVivaAg(userId, body, adminCtx) {
+    if (!userId) return { success: false, error: 'userId is required', statusCode: 400 };
+    const durationDays = parseInt(body?.duration_days, 10);
+    const note = (body?.note || '').trim();
+    if (!durationDays || durationDays <= 0) {
+        return { success: false, error: 'duration_days must be a positive integer', statusCode: 400 };
+    }
+    if (!note) return { success: false, error: 'note is required', statusCode: 400 };
+
+    try {
+        const { error } = await _loadUserForOwnershipCheck(userId, adminCtx);
+        if (error) return error;
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            // Stacking semantics mirror grantPersonaOverride: extend a live window, restart
+            // from now on an expired/absent one.
+            const { rows: [updated] } = await client.query(
+                `UPDATE users
+                 SET viva_ag_expires_at = CASE
+                         WHEN viva_ag_expires_at > NOW() THEN viva_ag_expires_at + ($2 || ' days')::interval
+                         ELSE NOW() + ($2 || ' days')::interval
+                     END
+                 WHERE user_id = $1
+                 RETURNING viva_ag_expires_at`,
+                [userId, durationDays]
+            );
+            const annotatedNote = `[Admin: ${adminCtx.username || adminCtx.accountId || 'unknown'}] ${note}`;
+            await client.query(
+                `INSERT INTO persona_subscription_grants (user_id, persona_type, action, duration_days, new_expires_at, note, granted_by, channel_id)
+                 SELECT $1, 'viva_ag', 'grant', $2, $3, $4, $5, channel_id FROM users WHERE user_id = $1`,
+                [userId, durationDays, updated.viva_ag_expires_at, annotatedNote, adminCtx.username || adminCtx.accountId || 'unknown']
+            );
+            await client.query('COMMIT');
+            return { success: true, viva_ag_expires_at: updated.viva_ag_expires_at };
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function handleDeleteAdminUserVivaAg(userId, body, adminCtx) {
+    if (!userId) return { success: false, error: 'userId is required', statusCode: 400 };
+    const note = (body?.note || '').trim();
+    if (!note) return { success: false, error: 'note is required', statusCode: 400 };
+
+    try {
+        const { error } = await _loadUserForOwnershipCheck(userId, adminCtx);
+        if (error) return error;
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const { rows: [before] } = await client.query(
+                'SELECT viva_ag_expires_at FROM users WHERE user_id = $1', [userId]
+            );
+            if (!before?.viva_ag_expires_at) {
+                await client.query('ROLLBACK');
+                return { success: false, error: 'No Viva AG add-on to revoke', statusCode: 400 };
+            }
+            await client.query('UPDATE users SET viva_ag_expires_at = NULL WHERE user_id = $1', [userId]);
+            const annotatedNote = `[Admin: ${adminCtx.username || adminCtx.accountId || 'unknown'}] ${note}`;
+            await client.query(
+                `INSERT INTO persona_subscription_grants (user_id, persona_type, action, duration_days, new_expires_at, note, granted_by, channel_id)
+                 SELECT $1, 'viva_ag', 'revoke', NULL, NULL, $2, $3, channel_id FROM users WHERE user_id = $1`,
+                [userId, annotatedNote, adminCtx.username || adminCtx.accountId || 'unknown']
+            );
+            await client.query('COMMIT');
+            return { success: true };
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 // Superadmin-only cross-channel list for the AIPersonaTab global screen. Explicit role
 // check here (not just nav-level gating in the web admin panel) since this is a new
 // endpoint with no precedent loose-checking to inherit.
@@ -188,4 +288,6 @@ module.exports = {
     handlePostAdminUserPersonaSubscription,
     handleDeleteAdminUserPersonaSubscription,
     handleGetAdminPersonaSubscriptions,
+    handlePostAdminUserVivaAg,
+    handleDeleteAdminUserVivaAg,
 };

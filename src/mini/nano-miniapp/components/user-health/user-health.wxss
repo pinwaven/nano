@@ -16,6 +16,41 @@
   height: 0;
 }
 
+/* ── Health-tab subtab strip (Digital Twin | Viva AG) ──
+   Component-local copies of the page-level .inner-tab-* classes in pages/main/main.wxss:
+   WeChat component style isolation means a component cannot see page WXSS, so these have to
+   be redeclared here rather than reused. Renamed so they can never collide with the page's. */
+
+.uh-tab-bar {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1rpx solid #1E3A5F;
+  background: #0A1F36;
+}
+
+.uh-tab {
+  flex: 1;
+  padding: 20rpx 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.uh-tab-text {
+  font-size: 26rpx;
+  color: var(--steel);
+  font-weight: 500;
+}
+
+.uh-tab-active .uh-tab-text {
+  color: #A0B4FF;
+  font-weight: 700;
+}
+
+.theme-light .uh-tab-bar { background: #f0f4ff; border-bottom-color: #dde5f5; }
+.theme-light .uh-tab-text { color: #607090; }
+.theme-light .uh-tab-active .uh-tab-text { color: #2942E5; }
+
 .center-wrap {
   display: flex;
   align-items: center;

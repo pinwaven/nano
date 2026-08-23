@@ -406,6 +406,17 @@ page {
   margin-bottom: 4rpx;
 }
 
+/* Viva AG attribution — mirrors .msg-coach-label's shape, in the accent used for AG elsewhere
+   in the app (the panel's badge and chips) so the two surfaces read as the same feature. */
+.msg-ag-label {
+  font-size: 20rpx;
+  color: #A0B4FF;
+  font-weight: 600;
+  letter-spacing: 1rpx;
+  display: block;
+  margin-bottom: 4rpx;
+}
+
 .msg-bubble-image {
   padding: 0;
   overflow: hidden;
@@ -2965,6 +2976,7 @@ page {
 .theme-light .chat-history-spinner,
 .theme-light .chat-refresher-spinner  { border-color: rgba(60,80,120,0.15); border-top-color: rgba(60,80,120,0.55); }
 .theme-light .msg-coach-label { color: #076646; }
+.theme-light .msg-ag-label { color: #2942E5; }
 .theme-light .msg-action-card {
   background: linear-gradient(135deg, rgba(201, 149, 106, 0.15), rgba(201, 149, 106, 0.06));
   border-color: rgba(201, 149, 106, 0.4);

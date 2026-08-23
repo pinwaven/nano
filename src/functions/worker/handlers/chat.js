@@ -67,14 +67,22 @@ const getLlmClient = () => new OpenAI({
     maxRetries: 1,
 });
 
-async function saveChatMessage(user_id, role, content, image_url = null, persona_type = 'nano') {
+// Returns the inserted row id (or null if the insert was swallowed) so callers that need to
+// correlate a delivered message with their own record can — viva_ag_jobs.chat_message_id is the
+// first such caller. Every pre-existing caller ignores the return value.
+// `source` marks a message whose author is not the plain persona (currently only 'viva_ag'), so
+// the chat can attribute it correctly. NULL — the default for every existing caller — means the
+// persona itself. Deliberately not persona_type: see migration_chat_messages_source.sql.
+async function saveChatMessage(user_id, role, content, image_url = null, persona_type = 'nano', source = null) {
     try {
-        await pool.query(
-            'INSERT INTO chat_messages (user_id, role, content, image_url, persona_type) VALUES ($1, $2, $3, $4, $5)',
-            [user_id, role, content, image_url, persona_type]
+        const { rows } = await pool.query(
+            'INSERT INTO chat_messages (user_id, role, content, image_url, persona_type, source) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+            [user_id, role, content, image_url, persona_type, source]
         );
+        return rows[0]?.id ?? null;
     } catch (err) {
         console.error('Failed to save chat message:', err);
+        return null;
     }
 }
 
@@ -110,7 +118,7 @@ async function handleGetChatHistory(openid, sinceId = null, beforeId = null, rol
             const roleList = [...new Set(wanted.flatMap(r => SINCE_ROLE_SETS[r] || []))];
             if (roleList.length === 0) roleList.push('coach');
             const result = await pool.query(
-                `SELECT id, role, content, image_url, created_at
+                `SELECT id, role, content, image_url, source, created_at
                  FROM chat_messages
                  WHERE user_id = $1 AND id > $2 AND role = ANY($3::text[])
                  ORDER BY created_at ASC, id ASC`,
@@ -121,8 +129,8 @@ async function handleGetChatHistory(openid, sinceId = null, beforeId = null, rol
         const limit = parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10);
         if (beforeId !== null) {
             const result = await pool.query(
-                `SELECT id, role, content, image_url, created_at FROM (
-                    SELECT id, role, content, image_url, created_at FROM chat_messages
+                `SELECT id, role, content, image_url, source, created_at FROM (
+                    SELECT id, role, content, image_url, source, created_at FROM chat_messages
                     WHERE user_id = $1 AND id < $2
                     ORDER BY created_at DESC, id DESC
                     LIMIT $3
@@ -134,8 +142,8 @@ async function handleGetChatHistory(openid, sinceId = null, beforeId = null, rol
             return { success: true, messages, has_more };
         }
         const result = await pool.query(
-            `SELECT id, role, content, image_url, created_at FROM (
-                SELECT id, role, content, image_url, created_at FROM chat_messages
+            `SELECT id, role, content, image_url, source, created_at FROM (
+                SELECT id, role, content, image_url, source, created_at FROM chat_messages
                 WHERE user_id = $1
                 ORDER BY created_at DESC, id DESC
                 LIMIT $2
@@ -1847,16 +1855,20 @@ function _asyncFailureMessage(language, reason) {
 // Delivers a terminal message through BOTH channels the miniapp can see: the notifications row
 // (fast path, 3s poll) and chat_messages (durable backstop — see handleGetChatHistory's `roles`
 // param for why the notification alone is not enough).
-async function _deliverTerminalMessage(user_id, personaType, notificationType, text) {
+// Returns {chat_message_id, notification_id} for callers that need to record what was
+// delivered; the four pre-existing call sites ignore it.
+async function _deliverTerminalMessage(user_id, personaType, notificationType, text, source = null) {
+    let chatMessageId = null;
     try {
-        await saveChatMessage(user_id, 'ai', text, null, personaType);
+        chatMessageId = await saveChatMessage(user_id, 'ai', text, null, personaType, source);
     } catch (err) {
         console.error('terminal message saveChatMessage failed:', err);
     }
-    await pool.query(
-        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+    const { rows } = await pool.query(
+        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4) RETURNING id',
         [user_id, notificationType, text, 'pending']
     );
+    return { chat_message_id: chatMessageId, notification_id: rows[0]?.id ?? null };
 }
 
 async function handleChatGenerateEvent(payload) {
@@ -2785,6 +2797,11 @@ module.exports = {
     stripTrailingQuestion,
     extractDateMentions,
     saveChatMessage,
+    // Exported for handlers/viva_ag.js, which delivers an external agent's result into chat
+    // through the same two-channel path everything else uses. Same precedent as
+    // handlers/checkin.js requiring saveChatMessage from here; no cycle, chat.js never
+    // requires viva_ag.js.
+    deliverTerminalMessage: _deliverTerminalMessage,
     fetchTagDerivationContext,
     resolveOrUpsertUser,
     _fireQuestionnaireAnsweredFollowup,

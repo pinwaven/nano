@@ -559,7 +559,13 @@ function buildSubAgeLabels(base, overrides, lang) {
 const AI_ECHO_TYPES = new Set([
   'chat_reply', 'nutrition_plan', 'formulation_reorder_ready', 'biological_report',
   'coach_message', 'morning_checkin', 'midday_checkin', 'evening_checkin',
+  'viva_ag_result', 'viva_ag_failed',
 ])
+
+// Notification types delivered by the external Viva AG agent rather than by Viva itself. Drives
+// the "Viva AG" label on the bubble so the user can tell a deep analysis apart from a normal
+// reply; the durable equivalent is chat_messages.source.
+const AG_NOTIFICATION_TYPES = new Set(['viva_ag_result', 'viva_ag_failed'])
 
 // Two chat messages more than this far apart get a time separator between them. The agentic
 // loop delivers replies through _poll minutes after the question, and history spans days, so
@@ -907,6 +913,8 @@ Page({
     vivaRedeemCode: '',
     vivaRedeemBusy: false,
     vivaRedeemError: '',
+    // Viva AG add-on — drives the health tab's subtab strip. Cosmetic; the server re-checks.
+    vivaAgActive: false,
 
     // Role menu flags
     menuOpen: false,
@@ -2042,9 +2050,11 @@ Page({
   // them skipped the conversion entirely. `content` is always the RAW text: AI rows are segmented
   // for display here, while the persist path (_addMsg below) still posts its own raw argument, so
   // nothing rendered is ever written back to the server.
-  _makeMsg({ id, role, content, imageUrl, action, label, createdAt }) {
+  _makeMsg({ id, role, content, imageUrl, action, label, createdAt, source }) {
     const r = (role === 'assistant') ? 'ai' : role
-    const msg = { id, role: r, imageUrl: imageUrl || null, ts: createdAt ? +new Date(createdAt) : Date.now(), sep: '' }
+    // `source` attributes a bubble to something other than the plain persona — currently only
+    // 'viva_ag', which renders a label the way a coach message does.
+    const msg = { id, role: r, imageUrl: imageUrl || null, source: source || null, ts: createdAt ? +new Date(createdAt) : Date.now(), sep: '' }
     if (r === 'action') { msg.action = action; msg.label = label; return msg }
     if (r === 'coach') { msg.content = (content || '').replace(/\n+/g, ' '); return msg }
     if (r === 'ai') { msg.segments = mdToSegments(content || ''); this._attachSparks(msg.segments) }
@@ -2102,7 +2112,7 @@ Page({
         return this._makeMsg({ id, role: 'ai', content: m.content, createdAt: m.created_at })
       }
     }
-    return this._makeMsg({ id, role, content: m.content, imageUrl: m.image_url, createdAt: m.created_at })
+    return this._makeMsg({ id, role, content: m.content, imageUrl: m.image_url, source: m.source, createdAt: m.created_at })
   },
 
   // Stamps each message's time separator relative to its predecessor. `prev` is the message
@@ -2598,7 +2608,12 @@ Page({
           const bubbleRows = realRows.filter(n => n.notification_type !== 'questionnaire_ready'
             && !(AI_ECHO_TYPES.has(n.notification_type) && this._isRenderedAi(n.content)))
           bubbleRows.forEach(n => { if (AI_ECHO_TYPES.has(n.notification_type)) this._markRenderedAi(n.content) })
-          const newMsgs = bubbleRows.map(n => this._makeMsg({ id: `n-${n.id}`, role: 'ai', content: n.content }))
+          const newMsgs = bubbleRows.map(n => this._makeMsg({
+            id: `n-${n.id}`, role: 'ai', content: n.content,
+            // The notification type is the only attribution available on this channel — the
+            // matching chat_messages row carries it durably for reloads.
+            source: AG_NOTIFICATION_TYPES.has(n.notification_type) ? 'viva_ag' : null,
+          }))
           // A 'nutrition_plan' row means Viva's async dot formulation just committed — add the
           // "view plan" action button here (it used to be added synchronously right after the
           // POST, back when the schedule was committed inline; now the commit itself happens
@@ -3023,7 +3038,8 @@ Page({
         const personaType = res.data.persona_type || 'nano'
         const vivaSubscriptionExpired = personaType === 'viva' && (!expiresAt || new Date(expiresAt) <= new Date())
         const vivaSubscriptionExpiresAtDisplay = expiresAt ? fmtDate(expiresAt, this.data.lang) : ''
-        this.setData({ personaType, vivaSubscriptionExpiresAt: expiresAt || null, vivaSubscriptionExpired, vivaSubscriptionExpiresAtDisplay })
+        this.setData({ personaType, vivaSubscriptionExpiresAt: expiresAt || null, vivaSubscriptionExpired, vivaSubscriptionExpiresAtDisplay,
+          vivaAgActive: !!res.data.viva_ag_active })
       }
     } catch (e) {}
   },

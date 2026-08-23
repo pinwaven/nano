@@ -172,6 +172,9 @@
                   bindload="_onChatImageLoad"
                 />
                 <text wx:if="{{item.role === 'user' && item.content}}" class="msg-text" selectable="true">{{item.content}}</text>
+                <!-- Attribution for a reply that came from the external Viva AG agent rather
+                     than Viva itself. Same shape as the Coach label above. -->
+                <text wx:if="{{item.source === 'viva_ag'}}" class="msg-ag-label">Viva AG</text>
                 <block wx:if="{{item.role !== 'user'}}">
                   <view wx:for="{{item.segments}}" wx:for-item="seg" wx:for-index="si" wx:key="si" class="msg-seg">
                     <mp-html
@@ -447,6 +450,7 @@
         mode="self"
         is-guest="{{isGuest}}"
         theme="{{theme}}"
+        viva-ag-enabled="{{vivaAgActive}}"
         bindchooseavatar="handleHealthChooseAvatar"
         bindguesttap="openGuestSheet"
         bind:profileUpdated="onProfileUpdated">

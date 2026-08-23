@@ -1,6 +1,7 @@
 {
   "component": true,
   "usingComponents": {
-    "avatar-picker": "../avatar-picker/avatar-picker"
+    "avatar-picker": "../avatar-picker/avatar-picker",
+    "viva-ag-panel": "../viva-ag-panel/viva-ag-panel"
   }
 }

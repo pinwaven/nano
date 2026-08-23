@@ -1,0 +1,119 @@
+<view class="ag-root {{theme === 'light' ? 'theme-light' : ''}}">
+  <scroll-view class="ag-scroll" scroll-y="true">
+
+    <!-- Entitlement header -->
+    <view class="ag-hero">
+      <view class="ag-hero-badge"><text>VIVA AG</text></view>
+      <text class="ag-hero-desc">{{t.heroDesc}}</text>
+      <text wx:if="{{expiryDisplay}}" class="ag-hero-expiry">{{t.validUntil}} {{expiryDisplay}}</text>
+    </view>
+
+    <!-- ── Documents ── -->
+    <view class="ag-section">
+      <view class="ag-section-head">
+        <text class="ag-section-title">{{t.documents}}</text>
+        <text class="ag-section-count">{{documents.length}}</text>
+      </view>
+
+      <view class="ag-upload-btn {{uploading ? 'ag-btn-busy' : ''}}" bindtap="chooseDocument">
+        <text wx:if="{{!uploading}}">{{t.uploadBtn}}</text>
+        <text wx:else>{{uploadStatus}}</text>
+      </view>
+
+      <view wx:if="{{docsLoading}}" class="ag-muted">{{t.loading}}</view>
+
+      <view wx:elif="{{documents.length === 0}}" class="ag-empty">
+        <text class="ag-empty-title">{{t.noDocsTitle}}</text>
+        <!-- wx.chooseMessageFile can only reach files that live in a WeChat conversation;
+             there is no filesystem picker on the platform, so the instruction is required. -->
+        <text class="ag-empty-hint">{{t.noDocsHint}}</text>
+      </view>
+
+      <view wx:else>
+        <view wx:for="{{documents}}" wx:key="id" class="ag-doc">
+          <view class="ag-doc-main" bindtap="openDocument" data-id="{{item.id}}">
+            <text class="ag-doc-name">{{item.filename}}</text>
+            <view class="ag-doc-meta">
+              <text class="ag-doc-badge">{{item.typeLabel}}</text>
+              <text wx:if="{{item.doc_date}}" class="ag-doc-sub">{{item.doc_date}}</text>
+              <text class="ag-doc-sub">{{item.sizeLabel}}</text>
+            </view>
+          </view>
+          <text class="ag-doc-del" catchtap="deleteDocument" data-id="{{item.id}}" data-name="{{item.filename}}">{{t.delete}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- ── Command ── -->
+    <view class="ag-section">
+      <text class="ag-section-title">{{t.newAnalysis}}</text>
+
+      <view class="ag-chips">
+        <view wx:for="{{presets}}" wx:key="key"
+              class="ag-chip {{commandKey === item.key ? 'ag-chip-on' : ''}}"
+              bindtap="selectPreset" data-key="{{item.key}}">
+          <text>{{item.label}}</text>
+        </view>
+      </view>
+
+      <textarea class="ag-input" value="{{commandText}}" bindinput="onCommandInput"
+                placeholder="{{t.commandPlaceholder}}" placeholder-class="ag-input-ph"
+                maxlength="2000" auto-height show-confirm-bar="{{false}}"
+                adjust-position="{{true}}" />
+
+      <view class="ag-submit {{canSubmit ? '' : 'ag-submit-off'}}" bindtap="submitJob">
+        <text>{{submitting ? t.submitting : t.submit}}</text>
+      </view>
+      <text wx:if="{{hasActive}}" class="ag-note">{{t.oneAtATime}}</text>
+      <text wx:elif="{{dailyLimitReached}}" class="ag-note">{{t.quotaUsedUp}}</text>
+      <text wx:elif="{{!commandKey && !commandText}}" class="ag-note">{{t.pickSomething}}</text>
+      <text wx:else class="ag-note">{{quotaLeftText}}</text>
+    </view>
+
+    <!-- ── Jobs ── -->
+    <view class="ag-section">
+      <text class="ag-section-title">{{t.history}}</text>
+
+      <view wx:if="{{jobsLoading}}" class="ag-muted">{{t.loading}}</view>
+      <view wx:elif="{{jobs.length === 0}}" class="ag-muted">{{t.noJobs}}</view>
+
+      <view wx:else>
+        <view wx:for="{{jobs}}" wx:key="job_uid" class="ag-job" bindtap="openJob" data-uid="{{item.job_uid}}">
+          <view class="ag-job-head">
+            <text class="ag-pill ag-pill-{{item.status}}">{{item.statusLabel}}</text>
+            <text class="ag-job-date">{{item.created_at}}</text>
+          </view>
+          <text class="ag-job-cmd">{{item.command}}</text>
+          <text wx:if="{{item.progress_note}}" class="ag-job-note">{{item.progress_note}}</text>
+          <text wx:elif="{{item.result_summary}}" class="ag-job-note">{{item.summaryPreview}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view style="height: 200rpx;"></view>
+  </scroll-view>
+
+  <!-- Job detail sheet -->
+  <view wx:if="{{detailJob}}" class="ag-sheet-mask" bindtap="closeJob">
+    <view class="ag-sheet" catchtap="noop">
+      <view class="ag-sheet-head">
+        <text class="ag-pill ag-pill-{{detailJob.status}}">{{detailJob.statusLabel}}</text>
+        <text class="ag-sheet-close" bindtap="closeJob">✕</text>
+      </view>
+      <text class="ag-sheet-date">{{detailJob.created_at}}</text>
+      <text class="ag-sheet-cmd">{{detailJob.command}}</text>
+
+      <text wx:if="{{detailJob.result_summary}}" class="ag-sheet-body">{{detailJob.result_summary}}</text>
+      <text wx:elif="{{detailJob.error_reason}}" class="ag-sheet-body ag-sheet-err">{{t.failed}}</text>
+      <text wx:elif="{{detailJob.progress_note}}" class="ag-sheet-body">{{detailJob.progress_note}}</text>
+      <text wx:else class="ag-sheet-body ag-muted">{{t.inProgress}}</text>
+
+      <view wx:if="{{detailJob.has_result_file}}" class="ag-sheet-btn" bindtap="downloadResult">
+        <text>{{downloadingResult ? t.opening : t.openReport}}</text>
+      </view>
+      <view wx:if="{{detailJob.status === 'queued'}}" class="ag-sheet-btn ag-sheet-btn-ghost" bindtap="cancelJob">
+        <text>{{t.cancel}}</text>
+      </view>
+    </view>
+  </view>
+</view>

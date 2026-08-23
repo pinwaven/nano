@@ -88,6 +88,17 @@ resources:
         WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
         GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
+        # Scoped external credential for the viva-ag advanced-generation agent (CLAUDE.md 35).
+        # Distinct token per environment ON PURPOSE: dev and prod share the OSS bucket and the
+        # Aliyun account, so one shared token would let a dev-configured external agent claim
+        # and answer real prod users' jobs. Must NOT start with "ch." — that prefix is claimed
+        # by the channel-admin JWT branch in worker/index.js and would 401. Issue as
+        # "vag_" + 32 hex.
+        VIVA_AG_API_TOKEN: ${env(VIVA_AG_API_TOKEN)}
+        # Generous on dev: the code default (3/day, handlers/viva_ag.js) makes the feature
+        # untestable after three runs — hit live during dev testing. Prod sets its own value
+        # (10) in s-prod.yaml.
+        VIVA_AG_MAX_JOBS_PER_DAY: "50"
         GCN_API_BASE_URL: "https://edge-dev.gcn.net"
         GCN_SERVICE_TOKEN: ${env(GCN_SERVICE_TOKEN)}
         OSS_REGION: "oss-cn-shanghai"

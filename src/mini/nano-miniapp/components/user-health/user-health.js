@@ -228,6 +228,7 @@ const T = {
     tests: '次检测',
     noBmData: '暂无生物标志物数据。', noHistory: '暂无检测记录。',
     guestHealthCta: '激活账户后，查看您的健康数据与生物年龄',
+    agTabTwin: '数字孪生', agTabAg: 'Viva AG',
     guestJoinBtn: '激活账户',
     editProfile: '编辑资料', changeAvatar: '换头像', save: '保存', cancel: '取消',
     name: '姓名', otherPlaceholder: '请说明', saveOk: '已保存', saveFail: '保存失败',
@@ -350,6 +351,7 @@ const T = {
     tests: 'tests',
     noBmData: 'No biomarker data available yet.', noHistory: 'No test history yet.',
     guestHealthCta: 'Activate your account to view your health data and Bio Age',
+    agTabTwin: 'Digital Twin', agTabAg: 'Viva AG',
     guestJoinBtn: 'Activate Account',
     editProfile: 'Edit Profile', changeAvatar: 'Photo', save: 'Save', cancel: 'Cancel',
     name: 'Name', otherPlaceholder: 'Please specify', saveOk: 'Saved', saveFail: 'Save failed',
@@ -1090,11 +1092,17 @@ Component({
     mode:    { type: String,  value: 'self' },
     isGuest: { type: Boolean, value: false },
     theme:   { type: String,  value: 'dark' },
+    // Whether this user holds an active Viva AG add-on. Cosmetic only — it decides whether the
+    // subtab strip renders; every AG endpoint re-checks entitlement server-side. Never passed
+    // by pages/coach/coach.wxml, so a coach viewing a client defaults to false.
+    vivaAgEnabled: { type: Boolean, value: false },
   },
 
   data: {
     t: {},
     isZh: true,
+    healthSubTab: 'twin',
+    showAgTab: false,
     bioLoading: true,
     bAge: null,
     cAge: null,
@@ -1240,6 +1248,15 @@ Component({
     },
     'mood': function() {
       this._refreshAvatarDisplay()
+    },
+    // Self view only: a coach has no upload story and no notification channel for results, and
+    // these are the most sensitive documents in the system.
+    'vivaAgEnabled, mode, isGuest': function(enabled, mode, isGuest) {
+      const showAgTab = !!enabled && mode === 'self' && !isGuest
+      const patch = { showAgTab }
+      // Losing entitlement while parked on the AG tab would otherwise leave a blank pane.
+      if (!showAgTab && this.data.healthSubTab !== 'twin') patch.healthSubTab = 'twin'
+      this.setData(patch)
     },
   },
 
@@ -2150,6 +2167,10 @@ Component({
 
     onGuestTap() {
       this.triggerEvent('guesttap')
+    },
+
+    switchHealthSubTab(e) {
+      this.setData({ healthSubTab: e.currentTarget.dataset.tab })
     },
 
     _req(url, method = 'GET', data = null) {

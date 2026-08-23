@@ -1,0 +1,508 @@
+# Viva AG — External Agent API
+
+Version 1 · bundle_version 1
+
+This is the complete contract between Waven Nano and the external **Viva AG** (Advanced
+Generation) agent. Nano holds a queue of analysis jobs; your agent **pulls** from it, reads a
+digital-twin bundle plus the user's uploaded medical documents, and posts a result back. Nano
+delivers that result into the user's chat.
+
+You never need to expose a public endpoint. Everything is outbound from your side.
+
+---
+
+## 1. Authentication
+
+Every request carries a static service token:
+
+```
+Authorization: Bearer <VIVA_AG_API_TOKEN>
+```
+
+- **Dev and prod have different tokens.** They point at different databases and different real
+  users. Confirm which one you are holding with `GET /api/viva-ag/ping` before doing anything.
+- The token is restricted to the paths in this document. Any other path returns **403
+  Forbidden**, even with a valid token.
+- The token must not begin with `ch.` — that prefix is reserved for a different credential type
+  and would be rejected. Tokens are issued as `vag_` + 32 hex characters.
+
+Base URLs:
+
+| Environment | Base |
+|---|---|
+| dev  | `https://nano-dev.gcn.net/api` |
+| prod | `https://nano.gcn.net/api` |
+
+### The per-job token
+
+Claiming a job returns a second credential, `result_token`. It is a **fencing token**, not a
+session: it is regenerated every time the job is claimed, and it is the only thing that
+authorises reading that job's twin bundle or submitting its result.
+
+- **GET** endpoints: send it as `X-Viva-Ag-Job-Token: <result_token>`.
+- **POST** endpoints: send it as a `result_token` field in the JSON body.
+
+It is a header rather than a query parameter on GET because query strings are recorded in access
+logs and this token unlocks a complete medical record.
+
+If your lease expires and another worker re-claims the job, your token stops working
+(`invalid_token`). That is the mechanism that guarantees two workers can never both write a
+result for the same job — there is no separate idempotency key to manage.
+
+---
+
+## 2. Response conventions
+
+Every response is HTTP **200** with a JSON body, including routine failures. Branch on the body,
+not the status code. Only an auth failure (401/403) or a genuine server fault (500) is non-200.
+
+```jsonc
+{ "success": true,  ... }
+{ "success": false, "reason": "job_not_found", "error": "human-readable detail" }
+```
+
+### Reason vocabulary
+
+| reason | meaning |
+|---|---|
+| `missing_params` | a required field was absent or malformed |
+| `job_not_found` | no job with that `job_uid` |
+| `invalid_token` | wrong `result_token` — usually means your lease expired and the job was re-claimed |
+| `lease_expired` | your lease deadline passed; heartbeat more often or request a longer lease |
+| `job_not_claimable` | the job is not in `claimed`/`processing` |
+| `job_already_completed` | a terminal result was already recorded |
+| `document_not_found` | the document is not in this job's snapshot, or was deleted |
+| `result_too_large` | `result` exceeds 512 KB serialized — use `result_oss_key` instead |
+| `invalid_result_key` | `result_oss_key` was not one minted for this job |
+| `internal_error` | unexpected server fault |
+
+---
+
+## 3. Lifecycle
+
+```
+  claim  ──►  twin-bundle  ──►  [heartbeat …]  ──►  result   (or fail)
+    │              │                                   │
+    └── job:null   └── documents downloaded            └── delivered to the user's chat
+        (queue empty; poll again)                          directly from OSS
+```
+
+Statuses: `queued` → `claimed` → `processing` → `completed` | `failed`. A job whose lease
+expires goes back to `queued` if it has attempts left, or terminally `failed` if not (in which
+case the user is told the analysis didn't finish).
+
+`attempts` increments on **every claim**, so a run that crashes at hour three burns one. Default
+`max_attempts` is 3.
+
+---
+
+## 4. Endpoints
+
+### `GET /viva-ag/ping`
+
+Confirm token and environment. Do this first.
+
+```bash
+curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
+  https://nano-dev.gcn.net/api/viva-ag/ping
+```
+
+```json
+{ "success": true, "service": "viva-ag", "env": "dev",
+  "bundle_version": 1, "queue_depth": 2, "server_time": "2026-08-23 17:04:11" }
+```
+
+---
+
+### `POST /viva-ag/jobs/claim`
+
+Atomically takes the head of the queue. Two workers polling simultaneously get two different
+jobs, never the same one.
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"worker_id":"ag-worker-1","lease_seconds":3600}' \
+  https://nano-dev.gcn.net/api/viva-ag/jobs/claim
+```
+
+| field | notes |
+|---|---|
+| `worker_id` | free-text, for log correlation |
+| `lease_seconds` | 60–21600, default 3600 |
+
+Empty queue:
+
+```json
+{ "success": true, "job": null }
+```
+
+Claimed:
+
+```json
+{ "success": true,
+  "job": {
+    "job_uid": "0d1f…",
+    "command": "看看我的体检报告有没有需要注意的地方",
+    "command_key": "document_review",
+    "params": {},
+    "attempt": 1,
+    "max_attempts": 3,
+    "queued_at": "2026-08-23 16:58:02",
+    "lease_expires_at": "2026-08-23 18:04:11",
+    "result_token": "9c2f…",
+    "document_count": 4,
+    "twin_bundle_url": "/api/viva-ag/twin-bundle?job_uid=0d1f…"
+  } }
+```
+
+`command_key` is one of `full_analysis`, `document_review`, `risk_screen`, or `null` when the
+user wrote a free-text request only. `command` carries the user's own words when they typed any;
+if they only tapped a preset, it repeats the `command_key`. Treat `command_key` as the intent and
+`command` as the elaboration.
+
+There is deliberately **no user identifier** in this response. `job_uid` is the only handle.
+
+---
+
+### `GET /viva-ag/twin-bundle?job_uid=…`
+
+The subject's complete digital twin. The first call moves the job to `processing`.
+
+```bash
+curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
+     -H "X-Viva-Ag-Job-Token: $RESULT_TOKEN" \
+  "https://nano-dev.gcn.net/api/viva-ag/twin-bundle?job_uid=$JOB_UID"
+```
+
+Shape:
+
+```jsonc
+{
+  "success": true,
+  "bundle_version": 1,
+  "generated_at": "2026-08-23 17:05:40",
+  "job": { "job_uid": "…", "command": "…", "command_key": "…", "params": {} },
+
+  // Pseudonymous by design: no user id, name, phone or openid anywhere in the bundle.
+  "subject": { "ref": "<job_uid>", "age": 41, "gender": "male", "language": "zh",
+               "height_cm": 178, "bmi": 22.4,
+               "health_conditions": [], "health_conditions_other": null },
+
+  // The four canonical Digital Twin layers.
+  "layers": {
+    "precision_testing": {          // Kino chip biomarker tests
+      "latest":  { "validated": {…}, "bioage_profile": {…}, "tested_at": "…" },
+      "total_tests": 63,
+      "history": [ { "tested_at": "…", "validated": {…}, "bioage_profile": {…} } ]
+    },
+    "daily_monitoring": {           // wearable ring / band
+      "health_twin": { "avg_hrv_ms": …, "avg_resting_hr": …, "avg_sleep_hours": …,
+                       "avg_daily_steps": …, "latest_weight_kg": …, "trend_data": {…},
+                       "data_coverage": {…} },
+      "weight_history": [ { "weight_kg": 72.4, "tested_at": "…" } ]
+    },
+    "medical_records": {
+      "health_reports": [ { "report_date": "…", "institution": "…", "observations": [ … ] } ],
+      "lab_panel": {…}, "lab_date": "…",
+      "documents": [ /* see section 5 */ ]
+    },
+    "personal_profile": {
+      "bio_data": {…},
+      "questionnaire_context": "…formatted Q&A text…",
+      "memory_facts": [ { "category": "allergy", "fact": "…", "last_mentioned_at": "…" } ]
+    }
+  },
+
+  // Interventions are NOT a twin layer — they are what the user DOES, not what they ARE.
+  "interventions": {
+    "active_health_plans": [ … ], "nutrition_schedule": [ … ],
+    "dot_inventory": [ … ], "reminders": [ … ]
+  },
+
+  "dots_formulary": [ … ]   // the full Dots catalogue, for grounding any recommendation
+}
+```
+
+**Biomarker values are always the `validated` set**, never raw reader output. Do not attempt to
+reconstruct unvalidated values; the platform's own BioAge figures are computed from `validated`,
+so anything else would contradict what the user already sees.
+
+**Timestamps are Shanghai local** (`YYYY-MM-DD HH:mm:ss`), not UTC ISO.
+
+If one data source is unavailable, that section is `null` or `[]` rather than the whole request
+failing. A partial twin is still worth analyzing — but say so in your summary rather than
+inferring around a gap.
+
+---
+
+## 5. Documents (large file download)
+
+Each entry in `layers.medical_records.documents`:
+
+```json
+{ "document_id": 12,
+  "filename": "2026年度体检报告.pdf",
+  "doc_type": "hospital_record",
+  "doc_date": "2026-03-11",
+  "institution": "上海市第一人民医院",
+  "note": null,
+  "content_type": "application/pdf",
+  "size_bytes": 18410224,
+  "etag": "9f86d081884c7d659a2feaa0c55ad015",
+  "uploaded_at": "2026-03-12 09:14:00",
+  "url": "https://waven-nano.oss-cn-shanghai.aliyuncs.com/…&Signature=…",
+  "url_expires_at": "2026-08-23 23:05:40",
+  "supports_range": true }
+```
+
+`doc_type` is one of `hospital_record`, `lab_report`, `imaging`, `discharge_summary`,
+`prescription`, `other`.
+
+**Documents are not always PDFs.** A "health record" is whatever the clinic handed the user, so
+expect any of these. **Branch on `content_type`, not on the filename.**
+
+| Kind | `content_type` |
+|---|---|
+| PDF | `application/pdf` |
+| Word | `application/msword`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
+| Excel | `application/vnd.ms-excel`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` |
+| PowerPoint | `application/vnd.ms-powerpoint`, `application/vnd.openxmlformats-officedocument.presentationml.presentation` |
+| Image | `image/jpeg`, `image/png`, `image/heic`, `image/heif`, `image/webp`, `image/bmp`, `image/gif` |
+
+Practical notes:
+
+- **Images need OCR, not parsing.** A photographed lab printout is common — often skewed, cropped
+  or poorly lit. Treat a low-confidence read as missing data and say so in your summary rather
+  than guessing at a number.
+- **Excel files often hold the actual result table**, one row per marker; that is usually higher
+  fidelity than the same panel embedded in a PDF.
+- **`.doc` and `.xls` (pre-2007 binary) do appear** — Chinese hospital systems still emit them.
+  If your parser only handles OOXML, fail that document explicitly rather than silently reading
+  nothing from it.
+- `doc_type` (the semantic category above) is what the **user** said the file is; `content_type`
+  is what it actually is. They are independent — a `lab_report` may well be a `.jpg`.
+
+### Download rules
+
+- **`url` points directly at object storage, not at nano.** Bytes never pass through the API, so
+  there is no practical size limit on a download. Fetch it as an ordinary HTTPS GET; do not send
+  your `Authorization` header to it (the signature is the credential).
+- **Range requests are supported.** Use them. A large PDF can be chunked, streamed, or resumed
+  after a dropped connection instead of restarted:
+  ```bash
+  curl -r 0-1048575 -o part0 "$URL"        # first 1 MiB → 206 Partial Content
+  curl -C - -o report.pdf "$URL"           # resume an interrupted download
+  ```
+- **Verify with `etag` and `size_bytes`.** `etag` is the object's lowercase MD5 for a normal
+  upload; if the bytes you received don't match, you got a truncated transfer, not a corrupt
+  file.
+- The response carries a real `Content-Type` (`application/pdf` for a PDF) and a
+  `Content-Disposition` with the original filename, RFC 5987 encoded — these are commonly
+  Chinese.
+- **URLs expire in 6 hours.** For a long run, re-mint rather than reusing a stale link:
+
+  ```bash
+  curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
+       -H "X-Viva-Ag-Job-Token: $RESULT_TOKEN" \
+    "https://nano-dev.gcn.net/api/viva-ag/document-url?job_uid=$JOB_UID&document_id=12"
+  ```
+  `GET /viva-ag/document-url` returns the same entry shape with a fresh signature. It is
+  re-callable as often as you like.
+- A job can only reach documents that existed **when it was enqueued**. A document uploaded
+  mid-run is not in scope, and a document the user deletes mid-run keeps working for you.
+
+---
+
+## 5b. Bulk history — inventory and paginated resources
+
+The twin bundle is a **digest**. It carries the latest snapshot, recent history and the full
+document list, but not the complete raw history — a `document_review` job needs none of that, and
+inlining it would grow the payload without bound as a subject accumulates tenure.
+
+Instead the bundle carries an **`inventory`** block: what exists, how much, over what period, and
+which endpoint serves it.
+
+```jsonc
+"inventory": {
+  "kino_tests":    { "count": 66,   "first": "...", "last": "...", "endpoint": "/api/viva-ag/biomarker-history" },
+  "health_events": { "count": 3523, "first": "...", "last": "...", "endpoint": "/api/viva-ag/health-events",
+                     "by_category": { "vitals": {"count":3423,...}, "sleep": {...}, "activity": {...} } },
+  "lab_results":   { "count": 207,  ... },
+  "health_reports":{ "count": 2,    ... },
+  "documents":     { "count": 4,    "endpoint": "(included in layers.medical_records.documents)" },
+  "chat_messages": { "count": 1065, "endpoint": "/api/viva-ag/chat-history",
+                     "note": "Not included in this bundle. Opt-in per job; defaults to a recent window." }
+}
+```
+
+Read it before deciding what to pull. `vitals` typically outnumbers every other event category by
+~50x, so a job that only cares about sleep should filter rather than drain everything.
+
+### Endpoints
+
+All take `job_uid` + the `X-Viva-Ag-Job-Token` header, like the twin bundle.
+
+| Endpoint | Extra parameters |
+|---|---|
+| `GET /viva-ag/health-events` | `category`, `from`, `to` |
+| `GET /viva-ag/lab-results` | — (first page also includes up to 500 `lab_events`) |
+| `GET /viva-ag/biomarker-history` | `test_type=kino_chip` (default) or `body_composition` |
+| `GET /viva-ag/chat-history` | `days` (default **90**; `days=all` for the whole history) |
+
+All accept `limit` (default 200, max 1000) and `cursor`, and all return the same envelope:
+
+```jsonc
+{ "success": true, "count": 200, "has_more": true,
+  "next_cursor": "eyJ...", "snapshot_id": "117685", "items": [ ... ] }
+```
+
+### Fetching everything
+
+Page until `next_cursor` is null:
+
+```bash
+CURSOR=""; while :; do
+  R=$(curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" -H "X-Viva-Ag-Job-Token: $TOK" \
+      "$BASE/viva-ag/health-events?job_uid=$JOB&limit=1000&cursor=$CURSOR")
+  echo "$R" | jq -c '.items[]' >> events.ndjson
+  CURSOR=$(echo "$R" | jq -r '.next_cursor // empty'); [ -z "$CURSOR" ] && break
+done
+```
+
+**A drain is a consistent snapshot.** The first page pins the highest row id that exists at that
+moment and the cursor carries it, so anything written while you are paging is excluded rather
+than half-included. This matters because these tables are append-only but *not* append-in-order:
+a wearable sync writes a batch of events stamped with the times the measurements were taken,
+which can be hours old. Without the pin, a row inserted mid-drain and backdated past your cursor
+would be skipped silently.
+
+The consequence to plan for: **a completed drain reflects the moment it started, not the moment
+it finished.** `snapshot_id` tells you which point that was; drain again if you need what arrived
+since.
+
+### Chat history is opt-in
+
+It is deliberately **not** in the bundle. The bundle is otherwise pseudonymous — no name, phone or
+user id anywhere — and transcripts routinely contain names, family details and locations, so
+requesting one is a deliberate act. It defaults to the last 90 days; `days=all` widens it.
+
+Durable personal facts the subject has stated (allergies, dietary restrictions, goals) are already
+in `layers.personal_profile.memory_facts` without needing the transcript at all — check there
+first.
+
+`role` is `user`, `ai` or `coach`. UI affordance rows are excluded.
+
+---
+
+## 6. Heartbeat
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"job_uid":"'$JOB_UID'","result_token":"'$RESULT_TOKEN'",
+       "progress_note":"读取第 3/4 份报告","extend_seconds":3600}' \
+  https://nano-dev.gcn.net/api/viva-ag/jobs/heartbeat
+```
+
+→ `{ "success": true, "lease_expires_at": "2026-08-23 19:12:00" }`
+
+Heartbeat well before `lease_expires_at`. If the lease lapses, the job is requeued and your
+token dies. `progress_note` is shown to the user in the Viva AG panel, so write it for them, in
+their language — it is not a debug channel.
+
+---
+
+## 7. Submitting a result
+
+### Optional: upload a long-form artifact first
+
+For a full report (PDF, markdown, anything), get a presigned upload URL:
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"job_uid":"'$JOB_UID'","result_token":"'$RESULT_TOKEN'","filename":"report.pdf"}' \
+  https://nano-dev.gcn.net/api/viva-ag/result-upload-url
+```
+
+→ `{ "success": true, "oss_key": "viva-ag-results/<job_uid>/…pdf", "put_url": "…",
+     "put_content_type": "application/octet-stream", "expires_in": 3600 }`
+
+```bash
+curl -X PUT -H "Content-Type: $PUT_CONTENT_TYPE" \
+     --data-binary @report.pdf "$PUT_URL"
+```
+
+**Send exactly the `put_content_type` value that was returned** — it is part of what was signed,
+and any other value fails with `SignatureDoesNotMatch`. It is derived from your `filename`'s
+extension (`application/pdf` for `.pdf`, and so on), because object storage here refuses a
+content-type override at download time, so the type has to be fixed at upload.
+
+### Then submit
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"job_uid":"…","result_token":"…",
+       "summary":"我看完了您的四份报告…",
+       "result":{"findings":[…],"confidence":"high"},
+       "result_oss_key":"viva-ag-results/…/ab12.pdf"}' \
+  https://nano-dev.gcn.net/api/viva-ag/jobs/result
+```
+
+| field | required | notes |
+|---|---|---|
+| `summary` | yes | **This becomes a chat message the user reads as Viva speaking.** Write it in the subject's `language`, in Viva's voice, addressed to the user. Max 4000 chars. |
+| `result` | no | structured findings, kept for the panel and future reference. Max 512 KB serialized. |
+| `result_oss_key` | no | must be a key minted by `/result-upload-url` for **this** job |
+
+→ `{ "success": true, "job_uid": "…", "delivered": true, "notification_id": 8812 }`
+
+Resubmitting the identical request is safe: `{ "success": true, "already_completed": true, … }`
+with no second message sent to the user.
+
+Note that `summary` is sanitized on ingest — the platform's own display-card markup (`:::`
+fences) is stripped, since an external system emitting it would be able to render arbitrary UI
+in the user's chat. Send plain text and normal paragraphs.
+
+### Reporting a failure
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"job_uid":"…","result_token":"…","reason":"pdf_unreadable","retryable":false}' \
+  https://nano-dev.gcn.net/api/viva-ag/jobs/fail
+```
+
+`retryable: true` puts the job back on the queue if it has attempts left
+(`{"requeued": true}`). Otherwise the job fails terminally and the user gets a short apology in
+their own language. Prefer a real `summary` explaining what you could and couldn't determine
+over a terminal failure — a partial answer is far more useful to the user than nothing.
+
+---
+
+## 8. Limits
+
+| | |
+|---|---|
+| Concurrent jobs per user | 1 (enforced at enqueue) |
+| Jobs per user per day | 3 |
+| Lease | 60s – 6h, default 1h, extendable by heartbeat |
+| Attempts per job | 3 by default |
+| `summary` | 4000 characters |
+| `result` | 512 KB serialized |
+| Document upload (user side) | 20 MB per file |
+| Document download | no limit — direct from object storage, Range supported |
+| Document URL lifetime | 6 hours, re-mintable |
+
+## 9. Recommended worker loop
+
+1. `POST /viva-ag/jobs/claim`. On `job: null`, sleep ~30s and repeat.
+2. `GET /viva-ag/twin-bundle`.
+3. Download the documents you need, using Range for anything large; verify against `etag`.
+4. Heartbeat every few minutes with a user-facing `progress_note`.
+5. Optionally upload a report artifact.
+6. `POST /viva-ag/jobs/result` — or `/jobs/fail` if you genuinely cannot produce anything.
+
+Treat `invalid_token` at any step as "I lost this job": stop work on it and claim again.

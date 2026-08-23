@@ -17,4 +17,13 @@ function hasActiveVivaAccess({ persona_override_type, persona_override_expires_a
         && new Date(persona_override_expires_at) > new Date();
 }
 
-module.exports = { resolveEffectivePersona, hasActiveVivaAccess };
+// Viva AG (Advanced Generation) add-on gate. Deliberately independent of
+// persona_override_type: AG is an ADD-ON on top of Viva, not a third persona — the regular
+// chatbox stays powered by viva, and viva-ag is only active inside the health tab's AG subtab.
+// Never use this alone: every real gate composes it with hasActiveVivaAccess() above, so AG
+// access means "an active Viva grant AND an active AG add-on".
+function hasActiveVivaAgAccess({ viva_ag_expires_at }) {
+    return !!viva_ag_expires_at && new Date(viva_ag_expires_at) > new Date();
+}
+
+module.exports = { resolveEffectivePersona, hasActiveVivaAccess, hasActiveVivaAgAccess };

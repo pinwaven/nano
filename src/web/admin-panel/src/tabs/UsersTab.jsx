@@ -1294,6 +1294,8 @@ function UserCreditModal({ user, onClose }) {
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [agDays, setAgDays] = useState(30);
+  const [agNote, setAgNote] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1426,7 +1428,9 @@ function UserCreditModal({ user, onClose }) {
 // priority over the user's channel default persona while active. Shared between
 // UsersTab's row action and the superadmin-only cross-channel PersonaSubscriptionsTab.
 
-const PERSONA_LABELS = { nano: 'Nano', viva: 'Viva' };
+// 'viva_ag' never appears in persona_override_type (that stays nano|viva) — it only shows up
+// as a persona_subscription_grants.persona_type in the history table below.
+const PERSONA_LABELS = { nano: 'Nano', viva: 'Viva', viva_ag: 'Viva AG' };
 const DURATION_PRESETS = [30, 90, 365];
 
 function PersonaSubscriptionModal({ user, onClose }) {
@@ -1490,8 +1494,46 @@ function PersonaSubscriptionModal({ user, onClose }) {
     }
   }
 
+  // Viva AG is an ADD-ON on top of an active Viva subscription, granted through its own
+  // endpoint — it is not a persona_override_type value, so it cannot go through the form above.
+  async function handleAgGrant(e) {
+    e.preventDefault();
+    if (!agNote.trim()) { setFormError(isZh ? '备注不能为空' : 'Note is required'); return; }
+    if (!agDays || agDays <= 0) { setFormError(isZh ? '请输入有效天数' : 'Enter a valid number of days'); return; }
+    setFormError('');
+    setSaving(true);
+    try {
+      await axios.post(`/api/admin/users/${user.user_id}/viva-ag-subscription`, {
+        duration_days: agDays, note: agNote.trim(),
+      });
+      setAgNote('');
+      await load();
+    } catch (e2) {
+      setFormError(e2.response?.data?.error || ps.error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleAgRevoke() {
+    const revokeNote = window.prompt(ps.revokeNotePrompt);
+    if (revokeNote === null) return;
+    if (!revokeNote.trim()) { setFormError(isZh ? '备注不能为空' : 'Note is required'); return; }
+    setSaving(true);
+    setFormError('');
+    try {
+      await axios.delete(`/api/admin/users/${user.user_id}/viva-ag-subscription`, { data: { note: revokeNote.trim() } });
+      await load();
+    } catch (e2) {
+      setFormError(e2.response?.data?.error || ps.error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const fmtDateLocal = (d) => d ? new Date(d).toLocaleString(isZh ? 'zh-CN' : 'en-US', { dateStyle: 'short', timeStyle: 'short' }) : '—';
   const overrideActive = data && data.persona_override_type && data.persona_override_expires_at && new Date(data.persona_override_expires_at) > new Date();
+  const agActive = data && data.viva_ag_expires_at && new Date(data.viva_ag_expires_at) > new Date();
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -1524,6 +1566,16 @@ function PersonaSubscriptionModal({ user, onClose }) {
                   </button>
                 </div>
               )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginTop: 4, paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
+                <span style={{ color: 'var(--muted)' }}>Viva AG:</span>
+                {agActive
+                  ? <><Badge color="#8b5cf6">{isZh ? '已开通' : 'Active'}</Badge>
+                      <span style={{ color: 'var(--muted)' }}>{ps.expires} {fmtDateLocal(data.viva_ag_expires_at)}</span>
+                      <button type="button" className="btn-secondary" style={{ fontSize: 12 }} disabled={saving} onClick={handleAgRevoke}>
+                        {ps.revoke}
+                      </button></>
+                  : <span style={{ color: 'var(--muted)' }}>{isZh ? '未开通' : 'Not active'}</span>}
+              </div>
             </div>
 
             <div style={{ maxHeight: 220, overflowY: 'auto', borderBottom: '1px solid var(--border)' }}>
@@ -1599,6 +1651,38 @@ function PersonaSubscriptionModal({ user, onClose }) {
                   {saving ? ps.saving : ps.submit}
                 </button>
               </div>
+            </form>
+
+            <form onSubmit={handleAgGrant} style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>
+                {isZh ? '开通 Viva AG 深度分析' : 'Grant Viva AG deep analysis'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: -6 }}>
+                {isZh
+                  ? '在 Viva 订阅之上的附加权益：健康档案上传与外部深度分析。需要用户同时持有有效的 Viva 订阅。'
+                  : 'An add-on on top of a Viva subscription: health-record uploads and external deep analysis. The user must also hold an active Viva subscription.'}
+              </div>
+              <div className="form-row">
+                <label className="form-label">{ps.duration}</label>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {DURATION_PRESETS.map(d => (
+                    <button key={d} type="button"
+                      className={agDays === d ? 'btn-primary' : 'btn-secondary'}
+                      style={{ fontSize: 12, padding: '4px 10px' }}
+                      onClick={() => setAgDays(d)}>{d}</button>
+                  ))}
+                  <input className="form-input" type="number" min="1" style={{ width: 90 }}
+                    value={agDays} onChange={e => setAgDays(parseInt(e.target.value, 10) || 0)} />
+                </div>
+              </div>
+              <div className="form-row">
+                <label className="form-label">{ps.note}</label>
+                <input className="form-input" value={agNote} onChange={e => setAgNote(e.target.value)}
+                  placeholder={ps.notePlaceholder} />
+              </div>
+              <button type="submit" className="btn-primary" disabled={saving}>
+                {saving ? ps.saving : (agActive ? (isZh ? '延长 Viva AG' : 'Extend Viva AG') : (isZh ? '开通 Viva AG' : 'Grant Viva AG'))}
+              </button>
             </form>
           </>
         )}
