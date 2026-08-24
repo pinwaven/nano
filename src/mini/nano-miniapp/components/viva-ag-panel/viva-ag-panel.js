@@ -5,6 +5,7 @@
 // Self-contained on purpose (own i18n table, own _req): keeping it out of user-health.js is
 // what stops that already-1000-line component from growing another feature's worth of state.
 const { BASE } = require('../../utils/config.js')
+const { mdToHtml, MD_TAG_STYLE } = require('../../utils/markdown.js')
 const app = getApp()
 
 const T = {
@@ -42,6 +43,9 @@ const T = {
     failed: '这次分析没能完成，您可以重新发起。',
     openReport: '查看完整报告',
     opening: '打开中…',
+    reports: '分析报告',
+    reportTruncated: '（报告较长，此处仅显示前一部分，可下载完整文件查看）',
+    errReportEmpty: '报告内容为空',
     cancel: '取消这次分析',
     presetFull: '全面分析',
     presetDocs: '解读档案',
@@ -95,6 +99,9 @@ const T = {
     failed: "This analysis didn't finish. You can start a new one.",
     openReport: 'Open full report',
     opening: 'Opening…',
+    reports: 'Reports',
+    reportTruncated: '(This report is long — only the first part is shown here. Download the file for the full text.)',
+    errReportEmpty: 'This report is empty',
     cancel: 'Cancel this analysis',
     presetFull: 'Full analysis',
     presetDocs: 'Review records',
@@ -128,6 +135,17 @@ const MAX_BYTES = 20 * 1024 * 1024
 const DOC_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'heic', 'heif', 'webp', 'bmp', 'gif']
 const ALLOWED_EXTENSIONS = DOC_EXTENSIONS.concat(IMAGE_EXTENSIONS)
+
+// Result artifacts the agent can attach, mirroring RESULT_CONTENT_TYPES in
+// worker/handlers/viva_ag.js. Two presentation paths, because wx.openDocument supports NEITHER
+// .md nor .txt (its fileType list is doc/docx/xls/xlsx/ppt/pptx/pdf only) — handing it a
+// markdown file just fails in the user's hands. So a PDF opens in the system viewer and text
+// renders in-app.
+const RESULT_TEXT_EXTENSIONS = ['md', 'txt']
+
+// A report is prose, not a dataset: past this the in-app viewer is the wrong tool, and the user
+// is told to download the file instead of being handed a page that janks.
+const MAX_REPORT_CHARS = 120000
 
 const extOf = (name) => String(name || '').includes('.')
   ? String(name).split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -163,6 +181,11 @@ Component({
     expiryDisplay: '',
     detailJob: null,
     downloadingResult: false,
+    // In-app viewer for .md/.txt artifacts (see RESULT_TEXT_EXTENSIONS).
+    reportTitle: '',
+    reportHtml: '',
+    reportTruncated: false,
+    mdTagStyle: MD_TAG_STYLE,
   },
 
   lifetimes: {
@@ -441,6 +464,11 @@ Component({
     _decorate(job) {
       return {
         ...job,
+        files: (job.result_files || []).map(f => ({
+          ...f,
+          extLabel: String(f.ext || '').toUpperCase(),
+          sizeLabel: this._sizeLabel(f.size_bytes),
+        })),
         statusLabel: this._statusLabel(job.status),
         summaryPreview: job.result_summary
           ? (job.result_summary.length > 60 ? job.result_summary.slice(0, 60) + '…' : job.result_summary)
@@ -549,27 +577,81 @@ Component({
 
     closeJob() { this.setData({ detailJob: null }) },
 
-    async downloadResult() {
-      const job = this.data.detailJob
-      if (!job || this.data.downloadingResult) return
-      const { userId } = this.properties
+    // One handler for both surfaces (the chips on a job card and the rows in its detail sheet),
+    // and for both artifact shapes. Files are addressed by INDEX — the server never hands the
+    // client an oss_key — and the URL is minted fresh per tap because it lives for 300s.
+    async openResultFile(e) {
+      if (this.data.downloadingResult) return
+      const ds = e.currentTarget.dataset
+      const job = this.data.jobs.find(j => j.job_uid === ds.uid) || this.data.detailJob
+      if (!job) return
+      const index = Number(ds.index) || 0
+      const t = this.data.t
       this.setData({ downloadingResult: true })
       try {
         const res = await this._req(
-          `${BASE}/api/viva-ag/jobs/result-url?openid=${encodeURIComponent(userId)}&job_uid=${encodeURIComponent(job.job_uid)}`)
-        if (!res.data?.success) throw new Error('no url')
+          `${BASE}/api/viva-ag/jobs/result-url?openid=${encodeURIComponent(this.properties.userId)}` +
+          `&job_uid=${encodeURIComponent(job.job_uid)}&index=${index}`)
+        if (!res.data?.success) throw new Error(res.data?.reason || 'no url')
+        const { url, file_type: ft, filename } = res.data
         const dl = await new Promise((resolve, reject) => {
-          wx.downloadFile({ url: res.data.url, success: resolve, fail: reject })
+          wx.downloadFile({
+            url,
+            // downloadFile resolves for any HTTP status; a 403 from an expired signature would
+            // otherwise be handed to openDocument as a "file".
+            success: (r) => (r.statusCode === 200 ? resolve(r) : reject(new Error('http ' + r.statusCode))),
+            fail: reject,
+          })
         })
         this.setData({ downloadingResult: false })
-        const ft = res.data.file_type
-        wx.openDocument({ filePath: dl.tempFilePath, fileType: DOC_EXTENSIONS.includes(ft) ? ft : 'pdf', showMenu: true,
-          fail: () => this._toast(this.data.t.errOpen) })
+        if (RESULT_TEXT_EXTENSIONS.includes(ft)) return this._showTextReport(dl.tempFilePath, ft, filename)
+        wx.openDocument({
+          filePath: dl.tempFilePath,
+          fileType: DOC_EXTENSIONS.includes(ft) ? ft : 'pdf',
+          showMenu: true,
+          fail: () => this._toast(t.errOpen),
+        })
       } catch (err) {
         this.setData({ downloadingResult: false })
-        this._toast(this.data.t.errGeneric)
+        this._toast(t.errGeneric)
       }
     },
+
+    // .md / .txt render in-app: wx.openDocument cannot open either (its fileType list is
+    // doc/docx/xls/xlsx/ppt/pptx/pdf), so handing it a markdown file just fails.
+    _showTextReport(filePath, ext, filename) {
+      const t = this.data.t
+      wx.getFileSystemManager().readFile({
+        filePath,
+        encoding: 'utf8',
+        success: (r) => {
+          let text = String(r.data || '')
+          if (!text.trim()) return this._toast(t.errReportEmpty)
+          const truncated = text.length > MAX_REPORT_CHARS
+          if (truncated) text = text.slice(0, MAX_REPORT_CHARS)
+          this.setData({
+            reportTitle: filename || '',
+            reportHtml: ext === 'md' ? mdToHtml(this._neutralizeLinks(text)) : this._plainToHtml(text),
+            reportTruncated: truncated,
+          })
+        },
+        fail: () => this._toast(t.errOpen),
+      })
+    },
+
+    // This file was written by an EXTERNAL system. mp-html's link handler navigates in-app for
+    // any href without a scheme (node.js: wx.navigateTo, falling back to switchTab), so a
+    // markdown link in a report could send the user to an arbitrary page of this miniapp. The
+    // target is kept visible as plain text — nothing is hidden, it just isn't tappable.
+    _neutralizeLinks(md) {
+      return String(md).replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_m, text, href) => `${text} (${href})`)
+    },
+
+    _plainToHtml(text) {
+      return '<pre>' + text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>'
+    },
+
+    closeReport() { this.setData({ reportHtml: '', reportTitle: '', reportTruncated: false }) },
 
     async cancelJob() {
       const job = this.data.detailJob

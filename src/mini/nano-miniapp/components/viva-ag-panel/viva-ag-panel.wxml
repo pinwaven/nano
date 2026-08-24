@@ -86,6 +86,16 @@
           <text class="ag-job-cmd">{{item.command}}</text>
           <text wx:if="{{item.progress_note}}" class="ag-job-note">{{item.progress_note}}</text>
           <text wx:elif="{{item.result_summary}}" class="ag-job-note">{{item.summaryPreview}}</text>
+
+          <view wx:if="{{item.files.length}}" class="ag-file-chips">
+            <!-- Report artifacts the external agent attached. Surfaced on the card itself, not
+                 only inside the detail sheet, so a finished report is one tap away. -->
+            <view wx:for="{{item.files}}" wx:for-item="f" wx:key="index" class="ag-file-chip"
+                  catchtap="openResultFile" data-uid="{{item.job_uid}}" data-index="{{f.index}}">
+              <text class="ag-file-ext">{{f.extLabel}}</text>
+              <text class="ag-file-name">{{f.filename}}</text>
+            </view>
+          </view>
         </view>
       </view>
     </view>
@@ -108,12 +118,33 @@
       <text wx:elif="{{detailJob.progress_note}}" class="ag-sheet-body">{{detailJob.progress_note}}</text>
       <text wx:else class="ag-sheet-body ag-muted">{{t.inProgress}}</text>
 
-      <view wx:if="{{detailJob.has_result_file}}" class="ag-sheet-btn" bindtap="downloadResult">
-        <text>{{downloadingResult ? t.opening : t.openReport}}</text>
+      <view wx:if="{{detailJob.files.length}}" class="ag-filelist">
+        <text class="ag-filelist-title">{{t.reports}}</text>
+        <view wx:for="{{detailJob.files}}" wx:for-item="f" wx:key="index" class="ag-file-row"
+              bindtap="openResultFile" data-uid="{{detailJob.job_uid}}" data-index="{{f.index}}">
+          <text class="ag-file-ext">{{f.extLabel}}</text>
+          <view class="ag-file-row-main">
+            <text class="ag-file-row-name">{{f.filename}}</text>
+            <text wx:if="{{f.sizeLabel}}" class="ag-file-row-size">{{f.sizeLabel}}</text>
+          </view>
+          <text class="ag-file-row-go">{{downloadingResult ? t.opening : t.openReport}}</text>
+        </view>
       </view>
       <view wx:if="{{detailJob.status === 'queued'}}" class="ag-sheet-btn ag-sheet-btn-ghost" bindtap="cancelJob">
         <text>{{t.cancel}}</text>
       </view>
     </view>
+  </view>
+  <view wx:if="{{reportHtml}}" class="ag-viewer">
+    <!-- In-app viewer for .md/.txt artifacts — wx.openDocument supports neither. -->
+    <view class="ag-viewer-head">
+      <text class="ag-viewer-title">{{reportTitle}}</text>
+      <text class="ag-viewer-close" bindtap="closeReport">✕</text>
+    </view>
+    <scroll-view class="ag-viewer-body" scroll-y="true">
+      <mp-html content="{{reportHtml}}" tag-style="{{mdTagStyle}}" />
+      <text wx:if="{{reportTruncated}}" class="ag-viewer-trunc">{{t.reportTruncated}}</text>
+      <view style="height: 120rpx;"></view>
+    </scroll-view>
   </view>
 </view>

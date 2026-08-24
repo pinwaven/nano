@@ -59,11 +59,23 @@ const MAX_LEASE_SECONDS = 6 * 3600;
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
+// Result-artifact types the agent may upload. Deliberately narrow: the miniapp is the only
+// consumer, and it can only present two shapes — a document wx.openDocument can open, or text
+// it can render itself. Accepting a .zip nano could never show the user would be a worse
+// contract than rejecting it at upload time with unsupported_file_type.
 const RESULT_CONTENT_TYPES = {
-    pdf: 'application/pdf', md: 'text/markdown; charset=utf-8',
-    txt: 'text/plain; charset=utf-8', json: 'application/json',
-    html: 'text/html; charset=utf-8', csv: 'text/csv; charset=utf-8',
+    pdf: 'application/pdf',
+    md: 'text/markdown; charset=utf-8',
+    txt: 'text/plain; charset=utf-8',
 };
+
+// A job may carry several artifacts (typically a rendered PDF plus its .md source). Bounded so a
+// misbehaving agent can't attach a hundred files to one job's detail sheet.
+const MAX_RESULT_FILES = 5;
+
+// Ordering used when picking which file fills the legacy single-file result_oss_key column, and
+// the order files are shown in. A PDF is what a user wants to open first.
+const RESULT_EXT_RANK = { pdf: 0, md: 1, txt: 2 };
 
 const NOTIFY_RESULT = 'viva_ag_result';
 const NOTIFY_FAILED = 'viva_ag_failed';
@@ -84,6 +96,9 @@ const REASONS = {
     DOCUMENT_NOT_FOUND: 'document_not_found',
     RESULT_TOO_LARGE: 'result_too_large',
     INVALID_RESULT_KEY: 'invalid_result_key',
+    UNSUPPORTED_FILE_TYPE: 'unsupported_file_type',
+    RESULT_FILE_MISSING: 'result_file_missing',
+    TOO_MANY_RESULT_FILES: 'too_many_result_files',
     INTERNAL_ERROR: 'internal_error',
 };
 
@@ -172,7 +187,28 @@ function _sanitizeSummary(raw) {
     return text;
 }
 
+// The client references result artifacts by INDEX, never by oss_key — the key is the only thing
+// standing between a signed URL and someone else's medical report, so it never leaves the server.
+// Legacy rows (written before result_files existed) still surface their single file here.
+function _publicResultFiles(row) {
+    const files = Array.isArray(row.result_files) ? row.result_files : null;
+    if (files && files.length) {
+        return files.map((f, index) => ({
+            index,
+            filename: f.filename || `report.${f.ext || 'bin'}`,
+            ext: f.ext || null,
+            size_bytes: f.size_bytes ?? null,
+        }));
+    }
+    if (row.result_oss_key) {
+        const ext = row.result_oss_key.split('.').pop().toLowerCase();
+        return [{ index: 0, filename: `report.${ext}`, ext, size_bytes: null }];
+    }
+    return [];
+}
+
 function _publicJob(row) {
+    const resultFiles = _publicResultFiles(row);
     return {
         job_uid: row.job_uid,
         command: row.command,
@@ -184,7 +220,8 @@ function _publicJob(row) {
         started_at: row.started_at ? formatToShanghai(row.started_at) : null,
         completed_at: row.completed_at ? formatToShanghai(row.completed_at) : null,
         result_summary: row.result_summary || null,
-        has_result_file: !!row.result_oss_key,
+        has_result_file: resultFiles.length > 0,
+        result_files: resultFiles,
         error_reason: row.error_reason || null,
         document_count: Array.isArray(row.document_ids) ? row.document_ids.length : 0,
     };
@@ -339,19 +376,30 @@ async function handleGetVivaAgResultUrl(query) {
         const gate = await requireVivaAgAccess(query?.openid);
         if (!gate.ok) return gate.error;
         const { rows: [job] } = await pool.query(
-            `SELECT job_uid, result_oss_key FROM viva_ag_jobs WHERE job_uid = $1 AND user_id = $2`,
+            `SELECT job_uid, result_oss_key, result_files FROM viva_ag_jobs WHERE job_uid = $1 AND user_id = $2`,
             [query?.job_uid, gate.user.user_id]
         );
         if (!job) return _fail(REASONS.JOB_NOT_FOUND);
-        if (!job.result_oss_key) return _fail(REASONS.DOCUMENT_NOT_FOUND, 'This analysis has no attached file');
-        const ext = job.result_oss_key.split('.').pop().toLowerCase();
+
+        // Files are addressed by index (see _publicResultFiles). Index 0 with no explicit
+        // parameter is exactly the old single-file behaviour, so the previous caller shape works
+        // unchanged against both new and legacy rows.
+        const files = Array.isArray(job.result_files) && job.result_files.length
+            ? job.result_files
+            : (job.result_oss_key ? [{ oss_key: job.result_oss_key }] : []);
+        if (!files.length) return _fail(REASONS.DOCUMENT_NOT_FOUND, 'This analysis has no attached file');
+        const index = clampInt(query?.index, 0, 0, files.length - 1);
+        const file = files[index];
+        const ext = (file.ext || file.oss_key.split('.').pop() || 'bin').toLowerCase();
+        const filename = file.filename || `viva-ag-${job.job_uid.slice(0, 8)}.${ext}`;
         return {
             success: true,
-            url: ossLib.generatePresignedGetUrl(job.result_oss_key, 300, null, null, {
-                filename: `viva-ag-${job.job_uid.slice(0, 8)}.${ext}`,
-            }),
+            url: ossLib.generatePresignedGetUrl(file.oss_key, 300, null, null, { filename }),
             expires_in: 300,
             file_type: ext,
+            filename,
+            size_bytes: file.size_bytes ?? null,
+            index,
         };
     } catch (err) {
         _logError('handleGetVivaAgResultUrl failed', err);
@@ -785,17 +833,22 @@ async function handlePostVivaAgResultUploadUrl(body) {
 
         const filename = String(body?.filename || 'report.pdf').trim();
         const ext = (filename.includes('.') ? filename.split('.').pop() : 'pdf')
-            .toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || 'bin';
+            .toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
+        // Rejected here rather than at submission, so the agent finds out before spending a
+        // multi-megabyte upload on a file the miniapp has no way to show.
+        const contentType = RESULT_CONTENT_TYPES[ext];
+        if (!contentType) {
+            return _fail(REASONS.UNSUPPORTED_FILE_TYPE,
+                `unsupported result file type '${ext || filename}'; allowed: ${Object.keys(RESULT_CONTENT_TYPES).join(', ')}`);
+        }
         const key = `${_resultKeyPrefix(job.job_uid)}${crypto.randomBytes(8).toString('hex')}.${ext}`;
-        // Sign the real type where we can recognise it: this bucket refuses a
-        // response-content-type override at download time, so upload is the only chance.
-        const contentType = RESULT_CONTENT_TYPES[ext] || 'application/octet-stream';
         return {
             success: true,
             oss_key: key,
             put_url: ossLib.generatePresignedPutUrl(key, 3600, null, contentType),
             // Mandatory — this exact Content-Type is part of the signature, and OSS returns
-            // SignatureDoesNotMatch on any other value.
+            // SignatureDoesNotMatch on any other value. It is also the ONLY chance to set the
+            // stored type: this bucket refuses a response-content-type override at download time.
             put_content_type: contentType,
             expires_in: 3600,
         };
@@ -803,6 +856,77 @@ async function handlePostVivaAgResultUploadUrl(body) {
         _logError('handlePostVivaAgResultUploadUrl failed', err, { job_uid: body?.job_uid });
         return _fail(REASONS.INTERNAL_ERROR, err.message);
     }
+}
+
+// Normalises whatever the agent submitted as artifacts into the stored result_files array.
+//
+// Accepts `result_files` (an array of oss_key strings, or {oss_key, filename} objects) and the
+// original single `result_oss_key`, so an agent written against either shape works. Every key is
+// verified three ways before it is stored: confined to THIS job's prefix (a job must not be able
+// to attach another job's report), a type the miniapp can actually present, and actually present
+// in OSS — a key that was minted but never PUT would otherwise become a download button that
+// fails in the user's hands.
+async function _resolveResultFiles(job, body) {
+    if (body?.result_files != null && !Array.isArray(body.result_files)) {
+        // Silently ignoring a malformed value would complete the job with no files attached and
+        // no hint why, which is a much worse failure than refusing it.
+        return { error: _fail(REASONS.MISSING_PARAMS, 'result_files must be an array') };
+    }
+    const raw = [];
+    if (Array.isArray(body?.result_files)) raw.push(...body.result_files);
+    if (body?.result_oss_key) raw.push(body.result_oss_key);
+
+    const seen = new Set();
+    const candidates = [];
+    for (const item of raw) {
+        const entry = typeof item === 'string' ? { oss_key: item } : (item || {});
+        const key = String(entry.oss_key || '').trim();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        candidates.push({ key, filename: entry.filename || entry.title || null });
+    }
+    if (!candidates.length) return { files: [] };
+    if (candidates.length > MAX_RESULT_FILES) {
+        return { error: _fail(REASONS.TOO_MANY_RESULT_FILES, `at most ${MAX_RESULT_FILES} result files per job`) };
+    }
+
+    const prefix = _resultKeyPrefix(job.job_uid);
+    const files = [];
+    for (const { key, filename } of candidates) {
+        if (!key.startsWith(prefix)) {
+            return { error: _fail(REASONS.INVALID_RESULT_KEY, `result file '${key}' was not minted for this job`) };
+        }
+        const ext = key.split('.').pop().toLowerCase();
+        if (!RESULT_CONTENT_TYPES[ext]) {
+            return { error: _fail(REASONS.UNSUPPORTED_FILE_TYPE, `unsupported result file type '${ext}'`) };
+        }
+        const meta = await ossLib.headObject(key);
+        if (!meta) {
+            return { error: _fail(REASONS.RESULT_FILE_MISSING, `result file '${key}' was never uploaded`) };
+        }
+        files.push({
+            oss_key: key,
+            filename: _safeResultFilename(filename, ext),
+            ext,
+            content_type: meta.content_type || RESULT_CONTENT_TYPES[ext],
+            size_bytes: meta.size_bytes ?? null,
+            etag: meta.etag || null,
+        });
+    }
+    // PDF first: it is what a user opens, and it is what fills the legacy single-file column.
+    files.sort((a, b) => (RESULT_EXT_RANK[a.ext] ?? 9) - (RESULT_EXT_RANK[b.ext] ?? 9));
+    return { files };
+}
+
+// The agent names its own files and the name reaches the user twice — as the label in the AG
+// subtab and as the Content-Disposition of the signed download — so path separators, quotes and
+// control characters are stripped rather than trusted.
+function _safeResultFilename(raw, ext) {
+    let name = String(raw || '').replace(/[\r\n\t\x00-\x1f]/g, '').replace(/[\\/"]/g, '_').trim();
+    if (!name) name = `report.${ext}`;
+    if (name.length > 120) name = name.slice(0, 120);
+    if (!name.toLowerCase().endsWith(`.${ext}`)) name = `${name}.${ext}`;
+    return name;
 }
 
 async function handlePostVivaAgResult(body) {
@@ -830,19 +954,18 @@ async function handlePostVivaAgResult(body) {
             }
         }
 
-        const resultOssKey = body?.result_oss_key ? String(body.result_oss_key).trim() : null;
-        if (resultOssKey && !resultOssKey.startsWith(_resultKeyPrefix(job.job_uid))) {
-            // Prefix confinement, same rule health_documents registration uses: a job cannot
-            // attach an artifact belonging to another job.
-            return _fail(REASONS.INVALID_RESULT_KEY, 'result_oss_key must be one minted for this job');
-        }
+        const { error: fileError, files } = await _resolveResultFiles(job, body);
+        if (fileError) return fileError;
+        // result_oss_key stays populated with the head of the list purely for backwards
+        // compatibility — result_files is the source of truth from here on.
+        const resultOssKey = files.length ? files[0].oss_key : null;
 
         await pool.query(
             `UPDATE viva_ag_jobs
                 SET status = 'completed', result = $2, result_summary = $3, result_oss_key = $4,
-                    completed_at = NOW(), progress_note = NULL, updated_at = NOW()
+                    result_files = $5, completed_at = NOW(), progress_note = NULL, updated_at = NOW()
               WHERE id = $1`,
-            [job.id, result, summary, resultOssKey]
+            [job.id, result, summary, resultOssKey, files.length ? JSON.stringify(files) : null]
         );
 
         // Two-channel delivery (CLAUDE.md 22): the notifications row is the 3s fast path, the
@@ -861,8 +984,12 @@ async function handlePostVivaAgResult(body) {
             _logError('viva_ag result delivery failed', err, { job_uid: job.job_uid });
         }
 
-        console.log(JSON.stringify({ level: 'INFO', msg: 'viva_ag job completed', job_uid: job.job_uid, worker_id: job.claimed_by }));
-        return { success: true, job_uid: job.job_uid, delivered: !!ids.notification_id, notification_id: ids.notification_id };
+        console.log(JSON.stringify({ level: 'INFO', msg: 'viva_ag job completed', job_uid: job.job_uid, worker_id: job.claimed_by, files: files.length }));
+        return {
+            success: true, job_uid: job.job_uid,
+            delivered: !!ids.notification_id, notification_id: ids.notification_id,
+            result_files: files.map(f => ({ filename: f.filename, ext: f.ext, size_bytes: f.size_bytes })),
+        };
     } catch (err) {
         _logError('handlePostVivaAgResult failed', err, { job_uid: body?.job_uid });
         return _fail(REASONS.INTERNAL_ERROR, err.message);

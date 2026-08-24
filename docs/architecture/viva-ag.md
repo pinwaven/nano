@@ -157,7 +157,7 @@ Migration `migration_viva_ag_jobs.sql`. The queue itself.
 | Request | `command_key`, `command`, `params JSONB` |
 | State | `status`, `priority`, `attempts`, `max_attempts` |
 | Lease | `claimed_by`, `claimed_at`, `claim_expires_at`, `heartbeat_at`, `progress_note`, `result_token` |
-| Result | `started_at`, `completed_at`, `result JSONB`, `result_summary`, `result_oss_key`, `error_reason` |
+| Result | `started_at`, `completed_at`, `result JSONB`, `result_summary`, `result_files JSONB`, `result_oss_key`, `error_reason` |
 | Delivery | `notification_id`, `chat_message_id`, `delivered_at` |
 
 Indexes: a partial index on the queued head for the claim path, one on `claim_expires_at` for the
@@ -293,7 +293,7 @@ medical record.
 | GET | `/viva-ag/twin-bundle?job_uid=` | first call flips the job to `processing` |
 | GET | `/viva-ag/document-url?job_uid=&document_id=` | re-mint an expired file URL |
 | POST | `/viva-ag/jobs/heartbeat` | extend lease, set `progress_note` |
-| POST | `/viva-ag/result-upload-url` | presigned PUT for a long-form artifact |
+| POST | `/viva-ag/result-upload-url` | presigned PUT for one report file (`pdf`/`md`/`txt`) |
 | POST | `/viva-ag/jobs/result` | submit; idempotent |
 | POST | `/viva-ag/jobs/fail` | `retryable` requeues if attempts remain |
 
@@ -469,7 +469,8 @@ token. That is a live pre-existing hole (see §10) and documents must not widen 
   could register someone else's object into their own list
 - `oss_key` is **never returned to the client**; documents are referenced by `id`
 - result artifacts are confined the same way, under `viva-ag-results/{job_uid}/`, and
-  `POST /jobs/result` rejects a `result_oss_key` outside its own job's prefix
+  `POST /jobs/result` rejects any submitted key outside its own job's prefix
+- the client addresses result files by **index**, never by key — see §9a
 
 ---
 
@@ -525,6 +526,76 @@ leave a stuck caption. Progress lives in the AG subtab's job list instead.
 
 ---
 
+## 9a. Report files
+
+A job may carry up to **5** artifacts in `result_files` (migration
+`migration_viva_ag_result_files.sql`), each `{oss_key, filename, ext, content_type, size_bytes,
+etag}`. The typical pair is a rendered **`.pdf`** plus its **`.md`** source.
+
+**`result_oss_key` is kept and still written** — the first file, PDF preferred — so pre-existing
+rows, `has_result_file` and any caller that only knows the single-file shape keep working.
+`result_files` is the source of truth; `result_oss_key` is its backwards-compatible head.
+
+### Why only `pdf` / `md` / `txt`
+
+The Mini Program is the only consumer, and it has exactly two ways to present a file:
+
+| ext | how the user reads it |
+|---|---|
+| `pdf` | `wx.downloadFile` → `wx.openDocument` — the system viewer |
+| `md`, `txt` | `wx.downloadFile` → `readFile('utf8')` → rendered **in-app** |
+
+**`wx.openDocument` cannot open markdown.** Its `fileType` list is `doc/docx/xls/xlsx/ppt/pptx/pdf`
+only, so handing it an `.md` fails in the user's hands. That is the whole reason the in-app viewer
+exists (`_showTextReport` in `components/viva-ag-panel/`), and the reason
+`/viva-ag/result-upload-url` **refuses** anything outside the three types up front, before the
+agent spends a multi-megabyte upload on a file nano could never show.
+
+### Validation at submission
+
+Each key is checked three ways, and any failure refuses the **whole** submission — nothing is
+committed and nothing is delivered, so the agent can fix and resubmit:
+
+| reason | check |
+|---|---|
+| `invalid_result_key` | prefix-confined to `viva-ag-results/{job_uid}/` |
+| `unsupported_file_type` | `pdf` / `md` / `txt` |
+| `result_file_missing` | `headObject` — a key minted but never PUT would otherwise become a download button that fails |
+| `too_many_result_files` | ≤ 5 distinct keys (identical keys are de-duplicated, not counted twice) |
+
+`headObject` is also where `size_bytes`, `content_type` and `etag` come from, so the panel can show
+a size without the client trusting a number the agent typed.
+
+The agent names its own files and that name reaches the user twice — as the label in the panel and
+as the `Content-Disposition` of the signed download — so `_safeResultFilename` strips path
+separators, quotes and control characters, caps at 120 chars, and appends the real extension.
+
+### Rendering markdown is a trust boundary
+
+The `.md` was written by an **external** system, so the viewer does not simply hand it to the
+renderer:
+
+- `mdToHtml()` (new export in `utils/markdown.js`) deliberately does **not** interpret `:::`
+  display-card directives, unlike `mdToSegments()`. Letting an outside system render designed
+  status cards inside the app is the same injection surface that makes `handlers/viva_ag.js` strip
+  `:::` out of result *summaries*.
+- Raw HTML is escaped by the existing `_esc`/`_inline` path, so it cannot inject.
+- **Links are neutralised.** mp-html's `linkTap` calls `wx.navigateTo` for any href without a
+  scheme (`components/mp-html/node/node.js`), so a markdown link in a report could push the user
+  into an arbitrary page of this miniapp. `_neutralizeLinks()` rewrites `[text](href)` to
+  `text (href)` — the target stays visible, it just isn't tappable.
+- Rendering is capped at `MAX_REPORT_CHARS` (120k) with a visible notice; past that a report is
+  a document to download, not a page to scroll.
+
+### Where the user sees them
+
+Chips on the job card in the list (so a finished report is one tap away without opening anything)
+and a titled file list inside the job detail sheet. Both bind the same `openResultFile` handler,
+which mints a fresh 300s signed URL per tap via
+`GET /viva-ag/jobs/result-url?openid=&job_uid=&index=`.
+
+---
+
 ## 10. Miniapp
 
 ### The subtab
@@ -558,6 +629,12 @@ faults, and `submitJob()` maps each to its own message; only a genuine fault get
 "please retry". Showing "操作失败，请重试" for a quota refusal is actively misleading — retrying
 never works and the user is told nothing (hit live on dev 2026-08-23). The `catch` block is now
 reserved for transport failures alone.
+
+Report files (§9a) appear as chips on the job card in the list and as a titled list inside the
+detail sheet; both bind the same `openResultFile`, which branches on extension — PDF into
+`wx.openDocument`, markdown/text into the in-app `.ag-viewer` overlay. `wx.downloadFile` treats any
+HTTP status as success, so a 403 from an expired signature is rejected explicitly rather than
+handed to `openDocument` as if it were a file.
 
 Polling is a 15s timer **inside the panel**, running only while a job is non-terminal and the panel
 is visible. Deliberately not hooked into `main.js`'s 3s notification poll — that loop is tuned for
@@ -678,6 +755,20 @@ Until then the queue is fully inspectable with SQL and there is one operator.
   add-on, tab switching mounts/unmounts correctly, panel loads, i18n resolves, presets, submit
   gating — plus a full journey (submit from the UI → claim/heartbeat/complete as the agent → reply
   rendered **exactly once** in the chat tab) and the photo upload path end to end.
+- **Report files** (21 assertions, direct handler calls + real OSS): `.pdf` and `.md` upload URLs
+  with the correct signed content type, `.zip` refused up front, both files PUT and submitted
+  together, foreign-prefix and never-uploaded keys refused, identical keys de-duplicated, PDF
+  sorted first, filename sanitisation, sizes captured from `headObject`, no `oss_key` in any
+  user-facing response, both files downloadable by index with matching size and content type, the
+  markdown round-tripping byte-for-byte, a missing `index` defaulting to the PDF, an out-of-range
+  index clamping rather than erroring, and the legacy single-`result_oss_key` submission still
+  working.
+- **Report rendering in the miniapp** via `tools/wechat-automator/` (20 assertions): chips and file
+  rows render with the right labels and sizes, a real `.md` staged on-device renders through
+  `readFile` → `mdToHtml` (headings, tables, bold), links are neutralised while their targets stay
+  visible, `mp-html` mounts inside the viewer, and the viewer closes cleanly — plus a live
+  `wx.downloadFile` of a `.md` straight from OSS (confirming the download domain whitelist covers
+  it) rendered end to end.
 - **i18n**: every `{{t.*}}` in WXML and every `t.*` in the panel's JS resolves in **both** language
   blocks, and the blocks are symmetric.
 - Existing suite: 8 failures, all identical on a clean tree, none related.

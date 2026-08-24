@@ -1009,6 +1009,30 @@ presign returned or OSS returns `SignatureDoesNotMatch`. `generatePresignedGetUr
 optional `filename` that sets an RFC 5987 `Content-Disposition` (these filenames are routinely
 Chinese) — but **no** content-type override; don't re-add one.
 
+### Report files: `pdf` / `md` / `txt` only, and markdown renders in-app
+
+A job carries up to 5 artifacts in `viva_ag_jobs.result_files` (migration
+`migration_viva_ag_result_files.sql`) — typically a rendered PDF plus its `.md` source.
+`result_oss_key` is **kept and still written** (the first file, PDF preferred) so legacy rows and
+the single-file shape keep working; `result_files` is the source of truth.
+
+The allowed set is narrow because the miniapp is the only consumer and has exactly two ways to
+present a file — and **`wx.openDocument` cannot open markdown** (its `fileType` list is
+`doc/docx/xls/xlsx/ppt/pptx/pdf`), so an `.md` handed to it fails in the user's hands. Hence
+`md`/`txt` are downloaded and rendered **in-app**, and `/viva-ag/result-upload-url` rejects
+anything else with `unsupported_file_type` *before* the agent spends the upload.
+
+At submission every key is prefix-confined to `viva-ag-results/{job_uid}/`, type-checked, and
+`headObject`-verified (a key minted but never PUT would become a download button that fails);
+any failure refuses the whole submission so nothing half-committed is delivered. The client
+addresses files by **index** — `oss_key` never leaves the server.
+
+**Rendering the `.md` is a trust boundary.** `mdToHtml()` (new export in `utils/markdown.js`)
+deliberately does not interpret `:::` display-card directives the way `mdToSegments()` does — same
+reason summaries are stripped of them. And `_neutralizeLinks()` rewrites `[text](href)` to plain
+text, because mp-html's `linkTap` calls `wx.navigateTo` for any scheme-less href, which would let
+an external report push the user into an arbitrary page of this miniapp.
+
 ### `health_documents`, not `health_reports`
 
 `health_reports` means "a parsed lab report": mandatory `report_date`, `raw_data` observations,
@@ -1106,13 +1130,13 @@ not hooked into `main.js`'s 3s notification poll, which is tuned for chat delive
 
 ### Files
 
-New: `src/schemas/migration_{users_viva_ag_expiry,health_documents,viva_ag_jobs}.sql`;
+New: `src/schemas/migration_{users_viva_ag_expiry,health_documents,viva_ag_jobs,viva_ag_result_files}.sql`;
 `worker/handlers/{viva_ag,viva_ag_docs,health_documents}.js`;
 `worker/lib/{twinBundle,vivaAgAccess}.js`; `worker/docs/viva-ag-{api.md,openapi.json}`;
 `nano-miniapp/components/viva-ag-panel/`. Modified: `worker/index.js` (token branch + routes),
 `worker/lib/{persona,oss}.js`, `worker/handlers/{chat,viva_subscription,persona_subscriptions}.js`,
 `s.yaml`/`s-prod.yaml`, `admin-panel/src/tabs/UsersTab.jsx`,
 `nano-miniapp/components/user-health/*`, `nano-miniapp/pages/main/main.{js,wxml}`,
-`utils/config.js` (VERSION).
+`nano-miniapp/utils/markdown.js` (`mdToHtml`), `utils/config.js` (VERSION).
 
 Full detail: [docs/architecture/viva-ag.md](docs/architecture/viva-ag.md).

@@ -1,0 +1,20 @@
+-- Viva AG: let one job carry SEVERAL result artifacts instead of a single file.
+--
+-- The external agent produces a report in more than one shape — a rendered PDF for reading and
+-- an .md source for the record — and the original single `result_oss_key` column could hold only
+-- one of them. Rather than making the agent choose, `result_files` holds an ordered array:
+--
+--   [{ "oss_key": "viva-ag-results/<job_uid>/<hex>.pdf",
+--      "filename": "2026-08 深度分析.pdf",     -- the agent's own name, shown to the user
+--      "ext": "pdf", "content_type": "application/pdf",
+--      "size_bytes": 184213, "etag": "9f86d0…" }, … ]
+--
+-- oss_key is INTERNAL: every one of these is confined to the job's own
+-- viva-ag-results/<job_uid>/ prefix at submission time, and the user-facing API returns files by
+-- index with a short-lived signed URL, never the key itself.
+--
+-- `result_oss_key` is deliberately KEPT and still written (the first file, preferring the PDF)
+-- so that pre-existing rows, the `has_result_file` flag and any caller that only knows about the
+-- single-file shape keep working unchanged. Treat result_files as the source of truth and
+-- result_oss_key as its backwards-compatible head.
+ALTER TABLE viva_ag_jobs ADD COLUMN IF NOT EXISTS result_files JSONB;

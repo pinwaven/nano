@@ -380,4 +380,20 @@ function mdToSegments (md) {
   return segs
 }
 
-module.exports = { mdToSegments, MD_TAG_STYLE }
+// Plain markdown -> ONE html string, for rendering a whole document in a single <mp-html>.
+//
+// Unlike mdToSegments this deliberately does NOT interpret ::: directives: its caller is the
+// Viva AG report viewer, whose input is a file written by an EXTERNAL system, and letting that
+// system render designed status cards inside the app is the same injection surface
+// handlers/viva_ag.js strips ::: out of result summaries to avoid. Directive lines fall through
+// as ordinary text. Raw HTML in the source is escaped by _esc/_inline, so it cannot inject either.
+function mdToHtml (md) {
+  if (md == null) return ''
+  var lines = String(md).replace(/\r\n?/g, '\n').split('\n')
+  var blocks = _parseBlocks(lines)
+  if (!blocks.length) return ''
+  blocks[blocks.length - 1] = _zeroLastMargin(blocks[blocks.length - 1])
+  return blocks.join('')
+}
+
+module.exports = { mdToSegments, mdToHtml, MD_TAG_STYLE }

@@ -72,8 +72,11 @@ not the status code. Only an auth failure (401/403) or a genuine server fault (5
 | `job_not_claimable` | the job is not in `claimed`/`processing` |
 | `job_already_completed` | a terminal result was already recorded |
 | `document_not_found` | the document is not in this job's snapshot, or was deleted |
-| `result_too_large` | `result` exceeds 512 KB serialized — use `result_oss_key` instead |
-| `invalid_result_key` | `result_oss_key` was not one minted for this job |
+| `result_too_large` | `result` exceeds 512 KB serialized — upload it as a file instead |
+| `invalid_result_key` | a submitted result file key was not one minted for this job |
+| `result_file_missing` | a submitted result file key exists but nothing was uploaded to it |
+| `unsupported_file_type` | result files must be `pdf`, `md` or `txt` |
+| `too_many_result_files` | at most 5 result files per job |
 | `internal_error` | unexpected server fault |
 
 ---
@@ -415,9 +418,17 @@ their language — it is not a debug channel.
 
 ## 7. Submitting a result
 
-### Optional: upload a long-form artifact first
+### Optional: upload report files first
 
-For a full report (PDF, markdown, anything), get a presigned upload URL:
+A job can carry up to **5** report files. Typically that is a rendered **`.pdf`** plus its
+**`.md`** source — the Mini Program opens the PDF in the system document viewer and renders the
+markdown in-app, so uploading both gives the user a readable report either way.
+
+**Allowed types: `pdf`, `md`, `txt`.** Anything else is refused with `unsupported_file_type` at
+this step, before you spend the upload — the Mini Program is the only consumer and it has no way
+to present, say, a `.zip` or a `.docx`.
+
+Get one presigned upload URL per file:
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
@@ -427,7 +438,7 @@ curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
 ```
 
 → `{ "success": true, "oss_key": "viva-ag-results/<job_uid>/…pdf", "put_url": "…",
-     "put_content_type": "application/octet-stream", "expires_in": 3600 }`
+     "put_content_type": "application/pdf", "expires_in": 3600 }`
 
 ```bash
 curl -X PUT -H "Content-Type: $PUT_CONTENT_TYPE" \
@@ -436,8 +447,13 @@ curl -X PUT -H "Content-Type: $PUT_CONTENT_TYPE" \
 
 **Send exactly the `put_content_type` value that was returned** — it is part of what was signed,
 and any other value fails with `SignatureDoesNotMatch`. It is derived from your `filename`'s
-extension (`application/pdf` for `.pdf`, and so on), because object storage here refuses a
-content-type override at download time, so the type has to be fixed at upload.
+extension (`application/pdf` for `.pdf`, `text/markdown; charset=utf-8` for `.md`), because
+object storage here refuses a content-type override at download time, so the type has to be
+fixed at upload.
+
+Markdown is rendered by the Mini Program's own renderer: headings, bold/italic, lists, tables,
+blockquotes and fenced code all work. Raw HTML is escaped, and links are shown as plain text
+rather than made tappable — write the report as ordinary markdown prose.
 
 ### Then submit
 
@@ -447,7 +463,8 @@ curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
   -d '{"job_uid":"…","result_token":"…",
        "summary":"我看完了您的四份报告…",
        "result":{"findings":[…],"confidence":"high"},
-       "result_oss_key":"viva-ag-results/…/ab12.pdf"}' \
+       "result_files":[{"oss_key":"viva-ag-results/…/ab12.pdf","filename":"2026年8月 深度分析.pdf"},
+                       {"oss_key":"viva-ag-results/…/cd34.md","filename":"分析全文.md"}]}' \
   https://nano-dev.gcn.net/api/viva-ag/jobs/result
 ```
 
@@ -455,9 +472,23 @@ curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
 |---|---|---|
 | `summary` | yes | **This becomes a chat message the user reads as Viva speaking.** Write it in the subject's `language`, in Viva's voice, addressed to the user. Max 4000 chars. |
 | `result` | no | structured findings, kept for the panel and future reference. Max 512 KB serialized. |
-| `result_oss_key` | no | must be a key minted by `/result-upload-url` for **this** job |
+| `result_files` | no | up to 5 files you uploaded for **this** job. `{oss_key, filename}` objects, or bare `oss_key` strings. `filename` is what the user sees in the app — name it for them, in their language. |
+| `result_oss_key` | no | legacy single-file form, still accepted; equivalent to one entry in `result_files` |
 
-→ `{ "success": true, "job_uid": "…", "delivered": true, "notification_id": 8812 }`
+→ `{ "success": true, "job_uid": "…", "delivered": true, "notification_id": 8812,
+     "result_files": [{"filename":"2026年8月 深度分析.pdf","ext":"pdf","size_bytes":184213}, …] }`
+
+Each file is checked three ways before it is stored, and a failure refuses the whole submission
+(nothing is delivered, so you can fix and resubmit):
+
+| reason | meaning |
+|---|---|
+| `invalid_result_key` | that key was not minted by `/result-upload-url` for **this** job |
+| `result_file_missing` | the key was minted but nothing was ever PUT to it — check your upload's HTTP status |
+| `unsupported_file_type` | not `pdf` / `md` / `txt` |
+| `too_many_result_files` | more than 5 distinct files |
+
+The PDF is listed first regardless of the order you send, since that is what a user opens.
 
 Resubmitting the identical request is safe: `{ "success": true, "already_completed": true, … }`
 with no second message sent to the user.

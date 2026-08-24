@@ -310,8 +310,8 @@
         "tags": [
           "queue"
         ],
-        "summary": "Presigned PUT for a long-form result artifact",
-        "description": "The PUT must send exactly the returned put_content_type as its Content-Type header — it is part of the signature. The returned oss_key is confined to this job and is the only value /jobs/result will accept as result_oss_key.",
+        "summary": "Presigned PUT for a report file (.pdf / .md / .txt)",
+        "description": "One call per file; a job may carry up to 5. Allowed types are pdf, md and txt — anything else is refused with unsupported_file_type before the upload is spent, because the Mini Program is the only consumer and can present nothing else. The PUT must send exactly the returned put_content_type as its Content-Type header — it is part of the signature. The returned oss_key is confined to this job and is the only value /jobs/result will accept for it.",
         "requestBody": {
           "required": true,
           "content": {
@@ -331,7 +331,8 @@
                   },
                   "filename": {
                     "type": "string",
-                    "default": "report.pdf"
+                    "default": "report.pdf",
+                    "description": "Extension decides the stored content type. Must end in .pdf, .md or .txt."
                   }
                 }
               }
@@ -377,7 +378,7 @@
           "queue"
         ],
         "summary": "Submit the analysis result",
-        "description": "summary becomes a chat message the user reads as Viva speaking — write it in the subject's language, addressed to them. Display-card markup is stripped on ingest. Resubmitting the same request is idempotent (already_completed: true, no second message).",
+        "description": "summary becomes a chat message the user reads as Viva speaking — write it in the subject's language, addressed to them. Display-card markup is stripped on ingest. Attach report files with result_files (pdf/md/txt, max 5): each key is verified to belong to this job, to be a supported type, and to have actually been uploaded — a bad file refuses the whole submission (invalid_result_key, unsupported_file_type, result_file_missing, too_many_result_files) and nothing is delivered, so you can fix and resubmit. Resubmitting the same request is idempotent (already_completed: true, no second message).",
         "requestBody": {
           "required": true,
           "content": {
@@ -406,7 +407,34 @@
                   },
                   "result_oss_key": {
                     "type": "string",
-                    "description": "Must be a key minted by /result-upload-url for this job"
+                    "description": "Legacy single-file form, still accepted; equivalent to one entry in result_files"
+                  },
+                  "result_files": {
+                    "type": "array",
+                    "maxItems": 5,
+                    "description": "Report files uploaded for THIS job. Each entry may be a bare oss_key string or an object. filename is what the user sees in the app — name it in their language. The PDF is listed first to the user regardless of the order sent.",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "oss_key"
+                          ],
+                          "properties": {
+                            "oss_key": {
+                              "type": "string"
+                            },
+                            "filename": {
+                              "type": "string",
+                              "maxLength": 120
+                            }
+                          }
+                        }
+                      ]
+                    }
                   }
                 }
               }
@@ -438,6 +466,27 @@
                         "integer",
                         "null"
                       ]
+                    },
+                    "result_files": {
+                      "type": "array",
+                      "description": "The files as stored, PDF first.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "filename": {
+                            "type": "string"
+                          },
+                          "ext": {
+                            "type": "string"
+                          },
+                          "size_bytes": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
                     }
                   }
                 }
