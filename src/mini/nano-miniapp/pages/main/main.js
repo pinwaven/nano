@@ -199,6 +199,11 @@ const T = {
     formulaComplete: '您的7天营养方案已生成！',
     formulaProcessing: '正在为您深度分析并配置本周方案，完成后会发送通知，请稍候…',
     formulaViewDots: '查看营养方案 →',
+    formulaCardTitle: '原粒配比评估',
+    formulaEvalNote: '仅供参考 · 未写入方案',
+    formulaAm: '早',
+    formulaPm: '晚',
+    formulaTotalLabel: '每日合计',
     formulaError: '方案生成失败，请重试。',
     chatHistoryLoadMore: '下拉或点此加载更早消息',
     chatHistoryLoading: '加载中…',
@@ -428,6 +433,11 @@ const T = {
     formulaComplete: 'Your 7-day nutrition plan is ready!',
     formulaProcessing: "Deeply analyzing your data and formulating this week's plan — you'll get a notification when it's ready…",
     formulaViewDots: 'View Dots Plan →',
+    formulaCardTitle: 'Dot allocation',
+    formulaEvalNote: 'Evaluation only · not saved',
+    formulaAm: 'AM',
+    formulaPm: 'PM',
+    formulaTotalLabel: 'Per day',
     formulaError: 'Plan generation failed. Please try again.',
     chatHistoryLoadMore: 'Pull or tap to load older messages',
     chatHistoryLoading: 'Loading…',
@@ -2614,14 +2624,10 @@ Page({
             // matching chat_messages row carries it durably for reloads.
             source: AG_NOTIFICATION_TYPES.has(n.notification_type) ? 'viva_ag' : null,
           }))
-          // A 'nutrition_plan' row means Viva's async dot formulation just committed — add the
-          // "view plan" action button here (it used to be added synchronously right after the
-          // POST, back when the schedule was committed inline; now the commit itself happens
-          // async, so the button must wait for this same completion signal instead of appearing
-          // before the plan actually exists).
-          if (realRows.some(n => n.notification_type === 'nutrition_plan')) {
-            newMsgs.push(this._makeMsg({ id: `action-view_dots-${Date.now()}`, role: 'action', action: 'view_dots', label: this.data.t.formulaViewDots }))
-          }
+          // No "view plan" button on a 'nutrition_plan' row any more: Formulate-Dots is an
+          // evaluation tool and writes nothing, so the Dots subtab it used to open would show
+          // whatever plan was there before, not the allocation the user is looking at. The
+          // numbers live in the message itself now, as a :::formula chart.
           this._chatWaitStartedAt = null
           if (newMsgs.length > 0) {
             const messages = [...this.data.messages, ...this._applySeparators(newMsgs, this.data.messages[this.data.messages.length - 1])]

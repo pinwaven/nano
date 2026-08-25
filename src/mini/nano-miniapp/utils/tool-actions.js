@@ -72,8 +72,10 @@ async function runFormulaDs(openid, t, ctx) {
       setTyping(false)
       return
     }
+    // No "view plan" button: this tool evaluates, it no longer commits a plan (the 28-day
+    // formula a user receives comes from Viva AG's dots_formulation job). The reply carries the
+    // allocation as a :::formula chart instead.
     addMsg('ai', t.formulaComplete, true)
-    if (addActionMsg) addActionMsg('view_dots', t.formulaViewDots, true)
     setTyping(false)
   } catch (e) {
     addMsg('ai', t.formulaError)

@@ -1106,6 +1106,35 @@ function _resolveCandidateDotKeys(activeHealthPlans, dotsFormulary) {
 // so the day's AM/PM pill counts land closer together. Non-flexible dots (e.g. DOT-N4/DOT-N12's
 // stimulating ingredients, DOT-N3's sleep support) always stay entirely in their default slot —
 // timing_flexible=false is a real reason, not a guess, so it's never overridden here.
+// Renders a committed AM/PM recipe as the chat tab's :::formula display card (see
+// utils/markdown.js's directive table and main.wxml's seg.t === 'formula' branch).
+//
+// This exists because Formulate-Dots is an EVALUATION tool now: it no longer writes to
+// nutrition_plans, so there is no Dots subtab for a "view plan" button to point at, and the
+// numbers have to be legible in the chat bubble itself. Built here, deterministically, from the
+// same validated recipe the rest of this file produces — the model never writes this block, so
+// the chart can never disagree with the allocation it is drawing.
+//
+// One row per dot: key|name|color|am|pm. The renderer derives every total itself, so the parser
+// stays dumb and there is no second place for the arithmetic to drift.
+function _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang) {
+    const isZh = (lang || 'zh') !== 'en';
+    const morning = morningRecipe?.dots || {};
+    const evening = eveningRecipe?.dots || {};
+    const rows = [];
+    for (const dot of dotsFormulary || []) {
+        const am = morning[dot.key_name] || 0;
+        const pm = evening[dot.key_name] || 0;
+        if (am === 0 && pm === 0) continue;
+        const name = (isZh ? (dot.name_zh || dot.name) : (dot.name || dot.name_zh)) || dot.key_name;
+        // Pipes would break the row split, and a dot name is admin-editable free text.
+        const safeName = String(name).replace(/\|/g, '/');
+        rows.push(`${dot.key_name}|${safeName}|${dot.color_hex || ''}|${am}|${pm}`);
+    }
+    if (!rows.length) return '';
+    return `\n\n:::formula\n${rows.join('\n')}\n:::`;
+}
+
 function _splitDotTiming(dot, count) {
     const isEveningDefault = dot.timing === 'Evening';
     if (!dot.timing_flexible || count <= 10) {
@@ -1293,9 +1322,12 @@ async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFor
 
     // The chat message deliberately does NOT include a raw per-dot text dump (previously
     // _generatePlanText's D-N1x3 D-N2x3 ... breakdown, repeated once per identical day) —
-    // found 2026-07-29 that this read as confusing technical noise; the "查看方案" (view
-    // plan) action button is the actual place users should see exact per-dot numbers.
-    const finalContent = analysis || (lang === 'zh' ? '您的专属原粒方案已生成，点击下方"查看方案"了解详情。' : 'Your personalized dot plan has been generated — tap "View Plan" below for the details.');
+    // found 2026-07-29 that this read as confusing technical noise. Exact per-dot numbers now
+    // live in the :::formula chart the caller appends (_buildFormulaChartBlock), which is where
+    // the old "查看方案" button used to send people.
+    const finalContent = analysis || (lang === 'zh'
+        ? '这是根据您当前数据评估出的原粒配比，仅供参考。'
+        : 'Here is the dot allocation evaluated from your current data, for reference.');
 
     const morningRecipe = { dots: {} };
     const eveningRecipe = { dots: {} };
@@ -1417,7 +1449,7 @@ async function handleNutritionTopupEvent(payload) {
                  AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
                 [user_id]
             ),
-            pool.query(`SELECT id, key_name, key_name_zh, name, name_zh, timing, timing_flexible, ingredients, ingredients_zh, sub_age_target, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ORDER BY id ASC`),
+            pool.query(`SELECT id, key_name, key_name_zh, name, name_zh, color_hex, timing, timing_flexible, ingredients, ingredients_zh, sub_age_target, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ORDER BY id ASC`),
         ]);
         if (userResult.rows.length === 0) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'nutrition_topup_user_not_found', user_id }));
@@ -1512,7 +1544,7 @@ async function handlePostFormulaDots(body) {
                  AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
                 [openid]
             ),
-            pool.query(`SELECT id, key_name, key_name_zh, name, name_zh, timing, timing_flexible, ingredients, ingredients_zh, sub_age_target, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ORDER BY id ASC`),
+            pool.query(`SELECT id, key_name, key_name_zh, name, name_zh, color_hex, timing, timing_flexible, ingredients, ingredients_zh, sub_age_target, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ORDER BY id ASC`),
         ]);
 
         if (userResult.rows.length === 0) return { success: false, error: 'User not found' };
@@ -1564,29 +1596,15 @@ async function handlePostFormulaDots(body) {
 // can take 10s-180s+, and Aliyun FC cancels an invocation the instant the HTTP client
 // disconnects (CLAUDE.md §22), the decision itself runs asynchronously via the same
 // chat.generate event → notifications-poll pipeline already shipped for chat/health-advice —
-// this handler only inserts a 'pending' plan row and publishes the event, returning immediately.
+// this handler only publishes the event and returns immediately.
+//
+// EVALUATION ONLY. Since the 28-day formula the user actually receives now comes from Viva AG's
+// dots_formulation job, this tool no longer writes anything: no 'pending' row is inserted here
+// and nothing is ever committed to nutrition_plans / nutrition_schedules. The result is a chat
+// message carrying a :::formula chart of the proposed AM/PM allocation, and that is the whole
+// deliverable — which is also why there is no longer a "view plan" button pointing at a Dots
+// subtab that this run did not change.
 async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dotsFormulary, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts, personaType }) {
-    const startDateObj = getNowShanghai();
-    const endDateObj = startDateObj.plus({ days: PLAN_DAYS - 1 });
-
-    const pendingClient = await pool.connect();
-    let pendingPlanId;
-    try {
-        await pendingClient.query('BEGIN');
-        await pendingClient.query(`UPDATE nutrition_plans SET status = 'superseded' WHERE user_id = $1 AND status = 'pending'`, [user.user_id]);
-        const pendingInsert = await pendingClient.query(
-            `INSERT INTO nutrition_plans (user_id, start_date, end_date, goal, status) VALUES ($1, $2, $3, NULL, 'pending') RETURNING id`,
-            [user.user_id, startDateObj.toISODate(), endDateObj.toISODate()]
-        );
-        pendingPlanId = pendingInsert.rows[0].id;
-        await pendingClient.query('COMMIT');
-    } catch (e) {
-        await pendingClient.query('ROLLBACK');
-        throw e;
-    } finally {
-        pendingClient.release();
-    }
-
     const age = calculateAge(user.birth_date);
     const heightCm = user.bio_data?.height;
     const weightKg = user.bio_data?.weight;
@@ -1648,7 +1666,6 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         current_solar_term: currentSolarTerm,
         essential_knowledge: essentialKnowledge,
         user_facts: userFacts,
-        pending_plan_id: pendingPlanId,
     };
     const formulaGenerateTemplate = personaType === 'viva' ? vivaSystemFormulaGenerateTemplate : systemFormulaGenerateTemplate;
     const systemPrompt = formulaGenerateTemplate(llmContext);
@@ -1665,30 +1682,18 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         return { success: true, processing: true };
     } catch (ebErr) {
         console.log(JSON.stringify({ level: 'WARN', msg: 'chat_generate_publish_failed_fallback_sync', user_id: user.user_id, handler: 'handlePostFormulaDots', error: ebErr.message }));
-        // Fail open: publish itself failed, so run the deterministic formulator synchronously
-        // end-to-end and commit it directly as 'active' — the pending row from above gets
-        // superseded by _commitNutritionPlan's own supersede-then-activate step.
-        const { analysis, finalContent, morningRecipe, eveningRecipe } = await _runDeterministicFormulation({
+        // Fail open: publish itself failed, so run the deterministic formulator synchronously and
+        // deliver the same evaluation the async path would have — still no DB write.
+        const { finalContent, morningRecipe, eveningRecipe } = await _runDeterministicFormulation({
             biomarkers, bioageProfile, dotsFormulary, personaType, lang, currentSolarTerm, essentialKnowledge, userFacts,
             activeHealthPlans: llmContext.active_health_plans,
         });
-        const client = await pool.connect();
-        try {
-            await client.query('BEGIN');
-            await client.query(`UPDATE nutrition_plans SET status = 'superseded' WHERE id = $1 AND status = 'pending'`, [pendingPlanId]);
-            await _commitNutritionPlan(client, { userId: user.user_id, analysis, morningRecipe, eveningRecipe, dotsFormulary, activeHealthPlans: llmContext.active_health_plans });
-            await client.query('COMMIT');
-        } catch (e) {
-            await client.query('ROLLBACK');
-            throw e;
-        } finally {
-            client.release();
-        }
+        const message = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang);
         await pool.query(
             'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-            [user.user_id, 'nutrition_plan', finalContent, 'pending']
+            [user.user_id, 'nutrition_plan', message, 'pending']
         );
-        await _saveChatMessage(user.user_id, 'ai', finalContent, null, personaType);
+        await _saveChatMessage(user.user_id, 'ai', message, null, personaType);
         return { success: true };
     }
 }
@@ -1776,6 +1781,7 @@ module.exports = {
     _fallbackCountForDot,
     _resolveCandidateDotKeys,
     _splitDotTiming,
+    _buildFormulaChartBlock,
     _isPulseActiveDate,
     _applyPulseSchedule,
 };

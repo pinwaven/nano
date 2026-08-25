@@ -273,7 +273,7 @@ function _zeroLastMargin (block) {
   })
 }
 
-var DIRECTIVE_NAMES = { metric: 1, takeaway: 1, dots: 1 }
+var DIRECTIVE_NAMES = { metric: 1, takeaway: 1, dots: 1, formula: 1 }
 
 function _buildDirective (name, inner) {
   var rows = []
@@ -304,6 +304,45 @@ function _buildDirective (name, inner) {
     // title is left undefined so the WXML falls back to the localised t.mdTakeaway — the
     // segmenter has no language context and must not hardcode one.
     return { t: 'takeaway', h: _parseBlocks(inner).join('') }
+  }
+
+  // :::formula — the Formulate-Dots evaluation chart. Rows are key|name|color|am|pm, written by
+  // the SERVER from an already-validated allocation (handlers/dots.js's
+  // _buildFormulaChartBlock), never by the model — so the bars can't disagree with the numbers.
+  // Every total is derived here rather than sent, so there is one place the arithmetic lives.
+  if (name === 'formula') {
+    var fitems = []
+    var famTotal = 0
+    var fpmTotal = 0
+    for (var f = 0; f < rows.length; f++) {
+      var fp = rows[f].split('|')
+      for (var y = 0; y < fp.length; y++) fp[y] = fp[y].trim()
+      var am = parseInt(fp[3], 10)
+      var pm = parseInt(fp[4], 10)
+      if (!fp[0] || (!am && !pm)) continue
+      am = am > 0 ? am : 0
+      pm = pm > 0 ? pm : 0
+      famTotal += am
+      fpmTotal += pm
+      fitems.push({
+        key: fp[0],
+        name: fp[1] || fp[0],
+        // Hex is validated rather than trusted: it is interpolated into an inline style.
+        color: /^#[0-9a-fA-F]{3,8}$/.test(fp[2] || '') ? fp[2] : '#6B7B8C',
+        am: am,
+        pm: pm,
+        total: am + pm
+      })
+    }
+    if (!fitems.length) return null
+    // Bar widths are percentages of the LARGER capsule, so the two bars stay comparable to each
+    // other instead of each self-normalising to 100%.
+    var fmax = Math.max(famTotal, fpmTotal, 1)
+    for (var g = 0; g < fitems.length; g++) {
+      fitems[g].amPct = fitems[g].am / fmax * 100
+      fitems[g].pmPct = fitems[g].pm / fmax * 100
+    }
+    return { t: 'formula', items: fitems, am: famTotal, pm: fpmTotal, total: famTotal + fpmTotal }
   }
 
   if (name === 'dots') {

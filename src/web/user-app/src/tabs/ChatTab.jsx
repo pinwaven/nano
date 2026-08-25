@@ -268,7 +268,9 @@ export default function ChatTab({ user, onUserUpdate, onNavigateTab }) {
     try {
       await axios.post(`${API}/formula-dots`, { openid: user.user_id });
       addMsg('ai', t.formulaComplete, true);
-      addActionMsg('view_dots', t.formulaViewDots, true);
+      // Formulate-Dots evaluates only — it no longer commits a plan, so there is nothing
+      // for a "view plan" button to open. (This app renders chat as plain markdown, so the
+      // :::formula chart the Mini Program draws shows here as its source rows.)
     } catch { addMsg('ai', t.formulaError); }
     finally { setTyping(false); }
   };

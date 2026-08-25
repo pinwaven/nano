@@ -43,7 +43,7 @@ const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { resolveEffectivePersona, hasActiveVivaAccess } = require('../lib/persona');
 const { grantSignupTrial } = require('../lib/personaOverride');
-const { _runDeterministicFormulation, _commitNutritionPlan, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming } = require('./dots');
+const { _runDeterministicFormulation, _buildFormulaChartBlock, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming } = require('./dots');
 
 // Intents where factual claims (biomarker values, dot recommendations, science/protocol
 // assertions) are common enough to warrant the fuller plan->generate->judge->revise loop
@@ -1712,7 +1712,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         if (entries.size === 0) entries = null;
     }
 
-    let analysis, finalContent, morningRecipe, eveningRecipe;
+    let finalContent, morningRecipe, eveningRecipe;
     const recommendedKeySet = _resolveCandidateDotKeys(llmContext.active_health_plans, llmContext.dots);
 
     if (entries) {
@@ -1762,10 +1762,9 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         }
 
         const strippedReply = rawReply.slice(0, extracted.start).trim();
-        analysis = strippedReply;
         finalContent = strippedReply || (lang === 'zh'
-            ? '您的专属原粒方案已生成，点击下方"查看方案"了解详情。'
-            : 'Your personalized dot plan has been generated — tap "View Plan" below for the details.');
+            ? '这是根据您当前数据评估出的原粒配比，仅供参考。'
+            : 'Here is the dot allocation evaluated from your current data, for reference.');
     } else {
         // No usable action JSON — fall back to the deterministic single-shot formulator so the
         // user is never left with nothing (same resilience principle as the 2026-07-29
@@ -1782,35 +1781,20 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
             userFacts: llmContext.user_facts,
             activeHealthPlans: llmContext.active_health_plans,
         });
-        ({ analysis, finalContent, morningRecipe, eveningRecipe } = fallback);
+        ({ finalContent, morningRecipe, eveningRecipe } = fallback);
     }
 
-    const client = await pool.connect();
-    let committedPlanId;
-    try {
-        await client.query('BEGIN');
-        committedPlanId = await _commitNutritionPlan(client, {
-            userId: user_id, analysis, morningRecipe, eveningRecipe,
-            planId: llmContext.pending_plan_id, dotsFormulary: llmContext.dots,
-            activeHealthPlans: llmContext.active_health_plans,
-        });
-        await client.query('COMMIT');
-    } catch (e) {
-        await client.query('ROLLBACK');
-        throw e;
-    } finally {
-        client.release();
-    }
+    // EVALUATION ONLY — nothing is written to nutrition_plans / nutrition_schedules. The 28-day
+    // formula a user actually receives now comes from Viva AG's dots_formulation job; this tool
+    // exists to show what the current data implies. The numbers therefore have to be legible in
+    // the bubble itself, so the validated allocation is rendered as a :::formula chart rather
+    // than hidden behind a button pointing at a Dots subtab this run did not touch.
+    const chatMessage = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, llmContext.dots, lang);
 
-    // null means the commit was skipped as stale (a late/duplicate event for a pending plan
-    // already superseded by a newer formulation run) — nothing actually changed, so don't tell
-    // the user a plan is ready.
-    if (committedPlanId === null) return;
-
-    await saveChatMessage(user_id, 'ai', finalContent, null, personaType);
+    await saveChatMessage(user_id, 'ai', chatMessage, null, personaType);
     await pool.query(
         'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-        [user_id, 'nutrition_plan', finalContent, 'pending']
+        [user_id, 'nutrition_plan', chatMessage, 'pending']
     );
 }
 
@@ -1947,9 +1931,10 @@ async function handleChatGenerateEvent(payload) {
             console.error('LLM Chat Error (async):', err);
             if (!claimDelivery()) return;
             if (kind === 'formula_dots_generate') {
-                // Never leave the pending plan row orphaned or the user with nothing — commit the
-                // deterministic fallback formulation directly, same as the publish-failure fail-open
-                // path in handlers/dots.js.
+                // Never leave the user with nothing — deliver the deterministic fallback
+                // evaluation, same as the publish-failure fail-open path in handlers/dots.js.
+                // Nothing is committed here either: this tool stopped writing to
+                // nutrition_plans when the real 28-day formula moved to Viva AG.
                 try {
                     const fallback = await _runDeterministicFormulation({
                         biomarkers: llmContext.biomarkers,
@@ -1961,30 +1946,13 @@ async function handleChatGenerateEvent(payload) {
                         userFacts: llmContext.user_facts,
                         activeHealthPlans: llmContext.active_health_plans,
                     });
-                    const fbClient = await pool.connect();
-                    let committedPlanId;
-                    try {
-                        await fbClient.query('BEGIN');
-                        committedPlanId = await _commitNutritionPlan(fbClient, {
-                            userId: user_id, analysis: fallback.analysis,
-                            morningRecipe: fallback.morningRecipe, eveningRecipe: fallback.eveningRecipe,
-                            planId: llmContext.pending_plan_id, dotsFormulary: llmContext.dots,
-                            activeHealthPlans: llmContext.active_health_plans,
-                        });
-                        await fbClient.query('COMMIT');
-                    } catch (e) {
-                        await fbClient.query('ROLLBACK');
-                        throw e;
-                    } finally {
-                        fbClient.release();
-                    }
-                    if (committedPlanId !== null) {
-                        await saveChatMessage(user_id, 'ai', fallback.finalContent, null, personaType);
-                        await pool.query(
-                            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                            [user_id, 'nutrition_plan', fallback.finalContent, 'pending']
-                        );
-                    }
+                    const fbMessage = fallback.finalContent
+                        + _buildFormulaChartBlock(fallback.morningRecipe, fallback.eveningRecipe, llmContext.dots, language);
+                    await saveChatMessage(user_id, 'ai', fbMessage, null, personaType);
+                    await pool.query(
+                        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                        [user_id, 'nutrition_plan', fbMessage, 'pending']
+                    );
                 } catch (fbErr) {
                     console.error('Formula dots fallback also failed:', fbErr);
                     await _deliverTerminalMessage(user_id, personaType, 'nutrition_plan', _asyncFailureMessage(language, 'error'));
@@ -2809,6 +2777,10 @@ module.exports = {
     handlePostBiomarkers,
     handlePostChat,
     handleChatGenerateEvent,
+    // Exported for tests: the Formulate-Dots finishing step. Verifying that it writes NO
+    // nutrition_plans/nutrition_schedules row is the whole point of the evaluation-only change,
+    // and reaching it through handleChatGenerateEvent would mean paying for a full agentic turn.
+    finalizeFormulaDotsGenerate,
     handlePostChatMessages,
     handlePostHeartbeat,
     handlePostHealthAdvice,

@@ -159,8 +159,9 @@ Claimed:
   } }
 ```
 
-`command_key` is one of `full_analysis`, `document_review`, `risk_screen`, or `null` when the
-user wrote a free-text request only. `command` carries the user's own words when they typed any;
+`command_key` is one of `full_analysis`, `document_review`, `risk_screen`, `dots_formulation`, or
+`null` when the user wrote a free-text request only. **`dots_formulation` (原粒定制) has its own
+required output format — see §8**; the other three are free-form analyses. `command` carries the user's own words when they typed any;
 if they only tapped a preset, it repeats the `command_key`. Treat `command_key` as the intent and
 `command` as the elaboration.
 
@@ -513,12 +514,142 @@ over a terminal failure — a partial answer is far more useful to the user than
 
 ---
 
-## 8. Limits
+## 8. `dots_formulation` — the 28-day formula contract
+
+When `command_key` is `dots_formulation` (原粒定制), the deliverable is a **28-day capsule
+formula**, attached as an **`.md` result file** (§7). It is read by a person *and* by machines —
+Aeviva's processing center compounds physical capsules from it — so the file must follow the
+template below exactly.
+
+`summary` stays what it always is: a short message to the user, in their language. Do not put the
+formula in it.
+
+### The product model
+
+These are the same rules nano's own formulator enforces. A formula that breaks them cannot be
+manufactured.
+
+| | |
+|---|---|
+| Cycle | **28 days** |
+| Capsules | **56** — one `AM` and one `PM` every day |
+| Dots per capsule | **≤ 72** (a physical fill limit, independent of any dot's own range) |
+| Per-dot dose | within that dot's `target_dots_min` … `target_dots_max`, applied to its **daily total (AM + PM)** — not to each capsule separately |
+| Slot | honour each dot's `timing` (`Morning`/`Evening`). Only a dot with `timing_flexible: true` may be split across both slots, and the majority of its daily count should stay in its own slot |
+| Pulse dots | a dot with `dosing_protocol: "pulse"` is dosed on only `pulse_days_per_cycle` days out of every `pulse_cycle_days` — never every day |
+| `DOT-N7` | **system-controlled, isolated.** On **days 10 and 11 only**, *both* capsules contain **only** `DOT-N7`, each at its `target_dots_max`. It appears on no other day, and no other dot appears in those four capsules. |
+
+Every field above comes from `dots_formulary` in the twin bundle (§4), which also carries each
+dot's ingredients with mg amounts, in both languages. `interventions.nutrition_schedule` shows
+what the subject is taking today, so a new cycle can be a deliberate change rather than a guess.
+
+Day numbers are **1–28 relative to the start of the cycle**. The start date is not yours to pick —
+it is set when the formula is dispensed — so do not put calendar dates in the file.
+
+### File format
+
+The file must open with the version marker, then carry three sections in this order. Keep the
+table headers verbatim, in lowercase: a downstream parser matches on them.
+
+```markdown
+<!-- viva-ag:dots-formulation v1 -->
+# 原粒定制 · 28 天配方
+
+## Summary
+
+| field | value |
+| --- | --- |
+| format | viva-ag-dots-formulation/1 |
+| job_uid | 0d1f8e2a-… |
+| cycle_days | 28 |
+| capsules | 56 |
+| total_dots | 1188 |
+| rationale | 一句话说明这次配方的主线（用户语言）。 |
+
+## Capsules
+
+| day | slot | dots |
+| --- | --- | --- |
+| 1 | AM | DOT-N1x2 DOT-N5x14 DOT-N12x14 |
+| 1 | PM | DOT-N3x4 DOT-N5x4 |
+| … | … | … |
+| 10 | AM | DOT-N7x50 |
+| 10 | PM | DOT-N7x50 |
+| 11 | AM | DOT-N7x50 |
+| 11 | PM | DOT-N7x50 |
+| … | … | … |
+| 28 | PM | DOT-N3x4 DOT-N5x4 |
+
+## Totals
+
+| dot_key | name | am_total | pm_total | cycle_total |
+| --- | --- | --- | --- | --- |
+| DOT-N1 | 甲基平衡 | 52 | 0 | 52 |
+| DOT-N3 | 静心夜 | 0 | 104 | 104 |
+| DOT-N5 | 迷走张力 | 364 | 104 | 468 |
+| DOT-N7 | 衰老清除 | 100 | 100 | 200 |
+| DOT-N12 | 敏锐心智 | 364 | 0 | 364 |
+```
+
+Read those numbers against the rules and you can see both traps. `DOT-N5` is
+`timing_flexible: true`, so its daily 18 may be split 14 AM / 4 PM with the majority in its own
+Morning slot; `DOT-N12` is not flexible, so all 14 stay in AM. And every everyday dot totals
+**26 days**, not 28 — days 10 and 11 are `DOT-N7` alone, which displaces everything else. Getting
+that wrong is the single easiest way to ship a formula whose totals don't match its capsules.
+
+Rules a parser depends on:
+
+- **All 56 rows are required**, in order: day 1 AM, day 1 PM, day 2 AM, … day 28 PM. Do not
+  abbreviate identical days into a range — most days *are* identical, and writing them out is
+  what makes the file safe to feed a machine.
+- The `dots` cell is space-separated `<dot_key>x<count>` tokens — `DOT-N5x14` means 14 dots of
+  `DOT-N5` in that capsule. `dot_key` must match `key_name` from `dots_formulary` exactly, case
+  included. `count` is a positive integer; never write a zero token, just omit the dot.
+- No capsule may be empty.
+- `Totals` must be arithmetically consistent with `Capsules`, and `total_dots` in `Summary` must
+  equal the sum of `cycle_total`. It is a checksum: a consumer that finds a mismatch should reject
+  the file rather than compound from it.
+
+Anything else you want to say — reasoning, biomarker rationale, cautions — goes **after** the
+`Totals` table, as ordinary prose. Everything above it is machine-read.
+
+Attach a `.pdf` alongside the `.md` if you like (§7 allows up to 5 files); the `.md` is the one
+that must conform.
+
+### Also send it as JSON
+
+Not required, but strongly recommended: put the same formula in the `result` field of
+`POST /jobs/result` as well —
+
+```jsonc
+{ "formulation": { "format": "viva-ag-dots-formulation/1", "cycle_days": 28,
+    "capsules": [ { "day": 1, "slot": "AM", "dots": { "DOT-N1": 2, "DOT-N5": 14 } }, … ],
+    "totals": { "DOT-N1": { "am": 56, "pm": 0, "cycle": 56 }, … } } }
+```
+
+A downstream system reading JSON cannot misparse a table, and it costs you one serialization.
+The 512 KB `result` cap is far above what 56 capsules need.
+
+### What nano does *not* do
+
+**Nano does not parse or validate this file.** It stores it and serves it back exactly as
+uploaded — a wrong dot key, an over-full capsule, a missing day or a broken checksum will not be
+caught anywhere between you and a system that compounds physical supplements. Conformance is
+entirely yours to guarantee. If you cannot produce a formula that satisfies every rule above,
+`POST /jobs/fail` with a clear reason is the correct outcome; a plausible-looking but invalid
+formula is worse than none.
+
+For the same reason the formula is an **artifact, not a prescription**: submitting it does not
+change the subject's active plan in nano, and nothing is dispensed automatically from it.
+
+---
+
+## 9. Limits
 
 | | |
 |---|---|
 | Concurrent jobs per user | 1 (enforced at enqueue) |
-| Jobs per user per day | 3 |
+| Jobs per user per day | configured per environment — 50 on dev, 10 on prod (code default 3) |
 | Lease | 60s – 6h, default 1h, extendable by heartbeat |
 | Attempts per job | 3 by default |
 | `summary` | 4000 characters |
@@ -527,7 +658,7 @@ over a terminal failure — a partial answer is far more useful to the user than
 | Document download | no limit — direct from object storage, Range supported |
 | Document URL lifetime | 6 hours, re-mintable |
 
-## 9. Recommended worker loop
+## 10. Recommended worker loop
 
 1. `POST /viva-ag/jobs/claim`. On `job: null`, sleep ~30s and repeat.
 2. `GET /viva-ag/twin-bundle`.

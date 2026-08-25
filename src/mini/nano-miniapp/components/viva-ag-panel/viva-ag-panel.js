@@ -50,6 +50,7 @@ const T = {
     presetFull: '全面分析',
     presetDocs: '解读档案',
     presetRisk: '风险筛查',
+    presetDots: '原粒定制',
     stQueued: '排队中', stClaimed: '已受理', stProcessing: '分析中',
     stCompleted: '已完成', stFailed: '未完成', stCancelled: '已取消',
     typeHospital: '就医记录', typeLab: '化验报告', typeImaging: '影像报告',
@@ -106,6 +107,7 @@ const T = {
     presetFull: 'Full analysis',
     presetDocs: 'Review records',
     presetRisk: 'Risk screen',
+    presetDots: 'Dot formulation',
     stQueued: 'Queued', stClaimed: 'Accepted', stProcessing: 'Analyzing',
     stCompleted: 'Done', stFailed: 'Failed', stCancelled: 'Cancelled',
     typeHospital: 'Hospital record', typeLab: 'Lab report', typeImaging: 'Imaging',
@@ -197,6 +199,7 @@ Component({
           { key: 'full_analysis',   label: t.presetFull },
           { key: 'document_review', label: t.presetDocs },
           { key: 'risk_screen',     label: t.presetRisk },
+          { key: 'dots_formulation', label: t.presetDots },
         ],
       })
       this._loadDocuments()

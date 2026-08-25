@@ -40,7 +40,10 @@ const { formatToShanghai } = require('../lib/time-utils');
 // Constants
 // ---------------------------------------------------------------------------------------
 
-const VALID_COMMAND_KEYS = new Set(['full_analysis', 'document_review', 'risk_screen']);
+// Preset intents the panel offers. 'dots_formulation' asks the agent to design a custom Dots
+// (原粒) formulation from the whole twin — the bundle already carries dots_formulary and the
+// user's committed nutrition schedule, so it needs no extra data, only a different intent.
+const VALID_COMMAND_KEYS = new Set(['full_analysis', 'document_review', 'risk_screen', 'dots_formulation']);
 const MAX_COMMAND_LENGTH = 2000;
 const MAX_SUMMARY_LENGTH = 4000;
 const MAX_RESULT_BYTES = 512 * 1024;

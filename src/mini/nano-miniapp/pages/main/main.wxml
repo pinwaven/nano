@@ -234,6 +234,48 @@
                         <text wx:if="{{di.note}}" class="dcard-note">{{di.note}}</text>
                       </view>
                     </view>
+                    <view wx:elif="{{seg.t === 'formula'}}" class="fcard">
+                      <view class="fcard-head">
+                        <text class="fcard-title">{{t.formulaCardTitle}}</text>
+                        <text class="fcard-note">{{t.formulaEvalNote}}</text>
+                      </view>
+                      <view class="fcard-row">
+                        <text class="fcard-slot">{{t.formulaAm}}</text>
+                        <view class="fcard-track">
+                          <view
+                            wx:for="{{seg.items}}"
+                            wx:for-item="fi"
+                            wx:for-index="fk"
+                            wx:key="key"
+                            class="fcard-seg"
+                            style="width:{{fi.amPct}}%;background:{{fi.color}}"
+                          ></view>
+                        </view>
+                        <text class="fcard-num">{{seg.am}}</text>
+                      </view>
+                      <view class="fcard-row">
+                        <text class="fcard-slot">{{t.formulaPm}}</text>
+                        <view class="fcard-track">
+                          <view
+                            wx:for="{{seg.items}}"
+                            wx:for-item="fi"
+                            wx:for-index="fk"
+                            wx:key="key"
+                            class="fcard-seg"
+                            style="width:{{fi.pmPct}}%;background:{{fi.color}}"
+                          ></view>
+                        </view>
+                        <text class="fcard-num">{{seg.pm}}</text>
+                      </view>
+                      <view class="fcard-legend">
+                        <view wx:for="{{seg.items}}" wx:for-item="fi" wx:for-index="fk" wx:key="key" class="fcard-leg">
+                          <view class="fcard-swatch" style="background:{{fi.color}}"></view>
+                          <text class="fcard-leg-name">{{fi.name}}</text>
+                          <text class="fcard-leg-num">{{fi.am}}·{{fi.pm}}</text>
+                        </view>
+                      </view>
+                      <text class="fcard-foot">{{t.formulaTotalLabel}} {{seg.total}}</text>
+                    </view>
                   </view>
                 </block>
                 <mp-html

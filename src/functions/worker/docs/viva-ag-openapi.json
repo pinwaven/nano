@@ -841,8 +841,10 @@
               "full_analysis",
               "document_review",
               "risk_screen",
+              "dots_formulation",
               null
-            ]
+            ],
+            "description": "Preset intent. dots_formulation (原粒定制) requires a specific deliverable: a 28-day / 56-capsule formula attached as an .md result file in the documented format — see section 8 of GET /viva-ag/docs. The other presets are free-form analyses."
           },
           "params": {
             "type": "object"

@@ -682,6 +682,39 @@ New: `src/schemas/migration_nutrition_plans_status.sql`, `src/functions/worker/p
 
 Files: `prompts/viva/judgeTemplate.js` (`message` param), `prompts/chat/planTemplate.js` (self-reported-fact clarification), `lib/agenticChat.js` (`message` threaded into `runJudge`, REVISE correction prompt strengthened, self-contradiction downgrade), `handlers/chat.js` (`recordedFactText`-aware fallback, replacing the old bare-generic fallback), `prompts/viva/chat/nutrition.js` (relevance-first rule, mirroring `chat/biomarker.js`).
 
+## 28b. Formulate-Dots Is an Evaluation Tool (2026-08-25)
+
+The chat toolbox's **Formulate Dots** (`handlePostFormulaDots` → `_handleFormulaDotsAgentic` →
+`finalizeFormulaDotsGenerate`) **no longer writes anything**. The 28-day formula a user actually
+receives now comes from Viva AG's `dots_formulation` job (§35), so this tool exists to show what
+the current data implies, not to commit a plan.
+
+What changed, and what deliberately did not:
+
+- **No `nutrition_plans` / `nutrition_schedules` writes anywhere on this path.** The `'pending'`
+  plan row `_handleFormulaDotsAgentic` used to insert is gone, `pending_plan_id` is no longer
+  threaded through `llmContext`, and neither the async finalizer, the EventBridge-publish
+  fail-open path, nor `handleChatGenerateEvent`'s error fallback calls `_commitNutritionPlan`.
+- **The allocation is rendered in the chat bubble** as a `:::formula` display card instead of
+  being hidden behind a "查看方案" button — that button pointed at the Dots subtab, which this run
+  no longer changes, so it would have shown the *previous* plan. It is removed from the miniapp,
+  `utils/tool-actions.js` and the web user-app's `ChatTab.jsx`.
+- `_buildFormulaChartBlock()` (`handlers/dots.js`) builds the card **server-side from the already
+  validated recipe** — the model never writes it, so the bars can never disagree with the numbers
+  they draw. Rows are `key|name|color|am|pm`; every total is derived in the renderer, so the
+  arithmetic lives in exactly one place. Colours are each dot's own `dots.color_hex`, which is why
+  that column was added to this handler's formulary SELECT.
+- **`handleNutritionTopupEvent` still commits** — untouched. Its dispatcher scan is a LEFT JOIN
+  with `HAVING COUNT(s.id) < 7`, so it matches users with *no* plan too, and it remains the thing
+  that keeps the Dots subtab populated. Don't "clean this up" to match the chat tool without
+  deciding what else would create a plan.
+- `_commitNutritionPlan` is therefore still live and still exported; only its chat-tool callers
+  went away.
+
+Open consequence, deliberately left: an AG `dots_formulation` result is an artifact and also does
+not write to `nutrition_plans` (§35), so a formula GCN compounds would not match the user's nano
+plan. That decision was deferred until the external agent is actually producing formulas.
+
 ## 29. Viva Proactive Daily Check-Ins (Morning / Midday / Evening)
 
 Added 2026-07-29. Every previous Viva feature (§21-28) only responds when the user speaks first. This adds the reverse: Viva initiates, up to three times a day, checking in on today's dots and flagging one grounded thing to watch for. Delivery is **in-app only** — the message waits in `notifications` for the user's next app-open (identical to how reminders/coach messages already surface), not a true WeChat push (no subscribe-message/template-message send exists anywhere in this codebase; that would need a new WeChat-platform template plus opt-in UI — out of scope). Content generation is a **single lightweight completion**, not the full PLAN→GENERATE→JUDGE→REVISE agentic loop — appropriate for a routine message going out to every eligible user up to 3x/day. **Viva only.**
@@ -1032,6 +1065,22 @@ deliberately does not interpret `:::` display-card directives the way `mdToSegme
 reason summaries are stripped of them. And `_neutralizeLinks()` rewrites `[text](href)` to plain
 text, because mp-html's `linkTap` calls `wx.navigateTo` for any scheme-less href, which would let
 an external report push the user into an arbitrary page of this miniapp.
+
+### `dots_formulation` (原粒定制) is a contract, and the contract lives in the API doc
+
+The fourth preset asks the external agent for a **28-day / 56-capsule Dots formula** as an `.md`
+file in a fixed, machine-readable format — §8 of `worker/docs/viva-ag-api.md`. Every rule in it is
+mirrored from `handlers/dots.js` (`PLAN_DAYS = 28`, `MAX_DOTS_PER_CAPSULE = 72`, per-dot
+`target_dots_min`/`max` applied to the **daily** total, pulse windows, and `DOT-N7` isolation on
+`N7_ISOLATION_DAY_INDEXES = [9, 10]` where both capsules are `DOT-N7` alone). **Change any of those
+constants and you must change that doc**, or the agent builds against rules nano no longer uses.
+
+Nano **does not parse or validate the file** (v1 decision) — it is stored and served byte for byte,
+so nothing catches a bad dot key or an over-full capsule between the agent and a processing center
+compounding physical capsules. The contract states that to the agent's authors rather than implying
+a safety net. And the formula is an **artifact, not a prescription**: it never writes to
+`nutrition_plans`, so a formula GCN compounds would not match the user's nano plan — deliberate for
+now, revisit before that path goes live.
 
 ### `health_documents`, not `health_reports`
 

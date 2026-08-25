@@ -12,7 +12,23 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   - The upstream release note is 修复网络耗时过久问题 (fixes excessive network latency), which lands directly on the only path we use the plugin for: the chat tab's hold-to-talk voice input (`pages/main/main.js`'s `getRecordRecognitionManager()`), where the mic stays open until the recognition round trip returns `onStop`.
   - A pinned plugin version never updates on its own, so this is an explicit bump; no MP-console change is needed since approval is per-plugin, not per-version. No code changes — the `start`/`stop`/`onStop`/`onError` surface is unchanged across 0.3.x.
 
+### Changed
+
+- **Formulate Dots is now an evaluation tool — it no longer writes a plan, and shows the allocation as a chart in the chat** (`worker/handlers/dots.js`, `worker/handlers/chat.js`, `nano-miniapp/pages/main/`, `nano-miniapp/utils/markdown.js`)
+  - The 28-day formula a user actually receives now comes from Viva AG's `dots_formulation` job, so the chat toolbox's Formulate Dots stopped committing: no `'pending'` `nutrition_plans` row is inserted, and nothing writes to `nutrition_plans` / `nutrition_schedules` on any of its three paths (async finalizer, EventBridge-publish fail-open, and the async error fallback).
+  - **The numbers moved into the bubble.** A new `:::formula` display-card directive renders the proposed AM/PM allocation as two colour-segmented capsule bars plus a legend, using each dot's own catalog colour (`dots.color_hex`). Both bars are scaled against the larger capsule so their lengths are comparable rather than each filling the track.
+  - The card is built **server-side from the already-validated recipe** (`_buildFormulaChartBlock`), never by the model, so the bars cannot disagree with the counts they draw; the renderer derives every total from the rows, so the arithmetic exists in one place only.
+  - **The "查看方案" button is gone** (miniapp, `utils/tool-actions.js`, and the web user-app's `ChatTab.jsx`). It opened the Dots subtab, which this run no longer changes — it would have shown the user the *previous* plan while they were reading a new evaluation.
+  - `handleNutritionTopupEvent` is deliberately untouched and still commits; its dispatcher scan matches users with no plan at all, so it remains what keeps the Dots subtab populated.
+
 ### Added
+
+- **Viva AG `原粒定制` preset + a specified 28-day formula contract** (`nano-miniapp/components/viva-ag-panel/`, `worker/handlers/viva_ag.js`, `worker/docs/viva-ag-api.md`)
+  - A fourth preset chip in the AG subtab's 发起分析 row, `原粒定制` / `Dot formulation` (`command_key: 'dots_formulation'`), asking the external agent for a custom Dots formulation designed from the whole digital twin.
+  - The deliverable is **specified, not free-form**: a 28-day / 56-capsule formula attached as an `.md` result file in a fixed machine-readable layout (§8 of the API doc) — a summary table with a `total_dots` checksum, all 56 capsule rows written out individually as `<dot_key>x<count>` tokens, and a per-dot totals table. The format exists so downstream systems such as Aeviva's processing center can consume it rather than reading prose.
+  - **Every rule is mirrored from nano's own formulator** (`handlers/dots.js`): 28 days, 56 capsules, ≤72 dots per capsule, per-dot `target_dots_min`/`target_dots_max` applied to the *daily* total rather than each capsule, `timing`/`timing_flexible` slot rules, pulse windows, and the `DOT-N7` isolation days where days 10–11 are `DOT-N7` alone at its max. The worked example is arithmetically correct against the live catalog, deliberately — it makes visible the trap that isolation days displace everything else, so an everyday dot totals 26 days across the cycle, not 28.
+  - **Nano does not parse or validate the file** for now; the contract says so to the agent's authors rather than letting them assume a safety net. The formula also does not touch `nutrition_plans` — it stays a read-only artifact, per the original Viva AG design decision.
+  - Also corrected a stale line in the same doc: the per-user daily job cap has been environment-configurable since 2026-08-23 (dev 50, prod 10), not a flat 3.
 
 - **Viva AG report files — the external agent can attach `.pdf` and `.md` results, shown in the AG subtab** (`worker/handlers/viva_ag.js`, `nano-miniapp/components/viva-ag-panel/`, `utils/markdown.js`, `migration_viva_ag_result_files.sql`)
   - A job now carries up to **5** artifacts (`viva_ag_jobs.result_files`) instead of a single file, so the agent can hand back a rendered PDF *and* its markdown source rather than choosing. `result_oss_key` is still written with the first file, so legacy rows and any single-file caller are unaffected.

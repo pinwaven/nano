@@ -596,6 +596,43 @@ which mints a fresh 300s signed URL per tap via
 
 ---
 
+## 9b. `dots_formulation` — a specified deliverable, not a free-form analysis
+
+The `dots_formulation` (原粒定制) preset asks the agent for a **28-day / 56-capsule Dots formula**,
+attached as an `.md` result file in a fixed format. Section 8 of `docs/viva-ag-api.md` is the
+contract; it is worth understanding *why* it looks the way it does.
+
+**The rules are nano's, not the agent's.** Every constraint in that section is mirrored from
+`handlers/dots.js`: `PLAN_DAYS = 28`, one `morning_cup` + one `evening_cup` per day (56 capsules),
+`MAX_DOTS_PER_CAPSULE = 72`, per-dot `target_dots_min`/`target_dots_max` applied to the **daily**
+total rather than each capsule, `dosing_protocol: 'pulse'` windows, and the `DOT-N7` isolation days
+(`N7_ISOLATION_DAY_INDEXES = [9, 10]`, i.e. calendar days 10–11, both capsules `DOT-N7` alone at
+its `target_dots_max`). If any of those change, **the doc has to change with them** — the agent has
+no other source for them, and a formula built on stale rules is not manufacturable.
+
+The isolation days are also the subtlety most likely to produce a wrong file: they displace every
+other dot, so an everyday dot totals 26 days across the cycle, not 28. The worked example in the
+contract is arithmetically correct against the live catalog specifically so that trap is visible.
+
+**All 56 rows are required, no ranges.** Most days are identical, which is exactly why compressing
+them would be tempting and wrong: the consumer is a processing center compounding physical
+capsules, and reconstructing an implied schedule is where that goes wrong.
+
+**Nano does not parse or validate the file** — decided for v1. It is stored and served back byte
+for byte, so a wrong dot key, an over-full capsule or a broken checksum is caught by nobody in
+between. The contract says this plainly to the agent's authors rather than letting them assume a
+safety net exists. The `Summary.total_dots` checksum exists so a *downstream* consumer can reject a
+file cheaply.
+
+**It is an artifact, not a prescription.** Submitting a formula does not touch `nutrition_plans`,
+consistent with §1's read-only-artifacts decision. The consequence is real and deliberate: if
+Aeviva's processing center ever compounds from an AG formula, the capsules the user physically
+receives will not match their nano plan. Revisit once the agent is actually producing formulas —
+committing would mean letting an external system write dosing into a user's schedule, which needs
+server-side validation as a hard gate first.
+
+---
+
 ## 10. Miniapp
 
 ### The subtab
