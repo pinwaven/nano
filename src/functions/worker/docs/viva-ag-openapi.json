@@ -583,6 +583,149 @@
         }
       }
     },
+    "/viva-ag/jobs/questionnaire": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Park the job and ask the user a clarifying questionnaire",
+        "description": "Use when the twin is missing something you actually need, instead of guessing. On success the job is parked as awaiting_input and YOUR LEASE IS GONE — the result_token is void and you must go back to polling /jobs/claim. When the user answers, the job returns to the queue and your next claim of it carries their answers in the bundle's job_questionnaires. Validation is all-or-nothing: one bad question rejects the round with reason invalid_questions and a violations array, leaving the job claimed so you can correct and retry. Max 2 rounds per job; the user has 7 days to answer. save_target, save_field, save_biomarker_type and completion_check are ignored if sent — a question may ask, never decide where the answer is written. See section 7b of /viva-ag/docs.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "job_uid",
+                  "result_token",
+                  "questions"
+                ],
+                "properties": {
+                  "job_uid": {
+                    "type": "string"
+                  },
+                  "result_token": {
+                    "type": "string"
+                  },
+                  "intro": {
+                    "type": "string",
+                    "maxLength": 4000,
+                    "description": "Chat message the user reads. Write it in the job's language. A default is used if omitted."
+                  },
+                  "questions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 12,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "input_type"
+                      ],
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9_]{1,40}$",
+                          "description": "Optional; generated if omitted."
+                        },
+                        "input_type": {
+                          "type": "string",
+                          "enum": [
+                            "text",
+                            "button_select",
+                            "multi_select",
+                            "slider_group",
+                            "date_picker"
+                          ]
+                        },
+                        "prompt_zh": {
+                          "type": "string",
+                          "maxLength": 500
+                        },
+                        "prompt_en": {
+                          "type": "string",
+                          "maxLength": 500,
+                          "description": "Supply at least one prompt; the other is mirrored."
+                        },
+                        "config": {
+                          "type": "object",
+                          "description": "Per input_type: options[] for button_select/multi_select (max 12, an option keyed \"other\" is rejected); sliders[] for slider_group (max 6); min_date/max_date for date_picker; placeholder_zh/_en for text."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Parked, or rejected with violations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "awaiting_input"
+                      ]
+                    },
+                    "assignment_id": {
+                      "type": "integer"
+                    },
+                    "question_count": {
+                      "type": "integer"
+                    },
+                    "round": {
+                      "type": "integer"
+                    },
+                    "rounds_remaining": {
+                      "type": "integer"
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "description": "After this the job closes as questionnaire_unanswered."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "invalid_questions",
+                        "questionnaire_limit_reached",
+                        "invalid_token",
+                        "lease_expired",
+                        "job_not_claimable",
+                        "missing_params",
+                        "internal_error"
+                      ]
+                    },
+                    "violations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/viva-ag/health-events": {
       "get": {
         "tags": [
@@ -990,7 +1133,31 @@
             "type": "string"
           },
           "job": {
-            "type": "object"
+            "type": "object",
+            "description": "The job you claimed, plus how many clarifying rounds it has used and has left.",
+            "properties": {
+              "job_uid": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "command_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "params": {
+                "type": "object"
+              },
+              "questionnaire_rounds_used": {
+                "type": "integer"
+              },
+              "questionnaire_rounds_remaining": {
+                "type": "integer"
+              }
+            }
           },
           "subject": {
             "type": "object",
@@ -1195,6 +1362,59 @@
                 "by_category": {
                   "type": "object",
                   "description": "health_events only."
+                }
+              }
+            }
+          },
+          "job_questionnaires": {
+            "type": "array",
+            "description": "Clarifying questions THIS job asked (see /viva-ag/jobs/questionnaire), in the order asked. answer:null means asked-but-unanswered.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "round": {
+                  "type": "integer"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed"
+                  ]
+                },
+                "completed_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "questions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "input_type": {
+                        "type": "string"
+                      },
+                      "prompt_zh": {
+                        "type": "string"
+                      },
+                      "prompt_en": {
+                        "type": "string"
+                      },
+                      "answer": {},
+                      "answered_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
                 }
               }
             }

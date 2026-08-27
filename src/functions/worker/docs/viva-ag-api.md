@@ -70,14 +70,19 @@ not the status code. Only an auth failure (401/403) or a genuine server fault (5
 | `invalid_token` | wrong `result_token` — usually means your lease expired and the job was re-claimed |
 | `lease_expired` | your lease deadline passed; heartbeat more often or request a longer lease |
 | `job_not_claimable` | the job is not in `claimed`/`processing` |
-| `job_already_completed` | a terminal result was already recorded |
+| `job_already_completed` | the job is in a **terminal state** — `completed`, `failed` **or `cancelled`**. Not only "a result was recorded": a lease that expired past `max_attempts`, or a job the user cancelled, both land here. Treat it as terminal (see §10). |
 | `document_not_found` | the document is not in this job's snapshot, or was deleted |
 | `result_too_large` | `result` exceeds 512 KB serialized — upload it as a file instead |
 | `invalid_result_key` | a submitted result file key was not one minted for this job |
 | `result_file_missing` | a submitted result file key exists but nothing was uploaded to it |
 | `unsupported_file_type` | result files must be `pdf`, `md` or `txt` |
 | `too_many_result_files` | at most 5 result files per job |
+| `invalid_questions` | a clarifying questionnaire was rejected; see the `violations` array |
+| `questionnaire_limit_reached` | this job has already used all its clarifying rounds |
 | `internal_error` | unexpected server fault |
+
+`questionnaire_unanswered` also appears as a job's `error_reason` — it is not returned to you.
+It means a job you parked was closed because the user never answered.
 
 ---
 
@@ -85,17 +90,26 @@ not the status code. Only an auth failure (401/403) or a genuine server fault (5
 
 ```
   claim  ──►  twin-bundle  ──►  [heartbeat …]  ──►  result   (or fail)
-    │              │                                   │
-    └── job:null   └── documents downloaded            └── delivered to the user's chat
-        (queue empty; poll again)                          directly from OSS
+    │              │                    │              │
+    │              │                    │              └── delivered to the user's chat
+    │              │                    │
+    │              │                    └──►  questionnaire  ──►  job parked as awaiting_input
+    │              │                                                     │
+    │              └── documents downloaded                    user answers in the app
+    │                  directly from OSS                                 │
+    └── job:null                                              back to queued — claim it again
+        (queue empty; poll again)
 ```
 
-Statuses: `queued` → `claimed` → `processing` → `completed` | `failed`. A job whose lease
-expires goes back to `queued` if it has attempts left, or terminally `failed` if not (in which
-case the user is told the analysis didn't finish).
+Statuses: `queued` → `claimed` → `processing` → `completed` | `failed`, plus `awaiting_input` for
+a job parked waiting on the user (§7b). A job whose lease expires goes back to `queued` if it has
+attempts left, or terminally `failed` if not (in which case the user is told the analysis didn't
+finish).
 
 `attempts` increments on **every claim**, so a run that crashes at hour three burns one. Default
-`max_attempts` is 3.
+`max_attempts` is 3. Parking a job to ask a question **refunds** the attempt it consumed — asking
+is progress, not a failure — so clarifying rounds never eat your retry budget. They are bounded
+separately, by the per-job round cap in §7b.
 
 ---
 
@@ -184,9 +198,21 @@ Shape:
 ```jsonc
 {
   "success": true,
-  "bundle_version": 1,
+  "bundle_version": 2,
   "generated_at": "2026-08-23 17:05:40",
-  "job": { "job_uid": "…", "command": "…", "command_key": "…", "params": {} },
+  "job": { "job_uid": "…", "command": "…", "command_key": "…", "params": {},
+           "questionnaire_rounds_used": 1, "questionnaire_rounds_remaining": 1 },
+
+  // Clarifying questions THIS job asked (§7b), in the order you asked them. Empty if none.
+  // `answer: null` means asked-but-unanswered — distinguishable from an empty answer.
+  "job_questionnaires": [
+    { "round": 1, "status": "completed", "completed_at": "2026-08-24 09:12:03",
+      "questions": [
+        { "key": "onset", "input_type": "text",
+          "prompt_zh": "这些症状大概是什么时候开始的？", "prompt_en": "When did the symptoms start?",
+          "answer": "大约三个月前", "answered_at": "2026-08-24 09:11:58" }
+      ] }
+  ],
 
   // Pseudonymous by design: no user id, name, phone or openid anywhere in the bundle.
   "subject": { "ref": "<job_uid>", "age": 41, "gender": "male", "language": "zh",
@@ -422,8 +448,23 @@ their language — it is not a debug channel.
 ### Optional: upload report files first
 
 A job can carry up to **5** report files. Typically that is a rendered **`.pdf`** plus its
-**`.md`** source — the Mini Program opens the PDF in the system document viewer and renders the
-markdown in-app, so uploading both gives the user a readable report either way.
+**`.md`** source.
+
+The two are **not** interchangeable, and the asymmetry is worth knowing before you choose what to
+attach. `wx.openDocument` — the only way to hand a file to the system viewer — accepts
+`doc/docx/xls/xlsx/ppt/pptx/pdf` and **cannot open markdown at all**. So:
+
+- a **`.pdf`** opens in the system viewer;
+- a **`.md`** or **`.txt`** is downloaded and rendered by the Mini Program itself. That in-app
+  render is the *only* path for those types, not a fallback — and it is a trust boundary: `:::`
+  display-card directives are not interpreted and markdown links are flattened to plain text,
+  because the file was written by an external system. Raw HTML in your markdown is escaped and
+  shown as text rather than rendered, so a machine-readable marker comment survives visibly
+  instead of disappearing.
+
+Attaching both gives the user a polished document *and* a readable source. Attaching only a `.md`
+is fine — it renders — but attaching only a `.pdf` means anything machine-readable in it is out of
+reach.
 
 **Allowed types: `pdf`, `md`, `txt`.** Anything else is refused with `unsupported_file_type` at
 this step, before you spend the upload — the Mini Program is the only consumer and it has no way
@@ -511,6 +552,140 @@ curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
 (`{"requeued": true}`). Otherwise the job fails terminally and the user gets a short apology in
 their own language. Prefer a real `summary` explaining what you could and couldn't determine
 over a terminal failure — a partial answer is far more useful to the user than nothing.
+
+---
+
+## 7b. Asking the user a question
+
+If the twin is missing something you genuinely need, don't guess — park the job and ask. This
+matters most for `dots_formulation`, where the output is compounded into physical capsules.
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" -H 'Content-Type: application/json' \
+  "https://nano-dev.gcn.net/api/viva-ag/jobs/questionnaire" -d '{
+    "job_uid": "'"$JOB_UID"'",
+    "result_token": "'"$RESULT_TOKEN"'",
+    "intro": "为了判断你的炎症来源，我还需要确认两件事。",
+    "questions": [
+      { "key": "onset", "input_type": "text",
+        "prompt_zh": "这些症状大概是什么时候开始的？",
+        "prompt_en": "When did the symptoms start?" },
+      { "input_type": "button_select",
+        "prompt_zh": "目前在服用抗炎药吗？",
+        "config": { "options": [ { "value": "yes", "label_zh": "是", "label_en": "Yes" },
+                                 { "value": "no",  "label_zh": "否", "label_en": "No"  } ] } }
+    ] }'
+```
+
+```jsonc
+{ "success": true, "status": "awaiting_input", "assignment_id": 812, "question_count": 2,
+  "round": 1, "rounds_remaining": 1, "expires_at": "2026-09-03 17:05:40" }
+```
+
+**Your lease is gone the moment this succeeds.** The job is parked as `awaiting_input`, your
+`result_token` is void, and you should return to polling `/jobs/claim`. There is no lease long
+enough to hold across a person answering a form, so the job goes back on the queue instead — and
+because a worker keeps nothing between claims, whichever worker picks it up next has everything
+it needs.
+
+When the user finishes the form, the job returns to `queued` automatically. Your next claim of it
+carries every round and answer in the bundle's `job_questionnaires` (§4), and the answers also
+merge into `layers.personal_profile.questionnaire_context`.
+
+`intro` is optional — it becomes the chat message the user reads, so write it in their language
+(the job's `language`); a default is used if you omit it.
+
+### Question types
+
+| `input_type` | `config` | notes |
+|---|---|---|
+| `text` | `placeholder_zh` / `placeholder_en` | free-form; the only type whose answer is arbitrary text |
+| `button_select` | `options: [{value, label_zh, label_en}]` | single choice, ≤ 12 options |
+| `multi_select` | `options: [{value, label_zh, label_en}]` | multiple choice, ≤ 12 options |
+| `slider_group` | `sliders: [{key, min, max, step, label_zh, label_en, unit}]` | ≤ 6 numeric sliders; `default` optional (midpoint if omitted) |
+| `date_picker` | `min_date` / `max_date` as `YYYY-MM-DD` | a single date |
+
+`key` is optional and generated if omitted. `prompt_zh`/`prompt_en` — supply at least one; the
+other is mirrored, because the user may be reading in either language.
+
+### Rules
+
+Validation is **all-or-nothing**: one bad question rejects the whole round with
+`reason: "invalid_questions"` and a `violations` array naming each problem. The job stays claimed,
+so fix the payload and post again. Nothing is silently repaired.
+
+- ≤ 12 questions per round, ≤ 500 characters per prompt.
+- ≤ 2 rounds per job. A third returns `questionnaire_limit_reached` — proceed with what you have,
+  or `/jobs/fail`. Check `questionnaire_rounds_remaining` in the bundle before you plan to ask.
+- The user has 7 days. After that the job closes as `questionnaire_unanswered` and they are told
+  why. Ask only for what you will actually use.
+- An option keyed `other` is rejected. If you want free text, ask a `text` question — that is the
+  only shape whose answer is recorded verbatim.
+- Prompts are rendered in the user's chat, so `:::` display-card fences are stripped and markdown
+  links are flattened to plain text. Send plain prose.
+
+### Order of checks
+
+Verified against the implementation, because it is easy to infer backwards from a single probe:
+
+    1. result_token   → invalid_token / lease_expired
+    2. job lookup     → job_not_found / job_not_claimable / job_already_completed
+    3. round cap      → questionnaire_limit_reached
+    4. question validation → invalid_questions
+
+**Your payload is validated last**, and not at all if an earlier check fails. The durable rule,
+which holds whatever the internals do later:
+
+> A job-level rejection is not payload confirmation. `invalid_questions` is the only reason that
+> says anything about your questions.
+
+So a `job_not_found` tells you nothing about whether they were well formed. Fix the job problem,
+then re-post and read the result again.
+
+The round cap sits before validation for the same reason, and that one can actively mask a bug:
+on an exhausted job you get `questionnaire_limit_reached` **whether your payload was valid or
+not**, so a malformed one is never reported and you may carry the same broken template into the
+next job believing it was fine. Read `questionnaire_rounds_remaining` from the bundle and refuse
+locally at 0, rather than spending a request to discover it.
+
+### What you cannot do
+
+A question can only **ask**. Fields that would route an answer into the user's profile,
+biometrics, or medical record — `save_target`, `save_field`, `save_biomarker_type` — and
+`completion_check`, which would let a question auto-skip itself, are ignored entirely if present.
+Where an answer is stored is nano's decision, not yours.
+
+They are ignored rather than rejected, so that adding a field to this API never breaks an existing
+client. But that means a payload carrying them **succeeds**, and nothing in the response tells you
+they were dropped. If your client lets an author write them, surface them as a local error rather
+than stripping them quietly — otherwise somebody ships a questionnaire believing an answer routes
+somewhere it does not.
+
+### Before you ask, check what you already asked
+
+A job you claim may **already carry answered rounds** — that is the normal state of any job that
+has been parked once. Read `job_questionnaires` (§4) *before* deciding to ask, not only after:
+
+- if every question you were about to send already has a non-null `answer`, you have your data —
+  asking again spends a round and asks a real person something they already told you;
+- if only some do, ask the rest;
+- `questionnaire_rounds_remaining` tells you whether asking is even possible.
+
+This matters more than it looks. Park → re-queue → re-claim is a lifecycle shape that did not
+exist before questionnaires: a job used to be claimed once and finished once, so **any per-claim
+state a worker keeps — local files, sentinels, in-memory flags — could never outlive its claim.**
+Now it routinely does. Audit every such assumption in your worker, not just the ones you have
+already thought about. A stale "ask" sentinel that survives into the next claim will re-send a
+questionnaire the user has already answered.
+
+### Parking is not idempotent
+
+A successful park messages a real person and spends one of two rounds. There is no dedupe key: if
+you post twice, the user gets two forms and the job has no rounds left.
+
+So do not auto-retry a park whose response you did not see. A request that timed out may well have
+landed. Treat an unconfirmed park as *possibly succeeded*, re-read the job's status (a parked job
+is `awaiting_input`), and require a human decision before trying again.
 
 ---
 
@@ -616,6 +791,13 @@ Anything else you want to say — reasoning, biomarker rationale, cautions — g
 Attach a `.pdf` alongside the `.md` if you like (§7 allows up to 5 files); the `.md` is the one
 that must conform.
 
+### The `.md` is doing double duty here
+
+For `full_analysis` a `.md` is usually the source behind a rendered PDF. For `dots_formulation` it
+is both the machine-readable artifact nano parses **and**, unless you also attach a PDF, the only
+thing the user can read. Write it so it survives being read by a person: the tables below render
+as tables in-app, and the marker comment on line 1 is shown as escaped text rather than hidden.
+
 ### Send it as JSON — required
 
 Put the same formula in the `result` field of `POST /jobs/result`:
@@ -680,7 +862,10 @@ formulary to validate a dot you didn't pick.
 | Concurrent jobs per user | 1 (enforced at enqueue) |
 | Jobs per user per day | configured per environment — 50 on dev, 10 on prod (code default 3) |
 | Lease | 60s – 6h, default 1h, extendable by heartbeat |
-| Attempts per job | 3 by default |
+| Attempts per job | 3 by default (a clarifying round refunds its attempt) |
+| Clarifying questionnaires per job | 2 rounds |
+| Questions per round | 12 |
+| Time the user has to answer | 7 days, after which the job closes as `questionnaire_unanswered` |
 | `summary` | 4000 characters |
 | `result` | 512 KB serialized |
 | Document upload (user side) | 20 MB per file |
@@ -693,7 +878,28 @@ formulary to validate a dot you didn't pick.
 2. `GET /viva-ag/twin-bundle`.
 3. Download the documents you need, using Range for anything large; verify against `etag`.
 4. Heartbeat every few minutes with a user-facing `progress_note`.
-5. Optionally upload a report artifact.
-6. `POST /viva-ag/jobs/result` — or `/jobs/fail` if you genuinely cannot produce anything.
+5. If the twin is missing something you actually need, `POST /viva-ag/jobs/questionnaire` and
+   **stop working on this job** — your lease is gone. Go back to step 1. When the user answers,
+   the job returns to the queue and your next claim of it carries their answers in
+   `job_questionnaires`. Check `questionnaire_rounds_remaining` before planning to ask.
+6. Optionally upload a report artifact.
+7. `POST /viva-ag/jobs/result` — or `/jobs/fail` if you genuinely cannot produce anything.
 
-Treat `invalid_token` at any step as "I lost this job": stop work on it and claim again.
+### Knowing when you have lost a job
+
+Any of these reasons, at any step, means **this job is no longer yours**: stop work on it, drop
+whatever local state you are holding for it, and go back to claiming.
+
+| reason | what happened |
+|---|---|
+| `invalid_token` | your lease expired and the job was re-claimed by someone else |
+| `lease_expired` | your lease deadline passed |
+| `job_already_completed` | the job reached a terminal state — including a lease that ran out past `max_attempts`, and a job the user cancelled |
+| `job_not_claimable` | the job is no longer in `claimed`/`processing` — e.g. you parked it for a questionnaire (§7b) and it is now waiting on the user |
+| `job_not_found` | the job no longer exists |
+
+**Do not treat only `invalid_token` as terminal.** A worker that retries or waits on the others
+goes *quiet* instead of failing loudly — it holds a dead job and stops claiming new ones, with no
+error surfaced. This is a real path, not a hypothetical: a run that overruns its lease past
+`max_attempts` is failed by the sweep while your `result_token` still matches, so your next
+heartbeat returns `job_already_completed`, not `invalid_token`.
