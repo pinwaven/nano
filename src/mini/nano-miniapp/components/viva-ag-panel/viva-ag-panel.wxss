@@ -475,7 +475,9 @@
   flex: 1;
   height: 0;
   padding: 28rpx 32rpx;
-  font-size: 26rpx;
+  /* Tokenised so the report prose follows the accessibility text-size setting, and so the
+     em-based sizes in MD_TAG_STYLE (which resolve against this element) scale with it. */
+  font-size: var(--fs-26, 26rpx);
   line-height: 1.75;
   color: var(--steel);
 }

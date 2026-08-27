@@ -116,7 +116,11 @@
   <view class="tab-content">
 
     <!-- ════ CHAT ════ -->
-    <view class="chat-tab{{tab !== 'chat' ? ' tab-hidden' : ''}}">
+    <view class="chat-tab{{tab !== 'chat' ? ' tab-hidden' : ''}}"
+          bindtouchstart="onChatTouchStart"
+          bindtouchmove="onChatTouchMove"
+          bindtouchend="onChatTouchEnd"
+          bindtouchcancel="onChatTouchEnd">
 
       <scroll-view
         class="chat-messages"

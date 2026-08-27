@@ -3,6 +3,7 @@ const { BASE, VERSION, WX_VERSION, IS_DEV } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
 const { resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
 const { maskPhone } = require('../../utils/phone.js')
+const { createPinchStepper } = require('../../utils/pinch.js')
 const { mdToSegments, MD_TAG_STYLE } = require('../../utils/markdown.js')
 const { buildSeriesIndex, sparkForLabel, appendReading } = require('../../utils/biomarker-series.js')
 const speechPlugin = requirePlugin('WechatSI')
@@ -1487,14 +1488,34 @@ Page({
     } catch (e) {}
   },
 
-  // Two-finger pinch on the health tab (user-health.js _onUhTouchMove). One step per
-  // gesture; a pinch past either end stop is a silent no-op rather than a wrap-around.
-  onTextScaleStep(e) {
-    const next = this.data.textScale + (e.detail.dir > 0 ? 1 : -1)
+  // One step per gesture; a pinch past either end stop is a silent no-op, not a wrap-around.
+  _stepTextScale(dir) {
+    const next = this.data.textScale + (dir > 0 ? 1 : -1)
     if (next < 0 || next > 3) return
     this._applyTextScale(next)
     if (wx.vibrateShort) wx.vibrateShort({ type: 'light' })
   },
+
+  // Pinch on the health tab, forwarded up by the user-health component.
+  onTextScaleStep(e) {
+    this._stepTextScale(e.detail.dir)
+  },
+
+  // Pinch on the chat tab. The health tab's gesture lives inside its component, but the chat
+  // tab is plain page markup, so the same shared stepper is driven from here instead. Bound
+  // on .chat-tab with `bind`, so it still bubbles to the root edge-swipe handler (which
+  // ignores multi-touch) and so a one-finger scroll or the mic press-and-hold never reaches
+  // the pinch path — the stepper only acts on exactly two touches.
+  _chatPinch() {
+    if (!this.__chatPinch) {
+      this.__chatPinch = createPinchStepper((dir) => this._stepTextScale(dir))
+    }
+    return this.__chatPinch
+  },
+
+  onChatTouchStart(e) { this._chatPinch().start(e) },
+  onChatTouchMove(e) { this._chatPinch().move(e) },
+  onChatTouchEnd() { this._chatPinch().end() },
 
   // Header-menu stepper. Deliberately does NOT close the menu — it is a 4-way control and
   // the point is to tap through the levels and watch the text behind it resize.

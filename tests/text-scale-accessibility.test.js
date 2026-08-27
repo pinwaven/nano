@@ -19,6 +19,8 @@ const read = (...p) => fs.readFileSync(path.join(MINI, ...p), 'utf8');
 const appCss = read('app.wxss');
 const uhCss = read('components', 'user-health', 'user-health.wxss');
 const uhJs = read('components', 'user-health', 'user-health.js');
+const mainCss = read('pages', 'main', 'main.wxss');
+const mdJs = read('utils', 'markdown.js');
 
 // Pull the --fs-* map out of a selector block in app.wxss.
 function tokens(selector) {
@@ -141,66 +143,85 @@ test('both hosts apply the level class and pass the prop through', () => {
 });
 
 // ── pinch gesture ───────────────────────────────────────────────────────────
-// Evaluate the four handlers straight out of the shipped source. The module itself cannot be
-// require()d outside the WeChat runtime, but slicing the real text still tests real code.
-function pinchHandlers() {
-  const a = uhJs.indexOf('_pinchDist(t) {');
-  const b = uhJs.indexOf('refresh() {', a);
-  assert.ok(a > -1 && b > a, 'pinch handlers not found in user-health.js');
-  const obj = eval('({' + uhJs.slice(a, b).trimEnd().replace(/,$/, '') + '})');
-  obj.fired = [];
-  obj.triggerEvent = (name, detail) => obj.fired.push([name, detail.dir]);
-  return obj;
+// The detector is a shared module (utils/pinch.js) precisely so the health tab's component
+// and the chat tab's page cannot drift into behaving differently under the same gesture.
+const { createPinchStepper } = require(path.join(MINI, 'utils', 'pinch.js'));
+
+function stepper() {
+  const fired = [];
+  const s = createPinchStepper((dir) => fired.push(dir));
+  s.fired = fired;
+  return s;
 }
 const touch = (x1, x2) => ({ touches: [{ clientX: x1, clientY: 300 }, { clientX: x2, clientY: 300 }] });
 
 test('pinch out fires exactly one step, however far it keeps going', () => {
-  const h = pinchHandlers();
-  h._onUhTouchStart(touch(100, 200));   // d0 = 100
-  h._onUhTouchMove(touch(80, 220));     // 1.40 -> fire
-  h._onUhTouchMove(touch(50, 250));     // 2.00 -> latched
-  h._onUhTouchMove(touch(0, 300));      // 3.00 -> latched
-  assert.deepStrictEqual(h.fired, [['textscalestep', 1]]);
+  const s = stepper();
+  s.start(touch(100, 200));   // d0 = 100
+  s.move(touch(80, 220));     // 1.40 -> fire
+  s.move(touch(50, 250));     // 2.00 -> latched
+  s.move(touch(0, 300));      // 3.00 -> latched
+  assert.deepStrictEqual(s.fired, [1]);
 });
 
 test('pinch in fires one negative step', () => {
-  const h = pinchHandlers();
-  h._onUhTouchStart(touch(0, 200));     // d0 = 200
-  h._onUhTouchMove(touch(70, 130));     // 0.30 -> fire
-  assert.deepStrictEqual(h.fired, [['textscalestep', -1]]);
+  const s = stepper();
+  s.start(touch(0, 200));     // d0 = 200
+  s.move(touch(70, 130));     // 0.30 -> fire
+  assert.deepStrictEqual(s.fired, [-1]);
 });
 
 test('touchend re-arms for the next gesture', () => {
-  const h = pinchHandlers();
-  h._onUhTouchStart(touch(100, 200));
-  h._onUhTouchMove(touch(80, 220));
-  h._onUhTouchEnd();
-  h._onUhTouchStart(touch(100, 200));
-  h._onUhTouchMove(touch(80, 220));
-  assert.strictEqual(h.fired.length, 2, 'second gesture did not fire — latch was not cleared');
+  const s = stepper();
+  s.start(touch(100, 200)); s.move(touch(80, 220));
+  s.end();
+  s.start(touch(100, 200)); s.move(touch(80, 220));
+  assert.strictEqual(s.fired.length, 2, 'second gesture did not fire — latch was not cleared');
 });
 
 test('movement inside the dead zone fires nothing', () => {
-  const h = pinchHandlers();
-  h._onUhTouchStart(touch(100, 200));
-  h._onUhTouchMove(touch(95, 205));     // 1.10, below the 1.25 threshold
-  h._onUhTouchMove(touch(105, 195));    // 0.90, above the 0.80 threshold
-  assert.deepStrictEqual(h.fired, [], 'ordinary two-finger drift changed the text size');
+  const s = stepper();
+  s.start(touch(100, 200));
+  s.move(touch(95, 205));     // 1.10, below the 1.25 threshold
+  s.move(touch(105, 195));    // 0.90, above the 0.80 threshold
+  assert.deepStrictEqual(s.fired, [], 'ordinary two-finger drift changed the text size');
 });
 
 test('one-finger touches never pinch', () => {
-  const h = pinchHandlers();
-  h._onUhTouchStart({ touches: [{ clientX: 100, clientY: 300 }] });
-  h._onUhTouchMove({ touches: [{ clientX: 300, clientY: 300 }] });
-  assert.deepStrictEqual(h.fired, [], 'a single-finger scroll changed the text size');
+  const s = stepper();
+  s.start({ touches: [{ clientX: 100, clientY: 300 }] });
+  s.move({ touches: [{ clientX: 300, clientY: 300 }] });
+  assert.deepStrictEqual(s.fired, [], 'a single-finger scroll or mic hold changed the text size');
 });
 
 test('two fingers resting close together are ignored', () => {
-  // Below ~40px apart the ratio is too noisy to act on.
-  const h = pinchHandlers();
-  h._onUhTouchStart(touch(100, 130));   // d0 = 30
-  h._onUhTouchMove(touch(90, 200));
-  assert.deepStrictEqual(h.fired, []);
+  const s = stepper();
+  s.start(touch(100, 130));   // d0 = 30, below minSpread
+  s.move(touch(90, 200));
+  assert.deepStrictEqual(s.fired, []);
+});
+
+test('both scalable tabs bind the gesture', () => {
+  // The health tab's binding lives on the component root; the chat tab is plain page markup,
+  // so it binds on .chat-tab. A converted tab with no binding is text that silently won't
+  // respond to the gesture the whole feature is built around.
+  const uhWxml = read('components', 'user-health', 'user-health.wxml');
+  assert.ok(/bindtouchmove="_onUhTouchMove"/.test(uhWxml), 'health tab lost its pinch binding');
+  const mainWxml = read('pages', 'main', 'main.wxml');
+  assert.ok(/class="chat-tab[^"]*"[\s\S]{0,220}?bindtouchmove="onChatTouchMove"/.test(mainWxml),
+    'chat tab does not bind the pinch gesture');
+});
+
+test('both pages drive the shared stepper rather than reimplementing it', () => {
+  for (const [name, js] of [['main', read('pages', 'main', 'main.js')],
+                            ['coach', read('pages', 'coach', 'coach.js')],
+                            ['user-health', uhJs]]) {
+    if (name === 'main') {
+      assert.ok(/require\('\.\.\/\.\.\/utils\/pinch\.js'\)/.test(js), `${name} does not use utils/pinch.js`);
+    }
+    // Nobody should be re-deriving the pinch maths locally.
+    assert.ok(!/Math\.sqrt\(dx \* dx/.test(js), `${name} reimplements the pinch distance`);
+  }
 });
 
 test('both hosts guard their edge-swipe against multi-touch', () => {
@@ -218,9 +239,56 @@ test('both hosts guard their edge-swipe against multi-touch', () => {
 test('step handlers clamp to the 0-3 range', () => {
   for (const [name, js] of [['main', read('pages', 'main', 'main.js')],
                             ['coach', read('pages', 'coach', 'coach.js')]]) {
-    const at = js.indexOf('onTextScaleStep(e) {');
-    assert.ok(at > -1, `${name}: onTextScaleStep missing`);
+    const at = js.indexOf('_stepTextScale(dir) {');
+    assert.ok(at > -1, `${name}: _stepTextScale missing`);
     const body = js.slice(at, at + 400);
     assert.ok(/next < 0 \|\| next > 3/.test(body), `${name}: step handler does not clamp`);
+  }
+});
+
+// ── chat tab ────────────────────────────────────────────────────────────────
+// main.wxss is one file for the whole main page, so the chat conversion is line-range
+// scoped (the "Chat messages" .. "Loading states" sections). These assert that the prose
+// actually scales and that the other tabs were left alone.
+
+test('chat prose containers are tokenised', () => {
+  for (const cls of ['msg-text', 'msg-html']) {
+    const at = mainCss.indexOf('.' + cls + ' {');
+    assert.ok(at > -1, `.${cls} not found`);
+    const body = mainCss.slice(at, mainCss.indexOf('}', at));
+    assert.ok(/font-size:\s*var\(--fs-28,\s*28rpx\)/.test(body),
+      `.${cls} still has a literal font-size — AI replies would not scale`);
+  }
+});
+
+test('chat tokens all resolve, and other tabs were left untouched', () => {
+  const defined = new Set(Object.keys(LEVELS[0]).map(Number));
+  for (const m of mainCss.matchAll(/var\(--fs-(\d+)/g)) {
+    assert.ok(defined.has(Number(m[1])), `--fs-${m[1]} used in main.wxss but never defined`);
+  }
+  // The conversion was deliberately scoped to chat; the rest of the page still has literals.
+  const literals = [...mainCss.matchAll(/font-size:\s*\d+rpx/g)].length;
+  assert.ok(literals > 200, `only ${literals} literal sizes left — the conversion escaped its range`);
+});
+
+test('markdown tag styles are relative, so headings track the bubble', () => {
+  // tagStyle is applied as an INLINE style (parser.js parseStyle) and bound once, so an
+  // absolute size here beats the stylesheet and never re-parses. With body text at 40rpx
+  // (level 3), a hardcoded 34rpx h1 would render SMALLER than its own paragraphs.
+  const at = mdJs.indexOf('var MD_TAG_STYLE = {');
+  const body = mdJs.slice(at, mdJs.indexOf('\n}', at));
+  const abs = [...body.matchAll(/font-size:\s*(\d+)rpx/g)];
+  assert.deepStrictEqual(abs.map((m) => m[0]), [], 'MD_TAG_STYLE still has absolute font sizes');
+  assert.ok(/h1: 'font-size:1\.21em/.test(body), 'h1 lost its relative size');
+});
+
+test('markdown em ratios reproduce the original sizes at the default level', () => {
+  // .msg-html is 28rpx, and these were 34/32/29/28/25/24rpx before the change.
+  const at = mdJs.indexOf('var MD_TAG_STYLE = {');
+  const body = mdJs.slice(at, mdJs.indexOf('\n}', at));
+  const em = (tag) => Number(body.match(new RegExp(tag + ": '[^']*font-size:([0-9.]+)em"))[1]);
+  for (const [tag, was] of [['h1', 34], ['h2', 32], ['h3', 29], ['h4', 28], ['code', 25], ['pre', 24], ['table', 25]]) {
+    const got = em(tag) * 28;
+    assert.ok(Math.abs(got - was) < 0.6, `${tag}: ${em(tag)}em = ${got.toFixed(1)}rpx, was ${was}rpx`);
   }
 });

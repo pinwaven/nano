@@ -604,13 +604,19 @@ Page({
     } catch (e) {}
   },
 
-  // Two-finger pinch inside the client-detail health sheet (user-health.js). The setting
-  // is the *viewer's* accessibility preference, so it applies here as well as on main.
-  onTextScaleStep(e) {
-    const next = this.data.textScale + (e.detail.dir > 0 ? 1 : -1)
+  // One step per gesture; a pinch past either end stop is a silent no-op, not a wrap-around.
+  // Same shape as pages/main so the two can be read side by side.
+  _stepTextScale(dir) {
+    const next = this.data.textScale + (dir > 0 ? 1 : -1)
     if (next < 0 || next > 3) return
     this._applyTextScale(next)
     if (wx.vibrateShort) wx.vibrateShort({ type: 'light' })
+  },
+
+  // Two-finger pinch inside the client-detail health sheet (user-health.js). The setting is
+  // the *viewer's* accessibility preference, so it applies here as well as on main.
+  onTextScaleStep(e) {
+    this._stepTextScale(e.detail.dir)
   },
 
   // Writes nano_text_scale, which is what app.js onLaunch actually reads back. (toggleTheme

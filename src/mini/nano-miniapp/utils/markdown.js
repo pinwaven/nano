@@ -28,26 +28,34 @@
 var B = 'rgba(127,127,127,0.30)' // borders / rules
 var F = 'rgba(127,127,127,0.13)' // subtle fills
 
+// Sizes here are RELATIVE (em), not absolute rpx, so they track .msg-html's own font-size
+// and therefore the accessibility text-size setting. Absolute values would not: tagStyle is
+// applied as an INLINE style on each parsed node (parser.js parseStyle), which beats any
+// stylesheet rule, and the map is bound once and never re-parsed (see the note above). With
+// 28rpx body text scaling to 40rpx at the largest level, a hardcoded 34rpx h1 would end up
+// SMALLER than the paragraphs under it. The em values reproduce the previous rpx sizes
+// exactly at the default level (34/28 = 1.21, 32/28 = 1.14, 29/28 = 1.04, 25/28 = 0.89,
+// 24/28 = 0.86). mp-html's own built-in tagStyle uses em the same way (big/small).
 var MD_TAG_STYLE = {
   p: 'margin:0 0 20rpx',
-  h1: 'font-size:34rpx;font-weight:700;margin:30rpx 0 12rpx;line-height:1.35',
-  h2: 'font-size:32rpx;font-weight:700;margin:28rpx 0 10rpx;line-height:1.35',
-  h3: 'font-size:29rpx;font-weight:600;margin:24rpx 0 8rpx;line-height:1.4',
-  h4: 'font-size:28rpx;font-weight:600;margin:20rpx 0 6rpx',
-  h5: 'font-size:28rpx;font-weight:600;margin:20rpx 0 6rpx',
-  h6: 'font-size:28rpx;font-weight:600;margin:20rpx 0 6rpx',
+  h1: 'font-size:1.21em;font-weight:700;margin:30rpx 0 12rpx;line-height:1.35',
+  h2: 'font-size:1.14em;font-weight:700;margin:28rpx 0 10rpx;line-height:1.35',
+  h3: 'font-size:1.04em;font-weight:600;margin:24rpx 0 8rpx;line-height:1.4',
+  h4: 'font-size:1em;font-weight:600;margin:20rpx 0 6rpx',
+  h5: 'font-size:1em;font-weight:600;margin:20rpx 0 6rpx',
+  h6: 'font-size:1em;font-weight:600;margin:20rpx 0 6rpx',
   ul: 'margin:10rpx 0 18rpx;padding-left:38rpx',
   ol: 'margin:10rpx 0 18rpx;padding-left:44rpx',
   li: 'margin:0 0 8rpx;line-height:1.6',
   strong: 'font-weight:600',
   em: 'font-style:italic',
   blockquote: 'margin:18rpx 0;padding:2rpx 0 2rpx 22rpx;border-left:6rpx solid ' + B,
-  code: 'font-family:monospace;font-size:25rpx;background:' + F + ';padding:2rpx 8rpx;border-radius:6rpx',
+  code: 'font-family:monospace;font-size:0.89em;background:' + F + ';padding:2rpx 8rpx;border-radius:6rpx',
   // Overriding the built-in `pre` entry DROPS its default "font-family:monospace;white-space:pre"
   // (parser.js does Object.assign over the whole map, not a per-property merge) — both restated.
-  pre: 'font-family:monospace;white-space:pre;display:block;font-size:24rpx;background:' + F +
+  pre: 'font-family:monospace;white-space:pre;display:block;font-size:0.86em;background:' + F +
        ';border:1rpx solid ' + B + ';border-radius:12rpx;padding:16rpx 18rpx;margin:18rpx 0;overflow-x:auto',
-  table: 'width:100%;table-layout:fixed;border-collapse:collapse;font-size:25rpx;margin:18rpx 0',
+  table: 'width:100%;table-layout:fixed;border-collapse:collapse;font-size:0.89em;margin:18rpx 0',
   th: 'border:1rpx solid ' + B + ';padding:10rpx 12rpx;text-align:left;font-weight:600',
   td: 'border:1rpx solid ' + B + ';padding:10rpx 12rpx;text-align:left;word-break:break-word',
   // node.wxss hardcodes ._a{color:#366092}, a blue matching neither theme. An element's own inline

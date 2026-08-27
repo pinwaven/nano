@@ -380,7 +380,7 @@ page {
   padding: 14rpx 0 6rpx;
 }
 .chat-history-spinner-row { display: flex; align-items: center; gap: 10rpx; }
-.chat-history-text { font-size: 22rpx; color: rgba(160,180,220,0.6); letter-spacing: 0.02em; }
+.chat-history-text { font-size: var(--fs-22, 22rpx); color: rgba(160,180,220,0.6); letter-spacing: 0.02em; }
 .chat-history-loading .chat-history-text { color: rgba(160,180,220,0.85); }
 .chat-history-spinner {
   width: 28rpx; height: 28rpx; border-radius: 50%;
@@ -390,7 +390,7 @@ page {
 }
 @keyframes chat-spin { to { transform: rotate(360deg); } }
 .chat-history-start { display: flex; justify-content: center; padding: 14rpx 0 6rpx; }
-.chat-history-start-text { font-size: 21rpx; color: rgba(160,180,220,0.35); letter-spacing: 0.03em; }
+.chat-history-start-text { font-size: var(--fs-21, 21rpx); color: rgba(160,180,220,0.35); letter-spacing: 0.03em; }
 
 /* pull-to-load custom refresher slot */
 .chat-refresher { display: flex; align-items: center; justify-content: center; height: 60rpx; }
@@ -438,7 +438,7 @@ page {
 }
 
 .msg-coach-label {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: var(--success-deep);
   font-weight: 600;
   display: block;
@@ -448,7 +448,7 @@ page {
 /* Viva AG attribution — mirrors .msg-coach-label's shape, in the accent used for AG elsewhere
    in the app (the panel's badge and chips) so the two surfaces read as the same feature. */
 .msg-ag-label {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: #A0B4FF;
   font-weight: 600;
   letter-spacing: 1rpx;
@@ -468,7 +468,7 @@ page {
 }
 
 .msg-text {
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   line-height: 1.55;
   word-break: break-word;
   white-space: pre-wrap;
@@ -486,7 +486,7 @@ page {
    theme-driven tag-style swap would never reach messages that are already on screen. */
 .msg-html {
   display: block;
-  font-size: 28rpx;   /* was WeChat's 32rpx page default — AI text ran visibly larger than the
+  font-size: var(--fs-28, 28rpx);   /* was WeChat's 32rpx page default — AI text ran visibly larger than the
                          user's own 28rpx bubbles, with no line-height at all */
   line-height: 1.62;
 }
@@ -512,7 +512,7 @@ page {
   padding: 12rpx 0 4rpx;
 }
 .msg-daysep-text {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: var(--chat-sep-fg);
   letter-spacing: 0.04em;
 }
@@ -541,7 +541,7 @@ page {
 }
 .mcard-label {
   display: block;
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: var(--text-sub);
   letter-spacing: 0.02em;
 }
@@ -552,12 +552,12 @@ page {
   margin-top: 4rpx;
 }
 .mcard-val {
-  font-size: 36rpx;
+  font-size: var(--fs-36, 36rpx);
   font-weight: 600;
   line-height: 1.15;
 }
 .mcard-unit {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: var(--text-sub);
 }
 .mcard-footrow {
@@ -569,7 +569,7 @@ page {
 .mcard-pill {
   display: inline-block;
   padding: 2rpx 12rpx;
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   border-radius: 20rpx;
   background: rgba(127, 127, 127, 0.14);
   color: var(--chat-pill-fg);
@@ -625,7 +625,7 @@ page {
    correct fallback if that ever changes — --chat-sep-fg measured 4.18:1 here (it is audited
    against the PAGE background, not the tile) and would have been a silent failure. */
 .spark-delta {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   letter-spacing: 0.02em;
 }
 .spark-d-good { color: var(--chat-good); }
@@ -641,14 +641,14 @@ page {
 }
 .tcard-title {
   display: block;
-  font-size: 21rpx;
+  font-size: var(--fs-21, 21rpx);
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--chat-accent);
   margin-bottom: 8rpx;
 }
 .tcard-body {
-  font-size: 27rpx;
+  font-size: var(--fs-27, 27rpx);
   line-height: 1.6;
 }
 
@@ -668,13 +668,13 @@ page {
   border: 1rpx solid rgba(var(--blue-rgb), 0.30);
 }
 .dcard-id {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   font-weight: 600;
   color: var(--chat-accent);
 }
-.dcard-name { font-size: 25rpx; }
+.dcard-name { font-size: var(--fs-25, 25rpx); }
 .dcard-note {
-  font-size: 21rpx;
+  font-size: var(--fs-21, 21rpx);
   color: var(--text-sub);
 }
 
@@ -697,13 +697,13 @@ page {
   margin-bottom: 20rpx;
 }
 .fcard-title {
-  font-size: 25rpx;
+  font-size: var(--fs-25, 25rpx);
   font-weight: 600;
   color: var(--chat-accent);
   letter-spacing: 1rpx;
 }
 .fcard-note {
-  font-size: 19rpx;
+  font-size: var(--fs-19, 19rpx);
   color: var(--text-sub);
   text-align: right;
 }
@@ -714,9 +714,10 @@ page {
   margin-bottom: 12rpx;
 }
 .fcard-slot {
-  width: 56rpx;
+  /* min-width: the AM/PM slot label scales with the text-size setting. */
+  min-width: 56rpx;
   flex-shrink: 0;
-  font-size: 21rpx;
+  font-size: var(--fs-21, 21rpx);
   color: var(--text-sub);
 }
 .fcard-track {
@@ -731,10 +732,11 @@ page {
   height: 100%;
 }
 .fcard-num {
-  width: 60rpx;
+  /* min-width: a 3-digit dot count at the larger text sizes overflows a hard 60rpx. */
+  min-width: 60rpx;
   flex-shrink: 0;
   text-align: right;
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   font-weight: 600;
   color: var(--chat-accent);
 }
@@ -757,11 +759,11 @@ page {
   flex-shrink: 0;
 }
 .fcard-leg-name {
-  font-size: 21rpx;
+  font-size: var(--fs-21, 21rpx);
   color: var(--text);
 }
 .fcard-leg-num {
-  font-size: 19rpx;
+  font-size: var(--fs-19, 19rpx);
   color: var(--text-sub);
 }
 .fcard-foot {
@@ -769,7 +771,7 @@ page {
   margin-top: 16rpx;
   padding-top: 14rpx;
   border-top: 1rpx solid rgba(127, 127, 127, 0.18);
-  font-size: 21rpx;
+  font-size: var(--fs-21, 21rpx);
   color: var(--text-sub);
 }
 
@@ -786,7 +788,7 @@ page {
 }
 
 .msg-action-label {
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   font-weight: 600;
   color: #A0B4FF;
   flex: 1;
@@ -820,7 +822,7 @@ page {
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
 .typing-status-text {
-  font-size: 24rpx;
+  font-size: var(--fs-24, 24rpx);
   opacity: 0.75;
   margin-left: 12rpx;
 }
@@ -854,7 +856,7 @@ page {
   border: 1rpx solid rgba(99, 117, 236, 0.3);
   border-radius: 24rpx;
   color: #EEF2FF;
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   line-height: 1.5;
   min-height: 80rpx;
   padding: 20rpx 28rpx;
@@ -866,7 +868,7 @@ page {
 .ob-confirm {
   background: #6375EC;
   color: #fff;
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   font-weight: 600;
   padding: 20rpx 36rpx;
   border-radius: 24rpx;
@@ -895,7 +897,7 @@ page {
   border: 1rpx solid rgba(99, 117, 236, 0.3);
   background: rgba(99, 117, 236, 0.08);
   color: rgba(166, 196, 229, 0.7);
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   font-weight: 500;
 }
 
@@ -917,7 +919,7 @@ page {
   border: 1rpx solid rgba(99, 117, 236, 0.35);
   background: rgba(99, 117, 236, 0.12);
   color: #EEF2FF;
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -936,7 +938,7 @@ page {
   padding: 22rpx 28rpx;
 }
 
-.picker-val  { font-size: 28rpx; color: #EEF2FF; }
+.picker-val  { font-size: var(--fs-28, 28rpx); color: #EEF2FF; }
 .picker-arrow { font-size: 36rpx; color: rgba(166, 196, 229, 0.4); }
 
 .body-bar { gap: 24rpx; }
@@ -950,7 +952,7 @@ page {
 }
 
 .slider-key {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   font-weight: 600;
   letter-spacing: 2rpx;
   text-transform: uppercase;
@@ -958,13 +960,13 @@ page {
 }
 
 .slider-val {
-  font-size: 32rpx;
+  font-size: var(--fs-32, 32rpx);
   font-weight: 700;
   color: #EEF2FF;
 }
 
 .slider-unit {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   font-weight: 400;
   color: rgba(166, 196, 229, 0.4);
 }
@@ -976,7 +978,7 @@ page {
 }
 
 .slider-val-input {
-  font-size: 32rpx;
+  font-size: var(--fs-32, 32rpx);
   font-weight: 700;
   color: #EEF2FF;
   text-align: right;
@@ -1017,7 +1019,7 @@ page {
 }
 
 .ai-disclaimer-text {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(255, 255, 255, 0.3);
   letter-spacing: 0.5rpx;
 }
@@ -1059,7 +1061,7 @@ page {
 }
 
 .tool-item-label {
-  font-size: 24rpx;
+  font-size: var(--fs-24, 24rpx);
   font-weight: 600;
   color: #EEF2FF;
   text-align: center;
@@ -1107,7 +1109,7 @@ page {
   background: #162E4A;
   border: 1rpx solid rgba(99, 117, 236, 0.22);
   border-radius: 24rpx;
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   padding: 18rpx 24rpx;
   color: #EEF2FF;
   min-height: 80rpx;
@@ -1182,7 +1184,7 @@ page {
 }
 
 .mic-recording-text {
-  font-size: 24rpx;
+  font-size: var(--fs-24, 24rpx);
   color: var(--danger-pale);
 }
 

@@ -1,6 +1,7 @@
 const app = getApp()
 const { BASE, IS_DEV } = require('../../utils/config.js')
 const { computeMood, resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
+const { createPinchStepper } = require('../../utils/pinch.js')
 
 const BM_META = [
   { key: 'hsCRP',     unit: 'mg/L',      color: '#f472b6' },
@@ -1298,44 +1299,26 @@ Component({
 
   methods: {
     // ── Two-finger pinch → text-size step ──────────────────────────────────────────
-    // Bound with `bind` (not `catch`) on .uh-root so the host pages' edge-swipe handlers
-    // still see the stream; those guard themselves against multi-touch instead. Bound on
-    // .uh-root rather than the inner <scroll-view> because scroll-view's own touchmove is
-    // throttled/repurposed during momentum scrolling.
+    // Logic lives in utils/pinch.js because the chat tab needs the identical gesture
+    // (pages/main/main.js) and two copies would drift. Bound with `bind` (not `catch`) on
+    // .uh-root so the host pages' edge-swipe handlers still see the stream; those guard
+    // themselves against multi-touch instead. Bound on .uh-root rather than the inner
+    // <scroll-view> because scroll-view's own touchmove is throttled during momentum
+    // scrolling.
     //
     // The two canvases that own a crosshair (dt-bioage-chart, uh-subage-chart) use
     // catchtouch*, so a pinch starting on one of them never reaches here — correct, those
     // are drag surfaces.
-    _pinchDist(t) {
-      const dx = t[0].clientX - t[1].clientX
-      const dy = t[0].clientY - t[1].clientY
-      return Math.sqrt(dx * dx + dy * dy)
+    _pinch() {
+      if (!this.__pinch) {
+        this.__pinch = createPinchStepper((dir) => this.triggerEvent('textscalestep', { dir }))
+      }
+      return this.__pinch
     },
 
-    _onUhTouchStart(e) {
-      // WeChat fires touchstart once per finger added, so the second finger's event is the
-      // one that arrives with length 2 — no first-finger bookkeeping needed.
-      if (!e.touches || e.touches.length !== 2) { this._pinchD0 = 0; return }
-      const d0 = this._pinchDist(e.touches)
-      // Two fingers resting close together give a ratio too noisy to act on.
-      this._pinchD0 = d0 > 40 ? d0 : 0
-      this._pinchFired = false
-    },
-
-    _onUhTouchMove(e) {
-      if (!this._pinchD0 || this._pinchFired) return
-      if (!e.touches || e.touches.length !== 2) return
-      const r = this._pinchDist(e.touches) / this._pinchD0
-      const dir = r >= 1.25 ? 1 : (r <= 0.8 ? -1 : 0)
-      if (!dir) return
-      this._pinchFired = true   // latch: one step per gesture, however far it keeps going
-      this.triggerEvent('textscalestep', { dir })
-    },
-
-    _onUhTouchEnd() {
-      this._pinchD0 = 0
-      this._pinchFired = false
-    },
+    _onUhTouchStart(e) { this._pinch().start(e) },
+    _onUhTouchMove(e) { this._pinch().move(e) },
+    _onUhTouchEnd() { this._pinch().end() },
 
     refresh() {
       this._loadHealth()
