@@ -8,6 +8,19 @@
       <text wx:if="{{expiryDisplay}}" class="ag-hero-expiry">{{t.validUntil}} {{expiryDisplay}}</text>
     </view>
 
+    <!-- ── Needs your input ──
+         The agent parked its job to ask a clarifying question. Placed above everything else
+         because nothing on this panel will move until the user answers. The form itself lives
+         in the chat tab (the existing questionnaire renderer); this only hands off to it. -->
+    <view wx:if="{{awaitingJob}}" class="ag-section">
+      <view class="ag-ask">
+        <text class="ag-ask-title">{{t.askTitle}}</text>
+        <text class="ag-ask-body">{{t.askBody}}</text>
+        <text wx:if="{{awaitingJob.deadlineText}}" class="ag-ask-deadline">{{awaitingJob.deadlineText}}</text>
+        <view class="ag-ask-cta" bindtap="goAnswer">{{t.askCta}}</view>
+      </view>
+    </view>
+
     <!-- ── Documents ── -->
     <view class="ag-section">
       <view class="ag-section-head">

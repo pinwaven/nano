@@ -850,7 +850,8 @@ module.exports.c = function (hex, theme) {
   <!-- The AG panel's whole body lives in its own component: keeping it out of this file is what
        stops an already-1000-line template from absorbing another feature. -->
   <viva-ag-panel wx:if="{{showAgTab && healthSubTab === 'ag'}}" id="viva-ag-panel"
-                 user-id="{{userId}}" lang="{{lang}}" theme="{{theme}}" />
+                 user-id="{{userId}}" lang="{{lang}}" theme="{{theme}}"
+                 bind:gotochat="onAgGoToChat" />
 
   <!-- Health Report Detail Sheet -->
   <view wx:if="{{activeReport}}" class="rpt-overlay" bindtap="onCloseReport">

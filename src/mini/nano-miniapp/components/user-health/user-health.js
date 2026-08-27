@@ -2169,6 +2169,12 @@ Component({
       this.triggerEvent('guesttap')
     },
 
+    // The AG panel needs the chat tab (that is where the questionnaire renderer lives) and this
+    // component sits between it and the page, so the event is forwarded rather than handled.
+    onAgGoToChat(e) {
+      this.triggerEvent('gotochat', e.detail)
+    },
+
     switchHealthSubTab(e) {
       this.setData({ healthSubTab: e.currentTarget.dataset.tab })
     },

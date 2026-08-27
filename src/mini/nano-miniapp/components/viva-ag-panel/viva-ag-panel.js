@@ -61,6 +61,12 @@ const T = {
     presetDots: '原粒定制',
     stQueued: '排队中', stClaimed: '已受理', stProcessing: '分析中',
     stCompleted: '已完成', stFailed: '未完成', stCancelled: '已取消',
+    stAwaitingInput: '待补充信息',
+    // ── Clarifying questionnaire (the agent parked the job to ask something) ──
+    askTitle: '需要补充信息',
+    askBody: 'Viva AG 还需要向你确认几个问题，回答后会继续分析。',
+    askCta: '去回答',
+    askDeadline: '请在 {n} 前回答',
     typeHospital: '就医记录', typeLab: '化验报告', typeImaging: '影像报告',
     typeDischarge: '出院小结', typePrescription: '处方', typeOther: '其他',
     errTooLarge: '文件超过 20MB，无法上传',
@@ -126,6 +132,12 @@ const T = {
     presetDots: 'Dot formulation',
     stQueued: 'Queued', stClaimed: 'Accepted', stProcessing: 'Analyzing',
     stCompleted: 'Done', stFailed: 'Failed', stCancelled: 'Cancelled',
+    stAwaitingInput: 'Needs your input',
+    // ── Clarifying questionnaire (the agent parked the job to ask something) ──
+    askTitle: 'A few more questions',
+    askBody: 'Viva AG needs to check a few things with you before it can finish this analysis.',
+    askCta: 'Answer now',
+    askDeadline: 'Please answer before {n}',
     typeHospital: 'Hospital record', typeLab: 'Lab report', typeImaging: 'Imaging',
     typeDischarge: 'Discharge summary', typePrescription: 'Prescription', typeOther: 'Other',
     errTooLarge: 'File exceeds the 20MB limit',
@@ -200,6 +212,8 @@ Component({
     detailJob: null,
     // The most recent dots_formulation and where it is on its way to becoming a real plan.
     formulation: null,
+    // The parked job waiting on a questionnaire, if any — drives the "needs your input" card.
+    awaitingJob: null,
     downloadingResult: false,
     // In-app viewer for .md/.txt artifacts (see RESULT_TEXT_EXTENSIONS).
     reportTitle: '',
@@ -479,6 +493,7 @@ Component({
       const t = this.data.t
       return {
         queued: t.stQueued, claimed: t.stClaimed, processing: t.stProcessing,
+        awaiting_input: t.stAwaitingInput,
         completed: t.stCompleted, failed: t.stFailed, cancelled: t.stCancelled,
       }[status] || status
     },
@@ -544,8 +559,16 @@ Component({
         const jobs = (res.data?.jobs || []).map(j => this._decorate(j))
         this._loadFormulation()
         const hasActive = !!res.data?.has_active
+        // At most one, because uniq_viva_ag_jobs_active counts 'awaiting_input' as active.
+        const awaiting = jobs.find(j => j.status === 'awaiting_input') || null
         this.setData({
           jobs, jobsLoading: false, hasActive,
+          awaitingJob: awaiting ? {
+            ...awaiting,
+            deadlineText: awaiting.awaiting_input_expires_at
+              ? (this.data.t.askDeadline || '').replace('{n}', awaiting.awaiting_input_expires_at.slice(0, 10))
+              : '',
+          } : null,
           dailyLimit: res.data?.daily_limit ?? this.data.dailyLimit,
           dailyUsed: res.data?.daily_used ?? 0,
           dailyLimitReached: !!res.data?.daily_limit_reached,
@@ -628,6 +651,15 @@ Component({
         this._recomputeSubmit()
         this._toast(t.errNetwork)
       }
+    },
+
+    // The questionnaire itself renders in the CHAT tab — that renderer already exists, handles
+    // all five widget types, and is what onboarding and coach-assigned forms already use.
+    // Duplicating it here would be a second place to maintain every input type for no
+    // user-visible gain, so the panel hands off instead: main.js switches tabs and calls
+    // _checkForPendingQuestionnaire().
+    goAnswer() {
+      this.triggerEvent('gotochat', { reason: 'viva_ag_questionnaire' })
     },
 
     openJob(e) {

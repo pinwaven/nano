@@ -514,6 +514,7 @@
         viva-ag-enabled="{{vivaAgActive}}"
         bindchooseavatar="handleHealthChooseAvatar"
         bindguesttap="openGuestSheet"
+        bind:gotochat="handleAgGoToChat"
         bind:profileUpdated="onProfileUpdated">
       </user-health>
     </view>

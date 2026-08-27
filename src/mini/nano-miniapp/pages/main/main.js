@@ -601,13 +601,13 @@ function buildSubAgeLabels(base, overrides, lang) {
 const AI_ECHO_TYPES = new Set([
   'chat_reply', 'nutrition_plan', 'formulation_reorder_ready', 'biological_report',
   'coach_message', 'morning_checkin', 'midday_checkin', 'evening_checkin',
-  'viva_ag_result', 'viva_ag_failed',
+  'viva_ag_result', 'viva_ag_failed', 'viva_ag_questionnaire',
 ])
 
 // Notification types delivered by the external Viva AG agent rather than by Viva itself. Drives
 // the "Viva AG" label on the bubble so the user can tell a deep analysis apart from a normal
 // reply; the durable equivalent is chat_messages.source.
-const AG_NOTIFICATION_TYPES = new Set(['viva_ag_result', 'viva_ag_failed'])
+const AG_NOTIFICATION_TYPES = new Set(['viva_ag_result', 'viva_ag_failed', 'viva_ag_questionnaire'])
 
 // Two chat messages more than this far apart get a time separator between them. The agentic
 // loop delivers replies through _poll minutes after the question, and history spans days, so
@@ -1337,6 +1337,29 @@ Page({
     const nutritionPlanId = planDetailData?.formulation?.nutrition_plan_id
     if (!isAeviva || !nutritionPlanId) return
     this._openAevivaStoreGated({ intent: 'buy_custom_formulation', nutrition_plan_id: nutritionPlanId })
+  },
+
+  // Raised by the AG panel (via user-health) when a job is parked waiting on a clarifying
+  // questionnaire. The form renders in the chat tab — one server-driven renderer for every
+  // questionnaire in the app — so this just lands the user there and asks it to start.
+  // _checkForPendingQuestionnaire is idempotent, so a repeat tap is harmless.
+  handleAgGoToChat() {
+    this.setData({ tab: 'chat' })
+    // Only fetch if a form isn't already on screen. _checkForPendingQuestionnaire has NO
+    // internal guard — it re-fetches, finds the first unanswered question and re-runs
+    // _startQuestionnaire, which re-posts the intro and the current question as duplicate
+    // bubbles. Every other caller guards it externally the same way (onShow: `obStep ===
+    // 'done'`), and the "it's idempotent" comment on the notification path means only that it
+    // won't start a *different* questionnaire.
+    //
+    // It matters more here than anywhere else: the questionnaire_ready notification the park
+    // also writes has usually started the form already by the time the user taps 去回答, so an
+    // unguarded call duplicated almost every time. Found on a live end-to-end run, not in
+    // review. Note `obStep` and not `obQuestion` — _onAllQuestionnaireDone sets obStep 'done'
+    // but deliberately leaves obQuestion populated.
+    const formInProgress = this.data.obStep && this.data.obStep !== 'done'
+    if (!formInProgress) this._checkForPendingQuestionnaire()
+    this._scrollBottom()
   },
 
   async switchTab(e) {

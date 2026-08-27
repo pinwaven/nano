@@ -252,6 +252,9 @@
 .ag-pill-completed { background: rgba(16, 185, 129, 0.16); color: #10B981; }
 .ag-pill-failed    { background: rgba(224, 92, 92, 0.16);  color: #E05C5C; }
 .ag-pill-cancelled { background: rgba(var(--wave-rgb), 0.12); color: rgba(var(--wave-rgb), 0.5); }
+/* Parked on the user. --gold already resolves per theme, so unlike its siblings above this
+   needs no .theme-light override. */
+.ag-pill-awaiting_input { background: rgba(var(--wave-rgb), 0.18); color: var(--gold); }
 
 .ag-job-date {
   font-size: 21rpx;
@@ -515,6 +518,31 @@
 .theme-light .ag-viewer { background: #FBF8F2; }
 .theme-light .ag-viewer-title { color: #14243D; }
 .theme-light .ag-viewer-body { color: #35485F; }
+
+/* ── Needs your input ─────────────────────────────────────────────────────────────────
+   Amber, matching .ag-fm-valid: both mean "stalled until a human acts". This one is the
+   only card on the panel with a call to action, so it also carries a filled button. */
+.ag-ask {
+  margin-top: 16rpx;
+  padding: 24rpx 28rpx;
+  border-radius: 18rpx;
+  background: rgba(var(--wave-rgb), 0.10);
+  border-left: 6rpx solid var(--gold);
+}
+.ag-ask-title { display: block; font-size: 27rpx; font-weight: 600; color: var(--text); }
+.ag-ask-body { display: block; margin-top: 10rpx; font-size: 23rpx; color: var(--text-muted); line-height: 1.6; }
+.ag-ask-deadline { display: block; margin-top: 8rpx; font-size: 21rpx; color: var(--text-muted); }
+.ag-ask-cta {
+  margin-top: 20rpx;
+  padding: 18rpx 0;
+  border-radius: 14rpx;
+  background: rgba(var(--blue-rgb), 0.85);
+  text-align: center;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #fff;
+}
+.theme-light .ag-ask { background: rgba(var(--wave-rgb), 0.08); border-left-color: var(--gold); }
 
 /* ── Formulation progress ─────────────────────────────────────────────────────────────
    Colour-coded by where the formula is, so a glance answers "is anything happening?":
