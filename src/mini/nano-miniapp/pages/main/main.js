@@ -133,6 +133,21 @@ const T = {
     neoBindTitle: '请先绑定 Neo 分配器以管理原粒盒',
     neoBindBtn: '绑定 Neo 设备',
     neoNotFoundMsg: '附近未找到 Neo 设备',
+    // ── Scan-to-activate (box QR → 28-day cycle starts today) ──
+    scanBoxTitle: '扫描包装激活方案',
+    scanBoxDetail: '收到定制原粒后扫描盒身二维码，28 天周期从今天开始',
+    scanBoxWorking: '正在激活…',
+    scanBoxOk: '已激活，28 天周期从今天开始',
+    scanBoxAlready: '这盒已经激活过了',
+    scanBoxFailTitle: '无法激活',
+    scanBoxErrGeneric: '暂时无法激活，请稍后再试。',
+    scanBoxErr_invalid_box_code: '这不是原粒包装上的二维码。',
+    scanBoxErr_box_not_found: '未找到该包装，请确认扫描的是原粒盒身的二维码。',
+    scanBoxErr_not_your_box: '这盒原粒是为其他人定制的，配方基于对方的检测数据，请勿服用。',
+    scanBoxErr_claimed_by_other: '这盒已被其他账号激活。',
+    scanBoxErr_batch_recalled: '该批次已被召回，请勿服用，我们会尽快与您联系。',
+    scanBoxErr_formulation_not_approved: '该配方尚未通过专家审核，请稍后再试。',
+    gotIt: '知道了',
     orderDotsTitle: '未绑定 Neo 分配器，可直接订购原粒胶囊',
     orderDotsDetail: '默认 4 周装 · 56 粒 · 每日 2 粒',
     orderDotsBtn: '前往商城订购',
@@ -200,6 +215,7 @@ const T = {
     formulaProcessing: '正在为您深度分析并配置本周方案，完成后会发送通知，请稍候…',
     formulaViewDots: '查看营养方案 →',
     formulaCardTitle: '原粒配比评估',
+    productCardTitle: '商城可选',
     formulaEvalNote: '仅供参考 · 未写入方案',
     formulaAm: '早',
     formulaPm: '晚',
@@ -367,6 +383,21 @@ const T = {
     neoBindTitle: 'Bind a Neo dispenser to manage your cartridges',
     neoBindBtn: 'Bind Neo Device',
     neoNotFoundMsg: 'No Neo device found nearby',
+    // ── Scan-to-activate (box QR → 28-day cycle starts today) ──
+    scanBoxTitle: 'Scan your box to start',
+    scanBoxDetail: 'Scan the QR on your capsule box — the 28-day cycle begins today',
+    scanBoxWorking: 'Activating…',
+    scanBoxOk: 'Activated — your 28-day cycle starts today',
+    scanBoxAlready: 'This box is already activated',
+    scanBoxFailTitle: "Couldn't activate",
+    scanBoxErrGeneric: "Couldn't activate this box just now. Please try again shortly.",
+    scanBoxErr_invalid_box_code: "That isn't a code from a Dots box.",
+    scanBoxErr_box_not_found: "We couldn't find that box — check you scanned the QR on the capsule box itself.",
+    scanBoxErr_not_your_box: "This box was formulated for someone else, from their test results. Please don't take it.",
+    scanBoxErr_claimed_by_other: 'This box has already been activated on another account.',
+    scanBoxErr_batch_recalled: "This batch has been recalled — please don't take it. We'll be in touch shortly.",
+    scanBoxErr_formulation_not_approved: "This formulation hasn't cleared expert review yet. Please try again shortly.",
+    gotIt: 'Got it',
     orderDotsTitle: 'No Neo dispenser bound — order pre-mixed capsules instead',
     orderDotsDetail: 'Default: 4-week pack · 56 capsules · 2/day',
     orderDotsBtn: 'Order in the Store',
@@ -434,6 +465,7 @@ const T = {
     formulaProcessing: "Deeply analyzing your data and formulating this week's plan — you'll get a notification when it's ready…",
     formulaViewDots: 'View Dots Plan →',
     formulaCardTitle: 'Dot allocation',
+    productCardTitle: 'From the store',
     formulaEvalNote: 'Evaluation only · not saved',
     formulaAm: 'AM',
     formulaPm: 'PM',
@@ -1238,8 +1270,62 @@ Page({
     this._openAevivaStore(context)
   },
 
+  // Scan the Dots box you received. This is what starts a Viva AG formulation's 28-day cycle:
+  // the plan was created (status 'approved') when a nutrition expert signed the formula off, but
+  // its schedule is only generated now, so day 1 is the day the capsules are actually in hand.
+  //
+  // wx.scanCode returns whatever the QR encodes — the box code itself, or the public ingredient
+  // page's URL that contains it. The server accepts either, so no parsing happens here.
+  handleScanBox() {
+    const { lang, user } = this.data
+    const t = T[lang]
+    if (!user?.user_id) return
+    wx.scanCode({
+      onlyFromCamera: false,
+      success: async (res) => {
+        wx.showLoading({ title: t.scanBoxWorking, mask: true })
+        try {
+          const r = await this._req(`${BASE}/api/box-claim`, 'POST', { openid: user.user_id, box_code: res.result })
+          wx.hideLoading()
+          if (r.data?.success) {
+            // A second scan of a box already claimed is not an error — say so plainly rather
+            // than showing a success animation for something that didn't just happen.
+            wx.showToast({ title: r.data.already_claimed ? t.scanBoxAlready : t.scanBoxOk, icon: 'none', duration: 2500 })
+            this._loadDots(user, lang)
+          } else {
+            wx.showModal({
+              title: t.scanBoxFailTitle,
+              content: t[`scanBoxErr_${r.data?.reason}`] || t.scanBoxErrGeneric,
+              showCancel: false,
+              confirmText: t.gotIt,
+            })
+          }
+        } catch (e) {
+          wx.hideLoading()
+          wx.showToast({ title: t.scanBoxErrGeneric, icon: 'none' })
+        }
+      },
+      // Silent on cancel — the user backing out of the camera is not a failure.
+      fail: () => {},
+    })
+  },
+
   handleOrderDots() {
     this._openAevivaStoreGated()
+  },
+
+  // Tapping a row of the :::product card Viva appended to a reply. Opens the GCN storefront
+  // deep-linked to that exact sku, reusing the existing webview-token context bridge — GCN's
+  // dashboard.html already owns the ?sku= opener this lands in, including its silent no-op when
+  // the item isn't listed in the buyer's own bound store.
+  //
+  // A native tap handler rather than a link in the prose is not a style choice: _onMdLinkTap can
+  // only offer to COPY an http(s) URL, because a WeChat miniapp cannot open an arbitrary external
+  // link from chat text. This is the only way a chat recommendation can actually reach the store.
+  handleProductCardTap(e) {
+    const skuId = e.currentTarget.dataset.sku
+    if (!this.data.isAeviva || !skuId) return
+    this._openAevivaStoreGated({ intent: 'view_product', sku_id: skuId })
   },
 
   // "Buy This Formulation" CTA in the plan-detail overlay — only rendered (see main.wxml) once

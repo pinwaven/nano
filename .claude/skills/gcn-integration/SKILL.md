@@ -20,16 +20,73 @@ The `aeviva` nano channel has a partner/distributor program (`docs/architecture/
 | `POST /partner-tier-assignment-gcn-sync` | `gcn/src/functions/auth/index.js` `syncTierAssignmentToNano`, called from `handleAdminAssignAevivaTier` (`PUT /api/auth/admin/partners/:id/tier`) | pushes `{nano_partner_id, tier}` **into** nano — per-partner analog of the row above, see "Partner-system consolidation" below |
 | `GET /api/formulation-checkout-snapshot?planId=&openid=` | *(in-flight, not yet committed/deployed as of 2026-08-14 — verify it actually shipped before relying on it)* intended caller: GCN's order-creation handler | validates a custom-formulation purchase against the buyer's real, currently-committed dot recipe before creating an order line |
 | `POST /api/formulation-purchase-confirmed` | *(in-flight, not yet committed/deployed as of 2026-08-14)* intended caller: GCN's order-confirm-payment handler | marks `users.custom_formulation_purchased_at` the moment a custom-formulation order is confirmed paid |
+| `GET /api/formulation-review-snapshot?planId=&openid=` | GCN's `mall/formulation-reviews.js` `handleFormulationReviewDetail` — **confirmed live on dev 2026-08-25** | the Pro-mode counterpart to the checkout snapshot: the same day-0 breakdown **plus** the health context the model itself saw, so a nutrition expert judges the AI against the same evidence. Plan- and owner-scoped |
+| `GET /api/ag-formulation-review-snapshot?formulationId=&openid=` | same caller, for an **AI 精准营养素** order — **added and verified live 2026-08-25** | keyed by a `viva_ag_formulations` id, not a plan id: nano has no plan for one of these until this review approves it. Also returns short-lived signed links to the AG agent's own report files |
+| `POST /api/ag-formulation-approved` | GCN's `handleFormulationReviewSubmit` approve branch — **added and verified live 2026-08-25** | the expert's decision. Nano **re-validates** any adjusted recipe against its own capsule spec first (approval by a human is not a reason to skip the only check there is), then creates the buyer's `nutrition_plans` row at status `'approved'` |
+| `GET /api/mall/nano/ai-catalog?sector_id=&nano_user_id=` | **nano → GCN**, from `worker/lib/gcnClient.js`'s `fetchAiCatalog` — added 2026-08-25 | the AI-recommendable slice of one nano user's **own bound** storefront, for Viva's in-chat product suggestions (CLAUDE.md §37). Gated by `requireNanoService`. Resolves the store via `partner_bindings` (`binding_type='consumer_store'`), then delegates listing to `handleStoreItems` so VMI/MDC availability matches the real storefront. **Always 200** — unbound/unlinked/failing all return `{items: []}`, same contract as `nano-focus-templates` |
+| `POST /api/mall/aeviva/formulation-ready` | **nano → GCN**, from `handlers/ag_formulation.js`'s `_notifyGcn` — **added and verified live 2026-08-25** | the AG agent's formula, already validated by nano, arriving for a buyer's `awaiting_formulation` order. Uses `GCN_SERVICE_TOKEN`, so GCN's `mall` function now carries `NANO_SERVICE_TOKEN` (previously only `auth` did) |
 
 These are gated by a **scoped** nano<->GCN service token (`worker/index.js`'s `GCN_ALLOWED_PATHS` allowlist, env var `GCN_API_TOKEN` on nano's side / `NANO_API_TOKEN` on GCN's — same value, different var names per side) — no longer nano's superadmin `API_BEARER_TOKEN`, which GCN previously held unscoped access via. The reverse direction (nano calling GCN's new provisioning endpoint) uses a separate scoped credential, `GCN_SERVICE_TOKEN` (nano) / `NANO_SERVICE_TOKEN` (GCN). `GET /api/partners/by-phone/:phone?channel=aeviva` still exists in nano (`handlers/partners.js`) but is no longer part of the cross-repo contract — nano's own provisioning handler reads its local `partners` table directly instead of calling its own API. `/health-plan-templates` (an existing internal admin route, unrelated to partners) also joined `GCN_ALLOWED_PATHS` as part of the in-flight work below — see that section for the "in-flight" caveat.
 
-### Custom-formulation purchase flow (in-flight, not yet committed/deployed as of 2026-08-14)
+### In-chat product recommendation (2026-08-25)
 
-This whole feature is uncommitted on nano's side as of this writing — check `git status`/`git log` on nano before assuming any of it actually shipped, and check GCN's own `nanoClient.js`/order-handling code for a real caller before assuming GCN implements its side either.
+A third `webview_tokens.context` intent, **`{intent:'view_product', sku_id}`**, joins
+`buy_custom_formulation` and `buy_viva_subscription`. It is dispatched in `dashboard.html`'s
+existing one-shot `nano_sso_context` block and routed straight into that page's **pre-existing**
+`?sku=` deep-link opener (`gcn_deep_link_sku` / `maybeOpenSharedSku`) — including its silent
+no-op when the sku isn't listed in that buyer's own bound store, which is the right behaviour for
+a stale suggestion. It `await loadMall()` rather than calling the opener directly: the page's own
+`loadMall()` is fired un-awaited during boot, so the opener would otherwise race an empty catalog.
+
+The catalog itself comes from `GET /api/mall/nano/ai-catalog` (table above), backed by a new
+`product_ai_profiles` table GCN owns — a reviewed, structured record deliberately **separate from
+`products.description`**, whose marketing copy must never reach a health LLM. `ai_recommendable`
+is admin-only and requires a `reviewed_by`. Full mechanics: nano's CLAUDE.md §37.
+
+### Custom-formulation purchase flow
+
+**Status corrected 2026-08-25:** this was written as "in-flight, uncommitted, verify before
+relying on it". GCN's side is now demonstrably real — `handleCustomFormulationOrderCreate` calls
+the checkout snapshot, the Pro/expert-review variant (GCN migration 0076) calls the review
+snapshot, and dev carries live `formulation_reviews` rows from real use. Nano's side is still
+uncommitted on the working tree, so `git log` is still worth a glance before assuming a *specific*
+line shipped — but treat the contract itself as live, not speculative.
 
 **`webview_tokens.context`** (new nullable `JSONB` column, `migration_webview_token_context.sql`) lets the miniapp attach an arbitrary, caller-supplied intent payload to a minted webview token — e.g. `{ intent: 'buy_custom_formulation', nutrition_plan_id }` — carried through the **existing** `POST /api/webview-token` → `wvt` → `POST /api/exchange-webview-token` handoff with zero new endpoint: `handlePostWebviewToken` (`handlers/login.js`) now accepts an optional `context` body field and stores it verbatim alongside the token; `handleExchangeWebviewToken` returns it back unchanged (`{ success, user, channel, context }`) on exchange, so the target page (GCN's `dashboard.html`) can read it straight off the SSO response with no separate lookup. Miniapp side: `openUserApp(path, context)` (`pages/main/main.js`) → query-param-encoded onto the `appview.js` navigation → `appview.js`'s `options.context` (decoded the same defensively-double-decoded way its existing `url` param already is) → threaded into the `/api/webview-token` POST body. The only current caller is the "Buy This Formulation" CTA in the health-plan detail overlay (`handleBuyFormulation`, Aeviva channel only, gated on a real committed formulation already existing for that focus — see `docs/architecture/health-plan-system.md`'s "Health-Plan-Focus-Linked Dot Formulation" section).
 
 Two new GCN-only endpoints (table above) are meant to complete the purchase round trip on GCN's side, once/if GCN implements a caller: `GET /formulation-checkout-snapshot?planId=&openid=` lets GCN validate a purchase against the buyer's real, currently-committed recipe (reads day-0 of the user's *active* `nutrition_plans` row; rejects on owner mismatch, non-active plan, or missing schedule/dots) before creating an order line — modeled on the same "never 404/500 for not-ready, caller branches on a `valid` field" pattern this file's other snapshot-style endpoints already use. `POST /formulation-purchase-confirmed` is meant to be called once GCN confirms the order paid, setting `users.custom_formulation_purchased_at` — nano's *only* signal a purchase ever happened, since it has no visibility into GCN's orders table. On nano's side this timestamp already has a consumer: it gates a `formulation_reorder_ready` notification (instead of the generic `nutrition_plan` one) from the dispatcher's periodic background-reformulation job (`handleNutritionTopupEvent`, `handlers/dots.js`) — so even if GCN never calls the confirm endpoint, nothing breaks; users just keep getting the generic notification instead of the reorder-flavored one.
+
+
+### AI 精准营养素 — the AG dots ordering flow (2026-08-25)
+
+A **second, inverted** custom-formulation flow, layered on the one above. One purchase grants
+nano's Viva AG add-on *and* one compounded 56-capsule batch — but the buyer pays **before** the
+recipe exists, because nano's external AG agent produces it days later.
+
+What that inversion changes, and the things most likely to trip up a later change:
+
+- **The AG add-on is sold through the existing subscription endpoint.**
+  `viva_subscription_plans`/`_codes` gained `product_type` (`'viva' | 'viva_ag'`), so
+  `/viva-subscription-checkout-confirmed` needed no new endpoint and no new allowlist entry. **A
+  `viva_ag` plan grants BOTH windows** — `requireVivaAgAccess()` is composite (viva persona AND a
+  live Viva grant AND a live AG grant), so setting only `viva_ag_expires_at` locks a paying buyer
+  out of what they just bought.
+- **GCN's order waits in a new `awaiting_formulation` status** until nano calls
+  `formulation-ready`. Not a reuse of `'paid'` — `handleOrderShip` accepts that one.
+- **Nano now parses and validates the AG formula** (`lib/agFormulation.js`), reversing the earlier
+  "nano does not parse or validate this file" decision in `docs/viva-ag-api.md` §8. It rejects,
+  never repairs. An invalid formula never reaches GCN.
+- **`order_item_custom_formulations.recipe_snapshot` stays write-once** — GCN migration 0076
+  depends on it and the printed label QR resolves against it. An expert's edit goes to
+  `formulation_reviews.adjusted_recipe`.
+- **An approved formula becomes a `nutrition_plans` row at status `'approved'` with no schedules**;
+  the 56 schedule rows and the real `start_date` are written when the user scans the delivered box
+  (`POST /api/box-claim`). This resolves the question CLAUDE.md §28b/§35 had deferred.
+- Both cross-repo notifies are **fire-and-forget**. The reconciliation query for a failed one:
+  `SELECT id FROM viva_ag_formulations WHERE status='valid' AND gcn_order_id IS NULL`.
+
+Full writeup: **`docs/architecture/ag-dots-ordering.md`** (nano) and
+`gcn/docs/aeviva/04-orders-and-fulfillment.md`.
 
 ### Partner-system consolidation: GCN owns tier catalog, assignment, referral tree, and commission (all 5 phases, shipped 2026-08-09)
 

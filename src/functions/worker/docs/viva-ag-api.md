@@ -616,31 +616,60 @@ Anything else you want to say — reasoning, biomarker rationale, cautions — g
 Attach a `.pdf` alongside the `.md` if you like (§7 allows up to 5 files); the `.md` is the one
 that must conform.
 
-### Also send it as JSON
+### Send it as JSON — required
 
-Not required, but strongly recommended: put the same formula in the `result` field of
-`POST /jobs/result` as well —
+Put the same formula in the `result` field of `POST /jobs/result`:
 
 ```jsonc
 { "formulation": { "format": "viva-ag-dots-formulation/1", "cycle_days": 28,
+    "total_dots": 1188,
+    "rationale": "一句话说明这次配方的主线。",
     "capsules": [ { "day": 1, "slot": "AM", "dots": { "DOT-N1": 2, "DOT-N5": 14 } }, … ],
     "totals": { "DOT-N1": { "am": 56, "pm": 0, "cycle": 56 }, … } } }
 ```
 
-A downstream system reading JSON cannot misparse a table, and it costs you one serialization.
-The 512 KB `result` cap is far above what 56 capsules need.
+This is what nano actually reads. A consumer parsing JSON cannot misparse a table, and it costs
+you one serialization; the 512 KB `result` cap is far above what 56 capsules need. The `.md` is
+parsed only as a fallback when `result.formulation` is absent, and it is the human-readable
+artifact the user and the reviewing expert see — so send both.
 
-### What nano does *not* do
+### What nano does with it
 
-**Nano does not parse or validate this file.** It stores it and serves it back exactly as
-uploaded — a wrong dot key, an over-full capsule, a missing day or a broken checksum will not be
-caught anywhere between you and a system that compounds physical supplements. Conformance is
-entirely yours to guarantee. If you cannot produce a formula that satisfies every rule above,
-`POST /jobs/fail` with a clear reason is the correct outcome; a plausible-looking but invalid
-formula is worse than none.
+**Nano parses and validates this formula, and rejects it if it breaks any rule above.** Since
+2026-08-25 an approved formula is compounded into physical capsules, so it can no longer be
+stored unchecked.
 
-For the same reason the formula is an **artifact, not a prescription**: submitting it does not
-change the subject's active plan in nano, and nothing is dispensed automatically from it.
+On submission nano checks: all 56 capsules present and in order, no empty capsule, every
+`dot_key` in the formulary, each capsule within the 72-dot fill limit, each dot's **daily** total
+inside its own `target_dots_min…max`, non-flexible dots confined to their own slot, `DOT-N7`
+alone on days 10-11 at its `target_dots_max` and absent elsewhere, and `total_dots` matching what
+the capsules add up to.
+
+`POST /jobs/result` still succeeds either way — your analysis and its report are delivered to the
+user regardless — but the response tells you which happened:
+
+```jsonc
+{ "success": true, "formulation_accepted": true,  "formulation_id": 42, "total_dots": 1188 }
+{ "success": true, "formulation_accepted": false, "formulation_violations": [
+    { "code": "dose_above_max", "message": "Day 1: DOT-N1 totals 9, above its maximum of 2." } ] }
+```
+
+A rejected formula goes no further: the user is told the formula needs regenerating, and nothing
+is compounded. **Nothing is coerced into range** — a count outside a dot's bounds is refused, not
+clamped, because a clamped formula is one nobody authored. If you cannot produce a formula that
+satisfies every rule, `POST /jobs/fail` with a clear reason is still the better outcome than a
+plausible-looking invalid one.
+
+### What happens after you submit
+
+An accepted formula is not dispensed automatically. It goes to a **nutrition expert**, who reviews
+it against the same digital twin you were given and either approves it (optionally adjusting
+counts) or rejects it. Only then is it compounded, and it becomes the subject's active plan only
+when they scan the box they receive — which is also when day 1 of the cycle starts.
+
+That is why the file carries no calendar dates, and why an adjustment may only re-count dots you
+already chose: neither you nor the expert sets the start date, and nobody downstream has a
+formulary to validate a dot you didn't pick.
 
 ---
 

@@ -2,8 +2,9 @@ const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getOutputFormatBlock } = require('../../chat/outputFormat');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
+const { getProductRecommendBlock } = require('../../chat/productRecommendBlock');
 
-module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, rich_format }) => {
+module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, rich_format, store_products }) => {
   const isZh = user_profile.language === 'zh';
   const hasBioAge = bioage && bioage.BioAge;
 
@@ -44,6 +45,8 @@ ${getOutputFormatBlock({ isZh: isZh, rich: rich_format, allow: ['takeaway', 'dot
 ${getCurrentDateBlock(now_iso, isZh)}
 
 ${getFactMemoryBlock(user_facts, isZh)}
+
+${getProductRecommendBlock(store_products, isZh)}
 
 You are Nano, a longevity AI built by Waven.
 

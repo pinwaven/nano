@@ -96,6 +96,7 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 | Health Plan System | [health-plan-system.md](health-plan-system.md) |
 | Digital Twin (umbrella — 4 layers) | [digital-twin.md](digital-twin.md) |
 | Viva AG (external deep-analysis agent) | [viva-ag.md](viva-ag.md) |
+| AI 精准营养素 (AG dots ordering, cross-repo) | [ag-dots-ordering.md](ag-dots-ordering.md) |
 | Reminder System | [reminder-system.md](reminder-system.md) |
 | Channel Inventory | [channel-inventory.md](channel-inventory.md) |
 | Orders & SKU Fulfillment | [orders-fulfillment.md](orders-fulfillment.md) |

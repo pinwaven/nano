@@ -1,6 +1,10 @@
 'use strict';
 
 const { pool } = require('../lib/db');
+// Physical product-model constants (cycle length, capsule fill limit, DOT-N7 isolation) —
+// shared with lib/agFormulation.js so nano's own formulator and the validator for an
+// externally-authored Viva AG formula can never disagree about what is manufacturable.
+const { PLAN_DAYS, MAX_DOTS_PER_CAPSULE, N7_KEY, N7_ISOLATION_DAY_INDEXES } = require('../lib/dotsProductModel');
 const { recordOrderCommissions, recordUserReferralCommission } = require('../lib/commissions');
 const { applyPartnerDiscount, getPartnerProductDiscount } = require('../lib/partnerCommissions');
 const { debitUser } = require('../lib/credits');
@@ -925,6 +929,93 @@ async function handleGetFormulationCheckoutSnapshot(planId, openid) {
     }
 }
 
+// The health context a nutrition expert judges a formulation against — everything the model
+// itself saw when it produced the recipe, so the reviewer is weighing the AI against the same
+// evidence rather than a different slice of it.
+//
+// Shared by BOTH review snapshots: handleGetFormulationReviewSnapshot (a committed nutrition_plan,
+// nano's own formulator) and handleGetAgFormulationReviewSnapshot (a Viva AG formula, in
+// handlers/ag_formulation.js). They differ only in where the recipe comes from; keeping the twin
+// half in one place is what stops the two drifting into showing reviewers different evidence.
+async function _buildReviewTwinContext(userId) {
+    const userResult = await pool.query(
+        `SELECT user_id, nickname, gender, birth_date, language, bio_data FROM users WHERE user_id = $1 LIMIT 1`,
+        [userId]
+    );
+    const user = userResult.rows[0] || {};
+    const lang = user.language || 'zh';
+    const heightCm = user.bio_data?.height;
+    const weightKg = user.bio_data?.weight;
+    const bmi = heightCm && weightKg ? Math.round((weightKg / ((heightCm / 100) ** 2)) * 10) / 10 : null;
+
+    // Same four context queries _handleFormulaDotsAgentic runs to build llmContext.
+    const [twinResult, bioResult, questionnaireResult, activePlansResult] = await Promise.all([
+        pool.query(`SELECT * FROM health_twin WHERE user_id = $1`, [userId]),
+        pool.query(
+            `SELECT bio_age, data, tested_at FROM biomarkers
+             WHERE user_id = $1 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL
+             ORDER BY tested_at DESC LIMIT 1`,
+            [userId]
+        ),
+        pool.query(
+            `SELECT q.name, q.name_zh, qq.prompt_en, qq.prompt_zh, qr.answer
+             FROM questionnaire_responses qr
+             JOIN questionnaire_questions qq ON qq.id = qr.question_id
+             JOIN questionnaire_assignments qa ON qa.id = qr.assignment_id
+             JOIN questionnaires q ON q.id = qa.questionnaire_id
+             WHERE qa.user_id = $1 AND qa.status = 'completed'
+               AND qq.save_field IS DISTINCT FROM 'birth_date'
+               AND qq.save_biomarker_type IS DISTINCT FROM 'body_composition'
+             ORDER BY qa.completed_at ASC, qq.sort_order ASC`,
+            [userId]
+        ),
+        pool.query(
+            `SELECT hp.id, hp.plan_type, hp.status, hp.start_date, hp.duration_weeks,
+                    hpt.name_en, hpt.name_zh, hpt.goal_en, hpt.goal_zh, hpt.target_sub_ages,
+                    hpt.recommended_dot_ids
+             FROM health_plans hp
+             LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
+             WHERE hp.user_id = $1 AND hp.status = 'active'
+             ORDER BY hp.start_date DESC LIMIT 5`,
+            [userId]
+        ),
+    ]);
+
+    const twin = twinResult.rows[0] || null;
+    const latestBio = bioResult.rows[0] || {};
+    const bioData = latestBio.data || {};
+    const validated = bioData.validated || null;
+
+    return {
+        user_profile: {
+            nickname: user.nickname || null,
+            gender: user.gender || null,
+            age: calculateAge(user.birth_date),
+            bmi,
+            language: lang,
+            health_conditions: user.bio_data?.health_conditions || [],
+        },
+        health_twin: twin ? { ...twin, tags: buildHealthTags(twin, validated, user.bio_data?.health_conditions || []) } : null,
+        biomarkers: {
+            validated,
+            bioage_profile: bioData.bioage_profile || null,
+            bio_age: latestBio.bio_age ?? null,
+            tested_at: latestBio.tested_at || null,
+        },
+        questionnaire_context: formatQuestionnaireContext(questionnaireResult.rows, lang),
+        active_health_plans: activePlansResult.rows.map(p => ({
+            id: p.id,
+            plan_type: p.plan_type,
+            name: lang === 'zh' ? p.name_zh : p.name_en,
+            goal: lang === 'zh' ? p.goal_zh : p.goal_en,
+            target_sub_ages: p.target_sub_ages || [],
+            recommended_dot_ids: p.recommended_dot_ids || [],
+            weeks_elapsed: Math.max(0, Math.floor((Date.now() - new Date(p.start_date).getTime()) / (7 * 86400000))),
+            total_weeks: p.duration_weeks,
+        })),
+    };
+}
+
 // GET /formulation-review-snapshot?planId=&openid=  (GCN service token only — see
 // GCN_ALLOWED_PATHS in ../index.js)
 //
@@ -968,53 +1059,7 @@ async function handleGetFormulationReviewSnapshot(planId, openid) {
         // an expert reviews a paid order the buyer may already have re-formulated, superseding the
         // plan that was actually purchased — the review must still show the recipe that was bought.
 
-        const userResult = await pool.query(
-            `SELECT user_id, nickname, gender, birth_date, language, bio_data FROM users WHERE user_id = $1 LIMIT 1`,
-            [plan.user_id]
-        );
-        const user = userResult.rows[0] || {};
-        const lang = user.language || 'zh';
-        const heightCm = user.bio_data?.height;
-        const weightKg = user.bio_data?.weight;
-        const bmi = heightCm && weightKg ? Math.round((weightKg / ((heightCm / 100) ** 2)) * 10) / 10 : null;
-
-        // Same four context queries _handleFormulaDotsAgentic runs to build llmContext.
-        const [twinResult, bioResult, questionnaireResult, activePlansResult] = await Promise.all([
-            pool.query(`SELECT * FROM health_twin WHERE user_id = $1`, [plan.user_id]),
-            pool.query(
-                `SELECT bio_age, data, tested_at FROM biomarkers
-                 WHERE user_id = $1 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL
-                 ORDER BY tested_at DESC LIMIT 1`,
-                [plan.user_id]
-            ),
-            pool.query(
-                `SELECT q.name, q.name_zh, qq.prompt_en, qq.prompt_zh, qr.answer
-                 FROM questionnaire_responses qr
-                 JOIN questionnaire_questions qq ON qq.id = qr.question_id
-                 JOIN questionnaire_assignments qa ON qa.id = qr.assignment_id
-                 JOIN questionnaires q ON q.id = qa.questionnaire_id
-                 WHERE qa.user_id = $1 AND qa.status = 'completed'
-                   AND qq.save_field IS DISTINCT FROM 'birth_date'
-                   AND qq.save_biomarker_type IS DISTINCT FROM 'body_composition'
-                 ORDER BY qa.completed_at ASC, qq.sort_order ASC`,
-                [plan.user_id]
-            ),
-            pool.query(
-                `SELECT hp.id, hp.plan_type, hp.status, hp.start_date, hp.duration_weeks,
-                        hpt.name_en, hpt.name_zh, hpt.goal_en, hpt.goal_zh, hpt.target_sub_ages,
-                        hpt.recommended_dot_ids
-                 FROM health_plans hp
-                 LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
-                 WHERE hp.user_id = $1 AND hp.status = 'active'
-                 ORDER BY hp.start_date DESC LIMIT 5`,
-                [plan.user_id]
-            ),
-        ]);
-
-        const twin = twinResult.rows[0] || null;
-        const latestBio = bioResult.rows[0] || {};
-        const bioData = latestBio.data || {};
-        const validated = bioData.validated || null;
+        const twin = await _buildReviewTwinContext(plan.user_id);
 
         return {
             valid: true,
@@ -1031,32 +1076,7 @@ async function handleGetFormulationReviewSnapshot(planId, openid) {
                     : null,
             },
             recipe_summary: { dot_breakdown: dotBreakdown },
-            user_profile: {
-                nickname: user.nickname || null,
-                gender: user.gender || null,
-                age: calculateAge(user.birth_date),
-                bmi,
-                language: lang,
-                health_conditions: user.bio_data?.health_conditions || [],
-            },
-            health_twin: twin ? { ...twin, tags: buildHealthTags(twin, validated, user.bio_data?.health_conditions || []) } : null,
-            biomarkers: {
-                validated,
-                bioage_profile: bioData.bioage_profile || null,
-                bio_age: latestBio.bio_age ?? null,
-                tested_at: latestBio.tested_at || null,
-            },
-            questionnaire_context: formatQuestionnaireContext(questionnaireResult.rows, lang),
-            active_health_plans: activePlansResult.rows.map(p => ({
-                id: p.id,
-                plan_type: p.plan_type,
-                name: lang === 'zh' ? p.name_zh : p.name_en,
-                goal: lang === 'zh' ? p.goal_zh : p.goal_en,
-                target_sub_ages: p.target_sub_ages || [],
-                recommended_dot_ids: p.recommended_dot_ids || [],
-                weeks_elapsed: Math.max(0, Math.floor((Date.now() - new Date(p.start_date).getTime()) / (7 * 86400000))),
-                total_weeks: p.duration_weeks,
-            })),
+            ...twin,
         };
     } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetFormulationReviewSnapshot failed', error: err.message }));
@@ -1135,6 +1155,33 @@ function _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, la
     return `\n\n:::formula\n${rows.join('\n')}\n:::`;
 }
 
+// Renders the :::product card for a validated set of store recommendations.
+//
+// Same contract as _buildFormulaChartBlock directly above, and for the same reason: the SERVER
+// writes every name and price, from the catalog snapshot the request already fetched — the model
+// only ever supplied a sku_id and a sentence of reasoning. A price the model was never shown is a
+// price it cannot get wrong, and the card can never disagree with what checkout will charge.
+//
+// `items` are already validated against the snapshot and capped by the caller
+// (finalizeChatReply). Rows are sku|name|price|reason; the renderer
+// (miniapp utils/markdown.js) derives display from these and nothing else.
+function _buildProductCardBlock(items, lang) {
+    const isZh = (lang || 'zh') !== 'en';
+    const rows = [];
+    for (const it of items || []) {
+        if (!it || !it.sku_id) continue;
+        // Pipes would break the row split; product names and reasons are both free text (one
+        // admin-authored, one model-authored), so neither may be trusted to be pipe-free.
+        const safe = v => String(v == null ? '' : v).replace(/\|/g, '/').replace(/[\r\n]+/g, ' ').trim();
+        const price = it.price_cny != null && Number.isFinite(Number(it.price_cny))
+            ? `¥${Number(it.price_cny).toFixed(2).replace(/\.00$/, '')}`
+            : (isZh ? '价格以商城为准' : 'see store');
+        rows.push(`${safe(it.sku_id)}|${safe(it.product_name_zh)}|${price}|${safe(it.reason_zh)}`);
+    }
+    if (!rows.length) return '';
+    return `\n\n:::product\n${rows.join('\n')}\n:::`;
+}
+
 function _splitDotTiming(dot, count) {
     const isEveningDefault = dot.timing === 'Evening';
     if (!dot.timing_flexible || count <= 10) {
@@ -1156,7 +1203,7 @@ const PULSE_CYCLE_EPOCH = DateTime.fromISO('2026-01-01');
 // whether a pulse dot appears in a given day's recipe at all, so "not a daily dose" is enforced
 // in code rather than left to the model to remember. DOT-N7 is the only pulse dot configured
 // today, but as of 2026-08-08 it's routed through the dedicated week-2 isolation-day mechanism
-// instead (see N7_KEY/N7_ISOLATION_DAY_INDEXES below) — this function/gate remains generic
+// instead (see N7_KEY/N7_ISOLATION_DAY_INDEXES in lib/dotsProductModel.js) — this function/gate remains generic
 // infrastructure for any *other* future pulse dot.
 function _isPulseActiveDate(dot, dateISO) {
     if (dot.dosing_protocol !== 'pulse') return true;
@@ -1181,25 +1228,6 @@ function _applyPulseSchedule(recipe, pulseDotsByKey, dateISO) {
     return { dots };
 }
 
-// Plan cycle length — 28 days (4 weeks) so one formulation run covers 56 capsules (28 days x
-// AM/PM) instead of needing a weekly re-run. Changed from 7 2026-08-08.
-const PLAN_DAYS = 28;
-
-// Physical capsule-size ceiling: a capsule holding hundreds of dots (real observed totals ran
-// into the high 300s) is impractical to swallow in one go, independent of what any individual
-// dot's own target_dots_min/max range allows. Enforced per-capsule in _commitNutritionPlan via
-// _capRecipeTotal, which scales every dot in an over-budget capsule down proportionally
-// (largest-remainder rounding) rather than dropping dots outright or capping arbitrarily.
-const MAX_DOTS_PER_CAPSULE = 72;
-
-// DOT-N7 (Senescence Clear) dosing is fully system-controlled, never blended into the everyday
-// capsule: on 2 consecutive days inside week 2 of the 28-day cycle (0-indexed day-offsets 9-10,
-// i.e. calendar days 10-11 of 28 — squarely inside days 8-14), BOTH the morning and evening
-// capsule that day contain ONLY DOT-N7, each at its own target_dots_max. It never appears on any
-// other day. Its normal epoch-based pulse window (_isPulseActiveDate) is bypassed entirely for
-// this key so it's never dosed via two different mechanisms within the same plan.
-const N7_KEY = 'DOT-N7';
-const N7_ISOLATION_DAY_INDEXES = [9, 10];
 
 // Returns a copy of `recipe` with `key` removed from its dots map — used to strip DOT-N7 out of
 // the everyday recipe before the isolation-day override takes over its dosing entirely.
@@ -1427,6 +1455,55 @@ async function _commitNutritionPlan(client, { userId, analysis, morningRecipe, e
         );
     }
     return finalPlanId;
+}
+
+// Commits a Viva AG formula — the box-scan half of the AG ordering flow.
+//
+// A DELIBERATE SIBLING of _commitNutritionPlan, not a reuse of it. That function takes a
+// steady-state morning/evening recipe and EXPANDS it across the cycle, applying
+// _applyPulseSchedule, _capRecipeTotal and the DOT-N7 isolation override day by day as it goes.
+// An AG formula already encodes all 56 capsules explicitly — pulse days, isolation days and all,
+// validated against exactly those rules by lib/agFormulation.js — so running it through that
+// expansion would apply every rule a second time and flatten the per-day variation the agent
+// deliberately produced. The capsules are written verbatim instead.
+//
+// `planId` is the 'approved' row created at expert-approval time. Its start_date is rewritten to
+// TODAY here: the 28-day cycle starts when the user physically has the capsules, not when the
+// formula was authored or the box was compounded.
+async function _commitAgFormulation(client, { userId, planId, capsules, analysis }) {
+    const startDateObj = getNowShanghai();
+    const endDateObj = startDateObj.plus({ days: PLAN_DAYS - 1 });
+
+    const activated = await client.query(
+        `UPDATE nutrition_plans SET status = 'active', start_date = $1, end_date = $2,
+                goal = COALESCE($3, goal)
+          WHERE id = $4 AND status = 'approved' RETURNING id`,
+        [startDateObj.toISODate(), endDateObj.toISODate(), analysis || null, planId]
+    );
+    if (activated.rows.length === 0) {
+        // Already active (a re-scan that raced this one) or never approved. Either way this is a
+        // no-op, not an error — the caller reports the existing plan rather than making a second.
+        console.log(JSON.stringify({ level: 'WARN', msg: 'commit_ag_formulation_not_approved', userId, planId }));
+        return null;
+    }
+    await client.query(
+        `UPDATE nutrition_plans SET status = 'superseded' WHERE user_id = $1 AND status = 'active' AND id != $2`,
+        [userId, planId]
+    );
+
+    for (const capsule of capsules) {
+        const slotName = capsule.slot === 'PM' ? 'evening_cup' : 'morning_cup';
+        const date = startDateObj.plus({ days: capsule.day - 1 }).toISODate();
+        // Defensive only — validateAgFormulation already rejects an over-full capsule, so this
+        // never fires for a formula that got this far. A physical fill limit is worth enforcing on
+        // both sides of the boundary rather than trusting that it was checked upstream.
+        const recipe = _capRecipeTotal({ dots: { ...capsule.dots } }, MAX_DOTS_PER_CAPSULE);
+        await client.query(
+            'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
+            [planId, userId, date, slotName, recipe]
+        );
+    }
+    return planId;
 }
 
 // Background reformulation triggered by the dispatcher's periodic nutrition.topup CloudEvent
@@ -1770,6 +1847,7 @@ module.exports = {
     handleGetNutritionPlan,
     handleGetFormulationCheckoutSnapshot,
     handleGetFormulationReviewSnapshot,
+    _buildReviewTwinContext,
     _getCommittedPlanDay0Breakdown,
     handleNutritionTopupEvent,
     handlePostFormulaDots,
@@ -1778,10 +1856,12 @@ module.exports = {
     handleDeleteDot,
     _runDeterministicFormulation,
     _commitNutritionPlan,
+    _commitAgFormulation,
     _fallbackCountForDot,
     _resolveCandidateDotKeys,
     _splitDotTiming,
     _buildFormulaChartBlock,
+    _buildProductCardBlock,
     _isPulseActiveDate,
     _applyPulseSchedule,
 };

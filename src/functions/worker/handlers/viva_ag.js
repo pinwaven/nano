@@ -34,6 +34,7 @@ const ossLib = require('../lib/oss');
 const { requireVivaAgAccess } = require('../lib/vivaAgAccess');
 const { buildTwinBundle, presignDocuments, fetchHealthDocuments, BUNDLE_VERSION, DEFAULT_DOC_URL_TTL_SECONDS, clampInt } = require('../lib/twinBundle');
 const { deliverTerminalMessage } = require('./chat');
+const { processAgFormulationResult } = require('./ag_formulation');
 const { formatToShanghai } = require('../lib/time-utils');
 
 // ---------------------------------------------------------------------------------------
@@ -987,15 +988,49 @@ async function handlePostVivaAgResult(body) {
             _logError('viva_ag result delivery failed', err, { job_uid: job.job_uid });
         }
 
+        // A dots_formulation result is not just a report — it drives a real order, so the formula
+        // is parsed and checked against every rule in docs/viva-ag-api.md §8 before anything
+        // downstream can compound it. Runs AFTER the result is committed and never throws: the
+        // agent must not be told its hours of work were rejected because nano failed to file the
+        // formula, and an invalid formula is reported to the agent as a warning, not a failure.
+        let formulation = null;
+        if (job.command_key === 'dots_formulation') {
+            formulation = await processAgFormulationResult(job, { result, files });
+            if (formulation.status === 'invalid') {
+                await _deliverFormulationRejected(job, formulation.violations);
+            }
+        }
+
         console.log(JSON.stringify({ level: 'INFO', msg: 'viva_ag job completed', job_uid: job.job_uid, worker_id: job.claimed_by, files: files.length }));
         return {
             success: true, job_uid: job.job_uid,
             delivered: !!ids.notification_id, notification_id: ids.notification_id,
             result_files: files.map(f => ({ filename: f.filename, ext: f.ext, size_bytes: f.size_bytes })),
+            ...(formulation ? {
+                formulation_accepted: formulation.status === 'valid',
+                ...(formulation.status === 'invalid' ? { formulation_violations: formulation.violations } : {}),
+                ...(formulation.status === 'valid' ? { formulation_id: formulation.formulationId, total_dots: formulation.totalDots } : {}),
+            } : {}),
         };
     } catch (err) {
         _logError('handlePostVivaAgResult failed', err, { job_uid: body?.job_uid });
         return _fail(REASONS.INTERNAL_ERROR, err.message);
+    }
+}
+
+// A formula that failed validation is a different thing from a failed job: the analysis itself
+// succeeded and its report is still readable in the AG subtab — only the machine-readable formula
+// was unusable. The message says that rather than implying the whole run was wasted.
+async function _deliverFormulationRejected(job, violations) {
+    const isZh = (job.language || 'zh') !== 'en';
+    const count = Array.isArray(violations) ? violations.length : 0;
+    const text = isZh
+        ? `本次原粒配方未通过配比校验（${count} 处不符合规格），无法用于定制生产。分析报告仍可在 Viva AG 中查看，配方可重新生成一次。`
+        : `This formulation didn't pass the capsule-spec check (${count} issue${count === 1 ? '' : 's'}), so it can't be used for compounding. The analysis report is still available in Viva AG — you can run the formulation again.`;
+    try {
+        await deliverTerminalMessage(job.user_id, job.persona_type || 'viva', NOTIFY_RESULT, text, CHAT_SOURCE);
+    } catch (err) {
+        _logError('viva_ag formulation rejection delivery failed', err, { job_uid: job.job_uid });
     }
 }
 

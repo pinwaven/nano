@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 const { pool } = require('../lib/db');
 const { formatToShanghai } = require('../lib/time-utils');
-const { _getCommittedPlanDay0Breakdown } = require('./dots');
+const { _getCommittedPlanDay0Breakdown, _commitAgFormulation } = require('./dots');
 
 // Full ingredient/timing/coating/color columns — the box QR page needs the actual per-dot
 // composition (mg amounts), not just names like the GCN checkout-snapshot endpoint does.
@@ -19,13 +19,48 @@ async function _generateBoxCode() {
     throw new Error('Failed to generate a unique box code');
 }
 
+// The printed box shows what is in it per day, so an AG formula's 56 capsules are collapsed to
+// the same per-dot AM/PM shape _getCommittedPlanDay0Breakdown returns for a nano-formulated plan.
+// Averaged over the days each dot actually appears, because a pulse dot (and every dot on the
+// two DOT-N7 isolation days) is absent on some days by design — a flat cycle-total divided by 28
+// would understate the dose the user actually takes.
+async function _agDotBreakdown(capsules) {
+    const dotsRes = await pool.query(`SELECT ${BOX_DOT_COLUMNS} FROM dots ORDER BY id ASC`);
+    const byKey = new Map(dotsRes.rows.map(d => [d.key_name, d]));
+
+    const agg = new Map();
+    for (const c of capsules || []) {
+        for (const [key, count] of Object.entries(c.dots || {})) {
+            if (!agg.has(key)) agg.set(key, { am: 0, pm: 0, days: new Set() });
+            const e = agg.get(key);
+            e[c.slot === 'PM' ? 'pm' : 'am'] += count;
+            e.days.add(c.day);
+        }
+    }
+    return [...agg.entries()].map(([key, e]) => {
+        const dot = byKey.get(key) || {};
+        const days = e.days.size || 1;
+        return {
+            ...dot,
+            key_name: key,
+            name: dot.name || key,
+            name_zh: dot.name_zh || key,
+            morning_count: Math.round(e.am / days),
+            evening_count: Math.round(e.pm / days),
+            total_count: Math.round((e.am + e.pm) / days),
+            cycle_total: e.am + e.pm,
+            days_dosed: e.days.size,
+        };
+    }).filter(d => d.cycle_total > 0);
+}
+
 // Admin: POST /box-batches — { user_id, quantity, notes? }
 // Snapshots the user's currently-active nutrition plan into a frozen recipe and generates
 // `quantity` unique box_codes for it, one per physical box produced in this manufacturing run.
 async function handlePostBoxBatch(body, adminCtx) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const { user_id, quantity, notes } = body || {};
+        const { user_id, quantity, notes, ag_formulation_id } = body || {};
         if (!user_id) return { success: false, error: 'user_id is required' };
         const qty = parseInt(quantity, 10);
         if (!qty || qty < 1 || qty > 5000) return { success: false, error: 'quantity must be 1-5000' };
@@ -36,31 +71,63 @@ async function handlePostBoxBatch(body, adminCtx) {
             return { success: false, error: 'Forbidden', statusCode: 403 };
         }
 
-        const planRes = await pool.query(
-            `SELECT id FROM nutrition_plans WHERE user_id = $1 AND status = 'active'
-             ORDER BY created_at DESC LIMIT 1`,
-            [user_id]
-        );
-        if (planRes.rows.length === 0) return { success: false, error: 'User has no committed (active) nutrition plan' };
-        const planId = planRes.rows[0].id;
+        // Two sources, because the AG ordering flow manufactures a box BEFORE its plan is in
+        // effect: an expert-approved viva_ag_formulations row exists while its nutrition_plans row
+        // is still 'approved' with no schedules, so the usual "snapshot the active plan" lookup
+        // would find the user's PREVIOUS formula and box the wrong thing.
+        let planId = null;
+        let agFormulationId = null;
+        let snapshot;
 
-        const { plan, dotBreakdown, reason } = await _getCommittedPlanDay0Breakdown(planId, { dotColumns: BOX_DOT_COLUMNS });
-        if (reason) return { success: false, error: `Cannot snapshot plan: ${reason}` };
+        if (ag_formulation_id) {
+            const agRes = await pool.query(
+                `SELECT id, user_id, status, capsules, adjusted_capsules, rationale, approved_at, nutrition_plan_id
+                 FROM viva_ag_formulations WHERE id = $1`,
+                [parseInt(ag_formulation_id, 10)]
+            );
+            const f = agRes.rows[0];
+            if (!f) return { success: false, error: 'Formulation not found' };
+            if (f.user_id !== user_id) return { success: false, error: 'Formulation belongs to a different user' };
+            if (!['approved', 'committed'].includes(f.status)) {
+                return { success: false, error: `Formulation is ${f.status}, not approved — it must not be compounded yet` };
+            }
+            agFormulationId = f.id;
+            planId = f.nutrition_plan_id;
+            snapshot = {
+                ag_formulation_id: f.id,
+                plan_id: planId,
+                committed_at: f.approved_at,
+                manufactured_at: new Date().toISOString(),
+                rationale: f.rationale || null,
+                dot_breakdown: await _agDotBreakdown(f.adjusted_capsules || f.capsules),
+            };
+        } else {
+            const planRes = await pool.query(
+                `SELECT id FROM nutrition_plans WHERE user_id = $1 AND status = 'active'
+                 ORDER BY created_at DESC LIMIT 1`,
+                [user_id]
+            );
+            if (planRes.rows.length === 0) return { success: false, error: 'User has no committed (active) nutrition plan' };
+            planId = planRes.rows[0].id;
 
-        const snapshot = {
-            plan_id: planId,
-            committed_at: plan.created_at,
-            manufactured_at: new Date().toISOString(),
-            dot_breakdown: dotBreakdown,
-        };
+            const { plan, dotBreakdown, reason } = await _getCommittedPlanDay0Breakdown(planId, { dotColumns: BOX_DOT_COLUMNS });
+            if (reason) return { success: false, error: `Cannot snapshot plan: ${reason}` };
+
+            snapshot = {
+                plan_id: planId,
+                committed_at: plan.created_at,
+                manufactured_at: new Date().toISOString(),
+                dot_breakdown: dotBreakdown,
+            };
+        }
 
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
             const batchRes = await client.query(
-                `INSERT INTO box_batches (user_id, plan_id, quantity, recipe_snapshot, notes, created_by)
-                 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-                [user_id, planId, qty, JSON.stringify(snapshot), notes || null, adminCtx.username || null]
+                `INSERT INTO box_batches (user_id, plan_id, quantity, recipe_snapshot, notes, created_by, ag_formulation_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+                [user_id, planId, qty, JSON.stringify(snapshot), notes || null, adminCtx.username || null, agFormulationId]
             );
             const batchId = batchRes.rows[0].id;
 
@@ -253,9 +320,100 @@ async function handleGetBoxPage(boxCode, query = {}) {
     }
 }
 
+
+// POST /box-claim  { openid, box_code }  (app bearer)
+//
+// The user scanning the box they just received. This is the moment an AG formulation stops being
+// a plan-on-paper and becomes a live 28-day schedule — start_date is TODAY, so the cycle is
+// aligned to when they can actually take the capsules rather than when the box was compounded.
+//
+// Idempotent by design: a second scan of the same box returns the plan the first scan made. A
+// user tapping twice must not get two overlapping 28-day schedules.
+async function handlePostBoxClaim(body) {
+    const { openid } = body || {};
+    if (!openid) return { success: false, reason: 'missing_params' };
+
+    // WeChat's scanner returns whatever the QR encodes — the bare code from a code-only QR, or the
+    // full https://…/box/WVB… URL from the public ingredient page's QR. Both are the same box.
+    const raw = String(body?.box_code || '').trim();
+    const match = /WVB[0-9A-Fa-f]{12}/.exec(raw);
+    const boxCode = match ? match[0].toUpperCase() : null;
+    if (!boxCode) return { success: false, reason: 'invalid_box_code' };
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { rows: [box] } = await client.query(
+            `SELECT b.id, b.box_code, b.claimed_by_user_id, b.nutrition_plan_id,
+                    bb.id AS batch_id, bb.user_id AS batch_user_id, bb.status AS batch_status,
+                    bb.ag_formulation_id, bb.plan_id
+             FROM boxes b JOIN box_batches bb ON bb.id = b.batch_id
+             WHERE b.box_code = $1
+             FOR UPDATE OF b`,
+            [boxCode]
+        );
+        if (!box) { await client.query('ROLLBACK'); return { success: false, reason: 'box_not_found' }; }
+        if (box.batch_status === 'recalled') { await client.query('ROLLBACK'); return { success: false, reason: 'batch_recalled' }; }
+
+        if (box.claimed_by_user_id) {
+            await client.query('ROLLBACK');
+            if (box.claimed_by_user_id !== openid) return { success: false, reason: 'claimed_by_other' };
+            return { success: true, already_claimed: true, plan_id: box.nutrition_plan_id, box_code: boxCode };
+        }
+        // These capsules were compounded for one named person from their own biomarkers — the box
+        // is not transferable, and taking someone else's formulation is a real safety issue.
+        if (box.batch_user_id !== openid) { await client.query('ROLLBACK'); return { success: false, reason: 'not_your_box' }; }
+
+        let planId = box.plan_id;
+        if (box.ag_formulation_id) {
+            const { rows: [f] } = await client.query(
+                `SELECT id, status, capsules, adjusted_capsules, rationale, nutrition_plan_id
+                 FROM viva_ag_formulations WHERE id = $1 FOR UPDATE`,
+                [box.ag_formulation_id]
+            );
+            if (!f) { await client.query('ROLLBACK'); return { success: false, reason: 'formulation_not_found' }; }
+            if (f.status === 'committed' && f.nutrition_plan_id) {
+                // Another box from the same batch already activated this formulation. Claim this
+                // box against the existing plan rather than generating the schedule twice.
+                planId = f.nutrition_plan_id;
+            } else if (f.status !== 'approved') {
+                await client.query('ROLLBACK');
+                return { success: false, reason: 'formulation_not_approved' };
+            } else {
+                const capsules = f.adjusted_capsules || f.capsules || [];
+                const committed = await _commitAgFormulation(client, {
+                    userId: openid, planId: f.nutrition_plan_id, capsules, analysis: f.rationale,
+                });
+                if (!committed) { await client.query('ROLLBACK'); return { success: false, reason: 'formulation_not_approved' }; }
+                planId = committed;
+                await client.query(
+                    `UPDATE viva_ag_formulations SET status = 'committed', committed_at = NOW(), updated_at = NOW() WHERE id = $1`,
+                    [f.id]
+                );
+            }
+        }
+
+        await client.query(
+            `UPDATE boxes SET claimed_by_user_id = $2, claimed_at = NOW(), nutrition_plan_id = $3 WHERE id = $1`,
+            [box.id, openid, planId]
+        );
+        await client.query('COMMIT');
+
+        console.log(JSON.stringify({ level: 'INFO', msg: 'box claimed', box_code: boxCode, user_id: openid, plan_id: planId }));
+        return { success: true, already_claimed: false, plan_id: planId, box_code: boxCode };
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostBoxClaim failed', error: err.message, box_code: boxCode }));
+        return { success: false, reason: 'internal_error' };
+    } finally {
+        client.release();
+    }
+}
+
 module.exports = {
     handlePostBoxBatch,
     handleGetBoxBatches,
     handleGetBoxBatchBoxes,
     handleGetBoxPage,
+    handlePostBoxClaim,
 };

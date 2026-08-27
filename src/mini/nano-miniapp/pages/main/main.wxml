@@ -276,6 +276,25 @@
                       </view>
                       <text class="fcard-foot">{{t.formulaTotalLabel}} {{seg.total}}</text>
                     </view>
+                    <view wx:elif="{{seg.t === 'product'}}" class="pcard">
+                      <text class="pcard-title">{{t.productCardTitle}}</text>
+                      <view
+                        wx:for="{{seg.items}}"
+                        wx:for-item="pi"
+                        wx:for-index="pk"
+                        wx:key="sku"
+                        class="pcard-row"
+                        bindtap="handleProductCardTap"
+                        data-sku="{{pi.sku}}"
+                      >
+                        <view class="pcard-main">
+                          <text class="pcard-name">{{pi.name}}</text>
+                          <text wx:if="{{pi.reason}}" class="pcard-reason">{{pi.reason}}</text>
+                        </view>
+                        <text class="pcard-price">{{pi.price}}</text>
+                        <text class="pcard-arrow">›</text>
+                      </view>
+                    </view>
                   </view>
                 </block>
                 <mp-html
@@ -641,6 +660,16 @@
           <text class="order-dots-title">{{t.orderDotsTitle}}</text>
           <text class="order-dots-detail">{{t.orderDotsDetail}}</text>
           <view class="order-dots-btn"><text class="order-dots-btn-text">{{t.orderDotsBtn}}</text></view>
+        </view>
+
+        <!-- Scan the box you received to start its 28-day cycle. Shown only to a real (non-guest)
+             user on the Aeviva channel, where the AI Precision Nutrition flow actually exists. -->
+        <view wx:if="{{isAeviva && !isGuest}}" class="scan-box-card" bindtap="handleScanBox">
+          <view class="scan-box-main">
+            <text class="scan-box-title">{{t.scanBoxTitle}}</text>
+            <text class="scan-box-detail">{{t.scanBoxDetail}}</text>
+          </view>
+          <text class="scan-box-icon">⌗</text>
         </view>
 
         <view class="dots-header">

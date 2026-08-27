@@ -273,7 +273,7 @@ function _zeroLastMargin (block) {
   })
 }
 
-var DIRECTIVE_NAMES = { metric: 1, takeaway: 1, dots: 1, formula: 1 }
+var DIRECTIVE_NAMES = { metric: 1, takeaway: 1, dots: 1, formula: 1, product: 1 }
 
 function _buildDirective (name, inner) {
   var rows = []
@@ -358,6 +358,22 @@ function _buildDirective (name, inner) {
       if (item.id) ditems.push(item)
     }
     return ditems.length ? { t: 'dots', items: ditems } : null
+  }
+
+  // :::product — a store recommendation card. Rows are sku|name|price|reason, written by the
+  // SERVER from the catalog snapshot the turn was built on (handlers/dots.js's
+  // _buildProductCardBlock), never by the model — same rule as :::formula above, so the price
+  // shown can never disagree with what the store will actually charge. The sku is carried
+  // through only as a tap target; it is never displayed.
+  if (name === 'product') {
+    var pitems = []
+    for (var pi = 0; pi < rows.length; pi++) {
+      var pp = rows[pi].split('|')
+      for (var pj = 0; pj < pp.length; pj++) pp[pj] = pp[pj].trim()
+      if (!pp[0] || !pp[1]) continue
+      pitems.push({ sku: pp[0], name: pp[1], price: pp[2] || '', reason: pp[3] || '' })
+    }
+    return pitems.length ? { t: 'product', items: pitems } : null
   }
 
   return null

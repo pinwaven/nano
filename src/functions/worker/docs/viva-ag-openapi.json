@@ -403,7 +403,7 @@
                   },
                   "result": {
                     "type": "object",
-                    "description": "Structured findings; max 512 KB serialized"
+                    "description": "Structured findings, up to 512 KB serialized. For a dots_formulation job this MUST carry the formula as result.formulation ({format, cycle_days, total_dots, rationale, capsules[], totals}) — that is what nano parses and validates; the .md is only a fallback. See section 8 of GET /viva-ag/docs."
                   },
                   "result_oss_key": {
                     "type": "string",
@@ -484,6 +484,34 @@
                               "integer",
                               "null"
                             ]
+                          }
+                        }
+                      }
+                    },
+                    "formulation_accepted": {
+                      "type": "boolean",
+                      "description": "dots_formulation jobs only. Whether the submitted formula passed nano's capsule-spec validation (section 8 of GET /viva-ag/docs). The job itself is recorded and delivered either way; a rejected formula is simply not compounded, and the user is asked to run the formulation again."
+                    },
+                    "formulation_id": {
+                      "type": "integer",
+                      "description": "Present when formulation_accepted is true. Nano’s handle for the stored formula."
+                    },
+                    "total_dots": {
+                      "type": "integer",
+                      "description": "Present when formulation_accepted is true. The dot total nano derived from the capsules — compare it against your own checksum."
+                    },
+                    "formulation_violations": {
+                      "type": "array",
+                      "description": "Present when formulation_accepted is false. Every rule the formula broke; nothing is coerced into range.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string",
+                            "description": "e.g. dose_above_max, capsule_over_fill, n7_outside_isolation, checksum_mismatch"
+                          },
+                          "message": {
+                            "type": "string"
                           }
                         }
                       }

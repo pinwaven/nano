@@ -50,6 +50,14 @@ const T = {
     presetFull: '全面分析',
     presetDocs: '解读档案',
     presetRisk: '风险筛查',
+    // ── Formulation progress (dots_formulation → expert review → compounding → scan) ──
+    fmTitle: '原粒配方进度',
+    fmValid: '待专家审核', fmValidHint: '配方已通过配比校验，营养专家审核中',
+    fmInvalid: '配比未通过', fmInvalidHint: '配方不符合胶囊规格，可重新生成一次',
+    fmApproved: '已审核 · 定制加工中', fmApprovedHint: '收到包装后扫描盒身二维码即可开始 28 天周期',
+    fmRejected: '专家未通过', fmRejectedHint: '营养专家暂未通过该配方，客服将与您联系',
+    fmCommitted: '已激活', fmCommittedHint: '方案已生效，可在「原粒」中查看每日配比',
+    fmDots: '共 {n} 粒 / 28 天',
     presetDots: '原粒定制',
     stQueued: '排队中', stClaimed: '已受理', stProcessing: '分析中',
     stCompleted: '已完成', stFailed: '未完成', stCancelled: '已取消',
@@ -107,6 +115,14 @@ const T = {
     presetFull: 'Full analysis',
     presetDocs: 'Review records',
     presetRisk: 'Risk screen',
+    // ── Formulation progress (dots_formulation → expert review → compounding → scan) ──
+    fmTitle: 'Formulation progress',
+    fmValid: 'Awaiting expert review', fmValidHint: 'Passed the capsule-spec check; a nutrition expert is reviewing it',
+    fmInvalid: 'Spec check failed', fmInvalidHint: "This formula doesn't meet the capsule spec — you can run it again",
+    fmApproved: 'Approved · being compounded', fmApprovedHint: 'Scan the QR on your box when it arrives to start the 28-day cycle',
+    fmRejected: 'Not approved', fmRejectedHint: "The nutrition expert didn't approve this formula; support will be in touch",
+    fmCommitted: 'Active', fmCommittedHint: 'Your plan is live — see the daily mix under Dots',
+    fmDots: '{n} dots / 28 days',
     presetDots: 'Dot formulation',
     stQueued: 'Queued', stClaimed: 'Accepted', stProcessing: 'Analyzing',
     stCompleted: 'Done', stFailed: 'Failed', stCancelled: 'Cancelled',
@@ -182,6 +198,8 @@ Component({
     quotaLeftText: '',
     expiryDisplay: '',
     detailJob: null,
+    // The most recent dots_formulation and where it is on its way to becoming a real plan.
+    formulation: null,
     downloadingResult: false,
     // In-app viewer for .md/.txt artifacts (see RESULT_TEXT_EXTENSIONS).
     reportTitle: '',
@@ -204,6 +222,7 @@ Component({
       })
       this._loadDocuments()
       this._loadJobs()
+      this._loadFormulation()
     },
     detached() { this._stopPoll() },
   },
@@ -479,12 +498,51 @@ Component({
       }
     },
 
+    // A dots_formulation job's result is not the end of the story the way an analysis report is:
+    // it goes to a nutrition expert, then to compounding, then ships, and only becomes the user's
+    // actual plan when they scan the box. Without this the panel would show "completed" and go
+    // quiet for days while all of that happened.
+    async _loadFormulation() {
+      const { userId } = this.properties
+      if (!userId) return
+      try {
+        const res = await this._req(`${BASE}/api/viva-ag/formulation?openid=${encodeURIComponent(userId)}`)
+        const list = res.data?.formulations || []
+        const f = list[0] || null
+        this.setData({ formulation: f ? this._decorateFormulation(f) : null })
+      } catch (e) {
+        // A missing status line is not worth an error banner over the rest of the panel.
+        this.setData({ formulation: null })
+      }
+    },
+
+    _decorateFormulation(f) {
+      const t = this.data.t
+      const map = {
+        valid: { label: t.fmValid, hint: t.fmValidHint },
+        invalid: { label: t.fmInvalid, hint: t.fmInvalidHint },
+        approved: { label: t.fmApproved, hint: t.fmApprovedHint },
+        rejected: { label: t.fmRejected, hint: t.fmRejectedHint },
+        committed: { label: t.fmCommitted, hint: t.fmCommittedHint },
+      }
+      const m = map[f.status] || { label: f.status, hint: '' }
+      return {
+        ...f,
+        statusLabel: m.label,
+        statusHint: m.hint,
+        // Rendered as-is by the WXML, so format it here rather than leaving a bare number
+        // that reads as an error code.
+        total_dots: f.total_dots ? String(t.fmDots).replace('{n}', f.total_dots) : '',
+      }
+    },
+
     async _loadJobs() {
       const { userId } = this.properties
       if (!userId) return
       try {
         const res = await this._req(`${BASE}/api/viva-ag/jobs?openid=${encodeURIComponent(userId)}`)
         const jobs = (res.data?.jobs || []).map(j => this._decorate(j))
+        this._loadFormulation()
         const hasActive = !!res.data?.has_active
         this.setData({
           jobs, jobsLoading: false, hasActive,

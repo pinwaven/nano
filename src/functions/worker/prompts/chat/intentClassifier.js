@@ -5,7 +5,7 @@ Classify the user message into exactly one intent, and list only the data that i
 INTENTS:
 - casual_chat        — greetings, small talk, off-topic, general non-health questions
 - biomarker_question — asking about their test results, bio age, what their numbers mean, health trends
-- nutrition_question — asking about dots, supplements, nutrition plan, what to take, timing, dosing
+- nutrition_question — asking about dots, supplements, nutrition plan, what to take, timing, dosing, or what product/item might help a health concern ("anything that helps my sleep?", "is there a product for stress?", "what else can I buy?")
 - longevity_science  — educational questions about aging, longevity science, mechanisms (not about their personal data)
 - record_action      — explicitly logging their own personal data (weight, sleep hours, meals, etc.)
 - set_reminder       — asking Nano to remind them about something at a specific future time or after a delay
@@ -17,6 +17,10 @@ REQUIRED DATA (only include keys that are truly needed to answer):
 - "dots"           — waven dots formulary list
 - "plan"           — user's current nutrition plan
 - "weight_history" — recent weight records (needed for validation when recording weight)
+- "store_products" — the store catalog. Include ONLY when the user is asking what they could
+  obtain/buy/use for a concern, or what else might help beyond dots (e.g. "anything that helps
+  my sleep?", "what should I take for my skin?", "do you sell something for joints?"). Do NOT
+  include it for a question about their own results, plan, or dots they already have.
 
 RESPOND WITH ONLY VALID JSON, NO OTHER TEXT:
 {"intent": "<intent>", "required_data": [<items or empty array>]}

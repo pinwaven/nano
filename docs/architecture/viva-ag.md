@@ -618,18 +618,27 @@ contract is arithmetically correct against the live catalog specifically so that
 them would be tempting and wrong: the consumer is a processing center compounding physical
 capsules, and reconstructing an implied schedule is where that goes wrong.
 
-**Nano does not parse or validate the file** — decided for v1. It is stored and served back byte
-for byte, so a wrong dot key, an over-full capsule or a broken checksum is caught by nobody in
-between. The contract says this plainly to the agent's authors rather than letting them assume a
-safety net exists. The `Summary.total_dots` checksum exists so a *downstream* consumer can reject a
-file cheaply.
+### Both of this section's v1 decisions were reversed on 2026-08-25
 
-**It is an artifact, not a prescription.** Submitting a formula does not touch `nutrition_plans`,
-consistent with §1's read-only-artifacts decision. The consequence is real and deliberate: if
-Aeviva's processing center ever compounds from an AG formula, the capsules the user physically
-receives will not match their nano plan. Revisit once the agent is actually producing formulas —
-committing would mean letting an external system write dosing into a user's schedule, which needs
-server-side validation as a hard gate first.
+They are recorded here because the reasoning still matters, and because code written against them
+would now be wrong.
+
+**"Nano does not parse or validate the file."** True while the formula was read-only. False now:
+`lib/agFormulation.js` enforces every rule above on submission and refuses a non-conforming
+formula outright. The trigger was exactly the condition this paragraph anticipated — an approved
+formula is compounded into capsules a person swallows, so nano became the only check in the chain.
+
+**"It is an artifact, not a prescription."** Also false now. An expert-approved formula creates a
+`nutrition_plans` row, and the user's plan starts when they scan the delivered box. The gate this
+paragraph asked for ("committing would mean letting an external system write dosing into a user's
+schedule, which needs server-side validation as a hard gate first") is precisely what was built
+first, and an expert's approval sits on top of it.
+
+What did **not** change: the `Summary.total_dots` checksum still exists so a downstream consumer
+can reject a file cheaply, and the constants-coupling warning above still stands — it now binds a
+third consumer, `lib/dotsProductModel.js`.
+
+**Full writeup: [ag-dots-ordering.md](ag-dots-ordering.md).**
 
 ---
 

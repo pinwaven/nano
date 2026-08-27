@@ -83,7 +83,8 @@ const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, h
 const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
 const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleSetIdentity, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation, handlePostFormulationPurchaseConfirmed } = require('./handlers/users');
 const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handleGetFormulationCheckoutSnapshot, handleGetFormulationReviewSnapshot, handleNutritionTopupEvent, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
-const { handlePostBoxBatch, handleGetBoxBatches, handleGetBoxBatchBoxes, handleGetBoxPage } = require('./handlers/boxes');
+const { handlePostBoxBatch, handleGetBoxBatches, handleGetBoxBatchBoxes, handleGetBoxPage, handlePostBoxClaim } = require('./handlers/boxes');
+const { handleGetAgFormulationReviewSnapshot, handlePostAgFormulationApproved, handleGetAgFormulationStatus } = require('./handlers/ag_formulation');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
 const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm } = require('./handlers/login');
 const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified, handlePhoneOtpList, handlePhoneOtpRemove, handlePhoneOtpAdminAdd } = require('./handlers/phone-otp');
@@ -278,7 +279,7 @@ exports.handler = async (req, resp, context) => {
             // Scoped nano<-GCN service credential — distinct from API_BEARER_TOKEN (nano's
             // full superadmin bearer). Authenticated but restricted to the exact paths GCN's
             // nanoClient.js actually calls; anything else 403s even with a valid token.
-            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn', '/partner-types-gcn-sync', '/partner-tier-assignment-gcn-sync', '/formulation-checkout-snapshot', '/formulation-review-snapshot', '/formulation-purchase-confirmed', '/health-plan-templates', '/viva-subscription-plans', '/viva-subscription-checkout-confirmed']);
+            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn', '/partner-types-gcn-sync', '/partner-tier-assignment-gcn-sync', '/formulation-checkout-snapshot', '/formulation-review-snapshot', '/ag-formulation-review-snapshot', '/ag-formulation-approved', '/formulation-purchase-confirmed', '/health-plan-templates', '/viva-subscription-plans', '/viva-subscription-checkout-confirmed']);
             if (!GCN_ALLOWED_PATHS.has(path)) {
                 const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
                 if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
@@ -393,6 +394,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetVivaAgJobDetail(query);
             } else if (path === '/viva-ag/jobs/result-url') {
                 result = await handleGetVivaAgResultUrl(query);
+            } else if (path === '/viva-ag/formulation') {
+                result = await handleGetAgFormulationStatus(query);
             } else if (path === '/viva-ag/jobs') {
                 result = await handleGetVivaAgJobs(query);
             // --- Health documents (user-facing; never routed through /oss/presign, which
@@ -466,6 +469,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetFormulationCheckoutSnapshot(query.planId, query.openid);
             } else if (path === '/formulation-review-snapshot') {
                 result = await handleGetFormulationReviewSnapshot(query.planId, query.openid);
+            } else if (path === '/ag-formulation-review-snapshot') {
+                result = await handleGetAgFormulationReviewSnapshot(query.formulationId, query.openid);
             } else if (path.includes('/nutrition-plan')) {
                 result = await handleGetNutritionPlan(query.openid);
             } else if (path === '/health-twin') {
@@ -818,6 +823,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostKinoChipModel(parsedBody);
             } else if (path.includes('/box-batches')) {
                 result = await handlePostBoxBatch(parsedBody, adminCtx);
+            } else if (path === '/box-claim') {
+                result = await handlePostBoxClaim(parsedBody);
+            } else if (path === '/ag-formulation-approved') {
+                result = await handlePostAgFormulationApproved(parsedBody);
             } else if (path.includes('/viva-subscription-checkout-confirmed')) {
                 result = await handlePostVivaSubscriptionCheckoutConfirmed(parsedBody);
             } else if (path.includes('/viva-subscription-redeem')) {

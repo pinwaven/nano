@@ -515,3 +515,37 @@
 .theme-light .ag-viewer { background: #FBF8F2; }
 .theme-light .ag-viewer-title { color: #14243D; }
 .theme-light .ag-viewer-body { color: #35485F; }
+
+/* ── Formulation progress ─────────────────────────────────────────────────────────────
+   Colour-coded by where the formula is, so a glance answers "is anything happening?":
+   amber while a human still has to act, green once it is approved or live, red if the
+   capsule-spec check or the expert rejected it. */
+.ag-fm {
+  margin-top: 16rpx;
+  padding: 24rpx 28rpx;
+  border-radius: 18rpx;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 6rpx solid rgba(255, 255, 255, 0.2);
+}
+.ag-fm-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16rpx; }
+.ag-fm-status { font-size: 27rpx; font-weight: 600; color: var(--text); }
+.ag-fm-dots { font-size: 22rpx; color: var(--text-muted); }
+.ag-fm-hint { display: block; margin-top: 10rpx; font-size: 23rpx; color: var(--text-muted); line-height: 1.6; }
+.ag-fm-rationale {
+  display: block; margin-top: 14rpx; padding-top: 14rpx;
+  border-top: 1rpx solid rgba(255, 255, 255, 0.08);
+  font-size: 23rpx; color: var(--text-sub); line-height: 1.6;
+}
+.ag-fm-valid    { border-left-color: var(--gold); }
+.ag-fm-approved { border-left-color: var(--success); }
+.ag-fm-committed{ border-left-color: var(--success); }
+.ag-fm-invalid  { border-left-color: var(--danger); }
+.ag-fm-rejected { border-left-color: var(--danger); }
+
+.theme-light .ag-fm { background: rgba(0, 0, 0, 0.03); border-left-color: rgba(0, 0, 0, 0.15); }
+.theme-light .ag-fm-rationale { border-top-color: rgba(0, 0, 0, 0.08); }
+.theme-light .ag-fm-valid    { border-left-color: var(--gold); }
+.theme-light .ag-fm-approved { border-left-color: var(--success); }
+.theme-light .ag-fm-committed{ border-left-color: var(--success); }
+.theme-light .ag-fm-invalid  { border-left-color: var(--danger); }
+.theme-light .ag-fm-rejected { border-left-color: var(--danger); }

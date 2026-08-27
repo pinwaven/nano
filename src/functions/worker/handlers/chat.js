@@ -43,7 +43,42 @@ const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { resolveEffectivePersona, hasActiveVivaAccess } = require('../lib/persona');
 const { grantSignupTrial } = require('../lib/personaOverride');
-const { _runDeterministicFormulation, _buildFormulaChartBlock, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming } = require('./dots');
+const { _runDeterministicFormulation, _buildFormulaChartBlock, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _buildProductCardBlock } = require('./dots');
+const { fetchAiCatalog } = require('../lib/gcnClient');
+const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock');
+
+// Channels with a GCN storefront behind them (mirrors handlers/login.js's own copy — the same
+// physically-duplicated-constant convention this codebase uses across handlers). Nothing else has
+// a catalog to recommend from, so the store fetch is gated on this rather than on persona alone.
+const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
+
+// Suppress any product whose declared allergens/cautions collide with something the user has
+// already told us (user_memory_facts, CLAUDE.md §27). Deliberately a hard filter applied BEFORE
+// the catalog is rendered into the prompt, not a rule in the prompt: the model never sees a
+// product it must not suggest, so there is nothing for it to get wrong. Same reasoning that moved
+// dimension-misattribution detection out of JUDGE and into code (lib/factCheck.js).
+//
+// Matching is plain bidirectional substring containment over the Chinese text. Crude, and
+// deliberately biased toward over-suppression — a missed suggestion costs a sale, a missed
+// allergen costs considerably more.
+function _filterProductsByUserFacts(products, userFacts) {
+    const blocking = (userFacts || [])
+        .filter(f => f.category === 'allergy' || f.category === 'dietary_restriction')
+        .map(f => String(f.fact_zh || '').trim())
+        .filter(Boolean);
+    if (blocking.length === 0) return products;
+
+    return products.filter((p) => {
+        const terms = [...(p.allergens_zh || []), ...(p.cautions_zh || [])]
+            .map(t => String(t || '').trim())
+            .filter(t => t.length >= 2);
+        const hit = terms.some(term => blocking.some(fact => fact.includes(term) || term.includes(fact)));
+        if (hit) {
+            console.log(JSON.stringify({ level: 'INFO', msg: 'store_product_suppressed_by_user_fact', sku_id: p.sku_id }));
+        }
+        return !hit;
+    });
+}
 
 // Intents where factual claims (biomarker values, dot recommendations, science/protocol
 // assertions) are common enough to warrant the fuller plan->generate->judge->revise loop
@@ -654,8 +689,63 @@ function _buildCorrectionPrompt(risk) {
     return parts.join('\n');
 }
 
-async function _regenerateIfFabricationRisk(client, model, messages, reply, logContext, dotsFormulary, textForDetection) {
-    const risk = detectAllRisks(textForDetection ?? reply, dotsFormulary);
+// Removes every action-JSON tail from a completion so it never reaches the user.
+//
+// The five actions split into two shapes, and getting that wrong is how a tail leaks:
+// record_weight/set_reminder/remember_fact are flat objects the `[^}]*` bound handles, while
+// ask_questions and recommend_product both NEST (an array of objects), so a `[^}]*` pattern
+// would stop at the first inner `}` and leave a JSON fragment in the reply. Those two use
+// greedy-to-end-of-string instead, which is safe because the model is always instructed to put
+// its action tail on the very last line, after every ::: block.
+//
+// Extracted from finalizeChatReply so it can be tested directly — a tail leaking into a saved
+// message is silent and user-visible, and has happened before (the 2026-07-26 set_reminder fix).
+function _stripActionTails(text) {
+    return String(text || '')
+        .replace(/\n?\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
+        .replace(/\n?\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
+        .replace(/\n?\{"action"\s*:\s*"remember_fact"[^}]*\}/g, '')
+        .replace(/\n?\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '')
+        .replace(/\n?\{"action"\s*:\s*"recommend_product"[\s\S]*$/, '')
+        .trim();
+}
+
+// Resolves a recommend_product action tail against the catalog snapshot the prompt was built
+// from, returning only entries the server can vouch for.
+//
+// NOTHING the model supplied about a product survives except the reason prose. The sku_id is a
+// lookup key, and name/price are read back out of the snapshot — so a hallucinated sku is dropped
+// silently (never repaired, never surfaced), and a real one can only ever be shown with its real
+// name and real price. Same "never trust the LLM's key blindly" rule finalizeFormulaDotsGenerate
+// applies to dot_key.
+//
+// Deliberately never throws and never partially fails the turn: a bad tail simply yields fewer
+// recommendations, or none.
+function _validateProductRecommendations(parsed, storeProducts) {
+    const catalog = new Map((storeProducts || []).map(p => [String(p.sku_id), p]));
+    if (catalog.size === 0) return [];
+    const out = [];
+    const seen = new Set();
+    for (const entry of parsed?.skus || []) {
+        const skuId = String(entry?.sku_id || '').trim();
+        const product = catalog.get(skuId);
+        if (!product || seen.has(skuId)) continue;
+        seen.add(skuId);
+        out.push({
+            sku_id: product.sku_id,
+            product_name_zh: product.product_name_zh,
+            price_cny: product.price_cny,
+            // Cap the model's own prose: this lands in a fixed-height card row, and a paragraph
+            // here would push the real content off screen.
+            reason_zh: String(entry?.reason_zh || '').trim().slice(0, 60),
+        });
+        if (out.length >= MAX_RECOMMENDATIONS) break;
+    }
+    return out;
+}
+
+async function _regenerateIfFabricationRisk(client, model, messages, reply, logContext, dotsFormulary, textForDetection, storeProducts) {
+    const risk = detectAllRisks(textForDetection ?? reply, dotsFormulary, storeProducts);
     if (risk.length === 0) return reply;
     console.log(JSON.stringify({ level: 'WARN', msg: 'fabrication_risk_detected', context: logContext, risk }));
     const correctionPrompt = _buildCorrectionPrompt(risk);
@@ -666,7 +756,7 @@ async function _regenerateIfFabricationRisk(client, model, messages, reply, logC
             temperature: 0.2,
         });
         const retryReply = retryCompletion.choices[0].message.content || reply;
-        const retryRisk = detectAllRisks(retryReply, dotsFormulary);
+        const retryRisk = detectAllRisks(retryReply, dotsFormulary, storeProducts);
         console.log(JSON.stringify({ level: retryRisk.length === 0 ? 'INFO' : 'WARN', msg: 'fabrication_risk_retry', context: logContext, ok: retryRisk.length === 0, risk: retryRisk }));
         return retryReply;
     } catch (err) {
@@ -832,7 +922,13 @@ async function finalizeChatReply({ rawReply, extraValidDates, extraValidValues, 
         // action tail, so it can't be bounded by the flat [^}]* pattern the other three use —
         // greedy-to-end-of-string is safe since the model is always instructed to put this
         // tail last.
-        .replace(/\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '');
+        .replace(/\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '')
+        // recommend_product nests too (an array of {sku_id, reason_zh}), so it takes the same
+        // greedy-to-end form rather than the flat [^}]* the first three use. Stripped before the
+        // grounding check for the same reason set_reminder is: reason_zh is free prose that can
+        // contain a number, and verifyBiomarkerGrounding has no way to tell a product blurb from
+        // a biomarker claim.
+        .replace(/\{"action"\s*:\s*"recommend_product"[\s\S]*$/, '');
     const hasKnownAge = user.birth_date != null;
     const hasKnownBmi = llmContext.user_profile.bmi != null;
     if (Object.keys(llmContext.biomarkers).length > 0 || hasKnownAge || hasKnownBmi) {
@@ -917,7 +1013,7 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
         rawReply = await _regenerateIfFabricationRisk(
             client, model,
             [{ role: 'system', content: systemPrompt }, ...cleanHistory],
-            rawReply, 'handlePostChat', llmContext.dots, stripActionJson(rawReply)
+            rawReply, 'handlePostChat', llmContext.dots, stripActionJson(rawReply), llmContext.store_products
         );
     }
 
@@ -1061,18 +1157,38 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
         }
     }
 
+    // Detect a recommend_product action — store items Viva chose from the catalog this request
+    // fetched (prompts/chat/productRecommendBlock.js). Follows formulate_dots' validation
+    // discipline exactly: the model supplies ids and reasoning, and NOTHING it supplies is
+    // trusted. Every sku_id must resolve inside the snapshot the prompt was built from — an
+    // unknown id is dropped silently rather than repaired or surfaced, so a hallucinated product
+    // simply never reaches the user.
+    //
+    // The card itself is built server-side (_buildProductCardBlock) from that same snapshot, so
+    // the name and price on screen are the real ones by construction rather than by the model
+    // having behaved. Absent/unparseable is never a failure — the model is only ever instructed
+    // to append this conditionally.
+    let recommendedProducts = [];
+    const recommendExtracted = _extractTrailingJson(rawReply, '{"action":"recommend_product"');
+    if (recommendExtracted) {
+        try {
+            recommendedProducts = _validateProductRecommendations(recommendExtracted.parsed, llmContext.store_products);
+            const dropped = (recommendExtracted.parsed?.skus || []).length - recommendedProducts.length;
+            if (dropped > 0) {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'recommend_product_entries_dropped', user_id, dropped }));
+            }
+        } catch (e) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'recommend_product action parse failed', error: e.message }));
+        }
+    }
+
     // A REVISE-round completion can occasionally consist of ONLY the corrected action JSON
     // with no surrounding prose (the model over-focuses on fixing the flagged action param
     // and drops the conversational reply) — stripping it then would ship a blank message.
     // Never let that happen; fall back to an acknowledgment referencing the actual recorded
     // fact when we have one (already validated above, so safe to echo back), otherwise a
     // minimal generic acknowledgment.
-    let strippedReply = rawReply
-        .replace(/\n?\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
-        .replace(/\n?\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
-        .replace(/\n?\{"action"\s*:\s*"remember_fact"[^}]*\}/g, '')
-        .replace(/\n?\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '')
-        .trim();
+    let strippedReply = _stripActionTails(rawReply);
     // Runs for every intent, not just the agentic ones — casual_chat/emotional_support still
     // get the narrower non-strict pass (TRAILING_INVITATION_PATTERNS only, no bare "?" ban) so
     // an "offering to act" ending like "需要我帮你...吗？" is caught there too, without breaking
@@ -1090,7 +1206,14 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
         : askQuestionsCommitted
         ? (isZhReply ? `好的，我想先了解几个问题：${askQuestionsCommitted.name_zh}` : `Sure — I have a couple of quick questions first: ${askQuestionsCommitted.name}`)
         : (isZhReply ? '好的，已记录。' : 'Got it — noted.');
-    const reply = strippedReply || fallbackReply;
+    // Appended after stripTrailingQuestion and the fallback, so the card can never be mistaken
+    // for a trailing invitation and is never lost to a blank-prose fallback. rich_format gates it
+    // the same way every other ::: card is gated: the coach app and web user-app would render the
+    // fence as literal text.
+    const productCard = (llmContext.rich_format && recommendedProducts.length > 0)
+        ? _buildProductCardBlock(recommendedProducts, user.language)
+        : '';
+    const reply = (strippedReply || fallbackReply) + productCard;
 
     if (sandbox) {
         // Sandbox sessions have no notification-polling side channel to rely on —
@@ -1237,10 +1360,12 @@ async function handlePostChat(body) {
     // Resolve persona from an active per-user override, else channel config (defaults to 'nano')
     let channelPersonaType = 'nano';
     let channelSubAgeNames = null;
+    let channelKeyName = null;
     if (user.channel_id) {
         try {
-            const chRes = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
+            const chRes = await pool.query('SELECT key_name, config FROM channels WHERE id = $1', [user.channel_id]);
             const chConfig = chRes.rows[0]?.config || {};
+            channelKeyName = chRes.rows[0]?.key_name || null;
             channelPersonaType = chConfig.persona_type ?? 'nano';
             channelSubAgeNames = chConfig.sub_age_display_names || null;
         } catch (err) {
@@ -1327,6 +1452,31 @@ async function handlePostChat(body) {
                     `SELECT data FROM biomarkers WHERE user_id = $1 AND test_type = 'body_composition' ORDER BY tested_at DESC LIMIT 1`,
                     [user_id]
                 );
+            }
+            // The store catalog is the ONE fetch here that is genuinely reactive: it happens only
+            // when the classifier saw the user themselves ask what they could use or obtain
+            // (required_data 'store_products'). Everything else above is fetched unconditionally
+            // precisely because a classifier miss must not blind the model — but here a miss is
+            // the desired failure mode. With no catalog in the prompt, the essential block's
+            // product rule collapses back to Dots-only, so "Viva never volunteers a product" is a
+            // structural property of what it was handed, not an instruction it might drift from.
+            //
+            // Also gated on a GCN-linked channel: nothing else has a storefront to sell from.
+            // Cross-repo and therefore slower than its neighbours, but it runs inside the same
+            // Promise.all and fetchAiCatalog never throws and self-limits to 4s, so at worst it
+            // contributes an empty list.
+            //
+            // Also gated on the intent, not just on required_data: only nutrition_question's
+            // template renders getProductRecommendBlock. Live classifier testing 2026-08-25 showed
+            // 'store_products' can be emitted alongside record_action/casual_chat, whose templates
+            // have no such block — the catalog would be fetched cross-repo and then silently
+            // dropped. Keeping the fetch and the render gated on the same condition makes that
+            // contract explicit rather than accidental; widening it means adding the block to
+            // another template in the same change.
+            if (required_data.includes('store_products')
+                && intent === 'nutrition_question'
+                && GCN_LINKED_CHANNEL_KEYS.has(channelKeyName)) {
+                fetches.store_products = fetchAiCatalog(user_id);
             }
 
             // Always fetch health_twin — provides wearable/sleep/activity context for all intents
@@ -1425,6 +1575,13 @@ async function handlePostChat(body) {
                 current_solar_term: currentSolarTerm,
                 essential_knowledge: essentialKnowledge,
                 user_facts: fetched.user_facts?.rows || [],
+                // The AI-approved slice of this user's own bound GCN storefront, already filtered
+                // against their recorded allergies/restrictions. Absent on every turn the
+                // classifier didn't flag — see the fetch above for why that absence is the point.
+                // Crosses the EventBridge boundary as JSON (CLAUDE.md §22), so it stays capped
+                // (25 items server-side) and carries no prices: the model is never given a number
+                // it could leak, since _buildProductCardBlock renders those from the same snapshot.
+                store_products: _filterProductsByUserFacts(fetched.store_products || [], fetched.user_facts?.rows || []),
                 // Gates prompts/chat/outputFormat.js's ::: display-card syntax. Scoped to the
                 // miniapp because it's the only surface whose renderer understands the fences —
                 // the coach app shows content as a bare <text> and the web user-app uses
@@ -2764,6 +2921,9 @@ module.exports = {
     // exported for tests — pure helpers, no DB/LLM dependency
     stripTrailingQuestion,
     extractDateMentions,
+    _stripActionTails,
+    _filterProductsByUserFacts,
+    _validateProductRecommendations,
     saveChatMessage,
     // Exported for handlers/viva_ag.js, which delivers an external agent's result into chat
     // through the same two-channel path everything else uses. Same precedent as

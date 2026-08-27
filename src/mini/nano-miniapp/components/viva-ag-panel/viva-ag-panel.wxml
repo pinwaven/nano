@@ -44,6 +44,22 @@
       </view>
     </view>
 
+    <!-- ── Formulation progress ──
+         A dots_formulation result keeps moving after the job says "completed": expert review,
+         compounding, delivery, then the box scan that actually starts the plan. Without this the
+         panel would go quiet for days. -->
+    <view wx:if="{{formulation}}" class="ag-section">
+      <text class="ag-section-title">{{t.fmTitle}}</text>
+      <view class="ag-fm ag-fm-{{formulation.status}}">
+        <view class="ag-fm-head">
+          <text class="ag-fm-status">{{formulation.statusLabel}}</text>
+          <text wx:if="{{formulation.total_dots}}" class="ag-fm-dots">{{formulation.total_dots}}</text>
+        </view>
+        <text class="ag-fm-hint">{{formulation.statusHint}}</text>
+        <text wx:if="{{formulation.rationale}}" class="ag-fm-rationale">{{formulation.rationale}}</text>
+      </view>
+    </view>
+
     <!-- ── Command ── -->
     <view class="ag-section">
       <text class="ag-section-title">{{t.newAnalysis}}</text>

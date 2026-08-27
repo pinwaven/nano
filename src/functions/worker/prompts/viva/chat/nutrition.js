@@ -4,6 +4,7 @@ const { getOutputFormatBlock } = require('../../chat/outputFormat');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
+const { getProductRecommendBlock } = require('../../chat/productRecommendBlock');
 
 module.exports = (ctx) => {
   const { user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, current_solar_term } = ctx;
@@ -57,6 +58,8 @@ ${getOutputFormatBlock({ isZh: true, rich: ctx.rich_format, allow: ['takeaway', 
 ${getCurrentDateBlock(ctx.now_iso)}
 
 ${getFactMemoryBlock(ctx.user_facts)}
+
+${getProductRecommendBlock(ctx.store_products)}
 
 ${getAskQuestionsBlock()}
 
