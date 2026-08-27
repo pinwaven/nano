@@ -212,6 +212,45 @@ page {
   font-weight: 500;
 }
 
+/* ── Text-size stepper (accessibility) ──
+   Same row metrics as .menu-item, but it is not one: tapping a step must not close the
+   menu. The four A glyphs keep hardcoded ascending sizes — they advertise the choice, so
+   they must not resize themselves when the setting changes. */
+.menu-fs-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 20rpx 32rpx;
+}
+
+.menu-fs-steps {
+  display: flex;
+  margin-left: auto;
+  gap: 10rpx;
+}
+
+.menu-fs-step {
+  width: 56rpx;
+  height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12rpx;
+  border: 1rpx solid rgba(99, 117, 236, 0.25);
+  color: #A6C4E5;
+}
+
+.menu-fs-step-on {
+  background: rgba(99, 117, 236, 0.22);
+  border-color: #6375EC;
+  color: #EEF2FF;
+}
+
+.menu-fs-a0 { font-size: 20rpx; }
+.menu-fs-a1 { font-size: 26rpx; }
+.menu-fs-a2 { font-size: 32rpx; }
+.menu-fs-a3 { font-size: 38rpx; }
+
 .menu-credit-row {
   display: flex;
   align-items: center;
@@ -3044,6 +3083,8 @@ page {
 .theme-light .menu-divider    { background: rgba(201, 149, 106, 0.15); }
 .theme-light .menu-item-icon  { color: var(--text-sub); }
 .theme-light .menu-item-label { color: var(--text); }
+.theme-light .menu-fs-step     { border-color: rgba(201, 149, 106, 0.3); color: var(--text-sub); }
+.theme-light .menu-fs-step-on  { background: rgba(201, 149, 106, 0.16); border-color: #C9956A; color: var(--text); }
 
 /* ── Tab bar ── */
 .theme-light .tab-bar {

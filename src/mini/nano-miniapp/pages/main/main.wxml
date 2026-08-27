@@ -1,4 +1,4 @@
-<view class="main {{theme === 'light' ? 'theme-light' : ''}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
+<view class="main fs-{{textScale}} {{theme === 'light' ? 'theme-light' : ''}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
 
   <!-- ── Status bar spacer ── -->
   <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
@@ -79,6 +79,21 @@
       <view class="menu-item" bindtap="toggleTheme">
         <text class="menu-item-icon">{{theme === 'dark' ? '☀' : '🌑'}}</text>
         <text class="menu-item-label">{{theme === 'dark' ? t.lightMode : t.darkMode}}</text>
+      </view>
+      <view class="menu-divider"></view>
+      <!-- Text size. A stepper, not a .menu-item: setTextScale deliberately leaves menuOpen
+           alone (every menu-item handler clears it), so you can tap through the levels and
+           watch the text behind the menu resize. The four A glyphs keep hardcoded sizes on
+           purpose — they advertise the choice, so they must not resize themselves. -->
+      <view class="menu-fs-row">
+        <text class="menu-item-icon">A</text>
+        <text class="menu-item-label">{{t.textSizeMenu}}</text>
+        <view class="menu-fs-steps">
+          <view class="menu-fs-step {{textScale === 0 ? 'menu-fs-step-on' : ''}}" catchtap="setTextScale" data-level="0"><text class="menu-fs-a0">A</text></view>
+          <view class="menu-fs-step {{textScale === 1 ? 'menu-fs-step-on' : ''}}" catchtap="setTextScale" data-level="1"><text class="menu-fs-a1">A</text></view>
+          <view class="menu-fs-step {{textScale === 2 ? 'menu-fs-step-on' : ''}}" catchtap="setTextScale" data-level="2"><text class="menu-fs-a2">A</text></view>
+          <view class="menu-fs-step {{textScale === 3 ? 'menu-fs-step-on' : ''}}" catchtap="setTextScale" data-level="3"><text class="menu-fs-a3">A</text></view>
+        </view>
       </view>
       <view class="menu-divider"></view>
       <view class="menu-item" bindtap="toggleLang">
@@ -511,10 +526,12 @@
         mode="self"
         is-guest="{{isGuest}}"
         theme="{{theme}}"
+        text-scale="{{textScale}}"
         viva-ag-enabled="{{vivaAgActive}}"
         bindchooseavatar="handleHealthChooseAvatar"
         bindguesttap="openGuestSheet"
         bind:gotochat="handleAgGoToChat"
+        bind:textscalestep="onTextScaleStep"
         bind:profileUpdated="onProfileUpdated">
       </user-health>
     </view>

@@ -118,6 +118,7 @@ async function handleWxLogin(body) {
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                 u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
                 u.referred_by_user_id, u.merged_into_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
+                COALESCE((u.preferences->>'text_scale')::int, 0) AS text_scale,
                 cu.nickname AS coach_name,
                 c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                 c.config->'sub_age_display_names' AS channel_sub_age_names,

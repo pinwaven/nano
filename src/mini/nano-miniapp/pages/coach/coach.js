@@ -345,6 +345,7 @@ Page({
     menuOpen: false,
     menuTop: 0,
     theme: 'dark',
+    textScale: 0,   // accessibility text size, 0-3; renders as .fs-N on the root view
     isAdmin: false,
     isSuperadmin: false,
     clients: [],
@@ -473,12 +474,13 @@ Page({
     const isAdmin = roles.includes('admin') || roles.includes('superadmin')
     const isSuperadmin = roles.includes('superadmin')
     const theme = user.theme || app.globalData.theme || 'dark'
+    const textScale = app.globalData.textScale || 0
     const lang = app.globalData.lang || 'zh'
     const t = T[lang]
     const sandboxMode = !!app.globalData.sandboxMode
     const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', nickname || '—') : ''
     const factCategoryLabels = ['dietary_restriction', 'allergy', 'preference', 'goal', 'other'].map(c => t.factCategories[c])
-    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText, factCategoryLabels })
+    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, textScale, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText, factCategoryLabels })
     this._applyNavBarColor(theme)
     this._loadAll()
   },
@@ -602,6 +604,28 @@ Page({
     } catch (e) {}
   },
 
+  // Two-finger pinch inside the client-detail health sheet (user-health.js). The setting
+  // is the *viewer's* accessibility preference, so it applies here as well as on main.
+  onTextScaleStep(e) {
+    const next = this.data.textScale + (e.detail.dir > 0 ? 1 : -1)
+    if (next < 0 || next > 3) return
+    this._applyTextScale(next)
+    if (wx.vibrateShort) wx.vibrateShort({ type: 'light' })
+  },
+
+  // Writes nano_text_scale, which is what app.js onLaunch actually reads back. (toggleTheme
+  // above only ever writes nano_user, so a theme picked here is lost on next launch — do not
+  // copy that shape.)
+  async _applyTextScale(textScale) {
+    app.globalData.textScale = textScale
+    wx.setStorageSync('nano_text_scale', textScale)
+    this.setData({ textScale })
+    if (!this._coachUserId) return
+    try {
+      await this._req(`${BASE}/api/users/${this._coachUserId}`, 'PATCH', { text_scale: textScale })
+    } catch (e) {}
+  },
+
   _applyNavBarColor(theme) {
     // navigationStyle is "custom" (coach.json) so this page draws its own header —
     // the OS status bar icon color set globally in app.json (white, for the dark
@@ -677,11 +701,17 @@ Page({
   },
 
   onTouchStart(e) {
+    // A two-finger pinch (health-sheet text size) must not also read as an edge swipe.
+    // Latched, not cleared in onTouchEnd: touchend fires once per finger, so clearing on
+    // the first lift would let the second one through.
+    if (e.touches.length > 1) { this._multiTouch = true; return }
+    this._multiTouch = false
     this._touchX = e.touches[0].clientX
     this._touchY = e.touches[0].clientY
   },
 
   onTouchEnd(e) {
+    if (this._multiTouch) return
     if (this.data.menuOpen || this.data.detailOpen || this.data.reminderOpen || this.data.qAssignOpen || this.data.qResponsesOpen) return
     if (this._touchX > 40) return // only honor swipes starting at the left edge (frees interior gestures like the CRM kanban)
     const dx = e.changedTouches[0].clientX - this._touchX

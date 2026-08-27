@@ -1,4 +1,4 @@
-<view class="coach-page {{theme === 'light' ? 'theme-light' : ''}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
+<view class="coach-page fs-{{textScale}} {{theme === 'light' ? 'theme-light' : ''}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
   <view class="swipe-back-hint">›</view>
   <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
 
@@ -448,6 +448,8 @@
           lang="{{lang}}"
           mode="coach"
           theme="{{theme}}"
+          text-scale="{{textScale}}"
+          bind:textscalestep="onTextScaleStep"
           bind:profileUpdated="onClientProfileUpdated">
         </user-health>
       </view>

@@ -1092,6 +1092,10 @@ Component({
     mode:    { type: String,  value: 'self' },
     isGuest: { type: Boolean, value: false },
     theme:   { type: String,  value: 'dark' },
+    // Accessibility text-size level (0-3). The .fs-N class that actually resizes text lives
+    // on the HOST page's root view (custom properties are inherited, so they cross component
+    // style isolation) — this property exists only so the observer below can react.
+    textScale: { type: Number, value: 0 },
     // Whether this user holds an active Viva AG add-on. Cosmetic only — it decides whether the
     // subtab strip renders; every AG endpoint re-checks entitlement server-side. Never passed
     // by pages/coach/coach.wxml, so a coach viewing a client defaults to false.
@@ -1258,6 +1262,12 @@ Component({
       if (!showAgTab && this.data.healthSubTab !== 'twin') patch.healthSubTab = 'twin'
       this.setData(patch)
     },
+    // Changing text size reflows everything below it, which invalidates the page-relative
+    // rect _onChartTouch falls back to for crosshair hit-testing. uh-subage-chart re-caches
+    // on every modal open, so only the inline BioAge chart needs this.
+    'textScale': function() {
+      if (this.data.bioAgeTrendOpen) this._cacheChartRect('dt-bioage-chart')
+    },
   },
 
   lifetimes: {
@@ -1287,6 +1297,46 @@ Component({
   },
 
   methods: {
+    // ── Two-finger pinch → text-size step ──────────────────────────────────────────
+    // Bound with `bind` (not `catch`) on .uh-root so the host pages' edge-swipe handlers
+    // still see the stream; those guard themselves against multi-touch instead. Bound on
+    // .uh-root rather than the inner <scroll-view> because scroll-view's own touchmove is
+    // throttled/repurposed during momentum scrolling.
+    //
+    // The two canvases that own a crosshair (dt-bioage-chart, uh-subage-chart) use
+    // catchtouch*, so a pinch starting on one of them never reaches here — correct, those
+    // are drag surfaces.
+    _pinchDist(t) {
+      const dx = t[0].clientX - t[1].clientX
+      const dy = t[0].clientY - t[1].clientY
+      return Math.sqrt(dx * dx + dy * dy)
+    },
+
+    _onUhTouchStart(e) {
+      // WeChat fires touchstart once per finger added, so the second finger's event is the
+      // one that arrives with length 2 — no first-finger bookkeeping needed.
+      if (!e.touches || e.touches.length !== 2) { this._pinchD0 = 0; return }
+      const d0 = this._pinchDist(e.touches)
+      // Two fingers resting close together give a ratio too noisy to act on.
+      this._pinchD0 = d0 > 40 ? d0 : 0
+      this._pinchFired = false
+    },
+
+    _onUhTouchMove(e) {
+      if (!this._pinchD0 || this._pinchFired) return
+      if (!e.touches || e.touches.length !== 2) return
+      const r = this._pinchDist(e.touches) / this._pinchD0
+      const dir = r >= 1.25 ? 1 : (r <= 0.8 ? -1 : 0)
+      if (!dir) return
+      this._pinchFired = true   // latch: one step per gesture, however far it keeps going
+      this.triggerEvent('textscalestep', { dir })
+    },
+
+    _onUhTouchEnd() {
+      this._pinchD0 = 0
+      this._pinchFired = false
+    },
+
     refresh() {
       this._loadHealth()
     },

@@ -331,6 +331,7 @@ const GET_USER_SELECT =
             u.birth_date, u.roles, u.coach_id, u.channel_id, u.created_at, u.merged_into_user_id,
             (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
             u.bio_data as user_bio_data,
+            COALESCE((u.preferences->>'text_scale')::int, 0) AS text_scale,
             u.wearable_brand, u.wearable_mac, u.wearable_name, u.wearable_bound_at,
             u.referred_by_user_id, u.invited_by_invitation_id,
             ru.nickname as referrer_nickname,
@@ -582,7 +583,7 @@ async function handlePutUser(user_id, body) {
 }
 
 async function handlePatchUser(user_id, body) {
-    const { theme, wearable } = body;
+    const { theme, wearable, text_scale } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const updates = [];
@@ -590,6 +591,15 @@ async function handlePatchUser(user_id, body) {
         if (theme !== undefined) {
             params.push(theme === 'light' ? 'light' : 'dark');
             updates.push(`theme = $${params.length}`);
+        }
+        // Accessibility text-size level (0-3), mirrored from the miniapp's
+        // app.globalData.textScale / wx.getStorageSync('nano_text_scale').
+        // Merged with `||` rather than assigned: jsonb_build_object would wipe the
+        // dispatcher's preferences->>'daily_checkin_enabled' opt-out.
+        if (text_scale !== undefined) {
+            const lvl = Math.max(0, Math.min(3, parseInt(text_scale, 10) || 0));
+            params.push(JSON.stringify({ text_scale: lvl }));
+            updates.push(`preferences = COALESCE(preferences, '{}'::jsonb) || $${params.length}::jsonb`);
         }
         // wearable: { brand, mac, name } to bind/update, or null to unbind.
         if (wearable !== undefined) {

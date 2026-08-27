@@ -20,7 +20,11 @@ module.exports.c = function (hex, theme) {
   return LIGHT[hex.toLowerCase()] || hex;
 };
 </wxs>
-<view class="uh-root {{theme === 'light' ? 'theme-light' : ''}}">
+<view class="uh-root {{theme === 'light' ? 'theme-light' : ''}}"
+      bindtouchstart="_onUhTouchStart"
+      bindtouchmove="_onUhTouchMove"
+      bindtouchend="_onUhTouchEnd"
+      bindtouchcancel="_onUhTouchEnd">
 
   <!-- Health-tab subtab strip. Only rendered for a self view holding an active Viva AG add-on;
        a one-item strip would be pure noise for everyone else. .uh-root is a column flexbox and

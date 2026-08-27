@@ -37,7 +37,7 @@
 }
 
 .uh-tab-text {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: var(--steel);
   font-weight: 500;
 }
@@ -155,8 +155,10 @@
   width: 100%;
 }
 .avatar-side-pill {
-  flex: 0 0 160rpx;
-  width: 160rpx;
+  /* min-width, not a fixed width: .avatar-pill-text scales with the text-size
+     setting and would otherwise overflow this box at the larger levels. */
+  flex: 0 0 auto;
+  min-width: 160rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -177,7 +179,7 @@
   pointer-events: auto;
 }
 .avatar-pill-text {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb), 0.75);
   letter-spacing: 0.03em;
   text-align: center;
@@ -230,26 +232,26 @@
 }
 
 .bio-num {
-  font-size: 52rpx;
+  font-size: var(--fs-52, 52rpx);
   font-weight: 800;
   line-height: 1;
 }
 
 .bio-num-primary {
-  font-size: 88rpx;
+  font-size: var(--fs-88, 88rpx);
   font-weight: 800;
   line-height: 1;
 }
 
 .bio-num-chrono {
-  font-size: 60rpx;
+  font-size: var(--fs-60, 60rpx);
   font-weight: 700;
   line-height: 1;
   color: var(--wave);
 }
 
 .bio-unit {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   font-weight: 700;
   letter-spacing: 1.6rpx;
   text-transform: uppercase;
@@ -274,14 +276,14 @@
 }
 
 .bio-bar-label {
-  font-size: 19rpx;
+  font-size: var(--fs-19, 19rpx);
   font-weight: 600;
   letter-spacing: 0.4rpx;
   color: rgba(var(--wave-rgb), 0.6);
 }
 
 .bio-bar-val {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   font-weight: 700;
   line-height: 1;
 }
@@ -334,13 +336,13 @@
 }
 
 .sub-age-val {
-  font-size: 32rpx;
+  font-size: var(--fs-32, 32rpx);
   font-weight: 700;
   line-height: 1.1;
 }
 
 .sub-age-label {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 600;
   letter-spacing: 0.8rpx;
   text-transform: uppercase;
@@ -349,7 +351,7 @@
 }
 
 .sub-age-desc {
-  font-size: 17rpx;
+  font-size: var(--fs-17, 17rpx);
   color: rgba(var(--wave-rgb), 0.35);
   line-height: 1.35;
   margin-top: 4rpx;
@@ -365,7 +367,7 @@
 .health-section:last-child { border-bottom: none; }
 
 .section-title {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 700;
   letter-spacing: 4rpx;
   text-transform: uppercase;
@@ -401,7 +403,7 @@
 }
 
 .twin-umbrella-title {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   font-weight: 700;
   letter-spacing: 4rpx;
   text-transform: uppercase;
@@ -409,7 +411,7 @@
 }
 
 .twin-umbrella-count {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   letter-spacing: 1rpx;
   color: rgba(var(--wave-rgb), 0.38);
 }
@@ -448,12 +450,12 @@
 }
 
 .twin-layer-label {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.7);
 }
 
 .twin-layer-date {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   color: rgba(var(--wave-rgb), 0.35);
 }
 
@@ -481,25 +483,25 @@
 }
 
 .fact-cat {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   font-weight: 700;
   letter-spacing: 1rpx;
 }
 
 .fact-text {
-  font-size: 24rpx;
+  font-size: var(--fs-24, 24rpx);
   color: rgba(var(--wave-rgb), 0.82);
 }
 
 .fact-footnote {
   width: 100%;
   margin-top: 12rpx;
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.35);
 }
 
 .section-badge {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 600;
   background: var(--blue-dim);
   color: var(--wave);
@@ -518,7 +520,7 @@
   border: 1rpx solid var(--navy-border);
 }
 
-.profile-toggle-text { font-size: 22rpx; color: var(--wave); font-weight: 600; }
+.profile-toggle-text { font-size: var(--fs-22, 22rpx); color: var(--wave); font-weight: 600; }
 .profile-toggle-arrow { font-size: 18rpx; color: rgba(var(--wave-rgb), 0.5); }
 
 .info-grid {
@@ -529,8 +531,8 @@
 
 .info-grid-extra { margin-top: 20rpx; padding-top: 20rpx; border-top: 1rpx solid rgba(var(--blue-rgb), 0.08); }
 
-.info-key { font-size: 24rpx; color: rgba(var(--wave-rgb), 0.4); }
-.info-val { font-size: 24rpx; color: var(--text); font-weight: 500; }
+.info-key { font-size: var(--fs-24, 24rpx); color: rgba(var(--wave-rgb), 0.4); }
+.info-val { font-size: var(--fs-24, 24rpx); color: var(--text); font-weight: 500; }
 
 .weight-val-row { display: flex; align-items: center; gap: 16rpx; }
 .weight-sparkline { width: 80rpx; height: 28rpx; flex-shrink: 0; }
@@ -572,7 +574,7 @@
   margin-bottom: 28rpx;
 }
 
-.wchart-title { font-size: 30rpx; font-weight: 600; color: var(--text); }
+.wchart-title { font-size: var(--fs-30, 30rpx); font-weight: 600; color: var(--text); }
 .wchart-close { width: 48rpx; height: 48rpx; display: flex; align-items: center; justify-content: center; color: rgba(var(--wave-rgb), 0.5); font-size: 28rpx; }
 .weight-chart-full { width: 100%; height: 200px; }
 
@@ -590,7 +592,7 @@
   border-radius: 30rpx;
   background: var(--blue-dim);
   border: 1rpx solid rgba(var(--blue-rgb), 0.3);
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: var(--wave);
   font-weight: 600;
 }
@@ -612,15 +614,16 @@
 }
 
 .edit-label {
-  font-size: 24rpx;
+  font-size: var(--fs-24, 24rpx);
   color: rgba(var(--wave-rgb), 0.4);
-  width: 140rpx;
+  /* min-width so the label column can grow with the text-size setting. */
+  min-width: 140rpx;
   flex-shrink: 0;
 }
 
 .edit-input {
   flex: 1;
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: var(--text);
   background: transparent;
   min-height: 44rpx;
@@ -634,7 +637,7 @@
 }
 
 .edit-unit-text {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb), 0.4);
   flex-shrink: 0;
 }
@@ -649,7 +652,7 @@
   border-radius: 30rpx;
   border: 1rpx solid rgba(var(--blue-rgb), 0.2);
   background: rgba(var(--blue-rgb), 0.06);
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: rgba(var(--wave-rgb), 0.5);
 }
 
@@ -666,7 +669,7 @@
 }
 
 .edit-picker-val {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: var(--text);
 }
 
@@ -676,7 +679,7 @@
 }
 
 .edit-section-label {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 700;
   letter-spacing: 3rpx;
   text-transform: uppercase;
@@ -724,7 +727,7 @@
 }
 
 .edit-cond-text {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: var(--wave);
 }
 
@@ -745,7 +748,7 @@
   border-radius: 20rpx;
   border: 1rpx solid rgba(var(--blue-rgb), 0.25);
   background: transparent;
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   color: rgba(var(--wave-rgb), 0.6);
   font-weight: 600;
 }
@@ -756,7 +759,7 @@
   padding: 24rpx 0;
   border-radius: 20rpx;
   background: linear-gradient(135deg, var(--blue) 0%, #8B9FFF 100%);
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   color: #fff;
   font-weight: 700;
   box-shadow: 0 6rpx 28rpx rgba(var(--blue-rgb), 0.35);
@@ -776,13 +779,13 @@
   border: 1rpx solid rgba(var(--blue-rgb), 0.35);
   background: rgba(var(--blue-rgb), 0.1);
   color: var(--wave);
-  font-size: 24rpx;
+  font-size: var(--fs-24, 24rpx);
   font-weight: 500;
 }
 
 /* ── Biomarker list ── */
 
-.health-empty { font-size: 24rpx; color: rgba(var(--wave-rgb), 0.4); }
+.health-empty { font-size: var(--fs-24, 24rpx); color: rgba(var(--wave-rgb), 0.4); }
 
 .bm-list { display: flex; flex-direction: column; }
 
@@ -797,9 +800,9 @@
 .bm-row:last-child { border-bottom: none; }
 
 .bm-dot  { width: 14rpx; height: 14rpx; border-radius: 50%; flex-shrink: 0; }
-.bm-label { font-size: 26rpx; color: var(--wave); flex: 1; }
-.bm-val  { font-size: 30rpx; font-weight: 700; }
-.bm-unit { font-size: 20rpx; color: rgba(var(--wave-rgb), 0.4); min-width: 96rpx; text-align: right; }
+.bm-label { font-size: var(--fs-26, 26rpx); color: var(--wave); flex: 1; }
+.bm-val  { font-size: var(--fs-30, 30rpx); font-weight: 700; }
+.bm-unit { font-size: var(--fs-20, 20rpx); color: rgba(var(--wave-rgb), 0.4); min-width: 96rpx; text-align: right; }
 
 /* ── Trend grid ── */
 
@@ -817,7 +820,7 @@
 }
 
 .trend-label {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   font-weight: 700;
   letter-spacing: 1.6rpx;
   color: rgba(var(--wave-rgb), 0.4);
@@ -827,8 +830,8 @@
 }
 
 .trend-val-row { display: flex; align-items: baseline; gap: 6rpx; }
-.trend-val     { font-size: 32rpx; font-weight: 800; }
-.trend-unit    { font-size: 18rpx; color: rgba(var(--wave-rgb), 0.4); }
+.trend-val     { font-size: var(--fs-32, 32rpx); font-weight: 800; }
+.trend-unit    { font-size: var(--fs-18, 18rpx); color: rgba(var(--wave-rgb), 0.4); }
 
 .spark-row {
   display: flex;
@@ -865,7 +868,7 @@
 .guest-lock-icon { font-size: 72rpx; }
 
 .guest-lock-title {
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   color: rgba(var(--wave-rgb), 0.7);
   line-height: 1.7;
   padding: 0 16rpx;
@@ -875,7 +878,7 @@
   margin-top: 12rpx;
   background: linear-gradient(135deg, var(--blue) 0%, #8B9FFF 100%);
   color: #fff;
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   font-weight: 600;
   padding: 24rpx 72rpx;
   border-radius: 100rpx;
@@ -906,7 +909,7 @@
 }
 
 .twin-label {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   font-weight: 700;
   letter-spacing: 1.6rpx;
   color: rgba(var(--wave-rgb), 0.4);
@@ -914,7 +917,7 @@
 }
 
 .twin-trend {
-  font-size: 24rpx;
+  font-size: var(--fs-24, 24rpx);
   font-weight: 700;
   line-height: 1;
 }
@@ -926,13 +929,13 @@
 }
 
 .twin-val {
-  font-size: 44rpx;
+  font-size: var(--fs-44, 44rpx);
   font-weight: 800;
   line-height: 1;
 }
 
 .twin-unit {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   color: rgba(var(--wave-rgb), 0.45);
   font-weight: 500;
 }
@@ -944,12 +947,12 @@
 }
 
 .twin-sub {
-  font-size: 17rpx;
+  font-size: var(--fs-17, 17rpx);
   color: rgba(var(--wave-rgb), 0.35);
 }
 
 .twin-sub-deep {
-  font-size: 17rpx;
+  font-size: var(--fs-17, 17rpx);
   color: rgba(var(--blue-rgb), 0.55);
 }
 
@@ -965,7 +968,7 @@
 }
 
 .twin-body-label {
-  font-size: 17rpx;
+  font-size: var(--fs-17, 17rpx);
   font-weight: 700;
   letter-spacing: 2rpx;
   text-transform: uppercase;
@@ -974,7 +977,7 @@
 }
 
 .twin-body-text {
-  font-size: 24rpx;
+  font-size: var(--fs-24, 24rpx);
   color: var(--text);
   font-weight: 500;
   flex: 1;
@@ -983,7 +986,7 @@
 .twin-coverage-wrap { margin-top: 4rpx; }
 
 .twin-coverage-title {
-  font-size: 17rpx;
+  font-size: var(--fs-17, 17rpx);
   font-weight: 700;
   letter-spacing: 2rpx;
   text-transform: uppercase;
@@ -1024,7 +1027,7 @@
 .twin-source-dot-on { background: #10b981; }
 
 .twin-source-label {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.4);
   font-weight: 500;
 }
@@ -1032,7 +1035,7 @@
 .twin-source-active .twin-source-label { color: var(--wave); }
 
 .twin-source-date {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   color: rgba(var(--blue-rgb), 0.6);
   font-weight: 600;
 }
@@ -1072,13 +1075,13 @@
 }
 
 .ht-score-num {
-  font-size: 52rpx;
+  font-size: var(--fs-52, 52rpx);
   font-weight: 900;
   line-height: 1;
 }
 
 .ht-score-title {
-  font-size: 14rpx;
+  font-size: var(--fs-14, 14rpx);
   font-weight: 700;
   letter-spacing: 1rpx;
   text-transform: uppercase;
@@ -1087,7 +1090,7 @@
 }
 
 .ht-score-grade {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   font-weight: 700;
 }
 
@@ -1105,7 +1108,7 @@
 }
 
 .ht-domain-label {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.45);
   width: 80rpx;
   flex-shrink: 0;
@@ -1126,7 +1129,7 @@
 }
 
 .ht-domain-score {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   font-weight: 800;
   width: 44rpx;
   text-align: right;
@@ -1158,7 +1161,7 @@
 }
 
 .ht-gauge-label {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   font-weight: 600;
   color: rgba(var(--wave-rgb), 0.55);
 }
@@ -1169,18 +1172,18 @@
 }
 
 .ht-gauge-val {
-  font-size: 36rpx;
+  font-size: var(--fs-36, 36rpx);
   font-weight: 800;
   line-height: 1;
 }
 
 .ht-gauge-unit {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   color: rgba(var(--wave-rgb), 0.4);
 }
 
 .ht-gauge-trend {
-  font-size: 24rpx;
+  font-size: var(--fs-24, 24rpx);
   font-weight: 700;
 }
 
@@ -1217,7 +1220,7 @@
 }
 
 .ht-gauge-sublabel {
-  font-size: 17rpx;
+  font-size: var(--fs-17, 17rpx);
   color: rgba(var(--wave-rgb), 0.22);
 }
 
@@ -1239,7 +1242,7 @@
 }
 
 .ht-body-title {
-  font-size: 19rpx;
+  font-size: var(--fs-19, 19rpx);
   font-weight: 700;
   letter-spacing: 2rpx;
   text-transform: uppercase;
@@ -1247,7 +1250,7 @@
 }
 
 .ht-body-vals {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb), 0.55);
   font-weight: 500;
 }
@@ -1293,7 +1296,7 @@
 .ht-fat-dot  { background: #f97316; }
 
 .ht-body-lbl {
-  font-size: 21rpx;
+  font-size: var(--fs-21, 21rpx);
   color: rgba(var(--wave-rgb), 0.5);
   font-weight: 500;
 }
@@ -1577,7 +1580,7 @@
 
 .dt-age-chips .bio-num-primary,
 .dt-age-chips .bio-num-chrono {
-  font-size: 52rpx;
+  font-size: var(--fs-52, 52rpx);
   font-weight: 800;
 }
 
@@ -1611,7 +1614,7 @@
 }
 
 .dt-sa-label {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb), 0.65);
   font-weight: 500;
   overflow: hidden;
@@ -1620,7 +1623,7 @@
 }
 
 .dt-sa-val {
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   font-weight: 700;
 }
 
@@ -1638,7 +1641,7 @@
 }
 
 .dt-sa-trend-hint {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   color: rgba(var(--blue-rgb), 0.55);
   line-height: 1;
   flex-shrink: 0;
@@ -1664,7 +1667,7 @@
 }
 
 .dt-bioage-chart-title {
-  font-size: 19rpx;
+  font-size: var(--fs-19, 19rpx);
   font-weight: 600;
   letter-spacing: 1rpx;
   text-transform: uppercase;
@@ -1700,20 +1703,20 @@
   gap: 3rpx;
 }
 .dt-metric-val {
-  font-size: 32rpx;
+  font-size: var(--fs-32, 32rpx);
   font-weight: 700;
   color: var(--text);
   line-height: 1.1;
 }
 .dt-metric-unit {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.5);
   margin-left: 2rpx;
   align-self: flex-end;
   margin-bottom: 4rpx;
 }
 .dt-metric-label {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.45);
   letter-spacing: 0.02em;
 }
@@ -1721,7 +1724,7 @@
   position: relative;
 }
 .dt-metric-trend-hint {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   color: rgba(var(--blue-rgb), 0.55);
   line-height: 1;
 }
@@ -1750,7 +1753,7 @@
 .bp-legend-sys { background: #ef4444; }
 .bp-legend-dia { background: var(--blue); }
 .bp-legend-label {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.6);
 }
 .dt-metric-divider {
@@ -1789,7 +1792,7 @@
 }
 
 .dt-htag-label {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 600;
   line-height: 1.2;
 }
@@ -1850,7 +1853,7 @@
 
 .rpt-institution {
   display: block;
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   font-weight: 700;
   color: #E8F4FF;
   margin-bottom: 6rpx;
@@ -1858,7 +1861,7 @@
 
 .rpt-date {
   display: block;
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb), 0.5);
 }
 
@@ -1870,7 +1873,7 @@
 }
 
 .rpt-type-text {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 700;
   letter-spacing: 0.5rpx;
 }
@@ -1928,7 +1931,7 @@
 
 .rpt-sheet-institution {
   display: block;
-  font-size: 30rpx;
+  font-size: var(--fs-30, 30rpx);
   font-weight: 800;
   color: #E8F4FF;
   margin-bottom: 4rpx;
@@ -1936,7 +1939,7 @@
 
 .rpt-sheet-date {
   display: block;
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb), 0.45);
 }
 
@@ -2005,14 +2008,14 @@
 
 .rpt-ev-name {
   display: block;
-  font-size: 27rpx;
+  font-size: var(--fs-27, 27rpx);
   font-weight: 700;
   color: var(--wave);
 }
 
 .rpt-ev-ref {
   display: block;
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.35);
   margin-top: 4rpx;
 }
@@ -2025,13 +2028,13 @@
 }
 
 .rpt-ev-val {
-  font-size: 32rpx;
+  font-size: var(--fs-32, 32rpx);
   font-weight: 800;
   color: #E8F4FF;
 }
 
 .rpt-ev-unit {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.4);
   min-width: 60rpx;
 }
@@ -2062,7 +2065,7 @@
 .rpt-section-icon { font-size: 28rpx; }
 
 .rpt-section-title {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 700;
   letter-spacing: 3rpx;
   text-transform: uppercase;
@@ -2093,7 +2096,7 @@
 }
 
 .rpt-diag-text {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: #C8DCF0;
   line-height: 1.65;
   flex: 1;
@@ -2131,7 +2134,7 @@
 }
 
 .rpt-advice-text {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: #C8DCF0;
   line-height: 1.65;
   flex: 1;
@@ -2150,12 +2153,12 @@
   border-radius: 16rpx;
 }
 .rpt-dn-key {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb),0.55);
   flex-shrink: 0;
 }
 .rpt-dn-val {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: var(--wave);
   flex: 1;
 }
@@ -2173,13 +2176,13 @@
   min-width: 140rpx;
 }
 .rpt-vital-key {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb),0.5);
   display: block;
   margin-bottom: 4rpx;
 }
 .rpt-vital-val {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: #C8DCF0;
   font-weight: 600;
   display: block;
@@ -2188,13 +2191,13 @@
   margin-bottom: 20rpx;
 }
 .rpt-clinical-label {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb),0.5);
   display: block;
   margin-bottom: 8rpx;
 }
 .rpt-clinical-text {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: var(--wave);
   line-height: 1.7;
   display: block;
@@ -2210,13 +2213,13 @@
   border-radius: 0 14rpx 14rpx 0;
 }
 .rpt-followup-label {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(16,185,129,0.7);
   display: block;
   margin-bottom: 6rpx;
 }
 .rpt-followup-text {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: var(--wave);
   line-height: 1.6;
   display: block;
@@ -2242,7 +2245,7 @@
 }
 
 .ht-lab-title {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 700;
   letter-spacing: 3rpx;
   text-transform: uppercase;
@@ -2261,14 +2264,14 @@
   margin-bottom: 16rpx;
 }
 .ht-lab-snapshot-title {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 700;
   letter-spacing: 2rpx;
   color: rgba(var(--wave-rgb), 0.45);
 }
 
 .ht-lab-date {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb), 0.45);
   flex: 1;
 }
@@ -2281,7 +2284,7 @@
 }
 
 .ht-lab-alert-text {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 700;
   color: var(--danger);
 }
@@ -2294,7 +2297,7 @@
 }
 
 .ht-lab-ok-text {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 700;
   color: var(--success-deep);
 }
@@ -2320,21 +2323,21 @@
 }
 
 .ht-lab-name {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   font-weight: 600;
   letter-spacing: 0.5rpx;
   display: block;
 }
 
 .ht-lab-val {
-  font-size: 30rpx;
+  font-size: var(--fs-30, 30rpx);
   font-weight: 800;
   display: block;
   line-height: 1.1;
 }
 
 .ht-lab-unit {
-  font-size: 17rpx;
+  font-size: var(--fs-17, 17rpx);
   color: rgba(var(--wave-rgb), 0.35);
   display: block;
 }
@@ -2373,18 +2376,18 @@
 }
 
 .wd-bind-label {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   font-weight: 700;
   color: var(--text);
 }
 
 .wd-bind-sub {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.5);
 }
 
 .wd-server-hint {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--blue-rgb), 0.65);
   font-weight: 500;
 }
@@ -2423,19 +2426,19 @@
 }
 
 .wd-device-name {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   font-weight: 700;
   color: var(--text);
 }
 
 .wd-battery-inline {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 600;
   color: var(--success-deep);
 }
 
 .wd-status-text {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.5);
 }
 
@@ -2467,7 +2470,7 @@
 
 .wd-sync-btn {
   padding: 10rpx 22rpx;
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   font-weight: 600;
   color: var(--text);
   background: rgba(var(--blue-rgb), 0.2);
@@ -2476,7 +2479,7 @@
 }
 
 .wd-sync-btn-text {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   font-weight: 600;
   color: var(--text);
 }
@@ -2534,12 +2537,12 @@
 }
 
 .wd-ring-time-label {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.55);
 }
 
 .wd-ring-time-val {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   font-weight: 600;
   color: rgba(var(--wave-rgb), 0.85);
   font-variant-numeric: tabular-nums;
@@ -2547,7 +2550,7 @@
 }
 
 .wd-interval-title {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--blue-rgb), 0.7);
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -2568,12 +2571,12 @@
 }
 
 .wd-interval-label {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb), 0.55);
 }
 
 .wd-wm-badge {
-  font-size: 17rpx;
+  font-size: var(--fs-17, 17rpx);
   font-weight: 600;
   letter-spacing: 0.3px;
   padding: 1rpx 8rpx;
@@ -2607,7 +2610,7 @@
 .wd-int-btn {
   padding: 4rpx 16rpx;
   border-radius: 30rpx;
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.45);
   border: 1rpx solid rgba(var(--wave-rgb), 0.12);
   background: rgba(var(--wave-rgb), 0.04);
@@ -2624,7 +2627,7 @@
 }
 
 .wd-settings-loading-txt {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb), 0.35);
 }
 
@@ -2636,7 +2639,7 @@
 }
 
 .wd-save-txt {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--blue-rgb), 0.95);
 }
 
@@ -2648,7 +2651,7 @@
 }
 
 .wd-unbind-txt {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(239, 68, 68, 0.75);
 }
 
@@ -2694,7 +2697,7 @@
 }
 
 .wd-measuring-txt {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--blue-rgb), 0.8);
 }
 
@@ -2731,26 +2734,26 @@
 }
 
 .ring-sum-val {
-  font-size: 34rpx;
+  font-size: var(--fs-34, 34rpx);
   font-weight: 700;
   color: var(--text);
   line-height: 1;
 }
 
 .ring-sum-na {
-  font-size: 30rpx;
+  font-size: var(--fs-30, 30rpx);
   font-weight: 600;
   color: rgba(var(--wave-rgb), 0.35);
   line-height: 1;
 }
 
 .ring-sum-unit {
-  font-size: 17rpx;
+  font-size: var(--fs-17, 17rpx);
   color: rgba(var(--wave-rgb), 0.55);
 }
 
 .ring-sum-sub {
-  font-size: 19rpx;
+  font-size: var(--fs-19, 19rpx);
   color: rgba(var(--wave-rgb), 0.45);
 }
 
@@ -2785,14 +2788,14 @@
 .ring-awake-seg   { background: rgba(var(--wave-rgb), 0.18); }
 
 .ring-sum-stress-label {
-  font-size: 17rpx;
+  font-size: var(--fs-17, 17rpx);
   font-weight: 600;
   margin-top: 2rpx;
 }
 
 .ring-sum-footer {
   display: block;
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   color: rgba(var(--wave-rgb), 0.3);
   text-align: right;
 }
@@ -2823,7 +2826,7 @@
 }
 
 .ring-chart-label {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   font-weight: 700;
   letter-spacing: 2rpx;
   text-transform: uppercase;
@@ -2831,7 +2834,7 @@
 }
 
 .ring-chart-time {
-  font-size: 19rpx;
+  font-size: var(--fs-19, 19rpx);
   color: rgba(var(--blue-rgb), 0.65);
   font-weight: 600;
 }
@@ -2843,7 +2846,7 @@
 }
 
 .ring-chart-date {
-  font-size: 17rpx;
+  font-size: var(--fs-17, 17rpx);
   color: rgba(var(--wave-rgb), 0.4);
   font-weight: 500;
 }
@@ -2896,7 +2899,7 @@
 }
 
 .ring-chart-day-avg {
-  font-size: 16rpx;
+  font-size: var(--fs-16, 16rpx);
   font-weight: 600;
   color: rgba(var(--wave-rgb), 0.55);
   line-height: 1;
@@ -2904,7 +2907,7 @@
 }
 
 .ring-chart-day-label {
-  font-size: 15rpx;
+  font-size: var(--fs-15, 15rpx);
   color: rgba(var(--wave-rgb), 0.35);
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -2912,7 +2915,7 @@
 
 /* Date section header in grouped readings list */
 .ring-reading-date-header {
-  font-size: 19rpx;
+  font-size: var(--fs-19, 19rpx);
   font-weight: 600;
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -2946,14 +2949,14 @@
 }
 
 .ring-reading-date {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   color: rgba(var(--wave-rgb), 0.3);
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
 }
 
 .ring-reading-time {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   font-weight: 700;
   color: rgba(var(--wave-rgb), 0.45);
   font-variant-numeric: tabular-nums;
@@ -2973,13 +2976,13 @@
 }
 
 .ring-reading-val {
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   font-weight: 800;
   line-height: 1;
 }
 
 .ring-reading-unit {
-  font-size: 17rpx;
+  font-size: var(--fs-17, 17rpx);
   color: rgba(var(--wave-rgb), 0.35);
 }
 
@@ -3014,14 +3017,14 @@
 }
 
 .ring-lc-estimated-marker {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 700;
   color: #f97316;
   margin-left: 2rpx;
 }
 
 .ring-lc-smoothed-note {
-  font-size: 16rpx;
+  font-size: var(--fs-16, 16rpx);
   color: rgba(var(--wave-rgb), 0.3);
   margin-top: 6rpx;
 }
@@ -3041,14 +3044,14 @@
 }
 
 .ring-linechart-latest {
-  font-size: 34rpx;
+  font-size: var(--fs-34, 34rpx);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
 .ring-linechart-unit {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   color: rgba(var(--wave-rgb), 0.45);
 }
 
@@ -3060,13 +3063,13 @@
 }
 
 .ring-linechart-bound {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   color: rgba(var(--wave-rgb), 0.35);
   font-variant-numeric: tabular-nums;
 }
 
 .ring-linechart-count {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   color: rgba(var(--wave-rgb), 0.25);
 }
 
@@ -3083,11 +3086,14 @@
   justify-content: space-between;
   width: 34rpx;
   flex-shrink: 0;
-  padding-bottom: 34rpx; /* aligns with the total/day labels under each track */
+  /* Aligns with the .ring-sleepweek-total + .ring-sleepweek-daylabel stack under each
+     track. Derived from those two tokens rather than hardcoded, so the axis ticks stay
+     aligned at every text-size level (resolves to the original 34rpx at level 0). */
+  padding-bottom: calc(var(--fs-15, 15rpx) + var(--fs-14, 14rpx) + 5rpx);
 }
 
 .ring-sleepweek-axis-lbl {
-  font-size: 14rpx;
+  font-size: var(--fs-14, 14rpx);
   color: rgba(var(--wave-rgb), 0.3);
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -3136,7 +3142,7 @@
 }
 
 .ring-sleepweek-total {
-  font-size: 15rpx;
+  font-size: var(--fs-15, 15rpx);
   font-weight: 600;
   color: rgba(var(--wave-rgb), 0.55);
   line-height: 1;
@@ -3144,7 +3150,7 @@
 }
 
 .ring-sleepweek-daylabel {
-  font-size: 14rpx;
+  font-size: var(--fs-14, 14rpx);
   color: rgba(var(--wave-rgb), 0.3);
   line-height: 1;
 }
@@ -3183,7 +3189,7 @@
 }
 
 .ring-sleep-leg-txt {
-  font-size: 19rpx;
+  font-size: var(--fs-19, 19rpx);
   color: rgba(var(--wave-rgb), 0.5);
   font-weight: 500;
 }
@@ -3211,14 +3217,14 @@
 }
 
 .privacy-title {
-  font-size: 32rpx;
+  font-size: var(--fs-32, 32rpx);
   font-weight: 700;
   color: #e2eaf4;
   text-align: center;
 }
 
 .privacy-body {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: rgba(var(--wave-rgb), 0.8);
   text-align: center;
   line-height: 1.6;
@@ -3229,7 +3235,7 @@
   background: #3b82f6;
   color: #fff;
   border-radius: 100rpx;
-  font-size: 28rpx;
+  font-size: var(--fs-28, 28rpx);
   font-weight: 600;
   padding: 20rpx 0;
   margin-top: 8rpx;
@@ -3241,7 +3247,7 @@
 }
 
 .privacy-cancel-btn text {
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: rgba(var(--wave-rgb), 0.5);
 }
 

@@ -40,6 +40,19 @@ page {
   --gold:         #F5C56A;
   --steel:        #7A9ABF;
 
+  /* ── Text scale tokens (accessibility) ──
+     Every distinct font-size used by the health tab, as an inherited token. These
+     baseline values are byte-identical to the literals they replaced, so the default
+     build renders exactly as before. The .fs-1/.fs-2/.fs-3 blocks below redefine them.
+     Custom properties are inherited values, so they cross component style isolation —
+     which is how user-health.wxss already consumes --blue/--text/--navy-card. */
+  --fs-14: 14rpx;  --fs-15: 15rpx;  --fs-16: 16rpx;  --fs-17: 17rpx;
+  --fs-18: 18rpx;  --fs-19: 19rpx;  --fs-20: 20rpx;  --fs-21: 21rpx;
+  --fs-22: 22rpx;  --fs-24: 24rpx;  --fs-26: 26rpx;  --fs-27: 27rpx;
+  --fs-28: 28rpx;  --fs-30: 30rpx;  --fs-32: 32rpx;  --fs-34: 34rpx;
+  --fs-36: 36rpx;  --fs-44: 44rpx;  --fs-48: 48rpx;  --fs-52: 52rpx;
+  --fs-60: 60rpx;  --fs-72: 72rpx;  --fs-88: 88rpx;
+
   height: 100%;
   background-color: #0B1C2E;
   color: #EEF2FF;
@@ -95,6 +108,52 @@ page {
      1.05:1). Setting it here re-roots inheritance for the whole light subtree. */
   color: var(--text);
 }
+
+/* ── Text scale levels (accessibility) ──
+   Applied as .fs-1/.fs-2/.fs-3 on the same root views that carry .theme-light
+   (pages/main/main.wxml, pages/coach/coach.wxml). Level 0 adds no class and falls
+   through to the `page` baseline above.
+
+   These are NOT a flat multiplier. The curve is
+     round(mA*min(b,22) + mB*max(0,min(b,36)-22) + mC*max(0,b-36))
+   with mA/mB/mC of 1.15/1.05/1.0, 1.30/1.10/1.0 and 1.50/1.15/1.0 — so caption and
+   body text (<=22rpx, where the "too small to read" complaint actually lives) gets the
+   full +15/+30/+50%, while display numerals taper off. A flat 1.5x would take
+   .bio-num-primary from 88rpx to 132rpx and blow out the BioAge chip; this lands it at
+   101rpx. The curve is strictly monotonic in every column, so no two originally
+   distinct sizes collapse into each other and the visual hierarchy survives at every
+   level. Marginal rates (not retroactive), so it stays continuous at the 22/36 knees.
+
+   .fs-N is a descendant of `page`, so it wins by inheritance regardless of specificity
+   — no !important needed. */
+
+.fs-1 {
+  --fs-14: 16rpx;  --fs-15: 17rpx;  --fs-16: 18rpx;  --fs-17: 20rpx;
+  --fs-18: 21rpx;  --fs-19: 22rpx;  --fs-20: 23rpx;  --fs-21: 24rpx;
+  --fs-22: 25rpx;  --fs-24: 27rpx;  --fs-26: 30rpx;  --fs-27: 31rpx;
+  --fs-28: 32rpx;  --fs-30: 34rpx;  --fs-32: 36rpx;  --fs-34: 38rpx;
+  --fs-36: 40rpx;  --fs-44: 48rpx;  --fs-48: 52rpx;  --fs-52: 56rpx;
+  --fs-60: 64rpx;  --fs-72: 76rpx;  --fs-88: 92rpx;
+}
+
+.fs-2 {
+  --fs-14: 18rpx;  --fs-15: 20rpx;  --fs-16: 21rpx;  --fs-17: 22rpx;
+  --fs-18: 23rpx;  --fs-19: 25rpx;  --fs-20: 26rpx;  --fs-21: 27rpx;
+  --fs-22: 29rpx;  --fs-24: 31rpx;  --fs-26: 33rpx;  --fs-27: 34rpx;
+  --fs-28: 35rpx;  --fs-30: 37rpx;  --fs-32: 40rpx;  --fs-34: 42rpx;
+  --fs-36: 44rpx;  --fs-44: 52rpx;  --fs-48: 56rpx;  --fs-52: 60rpx;
+  --fs-60: 68rpx;  --fs-72: 80rpx;  --fs-88: 96rpx;
+}
+
+.fs-3 {
+  --fs-14: 21rpx;  --fs-15: 23rpx;  --fs-16: 24rpx;  --fs-17: 26rpx;
+  --fs-18: 27rpx;  --fs-19: 29rpx;  --fs-20: 30rpx;  --fs-21: 32rpx;
+  --fs-22: 33rpx;  --fs-24: 35rpx;  --fs-26: 38rpx;  --fs-27: 39rpx;
+  --fs-28: 40rpx;  --fs-30: 42rpx;  --fs-32: 45rpx;  --fs-34: 47rpx;
+  --fs-36: 49rpx;  --fs-44: 57rpx;  --fs-48: 61rpx;  --fs-52: 65rpx;
+  --fs-60: 73rpx;  --fs-72: 85rpx;  --fs-88: 101rpx;
+}
+
 
 view, text, input, textarea, button {
   box-sizing: border-box;

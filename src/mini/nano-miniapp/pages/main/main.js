@@ -275,6 +275,8 @@ const T = {
     subAgeLabels: { ResilienceAge: '抗压年龄', CellularAge: '细胞年龄', MetabolicAge: '代谢年龄', MicroVascularAge: '微血管年龄' },
     lightMode: '浅色模式',
     darkMode: '深色模式',
+    textSizeMenu: '字体大小',
+    textSizeLevels: ['标准', '较大', '大', '特大'],
     guestHeaderName: '游客',
     guestJoinTitle: '激活健康账户',
     guestJoinDesc: '输入您的邀请码，解锁 AI 健康教练、生物标志物检测与精准营养方案。',
@@ -525,6 +527,8 @@ const T = {
     subAgeLabels: { ResilienceAge: 'Resilience Age', CellularAge: 'Cellular Age', MetabolicAge: 'Metabolic Age', MicroVascularAge: 'Micro-Vascular Age' },
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
+    textSizeMenu: 'Text Size',
+    textSizeLevels: ['Default', 'Large', 'Larger', 'Largest'],
     guestHeaderName: 'Guest',
     guestJoinTitle: 'Activate Your Account',
     guestJoinDesc: 'Enter your invite code to unlock AI health coaching, biomarker testing, and precision nutrition.',
@@ -874,6 +878,7 @@ Page({
     user: null,
     lang: 'zh',
     t: T.zh,
+    textScale: 0,   // accessibility text size, 0-3; renders as .fs-N on the root view
     tab: 'chat',
     version: IS_DEV ? VERSION : WX_VERSION,
 
@@ -1120,6 +1125,7 @@ Page({
     const isAdmin = roles.includes('admin') || roles.includes('superadmin')
     const isSuperadmin = roles.includes('superadmin')
     const theme = user.theme || app.globalData.theme || 'dark'
+    const textScale = app.globalData.textScale || 0
     app.globalData.theme = theme
     this._applyNavBarColor(theme)
     const userAvatarLetter = (user.nickname || 'U').slice(-1).toUpperCase()
@@ -1128,7 +1134,7 @@ Page({
     const sandboxMode = !!app.globalData.sandboxMode
     const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', user.nickname || '—') : ''
     const isAeviva = channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china'
-    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, isAeviva, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
+    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, textScale, isGuest, isAeviva, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
     if (isGuest) {
       this.setData({ messages: [this._makeMsg({ id: 'init', role: 'ai', content: T[lang].initMsg })], obStep: null, storeLoading: true })
       this._loadGuestStore(lang)
@@ -1481,17 +1487,53 @@ Page({
     } catch (e) {}
   },
 
+  // Two-finger pinch on the health tab (user-health.js _onUhTouchMove). One step per
+  // gesture; a pinch past either end stop is a silent no-op rather than a wrap-around.
+  onTextScaleStep(e) {
+    const next = this.data.textScale + (e.detail.dir > 0 ? 1 : -1)
+    if (next < 0 || next > 3) return
+    this._applyTextScale(next)
+    if (wx.vibrateShort) wx.vibrateShort({ type: 'light' })
+  },
+
+  // Header-menu stepper. Deliberately does NOT close the menu — it is a 4-way control and
+  // the point is to tap through the levels and watch the text behind it resize.
+  setTextScale(e) {
+    const level = parseInt(e.currentTarget.dataset.level, 10) || 0
+    if (level === this.data.textScale) return
+    this._applyTextScale(level)
+  },
+
+  // Mirrors toggleTheme's persistence chain: globalData -> storage -> setData -> server.
+  async _applyTextScale(textScale) {
+    app.globalData.textScale = textScale
+    wx.setStorageSync('nano_text_scale', textScale)
+    this.setData({ textScale })
+    wx.showToast({ title: this.data.t.textSizeLevels[textScale], icon: 'none', duration: 900 })
+    const user = this.data.user
+    if (this.data.isGuest || !user || !user.user_id) return
+    try {
+      await this._req(`${BASE}/api/users/${user.user_id}`, 'PATCH', { text_scale: textScale })
+    } catch (e) {}
+  },
+
   openCoach() {
     this.setData({ menuOpen: false })
     wx.navigateTo({ url: '/pages/coach/coach' })
   },
 
   onTouchStart(e) {
+    // A two-finger pinch (health-tab text size) must not also read as an edge swipe.
+    // Latched here rather than cleared in onTouchEnd because touchend fires once per
+    // finger — clearing on the first lift would let the second one through.
+    if (e.touches.length > 1) { this._multiTouch = true; return }
+    this._multiTouch = false
     this._touchX = e.touches[0].clientX
     this._touchY = e.touches[0].clientY
   },
 
   onTouchEnd(e) {
+    if (this._multiTouch) return
     if (!this.data.isCoach) return
     const d = this.data
     if (d.menuOpen || d.kinoSimOpen || d.guestSheetOpen || d.qSheetOpen) return
