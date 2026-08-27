@@ -35,6 +35,8 @@ const { requireVivaAgAccess } = require('../lib/vivaAgAccess');
 const { buildTwinBundle, presignDocuments, fetchHealthDocuments, BUNDLE_VERSION, DEFAULT_DOC_URL_TTL_SECONDS, clampInt } = require('../lib/twinBundle');
 const { deliverTerminalMessage } = require('./chat');
 const { processAgFormulationResult } = require('./ag_formulation');
+const { validateAgQuestions, sanitizeDisplayText } = require('../lib/agQuestionnaire');
+const { createDynamicQuestionnaire } = require('./questionnaires');
 const { formatToShanghai } = require('../lib/time-utils');
 
 // ---------------------------------------------------------------------------------------
@@ -63,6 +65,18 @@ const MAX_LEASE_SECONDS = 6 * 3600;
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
+// How many clarifying questionnaires one job may push back before it has to work with what it
+// has. Rounds — not `attempts` — are what bound this loop: a park REFUNDS the attempt it consumed
+// (see handlePostVivaAgQuestionnaire), because asking a question is forward progress, not a failed
+// delivery, and leaving it spent would let two rounds eat the retry budget a genuinely stuck job
+// still needs. Env-tunable for the same reason MAX_JOBS_PER_DAY is.
+const MAX_QUESTIONNAIRE_ROUNDS = parseInt(process.env.VIVA_AG_MAX_QUESTIONNAIRE_ROUNDS || '2', 10);
+
+// A parked job holds no lease — the user may take days — so claim_expires_at cannot bound it.
+// This deadline is what stops an ignored questionnaire holding the user's one in-flight slot
+// forever. Swept lazily alongside lease expiry.
+const QUESTIONNAIRE_DEADLINE_DAYS = parseInt(process.env.VIVA_AG_QUESTIONNAIRE_DEADLINE_DAYS || '7', 10);
+
 // Result-artifact types the agent may upload. Deliberately narrow: the miniapp is the only
 // consumer, and it can only present two shapes — a document wx.openDocument can open, or text
 // it can render itself. Accepting a .zip nano could never show the user would be a worse
@@ -83,6 +97,12 @@ const RESULT_EXT_RANK = { pdf: 0, md: 1, txt: 2 };
 
 const NOTIFY_RESULT = 'viva_ag_result';
 const NOTIFY_FAILED = 'viva_ag_failed';
+const NOTIFY_QUESTIONNAIRE = 'viva_ag_questionnaire';
+
+// The type the miniapp already listens for to go fetch and start a pending form. Reusing it means
+// the client needs no new trigger logic, and main.js already suppresses its own bubble for this
+// type — correct here, since the NOTIFY_QUESTIONNAIRE row above carries the message.
+const NOTIFY_QUESTIONNAIRE_READY = 'questionnaire_ready';
 
 // Written to chat_messages.source so the chat can attribute these to Viva AG rather than Viva.
 // persona_type stays 'viva' — see migration_chat_messages_source.sql for why it has to.
@@ -103,6 +123,8 @@ const REASONS = {
     UNSUPPORTED_FILE_TYPE: 'unsupported_file_type',
     RESULT_FILE_MISSING: 'result_file_missing',
     TOO_MANY_RESULT_FILES: 'too_many_result_files',
+    INVALID_QUESTIONS: 'invalid_questions',
+    QUESTIONNAIRE_LIMIT_REACHED: 'questionnaire_limit_reached',
     INTERNAL_ERROR: 'internal_error',
 };
 
@@ -127,6 +149,10 @@ function _logError(msg, err, extra = {}) {
 //
 // Two separate statements on purpose: a job with attempts left goes back on the queue, one out
 // of attempts terminally fails AND owes its user a chat message, so it has to be RETURNINGed.
+//
+// A third statement covers 'awaiting_input', which is a different kind of expiry: no lease ran
+// out, the user simply never answered the questionnaire the agent pushed back. It cannot be
+// folded into the two above — those key off claim_expires_at, which a parked job has none of.
 async function _sweepExpiredLeases() {
     try {
         await pool.query(
@@ -149,6 +175,18 @@ async function _sweepExpiredLeases() {
         for (const job of dead) {
             await _deliverFailure(job, 'lease_expired_max_attempts');
         }
+
+        const { rows: unanswered } = await pool.query(
+            `UPDATE viva_ag_jobs
+                SET status = 'failed', error_reason = 'questionnaire_unanswered',
+                    completed_at = NOW(), updated_at = NOW()
+              WHERE status = 'awaiting_input'
+                AND awaiting_input_expires_at < NOW()
+            RETURNING id, job_uid, user_id, persona_type, language`
+        );
+        for (const job of unanswered) {
+            await _deliverFailure(job, 'questionnaire_unanswered');
+        }
     } catch (err) {
         // A failed sweep must never block a claim — the next tick retries it.
         _logError('viva_ag lease sweep failed', err);
@@ -158,9 +196,15 @@ async function _sweepExpiredLeases() {
 function _failureMessage(language, reason) {
     const isZh = (language || 'zh') !== 'en';
     if (isZh) {
+        if (reason === 'questionnaire_unanswered') {
+            return '这次深度分析已结束——补充问卷一直没有完成，所以无法继续。您随时可以重新发起一次。';
+        }
         return reason === 'lease_expired_max_attempts'
             ? '抱歉，这次深度分析没能完成（处理超时）。您可以重新发起一次。'
             : '抱歉，这次深度分析没能完成。您可以重新发起一次。';
+    }
+    if (reason === 'questionnaire_unanswered') {
+        return "This deep analysis has closed — the follow-up questions were never answered, so it couldn't continue. You can start a new one any time.";
     }
     return reason === 'lease_expired_max_attempts'
         ? "Sorry — this deep analysis didn't finish in time. You can start a new one."
@@ -228,6 +272,11 @@ function _publicJob(row) {
         result_files: resultFiles,
         error_reason: row.error_reason || null,
         document_count: Array.isArray(row.document_ids) ? row.document_ids.length : 0,
+        // Drives the AG panel's "needs your input" card. The assignment ids themselves stay
+        // server-side: the panel only has to know that a form is waiting and hand the user off to
+        // the chat tab, which fetches it through /api/pending-questionnaires on its own.
+        questionnaire_rounds: Array.isArray(row.questionnaire_assignment_ids) ? row.questionnaire_assignment_ids.length : 0,
+        awaiting_input_expires_at: row.awaiting_input_expires_at ? formatToShanghai(row.awaiting_input_expires_at) : null,
     };
 }
 
@@ -357,15 +406,21 @@ async function handlePostVivaAgJobCancel(body) {
     try {
         const gate = await requireVivaAgAccess(body?.openid);
         if (!gate.ok) return gate.error;
-        // Only a job that hasn't been picked up yet. Once an external worker holds the lease,
+        // Only a job nobody is actively working on. Once an external worker holds the lease,
         // cancelling here would leave it working on something nobody will accept — let it
         // finish or let the lease expire.
+        //
+        // 'awaiting_input' is cancellable for the opposite reason: the job is parked on the user
+        // and no worker holds it, so "I'm not going to answer this" is a decision only they can
+        // make, and without this it would sit on their one in-flight slot until the deadline.
         const { rowCount } = await pool.query(
-            `UPDATE viva_ag_jobs SET status = 'cancelled', completed_at = NOW(), updated_at = NOW()
-              WHERE job_uid = $1 AND user_id = $2 AND status = 'queued'`,
+            `UPDATE viva_ag_jobs
+                SET status = 'cancelled', completed_at = NOW(),
+                    awaiting_input_expires_at = NULL, updated_at = NOW()
+              WHERE job_uid = $1 AND user_id = $2 AND status IN ('queued', 'awaiting_input')`,
             [body?.job_uid, gate.user.user_id]
         );
-        if (rowCount === 0) return _fail(REASONS.JOB_NOT_CLAIMABLE, 'Only a queued job can be cancelled');
+        if (rowCount === 0) return _fail(REASONS.JOB_NOT_CLAIMABLE, 'Only a queued or awaiting-input job can be cancelled');
         return { success: true };
     } catch (err) {
         _logError('handlePostVivaAgJobCancel failed', err);
@@ -520,12 +575,23 @@ async function handleGetVivaAgTwinBundle(query, jobToken) {
             ref: job.job_uid,
             documentIds: job.document_ids,
             urlTtlSeconds: DEFAULT_DOC_URL_TTL_SECONDS,
+            questionnaireAssignmentIds: job.questionnaire_assignment_ids,
         });
 
         return {
             success: true,
             ...bundle,
-            job: { job_uid: job.job_uid, command: job.command, command_key: job.command_key, params: job.params || {} },
+            job: {
+                job_uid: job.job_uid,
+                command: job.command,
+                command_key: job.command_key,
+                params: job.params || {},
+                // How many clarifying rounds this job has left, so a re-claimed worker knows
+                // whether asking again is even an option before it plans on doing so.
+                questionnaire_rounds_used: Array.isArray(job.questionnaire_assignment_ids) ? job.questionnaire_assignment_ids.length : 0,
+                questionnaire_rounds_remaining: Math.max(0, MAX_QUESTIONNAIRE_ROUNDS -
+                    (Array.isArray(job.questionnaire_assignment_ids) ? job.questionnaire_assignment_ids.length : 0)),
+            },
         };
     } catch (err) {
         _logError('handleGetVivaAgTwinBundle failed', err, { job_uid: query?.job_uid });
@@ -830,6 +896,144 @@ async function handlePostVivaAgHeartbeat(body) {
 // Presigned PUT for a long-form artifact (a generated PDF/markdown report). Without this the
 // result_oss_key field would be unreachable — the agent has no other way to put a file anywhere.
 // The key is minted here, under this job's own prefix, and never accepted from the caller.
+// ---------------------------------------------------------------------------------------
+// Clarifying questionnaires — the agent asks the user something mid-job
+// ---------------------------------------------------------------------------------------
+
+/**
+ * POST /viva-ag/jobs/questionnaire — park a claimed job and push a short questionnaire back.
+ *
+ * Everything the user sees here already exists: the four questionnaire_* tables, the five
+ * server-driven widgets, the chat-tab renderer, and the questionnaire_ready trigger. And the
+ * ANSWERS already reach the agent for free — twinBundle.js feeds completed questionnaire
+ * responses to every bundle as layers.personal_profile.questionnaire_context. All this endpoint
+ * adds is the asking and the parking.
+ *
+ * The lease is RELEASED rather than held. A user may take days to answer, and no lease length
+ * covers that; on resume any worker claims the job fresh and gets a new result_token. That keeps
+ * workers stateless — the answers travel in the bundle, never in a worker's memory — which is
+ * also why the caller must stop working on the job the moment this returns.
+ */
+async function handlePostVivaAgQuestionnaire(body) {
+    try {
+        const { error, job } = await _loadClaimedJob(body?.job_uid, body?.result_token);
+        if (error) return error;
+
+        const priorRounds = Array.isArray(job.questionnaire_assignment_ids) ? job.questionnaire_assignment_ids.length : 0;
+        if (priorRounds >= MAX_QUESTIONNAIRE_ROUNDS) {
+            // The job stays claimed and usable: the agent has to proceed on what it has (or call
+            // /jobs/fail), not lose the run for asking one question too many.
+            return _fail(REASONS.QUESTIONNAIRE_LIMIT_REACHED,
+                `This job has already asked ${priorRounds} of ${MAX_QUESTIONNAIRE_ROUNDS} allowed questionnaires.`);
+        }
+
+        const { ok, questions, violations } = validateAgQuestions(body?.questions);
+        if (!ok) {
+            // Also leaves the job claimed — this is a correctable payload error, not a dead run.
+            return { ...(_fail(REASONS.INVALID_QUESTIONS, 'One or more questions were rejected.')), violations };
+        }
+
+        const round = priorRounds + 1;
+        const isZh = (job.language || 'zh') !== 'en';
+        const title = isZh ? `Viva AG 补充问卷（第 ${round} 轮）` : `Viva AG follow-up (round ${round})`;
+
+        // type:'viva_ag' is what makes the completion of this form resume THIS job rather than
+        // fire Viva's own dynamic-questionnaire follow-up turn. channelId scopes it for the admin
+        // questionnaire list the same way a channel-authored form is scoped.
+        const { assignmentId } = await createDynamicQuestionnaire(
+            job.user_id,
+            { name: `Viva AG follow-up (round ${round})`, name_zh: title, questions },
+            { type: 'viva_ag', channelId: job.channel_id }
+        );
+
+        const { rows: [parked] } = await pool.query(
+            `UPDATE viva_ag_jobs
+                SET status = 'awaiting_input',
+                    claimed_by = NULL, claimed_at = NULL, claim_expires_at = NULL, result_token = NULL,
+                    attempts = GREATEST(attempts - 1, 0),
+                    awaiting_input_expires_at = NOW() + ($2 || ' days')::interval,
+                    questionnaire_assignment_ids = COALESCE(questionnaire_assignment_ids, '{}') || $3::int,
+                    progress_note = $4, updated_at = NOW()
+              WHERE id = $1
+            RETURNING awaiting_input_expires_at`,
+            [job.id, String(QUESTIONNAIRE_DEADLINE_DAYS), assignmentId,
+             isZh ? '等待用户补充信息' : 'Waiting on the user for more information']
+        );
+
+        await _deliverQuestionnaireRequest(job, body?.intro, questions.length);
+
+        return {
+            success: true,
+            status: 'awaiting_input',
+            assignment_id: assignmentId,
+            question_count: questions.length,
+            round,
+            rounds_remaining: MAX_QUESTIONNAIRE_ROUNDS - round,
+            expires_at: formatToShanghai(parked.awaiting_input_expires_at),
+        };
+    } catch (err) {
+        _logError('handlePostVivaAgQuestionnaire failed', err, { job_uid: body?.job_uid });
+        return _fail(REASONS.INTERNAL_ERROR, err.message);
+    }
+}
+
+// Two rows, on purpose:
+//   1. a NOTIFY_QUESTIONNAIRE bubble, so the user reads WHY they are being asked, attributed to
+//      Viva AG like every other message from this agent;
+//   2. a bare questionnaire_ready row, which is the existing signal that makes the chat tab go
+//      fetch and start the form. main.js suppresses its own bubble for that type, so the two do
+//      not double up.
+// The agent's intro is untrusted display text and goes through the same sanitiser the prompts do.
+async function _deliverQuestionnaireRequest(job, rawIntro, questionCount) {
+    try {
+        const isZh = (job.language || 'zh') !== 'en';
+        const intro = sanitizeDisplayText(rawIntro).slice(0, MAX_SUMMARY_LENGTH);
+        const fallback = isZh
+            ? `为了把这次深度分析做准确，我还需要向你确认 ${questionCount} 个问题。`
+            : `To get this deep analysis right, I need to check ${questionCount} more thing${questionCount === 1 ? '' : 's'} with you.`;
+        const ids = await deliverTerminalMessage(
+            job.user_id, job.persona_type || 'viva', NOTIFY_QUESTIONNAIRE, intro || fallback, CHAT_SOURCE);
+        await pool.query(
+            `INSERT INTO notifications (user_id, notification_type, content, status)
+             VALUES ($1, $2, $3, 'pending')`,
+            [job.user_id, NOTIFY_QUESTIONNAIRE_READY, isZh ? '补充问卷已生成' : 'Follow-up questions ready']
+        );
+        await pool.query(
+            `UPDATE viva_ag_jobs SET notification_id = $2, chat_message_id = $3, delivered_at = NOW() WHERE id = $1`,
+            [job.id, ids.notification_id, ids.chat_message_id]
+        );
+    } catch (err) {
+        // Never fail the park over delivery: the form exists and /api/pending-questionnaires will
+        // hand it to the user on their next app open regardless of whether the nudge landed.
+        _logError('viva_ag questionnaire delivery failed', err, { job_uid: job.job_uid });
+    }
+}
+
+/**
+ * Un-parks the job whose questionnaire this assignment belongs to. Called by
+ * handlePostQuestionnaireResponse the moment the last answer lands — injected from index.js so
+ * handlers/questionnaires.js never has to require this module.
+ *
+ * Idempotent by predicate: only an 'awaiting_input' row moves, so a resubmitted answer or a
+ * racing double-tap is a no-op rather than a second queueing.
+ */
+async function resumeVivaAgJobForAssignment(assignmentId) {
+    const id = parseInt(assignmentId, 10);
+    if (!Number.isInteger(id)) return null;
+    const { rows: [job] } = await pool.query(
+        `UPDATE viva_ag_jobs
+            SET status = 'queued', awaiting_input_expires_at = NULL,
+                progress_note = NULL, updated_at = NOW()
+          WHERE status = 'awaiting_input' AND $1 = ANY(questionnaire_assignment_ids)
+        RETURNING job_uid`,
+        [id]
+    );
+    if (job) {
+        console.log(JSON.stringify({ level: 'INFO', msg: 'viva_ag_job_resumed', job_uid: job.job_uid, assignment_id: id }));
+    }
+    return job ? job.job_uid : null;
+}
+
 async function handlePostVivaAgResultUploadUrl(body) {
     try {
         const { error, job } = await _loadClaimedJob(body?.job_uid, body?.result_token);
@@ -1088,8 +1292,14 @@ module.exports = {
     handlePostVivaAgResultUploadUrl,
     handlePostVivaAgResult,
     handlePostVivaAgFail,
+    handlePostVivaAgQuestionnaire,
+    // Injected into handlers/questionnaires.js from index.js, so that module never has to
+    // require this one — the same pattern saveChatMessage already uses there.
+    resumeVivaAgJobForAssignment,
     // Exported for tests / the docs endpoint
     VALID_COMMAND_KEYS,
     MAX_JOBS_PER_DAY,
+    MAX_QUESTIONNAIRE_ROUNDS,
+    QUESTIONNAIRE_DEADLINE_DAYS,
     REASONS,
 };

@@ -135,7 +135,7 @@ async function handleGetPendingQuestionnaires(openid) {
 // Saves one answer. If question has save_target, also writes to user profile.
 // Marks assignment completed when all questions answered.
 // saveChatMessage is passed as a dependency from index.js
-async function handlePostQuestionnaireResponse(body, saveChatMessage, fireQuestionnaireAnsweredFollowup) {
+async function handlePostQuestionnaireResponse(body, saveChatMessage, fireQuestionnaireAnsweredFollowup, resumeVivaAgJob) {
     const { assignment_id, question_id, answer } = body || {};
     if (!assignment_id || !question_id || answer === undefined) {
         return { statusCode: 400, success: false, error: 'assignment_id, question_id and answer required' };
@@ -258,6 +258,23 @@ async function handlePostQuestionnaireResponse(body, saveChatMessage, fireQuesti
                     console.log(JSON.stringify({ level: 'WARN', msg: 'questionnaire_answered_followup_failed', user_id, assignment_id, error: e.message }));
                 }
             }
+
+            // A 'viva_ag' questionnaire is one the external agent pushed back to unblock a job it
+            // had already claimed (§35). Its completion is the ONLY thing that un-parks that job,
+            // so this is the resume trigger, not a nicety.
+            //
+            // Injected from index.js for the same reason the two callbacks above are: this module
+            // must not require handlers/viva_ag.js. Awaited for the same reason too — see the
+            // comment above; an un-awaited promise here has been confirmed live never to complete.
+            // Fails open: the awaiting_input deadline sweep is the backstop, so a failure here
+            // costs the user a wait, not the job.
+            if (questionnaire_type === 'viva_ag' && typeof resumeVivaAgJob === 'function') {
+                try {
+                    await resumeVivaAgJob(assignment_id);
+                } catch (e) {
+                    console.log(JSON.stringify({ level: 'WARN', msg: 'viva_ag_resume_failed', user_id, assignment_id, error: e.message }));
+                }
+            }
         }
 
         return { success: true, completed: justCompleted };
@@ -313,17 +330,29 @@ async function canCreateDynamicQuestionnaire(userId, personaType) {
 }
 
 // Creates a fresh one-off questionnaire + its questions + a single assignment for userId,
-// atomically. `generated` is the already-validated { name, name_zh, questions: [...] }
-// shape produced by chat.js's ask_questions action-tail parser — never raw LLM output.
-async function createDynamicQuestionnaire(userId, generated) {
+// atomically. `generated` is the already-validated { name, name_zh, questions: [...] } shape
+// produced by chat.js's ask_questions action-tail parser or lib/agQuestionnaire.js's
+// validateAgQuestions — never raw LLM output, and never raw external-agent input.
+//
+// `type` distinguishes who authored it: 'dynamic' is Viva asking mid-conversation, 'viva_ag' is
+// the external AG agent parking a job to ask (§35). The completion block in
+// handlePostQuestionnaireResponse branches on it to decide what a finished form should trigger.
+//
+// NOTE the four columns deliberately NOT parameterised here: save_target, save_field,
+// save_biomarker_type and completion_check. All four are write paths into user data (or, for
+// completion_check, a way to make a question auto-skip), and no LLM- or agent-authored
+// questionnaire may reach them. They stay hardcoded NULL/'{}' — see agQuestionnaire.js's header.
+async function createDynamicQuestionnaire(userId, generated, opts = {}) {
     if (!pool) throw new Error('Database pool not initialized');
+    const type = opts.type || 'dynamic';
+    const channelId = opts.channelId != null ? opts.channelId : null;
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         const qRes = await client.query(
             `INSERT INTO questionnaires (channel_id, name, name_zh, type, created_by, is_active)
-             VALUES (NULL, $1, $2, 'dynamic', NULL, true) RETURNING id`,
-            [generated.name, generated.name_zh]
+             VALUES ($3, $1, $2, $4, NULL, true) RETURNING id`,
+            [generated.name, generated.name_zh, channelId, type]
         );
         const questionnaireId = qRes.rows[0].id;
         for (let i = 0; i < generated.questions.length; i++) {

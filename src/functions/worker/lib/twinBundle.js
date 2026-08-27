@@ -33,7 +33,8 @@ const { formatToShanghai, calculateAge, getNowShanghai } = require('./time-utils
 
 // Bump when the bundle's shape changes in a way an external consumer must notice. Returned in
 // every bundle response and echoed by /viva-ag/ping so the agent can assert compatibility.
-const BUNDLE_VERSION = 1;
+// v2 (2026-08-27) added job_questionnaires — purely additive, so a v1 consumer keeps working.
+const BUNDLE_VERSION = 2;
 
 // Presigned document URLs default to 6 hours: long enough for a multi-hour job that has to
 // resume a large download, short enough that a leaked bundle goes stale the same day.
@@ -240,6 +241,52 @@ async function fetchQuestionnaireRows(pool, userId) {
     return rows;
 }
 
+// The rounds of clarifying questions THIS job asked, with their answers.
+//
+// Distinct from questionnaire_context above, which is the whole-user view: it merges every
+// completed questionnaire the user has ever filled in, so it cannot tell the agent which
+// questions were its own, whether the round it asked is finished, or what it asked in a round
+// the user abandoned. That matters because the agent has to decide whether it now has what it
+// was missing — a question it can only answer against its own rounds.
+//
+// Ordered by round, then by the order the questions were asked in.
+async function fetchJobQuestionnaires(pool, assignmentIds) {
+    if (!Array.isArray(assignmentIds) || assignmentIds.length === 0) return [];
+    const { rows } = await pool.query(
+        `SELECT qa.id AS assignment_id, qa.status, qa.completed_at,
+                qq.key, qq.sort_order, qq.input_type, qq.prompt_zh, qq.prompt_en,
+                qr.answer, qr.answered_at
+           FROM questionnaire_assignments qa
+           JOIN questionnaire_questions qq ON qq.questionnaire_id = qa.questionnaire_id AND qq.is_active = true
+           LEFT JOIN questionnaire_responses qr ON qr.assignment_id = qa.id AND qr.question_id = qq.id
+          WHERE qa.id = ANY($1::int[])
+          ORDER BY qa.id ASC, qq.sort_order ASC`,
+        [assignmentIds]
+    );
+    const byAssignment = new Map();
+    for (const r of rows) {
+        if (!byAssignment.has(r.assignment_id)) {
+            byAssignment.set(r.assignment_id, {
+                round: byAssignment.size + 1,
+                status: r.status,
+                completed_at: r.completed_at ? _ts(r.completed_at) : null,
+                questions: [],
+            });
+        }
+        byAssignment.get(r.assignment_id).questions.push({
+            key: r.key,
+            input_type: r.input_type,
+            prompt_zh: r.prompt_zh,
+            prompt_en: r.prompt_en,
+            // null means asked-but-unanswered, which the agent must be able to tell apart from an
+            // answer that happens to be empty.
+            answer: r.answered_at ? r.answer : null,
+            answered_at: r.answered_at ? _ts(r.answered_at) : null,
+        });
+    }
+    return [...byAssignment.values()];
+}
+
 async function fetchMemoryFacts(pool, userId) {
     const { rows } = await pool.query(
         `SELECT category, fact_zh, first_mentioned_at, last_mentioned_at
@@ -427,14 +474,14 @@ async function fetchInventory(pool, userId) {
  * @param {number[]|null} opts.documentIds  restrict documents to this snapshot; null = all active
  * @param {number} opts.urlTtlSeconds       presigned document URL lifetime
  */
-async function buildTwinBundle(pool, { user, ref, documentIds = null, urlTtlSeconds = DEFAULT_DOC_URL_TTL_SECONDS }) {
+async function buildTwinBundle(pool, { user, ref, documentIds = null, urlTtlSeconds = DEFAULT_DOC_URL_TTL_SECONDS, questionnaireAssignmentIds = null }) {
     const userId = user.user_id;
     const language = user.language || 'zh';
 
     const [
         latestBio, bioHistory, twin, weightHistory,
         reports, documents, questionnaireRows, memoryFacts,
-        healthPlans, schedule, inventory, reminders, formulary, dataInventory,
+        healthPlans, schedule, inventory, reminders, formulary, dataInventory, jobQuestionnaires,
     ] = await Promise.all([
         _safe('latest_biomarkers', () => fetchLatestBiomarkers(pool, userId), null),
         _safe('biomarker_history', () => fetchBiomarkerHistory(pool, userId), { total_count: 0, tests: [] }),
@@ -450,6 +497,7 @@ async function buildTwinBundle(pool, { user, ref, documentIds = null, urlTtlSeco
         _safe('reminders', () => fetchReminders(pool, userId), []),
         _safe('dots_formulary', () => fetchDotsFormulary(pool), []),
         _safe('inventory', () => fetchInventory(pool, userId), null),
+        _safe('job_questionnaires', () => fetchJobQuestionnaires(pool, questionnaireAssignmentIds), []),
     ]);
 
     // Same BMI precedence handlePostChat uses: prefer a real scale/wearable reading over the
@@ -503,6 +551,8 @@ async function buildTwinBundle(pool, { user, ref, documentIds = null, urlTtlSeco
             reminders,
         },
         dots_formulary: formulary,
+        // Clarifying questions THIS job asked, per round. Empty for a job that never asked.
+        job_questionnaires: jobQuestionnaires,
         // What else exists but is NOT inlined here — see fetchInventory's docblock.
         inventory: dataInventory,
     };
@@ -515,5 +565,6 @@ module.exports = {
     buildTwinBundle,
     presignDocuments,
     fetchHealthDocuments,
+    fetchJobQuestionnaires,
     clampInt,
 };

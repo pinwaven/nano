@@ -72,6 +72,7 @@ const {
     handleGetVivaAgPing, handlePostVivaAgClaim, handleGetVivaAgTwinBundle, handleGetVivaAgDocumentUrl,
     handleGetVivaAgHealthEvents, handleGetVivaAgLabResults, handleGetVivaAgBiomarkerHistory, handleGetVivaAgChatHistory,
     handlePostVivaAgHeartbeat, handlePostVivaAgResultUploadUrl, handlePostVivaAgResult, handlePostVivaAgFail,
+    handlePostVivaAgQuestionnaire, resumeVivaAgJobForAssignment,
 } = require('./handlers/viva_ag');
 const { handleGetVivaAgDocs, handleGetVivaAgOpenApi } = require('./handlers/viva_ag_docs');
 const {
@@ -305,6 +306,7 @@ exports.handler = async (req, resp, context) => {
                 '/viva-ag/ping', '/viva-ag/docs', '/viva-ag/openapi.json',
                 '/viva-ag/jobs/claim', '/viva-ag/jobs/heartbeat',
                 '/viva-ag/jobs/result', '/viva-ag/jobs/fail', '/viva-ag/result-upload-url',
+                '/viva-ag/jobs/questionnaire',
                 '/viva-ag/twin-bundle', '/viva-ag/document-url',
                 // Paginated bulk-history resources the digest bundle deliberately omits.
                 '/viva-ag/health-events', '/viva-ag/lab-results',
@@ -724,6 +726,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostVivaAgResult(parsedBody);
             } else if (path === '/viva-ag/jobs/fail') {
                 result = await handlePostVivaAgFail(parsedBody);
+            } else if (path === '/viva-ag/jobs/questionnaire') {
+                result = await handlePostVivaAgQuestionnaire(parsedBody);
             } else if (path === '/viva-ag/result-upload-url') {
                 result = await handlePostVivaAgResultUploadUrl(parsedBody);
             // --- Viva AG: user-facing (app bearer + openid) ---
@@ -965,7 +969,10 @@ exports.handler = async (req, resp, context) => {
             } else if (path === '/questionnaires') {
                 result = await handlePostQuestionnaire(parsedBody);
             } else if (path === '/questionnaire-responses') {
-                result = await handlePostQuestionnaireResponse(parsedBody, saveChatMessage, _fireQuestionnaireAnsweredFollowup);
+                // resumeVivaAgJobForAssignment is injected for the same reason the other two are:
+                // handlers/questionnaires.js must not require handlers/viva_ag.js. Completing a
+                // 'viva_ag' questionnaire is what un-parks the job that asked it.
+                result = await handlePostQuestionnaireResponse(parsedBody, saveChatMessage, _fireQuestionnaireAnsweredFollowup, resumeVivaAgJobForAssignment);
             } else if (path === '/questionnaire-assignments') {
                 result = await handlePostQuestionnaireAssignment(parsedBody);
             } else if (path === '/admin/saved-reports') {
