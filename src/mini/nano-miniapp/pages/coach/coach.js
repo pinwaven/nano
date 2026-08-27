@@ -3,6 +3,9 @@ const { BASE } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
 const { maskPhone } = require('../../utils/phone.js')
 
+// Questionnaire types a human may assign — see _loadQuestionnaires.
+const ASSIGNABLE_TYPES = ['onboarding', 'custom']
+
 const T = {
   zh: {
     title: '教练面板',
@@ -1099,7 +1102,14 @@ Page({
     try {
       const params = this._coachChannelId ? `channel_id=${this._coachChannelId}` : ''
       const res = await this._req(`${BASE}/api/questionnaires?${params}`)
-      const questionnaires = (res.data?.questionnaires || []).filter(q => q.is_active)
+      // Allowlist, not a denylist, so a future questionnaire type defaults to hidden here.
+      // 'dynamic' (Viva's own mid-conversation follow-up) and 'viva_ag' (a clarifying form the
+      // external agent pushed back to unblock ONE job) are both one-off and scoped to the person
+      // they were generated for — assigning either to a different client would hand them
+      // questions written about someone else's situation. Their answers are still visible in the
+      // client detail sheet.
+      const questionnaires = (res.data?.questionnaires || [])
+        .filter(q => q.is_active && ASSIGNABLE_TYPES.includes(q.type))
       this.setData({ questionnaires })
     } catch {
       wx.showToast({ title: T[this.data.lang].networkError, icon: 'none' })

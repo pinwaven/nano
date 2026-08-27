@@ -304,6 +304,14 @@ function QuestionModal({ question, questionnaireId, onClose, onSave }) {
   );
 }
 
+// Types a human may assign. An allowlist, so a future type defaults to non-assignable.
+// 'dynamic' and 'viva_ag' are generated at runtime FOR ONE PERSON — Viva's own mid-conversation
+// follow-up, and a clarifying form the external AG agent pushed back to unblock one specific job.
+// Assigning either to somebody else hands them questions written about a different person's
+// situation. They still appear in the management list and the assignments filter; they just
+// cannot be handed out.
+const ASSIGNABLE_TYPES = ['onboarding', 'custom'];
+
 function AssignModal({ questionnaires, users, coaches, onClose, onSave }) {
   const [questionnaireId, setQuestionnaireId] = useState('');
   const [selectedUsers, setSelectedUsers] = useState([]);
@@ -345,7 +353,7 @@ function AssignModal({ questionnaires, users, coaches, onClose, onSave }) {
           <label>Questionnaire *</label>
           <select className="form-input" value={questionnaireId} onChange={e => setQuestionnaireId(e.target.value)}>
             <option value="">— select —</option>
-            {questionnaires.filter(q => q.is_active).map(q => (
+            {questionnaires.filter(q => q.is_active && ASSIGNABLE_TYPES.includes(q.type)).map(q => (
               <option key={q.id} value={q.id}>{q.name}{q.type === 'onboarding' ? ' (onboarding)' : ''}</option>
             ))}
           </select>
