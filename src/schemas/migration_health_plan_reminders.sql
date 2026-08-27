@@ -2,6 +2,7 @@
 -- Adds reminders config to plan templates, links reminders to plans, adds 'paused' status
 
 -- 1. Add reminders JSONB config to health_plan_templates
+-- @requires: migration_health_plans.sql
 ALTER TABLE health_plan_templates
   ADD COLUMN IF NOT EXISTS reminders JSONB NOT NULL DEFAULT '[]'::jsonb;
 

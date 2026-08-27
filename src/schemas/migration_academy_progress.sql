@@ -1,5 +1,6 @@
 -- Academy Coach Progress Migration
 -- Tracks which lessons each coach has completed (idempotent inserts via ON CONFLICT)
+-- @requires: migration_academy_lessons.sql
 
 CREATE TABLE IF NOT EXISTS academy_coach_progress (
     id              SERIAL PRIMARY KEY,

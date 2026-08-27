@@ -173,7 +173,9 @@ async function handleDeleteAdminAccount(id, adminCtx) {
         await pool.query('DELETE FROM admin_accounts WHERE id = $1', [id]);
         return { success: true };
     } catch (err) {
-        return { success: false, error: err.message };
+        // Without a statusCode the router replies 200 and the panel's axios
+        // never throws — the delete fails with no visible error at all.
+        return { statusCode: 500, success: false, error: err.message };
     }
 }
 

@@ -22,7 +22,7 @@ module.exports = (ctx) => {
     : `生理年龄：暂无检测记录。`;
 
   const dotsSection = dots && dots.length > 0
-    ? `原粒配方库（每粒 24mg；名称与编号必须逐字使用下方原文，不得凭记忆改写或替换）：\n${dots.map(d => {
+    ? `原粒配方库（每粒 36mg；名称与编号必须逐字使用下方原文，不得凭记忆改写或替换）：\n${dots.map(d => {
         const ingrArr = d.ingredients_zh || d.ingredients || [];
         const ingrStr = ingrArr.length > 0
           ? `（${ingrArr.map(i => `${i.name}${i.mg ? ' ' + i.mg + 'mg' : ''}`).join(' + ')}）`

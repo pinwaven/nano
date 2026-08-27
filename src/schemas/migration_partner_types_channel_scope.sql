@@ -4,6 +4,7 @@
 
 -- ── Step 1: Drop FK on partners.tier first (it depends on partner_types.key unique) ──
 -- Without this, dropping the UNIQUE constraint on partner_types.key will fail.
+-- @requires: migration_partners.sql
 ALTER TABLE partners DROP CONSTRAINT IF EXISTS fk_partners_tier;
 
 -- ── Step 2: Add channel_id to partner_types ──────────────────────────────────

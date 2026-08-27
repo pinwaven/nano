@@ -1,3 +1,5 @@
+-- @requires: migration_multi_tier_channels.sql
+
 BEGIN;
 
 -- Free up key_name 'aeviva' for the new parent

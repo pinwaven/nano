@@ -1,4 +1,5 @@
 -- Make orders.item_id nullable (was NOT NULL tied to global store_items)
+-- @requires: migration_store.sql
 ALTER TABLE orders ALTER COLUMN item_id DROP NOT NULL;
 
 -- Add channel_inventory_item_id FK to channel_inventory_items

@@ -16,6 +16,10 @@
 -- (CLAUDE.md §32), so referential integrity across the boundary is not available and is not
 -- pretended at. A 'valid' row with a NULL gcn_order_id is the query that finds formulas whose
 -- fire-and-forget notify to GCN failed.
+--
+-- @requires: migration_viva_ag_jobs.sql
+-- ("formulations" sorts ahead of "jobs" alphabetically, so without this the FK below hits a
+-- table that does not exist yet — which is exactly how this failed on prod on 2026-08-27.)
 
 CREATE TABLE IF NOT EXISTS viva_ag_formulations (
     id                  BIGSERIAL PRIMARY KEY,

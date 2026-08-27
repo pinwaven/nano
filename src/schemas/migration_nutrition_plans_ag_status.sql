@@ -15,6 +15,7 @@
 -- handleGetNutritionPlan filters status = 'active', so an approved-not-yet-scanned plan is
 -- invisible to the Dots subtab with no code change: the user keeps seeing their previous plan
 -- until the new box arrives.
+-- @requires: migration_nutrition_plans_status.sql
 
 ALTER TABLE nutrition_plans DROP CONSTRAINT IF EXISTS nutrition_plans_status_check;
 ALTER TABLE nutrition_plans ADD CONSTRAINT nutrition_plans_status_check

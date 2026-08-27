@@ -2,6 +2,7 @@
 -- but have no sku_id. Also seeds warehouse stock and links store_items.sku_id.
 
 -- 1. Insert missing SKUs
+-- @requires: migration_orders_fulfillment.sql, migration_store.sql
 INSERT INTO skus (sku_code, name_zh, name_en, item_type, unit_zh, unit_en)
 VALUES
   ('DOT01-CARTRIDGE', 'DOT01 · 细胞原力',               'DOT01 · Cellular Fuel',               'physical', '800 粒装', '800 dots'),

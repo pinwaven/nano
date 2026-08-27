@@ -1,6 +1,8 @@
 -- Channel-scoped store items
 -- First-tier channels (no parent) can manage their own store items by default.
 -- Sub-channels require explicit grant from their parent via can_customize_store.
+-- @requires: migration_store.sql
+-- @requires: migration_multi_tier_channels.sql
 
 ALTER TABLE channels
   ADD COLUMN IF NOT EXISTS can_customize_store BOOLEAN NOT NULL DEFAULT FALSE;

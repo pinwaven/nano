@@ -2,6 +2,7 @@
 -- Tables: client_nps_surveys, coach_performance_snapshots
 
 -- ── NPS Surveys ───────────────────────────────────────────────────────────────
+-- @requires: migration_health_plans.sql
 CREATE TABLE IF NOT EXISTS client_nps_surveys (
     id            BIGSERIAL PRIMARY KEY,
     coach_id      INTEGER NOT NULL REFERENCES coaches(id) ON DELETE CASCADE,

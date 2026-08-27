@@ -713,7 +713,7 @@ async function handleExchangeWebviewToken(body) {
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                     u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
                     u.merged_into_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
-                    cu.nickname AS coach_name,
+                    cu.nickname AS coach_name, p.user_id AS coach_user_id,
                     c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                     c.config->'sub_age_display_names' AS channel_sub_age_names,
                     c.config->>'locale' AS channel_locale,

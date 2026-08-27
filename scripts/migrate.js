@@ -13,6 +13,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+const { parseRequires, orderMigrations } = require('./migration-order');
 
 const args = process.argv.slice(2);
 const envTarget = args.includes('--env') ? args[args.indexOf('--env') + 1] : 'dev';
@@ -44,7 +45,12 @@ function collectMigrationFiles() {
         if (!fs.existsSync(dir)) continue;
         for (const f of fs.readdirSync(dir)) {
             if (f.startsWith('migration_') && f.endsWith('.sql')) {
-                files.push({ name: f, fullPath: path.join(dir, f) });
+                const fullPath = path.join(dir, f);
+                files.push({
+                    name: f,
+                    fullPath,
+                    requires: parseRequires(fs.readFileSync(fullPath, 'utf8')),
+                });
             }
         }
     }
@@ -54,7 +60,10 @@ function collectMigrationFiles() {
     // ahead of migration_academy_enrollments.sql (the CREATE TABLE it depends
     // on) and broke a prod migration run.
     files.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-    return files;
+    // Alphabetical order says nothing about dependencies, so a migration that needs
+    // another one first declares it with `-- @requires: migration_x.sql` and is moved
+    // after it here. See scripts/migration-order.js.
+    return orderMigrations(files);
 }
 
 async function ensureTable(client) {
@@ -76,7 +85,16 @@ async function run() {
     try {
         await ensureTable(client);
         const applied = await getApplied(client);
-        const files = collectMigrationFiles();
+        let files;
+        try {
+            files = collectMigrationFiles();
+        } catch (err) {
+            // A bad @requires declaration is a repo-level mistake, not a DB problem —
+            // refuse the whole run rather than falling back to alphabetical order.
+            console.error(`[migrate] ERROR: ${err.message}`);
+            process.exitCode = 1;
+            return;
+        }
         const pending = files.filter(f => !applied.has(f.name));
 
         console.log(`[migrate] target: ${envTarget.toUpperCase()}  applied: ${applied.size}  pending: ${pending.length}`);
@@ -85,7 +103,7 @@ async function run() {
             if (pending.length === 0) {
                 console.log('[migrate] All migrations are up to date.');
             } else {
-                console.log('[migrate] Pending migrations:');
+                console.log('[migrate] Pending migrations (in apply order):');
                 pending.forEach(f => console.log(`  - ${f.name}`));
             }
             return;

@@ -10,6 +10,7 @@
 --
 -- DEFAULT 'viva' means every existing plan and every already-minted code keeps its current
 -- meaning with no backfill.
+-- @requires: migration_viva_subscription_catalog.sql, migration_viva_subscription_codes.sql
 
 ALTER TABLE viva_subscription_plans ADD COLUMN IF NOT EXISTS product_type TEXT NOT NULL DEFAULT 'viva';
 ALTER TABLE viva_subscription_codes ADD COLUMN IF NOT EXISTS product_type TEXT NOT NULL DEFAULT 'viva';

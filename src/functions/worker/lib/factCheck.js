@@ -38,7 +38,7 @@ const PATTERNS = {
 
 // A specific mg dosage not attributed to a named dot (referenced as "X号" and/or "原粒") on the
 // same line is almost always an external-supplement recommendation slipping past the dots-only
-// rule — real dot ingredients are always sub-24mg and named right next to their dot on one line.
+// rule — real dot ingredients are always sub-36mg and named right next to their dot on one line.
 // Two deliberate narrowings to cut false positives found in testing:
 //  - "mg" only, not "g": whole-food meal suggestions (explicitly allowed) are measured in g
 //    (e.g. "山药60g"), while every real dot ingredient is dosed in mg.

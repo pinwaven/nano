@@ -5,6 +5,8 @@
 -- server-driven input widgets and the chat-tab renderer all already exist, and completed answers
 -- already reach the agent through twinBundle.js's layers.personal_profile.questionnaire_context.
 -- This migration only adds the job state to park in and the link back to the assignment.
+--
+-- @requires: migration_viva_ag_jobs.sql
 
 -- A questionnaire the external AG agent pushed back mid-job. A distinct type (rather than reusing
 -- 'dynamic') is what lets handlePostQuestionnaireResponse's completion block tell "resume an AG

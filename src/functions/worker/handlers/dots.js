@@ -1139,8 +1139,14 @@ function _resolveCandidateDotKeys(activeHealthPlans, dotsFormulary) {
 // stays dumb and there is no second place for the arithmetic to drift.
 function _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang) {
     const isZh = (lang || 'zh') !== 'en';
-    const morning = morningRecipe?.dots || {};
-    const evening = eveningRecipe?.dots || {};
+    // Cap here, not at the caller. Every dot is forced to at least its own target_dots_min, and
+    // those floors already sum past one capsule, so an uncapped recipe renders a capsule nobody
+    // can physically fill. _commitNutritionPlan applies the same cap on the paths that still
+    // write a plan; this tool stopped writing one (see the evaluation-tool note above), which
+    // left the card as the only surface showing raw, unbuildable counts. Capping inside the
+    // renderer covers all three call sites at once, and any future fourth one.
+    const morning = _capRecipeTotal(morningRecipe, MAX_DOTS_PER_CAPSULE)?.dots || {};
+    const evening = _capRecipeTotal(eveningRecipe, MAX_DOTS_PER_CAPSULE)?.dots || {};
     const rows = [];
     for (const dot of dotsFormulary || []) {
         const am = morning[dot.key_name] || 0;

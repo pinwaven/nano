@@ -2,6 +2,7 @@
 -- Adds credits, tiers, content types, quizzes, certifications, and learning paths
 
 -- Extend academy_courses
+-- @requires: migration_academy_lessons.sql, migration_academy_progress.sql
 ALTER TABLE academy_courses
   ADD COLUMN IF NOT EXISTS credit_value           INT DEFAULT 10,
   ADD COLUMN IF NOT EXISTS level                  TEXT NOT NULL DEFAULT 'foundation'

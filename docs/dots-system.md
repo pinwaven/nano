@@ -1,12 +1,12 @@
 # Waven Dots System
 
-Waven Dots are 24 mg precision nutrition cartridges. Each cartridge delivers one or more active compounds in an exact dose, calibrated to the user's biomarker profile. The system targets four biological age dimensions measured by the Kino chip.
+Waven Dots are 36 mg precision nutrition cartridges. Each cartridge delivers one or more active compounds in an exact dose, calibrated to the user's biomarker profile. The system targets four biological age dimensions measured by the Kino chip.
 
 ---
 
 ## Cartridge Format
 
-- **Payload:** 24 mg per dot
+- **Payload:** 36 mg per dot
 - **Pack size:** 800 dots per cartridge
 - **Timing:** Morning or Evening (fixed per dot — set by the `timing` column in the `dots` table)
 - **Types:** Isolates (single active compound) and Blends (two or more actives)
@@ -47,7 +47,7 @@ Dots are sold and dispensed in three groups of six. Each group maps to a set car
 
 #### Cellular Age targets (DOT01–04, DOT06)
 
-| Key   | Name                        | ZH       | Timing  | Type    | Ingredients (24 mg payload)                                                                        |
+| Key   | Name                        | ZH       | Timing  | Type    | Ingredients (36 mg payload)                                                                        |
 | ----- | --------------------------- | -------- | ------- | ------- | -------------------------------------------------------------------------------------------------- |
 | DOT01 | Cellular Fuel               | 细胞原力 | Morning | Isolate | NMN 24 mg                                                                                          |
 | DOT02 | Cellular Guard              | 细胞守护 | Evening | Isolate | Apigenin 24 mg                                                                                     |
@@ -57,7 +57,7 @@ Dots are sold and dispensed in three groups of six. Each group maps to a set car
 
 #### Metabolic Age target (DOT05)
 
-| Key   | Name                 | ZH       | Timing  | Type  | Ingredients (24 mg payload)               |
+| Key   | Name                 | ZH       | Timing  | Type  | Ingredients (36 mg payload)               |
 | ----- | -------------------- | -------- | ------- | ----- | ----------------------------------------- |
 | DOT05 | Metabolic Resilience | 代谢韧性 | Morning | Blend | Urolithin A 12 mg · Ca-AKG 12 mg         |
 
@@ -67,7 +67,7 @@ Dots are sold and dispensed in three groups of six. Each group maps to a set car
 
 ### Energy Boost — DOT07–12
 
-| Key   | Name                        | ZH               | Timing  | Type    | Ingredients (24 mg payload)                                                           |
+| Key   | Name                        | ZH               | Timing  | Type    | Ingredients (36 mg payload)                                                           |
 | ----- | --------------------------- | ---------------- | ------- | ------- | ------------------------------------------------------------------------------------- |
 | DOT07 | Metabolic Power             | 代谢动力         | Morning | Isolate | PQQ 24 mg                                                                             |
 | DOT08 | Vascular Awakening          | 血管唤醒         | Morning | Blend   | Beta-Alanine 15 mg · Niacin 6 mg · Methyl-B Complex 3 mg                            |
@@ -82,7 +82,7 @@ Dots are sold and dispensed in three groups of six. Each group maps to a set car
 
 ### System Optimization — DOT13–18
 
-| Key   | Name                   | ZH               | Timing  | Type  | Ingredients (24 mg payload)                                                            |
+| Key   | Name                   | ZH               | Timing  | Type  | Ingredients (36 mg payload)                                                            |
 | ----- | ---------------------- | ---------------- | ------- | ----- | -------------------------------------------------------------------------------------- |
 | DOT13 | Vascular Flow          | 微血管通流       | Morning | Blend | CoQ10 15 mg · Nattokinase 9 mg                                                        |
 | DOT14 | Vascular Protection    | 微血管保护       | Morning | Blend | Vitamin D3 0.03 mg · Vitamin K2 (MK-7) 0.03 mg · MCT Powder Carrier 23.94 mg        |

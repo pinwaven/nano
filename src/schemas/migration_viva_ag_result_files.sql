@@ -17,4 +17,6 @@
 -- so that pre-existing rows, the `has_result_file` flag and any caller that only knows about the
 -- single-file shape keep working unchanged. Treat result_files as the source of truth and
 -- result_oss_key as its backwards-compatible head.
+--
+-- @requires: migration_viva_ag_jobs.sql
 ALTER TABLE viva_ag_jobs ADD COLUMN IF NOT EXISTS result_files JSONB;

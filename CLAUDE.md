@@ -261,11 +261,11 @@ Full details: `docs/architecture/kino-system.md`
 
 ## 14. Dots System
 
-Waven Dots are 24 mg precision nutrition cartridges. Each cartridge delivers one or more active compounds in an exact dose, calibrated to the user's biomarker profile. The system targets four biological age dimensions measured by the Kino chip. The Dots can be mixed by AI at realtime according to the user's actual health data.
+Waven Dots are 36 mg precision nutrition cartridges. Each cartridge delivers one or more active compounds in an exact dose, calibrated to the user's biomarker profile. The system targets four biological age dimensions measured by the Kino chip. The Dots can be mixed by AI at realtime according to the user's actual health data.
 
 ### Cartridge Format
 
-- **Payload:** 24 mg per dot
+- **Payload:** 36 mg per dot
 - **Pack size:** 800 dots per cartridge
 - **Timing:** Morning or Evening (fixed per dot — set by the `timing` column in the `dots` table)
 - **Types:** Isolates (single active compound) and Blends (two or more actives)
@@ -402,12 +402,14 @@ The `aeviva` nano channel's partner storefront, wholesale/resale inventory, and 
 `p.user_id AS coach_user_id` — one line, next to the `cu.nickname AS coach_name` it already
 returned. It falls into the existing `...user` rest-spread and reaches GCN as
 `nanoUser.coach_user_id`. **No new endpoint and no `GCN_ALLOWED_PATHS` change** — that path was
-already allowlisted. GCN uses it to bind a coached user to their coach's own aeviva store when that
+already allowlisted. **Deployed to nano prod 2026-08-27** (`nano-worker`), together with the 4
+pending viva-ag migrations and the unreleased viva-ag commits, at the user's explicit direction.
+Verified live: `/api/exchange-webview-token` on prod returns `coach_user_id` matching nano's DB,
+with `coach_id`/`coach_name` unchanged. GCN uses it to bind a coached user to their coach's own aeviva store when that
 coach is also an active GCN premier partner (`silver_store`/`gold_store`/`platinum_store`), which
 was previously only ever created by a first confirmed retail order. Nothing else in nano changed,
 and nano remains the sole owner of the coaching relationship itself (`users.coach_id`) — GCN only
-reads it. **Deployed to nano dev only** (this repo's `worker` has unrelated viva-ag work
-uncommitted); the nano prod deploy is a prerequisite before GCN's prod rollout. GCN side, including
+reads it. **Deployed to nano dev and prod** (2026-08-27) — see the prod note above. GCN side, including
 the backfill script and the conflict policy: GCN's `CLAUDE.md` §"Coach-Client Store Binding".
 
 **All 5 phases shipped 2026-08-09**: GCN now owns aeviva's wholesale tier catalog (key/label/rank/
