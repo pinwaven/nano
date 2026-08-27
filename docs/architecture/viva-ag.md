@@ -180,14 +180,21 @@ without its job. Mirrors how `nutrition_plans` holds its own committed recipe. A
 queued ──claim──▶ claimed ──bundle fetch / heartbeat──▶ processing
    ▲                 │                                      │
    └─────────────────┴──── lease expiry & attempts < max ────┘
-                     lease expiry & attempts >= max ──▶ failed  (+ chat message)
+   ▲                 lease expiry & attempts >= max ──▶ failed  (+ chat message)
+   │
+   │  processing ──POST /jobs/questionnaire──▶ awaiting_input   (+ chat message + form)
+   └──────────────────── user completes the form ─────────────┘
+      awaiting_input ──7 days unanswered──▶ failed  (+ chat message)
+
    processing ──POST /jobs/result──▶ completed (+ chat message)
    processing ──POST /jobs/fail (non-retryable)──▶ failed (+ chat message)
-   queued ──user cancels──▶ cancelled
+   queued | awaiting_input ──user cancels──▶ cancelled
 ```
 
-Cancel applies **only** to a `queued` job. Once a worker holds the lease, cancelling would leave it
-working on something nobody will accept; let it finish or let the lease expire.
+Cancel applies to a `queued` or `awaiting_input` job — the two states where nobody is working. Once
+a worker holds the lease, cancelling would leave it working on something nobody will accept; let it
+finish or let the lease expire. `awaiting_input` is cancellable for the opposite reason: the job is
+parked on the *user*, and "I'm not going to answer this" is a decision only they can make.
 
 ---
 
@@ -296,12 +303,13 @@ medical record.
 | POST | `/viva-ag/result-upload-url` | presigned PUT for one report file (`pdf`/`md`/`txt`) |
 | POST | `/viva-ag/jobs/result` | submit; idempotent |
 | POST | `/viva-ag/jobs/fail` | `retryable` requeues if attempts remain |
+| POST | `/viva-ag/jobs/questionnaire` | park the job and ask the user (§9c); releases the lease |
 
 Routine failures are `{success:false, reason:'<snake_case>'}` at **HTTP 200**, following the GCN
 convention (`CLAUDE.md` §31) — callers branch on `reason`, never a status code. Vocabulary:
 `missing_params`, `job_not_found`, `invalid_token`, `lease_expired`, `job_not_claimable`,
 `job_already_completed`, `document_not_found`, `result_too_large`, `invalid_result_key`,
-`internal_error`.
+`invalid_questions`, `questionnaire_limit_reached`, `internal_error`.
 
 ### The API documents itself
 
@@ -639,6 +647,126 @@ can reject a file cheaply, and the constants-coupling warning above still stands
 third consumer, `lib/dotsProductModel.js`.
 
 **Full writeup: [ag-dots-ordering.md](ag-dots-ordering.md).**
+
+---
+
+## 9c. Clarifying questionnaires — the agent asks the user something
+
+Added 2026-08-27. Everything above describes a one-shot pipeline: submit, work, deliver. If the
+twin was missing something the agent needed — a symptom timeline, a medication no lab panel
+implies, whether a discharge summary describes a resolved or ongoing condition — its only options
+were to guess or to fail. That is worst for `dots_formulation` (§9b), where the output is now
+compounded into physical capsules.
+
+Now the agent can **park** its claimed job, push back a short questionnaire, and resume once the
+user has answered.
+
+### Almost none of this is new
+
+The build was small because nano already had every piece except the asking:
+
+| Piece | Where | Status |
+|---|---|---|
+| Four `questionnaire_*` tables | `migration_questionnaire_system.sql` | reused; one new `type` value |
+| Five server-driven input widgets + the renderer | `pages/main/main.wxml:325-440`, `main.js:1948-2091` | untouched |
+| A questionnaire generated at runtime by an LLM | `createDynamicQuestionnaire()` (Viva's own `ask_questions`, `type='dynamic'`) | generalised with a `type` param |
+| Delivering a pending form to the client | `GET /api/pending-questionnaires` returns **every** non-completed assignment | free |
+| The client trigger | a `questionnaire_ready` notification → `_checkForPendingQuestionnaire()` | free — the same type is emitted |
+| Completion detection with a typed hook | `handlePostQuestionnaireResponse` already branched on `type === 'dynamic'` | one sibling branch added |
+| **Answers reaching the agent** | `twinBundle.js`'s `questionnaire_context` already merges completed answers into every bundle | **free** |
+
+That last row is the one that shaped the design. The return path existed before the outbound path
+did, so reusing these tables meant the answers flow back with no new plumbing at all.
+
+### `awaiting_input`
+
+`viva_ag_jobs.status` has no CHECK constraint — the value set is a comment in
+`migration_viva_ag_jobs.sql`. What the new status *does* require is the audit:
+
+- **`uniq_viva_ag_jobs_active` must include it.** A parked job still owns the user's one in-flight
+  slot; letting them enqueue a second would leave two jobs competing for the same answers, and the
+  second would resume off the first one's form. The migration drops and recreates the index —
+  verify the predicate on a real DB, because a `DROP`/`CREATE` pair that no-ops fails silently and
+  the symptom appears much later.
+- **`idx_viva_ag_jobs_lease` must *not*.** A parked job holds no lease at all.
+- It is **not** in `TERMINAL_STATUSES`, so `has_active` and the panel's poll are correct for free.
+
+**The lease is released, not held.** A user may take days, and no lease length covers that. On
+resume any worker claims the job fresh and gets a new `result_token` — which is what keeps workers
+stateless: the answers travel in the bundle, never in a worker's memory. The corollary the API doc
+states plainly: after a successful park the worker has lost its lease and must stop working.
+
+**The attempt is refunded** (`attempts = GREATEST(attempts - 1, 0)`). `attempts` exists to stop a
+crashing worker re-claiming forever; asking a question is forward progress, not a failed delivery,
+and leaving it spent would let two rounds eat the retry budget a genuinely stuck job still needs.
+Rounds — capped at 2 — are what bound this loop instead.
+
+**A 7-day deadline** (`awaiting_input_expires_at`) is swept by a third statement in
+`_sweepExpiredLeases`, separate from the two lease statements because those key off
+`claim_expires_at`, which a parked job has none of. On expiry the job fails as
+`questionnaire_unanswered` with its own message, and the user's slot frees. Same lazy-sweep
+limitation §5 already documents: it only runs when someone touches the queue.
+
+### Validation is a security boundary, not a formatting check
+
+`lib/agQuestionnaire.js` mirrors `lib/agFormulation.js` — pure, no DB, violations collected and
+named rather than thrown, and **all-or-nothing** (a partially accepted form would ask the user a
+subset the agent never designed, and it has no way to know which subset it got).
+
+The reason it exists at all is that **`questionnaire_questions` is a write path into user data**.
+`handlePostQuestionnaireResponse` acts on three of its columns when an answer arrives —
+`save_target` of `user_field` writes `users.<save_field>`, `bio_data_field` merges into
+`users.bio_data`, and `biomarker` **inserts a biomarkers row** — and a fourth, `completion_check`,
+makes the client auto-skip a question, which would let an agent push a form that instantly
+self-completes and resumes the job having asked nothing.
+
+None of those four are read from the payload. They are hard-written `NULL`/`'{}'` by
+`createDynamicQuestionnaire`. Not validated, not rejected — **never sourced**. An external system
+gets to ask questions; it does not get to decide where the answers are written. `config.other_key`
+falls under the same rule (the miniapp writes that key into `bio_data` from the client), which is
+why it is stripped and an option keyed `other` is rejected outright — free text belongs in a `text`
+question, the only shape whose answer actually reaches `questionnaire_responses`.
+
+Prompts render as chat bubbles, so they are the same render-injection surface `result_summary` is
+(§9): `:::` fences are stripped and markdown links flattened. Those are *sanitised*, not rejected —
+a stray fence is a formatting slip, not a broken contract.
+
+### Delivery and resume
+
+Two notification rows, on purpose: a `viva_ag_questionnaire` bubble so the user reads **why** they
+are being asked (attributed to Viva AG via `chat_messages.source`, like every other AG message),
+and a bare `questionnaire_ready` row, which is the existing signal that makes the chat tab fetch
+and start the form. `main.js` already suppresses its own bubble for that type, so the two do not
+double up — and `viva_ag_questionnaire` had to join **`AI_ECHO_TYPES`**, or it would render twice.
+
+Completing the form is the **only** thing that un-parks the job.
+`resumeVivaAgJobForAssignment(assignmentId)` is injected into `handlePostQuestionnaireResponse`
+from `index.js` — the same pattern `saveChatMessage` uses there, so `handlers/questionnaires.js`
+never has to require `handlers/viva_ag.js`. It must be `await`ed for the reason the comment beside
+it already records: FC 3.0 freezes the execution context on handler return, and an un-awaited
+promise there was confirmed live never to complete. It fails open; the deadline sweep is the
+backstop.
+
+### Two views of the same answers
+
+`layers.personal_profile.questionnaire_context` is the whole-user view — every completed
+questionnaire the user has ever filled in, merged. `job_questionnaires` (new, `bundle_version` 2)
+is job-scoped: the rounds *this* job asked, per round, with `answer: null` marking
+asked-but-unanswered. The agent needs the second to decide whether it now has what it was missing,
+a question the merged view cannot answer.
+
+Answers feed normal chat too, by design — they are genuine user-stated health facts, and Viva
+appearing not to know something the user typed into an AG form a minute earlier would be worse than
+a slightly longer context block.
+
+### The user answers in the chat tab
+
+Deliberately not in the AG panel. The chat tab's renderer is one server-driven implementation
+covering all five widget types, already used by onboarding, coach-assigned forms and Viva's own
+follow-ups; a second renderer in the panel would be a second place to maintain every input type for
+no user-visible gain. The panel shows a "需要补充信息 · 去回答" card and hands off —
+`viva-ag-panel` → `user-health` → `main.js`'s `handleAgGoToChat`, which switches tab and calls the
+(idempotent) `_checkForPendingQuestionnaire()`.
 
 ---
 

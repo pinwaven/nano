@@ -397,6 +397,19 @@ const biomarkers = { ...latestBio?.data?.validated, ...latestBio?.data?.actual }
 
 The `aeviva` nano channel's partner storefront, wholesale/resale inventory, and manual-QR checkout live in a separate sibling repo, `/Users/pin/waven/gcn`. **As of 2026-08-09, this is no longer "nano owns partner identity/tier/referral/commission, GCN owns commerce"** — GCN now owns the wholesale tier catalog, tier assignment, the referral tree, and commission computation too (Phases 0-4 of the consolidation roadmap below, shipped). Nano still owns end-user identity/auth (OTP, WeChat) and remains where new recruitment edges are actually created (its own admin panel / self-service apply flow), pushing them to GCN on every provision/re-sync — but nano's own `recordReferralCommission`/`recordSalesCommission` are now disabled (commented out, not removed) to avoid double-paying against GCN's ported computation. Full contract — cross-repo endpoints, SSO bridges, provisioning flow, admin-panel embed, miniapp entry point: `gcn-integration` skill — load it before touching any GCN-linked endpoint, the sibling repo, or aeviva storefront/inventory code.
 
+**Coach relationship now feeds GCN's store bindings (2026-08-27).** `WEBVIEW_USER_SELECT` in
+`worker/handlers/login.js` (the `/exchange-webview-token` GCN SSO exchange) additionally projects
+`p.user_id AS coach_user_id` — one line, next to the `cu.nickname AS coach_name` it already
+returned. It falls into the existing `...user` rest-spread and reaches GCN as
+`nanoUser.coach_user_id`. **No new endpoint and no `GCN_ALLOWED_PATHS` change** — that path was
+already allowlisted. GCN uses it to bind a coached user to their coach's own aeviva store when that
+coach is also an active GCN premier partner (`silver_store`/`gold_store`/`platinum_store`), which
+was previously only ever created by a first confirmed retail order. Nothing else in nano changed,
+and nano remains the sole owner of the coaching relationship itself (`users.coach_id`) — GCN only
+reads it. **Deployed to nano dev only** (this repo's `worker` has unrelated viva-ag work
+uncommitted); the nano prod deploy is a prerequisite before GCN's prod rollout. GCN side, including
+the backfill script and the conflict policy: GCN's `CLAUDE.md` §"Coach-Client Store Binding".
+
 **All 5 phases shipped 2026-08-09**: GCN now owns aeviva's wholesale tier catalog (key/label/rank/
 entry_fee/active status), tier assignment, the referral tree
 (`partners.aeviva_upline_partner_id` on GCN's side — deliberately not `parent_partner_id`, which
@@ -1178,8 +1191,59 @@ manually once.
 Job polling is a 15s timer inside the panel, running only while a job is in flight — deliberately
 not hooked into `main.js`'s 3s notification poll, which is tuned for chat delivery.
 
+### Clarifying questionnaires — the agent can ask the user (2026-08-27)
+
+The agent can **park** a claimed job and push back a short questionnaire instead of guessing, then
+resume once the user answers. New status **`awaiting_input`**; new endpoint
+`POST /viva-ag/jobs/questionnaire`.
+
+Almost nothing was built. Nano already had a server-defined questionnaire system — four tables,
+five input widgets, a chat-tab renderer, a `questionnaire_ready` client trigger, and a precedent
+for a runtime-generated form (`type='dynamic'`, Viva's own `ask_questions`). Crucially
+`twinBundle.js` **already** merged completed answers into every bundle, so the return path existed
+before the outbound one did. Only the asking, the parking and the resume trigger are new.
+
+Things that are load-bearing:
+
+- **`uniq_viva_ag_jobs_active` must include `awaiting_input`** — a parked job still owns the
+  user's one in-flight slot. `viva_ag_jobs.status` has no CHECK constraint (the value set is a
+  comment), so the migration's real work is that index. Verify the predicate on a live DB: a
+  `DROP`/`CREATE` pair that no-ops fails silently.
+- **The lease is released, not held.** No lease length covers a person answering a form, so any
+  worker re-claims it fresh. Workers stay stateless — the answers travel in the bundle. After a
+  successful park the caller has lost its lease and must stop working on the job.
+- **The attempt is refunded.** Asking is progress, not a failed delivery. Rounds (2 per job) bound
+  the loop, not `attempts`.
+- **`lib/agQuestionnaire.js` is a security boundary, not a formatting check.**
+  `questionnaire_questions` is a write path into user data — `save_target` writes
+  `users.<save_field>`, merges `bio_data`, or **inserts a biomarkers row**, and `completion_check`
+  makes a question auto-skip (so a form could self-complete and resume the job having asked
+  nothing). Those four are **never sourced from the payload**; `createDynamicQuestionnaire` writes
+  them `NULL`/`'{}'`. Same rule strips `config.other_key` and rejects an option keyed `other`.
+  Treat any change that starts reading them from the agent as a regression.
+- **`viva_ag_questionnaire` must stay in `AI_ECHO_TYPES`** (`pages/main/main.js`) — it writes both
+  `chat_messages` and `notifications`, so a type missing from that Set renders the bubble twice.
+  The paired `questionnaire_ready` row is what makes the chat tab fetch the form, and `main.js`
+  already suppresses its own bubble for that type.
+- **The resume hook is injected from `index.js`**, like `saveChatMessage`, so
+  `handlers/questionnaires.js` never requires `handlers/viva_ag.js` — and it is **awaited**, per
+  the comment already beside it (FC 3.0 freezes the context on return; an un-awaited promise there
+  was confirmed live never to complete).
+- The user answers in the **chat tab**, reusing the one renderer every questionnaire in the app
+  uses. The panel only hands off (`gotochat` → `handleAgGoToChat`).
+
+`bundle_version` is now **2**: additive `job_questionnaires` (job-scoped rounds + answers,
+`answer: null` = asked-but-unanswered), distinct from `questionnaire_context`'s whole-user merge.
+AG answers deliberately feed normal chat too.
+
 ### Files
 
+New: `src/schemas/migration_viva_ag_questionnaire.sql`, `worker/lib/agQuestionnaire.js`.
+Modified for this pass: `worker/handlers/{viva_ag,questionnaires}.js`, `worker/lib/twinBundle.js`,
+`worker/index.js`, `worker/docs/viva-ag-{api.md,openapi.json}` (§7b),
+`nano-miniapp/components/{viva-ag-panel,user-health}/*`, `nano-miniapp/pages/main/main.{js,wxml}`.
+
+Originally (2026-08-23):
 New: `src/schemas/migration_{users_viva_ag_expiry,health_documents,viva_ag_jobs,viva_ag_result_files}.sql`;
 `worker/handlers/{viva_ag,viva_ag_docs,health_documents}.js`;
 `worker/lib/{twinBundle,vivaAgAccess}.js`; `worker/docs/viva-ag-{api.md,openapi.json}`;
