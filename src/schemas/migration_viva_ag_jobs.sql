@@ -32,13 +32,17 @@ CREATE TABLE IF NOT EXISTS viva_ag_jobs (
     persona_type     TEXT NOT NULL DEFAULT 'viva',
     language         TEXT NOT NULL DEFAULT 'zh',   -- snapshot, so failure text localises without a re-read
 
-    command_key      TEXT,                    -- preset: 'full_analysis'|'document_review'|'risk_screen'
+    command_key      TEXT,                    -- preset: 'full_analysis'|'document_review'|'risk_screen'|'dots_formulation'
     command          TEXT NOT NULL,           -- the user's free-text instruction
     params           JSONB NOT NULL DEFAULT '{}'::jsonb,
     document_ids     BIGINT[],                -- snapshot of in-scope docs; NULL = all active at fetch time
 
     status           TEXT NOT NULL DEFAULT 'queued',
-        -- 'queued'|'claimed'|'processing'|'completed'|'failed'|'cancelled'
+        -- 'queued'|'claimed'|'processing'|'awaiting_input'|'completed'|'failed'|'cancelled'
+        -- No CHECK constraint on purpose: this comment is the value set. 'awaiting_input' was
+        -- added by migration_viva_ag_questionnaire.sql — a job parked waiting on the user to
+        -- answer a questionnaire the agent pushed back. It is non-terminal, holds no lease, and
+        -- is bounded by awaiting_input_expires_at rather than claim_expires_at.
     priority         INTEGER NOT NULL DEFAULT 0,
     attempts         INTEGER NOT NULL DEFAULT 0,
     -- Per-row rather than a constant: attempts increments on every claim, so a legitimate
