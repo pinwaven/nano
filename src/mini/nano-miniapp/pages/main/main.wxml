@@ -258,42 +258,74 @@
                         <text class="fcard-title">{{t.formulaCardTitle}}</text>
                         <text class="fcard-note">{{t.formulaEvalNote}}</text>
                       </view>
-                      <view class="fcard-row">
-                        <text class="fcard-slot">{{t.formulaAm}}</text>
-                        <view class="fcard-track">
-                          <view
-                            wx:for="{{seg.items}}"
-                            wx:for-item="fi"
-                            wx:for-index="fk"
-                            wx:key="key"
-                            class="fcard-seg"
-                            style="width:{{fi.amPct}}%;background:{{fi.color}}"
-                          ></view>
+                      <view wx:for="{{seg.groups}}" wx:for-item="fg" wx:for-index="fgi" wx:key="days" class="fcard-group">
+                        <view wx:if="{{fg.days}}" class="fcard-days">
+                          <text class="fcard-daylabel">{{t.formulaDayWord}} {{fg.days}}</text>
+                          <text wx:if="{{fg.kind === 'n7'}}" class="fcard-daytag">{{t.formulaResetDay}}</text>
                         </view>
-                        <text class="fcard-num">{{seg.am}}</text>
-                      </view>
-                      <view class="fcard-row">
-                        <text class="fcard-slot">{{t.formulaPm}}</text>
-                        <view class="fcard-track">
-                          <view
-                            wx:for="{{seg.items}}"
-                            wx:for-item="fi"
-                            wx:for-index="fk"
-                            wx:key="key"
-                            class="fcard-seg"
-                            style="width:{{fi.pmPct}}%;background:{{fi.color}}"
-                          ></view>
+                        <view class="fcard-row">
+                          <text class="fcard-slot">{{t.formulaAm}}</text>
+                          <view class="fcard-track">
+                            <view
+                              wx:for="{{fg.items}}"
+                              wx:for-item="fi"
+                              wx:for-index="fk"
+                              wx:key="key"
+                              class="fcard-seg"
+                              style="width:{{fi.amPct}}%;background:{{fi.color}}"
+                            ></view>
+                          </view>
+                          <text class="fcard-num">{{fg.am}}</text>
                         </view>
-                        <text class="fcard-num">{{seg.pm}}</text>
-                      </view>
-                      <view class="fcard-legend">
-                        <view wx:for="{{seg.items}}" wx:for-item="fi" wx:for-index="fk" wx:key="key" class="fcard-leg">
-                          <view class="fcard-swatch" style="background:{{fi.color}}"></view>
-                          <text class="fcard-leg-name">{{fi.name}}</text>
-                          <text class="fcard-leg-num">{{fi.am}}·{{fi.pm}}</text>
+                        <view class="fcard-row">
+                          <text class="fcard-slot">{{t.formulaPm}}</text>
+                          <view class="fcard-track">
+                            <view
+                              wx:for="{{fg.items}}"
+                              wx:for-item="fi"
+                              wx:for-index="fk"
+                              wx:key="key"
+                              class="fcard-seg"
+                              style="width:{{fi.pmPct}}%;background:{{fi.color}}"
+                            ></view>
+                          </view>
+                          <text class="fcard-num">{{fg.pm}}</text>
                         </view>
+                        <view class="fcard-legend">
+                          <view wx:for="{{fg.items}}" wx:for-item="fi" wx:for-index="fk" wx:key="key" class="fcard-leg">
+                            <view class="fcard-swatch" style="background:{{fi.color}}"></view>
+                            <text class="fcard-leg-name">{{fi.name}}</text>
+                            <text class="fcard-leg-num">{{fi.am}}·{{fi.pm}}</text>
+                          </view>
+                        </view>
+                        <text class="fcard-foot">{{t.formulaTotalLabel}} {{fg.total}}</text>
                       </view>
-                      <text class="fcard-foot">{{t.formulaTotalLabel}} {{seg.total}}</text>
+                      <text wx:if="{{seg.cycleDays}}" class="fcard-cycle">{{seg.cycleDays}}{{t.formulaDaysUnit}} · {{seg.cycleCapsules}}{{t.formulaCapsulesUnit}}</text>
+                      <view
+                        wx:if="{{seg.labelUrl}}"
+                        class="fcard-label"
+                        bindtap="handleFormulaLabel"
+                        data-url="{{seg.labelUrl}}"
+                      >
+                        <text>{{t.formulaLabelCta}}</text>
+                      </view>
+                      <view
+                        wx:if="{{seg.planId && isAeviva && seg.orderMode === 'submit'}}"
+                        class="fcard-cta"
+                        bindtap="handleFormulaSubmit"
+                        data-plan="{{seg.planId}}"
+                      >
+                        <text>{{t.formulaSubmitCta}}</text>
+                      </view>
+                      <view
+                        wx:elif="{{seg.planId && isAeviva && seg.orderMode === 'buy'}}"
+                        class="fcard-cta"
+                        bindtap="handleFormulaOrder"
+                        data-plan="{{seg.planId}}"
+                      >
+                        <text>{{t.formulaOrderCta}}</text>
+                      </view>
+                      <text wx:elif="{{seg.orderMode === 'ag'}}" class="fcard-agnote">{{t.formulaAgPending}}</text>
                     </view>
                     <view wx:elif="{{seg.t === 'product'}}" class="pcard">
                       <text class="pcard-title">{{t.productCardTitle}}</text>

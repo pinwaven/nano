@@ -775,6 +775,77 @@ page {
   color: var(--text-sub);
 }
 
+/* One group = every day of the cycle whose two capsules are identical. A 28-day plan is
+   normally two groups: the everyday dose, and the two DOT-N7 reset days. */
+.fcard-group + .fcard-group {
+  margin-top: 22rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx dashed rgba(127, 127, 127, 0.24);
+}
+.fcard-days {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6rpx 12rpx;
+  margin-bottom: 12rpx;
+}
+.fcard-daylabel {
+  font-size: var(--fs-22, 22rpx);
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.5rpx;
+}
+.fcard-daytag {
+  font-size: var(--fs-19, 19rpx);
+  color: var(--chat-accent);
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  background: rgba(var(--blue-rgb), 0.18);
+}
+.fcard-cycle {
+  display: block;
+  margin-top: 18rpx;
+  font-size: var(--fs-21, 21rpx);
+  color: var(--text-sub);
+  letter-spacing: 0.5rpx;
+}
+.fcard-cta {
+  margin-top: 18rpx;
+  padding: 18rpx 24rpx;
+  border-radius: 16rpx;
+  text-align: center;
+  font-size: var(--fs-24, 24rpx);
+  font-weight: 600;
+  color: var(--chat-accent);
+  background: rgba(var(--blue-rgb), 0.16);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.40);
+}
+.fcard-cta:active {
+  opacity: 0.7;
+}
+.fcard-label {
+  margin-top: 14rpx;
+  padding: 14rpx 20rpx;
+  border-radius: 14rpx;
+  text-align: center;
+  font-size: var(--fs-22, 22rpx);
+  color: var(--text-sub);
+  border: 1rpx dashed rgba(127, 127, 127, 0.35);
+}
+.fcard-label:active {
+  opacity: 0.7;
+}
+.fcard-agnote {
+  display: block;
+  margin-top: 18rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 14rpx;
+  font-size: var(--fs-21, 21rpx);
+  line-height: 1.5;
+  color: var(--text-sub);
+  background: rgba(127, 127, 127, 0.10);
+}
+
 .msg-action-card {
   display: flex;
   align-items: center;

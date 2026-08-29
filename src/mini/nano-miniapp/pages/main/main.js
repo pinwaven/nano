@@ -159,7 +159,7 @@ const T = {
     simCartInserting: '正在插入…',
     simCartDone: '套装已插入！',
     simCartCancel: '取消',
-    noPlan: '暂无营养方案。完成 Kino 生物标志物检测后，系统将为您生成个性化方案。',
+    noPlan: '暂无营养方案。在对话中使用「营养定制」生成专属配方并下单，收到实物后扫码即可启用。',
     morning: '早上', evening: '晚上', today: '今天', tomorrow: '明天',
     dispenseTitle: '分发原粒', dispenseMorning: '今日早上配方', dispenseEvening: '今日晚上配方',
     dispenseBtn: '立即分发', dispensing: '正在分发…', dispenseOk: '✓ 已成功分发', dispenseErr: '分发失败，点击重试', dispenseNoDots: '此时段暂无配方',
@@ -211,16 +211,33 @@ const T = {
     toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
     healthAdviceGenerating: '正在分析您的健康数据，请稍候…',
     healthAdviceError: '健康分析请求失败，请重试。',
-    formulaGenerating: '正在为你定制营养方案…',
-    formulaComplete: '您的7天营养方案已生成！',
-    formulaProcessing: '正在为您深度分析并配置本周方案，完成后会发送通知，请稍候…',
-    formulaViewDots: '查看营养方案 →',
-    formulaCardTitle: '原粒配比评估',
+    formulaGenerating: '正在为你定制 28 天营养方案…',
+    formulaComplete: '您的 28 天定制方案已生成！',
+    formulaProcessing: '正在为您深度分析并定制 28 天方案，完成后会发送通知，请稍候…',
+    formulaCardTitle: '原粒定制方案',
     productCardTitle: '商城可选',
-    formulaEvalNote: '仅供参考 · 未写入方案',
+    formulaEvalNote: '收到实物扫码后启用',
     formulaAm: '早',
     formulaPm: '晚',
     formulaTotalLabel: '每日合计',
+    // Day numbers in a proposal are RELATIVE — the cycle is anchored when the delivered box is
+    // scanned, not when the plan was worked out — so the label is "Day 1-9", never a date. The
+    // word is deliberately the English one in both languages: it reads as a product term here,
+    // the way DOTS and BioAge already do, and "第1–9 · 12–28天" does not survive day ranges.
+    formulaDayWord: 'Day',
+    formulaResetDay: 'DOT-N7 单独重置',
+    formulaDaysUnit: '天',
+    formulaCapsulesUnit: '粒胶囊',
+    formulaOrderCta: '按此方案定制下单 →',
+    formulaLabelCta: '查看配方标签与二维码',
+    formulaSubmitCta: '确认此方案，开始配制 →',
+    formulaSubmitConfirmTitle: '确认配制方案',
+    formulaSubmitConfirmBody: '确认后将按此 28 天方案为您配制并发货，配方不可再更改。如需调整，请先重新生成。',
+    formulaSubmitOk: '已提交配制，我们会尽快为您加工发货。',
+    formulaSubmitNoOrder: '未找到待配制的订单，可能已完成或已取消。',
+    formulaSubmitExpert: '该订单为专家审核套餐，正式配方将由 Viva AG 生成。',
+    formulaSubmitFailed: '提交失败，请稍后重试。',
+    formulaAgPending: '您已购买 28 天套餐（含专家审核）。正式配方将由 Viva AG 生成并经营养专家审核，以上仅为参考评估。',
     formulaError: '方案生成失败，请重试。',
     chatHistoryLoadMore: '下拉或点此加载更早消息',
     chatHistoryLoading: '加载中…',
@@ -411,7 +428,7 @@ const T = {
     simCartInserting: 'Inserting…',
     simCartDone: 'Set inserted!',
     simCartCancel: 'Cancel',
-    noPlan: 'No nutrition plan yet. Complete a Kino biomarker test to generate your personalized plan.',
+    noPlan: 'No nutrition plan yet. Use Formulate Dots in chat to build your formulation and order it — scan the box when it arrives to start.',
     morning: 'Morning', evening: 'Evening', today: 'Today', tomorrow: 'Tomorrow',
     dispenseTitle: 'Dispense Dots', dispenseMorning: "Today's Morning Dose", dispenseEvening: "Today's Evening Dose",
     dispenseBtn: 'Dispense Now', dispensing: 'Dispensing…', dispenseOk: '✓ Dispensed Successfully', dispenseErr: 'Failed — tap to retry', dispenseNoDots: 'No dots scheduled for this slot',
@@ -463,16 +480,29 @@ const T = {
     toolHealthAdviceMsg: 'Please analyze my current health status and give me personalized health advice.',
     healthAdviceGenerating: 'Analyzing your health data, please wait…',
     healthAdviceError: 'Health analysis request failed. Please try again.',
-    formulaGenerating: 'Generating your 7-day nutrition plan from your biomarkers…',
-    formulaComplete: 'Your 7-day nutrition plan is ready!',
-    formulaProcessing: "Deeply analyzing your data and formulating this week's plan — you'll get a notification when it's ready…",
-    formulaViewDots: 'View Dots Plan →',
-    formulaCardTitle: 'Dot allocation',
+    formulaGenerating: 'Building your 28-day formulation from your biomarkers…',
+    formulaComplete: 'Your 28-day formulation is ready!',
+    formulaProcessing: "Deeply analyzing your data and building your 28-day formulation — you'll get a notification when it's ready…",
+    formulaCardTitle: 'Your formulation',
     productCardTitle: 'From the store',
-    formulaEvalNote: 'Evaluation only · not saved',
+    formulaEvalNote: 'Starts when you scan your box',
     formulaAm: 'AM',
     formulaPm: 'PM',
     formulaTotalLabel: 'Per day',
+    formulaDayWord: 'Day',
+    formulaResetDay: 'DOT-N7 reset',
+    formulaDaysUnit: ' days',
+    formulaCapsulesUnit: ' capsules',
+    formulaOrderCta: 'Order this formulation →',
+    formulaLabelCta: 'View formulation label & QR',
+    formulaSubmitCta: 'Confirm and start compounding →',
+    formulaSubmitConfirmTitle: 'Confirm this formulation',
+    formulaSubmitConfirmBody: 'This 28-day formulation will be compounded and shipped to you. It cannot be changed afterwards — regenerate first if you want to adjust it.',
+    formulaSubmitOk: 'Submitted. We will compound and ship this to you shortly.',
+    formulaSubmitNoOrder: 'No order is waiting to be formulated — it may already be fulfilled or cancelled.',
+    formulaSubmitExpert: 'That order includes expert review, so its final formula comes from Viva AG.',
+    formulaSubmitFailed: 'Submission failed. Please try again shortly.',
+    formulaAgPending: 'You have a 28-day package with expert review. Its final formula will be produced by Viva AG and signed off by a nutritionist — the allocation above is a preview.',
     formulaError: 'Plan generation failed. Please try again.',
     chatHistoryLoadMore: 'Pull or tap to load older messages',
     chatHistoryLoading: 'Loading…',
@@ -604,7 +634,7 @@ function buildSubAgeLabels(base, overrides, lang) {
 // excludes coach_reminder and questionnaire_ready, which have no chat_messages row at all —
 // registering a reminder would make two genuinely separate identical ones look like a duplicate.
 const AI_ECHO_TYPES = new Set([
-  'chat_reply', 'nutrition_plan', 'formulation_reorder_ready', 'biological_report',
+  'chat_reply', 'nutrition_plan', 'formulation_proposal', 'formulation_reorder_ready', 'biological_report',
   'coach_message', 'morning_checkin', 'midday_checkin', 'evening_checkin',
   'viva_ag_result', 'viva_ag_failed', 'viva_ag_questionnaire',
 ])
@@ -1344,6 +1374,72 @@ Page({
     const nutritionPlanId = planDetailData?.formulation?.nutrition_plan_id
     if (!isAeviva || !nutritionPlanId) return
     this._openAevivaStoreGated({ intent: 'buy_custom_formulation', nutrition_plan_id: nutritionPlanId })
+  },
+
+  // The order CTA on a :::formula card. The card carries the id of the 'proposed'
+  // nutrition_plans row the chat tool just wrote, and GCN's checkout reads that exact recipe back
+  // through /formulation-checkout-snapshot — so what gets priced is what the user is looking at,
+  // not a re-derivation of it. Same store bridge handleBuyFormulation uses.
+  handleFormulaOrder(e) {
+    const planId = e.currentTarget.dataset.plan
+    if (!this.data.isAeviva || !planId) return
+    this._openAevivaStoreGated({ intent: 'buy_custom_formulation', nutrition_plan_id: planId })
+  },
+
+  // Opens the formulation's label page — the GCN aeviva page that draws the QR, lists every dot
+  // with its ingredients, and is what gets printed on the box. Deliberately a webview rather than
+  // a QR drawn natively here: the user should be looking at the exact page the label is printed
+  // from, and there is then only one renderer to keep correct.
+  //
+  // The URL is written by the server into the card and scheme-checked by the markdown parser
+  // before it reaches this handler; it is never taken from model output.
+  handleFormulaLabel(e) {
+    const url = e.currentTarget.dataset.url
+    if (!url) return
+    wx.navigateTo({
+      url: `/pages/appview/appview?url=${encodeURIComponent(url)}`,
+      fail: () => wx.setClipboardData({ data: url }),
+    })
+  },
+
+  // The confirm CTA on a :::formula card, shown only when GCN reported a paid FAST-TRACK package
+  // waiting to be formulated (see _buildFormulaChartBlock's `#order` note). Fast track means no
+  // expert reviews this before it is compounded, so the formula is fixed at this tap — hence an
+  // explicit confirm rather than submitting silently when the card is generated. Regenerating is
+  // the way to change it, and the dialog says so.
+  //
+  // The server re-checks the order independently; this handler never assumes the card is current.
+  async handleFormulaSubmit(e) {
+    const planId = e.currentTarget.dataset.plan
+    const { user, t } = this.data
+    if (!this.data.isAeviva || !planId || !user) return
+    if (this._formulaSubmitting) return
+    const confirmed = await new Promise(resolve => wx.showModal({
+      title: t.formulaSubmitConfirmTitle,
+      content: t.formulaSubmitConfirmBody,
+      success: r => resolve(!!r.confirm),
+      fail: () => resolve(false),
+    }))
+    if (!confirmed) return
+    this._formulaSubmitting = true
+    wx.showLoading({ title: t.formulaSubmitCta, mask: true })
+    try {
+      const res = await this._req(`${BASE}/api/formulation-submit`, 'POST', { openid: user.user_id, plan_id: planId })
+      const d = res.data || {}
+      if (d.success) {
+        this._addMsg('ai', t.formulaSubmitOk, true)
+        return
+      }
+      // Named reasons the user can act on get their own message; everything else is a retry.
+      if (d.reason === 'no_awaiting_order') this._addMsg('ai', t.formulaSubmitNoOrder, true)
+      else if (d.reason === 'order_requires_expert_review') this._addMsg('ai', t.formulaSubmitExpert, true)
+      else this._addMsg('ai', t.formulaSubmitFailed, true)
+    } catch (err) {
+      this._addMsg('ai', t.formulaSubmitFailed, true)
+    } finally {
+      wx.hideLoading()
+      this._formulaSubmitting = false
+    }
   },
 
   // Raised by the AG panel (via user-health) when a job is parked waiting on a clarifying
@@ -2796,10 +2892,11 @@ Page({
             // matching chat_messages row carries it durably for reloads.
             source: AG_NOTIFICATION_TYPES.has(n.notification_type) ? 'viva_ag' : null,
           }))
-          // No "view plan" button on a 'nutrition_plan' row any more: Formulate-Dots is an
-          // evaluation tool and writes nothing, so the Dots subtab it used to open would show
-          // whatever plan was there before, not the allocation the user is looking at. The
-          // numbers live in the message itself now, as a :::formula chart.
+          // No "view plan" button on a 'nutrition_plan' row any more: Formulate-Dots writes a
+          // 'proposed' plan, which has no schedules and stays out of the Dots subtab until the
+          // delivered box is scanned — so that button would show whatever plan the user is
+          // currently ON, not the one they just asked for. The whole 28-day allocation lives in
+          // the message itself now, as a :::formula card with its own order CTA.
           this._chatWaitStartedAt = null
           if (newMsgs.length > 0) {
             const messages = [...this.data.messages, ...this._applySeparators(newMsgs, this.data.messages[this.data.messages.length - 1])]

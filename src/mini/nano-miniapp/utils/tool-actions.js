@@ -56,8 +56,8 @@ async function runFormulaDs(openid, t, ctx) {
   try {
     const res = await req(`${BASE}/api/formula-dots`, 'POST', { openid })
     if (res.data?.processing) {
-      // Viva's dot-count decision now runs through the full agentic loop asynchronously (can
-      // take up to ~180s) — the schedule is NOT committed yet at this point, so showing
+      // The dot-count decision runs through the full agentic loop asynchronously (can
+      // take up to ~180s) — nothing is written yet at this point, so showing
       // formulaComplete + a working "view plan" button here would be misleading (found via a
       // real device report, 2026-07-29: complete/view-plan showed within a second, but the
       // actual plan wasn't ready for minutes). main.js's ctx defines onAsyncStart (it has a
@@ -72,9 +72,10 @@ async function runFormulaDs(openid, t, ctx) {
       setTyping(false)
       return
     }
-    // No "view plan" button: this tool evaluates, it no longer commits a plan (the 28-day
-    // formula a user receives comes from Viva AG's dots_formulation job). The reply carries the
-    // allocation as a :::formula chart instead.
+    // No "view plan" button: this tool writes a 'proposed' plan, which deliberately has no
+    // schedules and stays out of the Dots subtab until the delivered box is scanned — so that
+    // button would show whatever plan the user is currently ON, not the one they just asked for.
+    // The reply carries the whole 28-day allocation as a :::formula card instead.
     addMsg('ai', t.formulaComplete, true)
     setTyping(false)
   } catch (e) {
