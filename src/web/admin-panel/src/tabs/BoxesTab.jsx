@@ -7,7 +7,17 @@ import { LangCtx, StatCard } from '../shared.jsx';
 // the miniapp's own scanner parses the raw code client-side), a box QR must open directly from
 // any camera app with no miniapp/login involved. Same origin the admin panel itself is served
 // from (worker serves both), so this naturally resolves to the right dev/prod domain.
-const boxUrl = (code) => `${window.location.origin}/api/box/${code}`;
+// The printed QR is a GCN aeviva sector link, not a nano one: that page draws the QR, lists every
+// dot with its ingredients, shows the order, and is the same page the user already saw in the app
+// when the formula was generated. The Mini Program's claim scan reads the WVB code straight out of
+// this URL, so one QR both explains the box and activates it.
+//
+// Host derived from nano's own, mirroring pages/main/main.js's `BASE.includes('-dev.')` — the
+// admin panel has no config endpoint and adding one for a single constant is not worth it.
+const AEVIVA_SITE = window.location.origin.includes('-dev.')
+  ? 'https://aeviva-dev.gcn.net'
+  : 'https://aeviva.gcn.net';
+const boxUrl = (code) => `${AEVIVA_SITE}/formulation-label.html?c=${encodeURIComponent(code)}`;
 
 function GenerateBoxBatchModal({ users, onClose, onSave }) {
   const { t } = useContext(LangCtx);
@@ -15,6 +25,7 @@ function GenerateBoxBatchModal({ users, onClose, onSave }) {
   const [userQuery, setUserQuery] = useState('');
   const [userId, setUserId] = useState('');
   const [quantity, setQuantity] = useState('');
+  const [planId, setPlanId] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -33,7 +44,12 @@ function GenerateBoxBatchModal({ users, onClose, onSave }) {
     e.preventDefault();
     setBusy(true); setError('');
     try {
-      const res = await axios.post('/api/box-batches', { user_id: userId, quantity, notes });
+      // plan_id is optional and omitted when blank, so the default stays exactly what it was:
+      // snapshot the user's latest ACTIVE plan. It is needed for a Formulate-Dots proposal,
+      // which by design has no schedules and is not the user's active plan until the box
+      // they are about to be shipped is scanned.
+      const res = await axios.post('/api/box-batches',
+        { user_id: userId, quantity, notes, ...(planId.trim() ? { plan_id: planId.trim() } : {}) });
       if (res.data?.success === false) { setError(res.data.error || tb.saveFailed); return; }
       onSave();
     } catch (err) { setError(err.response?.data?.error || tb.saveFailed); }
@@ -78,6 +94,10 @@ function GenerateBoxBatchModal({ users, onClose, onSave }) {
               <span>{tb.quantity}</span>
               <input type="number" min="1" max="5000" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="1 – 5000" required />
               <small style={{ color: '#64748b', fontSize: 10 }}>{tb.quantityHint}</small>
+
+              <span>{tb.planId}</span>
+              <input type="number" min="1" value={planId} onChange={e => setPlanId(e.target.value)} placeholder={tb.planIdPlaceholder} />
+              <small style={{ color: '#64748b', fontSize: 10 }}>{tb.planIdHint}</small>
             </label>
             <label className="form-field" style={{ gridColumn: '1 / -1' }}>
               <span>{tb.notes}</span>
