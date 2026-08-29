@@ -697,40 +697,258 @@ New: `src/schemas/migration_nutrition_plans_status.sql`, `src/functions/worker/p
 
 Files: `prompts/viva/judgeTemplate.js` (`message` param), `prompts/chat/planTemplate.js` (self-reported-fact clarification), `lib/agenticChat.js` (`message` threaded into `runJudge`, REVISE correction prompt strengthened, self-contradiction downgrade), `handlers/chat.js` (`recordedFactText`-aware fallback, replacing the old bare-generic fallback), `prompts/viva/chat/nutrition.js` (relevance-first rule, mirroring `chat/biomarker.js`).
 
-## 28b. Formulate-Dots Is an Evaluation Tool (2026-08-25)
+## 28b. Formulate-Dots Proposes a 28-Day Plan (2026-08-28)
 
 The chat toolbox's **Formulate Dots** (`handlePostFormulaDots` → `_handleFormulaDotsAgentic` →
-`finalizeFormulaDotsGenerate`) **no longer writes anything**. The 28-day formula a user actually
-receives now comes from Viva AG's `dots_formulation` job (§35), so this tool exists to show what
-the current data implies, not to commit a plan.
+`finalizeFormulaDotsGenerate`) writes a **`'proposed'`** `nutrition_plans` row and renders the whole
+28-day cycle in the chat bubble as a `:::formula` card.
 
-What changed, and what deliberately did not:
+Between 2026-08-25 and 2026-08-28 this tool was evaluation-only and wrote nothing, on the reasoning
+that the 28-day formula a user receives comes from Viva AG's `dots_formulation` job (§35/§36). That
+left it with no route to the store: GCN's custom-formulation checkout prices a recipe out of a
+`nutrition_plans` row, and there was no longer a row to price. It now proposes.
 
-- **No `nutrition_plans` / `nutrition_schedules` writes anywhere on this path.** The `'pending'`
-  plan row `_handleFormulaDotsAgentic` used to insert is gone, `pending_plan_id` is no longer
-  threaded through `llmContext`, and neither the async finalizer, the EventBridge-publish
-  fail-open path, nor `handleChatGenerateEvent`'s error fallback calls `_commitNutritionPlan`.
-- **The allocation is rendered in the chat bubble** as a `:::formula` display card instead of
-  being hidden behind a "查看方案" button — that button pointed at the Dots subtab, which this run
-  no longer changes, so it would have shown the *previous* plan. It is removed from the miniapp,
-  `utils/tool-actions.js` and the web user-app's `ChatTab.jsx`.
-- `_buildFormulaChartBlock()` (`handlers/dots.js`) builds the card **server-side from the already
-  validated recipe** — the model never writes it, so the bars can never disagree with the numbers
-  they draw. Rows are `key|name|color|am|pm`; every total is derived in the renderer, so the
-  arithmetic lives in exactly one place. Colours are each dot's own `dots.color_hex`, which is why
-  that column was added to this handler's formulary SELECT.
-- **`handleNutritionTopupEvent` still commits** — untouched. Its dispatcher scan is a LEFT JOIN
-  with `HAVING COUNT(s.id) < 7`, so it matches users with *no* plan too, and it remains the thing
-  that keeps the Dots subtab populated. Don't "clean this up" to match the chat tool without
-  deciding what else would create a plan.
-- `_commitNutritionPlan` is therefore still live and still exported; only its chat-tool callers
-  went away.
+### `'proposed'` is a fourth status, and none of the other three would do
 
-**Resolved 2026-08-25 (§36):** the deferred question — whether an AG formula should ever become a
-real plan — is answered yes, but not here. An AG `dots_formulation` result now writes a
-`nutrition_plans` row when a nutrition expert **approves** it, and that plan goes active when the
-user scans the delivered box. This chat tool is still evaluation-only and still writes nothing;
-the two paths no longer disagree about what the user is taking, because only one of them commits.
+`migration_nutrition_plans_proposed.sql`. `'pending'` means an async formulation is mid-flight and
+may never land. `'approved'` means a nutrition expert signed the recipe off and a batch is being
+compounded — conflating the two would let unreviewed model output reach the compounding queue.
+`'active'` means the user physically has the capsules. A proposal is none of those: a real,
+purchasable recipe for capsules that do not exist yet.
+
+- **No `nutrition_schedules` rows**, same as `'approved'`. The recipe lives in
+  `nutrition_plans.proposed_recipe` (`{morning:{}, evening:{}}`) — a proposal has no schedules to
+  read it back out of.
+- **It never supersedes the `'active'` plan.** Only a previous proposal is superseded, so a user
+  mid-cycle on a box they already have keeps taking it. `uniq_nutrition_plans_proposed` enforces
+  one live proposal per user.
+- `handleGetNutritionPlan` filters `status = 'active'`, so a proposal is invisible to the Dots
+  subtab with no code change — which is also why the card carries the numbers itself and there is
+  still **no "view plan" button**: it would open the *previous* plan.
+
+### Day numbers are relative, and that is the product, not a limitation
+
+The capsules must be compounded and shipped, so the card says `Day 1–9 · 12–28`, never a date.
+`_activateProposedPlan` (called from `handlePostBoxClaim` when a batch carries `plan_id` and no
+`ag_formulation_id`) is where "Day 1" stops being relative: `start_date` becomes that day and the
+56 capsules are written. Same shape as the AG flow's `_commitAgFormulation`, one status earlier.
+
+### `_expandPlanDay` is the single expansion rule set
+
+The N7 isolation override, the pulse window and the `MAX_DOTS_PER_CAPSULE` cap are applied in
+exactly one place, shared by **three** consumers that must never disagree about what a user is
+actually taking: `_commitNutritionPlan` (nano's own formulator writing schedules),
+`_activateProposedPlan` (the box scan) and `_planDayGroups` (the card).
+`tests/formula-28day-proposal.test.js` asserts the dateless preview matches what the scan writes,
+day for day. Don't reintroduce a second copy of these rules.
+
+**`_isPulseActiveDate` cannot be evaluated without a date** — it is anchored to a fixed calendar
+epoch — so `_expandPlanDay(i, ctx, null)` leaves pulse dots in every day. Exact today (`DOT-N7` is
+the only pulse dot and is routed through isolation, never through that gate), but a second pulse
+dot would make a proposal over-state the days it appears on until the scan anchors the cycle. Fix
+that by resolving the window at scan time, **not** by inventing a start date for a proposal.
+
+### The card
+
+`_buildFormulaChartBlock` (`handlers/dots.js`) builds it **server-side from the already validated
+recipe** — the model never writes it, so the bars can never disagree with the numbers they draw.
+Days whose two capsules are identical are collapsed into one group, so a 28-day plan is normally
+two groups (the everyday dose, and the two `DOT-N7` reset days) rather than 28 near-identical rows.
+
+Dot rows are still `key|name|color|am|pm`. Meta lines are **`'#'`-prefixed and all optional**, which
+no dot key can start with, so a card written before this change still renders as one unlabelled
+group — **keep them optional**:
+
+- `#cycle|<days>|<capsules>` — footer
+- `#plan|<id>` — the proposed row; enables the order CTA, and is digits-validated in the renderer
+  before it reaches a `data-` attribute
+- `#day|<ranges>|<kind>` — starts a group. Ranges are **bare numbers**; the localised day word is
+  the page's (`t.formulaDayWord`), because `utils/markdown.js` has no language context.
+
+Bar widths normalise against the largest capsule across **all** groups, so a reset day reads as the
+smaller capsule it genuinely is instead of self-normalising to look full.
+
+### Checkout needed no GCN change
+
+`handleGetFormulationCheckoutSnapshot` now accepts `'proposed'` as well as `'active'`, deriving
+day 0 from `proposed_recipe` through `_expandPlanDay` (day index 0 is never an isolation day, so it
+yields exactly the steady-state capsules that endpoint already promised). GCN's checkout reads
+`snapshot.valid` and the dot breakdown and never inspects plan status, so nothing changed there.
+The tap-through reuses the existing `webview_tokens.context` bridge with
+`{intent:'buy_custom_formulation', nutrition_plan_id}` (§31), which GCN's `dashboard.html` already
+routes into `openCustomFormulationCheckout`.
+
+**Nano does not price this, and must not start.** GCN sums the dot breakdown against its own
+`custom_formulation_dot_prices` and, since 2026-08-28, takes the buyer's own aeviva partner tier
+off that subtotal (`silver_store`/`gold_store`/`platinum_store`, `migration_0082` there) — a
+premier partner tapping this CTA had been paying the plain consumer price because every
+formulation sku is intercepted before GCN's wholesale machinery runs. The card carries no price
+for exactly this reason: the number the user is charged is settled on GCN's side at order time,
+after nano's snapshot is validated. Detail: GCN's `CLAUDE.md` §"Premier-partner pricing on
+formulation products".
+
+### The daily budget is settled by dropping dots, not by shrinking them
+
+Every dot has a `target_dots_min`, and those floors sum past the `2 × MAX_DOTS_PER_CAPSULE` a day
+holds. A full formulary therefore **cannot** keep every dot, and `_fitRecipeToDailyBudget` is where
+that is resolved — on daily totals, before anything is split into capsules, by removing whole dots.
+
+`_capRecipeTotal` used to resolve it instead, by scaling every dot down proportionally, which put
+most of them under their own minimum. `lib/agFormulation.js` calls that `dose_below_min` and
+refuses the formula. It went unnoticed because nothing validated nano's own output until the
+fast-track path (which no expert reviews) started sending it to GCN.
+
+- **A sub-therapeutic dot is worse than an absent one** — it occupies capsule space a real dose
+  could have used. The validator agrees: an absent dot is legal, an underdosed one is not.
+- **Which dot goes** is read from the formulator's own emphasis: lowest relative position in its
+  own min–max range first (the same scale `_fallbackCountForDot` writes on). A product judgement,
+  worth revisiting with the clinical side.
+- **A dropped dot leaves both slots.** Half a daily dose is the underdose this exists to prevent.
+- `_capRecipeTotal` still runs inside `_expandPlanDay`, but on a recipe that already fits it is a
+  no-op safety net rather than the thing deciding doses. **Don't move the budget decision back
+  into it** — it works per capsule and the floors are per day, so it structurally cannot enforce
+  them.
+
+### The label QR: one code from formula to box to activation
+
+`nutrition_plans.label_code` (`WVB` + 12 hex, `migration_nutrition_plans_label_code.sql`) is minted
+by `lib/labelCode.js` **when the formula is generated** — not at box-batch time, which is far too
+late to show anyone. It is the QR the user views in chat, the label printed on the box, and the
+code the Mini Program scans to activate the plan.
+
+```
+_commitProposedPlan  → label_code minted
+chat card            → #label|https://aeviva.gcn.net/formulation-label.html?c=WVB…
+box batch for a plan → the FIRST box reuses that code as its box_code
+user scans the box   → /WVB[0-9A-Fa-f]{12}/ reads it out of that URL → plan goes active
+```
+
+- **One code space, two tables.** `generateLabelCode()` checks `boxes.box_code` **and**
+  `nutrition_plans.label_code`. A collision means a scan resolving to someone else's capsules.
+- **The `WVB` + 12-hex shape is load-bearing.** It is what lets one QR be both a human-readable
+  page (phone camera) and a claim token (Mini Program) — `handlePostBoxClaim` regex-extracts it
+  from a bare code, nano's old `/api/box/{code}` URL, or the GCN aeviva URL alike. Old printed
+  labels therefore keep working; physical objects already shipped cannot be re-printed.
+- **Minting a code does NOT make anything claimable.** A scan still resolves through
+  `boxes`/`box_batches`, which exist only once a batch is compounded — so scanning the QR of a
+  formulation nobody manufactured returns `box_not_found`, not an activated plan for capsules the
+  user does not have. **Don't "simplify" claim to resolve straight off `label_code`.**
+
+### A label outlives the formulation it describes
+
+The QR is printed on a physical box, so it must keep resolving after the plan behind it stops being
+current. Day 0 therefore falls back to `proposed_recipe` whenever a plan has **no schedules**,
+regardless of status — **not** gated on `status === 'proposed'`, which is what made a superseded
+proposal's label fail with `plan_has_no_schedule` the moment its owner formulated again.
+
+`status` is what tells the reader where they stand (`proposed` / `approved` / `active` /
+`superseded`), and the page renders a 已被新配方替代 badge plus a hint that scanning it activates
+nothing. **`handleGetFormulationCheckoutSnapshot` stays gated on `active`/`proposed`** — a replaced
+formulation may be read, never bought.
+
+An unresolvable code says the label has expired and was likely replaced, rather than "not found":
+a mistyped code and a deleted one are indistinguishable from the server, and "not found" reads to a
+customer as "your box is counterfeit".
+
+### `GET /api/formulation-label?c=` is PUBLIC, and that constrains it
+
+Routed before the bearer gate, like `/api/box/{code}`, because the code is printed on a physical
+object — whoever holds the box can read it. So it returns **no user identity of any kind** (no
+user_id, openid, nickname, phone, or biomarker value) and truncates the order reference. A test
+asserts the user id is absent from the payload. **Never enrich this response with anything
+user-identifying**, on either side of the proxy.
+
+GCN's `formulation-label.html` reads it through `GET /api/mall/aeviva/formulation-label` — a
+server-side proxy, not a browser fetch, for the two reasons `handleNanoFocusTemplates` documents:
+nano's routes all require some bearer, and nano's custom domain emits a duplicate
+`Access-Control-Allow-Origin` header that browsers reject outright.
+
+`AEVIVA_SITE_BASE_URL` (`s.yaml` / `s-prod.yaml`) is the public aeviva site — distinct from
+`GCN_API_BASE_URL`, which is the server-to-server API edge. It is a verified WeChat business
+domain, which is why `<web-view>` can load it and why the miniapp opens the label rather than
+drawing a QR natively: the user should see the exact page that prints on the box.
+
+### Two purchase orderings, and the card is where they differ
+
+A custom-dots order can be placed either way round, and the chat card adapts:
+
+```
+formulate → buy    chat tool → 'proposed' plan → GCN prices THAT recipe per-dot
+buy → formulate    GCN parks the order at 'awaiting_formulation' → chat tool fills it in
+```
+
+`_resolveOrderMode()` asks GCN (`fetchFormulationOrderStatus`, `lib/gcnClient.js`) which case this
+is, and the answer becomes the card's `#order` mode: `buy`, `submit` (a paid **fast-track**
+package is waiting) or `ag` (a paid **premium** package is waiting — Viva AG owns it, no CTA).
+
+- **Pulled at delivery time, never cached on the user row.** An order can be refunded, cancelled,
+  or fulfilled by an AG run in between. Resolved when the card is built rather than when the
+  request was made, because the turn is async and may be minutes old.
+- **Any non-answer degrades to `buy`** — the safe direction. A buy button someone already paid
+  past is ignorable; a submit button with no order behind it fails on tap.
+
+### Fast track: `POST /formulation-submit`
+
+The user confirming that a proposal is the formula to compound for a package they already bought.
+**No expert reviews it** (that is what the premium AG package's higher price buys), which makes
+`validateAgFormulation` the only thing between a generated allocation and capsules a person
+swallows. It **refuses** on any violation and repairs nothing — §36's rule, same reasoning. The
+expansion is rule-conformant by construction (`_expandProposalToCapsules` → `_expandPlanDay`), so
+a violation means the expansion regressed.
+
+The AM/PM split is what keeps it valid: `_splitDotTiming` forces a non-`timing_flexible` dot
+(`DOT-N3`, `DOT-N4`, `DOT-N12` today) wholly into its own slot, and the validator's
+`slot_violation` rule rejects anything else. **Never assemble a recipe without it** — a test pins
+both halves of that.
+
+Submission is idempotent via `nutrition_plans.gcn_order_id`, so a double tap can never send two
+formulas for one purchase.
+
+### On GCN's side: no new branch flag
+
+Three existing SKU columns express the fast-track product (`migration_0081`):
+
+| column | meaning here |
+|---|---|
+| `is_ag_formulation_bundle = TRUE` | the **order shape** — flat-priced, no recipe at checkout, parks at `awaiting_formulation`. The "AG" is historical (0078 shipped it first); read it as "buy-first formulation bundle". |
+| `requires_expert_review = FALSE` | the **fulfilment** — reported to nano as `fulfillment: 'fast_track'`. This one flag is the entire difference between the two packages. |
+| `viva_subscription_plan_key = NULL` | the **entitlement** — none. A NULL key means the purchase grants nothing, and the insert is skipped rather than defaulted. |
+
+A future third package is therefore a configuration change, not a code change.
+`handleFormulationFastTrack` **refuses** an order whose SKU requires review rather than quietly
+downgrading it; nano surfaces that to the user as "that package is formulated by Viva AG".
+
+### Nothing creates a plan on a timer (removed 2026-08-28)
+
+The dispatcher's nutrition top-up scan is **gone**, along with the worker's `nutrition.topup` route,
+`handleNutritionTopupEvent`, and `_commitNutritionPlan` (whose only caller it was).
+
+It ran every minute with no plan requirement — a LEFT JOIN over `users` counting *schedules* — so
+it did not top anything up: it manufactured an `active` plan, via an LLM call, for anyone who did
+not have one, including every user who had never ordered a box. Dev had accumulated 1,133 plans
+across 676 users with **zero boxes ever produced**.
+
+**A plan now means "this person physically has these capsules."** Exactly two things may create
+one, and both require a scanned box:
+
+| | |
+|---|---|
+| `_activateProposedPlan` | a chat-tool proposal, activated by `handlePostBoxClaim` |
+| `_commitAgFormulation`  | a Viva AG formula, same scan |
+
+Do not reintroduce a timer that creates a plan. If a genuine top-up need appears, it must **extend
+a plan the user is already on** and must never match a user who has none.
+
+**`handleGetNutritionPlan` has a second, non-obvious source.** Its `plan` field is the content of
+the user's most recent `nutrition_plan` **notification**, not the `nutrition_plans` table — a
+legacy prose fallback. Clearing the table alone leaves the Plans tab showing stale text; the
+notification rows are what actually populate it.
+
+Which is why a Formulate-Dots proposal delivers as **`formulation_proposal`**, never
+`nutrition_plan`. Delivering it under the latter made the tab report `hasPlan: true` off the card's
+own text even though the plan row was correctly `'proposed'` and invisible to the structured query
+— the proposal repopulating the tab it exists to stay out of. Found in the simulator; the DB and
+the API each looked correct on their own.
 
 ## 29. Viva Proactive Daily Check-Ins (Morning / Midday / Evening)
 
