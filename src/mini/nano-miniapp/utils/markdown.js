@@ -283,6 +283,19 @@ function _zeroLastMargin (block) {
 
 var DIRECTIVE_NAMES = { metric: 1, takeaway: 1, dots: 1, formula: 1, product: 1 }
 
+// "1-9,12-28" -> "1\u20139 \u00b7 12\u201328". Digits, '-' and ',' only: this string is rendered next
+// to the page's own localised day word, and anything else in it came from somewhere it shouldn't.
+function _prettyDayRanges (raw) {
+  var parts = String(raw || '').split(',')
+  var out = []
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim()
+    if (!/^[0-9]+(-[0-9]+)?$/.test(p)) continue
+    out.push(p.replace('-', '\u2013'))
+  }
+  return out.join(' \u00b7 ')
+}
+
 function _buildDirective (name, inner) {
   var rows = []
   for (var i = 0; i < inner.length; i++) {
@@ -314,25 +327,81 @@ function _buildDirective (name, inner) {
     return { t: 'takeaway', h: _parseBlocks(inner).join('') }
   }
 
-  // :::formula — the Formulate-Dots evaluation chart. Rows are key|name|color|am|pm, written by
+  // :::formula — the Formulate-Dots proposal chart. Rows are key|name|color|am|pm, written by
   // the SERVER from an already-validated allocation (handlers/dots.js's
   // _buildFormulaChartBlock), never by the model — so the bars can't disagree with the numbers.
   // Every total is derived here rather than sent, so there is one place the arithmetic lives.
+  //
+  // Meta lines are '#'-prefixed, which no dot key can start with. A card saved to chat history
+  // BEFORE the 28-day rework has none of them and still renders correctly, as one unlabelled
+  // group — do not make any of them required.
+  //   #cycle|<days>|<capsules>   cycle length, for the footer
+  //   #plan|<id>                 the proposed nutrition_plans row, which enables the order CTA
+  //   #label|<url>               the formulation's QR/label page. Rendered as a link the page
+  //                              opens in a webview — the miniapp never draws the QR itself, so
+  //                              what the user sees is the same page that prints on the box.
+  //   #order|<mode>              'buy' (order this formulation) | 'submit' (a paid fast-track
+  //                              package is waiting — confirm THIS formula for compounding) |
+  //                              'ag' (a paid premium package is waiting; Viva AG owns it, so no
+  //                              CTA). Absent, unknown, or unrecognised all mean 'buy'.
+  //   #day|<ranges>|<kind>       starts a group; rows after it belong to it. Ranges are bare
+  //                              numbers ("1-9,12-28"); the day WORD is the page's, not ours.
   if (name === 'formula') {
-    var fitems = []
-    var famTotal = 0
-    var fpmTotal = 0
+    var fgroups = []
+    var fcur = null
+    var fcycleDays = 0
+    var fcycleCaps = 0
+    var fplan = ''
+    var fmode = 'buy'
+    var flabel = ''
     for (var f = 0; f < rows.length; f++) {
-      var fp = rows[f].split('|')
+      var line = rows[f]
+      var fp = line.split('|')
       for (var y = 0; y < fp.length; y++) fp[y] = fp[y].trim()
+      if (fp[0] === '#cycle') {
+        fcycleDays = parseInt(fp[1], 10) > 0 ? parseInt(fp[1], 10) : 0
+        fcycleCaps = parseInt(fp[2], 10) > 0 ? parseInt(fp[2], 10) : 0
+        continue
+      }
+      if (fp[0] === '#plan') {
+        // Interpolated into a data- attribute and posted back as a plan id, so digits only.
+        fplan = /^[0-9]{1,18}$/.test(fp[1] || '') ? fp[1] : ''
+        continue
+      }
+      if (fp[0] === '#label') {
+        // Rejoin: the URL was split on '|' along with everything else, and a query string may
+        // legitimately contain one. Scheme-checked because this ends up in wx.navigateTo.
+        var url = fp.slice(1).join('|')
+        flabel = /^https:\/\/[^\s]+$/.test(url) ? url : ''
+        continue
+      }
+      if (fp[0] === '#order') {
+        fmode = (fp[1] === 'submit' || fp[1] === 'ag') ? fp[1] : 'buy'
+        continue
+      }
+      if (fp[0] === '#day') {
+        fcur = {
+          days: _prettyDayRanges(fp[1] || ''),
+          kind: fp[2] === 'n7' ? 'n7' : 'regular',
+          items: [], am: 0, pm: 0, total: 0
+        }
+        fgroups.push(fcur)
+        continue
+      }
+      if (fp[0].charAt(0) === '#') continue
       var am = parseInt(fp[3], 10)
       var pm = parseInt(fp[4], 10)
       if (!fp[0] || (!am && !pm)) continue
       am = am > 0 ? am : 0
       pm = pm > 0 ? pm : 0
-      famTotal += am
-      fpmTotal += pm
-      fitems.push({
+      if (!fcur) {
+        // Legacy card, or rows before any #day line: one implicit unlabelled group.
+        fcur = { days: '', kind: 'regular', items: [], am: 0, pm: 0, total: 0 }
+        fgroups.push(fcur)
+      }
+      fcur.am += am
+      fcur.pm += pm
+      fcur.items.push({
         key: fp[0],
         name: fp[1] || fp[0],
         // Hex is validated rather than trusted: it is interpolated into an inline style.
@@ -342,15 +411,38 @@ function _buildDirective (name, inner) {
         total: am + pm
       })
     }
-    if (!fitems.length) return null
-    // Bar widths are percentages of the LARGER capsule, so the two bars stay comparable to each
-    // other instead of each self-normalising to 100%.
-    var fmax = Math.max(famTotal, fpmTotal, 1)
-    for (var g = 0; g < fitems.length; g++) {
-      fitems[g].amPct = fitems[g].am / fmax * 100
-      fitems[g].pmPct = fitems[g].pm / fmax * 100
+    var fkept = []
+    for (var h = 0; h < fgroups.length; h++) if (fgroups[h].items.length) fkept.push(fgroups[h])
+    if (!fkept.length) return null
+
+    // Bar widths are percentages of the LARGEST capsule across EVERY group, not per group, so a
+    // reset day's smaller capsule reads as genuinely smaller instead of self-normalising to look
+    // the same size as a full day.
+    var fmax = 1
+    for (var m2 = 0; m2 < fkept.length; m2++) {
+      if (fkept[m2].am > fmax) fmax = fkept[m2].am
+      if (fkept[m2].pm > fmax) fmax = fkept[m2].pm
     }
-    return { t: 'formula', items: fitems, am: famTotal, pm: fpmTotal, total: famTotal + fpmTotal }
+    for (var g2 = 0; g2 < fkept.length; g2++) {
+      var grp = fkept[g2]
+      grp.total = grp.am + grp.pm
+      for (var i2 = 0; i2 < grp.items.length; i2++) {
+        grp.items[i2].amPct = grp.items[i2].am / fmax * 100
+        grp.items[i2].pmPct = grp.items[i2].pm / fmax * 100
+      }
+    }
+    return {
+      t: 'formula',
+      groups: fkept,
+      cycleDays: fcycleDays,
+      cycleCapsules: fcycleCaps,
+      planId: fplan,
+      orderMode: fmode,
+      labelUrl: flabel,
+      // Legacy top-level fields, kept so anything still reading seg.items/am/pm/total sees the
+      // everyday dose rather than nothing.
+      items: fkept[0].items, am: fkept[0].am, pm: fkept[0].pm, total: fkept[0].total
+    }
   }
 
   if (name === 'dots') {

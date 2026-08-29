@@ -43,7 +43,7 @@ const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { resolveEffectivePersona, hasActiveVivaAccess } = require('../lib/persona');
 const { grantSignupTrial } = require('../lib/personaOverride');
-const { _runDeterministicFormulation, _buildFormulaChartBlock, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _buildProductCardBlock } = require('./dots');
+const { _runDeterministicFormulation, _buildFormulaChartBlock, _commitProposedPlan, _resolveOrderMode, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _buildProductCardBlock } = require('./dots');
 const { fetchAiCatalog } = require('../lib/gcnClient');
 const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock');
 
@@ -1784,7 +1784,8 @@ SQL must be a SELECT statement. $1 is always user_id.`,
 // Finishing tail for the formula_dots kind of chat.generate event — explains an ALREADY
 // COMMITTED dot allocation (handlePostFormulaDots's schedule was written to the DB before this
 // ever ran), not a fresh chat reply. Reuses the same grounding-check-with-one-retry pattern as
-// finalizeChatReply/finalizeHealthAdviceReply for consistency, but delivers via a 'nutrition_plan'
+// finalizeChatReply/finalizeHealthAdviceReply for consistency, but delivers via a
+// 'formulation_proposal'
 // notification (matching what this endpoint has always used) rather than 'chat_reply'.
 //
 // planText (the raw D-N1x3 D-N2x3 ... per-day breakdown, still passed through the event payload)
@@ -1812,6 +1813,26 @@ function _extractTrailingJson(text, marker) {
         return { parsed: JSON.parse(text.slice(idx, end + 1)), start: idx, end: end + 1 };
     } catch (e) {
         return null;
+    }
+}
+
+// Records a Formulate-Dots result as the user's one live 'proposed' plan, in its own
+// transaction. Returns the plan id, or null if the write failed — a proposal is what makes the
+// allocation orderable, but it is not what makes the reply useful, so a failure here degrades to
+// a card without a store CTA rather than costing the user the whole turn.
+async function _commitProposal(userId, { analysis, morningRecipe, eveningRecipe, activeHealthPlans }) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const planId = await _commitProposedPlan(client, { userId, analysis, morningRecipe, eveningRecipe, activeHealthPlans });
+        await client.query('COMMIT');
+        return planId;
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'commit_proposed_plan_failed', user_id: userId, error: err.message }));
+        return null;
+    } finally {
+        client.release();
     }
 }
 
@@ -1941,17 +1962,35 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         ({ finalContent, morningRecipe, eveningRecipe } = fallback);
     }
 
-    // EVALUATION ONLY — nothing is written to nutrition_plans / nutrition_schedules. The 28-day
-    // formula a user actually receives now comes from Viva AG's dots_formulation job; this tool
-    // exists to show what the current data implies. The numbers therefore have to be legible in
-    // the bubble itself, so the validated allocation is rendered as a :::formula chart rather
-    // than hidden behind a button pointing at a Dots subtab this run did not touch.
-    const chatMessage = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, llmContext.dots, lang);
+    // The allocation is recorded as a 'proposed' plan — a real 28-day recipe the user does not
+    // physically have yet, which is exactly what GCN's custom-formulation checkout needs in order
+    // to price it. It writes no schedules and never disturbs the plan the user is currently on;
+    // both of those happen when the delivered box is scanned (_activateProposedPlan). If the
+    // write fails the numbers still reach the user, just without a way to order them.
+    const planId = await _commitProposal(user_id, {
+        analysis: finalContent, morningRecipe, eveningRecipe,
+        activeHealthPlans: llmContext.active_health_plans,
+    });
+    // The label code is minted with the plan, and the QR built from it is part of what the user
+    // gets here — not something that appears later when a box is compounded.
+    const labelCode = planId
+        ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [planId])).rows[0]?.label_code
+        : null;
+    // The numbers have to be legible in the bubble itself: this card is the whole deliverable,
+    // and the Dots subtab still shows the user's ACTIVE plan, which a proposal deliberately is
+    // not — so there is nothing there for a "view plan" button to point at.
+    //
+    // The CTA depends on whether the user already paid for a package (the two orderings of the
+    // same purchase — see _buildFormulaChartBlock's `#order` note). Resolved here, at delivery
+    // time, rather than when the request was made: this turn ran asynchronously and may be
+    // minutes old, which is long enough for a checkout to have completed in between.
+    const orderMode = await _resolveOrderMode(user_id);
+    const chatMessage = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, llmContext.dots, lang, { planId, orderMode, labelCode });
 
     await saveChatMessage(user_id, 'ai', chatMessage, null, personaType);
     await pool.query(
         'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-        [user_id, 'nutrition_plan', chatMessage, 'pending']
+        [user_id, 'formulation_proposal', chatMessage, 'pending']
     );
 }
 
@@ -1964,7 +2003,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
 //
 // payload.kind distinguishes the finishing step: default (unset) is a normal chat turn
 // (finalizeChatReply, 'chat_reply' notification); 'formula_dots_generate' makes and commits the
-// actual weekly dot allocation instead (finalizeFormulaDotsGenerate, 'nutrition_plan'
+// actual weekly dot allocation instead (finalizeFormulaDotsGenerate, 'formulation_proposal'
 // notification) — see _handleFormulaDotsAgentic in handlers/dots.js, which publishes this kind
 // with a 'pending' nutrition_plans row already inserted for this event to fill in.
 // Hard wall-clock ceiling on delivering SOMETHING to the user, measured from the start of this
@@ -2089,9 +2128,7 @@ async function handleChatGenerateEvent(payload) {
             if (!claimDelivery()) return;
             if (kind === 'formula_dots_generate') {
                 // Never leave the user with nothing — deliver the deterministic fallback
-                // evaluation, same as the publish-failure fail-open path in handlers/dots.js.
-                // Nothing is committed here either: this tool stopped writing to
-                // nutrition_plans when the real 28-day formula moved to Viva AG.
+                // proposal, same as the publish-failure fail-open path in handlers/dots.js.
                 try {
                     const fallback = await _runDeterministicFormulation({
                         biomarkers: llmContext.biomarkers,
@@ -2103,16 +2140,26 @@ async function handleChatGenerateEvent(payload) {
                         userFacts: llmContext.user_facts,
                         activeHealthPlans: llmContext.active_health_plans,
                     });
+                    const fbPlanId = await _commitProposal(user_id, {
+                        analysis: fallback.finalContent,
+                        morningRecipe: fallback.morningRecipe,
+                        eveningRecipe: fallback.eveningRecipe,
+                        activeHealthPlans: llmContext.active_health_plans,
+                    });
+                    const fbOrderMode = await _resolveOrderMode(user_id);
+                    const fbLabelCode = fbPlanId
+                        ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [fbPlanId])).rows[0]?.label_code
+                        : null;
                     const fbMessage = fallback.finalContent
-                        + _buildFormulaChartBlock(fallback.morningRecipe, fallback.eveningRecipe, llmContext.dots, language);
+                        + _buildFormulaChartBlock(fallback.morningRecipe, fallback.eveningRecipe, llmContext.dots, language, { planId: fbPlanId, orderMode: fbOrderMode, labelCode: fbLabelCode });
                     await saveChatMessage(user_id, 'ai', fbMessage, null, personaType);
                     await pool.query(
                         'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                        [user_id, 'nutrition_plan', fbMessage, 'pending']
+                        [user_id, 'formulation_proposal', fbMessage, 'pending']
                     );
                 } catch (fbErr) {
                     console.error('Formula dots fallback also failed:', fbErr);
-                    await _deliverTerminalMessage(user_id, personaType, 'nutrition_plan', _asyncFailureMessage(language, 'error'));
+                    await _deliverTerminalMessage(user_id, personaType, 'formulation_proposal', _asyncFailureMessage(language, 'error'));
                 }
             } else {
                 await _deliverTerminalMessage(user_id, personaType, 'chat_reply', _asyncFailureMessage(language, 'error'));
@@ -2132,7 +2179,7 @@ async function handleChatGenerateEvent(payload) {
     if (outcome === 'timeout' && claimDelivery()) {
         console.log(JSON.stringify({ level: 'WARN', msg: 'chat_generate_deliver_deadline_exceeded', event_id, user_id, kind: kind || 'chat', deadline_ms: DELIVER_DEADLINE_MS }));
         try {
-            await _deliverTerminalMessage(user_id, personaType, kind === 'formula_dots_generate' ? 'nutrition_plan' : 'chat_reply', _asyncFailureMessage(language, 'timeout'));
+            await _deliverTerminalMessage(user_id, personaType, kind === 'formula_dots_generate' ? 'formulation_proposal' : 'chat_reply', _asyncFailureMessage(language, 'timeout'));
         } catch (err) {
             console.error('watchdog delivery failed:', err);
         }
@@ -2937,9 +2984,10 @@ module.exports = {
     handlePostBiomarkers,
     handlePostChat,
     handleChatGenerateEvent,
-    // Exported for tests: the Formulate-Dots finishing step. Verifying that it writes NO
-    // nutrition_plans/nutrition_schedules row is the whole point of the evaluation-only change,
-    // and reaching it through handleChatGenerateEvent would mean paying for a full agentic turn.
+    // Exported for tests: the Formulate-Dots finishing step. It writes a 'proposed' plan and no
+    // schedules, and never touches the user's active plan — the properties worth asserting
+    // directly, since reaching it through handleChatGenerateEvent would mean paying for a full
+    // agentic turn.
     finalizeFormulaDotsGenerate,
     handlePostChatMessages,
     handlePostHeartbeat,

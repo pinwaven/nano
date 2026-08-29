@@ -83,7 +83,7 @@ const { handleGetAdminUserPersonaSubscription, handlePostAdminUserPersonaSubscri
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
 const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
 const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleSetIdentity, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation, handlePostFormulationPurchaseConfirmed } = require('./handlers/users');
-const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handleGetFormulationCheckoutSnapshot, handleGetFormulationReviewSnapshot, handleNutritionTopupEvent, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
+const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handleGetFormulationCheckoutSnapshot, handlePostFormulationSubmit, handleGetFormulationLabelByCode, handleGetFormulationReviewSnapshot, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
 const { handlePostBoxBatch, handleGetBoxBatches, handleGetBoxBatchBoxes, handleGetBoxPage, handlePostBoxClaim } = require('./handlers/boxes');
 const { handleGetAgFormulationReviewSnapshot, handlePostAgFormulationApproved, handleGetAgFormulationStatus } = require('./handlers/ag_formulation');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
@@ -162,16 +162,11 @@ exports.handler = async (req, resp, context) => {
             } catch (err) {
                 console.error(JSON.stringify({ level: 'ERROR', msg: 'handleDailyCheckinEvent failed', error: err.message }));
             }
-        } else if (event.source === DISPATCHER_EVENT_SOURCE && event.type === 'nutrition.topup') {
-            // Previously unhandled — this case didn't exist, so the dispatcher's nutrition.topup
-            // CloudEvent was silently dropped (ok:true returned, nothing done) whenever it
-            // reached worker via EventBridge. See handleNutritionTopupEvent's own comment.
-            try {
-                await handleNutritionTopupEvent(cloudData);
-            } catch (err) {
-                console.error(JSON.stringify({ level: 'ERROR', msg: 'handleNutritionTopupEvent failed', error: err.message }));
-            }
         }
+        // No 'nutrition.topup' case, deliberately: nothing may create a nutrition plan on a timer.
+        // The dispatcher stopped publishing it 2026-08-28 and the handler is gone; leaving the
+        // route here would let a replayed or hand-crafted event still manufacture a plan for a
+        // user who never ordered a box. A plan is now only ever created by a box scan.
         return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true }), isBase64Encoded: false };
     }
 
@@ -255,6 +250,16 @@ exports.handler = async (req, resp, context) => {
         const htmlHeaders = { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' };
         if (isStandardHttp) { resp.setStatusCode(sc); Object.entries(htmlHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(pageResult.html); return; }
         return { isBase64Encoded: false, statusCode: sc, headers: htmlHeaders, body: pageResult.html };
+    }
+
+    // Public formulation label — no auth required, same as the box page above and for the same
+    // reason: the code is printed on a physical object, so whoever holds the box can read it.
+    // Read server-side by GCN's aeviva formulation-label.html, which is what the QR points at.
+    if (method === 'GET' && path === '/formulation-label') {
+        const labelResult = await handleGetFormulationLabelByCode(query.c || query.code);
+        const sc = labelResult.valid ? 200 : (labelResult.reason === 'internal_error' ? 500 : 404);
+        if (isStandardHttp) { resp.setStatusCode(sc); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify(labelResult)); return; }
+        return { isBase64Encoded: false, statusCode: sc, headers: corsHeaders, body: JSON.stringify(labelResult) };
     }
 
     // Per-job fencing token for the external viva-ag agent. Carried in a header rather than a
@@ -860,6 +865,12 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostDispense(parsedBody);
             } else if (path.includes('/formula-dots')) {
                 result = await handlePostFormulaDots(parsedBody);
+            } else if (path.includes('/formulation-submit')) {
+                // The user confirming that a chat-tool proposal is the formula to compound for a
+                // 28-day package they already paid for. App bearer + the plan's own owner check
+                // inside the handler; deliberately NOT a GCN-allowlisted path, since GCN is the
+                // callee here, not the caller.
+                result = await handlePostFormulationSubmit(parsedBody);
             } else if (path.match(/\/health-plans\/(\d+)\/checkin/)) {
                 const planId = path.match(/\/health-plans\/(\d+)\/checkin/)[1];
                 result = await handlePostHealthPlanCheckin(planId, parsedBody);

@@ -6,8 +6,8 @@
  * These four constants describe what can actually be manufactured, and they are consumed by
  * three things that must never disagree:
  *
- *   1. handlers/dots.js       — nano's own formulator (_commitNutritionPlan expands a
- *                               steady-state recipe across the cycle using them)
+ *   1. handlers/dots.js       — _expandPlanDay, the single place a steady-state recipe is
+ *                               expanded across the cycle (box scan, and the chat card)
  *   2. lib/agFormulation.js   — the validator for a formula authored by the external Viva AG
  *                               agent, which must be rejected if it breaks any of them
  *   3. docs/viva-ag-api.md §8 — the contract that agent builds against

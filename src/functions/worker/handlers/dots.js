@@ -20,6 +20,25 @@ const { v4: uuidv4 } = require('uuid');
 const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { formatQuestionnaireContext } = require('./questionnaires');
+// The same validator an externally-authored Viva AG formula must pass. A fast-track formula gets
+// no expert review at all, which makes this the ONLY thing standing between a generated table and
+// physical capsules — so it runs here too, and a violation refuses the submission outright.
+const { validateAgFormulation, canonicalizeCapsules } = require('../lib/agFormulation');
+const { fetchFormulationOrderStatus, submitFastTrackFormulation } = require('../lib/gcnClient');
+const { generateLabelCode } = require('../lib/labelCode');
+
+// Where the aeviva sector's public pages live. The formulation label QR is a GCN aeviva link
+// rather than a nano one because that is the sector the product is sold in — the page that
+// renders it already exists there (formulation-label.html), already prints, and already draws the
+// QR. Falls back to prod so a missing env var degrades to a real page rather than a broken link.
+const AEVIVA_SITE_BASE_URL = (process.env.AEVIVA_SITE_BASE_URL || 'https://aeviva.gcn.net').replace(/\/+$/, '');
+
+// The QR payload. Contains the code, so handlePostBoxClaim's /WVB[0-9A-Fa-f]{12}/ still reads it
+// straight out of whatever the scanner returns — one QR that both shows the formulation and
+// activates it.
+function _formulationLabelUrl(code) {
+    return `${AEVIVA_SITE_BASE_URL}/formulation-label.html?c=${encodeURIComponent(code)}`;
+}
 const { buildHealthTags } = require('../lib/healthTags');
 const { resolveEffectivePersona } = require('../lib/persona');
 
@@ -803,7 +822,14 @@ async function handleGetNutritionPlan(openid) {
             schedules = scheduleResult.rows;
         }
 
-        // 2. Fallback/Legacy notification content
+        // 2. Fallback/Legacy notification content.
+        //
+        // Deliberately still 'nutrition_plan' and NOT 'formulation_proposal': this field is what
+        // the Plans tab renders as "the plan you are on". A Formulate-Dots proposal is explicitly
+        // not that until the box is scanned, so it delivers under its own type and never lands
+        // here — otherwise every proposal would repopulate the tab it is designed to stay out of.
+        // Nothing writes 'nutrition_plan' any more (the top-up job that did is gone); this reads
+        // pre-existing rows only.
         const notifyResult = await pool.query(
             `SELECT content, sent_at FROM notifications
              WHERE user_id = $1 AND notification_type = 'nutrition_plan'
@@ -847,9 +873,17 @@ async function handleGetNutritionPlan(openid) {
 // specifically (not any arbitrary day) to avoid the two DOT-N7 "isolation days", which would
 // misrepresent the steady-state recipe. `dotColumns` lets a caller ask for just names (checkout
 // snapshot's need) or the full ingredient/timing/coating/color payload (box QR page's need).
+//
+// A 'proposed' plan has no schedules at all — they are generated at box-scan time — so its day 0
+// is derived from proposed_recipe through the same _expandPlanDay the scan will later use. Day
+// index 0 is never an N7 isolation day, so this yields exactly the steady-state capsules the rest
+// of this function promises. That is what lets GCN price a formula the user has not received
+// yet, which is the whole point of a proposal.
 async function _getCommittedPlanDay0Breakdown(planId, { dotColumns = 'id, key_name, name, name_zh' } = {}) {
     const planResult = await pool.query(
-        `SELECT np.id, np.user_id, np.status, np.start_date, np.created_at, np.goal,
+        `SELECT np.id, np.user_id, np.status, np.start_date, np.start_date::text AS start_date_text,
+                np.created_at, np.goal,
+                np.proposed_recipe, np.label_code, np.gcn_order_id, np.submitted_to_gcn_at,
                 np.primary_health_plan_id, np.secondary_health_plan_id,
                 hpt.key_name AS focus_key_name, hpt.name_zh AS focus_label_zh, hpt.name_en AS focus_label_en
          FROM nutrition_plans np
@@ -861,20 +895,41 @@ async function _getCommittedPlanDay0Breakdown(planId, { dotColumns = 'id, key_na
     if (planResult.rows.length === 0) return { reason: 'plan_not_found' };
     const plan = planResult.rows[0];
 
-    const scheduleResult = await pool.query(
+    let morningDots;
+    let eveningDots;
+    // Schedules first when the plan has any — they are what the user is actually taking. A plan
+    // that never reached a box has none, so it falls back to the recipe still on the row.
+    //
+    // The fallback is NOT gated on status === 'proposed'. A proposal that was replaced by a newer
+    // one becomes 'superseded' while still having no schedules, and gating on 'proposed' made its
+    // printed label fail with plan_has_no_schedule — the label on a real box in someone's hands,
+    // reading as an error the moment they formulate again. Its recipe is right there; show it, and
+    // let the status field tell the reader it has been replaced.
+    const scheduleResult = plan.status === 'proposed' ? { rows: [] } : await pool.query(
         `SELECT slot_name, recipe FROM nutrition_schedules
          WHERE plan_id = $1 AND scheduled_date = $2`,
         [plan.id, plan.start_date]
     );
-    if (scheduleResult.rows.length === 0) return { reason: 'plan_has_no_schedule', plan };
+    if (scheduleResult.rows.length > 0) {
+        morningDots = scheduleResult.rows.find(r => r.slot_name === 'morning_cup')?.recipe?.dots || {};
+        eveningDots = scheduleResult.rows.find(r => r.slot_name === 'evening_cup')?.recipe?.dots || {};
+    } else if (plan.proposed_recipe) {
+        const { rows: expansionFormulary } = await pool.query(
+            `SELECT key_name, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots`
+        );
+        const day0 = _expandPlanDay(0, _planExpansionContext(
+            { dots: plan.proposed_recipe.morning || {} },
+            { dots: plan.proposed_recipe.evening || {} },
+            expansionFormulary,
+        ), null);
+        morningDots = day0.morning.dots;
+        eveningDots = day0.evening.dots;
+    } else {
+        return { reason: 'plan_has_no_schedule', plan };
+    }
 
     const dotsResult = await pool.query(`SELECT ${dotColumns} FROM dots ORDER BY id ASC`);
     const dotsByKey = new Map(dotsResult.rows.map(d => [d.key_name, d]));
-
-    const morningRow = scheduleResult.rows.find(r => r.slot_name === 'morning_cup');
-    const eveningRow = scheduleResult.rows.find(r => r.slot_name === 'evening_cup');
-    const morningDots = morningRow?.recipe?.dots || {};
-    const eveningDots = eveningRow?.recipe?.dots || {};
 
     const allKeys = new Set([...Object.keys(morningDots), ...Object.keys(eveningDots)]);
     const dotBreakdown = [...allKeys].map(key => {
@@ -907,7 +962,12 @@ async function handleGetFormulationCheckoutSnapshot(planId, openid) {
         const { plan, dotBreakdown, reason } = await _getCommittedPlanDay0Breakdown(planIdNum);
         if (reason === 'plan_not_found') return { valid: false, reason };
         if (plan.user_id !== openid) return { valid: false, reason: 'plan_owner_mismatch' };
-        if (plan.status !== 'active') return { valid: false, reason: 'plan_not_active' };
+        // 'proposed' is what the Formulate-Dots chat tool writes: a real recipe the user has not
+        // been shipped yet, and precisely the thing this endpoint exists to let GCN price. An
+        // 'active' plan stays valid too — a user mid-cycle can still reorder what they are on.
+        // Unchanged by the label's superseded fallback above: a replaced formulation must never be
+        // purchasable, even though it can now still be READ.
+        if (plan.status !== 'active' && plan.status !== 'proposed') return { valid: false, reason: 'plan_not_active' };
         if (reason) return { valid: false, reason };
 
         return {
@@ -926,6 +986,195 @@ async function handleGetFormulationCheckoutSnapshot(planId, openid) {
     } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetFormulationCheckoutSnapshot failed', error: err.message }));
         return { valid: false, reason: 'internal_error' };
+    }
+}
+
+// GET /formulation-label?c=WVB…   (PUBLIC — no auth)
+//
+// What the box QR resolves to. GCN's aeviva formulation-label.html calls this (server-side, via
+// its own mall function — nano's custom domain emits a duplicate CORS header that browsers reject,
+// so a direct browser fetch is not an option) and renders the page the user views on screen and
+// the label printed on the box.
+//
+// PUBLIC on purpose, exactly like the older /api/box/{code} page it supersedes: this is a code
+// printed on a physical object, so anyone holding the box can read it. That constrains what it may
+// return — **no user identity of any kind**: no user_id, openid, nickname, phone, or biomarker
+// value. What a stranger scanning a found box learns is what is in the box, which is what a
+// nutrition label is for. The order reference is truncated the same way GCN's own label does it.
+//
+// Resolves a plan's own label_code first, then falls back to boxes.box_code so labels printed
+// before the code moved to generation time keep working — physical objects already in the world
+// cannot be re-printed.
+async function handleGetFormulationLabelByCode(rawCode) {
+    try {
+        if (!pool) return { valid: false, reason: 'internal_error' };
+        const match = /WVB[0-9A-Fa-f]{12}/.exec(String(rawCode || '').trim());
+        const code = match ? match[0].toUpperCase() : null;
+        if (!code) return { valid: false, reason: 'invalid_code' };
+
+        const { rows: [plan] } = await pool.query(
+            `SELECT np.id, np.status, np.created_at, np.start_date, np.end_date, np.label_code,
+                    np.gcn_order_id, np.submitted_to_gcn_at,
+                    b.claimed_at, b.box_code,
+                    bb.status AS batch_status, bb.created_at AS batch_created_at
+               FROM nutrition_plans np
+               LEFT JOIN boxes b ON b.box_code = COALESCE(np.label_code, '')
+               LEFT JOIN box_batches bb ON bb.id = b.batch_id
+              WHERE np.label_code = $1
+              LIMIT 1`,
+            [code]
+        );
+
+        let planId = plan?.id;
+        let boxRow = plan;
+        if (!planId) {
+            // A label printed from a box batch rather than from the formulation itself.
+            const { rows: [box] } = await pool.query(
+                `SELECT b.box_code, b.claimed_at, b.nutrition_plan_id, bb.plan_id,
+                        bb.status AS batch_status, bb.created_at AS batch_created_at
+                   FROM boxes b JOIN box_batches bb ON bb.id = b.batch_id
+                  WHERE b.box_code = $1`,
+                [code]
+            );
+            if (!box) return { valid: false, reason: 'not_found' };
+            planId = box.nutrition_plan_id || box.plan_id;
+            boxRow = box;
+            if (!planId) return { valid: false, reason: 'not_found' };
+        }
+
+        const { plan: planRow, dotBreakdown, reason } = await _getCommittedPlanDay0Breakdown(planId, {
+            dotColumns: 'id, key_name, key_name_zh, name, name_zh, color_hex, timing, '
+                + 'sub_age_target, ingredients, ingredients_zh',
+        });
+        if (reason) return { valid: false, reason };
+
+        return {
+            valid: true,
+            code,
+            // 'proposed'  — formulated, not yet compounded. The QR exists from this moment.
+            // 'approved'  — signed off by a nutrition expert, being compounded.
+            // 'active'    — the box was scanned; the user is taking it.
+            // 'superseded'— replaced by a newer formulation.
+            status: planRow.status,
+            formulated_at: planRow.created_at,
+            cycle_days: PLAN_DAYS,
+            cycle_capsules: PLAN_DAYS * 2,
+            // Truncated, matching GCN's own label page: enough to quote to support, not the full
+            // order id, on a page anyone holding the box can open.
+            order_short_id: planRow.gcn_order_id ? String(planRow.gcn_order_id).slice(0, 8) : null,
+            ordered_at: planRow.submitted_to_gcn_at || null,
+            manufactured_at: boxRow?.batch_created_at || null,
+            recalled: boxRow?.batch_status === 'recalled',
+            claimed_at: boxRow?.claimed_at || null,
+            // ::text, not the DATE column: node-postgres parses a DATE at local midnight, which
+            // serializes to the PREVIOUS day in UTC (CLAUDE.md §35). This is a calendar day the
+            // label states, so it must be the day it says.
+            started_on: planRow.status === 'active' ? planRow.start_date_text : null,
+            dot_breakdown: dotBreakdown,
+        };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetFormulationLabelByCode failed', error: err.message }));
+        return { valid: false, reason: 'internal_error' };
+    }
+}
+
+// POST /formulation-submit  { openid, plan_id }   (app bearer, the user's own action)
+//
+// The "buy first, formulate second" half of the custom-dots flow. The user already paid for a
+// flat-priced 28-day package, GCN parked that order at 'awaiting_formulation' with no recipe, and
+// this is the user confirming that the proposal the chat tool just showed them is the one to
+// compound.
+//
+// FAST TRACK MEANS NO HUMAN EVER LOOKS AT THIS. The premium (Viva AG) package routes through a
+// nutrition expert; this one goes straight to compounding, so `validateAgFormulation` below is the
+// only check between a generated allocation and capsules a person swallows. A violation refuses
+// the whole submission rather than repairing anything — the same reject-never-repair rule §36
+// sets for an AG formula, and for the same reason: a repaired formula is one nobody authored.
+//
+// The expansion is rule-conformant by construction (it comes out of _expandPlanDay, which applies
+// the isolation override and the fill cap), so a violation here means the expansion itself
+// regressed. That is exactly the case worth catching.
+async function handlePostFormulationSubmit(body) {
+    const { openid } = body || {};
+    const planId = parseInt(body?.plan_id, 10);
+    if (!openid) return { success: false, reason: 'missing_params' };
+    if (!Number.isFinite(planId)) return { success: false, reason: 'invalid_plan_id' };
+
+    try {
+        if (!pool) return { success: false, reason: 'internal_error' };
+
+        const { rows: [user] } = await pool.query(
+            'SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]);
+        if (!user) return { success: false, reason: 'user_not_found' };
+
+        const { rows: [plan] } = await pool.query(
+            `SELECT id, user_id, status, goal, proposed_recipe, gcn_order_id
+               FROM nutrition_plans WHERE id = $1`, [planId]);
+        if (!plan) return { success: false, reason: 'plan_not_found' };
+        if (plan.user_id !== user.user_id) return { success: false, reason: 'plan_owner_mismatch' };
+        // Idempotent: a double tap returns the order the first tap attached to rather than
+        // submitting a second formula for the same purchase.
+        if (plan.gcn_order_id) return { success: true, already_submitted: true, order_id: plan.gcn_order_id };
+        if (plan.status !== 'proposed') return { success: false, reason: 'plan_not_proposed' };
+        if (!plan.proposed_recipe) return { success: false, reason: 'plan_has_no_recipe' };
+
+        // Re-checked here rather than trusted from the card the user tapped: the card was rendered
+        // when the formulation finished, and the order could have been refunded, cancelled or
+        // already fulfilled by a Viva AG run in the meantime.
+        const order = await fetchFormulationOrderStatus(user.user_id);
+        if (!order) return { success: false, reason: 'no_awaiting_order' };
+        if (order.fulfillment !== 'fast_track') return { success: false, reason: 'order_requires_expert_review' };
+
+        // timing/timing_flexible are read by validateAgFormulation's slot rules, not by the
+        // expansion — omitting them makes the validator silently weaker, not louder.
+        const { rows: formulary } = await pool.query(
+            `SELECT key_name, timing, timing_flexible, target_dots_min, target_dots_max,
+                    dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots`);
+        const capsules = _expandProposalToCapsules(
+            { dots: plan.proposed_recipe.morning || {} },
+            { dots: plan.proposed_recipe.evening || {} },
+            formulary,
+        );
+        const check = validateAgFormulation({ capsules }, formulary);
+        if (!check.valid) {
+            console.error(JSON.stringify({ level: 'ERROR', msg: 'fasttrack_formulation_invalid',
+                user_id: user.user_id, plan_id: planId, violations: check.violations }));
+            return { success: false, reason: 'formulation_invalid', violations: check.violations };
+        }
+        // The validator already computed these over the exact capsules it approved; recomputing
+        // them separately would let the numbers GCN prints drift from the numbers nano checked.
+        const { totals, totalDots } = check;
+
+        let result;
+        try {
+            result = await submitFastTrackFormulation({
+                nano_user_id: user.user_id,
+                nano_nutrition_plan_id: plan.id,
+                capsules,
+                totals,
+                total_dots: totalDots ?? null,
+                rationale: plan.goal || null,
+            });
+        } catch (err) {
+            // Unlike the two read paths, this failure must reach the user: the entire point of the
+            // tap was the call, and silently succeeding would leave them believing their paid
+            // order is being compounded when GCN never heard about it.
+            console.error(JSON.stringify({ level: 'ERROR', msg: 'fasttrack_submit_failed',
+                user_id: user.user_id, plan_id: planId, error: err.message, status: err.status }));
+            await pool.query('UPDATE nutrition_plans SET submitted_to_gcn_at = NOW() WHERE id = $1', [planId]);
+            return { success: false, reason: err.body?.error || 'gcn_unreachable' };
+        }
+        if (!result || !result.order_id) return { success: false, reason: result?.reason || 'no_awaiting_order' };
+
+        await pool.query(
+            `UPDATE nutrition_plans SET gcn_order_id = $2, submitted_to_gcn_at = NOW() WHERE id = $1`,
+            [planId, String(result.order_id)]);
+        console.log(JSON.stringify({ level: 'INFO', msg: 'fasttrack formulation submitted',
+            user_id: user.user_id, plan_id: planId, order_id: result.order_id }));
+        return { success: true, order_id: result.order_id };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostFormulationSubmit failed', error: err.message }));
+        return { success: false, reason: 'internal_error' };
     }
 }
 
@@ -1137,28 +1386,118 @@ function _resolveCandidateDotKeys(activeHealthPlans, dotsFormulary) {
 //
 // One row per dot: key|name|color|am|pm. The renderer derives every total itself, so the parser
 // stays dumb and there is no second place for the arithmetic to drift.
-function _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang) {
-    const isZh = (lang || 'zh') !== 'en';
-    // Cap here, not at the caller. Every dot is forced to at least its own target_dots_min, and
-    // those floors already sum past one capsule, so an uncapped recipe renders a capsule nobody
-    // can physically fill. _commitNutritionPlan applies the same cap on the paths that still
-    // write a plan; this tool stopped writing one (see the evaluation-tool note above), which
-    // left the card as the only surface showing raw, unbuildable counts. Capping inside the
-    // renderer covers all three call sites at once, and any future fourth one.
-    const morning = _capRecipeTotal(morningRecipe, MAX_DOTS_PER_CAPSULE)?.dots || {};
-    const evening = _capRecipeTotal(eveningRecipe, MAX_DOTS_PER_CAPSULE)?.dots || {};
-    const rows = [];
-    for (const dot of dotsFormulary || []) {
-        const am = morning[dot.key_name] || 0;
-        const pm = evening[dot.key_name] || 0;
-        if (am === 0 && pm === 0) continue;
-        const name = (isZh ? (dot.name_zh || dot.name) : (dot.name || dot.name_zh)) || dot.key_name;
-        // Pipes would break the row split, and a dot name is admin-editable free text.
-        const safeName = String(name).replace(/\|/g, '/');
-        rows.push(`${dot.key_name}|${safeName}|${dot.color_hex || ''}|${am}|${pm}`);
+// Which call to action a formula card should carry, resolved by asking GCN whether this user has
+// a paid 28-day package sitting unformulated. See _buildFormulaChartBlock's `#order` note for what
+// each mode means and why an unknown answer degrades to 'buy'.
+async function _resolveOrderMode(userId) {
+    const order = await fetchFormulationOrderStatus(userId);
+    if (!order) return 'buy';
+    return order.fulfillment === 'fast_track' ? 'submit' : 'ag';
+}
+
+// Groups the 28 days of a cycle by what a day's capsules actually contain.
+//
+// Almost every day of a plan is identical — the only per-day variation is the DOT-N7 isolation
+// override (both capsules are N7 alone on N7_ISOLATION_DAY_INDEXES) and, in principle, any other
+// pulse-protocol dot's active window. Enumerating 28 near-identical rows in a chat bubble is
+// noise, so days that expand to the same two capsules are collapsed into one group carrying the
+// day numbers it covers.
+//
+// `dateISO` is deliberately absent: a proposal has no start date yet (the cycle is anchored when
+// the box is scanned), so day numbers here are relative — "Day 1" is the first day the user takes
+// a capsule, whenever that turns out to be. See _expandPlanDay for what that costs.
+function _planDayGroups(morningRecipe, eveningRecipe, dotsFormulary) {
+    const ctx = _planExpansionContext(morningRecipe, eveningRecipe, dotsFormulary);
+    const groups = [];
+    const bySignature = new Map();
+    for (let i = 0; i < PLAN_DAYS; i++) {
+        const day = _expandPlanDay(i, ctx, null);
+        // Key on the capsule contents themselves, so two days group together exactly when they
+        // are genuinely the same dose — never on which rule happened to produce them.
+        const signature = JSON.stringify([day.morning.dots, day.evening.dots]);
+        const existing = bySignature.get(signature);
+        if (existing) { existing.days.push(i + 1); continue; }
+        const group = { days: [i + 1], morning: day.morning, evening: day.evening, kind: day.isN7 ? 'n7' : 'regular' };
+        bySignature.set(signature, group);
+        groups.push(group);
     }
-    if (!rows.length) return '';
-    return `\n\n:::formula\n${rows.join('\n')}\n:::`;
+    return groups;
+}
+
+// [1,2,3,5,9,10] -> "1-3,5,9-10". Numbers only: the renderer owns the "Day N" / "第N天" wording,
+// because this module has no language context and must not hardcode one.
+function _formatDayRanges(days) {
+    const sorted = [...days].sort((a, b) => a - b);
+    const parts = [];
+    let runStart = sorted[0];
+    let prev = sorted[0];
+    for (let i = 1; i <= sorted.length; i++) {
+        const d = sorted[i];
+        if (d === prev + 1) { prev = d; continue; }
+        parts.push(runStart === prev ? `${runStart}` : `${runStart}-${prev}`);
+        runStart = d;
+        prev = d;
+    }
+    return parts.join(',');
+}
+
+// Renders the :::formula card for a validated allocation.
+//
+// The SERVER writes every row, from the recipe it just validated — the model never authors this
+// block, so the bars can never disagree with the numbers they draw. Every total is derived in the
+// renderer, so the arithmetic lives in exactly one place.
+//
+// Row format (unchanged, and still the only thing a legacy card in chat history contains):
+//   key|name|color|am|pm
+//
+// Meta lines were added when the card became a 28-day proposal rather than a single steady-state
+// day. They are all prefixed '#', which no dot key can start with, so a card saved before this
+// change simply has none of them and renders as one unlabelled group exactly as it used to:
+//   #cycle|<days>|<capsules>   the cycle length, for the footer
+//   #plan|<id>                 the nutrition_plans row this proposes, enabling the store CTA
+//   #order|<mode>              which call to action this card gets (see below)
+//   #label|<url>               the formulation's QR/label page — the same GCN aeviva link that
+//                              gets printed on the box and scanned to activate it
+//   #day|<ranges>|<kind>       starts a group; every row after it belongs to that group
+//
+// A custom-dots order can be placed in either sequence, and the card is where the difference
+// shows. `#order` is the mode:
+//   buy      no paid package waiting — offer to order this formulation. The default, and what a
+//            failed/absent order lookup degrades to: a buy button someone has already paid past
+//            is ignorable, whereas a submit button with no order behind it fails on tap.
+//   submit   a paid fast-track package is waiting — offer to confirm THIS formula for compounding.
+//   ag       a paid premium package is waiting, and Viva AG formulates that one after expert
+//            review. No CTA at all: this card is a preview, and tapping anything here would
+//            compete with the pipeline that actually owns the order.
+function _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang, opts) {
+    const isZh = (lang || 'zh') !== 'en';
+    const groups = _planDayGroups(morningRecipe, eveningRecipe, dotsFormulary);
+    const lines = [`#cycle|${PLAN_DAYS}|${PLAN_DAYS * 2}`];
+    if (opts && opts.planId) lines.push(`#plan|${opts.planId}`);
+    if (opts && opts.orderMode) lines.push(`#order|${opts.orderMode}`);
+    // A URL, not a bare code: the miniapp opens it in a webview rather than drawing a QR itself,
+    // so what the user sees on screen is byte-for-byte the page that prints on the box.
+    if (opts && opts.labelCode) lines.push(`#label|${_formulationLabelUrl(opts.labelCode)}`);
+
+    let anyRow = false;
+    for (const group of groups) {
+        const rows = [];
+        for (const dot of dotsFormulary || []) {
+            const am = group.morning.dots[dot.key_name] || 0;
+            const pm = group.evening.dots[dot.key_name] || 0;
+            if (am === 0 && pm === 0) continue;
+            const name = (isZh ? (dot.name_zh || dot.name) : (dot.name || dot.name_zh)) || dot.key_name;
+            // Pipes would break the row split, and a dot name is admin-editable free text.
+            const safeName = String(name).replace(/\|/g, '/');
+            rows.push(`${dot.key_name}|${safeName}|${dot.color_hex || ''}|${am}|${pm}`);
+        }
+        if (!rows.length) continue;
+        anyRow = true;
+        lines.push(`#day|${_formatDayRanges(group.days)}|${group.kind}`);
+        lines.push(...rows);
+    }
+    if (!anyRow) return '';
+    return `\n\n:::formula\n${lines.join('\n')}\n:::`;
 }
 
 // Renders the :::product card for a validated set of store recommendations.
@@ -1205,7 +1544,7 @@ function _splitDotTiming(dot, count) {
 const PULSE_CYCLE_EPOCH = DateTime.fromISO('2026-01-01');
 
 // True if `dateISO` falls inside a pulse-protocol dot's active window. Non-pulse dots ('daily',
-// the default) are always active — this is the single gate _commitNutritionPlan uses to decide
+// the default) are always active — this is the single gate _expandPlanDay uses to decide
 // whether a pulse dot appears in a given day's recipe at all, so "not a daily dose" is enforced
 // in code rather than left to the model to remember. DOT-N7 is the only pulse dot configured
 // today, but as of 2026-08-08 it's routed through the dedicated week-2 isolation-day mechanism
@@ -1221,7 +1560,7 @@ function _isPulseActiveDate(dot, dateISO) {
 
 // Drops any pulse-protocol dot from a day's recipe on a day outside its active window — the
 // model/deterministic formulator still decides one count per dot per cycle (the per-dose amount
-// taken ON an active day), _commitNutritionPlan just no longer copies that count into every day
+// taken ON an active day), the expansion just no longer copies that count into every day
 // of the plan verbatim for dots that were never meant to be dosed daily.
 function _applyPulseSchedule(recipe, pulseDotsByKey, dateISO) {
     if (!pulseDotsByKey || pulseDotsByKey.size === 0) return recipe;
@@ -1274,6 +1613,132 @@ function _capRecipeTotal(recipe, maxTotal) {
         if (count > 0) result[key] = count;
     }
     return { dots: result };
+}
+
+// Expands a steady-state proposal into the canonical 56-capsule array the rest of the product
+// speaks: [{day:1..28, slot:'AM'|'PM', dots:{KEY:count}}]. Identical shape to what the external
+// Viva AG agent submits, so GCN's processing centre, its printed label QR and nano's own
+// validator all read one format regardless of which pipeline produced the formula.
+//
+// Days are 1-based here and 0-based in _expandPlanDay, matching each side's own convention.
+function _expandProposalToCapsules(morningRecipe, eveningRecipe, dotsFormulary) {
+    const ctx = _planExpansionContext(morningRecipe, eveningRecipe, dotsFormulary);
+    const capsules = [];
+    for (let i = 0; i < PLAN_DAYS; i++) {
+        const day = _expandPlanDay(i, ctx, null);
+        capsules.push({ day: i + 1, slot: 'AM', dots: { ...day.morning.dots } });
+        capsules.push({ day: i + 1, slot: 'PM', dots: { ...day.evening.dots } });
+    }
+    return canonicalizeCapsules(capsules);
+}
+
+// Drops whole dots until both capsules fit, instead of shrinking every dot to fit.
+//
+// The two constraints genuinely cannot both hold for a full formulary: every dot has its own
+// target_dots_min, those floors sum to more than the 2 x MAX_DOTS_PER_CAPSULE a day physically
+// holds, so SOMETHING has to give. _capRecipeTotal's answer was to scale everything down
+// proportionally, which silently lands most dots below their own minimum — a dose low enough that
+// the product's own rules call it invalid (lib/agFormulation.js's `dose_below_min`, checked on the
+// DAILY total). A sub-therapeutic dot is worse than an absent one: it occupies capsule space that
+// a dot at a real dose could have used, and it tells the user they are taking something they are
+// effectively not.
+//
+// So the budget is settled here, on daily totals, before anything is split into capsules — and it
+// is settled by removing dots outright. _capRecipeTotal still runs afterwards inside
+// _expandPlanDay, but on a recipe that already fits it is a no-op safety net rather than the thing
+// deciding the doses.
+//
+// WHICH dot goes is a product judgement, and this is the rule: lowest relative position in its own
+// range first. The formulator expresses emphasis by where in a dot's min..max it placed the count
+// (see _fallbackCountForDot's 25/50/75%), so a dot sitting at its floor is the one it cared least
+// about, and a dot near its ceiling is the one it cared most about. Ties break toward dropping the
+// larger count, since that frees more room per dot sacrificed.
+function _fitRecipeToDailyBudget(morningRecipe, eveningRecipe, dotsFormulary) {
+    const byKey = new Map((dotsFormulary || []).map(d => [d.key_name, d]));
+    const morning = { ...(morningRecipe?.dots || {}) };
+    const evening = { ...(eveningRecipe?.dots || {}) };
+    const sum = obj => Object.values(obj).reduce((a, b) => a + b, 0);
+
+    const position = (key) => {
+        const dot = byKey.get(key);
+        const total = (morning[key] || 0) + (evening[key] || 0);
+        const min = dot?.target_dots_min ?? 1;
+        const max = dot?.target_dots_max ?? 10;
+        // A fixed-range dot (min === max) has no emphasis to read, so it is treated as fully
+        // emphasised and dropped last — it is also usually tiny, so dropping it frees almost
+        // nothing anyway.
+        return max === min ? 1 : (total - min) / (max - min);
+    };
+
+    // Bounded by the dot count: each pass removes exactly one dot, and an empty recipe trivially
+    // fits, so this cannot spin.
+    while (sum(morning) > MAX_DOTS_PER_CAPSULE || sum(evening) > MAX_DOTS_PER_CAPSULE) {
+        // Only a dot present in the over-budget capsule can relieve it.
+        const overSlot = sum(morning) > MAX_DOTS_PER_CAPSULE ? morning : evening;
+        const candidates = Object.keys(overSlot);
+        if (candidates.length <= 1) break; // nothing left to give; _capRecipeTotal takes it from here
+        candidates.sort((a, b) => {
+            const pa = position(a);
+            const pb = position(b);
+            if (pa !== pb) return pa - pb;
+            return ((morning[b] || 0) + (evening[b] || 0)) - ((morning[a] || 0) + (evening[a] || 0));
+        });
+        const drop = candidates[0];
+        // Removed from BOTH slots: half a dot's daily dose is exactly the underdose this function
+        // exists to prevent.
+        delete morning[drop];
+        delete evening[drop];
+    }
+    return { morning: { dots: morning }, evening: { dots: evening } };
+}
+
+// Everything a 28-day expansion needs, derived once from a steady-state AM/PM recipe.
+//
+// DOT-N7 is lifted out of the everyday recipe entirely here rather than day by day: its dosing is
+// fully system-controlled (both capsules, alone, at its own target_dots_max, on exactly the two
+// isolation days), so leaving it in the base recipe would dose it twice by two different
+// mechanisms. Any *other* pulse-protocol dot — none exist today — still follows the generic
+// epoch-based window and is gated per day instead.
+function _planExpansionContext(morningRecipe, eveningRecipe, dotsFormulary) {
+    const dotsByKey = new Map((dotsFormulary || []).map(d => [d.key_name, d]));
+    const n7MaxCount = dotsByKey.get(N7_KEY)?.target_dots_max ?? 50;
+    // Settle the daily budget by dropping whole dots BEFORE anything is split into capsules, so
+    // no dot survives below its own minimum. N7 is stripped first so it is never a drop candidate:
+    // its dosing is system-controlled and it does not occupy an everyday capsule at all.
+    const fitted = _fitRecipeToDailyBudget(
+        _omitDotKey(morningRecipe, N7_KEY), _omitDotKey(eveningRecipe, N7_KEY), dotsFormulary);
+    return {
+        baseMorning: fitted.morning,
+        baseEvening: fitted.evening,
+        n7IsolationRecipe: { dots: { [N7_KEY]: n7MaxCount } },
+        pulseDotsByKey: new Map((dotsFormulary || [])
+            .filter(d => d.dosing_protocol === 'pulse' && d.key_name !== N7_KEY)
+            .map(d => [d.key_name, d])),
+    };
+}
+
+// The two capsules for day `dayIndex` (0-based) of a cycle. The single expansion rule set, shared
+// by everything that turns a steady-state recipe into real days: _activateProposedPlan (the box
+// scan, writing schedules) and _planDayGroups (the chat card). Two consumers that must never
+// disagree about what a user is actually taking.
+//
+// `dateISO` may be null, which is what a dateless proposal passes. The generic pulse window
+// (_isPulseActiveDate) is anchored to a fixed calendar epoch, so it cannot be evaluated without a
+// real date — with no date, pulse dots are simply left in every day. That is exact today (N7 is
+// the only pulse dot and it is routed through isolation instead, never through that gate), but if
+// a second pulse dot is ever configured, a proposal will over-state the days it appears on until
+// the box scan anchors the cycle. Fix that by resolving the window at scan time, not by inventing
+// a start date here: a proposal genuinely does not have one.
+function _expandPlanDay(dayIndex, ctx, dateISO) {
+    if (N7_ISOLATION_DAY_INDEXES.includes(dayIndex)) {
+        return { morning: ctx.n7IsolationRecipe, evening: ctx.n7IsolationRecipe, isN7: true };
+    }
+    const gate = recipe => (dateISO ? _applyPulseSchedule(recipe, ctx.pulseDotsByKey, dateISO) : recipe);
+    return {
+        morning: _capRecipeTotal(gate(ctx.baseMorning), MAX_DOTS_PER_CAPSULE),
+        evening: _capRecipeTotal(gate(ctx.baseEvening), MAX_DOTS_PER_CAPSULE),
+        isN7: false,
+    };
 }
 
 // The original (2026-07 and earlier) formulation path: one non-agentic LLM completion over the
@@ -1377,95 +1842,125 @@ async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFor
     return { analysis, finalContent, morningRecipe, eveningRecipe, dotCounts };
 }
 
-// Commits a deterministic-formulation result as the one active plan for a user: supersedes any
-// existing active plan, inserts a fresh 'active' nutrition_plans row (or activates an existing
-// pending one when planId is given), and writes PLAN_DAYS (28) days of morning/evening schedules.
-// Every day's capsule is capped at MAX_DOTS_PER_CAPSULE via _capRecipeTotal. DOT-N7 is stripped
-// out of the everyday recipe entirely and instead written only on the 2 dedicated week-2
-// isolation days (N7_ISOLATION_DAY_INDEXES), where it's the sole dot in both capsules at its own
-// target_dots_max — see the constants above for why. Any *other* pulse-protocol dot (none exist
-// today) still follows the older generic epoch-based pulse window (_isPulseActiveDate), included
-// only on the days that actually fall inside its active window and omitted from the rest.
-// `dotsFormulary` is optional (callers that never touch a pulse dot can omit it) — without it,
-// pulse/N7 enforcement simply doesn't run (N7 stays in the everyday recipe uncapped-by-isolation,
-// falling back to a default target_dots_max of 50 if it ever is isolated) and only the 72/capsule
-// cap still applies.
+// Writes the PLAN_DAYS x 2 schedule rows for a plan, expanding a steady-state recipe through
+// _expandPlanDay so the day-by-day rules live in exactly one place. Shared by the two paths that
+// turn a recipe into a running schedule. Only _activateProposedPlan (the box scan for a
+// chat-tool proposal) uses it today; _commitAgFormulation writes its own pre-expanded capsules.
+async function _writeExpandedSchedules(client, { planId, userId, startDateObj, morningRecipe, eveningRecipe, dotsFormulary }) {
+    const ctx = _planExpansionContext(morningRecipe, eveningRecipe, dotsFormulary);
+    for (let i = 0; i < PLAN_DAYS; i++) {
+        const currentDate = startDateObj.plus({ days: i }).toISODate();
+        const day = _expandPlanDay(i, ctx, currentDate);
+        await client.query(
+            'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
+            [planId, userId, currentDate, 'morning_cup', day.morning]
+        );
+        await client.query(
+            'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
+            [planId, userId, currentDate, 'evening_cup', day.evening]
+        );
+    }
+}
+
+// _commitNutritionPlan lived here until 2026-08-28: it superseded whatever plan a user was on
+// and inserted a fresh ACTIVE one with a full cycle of schedules, from a steady-state recipe. Its
+// only caller was the nutrition top-up job (removed — see the note further down), so it went with
+// it. The two functions that may still put a user on a plan both require a scanned box:
+// _activateProposedPlan (a chat-tool proposal) and _commitAgFormulation (a Viva AG formula). Both
+// write their schedules through _writeExpandedSchedules, which is what _commitNutritionPlan's day
+// expansion was factored into.
+
+// Records what the Formulate-Dots chat tool just worked out as a 'proposed' plan.
 //
-// Stale-pending guard: when `planId` is given, the current active plan is only superseded AFTER
-// confirming the pending->active flip actually landed (WHERE status='pending' on that UPDATE). A
-// formula-dots request publishes its chat.generate event with a brand-new pending row every time
-// it's called (handlers/dots.js's _handleFormulaDotsAgentic); if two calls race, or EventBridge's
-// at-least-once delivery redelivers an older event late, that older pending row may already be
-// 'superseded' by the time its event is finally processed. Without this guard, that late
-// delivery would silently supersede whatever plan is genuinely active now and resurrect stale
-// data in its place — confirmed possible via live testing 2026-08-08 (two formula-dots calls for
-// the same user produced 3 pending rows but only 1 delivered event; the other 2 remained
-// undelivered and could still land later). Returns the plan id normally, or `null` if the commit
-// was skipped as stale — callers should treat `null` as "nothing changed, don't notify the user".
-async function _commitNutritionPlan(client, { userId, analysis, morningRecipe, eveningRecipe, planId, dotsFormulary, activeHealthPlans }) {
-    const startDateObj = getNowShanghai();
-    const endDateObj = startDateObj.plus({ days: PLAN_DAYS - 1 });
+// A proposal is a real, purchasable 28-day recipe that the user does not yet physically have, so
+// two things it does NOT do are as important as what it does:
+//
+//   * No schedules. The 56 capsules are generated at box-scan time (_activateProposedPlan), when
+//     start_date becomes a real date. The dates written here are provisional placeholders for
+//     NOT NULL columns, exactly as the AG approval path does for 'approved'.
+//   * It never touches the user's 'active' plan. Someone mid-cycle on a box they already have
+//     keeps taking it; asking the chat tool a question must not silently end that cycle. Only a
+//     previous proposal is superseded, so there is at most one live proposal to price.
+//
+// Returns the new plan id.
+async function _commitProposedPlan(client, { userId, analysis, morningRecipe, eveningRecipe, activeHealthPlans }) {
     const primaryHealthPlanId = (activeHealthPlans || []).find(p => p.plan_type === 'primary')?.id ?? null;
     const secondaryHealthPlanId = (activeHealthPlans || []).find(p => p.plan_type === 'secondary')?.id ?? null;
 
-    let finalPlanId = planId;
-    if (finalPlanId) {
-        const activated = await client.query(
-            `UPDATE nutrition_plans SET status = 'active', start_date = $1, end_date = $2, goal = $3,
-                    primary_health_plan_id = $5, secondary_health_plan_id = $6
-             WHERE id = $4 AND status = 'pending' RETURNING id`,
-            [startDateObj.toISODate(), endDateObj.toISODate(), analysis || 'Personalized Formulation', finalPlanId, primaryHealthPlanId, secondaryHealthPlanId]
-        );
-        if (activated.rows.length === 0) {
-            console.log(JSON.stringify({ level: 'WARN', msg: 'commit_nutrition_plan_stale_pending_skipped', userId, planId: finalPlanId }));
-            return null; // signals "no-op" so callers skip notifying the user about nothing
-        }
-        await client.query(`UPDATE nutrition_plans SET status = 'superseded' WHERE user_id = $1 AND status = 'active' AND id != $2`, [userId, finalPlanId]);
-    } else {
-        await client.query(`UPDATE nutrition_plans SET status = 'superseded' WHERE user_id = $1 AND status = 'active'`, [userId]);
-        const planInsert = await client.query(
-            `INSERT INTO nutrition_plans (user_id, start_date, end_date, goal, status, primary_health_plan_id, secondary_health_plan_id)
-             VALUES ($1, $2, $3, $4, 'active', $5, $6) RETURNING id`,
-            [userId, startDateObj.toISODate(), endDateObj.toISODate(), analysis || 'Personalized Formulation', primaryHealthPlanId, secondaryHealthPlanId]
-        );
-        finalPlanId = planInsert.rows[0].id;
+    await client.query(
+        `UPDATE nutrition_plans SET status = 'superseded' WHERE user_id = $1 AND status = 'proposed'`,
+        [userId]
+    );
+    // Minted here, at generation time, because the QR is part of the deliverable: the user can
+    // view it as soon as the formula exists, it is what gets printed on the box compounded from
+    // it, and it is what the Mini Program scans to activate the plan. See lib/labelCode.js.
+    const labelCode = await generateLabelCode();
+    const { rows: [plan] } = await client.query(
+        `INSERT INTO nutrition_plans (user_id, start_date, end_date, goal, status, source,
+                                      proposed_recipe, label_code, primary_health_plan_id, secondary_health_plan_id)
+         VALUES ($1, CURRENT_DATE, CURRENT_DATE + $2::int, $3, 'proposed', 'nano', $4, $5, $6, $7)
+         RETURNING id`,
+        [userId, PLAN_DAYS - 1, (analysis || 'Proposed Formulation').slice(0, 2000),
+         JSON.stringify({ morning: morningRecipe?.dots || {}, evening: eveningRecipe?.dots || {} }),
+         labelCode, primaryHealthPlanId, secondaryHealthPlanId]
+    );
+    return plan.id;
+}
+
+// The box-scan half of a chat-tool proposal: the sibling of _commitAgFormulation, for a plan that
+// came from nano's own formulator rather than the external agent.
+//
+// This is where "Day 1" stops being relative. The proposal was authored with no start date
+// because the capsules had to be compounded and shipped first; scanning the delivered box is the
+// first moment a real calendar day exists, so start_date is rewritten to today and the 56 capsules
+// are generated from there.
+//
+// Returns the plan id, or null if the row was not a live proposal (already activated by an
+// earlier scan of another box from the same batch, or superseded by a newer proposal before the
+// box arrived) — callers treat null as "nothing to activate", not as an error.
+async function _activateProposedPlan(client, { userId, planId }) {
+    const { rows: [plan] } = await client.query(
+        `SELECT id, status, goal, proposed_recipe FROM nutrition_plans
+          WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+        [planId, userId]
+    );
+    if (!plan) return null;
+    // A second box from the same batch: the first scan already started the cycle, so join it
+    // rather than regenerating a schedule the user is part-way through.
+    if (plan.status === 'active') return plan.id;
+    if (plan.status !== 'proposed') {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'activate_proposed_plan_not_proposed', userId, planId, status: plan.status }));
+        return null;
     }
+    const recipe = plan.proposed_recipe || {};
+    const morningRecipe = { dots: recipe.morning || {} };
+    const eveningRecipe = { dots: recipe.evening || {} };
 
-    const dotsByKey = new Map((dotsFormulary || []).map(d => [d.key_name, d]));
-    const n7Dot = dotsByKey.get(N7_KEY);
-    const n7MaxCount = n7Dot?.target_dots_max ?? 50;
-    const n7IsolationRecipe = { dots: { [N7_KEY]: n7MaxCount } };
+    const startDateObj = getNowShanghai();
+    const endDateObj = startDateObj.plus({ days: PLAN_DAYS - 1 });
+    await client.query(
+        `UPDATE nutrition_plans SET status = 'active', start_date = $1, end_date = $2 WHERE id = $3`,
+        [startDateObj.toISODate(), endDateObj.toISODate(), plan.id]
+    );
+    await client.query(
+        `UPDATE nutrition_plans SET status = 'superseded' WHERE user_id = $1 AND status = 'active' AND id != $2`,
+        [userId, plan.id]
+    );
 
-    const baseMorningRecipe = _omitDotKey(morningRecipe, N7_KEY);
-    const baseEveningRecipe = _omitDotKey(eveningRecipe, N7_KEY);
-    const pulseDotsByKey = new Map((dotsFormulary || []).filter(d => d.dosing_protocol === 'pulse' && d.key_name !== N7_KEY).map(d => [d.key_name, d]));
-
-    for (let i = 0; i < PLAN_DAYS; i++) {
-        const currentDate = startDateObj.plus({ days: i }).toISODate();
-        const isN7IsolationDay = N7_ISOLATION_DAY_INDEXES.includes(i);
-
-        const dayMorningRecipe = isN7IsolationDay
-            ? n7IsolationRecipe
-            : _capRecipeTotal(_applyPulseSchedule(baseMorningRecipe, pulseDotsByKey, currentDate), MAX_DOTS_PER_CAPSULE);
-        const dayEveningRecipe = isN7IsolationDay
-            ? n7IsolationRecipe
-            : _capRecipeTotal(_applyPulseSchedule(baseEveningRecipe, pulseDotsByKey, currentDate), MAX_DOTS_PER_CAPSULE);
-
-        await client.query(
-            'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
-            [finalPlanId, userId, currentDate, 'morning_cup', dayMorningRecipe]
-        );
-        await client.query(
-            'INSERT INTO nutrition_schedules (plan_id, user_id, scheduled_date, slot_name, recipe) VALUES ($1, $2, $3, $4, $5)',
-            [finalPlanId, userId, currentDate, 'evening_cup', dayEveningRecipe]
-        );
-    }
-    return finalPlanId;
+    // The formulary is needed for the expansion rules only — N7's isolation dose and any pulse
+    // dot's window — not for the counts, which are already fixed in proposed_recipe.
+    const { rows: formulary } = await client.query(
+        `SELECT key_name, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots`
+    );
+    await _writeExpandedSchedules(client, {
+        planId: plan.id, userId, startDateObj, morningRecipe, eveningRecipe, dotsFormulary: formulary,
+    });
+    return plan.id;
 }
 
 // Commits a Viva AG formula — the box-scan half of the AG ordering flow.
 //
-// A DELIBERATE SIBLING of _commitNutritionPlan, not a reuse of it. That function takes a
+// A DELIBERATE SIBLING of _activateProposedPlan, not a reuse of it. That function takes a
 // steady-state morning/evening recipe and EXPANDS it across the cycle, applying
 // _applyPulseSchedule, _capRecipeTotal and the DOT-N7 isolation override day by day as it goes.
 // An AG formula already encodes all 56 capsules explicitly — pulse days, isolation days and all,
@@ -1512,107 +2007,11 @@ async function _commitAgFormulation(client, { userId, planId, capsules, analysis
     return planId;
 }
 
-// Background reformulation triggered by the dispatcher's periodic nutrition.topup CloudEvent
-// (source acs.dispatcher, see dispatcher/index.js's nutritionQuery and worker/index.js's
-// EventBridge router — this case was previously missing there entirely, so the event was
-// silently dropped and this handler never ran). Runs the deterministic single-completion
-// formulator directly rather than the full agentic PLAN->GENERATE->JUDGE->REVISE loop: this is
-// an unattended background job with no user waiting on a reply, so the richer interactive loop's
-// extra latency/cost isn't warranted, mirroring the same choice already made for every other
-// fallback path in this file.
-async function handleNutritionTopupEvent(payload) {
-    const { user_id } = payload || {};
-    if (!user_id) return;
-    try {
-        if (!pool) return;
-        const [userResult, bioResult, dotsResult] = await Promise.all([
-            pool.query('SELECT * FROM users WHERE user_id = $1 LIMIT 1', [user_id]),
-            pool.query(
-                `SELECT data FROM biomarkers WHERE user_id = $1
-                 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL ORDER BY tested_at DESC LIMIT 1`,
-                [user_id]
-            ),
-            pool.query(`SELECT id, key_name, key_name_zh, name, name_zh, color_hex, timing, timing_flexible, ingredients, ingredients_zh, sub_age_target, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ORDER BY id ASC`),
-        ]);
-        if (userResult.rows.length === 0) {
-            console.log(JSON.stringify({ level: 'WARN', msg: 'nutrition_topup_user_not_found', user_id }));
-            return;
-        }
-        const user = userResult.rows[0];
-        const data = bioResult.rows[0]?.data || {};
-        const biomarkers = data.validated || {};
-        const bioageProfile = data.bioage_profile || {};
-
-        let channelPersonaType = 'nano';
-        if (user.channel_id) {
-            try {
-                const chResult = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
-                channelPersonaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
-            } catch (_) {}
-        }
-        const personaType = resolveEffectivePersona({
-            channelPersonaType,
-            personaOverrideType: user.persona_override_type,
-            personaOverrideExpiresAt: user.persona_override_expires_at,
-        });
-
-        const lang = user.language || 'zh';
-        const currentSolarTerm = getCurrentSolarTerm(getNowShanghai().toJSDate());
-        const essentialKnowledge = await getEssentialBlock(personaType);
-        const [userFactsResult, activePlansResult] = await Promise.all([
-            pool.query(
-                `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
-                [user.user_id]
-            ),
-            pool.query(
-                `SELECT hp.id, hp.plan_type, hpt.recommended_dot_ids
-                 FROM health_plans hp
-                 LEFT JOIN health_plan_templates hpt ON hpt.id = hp.template_id
-                 WHERE hp.user_id = $1 AND hp.status = 'active'
-                 ORDER BY hp.start_date DESC LIMIT 5`,
-                [user.user_id]
-            ),
-        ]);
-
-        const { analysis, finalContent, morningRecipe, eveningRecipe } = await _runDeterministicFormulation({
-            biomarkers, bioageProfile, dotsFormulary: dotsResult.rows, personaType, lang, currentSolarTerm,
-            essentialKnowledge, userFacts: userFactsResult.rows, activeHealthPlans: activePlansResult.rows,
-        });
-
-        const client = await pool.connect();
-        try {
-            await client.query('BEGIN');
-            await _commitNutritionPlan(client, {
-                userId: user.user_id, analysis, morningRecipe, eveningRecipe,
-                dotsFormulary: dotsResult.rows, activeHealthPlans: activePlansResult.rows,
-            });
-            await client.query('COMMIT');
-        } catch (e) {
-            await client.query('ROLLBACK');
-            throw e;
-        } finally {
-            client.release();
-        }
-
-        // Reorder-ready nudge: only for a user who has already bought a custom formulation at
-        // least once — handlers/users.js's handlePostFormulationPurchaseConfirmed is the only
-        // way nano learns this (GCN has no other channel to signal it back through). A user who
-        // has never purchased just gets the normal 'nutrition_plan' notification, same as today.
-        const notificationType = user.custom_formulation_purchased_at ? 'formulation_reorder_ready' : 'nutrition_plan';
-        const notificationContent = user.custom_formulation_purchased_at
-            ? (lang === 'zh'
-                ? '您的原粒方案已根据最新数据刷新，点击查看并重新购买。'
-                : 'Your dot formulation has been refreshed with your latest data — tap to view and reorder.')
-            : finalContent;
-        await pool.query(
-            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-            [user.user_id, notificationType, notificationContent, 'pending']
-        );
-        await _saveChatMessage(user.user_id, 'ai', finalContent, null, personaType);
-    } catch (err) {
-        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleNutritionTopupEvent failed', user_id, error: err.message }));
-    }
-}
+// The dispatcher's nutrition.topup handler lived here until 2026-08-28. It generated a
+// formulation and committed it as the user's ACTIVE plan, on a timer, for anyone with fewer than
+// 7 upcoming scheduled days — which included every user who had never ordered a box. Removed
+// along with the scan that triggered it (dispatcher/index.js) and the route that delivered it
+// (worker/index.js), so nothing creates a nutrition plan except a box scan.
 
 async function handlePostFormulaDots(body) {
     const { openid } = body;
@@ -1681,12 +2080,11 @@ async function handlePostFormulaDots(body) {
 // chat.generate event → notifications-poll pipeline already shipped for chat/health-advice —
 // this handler only publishes the event and returns immediately.
 //
-// EVALUATION ONLY. Since the 28-day formula the user actually receives now comes from Viva AG's
-// dots_formulation job, this tool no longer writes anything: no 'pending' row is inserted here
-// and nothing is ever committed to nutrition_plans / nutrition_schedules. The result is a chat
-// message carrying a :::formula chart of the proposed AM/PM allocation, and that is the whole
-// deliverable — which is also why there is no longer a "view plan" button pointing at a Dots
-// subtab that this run did not change.
+// PROPOSES a plan; it does not put the user on one. The result is committed as a 'proposed'
+// nutrition_plans row (no schedules, never supersedes the active plan) plus a chat message
+// carrying a :::formula chart of the whole 28-day cycle. That row is what GCN's checkout prices,
+// and it becomes the user's live plan only when the delivered box is scanned. No 'pending' row is
+// inserted here — the write happens in the finalizer, once there is a validated recipe to write.
 async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dotsFormulary, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts, personaType }) {
     const age = calculateAge(user.birth_date);
     const heightCm = user.bio_data?.height;
@@ -1753,8 +2151,8 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
     const formulaGenerateTemplate = personaType === 'viva' ? vivaSystemFormulaGenerateTemplate : systemFormulaGenerateTemplate;
     const systemPrompt = formulaGenerateTemplate(llmContext);
     const triggerMsg = lang === 'zh'
-        ? '请根据我的完整健康数据配置本周的 Dots 方案。'
-        : "Please formulate this week's Dots plan based on my complete health data.";
+        ? `请根据我的完整健康数据，为我配置一个 ${PLAN_DAYS} 天周期的 Dots 方案。`
+        : `Please formulate a ${PLAN_DAYS}-day Dots plan based on my complete health data.`;
 
     try {
         await publishChatGenerateEvent({
@@ -1766,15 +2164,34 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
     } catch (ebErr) {
         console.log(JSON.stringify({ level: 'WARN', msg: 'chat_generate_publish_failed_fallback_sync', user_id: user.user_id, handler: 'handlePostFormulaDots', error: ebErr.message }));
         // Fail open: publish itself failed, so run the deterministic formulator synchronously and
-        // deliver the same evaluation the async path would have — still no DB write.
-        const { finalContent, morningRecipe, eveningRecipe } = await _runDeterministicFormulation({
+        // deliver the same proposal the async path would have.
+        const { analysis, finalContent, morningRecipe, eveningRecipe } = await _runDeterministicFormulation({
             biomarkers, bioageProfile, dotsFormulary, personaType, lang, currentSolarTerm, essentialKnowledge, userFacts,
             activeHealthPlans: llmContext.active_health_plans,
         });
-        const message = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang);
+        const client = await pool.connect();
+        let planId = null;
+        try {
+            await client.query('BEGIN');
+            planId = await _commitProposedPlan(client, {
+                userId: user.user_id, analysis, morningRecipe, eveningRecipe,
+                activeHealthPlans: llmContext.active_health_plans,
+            });
+            await client.query('COMMIT');
+        } catch (commitErr) {
+            await client.query('ROLLBACK');
+            // The proposal is a nice-to-have here; the user still gets the numbers in chat, just
+            // without a store CTA to order them.
+            console.error(JSON.stringify({ level: 'ERROR', msg: 'commit_proposed_plan_failed', user_id: user.user_id, error: commitErr.message }));
+        } finally {
+            client.release();
+        }
+        const orderMode = await _resolveOrderMode(user.user_id);
+        const labelCode = planId ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [planId])).rows[0]?.label_code : null;
+        const message = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang, { planId, orderMode, labelCode });
         await pool.query(
             'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-            [user.user_id, 'nutrition_plan', message, 'pending']
+            [user.user_id, 'formulation_proposal', message, 'pending']
         );
         await _saveChatMessage(user.user_id, 'ai', message, null, personaType);
         return { success: true };
@@ -1852,20 +2269,30 @@ module.exports = {
     handlePostOrderBatch,
     handleGetNutritionPlan,
     handleGetFormulationCheckoutSnapshot,
+    handlePostFormulationSubmit,
+    handleGetFormulationLabelByCode,
     handleGetFormulationReviewSnapshot,
     _buildReviewTwinContext,
     _getCommittedPlanDay0Breakdown,
-    handleNutritionTopupEvent,
     handlePostFormulaDots,
     handlePostDots,
     handlePutDot,
     handleDeleteDot,
     _runDeterministicFormulation,
-    _commitNutritionPlan,
+    _commitProposedPlan,
+    _activateProposedPlan,
     _commitAgFormulation,
     _fallbackCountForDot,
     _resolveCandidateDotKeys,
     _splitDotTiming,
+    _planDayGroups,
+    _resolveOrderMode,
+    _formulationLabelUrl,
+    _expandProposalToCapsules,
+    _formatDayRanges,
+    _expandPlanDay,
+    _planExpansionContext,
+    _fitRecipeToDailyBudget,
     _buildFormulaChartBlock,
     _buildProductCardBlock,
     _isPulseActiveDate,

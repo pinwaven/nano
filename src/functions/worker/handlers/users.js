@@ -748,7 +748,7 @@ async function handleDeleteInvitation(inviteId) {
 // moment a custom-formulation order is confirmed paid. This one nullable timestamp is nano's
 // entire signal for "has this user ever bought a custom formulation" (nano has no visibility
 // into GCN's orders otherwise), used to gate the topup-triggered reorder-ready notification
-// (handlers/dots.js's handleNutritionTopupEvent) — no need to re-derive it on every call, so
+// (it was read by the since-removed nutrition top-up job) — no need to re-derive it, so
 // this is a plain unconditional UPDATE rather than an ON CONFLICT-guarded first-write-only one.
 async function handlePostFormulationPurchaseConfirmed(body) {
     const { openid } = body || {};

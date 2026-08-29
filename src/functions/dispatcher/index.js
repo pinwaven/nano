@@ -11,7 +11,8 @@ const { v4: uuidv4 } = require('uuid');
 // so a dev-published chat.generate event was also picked up and processed by prod, leaking a
 // raw LLM action tail into a real user's live chat history — see chatEventBridge.js for the
 // full writeup. The same shared-bus risk applies to every event this function publishes
-// (nutrition.topup / agent.coaching_session / checkin.daily, all under source "acs.dispatcher")
+// (agent.coaching_session / checkin.daily, both under source "acs.dispatcher"; nutrition.topup
+// was published here too until it was removed 2026-08-28 — see the note in the handler)
 // since nano-agent/nano-agent-dev's and nano-worker/nano-worker-dev's eb-triggers had the
 // identical unscoped filter. EVENT_SOURCE_SUFFIX is set to ".dev" in s.yaml and left unset in
 // s-prod.yaml (defaults to "", i.e. prod's original unsuffixed source — no prod change needed).
@@ -45,70 +46,24 @@ exports.handler = async (event, context) => {
     const ebClient = new EventBridge.default(ebConfig);
 
     try {
-        const nutritionQuery = `
-            SELECT u.user_id, u.nickname,
-                   COUNT(s.id) as scheduled_days,
-                   MAX(s.scheduled_date) as last_scheduled_date
-            FROM users u
-            LEFT JOIN nutrition_schedules s ON u.user_id = s.user_id AND s.scheduled_date >= CURRENT_DATE
-            GROUP BY u.user_id
-            HAVING COUNT(s.id) < 7;
-        `;
-
-        const nutritionResult = await pool.query(nutritionQuery);
-        const usersToTopUp = nutritionResult.rows;
-
-        console.log(`Found ${usersToTopUp.length} users needing nutrition plan top-up.`);
-
-        // The internal VPC URL for nano-worker - fallback
-        const workerUrl = process.env.WORKER_URL || 'https://nano-worker-napllanrqp.cn-shanghai-vpc.fcapp.run';
-
-        for (const user of usersToTopUp) {
-            console.log(`Dispatching nutrition top-up for: ${user.nickname}`);
-            
-            const payload = {
-                user_id: user.user_id,
-                trigger_type: 'nutrition_topup',
-                days_needed: 7 - parseInt(user.scheduled_days),
-                start_from: user.last_scheduled_date || new Date().toISOString().split('T')[0]
-            };
-
-            // 1. Try EventBridge (Preferred)
-            const cloudEvent = new EventBridge.CloudEvent({
-                id: uuidv4(),
-                source: DISPATCHER_EVENT_SOURCE,
-                specversion: '1.0',
-                type: 'nutrition.topup',
-                subject: 'user_nutrition_needed',
-                datacontenttype: 'application/json',
-                data: Buffer.from(JSON.stringify(payload)),
-                time: new Date().toISOString(),
-                extensions: {
-                    aliyuneventbusname: 'default'
-                }
-            });
-
-            try {
-                await ebClient.putEvents([cloudEvent]);
-                console.log(`[EventBridge] Published event for ${user.user_id}`);
-            } catch (ebErr) {
-                console.warn(`[EventBridge] Failed, falling back to HTTP: ${ebErr.message}`);
-                
-                // 2. Fallback to HTTP (Direct Worker Call)
-                try {
-                    await axios.post(workerUrl, payload, { 
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'x-fc-invocation-type': 'Async'
-                        },
-                        timeout: 10000 
-                    });
-                    console.log(`[HTTP Fallback] Dispatched to worker for ${user.user_id}`);
-                } catch (httpErr) {
-                    console.error(`[HTTP Fallback] Failed for ${user.user_id}:`, httpErr.message);
-                }
-            }
-        }
+        // ── Nutrition top-up: REMOVED 2026-08-28 ────────────────────────────────────────────
+        // This scan used to publish a nutrition.topup CloudEvent for every user with fewer than
+        // 7 upcoming nutrition_schedules rows, and the worker answered it by generating a fresh
+        // formulation and committing it as that user's ACTIVE plan.
+        //
+        // It had no plan requirement at all — a LEFT JOIN over `users`, counting schedules — so
+        // it did not "top up" anything: it MANUFACTURED a plan for anyone who did not have one,
+        // including every user who had never ordered a box, never received capsules, and had no
+        // intention of taking anything. That is how dev accumulated 1,133 plans across 676 users
+        // with zero boxes ever produced.
+        //
+        // A plan now means "this person physically has these capsules", and the only two things
+        // that may create one are a box scan (_activateProposedPlan for a chat-tool proposal,
+        // _commitAgFormulation for a Viva AG formula). Nothing runs on a timer.
+        //
+        // Do not reintroduce a scan here that creates a plan. If a genuine top-up need ever
+        // appears — a user mid-cycle running short of scheduled days — it must EXTEND the plan
+        // they are already on, and must not match a user who has no plan.
 
         const agentUrl = process.env.AGENT_URL || 'https://nano-agent-napllanrqp.cn-shanghai-vpc.fcapp.run';
 
@@ -142,9 +97,12 @@ exports.handler = async (event, context) => {
             }
         };
 
-        // Helper: dispatch a payload to the worker function via EventBridge with HTTP fallback —
-        // same pattern as the inline nutrition_topup dispatch above, factored out since the
-        // Viva check-in scan below needs the identical shape.
+        // The internal VPC URL for nano-worker, used as the HTTP fallback below.
+        const workerUrl = process.env.WORKER_URL || 'https://nano-worker-napllanrqp.cn-shanghai-vpc.fcapp.run';
+
+        // Helper: dispatch a payload to the worker function via EventBridge with HTTP fallback.
+        // Originally factored out of the nutrition top-up dispatch (now removed, see above); the
+        // Viva check-in scan below is what uses it today.
         const dispatchToWorker = async (payload, type, subject) => {
             const cloudEvent = new EventBridge.CloudEvent({
                 id: uuidv4(),
@@ -314,7 +272,7 @@ exports.handler = async (event, context) => {
 
         return {
             statusCode: 200,
-            body: JSON.stringify({ message: `Dispatched ${usersToTopUp.length} top-ups.` })
+            body: JSON.stringify({ message: 'Dispatcher scan complete.' })
         };
     } catch (error) {
         console.error('Dispatcher error:', error);

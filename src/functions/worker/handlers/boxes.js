@@ -1,23 +1,19 @@
 'use strict';
 
-const crypto = require('crypto');
 const { pool } = require('../lib/db');
 const { formatToShanghai } = require('../lib/time-utils');
-const { _getCommittedPlanDay0Breakdown, _commitAgFormulation } = require('./dots');
+const { _getCommittedPlanDay0Breakdown, _commitAgFormulation, _activateProposedPlan } = require('./dots');
+const { generateLabelCode } = require('../lib/labelCode');
 
 // Full ingredient/timing/coating/color columns — the box QR page needs the actual per-dot
 // composition (mg amounts), not just names like the GCN checkout-snapshot endpoint does.
 const BOX_DOT_COLUMNS = `id, key_name, name, name_zh, color, color_zh, color_hex,
     coating, timing, ingredients, ingredients_zh, ingredients_summary`;
 
-async function _generateBoxCode() {
-    for (let i = 0; i < 10; i++) {
-        const code = 'WVB' + crypto.randomBytes(6).toString('hex').toUpperCase();
-        const { rows } = await pool.query('SELECT 1 FROM boxes WHERE box_code = $1', [code]);
-        if (rows.length === 0) return code;
-    }
-    throw new Error('Failed to generate a unique box code');
-}
+// Moved to lib/labelCode.js so box codes and formulation label codes are minted from ONE space —
+// a plan's label_code becomes its box's box_code, and a collision between the two would mean a
+// scan resolving to the wrong person's capsules.
+const _generateBoxCode = generateLabelCode;
 
 // The printed box shows what is in it per day, so an AG formula's 56 capsules are collapsed to
 // the same per-dot AM/PM shape _getCommittedPlanDay0Breakdown returns for a nano-formulated plan.
@@ -60,7 +56,7 @@ async function _agDotBreakdown(capsules) {
 async function handlePostBoxBatch(body, adminCtx) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const { user_id, quantity, notes, ag_formulation_id } = body || {};
+        const { user_id, quantity, notes, ag_formulation_id, plan_id } = body || {};
         if (!user_id) return { success: false, error: 'user_id is required' };
         const qty = parseInt(quantity, 10);
         if (!qty || qty < 1 || qty > 5000) return { success: false, error: 'quantity must be 1-5000' };
@@ -71,10 +67,15 @@ async function handlePostBoxBatch(body, adminCtx) {
             return { success: false, error: 'Forbidden', statusCode: 403 };
         }
 
-        // Two sources, because the AG ordering flow manufactures a box BEFORE its plan is in
-        // effect: an expert-approved viva_ag_formulations row exists while its nutrition_plans row
-        // is still 'approved' with no schedules, so the usual "snapshot the active plan" lookup
-        // would find the user's PREVIOUS formula and box the wrong thing.
+        // Three sources, and the two explicit ones exist for the same reason: a box is
+        // manufactured BEFORE its plan is in effect, so the default "snapshot the active plan"
+        // lookup would find the user's PREVIOUS formula and box the wrong thing.
+        //   ag_formulation_id — the AG ordering flow. The nutrition_plans row is still 'approved'
+        //                       with no schedules while the batch is compounded.
+        //   plan_id           — a Formulate-Dots proposal ('proposed', also no schedules) that the
+        //                       user has ordered through the store. Accepts an 'active' plan too,
+        //                       so an explicit id is always honoured over the implicit lookup.
+        //   neither           — the pre-existing behaviour: the user's latest active plan.
         let planId = null;
         let agFormulationId = null;
         let snapshot;
@@ -102,13 +103,29 @@ async function handlePostBoxBatch(body, adminCtx) {
                 dot_breakdown: await _agDotBreakdown(f.adjusted_capsules || f.capsules),
             };
         } else {
-            const planRes = await pool.query(
-                `SELECT id FROM nutrition_plans WHERE user_id = $1 AND status = 'active'
-                 ORDER BY created_at DESC LIMIT 1`,
-                [user_id]
-            );
-            if (planRes.rows.length === 0) return { success: false, error: 'User has no committed (active) nutrition plan' };
-            planId = planRes.rows[0].id;
+            if (plan_id) {
+                const explicit = await pool.query(
+                    `SELECT id, user_id, status FROM nutrition_plans WHERE id = $1`,
+                    [parseInt(plan_id, 10)]
+                );
+                const row = explicit.rows[0];
+                if (!row) return { success: false, error: 'Plan not found' };
+                // Same safety rule as the AG branch: these capsules are compounded for one named
+                // person from their own biomarkers.
+                if (row.user_id !== user_id) return { success: false, error: 'Plan belongs to a different user' };
+                if (!['proposed', 'active'].includes(row.status)) {
+                    return { success: false, error: `Plan is ${row.status}, not a live proposal or an active plan — it must not be compounded` };
+                }
+                planId = row.id;
+            } else {
+                const planRes = await pool.query(
+                    `SELECT id FROM nutrition_plans WHERE user_id = $1 AND status = 'active'
+                     ORDER BY created_at DESC LIMIT 1`,
+                    [user_id]
+                );
+                if (planRes.rows.length === 0) return { success: false, error: 'User has no committed (active) nutrition plan' };
+                planId = planRes.rows[0].id;
+            }
 
             const { plan, dotBreakdown, reason } = await _getCommittedPlanDay0Breakdown(planId, { dotColumns: BOX_DOT_COLUMNS });
             if (reason) return { success: false, error: `Cannot snapshot plan: ${reason}` };
@@ -131,8 +148,21 @@ async function handlePostBoxBatch(body, adminCtx) {
             );
             const batchId = batchRes.rows[0].id;
 
+            // The first box carries the FORMULATION's own code, minted when the formula was
+            // generated — that is the QR the user has already been shown and the one that
+            // identifies this formulation everywhere. Only the extra boxes of a multi-box batch
+            // need fresh codes; each still claims the same plan (a second scan joins the cycle
+            // the first started rather than restarting it).
             const codes = [];
-            for (let i = 0; i < qty; i++) codes.push(await _generateBoxCode());
+            const { rows: [labelled] } = planId
+                ? await client.query(
+                    `SELECT label_code FROM nutrition_plans
+                      WHERE id = $1 AND label_code IS NOT NULL
+                        AND NOT EXISTS (SELECT 1 FROM boxes WHERE box_code = nutrition_plans.label_code)`,
+                    [planId])
+                : { rows: [] };
+            if (labelled?.label_code) codes.push(labelled.label_code);
+            while (codes.length < qty) codes.push(await _generateBoxCode());
 
             const vals = [], params = [];
             codes.forEach(code => {
@@ -391,6 +421,17 @@ async function handlePostBoxClaim(body) {
                     [f.id]
                 );
             }
+        } else if (planId) {
+            // A batch compounded straight from a Formulate-Dots proposal (no AG formulation in
+            // between). Same moment, same meaning as the AG branch above: the proposal's relative
+            // "Day 1" becomes today, and the 56 capsules are written from proposed_recipe.
+            //
+            // A null return is not an error — the proposal was already activated by an earlier
+            // box from this batch (in which case the plan is live and this box just joins it), or
+            // it was superseded by a newer proposal while this one was in transit. Either way the
+            // box is still claimed against the row, so the user has a record of what they got.
+            const activated = await _activateProposedPlan(client, { userId: openid, planId });
+            if (activated) planId = activated;
         }
 
         await client.query(

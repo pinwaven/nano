@@ -25,7 +25,7 @@ const SLOTS = ['AM', 'PM'];
 const EXPECTED_CAPSULES = PLAN_DAYS * SLOTS.length;
 const FORMAT_ID = 'viva-ag-dots-formulation/1';
 
-// N7_ISOLATION_DAY_INDEXES is 0-indexed day offsets (matching _commitNutritionPlan's loop);
+// N7_ISOLATION_DAY_INDEXES is 0-indexed day offsets (matching _expandPlanDay's day index);
 // the .md contract and everything user-facing counts days from 1.
 const N7_ISOLATION_DAYS = N7_ISOLATION_DAY_INDEXES.map(i => i + 1);
 

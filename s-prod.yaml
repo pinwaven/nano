@@ -98,6 +98,10 @@ resources:
         # code default (handlers/viva_ag.js) is 3; dev sets 50 so testing isn't blocked.
         VIVA_AG_MAX_JOBS_PER_DAY: "10"
         GCN_API_BASE_URL: "https://edge.gcn.net"
+        # Public aeviva sector site — where the formulation label QR points. Distinct from
+        # GCN_API_BASE_URL (the server-to-server API edge): this one is a link a person opens,
+        # and it is a verified WeChat business domain so <web-view> can load it.
+        AEVIVA_SITE_BASE_URL: "https://aeviva.gcn.net"
         GCN_SERVICE_TOKEN: ${env(GCN_SERVICE_TOKEN)}
         OSS_REGION: "oss-cn-shanghai"
         OSS_BUCKET: "waven-nano"
