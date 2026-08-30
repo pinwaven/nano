@@ -228,7 +228,7 @@ const T = {
     formulaResetDay: 'DOT-N7 单独重置',
     formulaDaysUnit: '天',
     formulaCapsulesUnit: '粒胶囊',
-    formulaOrderCta: '按此方案定制下单 →',
+    formulaOrderCta: '购买 28 天定制套餐 →',
     formulaLabelCta: '查看配方标签与二维码',
     formulaSubmitCta: '确认此方案，开始配制 →',
     formulaSubmitConfirmTitle: '确认配制方案',
@@ -236,6 +236,7 @@ const T = {
     formulaSubmitOk: '已提交配制，我们会尽快为您加工发货。',
     formulaSubmitNoOrder: '未找到待配制的订单，可能已完成或已取消。',
     formulaSubmitExpert: '该订单为专家审核套餐，正式配方将由 Viva AG 生成。',
+    formulaSubmitOverTier: '本方案某一周同时服用的原粒种类超出您购买的套餐上限，请重新使用「营养定制」生成一份符合套餐的方案。',
     formulaSubmitFailed: '提交失败，请稍后重试。',
     formulaAgPending: '您已购买 28 天套餐（含专家审核）。正式配方将由 Viva AG 生成并经营养专家审核，以上仅为参考评估。',
     formulaError: '方案生成失败，请重试。',
@@ -493,7 +494,7 @@ const T = {
     formulaResetDay: 'DOT-N7 reset',
     formulaDaysUnit: ' days',
     formulaCapsulesUnit: ' capsules',
-    formulaOrderCta: 'Order this formulation →',
+    formulaOrderCta: 'Buy your 28-day package →',
     formulaLabelCta: 'View formulation label & QR',
     formulaSubmitCta: 'Confirm and start compounding →',
     formulaSubmitConfirmTitle: 'Confirm this formulation',
@@ -501,6 +502,7 @@ const T = {
     formulaSubmitOk: 'Submitted. We will compound and ship this to you shortly.',
     formulaSubmitNoOrder: 'No order is waiting to be formulated — it may already be fulfilled or cancelled.',
     formulaSubmitExpert: 'That order includes expert review, so its final formula comes from Viva AG.',
+    formulaSubmitOverTier: "One week of this formulation runs more dots at once than your package allows — run Formulate Dots again to build one that fits it.",
     formulaSubmitFailed: 'Submission failed. Please try again shortly.',
     formulaAgPending: 'You have a 28-day package with expert review. Its final formula will be produced by Viva AG and signed off by a nutritionist — the allocation above is a preview.',
     formulaError: 'Plan generation failed. Please try again.',
@@ -634,7 +636,8 @@ function buildSubAgeLabels(base, overrides, lang) {
 // excludes coach_reminder and questionnaire_ready, which have no chat_messages row at all —
 // registering a reminder would make two genuinely separate identical ones look like a duplicate.
 const AI_ECHO_TYPES = new Set([
-  'chat_reply', 'nutrition_plan', 'formulation_proposal', 'formulation_reorder_ready', 'biological_report',
+  'chat_reply', 'nutrition_plan', 'formulation_proposal', 'formulation_reorder_ready',
+  'formulation_order_paid', 'biological_report',
   'coach_message', 'morning_checkin', 'midday_checkin', 'evening_checkin',
   'viva_ag_result', 'viva_ag_failed', 'viva_ag_questionnaire',
 ])
@@ -1433,6 +1436,7 @@ Page({
       // Named reasons the user can act on get their own message; everything else is a retry.
       if (d.reason === 'no_awaiting_order') this._addMsg('ai', t.formulaSubmitNoOrder, true)
       else if (d.reason === 'order_requires_expert_review') this._addMsg('ai', t.formulaSubmitExpert, true)
+      else if (d.reason === 'formulation_exceeds_package') this._addMsg('ai', t.formulaSubmitOverTier, true)
       else this._addMsg('ai', t.formulaSubmitFailed, true)
     } catch (err) {
       this._addMsg('ai', t.formulaSubmitFailed, true)
