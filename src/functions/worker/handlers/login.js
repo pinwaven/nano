@@ -25,6 +25,51 @@ async function coachIdForReferrer(referrerUserId) {
     }
 }
 
+// Resolves the caller's own coach identity — the object the clients store as globalData.coach and
+// every coach-panel request keys off (pages/coach/coach.js: `_coachId = coach ? coach.id : null`).
+// Exported because EVERY login path must return it: a path that omits it leaves a real coach with
+// `_coachId = null`, and the panel then renders an empty client list without ever calling the API
+// (prod 2026-08-30 — coaches who signed in by phone OTP instead of WeChat saw no clients at all).
+async function resolveCoachSession(userId, roles) {
+    if (!roles || !roles.includes('coach')) return null;
+    try {
+        const res = await pool.query(
+            'SELECT c.id, u2.channel_id, c.user_id FROM coaches c JOIN users u2 ON c.user_id = u2.user_id WHERE c.user_id = $1 LIMIT 1',
+            [userId]
+        );
+        return res.rows[0] || null;
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'resolveCoachSession failed', user_id: userId, error: err.message }));
+        return null;
+    }
+}
+
+// GET /my-coach?user_id=… — re-resolve the caller's own coach identity.
+//
+// globalData.coach is captured at login and, unlike globalData.user, is NEVER refreshed after it
+// (nano_user is rewritten from the server in several places; nano_coach only ever at login and
+// sandbox enter/exit). So a session that once stored a null — logging in before being made a
+// coach, or via a path that predates the coach field — keeps that null across every relaunch,
+// forever, while roles DO get refreshed. The result is a user the app labels 教练 whose coach
+// panel can never load: confirmed in prod 2026-08-30 as `coach=null` for a coach with 37 clients.
+// This lets the client repair itself instead of requiring the user to work out that a full
+// re-login is the fix.
+async function handleGetMyCoach(query) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const userId = query && query.user_id;
+        if (!userId) return { success: false, error: 'user_id is required', statusCode: 400 };
+        // Read roles from the DB rather than trusting a client-supplied claim — the coaches row is
+        // the real authority anyway, and resolveCoachSession returns null for a non-coach.
+        const uRes = await pool.query('SELECT roles FROM users WHERE user_id = $1 LIMIT 1', [userId]);
+        if (uRes.rows.length === 0) return { success: false, error: 'user_not_found', statusCode: 404 };
+        const coach = await resolveCoachSession(userId, uRes.rows[0].roles);
+        return { success: true, coach };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleResolvePhone(code, app_id = null) {
     try {
         if (!code) return { success: false, error: 'code is required' };
@@ -277,14 +322,7 @@ async function handleWxLogin(body) {
             ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
             : null;
         // If user is a coach, fetch their coach record
-        let coach = null;
-        if (user.roles && user.roles.includes('coach')) {
-            const coachRes = await pool.query(
-                `SELECT c.id, u2.channel_id, c.user_id FROM coaches c JOIN users u2 ON c.user_id = u2.user_id WHERE c.user_id = $1 LIMIT 1`,
-                [user.user_id]
-            );
-            if (coachRes.rows.length > 0) coach = coachRes.rows[0];
-        }
+        const coach = await resolveCoachSession(user.user_id, user.roles);
         // Account already exists — log in regardless of whether a phone is on file.
         // Missing phone is nudged via an in-chat prompt, not by re-forcing the signup screen.
         return { success: true, user, channel, coach };
@@ -484,14 +522,7 @@ async function handleWxAppLogin(body) {
         const channel = channel_name
             ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
             : null;
-        let coach = null;
-        if (user.roles && user.roles.includes('coach')) {
-            const coachRes = await pool.query(
-                'SELECT c.id, u2.channel_id, c.user_id FROM coaches c JOIN users u2 ON c.user_id = u2.user_id WHERE c.user_id = $1 LIMIT 1',
-                [user.user_id]
-            );
-            if (coachRes.rows.length > 0) coach = coachRes.rows[0];
-        }
+        const coach = await resolveCoachSession(user.user_id, user.roles);
         // Account already exists — log in regardless of whether a phone is on file.
         return { success: true, user, channel, coach };
     };
@@ -965,6 +996,8 @@ async function handlePostQrLoginConfirm(body) {
 }
 
 module.exports = {
+    resolveCoachSession,
+    handleGetMyCoach,
     handleResolvePhone,
     handleBindPhone,
     handleWxLogin,

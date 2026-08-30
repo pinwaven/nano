@@ -7,6 +7,7 @@ const { normalizeCnPhone } = require('../lib/phone');
 const { mergeUsers, resolveMergedUser } = require('./user-merge');
 const { grantSignupTrial } = require('../lib/personaOverride');
 const { syncPartnerPhoneFromUser } = require('./partners');
+const { resolveCoachSession } = require('./login');
 
 const PHONE_RE = /^1\d{10}$/;
 
@@ -46,12 +47,16 @@ const USER_SELECT = `
         FROM biomarkers ORDER BY user_id, tested_at DESC
     ) b ON u.user_id = b.user_id`;
 
-function shapeUserRow(row) {
+// Async because it also resolves the caller's own coach identity. The WeChat login paths have
+// always returned `coach` alongside user/channel; this one did not, so a coach signing in by phone
+// got globalData.coach = null and an empty coach panel (see resolveCoachSession in login.js).
+async function shapeUserRow(row) {
     const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = row;
     const channel = channel_name
         ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
         : null;
-    return { user, channel };
+    const coach = await resolveCoachSession(user.user_id, user.roles);
+    return { user, channel, coach };
 }
 
 // Joins through user_phones (source of truth for phone -> user_id) rather than
@@ -99,8 +104,8 @@ async function handlePhoneOtpVerify(body) {
         if (existing) {
             if (isSuperOtp) await logSuperOtpUse(fullPhone, existing.user_id);
             console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-existing', data: { phone: fullPhone, user_id: existing.user_id } }));
-            const { user, channel } = shapeUserRow(existing);
-            return { success: true, user, channel };
+            const { user, channel, coach } = await shapeUserRow(existing);
+            return { success: true, user, channel, coach };
         }
 
         const user_id = generateUserId();
@@ -139,8 +144,8 @@ async function handlePhoneOtpVerify(body) {
                 const raced = await findUserByPhone(fullPhone);
                 if (raced) {
                     if (isSuperOtp) await logSuperOtpUse(fullPhone, raced.user_id);
-                    const { user, channel } = shapeUserRow(raced);
-                    return { success: true, user, channel };
+                    const { user, channel, coach } = await shapeUserRow(raced);
+                    return { success: true, user, channel, coach };
                 }
             }
             throw err;
@@ -209,9 +214,9 @@ async function handlePhoneOtpBind(body) {
 
             const { rows } = await client.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [winnerId]);
             if (rows.length === 0) return { success: false, error: 'user_not_found' };
-            const { user, channel } = shapeUserRow(rows[0]);
+            const { user, channel, coach } = await shapeUserRow(rows[0]);
             console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-bind-merged', data: { phone: fullPhone, requested_user_id: user_id, winner_user_id: winnerId } }));
-            return { success: true, user, channel, merged: true };
+            return { success: true, user, channel, coach, merged: true };
         }
 
         await client.query('BEGIN');
@@ -266,9 +271,9 @@ async function handlePhoneOtpBind(body) {
         if (attach.rows[0].is_primary) await syncPartnerPhoneFromUser(user_id, fullPhone);
 
         const { rows } = await client.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [user_id]);
-        const { user, channel } = shapeUserRow(rows[0]);
+        const { user, channel, coach } = await shapeUserRow(rows[0]);
         console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-bind', data: { phone: fullPhone, user_id, is_primary: attach.rows[0].is_primary } }));
-        return { success: true, user, channel };
+        return { success: true, user, channel, coach };
     } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
         console.log(JSON.stringify({ level: 'ERROR', msg: 'phone-otp-bind-error', data: { err: err.message } }));
@@ -415,9 +420,9 @@ async function handlePhoneAcceptUnverified(body) {
         if (updated.rows.length === 0) return { success: false, error: 'user_not_found' };
 
         const { rows } = await pool.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [user_id]);
-        const { user, channel } = shapeUserRow(rows[0]);
+        const { user, channel, coach } = await shapeUserRow(rows[0]);
         console.log(JSON.stringify({ level: 'INFO', msg: 'phone-accept-unverified', data: { phone, user_id } }));
-        return { success: true, user, channel };
+        return { success: true, user, channel, coach };
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'phone-accept-unverified-error', data: { err: err.message } }));
         return { success: false, error: err.message };

@@ -87,7 +87,7 @@ const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert
 const { handlePostBoxBatch, handleGetBoxBatches, handleGetBoxBatchBoxes, handleGetBoxPage, handlePostBoxClaim } = require('./handlers/boxes');
 const { handleGetAgFormulationReviewSnapshot, handlePostAgFormulationApproved, handleGetAgFormulationStatus } = require('./handlers/ag_formulation');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
-const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm } = require('./handlers/login');
+const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm, handleGetMyCoach } = require('./handlers/login');
 const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified, handlePhoneOtpList, handlePhoneOtpRemove, handlePhoneOtpAdminAdd } = require('./handlers/phone-otp');
 const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handleChatGenerateEvent, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign, _fireQuestionnaireAnsweredFollowup } = require('./handlers/chat');
 const { CHAT_EVENT_SOURCE } = require('./lib/chatEventBridge');
@@ -524,6 +524,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetMyOrders(query.openid);
             } else if (path.includes('/orders')) {
                 result = await handleGetOrders(query, adminCtx);
+            } else if (path === '/my-coach') {
+                result = await handleGetMyCoach(query);
             } else if (path.includes('/coach-list')) {
                 result = await handleGetCoachList(adminCtx.channelId);
             } else if (path.match(/\/channel-users\/(\d+)/)) {
