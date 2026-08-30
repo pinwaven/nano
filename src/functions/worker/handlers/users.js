@@ -750,18 +750,180 @@ async function handleDeleteInvitation(inviteId) {
 // into GCN's orders otherwise), used to gate the topup-triggered reorder-ready notification
 // (it was read by the since-removed nutrition top-up job) — no need to re-derive it, so
 // this is a plain unconditional UPDATE rather than an ON CONFLICT-guarded first-write-only one.
+// POST /api/formulation-purchase-confirmed   (GCN service token)
+//
+// GCN confirmed payment on a formulation order. Two things come out of that, and they are for
+// different products:
+//
+//   1. The purchase flag, always. nano has no other visibility into GCN's orders and uses this one
+//      column to decide whether a later reformulation should be framed as a reorder.
+//   2. A chat message, only when the order parked at 'awaiting_formulation' — i.e. a buy-first
+//      package (GCN's migration_0085) whose recipe does not exist yet. That order is waiting on
+//      something ONLY this app can produce, and nothing in the store says so; without this message
+//      the buyer has paid and has no idea the next move is theirs.
+//
+// A formulate→buy order (migration_0061) sends neither flag nor message beyond (1): its recipe
+// already exists and there is nothing to prompt.
 async function handlePostFormulationPurchaseConfirmed(body) {
-    const { openid } = body || {};
+    const { openid, awaiting_formulation, fulfillment, max_distinct_dots, package_name,
+            intended_nano_plan_id } = body || {};
     if (!openid) return { success: false, error: 'openid is required' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        await pool.query(
-            `UPDATE users SET custom_formulation_purchased_at = NOW() WHERE user_id = $1 OR external_id = $1`,
+        const { rows: [user] } = await pool.query(
+            `UPDATE users SET custom_formulation_purchased_at = NOW()
+             WHERE user_id = $1 OR external_id = $1
+             RETURNING user_id, language`,
             [openid]
         );
+        if (!user) return { success: false, error: 'user_not_found' };
+
+        // An expert-review package is formulated by Viva AG on its own schedule — the user has
+        // nothing to do, so inviting them to run 营养定制 would send them somewhere that cannot
+        // fulfil their order.
+        if (awaiting_formulation && fulfillment === 'fast_track') {
+            await _settleFastTrackPackage(user, { max_distinct_dots, package_name, intended_nano_plan_id });
+        }
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
+    }
+}
+
+// A fast-track package just went paid. Two outcomes, and this is where which one happens is decided.
+//
+// The buyer reached checkout by tapping "order" on a formulation card, so they usually have a
+// specific proposal in mind, and GCN carried its id through (migration_0086). Attaching it now is
+// the difference between "you already approved this, we are compounding it" and sending someone
+// back to re-run a tool on a formula they just agreed to.
+//
+// It is only ever an ATTEMPT. handlePostFormulationSubmit re-checks everything from scratch —
+// ownership, that the plan is still 'proposed' (a newer formulation supersedes it), that an order
+// really is waiting, that it fits the purchased weekly width, and that the expansion still passes
+// the validator. Any of those can legitimately say no, and every no falls through to the nudge —
+// which is exactly the behaviour this flow had before a plan id was carried at all. Nothing here
+// can leave the buyer worse off than the nudge alone.
+async function _settleFastTrackPackage(user, { max_distinct_dots, package_name, intended_nano_plan_id }) {
+    const planId = Number(intended_nano_plan_id);
+    if (Number.isFinite(planId) && planId > 0) {
+        try {
+            // Required at call time for the same reason ./chat is below.
+            const { handlePostFormulationSubmit } = require('./dots');
+            const result = await handlePostFormulationSubmit({ openid: user.user_id, plan_id: planId });
+            if (result?.success) {
+                console.log(JSON.stringify({ level: 'INFO', msg: 'fasttrack_auto_submitted',
+                    user_id: user.user_id, plan_id: planId, order_id: result.order_id,
+                    already_submitted: !!result.already_submitted }));
+                await _notifyFormulationAutoSubmitted(user, { package_name });
+                return;
+            }
+            // The one refusal worth its own message: the formula is fine, it is simply wider than
+            // the package they bought. Re-running the tool now produces one built for the tier,
+            // because the prompt is told the width.
+            if (result?.reason === 'formulation_exceeds_package') {
+                console.log(JSON.stringify({ level: 'INFO', msg: 'fasttrack_auto_submit_over_tier',
+                    user_id: user.user_id, plan_id: planId,
+                    distinct_dots: result.distinct_dots, max_distinct_dots: result.max_distinct_dots }));
+                await _notifyFormulationPackagePaid(user, {
+                    max_distinct_dots: result.max_distinct_dots ?? max_distinct_dots,
+                    package_name, overTierDots: result.distinct_dots,
+                });
+                return;
+            }
+            console.log(JSON.stringify({ level: 'INFO', msg: 'fasttrack_auto_submit_declined',
+                user_id: user.user_id, plan_id: planId, reason: result?.reason || 'unknown' }));
+        } catch (err) {
+            // Never fatal: the nudge below is the entire pre-existing behaviour and still works.
+            console.error(JSON.stringify({ level: 'ERROR', msg: 'fasttrack_auto_submit_failed',
+                user_id: user.user_id, plan_id: planId, error: err.message }));
+        }
+    }
+    await _notifyFormulationPackagePaid(user, { max_distinct_dots, package_name });
+}
+
+// The proposal the buyer ordered was accepted and is going to compounding, so this is a
+// confirmation, not an instruction. Telling them to go and formulate here would be wrong twice
+// over: the work is done, and running the tool again would produce a NEW proposal that is not the
+// one being compounded.
+async function _notifyFormulationAutoSubmitted(user, { package_name }) {
+    try {
+        const { deliverTerminalMessage } = require('./chat');
+        const { resolveEffectivePersona } = require('../lib/persona');
+        const { rows: [row] } = await pool.query(
+            `SELECT c.config->>'persona_type' AS channel_persona,
+                    u.persona_override_type, u.persona_override_expires_at
+             FROM users u LEFT JOIN channels c ON c.id = u.channel_id
+             WHERE u.user_id = $1`,
+            [user.user_id]
+        );
+        const personaType = resolveEffectivePersona({
+            channelPersonaType: row?.channel_persona,
+            personaOverrideType: row?.persona_override_type,
+            personaOverrideExpiresAt: row?.persona_override_expires_at,
+        });
+        const isZh = (user.language || 'zh') !== 'en';
+        const name = package_name || (isZh ? '28天定制套餐' : 'your 28-day custom package');
+        const text = isZh
+            ? `您的「${name}」已支付成功 🎉\n\n您下单时确认的原粒配方已提交配制，我们会尽快为您加工发货。收到实物后扫描包装上的二维码，即可开始您的 28 天周期。`
+            : `Your ${name} is paid 🎉\n\nThe formula you confirmed at checkout has gone to compounding — we'll get it made and shipped. Scan the QR on the box when it arrives to start your 28-day cycle.`;
+        await deliverTerminalMessage(user.user_id, personaType, 'formulation_order_paid', text);
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'formulation_auto_submitted_notify_failed',
+            user_id: user.user_id, error: err.message }));
+    }
+}
+
+// Delivers the "your package is paid — now formulate it" nudge.
+//
+// Best-effort by design: the money has already moved and the flag above is already written, so a
+// failure here must never turn into a non-2xx that makes GCN log a failed payment notify. The user
+// can still reach 营养定制 on their own, and the card they get there resolves the waiting order at
+// delivery time regardless of whether this message ever arrived.
+//
+// require('./chat') is at call time rather than at module load: chat.js pulls in the whole dots /
+// questionnaires / coaches graph, and this is one endpoint on a module that is otherwise a leaf of
+// that graph. Nothing in the chat graph requires users.js, so this is not breaking a cycle — it is
+// keeping a cold path off the module-load critical path of every warm container.
+async function _notifyFormulationPackagePaid(user, { max_distinct_dots, package_name, overTierDots }) {
+    try {
+        const { deliverTerminalMessage } = require('./chat');
+        const { resolveEffectivePersona } = require('../lib/persona');
+        const { rows: [row] } = await pool.query(
+            `SELECT c.config->>'persona_type' AS channel_persona,
+                    u.persona_override_type, u.persona_override_expires_at
+             FROM users u LEFT JOIN channels c ON c.id = u.channel_id
+             WHERE u.user_id = $1`,
+            [user.user_id]
+        );
+        const personaType = resolveEffectivePersona({
+            channelPersonaType: row?.channel_persona,
+            personaOverrideType: row?.persona_override_type,
+            personaOverrideExpiresAt: row?.persona_override_expires_at,
+        });
+        const isZh = (user.language || 'zh') !== 'en';
+        const cap = Number(max_distinct_dots);
+        // "per week", not "in total": the package caps how many dots run at once, and the formula
+        // may rotate others in the following week. Saying "up to N dots" would undersell what
+        // they bought and misdescribe the box.
+        const tier = Number.isFinite(cap) && cap > 0
+            ? (isZh ? `（每周最多 ${cap} 种原粒）` : ` (up to ${cap} dots running each week)`)
+            : '';
+        const name = package_name || (isZh ? '28天定制套餐' : 'your 28-day custom package');
+        // Say WHY when the plan they ordered was refused. Without it they would regenerate the same
+        // too-wide formula and hit the same wall; with it, one re-run inside the tool (whose prompt
+        // is told the width) produces one that fits.
+        const overTier = Number.isFinite(Number(overTierDots)) && Number(overTierDots) > 0
+            ? (isZh
+                ? `\n\n您下单时的方案某一周同时用到 ${overTierDots} 种原粒，超出本套餐上限，因此未直接提交。`
+                : `\n\nThe formulation you had at checkout runs ${overTierDots} dots at once in one of its weeks, over this package's limit, so it wasn't submitted as-is.`)
+            : '';
+        const text = isZh
+            ? `您的「${name}」${tier}已支付成功 🎉${overTier}\n\n接下来请在下方工具箱中点击「营养定制」，我会根据您最新的健康数据为您生成这 28 天的专属原粒配方。确认方案后我们就立即开始配制发货。`
+            : `Your ${name}${tier} is paid 🎉${overTier}\n\nNext, tap "Formulate Dots" in the toolbox below and I'll build your bespoke 28-day capsule formula from your latest health data. Confirm it and compounding starts right away.`;
+        await deliverTerminalMessage(user.user_id, personaType, 'formulation_order_paid', text);
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'formulation_order_paid_notify_failed',
+            user_id: user.user_id, error: err.message }));
     }
 }
 
