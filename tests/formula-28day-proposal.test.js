@@ -221,6 +221,8 @@ test('the validator still rejects a slot-illegal recipe, if one ever reaches it'
     assert.ok(check.violations.some(v => v.code === 'slot_violation' && v.detail?.key === 'DOT-N3'));
 });
 
+const sumDots = o => Object.values(o).reduce((a, b) => a + b, 0);
+
 // ── Daily budget ─────────────────────────────────────────────────────────────────────────────
 // Every dot has a minimum dose and the floors sum past what a day physically holds, so a full
 // formulary cannot keep them all. These pin HOW that is resolved: by dropping whole dots, never by
@@ -273,15 +275,91 @@ test('the dot the formulator emphasised least is the one dropped', () => {
 
 test('a dropped dot leaves BOTH slots — half a daily dose is the underdose this prevents', () => {
     const flexible = [
-        { key_name: 'DOT-X', timing: 'Morning', timing_flexible: true, target_dots_min: 60, target_dots_max: 90 },
-        { key_name: 'DOT-Y', timing: 'Morning', timing_flexible: true, target_dots_min: 30, target_dots_max: 90 },
+        { key_name: 'DOT-X', timing: 'Morning', timing_flexible: true, target_dots_min: 90, target_dots_max: 120 },
+        { key_name: 'DOT-Y', timing: 'Morning', timing_flexible: true, target_dots_min: 60, target_dots_max: 90 },
     ];
-    // DOT-Y is split across both slots and sits at its floor, so it is the one to go — and it must
-    // vanish from the evening capsule too, even though the evening capsule was never over budget.
+    // Floors of 90 + 60 pass the 144 a day holds, so one of these genuinely has to go. DOT-Y is
+    // split across both slots and sits at its floor, so it is the one — and it must vanish from
+    // the evening capsule too, even though the evening capsule was never over budget.
     const fitted = D._fitRecipeToDailyBudget(
-        { dots: { 'DOT-X': 70, 'DOT-Y': 20 } }, { dots: { 'DOT-Y': 10 } }, flexible);
+        { dots: { 'DOT-X': 100, 'DOT-Y': 40 } }, { dots: { 'DOT-Y': 20 } }, flexible);
     assert.ok(!('DOT-Y' in fitted.morning.dots));
     assert.ok(!('DOT-Y' in fitted.evening.dots), 'the untouched capsule is cleaned up as well');
+});
+
+test('an over-full capsule is rebalanced before anything is reduced or dropped', () => {
+    // Both dots default to the morning, so _splitDotTiming's 70/30 leaves AM at 91 — over the 72 a
+    // capsule holds — while PM sits at 39 with room to spare. The day itself fits, so nothing may
+    // be reduced and nothing may be dropped: the same doses are simply taken at the other end of
+    // the day. This is the stage the old rule had no notion of at all.
+    const flexible = [
+        { key_name: 'DOT-P', timing: 'Morning', timing_flexible: true, target_dots_min: 10, target_dots_max: 100 },
+        { key_name: 'DOT-Q', timing: 'Morning', timing_flexible: true, target_dots_min: 10, target_dots_max: 100 },
+    ];
+    const am = { dots: {} }, pm = { dots: {} };
+    for (const [dot, total] of [[flexible[0], 80], [flexible[1], 50]]) {
+        const split = D._splitDotTiming(dot, total);
+        if (split.morning > 0) am.dots[dot.key_name] = split.morning;
+        if (split.evening > 0) pm.dots[dot.key_name] = split.evening;
+    }
+    const fitted = D._fitRecipeToDailyBudget(am, pm, flexible);
+    const sum = o => Object.values(o).reduce((a, b) => a + b, 0);
+    assert.ok(sum(fitted.morning.dots) <= MAX_DOTS_PER_CAPSULE, `AM ${sum(fitted.morning.dots)}`);
+    assert.ok(sum(fitted.evening.dots) <= MAX_DOTS_PER_CAPSULE, `PM ${sum(fitted.evening.dots)}`);
+    const daily = k => (fitted.morning.dots[k] || 0) + (fitted.evening.dots[k] || 0);
+    assert.strictEqual(daily('DOT-P'), 80, 'a rebalance must not cost a single dot of dose');
+    assert.strictEqual(daily('DOT-Q'), 50);
+});
+
+test('the slack inside the survivors is given back before any dot is dropped', () => {
+    // 220 dots requested against the 144 a day holds, but the floors only add up to 60 — so every
+    // dot can stay, each giving back what it asked for above its own floor. The old rule dropped
+    // whole dots here while every survivor still sat far above its minimum: it destroyed
+    // interventions to buy room that was already lying unused inside the ones it kept.
+    const roomy = [
+        { key_name: 'DOT-A', timing: 'Morning', timing_flexible: true, target_dots_min: 20, target_dots_max: 80 },
+        { key_name: 'DOT-B', timing: 'Morning', timing_flexible: true, target_dots_min: 20, target_dots_max: 80 },
+        { key_name: 'DOT-C', timing: 'Evening', timing_flexible: true, target_dots_min: 20, target_dots_max: 60 },
+    ];
+    const fitted = D._fitRecipeToDailyBudget(
+        { dots: { 'DOT-A': 80, 'DOT-B': 80 } }, { dots: { 'DOT-C': 60 } }, roomy);
+    const sum = o => Object.values(o).reduce((a, b) => a + b, 0);
+    const daily = k => (fitted.morning.dots[k] || 0) + (fitted.evening.dots[k] || 0);
+    for (const dot of roomy) {
+        assert.ok(daily(dot.key_name) >= dot.target_dots_min,
+            `${dot.key_name} kept at ${daily(dot.key_name)}, below its floor of ${dot.target_dots_min}`);
+        assert.ok(daily(dot.key_name) <= dot.target_dots_max, `${dot.key_name} must never be raised above its own ceiling`);
+    }
+    assert.strictEqual(sum(fitted.morning.dots) + sum(fitted.evening.dots), 2 * MAX_DOTS_PER_CAPSULE,
+        'the day is filled, not left short');
+    assert.ok(sum(fitted.morning.dots) <= MAX_DOTS_PER_CAPSULE);
+    assert.ok(sum(fitted.evening.dots) <= MAX_DOTS_PER_CAPSULE);
+});
+
+test('a reduced dot is never raised above what the formulator asked for', () => {
+    // The give-back only ever takes away. A dot asked for below its own floor (an upstream clamp
+    // failure) must not be topped up to the floor by this function.
+    const one = [{ key_name: 'DOT-Z', timing: 'Morning', timing_flexible: false, target_dots_min: 40, target_dots_max: 90 }];
+    const fitted = D._fitRecipeToDailyBudget({ dots: { 'DOT-Z': 90 } }, { dots: {} }, one);
+    assert.strictEqual(fitted.morning.dots['DOT-Z'], MAX_DOTS_PER_CAPSULE, 'a locked dot fills its own capsule and no more');
+});
+
+test('a formulary missing `timing` falls back to the caller\'s own split, not to the morning', () => {
+    // Shipped exactly this: three call sites (the printed label, the GCN checkout snapshot, the
+    // box scan that writes the real capsules) SELECTed only the pulse/isolation columns. With
+    // `timing` undefined every dot read as Morning, so a two-capsule recipe collapsed into one —
+    // a 72-dot morning and an empty evening, which reads as a plausible formulation rather than
+    // as an error. The SELECTs are fixed; this pins the degradation so it can never be silent.
+    const stripped = [
+        { key_name: 'DOT-M', target_dots_max: 90 },
+        { key_name: 'DOT-E', target_dots_max: 90 },
+    ];
+    const fitted = D._fitRecipeToDailyBudget(
+        { dots: { 'DOT-M': 80 } }, { dots: { 'DOT-E': 80 } }, stripped);
+    assert.ok(sumDots(fitted.evening.dots) > 0, 'the evening capsule must not be emptied');
+    assert.ok('DOT-E' in fitted.evening.dots, 'a dot the caller put in the evening stays there');
+    assert.ok(sumDots(fitted.morning.dots) <= MAX_DOTS_PER_CAPSULE);
+    assert.ok(sumDots(fitted.evening.dots) <= MAX_DOTS_PER_CAPSULE);
 });
 
 test('a crowded formulary still expands to a formula the validator accepts', () => {

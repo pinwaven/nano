@@ -914,8 +914,14 @@ async function _getCommittedPlanDay0Breakdown(planId, { dotColumns = 'id, key_na
         morningDots = scheduleResult.rows.find(r => r.slot_name === 'morning_cup')?.recipe?.dots || {};
         eveningDots = scheduleResult.rows.find(r => r.slot_name === 'evening_cup')?.recipe?.dots || {};
     } else if (plan.proposed_recipe) {
+        // timing/timing_flexible/target_dots_min are NOT optional here. _fitRecipeToDailyBudget
+        // reads all three — the slot a dot belongs to, whether it may be split, and the floor it
+        // may never go under — so a formulary missing them yields a day 0 that disagrees with the
+        // capsules the box scan will actually write. This is the printed label and the GCN
+        // checkout snapshot: both must show the real formulation, not an approximation of it.
         const { rows: expansionFormulary } = await pool.query(
-            `SELECT key_name, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots`
+            `SELECT key_name, timing, timing_flexible, target_dots_min, target_dots_max,
+                    dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots`
         );
         const day0 = _expandPlanDay(0, _planExpansionContext(
             { dots: plan.proposed_recipe.morning || {} },
@@ -1632,62 +1638,160 @@ function _expandProposalToCapsules(morningRecipe, eveningRecipe, dotsFormulary) 
     return canonicalizeCapsules(capsules);
 }
 
-// Drops whole dots until both capsules fit, instead of shrinking every dot to fit.
+// Fits a requested daily allocation into the two capsules a day physically holds.
 //
 // The two constraints genuinely cannot both hold for a full formulary: every dot has its own
-// target_dots_min, those floors sum to more than the 2 x MAX_DOTS_PER_CAPSULE a day physically
-// holds, so SOMETHING has to give. _capRecipeTotal's answer was to scale everything down
-// proportionally, which silently lands most dots below their own minimum — a dose low enough that
-// the product's own rules call it invalid (lib/agFormulation.js's `dose_below_min`, checked on the
-// DAILY total). A sub-therapeutic dot is worse than an absent one: it occupies capsule space that
-// a dot at a real dose could have used, and it tells the user they are taking something they are
-// effectively not.
+// target_dots_min, those floors sum to more than the 2 x MAX_DOTS_PER_CAPSULE a day holds, so
+// SOMETHING has to give. _capRecipeTotal's answer was to scale everything down proportionally,
+// which silently lands most dots below their own minimum — a dose low enough that the product's
+// own rules call it invalid (lib/agFormulation.js's `dose_below_min`, checked on the DAILY total).
+// A sub-therapeutic dot is worse than an absent one: it occupies capsule space that a dot at a
+// real dose could have used, and it tells the user they are taking something they are effectively
+// not.
 //
-// So the budget is settled here, on daily totals, before anything is split into capsules — and it
-// is settled by removing dots outright. _capRecipeTotal still runs afterwards inside
-// _expandPlanDay, but on a recipe that already fits it is a no-op safety net rather than the thing
-// deciding the doses.
+// So the budget is settled here, on daily totals, before anything is split into capsules.
+// _capRecipeTotal still runs afterwards inside _expandPlanDay, but on a recipe that already fits
+// it is a no-op safety net rather than the thing deciding the doses.
+//
+// It gives in three stages, in this order — cheapest sacrifice first:
+//
+//   1. REBALANCE. A flexible dot in an over-full capsule moves to the other one before anything
+//      is reduced or removed. Costs nothing at all: the daily dose is unchanged, it is simply
+//      taken at the other end of the day.
+//   2. REDUCE toward each dot's own floor. A dot asked for at 58 with a minimum of 28 can give
+//      back 30 and still be a real dose. This is the stage the original rule was missing: it
+//      dropped whole dots while every survivor sat well above its floor, so it destroyed
+//      interventions to buy room that was already lying unused inside the survivors.
+//   3. DROP whole dots, and only once even the floors of everything don't fit. Never a partial
+//      dot: half a daily dose is exactly the underdose this function exists to prevent, so a
+//      dropped dot leaves BOTH slots.
 //
 // WHICH dot goes is a product judgement, and this is the rule: lowest relative position in its own
 // range first. The formulator expresses emphasis by where in a dot's min..max it placed the count
 // (see _fallbackCountForDot's 25/50/75%), so a dot sitting at its floor is the one it cared least
-// about, and a dot near its ceiling is the one it cared most about. Ties break toward dropping the
-// larger count, since that frees more room per dot sacrificed.
+// about, and a dot near its ceiling is the one it cared most about. Ties break toward the larger
+// FLOOR, because at the point a drop is being considered every survivor is at its floor and the
+// floor is what actually relieves the constraint.
+//
+// Stage 2's give-back is proportional to how much each dot asked for above its floor, so a dot
+// the formulator pushed to its ceiling keeps more of that emphasis than one left near its floor.
+// It never raises a dot above what was asked for — this function only ever takes away.
 function _fitRecipeToDailyBudget(morningRecipe, eveningRecipe, dotsFormulary) {
+    const CAP = MAX_DOTS_PER_CAPSULE;
     const byKey = new Map((dotsFormulary || []).map(d => [d.key_name, d]));
-    const morning = { ...(morningRecipe?.dots || {}) };
-    const evening = { ...(eveningRecipe?.dots || {}) };
+    const inMorning = { ...(morningRecipe?.dots || {}) };
+    const inEvening = { ...(eveningRecipe?.dots || {}) };
     const sum = obj => Object.values(obj).reduce((a, b) => a + b, 0);
 
+    // A recipe that already fits is returned exactly as it came in, rather than re-derived. The
+    // caller's own AM/PM split is a real decision (an AG formula's, or _splitDotTiming's) and
+    // there is nothing to fix.
+    if (sum(inMorning) <= CAP && sum(inEvening) <= CAP) {
+        return { morning: { dots: inMorning }, evening: { dots: inEvening } };
+    }
+
+    const requested = new Map();
+    for (const [key, count] of [...Object.entries(inMorning), ...Object.entries(inEvening)]) {
+        if (count > 0) requested.set(key, (requested.get(key) || 0) + count);
+    }
+
+    const dotOf = key => byKey.get(key) || {};
+    const isFlexible = key => !!dotOf(key).timing_flexible;
+    // A dot the formulary doesn't describe falls back to where the CALLER put it, not to the
+    // morning. Defaulting to morning would quietly collapse a whole two-capsule recipe into one
+    // capsule the moment a caller's SELECT omits `timing` — a failure that reads as a plausible
+    // formulation rather than as an error.
+    const slotOf = key => {
+        const timing = dotOf(key).timing;
+        if (timing === 'Evening') return 'evening';
+        if (timing === 'Morning') return 'morning';
+        return (inEvening[key] || 0) > (inMorning[key] || 0) ? 'evening' : 'morning';
+    };
+    // A floor above what was asked for would be this function adding dose, which it must never do.
+    const floorOf = key => Math.min(requested.get(key), dotOf(key).target_dots_min ?? 1);
     const position = (key) => {
-        const dot = byKey.get(key);
-        const total = (morning[key] || 0) + (evening[key] || 0);
-        const min = dot?.target_dots_min ?? 1;
-        const max = dot?.target_dots_max ?? 10;
+        const dot = dotOf(key);
+        const min = dot.target_dots_min ?? 1;
+        const max = dot.target_dots_max ?? 10;
         // A fixed-range dot (min === max) has no emphasis to read, so it is treated as fully
         // emphasised and dropped last — it is also usually tiny, so dropping it frees almost
         // nothing anyway.
-        return max === min ? 1 : (total - min) / (max - min);
+        return max === min ? 1 : (requested.get(key) - min) / (max - min);
     };
 
-    // Bounded by the dot count: each pass removes exactly one dot, and an empty recipe trivially
-    // fits, so this cannot spin.
-    while (sum(morning) > MAX_DOTS_PER_CAPSULE || sum(evening) > MAX_DOTS_PER_CAPSULE) {
-        // Only a dot present in the over-budget capsule can relieve it.
-        const overSlot = sum(morning) > MAX_DOTS_PER_CAPSULE ? morning : evening;
-        const candidates = Object.keys(overSlot);
-        if (candidates.length <= 1) break; // nothing left to give; _capRecipeTotal takes it from here
-        candidates.sort((a, b) => {
-            const pa = position(a);
-            const pb = position(b);
-            if (pa !== pb) return pa - pb;
-            return ((morning[b] || 0) + (evening[b] || 0)) - ((morning[a] || 0) + (evening[a] || 0));
-        });
-        const drop = candidates[0];
-        // Removed from BOTH slots: half a dot's daily dose is exactly the underdose this function
-        // exists to prevent.
-        delete morning[drop];
-        delete evening[drop];
+    // Stage 3, hoisted: a non-flexible dot cannot leave its own capsule, so its slot's floors have
+    // to fit that one capsule on their own. Everything else only has to fit the day.
+    let keys = [...requested.keys()];
+    const floorsIn = ks => ks.reduce((a, k) => a + floorOf(k), 0);
+    const lockedIn = slot => keys.filter(k => !isFlexible(k) && slotOf(k) === slot);
+    while (keys.length > 1) {
+        let pool = null;
+        if (floorsIn(lockedIn('morning')) > CAP) pool = lockedIn('morning');
+        else if (floorsIn(lockedIn('evening')) > CAP) pool = lockedIn('evening');
+        else if (floorsIn(keys) > 2 * CAP) pool = keys;
+        if (!pool || pool.length <= 1) break; // nothing left to give; _capRecipeTotal takes it from here
+        const drop = [...pool].sort((a, b) => (position(a) - position(b)) || (floorOf(b) - floorOf(a)))[0];
+        keys = keys.filter(k => k !== drop);
+    }
+
+    // Stage 2: start every survivor at its floor, then hand the remaining daily capacity back out
+    // one dot at a time, always to whichever dot is proportionally furthest from what was asked
+    // for. Bounded by the budget, so at most 2 x CAP iterations.
+    const counts = new Map(keys.map(k => [k, floorOf(k)]));
+    const wanted = new Map(keys.map(k => [k, requested.get(k)]));
+    let allocated = [...counts.values()].reduce((a, b) => a + b, 0);
+    // A locked dot's growth is bounded by its own capsule as well as by the day.
+    const lockedTotal = slot => lockedIn(slot).reduce((a, k) => a + counts.get(k), 0);
+    while (allocated < 2 * CAP) {
+        let best = null, bestRatio = -1;
+        for (const key of keys) {
+            const room = wanted.get(key) - counts.get(key);
+            if (room <= 0) continue;
+            if (!isFlexible(key) && lockedTotal(slotOf(key)) >= CAP) continue;
+            const demand = wanted.get(key) - floorOf(key);
+            const ratio = demand > 0 ? room / demand : 0;
+            if (ratio > bestRatio || (ratio === bestRatio && best !== null && key < best)) {
+                best = key; bestRatio = ratio;
+            }
+        }
+        if (best === null) break; // everyone has what they asked for
+        counts.set(best, counts.get(best) + 1);
+        allocated += 1;
+    }
+
+    // Stage 1: lay the daily totals into the two capsules and even them out. _splitDotTiming is
+    // the baseline (a locked dot wholly in its own slot, a flexible one 70/30), then flexible dots
+    // move across until both capsules fit. Feasible by construction — each slot's locked floors
+    // fit that capsule and the day's total fits both — so the moves below always converge.
+    const morning = {}, evening = {};
+    for (const key of keys) {
+        // slotOf, not dot.timing directly, so the caller-derived fallback above is what
+        // _splitDotTiming sees for a dot the formulary doesn't describe.
+        const timing = slotOf(key) === 'evening' ? 'Evening' : 'Morning';
+        const split = _splitDotTiming({ ...dotOf(key), timing, key_name: key }, counts.get(key));
+        if (split.morning > 0) morning[key] = split.morning;
+        if (split.evening > 0) evening[key] = split.evening;
+    }
+    // Two passes: the first keeps the majority of a dot's daily count in the slot it belongs to
+    // (the rule systemFormulaGenerate.js and the AG contract both state), the second drops that
+    // preference because a capsule that does not physically close is not a trade-off.
+    for (const keepMajority of [true, false]) {
+        for (const [from, to] of [[morning, evening], [evening, morning]]) {
+            while (sum(from) > CAP && sum(to) < CAP) {
+                const movable = keys
+                    .filter(k => isFlexible(k) && (from[k] || 0) > 0)
+                    .filter(k => !keepMajority || (from[k] - Math.ceil(counts.get(k) / 2)) > 0)
+                    .sort((a, b) => (from[b] - from[a]) || (a < b ? -1 : 1));
+                if (!movable.length) break;
+                const key = movable[0];
+                const ceiling = keepMajority ? from[key] - Math.ceil(counts.get(key) / 2) : from[key];
+                const amount = Math.min(sum(from) - CAP, CAP - sum(to), ceiling);
+                if (amount <= 0) break;
+                from[key] -= amount;
+                to[key] = (to[key] || 0) + amount;
+                if (from[key] === 0) delete from[key];
+            }
+        }
     }
     return { morning: { dots: morning }, evening: { dots: evening } };
 }
@@ -1947,10 +2051,14 @@ async function _activateProposedPlan(client, { userId, planId }) {
         [userId, plan.id]
     );
 
-    // The formulary is needed for the expansion rules only — N7's isolation dose and any pulse
-    // dot's window — not for the counts, which are already fixed in proposed_recipe.
+    // proposed_recipe fixes the counts, but not how they land in the two capsules: the expansion
+    // still re-fits an over-budget recipe, which needs each dot's slot, whether it may be split,
+    // and its floor. Selecting only the pulse/isolation columns silently expands every dot into
+    // the morning capsule at doses under their own minimums — and these are the schedules the
+    // user physically takes.
     const { rows: formulary } = await client.query(
-        `SELECT key_name, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots`
+        `SELECT key_name, timing, timing_flexible, target_dots_min, target_dots_max,
+                dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots`
     );
     await _writeExpandedSchedules(client, {
         planId: plan.id, userId, startDateObj, morningRecipe, eveningRecipe, dotsFormulary: formulary,
