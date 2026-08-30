@@ -65,7 +65,14 @@
     </view>
 
     <view wx:if="{{filteredClients.length === 0}}" class="empty-state">
-      <text class="empty-text">{{clients.length === 0 ? t.noClients : t.noMatchClients}}</text>
+      <text wx:if="{{clientsLoadState === 'no_coach'}}" class="empty-text">{{t.noCoachSession}}</text>
+      <text wx:elif="{{clientsLoadState === 'failed'}}" class="empty-text">{{t.clientsLoadFailed}}</text>
+      <text wx:elif="{{clients.length === 0}}" class="empty-text">{{t.noClients}}</text>
+      <text wx:else class="empty-text">{{t.noMatchClients}}</text>
+      <view wx:if="{{clientsLoadState}}" class="empty-retry" catchtap="handleRefresh">
+        <text class="empty-retry-txt">{{t.retryLoad}}</text>
+      </view>
+      <text wx:if="{{diagText}}" class="empty-diag">{{diagText}}</text>
     </view>
     <view wx:for="{{filteredClients}}" wx:key="user_id" class="client-card">
       <!-- Top row: avatar + name/ages + delta badge -->

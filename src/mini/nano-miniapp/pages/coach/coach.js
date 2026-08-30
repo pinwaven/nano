@@ -1,5 +1,5 @@
 const app = getApp()
-const { BASE } = require('../../utils/config.js')
+const { BASE, VERSION } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
 const { maskPhone } = require('../../utils/phone.js')
 
@@ -27,6 +27,11 @@ const T = {
     searchPlaceholder: '搜索客户姓名…',
     filterAll: '全部',
     noMatchClients: '无匹配客户',
+    // Three distinct reasons the list can be empty. They used to all render as noClients, which is
+    // what made a real incident (2026-08-30) undiagnosable from the user's description.
+    clientsLoadFailed: '客户列表加载失败，请下拉刷新',
+    noCoachSession: '未能识别你的教练身份，请重新登录',
+    retryLoad: '重试',
     bioAge: '生理年龄', chronoAge: '实际年龄',
     lastScan: '上次检测',
     older: '岁↑', younger: '岁↓',
@@ -163,6 +168,9 @@ const T = {
     searchPlaceholder: 'Search by name…',
     filterAll: 'All',
     noMatchClients: 'No matching clients',
+    clientsLoadFailed: 'Could not load clients — pull down to retry',
+    noCoachSession: 'Your coach identity could not be resolved — please sign in again',
+    retryLoad: 'Retry',
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
     lastScan: 'Last scan',
     older: 'yrs↑', younger: 'yrs↓',
@@ -348,6 +356,13 @@ Page({
     isSuperadmin: false,
     clients: [],
     filteredClients: [],
+    // '' = loaded fine (an empty list then genuinely means no clients).
+    // 'no_coach' = no coach id in this session, so the API was never called.
+    // 'failed'   = the request was made and did not come back usable.
+    clientsLoadState: '',
+    // Shown only when the load did not succeed — answers "which backend, which coach id" at a
+    // glance instead of requiring a server-side investigation to find out.
+    diagText: '',
     clientSearch: '',
     clientStageFilter: '',
     clientFilterStages: [],
@@ -443,6 +458,8 @@ Page({
   },
 
   _coachId: null,
+  _loaded: false,
+  _repairAttempted: false,
   _coachChannelId: null,
   _coachUserId: null,
   _touchX: 0,
@@ -480,20 +497,65 @@ Page({
     const factCategoryLabels = ['dietary_restriction', 'allergy', 'preference', 'goal', 'other'].map(c => t.factCategories[c])
     this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, textScale, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText, factCategoryLabels })
     this._applyNavBarColor(theme)
+    this._loaded = true
+    this._loadAll()
+  },
+
+  // The client list was previously fetched ONLY in onLoad, which fires once per page instance. A
+  // coach who backgrounded the app and came back kept seeing the list from whenever they first
+  // opened the page — indefinitely, and with no way to tell it was stale (2026-08-30). onShow
+  // refetches on every return to the page; the guard skips the first one, since onLoad just ran.
+  onShow() {
+    if (!this._loaded) return
     this._loadAll()
   },
 
   async _loadAll() {
     this.setData({ loading: true })
+    // No coach id means globalData.coach was never populated by whichever login path ran. The
+    // request below would be `/coach-users/undefined`, so it isn't made at all — but that must
+    // report itself rather than render as "no clients", which is indistinguishable from a coach
+    // who genuinely has none (2026-08-30: a coach's 37 real clients looked exactly like zero).
+    if (!this._coachId) {
+      // globalData.coach is captured at login and never refreshed afterwards, so a session that
+      // once stored a null keeps it across every relaunch — while roles ARE refreshed, which is how
+      // a user the app labels 教练 ends up with no coach id at all (prod 2026-08-30). Re-resolve it
+      // from the server and repair the stored session, rather than making the user work out that a
+      // full re-login is the fix.
+      const repaired = await this._repairCoachSession()
+      if (repaired) return this._loadAll()
+      // Invites are keyed on the user id, not the coach id, so they still load — a broken coach
+      // session must not also empty the 邀请码 tab, which has nothing to do with this failure.
+      let invites = []
+      try {
+        const res = await this._req(`${BASE}/api/invitations?created_by=${encodeURIComponent(this._coachUserId)}`)
+        invites = res.data?.invitations || []
+      } catch (e) { /* the client-list state below is the error worth reporting, not this one */ }
+      this.setData({
+        clients: [], filteredClients: [], clientFilterStages: [], invites,
+        clientsLoadState: 'no_coach', diagText: this._diagText(), loading: false,
+      })
+      return
+    }
     try {
       const [clientsRes, invitesRes] = await Promise.all([
-        this._coachId
-          ? this._req(`${BASE}/api/coach-users/${this._coachId}`)
-          : Promise.resolve({ data: { users: [] } }),
+        this._req(`${BASE}/api/coach-users/${this._coachId}`),
         this._req(`${BASE}/api/invitations?created_by=${encodeURIComponent(this._coachUserId)}`),
       ])
+      // _req resolves on ANY status — it only rejects on transport failure — so a 401/403/500
+      // arrives here as a resolved response with no `users` array. Without this check that became
+      // a silent empty list, the second way this failure hid itself.
+      const payload = clientsRes.data
+      if (!payload || !Array.isArray(payload.users)) {
+        this.setData({
+          clients: [], filteredClients: [], clientFilterStages: [],
+          clientsLoadState: 'failed', diagText: this._diagText(clientsRes),
+        })
+        wx.showToast({ title: T[this.data.lang].clientsLoadFailed, icon: 'none' })
+        return
+      }
       const lang = this.data.lang
-      const clients = (clientsRes.data?.users || []).map(u => {
+      const clients = payload.users.map(u => {
         const cAge = chronoAge(u.birth_date)
         const bioAge = u.bio_age != null ? Number(u.bio_age) : null
         const delta = bioAge != null && cAge != null ? Number((bioAge - cAge).toFixed(1)) : null
@@ -526,13 +588,49 @@ Page({
         }
       })
       const clientFilterStages = this._buildFilterStages(clients)
-      this.setData({ clients, invites: invitesRes.data?.invitations || [], clientFilterStages })
+      this.setData({
+        clients, invites: invitesRes.data?.invitations || [], clientFilterStages,
+        clientsLoadState: '', diagText: '',
+      })
       this._filterClients()
     } catch (e) {
+      // Transport failure. Keep whatever was already on screen — replacing a good list with an
+      // empty one because a later refresh blipped is strictly worse than showing stale data.
+      this.setData({ clientsLoadState: 'failed', diagText: this._diagText(null, e) })
       wx.showToast({ title: T[this.data.lang].networkError, icon: 'none' })
     } finally {
       this.setData({ loading: false })
     }
+  },
+
+  // Re-fetches this user's coach identity and writes it back to both globalData and storage, so
+  // the repair survives the next app launch instead of being redone on every visit. Returns false
+  // on any failure — the caller then falls through to the explicit no-coach state.
+  async _repairCoachSession() {
+    if (this._repairAttempted) return false
+    this._repairAttempted = true
+    try {
+      const res = await this._req(`${BASE}/api/my-coach?user_id=${encodeURIComponent(this._coachUserId)}`)
+      const coach = res.data && res.data.success ? res.data.coach : null
+      if (!coach || !coach.id) return false
+      app.globalData.coach = coach
+      wx.setStorageSync('nano_coach', coach)
+      this._coachId = coach.id
+      this._coachChannelId = coach.channel_id
+      return true
+    } catch (e) {
+      return false
+    }
+  },
+
+  // Which backend, which coach id, and what came back — the three facts that turn "no users" from
+  // a multi-round investigation into something readable off the screen. Only rendered on failure.
+  _diagText(res, err) {
+    const host = String(BASE).replace(/^https?:\/\//, '')
+    const parts = [`${host} · coach=${this._coachId == null ? 'null' : this._coachId}`, `v${VERSION}`]
+    if (res && res.statusCode) parts.push(`HTTP ${res.statusCode}`)
+    if (err && err.errMsg) parts.push(String(err.errMsg).slice(0, 40))
+    return parts.join(' · ')
   },
 
   handleRefresh() {
