@@ -43,8 +43,9 @@ const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { resolveEffectivePersona, hasActiveVivaAccess } = require('../lib/persona');
 const { grantSignupTrial } = require('../lib/personaOverride');
-const { _runDeterministicFormulation, _buildFormulaChartBlock, _commitProposedPlan, _resolveOrderMode, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _buildProductCardBlock } = require('./dots');
+const { _runDeterministicFormulation, _buildFormulaChartBlock, _commitProposedPlan, _resolveOrderContext, _capDistinctDots, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _buildProductCardBlock } = require('./dots');
 const { fetchAiCatalog } = require('../lib/gcnClient');
+const { PLAN_WEEKS, N7_KEY } = require('../lib/dotsProductModel');
 const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock');
 
 // Channels with a GCN storefront behind them (mirrors handlers/login.js's own copy — the same
@@ -1885,7 +1886,22 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
             const count = Number.isFinite(item.count)
                 ? Math.max(0, Math.round(item.count))
                 : Math.max(0, Math.round((Number(item.morning) || 0) + (Number(item.evening) || 0)));
-            entries.set(item.dot_key, { count, dot });
+            // Which weeks of the cycle this dot is taken in. The purchased package caps how many
+            // distinct dots may run in ONE WEEK, so a formula may legitimately rotate — six dots
+            // this week, a partly different six next week. This is the one thing the model does
+            // decide about the cycle's shape, because whether a dot can be paused for a week is a
+            // clinical judgement, not arithmetic: a sleep-support dot held continuously and a
+            // seasonal accent are not interchangeable.
+            //
+            // Omitted, empty or malformed means EVERY week — the safe direction, and what every
+            // pre-weeks completion produces. _capDistinctDots then trims the over-wide weeks
+            // against the real tier, which is a bounded, deterministic correction; an empty list
+            // read as "no weeks" would instead delete a dose nobody asked to remove.
+            const weeks = Array.isArray(item.weeks)
+                ? [...new Set(item.weeks.map(w => Math.round(Number(w)))
+                    .filter(w => Number.isFinite(w) && w >= 1 && w <= PLAN_WEEKS))].sort((a, b) => a - b)
+                : [];
+            entries.set(item.dot_key, { count, dot, weeks });
         }
         if (entries.size === 0) entries = null;
     }
@@ -1924,13 +1940,25 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
 
         morningRecipe = { dots: {} };
         eveningRecipe = { dots: {} };
+        // Only materialized when the model actually asked for a rotation, so a steady-state
+        // formula is stored in exactly the shape it was before weeks existed.
+        const weekMap = {};
         let morningTotal = 0, eveningTotal = 0;
         for (const [key, v] of entries) {
             const dbKey = key.replace('D', 'DOT');
             if (v.morning > 0) morningRecipe.dots[dbKey] = v.morning;
             if (v.evening > 0) eveningRecipe.dots[dbKey] = v.evening;
+            // DOT-N7 is dosed by the isolation rule alone, on fixed days the formulator does not
+            // choose, so a week list for it would be read and then ignored — never recorded.
+            if (v.count > 0 && dbKey !== N7_KEY && v.weeks.length && v.weeks.length < PLAN_WEEKS) {
+                weekMap[dbKey] = v.weeks;
+            }
             morningTotal += v.morning;
             eveningTotal += v.evening;
+        }
+        if (Object.keys(weekMap).length) {
+            morningRecipe.weeks = weekMap;
+            eveningRecipe.weeks = weekMap;
         }
         // Observability only — _splitDotTiming only moves ~30% of a flexible dot's count off its
         // default slot, so a day dominated by dots defaulting to the same slot can still end up
@@ -1962,6 +1990,17 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         ({ finalContent, morningRecipe, eveningRecipe } = fallback);
     }
 
+    // Whether the user already holds a paid package, and at which tier — one lookup, because the
+    // two answers have to agree with each other. Resolved here at DELIVERY time rather than when
+    // the request was made: this turn ran asynchronously and may be minutes old, which is long
+    // enough for a checkout to have completed in between. llmContext.formulation_package told the
+    // model what to aim for; this is what actually binds the recipe that gets stored.
+    const orderContext = await _resolveOrderContext(user_id);
+    // Trimmed to the purchased tier BEFORE the proposal is written, so the card, the box scan and
+    // the fast-track submission all expand one recipe. A no-op when no package is waiting.
+    ({ morning: morningRecipe, evening: eveningRecipe } =
+        _capDistinctDots(morningRecipe, eveningRecipe, llmContext.dots, orderContext.maxDistinctDots));
+
     // The allocation is recorded as a 'proposed' plan — a real 28-day recipe the user does not
     // physically have yet, which is exactly what GCN's custom-formulation checkout needs in order
     // to price it. It writes no schedules and never disturbs the plan the user is currently on;
@@ -1981,11 +2020,9 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     // not — so there is nothing there for a "view plan" button to point at.
     //
     // The CTA depends on whether the user already paid for a package (the two orderings of the
-    // same purchase — see _buildFormulaChartBlock's `#order` note). Resolved here, at delivery
-    // time, rather than when the request was made: this turn ran asynchronously and may be
-    // minutes old, which is long enough for a checkout to have completed in between.
-    const orderMode = await _resolveOrderMode(user_id);
-    const chatMessage = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, llmContext.dots, lang, { planId, orderMode, labelCode });
+    // same purchase — see _buildFormulaChartBlock's `#order` note), which orderContext above
+    // already answered.
+    const chatMessage = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, llmContext.dots, lang, { planId, orderMode: orderContext.mode, labelCode });
 
     await saveChatMessage(user_id, 'ai', chatMessage, null, personaType);
     await pool.query(
@@ -2140,18 +2177,20 @@ async function handleChatGenerateEvent(payload) {
                         userFacts: llmContext.user_facts,
                         activeHealthPlans: llmContext.active_health_plans,
                     });
+                    const fbOrder = await _resolveOrderContext(user_id);
+                    const fbCapped = _capDistinctDots(fallback.morningRecipe, fallback.eveningRecipe,
+                        llmContext.dots, fbOrder.maxDistinctDots);
                     const fbPlanId = await _commitProposal(user_id, {
                         analysis: fallback.finalContent,
-                        morningRecipe: fallback.morningRecipe,
-                        eveningRecipe: fallback.eveningRecipe,
+                        morningRecipe: fbCapped.morning,
+                        eveningRecipe: fbCapped.evening,
                         activeHealthPlans: llmContext.active_health_plans,
                     });
-                    const fbOrderMode = await _resolveOrderMode(user_id);
                     const fbLabelCode = fbPlanId
                         ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [fbPlanId])).rows[0]?.label_code
                         : null;
                     const fbMessage = fallback.finalContent
-                        + _buildFormulaChartBlock(fallback.morningRecipe, fallback.eveningRecipe, llmContext.dots, language, { planId: fbPlanId, orderMode: fbOrderMode, labelCode: fbLabelCode });
+                        + _buildFormulaChartBlock(fbCapped.morning, fbCapped.evening, llmContext.dots, language, { planId: fbPlanId, orderMode: fbOrder.mode, labelCode: fbLabelCode });
                     await saveChatMessage(user_id, 'ai', fbMessage, null, personaType);
                     await pool.query(
                         'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',

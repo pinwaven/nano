@@ -93,6 +93,17 @@ async function fetchFormulationOrderStatus(nanoUserId) {
             //                   it off, so the chat tool must not try to fulfil it.
             fulfillment: data.fulfillment === 'fast_track' ? 'fast_track' : 'expert_review',
             ordered_at: data.ordered_at || null,
+            // The purchased tier: how many distinct dots this package's formula may contain
+            // (GCN's migration_0085). null for the two older formulation products, which have no
+            // tier — read as "unlimited", which is what they were.
+            //
+            // GCN reports it; nano enforces it. The rule needs the dots formulary and the product
+            // model's own judgement about which components a tier counts (DOT-N7 is excluded, see
+            // _capDistinctDots), and neither of those belongs on the other side of the wire.
+            max_distinct_dots: Number.isFinite(Number(data.max_distinct_dots)) && Number(data.max_distinct_dots) > 0
+                ? Number(data.max_distinct_dots)
+                : null,
+            package_name: data.package_name || null,
         };
     } catch (err) {
         console.log(JSON.stringify({ level: 'WARN', msg: 'gcn_formulation_order_status_failed', error: err.message }));

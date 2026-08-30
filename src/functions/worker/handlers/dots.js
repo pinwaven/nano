@@ -4,7 +4,7 @@ const { pool } = require('../lib/db');
 // Physical product-model constants (cycle length, capsule fill limit, DOT-N7 isolation) —
 // shared with lib/agFormulation.js so nano's own formulator and the validator for an
 // externally-authored Viva AG formula can never disagree about what is manufacturable.
-const { PLAN_DAYS, MAX_DOTS_PER_CAPSULE, N7_KEY, N7_ISOLATION_DAY_INDEXES } = require('../lib/dotsProductModel');
+const { PLAN_DAYS, DAYS_PER_WEEK, PLAN_WEEKS, MAX_DOTS_PER_CAPSULE, N7_KEY, N7_ISOLATION_DAY_INDEXES } = require('../lib/dotsProductModel');
 const { recordOrderCommissions, recordUserReferralCommission } = require('../lib/commissions');
 const { applyPartnerDiscount, getPartnerProductDiscount } = require('../lib/partnerCommissions');
 const { debitUser } = require('../lib/credits');
@@ -879,6 +879,19 @@ async function handleGetNutritionPlan(openid) {
 // index 0 is never an N7 isolation day, so this yields exactly the steady-state capsules the rest
 // of this function promises. That is what lets GCN price a formula the user has not received
 // yet, which is the whole point of a proposal.
+//
+// KNOWN LIMIT, deliberately not changed here: since a purchased package caps distinct dots PER
+// WEEK, a formula may legitimately rotate, and day 0 is then week 1 rather than the whole cycle.
+// Two callers read this and neither should be silently redefined:
+//
+//   * GCN's per-dot checkout snapshot prices what it is given. Summing the cycle instead would
+//     change what a customer is charged, which is a business decision, not a refactor — and that
+//     product is now the FALLBACK path anyway (the tiered package is flat-priced, §28c).
+//   * the printed box label would under-list a rotating formula, showing week 1's dots for a box
+//     that physically holds all four weeks'.
+//
+// Both want the cycle-wide union, not a different day. Give them one when someone owns the
+// pricing question; do not quietly switch day 0 to mean something else.
 async function _getCommittedPlanDay0Breakdown(planId, { dotColumns = 'id, key_name, name, name_zh' } = {}) {
     const planResult = await pool.query(
         `SELECT np.id, np.user_id, np.status, np.start_date, np.start_date::text AS start_date_text,
@@ -924,8 +937,8 @@ async function _getCommittedPlanDay0Breakdown(planId, { dotColumns = 'id, key_na
                     dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots`
         );
         const day0 = _expandPlanDay(0, _planExpansionContext(
-            { dots: plan.proposed_recipe.morning || {} },
-            { dots: plan.proposed_recipe.evening || {} },
+            { dots: plan.proposed_recipe.morning || {}, weeks: plan.proposed_recipe.weeks || undefined },
+            { dots: plan.proposed_recipe.evening || {}, weeks: plan.proposed_recipe.weeks || undefined },
             expansionFormulary,
         ), null);
         morningDots = day0.morning.dots;
@@ -1131,14 +1144,30 @@ async function handlePostFormulationSubmit(body) {
         if (!order) return { success: false, reason: 'no_awaiting_order' };
         if (order.fulfillment !== 'fast_track') return { success: false, reason: 'order_requires_expert_review' };
 
+        // The purchased tier binds here too, not only at proposal time. A plan proposed BEFORE the
+        // package was bought was capped by nothing (there was no order to read a tier from), and
+        // it is still a 'proposed' plan this endpoint would happily submit. Refused rather than
+        // trimmed: the same reject-never-repair rule the validator below follows, and for the same
+        // reason — a formula the user never saw is one nobody authored. Re-running 营养定制 now
+        // produces one built for the tier, which is a better formula than this one minus a dot.
+        if (order.max_distinct_dots) {
+            const distinct = _countDistinctDots(
+                { dots: plan.proposed_recipe.morning || {}, weeks: plan.proposed_recipe.weeks || undefined },
+                { dots: plan.proposed_recipe.evening || {}, weeks: plan.proposed_recipe.weeks || undefined });
+            if (distinct > order.max_distinct_dots) {
+                return { success: false, reason: 'formulation_exceeds_package',
+                    distinct_dots: distinct, max_distinct_dots: order.max_distinct_dots };
+            }
+        }
+
         // timing/timing_flexible are read by validateAgFormulation's slot rules, not by the
         // expansion — omitting them makes the validator silently weaker, not louder.
         const { rows: formulary } = await pool.query(
             `SELECT key_name, timing, timing_flexible, target_dots_min, target_dots_max,
                     dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots`);
         const capsules = _expandProposalToCapsules(
-            { dots: plan.proposed_recipe.morning || {} },
-            { dots: plan.proposed_recipe.evening || {} },
+            { dots: plan.proposed_recipe.morning || {}, weeks: plan.proposed_recipe.weeks || undefined },
+            { dots: plan.proposed_recipe.evening || {}, weeks: plan.proposed_recipe.weeks || undefined },
             formulary,
         );
         const check = validateAgFormulation({ capsules }, formulary);
@@ -1392,13 +1421,27 @@ function _resolveCandidateDotKeys(activeHealthPlans, dotsFormulary) {
 //
 // One row per dot: key|name|color|am|pm. The renderer derives every total itself, so the parser
 // stays dumb and there is no second place for the arithmetic to drift.
-// Which call to action a formula card should carry, resolved by asking GCN whether this user has
-// a paid 28-day package sitting unformulated. See _buildFormulaChartBlock's `#order` note for what
-// each mode means and why an unknown answer degrades to 'buy'.
-async function _resolveOrderMode(userId) {
+// Everything the delivery step needs to know about a paid package this user is already holding,
+// resolved by asking GCN. Two things come out of one call because they answer the same question
+// and must agree with each other:
+//
+//   mode             which call to action the formula card carries. See _buildFormulaChartBlock's
+//                    `#order` note for what each means and why an unknown answer degrades to
+//                    'buy'.
+//   maxDistinctDots  the tier the user actually bought — how many distinct dots their formula may
+//                    contain (GCN's migration_0085). null when no package is waiting, or for a
+//                    package with no tier, in which case the formulation is not capped.
+async function _resolveOrderContext(userId) {
     const order = await fetchFormulationOrderStatus(userId);
-    if (!order) return 'buy';
-    return order.fulfillment === 'fast_track' ? 'submit' : 'ag';
+    if (!order) return { mode: 'buy', maxDistinctDots: null, packageName: null };
+    return {
+        mode: order.fulfillment === 'fast_track' ? 'submit' : 'ag',
+        // Only a fast-track package's tier binds this user's own formulation. An expert-review
+        // package is formulated by Viva AG against its own contract, and nothing the chat tool
+        // proposes for it is ever submitted, so applying a cap there would only distort a preview.
+        maxDistinctDots: order.fulfillment === 'fast_track' ? (order.max_distinct_dots ?? null) : null,
+        packageName: order.package_name || null,
+    };
 }
 
 // Groups the 28 days of a cycle by what a day's capsules actually contain.
@@ -1638,6 +1681,190 @@ function _expandProposalToCapsules(morningRecipe, eveningRecipe, dotsFormulary) 
     return canonicalizeCapsules(capsules);
 }
 
+// ── The weekly dimension ───────────────────────────────────────────────────────────────────────
+//
+// A purchased package caps how many distinct dots may appear in ONE WEEK, not in the cycle — so
+// weeks may legitimately differ, and a formula may rotate other dots in next week up to the same
+// per-week limit. That is the whole reason a recipe has a week dimension at all.
+//
+// It rides on the recipe object as an OPTIONAL `weeks` map, `{ 'DOT-N1': [1, 2] }`, alongside the
+// `dots` counts it already carried. A key that names no weeks is in EVERY week, which is what
+// makes this backward compatible in both directions: a stored proposal written before this
+// existed, a completion from a stale cached prompt, and the deterministic fallback formulator all
+// produce four identical weeks — exactly today's behaviour — without a migration or a shape check.
+
+// 1-based week for a 0-based day index. Clamped, so a cycle length that is not a whole number of
+// weeks puts the ragged tail in the last week rather than inventing a fifth.
+function _weekOfDayIndex(dayIndex) {
+    return Math.min(PLAN_WEEKS, Math.floor(dayIndex / DAYS_PER_WEEK) + 1);
+}
+
+// Per-dot week membership for a recipe PAIR. Membership is a property of the formula, not of one
+// capsule, so both slots are read and merged — callers set the same map on both.
+//
+// A malformed or empty list is treated as "no constraint", never as "no weeks". The safe direction
+// is the one that cannot silently delete a dose the formulator asked for: an over-wide membership
+// is then trimmed by _capDistinctDots against the real tier, whereas an empty one would drop the
+// dot with nothing to notice it.
+function _weekMembership(morningRecipe, eveningRecipe) {
+    const out = new Map();
+    for (const src of [morningRecipe?.weeks, eveningRecipe?.weeks]) {
+        for (const [key, weeks] of Object.entries(src || {})) {
+            const valid = [...new Set((Array.isArray(weeks) ? weeks : [])
+                .map(w => Math.round(Number(w)))
+                .filter(w => Number.isFinite(w) && w >= 1 && w <= PLAN_WEEKS))].sort((a, b) => a - b);
+            if (valid.length) out.set(key, valid);
+        }
+    }
+    return out;
+}
+
+// The slice of a recipe that is actually taken in `week`.
+function _recipeForWeek(recipe, membership, week) {
+    const dots = {};
+    for (const [key, count] of Object.entries(recipe?.dots || {})) {
+        const weeks = membership.get(key);
+        if (weeks && !weeks.includes(week)) continue;
+        dots[key] = count;
+    }
+    return { dots };
+}
+
+// The distinct non-N7 dots active in `week`.
+function _keysInWeek(morningRecipe, eveningRecipe, membership, week) {
+    const keys = new Set();
+    for (const recipe of [morningRecipe, eveningRecipe]) {
+        for (const [key, count] of Object.entries(recipe?.dots || {})) {
+            if (key === N7_KEY || !(count > 0)) continue;
+            const weeks = membership.get(key);
+            if (weeks && !weeks.includes(week)) continue;
+            keys.add(key);
+        }
+    }
+    return keys;
+}
+
+// Where in its own min..max range the formulator placed a dot — 0 at its floor, 1 at its ceiling.
+//
+// This is how emphasis is read back out of a finished allocation: the formulator expresses "this
+// one matters" by where in the range it put the count (see _fallbackCountForDot's 25/50/75%), so
+// a dot sitting at its floor is the one it cared least about. Both droppers below rank on it, and
+// they must rank the same way — a dot dropped for the capsule budget and a dot dropped for the
+// purchased tier are the same judgement about the same recipe.
+//
+// A fixed-range dot (min === max) has no emphasis to read, so it counts as fully emphasised and
+// is dropped last. It is also usually tiny, so dropping it frees almost nothing anyway.
+function _emphasisPosition(dot, requestedTotal) {
+    const min = dot?.target_dots_min ?? 1;
+    const max = dot?.target_dots_max ?? 10;
+    return max === min ? 1 : (requestedTotal - min) / (max - min);
+}
+
+// Trims a recipe to the number of distinct dots the user's purchased package allows — PER WEEK.
+//
+// The 28-day packages (GCN's migration_0085) differ only in this number — 6 / 8 / 10 种原粒 — so
+// it is the entire thing the buyer is choosing between, and honouring it is not optional.
+//
+// IT IS A WEEKLY LIMIT, NOT A CYCLE LIMIT. A 6种 buyer may take six dots this week and a partly
+// different six next week; what they bought is the width of any one week, not the size of the
+// whole formulation. So this caps each week independently and, when a week is over its limit,
+// removes dots FROM THAT WEEK rather than from the formula — a dot dropped from week 3 keeps its
+// weeks 1 and 2. Only a dot left with no weeks at all disappears entirely.
+//
+// WHERE IT RUNS MATTERS. The cap is applied ONCE, to the recipe, before it is stored as
+// nutrition_plans.proposed_recipe. Everything downstream — the chat card, the box scan writing
+// schedules, the fast-track submission — expands that stored recipe through the one shared rule
+// set (_expandPlanDay), so they cannot disagree about what the user is taking. Applying it inside
+// the expansion instead would mean the box scan, which knows nothing about the order, would expand
+// a different recipe than the card the user was shown.
+//
+// DOT-N7 IS NOT COUNTED. It is a system-controlled reset component, dosed alone on 2 of the 28
+// days in every plan regardless of tier (see _planExpansionContext, which lifts it out of the
+// everyday recipe entirely). Counting it would silently cost a 6种 buyer one of the six dots they
+// chose to pay for. This is a product judgement, and it is the reason the tier is described to the
+// user as the width of their weekly formula rather than as the number of labels on the box.
+//
+// Dropping is whole-dot-within-a-week and both-slots, for the same reason _fitRecipeToDailyBudget's
+// stage 3 is: half a daily dose is an underdose, which is worse than an absent dot. Ranking is the
+// shared _emphasisPosition — lowest emphasis goes first — with ties broken toward the smaller daily
+// total and then the key name, so the outcome is deterministic. (_fitRecipeToDailyBudget breaks
+// ties on the larger floor because there a drop has to free capsule capacity; here every drop
+// relieves the constraint by exactly one dot, so floor size is irrelevant.)
+function _capDistinctDots(morningRecipe, eveningRecipe, dotsFormulary, maxDistinctDots) {
+    const morning = { ...(morningRecipe?.dots || {}) };
+    const evening = { ...(eveningRecipe?.dots || {}) };
+    const membership = _weekMembership(morningRecipe, eveningRecipe);
+    const asRecipes = (weeks) => {
+        // The map is only materialized onto the result when it says something: an untouched
+        // formula keeps whatever `weeks` it arrived with (usually none), so a recipe that needed
+        // no trimming is returned in exactly the shape it came in.
+        const out = weeks ? { weeks } : (membership.size ? { weeks: Object.fromEntries(membership) } : {});
+        return { morning: { dots: morning, ...out }, evening: { dots: evening, ...out } };
+    };
+
+    const max = Number(maxDistinctDots);
+    if (!Number.isFinite(max) || max <= 0) return asRecipes(null);
+
+    const byKey = new Map((dotsFormulary || []).map(d => [d.key_name, d]));
+    const totals = new Map();
+    for (const [key, count] of [...Object.entries(morning), ...Object.entries(evening)]) {
+        if (key === N7_KEY || !(count > 0)) continue;
+        totals.set(key, (totals.get(key) || 0) + count);
+    }
+    if (totals.size === 0) return asRecipes(null);
+
+    const rank = (a, b) =>
+        (_emphasisPosition(byKey.get(a), totals.get(a)) - _emphasisPosition(byKey.get(b), totals.get(b)))
+        || (totals.get(a) - totals.get(b))
+        || (a < b ? -1 : 1);
+
+    // Start from the effective membership (a dot naming no weeks is in all of them), then take
+    // dots out of the weeks that are over the limit. Weeks are independent: a dot may survive one
+    // and be cut from the next.
+    const effective = new Map([...totals.keys()].map(k => [k, new Set(membership.get(k) || allWeeks())]));
+    let trimmed = false;
+    for (let week = 1; week <= PLAN_WEEKS; week++) {
+        const active = [...totals.keys()].filter(k => effective.get(k).has(week));
+        if (active.length <= max) continue;
+        for (const key of active.sort(rank).slice(0, active.length - max)) {
+            effective.get(key).delete(week);
+            trimmed = true;
+        }
+    }
+    if (!trimmed) return asRecipes(null);
+
+    const weeks = {};
+    for (const [key, set] of effective) {
+        if (set.size === 0) {
+            // Left in no week at all — gone from the formula, and from BOTH capsules.
+            delete morning[key];
+            delete evening[key];
+            continue;
+        }
+        weeks[key] = [...set].sort((a, b) => a - b);
+    }
+    return asRecipes(weeks);
+}
+
+function allWeeks() {
+    return Array.from({ length: PLAN_WEEKS }, (_, i) => i + 1);
+}
+
+// The widest week: the number a purchased tier is actually compared against. Counted by the same
+// rule _capDistinctDots enforces, so a tier check anywhere else (handlePostFormulationSubmit) can
+// never count differently than the place that did the trimming.
+//
+// Deliberately NOT the distinct dots in the whole cycle. A 6种 package permits six per week, so a
+// formula rotating twelve dots through four weeks — never more than six at once — is inside it.
+function _countDistinctDots(morningRecipe, eveningRecipe) {
+    const membership = _weekMembership(morningRecipe, eveningRecipe);
+    let widest = 0;
+    for (let week = 1; week <= PLAN_WEEKS; week++) {
+        widest = Math.max(widest, _keysInWeek(morningRecipe, eveningRecipe, membership, week).size);
+    }
+    return widest;
+}
+
 // Fits a requested daily allocation into the two capsules a day physically holds.
 //
 // The two constraints genuinely cannot both hold for a full formulary: every dot has its own
@@ -1709,15 +1936,7 @@ function _fitRecipeToDailyBudget(morningRecipe, eveningRecipe, dotsFormulary) {
     };
     // A floor above what was asked for would be this function adding dose, which it must never do.
     const floorOf = key => Math.min(requested.get(key), dotOf(key).target_dots_min ?? 1);
-    const position = (key) => {
-        const dot = dotOf(key);
-        const min = dot.target_dots_min ?? 1;
-        const max = dot.target_dots_max ?? 10;
-        // A fixed-range dot (min === max) has no emphasis to read, so it is treated as fully
-        // emphasised and dropped last — it is also usually tiny, so dropping it frees almost
-        // nothing anyway.
-        return max === min ? 1 : (requested.get(key) - min) / (max - min);
-    };
+    const position = (key) => _emphasisPosition(dotOf(key), requested.get(key));
 
     // Stage 3, hoisted: a non-flexible dot cannot leave its own capsule, so its slot's floors have
     // to fit that one capsule on their own. Everything else only has to fit the day.
@@ -1796,7 +2015,13 @@ function _fitRecipeToDailyBudget(morningRecipe, eveningRecipe, dotsFormulary) {
     return { morning: { dots: morning }, evening: { dots: evening } };
 }
 
-// Everything a 28-day expansion needs, derived once from a steady-state AM/PM recipe.
+// Everything a 28-day expansion needs, derived once from an AM/PM recipe.
+//
+// ONE FITTED RECIPE PER WEEK, not one for the cycle. A recipe may carry per-dot week membership
+// (see _weekMembership), so weeks can differ — and the daily budget therefore has to be settled
+// per week: a week where only five of a formula's twelve dots are active has room the others do
+// not. A recipe with no membership yields PLAN_WEEKS identical weeks, which is exactly the
+// steady-state behaviour this function had before weeks existed.
 //
 // DOT-N7 is lifted out of the everyday recipe entirely here rather than day by day: its dosing is
 // fully system-controlled (both capsules, alone, at its own target_dots_max, on exactly the two
@@ -1806,14 +2031,22 @@ function _fitRecipeToDailyBudget(morningRecipe, eveningRecipe, dotsFormulary) {
 function _planExpansionContext(morningRecipe, eveningRecipe, dotsFormulary) {
     const dotsByKey = new Map((dotsFormulary || []).map(d => [d.key_name, d]));
     const n7MaxCount = dotsByKey.get(N7_KEY)?.target_dots_max ?? 50;
-    // Settle the daily budget by dropping whole dots BEFORE anything is split into capsules, so
-    // no dot survives below its own minimum. N7 is stripped first so it is never a drop candidate:
-    // its dosing is system-controlled and it does not occupy an everyday capsule at all.
-    const fitted = _fitRecipeToDailyBudget(
-        _omitDotKey(morningRecipe, N7_KEY), _omitDotKey(eveningRecipe, N7_KEY), dotsFormulary);
+    const membership = _weekMembership(morningRecipe, eveningRecipe);
+    // N7 is stripped first so it is never a drop candidate in the budget fit below: its dosing is
+    // system-controlled and it does not occupy an everyday capsule at all.
+    const bareMorning = _omitDotKey(morningRecipe, N7_KEY);
+    const bareEvening = _omitDotKey(eveningRecipe, N7_KEY);
+    const weekly = [];
+    for (let week = 1; week <= PLAN_WEEKS; week++) {
+        // Settle the budget by dropping whole dots BEFORE anything is split into capsules, so no
+        // dot survives below its own minimum.
+        weekly.push(_fitRecipeToDailyBudget(
+            _recipeForWeek(bareMorning, membership, week),
+            _recipeForWeek(bareEvening, membership, week),
+            dotsFormulary));
+    }
     return {
-        baseMorning: fitted.morning,
-        baseEvening: fitted.evening,
+        weekly,
         n7IsolationRecipe: { dots: { [N7_KEY]: n7MaxCount } },
         pulseDotsByKey: new Map((dotsFormulary || [])
             .filter(d => d.dosing_protocol === 'pulse' && d.key_name !== N7_KEY)
@@ -1837,10 +2070,13 @@ function _expandPlanDay(dayIndex, ctx, dateISO) {
     if (N7_ISOLATION_DAY_INDEXES.includes(dayIndex)) {
         return { morning: ctx.n7IsolationRecipe, evening: ctx.n7IsolationRecipe, isN7: true };
     }
+    // Which week this day belongs to is the only thing that varies between ordinary days. Every
+    // week's recipe was already budget-fitted in _planExpansionContext, so this stays a lookup.
+    const base = ctx.weekly[_weekOfDayIndex(dayIndex) - 1] || ctx.weekly[0];
     const gate = recipe => (dateISO ? _applyPulseSchedule(recipe, ctx.pulseDotsByKey, dateISO) : recipe);
     return {
-        morning: _capRecipeTotal(gate(ctx.baseMorning), MAX_DOTS_PER_CAPSULE),
-        evening: _capRecipeTotal(gate(ctx.baseEvening), MAX_DOTS_PER_CAPSULE),
+        morning: _capRecipeTotal(gate(base.morning), MAX_DOTS_PER_CAPSULE),
+        evening: _capRecipeTotal(gate(base.evening), MAX_DOTS_PER_CAPSULE),
         isN7: false,
     };
 }
@@ -2005,7 +2241,16 @@ async function _commitProposedPlan(client, { userId, analysis, morningRecipe, ev
          VALUES ($1, CURRENT_DATE, CURRENT_DATE + $2::int, $3, 'proposed', 'nano', $4, $5, $6, $7)
          RETURNING id`,
         [userId, PLAN_DAYS - 1, (analysis || 'Proposed Formulation').slice(0, 2000),
-         JSON.stringify({ morning: morningRecipe?.dots || {}, evening: eveningRecipe?.dots || {} }),
+         // `weeks` is written only when the formula actually varies across the cycle, so a
+         // steady-state proposal is stored in exactly the shape it always was. Absent means every
+         // dot is in every week — see _weekMembership.
+         JSON.stringify({
+             morning: morningRecipe?.dots || {},
+             evening: eveningRecipe?.dots || {},
+             ...(morningRecipe?.weeks || eveningRecipe?.weeks
+                 ? { weeks: { ...(eveningRecipe?.weeks || {}), ...(morningRecipe?.weeks || {}) } }
+                 : {}),
+         }),
          labelCode, primaryHealthPlanId, secondaryHealthPlanId]
     );
     return plan.id;
@@ -2037,8 +2282,10 @@ async function _activateProposedPlan(client, { userId, planId }) {
         return null;
     }
     const recipe = plan.proposed_recipe || {};
-    const morningRecipe = { dots: recipe.morning || {} };
-    const eveningRecipe = { dots: recipe.evening || {} };
+    // `weeks` carries the rotation the proposal was authored with; a row written before weeks
+    // existed simply has none, and expands to four identical weeks exactly as it used to.
+    const morningRecipe = { dots: recipe.morning || {}, weeks: recipe.weeks || undefined };
+    const eveningRecipe = { dots: recipe.evening || {}, weeks: recipe.weeks || undefined };
 
     const startDateObj = getNowShanghai();
     const endDateObj = startDateObj.plus({ days: PLAN_DAYS - 1 });
@@ -2231,6 +2478,10 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         ),
     ]);
 
+    // Never throws (see fetchFormulationOrderStatus): not knowing whether a package is waiting
+    // costs the prompt a hint, never the user their formulation.
+    const orderContext = await _resolveOrderContext(user.user_id);
+
     const llmContext = {
         user_profile: { nickname: user.nickname, gender: user.gender, age, bmi, language: lang },
         biomarkers,
@@ -2255,6 +2506,17 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         current_solar_term: currentSolarTerm,
         essential_knowledge: essentialKnowledge,
         user_facts: userFacts,
+        // The package this user has already paid for, if any. Carried into the prompt so the model
+        // AIMS at the tier rather than being trimmed down to it afterwards — a formula built for 6
+        // dots is a better formula than the best 10-dot one with 4 dots deleted.
+        //
+        // Best-effort only, and deliberately not the enforcement point: this turn runs
+        // asynchronously and may be delivered minutes later, by which time a checkout could have
+        // completed. finalizeFormulaDotsGenerate re-resolves the tier at delivery and applies
+        // _capDistinctDots there, which is what actually binds.
+        formulation_package: orderContext.maxDistinctDots
+            ? { max_distinct_dots: orderContext.maxDistinctDots, name: orderContext.packageName }
+            : null,
     };
     const formulaGenerateTemplate = personaType === 'viva' ? vivaSystemFormulaGenerateTemplate : systemFormulaGenerateTemplate;
     const systemPrompt = formulaGenerateTemplate(llmContext);
@@ -2273,10 +2535,17 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         console.log(JSON.stringify({ level: 'WARN', msg: 'chat_generate_publish_failed_fallback_sync', user_id: user.user_id, handler: 'handlePostFormulaDots', error: ebErr.message }));
         // Fail open: publish itself failed, so run the deterministic formulator synchronously and
         // deliver the same proposal the async path would have.
-        const { analysis, finalContent, morningRecipe, eveningRecipe } = await _runDeterministicFormulation({
+        const deterministic = await _runDeterministicFormulation({
             biomarkers, bioageProfile, dotsFormulary, personaType, lang, currentSolarTerm, essentialKnowledge, userFacts,
             activeHealthPlans: llmContext.active_health_plans,
         });
+        const { analysis, finalContent } = deterministic;
+        // Trimmed to the purchased tier before it is stored, so the card, the box scan and the
+        // fast-track submission all expand the same recipe. A no-op when nothing is waiting.
+        const capped = _capDistinctDots(deterministic.morningRecipe, deterministic.eveningRecipe,
+            dotsFormulary, orderContext.maxDistinctDots);
+        const morningRecipe = capped.morning;
+        const eveningRecipe = capped.evening;
         const client = await pool.connect();
         let planId = null;
         try {
@@ -2294,9 +2563,8 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         } finally {
             client.release();
         }
-        const orderMode = await _resolveOrderMode(user.user_id);
         const labelCode = planId ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [planId])).rows[0]?.label_code : null;
-        const message = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang, { planId, orderMode, labelCode });
+        const message = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang, { planId, orderMode: orderContext.mode, labelCode });
         await pool.query(
             'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
             [user.user_id, 'formulation_proposal', message, 'pending']
@@ -2394,7 +2662,9 @@ module.exports = {
     _resolveCandidateDotKeys,
     _splitDotTiming,
     _planDayGroups,
-    _resolveOrderMode,
+    _resolveOrderContext,
+    _capDistinctDots,
+    _countDistinctDots,
     _formulationLabelUrl,
     _expandProposalToCapsules,
     _formatDayRanges,

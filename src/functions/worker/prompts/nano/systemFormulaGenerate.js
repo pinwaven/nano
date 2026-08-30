@@ -14,6 +14,7 @@ const { classifyBiomarker, LABELS_ZH: STATUS_LABELS_ZH, LABELS_EN: STATUS_LABELS
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 const { getTwinVocabBlock } = require('../chat/twinVocabulary');
+const { PLAN_WEEKS } = require('../../lib/dotsProductModel');
 
 const DIM_LABELS = {
     ResilienceAge:    { zh: '抗压年龄', en: 'Resilience Age' },
@@ -23,7 +24,7 @@ const DIM_LABELS = {
 };
 
 module.exports = (ctx) => {
-    const { user_profile, biomarkers, bioage, dots, health_twin, questionnaire_context, active_health_plans, current_solar_term } = ctx;
+    const { user_profile, biomarkers, bioage, dots, health_twin, questionnaire_context, active_health_plans, current_solar_term , formulation_package } = ctx;
     const isZh = user_profile?.language === 'zh';
 
     const formularyLines = (dots || []).length > 0
@@ -114,6 +115,32 @@ module.exports = (ctx) => {
             : `This cycle's focus plan especially recommends: ${recommendedDotShortKeys.join(', ')} (you may skew these toward the higher end of their range; every other Dot is still decided normally by biomarker severity — never force one to 0 just for being off this list. If a biomarker is clearly abnormal but its Dot isn't on this list, still assign it a reasonable dose)`)
         : '';
 
+
+    // The 28-day package this user has already paid for (GCN's migration_0085). The tiers differ
+    // only in how many distinct dots the formula may contain, so this is a hard shape constraint
+    // on the answer, not a preference — and it is far better to BUILD a 6-dot formula than to
+    // build a 10-dot one and delete four. _capDistinctDots enforces the number afterwards
+    // regardless; this section is what makes that trim a no-op instead of a demolition.
+    const packageSection = formulation_package && formulation_package.max_distinct_dots
+        ? (isZh
+            ? `用户已购买的套餐：${formulation_package.name || '28天定制套餐'} — 该套餐限定的是**每周**可同时服用的原粒种类数：任意一周内最多 ${formulation_package.max_distinct_dots} 种（DOT-N7 为系统固定的重置原粒，不计入此数量）。
+四周可以不同：你可以让某个原粒只出现在其中一两周，把名额让给另一个原粒，只要**每一周**都不超过 ${formulation_package.max_distinct_dots} 种。需要连续服用才有意义的原粒（如睡眠、情绪支持）应四周都保留；只有适合阶段性或轮换的原粒才安排在部分周。
+如需让某个原粒只在部分周出现，在该条目上加 "weeks" 字段列出周次（1-${PLAN_WEEKS}）；省略即表示四周都有。例如：{"dot_key":"D-N1","count":3,"weeks":[1,2]}
+请**主动挑选**每周最关键的 ${formulation_package.max_distinct_dots} 种并把剂量给足，不要先铺开再删减——超出的部分会被系统按重要性裁掉。`
+            : `The user's purchased package: ${formulation_package.name || '28-day custom package'} — it limits how many distinct dots may run in ANY ONE WEEK: at most ${formulation_package.max_distinct_dots} at a time (DOT-N7 is the system's fixed reset dot and does not count).
+The four weeks may differ: you can give a dot only one or two weeks and hand the slot to a different dot, as long as no single week exceeds ${formulation_package.max_distinct_dots}. A dot that only works taken continuously (sleep or mood support) should stay in all four weeks; only dots that make sense in phases or rotation belong in a subset.
+To put a dot in only some weeks, add a "weeks" field to its entry listing the week numbers (1-${PLAN_WEEKS}); omit it for all four. For example: {"dot_key":"D-N1","count":3,"weeks":[1,2]}
+CHOOSE the ${formulation_package.max_distinct_dots} that matter most in each week and dose them properly. Do not spread thin and then trim — anything over the limit is cut by the system, by importance.`)
+        : '';
+
+    // Only mentioned when a package is in play, because packageSection is the only place the
+    // "weeks" field is actually specified — naming it otherwise invites a field the model was
+    // never taught the shape of.
+    const weeksNote = !packageSection ? ''
+        : (isZh
+            ? '；若你用 "weeks" 字段限定某个原粒只在部分周出现，则该原粒只安排在这些周'
+            : ' — and except any dot you restrict to certain weeks with a "weeks" field, which then runs only in those weeks');
+
     const seasonSection = current_solar_term
         ? (isZh
             ? `当前节气：${current_solar_term.name_zh}（${current_solar_term.season_zh}季 · ${current_solar_term.organ_zh}）— ${current_solar_term.theme_zh}（传统节气养生视角，非临床证据，仅作轻微参考，不得掩盖生物标志物驱动的优先级）`
@@ -122,14 +149,14 @@ module.exports = (ctx) => {
 
     const NOTE_ZH_DIALOGUE_LABEL = '提及原粒时对用户使用配方库中标注的"对话中称呼"（如"原粒1号"）或原粒名称，**不要**说出内部短代码（如"D-N1"）——那是给系统解析用的，不是给用户看的。';
 
-const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的任务是：为用户配置接下来28天（4周）的 Waven Dots 方案——这是一次真实的配方决策，不是解释一个已有方案。系统会将你给出的每日总量重复安排到这28天内（DOT-N7 除外，见下方配方库中的专项说明）。
+const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的任务是：为用户配置接下来28天（4周）的 Waven Dots 方案——这是一次真实的配方决策，不是解释一个已有方案。系统会将你给出的每日总量重复安排到这28天内（DOT-N7 除外，见下方配方库中的专项说明${weeksNote}）。
 
 生物标志物的状态（正常/偏高/高）已在下方直接标注，请严格使用该标注。
 
 用户：${user_profile.nickname || '用户'}，${user_profile.age ? user_profile.age + ' 岁' : '年龄未知'}${user_profile.bmi ? '，BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
-${focusWeightingSection ? focusWeightingSection + '\n' : ''}
+${focusWeightingSection ? focusWeightingSection + '\n' : ''}${packageSection ? packageSection + '\n' : ''}
 ${twinSection}
 
 ${seasonSection}
@@ -162,14 +189,14 @@ ${formularyLines}
 - 引用用户真实的生物标志物/趋势数值，说明驱动因素。
 - 全程使用简体中文回复，结尾干净收尾，不提问、不引导用户继续追问。`;
 
-    const taskEn = `You are Nano, a warm precision-longevity AI built by Waven. Your task right now: formulate the next 28 days' (4-week) Waven Dots plan for this user — this is a real formulation decision, not an explanation of an existing plan. The system repeats your assigned daily totals across all 28 days (except DOT-N7 — see its dedicated note in the formulary below).
+    const taskEn = `You are Nano, a warm precision-longevity AI built by Waven. Your task right now: formulate the next 28 days' (4-week) Waven Dots plan for this user — this is a real formulation decision, not an explanation of an existing plan. The system repeats your assigned daily totals across all 28 days (except DOT-N7 — see its dedicated note in the formulary below${weeksNote}).
 
 Biomarker status (normal/elevated/high) is already labeled directly below — use that label as-is.
 
 User: ${user_profile.nickname || 'the user'}${user_profile.age ? ', ' + user_profile.age + ' years old' : ' (age unknown)'}${user_profile.bmi ? ', BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
-${focusWeightingSection ? focusWeightingSection + '\n' : ''}
+${focusWeightingSection ? focusWeightingSection + '\n' : ''}${packageSection ? packageSection + '\n' : ''}
 ${twinSection}
 
 ${seasonSection}
