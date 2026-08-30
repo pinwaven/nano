@@ -6,6 +6,29 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Changed
+
+- **Three call sites were expanding a formulation against a formulary with `timing`, `timing_flexible` and `target_dots_min` stripped out** (`worker/handlers/dots.js`, `tests/formula-28day-proposal.test.js`)
+  - `_getCommittedPlanDay0Breakdown` (the printed box label **and** the GCN checkout snapshot) and `_activateProposedPlan` (the box scan that writes the 56 capsules a user physically takes) each `SELECT`ed only the pulse/isolation columns. `_fitRecipeToDailyBudget` reads all three — which capsule a dot belongs to, whether it may be split, and the floor it may never go under.
+  - Live on prod, a real proposal's label rendered as **AM 72 / PM 0** with `DOT-N4` at 4 against a minimum of 9 and `DOT-N17` at 12 against 28: every dot collapsed into one capsule at sub-therapeutic doses, and it reads as a plausible formulation rather than as an error. GCN prices a custom formulation off that same breakdown.
+  - Fixed the three SELECTs, and made the degradation impossible to miss if it ever recurs: a dot the formulary doesn't describe now falls back to **whichever slot the caller put it in**, never to the morning.
+  - Verified against the live label endpoint on both environments after redeploying: both capsules within the 72 cap, no dot outside its own min/max, no locked dot split across slots, and no user identity in the public payload.
+
+- **The daily-budget rule rebalances and reduces before it drops a dot, instead of dropping first** (`worker/handlers/dots.js`, `tests/formula-28day-proposal.test.js`)
+  - Every dot's `target_dots_min` floors sum past the `2 x 72` a day holds, so a full formulary genuinely cannot keep them all. `_fitRecipeToDailyBudget` went straight to removing whole dots — while every survivor still sat far above its own floor. It destroyed interventions to buy room that was already lying unused inside the ones it kept.
+  - Now three stages, cheapest sacrifice first. **Rebalance**: a flexible dot in an over-full capsule moves to the other one, which costs nothing at all — same daily dose, taken at the other end of the day. **Reduce**: give back what each dot asked for above its own floor, proportionally, so a dot pushed to its ceiling keeps more of that emphasis. **Drop**: only once even the floors don't fit.
+  - The invariant is unchanged and now has more room to hold: no survivor is ever below its own minimum, and a dropped dot still leaves **both** slots. The give-back only ever takes away — it never raises a dot toward its floor or past what was asked for.
+  - Drop order still reads the formulator's emphasis (lowest position in the dot's own min-max range), but ties now break toward the larger **floor** rather than the larger count: by the time a drop is considered every survivor is at its floor, and the floor is what actually relieves the constraint.
+  - A non-flexible dot can't leave its own capsule, so that slot's floors are checked against a single capsule before the day-wide budget — which is what makes the final split always feasible. A recipe that already fits is returned untouched rather than re-derived.
+  - Same midpoint allocation against the real formulary: **72 AM / 72 PM with 16 of 17 dots surviving**, up from 44/3 with 8 before this and the timing change. `validateAgFormulation` clean over all 56 capsules, `dose_below_min` empty, and `_capRecipeTotal` is now genuinely the no-op safety net it was meant to be.
+
+- **Most dots now default to the evening slot they actually belong in, so a formulation is no longer a morning-only capsule** (`src/schemas/migration_dots_timing_rebalance.sql`)
+  - 17 of the 18 dots carried `timing = 'Morning'`; `DOT-N3` was the only evening dot, at 2-3 dots and `timing_flexible = false`. That column is what decides the AM/PM split — `_splitDotTiming` keeps 70% of a flexible dot in its own slot and only moves ~30%, and only above a daily count of 10 — so the evening capsule could only ever be filled by spill.
+  - `_fitRecipeToDailyBudget` then removed exactly the dots carrying that spill: the daily floors sum past the `2 x 72` a day holds, so it drops whole dots largest-first out of the over-budget slot, and the largest dots are the flexible ones. A midpoint allocation expanded to **44 dots AM / 3 dots PM, 8 of 17 dots surviving**.
+  - Moved to evening on the ingredient's own merits, not to hit a number: **N17** (cholesterol synthesis peaks overnight; plant sterols need a fat-containing meal), **N15** (anti-glycation acts postprandially, benfotiamine is dosed with meals), **N14** (flavanol FMD effect wanes inside 8h, trials dose twice daily), **N2** (D3 absorbs far better with the largest fat-containing meal; zinc/copper away from morning minerals), **N13** (spore probiotics with the evening meal), **N10** (fat-soluble; ceramide turnover is overnight), **N18** (ergothioneine's half-life is weeks - no diurnal constraint, placed as a balancer).
+  - Same allocation after the change: **71 AM / 62 PM, 13 of 17 dots surviving**, `validateAgFormulation` clean over the full 56 capsules.
+  - No code changed. `timing_flexible` is untouched, so the locked set is still `{N3 evening, N4 morning, N12 morning}`. Applied to dev and prod.
+
 ### Fixed
 
 - **A coach session whose `coach` object was lost now repairs itself instead of dead-ending** (`worker/handlers/login.js`, `worker/index.js`, `nano-miniapp/pages/coach/coach.js`, `tests/coach-panel-empty-states.test.js`)

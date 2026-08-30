@@ -787,27 +787,52 @@ for exactly this reason: the number the user is charged is settled on GCN's side
 after nano's snapshot is validated. Detail: GCN's `CLAUDE.md` §"Premier-partner pricing on
 formulation products".
 
-### The daily budget is settled by dropping dots, not by shrinking them
+### The daily budget: rebalance, then reduce, then drop (2026-08-30)
 
 Every dot has a `target_dots_min`, and those floors sum past the `2 × MAX_DOTS_PER_CAPSULE` a day
 holds. A full formulary therefore **cannot** keep every dot, and `_fitRecipeToDailyBudget` is where
-that is resolved — on daily totals, before anything is split into capsules, by removing whole dots.
+that is resolved — on daily totals, before anything is split into capsules.
 
 `_capRecipeTotal` used to resolve it instead, by scaling every dot down proportionally, which put
 most of them under their own minimum. `lib/agFormulation.js` calls that `dose_below_min` and
 refuses the formula. It went unnoticed because nothing validated nano's own output until the
 fast-track path (which no expert reviews) started sending it to GCN.
 
-- **A sub-therapeutic dot is worse than an absent one** — it occupies capsule space a real dose
-  could have used. The validator agrees: an absent dot is legal, an underdosed one is not.
-- **Which dot goes** is read from the formulator's own emphasis: lowest relative position in its
-  own min–max range first (the same scale `_fallbackCountForDot` writes on). A product judgement,
-  worth revisiting with the clinical side.
-- **A dropped dot leaves both slots.** Half a daily dose is the underdose this exists to prevent.
-- `_capRecipeTotal` still runs inside `_expandPlanDay`, but on a recipe that already fits it is a
-  no-op safety net rather than the thing deciding doses. **Don't move the budget decision back
-  into it** — it works per capsule and the floors are per day, so it structurally cannot enforce
-  them.
+**A sub-therapeutic dot is worse than an absent one** — it occupies capsule space a real dose could
+have used. The validator agrees: an absent dot is legal, an underdosed one is not. That is the
+invariant, and it is why the give-back below stops at each dot's own floor.
+
+It gives in three stages, cheapest sacrifice first. The first two were added 2026-08-30; before
+that the function went straight to dropping, so it destroyed whole interventions to buy room that
+was already lying unused inside the survivors — a midpoint allocation kept 8 of 17 dots where it
+can now keep 16.
+
+1. **Rebalance.** A flexible dot in an over-full capsule moves to the other one before anything is
+   reduced or removed. Costs nothing: the daily dose is unchanged, taken at the other end of the
+   day. Two passes — the first keeps the majority of a dot's count in its own slot (the rule
+   `systemFormulaGenerate.js` and the AG contract both state), the second drops that preference,
+   because a capsule that does not physically close is not a trade-off.
+2. **Reduce toward each dot's floor**, proportionally to how much it asked for above that floor, so
+   a dot pushed to its ceiling keeps more of that emphasis. It **only ever takes away** — never
+   raises a dot toward its floor or above what was asked for.
+3. **Drop whole dots**, and only once even the floors of everything don't fit. **A dropped dot
+   leaves both slots** — half a daily dose is the underdose this exists to prevent.
+
+**Which dot goes** is read from the formulator's own emphasis: lowest relative position in its own
+min–max range first (the same scale `_fallbackCountForDot` writes on). Ties break toward the larger
+**floor**, because by the time a drop is considered every survivor is at its floor and the floor is
+what actually relieves the constraint. A product judgement, worth revisiting with the clinical side.
+
+A **non-flexible** dot cannot leave its own capsule, so its slot's floors must fit that one capsule
+on their own — checked before the day-wide budget, and the reason the split at the end is always
+feasible.
+
+`_capRecipeTotal` still runs inside `_expandPlanDay`, but on a recipe that already fits it is a
+no-op safety net rather than the thing deciding doses. **Don't move the budget decision back into
+it** — it works per capsule and the floors are per day, so it structurally cannot enforce them.
+
+A recipe that already fits both capsules is returned **untouched**, not re-derived: the caller's own
+AM/PM split is a real decision and there is nothing to fix.
 
 ### The label QR: one code from formula to box to activation
 
