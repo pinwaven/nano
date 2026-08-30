@@ -6,6 +6,25 @@ const { normalizeCnPhone } = require('../lib/phone');
 const { grantSignupTrial } = require('../lib/personaOverride');
 const { syncPartnerPhoneFromUser } = require('./partners');
 
+// A referral code belongs to a user, not a coach — but when that user IS a coach, sharing their
+// personal referral_code instead of their coaches invitation code should still land the new signup
+// in their client list. Without this the referral path sets referred_by_user_id and inherits the
+// channel but leaves coach_id NULL, so the coach never sees them (prod incident 2026-08-29: a coach
+// shared her referral code at an event and all 36 signups were invisible to her).
+async function coachIdForReferrer(referrerUserId) {
+    if (!referrerUserId) return null;
+    try {
+        const res = await pool.query(
+            "SELECT id FROM coaches WHERE user_id = $1 AND status = 'active' LIMIT 1",
+            [referrerUserId]
+        );
+        return res.rows[0]?.id || null;
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'coachIdForReferrer failed', referrer: referrerUserId, error: err.message }));
+        return null;
+    }
+}
+
 async function handleResolvePhone(code, app_id = null) {
     try {
         if (!code) return { success: false, error: 'code is required' };
@@ -220,6 +239,13 @@ async function handleWxLogin(body) {
                         await pool.query('UPDATE users SET channel_id = $1 WHERE user_id = $2', [referrer.channel_id, existingRow.user_id]);
                         existingRow.channel_id = referrer.channel_id;
                     }
+                    if (!existingRow.coach_id) {
+                        const referrerCoachId = await coachIdForReferrer(referrer.user_id);
+                        if (referrerCoachId) {
+                            await pool.query('UPDATE users SET coach_id = $1 WHERE user_id = $2 AND coach_id IS NULL', [referrerCoachId, existingRow.user_id]);
+                            existingRow.coach_id = referrerCoachId;
+                        }
+                    }
                 }
             }
         }
@@ -349,6 +375,7 @@ async function handleWxLogin(body) {
             if (refByCode.rows.length > 0) {
                 referralUserId = refByCode.rows[0].user_id;
                 if (!channelId) channelId = refByCode.rows[0].channel_id;
+                if (!resolvedCoachId) resolvedCoachId = await coachIdForReferrer(referralUserId);
             } else {
                 return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
             }
@@ -531,6 +558,7 @@ async function handleWxAppLogin(body) {
             if (refByCode.rows.length > 0) {
                 referralUserId = refByCode.rows[0].user_id;
                 if (!channelId) channelId = refByCode.rows[0].channel_id;
+                if (!resolvedCoachId) resolvedCoachId = await coachIdForReferrer(referralUserId);
             } else {
                 return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
             }
