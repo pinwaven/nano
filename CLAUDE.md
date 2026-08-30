@@ -975,6 +975,142 @@ own text even though the plan row was correctly `'proposed'` and invisible to th
 — the proposal repopulating the tab it exists to stay out of. Found in the simulator; the DB and
 the API each looked correct on their own.
 
+## 28c. The 营养定制 Tool Sells a Tiered Package (2026-08-30)
+
+The formula card's `#order|buy` CTA opens **原粒 · 定制营养素 · 28天** — a buy-first package with
+three tiers — instead of the per-dot `定制原粒方案` it opened before. GCN `migration_0085`.
+
+```
+chat card  #order|buy  → GCN package picker → pay → order parks 'awaiting_formulation'
+GCN → nano  /formulation-purchase-confirmed  → 'formulation_order_paid' chat message
+user runs 营养定制 again → card is now #order|submit → confirm → fast track (§28b)
+```
+
+Nothing here is a new order shape. §28b's fast-track SKU flags already expressed a flat-priced,
+no-expert-review, buy-first package; this product just *is* one, at a real price, with a tier.
+
+### The tier is a WEEKLY width, and that is why a recipe has weeks at all
+
+`skus.metadata.max_distinct_dots` (6 / 8 / 10 种原粒) is the only difference between the three
+prices, so honouring it is not optional. GCN **reports** it on the waiting order
+(`handleNanoFormulationOrderStatus`) and enforces nothing: the rule needs the dots formulary and a
+product judgement about what a tier counts, and neither belongs on the far side of the wire.
+
+**It caps one week, not the cycle.** A 6种 buyer may take six dots this week and a partly different
+six next week; what they bought is the width of any single week. So a 28-day formula can genuinely
+use more than six dots — it just may never run more than six at once.
+
+That is the whole reason `_expandPlanDay` is week-aware. A recipe may carry an **optional** `weeks`
+map alongside its `dots` counts:
+
+```js
+{ dots: { 'DOT-N3': 7 }, weeks: { 'DOT-N3': [1, 2] } }   // taken in weeks 1-2 only
+```
+
+**A key that names no weeks is in every week**, which is what makes this backward compatible in
+both directions with no migration and no shape check: a proposal stored before weeks existed, a
+completion from a stale cached prompt, and the deterministic fallback formulator all expand to
+`PLAN_WEEKS` identical weeks — exactly the old behaviour. `_planExpansionContext` therefore
+budget-fits **once per week**, because a week running five of a formula's twelve dots has capsule
+room the others do not.
+
+**The model owns the rotation, not the server.** Whether a dot can be paused for a week is a
+clinical judgement — continuous sleep support and a seasonal accent are not interchangeable — so
+the prompt asks for a per-dot `weeks` field and says continuous dots stay in all four. The server
+only enforces the width.
+
+**`_capDistinctDots` runs ONCE, on the recipe, before it is stored**, and removes a dot **from an
+over-full week** rather than from the formula: a dot cut from week 3 keeps weeks 1-2, and only a
+dot left with no weeks disappears. Everything downstream expands `proposed_recipe` through
+`_expandPlanDay` — the card, the box scan writing 56 capsules, the fast-track submission — so they
+cannot disagree. Apply it inside the expansion instead and the box scan, which knows nothing about
+the order, would expand a different recipe than the card the user was shown.
+
+**`DOT-N7` is not counted.** It is the system reset dot, dosed alone on 2 of the 28 days in every
+plan regardless of tier (`_planExpansionContext` lifts it out of the everyday recipe entirely), so
+counting it would silently cost a 6种 buyer one of the six dots they paid for. A product judgement,
+and the reason the tier is described to the user as the width of their weekly formula rather than
+as the number of labels on the box. `_countDistinctDots` is the one definition of that count — the
+**widest week**, never the cycle's distinct total.
+
+Ranking reuses **`_emphasisPosition`**, now shared with `_fitRecipeToDailyBudget`'s stage 3 — a dot
+dropped for capsule space and a dot dropped for the tier are the same judgement about the same
+recipe.
+
+`handlePostFormulationSubmit` **refuses** a plan over the tier rather than trimming it — a plan
+proposed before the package was bought was capped by nothing, and re-running 营养定制 produces a
+better formula than that one minus a dot. Same reject-never-repair rule as §36.
+
+**Open, and now user-visible if a rotation ever ships:** `_getCommittedPlanDay0Breakdown` reads day
+0, which under rotation is week 1 rather than the cycle. Its two callers both want the cycle-wide
+union — GCN's per-dot checkout snapshot (changing it changes what a customer is charged) and the
+printed box label (which would under-list a box that physically holds all four weeks). Give them
+one when someone owns the pricing question; do not quietly redefine day 0.
+
+### Buying a package attaches the formulation the buyer was looking at
+
+The chat card's order CTA is tapped while a specific proposal is on screen, so GCN carries its id
+into the order as **`order_item_custom_formulations.intended_nano_plan_id`** (`migration_0086`) and
+payment confirmation asks nano to attach it. Without this the buyer taps "order this formulation"
+and gets an order referencing no formulation at all — which is exactly how this was first reported.
+
+**Advisory, and a separate column on purpose.** `nano_nutrition_plan_id` is the audit record of what
+will be compounded and is what `formulation_reviews` resolves against; the intent may never be
+compounded. Collapsing them would make an unpaid, unvalidated intention indistinguishable from a
+committed formula.
+
+`_settleFastTrackPackage` (`handlers/users.js`) runs the attempt, and it is **only ever an attempt**:
+`handlePostFormulationSubmit` re-checks ownership, `'proposed'` status, that an order is waiting,
+the weekly width, and the validator. Every refusal falls through to the nudge — the behaviour this
+flow had before an id was carried — so nothing can leave a buyer worse off. The one refusal with its
+own message is an over-tier plan, because a generic "go formulate it" would have them regenerate the
+same too-wide formula and fail the same way.
+
+**GCN's `dashboard.html` is what routes the miniapp's `buy_custom_formulation` intent**, so a
+production miniapp reaches whatever checkout the web function was last deployed with. That is how a
+card still reading 按此方案定制下单 ended up opening a package picker. When changing where that
+intent lands, the miniapp card copy has to ship with it or it will promise the wrong thing.
+
+### 查看配方 is not 我的激活码
+
+`openOrderCodes` serves three item kinds and its heading was hardcoded to the activation-code one,
+so a buyer tapping 查看配方 was told they were looking at activation codes. It now titles itself
+from its contents.
+
+A buy-first package is paid **before** anything is formulated, so that modal routinely has no
+recipe. It used to render an empty shell with `配方主打方向: —`; it now drops the focus line when
+there is no focus and says whose move it is. That answer is per-product, which is why
+`is_ag_formulation_bundle` / `requires_expert_review` ride on the order item — at
+`awaiting_formulation` a fast-track package waits on the buyer running 营养定制, a premium one waits
+on Viva AG. `order.status` cannot tell them apart, and getting it backwards either strands the order
+or sends someone somewhere that cannot fulfil it.
+
+### A paid package says so in chat
+
+An order at `awaiting_formulation` is waiting on something only this app can produce, and the store
+never said so. `/formulation-purchase-confirmed` now carries the package, and delivers a
+`formulation_order_paid` message (**in `AI_ECHO_TYPES`** — it writes both channels). An
+expert-review package sends none: Viva AG owns that one and the user has nothing to do.
+
+`handlers/users.js` requires `./chat` **at call time**. Not a cycle — nothing in the chat graph
+requires users.js — just keeping a cold path off every warm container's module load.
+
+### No sku id in the client, ever again
+
+The picker reads `GET /api/mall/aeviva/formulation-packages`. A tier added, repriced or retired in
+the admin panel takes effect with no web deploy, and a stale client-side formulation sku constant
+is exactly what broke both checkouts in the sandbox on 2026-08-22. An empty response falls back to
+the per-dot product rather than dead-ending a CTA the user already tapped.
+
+Seller and fulfiller stay separate without the client knowing either: the order carries the
+**buyer's own bound store** as `store_partner_id`, and `handleAgFormulationBundleOrderCreate`
+stamps the processing centre onto the order *item*.
+
+**Open, unchanged by this pass:** that handler hardcodes `PROCESSING_CENTER_PARTNER_ID` (`…a3`)
+while the AI 精准营养素 product sits on `42f7307f`, and neither processing centre has a
+`payment_qr_urls`. No custom-formulation order has ever been placed in prod, so nothing is broken
+yet — but the first real one will surface it.
+
 ## 29. Viva Proactive Daily Check-Ins (Morning / Midday / Evening)
 
 Added 2026-07-29. Every previous Viva feature (§21-28) only responds when the user speaks first. This adds the reverse: Viva initiates, up to three times a day, checking in on today's dots and flagging one grounded thing to watch for. Delivery is **in-app only** — the message waits in `notifications` for the user's next app-open (identical to how reminders/coach messages already surface), not a true WeChat push (no subscribe-message/template-message send exists anywhere in this codebase; that would need a new WeChat-platform template plus opt-in UI — out of scope). Content generation is a **single lightweight completion**, not the full PLAN→GENERATE→JUDGE→REVISE agentic loop — appropriate for a routine message going out to every eligible user up to 3x/day. **Viva only.**
