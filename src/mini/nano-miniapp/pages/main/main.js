@@ -151,7 +151,7 @@ const T = {
     gotIt: '知道了',
     orderDotsTitle: '未绑定 Neo 分配器，可直接订购原粒胶囊',
     orderDotsDetail: '默认 4 周装 · 56 粒 · 每日 2 粒',
-    orderDotsBtn: '前往商城订购',
+    orderDotsBtn: '订购 28 天定制套餐',
     cartridgeTitle: '原粒盒',
     noCartridges: '未插入原粒盒。请将原粒盒插入分配器。',
     simCartTitle: '选择套装',
@@ -421,7 +421,7 @@ const T = {
     gotIt: 'Got it',
     orderDotsTitle: 'No Neo dispenser bound — order pre-mixed capsules instead',
     orderDotsDetail: 'Default: 4-week pack · 56 capsules · 2/day',
-    orderDotsBtn: 'Order in the Store',
+    orderDotsBtn: 'Order the 28-Day Package',
     cartridgeTitle: 'Cartridges',
     noCartridges: 'No cartridges inserted. Insert cartridges into your dispenser.',
     simCartTitle: 'Choose a Set',
@@ -1350,8 +1350,18 @@ Page({
     })
   },
 
+  // "Order pre-mixed capsules" on the Dots subtab, shown when no Neo dispenser is bound. Opens
+  // the SAME product the chat tool's :::formula card sells — 原粒 · 定制营养素 · 28天 — rather
+  // than dropping the user on the storefront to find it themselves. Both routes therefore go
+  // through GCN's dashboard.html, which owns where `buy_custom_formulation` lands.
+  //
+  // No nutrition_plan_id, deliberately: this is the buy-first ordering (§28c). Nothing here is a
+  // formulation the user just approved — the Dots subtab reads /api/nutrition-plan, which serves
+  // only 'active' plans, and an active plan id could never be attached to the order anyway
+  // (_settleFastTrackPackage requires 'proposed'). So the order parks at 'awaiting_formulation'
+  // and nano messages the buyer to run 营养定制, which is exactly that flow's intended shape.
   handleOrderDots() {
-    this._openAevivaStoreGated()
+    this._openAevivaStoreGated({ intent: 'buy_custom_formulation' })
   },
 
   // Tapping a row of the :::product card Viva appended to a reply. Opens the GCN storefront
