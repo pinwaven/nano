@@ -13,17 +13,11 @@ switch (envVersion) {
     break;
 }
 
-// ===== TEMPORARY PROD OVERRIDE (temp/miniapp-backend.js) — DO NOT COMMIT =====
-// The IDE always reports envVersion 'develop', so the switch above just chose the dev backend.
-// Remove with: node temp/miniapp-backend.js dev   (restores VERSION 0828-8)
-BASE = 'https://nano.gcn.net';
-// ===== end temporary prod override =====
-
 // Bump on every change anywhere under src/mini/nano-miniapp/, not just before preview
 // uploads — no build pipeline exists, so this is the only way to confirm WeChat DevTools
 // is actually running the latest code rather than a stale cached compile. See CLAUDE.md
 // "Miniapp VERSION Marker". Format: MMDD-N (month+day, build number that day).
-const VERSION = '0831-1';
+const VERSION = '0901-1';
 const WX_VERSION = accountInfo.miniProgram.version || '';
 const IS_DEV = envVersion === 'develop' || envVersion === 'trial';
 

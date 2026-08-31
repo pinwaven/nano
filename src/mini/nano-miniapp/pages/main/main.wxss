@@ -1427,6 +1427,129 @@ page {
   color: rgba(166, 196, 229, 0.2);
 }
 
+/* ── My dots packages (Plans ▸ Dots) ──
+   One card per journey. Sits above .order-dots-card so "where are mine" reads before "buy
+   another". Colours follow the steel/blue card idiom used elsewhere in this tab rather than the
+   gold order card, which is reserved for the buy CTA. */
+.pkg-section {
+  flex-shrink: 0;
+  padding: 24rpx 36rpx 4rpx;
+}
+.pkg-section-title {
+  display: block;
+  font-size: var(--fs-26, 26rpx);
+  font-weight: 700;
+  color: rgba(238, 242, 255, 0.9);
+  letter-spacing: 1rpx;
+  margin-bottom: 16rpx;
+}
+.pkg-card {
+  padding: 24rpx 26rpx;
+  margin-bottom: 16rpx;
+  border-radius: 22rpx;
+  background: rgba(122, 154, 191, 0.08);
+  border: 2rpx solid rgba(122, 154, 191, 0.22);
+}
+.pkg-card-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+.pkg-name {
+  flex: 1;
+  font-size: var(--fs-25, 25rpx);
+  font-weight: 600;
+  color: rgba(238, 242, 255, 0.92);
+  line-height: 1.4;
+}
+/* The stage pill. Neutral steel by default; only the stages that mean something to a waiting
+   user get their own colour, so a coloured pill always carries information. */
+.pkg-stage {
+  flex-shrink: 0;
+  padding: 6rpx 16rpx;
+  border-radius: 100rpx;
+  font-size: var(--fs-20, 20rpx);
+  font-weight: 600;
+  color: rgba(166, 196, 229, 0.85);
+  background: rgba(122, 154, 191, 0.16);
+  white-space: nowrap;
+}
+.pkg-stage-awaiting_formulation,
+.pkg-stage-shipped,
+.pkg-stage-delivered {
+  color: var(--gold);
+  background: rgba(245, 197, 106, 0.16);
+}
+.pkg-stage-active {
+  color: var(--success);
+  background: rgba(52, 211, 153, 0.14);
+}
+.pkg-stage-cancelled,
+.pkg-stage-refunded {
+  color: rgba(238, 242, 255, 0.45);
+  background: rgba(122, 154, 191, 0.1);
+}
+.pkg-meta {
+  display: block;
+  margin-top: 10rpx;
+  font-size: var(--fs-22, 22rpx);
+  color: rgba(166, 196, 229, 0.62);
+  line-height: 1.5;
+}
+.pkg-track {
+  margin-top: 16rpx;
+  padding: 14rpx 18rpx;
+  border-radius: 14rpx;
+  background: rgba(11, 28, 46, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+.pkg-track-text {
+  flex: 1;
+  font-size: var(--fs-21, 21rpx);
+  color: rgba(166, 196, 229, 0.8);
+  line-height: 1.45;
+}
+.pkg-track-copy {
+  flex-shrink: 0;
+  font-size: var(--fs-21, 21rpx);
+  font-weight: 600;
+  color: var(--steel);
+}
+.pkg-cta {
+  margin-top: 20rpx;
+  height: 66rpx;
+  border-radius: 100rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245, 197, 106, 0.18);
+  border: 2rpx solid rgba(245, 197, 106, 0.5);
+}
+.pkg-cta-ghost {
+  background: rgba(122, 154, 191, 0.12);
+  border-color: rgba(122, 154, 191, 0.4);
+}
+.pkg-cta-text {
+  font-size: var(--fs-24, 24rpx);
+  font-weight: 600;
+  color: var(--gold);
+  letter-spacing: 1rpx;
+}
+.pkg-cta-ghost .pkg-cta-text { color: var(--steel); }
+/* Shown instead of the CTA when a package is waiting but the user has no formula to give it —
+   a dead button would be worse than a sentence saying what to do. */
+.pkg-hint {
+  display: block;
+  margin-top: 16rpx;
+  font-size: var(--fs-21, 21rpx);
+  color: rgba(245, 197, 106, 0.7);
+  line-height: 1.5;
+}
+
 .order-dots-card {
   margin: 24rpx 36rpx 20rpx;
   padding: 32rpx;

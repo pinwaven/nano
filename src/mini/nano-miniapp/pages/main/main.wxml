@@ -710,7 +710,39 @@
           </view>
         </view>
 
-        <view wx:if="{{!neoBound && isAeviva && !isGuest}}" class="order-dots-card" bindtap="handleOrderDots">
+        <!-- ── My dots packages ────────────────────────────────────────────────────────────
+             One row per journey, merged server-side from the GCN order and nano's own formula
+             (handlers/dots.js, _mergeFormulationPackages). This is the whole point of the
+             feature: where a user's capsules are, without opening the store webview.
+             Above the order card, so "where are mine" reads before "buy another". -->
+        <view wx:if="{{isAeviva && !isGuest && packages.length > 0}}" class="pkg-section">
+          <text class="pkg-section-title">{{t.pkgSectionTitle}}</text>
+          <view wx:for="{{packages}}" wx:key="key" class="pkg-card">
+            <view class="pkg-card-hdr">
+              <text class="pkg-name">{{item.name}}</text>
+              <text class="pkg-stage pkg-stage-{{item.stage}}">{{item.stageLabel}}</text>
+            </view>
+            <text wx:if="{{item.meta}}" class="pkg-meta">{{item.meta}}</text>
+            <view wx:if="{{item.tracking_number}}" class="pkg-track" catchtap="handleCopyPackageTracking" data-num="{{item.tracking_number}}">
+              <text class="pkg-track-text">{{item.trackingLabel}}</text>
+              <text class="pkg-track-copy">{{t.copy}}</text>
+            </view>
+            <view wx:if="{{item.can_submit && item.submit_plan_id}}" class="pkg-cta" catchtap="handlePackageSubmit" data-order="{{item.order_id}}" data-plan="{{item.submit_plan_id}}">
+              <text class="pkg-cta-text">{{t.pkgUseFormulaBtn}}</text>
+            </view>
+            <text wx:elif="{{item.can_submit}}" class="pkg-hint">{{t.pkgNeedsFormulaHint}}</text>
+            <view wx:elif="{{item.can_scan}}" class="pkg-cta pkg-cta-ghost" catchtap="handleScanBox">
+              <text class="pkg-cta-text">{{t.pkgScanBtn}}</text>
+            </view>
+            <view wx:elif="{{item.can_order && item.plan_id}}" class="pkg-cta" catchtap="handleFormulaOrder" data-plan="{{item.plan_id}}">
+              <text class="pkg-cta-text">{{t.pkgOrderBtn}}</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- Hidden while any package is in flight: GCN's formulation_already_in_progress guard
+             would reject the purchase anyway, so offering it is a dead end. -->
+        <view wx:if="{{!neoBound && isAeviva && !isGuest && !hasPackageInFlight}}" class="order-dots-card" bindtap="handleOrderDots">
           <text class="order-dots-title">{{t.orderDotsTitle}}</text>
           <text class="order-dots-detail">{{t.orderDotsDetail}}</text>
           <view class="order-dots-btn"><text class="order-dots-btn-text">{{t.orderDotsBtn}}</text></view>

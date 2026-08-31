@@ -152,6 +152,36 @@ const T = {
     orderDotsTitle: '未绑定 Neo 分配器，可直接订购原粒胶囊',
     orderDotsDetail: '默认 4 周装 · 56 粒 · 每日 2 粒',
     orderDotsBtn: '订购 28 天定制套餐',
+    // ── My dots packages (Plans ▸ Dots) ──
+    // Stage labels are keyed by the server's own stage string (t['pkgStage_' + p.stage]),
+    // following the t['scanBoxErr_' + reason] convention already used below. A stage with no key
+    // renders empty — WXML has no compile-time key checking — so every value in
+    // handlers/dots.js's PACKAGE_STAGES must have a line here AND in the en block.
+    pkgSectionTitle: '我的原粒套餐',
+    pkgStage_proposed: '待下单',
+    pkgStage_pending_payment: '待付款',
+    pkgStage_paid: '已付款',
+    pkgStage_awaiting_formulation: '待确认配方',
+    pkgStage_awaiting_ag: 'Viva AG 配方中',
+    pkgStage_expert_review: '专家审核中',
+    pkgStage_compounding: '配制中',
+    pkgStage_shipped: '已发货',
+    pkgStage_delivered: '已送达',
+    pkgStage_active: '进行中',
+    pkgStage_cancelled: '已取消',
+    pkgStage_refunded: '已退款',
+    pkgUnnamed: '定制原粒方案',
+    pkgUseFormulaBtn: '用此配方定制',
+    pkgNeedsFormulaHint: '请先在对话中使用「营养定制」生成配方',
+    pkgScanBtn: '扫描包装二维码启用',
+    pkgOrderBtn: '按此配方下单',
+    pkgOrderGone: '该套餐已不在等待配方（可能已退款或已由其他设备提交）。请刷新后重试。',
+    pkgSubmitConfirm: '确认用当前配方定制这份套餐？确认后即进入配制，无法更改。',
+    pkgSubmitOk: '已提交配制',
+    pkgDay: (n, total) => `第 ${n} 天 · 共 ${total} 天`,
+    pkgOrderedOn: (d) => `${d} 下单`,
+    pkgTierUpTo: (n) => `最多 ${n} 种原粒`,
+    copy: '复制',
     cartridgeTitle: '原粒盒',
     noCartridges: '未插入原粒盒。请将原粒盒插入分配器。',
     simCartTitle: '选择套装',
@@ -422,6 +452,32 @@ const T = {
     orderDotsTitle: 'No Neo dispenser bound — order pre-mixed capsules instead',
     orderDotsDetail: 'Default: 4-week pack · 56 capsules · 2/day',
     orderDotsBtn: 'Order the 28-Day Package',
+    // ── My dots packages (Plans ▸ Dots) — see the zh block for why every stage needs a key ──
+    pkgSectionTitle: 'My Dots Packages',
+    pkgStage_proposed: 'Ready to order',
+    pkgStage_pending_payment: 'Awaiting payment',
+    pkgStage_paid: 'Paid',
+    pkgStage_awaiting_formulation: 'Needs your formula',
+    pkgStage_awaiting_ag: 'Viva AG formulating',
+    pkgStage_expert_review: 'Expert review',
+    pkgStage_compounding: 'Being compounded',
+    pkgStage_shipped: 'Shipped',
+    pkgStage_delivered: 'Delivered',
+    pkgStage_active: 'In progress',
+    pkgStage_cancelled: 'Cancelled',
+    pkgStage_refunded: 'Refunded',
+    pkgUnnamed: 'Custom dots formulation',
+    pkgUseFormulaBtn: 'Use this formula',
+    pkgNeedsFormulaHint: 'Run Formulate Dots in chat first to build a formula',
+    pkgScanBtn: 'Scan the box QR to start',
+    pkgOrderBtn: 'Order this formula',
+    pkgOrderGone: 'That package is no longer waiting for a formula — it may have been refunded, or filled from another device. Pull to refresh and try again.',
+    pkgSubmitConfirm: 'Compound this package using your current formula? Compounding starts right away and cannot be changed.',
+    pkgSubmitOk: 'Sent to compounding',
+    pkgDay: (n, total) => `Day ${n} of ${total}`,
+    pkgOrderedOn: (d) => `Ordered ${d}`,
+    pkgTierUpTo: (n) => `up to ${n} dots`,
+    copy: 'Copy',
     cartridgeTitle: 'Cartridges',
     noCartridges: 'No cartridges inserted. Insert cartridges into your dispenser.',
     simCartTitle: 'Choose a Set',
@@ -664,6 +720,11 @@ function _msgSeparator(prevTs, ts, lang) {
   return `${md} ${hh}:${mm}`
 }
 
+// "The user backed out of the package picker", which is NOT the same as "nothing is waiting":
+// one must silently do nothing, the other must explain itself. A symbol so it can never collide
+// with a real order_id.
+const CANCELLED = Symbol('picker-cancelled')
+
 function chronoAge(birthDate) {
   if (!birthDate) return null
   return Math.floor((Date.now() - new Date(birthDate).getTime()) / (1000 * 60 * 60 * 24 * 365.25))
@@ -829,6 +890,54 @@ function mapStructuredSchedules(schedules, dotsMap, lang) {
 
   return Object.values(dayGroups).sort((a, b) => {
     return new Date(a.label).getTime() - new Date(b.label).getTime()
+  })
+}
+
+// One row per dots package, for Plans ▸ Dots. The server already merged the GCN order with
+// nano's own formula and derived the stage (handlers/dots.js, _mergeFormulationPackages); this
+// only turns that into strings, because WXML cannot format or branch on a numeric day count.
+//
+// Every stage label is looked up as t['pkgStage_' + stage] rather than switched on here, so a new
+// server-side stage needs one line in each T block and nothing else. A missing key falls back to
+// the generic name instead of rendering an empty pill — WXML has no compile-time key checking.
+function mapPackages(rawPackages, t, lang) {
+  if (!Array.isArray(rawPackages) || !t) return []
+  return rawPackages.map((p, i) => {
+    const name = p.package_name || t.pkgUnnamed
+    const bits = []
+    // What the row says under its title, most specific fact first.
+    if (p.stage === 'active' && p.day_index) {
+      bits.push(t.pkgDay(p.day_index, p.total_days))
+    } else {
+      if (p.tier_label) bits.push(p.tier_label)
+      else if (p.max_distinct_dots) bits.push(t.pkgTierUpTo(p.max_distinct_dots))
+      if (p.ordered_at) bits.push(t.pkgOrderedOn(fmtDate(p.ordered_at, lang)))
+    }
+    return {
+      // order_id is a UUID and plan_id an int; a package can legitimately have only one of them,
+      // so the wx:key is the pair plus the index rather than either alone.
+      key: `${p.order_id || 'p'}-${p.plan_id || 'o'}-${i}`,
+      stage: p.stage,
+      stageLabel: t['pkgStage_' + p.stage] || name,
+      name,
+      meta: bits.join(' · '),
+      order_id: p.order_id || null,
+      plan_id: p.plan_id || null,
+      // The formula a waiting package could be filled with — a DIFFERENT plan from plan_id, which
+      // is what is already attached (nothing is bound until submit). Dropping this is what makes
+      // the CTA silently render as a hint, so it must stay copied through.
+      submit_plan_id: p.submit_plan_id || null,
+      can_submit: !!p.can_submit,
+      can_scan: !!p.can_scan,
+      can_order: !!p.can_order,
+      tracking_number: p.tracking_number || null,
+      // The courier's own status line when Kuaidi100 has pushed one, otherwise just the number.
+      trackingLabel: [p.shipping_carrier, p.tracking_number, p.tracking_status_desc]
+        .filter(Boolean).join(' · '),
+      // "Bought and not yet finished with" — what hides the buy-another card. A proposal is not
+      // in flight (nothing was paid), and neither is a package already taken, cancelled or refunded.
+      inFlight: !['proposed', 'active', 'cancelled', 'refunded'].includes(p.stage),
+    }
   })
 }
 
@@ -1028,6 +1137,10 @@ Page({
     dispenseStatus: '',
     cartridges: [],
     cartridgesLoading: true,
+    // Every dots package this user has, merged server-side from the GCN order and nano's
+    // own formula. Never a source for hasPlan — see _loadDots.
+    packages: [],
+    hasPackageInFlight: false,
     weekLabel: '',
     dotsWeekOffset: 0,
     hasPrevWeek: false,
@@ -1427,6 +1540,9 @@ Page({
     const { user, t } = this.data
     if (!this.data.isAeviva || !planId || !user) return
     if (this._formulaSubmitting) return
+
+    // Confirm first, then ask which package — agreeing to compound is the bigger decision, and
+    // this keeps the single-package flow byte-identical to what it was before a picker existed.
     const confirmed = await new Promise(resolve => wx.showModal({
       title: t.formulaSubmitConfirmTitle,
       content: t.formulaSubmitConfirmBody,
@@ -1434,26 +1550,110 @@ Page({
       fail: () => resolve(false),
     }))
     if (!confirmed) return
+
+    // Which package is this filling? Resolved NOW, not from the card. The formulation turn is
+    // async, so this card may be minutes old and was rendered against whatever was waiting then —
+    // an order can have been refunded, or a second one confirmed, since. Same reasoning
+    // _resolveOrderContext gives for never caching the mode.
+    const orderId = await this._pickAwaitingOrder()
+    if (orderId === CANCELLED) return
+    await this._submitFormulation(planId, orderId, msg => this._addMsg('ai', msg, true))
+  },
+
+  // The Dots subtab's own submit. The package row already names its order, so there is nothing to
+  // pick — tapping the row IS the choice, which is what makes selection work when more than one
+  // package is waiting. Reports through a toast rather than a chat bubble; the user is not in the
+  // chat tab, and dropping a message into a conversation they are not looking at reads as noise.
+  async handlePackageSubmit(e) {
+    const { plan: planId, order: orderId } = e.currentTarget.dataset
+    const { user, t } = this.data
+    if (!this.data.isAeviva || !planId || !orderId || !user) return
+    if (this._formulaSubmitting) return
+    const confirmed = await new Promise(resolve => wx.showModal({
+      title: t.formulaSubmitConfirmTitle,
+      content: t.pkgSubmitConfirm,
+      success: r => resolve(!!r.confirm),
+      fail: () => resolve(false),
+    }))
+    if (!confirmed) return
+    const ok = await this._submitFormulation(planId, orderId,
+      msg => wx.showModal({ title: '', content: msg, showCancel: false }))
+    if (ok) {
+      wx.showToast({ title: t.pkgSubmitOk, icon: 'success' })
+      // The package has moved to 'compounding' on GCN's side; repaint so the row stops offering
+      // an action that has already been taken.
+      this._dotsLoadedAt = 0
+      this._loadDots(user, this.data.lang)
+    }
+  },
+
+  // Sentinel for "the user backed out of the picker", which is not the same as "no order" — one
+  // must silently do nothing, the other must explain itself.
+  //
+  // Returns the chosen order_id, null when nothing is waiting (the server says so authoritatively
+  // and its message is the one the user sees), or CANCELLED.
+  async _pickAwaitingOrder() {
+    const { user, t } = this.data
+    let packages = []
+    try {
+      const res = await this._req(`${BASE}/api/formulation-orders?openid=${encodeURIComponent(user.user_id)}`)
+      packages = (res.data?.packages || []).filter(p => p.can_submit && p.order_id)
+    } catch (err) {
+      // Fall through with no id: the submit below re-resolves server-side and picks the oldest,
+      // exactly as it did before a picker existed. A lookup failure must not block the action.
+      return null
+    }
+    if (packages.length <= 1) return packages.length === 1 ? packages[0].order_id : null
+    const labels = packages.map(p => {
+      const tier = p.tier_label || (p.max_distinct_dots ? t.pkgTierUpTo(p.max_distinct_dots) : '')
+      return [p.package_name || t.pkgUnnamed, tier].filter(Boolean).join(' · ')
+    })
+    return await new Promise(resolve => wx.showActionSheet({
+      itemList: labels,
+      success: r => resolve(packages[r.tapIndex].order_id),
+      fail: () => resolve(CANCELLED),
+    }))
+  },
+
+  // The one submit path, shared by the chat card and the Dots subtab so the two surfaces can never
+  // disagree about what a reason code means. `report` is how each surface talks to its own user.
+  // Returns true only on a real success.
+  async _submitFormulation(planId, orderId, report) {
+    const { user, t } = this.data
     this._formulaSubmitting = true
     wx.showLoading({ title: t.formulaSubmitCta, mask: true })
     try {
-      const res = await this._req(`${BASE}/api/formulation-submit`, 'POST', { openid: user.user_id, plan_id: planId })
+      const body = { openid: user.user_id, plan_id: planId }
+      if (orderId) body.order_id = orderId
+      const res = await this._req(`${BASE}/api/formulation-submit`, 'POST', body)
       const d = res.data || {}
-      if (d.success) {
-        this._addMsg('ai', t.formulaSubmitOk, true)
-        return
-      }
+      if (d.success) { report(t.formulaSubmitOk); return true }
       // Named reasons the user can act on get their own message; everything else is a retry.
-      if (d.reason === 'no_awaiting_order') this._addMsg('ai', t.formulaSubmitNoOrder, true)
-      else if (d.reason === 'order_requires_expert_review') this._addMsg('ai', t.formulaSubmitExpert, true)
-      else if (d.reason === 'formulation_exceeds_package') this._addMsg('ai', t.formulaSubmitOverTier, true)
-      else this._addMsg('ai', t.formulaSubmitFailed, true)
+      if (d.reason === 'no_awaiting_order') report(t.formulaSubmitNoOrder)
+      // The package they picked moved on between the picker and the tap — refunded, or filled from
+      // another device. Not a failure of their formula, so it must not read like one.
+      else if (d.reason === 'order_not_available') report(t.pkgOrderGone)
+      else if (d.reason === 'order_requires_expert_review') report(t.formulaSubmitExpert)
+      else if (d.reason === 'formulation_exceeds_package') report(t.formulaSubmitOverTier)
+      else report(t.formulaSubmitFailed)
+      return false
     } catch (err) {
-      this._addMsg('ai', t.formulaSubmitFailed, true)
+      report(t.formulaSubmitFailed)
+      return false
     } finally {
       wx.hideLoading()
       this._formulaSubmitting = false
     }
+  },
+
+  handleCopyPackageTracking(e) {
+    const num = e.currentTarget.dataset.num
+    const { lang } = this.data
+    if (!num) return
+    wx.setClipboardData({
+      data: num,
+      success: () => wx.showToast({ title: lang === 'zh' ? '单号已复制' : 'Tracking copied', icon: 'success' }),
+    })
   },
 
   // Raised by the AG panel (via user-health) when a job is parked waiting on a clarifying
@@ -3164,9 +3364,18 @@ Page({
         ? (dispenseSlot === 'morning_cup' ? todayDay.morning : todayDay.evening)
         : []
 
+      const packages = mapPackages(res.data?.packages, this.data.t, lang)
+
       this.setData({
         dotsLoading: false,
+        // Still 'active'-only, deliberately. `packages` is a sibling of the plan fields and must
+        // never feed this — CLAUDE.md §28b records the bug where a proposal made this tab report
+        // a plan the user did not physically have.
         hasPlan: (plan !== null || structured !== null),
+        packages,
+        // Buying a second package while one is in flight is refused by GCN
+        // (formulation_already_in_progress), so the order card hides rather than dead-ending.
+        hasPackageInFlight: packages.some(p => p.inFlight),
         dispenseSlot,
         dispenseSlotDots,
         dispenseDate: localISODate(new Date()),
@@ -3175,7 +3384,7 @@ Page({
       })
       this._applyDotsWeek(0)
     } catch (e) {
-      this.setData({ dotsLoading: false, hasPlan: false })
+      this.setData({ dotsLoading: false, hasPlan: false, packages: [], hasPackageInFlight: false })
     }
   },
 
