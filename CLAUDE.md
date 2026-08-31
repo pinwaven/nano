@@ -1111,6 +1111,95 @@ while the AI 精准营养素 product sits on `42f7307f`, and neither processing 
 `payment_qr_urls`. No custom-formulation order has ever been placed in prod, so nothing is broken
 yet — but the first real one will surface it.
 
+## 28d. The Dots Subtab Is Order-Aware (2026-09-01)
+
+Plans ▸ Dots lists **one row per dots package**, merged from two systems that each know only half
+of a journey: GCN owns the order (`pending_payment → paid → awaiting_formulation → expert_review →
+compounding → shipped`) and nano owns the formula (`proposed → approved → active`). Before this,
+nano's entire record that an order existed was `users.custom_formulation_purchased_at` — one
+timestamp, no id, no status — so the only way to learn where your capsules were was the GCN store
+webview.
+
+### Nothing is mirrored, and that is the point
+
+The order half is read live through `fetchFormulationOrders` (`lib/gcnClient.js`) on every request
+and **never written to a nano table**. A cached status has nothing to reconcile itself against: an
+order can be refunded, cancelled, or filled from another device between two reads. Same reasoning
+that already governs why "is a package waiting" is pulled rather than stamped on the user row.
+**No migration, either repo** — every field already existed.
+
+`_fetchFormulationPackages` is awaited inside `handleGetNutritionPlan`'s existing `Promise.all`, so
+a slow GCN costs `max(db, gcn)` rather than the sum, and it degrades to `[]` on any failure. The
+Dots subtab must still render the user's active plan when the order half is unavailable.
+
+> **`packages` is a SIBLING of `plan` / `structured_plan` / `schedules`, never a source for them.**
+> Those keep meaning "the plan you are physically on" and stay `status='active'`-only. §28b records
+> the live bug where a proposal repopulated this tab and made it report a plan the user did not
+> have.
+
+### The stage is derived from both halves, and is neither system's status column
+
+`PACKAGE_STAGES` (12 values) is the vocabulary; the miniapp keys its copy off the string
+(`t['pkgStage_' + stage]`), so **a new stage needs a line in both `T.zh` and `T.en`** — WXML has no
+compile-time key checking and a missing key renders empty.
+
+- `awaiting_formulation` vs `awaiting_ag` are **one GCN status split by which package was bought**.
+  A fast-track package waits on the buyer; a premium one is Viva AG's to fulfil and asks nothing of
+  them. Offering a submit CTA on the latter sends someone somewhere that cannot fulfil their order.
+- An **active plan outranks the order** — the user scanned the box, which is a truer statement than
+  an order still sitting at `shipped` because nobody closed it out on the commerce side.
+- `completed` becomes `delivered`, not "done": for a physical box the journey ends at the scan, and
+  that scan is a nano-side event GCN never hears about.
+- `day_index` is null for anything but `active`. A proposal's `start_date` is a placeholder and an
+  approved plan's is provisional until the box is scanned, so counting from either would claim the
+  user is taking capsules that do not exist.
+
+### Offered, not matched
+
+A waiting package carries **`submit_plan_id`** — the user's single un-submitted proposal
+(`uniq_nutrition_plans_proposed`) — which is deliberately *not* `plan_id`. Buying writes no plan and
+formulating writes no order; the two are bound only by `handlePostFormulationSubmit`. The
+standalone proposal row is suppressed once offered, because the same formula listed twice (once to
+buy, once to fill) reads as two formulas.
+
+**`intended_nano_plan_id` is never a link.** It is advisory — what the buyer was looking at, possibly
+a formula since superseded (GCN's `migration_0086`) — and joining on it would report a package as
+carrying a recipe nothing is going to make.
+
+### Selecting which package a formula fills
+
+Both halves of the handoff were hardcoded `ORDER BY o.created_at ASC LIMIT 1`, so "oldest wins" was
+silently deciding. **Two waiting packages is reachable**: GCN's `formulation_already_in_progress`
+guard runs at order *creation*, so two checkouts started while both were `pending_payment` can both
+be confirmed.
+
+`_attachRecipeToAwaitingOrder` (GCN) now takes an optional `orderId`. **Ownership stays enforced by
+the `ocf.nano_user_id` predicate**, not by the caller having supplied a plausible id — keep it that
+way; it is the only thing between a client-chosen id and another buyer's order.
+
+- **Chat card** — `handleFormulaSubmit` resolves the list at **tap** time via
+  `GET /api/formulation-orders`, not from the card. The turn is async, so a card can be minutes old.
+  One waiting package behaves exactly as before; several open an action sheet.
+- **Dots subtab** — tapping a package row *is* the choice; the row already names its order.
+- Both go through one `_submitFormulation`, so the two surfaces cannot drift on what a reason code
+  means.
+
+**`_awaitingOrders` re-sorts oldest-first.** GCN returns newest-first for display but attaches
+oldest-first, so anything that must agree with what GCN will actually do has to re-sort. Not doing
+this is how a picker and a submission end up naming two different packages.
+
+### GCN side
+
+New `GET /api/mall/nano/formulation-orders` (`requireNanoService`, always 200, `{orders: []}` on any
+failure). It shares `FORMULATION_ORDER_FROM` with the older single-row status probe — a row visible
+to one and not the other would show a package the submit path cannot find. It returns **no buyer
+identity and no money**: the response travels back out to a Mini Program, and what someone paid is
+the store's to show.
+
+`handleNanoFormulationOrderStatus` is kept but **has no caller** — nano and GCN deploy separately,
+and leaving it means neither deploy order breaks the chat card. **Deploy GCN first.** Retire it once
+nano prod is confirmed on the new endpoint.
+
 ## 29. Viva Proactive Daily Check-Ins (Morning / Midday / Evening)
 
 Added 2026-07-29. Every previous Viva feature (§21-28) only responds when the user speaks first. This adds the reverse: Viva initiates, up to three times a day, checking in on today's dots and flagging one grounded thing to watch for. Delivery is **in-app only** — the message waits in `notifications` for the user's next app-open (identical to how reminders/coach messages already surface), not a true WeChat push (no subscribe-message/template-message send exists anywhere in this codebase; that would need a new WeChat-platform template plus opt-in UI — out of scope). Content generation is a **single lightweight completion**, not the full PLAN→GENERATE→JUDGE→REVISE agentic loop — appropriate for a routine message going out to every eligible user up to 3x/day. **Viva only.**
