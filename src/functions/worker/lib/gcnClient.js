@@ -65,49 +65,31 @@ async function fetchAiCatalog(nanoUserId, sectorId = 'aeviva') {
 // waiting must cost the user a CTA, never their formulation.
 const ORDER_STATUS_TIMEOUT_MS = 4000;
 
-// Does this user have a paid 28-day package sitting at 'awaiting_formulation'?
+// Every formulation order this user has, in every state (GCN's handleNanoFormulationOrders) —
+// both the commerce half of what the Dots subtab shows and, filtered to 'awaiting_formulation',
+// the answer to "is a package waiting for a recipe" that _resolveOrderContext needs.
 //
-// Deliberately PULLED at the moment it matters rather than pushed and cached on the user row: an
-// order can be refunded or cancelled, and a stamped flag has nothing to reconcile it against. The
-// cost of asking is one 4s-capped call; the cost of being wrong is offering to sell someone
-// something they already bought, or offering to fulfil an order that no longer exists.
+// Replaced the narrower fetchFormulationOrderStatus, which asked only the second question. GCN
+// still serves that older endpoint so a nano deploy landing before a GCN one cannot break the
+// chat card; retire it there once nano prod is confirmed on this one.
 //
-// NEVER THROWS. Returns null on any failure, which every caller treats as "no order waiting" —
-// i.e. it degrades to the buy CTA, the safe direction: a user who really has a paid order sees a
-// buy button they can ignore, rather than a submit button that would fail against GCN.
-async function fetchFormulationOrderStatus(nanoUserId) {
-    if (!nanoUserId || !BASE_URL || !TOKEN) return null;
+// NEVER THROWS, same contract and same 4s budget as its two neighbours: a dead or slow GCN costs
+// the user their order status, never their nutrition plan — this is fetched alongside the plan
+// query that the Dots subtab actually depends on.
+async function fetchFormulationOrders(nanoUserId) {
+    if (!nanoUserId || !BASE_URL || !TOKEN) return [];
     const timer = AbortSignal.timeout ? AbortSignal.timeout(ORDER_STATUS_TIMEOUT_MS) : undefined;
     try {
         const res = await fetch(
-            `${BASE_URL}/api/mall/nano/formulation-order-status?nano_user_id=${encodeURIComponent(nanoUserId)}`,
+            `${BASE_URL}/api/mall/nano/formulation-orders?nano_user_id=${encodeURIComponent(nanoUserId)}`,
             { headers: { authorization: `Bearer ${TOKEN}` }, signal: timer }
         );
-        if (!res.ok) return null;
+        if (!res.ok) return [];
         const data = await res.json();
-        if (!data || !data.awaiting_formulation) return null;
-        return {
-            order_id: data.order_id || null,
-            // 'fast_track' — no expert review; the chat tool's own formula is compounded as-is.
-            // 'expert_review' — the premium AG package; Viva AG formulates it and an expert signs
-            //                   it off, so the chat tool must not try to fulfil it.
-            fulfillment: data.fulfillment === 'fast_track' ? 'fast_track' : 'expert_review',
-            ordered_at: data.ordered_at || null,
-            // The purchased tier: how many distinct dots this package's formula may contain
-            // (GCN's migration_0085). null for the two older formulation products, which have no
-            // tier — read as "unlimited", which is what they were.
-            //
-            // GCN reports it; nano enforces it. The rule needs the dots formulary and the product
-            // model's own judgement about which components a tier counts (DOT-N7 is excluded, see
-            // _capDistinctDots), and neither of those belongs on the other side of the wire.
-            max_distinct_dots: Number.isFinite(Number(data.max_distinct_dots)) && Number(data.max_distinct_dots) > 0
-                ? Number(data.max_distinct_dots)
-                : null,
-            package_name: data.package_name || null,
-        };
+        return Array.isArray(data?.orders) ? data.orders : [];
     } catch (err) {
-        console.log(JSON.stringify({ level: 'WARN', msg: 'gcn_formulation_order_status_failed', error: err.message }));
-        return null;
+        console.log(JSON.stringify({ level: 'WARN', msg: 'gcn_formulation_orders_failed', error: err.message }));
+        return [];
     }
 }
 
@@ -119,4 +101,4 @@ async function submitFastTrackFormulation(payload) {
     return gcnFetch('/api/mall/nano/formulation-fasttrack', { method: 'POST', body: payload });
 }
 
-module.exports = { gcnFetch, fetchAiCatalog, fetchFormulationOrderStatus, submitFastTrackFormulation };
+module.exports = { gcnFetch, fetchAiCatalog, fetchFormulationOrders, submitFastTrackFormulation };

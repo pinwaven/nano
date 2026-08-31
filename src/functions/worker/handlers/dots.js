@@ -24,7 +24,7 @@ const { formatQuestionnaireContext } = require('./questionnaires');
 // no expert review at all, which makes this the ONLY thing standing between a generated table and
 // physical capsules — so it runs here too, and a violation refuses the submission outright.
 const { validateAgFormulation, canonicalizeCapsules } = require('../lib/agFormulation');
-const { fetchFormulationOrderStatus, submitFastTrackFormulation } = require('../lib/gcnClient');
+const { fetchFormulationOrders, submitFastTrackFormulation } = require('../lib/gcnClient');
 const { generateLabelCode } = require('../lib/labelCode');
 
 // Where the aeviva sector's public pages live. The formulation label QR is a GCN aeviva link
@@ -791,6 +791,228 @@ async function handlePostOrderBatch(body) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Formulation packages — one journey per row, assembled from two systems
+//
+// A user's custom-dots journey lives half in GCN (the order: paid, compounding, shipped) and half
+// in nano (the formula: proposed, approved, active). Neither half alone answers "where are my
+// capsules", which is why the Dots subtab could not answer it at all before this — nano's only
+// record that an order existed was users.custom_formulation_purchased_at, a bare timestamp.
+//
+// NOTHING IS MIRRORED. The order half is read from GCN at request time, never copied into a nano
+// table. A cached status has nothing to reconcile itself against — an order can be refunded,
+// cancelled, or fulfilled by an AG run between two reads — which is the same reasoning
+// fetchFormulationOrders already records for pulling rather than stamping a flag.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+// The stage a USER is at, which is not the same thing as either system's own status column.
+// Two of these ('proposed', 'active') have no GCN order behind them at all, and two more
+// ('awaiting_formulation' vs 'awaiting_ag') are one GCN status split by which package was bought,
+// because they ask opposite things of the user: one needs them to act, the other explicitly does
+// not. The miniapp keys its labels off these strings (t['pkgStage_' + stage]).
+const PACKAGE_STAGES = new Set([
+    'proposed',              // a formula from the chat tool that nobody has ordered yet
+    'pending_payment', 'paid',
+    'awaiting_formulation',  // fast-track package waiting on THIS user to confirm a formula
+    'awaiting_ag',           // premium package — Viva AG formulates it, the user does nothing
+    'expert_review', 'compounding',
+    'shipped', 'delivered',  // both mean "scan the box"
+    'active',                // the box was scanned; capsules are being taken
+    'cancelled', 'refunded',
+]);
+
+// Ranked so the row a user can act on is never buried under one they cannot. Within a rank,
+// newest first. Deliberately not pure recency: the whole point of the list is to surface the
+// package that is waiting on them.
+const _STAGE_RANK = {
+    awaiting_formulation: 0, shipped: 1, delivered: 1,
+    proposed: 2,
+    pending_payment: 3, paid: 3, awaiting_ag: 3, expert_review: 3, compounding: 3,
+    active: 4,
+    completed: 5, cancelled: 6, refunded: 6,
+};
+
+// GCN's order status → the user-facing stage, for an order that has no nano plan overriding it.
+// 'processing' collapses into 'compounding' because to a buyer they are the same sentence ("it is
+// being made"); 'completed' becomes 'delivered' because for a physical box the journey is not over
+// until they scan it, and that scan is a nano-side event GCN never learns about.
+function _stageFromOrderStatus(order) {
+    switch (order.status) {
+        case 'pending_payment': return 'pending_payment';
+        case 'paid': return 'paid';
+        case 'awaiting_formulation':
+            return order.fulfillment === 'fast_track' ? 'awaiting_formulation' : 'awaiting_ag';
+        case 'expert_review': return 'expert_review';
+        case 'compounding':
+        case 'processing': return 'compounding';
+        case 'shipped': return 'shipped';
+        case 'completed': return 'delivered';
+        case 'cancelled': return 'cancelled';
+        case 'refunded': return 'refunded';
+        default: return 'compounding';
+    }
+}
+
+// Which nano plan belongs to which GCN order. Three links, in confidence order:
+//   1. nutrition_plans.gcn_order_id  — written by handlePostFormulationSubmit when nano itself
+//      submitted the formula. The strongest signal, because nano wrote both sides of it.
+//   2. order.nano_nutrition_plan_id  — written by GCN's attach path. Covers the AG flow, where
+//      the plan row is created by handlePostAgFormulationApproved and never carries gcn_order_id.
+//   3. the AG formulation id         — the last resort for an AG plan whose order-side id was
+//      recorded before the plan existed. TEXT on GCN's side, BIGINT here, so compared as strings.
+// intended_nano_plan_id is deliberately NOT used: it is what the buyer was looking at, advisory
+// only, and may name a formula that was superseded and never compounded (GCN's migration_0086).
+function _planMatchesOrder(plan, order) {
+    if (plan.gcn_order_id && String(plan.gcn_order_id) === String(order.order_id)) return true;
+    if (order.nano_nutrition_plan_id != null && Number(plan.id) === Number(order.nano_nutrition_plan_id)) return true;
+    if (order.nano_ag_formulation_id && plan.ag_formulation_id != null
+        && String(plan.ag_formulation_id) === String(order.nano_ag_formulation_id)) return true;
+    return false;
+}
+
+// Day N of 28, for a plan the user is actually taking. Null for every other status: a proposal's
+// start_date is a placeholder (CURRENT_DATE at commit time) and an approved plan's is provisional
+// until the box is scanned, so counting from either would show a day number for capsules the user
+// does not have. Clamped, because a plan that ran past its end date still reads as "day 28",
+// never "day 31".
+function _planDayIndex(plan) {
+    if (!plan || plan.status !== 'active' || !plan.start_date) return null;
+    const start = DateTime.fromISO(String(plan.start_date), { zone: 'Asia/Shanghai' });
+    if (!start.isValid) return null;
+    const elapsed = Math.floor(getNowShanghai().startOf('day').diff(start.startOf('day'), 'days').days);
+    return Math.min(PLAN_DAYS, Math.max(1, elapsed + 1));
+}
+
+// PURE — no DB, no network. Takes GCN's orders and nano's own non-superseded plans and returns one
+// row per journey. Kept pure so every stage mapping is testable without either system.
+function _mergeFormulationPackages(orders, plans) {
+    const orderList = Array.isArray(orders) ? orders : [];
+    const planList = Array.isArray(plans) ? plans : [];
+    const claimed = new Set();
+    const packages = [];
+
+    for (const order of orderList) {
+        const plan = planList.find(pl => !claimed.has(pl.id) && _planMatchesOrder(pl, order)) || null;
+        if (plan) claimed.add(plan.id);
+        // An active plan outranks whatever the order says. The user scanned the box; that they are
+        // taking the capsules is a more useful truth than the order still sitting at 'shipped'
+        // because nobody closed it out on the commerce side.
+        const stage = plan && plan.status === 'active' ? 'active' : _stageFromOrderStatus(order);
+        packages.push(_packageRow({ order, plan, stage }));
+    }
+
+    // The formula a waiting package could be filled with. There is at most one un-submitted
+    // proposal per user (uniq_nutrition_plans_proposed), and it lives on its OWN row rather than
+    // on the order's — so without this, a package that says "needs your formula" would have no
+    // way to reach the formula sitting directly above it. Submitting is what binds them; until
+    // then the pairing is only an offer, which is why this is a separate field and not a match.
+    const submittable = planList.find(pl => !claimed.has(pl.id) && pl.status === 'proposed') || null;
+    let offered = false;
+    for (const pkg of packages) {
+        if (!pkg.can_submit) continue;
+        pkg.submit_plan_id = submittable ? Number(submittable.id) : null;
+        if (submittable) offered = true;
+    }
+
+    // A formula with no order behind it — the chat tool's proposal before anyone has bought it,
+    // which is exactly the case the Dots subtab was blindest to. Suppressed once it has been
+    // offered to a waiting package above: the same formula listed twice, once as a thing to buy
+    // and once as a thing to fill, reads as two different formulas.
+    for (const plan of planList) {
+        if (claimed.has(plan.id)) continue;
+        if (offered && plan.id === submittable.id) continue;
+        packages.push(_packageRow({ order: null, plan, stage: plan.status === 'active' ? 'active' : plan.status }));
+    }
+
+    packages.sort((a, b) => {
+        const ra = _STAGE_RANK[a.stage] ?? 5;
+        const rb = _STAGE_RANK[b.stage] ?? 5;
+        if (ra !== rb) return ra - rb;
+        return new Date(b.sort_at || 0) - new Date(a.sort_at || 0);
+    });
+    return packages;
+}
+
+function _packageRow({ order, plan, stage }) {
+    return {
+        stage: PACKAGE_STAGES.has(stage) ? stage : 'compounding',
+        order_id: order ? order.order_id : null,
+        // The formula behind this package, if one exists yet. plan_id is what the submit and
+        // label actions are keyed on, so it stays null rather than guessing.
+        plan_id: plan ? Number(plan.id) : null,
+        plan_status: plan ? plan.status : null,
+        label_code: plan ? (plan.label_code || null) : null,
+        day_index: _planDayIndex(plan),
+        total_days: plan && plan.status === 'active' ? PLAN_DAYS : null,
+        package_name: order ? (order.package_name || null) : null,
+        tier_label: order ? (order.tier_label || null) : null,
+        max_distinct_dots: order ? (order.max_distinct_dots ?? null) : null,
+        fulfillment: order ? order.fulfillment : null,
+        ordered_at: order ? (order.created_at || null) : null,
+        shipped_at: order ? (order.shipped_at || null) : null,
+        // Shown only on a shipped row; the carrier is free text for display and the number is what
+        // the user copies into a courier app.
+        tracking_number: order ? (order.tracking_number || null) : null,
+        shipping_carrier: order ? (order.shipping_carrier || null) : null,
+        tracking_status_desc: order ? (order.tracking_status_desc || null) : null,
+        // The three CTAs the client renders. Derived here rather than re-derived from `stage` in
+        // WXML, so the rule for "can this be acted on" lives in one place.
+        can_submit: stage === 'awaiting_formulation',
+        can_scan: stage === 'shipped' || stage === 'delivered',
+        can_order: stage === 'proposed',
+        // Filled in by the caller for can_submit rows only: the proposal this package could be
+        // filled with, which is a different plan from `plan_id` (nothing is bound until submit).
+        submit_plan_id: null,
+        sort_at: (order && order.created_at) || (plan && plan.created_at) || null,
+    };
+}
+
+// The DB + GCN half. Never throws: fetchFormulationOrders degrades to [] on any failure, and a
+// plan-query failure degrades the whole list to [] rather than failing the caller — the Dots
+// subtab must still render the user's active plan when the order half is unavailable.
+async function _fetchFormulationPackages(userId) {
+    if (!userId) return [];
+    try {
+        const [orders, plansRes] = await Promise.all([
+            fetchFormulationOrders(userId),
+            pool.query(
+                `SELECT id, status, start_date::text AS start_date, created_at,
+                        label_code, gcn_order_id, ag_formulation_id
+                   FROM nutrition_plans
+                  WHERE user_id = $1 AND status IN ('proposed', 'approved', 'active')
+                  ORDER BY created_at DESC
+                  LIMIT 20`,
+                [userId]
+            ),
+        ]);
+        return _mergeFormulationPackages(orders, plansRes.rows);
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: '_fetchFormulationPackages failed',
+            user_id: userId, error: err.message }));
+        return [];
+    }
+}
+
+// GET /formulation-orders?openid=   (app bearer, the user's own packages)
+//
+// The same list handleGetNutritionPlan embeds, on its own endpoint. It exists for the chat card:
+// handleFormulaSubmit resolves the awaiting packages at TAP time rather than trusting what the
+// card said when it was rendered, because the formulation turn is async and a card can be minutes
+// old by the time someone acts on it — the same reason _resolveOrderContext does not cache a mode.
+async function handleGetFormulationOrders(openid) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        if (!openid) return { success: true, packages: [] };
+        const { rows: [user] } = await pool.query(
+            'SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]);
+        if (!user) return { success: true, packages: [] };
+        return { success: true, packages: await _fetchFormulationPackages(user.user_id) };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetFormulationOrders failed', error: err.message }));
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleGetNutritionPlan(openid) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -830,14 +1052,18 @@ async function handleGetNutritionPlan(openid) {
         // here — otherwise every proposal would repopulate the tab it is designed to stay out of.
         // Nothing writes 'nutrition_plan' any more (the top-up job that did is gone); this reads
         // pre-existing rows only.
-        const notifyResult = await pool.query(
-            `SELECT content, sent_at FROM notifications
-             WHERE user_id = $1 AND notification_type = 'nutrition_plan'
-             ORDER BY sent_at DESC LIMIT 1`,
-            [openid]
-        );
-
-        const dotsResult = await pool.query('SELECT * FROM dots ORDER BY id ASC');
+        // 3. The rest of the fan-out, in parallel — the package list reaches out to GCN, so it
+        // must not be awaited in series behind the dots query. Costs max(db, gcn), not the sum.
+        const [notifyResult, dotsResult, packages] = await Promise.all([
+            pool.query(
+                `SELECT content, sent_at FROM notifications
+                 WHERE user_id = $1 AND notification_type = 'nutrition_plan'
+                 ORDER BY sent_at DESC LIMIT 1`,
+                [openid]
+            ),
+            pool.query('SELECT * FROM dots ORDER BY id ASC'),
+            _fetchFormulationPackages(openid),
+        ]);
 
         return {
             success: true,
@@ -846,6 +1072,11 @@ async function handleGetNutritionPlan(openid) {
             structured_plan: planData,
             schedules: schedules,
             dots: dotsResult.rows,
+            // Every dots package this user has, in every state — a SIBLING of the fields above,
+            // never a source for them. `plan`/`structured_plan`/`schedules` still mean "the plan
+            // you are physically on" and stay 'active'-only; §28b records the live bug where a
+            // proposal leaked into this tab and made it report a plan the user did not have.
+            packages,
         };
     } catch (err) {
         return { success: false, error: err.message };
@@ -1116,6 +1347,10 @@ async function handleGetFormulationLabelByCode(rawCode) {
 async function handlePostFormulationSubmit(body) {
     const { openid } = body || {};
     const planId = parseInt(body?.plan_id, 10);
+    // Which waiting package this formula is for. Optional: absent means "the one waiting", which
+    // is what the auto-attach at payment time (_settleFastTrackPackage) and every single-package
+    // user send. Present only when the user was shown a choice and made one.
+    const targetOrderId = body?.order_id ? String(body.order_id) : null;
     if (!openid) return { success: false, reason: 'missing_params' };
     if (!Number.isFinite(planId)) return { success: false, reason: 'invalid_plan_id' };
 
@@ -1140,8 +1375,15 @@ async function handlePostFormulationSubmit(body) {
         // Re-checked here rather than trusted from the card the user tapped: the card was rendered
         // when the formulation finished, and the order could have been refunded, cancelled or
         // already fulfilled by a Viva AG run in the meantime.
-        const order = await fetchFormulationOrderStatus(user.user_id);
-        if (!order) return { success: false, reason: 'no_awaiting_order' };
+        const awaiting = _awaitingOrders(await fetchFormulationOrders(user.user_id));
+        if (awaiting.length === 0) return { success: false, reason: 'no_awaiting_order' };
+        // A named order must still be one of THIS user's waiting packages — the list was fetched
+        // for user.user_id, so an id belonging to anyone else simply is not in it. GCN re-checks
+        // ownership the same way rather than trusting the id we pass on.
+        const order = targetOrderId
+            ? awaiting.find(o => String(o.order_id) === targetOrderId)
+            : awaiting[0];
+        if (!order) return { success: false, reason: 'order_not_available' };
         if (order.fulfillment !== 'fast_track') return { success: false, reason: 'order_requires_expert_review' };
 
         // The purchased tier binds here too, not only at proposal time. A plan proposed BEFORE the
@@ -1156,7 +1398,8 @@ async function handlePostFormulationSubmit(body) {
                 { dots: plan.proposed_recipe.evening || {}, weeks: plan.proposed_recipe.weeks || undefined });
             if (distinct > order.max_distinct_dots) {
                 return { success: false, reason: 'formulation_exceeds_package',
-                    distinct_dots: distinct, max_distinct_dots: order.max_distinct_dots };
+                    distinct_dots: distinct, max_distinct_dots: order.max_distinct_dots,
+                    package_name: order.package_name || null };
             }
         }
 
@@ -1189,6 +1432,10 @@ async function handlePostFormulationSubmit(body) {
                 totals,
                 total_dots: totalDots ?? null,
                 rationale: plan.goal || null,
+                // Always sent, even when the user made no choice: the order was resolved above and
+                // naming it removes the window where GCN's own oldest-first tie-break picks a
+                // different package than the tier check just ran against.
+                order_id: order.order_id,
             });
         } catch (err) {
             // Unlike the two read paths, this failure must reach the user: the entire point of the
@@ -1432,8 +1679,13 @@ function _resolveCandidateDotKeys(activeHealthPlans, dotsFormulary) {
 //                    contain (GCN's migration_0085). null when no package is waiting, or for a
 //                    package with no tier, in which case the formulation is not capped.
 async function _resolveOrderContext(userId) {
-    const order = await fetchFormulationOrderStatus(userId);
-    if (!order) return { mode: 'buy', maxDistinctDots: null, packageName: null };
+    const awaiting = _awaitingOrders(await fetchFormulationOrders(userId));
+    if (awaiting.length === 0) return { mode: 'buy', maxDistinctDots: null, packageName: null, awaitingCount: 0 };
+    // The OLDEST, deliberately — that is the one GCN's _attachRecipeToAwaitingOrder will pick when
+    // no order_id is named, so the tier this preview is built against is the tier it would
+    // actually be submitted against. Preferring a fast-track order over an older expert-review one
+    // would make the card promise a submission GCN then refuses.
+    const order = awaiting[0];
     return {
         mode: order.fulfillment === 'fast_track' ? 'submit' : 'ag',
         // Only a fast-track package's tier binds this user's own formulation. An expert-review
@@ -1441,7 +1693,18 @@ async function _resolveOrderContext(userId) {
         // proposes for it is ever submitted, so applying a cap there would only distort a preview.
         maxDistinctDots: order.fulfillment === 'fast_track' ? (order.max_distinct_dots ?? null) : null,
         packageName: order.package_name || null,
+        awaitingCount: awaiting.length,
     };
+}
+
+// The packages waiting for a recipe, OLDEST FIRST. The order matters: GCN returns newest-first for
+// display, but its attach path resolves ties oldest-first, so anything that has to agree with what
+// GCN will actually do must re-sort. Not doing this is how a picker and a submission end up
+// naming two different packages.
+function _awaitingOrders(orders) {
+    return (Array.isArray(orders) ? orders : [])
+        .filter(o => o && o.status === 'awaiting_formulation')
+        .sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
 }
 
 // Groups the 28 days of a cycle by what a day's capsules actually contain.
@@ -2478,7 +2741,7 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         ),
     ]);
 
-    // Never throws (see fetchFormulationOrderStatus): not knowing whether a package is waiting
+    // Never throws (see fetchFormulationOrders): not knowing whether a package is waiting
     // costs the prompt a hint, never the user their formulation.
     const orderContext = await _resolveOrderContext(user.user_id);
 
@@ -2644,6 +2907,7 @@ module.exports = {
     handlePostOrder,
     handlePostOrderBatch,
     handleGetNutritionPlan,
+    handleGetFormulationOrders,
     handleGetFormulationCheckoutSnapshot,
     handlePostFormulationSubmit,
     handleGetFormulationLabelByCode,
@@ -2663,6 +2927,8 @@ module.exports = {
     _splitDotTiming,
     _planDayGroups,
     _resolveOrderContext,
+    _mergeFormulationPackages,
+    _awaitingOrders,
     _capDistinctDots,
     _countDistinctDots,
     _formulationLabelUrl,
