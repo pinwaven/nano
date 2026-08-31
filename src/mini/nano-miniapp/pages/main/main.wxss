@@ -1429,8 +1429,10 @@ page {
 
 /* ── My dots packages (Plans ▸ Dots) ──
    One card per journey. Sits above .order-dots-card so "where are mine" reads before "buy
-   another". Colours follow the steel/blue card idiom used elsewhere in this tab rather than the
-   gold order card, which is reserved for the buy CTA. */
+   another". Surfaces and text go through the theme tokens rather than raw rgba: the first
+   version hardcoded the dark palette's near-white text, which washed out to nearly invisible
+   on the cream light theme. Mirrors .scan-box-card, so it inherits that card's audited
+   light-theme contrast instead of introducing a second set of values. */
 .pkg-section {
   flex-shrink: 0;
   padding: 24rpx 36rpx 4rpx;
@@ -1439,7 +1441,7 @@ page {
   display: block;
   font-size: var(--fs-26, 26rpx);
   font-weight: 700;
-  color: rgba(238, 242, 255, 0.9);
+  color: var(--text);
   letter-spacing: 1rpx;
   margin-bottom: 16rpx;
 }
@@ -1447,8 +1449,12 @@ page {
   padding: 24rpx 26rpx;
   margin-bottom: 16rpx;
   border-radius: 22rpx;
-  background: rgba(122, 154, 191, 0.08);
-  border: 2rpx solid rgba(122, 154, 191, 0.22);
+  background: rgba(var(--wave-rgb), 0.08);
+  border: 2rpx solid rgba(var(--wave-rgb), 0.28);
+}
+.theme-light .pkg-card {
+  background: rgba(var(--wave-rgb), 0.06);
+  border-color: rgba(var(--wave-rgb), 0.22);
 }
 .pkg-card-hdr {
   display: flex;
@@ -1460,57 +1466,65 @@ page {
   flex: 1;
   font-size: var(--fs-25, 25rpx);
   font-weight: 600;
-  color: rgba(238, 242, 255, 0.92);
+  color: var(--text);
   line-height: 1.4;
 }
-/* The stage pill. Neutral steel by default; only the stages that mean something to a waiting
-   user get their own colour, so a coloured pill always carries information. */
+/* The stage pill. Neutral by default; only the stages that mean something to a waiting user get
+   their own colour, so a coloured pill always carries information. */
 .pkg-stage {
   flex-shrink: 0;
   padding: 6rpx 16rpx;
   border-radius: 100rpx;
   font-size: var(--fs-20, 20rpx);
   font-weight: 600;
-  color: rgba(166, 196, 229, 0.85);
-  background: rgba(122, 154, 191, 0.16);
+  color: var(--text-sub);
+  background: rgba(var(--wave-rgb), 0.16);
   white-space: nowrap;
 }
+.theme-light .pkg-stage { background: rgba(var(--wave-rgb), 0.08); }
 .pkg-stage-awaiting_formulation,
 .pkg-stage-shipped,
 .pkg-stage-delivered {
   color: var(--gold);
   background: rgba(245, 197, 106, 0.16);
 }
+.theme-light .pkg-stage-awaiting_formulation,
+.theme-light .pkg-stage-shipped,
+.theme-light .pkg-stage-delivered {
+  background: rgba(138, 93, 10, 0.08);
+}
 .pkg-stage-active {
   color: var(--success);
   background: rgba(52, 211, 153, 0.14);
 }
+.theme-light .pkg-stage-active { background: rgba(15, 122, 82, 0.08); }
 .pkg-stage-cancelled,
 .pkg-stage-refunded {
-  color: rgba(238, 242, 255, 0.45);
-  background: rgba(122, 154, 191, 0.1);
+  color: var(--text-muted);
+  background: rgba(var(--wave-rgb), 0.1);
 }
 .pkg-meta {
   display: block;
   margin-top: 10rpx;
   font-size: var(--fs-22, 22rpx);
-  color: rgba(166, 196, 229, 0.62);
+  color: var(--text-muted);
   line-height: 1.5;
 }
 .pkg-track {
   margin-top: 16rpx;
   padding: 14rpx 18rpx;
   border-radius: 14rpx;
-  background: rgba(11, 28, 46, 0.45);
+  background: rgba(var(--wave-rgb), 0.12);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16rpx;
 }
+.theme-light .pkg-track { background: rgba(var(--wave-rgb), 0.07); }
 .pkg-track-text {
   flex: 1;
   font-size: var(--fs-21, 21rpx);
-  color: rgba(166, 196, 229, 0.8);
+  color: var(--text-sub);
   line-height: 1.45;
 }
 .pkg-track-copy {
@@ -1519,6 +1533,9 @@ page {
   font-weight: 600;
   color: var(--steel);
 }
+/* Matches .copy-badge, the page's other copy affordance — steel is the weakest value in this
+   card on cream, and --blue is what light theme already uses to mark something tappable. */
+.theme-light .pkg-track-copy { color: var(--blue); }
 .pkg-cta {
   margin-top: 20rpx;
   height: 66rpx;
@@ -1529,9 +1546,17 @@ page {
   background: rgba(245, 197, 106, 0.18);
   border: 2rpx solid rgba(245, 197, 106, 0.5);
 }
+.theme-light .pkg-cta {
+  background: rgba(138, 93, 10, 0.09);
+  border-color: rgba(138, 93, 10, 0.42);
+}
 .pkg-cta-ghost {
-  background: rgba(122, 154, 191, 0.12);
-  border-color: rgba(122, 154, 191, 0.4);
+  background: rgba(var(--wave-rgb), 0.12);
+  border-color: rgba(var(--wave-rgb), 0.4);
+}
+.theme-light .pkg-cta-ghost {
+  background: rgba(var(--wave-rgb), 0.1);
+  border-color: rgba(var(--wave-rgb), 0.32);
 }
 .pkg-cta-text {
   font-size: var(--fs-24, 24rpx);
@@ -1546,7 +1571,7 @@ page {
   display: block;
   margin-top: 16rpx;
   font-size: var(--fs-21, 21rpx);
-  color: rgba(245, 197, 106, 0.7);
+  color: var(--gold);
   line-height: 1.5;
 }
 
