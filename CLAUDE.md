@@ -1200,6 +1200,26 @@ the store's to show.
 and leaving it means neither deploy order breaks the chat card. **Deploy GCN first.** Retire it once
 nano prod is confirmed on the new endpoint.
 
+### The order card leads with the tool, not the store (2026-09-01)
+
+The Dots subtab has **one** order card and it only ever runs 营养定制 in the chat tab
+(`handleGoFormulate`), gated on `!hasProposedFormula` — derived from `packages`, not from
+`hasPlan`.
+
+Buying without a formula is a real flow (§28c) but a worse one: the order parks at
+`awaiting_formulation` and hands the buyer back the same job one screen later. And once a formula
+*does* exist, the package row above already carries 按此配方下单, which passes the plan id so GCN
+prices that exact recipe. A second card next to it opening `buy_custom_formulation` with no plan
+id is a strictly worse route to the same product — which is why the old `handleOrderDots` and its
+`orderDots*` strings were **removed**, not kept as a fallback. Don't reintroduce a store link
+here; the package row is the buy path.
+
+**The Neo dispenser entry point is off behind `neoAvailable: false`.** The hardware is not
+shipping, so the bind card offered something nobody could act on. Gated rather than deleted:
+nothing about the dispenser changed, and this is its only entry point. `neoBound` is still
+permanently false and still gates the cartridge grid, the Dispense button and the order card's own
+`!neoBound` — don't collapse the two flags into one.
+
 ## 29. Viva Proactive Daily Check-Ins (Morning / Midday / Evening)
 
 Added 2026-07-29. Every previous Viva feature (§21-28) only responds when the user speaks first. This adds the reverse: Viva initiates, up to three times a day, checking in on today's dots and flagging one grounded thing to watch for. Delivery is **in-app only** — the message waits in `notifications` for the user's next app-open (identical to how reminders/coach messages already surface), not a true WeChat push (no subscribe-message/template-message send exists anywhere in this codebase; that would need a new WeChat-platform template plus opt-in UI — out of scope). Content generation is a **single lightweight completion**, not the full PLAN→GENERATE→JUDGE→REVISE agentic loop — appropriate for a routine message going out to every eligible user up to 3x/day. **Viva only.**

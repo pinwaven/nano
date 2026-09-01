@@ -149,9 +149,12 @@ const T = {
     scanBoxErr_batch_recalled: '该批次已被召回，请勿服用，我们会尽快与您联系。',
     scanBoxErr_formulation_not_approved: '该配方尚未通过专家审核，请稍后再试。',
     gotIt: '知道了',
-    orderDotsTitle: '未绑定 Neo 分配器，可直接订购原粒胶囊',
-    orderDotsDetail: '默认 4 周装 · 56 粒 · 每日 2 粒',
-    orderDotsBtn: '订购 28 天定制套餐',
+    // The Dots subtab's only order card. Ordering without a formula is a real flow but a worse
+    // one, and once a formula exists the package row's own 按此配方下单 covers it — so this
+    // always leads to the tool.
+    formulateFirstTitle: '先定制属于你的配方',
+    formulateFirstDetail: '根据你的检测与日常数据，生成 28 天专属原粒方案',
+    formulateFirstBtn: '开始定制营养素',
     // ── My dots packages (Plans ▸ Dots) ──
     // Stage labels are keyed by the server's own stage string (t['pkgStage_' + p.stage]),
     // following the t['scanBoxErr_' + reason] convention already used below. A stage with no key
@@ -449,9 +452,9 @@ const T = {
     scanBoxErr_batch_recalled: "This batch has been recalled — please don't take it. We'll be in touch shortly.",
     scanBoxErr_formulation_not_approved: "This formulation hasn't cleared expert review yet. Please try again shortly.",
     gotIt: 'Got it',
-    orderDotsTitle: 'No Neo dispenser bound — order pre-mixed capsules instead',
-    orderDotsDetail: 'Default: 4-week pack · 56 capsules · 2/day',
-    orderDotsBtn: 'Order the 28-Day Package',
+    formulateFirstTitle: 'Build your formula first',
+    formulateFirstDetail: 'Generates a 28-day Dots plan from your test results and daily data',
+    formulateFirstBtn: 'Formulate My Dots',
     // ── My dots packages (Plans ▸ Dots) — see the zh block for why every stage needs a key ──
     pkgSectionTitle: 'My Dots Packages',
     pkgStage_proposed: 'Ready to order',
@@ -1141,6 +1144,9 @@ Page({
     // own formula. Never a source for hasPlan — see _loadDots.
     packages: [],
     hasPackageInFlight: false,
+    // A 'proposed' formula the chat tool has already written. Without one, the order card leads
+    // to that tool instead of the store.
+    hasProposedFormula: false,
     weekLabel: '',
     dotsWeekOffset: 0,
     hasPrevWeek: false,
@@ -1172,6 +1178,9 @@ Page({
     planSubTab: 'overview',
     plansDotsSubTab: 'dots',
     neoBound: false,
+    // Kill switch for the whole Neo dispenser entry point — the hardware is not shipping yet, so
+    // the bind card would offer something nobody can act on. Flip to true to bring it back.
+    neoAvailable: false,
     learnSubTab: 'academy',
     planBrowseOpen: false,
     events: [],
@@ -1463,18 +1472,26 @@ Page({
     })
   },
 
-  // "Order pre-mixed capsules" on the Dots subtab, shown when no Neo dispenser is bound. Opens
-  // the SAME product the chat tool's :::formula card sells — 原粒 · 定制营养素 · 28天 — rather
-  // than dropping the user on the storefront to find it themselves. Both routes therefore go
-  // through GCN's dashboard.html, which owns where `buy_custom_formulation` lands.
+  // The Dots subtab's order card. There is no longer a second card beside it opening the store
+  // with no plan id (the old handleOrderDots): once a formula exists the package row's
+  // 按此配方下单 names it, and before one exists this is the thing that makes it. Runs the same
+  // 营养定制 tool the chat toolbox does — that tool is what actually produces a formulation, and
+  // it writes the 'proposed' plan every downstream step (the order CTA, the checkout snapshot,
+  // the printed label) resolves against. Sending them to the store from here instead would park
+  // an order at awaiting_formulation and hand them back this same job, one screen further away.
   //
-  // No nutrition_plan_id, deliberately: this is the buy-first ordering (§28c). Nothing here is a
-  // formulation the user just approved — the Dots subtab reads /api/nutrition-plan, which serves
-  // only 'active' plans, and an active plan id could never be attached to the order anyway
-  // (_settleFastTrackPackage requires 'proposed'). So the order parks at 'awaiting_formulation'
-  // and nano messages the buyer to run 营养定制, which is exactly that flow's intended shape.
-  handleOrderDots() {
-    this._openAevivaStoreGated({ intent: 'buy_custom_formulation' })
+  // Mirrors handleAgGoToChat: land on the chat tab first, then act, so the messages the tool
+  // posts are on screen as they arrive rather than behind a tab the user has to find.
+  handleGoFormulate() {
+    const { user, t, typing, obStep, isGuest } = this.data
+    if (isGuest || !user) return
+    this.setData({ tab: 'chat', toolboxOpen: false })
+    // Same guard handleToolAction uses: a turn already in flight owns the chat, and starting a
+    // second one on top of it would interleave two sets of bubbles. Landing on the tab still
+    // helps — whatever is running is what the user wanted to see.
+    if (typing || obStep !== 'done') return
+    toolActions.runFormulaDs(user.user_id, t, this._toolCtx())
+    this._scrollBottom()
   },
 
   // Tapping a row of the :::product card Viva appended to a reply. Opens the GCN storefront
@@ -3376,6 +3393,7 @@ Page({
         // Buying a second package while one is in flight is refused by GCN
         // (formulation_already_in_progress), so the order card hides rather than dead-ending.
         hasPackageInFlight: packages.some(p => p.inFlight),
+        hasProposedFormula: packages.some(p => p.stage === 'proposed'),
         dispenseSlot,
         dispenseSlotDots,
         dispenseDate: localISODate(new Date()),
@@ -3384,7 +3402,7 @@ Page({
       })
       this._applyDotsWeek(0)
     } catch (e) {
-      this.setData({ dotsLoading: false, hasPlan: false, packages: [], hasPackageInFlight: false })
+      this.setData({ dotsLoading: false, hasPlan: false, packages: [], hasPackageInFlight: false, hasProposedFormula: false })
     }
   },
 

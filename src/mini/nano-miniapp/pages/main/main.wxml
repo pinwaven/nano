@@ -671,7 +671,10 @@
       </block>
       <scroll-view wx:elif="{{plansDotsSubTab==='dots'}}" scroll-y class="dots-subtab-scroll">
 
-        <view wx:if="{{!neoBound && !isGuest}}" class="guest-lock-card neo-bind-card" bindtap="handleBindNeoDevice">
+        <!-- Neo dispenser is not shipping yet, so the bind prompt is off behind neoAvailable
+             (permanently false in data). Kept rather than deleted: nothing else about the
+             dispenser changed, and this is the one entry point to it. -->
+        <view wx:if="{{neoAvailable && !neoBound && !isGuest}}" class="guest-lock-card neo-bind-card" bindtap="handleBindNeoDevice">
           <text class="guest-lock-icon">⬢</text>
           <text class="guest-lock-title">{{t.neoBindTitle}}</text>
           <view class="guest-lock-btn"><text>{{t.neoBindBtn}}</text></view>
@@ -740,12 +743,19 @@
           </view>
         </view>
 
-        <!-- Hidden while any package is in flight: GCN's formulation_already_in_progress guard
-             would reject the purchase anyway, so offering it is a dead end. -->
-        <view wx:if="{{!neoBound && isAeviva && !isGuest && !hasPackageInFlight}}" class="order-dots-card" bindtap="handleOrderDots">
-          <text class="order-dots-title">{{t.orderDotsTitle}}</text>
-          <text class="order-dots-detail">{{t.orderDotsDetail}}</text>
-          <view class="order-dots-btn"><text class="order-dots-btn-text">{{t.orderDotsBtn}}</text></view>
+        <!-- The one way into ordering dots from this tab, and it only ever offers the tool.
+             Buying without a formula is a real flow (§28c parks the order at
+             awaiting_formulation) but it hands the buyer back this same job one screen later, and
+             once a formula DOES exist the package row above already carries 按此配方下单 — which
+             is strictly better, because it names the plan and GCN prices that exact recipe.
+             A second card next to it would be a worse route to the same product.
+
+             Hidden while a package is in flight: GCN's formulation_already_in_progress guard
+             would reject the purchase anyway. -->
+        <view wx:if="{{!neoBound && isAeviva && !isGuest && !hasPackageInFlight && !hasProposedFormula}}" class="order-dots-card" bindtap="handleGoFormulate">
+          <text class="order-dots-title">{{t.formulateFirstTitle}}</text>
+          <text class="order-dots-detail">{{t.formulateFirstDetail}}</text>
+          <view class="order-dots-btn"><text class="order-dots-btn-text">{{t.formulateFirstBtn}}</text></view>
         </view>
 
         <!-- Scan the box you received to start its 28-day cycle. Shown only to a real (non-guest)
