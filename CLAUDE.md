@@ -1232,6 +1232,62 @@ nothing about the dispenser changed, and this is its only entry point. `neoBound
 permanently false and still gates the cartridge grid, the Dispense button and the order card's own
 `!neoBound` — don't collapse the two flags into one.
 
+## 28e. A Dots Package Is Bought With a Redeem Code (2026-09-01)
+
+The direct checkout is retired. A store buys codes wholesale, resells them, and the holder redeems
+one for the 28-day package it stands for — **with no payment step at redemption**.
+
+Direct checkout was the wrong shape for how these are sold: the buyer is an end user, but the money
+is owed to the **root supplier** that compounds the capsules while the order is attributed to the
+buyer's bound store. That split is where the self-approved payment, the payee override and the
+per-order 确认收款 all came from. Making it a wholesale order was rejected on GCN's side, because
+`wholesale_transfer_out` would book stock of capsules compounded from one person's biomarkers. A
+code has none of those problems — it is fungible, non-perishable and transferable, so stocking codes
+is a genuine 补货订单 and the money moves once, in bulk.
+
+**The mechanics live in GCN** (`migration_0088`, `handleFormulationCodeRedeem`, `skus.redeems_for_sku_id`,
+`skus.wholesale_only`, `sku_activation_codes.holder_partner_id`). See its `CLAUDE.md`
+§"Custom Dots sold as prepaid redeem codes" before changing anything about the flow.
+
+### Why nano barely changed, and must not grow its own code table
+
+Every "is a package waiting for me?" answer here comes from **one** source, `fetchFormulationOrders`
+(`lib/gcnClient.js`), read live at three call sites:
+
+| Call site | Breaks without a real GCN order |
+|---|---|
+| `_resolveOrderContext` (`handlers/dots.js`) | the chat card's `#order` mode never becomes `submit` |
+| `handlePostFormulationSubmit` | refuses `no_awaiting_order` — the formula can never be submitted |
+| `_fetchFormulationPackages` | no package row, so no stage, no tracking, no scan CTA |
+
+Redemption produces a real `orders` row exactly as a purchase did, so **none of those changed**. A
+nano-local `formulation_codes` table (mirroring `viva_subscription_codes`) would mean merging a
+second source into all three *and* would still leave the capsules with no order to be compounded and
+shipped against. `viva_subscription_codes` stays where it belongs: a subscription is a pure
+entitlement with nothing to ship, so a nano-local code is right there and wrong here.
+
+### What did change
+
+`handleFormulaOrder` sends `intent: 'redeem_formulation_code'` through the existing
+`webview_tokens.context` bridge, and `t.formulaOrderCta` / `t.pkgOrderBtn` name a code rather than a
+purchase. The plan id is still carried, and is **advisory only** — a code is not priced against a
+recipe; nano attaches whatever formula the user has when they submit it. It is still sent because
+the GCN page deploys independently of this miniapp and older builds of it read one.
+
+GCN routes the old `buy_custom_formulation` intent to the same redeem screen, so a miniapp build
+already in the wild keeps working. **Deploy GCN's `mall` and `web` together** — the redeem route and
+the redeem screen are two halves of one flow.
+
+**Verified end to end on dev** (2026-09-01), including the two halves nano owns: the 使用兑换码 CTA
+carries `redeem_formulation_code` plus the plan id through the webview token, and a code-created
+order is indistinguishable downstream — `_resolveOrderContext` reads `max_distinct_dots: 8` off it,
+`handlePostFormulationSubmit` correctly refuses a 17-dot proposal made before any package existed,
+and a re-run of 营养定制 caps to 8 (+`DOT-N7`, which is never counted) and submits to `compounding`.
+
+The order card in Plans ▸ Dots is unchanged and still runs 营养定制: formulate first, then redeem.
+Where a code comes from is answered on the redeem screen ("your store provides this code"), which is
+the only surface that can say it truthfully.
+
 ## 29. Viva Proactive Daily Check-Ins (Morning / Midday / Evening)
 
 Added 2026-07-29. Every previous Viva feature (§21-28) only responds when the user speaks first. This adds the reverse: Viva initiates, up to three times a day, checking in on today's dots and flagging one grounded thing to watch for. Delivery is **in-app only** — the message waits in `notifications` for the user's next app-open (identical to how reminders/coach messages already surface), not a true WeChat push (no subscribe-message/template-message send exists anywhere in this codebase; that would need a new WeChat-platform template plus opt-in UI — out of scope). Content generation is a **single lightweight completion**, not the full PLAN→GENERATE→JUDGE→REVISE agentic loop — appropriate for a routine message going out to every eligible user up to 3x/day. **Viva only.**

@@ -177,7 +177,7 @@ const T = {
     pkgUseFormulaBtn: '用此配方定制',
     pkgNeedsFormulaHint: '请先在对话中使用「营养定制」生成配方',
     pkgScanBtn: '扫描包装二维码启用',
-    pkgOrderBtn: '按此配方下单',
+    pkgOrderBtn: '使用兑换码',
     pkgOrderGone: '该套餐已不在等待配方（可能已退款或已由其他设备提交）。请刷新后重试。',
     pkgSubmitConfirm: '确认用当前配方定制这份套餐？确认后即进入配制，无法更改。',
     pkgSubmitOk: '已提交配制',
@@ -261,7 +261,7 @@ const T = {
     formulaResetDay: 'DOT-N7 单独重置',
     formulaDaysUnit: '天',
     formulaCapsulesUnit: '粒胶囊',
-    formulaOrderCta: '购买 28 天定制套餐 →',
+    formulaOrderCta: '使用兑换码开始配制 →',
     formulaLabelCta: '查看配方标签与二维码',
     formulaSubmitCta: '确认此方案，开始配制 →',
     formulaSubmitConfirmTitle: '确认配制方案',
@@ -473,7 +473,7 @@ const T = {
     pkgUseFormulaBtn: 'Use this formula',
     pkgNeedsFormulaHint: 'Run Formulate Dots in chat first to build a formula',
     pkgScanBtn: 'Scan the box QR to start',
-    pkgOrderBtn: 'Order this formula',
+    pkgOrderBtn: 'Redeem a code',
     pkgOrderGone: 'That package is no longer waiting for a formula — it may have been refunded, or filled from another device. Pull to refresh and try again.',
     pkgSubmitConfirm: 'Compound this package using your current formula? Compounding starts right away and cannot be changed.',
     pkgSubmitOk: 'Sent to compounding',
@@ -553,7 +553,7 @@ const T = {
     formulaResetDay: 'DOT-N7 reset',
     formulaDaysUnit: ' days',
     formulaCapsulesUnit: ' capsules',
-    formulaOrderCta: 'Buy your 28-day package →',
+    formulaOrderCta: 'Redeem a code to start →',
     formulaLabelCta: 'View formulation label & QR',
     formulaSubmitCta: 'Confirm and start compounding →',
     formulaSubmitConfirmTitle: 'Confirm this formulation',
@@ -1519,14 +1519,18 @@ Page({
     this._openAevivaStoreGated({ intent: 'buy_custom_formulation', nutrition_plan_id: nutritionPlanId })
   },
 
-  // The order CTA on a :::formula card. The card carries the id of the 'proposed'
-  // nutrition_plans row the chat tool just wrote, and GCN's checkout reads that exact recipe back
-  // through /formulation-checkout-snapshot — so what gets priced is what the user is looking at,
-  // not a re-derivation of it. Same store bridge handleBuyFormulation uses.
+  // The order CTA on a :::formula card, and on a 'proposed' row in Plans ▸ Dots.
+  //
+  // A 28-day package is bought with a prepaid REDEEM CODE now, not at a checkout: a store stocks
+  // codes wholesale and resells them, and there is no payment step here at all. So this opens the
+  // redeem screen rather than a priced checkout, and the plan id it carries is along for the ride
+  // — a code is not priced against a recipe, and nano attaches whatever formula the user has when
+  // they submit it. The id is still sent because the GCN page is deployed independently of this
+  // miniapp and older builds of it still read one.
   handleFormulaOrder(e) {
     const planId = e.currentTarget.dataset.plan
     if (!this.data.isAeviva || !planId) return
-    this._openAevivaStoreGated({ intent: 'buy_custom_formulation', nutrition_plan_id: planId })
+    this._openAevivaStoreGated({ intent: 'redeem_formulation_code', nutrition_plan_id: planId })
   },
 
   // Opens the formulation's label page — the GCN aeviva page that draws the QR, lists every dot

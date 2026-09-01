@@ -8,6 +8,12 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **A 28-day dots package is bought with a prepaid redeem code** (`nano-miniapp/pages/main/main.js`, `nano-miniapp/utils/config.js`; the substance is in the GCN repo)
+  - Direct checkout was the wrong shape for how these are sold. The buyer is an end user but the money is owed to the root supplier that compounds the capsules, while the order is attributed to the buyer's bound store — which is where the self-approved payment, the payee override and the per-order 确认收款 all came from. A store now buys codes wholesale, resells them, and the holder redeems one; there is no payment step at redemption at all.
+  - **Nano barely changes, and that is the design.** Every "is a package waiting for me?" answer here comes from one place — `fetchFormulationOrders` — read live at three call sites (`_resolveOrderContext`, `handlePostFormulationSubmit`, `_fetchFormulationPackages`). Because redemption produces a real GCN order exactly as a purchase did, **not one line of those paths changed**. A nano-local code table would have meant merging a second source into all three and would still have left the capsules with no order to be compounded against.
+  - The formula card's order CTA and the Dots subtab's `can_order` CTA now open the redeem screen (`intent: 'redeem_formulation_code'`) instead of a priced checkout, and say 使用兑换码 / Redeem a code. GCN routes the old `buy_custom_formulation` intent to the same screen, so an already-released miniapp build keeps working.
+  - `viva_subscription_codes` stays where it belongs: a subscription is a pure entitlement with nothing to ship, so a nano-local code is right there and wrong here.
+
 - **A formula already ordered stops offering to be ordered again** (`worker/handlers/dots.js`, `tests/formulation-orders.test.js`)
   - Reported live on dev: after placing the order in GCN, Plans ▸ Dots showed *both* 定制原粒方案 / 待下单 / 按此配方下单 **and** 原粒 · 定制营养素 · 28天 / 待付款 — the first still inviting the user to place an order they had just placed.
   - Not a display bug so much as an honest gap in the merge: nothing attaches the plan to the order until payment is confirmed (`_settleFastTrackPackage`), so at `pending_payment` the two halves of one journey genuinely are two rows. The standalone proposal is now suppressed while any order is still waiting for a recipe — the same rule that already hid it once it had been offered to a waiting package, and the same reasoning that hides the buy-another card while a package is in flight.
