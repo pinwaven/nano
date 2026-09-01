@@ -1106,10 +1106,17 @@ Seller and fulfiller stay separate without the client knowing either: the order 
 **buyer's own bound store** as `store_partner_id`, and `handleAgFormulationBundleOrderCreate`
 stamps the processing centre onto the order *item*.
 
-**Open, unchanged by this pass:** that handler hardcodes `PROCESSING_CENTER_PARTNER_ID` (`…a3`)
-while the AI 精准营养素 product sits on `42f7307f`, and neither processing centre has a
-`payment_qr_urls`. No custom-formulation order has ever been placed in prod, so nothing is broken
-yet — but the first real one will surface it.
+**Resolved 2026-09-01 (GCN `migration_0089`).** That handler used to hardcode
+`PROCESSING_CENTER_PARTNER_ID` (`…a3`) while the AI 精准营养素 product sat on `42f7307f`, so the
+28天 packages, `AI精准营养素` and every redeem-code order were all addressed to a compounding centre
+that does not make them, while the per-dot product independently used its own *seller*. GCN now
+carries `products.processing_center_partner_id` and both order paths resolve
+`COALESCE(processing_center_partner_id, supplier_partner_id)` — see GCN's `CLAUDE.md`
+§"Selling a product and compounding it are different partners". Nothing in nano changed.
+
+Still open: neither processing centre has a `payment_qr_urls`. Not on this path (the customer pays
+the store, and a redeemed code charges nothing), so it only bites if a processing centre is ever
+made a *seller*.
 
 ## 28d. The Dots Subtab Is Order-Aware (2026-09-01)
 
