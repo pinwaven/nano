@@ -1,4 +1,5 @@
 -- Link inventory items to the lab provider that fulfills them
+-- @requires: migration_lab_providers.sql, migration_store.sql
 ALTER TABLE channel_inventory_items
   ADD COLUMN IF NOT EXISTS lab_provider_id INTEGER
     REFERENCES lab_providers(id) ON DELETE SET NULL;

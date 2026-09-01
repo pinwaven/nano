@@ -1,6 +1,7 @@
 const app = getApp()
 const { BASE, IS_DEV } = require('../../utils/config.js')
 const { computeMood, resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
+const { createPinchStepper } = require('../../utils/pinch.js')
 
 const BM_META = [
   { key: 'hsCRP',     unit: 'mg/L',      color: '#f472b6' },
@@ -228,6 +229,7 @@ const T = {
     tests: '次检测',
     noBmData: '暂无生物标志物数据。', noHistory: '暂无检测记录。',
     guestHealthCta: '激活账户后，查看您的健康数据与生物年龄',
+    agTabTwin: '数字孪生', agTabAg: 'Viva AG',
     guestJoinBtn: '激活账户',
     editProfile: '编辑资料', changeAvatar: '换头像', save: '保存', cancel: '取消',
     name: '姓名', otherPlaceholder: '请说明', saveOk: '已保存', saveFail: '保存失败',
@@ -350,6 +352,7 @@ const T = {
     tests: 'tests',
     noBmData: 'No biomarker data available yet.', noHistory: 'No test history yet.',
     guestHealthCta: 'Activate your account to view your health data and Bio Age',
+    agTabTwin: 'Digital Twin', agTabAg: 'Viva AG',
     guestJoinBtn: 'Activate Account',
     editProfile: 'Edit Profile', changeAvatar: 'Photo', save: 'Save', cancel: 'Cancel',
     name: 'Name', otherPlaceholder: 'Please specify', saveOk: 'Saved', saveFail: 'Save failed',
@@ -1090,11 +1093,21 @@ Component({
     mode:    { type: String,  value: 'self' },
     isGuest: { type: Boolean, value: false },
     theme:   { type: String,  value: 'dark' },
+    // Accessibility text-size level (0-3). The .fs-N class that actually resizes text lives
+    // on the HOST page's root view (custom properties are inherited, so they cross component
+    // style isolation) — this property exists only so the observer below can react.
+    textScale: { type: Number, value: 0 },
+    // Whether this user holds an active Viva AG add-on. Cosmetic only — it decides whether the
+    // subtab strip renders; every AG endpoint re-checks entitlement server-side. Never passed
+    // by pages/coach/coach.wxml, so a coach viewing a client defaults to false.
+    vivaAgEnabled: { type: Boolean, value: false },
   },
 
   data: {
     t: {},
     isZh: true,
+    healthSubTab: 'twin',
+    showAgTab: false,
     bioLoading: true,
     bAge: null,
     cAge: null,
@@ -1241,6 +1254,21 @@ Component({
     'mood': function() {
       this._refreshAvatarDisplay()
     },
+    // Self view only: a coach has no upload story and no notification channel for results, and
+    // these are the most sensitive documents in the system.
+    'vivaAgEnabled, mode, isGuest': function(enabled, mode, isGuest) {
+      const showAgTab = !!enabled && mode === 'self' && !isGuest
+      const patch = { showAgTab }
+      // Losing entitlement while parked on the AG tab would otherwise leave a blank pane.
+      if (!showAgTab && this.data.healthSubTab !== 'twin') patch.healthSubTab = 'twin'
+      this.setData(patch)
+    },
+    // Changing text size reflows everything below it, which invalidates the page-relative
+    // rect _onChartTouch falls back to for crosshair hit-testing. uh-subage-chart re-caches
+    // on every modal open, so only the inline BioAge chart needs this.
+    'textScale': function() {
+      if (this.data.bioAgeTrendOpen) this._cacheChartRect('dt-bioage-chart')
+    },
   },
 
   lifetimes: {
@@ -1270,6 +1298,28 @@ Component({
   },
 
   methods: {
+    // ── Two-finger pinch → text-size step ──────────────────────────────────────────
+    // Logic lives in utils/pinch.js because the chat tab needs the identical gesture
+    // (pages/main/main.js) and two copies would drift. Bound with `bind` (not `catch`) on
+    // .uh-root so the host pages' edge-swipe handlers still see the stream; those guard
+    // themselves against multi-touch instead. Bound on .uh-root rather than the inner
+    // <scroll-view> because scroll-view's own touchmove is throttled during momentum
+    // scrolling.
+    //
+    // The two canvases that own a crosshair (dt-bioage-chart, uh-subage-chart) use
+    // catchtouch*, so a pinch starting on one of them never reaches here — correct, those
+    // are drag surfaces.
+    _pinch() {
+      if (!this.__pinch) {
+        this.__pinch = createPinchStepper((dir) => this.triggerEvent('textscalestep', { dir }))
+      }
+      return this.__pinch
+    },
+
+    _onUhTouchStart(e) { this._pinch().start(e) },
+    _onUhTouchMove(e) { this._pinch().move(e) },
+    _onUhTouchEnd() { this._pinch().end() },
+
     refresh() {
       this._loadHealth()
     },
@@ -2150,6 +2200,16 @@ Component({
 
     onGuestTap() {
       this.triggerEvent('guesttap')
+    },
+
+    // The AG panel needs the chat tab (that is where the questionnaire renderer lives) and this
+    // component sits between it and the page, so the event is forwarded rather than handled.
+    onAgGoToChat(e) {
+      this.triggerEvent('gotochat', e.detail)
+    },
+
+    switchHealthSubTab(e) {
+      this.setData({ healthSubTab: e.currentTarget.dataset.tab })
     },
 
     _req(url, method = 'GET', data = null) {

@@ -2,7 +2,7 @@
 
 const crypto = require('crypto');
 const { pool } = require('../lib/db');
-const { resolveEffectivePersona } = require('../lib/persona');
+const { resolveEffectivePersona, hasActiveVivaAccess, hasActiveVivaAgAccess } = require('../lib/persona');
 const { grantPersonaOverride } = require('../lib/personaOverride');
 
 // High-entropy, unguessable code — unlike kino_chips.chip_code (sequential KNC{8}-{4}), a
@@ -22,6 +22,7 @@ async function handleGetVivaSubscriptionStatus(openid) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
             `SELECT u.viva_subscription_expires_at, u.persona_override_type, u.persona_override_expires_at,
+                    u.viva_ag_expires_at,
                     COALESCE(c.config->>'persona_type', 'nano') AS channel_persona_type
              FROM users u LEFT JOIN channels c ON c.id = u.channel_id
              WHERE u.user_id = $1 OR u.external_id = $1 LIMIT 1`,
@@ -39,10 +40,17 @@ async function handleGetVivaSubscriptionStatus(openid) {
         const vivaExpiresAt = row.persona_override_type === 'viva'
             ? row.persona_override_expires_at
             : row.viva_subscription_expires_at;
+        // Viva AG is an add-on, so "active" means an active Viva grant AND an active AG
+        // window — the same composite the server-side gates in handlers/viva_ag.js enforce.
+        // This field only drives whether the miniapp renders the AG subtab at all; it is
+        // cosmetic, and every AG endpoint re-checks entitlement server-side.
+        const vivaAgActive = hasActiveVivaAccess(row) && hasActiveVivaAgAccess(row);
         return {
             success: true,
             persona_type: effectivePersona,
             viva_subscription_expires_at: vivaExpiresAt,
+            viva_ag_expires_at: row.viva_ag_expires_at,
+            viva_ag_active: vivaAgActive,
         };
     } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetVivaSubscriptionStatus failed', error: err.message }));
@@ -54,7 +62,7 @@ async function handleGetVivaSubscriptionPlans() {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
-            `SELECT plan_key, label, label_zh, duration_days FROM viva_subscription_plans
+            `SELECT plan_key, label, label_zh, duration_days, product_type FROM viva_subscription_plans
              WHERE is_active = TRUE ORDER BY duration_days ASC`
         );
         return { success: true, plans: result.rows };
@@ -70,7 +78,11 @@ async function handleGetVivaSubscriptionPlans() {
 // the legacy viva_subscription_expires_at column for back-compat reads, and logs a
 // persona_subscription_grants audit row so the admin UI shows one unified history
 // regardless of whether a grant came from a code redemption or a direct admin grant.
-async function _extendUserSubscription(client, userId, durationDays) {
+async function _extendUserSubscription(client, userId, durationDays, productType = 'viva') {
+    // Every product grants the Viva persona window: for 'viva' that IS the product, and for
+    // 'viva_ag' it's a prerequisite — requireVivaAgAccess() (lib/vivaAgAccess.js) is a composite
+    // of effective-persona-is-viva AND a live Viva grant AND a live AG grant, so granting only
+    // the AG column would leave a paying buyer locked out of the subtab they just bought.
     const override = await grantPersonaOverride(client, userId, 'viva', durationDays);
     if (!override) return null;
     await client.query(
@@ -81,6 +93,27 @@ async function _extendUserSubscription(client, userId, durationDays) {
         `INSERT INTO persona_subscription_grants (user_id, persona_type, action, duration_days, new_expires_at, note, granted_by, channel_id)
          SELECT $1, 'viva', 'code_redeemed', $2, $3, 'Code redeemed', 'gcn', channel_id FROM users WHERE user_id = $1`,
         [userId, durationDays, override.persona_override_expires_at]
+    );
+
+    if (productType !== 'viva_ag') return override.persona_override_expires_at;
+
+    // Same stacking semantics as grantPersonaOverride and handlePostAdminUserVivaAg: extend a
+    // live window, restart from now on an expired/absent one. A second audit row (persona_type
+    // 'viva_ag') so the admin history shows that one purchase moved two entitlements.
+    const { rows: [agRow] } = await client.query(
+        `UPDATE users
+         SET viva_ag_expires_at = CASE
+                 WHEN viva_ag_expires_at > NOW() THEN viva_ag_expires_at + ($2 || ' days')::interval
+                 ELSE NOW() + ($2 || ' days')::interval
+             END
+         WHERE user_id = $1
+         RETURNING viva_ag_expires_at`,
+        [userId, durationDays]
+    );
+    await client.query(
+        `INSERT INTO persona_subscription_grants (user_id, persona_type, action, duration_days, new_expires_at, note, granted_by, channel_id)
+         SELECT $1, 'viva_ag', 'code_redeemed', $2, $3, 'Code redeemed', 'gcn', channel_id FROM users WHERE user_id = $1`,
+        [userId, durationDays, agRow?.viva_ag_expires_at || null]
     );
     return override.persona_override_expires_at;
 }
@@ -103,7 +136,7 @@ async function handlePostVivaSubscriptionCheckoutConfirmed(body) {
         await client.query('BEGIN');
 
         const planRes = await client.query(
-            `SELECT duration_days FROM viva_subscription_plans WHERE plan_key = $1 AND is_active = TRUE`,
+            `SELECT duration_days, product_type FROM viva_subscription_plans WHERE plan_key = $1 AND is_active = TRUE`,
             [plan_key]
         );
         if (planRes.rows.length === 0) {
@@ -111,13 +144,14 @@ async function handlePostVivaSubscriptionCheckoutConfirmed(body) {
             return { success: false, error: 'invalid_plan_key' };
         }
         const durationDays = planRes.rows[0].duration_days;
+        const productType = planRes.rows[0].product_type || 'viva';
 
         const insertRes = await client.query(
-            `INSERT INTO viva_subscription_codes (code, plan_key, duration_days, order_ref, purchaser_openid, expires_at)
-             VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '1 year')
+            `INSERT INTO viva_subscription_codes (code, plan_key, duration_days, product_type, order_ref, purchaser_openid, expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6, NOW() + INTERVAL '1 year')
              ON CONFLICT (order_ref) DO NOTHING
-             RETURNING id, code, plan_key, duration_days, status, expires_at`,
-            [_generateSubscriptionCode(), plan_key, durationDays, order_ref, purchaser_openid || null]
+             RETURNING id, code, plan_key, duration_days, product_type, status, expires_at`,
+            [_generateSubscriptionCode(), plan_key, durationDays, productType, order_ref, purchaser_openid || null]
         );
 
         let codeRow;
@@ -129,7 +163,7 @@ async function handlePostVivaSubscriptionCheckoutConfirmed(body) {
             // Replay of an already-processed order_ref — return the existing row unchanged,
             // never mint (or auto-redeem) twice.
             const existing = await client.query(
-                `SELECT id, code, plan_key, duration_days, status, expires_at FROM viva_subscription_codes WHERE order_ref = $1`,
+                `SELECT id, code, plan_key, duration_days, product_type, status, expires_at FROM viva_subscription_codes WHERE order_ref = $1`,
                 [order_ref]
             );
             codeRow = existing.rows[0];
@@ -145,7 +179,7 @@ async function handlePostVivaSubscriptionCheckoutConfirmed(body) {
                 [codeRow.id, auto_redeem_openid]
             );
             if (redeemRes.rows.length > 0) {
-                await _extendUserSubscription(client, auto_redeem_openid, codeRow.duration_days);
+                await _extendUserSubscription(client, auto_redeem_openid, codeRow.duration_days, codeRow.product_type || 'viva');
                 codeRow.status = redeemRes.rows[0].status;
             }
         }
@@ -156,6 +190,7 @@ async function handlePostVivaSubscriptionCheckoutConfirmed(body) {
             code: codeRow.code,
             plan_key: codeRow.plan_key,
             duration_days: codeRow.duration_days,
+            product_type: codeRow.product_type || 'viva',
             status: codeRow.status,
             redeemed: codeRow.status === 'redeemed',
             expires_at: codeRow.status === 'unredeemed' ? codeRow.expires_at : null,
@@ -185,7 +220,7 @@ async function handlePostVivaSubscriptionRedeem(body) {
             `UPDATE viva_subscription_codes
              SET status = 'redeemed', redeemed_by_user_id = $2, redeemed_at = NOW()
              WHERE code = $1 AND status = 'unredeemed' AND (expires_at IS NULL OR expires_at > NOW())
-             RETURNING plan_key, duration_days`,
+             RETURNING plan_key, duration_days, product_type`,
             [normalizedCode, openid]
         );
 
@@ -203,8 +238,8 @@ async function handlePostVivaSubscriptionRedeem(body) {
             return { success: false, status: 'invalid_code' };
         }
 
-        const { duration_days } = claim.rows[0];
-        const newExpiresAt = await _extendUserSubscription(client, openid, duration_days);
+        const { duration_days, product_type } = claim.rows[0];
+        const newExpiresAt = await _extendUserSubscription(client, openid, duration_days, product_type || 'viva');
 
         await client.query('COMMIT');
         return { success: true, new_expires_at: newExpiresAt };
@@ -229,7 +264,7 @@ async function handleGetVivaSubscriptionCodes(query) {
             where = `WHERE vsc.status = $${params.length}`;
         }
         const result = await pool.query(
-            `SELECT vsc.id, vsc.code, vsc.plan_key, vsc.duration_days, vsc.status, vsc.order_ref,
+            `SELECT vsc.id, vsc.code, vsc.plan_key, vsc.duration_days, vsc.product_type, vsc.status, vsc.order_ref,
                     vsc.purchaser_openid, vsc.redeemed_by_user_id, u.nickname AS redeemed_by_nickname,
                     vsc.redeemed_at, vsc.expires_at, vsc.created_at
              FROM viva_subscription_codes vsc

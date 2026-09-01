@@ -266,9 +266,12 @@ export default function ChatTab({ user, onUserUpdate, onNavigateTab }) {
     addMsg('ai', t.formulaGenerating, true);
     setTyping(true);
     try {
-      await axios.post(`${API}/formula-dots`, { openid: user.user_id });
-      addMsg('ai', t.formulaComplete, true);
-      addActionMsg('view_dots', t.formulaViewDots, true);
+      const r = await axios.post(`${API}/formula-dots`, { openid: user.user_id });
+      // The formulation runs asynchronously and is delivered by the notification poll above,
+      // minutes later. Claiming "ready" the instant the POST returns was simply wrong — the
+      // recipe does not exist yet at that point. (This app renders chat as plain markdown, so
+      // the :::formula card the Mini Program draws shows here as its source rows.)
+      addMsg('ai', r.data?.processing ? t.formulaProcessing : t.formulaComplete, true);
     } catch { addMsg('ai', t.formulaError); }
     finally { setTyping(false); }
   };

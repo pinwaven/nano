@@ -4,6 +4,7 @@ const { getOutputFormatBlock } = require('../../chat/outputFormat');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
+const { getProductRecommendBlock } = require('../../chat/productRecommendBlock');
 
 module.exports = (ctx) => {
   const { user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, current_solar_term } = ctx;
@@ -21,7 +22,7 @@ module.exports = (ctx) => {
     : `生理年龄：暂无检测记录。`;
 
   const dotsSection = dots && dots.length > 0
-    ? `原粒配方库（每粒 24mg；名称与编号必须逐字使用下方原文，不得凭记忆改写或替换）：\n${dots.map(d => {
+    ? `原粒配方库（每粒 36mg；名称与编号必须逐字使用下方原文，不得凭记忆改写或替换）：\n${dots.map(d => {
         const ingrArr = d.ingredients_zh || d.ingredients || [];
         const ingrStr = ingrArr.length > 0
           ? `（${ingrArr.map(i => `${i.name}${i.mg ? ' ' + i.mg + 'mg' : ''}`).join(' + ')}）`
@@ -57,6 +58,8 @@ ${getOutputFormatBlock({ isZh: true, rich: ctx.rich_format, allow: ['takeaway', 
 ${getCurrentDateBlock(ctx.now_iso)}
 
 ${getFactMemoryBlock(ctx.user_facts)}
+
+${getProductRecommendBlock(ctx.store_products)}
 
 ${getAskQuestionsBlock()}
 

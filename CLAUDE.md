@@ -261,11 +261,11 @@ Full details: `docs/architecture/kino-system.md`
 
 ## 14. Dots System
 
-Waven Dots are 24 mg precision nutrition cartridges. Each cartridge delivers one or more active compounds in an exact dose, calibrated to the user's biomarker profile. The system targets four biological age dimensions measured by the Kino chip. The Dots can be mixed by AI at realtime according to the user's actual health data.
+Waven Dots are 36 mg precision nutrition cartridges. Each cartridge delivers one or more active compounds in an exact dose, calibrated to the user's biomarker profile. The system targets four biological age dimensions measured by the Kino chip. The Dots can be mixed by AI at realtime according to the user's actual health data.
 
 ### Cartridge Format
 
-- **Payload:** 24 mg per dot
+- **Payload:** 36 mg per dot
 - **Pack size:** 800 dots per cartridge
 - **Timing:** Morning or Evening (fixed per dot — set by the `timing` column in the `dots` table)
 - **Types:** Isolates (single active compound) and Blends (two or more actives)
@@ -396,6 +396,21 @@ const biomarkers = { ...latestBio?.data?.validated, ...latestBio?.data?.actual }
 ## 19. GCN Integration (Aeviva Partner Storefront)
 
 The `aeviva` nano channel's partner storefront, wholesale/resale inventory, and manual-QR checkout live in a separate sibling repo, `/Users/pin/waven/gcn`. **As of 2026-08-09, this is no longer "nano owns partner identity/tier/referral/commission, GCN owns commerce"** — GCN now owns the wholesale tier catalog, tier assignment, the referral tree, and commission computation too (Phases 0-4 of the consolidation roadmap below, shipped). Nano still owns end-user identity/auth (OTP, WeChat) and remains where new recruitment edges are actually created (its own admin panel / self-service apply flow), pushing them to GCN on every provision/re-sync — but nano's own `recordReferralCommission`/`recordSalesCommission` are now disabled (commented out, not removed) to avoid double-paying against GCN's ported computation. Full contract — cross-repo endpoints, SSO bridges, provisioning flow, admin-panel embed, miniapp entry point: `gcn-integration` skill — load it before touching any GCN-linked endpoint, the sibling repo, or aeviva storefront/inventory code.
+
+**Coach relationship now feeds GCN's store bindings (2026-08-27).** `WEBVIEW_USER_SELECT` in
+`worker/handlers/login.js` (the `/exchange-webview-token` GCN SSO exchange) additionally projects
+`p.user_id AS coach_user_id` — one line, next to the `cu.nickname AS coach_name` it already
+returned. It falls into the existing `...user` rest-spread and reaches GCN as
+`nanoUser.coach_user_id`. **No new endpoint and no `GCN_ALLOWED_PATHS` change** — that path was
+already allowlisted. **Deployed to nano prod 2026-08-27** (`nano-worker`), together with the 4
+pending viva-ag migrations and the unreleased viva-ag commits, at the user's explicit direction.
+Verified live: `/api/exchange-webview-token` on prod returns `coach_user_id` matching nano's DB,
+with `coach_id`/`coach_name` unchanged. GCN uses it to bind a coached user to their coach's own aeviva store when that
+coach is also an active GCN premier partner (`silver_store`/`gold_store`/`platinum_store`), which
+was previously only ever created by a first confirmed retail order. Nothing else in nano changed,
+and nano remains the sole owner of the coaching relationship itself (`users.coach_id`) — GCN only
+reads it. **Deployed to nano dev and prod** (2026-08-27) — see the prod note above. GCN side, including
+the backfill script and the conflict policy: GCN's `CLAUDE.md` §"Coach-Client Store Binding".
 
 **All 5 phases shipped 2026-08-09**: GCN now owns aeviva's wholesale tier catalog (key/label/rank/
 entry_fee/active status), tier assignment, the referral tree
@@ -682,6 +697,541 @@ New: `src/schemas/migration_nutrition_plans_status.sql`, `src/functions/worker/p
 
 Files: `prompts/viva/judgeTemplate.js` (`message` param), `prompts/chat/planTemplate.js` (self-reported-fact clarification), `lib/agenticChat.js` (`message` threaded into `runJudge`, REVISE correction prompt strengthened, self-contradiction downgrade), `handlers/chat.js` (`recordedFactText`-aware fallback, replacing the old bare-generic fallback), `prompts/viva/chat/nutrition.js` (relevance-first rule, mirroring `chat/biomarker.js`).
 
+## 28b. Formulate-Dots Proposes a 28-Day Plan (2026-08-28)
+
+The chat toolbox's **Formulate Dots** (`handlePostFormulaDots` → `_handleFormulaDotsAgentic` →
+`finalizeFormulaDotsGenerate`) writes a **`'proposed'`** `nutrition_plans` row and renders the whole
+28-day cycle in the chat bubble as a `:::formula` card.
+
+Between 2026-08-25 and 2026-08-28 this tool was evaluation-only and wrote nothing, on the reasoning
+that the 28-day formula a user receives comes from Viva AG's `dots_formulation` job (§35/§36). That
+left it with no route to the store: GCN's custom-formulation checkout prices a recipe out of a
+`nutrition_plans` row, and there was no longer a row to price. It now proposes.
+
+### `'proposed'` is a fourth status, and none of the other three would do
+
+`migration_nutrition_plans_proposed.sql`. `'pending'` means an async formulation is mid-flight and
+may never land. `'approved'` means a nutrition expert signed the recipe off and a batch is being
+compounded — conflating the two would let unreviewed model output reach the compounding queue.
+`'active'` means the user physically has the capsules. A proposal is none of those: a real,
+purchasable recipe for capsules that do not exist yet.
+
+- **No `nutrition_schedules` rows**, same as `'approved'`. The recipe lives in
+  `nutrition_plans.proposed_recipe` (`{morning:{}, evening:{}}`) — a proposal has no schedules to
+  read it back out of.
+- **It never supersedes the `'active'` plan.** Only a previous proposal is superseded, so a user
+  mid-cycle on a box they already have keeps taking it. `uniq_nutrition_plans_proposed` enforces
+  one live proposal per user.
+- `handleGetNutritionPlan` filters `status = 'active'`, so a proposal is invisible to the Dots
+  subtab with no code change — which is also why the card carries the numbers itself and there is
+  still **no "view plan" button**: it would open the *previous* plan.
+
+### Day numbers are relative, and that is the product, not a limitation
+
+The capsules must be compounded and shipped, so the card says `Day 1–9 · 12–28`, never a date.
+`_activateProposedPlan` (called from `handlePostBoxClaim` when a batch carries `plan_id` and no
+`ag_formulation_id`) is where "Day 1" stops being relative: `start_date` becomes that day and the
+56 capsules are written. Same shape as the AG flow's `_commitAgFormulation`, one status earlier.
+
+### `_expandPlanDay` is the single expansion rule set
+
+The N7 isolation override, the pulse window and the `MAX_DOTS_PER_CAPSULE` cap are applied in
+exactly one place, shared by **three** consumers that must never disagree about what a user is
+actually taking: `_commitNutritionPlan` (nano's own formulator writing schedules),
+`_activateProposedPlan` (the box scan) and `_planDayGroups` (the card).
+`tests/formula-28day-proposal.test.js` asserts the dateless preview matches what the scan writes,
+day for day. Don't reintroduce a second copy of these rules.
+
+**`_isPulseActiveDate` cannot be evaluated without a date** — it is anchored to a fixed calendar
+epoch — so `_expandPlanDay(i, ctx, null)` leaves pulse dots in every day. Exact today (`DOT-N7` is
+the only pulse dot and is routed through isolation, never through that gate), but a second pulse
+dot would make a proposal over-state the days it appears on until the scan anchors the cycle. Fix
+that by resolving the window at scan time, **not** by inventing a start date for a proposal.
+
+### The card
+
+`_buildFormulaChartBlock` (`handlers/dots.js`) builds it **server-side from the already validated
+recipe** — the model never writes it, so the bars can never disagree with the numbers they draw.
+Days whose two capsules are identical are collapsed into one group, so a 28-day plan is normally
+two groups (the everyday dose, and the two `DOT-N7` reset days) rather than 28 near-identical rows.
+
+Dot rows are still `key|name|color|am|pm`. Meta lines are **`'#'`-prefixed and all optional**, which
+no dot key can start with, so a card written before this change still renders as one unlabelled
+group — **keep them optional**:
+
+- `#cycle|<days>|<capsules>` — footer
+- `#plan|<id>` — the proposed row; enables the order CTA, and is digits-validated in the renderer
+  before it reaches a `data-` attribute
+- `#day|<ranges>|<kind>` — starts a group. Ranges are **bare numbers**; the localised day word is
+  the page's (`t.formulaDayWord`), because `utils/markdown.js` has no language context.
+
+Bar widths normalise against the largest capsule across **all** groups, so a reset day reads as the
+smaller capsule it genuinely is instead of self-normalising to look full.
+
+### Checkout needed no GCN change
+
+`handleGetFormulationCheckoutSnapshot` now accepts `'proposed'` as well as `'active'`, deriving
+day 0 from `proposed_recipe` through `_expandPlanDay` (day index 0 is never an isolation day, so it
+yields exactly the steady-state capsules that endpoint already promised). GCN's checkout reads
+`snapshot.valid` and the dot breakdown and never inspects plan status, so nothing changed there.
+The tap-through reuses the existing `webview_tokens.context` bridge with
+`{intent:'buy_custom_formulation', nutrition_plan_id}` (§31), which GCN's `dashboard.html` already
+routes into `openCustomFormulationCheckout`.
+
+**Nano does not price this, and must not start.** GCN sums the dot breakdown against its own
+`custom_formulation_dot_prices` and, since 2026-08-28, takes the buyer's own aeviva partner tier
+off that subtotal (`silver_store`/`gold_store`/`platinum_store`, `migration_0082` there) — a
+premier partner tapping this CTA had been paying the plain consumer price because every
+formulation sku is intercepted before GCN's wholesale machinery runs. The card carries no price
+for exactly this reason: the number the user is charged is settled on GCN's side at order time,
+after nano's snapshot is validated. Detail: GCN's `CLAUDE.md` §"Premier-partner pricing on
+formulation products".
+
+### The daily budget: rebalance, then reduce, then drop (2026-08-30)
+
+Every dot has a `target_dots_min`, and those floors sum past the `2 × MAX_DOTS_PER_CAPSULE` a day
+holds. A full formulary therefore **cannot** keep every dot, and `_fitRecipeToDailyBudget` is where
+that is resolved — on daily totals, before anything is split into capsules.
+
+`_capRecipeTotal` used to resolve it instead, by scaling every dot down proportionally, which put
+most of them under their own minimum. `lib/agFormulation.js` calls that `dose_below_min` and
+refuses the formula. It went unnoticed because nothing validated nano's own output until the
+fast-track path (which no expert reviews) started sending it to GCN.
+
+**A sub-therapeutic dot is worse than an absent one** — it occupies capsule space a real dose could
+have used. The validator agrees: an absent dot is legal, an underdosed one is not. That is the
+invariant, and it is why the give-back below stops at each dot's own floor.
+
+It gives in three stages, cheapest sacrifice first. The first two were added 2026-08-30; before
+that the function went straight to dropping, so it destroyed whole interventions to buy room that
+was already lying unused inside the survivors — a midpoint allocation kept 8 of 17 dots where it
+can now keep 16.
+
+1. **Rebalance.** A flexible dot in an over-full capsule moves to the other one before anything is
+   reduced or removed. Costs nothing: the daily dose is unchanged, taken at the other end of the
+   day. Two passes — the first keeps the majority of a dot's count in its own slot (the rule
+   `systemFormulaGenerate.js` and the AG contract both state), the second drops that preference,
+   because a capsule that does not physically close is not a trade-off.
+2. **Reduce toward each dot's floor**, proportionally to how much it asked for above that floor, so
+   a dot pushed to its ceiling keeps more of that emphasis. It **only ever takes away** — never
+   raises a dot toward its floor or above what was asked for.
+3. **Drop whole dots**, and only once even the floors of everything don't fit. **A dropped dot
+   leaves both slots** — half a daily dose is the underdose this exists to prevent.
+
+**Which dot goes** is read from the formulator's own emphasis: lowest relative position in its own
+min–max range first (the same scale `_fallbackCountForDot` writes on). Ties break toward the larger
+**floor**, because by the time a drop is considered every survivor is at its floor and the floor is
+what actually relieves the constraint. A product judgement, worth revisiting with the clinical side.
+
+A **non-flexible** dot cannot leave its own capsule, so its slot's floors must fit that one capsule
+on their own — checked before the day-wide budget, and the reason the split at the end is always
+feasible.
+
+`_capRecipeTotal` still runs inside `_expandPlanDay`, but on a recipe that already fits it is a
+no-op safety net rather than the thing deciding doses. **Don't move the budget decision back into
+it** — it works per capsule and the floors are per day, so it structurally cannot enforce them.
+
+A recipe that already fits both capsules is returned **untouched**, not re-derived: the caller's own
+AM/PM split is a real decision and there is nothing to fix.
+
+### The label QR: one code from formula to box to activation
+
+`nutrition_plans.label_code` (`WVB` + 12 hex, `migration_nutrition_plans_label_code.sql`) is minted
+by `lib/labelCode.js` **when the formula is generated** — not at box-batch time, which is far too
+late to show anyone. It is the QR the user views in chat, the label printed on the box, and the
+code the Mini Program scans to activate the plan.
+
+```
+_commitProposedPlan  → label_code minted
+chat card            → #label|https://aeviva.gcn.net/formulation-label.html?c=WVB…
+box batch for a plan → the FIRST box reuses that code as its box_code
+user scans the box   → /WVB[0-9A-Fa-f]{12}/ reads it out of that URL → plan goes active
+```
+
+- **One code space, two tables.** `generateLabelCode()` checks `boxes.box_code` **and**
+  `nutrition_plans.label_code`. A collision means a scan resolving to someone else's capsules.
+- **The `WVB` + 12-hex shape is load-bearing.** It is what lets one QR be both a human-readable
+  page (phone camera) and a claim token (Mini Program) — `handlePostBoxClaim` regex-extracts it
+  from a bare code, nano's old `/api/box/{code}` URL, or the GCN aeviva URL alike. Old printed
+  labels therefore keep working; physical objects already shipped cannot be re-printed.
+- **Minting a code does NOT make anything claimable.** A scan still resolves through
+  `boxes`/`box_batches`, which exist only once a batch is compounded — so scanning the QR of a
+  formulation nobody manufactured returns `box_not_found`, not an activated plan for capsules the
+  user does not have. **Don't "simplify" claim to resolve straight off `label_code`.**
+
+### A label outlives the formulation it describes
+
+The QR is printed on a physical box, so it must keep resolving after the plan behind it stops being
+current. Day 0 therefore falls back to `proposed_recipe` whenever a plan has **no schedules**,
+regardless of status — **not** gated on `status === 'proposed'`, which is what made a superseded
+proposal's label fail with `plan_has_no_schedule` the moment its owner formulated again.
+
+`status` is what tells the reader where they stand (`proposed` / `approved` / `active` /
+`superseded`), and the page renders a 已被新配方替代 badge plus a hint that scanning it activates
+nothing. **`handleGetFormulationCheckoutSnapshot` stays gated on `active`/`proposed`** — a replaced
+formulation may be read, never bought.
+
+An unresolvable code says the label has expired and was likely replaced, rather than "not found":
+a mistyped code and a deleted one are indistinguishable from the server, and "not found" reads to a
+customer as "your box is counterfeit".
+
+### `GET /api/formulation-label?c=` is PUBLIC, and that constrains it
+
+Routed before the bearer gate, like `/api/box/{code}`, because the code is printed on a physical
+object — whoever holds the box can read it. So it returns **no user identity of any kind** (no
+user_id, openid, nickname, phone, or biomarker value) and truncates the order reference. A test
+asserts the user id is absent from the payload. **Never enrich this response with anything
+user-identifying**, on either side of the proxy.
+
+GCN's `formulation-label.html` reads it through `GET /api/mall/aeviva/formulation-label` — a
+server-side proxy, not a browser fetch, for the two reasons `handleNanoFocusTemplates` documents:
+nano's routes all require some bearer, and nano's custom domain emits a duplicate
+`Access-Control-Allow-Origin` header that browsers reject outright.
+
+`AEVIVA_SITE_BASE_URL` (`s.yaml` / `s-prod.yaml`) is the public aeviva site — distinct from
+`GCN_API_BASE_URL`, which is the server-to-server API edge. It is a verified WeChat business
+domain, which is why `<web-view>` can load it and why the miniapp opens the label rather than
+drawing a QR natively: the user should see the exact page that prints on the box.
+
+### Two purchase orderings, and the card is where they differ
+
+A custom-dots order can be placed either way round, and the chat card adapts:
+
+```
+formulate → buy    chat tool → 'proposed' plan → GCN prices THAT recipe per-dot
+buy → formulate    GCN parks the order at 'awaiting_formulation' → chat tool fills it in
+```
+
+`_resolveOrderMode()` asks GCN (`fetchFormulationOrderStatus`, `lib/gcnClient.js`) which case this
+is, and the answer becomes the card's `#order` mode: `buy`, `submit` (a paid **fast-track**
+package is waiting) or `ag` (a paid **premium** package is waiting — Viva AG owns it, no CTA).
+
+- **Pulled at delivery time, never cached on the user row.** An order can be refunded, cancelled,
+  or fulfilled by an AG run in between. Resolved when the card is built rather than when the
+  request was made, because the turn is async and may be minutes old.
+- **Any non-answer degrades to `buy`** — the safe direction. A buy button someone already paid
+  past is ignorable; a submit button with no order behind it fails on tap.
+
+### Fast track: `POST /formulation-submit`
+
+The user confirming that a proposal is the formula to compound for a package they already bought.
+**No expert reviews it** (that is what the premium AG package's higher price buys), which makes
+`validateAgFormulation` the only thing between a generated allocation and capsules a person
+swallows. It **refuses** on any violation and repairs nothing — §36's rule, same reasoning. The
+expansion is rule-conformant by construction (`_expandProposalToCapsules` → `_expandPlanDay`), so
+a violation means the expansion regressed.
+
+The AM/PM split is what keeps it valid: `_splitDotTiming` forces a non-`timing_flexible` dot
+(`DOT-N3`, `DOT-N4`, `DOT-N12` today) wholly into its own slot, and the validator's
+`slot_violation` rule rejects anything else. **Never assemble a recipe without it** — a test pins
+both halves of that.
+
+Submission is idempotent via `nutrition_plans.gcn_order_id`, so a double tap can never send two
+formulas for one purchase.
+
+### On GCN's side: no new branch flag
+
+Three existing SKU columns express the fast-track product (`migration_0081`):
+
+| column | meaning here |
+|---|---|
+| `is_ag_formulation_bundle = TRUE` | the **order shape** — flat-priced, no recipe at checkout, parks at `awaiting_formulation`. The "AG" is historical (0078 shipped it first); read it as "buy-first formulation bundle". |
+| `requires_expert_review = FALSE` | the **fulfilment** — reported to nano as `fulfillment: 'fast_track'`. This one flag is the entire difference between the two packages. |
+| `viva_subscription_plan_key = NULL` | the **entitlement** — none. A NULL key means the purchase grants nothing, and the insert is skipped rather than defaulted. |
+
+A future third package is therefore a configuration change, not a code change.
+`handleFormulationFastTrack` **refuses** an order whose SKU requires review rather than quietly
+downgrading it; nano surfaces that to the user as "that package is formulated by Viva AG".
+
+### Nothing creates a plan on a timer (removed 2026-08-28)
+
+The dispatcher's nutrition top-up scan is **gone**, along with the worker's `nutrition.topup` route,
+`handleNutritionTopupEvent`, and `_commitNutritionPlan` (whose only caller it was).
+
+It ran every minute with no plan requirement — a LEFT JOIN over `users` counting *schedules* — so
+it did not top anything up: it manufactured an `active` plan, via an LLM call, for anyone who did
+not have one, including every user who had never ordered a box. Dev had accumulated 1,133 plans
+across 676 users with **zero boxes ever produced**.
+
+**A plan now means "this person physically has these capsules."** Exactly two things may create
+one, and both require a scanned box:
+
+| | |
+|---|---|
+| `_activateProposedPlan` | a chat-tool proposal, activated by `handlePostBoxClaim` |
+| `_commitAgFormulation`  | a Viva AG formula, same scan |
+
+Do not reintroduce a timer that creates a plan. If a genuine top-up need appears, it must **extend
+a plan the user is already on** and must never match a user who has none.
+
+**`handleGetNutritionPlan` has a second, non-obvious source.** Its `plan` field is the content of
+the user's most recent `nutrition_plan` **notification**, not the `nutrition_plans` table — a
+legacy prose fallback. Clearing the table alone leaves the Plans tab showing stale text; the
+notification rows are what actually populate it.
+
+Which is why a Formulate-Dots proposal delivers as **`formulation_proposal`**, never
+`nutrition_plan`. Delivering it under the latter made the tab report `hasPlan: true` off the card's
+own text even though the plan row was correctly `'proposed'` and invisible to the structured query
+— the proposal repopulating the tab it exists to stay out of. Found in the simulator; the DB and
+the API each looked correct on their own.
+
+## 28c. The 营养定制 Tool Sells a Tiered Package (2026-08-30)
+
+The formula card's `#order|buy` CTA opens **原粒 · 定制营养素 · 28天** — a buy-first package with
+three tiers — instead of the per-dot `定制原粒方案` it opened before. GCN `migration_0085`.
+
+```
+chat card  #order|buy  → GCN package picker → pay → order parks 'awaiting_formulation'
+GCN → nano  /formulation-purchase-confirmed  → 'formulation_order_paid' chat message
+user runs 营养定制 again → card is now #order|submit → confirm → fast track (§28b)
+```
+
+Nothing here is a new order shape. §28b's fast-track SKU flags already expressed a flat-priced,
+no-expert-review, buy-first package; this product just *is* one, at a real price, with a tier.
+
+### The tier is a WEEKLY width, and that is why a recipe has weeks at all
+
+`skus.metadata.max_distinct_dots` (6 / 8 / 10 种原粒) is the only difference between the three
+prices, so honouring it is not optional. GCN **reports** it on the waiting order
+(`handleNanoFormulationOrderStatus`) and enforces nothing: the rule needs the dots formulary and a
+product judgement about what a tier counts, and neither belongs on the far side of the wire.
+
+**It caps one week, not the cycle.** A 6种 buyer may take six dots this week and a partly different
+six next week; what they bought is the width of any single week. So a 28-day formula can genuinely
+use more than six dots — it just may never run more than six at once.
+
+That is the whole reason `_expandPlanDay` is week-aware. A recipe may carry an **optional** `weeks`
+map alongside its `dots` counts:
+
+```js
+{ dots: { 'DOT-N3': 7 }, weeks: { 'DOT-N3': [1, 2] } }   // taken in weeks 1-2 only
+```
+
+**A key that names no weeks is in every week**, which is what makes this backward compatible in
+both directions with no migration and no shape check: a proposal stored before weeks existed, a
+completion from a stale cached prompt, and the deterministic fallback formulator all expand to
+`PLAN_WEEKS` identical weeks — exactly the old behaviour. `_planExpansionContext` therefore
+budget-fits **once per week**, because a week running five of a formula's twelve dots has capsule
+room the others do not.
+
+**The model owns the rotation, not the server.** Whether a dot can be paused for a week is a
+clinical judgement — continuous sleep support and a seasonal accent are not interchangeable — so
+the prompt asks for a per-dot `weeks` field and says continuous dots stay in all four. The server
+only enforces the width.
+
+**`_capDistinctDots` runs ONCE, on the recipe, before it is stored**, and removes a dot **from an
+over-full week** rather than from the formula: a dot cut from week 3 keeps weeks 1-2, and only a
+dot left with no weeks disappears. Everything downstream expands `proposed_recipe` through
+`_expandPlanDay` — the card, the box scan writing 56 capsules, the fast-track submission — so they
+cannot disagree. Apply it inside the expansion instead and the box scan, which knows nothing about
+the order, would expand a different recipe than the card the user was shown.
+
+**`DOT-N7` is not counted.** It is the system reset dot, dosed alone on 2 of the 28 days in every
+plan regardless of tier (`_planExpansionContext` lifts it out of the everyday recipe entirely), so
+counting it would silently cost a 6种 buyer one of the six dots they paid for. A product judgement,
+and the reason the tier is described to the user as the width of their weekly formula rather than
+as the number of labels on the box. `_countDistinctDots` is the one definition of that count — the
+**widest week**, never the cycle's distinct total.
+
+Ranking reuses **`_emphasisPosition`**, now shared with `_fitRecipeToDailyBudget`'s stage 3 — a dot
+dropped for capsule space and a dot dropped for the tier are the same judgement about the same
+recipe.
+
+`handlePostFormulationSubmit` **refuses** a plan over the tier rather than trimming it — a plan
+proposed before the package was bought was capped by nothing, and re-running 营养定制 produces a
+better formula than that one minus a dot. Same reject-never-repair rule as §36.
+
+**Open, and now user-visible if a rotation ever ships:** `_getCommittedPlanDay0Breakdown` reads day
+0, which under rotation is week 1 rather than the cycle. Its two callers both want the cycle-wide
+union — GCN's per-dot checkout snapshot (changing it changes what a customer is charged) and the
+printed box label (which would under-list a box that physically holds all four weeks). Give them
+one when someone owns the pricing question; do not quietly redefine day 0.
+
+### Buying a package attaches the formulation the buyer was looking at
+
+The chat card's order CTA is tapped while a specific proposal is on screen, so GCN carries its id
+into the order as **`order_item_custom_formulations.intended_nano_plan_id`** (`migration_0086`) and
+payment confirmation asks nano to attach it. Without this the buyer taps "order this formulation"
+and gets an order referencing no formulation at all — which is exactly how this was first reported.
+
+**Advisory, and a separate column on purpose.** `nano_nutrition_plan_id` is the audit record of what
+will be compounded and is what `formulation_reviews` resolves against; the intent may never be
+compounded. Collapsing them would make an unpaid, unvalidated intention indistinguishable from a
+committed formula.
+
+`_settleFastTrackPackage` (`handlers/users.js`) runs the attempt, and it is **only ever an attempt**:
+`handlePostFormulationSubmit` re-checks ownership, `'proposed'` status, that an order is waiting,
+the weekly width, and the validator. Every refusal falls through to the nudge — the behaviour this
+flow had before an id was carried — so nothing can leave a buyer worse off. The one refusal with its
+own message is an over-tier plan, because a generic "go formulate it" would have them regenerate the
+same too-wide formula and fail the same way.
+
+**GCN's `dashboard.html` is what routes the miniapp's `buy_custom_formulation` intent**, so a
+production miniapp reaches whatever checkout the web function was last deployed with. That is how a
+card still reading 按此方案定制下单 ended up opening a package picker. When changing where that
+intent lands, the miniapp card copy has to ship with it or it will promise the wrong thing.
+
+### 查看配方 is not 我的激活码
+
+`openOrderCodes` serves three item kinds and its heading was hardcoded to the activation-code one,
+so a buyer tapping 查看配方 was told they were looking at activation codes. It now titles itself
+from its contents.
+
+A buy-first package is paid **before** anything is formulated, so that modal routinely has no
+recipe. It used to render an empty shell with `配方主打方向: —`; it now drops the focus line when
+there is no focus and says whose move it is. That answer is per-product, which is why
+`is_ag_formulation_bundle` / `requires_expert_review` ride on the order item — at
+`awaiting_formulation` a fast-track package waits on the buyer running 营养定制, a premium one waits
+on Viva AG. `order.status` cannot tell them apart, and getting it backwards either strands the order
+or sends someone somewhere that cannot fulfil it.
+
+### A paid package says so in chat
+
+An order at `awaiting_formulation` is waiting on something only this app can produce, and the store
+never said so. `/formulation-purchase-confirmed` now carries the package, and delivers a
+`formulation_order_paid` message (**in `AI_ECHO_TYPES`** — it writes both channels). An
+expert-review package sends none: Viva AG owns that one and the user has nothing to do.
+
+`handlers/users.js` requires `./chat` **at call time**. Not a cycle — nothing in the chat graph
+requires users.js — just keeping a cold path off every warm container's module load.
+
+### No sku id in the client, ever again
+
+The picker reads `GET /api/mall/aeviva/formulation-packages`. A tier added, repriced or retired in
+the admin panel takes effect with no web deploy, and a stale client-side formulation sku constant
+is exactly what broke both checkouts in the sandbox on 2026-08-22. An empty response falls back to
+the per-dot product rather than dead-ending a CTA the user already tapped.
+
+Seller and fulfiller stay separate without the client knowing either: the order carries the
+**buyer's own bound store** as `store_partner_id`, and `handleAgFormulationBundleOrderCreate`
+stamps the processing centre onto the order *item*.
+
+**Open, unchanged by this pass:** that handler hardcodes `PROCESSING_CENTER_PARTNER_ID` (`…a3`)
+while the AI 精准营养素 product sits on `42f7307f`, and neither processing centre has a
+`payment_qr_urls`. No custom-formulation order has ever been placed in prod, so nothing is broken
+yet — but the first real one will surface it.
+
+## 28d. The Dots Subtab Is Order-Aware (2026-09-01)
+
+Plans ▸ Dots lists **one row per dots package**, merged from two systems that each know only half
+of a journey: GCN owns the order (`pending_payment → paid → awaiting_formulation → expert_review →
+compounding → shipped`) and nano owns the formula (`proposed → approved → active`). Before this,
+nano's entire record that an order existed was `users.custom_formulation_purchased_at` — one
+timestamp, no id, no status — so the only way to learn where your capsules were was the GCN store
+webview.
+
+### Nothing is mirrored, and that is the point
+
+The order half is read live through `fetchFormulationOrders` (`lib/gcnClient.js`) on every request
+and **never written to a nano table**. A cached status has nothing to reconcile itself against: an
+order can be refunded, cancelled, or filled from another device between two reads. Same reasoning
+that already governs why "is a package waiting" is pulled rather than stamped on the user row.
+**No migration, either repo** — every field already existed.
+
+`_fetchFormulationPackages` is awaited inside `handleGetNutritionPlan`'s existing `Promise.all`, so
+a slow GCN costs `max(db, gcn)` rather than the sum, and it degrades to `[]` on any failure. The
+Dots subtab must still render the user's active plan when the order half is unavailable.
+
+> **`packages` is a SIBLING of `plan` / `structured_plan` / `schedules`, never a source for them.**
+> Those keep meaning "the plan you are physically on" and stay `status='active'`-only. §28b records
+> the live bug where a proposal repopulated this tab and made it report a plan the user did not
+> have.
+
+### The stage is derived from both halves, and is neither system's status column
+
+`PACKAGE_STAGES` (12 values) is the vocabulary; the miniapp keys its copy off the string
+(`t['pkgStage_' + stage]`), so **a new stage needs a line in both `T.zh` and `T.en`** — WXML has no
+compile-time key checking and a missing key renders empty.
+
+- `awaiting_formulation` vs `awaiting_ag` are **one GCN status split by which package was bought**.
+  A fast-track package waits on the buyer; a premium one is Viva AG's to fulfil and asks nothing of
+  them. Offering a submit CTA on the latter sends someone somewhere that cannot fulfil their order.
+- An **active plan outranks the order** — the user scanned the box, which is a truer statement than
+  an order still sitting at `shipped` because nobody closed it out on the commerce side.
+- `completed` becomes `delivered`, not "done": for a physical box the journey ends at the scan, and
+  that scan is a nano-side event GCN never hears about.
+- `day_index` is null for anything but `active`. A proposal's `start_date` is a placeholder and an
+  approved plan's is provisional until the box is scanned, so counting from either would claim the
+  user is taking capsules that do not exist.
+
+### Offered, not matched
+
+A waiting package carries **`submit_plan_id`** — the user's single un-submitted proposal
+(`uniq_nutrition_plans_proposed`) — which is deliberately *not* `plan_id`. Buying writes no plan and
+formulating writes no order; the two are bound only by `handlePostFormulationSubmit`. The
+standalone proposal row is suppressed once offered, because the same formula listed twice (once to
+buy, once to fill) reads as two formulas.
+
+**`intended_nano_plan_id` is never a link.** It is advisory — what the buyer was looking at, possibly
+a formula since superseded (GCN's `migration_0086`) — and joining on it would report a package as
+carrying a recipe nothing is going to make.
+
+**A proposal is also suppressed while an order is waiting for a recipe** (`AWAITING_FORMULA_STAGES`
+= `pending_payment` / `paid` / `awaiting_formulation` / `awaiting_ag`, with no plan attached). The
+plan is not attached until payment confirms, so at `pending_payment` one journey is genuinely two
+rows — and the standalone one was still offering 按此配方下单 for a package already ordered.
+
+The stage is what this keys on, **not `intended_nano_plan_id`**, per the rule directly above: at
+most one un-submitted proposal exists per user, so "an order is waiting" already identifies it
+without trusting an advisory link. Keep the set narrow — a package at `compounding` or `shipped`
+already has its formula, so a proposal made afterwards is a real next-cycle formula and must stay
+orderable; `cancelled`/`refunded` release it. Only `'proposed'` rows are suppressed, never an
+`active` plan.
+
+### Selecting which package a formula fills
+
+Both halves of the handoff were hardcoded `ORDER BY o.created_at ASC LIMIT 1`, so "oldest wins" was
+silently deciding. **Two waiting packages is reachable**: GCN's `formulation_already_in_progress`
+guard runs at order *creation*, so two checkouts started while both were `pending_payment` can both
+be confirmed.
+
+`_attachRecipeToAwaitingOrder` (GCN) now takes an optional `orderId`. **Ownership stays enforced by
+the `ocf.nano_user_id` predicate**, not by the caller having supplied a plausible id — keep it that
+way; it is the only thing between a client-chosen id and another buyer's order.
+
+- **Chat card** — `handleFormulaSubmit` resolves the list at **tap** time via
+  `GET /api/formulation-orders`, not from the card. The turn is async, so a card can be minutes old.
+  One waiting package behaves exactly as before; several open an action sheet.
+- **Dots subtab** — tapping a package row *is* the choice; the row already names its order.
+- Both go through one `_submitFormulation`, so the two surfaces cannot drift on what a reason code
+  means.
+
+**`_awaitingOrders` re-sorts oldest-first.** GCN returns newest-first for display but attaches
+oldest-first, so anything that must agree with what GCN will actually do has to re-sort. Not doing
+this is how a picker and a submission end up naming two different packages.
+
+### GCN side
+
+New `GET /api/mall/nano/formulation-orders` (`requireNanoService`, always 200, `{orders: []}` on any
+failure). It shares `FORMULATION_ORDER_FROM` with the older single-row status probe — a row visible
+to one and not the other would show a package the submit path cannot find. It returns **no buyer
+identity and no money**: the response travels back out to a Mini Program, and what someone paid is
+the store's to show.
+
+`handleNanoFormulationOrderStatus` is kept but **has no caller** — nano and GCN deploy separately,
+and leaving it means neither deploy order breaks the chat card. **Deploy GCN first.** Retire it once
+nano prod is confirmed on the new endpoint.
+
+### The order card leads with the tool, not the store (2026-09-01)
+
+The Dots subtab has **one** order card and it only ever runs 营养定制 in the chat tab
+(`handleGoFormulate`), gated on `!hasProposedFormula` — derived from `packages`, not from
+`hasPlan`.
+
+Buying without a formula is a real flow (§28c) but a worse one: the order parks at
+`awaiting_formulation` and hands the buyer back the same job one screen later. And once a formula
+*does* exist, the package row above already carries 按此配方下单, which passes the plan id so GCN
+prices that exact recipe. A second card next to it opening `buy_custom_formulation` with no plan
+id is a strictly worse route to the same product — which is why the old `handleOrderDots` and its
+`orderDots*` strings were **removed**, not kept as a fallback. Don't reintroduce a store link
+here; the package row is the buy path.
+
+**The Neo dispenser entry point is off behind `neoAvailable: false`.** The hardware is not
+shipping, so the bind card offered something nobody could act on. Gated rather than deleted:
+nothing about the dispenser changed, and this is its only entry point. `neoBound` is still
+permanently false and still gates the cartridge grid, the Dispense button and the order card's own
+`!neoBound` — don't collapse the two flags into one.
+
 ## 29. Viva Proactive Daily Check-Ins (Morning / Midday / Evening)
 
 Added 2026-07-29. Every previous Viva feature (§21-28) only responds when the user speaks first. This adds the reverse: Viva initiates, up to three times a day, checking in on today's dots and flagging one grounded thing to watch for. Delivery is **in-app only** — the message waits in `notifications` for the user's next app-open (identical to how reminders/coach messages already surface), not a true WeChat push (no subscribe-message/template-message send exists anywhere in this codebase; that would need a new WeChat-platform template plus opt-in UI — out of scope). Content generation is a **single lightweight completion**, not the full PLAN→GENERATE→JUDGE→REVISE agentic loop — appropriate for a routine message going out to every eligible user up to 3x/day. **Viva only.**
@@ -919,3 +1469,564 @@ none of their own data. They're now in an ungated sibling card. `user_memory_fac
 first end-user surface (read-only, self view only; the coach app already has its own Facts tab).
 
 Full detail: `docs/architecture/digital-twin.md`.
+
+## 35. Viva AG — External Deep-Analysis Agent (2026-08-23)
+
+**Viva AG (Advanced Generation)** is an *external* agent that spends minutes-to-hours analyzing a
+user's full digital twin, including uploaded hospital-record PDFs. Nano owns a job queue; the
+agent **pulls** from it, reads a twin bundle, and posts a result back, which lands in the user's
+chat. Nothing in §21-§29 applies here — that machinery is for work nano performs itself.
+
+### Entitlement: an add-on column, not a third persona
+
+`users.viva_ag_expires_at` (migration `migration_users_viva_ag_expiry.sql`), gated by
+`hasActiveVivaAgAccess()` in `lib/persona.js`. **The regular chatbox stays powered by Viva; AG is
+only active inside the health tab's AG subtab.** Deliberately not a `persona_override_type` value
+— `resolveEffectivePersona()` must keep returning `'nano'|'viva'` only, or every prompt-routing
+site, `chat_messages.persona_type` and the dispatcher's inlined SQL copy would need a third branch
+they have no prompts for.
+
+Every server-side gate goes through `requireVivaAgAccess()` (`lib/vivaAgAccess.js`), which is a
+**composite**: effective persona is `viva` **and** `hasActiveVivaAccess()` **and**
+`hasActiveVivaAgAccess()`. Conditions 1-2 mirror `handlePostChat`'s paywall exactly, so AG can
+never be more permissive than the chatbox. Grants/revokes are admin-only for v1
+(`handlePostAdminUserVivaAg` / `handleDeleteAdminUserVivaAg` in `handlers/persona_subscriptions.js`,
+routed at `/admin/users/{uid}/viva-ag-subscription`) and audit into the existing
+`persona_subscription_grants` with `persona_type='viva_ag'`. The one-migration path to redeem
+codes / GCN checkout is written into the migration comment.
+
+### No EventBridge, no cron — and why
+
+§22's CloudEvent machinery exists for exactly one reason: FC cancels an invocation the moment the
+HTTP client disconnects, so nano-side work taking minutes must leave the request cycle. **Viva AG
+has no nano-side long work** — enqueue is one INSERT, the long work is entirely inside the external
+agent, and delivery is two INSERTs inside the agent's own `POST /result` request. Publishing a
+CloudEvent would add shared dev/prod bus leak risk and a dedupe table for zero benefit.
+
+Lease expiry is swept **lazily** at the top of the claim handler and the user's job list
+(`_sweepExpiredLeases()`). Residual limitation, accepted: if the agent stops polling *and* no user
+opens the AG subtab, an expired lease sits until someone touches the queue. The fix, if it ever
+bites, is a fourth scan in `dispatcher/index.js`'s existing tick — not new infrastructure.
+
+### The fencing token is the whole concurrency story
+
+`viva_ag_jobs.result_token` is regenerated on **every** claim. It is simultaneously the
+result-submission credential and the idempotency key: a worker whose lease expired and was
+re-claimed holds a stale token and is rejected, so two workers can never both write a result and
+no separate idempotency key exists. The claim itself is a single
+`UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)` — **do not** rewrite it as a
+SELECT followed by an UPDATE; SKIP LOCKED is what gives two concurrent pollers two different jobs.
+`uniq_viva_ag_jobs_active` caps one in-flight job per user at the DB level, plus a 3/day cap in the
+enqueue handler.
+
+### External API — `VIVA_AG_API_TOKEN`
+
+Same shape as the GCN credential (§19): a scoped token branch in `worker/index.js` with a local
+`VIVA_AG_ALLOWED_PATHS` Set, 403 on anything else. Three constraints, all load-bearing:
+
+1. **It must precede the `ch.` branch** — that one matches on prefix and would swallow a token
+   starting `ch.`. Issue tokens as `vag_` + 32 hex.
+2. **Exact match only, no path params** — every parameter travels in the query string or body.
+3. **Distinct tokens per environment** (`VIVA_AG_API_TOKEN` / `VIVA_AG_API_TOKEN_PROD`), or a
+   dev-configured agent could claim and answer real prod users' jobs.
+
+The per-job fencing token rides in an `X-Viva-Ag-Job-Token` header on GET and in the body on POST
+— never a query param, because query strings land in FC/SLS access logs and it gates a medical
+record. **No `/viva-ag/*` response ever returns a `user_id`, openid or nickname**: `job_uid` is
+the only handle, and there is deliberately no "fetch the twin for an arbitrary openid" endpoint,
+so a leaked token can drain the queue but cannot enumerate users.
+
+**The API documents itself**: `GET /viva-ag/docs` (Markdown) and `GET /viva-ag/openapi.json`,
+read at module load from `src/functions/worker/docs/viva-ag-api.md` / `viva-ag-openapi.json`.
+`s.yaml`'s worker uses `code: ./src/functions/worker`, so those files deploy with the function and
+cannot drift from the code. **Keep them in step with any endpoint change** — the spec's paths and
+`VIVA_AG_ALLOWED_PATHS` should agree in both directions.
+
+### Large files never pass through Function Compute
+
+The response envelope base64-encodes binary bodies, so proxying a large PDF would inflate it ~33%,
+buffer it entirely in the 512 MB worker, and hit FC's response ceiling. Every download is a
+**direct-from-OSS presigned GET**; nano only hands out a signature. This also makes HTTP `Range`
+(chunked and resumable transfer) work for free, and means download size is effectively unbounded
+— the 20 MB cap is a miniapp *upload* constraint (`readFile` loads into the JS heap), not a
+download one.
+
+**This bucket refuses a `response-content-type` override** — `400 InvalidRequest`, "Can not
+override response header on content-type" (confirmed live; the signed URL fails outright, it does
+not degrade). Content-Type is therefore fixed at **upload** time: `generatePresignedPutUrl` takes
+an optional real content type, and callers must PUT with exactly the `put_content_type` the
+presign returned or OSS returns `SignatureDoesNotMatch`. `generatePresignedGetUrl` gained an
+optional `filename` that sets an RFC 5987 `Content-Disposition` (these filenames are routinely
+Chinese) — but **no** content-type override; don't re-add one.
+
+### Report files: `pdf` / `md` / `txt` only, and markdown renders in-app
+
+A job carries up to 5 artifacts in `viva_ag_jobs.result_files` (migration
+`migration_viva_ag_result_files.sql`) — typically a rendered PDF plus its `.md` source.
+`result_oss_key` is **kept and still written** (the first file, PDF preferred) so legacy rows and
+the single-file shape keep working; `result_files` is the source of truth.
+
+The allowed set is narrow because the miniapp is the only consumer and has exactly two ways to
+present a file — and **`wx.openDocument` cannot open markdown** (its `fileType` list is
+`doc/docx/xls/xlsx/ppt/pptx/pdf`), so an `.md` handed to it fails in the user's hands. Hence
+`md`/`txt` are downloaded and rendered **in-app**, and `/viva-ag/result-upload-url` rejects
+anything else with `unsupported_file_type` *before* the agent spends the upload.
+
+At submission every key is prefix-confined to `viva-ag-results/{job_uid}/`, type-checked, and
+`headObject`-verified (a key minted but never PUT would become a download button that fails);
+any failure refuses the whole submission so nothing half-committed is delivered. The client
+addresses files by **index** — `oss_key` never leaves the server.
+
+**Rendering the `.md` is a trust boundary.** `mdToHtml()` (new export in `utils/markdown.js`)
+deliberately does not interpret `:::` display-card directives the way `mdToSegments()` does — same
+reason summaries are stripped of them. And `_neutralizeLinks()` rewrites `[text](href)` to plain
+text, because mp-html's `linkTap` calls `wx.navigateTo` for any scheme-less href, which would let
+an external report push the user into an arbitrary page of this miniapp.
+
+### `dots_formulation` (原粒定制) is a contract, and the contract lives in the API doc
+
+The fourth preset asks the external agent for a **28-day / 56-capsule Dots formula** as an `.md`
+file in a fixed, machine-readable format — §8 of `worker/docs/viva-ag-api.md`. Every rule in it is
+mirrored from `handlers/dots.js` (`PLAN_DAYS = 28`, `MAX_DOTS_PER_CAPSULE = 72`, per-dot
+`target_dots_min`/`max` applied to the **daily** total, pulse windows, and `DOT-N7` isolation on
+`N7_ISOLATION_DAY_INDEXES = [9, 10]` where both capsules are `DOT-N7` alone). **Change any of those
+constants and you must change that doc**, or the agent builds against rules nano no longer uses.
+
+**Superseded 2026-08-25 by §36.** Nano originally did **not** parse or validate this file, and the
+formula was an artifact that never touched `nutrition_plans`. Both are now false: `lib/agFormulation.js`
+validates every rule above on submission and rejects a non-conforming formula outright, and an
+expert-approved formula becomes a real plan. The constants-coupling warning in the paragraph above
+still stands, and now binds a third consumer — see §36.
+
+### `health_documents`, not `health_reports`
+
+`health_reports` means "a parsed lab report": mandatory `report_date`, `raw_data` observations,
+`health_events.report_id` children. A discharge PDF has none of those. `health_documents` is
+**twin layer 3, Medical Records** (§34) and is declared as such in
+`docs/architecture/digital-twin.md`.
+
+Delete is a **soft** delete: a running job can hold a 6-hour URL and snapshots document ids in
+`viva_ag_jobs.document_ids`, so hard-deleting either would break it mid-run. Cost is orphaned OSS
+objects; a purge job is an open follow-up.
+
+**Documents are never routed through `/oss/presign`.** That endpoint performs zero authorization
+on `action=get&key=…` and will hand a signed URL for *any* OSS key to any caller holding the app
+token — a live pre-existing hole this feature must not widen. Instead: keys are minted server-side
+under `health-documents/<user_id>/`, registration rejects any key outside the caller's own prefix,
+`oss_key` is never returned to the client (documents are referenced by id), and user-facing URLs
+expire in 300s.
+
+### Result delivery
+
+`deliverTerminalMessage` (exported from `handlers/chat.js`) writes **both** `chat_messages` and a
+`notifications` row — the two-channel model §22 requires. Saved under `persona_type = 'viva'`,
+**never** `'viva_ag'`: chat history is persona-scoped, so a bubble under a persona the chat tab
+never queries would flash once and vanish on reload (§25's "second real bug"). `saveChatMessage`
+and `_deliverTerminalMessage` now return their inserted ids for correlation; every pre-existing
+caller ignores the return.
+
+AG replies are attributed to **"Viva AG"** in the chat via `chat_messages.source = 'viva_ag'`
+(migration `migration_chat_messages_source.sql`), rendered as a label above the bubble like the
+existing `Coach` one. It has to be its own column: `persona_type` would make the row invisible to
+the persona-scoped history query (§25's bug again), and `notification_type` is not durable because
+notifications are read destructively. `handleGetChatHistory`'s three queries all select `source` —
+missing one makes the label vanish on that load path only.
+
+`'viva_ag_result'` and `'viva_ag_failed'` **must stay in `AI_ECHO_TYPES`** (`pages/main/main.js`)
+— both write to `chat_messages` and `notifications`, and a type missing from that Set renders the
+bubble twice.
+
+`result_summary` is **sanitized on ingest**: `:::` display-card fences are stripped, because that
+syntax is interpreted by the miniapp renderer and an external system emitting it could render
+arbitrary UI in the user's chat. Never feed `viva_ag_jobs.result` into a later LLM prompt without
+treating it as untrusted content.
+
+### `lib/twinBundle.js` is AG-only, on purpose
+
+Its fetchers duplicate SQL that also lives in `lib/agenticTools.js` and the four `llmContext`
+builders. Adopting them there is the natural next pass and would be a real improvement — but those
+builders construct the contract 20+ prompt templates, JUDGE grounding and `extractToolGroundTruth`
+consume, and §21/§27 record user-visible regressions from touching exactly that. The duplication
+is a decision, not an oversight.
+
+Conventions the module carries over and must keep: fetchers never throw (a dead source degrades
+that section to `null`/`[]` rather than failing the bundle), biomarkers always from
+`data.validated` (§17), every timestamp through `formatToShanghai()`, and **`DATE` columns cast
+`::text` in SQL** — node-postgres parses a DATE at local midnight, which serializes to a UTC
+instant, so `scheduled_date` for 2026-08-16 shipped as `"2026-08-15T16:00:00.000Z"`, the wrong day
+to any consumer.
+
+### Miniapp
+
+The subtab strip lives **inside** `components/user-health/` (three small WXML edits plus
+component-local `.uh-tab-*` classes — component style isolation means the page's `.inner-tab-*`
+rules are unreachable). The panel body is its own component, `components/viva-ag-panel/`, which is
+what keeps an already-1000-line template from absorbing another feature. Self view only; the coach
+app never passes `viva-ag-enabled`, so it defaults false.
+
+Upload offers two sources via an action sheet, because they have different prerequisites:
+
+- **`wx.chooseMessageFile`** is the only way to obtain a PDF in a Mini Program, and it reads from
+  a WeChat *conversation*, not the device filesystem — the user must forward the file to
+  文件传输助手 first, which the empty state has to say.
+- **`wx.chooseMedia`** (photo of a paper record) uses the album/camera scope the chat tab's image
+  upload already relies on, so it needs no additional declaration and works today.
+
+**Platform prerequisite for the PDF path (2026-08-23):** `chooseMessageFile` requires the
+「选中的文件」 scope to be declared in the miniapp's **用户隐私保护指引** in the MP console
+(小程序后台 → 设置 → 服务内容声明). Without it WeChat rejects the call outright —
+`chooseMessageFile:fail api scope is not declared in the privacy agreement`, errno 112 — and
+**no runtime consent flow can rescue it**: `app.js`'s `onNeedPrivacyAuthorization` handler never
+fires, because the failure is a missing *declaration*, not a missing *consent*. It is not a
+`requiredPrivateInfos` entry either (that list only accepts location-family APIs plus
+`chooseAddress`). The only fix is the console declaration.
+
+`_choosePdf()` therefore distinguishes three outcomes, following `fetchWechatAddress`'s precedent
+in `pages/main/main.js`: silent on cancel/deny, an explanatory modal pointing at the photo path
+on a privacy/scope error, a generic toast otherwise. **Never re-add a bare `fail: () => {}`** —
+that is what made the button look dead when this first shipped.
+
+Neither picker can be driven by `miniprogram-automator` (both open native pickers), so automate
+`_uploadDocument` directly with a file staged into `wx.env.USER_DATA_PATH` and do the real pick
+manually once.
+
+Job polling is a 15s timer inside the panel, running only while a job is in flight — deliberately
+not hooked into `main.js`'s 3s notification poll, which is tuned for chat delivery.
+
+### Clarifying questionnaires — the agent can ask the user (2026-08-27)
+
+The agent can **park** a claimed job and push back a short questionnaire instead of guessing, then
+resume once the user answers. New status **`awaiting_input`**; new endpoint
+`POST /viva-ag/jobs/questionnaire`.
+
+Almost nothing was built. Nano already had a server-defined questionnaire system — four tables,
+five input widgets, a chat-tab renderer, a `questionnaire_ready` client trigger, and a precedent
+for a runtime-generated form (`type='dynamic'`, Viva's own `ask_questions`). Crucially
+`twinBundle.js` **already** merged completed answers into every bundle, so the return path existed
+before the outbound one did. Only the asking, the parking and the resume trigger are new.
+
+Things that are load-bearing:
+
+- **`uniq_viva_ag_jobs_active` must include `awaiting_input`** — a parked job still owns the
+  user's one in-flight slot. `viva_ag_jobs.status` has no CHECK constraint (the value set is a
+  comment), so the migration's real work is that index. Verify the predicate on a live DB: a
+  `DROP`/`CREATE` pair that no-ops fails silently.
+- **The lease is released, not held.** No lease length covers a person answering a form, so any
+  worker re-claims it fresh. Workers stay stateless — the answers travel in the bundle. After a
+  successful park the caller has lost its lease and must stop working on the job.
+- **The attempt is refunded.** Asking is progress, not a failed delivery. Rounds (2 per job) bound
+  the loop, not `attempts`.
+- **`lib/agQuestionnaire.js` is a security boundary, not a formatting check.**
+  `questionnaire_questions` is a write path into user data — `save_target` writes
+  `users.<save_field>`, merges `bio_data`, or **inserts a biomarkers row**, and `completion_check`
+  makes a question auto-skip (so a form could self-complete and resume the job having asked
+  nothing). Those four are **never sourced from the payload**; `createDynamicQuestionnaire` writes
+  them `NULL`/`'{}'`. Same rule strips `config.other_key` and rejects an option keyed `other`.
+  Treat any change that starts reading them from the agent as a regression.
+- **`viva_ag_questionnaire` must stay in `AI_ECHO_TYPES`** (`pages/main/main.js`) — it writes both
+  `chat_messages` and `notifications`, so a type missing from that Set renders the bubble twice.
+  The paired `questionnaire_ready` row is what makes the chat tab fetch the form, and `main.js`
+  already suppresses its own bubble for that type.
+- **The resume hook is injected from `index.js`**, like `saveChatMessage`, so
+  `handlers/questionnaires.js` never requires `handlers/viva_ag.js` — and it is **awaited**, per
+  the comment already beside it (FC 3.0 freezes the context on return; an un-awaited promise there
+  was confirmed live never to complete).
+- The user answers in the **chat tab**, reusing the one renderer every questionnaire in the app
+  uses. The panel only hands off (`gotochat` → `handleAgGoToChat`).
+
+`bundle_version` is now **2**: additive `job_questionnaires` (job-scoped rounds + answers,
+`answer: null` = asked-but-unanswered), distinct from `questionnaire_context`'s whole-user merge.
+AG answers deliberately feed normal chat too.
+
+### Files
+
+New: `src/schemas/migration_viva_ag_questionnaire.sql`, `worker/lib/agQuestionnaire.js`.
+Modified for this pass: `worker/handlers/{viva_ag,questionnaires}.js`, `worker/lib/twinBundle.js`,
+`worker/index.js`, `worker/docs/viva-ag-{api.md,openapi.json}` (§7b),
+`nano-miniapp/components/{viva-ag-panel,user-health}/*`, `nano-miniapp/pages/main/main.{js,wxml}`.
+
+Originally (2026-08-23):
+New: `src/schemas/migration_{users_viva_ag_expiry,health_documents,viva_ag_jobs,viva_ag_result_files}.sql`;
+`worker/handlers/{viva_ag,viva_ag_docs,health_documents}.js`;
+`worker/lib/{twinBundle,vivaAgAccess}.js`; `worker/docs/viva-ag-{api.md,openapi.json}`;
+`nano-miniapp/components/viva-ag-panel/`. Modified: `worker/index.js` (token branch + routes),
+`worker/lib/{persona,oss}.js`, `worker/handlers/{chat,viva_subscription,persona_subscriptions}.js`,
+`s.yaml`/`s-prod.yaml`, `admin-panel/src/tabs/UsersTab.jsx`,
+`nano-miniapp/components/user-health/*`, `nano-miniapp/pages/main/main.{js,wxml}`,
+`nano-miniapp/utils/markdown.js` (`mdToHtml`), `utils/config.js` (VERSION).
+
+Full detail: [docs/architecture/viva-ag.md](docs/architecture/viva-ag.md).
+
+
+## 36. AI 精准营养素 — the AG Dots Ordering Flow (2026-08-25)
+
+One purchase in GCN's Aeviva store drives a chain that crosses both repos:
+
+```
+GCN store   buy 'AI 精准营养素'                  → order: pending_payment
+GCN         payment confirmed                    → order: awaiting_formulation   [new status]
+GCN → nano  /viva-subscription-checkout-confirmed → grants viva + viva_ag
+nano        AG subtab: upload records, submit dots_formulation      (§35, unchanged)
+AG agent    POST /viva-ag/jobs/result
+nano        parse + validate → viva_ag_formulations 'valid'
+nano → GCN  POST /api/mall/aeviva/formulation-ready
+GCN         opens formulation_reviews, notifies experts → order: expert_review
+GCN expert  claims, reads the nano snapshot, approves  → order: compounding
+GCN → nano  POST /ag-formulation-approved         → nutrition_plans row, status 'approved'
+GCN         compounds, ships
+nano        user scans the box → POST /box-claim   → 56 schedules, plan 'active', day 1 = today
+```
+
+Most of this is pre-existing machinery on both sides (§35's job queue; GCN's `formulation_reviews`,
+`nutrition_expert` role and processing centre from its migrations 0060-0076). Four things were
+genuinely missing, and they are what this section is about.
+
+### Nano now parses and validates the formula — §35 said it never would
+
+That was correct while the formula was a read-only artifact. It stopped being correct the moment an
+approved formula gets compounded into physical capsules, because then `lib/agFormulation.js` is the
+**only** thing between an LLM-authored table and something a person swallows.
+
+Two properties it must keep:
+
+1. **Reject, never repair.** A count outside a dot's `target_dots_min…max` is refused, not clamped;
+   a bad `total_dots` is refused, not recomputed. Either repair would ship a formula nobody
+   authored. Violations are collected and returned in full, and the user is asked to re-run.
+2. **No DB, no I/O.** Every rule is a pure function over `(parsed, dotsFormulary)`, so the whole
+   rule set is testable without a database.
+
+`result.formulation` (the JSON mirror) is now the contract; the `.md` is a documented fallback. The
+job still succeeds either way — the agent's analysis and report reach the user regardless — and the
+response carries `formulation_accepted` plus the violations. **`worker/docs/viva-ag-api.md` §8 was
+rewritten to say all of this**; it ships inside the function, so it cannot drift, but only if it is
+edited alongside the rules.
+
+The product-model constants moved to **`lib/dotsProductModel.js`** so `handlers/dots.js` and the
+validator share one definition. §35's warning now binds three consumers, not two: change
+`PLAN_DAYS`, `MAX_DOTS_PER_CAPSULE`, `N7_KEY` or `N7_ISOLATION_DAY_INDEXES` and you must change
+§8 of the API doc in the same commit.
+
+### The plan is created on approval and activated on scan
+
+Expert approval inserts a `nutrition_plans` row at the new **`'approved'`** status with **zero**
+`nutrition_schedules`. The 56 schedule rows are written when the user scans the box, which is also
+when `start_date` is rewritten to that day — so the cycle starts when the capsules are in hand, not
+while they are being compounded and shipped.
+
+`'approved'` is deliberately not a reuse of `'pending'`: that value means "an async formulation is
+mid-flight and may never land" and is written and read by `_handleFormulaDotsAgentic`'s own flow.
+`handleGetNutritionPlan` filters `status = 'active'`, so an approved-not-yet-scanned plan is
+invisible to the Dots subtab for free — the user keeps seeing their previous plan until the box
+arrives.
+
+**`_commitAgFormulation` is a deliberate sibling of `_commitNutritionPlan`, not a reuse of it.**
+That function takes a *steady-state* AM/PM recipe and EXPANDS it across the cycle, applying
+`_applyPulseSchedule`, `_capRecipeTotal` and the `DOT-N7` isolation override day by day. An AG
+formula already encodes all 56 capsules explicitly — pulse days, isolation days and all — so
+running it through that expansion applies every rule a second time and flattens the per-day
+variation the agent produced. The capsules are written verbatim; the fill cap is re-applied
+defensively only. Do not "simplify" these two into one.
+
+### The box scan (`POST /box-claim`)
+
+`boxes` previously existed only to back a public ingredient page. It now carries
+`claimed_by_user_id` / `claimed_at` / `nutrition_plan_id`, and `box_batches.ag_formulation_id` lets
+a batch be snapshotted from an approved formulation rather than the user's *active* plan — which
+for this flow would be the previous formula.
+
+Three behaviours that are load-bearing:
+
+- **Idempotent.** A second scan returns the plan the first made. A user double-tapping must not get
+  two overlapping 28-day cycles.
+- **Non-transferable.** `not_your_box` if the batch belongs to someone else. These capsules are
+  compounded from one person's biomarkers; taking someone else's is a real safety issue, not a
+  permissions nicety.
+- **A second box from the same batch joins the existing plan** rather than regenerating the
+  schedule.
+
+Both a bare `WVB…` code and the public page's URL are accepted, because a WeChat scan returns
+either depending on what was encoded.
+
+### Entitlement: `product_type` on the subscription catalog
+
+Exactly the upgrade path `migration_users_viva_ag_expiry.sql`'s comment prescribed — one column on
+`viva_subscription_plans` and `viva_subscription_codes`, snapshotted at mint like `duration_days`,
+plus a branch in `_extendUserSubscription`. No new endpoint and no new `GCN_ALLOWED_PATHS` entry;
+`/viva-subscription-checkout-confirmed` already takes `plan_key`.
+
+**A `viva_ag` plan grants BOTH windows.** `requireVivaAgAccess()` is a composite of
+effective-persona-is-viva AND a live Viva grant AND a live AG grant, so granting only
+`viva_ag_expires_at` leaves a paying buyer locked out of the subtab they just bought. Two
+`persona_subscription_grants` audit rows are written so the admin history shows it.
+
+### The review stays in GCN
+
+Nano exposes `GET /ag-formulation-review-snapshot?formulationId=&openid=` (GCN-allowlisted, same
+`{valid, reason}` always-200 contract as its siblings). The twin half of both review snapshots is
+now one shared **`_buildReviewTwinContext`** in `dots.js` — two endpoints showing reviewers
+different evidence would be the worst failure mode available here.
+
+**An expert's adjustment is re-validated by nano** through the same validator. The reviewer UI can
+be wrong too, and this recipe is about to become physical capsules; "a human approved it" is not a
+reason to skip the only check there is. In GCN's expert dashboard `DOT-N7` is read-only (its dosing
+is system-controlled), and the table edits **daily** counts — what a dot's min/max actually compares
+against — then rebuilds the 56 capsules preserving each dot's AM/PM split.
+
+### Why the order needs a waiting state
+
+The sequence is **inverted** relative to GCN's existing custom-formulation product. There the recipe
+existed first and checkout priced it per-dot from nano's committed plan. Here the buyer pays first
+and the recipe arrives days later. Consequences, all of them forced:
+
+- the bundle is **flat-priced** — there is no recipe to price at checkout;
+- `order_item_custom_formulations.nano_nutrition_plan_id` / `recipe_snapshot` had to become
+  **nullable**;
+- the order waits in **`awaiting_formulation`**, a new status before `expert_review`. Not a reuse of
+  `'paid'`, which `handleOrderShip` accepts — an order parked there could ship before any formula
+  existed.
+- `recipe_snapshot` stays **write-once** (GCN's own migration 0076 depends on it; the printed label
+  QR resolves against it). An expert's edit goes to `adjusted_recipe`, never there.
+
+Cross-repo notifies are **fire-and-forget in both directions**, matching the rest of this
+integration: the formula is safely recorded before GCN hears about it, and the expert's decision is
+committed before nano hears about it. A `valid` formulation with a NULL `gcn_order_id` is the query
+that finds the ones that didn't land — there is no retry job.
+
+### Files
+
+**nano** — new: `src/schemas/migration_{subscription_product_type,viva_ag_formulations,nutrition_plans_ag_status,boxes_claim}.sql`,
+`worker/lib/{agFormulation,dotsProductModel}.js`, `worker/handlers/ag_formulation.js`.
+Modified: `handlers/{viva_subscription,viva_ag,dots,boxes}.js`, `worker/index.js`,
+`worker/docs/viva-ag-{api.md,openapi.json}`, `nano-miniapp/pages/main/*`,
+`components/viva-ag-panel/*`, `utils/config.js` (VERSION).
+
+**GCN** — new: `migration_0078_aeviva_ai_precision_nutrition.sql`, `handleFormulationReady` +
+`openFormulationReview` + `handleAgFormulationBundleOrderCreate` in `mall/index.js`.
+Modified: `mall/formulation-reviews.js`, `site/aeviva/dashboard-expert.html`, `s.yaml`/`s-prod.yaml`
+(`NANO_SERVICE_TOKEN` for the mall function).
+
+Full detail: [docs/architecture/ag-dots-ordering.md](docs/architecture/ag-dots-ordering.md).
+
+## 37. AI Store-Product Recommendation (aeviva-china, 2026-08-25)
+
+Viva can suggest the Aeviva GCN storefront's **non-Dots** products (supplements, skincare,
+wellness devices) inside a health conversation. Reactive only: it never volunteers one.
+
+### The blocker was an instruction, not a gap
+
+`llmContext` had no commerce field and `AGENTIC_TOOL_DEFS` no commerce tool, but neither mattered
+— the always-injected `fact-constraint-core` block (§26) said every ingredient suggestion must
+come from the Dots formulary and that **no purchase channel may ever be named**. Catalog data in
+the prompt would have been refused.
+
+That rule is **narrowed, not removed**: recommend from the Dots formulary **or** a catalog
+explicitly provided in this prompt, never from training-data memory. It lives in **three places
+that must change together** — the `knowledge_entries` rows (both personas,
+`migration_knowledge_store_products.sql`), `lib/knowledgeBase.js`'s `FALLBACK_ESSENTIAL_BLOCK`,
+and `prompts/chat/factConstraint.js`. If the two fallbacks drift back, a transient DB error
+silently returns Viva to refusing to discuss any product at all.
+
+The company-business-info ban (prices, stock, delivery, promotions) is **untouched and still
+absolute** — see "the model picks, the server writes" below for why it did not need loosening.
+
+### AI profiles are authored in GCN, and are not the marketing copy
+
+`products.description` already carries `zh`/`highlights_zh`/`details_zh`. **Never feed it to the
+model.** It is written to convert a shopper already looking at the item; handed to a health LLM it
+becomes personalized medical advice assembled out of unvetted promotional claims.
+
+`product_ai_profiles` (GCN `migration_0079`) is the separate, reviewed record: `summary_zh`,
+`indications_zh`, `key_actives_zh`, `cautions_zh`, `allergens_zh`, `evidence_level`, and
+**`sub_age_targets`** using this file's §11 canonical keys. That last field is what earns the
+table — it makes "which products fit this user's elevated dimension" a code filter, exactly as
+`dots.sub_age_target` already does. Values are validated app-side against the fixed four.
+
+`ai_recommendable` is **admin-only** and is rejected without a `reviewed_by` — the gate
+`knowledge_entries` enforces before an entry may go active, and the precedent of
+`skus.grants_partner_type` (migration_0053), the one SKU field that rejects its owning supplier.
+A supplier's write omits the flag entirely rather than defaulting it false, so routine copy edits
+can never silently un-approve a cleared product.
+
+### Reactive-only is structural, not an instruction
+
+`prompts/chat/intentClassifier.js`'s `required_data` enum gained **`store_products`**, so the
+catalog is fetched only when the classifier saw the user themselves ask what they could obtain.
+Every *other* pre-fetch in that bundle is unconditional precisely so a classifier miss can't blind
+the model — **here a miss is the desired failure mode.** With no catalog,
+`getProductRecommendBlock` returns `''`, the model is never taught the vocabulary, and the
+essential block's parenthetical collapses the rule back to Dots-only. Also gated on a GCN-linked
+channel (`GCN_LINKED_CHANNEL_KEYS` in `handlers/chat.js`, mirroring `handlers/login.js`'s copy).
+
+### The model picks, the server writes
+
+The `recommend_product` action tail carries a `sku_id` and one sentence of reasoning and **nothing
+else**. `_validateProductRecommendations` resolves each id against the snapshot the prompt was
+built from — unknown ids are dropped silently, never repaired — and `_buildProductCardBlock`
+(`handlers/dots.js`, beside `_buildFormulaChartBlock`) renders the `:::product` card from that
+same snapshot. Same rule as `:::formula`: the card cannot disagree with what checkout will charge.
+
+**Prices are deliberately never shown to the model** (`getProductRecommendBlock` omits them) — a
+number it was never given is a number it cannot leak. This is why the price/stock ban above needed
+no loosening.
+
+### Allergies are a code filter, not a prompt rule
+
+`_filterProductsByUserFacts` (`handlers/chat.js`) drops any product whose `allergens_zh`/
+`cautions_zh` collide with an active `user_memory_facts` row of category `allergy` or
+`dietary_restriction` (§27) **before the catalog is rendered into the prompt**, so there is nothing
+left for the model to get wrong. Matching is bidirectional substring containment and deliberately
+biased toward over-suppression.
+
+### PLAN and JUDGE both had to be taught the tail
+
+Otherwise they reject it as an unsupported claim and burn REVISE rounds — the exact failure
+`remember_fact` hit in §27. `judgeTemplate.js` now states that the tail is a control action
+verified in code against `store_products`, and that the draft's **absence** of a price is correct
+rather than an omission; `planTemplate.js` states that choosing a product is a merchandising
+decision needing no evidence-level backing (a health claim *about* it still does).
+`detectFakeStoreProduct` (`lib/factCheck.js`) covers the remaining gap — a product named in prose
+but never actually picked, which never becomes a card but reads to the user exactly like one.
+`detectAllRisks`'s signature widened to `(reply, dotsFormulary, storeProducts)`; both call sites
+pass it.
+
+### Tap-through reuses everything
+
+`handleProductCardTap` → `_openAevivaStoreGated({intent:'view_product', sku_id})` → the existing
+`webview_tokens.context` bridge → GCN's `dashboard.html`, which routes it into its **existing**
+`?sku=` opener (`gcn_deep_link_sku`/`maybeOpenSharedSku`), silent no-op included when the item
+isn't listed in that buyer's own bound store. It `await loadMall()` rather than calling the opener
+directly: the page's own `loadMall()` is fired un-awaited, so the opener would otherwise race an
+empty catalog.
+
+A native tap handler is **mandatory, not stylistic** — `_onMdLinkTap` can only offer to *copy* an
+http(s) URL, because a WeChat miniapp cannot open an arbitrary external link from chat prose.
+
+### Catalog is per-user and store-scoped
+
+`GET /api/mall/nano/ai-catalog` (GCN, `requireNanoService`) resolves the user's bound store via
+`partner_bindings` (`binding_type='consumer_store'` — **not** the superseded
+`consumer_store_bindings`) and delegates listing to `handleStoreItems` rather than reimplementing
+it, so VMI/MDC cascade availability stays consistent with what the storefront actually shows.
+Recommending an item the user's bound store doesn't list would dead-end them on an empty grid.
+**Always returns 200** — unbound, unlinked, or failing all yield `{items: []}`, following
+`handleNanoFocusTemplates`' contract. `fetchAiCatalog` (`lib/gcnClient.js`) never throws either and
+self-limits to 4s.
+
+Every SKU with its own dedicated purchase flow is excluded (`is_custom_formulation`,
+`is_ag_formulation_bundle`, `viva_subscription_plan_key`, `grants_partner_type`, `package_only`,
+`is_parent`) — surfacing one as "here's something for your sleep" would route a shopper into a
+flow they have no business entering from a chat reply.
+
+### Files
+
+**nano** — new: `src/schemas/migration_knowledge_store_products.sql`,
+`worker/prompts/chat/productRecommendBlock.js`, `tests/store-product-recommendation.test.js`.
+Modified: `worker/lib/{gcnClient,knowledgeBase,factCheck,agenticChat}.js`,
+`worker/prompts/chat/{intentClassifier,factConstraint,planTemplate}.js`,
+`worker/prompts/viva/judgeTemplate.js`, `worker/prompts/{nano,viva}/chat/nutrition.js`,
+`worker/handlers/{chat,dots}.js`, `nano-miniapp/utils/markdown.js`,
+`nano-miniapp/pages/main/main.{js,wxml,wxss}`, `utils/config.js` (VERSION).
+
+**GCN** — new: `migration_0079_product_ai_profiles.sql`; `handleProductAiProfileGet`/`Update` +
+`handleNanoAiCatalog` in `mall/index.js`. Modified:
+`site/aeviva/ext-catalog-editor.js` (the AI 推荐资料 section), `site/aeviva/dashboard.html`.

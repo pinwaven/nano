@@ -7,6 +7,7 @@
 --     channel_id (both NULL for onboarding too).
 --  2. Admin panel / coach app questionnaire lists to filter/label LLM-generated ones
 --     separately for visibility, and a future cleanup policy to target only this type.
+-- @requires: migration_questionnaire_system.sql
 ALTER TABLE questionnaires DROP CONSTRAINT IF EXISTS questionnaires_type_check;
 ALTER TABLE questionnaires ADD CONSTRAINT questionnaires_type_check
     CHECK (type IN ('onboarding', 'custom', 'dynamic'));

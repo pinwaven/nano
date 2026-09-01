@@ -1,4 +1,4 @@
-<view class="main {{theme === 'light' ? 'theme-light' : ''}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
+<view class="main fs-{{textScale}} {{theme === 'light' ? 'theme-light' : ''}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
 
   <!-- ── Status bar spacer ── -->
   <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
@@ -81,6 +81,21 @@
         <text class="menu-item-label">{{theme === 'dark' ? t.lightMode : t.darkMode}}</text>
       </view>
       <view class="menu-divider"></view>
+      <!-- Text size. A stepper, not a .menu-item: setTextScale deliberately leaves menuOpen
+           alone (every menu-item handler clears it), so you can tap through the levels and
+           watch the text behind the menu resize. The four A glyphs keep hardcoded sizes on
+           purpose — they advertise the choice, so they must not resize themselves. -->
+      <view class="menu-fs-row">
+        <text class="menu-item-icon">A</text>
+        <text class="menu-item-label">{{t.textSizeMenu}}</text>
+        <view class="menu-fs-steps">
+          <view class="menu-fs-step {{textScale === 0 ? 'menu-fs-step-on' : ''}}" catchtap="setTextScale" data-level="0"><text class="menu-fs-a0">A</text></view>
+          <view class="menu-fs-step {{textScale === 1 ? 'menu-fs-step-on' : ''}}" catchtap="setTextScale" data-level="1"><text class="menu-fs-a1">A</text></view>
+          <view class="menu-fs-step {{textScale === 2 ? 'menu-fs-step-on' : ''}}" catchtap="setTextScale" data-level="2"><text class="menu-fs-a2">A</text></view>
+          <view class="menu-fs-step {{textScale === 3 ? 'menu-fs-step-on' : ''}}" catchtap="setTextScale" data-level="3"><text class="menu-fs-a3">A</text></view>
+        </view>
+      </view>
+      <view class="menu-divider"></view>
       <view class="menu-item" bindtap="toggleLang">
         <text class="menu-item-icon">{{lang === 'zh' ? '🇺🇸' : '🇨🇳'}}</text>
         <text class="menu-item-label">{{lang === 'zh' ? 'English' : '中文'}}</text>
@@ -101,7 +116,11 @@
   <view class="tab-content">
 
     <!-- ════ CHAT ════ -->
-    <view class="chat-tab{{tab !== 'chat' ? ' tab-hidden' : ''}}">
+    <view class="chat-tab{{tab !== 'chat' ? ' tab-hidden' : ''}}"
+          bindtouchstart="onTabTouchStart"
+          bindtouchmove="onTabTouchMove"
+          bindtouchend="onTabTouchEnd"
+          bindtouchcancel="onTabTouchEnd">
 
       <scroll-view
         class="chat-messages"
@@ -172,6 +191,9 @@
                   bindload="_onChatImageLoad"
                 />
                 <text wx:if="{{item.role === 'user' && item.content}}" class="msg-text" selectable="true">{{item.content}}</text>
+                <!-- Attribution for a reply that came from the external Viva AG agent rather
+                     than Viva itself. Same shape as the Coach label above. -->
+                <text wx:if="{{item.source === 'viva_ag'}}" class="msg-ag-label">Viva AG</text>
                 <block wx:if="{{item.role !== 'user'}}">
                   <view wx:for="{{item.segments}}" wx:for-item="seg" wx:for-index="si" wx:key="si" class="msg-seg">
                     <mp-html
@@ -229,6 +251,99 @@
                         <text class="dcard-id">{{di.id}}</text>
                         <text wx:if="{{di.name}}" class="dcard-name">{{di.name}}</text>
                         <text wx:if="{{di.note}}" class="dcard-note">{{di.note}}</text>
+                      </view>
+                    </view>
+                    <view wx:elif="{{seg.t === 'formula'}}" class="fcard">
+                      <view class="fcard-head">
+                        <text class="fcard-title">{{t.formulaCardTitle}}</text>
+                        <text class="fcard-note">{{t.formulaEvalNote}}</text>
+                      </view>
+                      <view wx:for="{{seg.groups}}" wx:for-item="fg" wx:for-index="fgi" wx:key="days" class="fcard-group">
+                        <view wx:if="{{fg.days}}" class="fcard-days">
+                          <text class="fcard-daylabel">{{t.formulaDayWord}} {{fg.days}}</text>
+                          <text wx:if="{{fg.kind === 'n7'}}" class="fcard-daytag">{{t.formulaResetDay}}</text>
+                        </view>
+                        <view class="fcard-row">
+                          <text class="fcard-slot">{{t.formulaAm}}</text>
+                          <view class="fcard-track">
+                            <view
+                              wx:for="{{fg.items}}"
+                              wx:for-item="fi"
+                              wx:for-index="fk"
+                              wx:key="key"
+                              class="fcard-seg"
+                              style="width:{{fi.amPct}}%;background:{{fi.color}}"
+                            ></view>
+                          </view>
+                          <text class="fcard-num">{{fg.am}}</text>
+                        </view>
+                        <view class="fcard-row">
+                          <text class="fcard-slot">{{t.formulaPm}}</text>
+                          <view class="fcard-track">
+                            <view
+                              wx:for="{{fg.items}}"
+                              wx:for-item="fi"
+                              wx:for-index="fk"
+                              wx:key="key"
+                              class="fcard-seg"
+                              style="width:{{fi.pmPct}}%;background:{{fi.color}}"
+                            ></view>
+                          </view>
+                          <text class="fcard-num">{{fg.pm}}</text>
+                        </view>
+                        <view class="fcard-legend">
+                          <view wx:for="{{fg.items}}" wx:for-item="fi" wx:for-index="fk" wx:key="key" class="fcard-leg">
+                            <view class="fcard-swatch" style="background:{{fi.color}}"></view>
+                            <text class="fcard-leg-name">{{fi.name}}</text>
+                            <text class="fcard-leg-num">{{fi.am}}·{{fi.pm}}</text>
+                          </view>
+                        </view>
+                        <text class="fcard-foot">{{t.formulaTotalLabel}} {{fg.total}}</text>
+                      </view>
+                      <text wx:if="{{seg.cycleDays}}" class="fcard-cycle">{{seg.cycleDays}}{{t.formulaDaysUnit}} · {{seg.cycleCapsules}}{{t.formulaCapsulesUnit}}</text>
+                      <view
+                        wx:if="{{seg.labelUrl}}"
+                        class="fcard-label"
+                        bindtap="handleFormulaLabel"
+                        data-url="{{seg.labelUrl}}"
+                      >
+                        <text>{{t.formulaLabelCta}}</text>
+                      </view>
+                      <view
+                        wx:if="{{seg.planId && isAeviva && seg.orderMode === 'submit'}}"
+                        class="fcard-cta"
+                        bindtap="handleFormulaSubmit"
+                        data-plan="{{seg.planId}}"
+                      >
+                        <text>{{t.formulaSubmitCta}}</text>
+                      </view>
+                      <view
+                        wx:elif="{{seg.planId && isAeviva && seg.orderMode === 'buy'}}"
+                        class="fcard-cta"
+                        bindtap="handleFormulaOrder"
+                        data-plan="{{seg.planId}}"
+                      >
+                        <text>{{t.formulaOrderCta}}</text>
+                      </view>
+                      <text wx:elif="{{seg.orderMode === 'ag'}}" class="fcard-agnote">{{t.formulaAgPending}}</text>
+                    </view>
+                    <view wx:elif="{{seg.t === 'product'}}" class="pcard">
+                      <text class="pcard-title">{{t.productCardTitle}}</text>
+                      <view
+                        wx:for="{{seg.items}}"
+                        wx:for-item="pi"
+                        wx:for-index="pk"
+                        wx:key="sku"
+                        class="pcard-row"
+                        bindtap="handleProductCardTap"
+                        data-sku="{{pi.sku}}"
+                      >
+                        <view class="pcard-main">
+                          <text class="pcard-name">{{pi.name}}</text>
+                          <text wx:if="{{pi.reason}}" class="pcard-reason">{{pi.reason}}</text>
+                        </view>
+                        <text class="pcard-price">{{pi.price}}</text>
+                        <text class="pcard-arrow">›</text>
                       </view>
                     </view>
                   </view>
@@ -447,15 +562,23 @@
         mode="self"
         is-guest="{{isGuest}}"
         theme="{{theme}}"
+        text-scale="{{textScale}}"
+        viva-ag-enabled="{{vivaAgActive}}"
         bindchooseavatar="handleHealthChooseAvatar"
         bindguesttap="openGuestSheet"
+        bind:gotochat="handleAgGoToChat"
+        bind:textscalestep="onTextScaleStep"
         bind:profileUpdated="onProfileUpdated">
       </user-health>
     </view>
     <!-- end HEALTH -->
 
     <!-- ════ PLANS + DOTS ════ -->
-    <view class="plans-tab{{tab !== 'plans' ? ' tab-hidden' : ''}}">
+    <view class="plans-tab{{tab !== 'plans' ? ' tab-hidden' : ''}}"
+          bindtouchstart="onTabTouchStart"
+          bindtouchmove="onTabTouchMove"
+          bindtouchend="onTabTouchEnd"
+          bindtouchcancel="onTabTouchEnd">
 
       <view class="inner-tab-bar">
         <view class="inner-tab {{plansDotsSubTab==='dots'?'inner-tab-active':''}}" bindtap="switchPlansDotsSubTab" data-tab="dots">
@@ -552,7 +675,10 @@
       </block>
       <scroll-view wx:elif="{{plansDotsSubTab==='dots'}}" scroll-y class="dots-subtab-scroll">
 
-        <view wx:if="{{!neoBound && !isGuest}}" class="guest-lock-card neo-bind-card" bindtap="handleBindNeoDevice">
+        <!-- Neo dispenser is not shipping yet, so the bind prompt is off behind neoAvailable
+             (permanently false in data). Kept rather than deleted: nothing else about the
+             dispenser changed, and this is the one entry point to it. -->
+        <view wx:if="{{neoAvailable && !neoBound && !isGuest}}" class="guest-lock-card neo-bind-card" bindtap="handleBindNeoDevice">
           <text class="guest-lock-icon">⬢</text>
           <text class="guest-lock-title">{{t.neoBindTitle}}</text>
           <view class="guest-lock-btn"><text>{{t.neoBindBtn}}</text></view>
@@ -591,10 +717,59 @@
           </view>
         </view>
 
-        <view wx:if="{{!neoBound && isAeviva && !isGuest}}" class="order-dots-card" bindtap="handleOrderDots">
-          <text class="order-dots-title">{{t.orderDotsTitle}}</text>
-          <text class="order-dots-detail">{{t.orderDotsDetail}}</text>
-          <view class="order-dots-btn"><text class="order-dots-btn-text">{{t.orderDotsBtn}}</text></view>
+        <!-- ── My dots packages ────────────────────────────────────────────────────────────
+             One row per journey, merged server-side from the GCN order and nano's own formula
+             (handlers/dots.js, _mergeFormulationPackages). This is the whole point of the
+             feature: where a user's capsules are, without opening the store webview.
+             Above the order card, so "where are mine" reads before "buy another". -->
+        <view wx:if="{{isAeviva && !isGuest && packages.length > 0}}" class="pkg-section">
+          <text class="pkg-section-title">{{t.pkgSectionTitle}}</text>
+          <view wx:for="{{packages}}" wx:key="key" class="pkg-card">
+            <view class="pkg-card-hdr">
+              <text class="pkg-name">{{item.name}}</text>
+              <text class="pkg-stage pkg-stage-{{item.stage}}">{{item.stageLabel}}</text>
+            </view>
+            <text wx:if="{{item.meta}}" class="pkg-meta">{{item.meta}}</text>
+            <view wx:if="{{item.tracking_number}}" class="pkg-track" catchtap="handleCopyPackageTracking" data-num="{{item.tracking_number}}">
+              <text class="pkg-track-text">{{item.trackingLabel}}</text>
+              <text class="pkg-track-copy">{{t.copy}}</text>
+            </view>
+            <view wx:if="{{item.can_submit && item.submit_plan_id}}" class="pkg-cta" catchtap="handlePackageSubmit" data-order="{{item.order_id}}" data-plan="{{item.submit_plan_id}}">
+              <text class="pkg-cta-text">{{t.pkgUseFormulaBtn}}</text>
+            </view>
+            <text wx:elif="{{item.can_submit}}" class="pkg-hint">{{t.pkgNeedsFormulaHint}}</text>
+            <view wx:elif="{{item.can_scan}}" class="pkg-cta pkg-cta-ghost" catchtap="handleScanBox">
+              <text class="pkg-cta-text">{{t.pkgScanBtn}}</text>
+            </view>
+            <view wx:elif="{{item.can_order && item.plan_id}}" class="pkg-cta" catchtap="handleFormulaOrder" data-plan="{{item.plan_id}}">
+              <text class="pkg-cta-text">{{t.pkgOrderBtn}}</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- The one way into ordering dots from this tab, and it only ever offers the tool.
+             Buying without a formula is a real flow (§28c parks the order at
+             awaiting_formulation) but it hands the buyer back this same job one screen later, and
+             once a formula DOES exist the package row above already carries 按此配方下单 — which
+             is strictly better, because it names the plan and GCN prices that exact recipe.
+             A second card next to it would be a worse route to the same product.
+
+             Hidden while a package is in flight: GCN's formulation_already_in_progress guard
+             would reject the purchase anyway. -->
+        <view wx:if="{{!neoBound && isAeviva && !isGuest && !hasPackageInFlight && !hasProposedFormula}}" class="order-dots-card" bindtap="handleGoFormulate">
+          <text class="order-dots-title">{{t.formulateFirstTitle}}</text>
+          <text class="order-dots-detail">{{t.formulateFirstDetail}}</text>
+          <view class="order-dots-btn"><text class="order-dots-btn-text">{{t.formulateFirstBtn}}</text></view>
+        </view>
+
+        <!-- Scan the box you received to start its 28-day cycle. Shown only to a real (non-guest)
+             user on the Aeviva channel, where the AI Precision Nutrition flow actually exists. -->
+        <view wx:if="{{isAeviva && !isGuest}}" class="scan-box-card" bindtap="handleScanBox">
+          <view class="scan-box-main">
+            <text class="scan-box-title">{{t.scanBoxTitle}}</text>
+            <text class="scan-box-detail">{{t.scanBoxDetail}}</text>
+          </view>
+          <text class="scan-box-icon">⌗</text>
         </view>
 
         <view class="dots-header">
@@ -922,7 +1097,11 @@
     </view>
 
     <!-- ════ STORE ════ -->
-    <view class="store-tab{{tab !== 'store' ? ' tab-hidden' : ''}}">
+    <view class="store-tab{{tab !== 'store' ? ' tab-hidden' : ''}}"
+          bindtouchstart="onTabTouchStart"
+          bindtouchmove="onTabTouchMove"
+          bindtouchend="onTabTouchEnd"
+          bindtouchcancel="onTabTouchEnd">
 
       <!-- Aeviva channel: tapping the Store tab button opens the GCN partner storefront
            as a separate navigated page instead (see main.js switchTab/_openAevivaStore)
@@ -1147,7 +1326,11 @@
     <!-- end STORE -->
 
     <!-- ════ LEARN (Academy + Wellness) ════ -->
-    <view class="learn-tab{{tab !== 'learn' ? ' tab-hidden' : ''}}">
+    <view class="learn-tab{{tab !== 'learn' ? ' tab-hidden' : ''}}"
+          bindtouchstart="onTabTouchStart"
+          bindtouchmove="onTabTouchMove"
+          bindtouchend="onTabTouchEnd"
+          bindtouchcancel="onTabTouchEnd">
 
       <view class="inner-tab-bar">
         <view class="inner-tab {{learnSubTab==='academy'?'inner-tab-active':''}}" bindtap="switchLearnSubTab" data-tab="academy">

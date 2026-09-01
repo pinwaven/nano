@@ -30,4 +30,75 @@ async function gcnFetch(path, { method = 'GET', body } = {}) {
     return data;
 }
 
-module.exports = { gcnFetch };
+// How long to wait on GCN before giving up on a product catalog. This call sits inline in a chat
+// turn's pre-fetch bundle, so a slow neighbour must not hold the whole turn hostage — a missing
+// catalog costs the user a product suggestion, a stalled turn costs them their answer.
+const AI_CATALOG_TIMEOUT_MS = 4000;
+
+// The AI-recommendable slice of a nano user's own bound GCN storefront (GCN's
+// handleNanoAiCatalog). Store-scoped, because recommending an item the user's bound store does
+// not list would dead-end them on an empty product grid.
+//
+// NEVER THROWS. Any failure — unconfigured credentials, GCN down, a timeout, a malformed
+// response — degrades to []. Following lib/twinBundle.js's convention: a dead source degrades
+// its own section rather than failing the thing it is part of. Commerce is the most droppable
+// content in a health conversation.
+async function fetchAiCatalog(nanoUserId, sectorId = 'aeviva') {
+    if (!nanoUserId || !BASE_URL || !TOKEN) return [];
+    const timer = AbortSignal.timeout ? AbortSignal.timeout(AI_CATALOG_TIMEOUT_MS) : undefined;
+    try {
+        const res = await fetch(
+            `${BASE_URL}/api/mall/nano/ai-catalog?sector_id=${encodeURIComponent(sectorId)}&nano_user_id=${encodeURIComponent(nanoUserId)}`,
+            { headers: { authorization: `Bearer ${TOKEN}` }, signal: timer }
+        );
+        if (!res.ok) return [];
+        const data = await res.json();
+        return Array.isArray(data?.items) ? data.items : [];
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'gcn_ai_catalog_fetch_failed', error: err.message }));
+        return [];
+    }
+}
+
+// Same budget and the same never-throws contract as the catalog fetch above, for the same
+// reason: this sits inline in the Formulate-Dots turn, and not knowing whether an order is
+// waiting must cost the user a CTA, never their formulation.
+const ORDER_STATUS_TIMEOUT_MS = 4000;
+
+// Every formulation order this user has, in every state (GCN's handleNanoFormulationOrders) —
+// both the commerce half of what the Dots subtab shows and, filtered to 'awaiting_formulation',
+// the answer to "is a package waiting for a recipe" that _resolveOrderContext needs.
+//
+// Replaced the narrower fetchFormulationOrderStatus, which asked only the second question. GCN
+// still serves that older endpoint so a nano deploy landing before a GCN one cannot break the
+// chat card; retire it there once nano prod is confirmed on this one.
+//
+// NEVER THROWS, same contract and same 4s budget as its two neighbours: a dead or slow GCN costs
+// the user their order status, never their nutrition plan — this is fetched alongside the plan
+// query that the Dots subtab actually depends on.
+async function fetchFormulationOrders(nanoUserId) {
+    if (!nanoUserId || !BASE_URL || !TOKEN) return [];
+    const timer = AbortSignal.timeout ? AbortSignal.timeout(ORDER_STATUS_TIMEOUT_MS) : undefined;
+    try {
+        const res = await fetch(
+            `${BASE_URL}/api/mall/nano/formulation-orders?nano_user_id=${encodeURIComponent(nanoUserId)}`,
+            { headers: { authorization: `Bearer ${TOKEN}` }, signal: timer }
+        );
+        if (!res.ok) return [];
+        const data = await res.json();
+        return Array.isArray(data?.orders) ? data.orders : [];
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'gcn_formulation_orders_failed', error: err.message }));
+        return [];
+    }
+}
+
+// Hands a fast-track formula to GCN so the paid order can go to compounding. Unlike the two
+// fetches above this one MAY throw: it is called from an explicit user action ("confirm this
+// formula") whose entire purpose is the call, so a failure has to reach the user rather than be
+// swallowed into a silent no-op.
+async function submitFastTrackFormulation(payload) {
+    return gcnFetch('/api/mall/nano/formulation-fasttrack', { method: 'POST', body: payload });
+}
+
+module.exports = { gcnFetch, fetchAiCatalog, fetchFormulationOrders, submitFastTrackFormulation };

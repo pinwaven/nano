@@ -264,11 +264,34 @@
 
 .empty-state {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  padding: 64px 0;
+  padding: 64px 32rpx;
 }
 
-.empty-text { color: var(--steel); font-size: 14px; }
+.empty-text { color: var(--steel); font-size: 14px; text-align: center; line-height: 1.5; }
+
+/* Shown only when the list is empty because something went wrong, never for a coach who simply
+   has no clients — so the retry and the diagnostic line stay out of the ordinary empty view. */
+.empty-retry {
+  margin-top: 24rpx;
+  padding: 12rpx 40rpx;
+  border: 1rpx solid var(--steel);
+  border-radius: 999rpx;
+}
+.empty-retry-txt { color: var(--steel); font-size: 13px; }
+
+/* Backend host + coach id + build. Deliberately small and muted: it is for whoever is being asked
+   "why is my list empty", not something an ordinary coach needs to read. */
+.empty-diag {
+  margin-top: 20rpx;
+  color: var(--text-muted);
+  font-size: 11px;
+  opacity: 0.7;
+  text-align: center;
+  word-break: break-all;
+}
 
 .client-card {
   background: #0F2540;

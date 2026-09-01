@@ -436,7 +436,7 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
             dots: freshDots.data,
             tool_calls_made: toolCallLog,
         };
-        const detectorHits = detectAllRisks(replyText, llmContext.dots);
+        const detectorHits = detectAllRisks(replyText, llmContext.dots, llmContext.store_products);
         const verdict = await callJson(
             client, model,
             judgeTemplate(replyText, plan, groundTruth, knowledgeExcerpts, detectorHits, message),

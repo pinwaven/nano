@@ -1,4 +1,5 @@
 -- Extend certification templates with display/issuing metadata
+-- @requires: migration_academy_overhaul.sql
 ALTER TABLE academy_certifications
   ADD COLUMN IF NOT EXISTS cert_number_prefix       TEXT    DEFAULT '',
   ADD COLUMN IF NOT EXISTS issuing_org              TEXT,

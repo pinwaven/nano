@@ -19,6 +19,8 @@
 --    (1-2 target, 3 max) and L-Selenomethionine (0.16mg) are unchanged.
 
 -- DOT-N14: Beta-Glucan/Immune Resilience -> Cocoa Flavanols/Vascular Flow
+-- @requires: migration_dots_new_fields.sql
+-- @requires: migration_dots_new_lineup.sql
 UPDATE dots SET
   name = 'Vascular Flow',
   name_zh = '脉络畅流',

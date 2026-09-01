@@ -14,4 +14,5 @@
 -- assigns a tier for a given partner (via the new POST /partner-tier-assignment-gcn-sync),
 -- nano's own tier <select> in the Add/Edit Partner form remains fully authoritative, exactly as
 -- today. Once TRUE, nano's local tier field becomes read-only and GCN's assignment wins.
+-- @requires: migration_partners.sql
 ALTER TABLE partners ADD COLUMN IF NOT EXISTS tier_managed_by_gcn BOOLEAN NOT NULL DEFAULT FALSE;

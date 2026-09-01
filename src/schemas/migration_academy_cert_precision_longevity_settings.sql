@@ -4,6 +4,9 @@
 -- it in line so the media function can render real certificate images in prod.
 -- Idempotent: re-running is a no-op once the row already matches (and a no-op on
 -- dev, which already has these values).
+-- @requires: migration_academy_overhaul.sql
+-- @requires: migration_academy_certifications_dates.sql
+-- @requires: migration_academy_cert_template_layout.sql
 UPDATE academy_certifications SET
   description             = '谢克曼长寿管理实操班认证证书 第一期',
   required_course_ids      = ARRAY[4],

@@ -5,6 +5,7 @@
 -- viva_subscription_expires_at is kept as a mirrored, read-only legacy column — still
 -- written by grantPersonaOverride whenever persona_type='viva', for any not-yet-migrated
 -- reader.
+-- @requires: migration_users_viva_subscription_expiry.sql
 ALTER TABLE users ADD COLUMN IF NOT EXISTS persona_override_type TEXT;          -- 'nano' | 'viva' | NULL
 ALTER TABLE users ADD COLUMN IF NOT EXISTS persona_override_expires_at TIMESTAMPTZ;
 

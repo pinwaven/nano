@@ -20,8 +20,25 @@ module.exports.c = function (hex, theme) {
   return LIGHT[hex.toLowerCase()] || hex;
 };
 </wxs>
-<view class="uh-root {{theme === 'light' ? 'theme-light' : ''}}">
-  <scroll-view class="health-scroll" scroll-y="true">
+<view class="uh-root {{theme === 'light' ? 'theme-light' : ''}}"
+      bindtouchstart="_onUhTouchStart"
+      bindtouchmove="_onUhTouchMove"
+      bindtouchend="_onUhTouchEnd"
+      bindtouchcancel="_onUhTouchEnd">
+
+  <!-- Health-tab subtab strip. Only rendered for a self view holding an active Viva AG add-on;
+       a one-item strip would be pure noise for everyone else. .uh-root is a column flexbox and
+       .health-scroll is flex:1/height:0, so a fixed strip here needs no other layout change. -->
+  <view wx:if="{{showAgTab}}" class="uh-tab-bar">
+    <view class="uh-tab {{healthSubTab === 'twin' ? 'uh-tab-active' : ''}}" bindtap="switchHealthSubTab" data-tab="twin">
+      <text class="uh-tab-text">{{t.agTabTwin}}</text>
+    </view>
+    <view class="uh-tab {{healthSubTab === 'ag' ? 'uh-tab-active' : ''}}" bindtap="switchHealthSubTab" data-tab="ag">
+      <text class="uh-tab-text">{{t.agTabAg}}</text>
+    </view>
+  </view>
+
+  <scroll-view wx:if="{{!showAgTab || healthSubTab === 'twin'}}" class="health-scroll" scroll-y="true">
 
     <!-- Guest lock -->
     <view wx:if="{{isGuest}}" class="guest-lock-card" bindtap="onGuestTap">
@@ -833,6 +850,12 @@ module.exports.c = function (hex, theme) {
     </block>
 
   </scroll-view>
+
+  <!-- The AG panel's whole body lives in its own component: keeping it out of this file is what
+       stops an already-1000-line template from absorbing another feature. -->
+  <viva-ag-panel wx:if="{{showAgTab && healthSubTab === 'ag'}}" id="viva-ag-panel"
+                 user-id="{{userId}}" lang="{{lang}}" theme="{{theme}}"
+                 bind:gotochat="onAgGoToChat" />
 
   <!-- Health Report Detail Sheet -->
   <view wx:if="{{activeReport}}" class="rpt-overlay" bindtap="onCloseReport">

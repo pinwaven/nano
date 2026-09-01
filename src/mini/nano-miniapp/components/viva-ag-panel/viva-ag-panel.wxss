@@ -1,0 +1,581 @@
+:host {
+  flex: 1;
+  min-height: 0;
+}
+
+.ag-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.ag-scroll {
+  flex: 1;
+  height: 0;
+}
+
+/* ── Hero ── */
+
+.ag-hero {
+  padding: 36rpx 36rpx 30rpx;
+  border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.08);
+}
+
+.ag-hero-badge {
+  display: inline-block;
+  padding: 6rpx 18rpx;
+  border-radius: 8rpx;
+  background: rgba(var(--blue-rgb), 0.16);
+  margin-bottom: 18rpx;
+}
+
+.ag-hero-badge text {
+  font-size: var(--fs-20, 20rpx);
+  font-weight: 700;
+  letter-spacing: 3rpx;
+  color: #A0B4FF;
+}
+
+.ag-hero-desc {
+  display: block;
+  font-size: var(--fs-25, 25rpx);
+  line-height: 1.6;
+  color: var(--steel);
+}
+
+.ag-hero-expiry {
+  display: block;
+  margin-top: 14rpx;
+  font-size: var(--fs-22, 22rpx);
+  color: rgba(var(--wave-rgb), 0.5);
+}
+
+/* ── Sections ── */
+
+.ag-section {
+  padding: 32rpx 36rpx;
+  border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.08);
+}
+
+.ag-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+}
+
+.ag-section-title {
+  font-size: var(--fs-20, 20rpx);
+  font-weight: 700;
+  letter-spacing: 4rpx;
+  text-transform: uppercase;
+  color: rgba(var(--wave-rgb), 0.4);
+  display: block;
+  margin-bottom: 24rpx;
+}
+
+.ag-section-head .ag-section-title { margin-bottom: 0; }
+
+.ag-section-count {
+  font-size: var(--fs-22, 22rpx);
+  color: rgba(var(--wave-rgb), 0.4);
+}
+
+.ag-muted {
+  font-size: var(--fs-24, 24rpx);
+  color: rgba(var(--wave-rgb), 0.45);
+  padding: 12rpx 0;
+}
+
+/* ── Documents ── */
+
+.ag-upload-btn {
+  padding: 22rpx 0;
+  border-radius: 14rpx;
+  border: 1rpx dashed rgba(var(--blue-rgb), 0.35);
+  text-align: center;
+  font-size: var(--fs-25, 25rpx);
+  color: #A0B4FF;
+  margin-bottom: 22rpx;
+}
+
+.ag-btn-busy { opacity: 0.55; }
+
+.ag-empty {
+  padding: 20rpx 4rpx;
+}
+
+.ag-empty-title {
+  display: block;
+  font-size: var(--fs-25, 25rpx);
+  color: var(--steel);
+  margin-bottom: 10rpx;
+}
+
+.ag-empty-hint {
+  display: block;
+  font-size: var(--fs-22, 22rpx);
+  line-height: 1.6;
+  color: rgba(var(--wave-rgb), 0.45);
+}
+
+.ag-doc {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.06);
+}
+
+.ag-doc:last-child { border-bottom: none; }
+
+.ag-doc-main { flex: 1; min-width: 0; }
+
+.ag-doc-name {
+  display: block;
+  font-size: var(--fs-26, 26rpx);
+  color: var(--wave, #A6C4E5);
+  margin-bottom: 8rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-doc-meta {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.ag-doc-badge {
+  font-size: var(--fs-20, 20rpx);
+  padding: 3rpx 12rpx;
+  border-radius: 6rpx;
+  background: rgba(var(--blue-rgb), 0.14);
+  color: #A0B4FF;
+}
+
+.ag-doc-sub {
+  font-size: var(--fs-21, 21rpx);
+  color: rgba(var(--wave-rgb), 0.4);
+}
+
+.ag-doc-del {
+  font-size: var(--fs-23, 23rpx);
+  color: #E05C5C;
+  padding: 10rpx 0 10rpx 24rpx;
+}
+
+/* ── Command ── */
+
+.ag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin-bottom: 20rpx;
+}
+
+.ag-chip {
+  padding: 12rpx 24rpx;
+  border-radius: 30rpx;
+  border: 1rpx solid rgba(var(--blue-rgb), 0.22);
+  font-size: var(--fs-23, 23rpx);
+  color: var(--steel);
+}
+
+.ag-chip-on {
+  background: rgba(var(--blue-rgb), 0.18);
+  border-color: rgba(var(--blue-rgb), 0.5);
+  color: #A0B4FF;
+  font-weight: 600;
+}
+
+.ag-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 120rpx;
+  padding: 20rpx;
+  border-radius: 14rpx;
+  background: rgba(var(--blue-rgb), 0.07);
+  font-size: var(--fs-25, 25rpx);
+  line-height: 1.6;
+  color: var(--wave, #A6C4E5);
+  margin-bottom: 20rpx;
+}
+
+.ag-input-ph { color: rgba(var(--wave-rgb), 0.35); }
+
+.ag-submit {
+  padding: 24rpx 0;
+  border-radius: 14rpx;
+  background: rgba(var(--blue-rgb), 0.85);
+  text-align: center;
+  font-size: var(--fs-27, 27rpx);
+  font-weight: 600;
+  color: #fff;
+}
+
+.ag-submit-off { opacity: 0.35; }
+
+.ag-note {
+  display: block;
+  margin-top: 14rpx;
+  font-size: var(--fs-21, 21rpx);
+  color: rgba(var(--wave-rgb), 0.42);
+}
+
+/* ── Jobs ── */
+
+.ag-job {
+  padding: 22rpx 0;
+  border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.06);
+}
+
+.ag-job:last-child { border-bottom: none; }
+
+.ag-job-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.ag-pill {
+  font-size: var(--fs-20, 20rpx);
+  font-weight: 600;
+  padding: 4rpx 14rpx;
+  border-radius: 20rpx;
+  background: rgba(var(--blue-rgb), 0.14);
+  color: #A0B4FF;
+}
+
+.ag-pill-processing, .ag-pill-claimed { background: rgba(245, 158, 11, 0.16); color: #F59E0B; }
+.ag-pill-completed { background: rgba(16, 185, 129, 0.16); color: #10B981; }
+.ag-pill-failed    { background: rgba(224, 92, 92, 0.16);  color: #E05C5C; }
+.ag-pill-cancelled { background: rgba(var(--wave-rgb), 0.12); color: rgba(var(--wave-rgb), 0.5); }
+/* Parked on the user. --gold already resolves per theme, so unlike its siblings above this
+   needs no .theme-light override. */
+.ag-pill-awaiting_input { background: rgba(var(--wave-rgb), 0.18); color: var(--gold); }
+
+.ag-job-date {
+  font-size: var(--fs-21, 21rpx);
+  color: rgba(var(--wave-rgb), 0.4);
+}
+
+.ag-job-cmd {
+  display: block;
+  font-size: var(--fs-25, 25rpx);
+  color: var(--wave, #A6C4E5);
+  margin-bottom: 8rpx;
+}
+
+.ag-job-note {
+  display: block;
+  font-size: var(--fs-22, 22rpx);
+  line-height: 1.5;
+  color: rgba(var(--wave-rgb), 0.45);
+}
+
+/* ── Detail sheet ── */
+
+.ag-sheet-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-end;
+  z-index: 60;
+}
+
+.ag-sheet {
+  width: 100%;
+  box-sizing: border-box;
+  max-height: 76vh;
+  overflow-y: auto;
+  padding: 34rpx 36rpx 60rpx;
+  border-radius: 26rpx 26rpx 0 0;
+  background: #0A1F36;
+}
+
+.ag-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14rpx;
+}
+
+.ag-sheet-close {
+  font-size: var(--fs-30, 30rpx);
+  color: rgba(var(--wave-rgb), 0.5);
+  padding: 0 6rpx;
+}
+
+.ag-sheet-date {
+  display: block;
+  font-size: var(--fs-21, 21rpx);
+  color: rgba(var(--wave-rgb), 0.4);
+  margin-bottom: 16rpx;
+}
+
+.ag-sheet-cmd {
+  display: block;
+  font-size: var(--fs-26, 26rpx);
+  font-weight: 600;
+  color: var(--wave, #A6C4E5);
+  margin-bottom: 20rpx;
+}
+
+.ag-sheet-body {
+  display: block;
+  font-size: var(--fs-25, 25rpx);
+  line-height: 1.75;
+  color: var(--steel);
+  white-space: pre-wrap;
+  margin-bottom: 26rpx;
+}
+
+.ag-sheet-err { color: #E05C5C; }
+
+.ag-sheet-btn {
+  padding: 22rpx 0;
+  border-radius: 14rpx;
+  background: rgba(var(--blue-rgb), 0.85);
+  text-align: center;
+  font-size: var(--fs-26, 26rpx);
+  color: #fff;
+  margin-bottom: 16rpx;
+}
+
+.ag-sheet-btn-ghost {
+  background: transparent;
+  border: 1rpx solid rgba(var(--wave-rgb), 0.2);
+  color: rgba(var(--wave-rgb), 0.6);
+}
+
+/* ── Result artifacts ── */
+
+.ag-file-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 14rpx;
+}
+
+.ag-file-chip {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  max-width: 100%;
+  padding: 8rpx 16rpx;
+  border-radius: 10rpx;
+  background: rgba(var(--blue-rgb), 0.14);
+}
+
+.ag-file-ext {
+  font-size: var(--fs-18, 18rpx);
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: #A0B4FF;
+}
+
+.ag-file-name {
+  font-size: var(--fs-21, 21rpx);
+  color: rgba(var(--wave-rgb), 0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-filelist {
+  margin-bottom: 22rpx;
+}
+
+.ag-filelist-title {
+  display: block;
+  font-size: var(--fs-21, 21rpx);
+  letter-spacing: 1rpx;
+  color: rgba(var(--wave-rgb), 0.45);
+  margin-bottom: 12rpx;
+}
+
+.ag-file-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 22rpx;
+  margin-bottom: 12rpx;
+  border-radius: 14rpx;
+  background: rgba(var(--blue-rgb), 0.1);
+}
+
+.ag-file-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ag-file-row-name {
+  display: block;
+  font-size: var(--fs-25, 25rpx);
+  color: var(--wave, #A6C4E5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-file-row-size {
+  font-size: var(--fs-20, 20rpx);
+  color: rgba(var(--wave-rgb), 0.4);
+}
+
+.ag-file-row-go {
+  font-size: var(--fs-22, 22rpx);
+  color: #A0B4FF;
+  white-space: nowrap;
+}
+
+/* ── In-app report viewer (.md/.txt) ── */
+
+.ag-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  background: #061426;
+}
+
+.ag-viewer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 28rpx 32rpx 20rpx;
+  border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.12);
+}
+
+.ag-viewer-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-26, 26rpx);
+  font-weight: 600;
+  color: var(--wave, #A6C4E5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-viewer-close {
+  font-size: var(--fs-30, 30rpx);
+  color: rgba(var(--wave-rgb), 0.5);
+  padding: 0 6rpx;
+}
+
+/* mp-html is style-ISOLATED — only inherited properties cross into it, so prose colour and size
+   are set on the scroll container and everything else rides on tag-style (MD_TAG_STYLE). */
+.ag-viewer-body {
+  flex: 1;
+  height: 0;
+  padding: 28rpx 32rpx;
+  /* Tokenised so the report prose follows the accessibility text-size setting, and so the
+     em-based sizes in MD_TAG_STYLE (which resolve against this element) scale with it. */
+  font-size: var(--fs-26, 26rpx);
+  line-height: 1.75;
+  color: var(--steel);
+}
+
+.ag-viewer-trunc {
+  display: block;
+  margin-top: 24rpx;
+  font-size: var(--fs-21, 21rpx);
+  line-height: 1.6;
+  color: rgba(var(--wave-rgb), 0.4);
+}
+
+/* ── Light theme ── */
+
+.theme-light .ag-hero-badge { background: rgba(41, 66, 229, 0.1); }
+.theme-light .ag-hero-badge text,
+.theme-light .ag-doc-badge,
+.theme-light .ag-chip-on,
+.theme-light .ag-upload-btn,
+.theme-light .ag-pill { color: #2942E5; }
+.theme-light .ag-hero-desc,
+.theme-light .ag-chip,
+.theme-light .ag-empty-title,
+.theme-light .ag-sheet-body { color: #607090; }
+.theme-light .ag-doc-name,
+.theme-light .ag-job-cmd,
+.theme-light .ag-sheet-cmd { color: #14243D; }
+.theme-light .ag-input { background: #f0f4ff; color: #14243D; }
+.theme-light .ag-sheet { background: #FBF8F2; }
+.theme-light .ag-pill-processing, .theme-light .ag-pill-claimed { color: #B45309; }
+.theme-light .ag-pill-completed { color: #0A7350; }
+.theme-light .ag-pill-failed    { color: #C0392B; }
+
+.theme-light .ag-file-chip,
+.theme-light .ag-file-row { background: rgba(41, 66, 229, 0.08); }
+.theme-light .ag-file-ext,
+.theme-light .ag-file-row-go { color: #2942E5; }
+.theme-light .ag-file-name,
+.theme-light .ag-file-row-name { color: #14243D; }
+.theme-light .ag-viewer { background: #FBF8F2; }
+.theme-light .ag-viewer-title { color: #14243D; }
+.theme-light .ag-viewer-body { color: #35485F; }
+
+/* ── Needs your input ─────────────────────────────────────────────────────────────────
+   Amber, matching .ag-fm-valid: both mean "stalled until a human acts". This one is the
+   only card on the panel with a call to action, so it also carries a filled button. */
+.ag-ask {
+  margin-top: 16rpx;
+  padding: 24rpx 28rpx;
+  border-radius: 18rpx;
+  background: rgba(var(--wave-rgb), 0.10);
+  border-left: 6rpx solid var(--gold);
+}
+.ag-ask-title { display: block; font-size: var(--fs-27, 27rpx); font-weight: 600; color: var(--text); }
+.ag-ask-body { display: block; margin-top: 10rpx; font-size: var(--fs-23, 23rpx); color: var(--text-muted); line-height: 1.6; }
+.ag-ask-deadline { display: block; margin-top: 8rpx; font-size: var(--fs-21, 21rpx); color: var(--text-muted); }
+.ag-ask-cta {
+  margin-top: 20rpx;
+  padding: 18rpx 0;
+  border-radius: 14rpx;
+  background: rgba(var(--blue-rgb), 0.85);
+  text-align: center;
+  font-size: var(--fs-26, 26rpx);
+  font-weight: 600;
+  color: #fff;
+}
+.theme-light .ag-ask { background: rgba(var(--wave-rgb), 0.08); border-left-color: var(--gold); }
+
+/* ── Formulation progress ─────────────────────────────────────────────────────────────
+   Colour-coded by where the formula is, so a glance answers "is anything happening?":
+   amber while a human still has to act, green once it is approved or live, red if the
+   capsule-spec check or the expert rejected it. */
+.ag-fm {
+  margin-top: 16rpx;
+  padding: 24rpx 28rpx;
+  border-radius: 18rpx;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 6rpx solid rgba(255, 255, 255, 0.2);
+}
+.ag-fm-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16rpx; }
+.ag-fm-status { font-size: var(--fs-27, 27rpx); font-weight: 600; color: var(--text); }
+.ag-fm-dots { font-size: var(--fs-22, 22rpx); color: var(--text-muted); }
+.ag-fm-hint { display: block; margin-top: 10rpx; font-size: var(--fs-23, 23rpx); color: var(--text-muted); line-height: 1.6; }
+.ag-fm-rationale {
+  display: block; margin-top: 14rpx; padding-top: 14rpx;
+  border-top: 1rpx solid rgba(255, 255, 255, 0.08);
+  font-size: var(--fs-23, 23rpx); color: var(--text-sub); line-height: 1.6;
+}
+.ag-fm-valid    { border-left-color: var(--gold); }
+.ag-fm-approved { border-left-color: var(--success); }
+.ag-fm-committed{ border-left-color: var(--success); }
+.ag-fm-invalid  { border-left-color: var(--danger); }
+.ag-fm-rejected { border-left-color: var(--danger); }
+
+.theme-light .ag-fm { background: rgba(0, 0, 0, 0.03); border-left-color: rgba(0, 0, 0, 0.15); }
+.theme-light .ag-fm-rationale { border-top-color: rgba(0, 0, 0, 0.08); }
+.theme-light .ag-fm-valid    { border-left-color: var(--gold); }
+.theme-light .ag-fm-approved { border-left-color: var(--success); }
+.theme-light .ag-fm-committed{ border-left-color: var(--success); }
+.theme-light .ag-fm-invalid  { border-left-color: var(--danger); }
+.theme-light .ag-fm-rejected { border-left-color: var(--danger); }

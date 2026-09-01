@@ -1426,8 +1426,37 @@ function UserCreditModal({ user, onClose }) {
 // priority over the user's channel default persona while active. Shared between
 // UsersTab's row action and the superadmin-only cross-channel PersonaSubscriptionsTab.
 
-const PERSONA_LABELS = { nano: 'Nano', viva: 'Viva' };
+// 'viva_ag' never appears in persona_override_type (that stays nano|viva) — it only shows up
+// as a persona_subscription_grants.persona_type in the history table below.
+const PERSONA_LABELS = { nano: 'Nano', viva: 'Viva', viva_ag: 'Viva AG' };
 const DURATION_PRESETS = [30, 90, 365];
+
+// Shared by both grant forms below so they read as the same control: the persona form had
+// the free-entry box before the presets and the AG form after, which made two identical
+// fields look like two different kinds of input.
+const CARD_STYLE = { border: '1px solid var(--border)', borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 };
+const CARD_TITLE_STYLE = { fontSize: 13, fontWeight: 600, color: 'var(--text)' };
+const FORM_STYLE = { display: 'flex', flexDirection: 'column', gap: 10, marginTop: 2, paddingTop: 10, borderTop: '1px dashed var(--border)' };
+const ERROR_STYLE = { fontSize: 12, color: '#ef4444' };
+
+function DurationField({ label, value, onChange, isZh }) {
+  return (
+    <div className="form-row">
+      <label className="form-label">{label}</label>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <input type="number" min="1" className="form-input" style={{ width: 90 }}
+          value={value} onChange={e => onChange(parseInt(e.target.value, 10) || '')} />
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{isZh ? '天' : 'days'}</span>
+        {DURATION_PRESETS.map(d => (
+          <button key={d} type="button"
+            className={value === d ? 'btn-primary' : 'btn-secondary'}
+            style={{ fontSize: 12, padding: '4px 10px' }}
+            onClick={() => onChange(d)}>{d}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function PersonaSubscriptionModal({ user, onClose }) {
   const { t, lang } = useLang();
@@ -1440,6 +1469,16 @@ function PersonaSubscriptionModal({ user, onClose }) {
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  // Viva AG add-on form state — belongs to THIS component, which owns the AG grant form
+  // below (handleAgGrant + the duration presets). It was declared in UserCreditModal, where
+  // nothing used it, so every render of this modal threw `ReferenceError: agDays is not
+  // defined` and blanked the whole admin panel.
+  const [agDays, setAgDays] = useState(30);
+  const [agNote, setAgNote] = useState('');
+  // Separate from formError: the two forms are far apart in a tall modal, and sharing one
+  // error slot printed the AG form's validation failure inside the persona form above it,
+  // where it read as a complaint about the field the admin wasn't filling in.
+  const [agError, setAgError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1490,12 +1529,52 @@ function PersonaSubscriptionModal({ user, onClose }) {
     }
   }
 
+  // Viva AG is an ADD-ON on top of an active Viva subscription, granted through its own
+  // endpoint — it is not a persona_override_type value, so it cannot go through the form above.
+  async function handleAgGrant(e) {
+    e.preventDefault();
+    if (!agNote.trim()) { setAgError(isZh ? '备注不能为空' : 'Note is required'); return; }
+    if (!agDays || agDays <= 0) { setAgError(isZh ? '请输入有效天数' : 'Enter a valid number of days'); return; }
+    setAgError('');
+    setSaving(true);
+    try {
+      await axios.post(`/api/admin/users/${user.user_id}/viva-ag-subscription`, {
+        duration_days: agDays, note: agNote.trim(),
+      });
+      setAgNote('');
+      await load();
+    } catch (e2) {
+      setAgError(e2.response?.data?.error || ps.error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleAgRevoke() {
+    const revokeNote = window.prompt(ps.revokeNotePrompt);
+    if (revokeNote === null) return;
+    if (!revokeNote.trim()) { setAgError(isZh ? '备注不能为空' : 'Note is required'); return; }
+    setSaving(true);
+    setAgError('');
+    try {
+      await axios.delete(`/api/admin/users/${user.user_id}/viva-ag-subscription`, { data: { note: revokeNote.trim() } });
+      await load();
+    } catch (e2) {
+      setAgError(e2.response?.data?.error || ps.error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const fmtDateLocal = (d) => d ? new Date(d).toLocaleString(isZh ? 'zh-CN' : 'en-US', { dateStyle: 'short', timeStyle: 'short' }) : '—';
   const overrideActive = data && data.persona_override_type && data.persona_override_expires_at && new Date(data.persona_override_expires_at) > new Date();
+  const agActive = data && data.viva_ag_expires_at && new Date(data.viva_ag_expires_at) > new Date();
+  // AG's runtime gate needs a live *Viva* grant too, not merely a viva channel default.
+  const vivaGrantActive = overrideActive && data.persona_override_type === 'viva';
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ width: 560 }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ width: 600 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <span>{ps.title} — {user.nickname || user.user_id}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
@@ -1505,101 +1584,143 @@ function PersonaSubscriptionModal({ user, onClose }) {
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>{ps.loading}</div>
         ) : (
           <>
-            <div style={{ padding: '12px 20px', background: 'var(--bg)', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                <span style={{ color: 'var(--muted)' }}>{ps.channelDefault}:</span>
-                <Badge color="#64748b">{PERSONA_LABELS[data?.channel_persona_type] || data?.channel_persona_type}</Badge>
-                <span style={{ color: 'var(--muted)' }}>{ps.effective}:</span>
-                <Badge color="#10b981">{PERSONA_LABELS[data?.effective_persona_type] || data?.effective_persona_type}</Badge>
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-                {overrideActive
-                  ? `${ps.activeOverride}: ${PERSONA_LABELS[data.persona_override_type]} — ${ps.expires} ${fmtDateLocal(data.persona_override_expires_at)}`
-                  : ps.noOverride}
-              </div>
-              {overrideActive && (
-                <div>
-                  <button type="button" className="btn-secondary" style={{ fontSize: 12 }} disabled={saving} onClick={handleRevoke}>
-                    {ps.revoke}
-                  </button>
+            {/* Context strip — what the user resolves to right now, before any of the actions. */}
+            <div style={{ padding: '10px 20px', background: 'var(--bg)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, flexShrink: 0 }}>
+              <span style={{ color: 'var(--muted)' }}>{ps.channelDefault}:</span>
+              <Badge color="#64748b">{PERSONA_LABELS[data?.channel_persona_type] || data?.channel_persona_type}</Badge>
+              <span style={{ color: 'var(--muted)' }}>{ps.effective}:</span>
+              <Badge color="#10b981">{PERSONA_LABELS[data?.effective_persona_type] || data?.effective_persona_type}</Badge>
+            </div>
+
+            {/* The two entitlements are separate grants with separate endpoints, so each gets
+                its own card: current state, then the form that changes it, then its own error.
+                They used to be two bare stacked forms sharing one error slot, which put the AG
+                form's validation message inside the persona form far above it. */}
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+              <section style={CARD_STYLE}>
+                <div style={CARD_TITLE_STYLE}>{isZh ? '角色订阅' : 'Persona subscription'}</div>
+                <div style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {overrideActive ? (
+                    <>
+                      <Badge color="#8b5cf6">{PERSONA_LABELS[data.persona_override_type]}</Badge>
+                      <span style={{ color: 'var(--muted)' }}>{ps.expires} {fmtDateLocal(data.persona_override_expires_at)}</span>
+                      <button type="button" className="btn-secondary" style={{ fontSize: 12, padding: '2px 10px' }} disabled={saving} onClick={handleRevoke}>
+                        {ps.revoke}
+                      </button>
+                    </>
+                  ) : <span style={{ color: 'var(--muted)' }}>{ps.noOverride}</span>}
                 </div>
-              )}
-            </div>
 
-            <div style={{ maxHeight: 220, overflowY: 'auto', borderBottom: '1px solid var(--border)' }}>
-              {(!data?.history || data.history.length === 0) ? (
-                <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{ps.noHistory}</div>
-              ) : (
-                <table className="data-table" style={{ fontSize: 12 }}>
-                  <thead>
-                    <tr>
-                      <th>{isZh ? '日期' : 'Date'}</th>
-                      <th>{isZh ? '操作' : 'Action'}</th>
-                      <th>{isZh ? '角色' : 'Persona'}</th>
-                      <th>{isZh ? '备注' : 'Note'}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.history.map(row => (
-                      <tr key={row.id}>
-                        <td className="muted" style={{ whiteSpace: 'nowrap' }}>{fmtDateLocal(row.created_at)}</td>
-                        <td><Badge color={row.action === 'revoke' ? '#ef4444' : '#8b5cf6'}>{row.action}</Badge></td>
-                        <td>{PERSONA_LABELS[row.persona_type] || row.persona_type}</td>
-                        <td className="muted" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.note || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            <form onSubmit={handleGrant} style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>{ps.grantTitle}</div>
-              <div className="form-row">
-                <label className="form-label">{ps.persona}</label>
-                <select className="form-input" value={personaType} onChange={e => setPersonaType(e.target.value)}>
-                  <option value="nano">Nano</option>
-                  <option value="viva">Viva</option>
-                </select>
-              </div>
-              <div className="form-row">
-                <label className="form-label">{ps.duration}</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input
-                    type="number"
-                    min="1"
-                    value={durationDays}
-                    onChange={e => setDurationDays(parseInt(e.target.value, 10) || '')}
-                    className="form-input"
-                    style={{ width: 100 }}
-                  />
-                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{isZh ? '天' : 'days'}</span>
-                  {DURATION_PRESETS.map(d => (
-                    <button type="button" key={d} className="btn-secondary" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => setDurationDays(d)}>
-                      {d}
+                <form onSubmit={handleGrant} style={FORM_STYLE}>
+                  <div className="form-row">
+                    <label className="form-label">{ps.persona}</label>
+                    <select className="form-input" value={personaType} onChange={e => setPersonaType(e.target.value)}>
+                      <option value="nano">Nano</option>
+                      <option value="viva">Viva</option>
+                    </select>
+                  </div>
+                  <DurationField label={ps.duration} value={durationDays} onChange={setDurationDays} isZh={isZh} />
+                  <div className="form-row">
+                    <label className="form-label">{ps.note}</label>
+                    <input type="text" className="form-input" style={{ width: '100%' }}
+                      value={note} onChange={e => setNote(e.target.value)} placeholder={ps.notePlaceholder} />
+                  </div>
+                  {formError && <div style={ERROR_STYLE}>{formError}</div>}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button type="submit" className="btn-primary" disabled={saving}>
+                      {saving ? ps.saving : (overrideActive ? (isZh ? '续期' : 'Extend') : ps.submit)}
                     </button>
-                  ))}
+                  </div>
+                </form>
+              </section>
+
+              <section style={CARD_STYLE}>
+                <div style={CARD_TITLE_STYLE}>
+                  Viva AG
+                  <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)', marginLeft: 6 }}>
+                    {isZh ? '深度分析（附加权益）' : 'Deep analysis (add-on)'}
+                  </span>
                 </div>
-              </div>
-              <div className="form-row">
-                <label className="form-label">{ps.note}</label>
-                <input
-                  type="text"
-                  value={note}
-                  onChange={e => setNote(e.target.value)}
-                  placeholder={ps.notePlaceholder}
-                  className="form-input"
-                  style={{ width: '100%' }}
-                />
-              </div>
-              {formError && <div style={{ fontSize: 12, color: '#ef4444' }}>{formError}</div>}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                <button type="button" className="btn-secondary" onClick={onClose}>{isZh ? '取消' : 'Cancel'}</button>
-                <button type="submit" className="btn-primary" disabled={saving}>
-                  {saving ? ps.saving : ps.submit}
-                </button>
-              </div>
-            </form>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  {isZh
+                    ? '健康档案上传与外部深度分析。需要用户同时持有有效的 Viva 订阅。'
+                    : 'Health-record uploads and external deep analysis. The user must also hold an active Viva subscription.'}
+                </div>
+                <div style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {agActive ? (
+                    <>
+                      <Badge color="#8b5cf6">{isZh ? '已开通' : 'Active'}</Badge>
+                      <span style={{ color: 'var(--muted)' }}>{ps.expires} {fmtDateLocal(data.viva_ag_expires_at)}</span>
+                      <button type="button" className="btn-secondary" style={{ fontSize: 12, padding: '2px 10px' }} disabled={saving} onClick={handleAgRevoke}>
+                        {ps.revoke}
+                      </button>
+                    </>
+                  ) : <span style={{ color: 'var(--muted)' }}>{isZh ? '未开通' : 'Not active'}</span>}
+                </div>
+
+                {/* The backend grants the AG window without checking Viva, but the runtime gate
+                    (lib/vivaAgAccess.js) is a composite — AG alone leaves the user 403ing with
+                    reason 'viva_inactive'. Say so here rather than let it look granted. */}
+                {!vivaGrantActive && (
+                  <div style={{ fontSize: 12, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '8px 10px' }}>
+                    {isZh
+                      ? '该用户当前没有有效的 Viva 订阅，单独开通 Viva AG 不会生效——请先在上方开通 Viva。'
+                      : 'This user has no active Viva subscription. Viva AG alone will not take effect — grant Viva above first.'}
+                  </div>
+                )}
+
+                <form onSubmit={handleAgGrant} style={FORM_STYLE}>
+                  <DurationField label={ps.duration} value={agDays} onChange={setAgDays} isZh={isZh} />
+                  <div className="form-row">
+                    <label className="form-label">{ps.note}</label>
+                    <input type="text" className="form-input" style={{ width: '100%' }}
+                      value={agNote} onChange={e => setAgNote(e.target.value)} placeholder={ps.notePlaceholder} />
+                  </div>
+                  {agError && <div style={ERROR_STYLE}>{agError}</div>}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button type="submit" className="btn-primary" disabled={saving}>
+                      {saving ? ps.saving : (agActive ? (isZh ? '续期 Viva AG' : 'Extend Viva AG') : (isZh ? '开通 Viva AG' : 'Grant Viva AG'))}
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              {/* Collapsed by default: it is a reference, and open it pushed the AG card below
+                  the fold of a 90vh modal. */}
+              <details>
+                <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                  {isZh ? '变更记录' : 'Grant history'}
+                  <span style={{ fontWeight: 400, color: 'var(--muted)' }}> ({data?.history?.length || 0})</span>
+                </summary>
+                <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                  {(!data?.history || data.history.length === 0) ? (
+                    <div style={{ padding: '1.25rem', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{ps.noHistory}</div>
+                  ) : (
+                    <table className="data-table" style={{ fontSize: 12 }}>
+                      <thead>
+                        <tr>
+                          <th>{isZh ? '日期' : 'Date'}</th>
+                          <th>{isZh ? '操作' : 'Action'}</th>
+                          <th>{isZh ? '角色' : 'Persona'}</th>
+                          <th>{isZh ? '备注' : 'Note'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.history.map(row => (
+                          <tr key={row.id}>
+                            <td className="muted" style={{ whiteSpace: 'nowrap' }}>{fmtDateLocal(row.created_at)}</td>
+                            <td><Badge color={row.action === 'revoke' ? '#ef4444' : '#8b5cf6'}>{row.action}</Badge></td>
+                            <td>{PERSONA_LABELS[row.persona_type] || row.persona_type}</td>
+                            <td className="muted" style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.note || ''}>{row.note || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </details>
+            </div>
           </>
         )}
       </div>

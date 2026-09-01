@@ -38,7 +38,7 @@ const PATTERNS = {
 
 // A specific mg dosage not attributed to a named dot (referenced as "X号" and/or "原粒") on the
 // same line is almost always an external-supplement recommendation slipping past the dots-only
-// rule — real dot ingredients are always sub-24mg and named right next to their dot on one line.
+// rule — real dot ingredients are always sub-36mg and named right next to their dot on one line.
 // Two deliberate narrowings to cut false positives found in testing:
 //  - "mg" only, not "g": whole-food meal suggestions (explicitly allowed) are measured in g
 //    (e.g. "山药60g"), while every real dot ingredient is dosed in mg.
@@ -268,13 +268,45 @@ function detectDimensionMisattribution(reply, dimensionBiomarkers, extraLabels) 
     return out;
 }
 
-function detectAllRisks(reply, dotsFormulary) {
+// Catches a store product the model invented rather than picked from the catalog it was given.
+//
+// The counterpart to detectFakeProductName above, and structurally identical: a bracket-quoted
+// name in a shopping context that matches nothing real. Needed as a separate detector because
+// the shipped card is built from validated ids only — so a fabricated product never appears as a
+// CARD, but nothing otherwise stops the model from naming one in its prose ("你可以看看「深海鱼油
+// 胶囊」"), which reads to a user exactly like a real recommendation and sends them looking for
+// something the store does not sell.
+//
+// Only fires when a catalog was actually supplied. On a turn with no catalog the essential block
+// already forbids naming any product at all, and that is detectFakeProductName's territory.
+function detectFakeStoreProduct(text, storeProducts) {
+    if (!text || !Array.isArray(storeProducts) || storeProducts.length === 0) return [];
+    const realNames = storeProducts.map(p => String(p.product_name_zh || '').trim()).filter(Boolean);
+    const mismatches = [];
+    const quoteRegex = /[「『]([^「『」』]{2,30})[」』]/g;
+    let m;
+    while ((m = quoteRegex.exec(text)) !== null) {
+        const name = m[1].trim();
+        if (realNames.some(rn => name.includes(rn) || rn.includes(name))) continue;
+        // Same narrow-context guard detectFakeProductName uses: only treat a quoted string as a
+        // product claim when the surrounding text is actually talking about buying something.
+        // Chinese prose brackets plenty of things that are not products.
+        const contextStart = Math.max(0, m.index - 80);
+        if (/商城|商品|购买|下单|店铺|选购/.test(text.slice(contextStart, m.index))) {
+            mismatches.push({ claimedName: name, realName: null });
+        }
+    }
+    return mismatches;
+}
+
+function detectAllRisks(reply, dotsFormulary, storeProducts) {
     const risk = detectFabricationRisk(reply);
     if (dotsFormulary && dotsFormulary.length > 0) {
         if (detectDotNameMismatch(reply, dotsFormulary).length > 0) risk.push('dotNameMismatch');
         if (detectFakeProductName(reply, dotsFormulary).length > 0) risk.push('fakeProductName');
         if (detectDotIngredientMismatch(reply, dotsFormulary).length > 0) risk.push('dotIngredientMismatch');
     }
+    if (detectFakeStoreProduct(reply, storeProducts).length > 0) risk.push('fakeStoreProduct');
     return risk;
 }
 
@@ -283,6 +315,7 @@ module.exports = {
     detectDimensionMisattribution,
     detectDotNameMismatch,
     detectFakeProductName,
+    detectFakeStoreProduct,
     detectDotIngredientMismatch,
     detectAllRisks,
 };

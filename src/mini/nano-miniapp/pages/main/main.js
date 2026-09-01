@@ -3,6 +3,7 @@ const { BASE, VERSION, WX_VERSION, IS_DEV } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
 const { resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
 const { maskPhone } = require('../../utils/phone.js')
+const { createPinchStepper } = require('../../utils/pinch.js')
 const { mdToSegments, MD_TAG_STYLE } = require('../../utils/markdown.js')
 const { buildSeriesIndex, sparkForLabel, appendReading } = require('../../utils/biomarker-series.js')
 const speechPlugin = requirePlugin('WechatSI')
@@ -133,9 +134,57 @@ const T = {
     neoBindTitle: '请先绑定 Neo 分配器以管理原粒盒',
     neoBindBtn: '绑定 Neo 设备',
     neoNotFoundMsg: '附近未找到 Neo 设备',
-    orderDotsTitle: '未绑定 Neo 分配器，可直接订购原粒胶囊',
-    orderDotsDetail: '默认 4 周装 · 56 粒 · 每日 2 粒',
-    orderDotsBtn: '前往商城订购',
+    // ── Scan-to-activate (box QR → 28-day cycle starts today) ──
+    scanBoxTitle: '扫描包装激活方案',
+    scanBoxDetail: '收到定制原粒后扫描盒身二维码，28 天周期从今天开始',
+    scanBoxWorking: '正在激活…',
+    scanBoxOk: '已激活，28 天周期从今天开始',
+    scanBoxAlready: '这盒已经激活过了',
+    scanBoxFailTitle: '无法激活',
+    scanBoxErrGeneric: '暂时无法激活，请稍后再试。',
+    scanBoxErr_invalid_box_code: '这不是原粒包装上的二维码。',
+    scanBoxErr_box_not_found: '未找到该包装，请确认扫描的是原粒盒身的二维码。',
+    scanBoxErr_not_your_box: '这盒原粒是为其他人定制的，配方基于对方的检测数据，请勿服用。',
+    scanBoxErr_claimed_by_other: '这盒已被其他账号激活。',
+    scanBoxErr_batch_recalled: '该批次已被召回，请勿服用，我们会尽快与您联系。',
+    scanBoxErr_formulation_not_approved: '该配方尚未通过专家审核，请稍后再试。',
+    gotIt: '知道了',
+    // The Dots subtab's only order card. Ordering without a formula is a real flow but a worse
+    // one, and once a formula exists the package row's own 按此配方下单 covers it — so this
+    // always leads to the tool.
+    formulateFirstTitle: '先定制属于你的配方',
+    formulateFirstDetail: '根据你的检测与日常数据，生成 28 天专属原粒方案',
+    formulateFirstBtn: '开始定制营养素',
+    // ── My dots packages (Plans ▸ Dots) ──
+    // Stage labels are keyed by the server's own stage string (t['pkgStage_' + p.stage]),
+    // following the t['scanBoxErr_' + reason] convention already used below. A stage with no key
+    // renders empty — WXML has no compile-time key checking — so every value in
+    // handlers/dots.js's PACKAGE_STAGES must have a line here AND in the en block.
+    pkgSectionTitle: '我的原粒套餐',
+    pkgStage_proposed: '待下单',
+    pkgStage_pending_payment: '待付款',
+    pkgStage_paid: '已付款',
+    pkgStage_awaiting_formulation: '待确认配方',
+    pkgStage_awaiting_ag: 'Viva AG 配方中',
+    pkgStage_expert_review: '专家审核中',
+    pkgStage_compounding: '配制中',
+    pkgStage_shipped: '已发货',
+    pkgStage_delivered: '已送达',
+    pkgStage_active: '进行中',
+    pkgStage_cancelled: '已取消',
+    pkgStage_refunded: '已退款',
+    pkgUnnamed: '定制原粒方案',
+    pkgUseFormulaBtn: '用此配方定制',
+    pkgNeedsFormulaHint: '请先在对话中使用「营养定制」生成配方',
+    pkgScanBtn: '扫描包装二维码启用',
+    pkgOrderBtn: '按此配方下单',
+    pkgOrderGone: '该套餐已不在等待配方（可能已退款或已由其他设备提交）。请刷新后重试。',
+    pkgSubmitConfirm: '确认用当前配方定制这份套餐？确认后即进入配制，无法更改。',
+    pkgSubmitOk: '已提交配制',
+    pkgDay: (n, total) => `第 ${n} 天 · 共 ${total} 天`,
+    pkgOrderedOn: (d) => `${d} 下单`,
+    pkgTierUpTo: (n) => `最多 ${n} 种原粒`,
+    copy: '复制',
     cartridgeTitle: '原粒盒',
     noCartridges: '未插入原粒盒。请将原粒盒插入分配器。',
     simCartTitle: '选择套装',
@@ -143,7 +192,7 @@ const T = {
     simCartInserting: '正在插入…',
     simCartDone: '套装已插入！',
     simCartCancel: '取消',
-    noPlan: '暂无营养方案。完成 Kino 生物标志物检测后，系统将为您生成个性化方案。',
+    noPlan: '暂无营养方案。在对话中使用「营养定制」生成专属配方并下单，收到实物后扫码即可启用。',
     morning: '早上', evening: '晚上', today: '今天', tomorrow: '明天',
     dispenseTitle: '分发原粒', dispenseMorning: '今日早上配方', dispenseEvening: '今日晚上配方',
     dispenseBtn: '立即分发', dispensing: '正在分发…', dispenseOk: '✓ 已成功分发', dispenseErr: '分发失败，点击重试', dispenseNoDots: '此时段暂无配方',
@@ -195,10 +244,34 @@ const T = {
     toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
     healthAdviceGenerating: '正在分析您的健康数据，请稍候…',
     healthAdviceError: '健康分析请求失败，请重试。',
-    formulaGenerating: '正在为你定制营养方案…',
-    formulaComplete: '您的7天营养方案已生成！',
-    formulaProcessing: '正在为您深度分析并配置本周方案，完成后会发送通知，请稍候…',
-    formulaViewDots: '查看营养方案 →',
+    formulaGenerating: '正在为你定制 28 天营养方案…',
+    formulaComplete: '您的 28 天定制方案已生成！',
+    formulaProcessing: '正在为您深度分析并定制 28 天方案，完成后会发送通知，请稍候…',
+    formulaCardTitle: '原粒定制方案',
+    productCardTitle: '商城可选',
+    formulaEvalNote: '收到实物扫码后启用',
+    formulaAm: '早',
+    formulaPm: '晚',
+    formulaTotalLabel: '每日合计',
+    // Day numbers in a proposal are RELATIVE — the cycle is anchored when the delivered box is
+    // scanned, not when the plan was worked out — so the label is "Day 1-9", never a date. The
+    // word is deliberately the English one in both languages: it reads as a product term here,
+    // the way DOTS and BioAge already do, and "第1–9 · 12–28天" does not survive day ranges.
+    formulaDayWord: 'Day',
+    formulaResetDay: 'DOT-N7 单独重置',
+    formulaDaysUnit: '天',
+    formulaCapsulesUnit: '粒胶囊',
+    formulaOrderCta: '购买 28 天定制套餐 →',
+    formulaLabelCta: '查看配方标签与二维码',
+    formulaSubmitCta: '确认此方案，开始配制 →',
+    formulaSubmitConfirmTitle: '确认配制方案',
+    formulaSubmitConfirmBody: '确认后将按此 28 天方案为您配制并发货，配方不可再更改。如需调整，请先重新生成。',
+    formulaSubmitOk: '已提交配制，我们会尽快为您加工发货。',
+    formulaSubmitNoOrder: '未找到待配制的订单，可能已完成或已取消。',
+    formulaSubmitExpert: '该订单为专家审核套餐，正式配方将由 Viva AG 生成。',
+    formulaSubmitOverTier: '本方案某一周同时服用的原粒种类超出您购买的套餐上限，请重新使用「营养定制」生成一份符合套餐的方案。',
+    formulaSubmitFailed: '提交失败，请稍后重试。',
+    formulaAgPending: '您已购买 28 天套餐（含专家审核）。正式配方将由 Viva AG 生成并经营养专家审核，以上仅为参考评估。',
     formulaError: '方案生成失败，请重试。',
     chatHistoryLoadMore: '下拉或点此加载更早消息',
     chatHistoryLoading: '加载中…',
@@ -254,6 +327,8 @@ const T = {
     subAgeLabels: { ResilienceAge: '抗压年龄', CellularAge: '细胞年龄', MetabolicAge: '代谢年龄', MicroVascularAge: '微血管年龄' },
     lightMode: '浅色模式',
     darkMode: '深色模式',
+    textSizeMenu: '字体大小',
+    textSizeLevels: ['标准', '较大', '大', '特大'],
     guestHeaderName: '游客',
     guestJoinTitle: '激活健康账户',
     guestJoinDesc: '输入您的邀请码，解锁 AI 健康教练、生物标志物检测与精准营养方案。',
@@ -362,9 +437,50 @@ const T = {
     neoBindTitle: 'Bind a Neo dispenser to manage your cartridges',
     neoBindBtn: 'Bind Neo Device',
     neoNotFoundMsg: 'No Neo device found nearby',
-    orderDotsTitle: 'No Neo dispenser bound — order pre-mixed capsules instead',
-    orderDotsDetail: 'Default: 4-week pack · 56 capsules · 2/day',
-    orderDotsBtn: 'Order in the Store',
+    // ── Scan-to-activate (box QR → 28-day cycle starts today) ──
+    scanBoxTitle: 'Scan your box to start',
+    scanBoxDetail: 'Scan the QR on your capsule box — the 28-day cycle begins today',
+    scanBoxWorking: 'Activating…',
+    scanBoxOk: 'Activated — your 28-day cycle starts today',
+    scanBoxAlready: 'This box is already activated',
+    scanBoxFailTitle: "Couldn't activate",
+    scanBoxErrGeneric: "Couldn't activate this box just now. Please try again shortly.",
+    scanBoxErr_invalid_box_code: "That isn't a code from a Dots box.",
+    scanBoxErr_box_not_found: "We couldn't find that box — check you scanned the QR on the capsule box itself.",
+    scanBoxErr_not_your_box: "This box was formulated for someone else, from their test results. Please don't take it.",
+    scanBoxErr_claimed_by_other: 'This box has already been activated on another account.',
+    scanBoxErr_batch_recalled: "This batch has been recalled — please don't take it. We'll be in touch shortly.",
+    scanBoxErr_formulation_not_approved: "This formulation hasn't cleared expert review yet. Please try again shortly.",
+    gotIt: 'Got it',
+    formulateFirstTitle: 'Build your formula first',
+    formulateFirstDetail: 'Generates a 28-day Dots plan from your test results and daily data',
+    formulateFirstBtn: 'Formulate My Dots',
+    // ── My dots packages (Plans ▸ Dots) — see the zh block for why every stage needs a key ──
+    pkgSectionTitle: 'My Dots Packages',
+    pkgStage_proposed: 'Ready to order',
+    pkgStage_pending_payment: 'Awaiting payment',
+    pkgStage_paid: 'Paid',
+    pkgStage_awaiting_formulation: 'Needs your formula',
+    pkgStage_awaiting_ag: 'Viva AG formulating',
+    pkgStage_expert_review: 'Expert review',
+    pkgStage_compounding: 'Being compounded',
+    pkgStage_shipped: 'Shipped',
+    pkgStage_delivered: 'Delivered',
+    pkgStage_active: 'In progress',
+    pkgStage_cancelled: 'Cancelled',
+    pkgStage_refunded: 'Refunded',
+    pkgUnnamed: 'Custom dots formulation',
+    pkgUseFormulaBtn: 'Use this formula',
+    pkgNeedsFormulaHint: 'Run Formulate Dots in chat first to build a formula',
+    pkgScanBtn: 'Scan the box QR to start',
+    pkgOrderBtn: 'Order this formula',
+    pkgOrderGone: 'That package is no longer waiting for a formula — it may have been refunded, or filled from another device. Pull to refresh and try again.',
+    pkgSubmitConfirm: 'Compound this package using your current formula? Compounding starts right away and cannot be changed.',
+    pkgSubmitOk: 'Sent to compounding',
+    pkgDay: (n, total) => `Day ${n} of ${total}`,
+    pkgOrderedOn: (d) => `Ordered ${d}`,
+    pkgTierUpTo: (n) => `up to ${n} dots`,
+    copy: 'Copy',
     cartridgeTitle: 'Cartridges',
     noCartridges: 'No cartridges inserted. Insert cartridges into your dispenser.',
     simCartTitle: 'Choose a Set',
@@ -372,7 +488,7 @@ const T = {
     simCartInserting: 'Inserting…',
     simCartDone: 'Set inserted!',
     simCartCancel: 'Cancel',
-    noPlan: 'No nutrition plan yet. Complete a Kino biomarker test to generate your personalized plan.',
+    noPlan: 'No nutrition plan yet. Use Formulate Dots in chat to build your formulation and order it — scan the box when it arrives to start.',
     morning: 'Morning', evening: 'Evening', today: 'Today', tomorrow: 'Tomorrow',
     dispenseTitle: 'Dispense Dots', dispenseMorning: "Today's Morning Dose", dispenseEvening: "Today's Evening Dose",
     dispenseBtn: 'Dispense Now', dispensing: 'Dispensing…', dispenseOk: '✓ Dispensed Successfully', dispenseErr: 'Failed — tap to retry', dispenseNoDots: 'No dots scheduled for this slot',
@@ -424,10 +540,30 @@ const T = {
     toolHealthAdviceMsg: 'Please analyze my current health status and give me personalized health advice.',
     healthAdviceGenerating: 'Analyzing your health data, please wait…',
     healthAdviceError: 'Health analysis request failed. Please try again.',
-    formulaGenerating: 'Generating your 7-day nutrition plan from your biomarkers…',
-    formulaComplete: 'Your 7-day nutrition plan is ready!',
-    formulaProcessing: "Deeply analyzing your data and formulating this week's plan — you'll get a notification when it's ready…",
-    formulaViewDots: 'View Dots Plan →',
+    formulaGenerating: 'Building your 28-day formulation from your biomarkers…',
+    formulaComplete: 'Your 28-day formulation is ready!',
+    formulaProcessing: "Deeply analyzing your data and building your 28-day formulation — you'll get a notification when it's ready…",
+    formulaCardTitle: 'Your formulation',
+    productCardTitle: 'From the store',
+    formulaEvalNote: 'Starts when you scan your box',
+    formulaAm: 'AM',
+    formulaPm: 'PM',
+    formulaTotalLabel: 'Per day',
+    formulaDayWord: 'Day',
+    formulaResetDay: 'DOT-N7 reset',
+    formulaDaysUnit: ' days',
+    formulaCapsulesUnit: ' capsules',
+    formulaOrderCta: 'Buy your 28-day package →',
+    formulaLabelCta: 'View formulation label & QR',
+    formulaSubmitCta: 'Confirm and start compounding →',
+    formulaSubmitConfirmTitle: 'Confirm this formulation',
+    formulaSubmitConfirmBody: 'This 28-day formulation will be compounded and shipped to you. It cannot be changed afterwards — regenerate first if you want to adjust it.',
+    formulaSubmitOk: 'Submitted. We will compound and ship this to you shortly.',
+    formulaSubmitNoOrder: 'No order is waiting to be formulated — it may already be fulfilled or cancelled.',
+    formulaSubmitExpert: 'That order includes expert review, so its final formula comes from Viva AG.',
+    formulaSubmitOverTier: "One week of this formulation runs more dots at once than your package allows — run Formulate Dots again to build one that fits it.",
+    formulaSubmitFailed: 'Submission failed. Please try again shortly.',
+    formulaAgPending: 'You have a 28-day package with expert review. Its final formula will be produced by Viva AG and signed off by a nutritionist — the allocation above is a preview.',
     formulaError: 'Plan generation failed. Please try again.',
     chatHistoryLoadMore: 'Pull or tap to load older messages',
     chatHistoryLoading: 'Loading…',
@@ -483,6 +619,8 @@ const T = {
     subAgeLabels: { ResilienceAge: 'Resilience Age', CellularAge: 'Cellular Age', MetabolicAge: 'Metabolic Age', MicroVascularAge: 'Micro-Vascular Age' },
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
+    textSizeMenu: 'Text Size',
+    textSizeLevels: ['Default', 'Large', 'Larger', 'Largest'],
     guestHeaderName: 'Guest',
     guestJoinTitle: 'Activate Your Account',
     guestJoinDesc: 'Enter your invite code to unlock AI health coaching, biomarker testing, and precision nutrition.',
@@ -557,9 +695,16 @@ function buildSubAgeLabels(base, overrides, lang) {
 // excludes coach_reminder and questionnaire_ready, which have no chat_messages row at all —
 // registering a reminder would make two genuinely separate identical ones look like a duplicate.
 const AI_ECHO_TYPES = new Set([
-  'chat_reply', 'nutrition_plan', 'formulation_reorder_ready', 'biological_report',
+  'chat_reply', 'nutrition_plan', 'formulation_proposal', 'formulation_reorder_ready',
+  'formulation_order_paid', 'biological_report',
   'coach_message', 'morning_checkin', 'midday_checkin', 'evening_checkin',
+  'viva_ag_result', 'viva_ag_failed', 'viva_ag_questionnaire',
 ])
+
+// Notification types delivered by the external Viva AG agent rather than by Viva itself. Drives
+// the "Viva AG" label on the bubble so the user can tell a deep analysis apart from a normal
+// reply; the durable equivalent is chat_messages.source.
+const AG_NOTIFICATION_TYPES = new Set(['viva_ag_result', 'viva_ag_failed', 'viva_ag_questionnaire'])
 
 // Two chat messages more than this far apart get a time separator between them. The agentic
 // loop delivers replies through _poll minutes after the question, and history spans days, so
@@ -577,6 +722,11 @@ function _msgSeparator(prevTs, ts, lang) {
   const md = lang === 'zh' ? `${d.getMonth() + 1}月${d.getDate()}日` : `${d.getMonth() + 1}/${d.getDate()}`
   return `${md} ${hh}:${mm}`
 }
+
+// "The user backed out of the package picker", which is NOT the same as "nothing is waiting":
+// one must silently do nothing, the other must explain itself. A symbol so it can never collide
+// with a real order_id.
+const CANCELLED = Symbol('picker-cancelled')
 
 function chronoAge(birthDate) {
   if (!birthDate) return null
@@ -746,6 +896,54 @@ function mapStructuredSchedules(schedules, dotsMap, lang) {
   })
 }
 
+// One row per dots package, for Plans ▸ Dots. The server already merged the GCN order with
+// nano's own formula and derived the stage (handlers/dots.js, _mergeFormulationPackages); this
+// only turns that into strings, because WXML cannot format or branch on a numeric day count.
+//
+// Every stage label is looked up as t['pkgStage_' + stage] rather than switched on here, so a new
+// server-side stage needs one line in each T block and nothing else. A missing key falls back to
+// the generic name instead of rendering an empty pill — WXML has no compile-time key checking.
+function mapPackages(rawPackages, t, lang) {
+  if (!Array.isArray(rawPackages) || !t) return []
+  return rawPackages.map((p, i) => {
+    const name = p.package_name || t.pkgUnnamed
+    const bits = []
+    // What the row says under its title, most specific fact first.
+    if (p.stage === 'active' && p.day_index) {
+      bits.push(t.pkgDay(p.day_index, p.total_days))
+    } else {
+      if (p.tier_label) bits.push(p.tier_label)
+      else if (p.max_distinct_dots) bits.push(t.pkgTierUpTo(p.max_distinct_dots))
+      if (p.ordered_at) bits.push(t.pkgOrderedOn(fmtDate(p.ordered_at, lang)))
+    }
+    return {
+      // order_id is a UUID and plan_id an int; a package can legitimately have only one of them,
+      // so the wx:key is the pair plus the index rather than either alone.
+      key: `${p.order_id || 'p'}-${p.plan_id || 'o'}-${i}`,
+      stage: p.stage,
+      stageLabel: t['pkgStage_' + p.stage] || name,
+      name,
+      meta: bits.join(' · '),
+      order_id: p.order_id || null,
+      plan_id: p.plan_id || null,
+      // The formula a waiting package could be filled with — a DIFFERENT plan from plan_id, which
+      // is what is already attached (nothing is bound until submit). Dropping this is what makes
+      // the CTA silently render as a hint, so it must stay copied through.
+      submit_plan_id: p.submit_plan_id || null,
+      can_submit: !!p.can_submit,
+      can_scan: !!p.can_scan,
+      can_order: !!p.can_order,
+      tracking_number: p.tracking_number || null,
+      // The courier's own status line when Kuaidi100 has pushed one, otherwise just the number.
+      trackingLabel: [p.shipping_carrier, p.tracking_number, p.tracking_status_desc]
+        .filter(Boolean).join(' · '),
+      // "Bought and not yet finished with" — what hides the buy-another card. A proposal is not
+      // in flight (nothing was paid), and neither is a package already taken, cancelled or refunded.
+      inFlight: !['proposed', 'active', 'cancelled', 'refunded'].includes(p.stage),
+    }
+  })
+}
+
 // Constrains <img> tags in HTML descriptions so pictures fit the store card width
 function prepDescHtml(html) {
   return html.replace(/<img\b([^>]*?)\/?>/gi, (m, attrs) => {
@@ -826,6 +1024,7 @@ Page({
     user: null,
     lang: 'zh',
     t: T.zh,
+    textScale: 0,   // accessibility text size, 0-3; renders as .fs-N on the root view
     tab: 'chat',
     version: IS_DEV ? VERSION : WX_VERSION,
 
@@ -907,6 +1106,8 @@ Page({
     vivaRedeemCode: '',
     vivaRedeemBusy: false,
     vivaRedeemError: '',
+    // Viva AG add-on — drives the health tab's subtab strip. Cosmetic; the server re-checks.
+    vivaAgActive: false,
 
     // Role menu flags
     menuOpen: false,
@@ -939,6 +1140,13 @@ Page({
     dispenseStatus: '',
     cartridges: [],
     cartridgesLoading: true,
+    // Every dots package this user has, merged server-side from the GCN order and nano's
+    // own formula. Never a source for hasPlan — see _loadDots.
+    packages: [],
+    hasPackageInFlight: false,
+    // A 'proposed' formula the chat tool has already written. Without one, the order card leads
+    // to that tool instead of the store.
+    hasProposedFormula: false,
     weekLabel: '',
     dotsWeekOffset: 0,
     hasPrevWeek: false,
@@ -970,6 +1178,9 @@ Page({
     planSubTab: 'overview',
     plansDotsSubTab: 'dots',
     neoBound: false,
+    // Kill switch for the whole Neo dispenser entry point — the hardware is not shipping yet, so
+    // the bind card would offer something nobody can act on. Flip to true to bring it back.
+    neoAvailable: false,
     learnSubTab: 'academy',
     planBrowseOpen: false,
     events: [],
@@ -1070,6 +1281,7 @@ Page({
     const isAdmin = roles.includes('admin') || roles.includes('superadmin')
     const isSuperadmin = roles.includes('superadmin')
     const theme = user.theme || app.globalData.theme || 'dark'
+    const textScale = app.globalData.textScale || 0
     app.globalData.theme = theme
     this._applyNavBarColor(theme)
     const userAvatarLetter = (user.nickname || 'U').slice(-1).toUpperCase()
@@ -1078,7 +1290,7 @@ Page({
     const sandboxMode = !!app.globalData.sandboxMode
     const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', user.nickname || '—') : ''
     const isAeviva = channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china'
-    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, isGuest, isAeviva, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
+    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, textScale, isGuest, isAeviva, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
     if (isGuest) {
       this.setData({ messages: [this._makeMsg({ id: 'init', role: 'ai', content: T[lang].initMsg })], obStep: null, storeLoading: true })
       this._loadGuestStore(lang)
@@ -1220,8 +1432,80 @@ Page({
     this._openAevivaStore(context)
   },
 
-  handleOrderDots() {
-    this._openAevivaStoreGated()
+  // Scan the Dots box you received. This is what starts a Viva AG formulation's 28-day cycle:
+  // the plan was created (status 'approved') when a nutrition expert signed the formula off, but
+  // its schedule is only generated now, so day 1 is the day the capsules are actually in hand.
+  //
+  // wx.scanCode returns whatever the QR encodes — the box code itself, or the public ingredient
+  // page's URL that contains it. The server accepts either, so no parsing happens here.
+  handleScanBox() {
+    const { lang, user } = this.data
+    const t = T[lang]
+    if (!user?.user_id) return
+    wx.scanCode({
+      onlyFromCamera: false,
+      success: async (res) => {
+        wx.showLoading({ title: t.scanBoxWorking, mask: true })
+        try {
+          const r = await this._req(`${BASE}/api/box-claim`, 'POST', { openid: user.user_id, box_code: res.result })
+          wx.hideLoading()
+          if (r.data?.success) {
+            // A second scan of a box already claimed is not an error — say so plainly rather
+            // than showing a success animation for something that didn't just happen.
+            wx.showToast({ title: r.data.already_claimed ? t.scanBoxAlready : t.scanBoxOk, icon: 'none', duration: 2500 })
+            this._loadDots(user, lang)
+          } else {
+            wx.showModal({
+              title: t.scanBoxFailTitle,
+              content: t[`scanBoxErr_${r.data?.reason}`] || t.scanBoxErrGeneric,
+              showCancel: false,
+              confirmText: t.gotIt,
+            })
+          }
+        } catch (e) {
+          wx.hideLoading()
+          wx.showToast({ title: t.scanBoxErrGeneric, icon: 'none' })
+        }
+      },
+      // Silent on cancel — the user backing out of the camera is not a failure.
+      fail: () => {},
+    })
+  },
+
+  // The Dots subtab's order card. There is no longer a second card beside it opening the store
+  // with no plan id (the old handleOrderDots): once a formula exists the package row's
+  // 按此配方下单 names it, and before one exists this is the thing that makes it. Runs the same
+  // 营养定制 tool the chat toolbox does — that tool is what actually produces a formulation, and
+  // it writes the 'proposed' plan every downstream step (the order CTA, the checkout snapshot,
+  // the printed label) resolves against. Sending them to the store from here instead would park
+  // an order at awaiting_formulation and hand them back this same job, one screen further away.
+  //
+  // Mirrors handleAgGoToChat: land on the chat tab first, then act, so the messages the tool
+  // posts are on screen as they arrive rather than behind a tab the user has to find.
+  handleGoFormulate() {
+    const { user, t, typing, obStep, isGuest } = this.data
+    if (isGuest || !user) return
+    this.setData({ tab: 'chat', toolboxOpen: false })
+    // Same guard handleToolAction uses: a turn already in flight owns the chat, and starting a
+    // second one on top of it would interleave two sets of bubbles. Landing on the tab still
+    // helps — whatever is running is what the user wanted to see.
+    if (typing || obStep !== 'done') return
+    toolActions.runFormulaDs(user.user_id, t, this._toolCtx())
+    this._scrollBottom()
+  },
+
+  // Tapping a row of the :::product card Viva appended to a reply. Opens the GCN storefront
+  // deep-linked to that exact sku, reusing the existing webview-token context bridge — GCN's
+  // dashboard.html already owns the ?sku= opener this lands in, including its silent no-op when
+  // the item isn't listed in the buyer's own bound store.
+  //
+  // A native tap handler rather than a link in the prose is not a style choice: _onMdLinkTap can
+  // only offer to COPY an http(s) URL, because a WeChat miniapp cannot open an arbitrary external
+  // link from chat text. This is the only way a chat recommendation can actually reach the store.
+  handleProductCardTap(e) {
+    const skuId = e.currentTarget.dataset.sku
+    if (!this.data.isAeviva || !skuId) return
+    this._openAevivaStoreGated({ intent: 'view_product', sku_id: skuId })
   },
 
   // "Buy This Formulation" CTA in the plan-detail overlay — only rendered (see main.wxml) once
@@ -1233,6 +1517,183 @@ Page({
     const nutritionPlanId = planDetailData?.formulation?.nutrition_plan_id
     if (!isAeviva || !nutritionPlanId) return
     this._openAevivaStoreGated({ intent: 'buy_custom_formulation', nutrition_plan_id: nutritionPlanId })
+  },
+
+  // The order CTA on a :::formula card. The card carries the id of the 'proposed'
+  // nutrition_plans row the chat tool just wrote, and GCN's checkout reads that exact recipe back
+  // through /formulation-checkout-snapshot — so what gets priced is what the user is looking at,
+  // not a re-derivation of it. Same store bridge handleBuyFormulation uses.
+  handleFormulaOrder(e) {
+    const planId = e.currentTarget.dataset.plan
+    if (!this.data.isAeviva || !planId) return
+    this._openAevivaStoreGated({ intent: 'buy_custom_formulation', nutrition_plan_id: planId })
+  },
+
+  // Opens the formulation's label page — the GCN aeviva page that draws the QR, lists every dot
+  // with its ingredients, and is what gets printed on the box. Deliberately a webview rather than
+  // a QR drawn natively here: the user should be looking at the exact page the label is printed
+  // from, and there is then only one renderer to keep correct.
+  //
+  // The URL is written by the server into the card and scheme-checked by the markdown parser
+  // before it reaches this handler; it is never taken from model output.
+  handleFormulaLabel(e) {
+    const url = e.currentTarget.dataset.url
+    if (!url) return
+    wx.navigateTo({
+      url: `/pages/appview/appview?url=${encodeURIComponent(url)}`,
+      fail: () => wx.setClipboardData({ data: url }),
+    })
+  },
+
+  // The confirm CTA on a :::formula card, shown only when GCN reported a paid FAST-TRACK package
+  // waiting to be formulated (see _buildFormulaChartBlock's `#order` note). Fast track means no
+  // expert reviews this before it is compounded, so the formula is fixed at this tap — hence an
+  // explicit confirm rather than submitting silently when the card is generated. Regenerating is
+  // the way to change it, and the dialog says so.
+  //
+  // The server re-checks the order independently; this handler never assumes the card is current.
+  async handleFormulaSubmit(e) {
+    const planId = e.currentTarget.dataset.plan
+    const { user, t } = this.data
+    if (!this.data.isAeviva || !planId || !user) return
+    if (this._formulaSubmitting) return
+
+    // Confirm first, then ask which package — agreeing to compound is the bigger decision, and
+    // this keeps the single-package flow byte-identical to what it was before a picker existed.
+    const confirmed = await new Promise(resolve => wx.showModal({
+      title: t.formulaSubmitConfirmTitle,
+      content: t.formulaSubmitConfirmBody,
+      success: r => resolve(!!r.confirm),
+      fail: () => resolve(false),
+    }))
+    if (!confirmed) return
+
+    // Which package is this filling? Resolved NOW, not from the card. The formulation turn is
+    // async, so this card may be minutes old and was rendered against whatever was waiting then —
+    // an order can have been refunded, or a second one confirmed, since. Same reasoning
+    // _resolveOrderContext gives for never caching the mode.
+    const orderId = await this._pickAwaitingOrder()
+    if (orderId === CANCELLED) return
+    await this._submitFormulation(planId, orderId, msg => this._addMsg('ai', msg, true))
+  },
+
+  // The Dots subtab's own submit. The package row already names its order, so there is nothing to
+  // pick — tapping the row IS the choice, which is what makes selection work when more than one
+  // package is waiting. Reports through a toast rather than a chat bubble; the user is not in the
+  // chat tab, and dropping a message into a conversation they are not looking at reads as noise.
+  async handlePackageSubmit(e) {
+    const { plan: planId, order: orderId } = e.currentTarget.dataset
+    const { user, t } = this.data
+    if (!this.data.isAeviva || !planId || !orderId || !user) return
+    if (this._formulaSubmitting) return
+    const confirmed = await new Promise(resolve => wx.showModal({
+      title: t.formulaSubmitConfirmTitle,
+      content: t.pkgSubmitConfirm,
+      success: r => resolve(!!r.confirm),
+      fail: () => resolve(false),
+    }))
+    if (!confirmed) return
+    const ok = await this._submitFormulation(planId, orderId,
+      msg => wx.showModal({ title: '', content: msg, showCancel: false }))
+    if (ok) {
+      wx.showToast({ title: t.pkgSubmitOk, icon: 'success' })
+      // The package has moved to 'compounding' on GCN's side; repaint so the row stops offering
+      // an action that has already been taken.
+      this._dotsLoadedAt = 0
+      this._loadDots(user, this.data.lang)
+    }
+  },
+
+  // Sentinel for "the user backed out of the picker", which is not the same as "no order" — one
+  // must silently do nothing, the other must explain itself.
+  //
+  // Returns the chosen order_id, null when nothing is waiting (the server says so authoritatively
+  // and its message is the one the user sees), or CANCELLED.
+  async _pickAwaitingOrder() {
+    const { user, t } = this.data
+    let packages = []
+    try {
+      const res = await this._req(`${BASE}/api/formulation-orders?openid=${encodeURIComponent(user.user_id)}`)
+      packages = (res.data?.packages || []).filter(p => p.can_submit && p.order_id)
+    } catch (err) {
+      // Fall through with no id: the submit below re-resolves server-side and picks the oldest,
+      // exactly as it did before a picker existed. A lookup failure must not block the action.
+      return null
+    }
+    if (packages.length <= 1) return packages.length === 1 ? packages[0].order_id : null
+    const labels = packages.map(p => {
+      const tier = p.tier_label || (p.max_distinct_dots ? t.pkgTierUpTo(p.max_distinct_dots) : '')
+      return [p.package_name || t.pkgUnnamed, tier].filter(Boolean).join(' · ')
+    })
+    return await new Promise(resolve => wx.showActionSheet({
+      itemList: labels,
+      success: r => resolve(packages[r.tapIndex].order_id),
+      fail: () => resolve(CANCELLED),
+    }))
+  },
+
+  // The one submit path, shared by the chat card and the Dots subtab so the two surfaces can never
+  // disagree about what a reason code means. `report` is how each surface talks to its own user.
+  // Returns true only on a real success.
+  async _submitFormulation(planId, orderId, report) {
+    const { user, t } = this.data
+    this._formulaSubmitting = true
+    wx.showLoading({ title: t.formulaSubmitCta, mask: true })
+    try {
+      const body = { openid: user.user_id, plan_id: planId }
+      if (orderId) body.order_id = orderId
+      const res = await this._req(`${BASE}/api/formulation-submit`, 'POST', body)
+      const d = res.data || {}
+      if (d.success) { report(t.formulaSubmitOk); return true }
+      // Named reasons the user can act on get their own message; everything else is a retry.
+      if (d.reason === 'no_awaiting_order') report(t.formulaSubmitNoOrder)
+      // The package they picked moved on between the picker and the tap — refunded, or filled from
+      // another device. Not a failure of their formula, so it must not read like one.
+      else if (d.reason === 'order_not_available') report(t.pkgOrderGone)
+      else if (d.reason === 'order_requires_expert_review') report(t.formulaSubmitExpert)
+      else if (d.reason === 'formulation_exceeds_package') report(t.formulaSubmitOverTier)
+      else report(t.formulaSubmitFailed)
+      return false
+    } catch (err) {
+      report(t.formulaSubmitFailed)
+      return false
+    } finally {
+      wx.hideLoading()
+      this._formulaSubmitting = false
+    }
+  },
+
+  handleCopyPackageTracking(e) {
+    const num = e.currentTarget.dataset.num
+    const { lang } = this.data
+    if (!num) return
+    wx.setClipboardData({
+      data: num,
+      success: () => wx.showToast({ title: lang === 'zh' ? '单号已复制' : 'Tracking copied', icon: 'success' }),
+    })
+  },
+
+  // Raised by the AG panel (via user-health) when a job is parked waiting on a clarifying
+  // questionnaire. The form renders in the chat tab — one server-driven renderer for every
+  // questionnaire in the app — so this just lands the user there and asks it to start.
+  // _checkForPendingQuestionnaire is idempotent, so a repeat tap is harmless.
+  handleAgGoToChat() {
+    this.setData({ tab: 'chat' })
+    // Only fetch if a form isn't already on screen. _checkForPendingQuestionnaire has NO
+    // internal guard — it re-fetches, finds the first unanswered question and re-runs
+    // _startQuestionnaire, which re-posts the intro and the current question as duplicate
+    // bubbles. Every other caller guards it externally the same way (onShow: `obStep ===
+    // 'done'`), and the "it's idempotent" comment on the notification path means only that it
+    // won't start a *different* questionnaire.
+    //
+    // It matters more here than anywhere else: the questionnaire_ready notification the park
+    // also writes has usually started the form already by the time the user taps 去回答, so an
+    // unguarded call duplicated almost every time. Found on a live end-to-end run, not in
+    // review. Note `obStep` and not `obQuestion` — _onAllQuestionnaireDone sets obStep 'done'
+    // but deliberately leaves obQuestion populated.
+    const formInProgress = this.data.obStep && this.data.obStep !== 'done'
+    if (!formInProgress) this._checkForPendingQuestionnaire()
+    this._scrollBottom()
   },
 
   async switchTab(e) {
@@ -1354,17 +1815,80 @@ Page({
     } catch (e) {}
   },
 
+  // One step per gesture; a pinch past either end stop is a silent no-op, not a wrap-around.
+  _stepTextScale(dir) {
+    const next = this.data.textScale + (dir > 0 ? 1 : -1)
+    if (next < 0 || next > 3) return
+    this._applyTextScale(next)
+    if (wx.vibrateShort) wx.vibrateShort({ type: 'light' })
+  },
+
+  // Pinch on the health tab, forwarded up by the user-health component.
+  onTextScaleStep(e) {
+    this._stepTextScale(e.detail.dir)
+  },
+
+  // Pinch on any tab whose body is plain page markup — chat, plans, learn and store. The health
+  // tab's gesture lives inside the user-health component instead (it forwards a textscalestep
+  // event, handled above), so it is deliberately NOT bound here: binding both would step twice
+  // on one gesture. For the same reason this is bound per tab body rather than once on the root
+  // view, which would sit under the health tab too.
+  //
+  // ONE shared stepper instance across the four is safe because `.tab-hidden` is
+  // `display: none`, so only the visible tab can receive touches at all.
+  //
+  // Bound with `bind`, not `catch`, so the stream still bubbles to the root edge-swipe handler
+  // (which ignores multi-touch) and so a one-finger scroll, a card tap or the mic
+  // press-and-hold never reaches the pinch path — the stepper only acts on exactly two touches.
+  _tabPinch() {
+    if (!this.__tabPinch) {
+      this.__tabPinch = createPinchStepper((dir) => this._stepTextScale(dir))
+    }
+    return this.__tabPinch
+  },
+
+  onTabTouchStart(e) { this._tabPinch().start(e) },
+  onTabTouchMove(e) { this._tabPinch().move(e) },
+  onTabTouchEnd() { this._tabPinch().end() },
+
+  // Header-menu stepper. Deliberately does NOT close the menu — it is a 4-way control and
+  // the point is to tap through the levels and watch the text behind it resize.
+  setTextScale(e) {
+    const level = parseInt(e.currentTarget.dataset.level, 10) || 0
+    if (level === this.data.textScale) return
+    this._applyTextScale(level)
+  },
+
+  // Mirrors toggleTheme's persistence chain: globalData -> storage -> setData -> server.
+  async _applyTextScale(textScale) {
+    app.globalData.textScale = textScale
+    wx.setStorageSync('nano_text_scale', textScale)
+    this.setData({ textScale })
+    wx.showToast({ title: this.data.t.textSizeLevels[textScale], icon: 'none', duration: 900 })
+    const user = this.data.user
+    if (this.data.isGuest || !user || !user.user_id) return
+    try {
+      await this._req(`${BASE}/api/users/${user.user_id}`, 'PATCH', { text_scale: textScale })
+    } catch (e) {}
+  },
+
   openCoach() {
     this.setData({ menuOpen: false })
     wx.navigateTo({ url: '/pages/coach/coach' })
   },
 
   onTouchStart(e) {
+    // A two-finger pinch (health-tab text size) must not also read as an edge swipe.
+    // Latched here rather than cleared in onTouchEnd because touchend fires once per
+    // finger — clearing on the first lift would let the second one through.
+    if (e.touches.length > 1) { this._multiTouch = true; return }
+    this._multiTouch = false
     this._touchX = e.touches[0].clientX
     this._touchY = e.touches[0].clientY
   },
 
   onTouchEnd(e) {
+    if (this._multiTouch) return
     if (!this.data.isCoach) return
     const d = this.data
     if (d.menuOpen || d.kinoSimOpen || d.guestSheetOpen || d.qSheetOpen) return
@@ -2042,9 +2566,11 @@ Page({
   // them skipped the conversion entirely. `content` is always the RAW text: AI rows are segmented
   // for display here, while the persist path (_addMsg below) still posts its own raw argument, so
   // nothing rendered is ever written back to the server.
-  _makeMsg({ id, role, content, imageUrl, action, label, createdAt }) {
+  _makeMsg({ id, role, content, imageUrl, action, label, createdAt, source }) {
     const r = (role === 'assistant') ? 'ai' : role
-    const msg = { id, role: r, imageUrl: imageUrl || null, ts: createdAt ? +new Date(createdAt) : Date.now(), sep: '' }
+    // `source` attributes a bubble to something other than the plain persona — currently only
+    // 'viva_ag', which renders a label the way a coach message does.
+    const msg = { id, role: r, imageUrl: imageUrl || null, source: source || null, ts: createdAt ? +new Date(createdAt) : Date.now(), sep: '' }
     if (r === 'action') { msg.action = action; msg.label = label; return msg }
     if (r === 'coach') { msg.content = (content || '').replace(/\n+/g, ' '); return msg }
     if (r === 'ai') { msg.segments = mdToSegments(content || ''); this._attachSparks(msg.segments) }
@@ -2102,7 +2628,7 @@ Page({
         return this._makeMsg({ id, role: 'ai', content: m.content, createdAt: m.created_at })
       }
     }
-    return this._makeMsg({ id, role, content: m.content, imageUrl: m.image_url, createdAt: m.created_at })
+    return this._makeMsg({ id, role, content: m.content, imageUrl: m.image_url, source: m.source, createdAt: m.created_at })
   },
 
   // Stamps each message's time separator relative to its predecessor. `prev` is the message
@@ -2344,14 +2870,11 @@ Page({
     })
   },
 
-  handleToolAction(e) {
-    const action = e.detail?.action || e.currentTarget?.dataset?.action
-    const { t, typing, obStep, user } = this.data
-    if (typing || obStep !== 'done') {
-      return
-    }
-    this.setData({ toolboxOpen: false })
-    const ctx = {
+  // The context a toolbox tool runs against. Shared, because a tool can be started two ways:
+  // by the user tapping it in the toolbox (handleToolAction) and by the chat classifier
+  // recognising the request in what the user typed (_sendMessage's launch_tool branch).
+  _toolCtx() {
+    return {
       addMsg: (role, content, persist) => this._addMsg(role, content, persist),
       addActionMsg: (action, label, persist) => this._addActionMsg(action, label, persist),
       addImageMsg: (url) => this._addImageMsg(url),
@@ -2359,7 +2882,7 @@ Page({
       req: (url, method, data, timeoutMs) => this._req(url, method, data, timeoutMs),
       setTyping: (v) => this.setData({ typing: v }),
       onHealthReportPending: (payload) => this._startHealthReportConsent(payload),
-      // Fires when the backend acks with {processing:true} instead of the reply itself (Viva's
+      // Fires when the backend acks with {processing:true} instead of the reply itself (the
       // agentic loop running async — see chat.generate) — mirrors _sendMessage's handling so the
       // same status-caption/safety-timeout machinery in _poll covers this path too.
       onAsyncStart: () => {
@@ -2367,6 +2890,16 @@ Page({
         this.setData({ typing: true, chatStatusText: this.data.t.chatThinking })
       },
     }
+  },
+
+  handleToolAction(e) {
+    const action = e.detail?.action || e.currentTarget?.dataset?.action
+    const { t, typing, obStep, user } = this.data
+    if (typing || obStep !== 'done') {
+      return
+    }
+    this.setData({ toolboxOpen: false })
+    const ctx = this._toolCtx()
     if (action === 'test_chip') {
       this._addMsg('ai', t.kinoScanPrompt)
       this.setData({ kinoScanPending: true })
@@ -2531,8 +3064,17 @@ Page({
       if (res.data?.recorded_weight != null) {
         this.selectComponent('#health-comp')?.refresh()
       }
+      // The classifier recognised an explicit "formulate my dots" request and handed the turn to
+      // the toolbox tool instead of generating a reply (see handlePostChat's launch_tool branch):
+      // that tool is what actually produces a formulation, so running it beats describing it.
+      // The user's own message already stands in the chat and was persisted server-side, hence
+      // skipUserMsg — the tool must not append its own canned trigger line on top of it.
+      if (res.data?.launch_tool === 'formula_dots') {
+        toolActions.runFormulaDs(user.user_id, t, this._toolCtx(), { skipUserMsg: true })
+        return
+      }
       if (res.data?.processing) {
-        // Viva's agentic loop is running asynchronously (see backend chat.generate event) —
+        // The agentic loop is running asynchronously (see backend chat.generate event) —
         // the real reply isn't ready yet. Keep the typing indicator up with an evolving
         // status caption; _poll clears it when the actual reply (or the safety timeout)
         // arrives. Set an immediate local caption so there's no gap before the first
@@ -2598,15 +3140,17 @@ Page({
           const bubbleRows = realRows.filter(n => n.notification_type !== 'questionnaire_ready'
             && !(AI_ECHO_TYPES.has(n.notification_type) && this._isRenderedAi(n.content)))
           bubbleRows.forEach(n => { if (AI_ECHO_TYPES.has(n.notification_type)) this._markRenderedAi(n.content) })
-          const newMsgs = bubbleRows.map(n => this._makeMsg({ id: `n-${n.id}`, role: 'ai', content: n.content }))
-          // A 'nutrition_plan' row means Viva's async dot formulation just committed — add the
-          // "view plan" action button here (it used to be added synchronously right after the
-          // POST, back when the schedule was committed inline; now the commit itself happens
-          // async, so the button must wait for this same completion signal instead of appearing
-          // before the plan actually exists).
-          if (realRows.some(n => n.notification_type === 'nutrition_plan')) {
-            newMsgs.push(this._makeMsg({ id: `action-view_dots-${Date.now()}`, role: 'action', action: 'view_dots', label: this.data.t.formulaViewDots }))
-          }
+          const newMsgs = bubbleRows.map(n => this._makeMsg({
+            id: `n-${n.id}`, role: 'ai', content: n.content,
+            // The notification type is the only attribution available on this channel — the
+            // matching chat_messages row carries it durably for reloads.
+            source: AG_NOTIFICATION_TYPES.has(n.notification_type) ? 'viva_ag' : null,
+          }))
+          // No "view plan" button on a 'nutrition_plan' row any more: Formulate-Dots writes a
+          // 'proposed' plan, which has no schedules and stays out of the Dots subtab until the
+          // delivered box is scanned — so that button would show whatever plan the user is
+          // currently ON, not the one they just asked for. The whole 28-day allocation lives in
+          // the message itself now, as a :::formula card with its own order CTA.
           this._chatWaitStartedAt = null
           if (newMsgs.length > 0) {
             const messages = [...this.data.messages, ...this._applySeparators(newMsgs, this.data.messages[this.data.messages.length - 1])]
@@ -2860,9 +3404,19 @@ Page({
         ? (dispenseSlot === 'morning_cup' ? todayDay.morning : todayDay.evening)
         : []
 
+      const packages = mapPackages(res.data?.packages, this.data.t, lang)
+
       this.setData({
         dotsLoading: false,
+        // Still 'active'-only, deliberately. `packages` is a sibling of the plan fields and must
+        // never feed this — CLAUDE.md §28b records the bug where a proposal made this tab report
+        // a plan the user did not physically have.
         hasPlan: (plan !== null || structured !== null),
+        packages,
+        // Buying a second package while one is in flight is refused by GCN
+        // (formulation_already_in_progress), so the order card hides rather than dead-ending.
+        hasPackageInFlight: packages.some(p => p.inFlight),
+        hasProposedFormula: packages.some(p => p.stage === 'proposed'),
         dispenseSlot,
         dispenseSlotDots,
         dispenseDate: localISODate(new Date()),
@@ -2871,7 +3425,7 @@ Page({
       })
       this._applyDotsWeek(0)
     } catch (e) {
-      this.setData({ dotsLoading: false, hasPlan: false })
+      this.setData({ dotsLoading: false, hasPlan: false, packages: [], hasPackageInFlight: false, hasProposedFormula: false })
     }
   },
 
@@ -3023,7 +3577,8 @@ Page({
         const personaType = res.data.persona_type || 'nano'
         const vivaSubscriptionExpired = personaType === 'viva' && (!expiresAt || new Date(expiresAt) <= new Date())
         const vivaSubscriptionExpiresAtDisplay = expiresAt ? fmtDate(expiresAt, this.data.lang) : ''
-        this.setData({ personaType, vivaSubscriptionExpiresAt: expiresAt || null, vivaSubscriptionExpired, vivaSubscriptionExpiresAtDisplay })
+        this.setData({ personaType, vivaSubscriptionExpiresAt: expiresAt || null, vivaSubscriptionExpired, vivaSubscriptionExpiresAtDisplay,
+          vivaAgActive: !!res.data.viva_ag_active })
       }
     } catch (e) {}
   },

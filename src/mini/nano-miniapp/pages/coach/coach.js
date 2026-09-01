@@ -1,7 +1,10 @@
 const app = getApp()
-const { BASE } = require('../../utils/config.js')
+const { BASE, VERSION } = require('../../utils/config.js')
 const toolActions = require('../../utils/tool-actions')
 const { maskPhone } = require('../../utils/phone.js')
+
+// Questionnaire types a human may assign — see _loadQuestionnaires.
+const ASSIGNABLE_TYPES = ['onboarding', 'custom']
 
 const T = {
   zh: {
@@ -24,6 +27,11 @@ const T = {
     searchPlaceholder: '搜索客户姓名…',
     filterAll: '全部',
     noMatchClients: '无匹配客户',
+    // Three distinct reasons the list can be empty. They used to all render as noClients, which is
+    // what made a real incident (2026-08-30) undiagnosable from the user's description.
+    clientsLoadFailed: '客户列表加载失败，请下拉刷新',
+    noCoachSession: '未能识别你的教练身份，请重新登录',
+    retryLoad: '重试',
     bioAge: '生理年龄', chronoAge: '实际年龄',
     lastScan: '上次检测',
     older: '岁↑', younger: '岁↓',
@@ -125,9 +133,8 @@ const T = {
     toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
     toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
     formulaGenerating: '正在为你定制营养方案…',
-    formulaComplete: '您的28天营养方案已生成！',
-    formulaProcessing: '正在深度分析并配置本周方案，请稍后在方案页查看…',
-    formulaViewDots: '查看营养方案 →',
+    formulaComplete: '该客户的 28 天定制方案已生成，详见对话中的配比卡片。',
+    formulaProcessing: '正在深度分析并定制 28 天方案，完成后会显示在对话中…',
     formulaError: '方案生成失败，请重试。',
     healthAdviceError: '健康分析请求失败，请重试。',
     imageUploading: '正在上传图片…',
@@ -161,6 +168,9 @@ const T = {
     searchPlaceholder: 'Search by name…',
     filterAll: 'All',
     noMatchClients: 'No matching clients',
+    clientsLoadFailed: 'Could not load clients — pull down to retry',
+    noCoachSession: 'Your coach identity could not be resolved — please sign in again',
+    retryLoad: 'Retry',
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
     lastScan: 'Last scan',
     older: 'yrs↑', younger: 'yrs↓',
@@ -262,9 +272,8 @@ const T = {
     toolFormulaDotMsg: 'Please formulate my Dots plan',
     toolHealthAdviceMsg: 'Please analyze my current health status and give me personalized health advice.',
     formulaGenerating: 'Generating your 28-day nutrition plan from your biomarkers…',
-    formulaComplete: 'Your 28-day nutrition plan is ready!',
-    formulaProcessing: "Deeply analyzing and formulating this week's plan — check the Plan page shortly…",
-    formulaViewDots: 'View Dots Plan →',
+    formulaComplete: "This client's 28-day formulation is ready — see the allocation card in the conversation.",
+    formulaProcessing: 'Deeply analyzing and building the 28-day formulation — it will appear in the conversation…',
     formulaError: 'Plan generation failed. Please try again.',
     healthAdviceError: 'Health analysis request failed. Please try again.',
     imageUploading: 'Uploading image…',
@@ -342,10 +351,18 @@ Page({
     menuOpen: false,
     menuTop: 0,
     theme: 'dark',
+    textScale: 0,   // accessibility text size, 0-3; renders as .fs-N on the root view
     isAdmin: false,
     isSuperadmin: false,
     clients: [],
     filteredClients: [],
+    // '' = loaded fine (an empty list then genuinely means no clients).
+    // 'no_coach' = no coach id in this session, so the API was never called.
+    // 'failed'   = the request was made and did not come back usable.
+    clientsLoadState: '',
+    // Shown only when the load did not succeed — answers "which backend, which coach id" at a
+    // glance instead of requiring a server-side investigation to find out.
+    diagText: '',
     clientSearch: '',
     clientStageFilter: '',
     clientFilterStages: [],
@@ -441,6 +458,8 @@ Page({
   },
 
   _coachId: null,
+  _loaded: false,
+  _repairAttempted: false,
   _coachChannelId: null,
   _coachUserId: null,
   _touchX: 0,
@@ -470,27 +489,73 @@ Page({
     const isAdmin = roles.includes('admin') || roles.includes('superadmin')
     const isSuperadmin = roles.includes('superadmin')
     const theme = user.theme || app.globalData.theme || 'dark'
+    const textScale = app.globalData.textScale || 0
     const lang = app.globalData.lang || 'zh'
     const t = T[lang]
     const sandboxMode = !!app.globalData.sandboxMode
     const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', nickname || '—') : ''
     const factCategoryLabels = ['dietary_restriction', 'allergy', 'preference', 'goal', 'other'].map(c => t.factCategories[c])
-    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText, factCategoryLabels })
+    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, textScale, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText, factCategoryLabels })
     this._applyNavBarColor(theme)
+    this._loaded = true
+    this._loadAll()
+  },
+
+  // The client list was previously fetched ONLY in onLoad, which fires once per page instance. A
+  // coach who backgrounded the app and came back kept seeing the list from whenever they first
+  // opened the page — indefinitely, and with no way to tell it was stale (2026-08-30). onShow
+  // refetches on every return to the page; the guard skips the first one, since onLoad just ran.
+  onShow() {
+    if (!this._loaded) return
     this._loadAll()
   },
 
   async _loadAll() {
     this.setData({ loading: true })
+    // No coach id means globalData.coach was never populated by whichever login path ran. The
+    // request below would be `/coach-users/undefined`, so it isn't made at all — but that must
+    // report itself rather than render as "no clients", which is indistinguishable from a coach
+    // who genuinely has none (2026-08-30: a coach's 37 real clients looked exactly like zero).
+    if (!this._coachId) {
+      // globalData.coach is captured at login and never refreshed afterwards, so a session that
+      // once stored a null keeps it across every relaunch — while roles ARE refreshed, which is how
+      // a user the app labels 教练 ends up with no coach id at all (prod 2026-08-30). Re-resolve it
+      // from the server and repair the stored session, rather than making the user work out that a
+      // full re-login is the fix.
+      const repaired = await this._repairCoachSession()
+      if (repaired) return this._loadAll()
+      // Invites are keyed on the user id, not the coach id, so they still load — a broken coach
+      // session must not also empty the 邀请码 tab, which has nothing to do with this failure.
+      let invites = []
+      try {
+        const res = await this._req(`${BASE}/api/invitations?created_by=${encodeURIComponent(this._coachUserId)}`)
+        invites = res.data?.invitations || []
+      } catch (e) { /* the client-list state below is the error worth reporting, not this one */ }
+      this.setData({
+        clients: [], filteredClients: [], clientFilterStages: [], invites,
+        clientsLoadState: 'no_coach', diagText: this._diagText(), loading: false,
+      })
+      return
+    }
     try {
       const [clientsRes, invitesRes] = await Promise.all([
-        this._coachId
-          ? this._req(`${BASE}/api/coach-users/${this._coachId}`)
-          : Promise.resolve({ data: { users: [] } }),
+        this._req(`${BASE}/api/coach-users/${this._coachId}`),
         this._req(`${BASE}/api/invitations?created_by=${encodeURIComponent(this._coachUserId)}`),
       ])
+      // _req resolves on ANY status — it only rejects on transport failure — so a 401/403/500
+      // arrives here as a resolved response with no `users` array. Without this check that became
+      // a silent empty list, the second way this failure hid itself.
+      const payload = clientsRes.data
+      if (!payload || !Array.isArray(payload.users)) {
+        this.setData({
+          clients: [], filteredClients: [], clientFilterStages: [],
+          clientsLoadState: 'failed', diagText: this._diagText(clientsRes),
+        })
+        wx.showToast({ title: T[this.data.lang].clientsLoadFailed, icon: 'none' })
+        return
+      }
       const lang = this.data.lang
-      const clients = (clientsRes.data?.users || []).map(u => {
+      const clients = payload.users.map(u => {
         const cAge = chronoAge(u.birth_date)
         const bioAge = u.bio_age != null ? Number(u.bio_age) : null
         const delta = bioAge != null && cAge != null ? Number((bioAge - cAge).toFixed(1)) : null
@@ -523,13 +588,49 @@ Page({
         }
       })
       const clientFilterStages = this._buildFilterStages(clients)
-      this.setData({ clients, invites: invitesRes.data?.invitations || [], clientFilterStages })
+      this.setData({
+        clients, invites: invitesRes.data?.invitations || [], clientFilterStages,
+        clientsLoadState: '', diagText: '',
+      })
       this._filterClients()
     } catch (e) {
+      // Transport failure. Keep whatever was already on screen — replacing a good list with an
+      // empty one because a later refresh blipped is strictly worse than showing stale data.
+      this.setData({ clientsLoadState: 'failed', diagText: this._diagText(null, e) })
       wx.showToast({ title: T[this.data.lang].networkError, icon: 'none' })
     } finally {
       this.setData({ loading: false })
     }
+  },
+
+  // Re-fetches this user's coach identity and writes it back to both globalData and storage, so
+  // the repair survives the next app launch instead of being redone on every visit. Returns false
+  // on any failure — the caller then falls through to the explicit no-coach state.
+  async _repairCoachSession() {
+    if (this._repairAttempted) return false
+    this._repairAttempted = true
+    try {
+      const res = await this._req(`${BASE}/api/my-coach?user_id=${encodeURIComponent(this._coachUserId)}`)
+      const coach = res.data && res.data.success ? res.data.coach : null
+      if (!coach || !coach.id) return false
+      app.globalData.coach = coach
+      wx.setStorageSync('nano_coach', coach)
+      this._coachId = coach.id
+      this._coachChannelId = coach.channel_id
+      return true
+    } catch (e) {
+      return false
+    }
+  },
+
+  // Which backend, which coach id, and what came back — the three facts that turn "no users" from
+  // a multi-round investigation into something readable off the screen. Only rendered on failure.
+  _diagText(res, err) {
+    const host = String(BASE).replace(/^https?:\/\//, '')
+    const parts = [`${host} · coach=${this._coachId == null ? 'null' : this._coachId}`, `v${VERSION}`]
+    if (res && res.statusCode) parts.push(`HTTP ${res.statusCode}`)
+    if (err && err.errMsg) parts.push(String(err.errMsg).slice(0, 40))
+    return parts.join(' · ')
   },
 
   handleRefresh() {
@@ -596,6 +697,34 @@ Page({
     this._applyNavBarColor(theme)
     try {
       await this._req(`${BASE}/api/users/${this._coachUserId}`, 'PATCH', { theme })
+    } catch (e) {}
+  },
+
+  // One step per gesture; a pinch past either end stop is a silent no-op, not a wrap-around.
+  // Same shape as pages/main so the two can be read side by side.
+  _stepTextScale(dir) {
+    const next = this.data.textScale + (dir > 0 ? 1 : -1)
+    if (next < 0 || next > 3) return
+    this._applyTextScale(next)
+    if (wx.vibrateShort) wx.vibrateShort({ type: 'light' })
+  },
+
+  // Two-finger pinch inside the client-detail health sheet (user-health.js). The setting is
+  // the *viewer's* accessibility preference, so it applies here as well as on main.
+  onTextScaleStep(e) {
+    this._stepTextScale(e.detail.dir)
+  },
+
+  // Writes nano_text_scale, which is what app.js onLaunch actually reads back. (toggleTheme
+  // above only ever writes nano_user, so a theme picked here is lost on next launch — do not
+  // copy that shape.)
+  async _applyTextScale(textScale) {
+    app.globalData.textScale = textScale
+    wx.setStorageSync('nano_text_scale', textScale)
+    this.setData({ textScale })
+    if (!this._coachUserId) return
+    try {
+      await this._req(`${BASE}/api/users/${this._coachUserId}`, 'PATCH', { text_scale: textScale })
     } catch (e) {}
   },
 
@@ -674,11 +803,17 @@ Page({
   },
 
   onTouchStart(e) {
+    // A two-finger pinch (health-sheet text size) must not also read as an edge swipe.
+    // Latched, not cleared in onTouchEnd: touchend fires once per finger, so clearing on
+    // the first lift would let the second one through.
+    if (e.touches.length > 1) { this._multiTouch = true; return }
+    this._multiTouch = false
     this._touchX = e.touches[0].clientX
     this._touchY = e.touches[0].clientY
   },
 
   onTouchEnd(e) {
+    if (this._multiTouch) return
     if (this.data.menuOpen || this.data.detailOpen || this.data.reminderOpen || this.data.qAssignOpen || this.data.qResponsesOpen) return
     if (this._touchX > 40) return // only honor swipes starting at the left edge (frees interior gestures like the CRM kanban)
     const dx = e.changedTouches[0].clientX - this._touchX
@@ -1099,7 +1234,14 @@ Page({
     try {
       const params = this._coachChannelId ? `channel_id=${this._coachChannelId}` : ''
       const res = await this._req(`${BASE}/api/questionnaires?${params}`)
-      const questionnaires = (res.data?.questionnaires || []).filter(q => q.is_active)
+      // Allowlist, not a denylist, so a future questionnaire type defaults to hidden here.
+      // 'dynamic' (Viva's own mid-conversation follow-up) and 'viva_ag' (a clarifying form the
+      // external agent pushed back to unblock ONE job) are both one-off and scoped to the person
+      // they were generated for — assigning either to a different client would hand them
+      // questions written about someone else's situation. Their answers are still visible in the
+      // client detail sheet.
+      const questionnaires = (res.data?.questionnaires || [])
+        .filter(q => q.is_active && ASSIGNABLE_TYPES.includes(q.type))
       this.setData({ questionnaires })
     } catch {
       wx.showToast({ title: T[this.data.lang].networkError, icon: 'none' })

@@ -5,6 +5,7 @@
  * Output includes a brief analysis and the DXX:N formulation lines.
  */
 const { classifyBiomarker, LABELS_ZH: STATUS_LABELS_ZH, LABELS_EN: STATUS_LABELS_EN } = require('../../lib/biomarkerStatus');
+const { MAX_DOTS_PER_CAPSULE } = require('../../lib/dotsProductModel');
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 
@@ -21,7 +22,16 @@ module.exports = (context) => {
           : '';
         const shortKey = d.key_name.replace(/^DOT/, 'D');
         const zhLabel = isZh && d.key_name_zh ? `（对话中称呼："${d.key_name_zh}"）` : '';
-        return `${shortKey}${zhLabel}: ${d.name}${d.name_zh ? ' / ' + d.name_zh : ''}${ingrStr}`;
+        // Each dot's intake range is its own, and they differ by more than an order of magnitude,
+        // so it has to be shown per dot: one global range in the rules below is meaningless, and the
+        // parse path clamps into target_dots_min/max anyway, silently discarding any guess made
+        // without this. Mirrors the ［建议摄入：…］ rendering in viva/chat/nutrition.js.
+        const rangeStr = (d.target_dots_min != null && d.target_dots_max != null)
+          ? (d.target_dots_min === d.target_dots_max
+              ? (isZh ? `［建议摄入：${d.target_dots_min}粒/日］` : ` [suggested intake: ${d.target_dots_min}/day]`)
+              : (isZh ? `［建议摄入：${d.target_dots_min}–${d.target_dots_max}粒/日］` : ` [suggested intake: ${d.target_dots_min}–${d.target_dots_max}/day]`))
+          : '';
+        return `${shortKey}${zhLabel}: ${d.name}${d.name_zh ? ' / ' + d.name_zh : ''}${ingrStr}${rangeStr}`;
       }).join('\n')
     : 'Formulary not available.';
 
@@ -64,7 +74,7 @@ ${formularyLines}
 
 任务：
 1. 分析 (Analysis): 用两三句话简要说明基于上述数据的核心健康洞察。提及 Dot 时使用配方库中标注的"对话中称呼"（如"原粒1号"）或名称，**不要**说出内部短代码（如"D-N1"）。
-2. 配方 (Formulation): 为配方库中的每个短代码分配每日数量 (1-10)。
+2. 配方 (Formulation): 为配方库中的每个短代码分配每日数量，数值必须落在该短代码自己标注的"建议摄入"区间内。
 
 输出格式 (必须严格遵守，短代码必须与上方配方库中出现的完全一致，如 D-N1、D-N2)：
 ANALYSIS: [你的简短分析]
@@ -74,10 +84,14 @@ D-N2:N
 ... (以此类推)
 
 规则：
-- N 是 1 到 10 之间的整数。
-- 对与用户异常指标无关的 Dot，使用 3-4 作为基础量。
-- 对针对用户偏高指标的 Dot，使用 5-7。
-- 对针对高风险或关键指标的 Dot，使用 8-10。
+- N 必须是整数，且必须落在上方配方库中该短代码自己标注的"建议摄入"区间内（含端点）。
+- 各短代码的区间差异极大（有的仅个位数，有的高达数十粒/日），必须逐一核对上方配方库中该短代码自己标注的区间，不得套用统一数值，也不得默认使用个位数。
+- 用量强度通过"在该短代码自己区间内的相对位置"表达，而非绝对数值：
+  · 与用户异常指标无关的 Dot：取该区间的低端（约区间起点上方 1/4 处）。
+  · 针对用户偏高指标的 Dot：取该区间的中段。
+  · 针对高风险或关键指标的 Dot：取该区间的高端（约区间起点上方 3/4 处）。
+- 全天总量上限：早、晚各一粒胶囊，每粒最多 ${MAX_DOTS_PER_CAPSULE} 颗原粒，全天合计不超过 ${MAX_DOTS_PER_CAPSULE * 2} 颗。这是硬性物理上限。
+- 若按上述相对位置分配后总量超出该上限，必须做取舍：把与用户异常指标无关的原粒压到其区间下限，将额度让给针对用户异常指标的原粒。不要为了凑总量而把所有原粒一起等比例下调。
 - 必须包含配方库中列出的所有 DXX 代码。
 `;
   } else {
@@ -85,7 +99,7 @@ D-N2:N
 
 ${getFactMemoryBlock(context.user_facts, false)}
 
-You are a precision nutrition engine. Based on the user's biomarkers and BioAge, analyze their health profile and assign a daily dot count (1–10) for each Waven Dot.
+You are a precision nutrition engine. Based on the user's biomarkers and BioAge, analyze their health profile and assign a daily dot count for each Waven Dot, within that dot's own suggested intake range.
 
 BIOMARKER REFERENCE RANGES:
   hsCRP (mg/L):       <1 = normal | 1–3 = elevated | >3 = high inflammation
@@ -108,7 +122,7 @@ ${formularyLines}
 
 TASK:
 1. Analysis: Provide a 2-3 sentence summary of core health insights based on the data.
-2. Formulation: Assign a daily count (1-10) for every dot key in the formulary.
+2. Formulation: Assign a daily count for every dot key in the formulary, inside that key's own suggested intake range.
 
 OUTPUT FORMAT (strictly follow this — short keys MUST match the formulary above exactly, e.g. D-N1, D-N2):
 ANALYSIS: [Your brief analysis]
@@ -118,10 +132,14 @@ D-N2:N
 ... (etc.)
 
 Rules:
-- N is an integer from 1 to 10.
-- Use 3–4 for dots not relevant to the user's elevated markers.
-- Use 5–7 for dots addressing elevated markers.
-- Use 8–10 for dots addressing high/critical markers.
+- N must be an integer inside that short key's own "suggested intake" range shown in the formulary above (endpoints included).
+- Ranges differ enormously between dots — some are single digits, others run to dozens per day. Check each dot's own range in the formulary above individually; never reuse one number across dots, and never default to single digits.
+- Express intensity as a RELATIVE POSITION within that dot's own range, not as an absolute number:
+  - Dots not relevant to the user's elevated markers: the low end of that range (~1/4 of the way up).
+  - Dots addressing elevated markers: the middle of that range.
+  - Dots addressing high/critical markers: the high end of that range (~3/4 of the way up).
+- TOTAL BUDGET: one morning capsule and one evening capsule, each holding at most ${MAX_DOTS_PER_CAPSULE} dots — ${MAX_DOTS_PER_CAPSULE * 2} per day in total. This is a hard physical limit.
+- If your allocation exceeds that budget you MUST prioritize: push every dot unrelated to the user's elevated markers down to the low end of its range and give the headroom to the dots that address those markers. Do NOT scale every dot down uniformly to make it fit.
 - You MUST include all DXX codes listed in the formulary.
 `;
   }

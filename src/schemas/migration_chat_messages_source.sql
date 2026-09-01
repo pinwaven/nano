@@ -1,0 +1,14 @@
+-- Attribution marker for a chat message whose author is not the plain persona.
+--
+-- Viva AG results are delivered into the normal chat, but the user should be able to tell that a
+-- deep analysis came from Viva AG rather than from Viva. That attribution CANNOT be carried by
+-- persona_type: chat history is persona-scoped, so a row saved as 'viva_ag' would be invisible to
+-- the chat tab's own history query and the bubble would flash once via the notification poll and
+-- vanish on reload (CLAUDE.md 25's "second real bug"). persona_type stays 'viva'.
+--
+-- It also cannot be derived at render time from the notification type: notifications are read
+-- destructively and are gone after one poll, so a reload has only chat_messages to work from.
+-- Hence a durable column.
+--
+-- NULL means "the persona itself", which is every pre-existing row and every normal reply.
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS source TEXT;

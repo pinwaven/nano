@@ -1,3 +1,5 @@
+-- @requires: migration_kino_devices.sql
+
 CREATE TABLE IF NOT EXISTS kino_curve (
     id               SERIAL PRIMARY KEY,
     kino_device_id   INTEGER REFERENCES kino_devices(id) ON DELETE SET NULL,

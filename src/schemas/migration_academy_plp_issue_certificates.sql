@@ -8,6 +8,7 @@
 -- script renders and uploads to OSS -- keeping the key here means no
 -- separate ad-hoc UPDATE against prod is needed after image generation.
 -- Idempotent via ON CONFLICT (user_id, certification_id) DO NOTHING.
+-- @requires: migration_academy_rename_coach_user_id.sql
 
 INSERT INTO academy_coach_certifications (user_id, certification_id, earned_at, is_manual_issue, certificate_number, issue_date, expiry_date, cert_oss_key) SELECT 'e983e7c2', 1, NOW(), TRUE, 'SCHCD012188', c.issue_date, c.validity_date, 'academy/cert-rendered/SCHCD012188.png' FROM academy_certifications c WHERE c.id = 1 ON CONFLICT (user_id, certification_id) DO NOTHING;
 INSERT INTO academy_coach_certifications (user_id, certification_id, earned_at, is_manual_issue, certificate_number, issue_date, expiry_date, cert_oss_key) SELECT '217438b4', 1, NOW(), TRUE, 'SCHZJ072733', c.issue_date, c.validity_date, 'academy/cert-rendered/SCHZJ072733.png' FROM academy_certifications c WHERE c.id = 1 ON CONFLICT (user_id, certification_id) DO NOTHING;

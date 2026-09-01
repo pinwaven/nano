@@ -6,6 +6,70 @@ const { normalizeCnPhone } = require('../lib/phone');
 const { grantSignupTrial } = require('../lib/personaOverride');
 const { syncPartnerPhoneFromUser } = require('./partners');
 
+// A referral code belongs to a user, not a coach — but when that user IS a coach, sharing their
+// personal referral_code instead of their coaches invitation code should still land the new signup
+// in their client list. Without this the referral path sets referred_by_user_id and inherits the
+// channel but leaves coach_id NULL, so the coach never sees them (prod incident 2026-08-29: a coach
+// shared her referral code at an event and all 36 signups were invisible to her).
+async function coachIdForReferrer(referrerUserId) {
+    if (!referrerUserId) return null;
+    try {
+        const res = await pool.query(
+            "SELECT id FROM coaches WHERE user_id = $1 AND status = 'active' LIMIT 1",
+            [referrerUserId]
+        );
+        return res.rows[0]?.id || null;
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'coachIdForReferrer failed', referrer: referrerUserId, error: err.message }));
+        return null;
+    }
+}
+
+// Resolves the caller's own coach identity — the object the clients store as globalData.coach and
+// every coach-panel request keys off (pages/coach/coach.js: `_coachId = coach ? coach.id : null`).
+// Exported because EVERY login path must return it: a path that omits it leaves a real coach with
+// `_coachId = null`, and the panel then renders an empty client list without ever calling the API
+// (prod 2026-08-30 — coaches who signed in by phone OTP instead of WeChat saw no clients at all).
+async function resolveCoachSession(userId, roles) {
+    if (!roles || !roles.includes('coach')) return null;
+    try {
+        const res = await pool.query(
+            'SELECT c.id, u2.channel_id, c.user_id FROM coaches c JOIN users u2 ON c.user_id = u2.user_id WHERE c.user_id = $1 LIMIT 1',
+            [userId]
+        );
+        return res.rows[0] || null;
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'resolveCoachSession failed', user_id: userId, error: err.message }));
+        return null;
+    }
+}
+
+// GET /my-coach?user_id=… — re-resolve the caller's own coach identity.
+//
+// globalData.coach is captured at login and, unlike globalData.user, is NEVER refreshed after it
+// (nano_user is rewritten from the server in several places; nano_coach only ever at login and
+// sandbox enter/exit). So a session that once stored a null — logging in before being made a
+// coach, or via a path that predates the coach field — keeps that null across every relaunch,
+// forever, while roles DO get refreshed. The result is a user the app labels 教练 whose coach
+// panel can never load: confirmed in prod 2026-08-30 as `coach=null` for a coach with 37 clients.
+// This lets the client repair itself instead of requiring the user to work out that a full
+// re-login is the fix.
+async function handleGetMyCoach(query) {
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const userId = query && query.user_id;
+        if (!userId) return { success: false, error: 'user_id is required', statusCode: 400 };
+        // Read roles from the DB rather than trusting a client-supplied claim — the coaches row is
+        // the real authority anyway, and resolveCoachSession returns null for a non-coach.
+        const uRes = await pool.query('SELECT roles FROM users WHERE user_id = $1 LIMIT 1', [userId]);
+        if (uRes.rows.length === 0) return { success: false, error: 'user_not_found', statusCode: 404 };
+        const coach = await resolveCoachSession(userId, uRes.rows[0].roles);
+        return { success: true, coach };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function handleResolvePhone(code, app_id = null) {
     try {
         if (!code) return { success: false, error: 'code is required' };
@@ -118,6 +182,7 @@ async function handleWxLogin(body) {
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                 u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
                 u.referred_by_user_id, u.merged_into_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
+                COALESCE((u.preferences->>'text_scale')::int, 0) AS text_scale,
                 cu.nickname AS coach_name,
                 c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                 c.config->'sub_age_display_names' AS channel_sub_age_names,
@@ -219,6 +284,13 @@ async function handleWxLogin(body) {
                         await pool.query('UPDATE users SET channel_id = $1 WHERE user_id = $2', [referrer.channel_id, existingRow.user_id]);
                         existingRow.channel_id = referrer.channel_id;
                     }
+                    if (!existingRow.coach_id) {
+                        const referrerCoachId = await coachIdForReferrer(referrer.user_id);
+                        if (referrerCoachId) {
+                            await pool.query('UPDATE users SET coach_id = $1 WHERE user_id = $2 AND coach_id IS NULL', [referrerCoachId, existingRow.user_id]);
+                            existingRow.coach_id = referrerCoachId;
+                        }
+                    }
                 }
             }
         }
@@ -250,14 +322,7 @@ async function handleWxLogin(body) {
             ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
             : null;
         // If user is a coach, fetch their coach record
-        let coach = null;
-        if (user.roles && user.roles.includes('coach')) {
-            const coachRes = await pool.query(
-                `SELECT c.id, u2.channel_id, c.user_id FROM coaches c JOIN users u2 ON c.user_id = u2.user_id WHERE c.user_id = $1 LIMIT 1`,
-                [user.user_id]
-            );
-            if (coachRes.rows.length > 0) coach = coachRes.rows[0];
-        }
+        const coach = await resolveCoachSession(user.user_id, user.roles);
         // Account already exists — log in regardless of whether a phone is on file.
         // Missing phone is nudged via an in-chat prompt, not by re-forcing the signup screen.
         return { success: true, user, channel, coach };
@@ -348,6 +413,7 @@ async function handleWxLogin(body) {
             if (refByCode.rows.length > 0) {
                 referralUserId = refByCode.rows[0].user_id;
                 if (!channelId) channelId = refByCode.rows[0].channel_id;
+                if (!resolvedCoachId) resolvedCoachId = await coachIdForReferrer(referralUserId);
             } else {
                 return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
             }
@@ -456,14 +522,7 @@ async function handleWxAppLogin(body) {
         const channel = channel_name
             ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
             : null;
-        let coach = null;
-        if (user.roles && user.roles.includes('coach')) {
-            const coachRes = await pool.query(
-                'SELECT c.id, u2.channel_id, c.user_id FROM coaches c JOIN users u2 ON c.user_id = u2.user_id WHERE c.user_id = $1 LIMIT 1',
-                [user.user_id]
-            );
-            if (coachRes.rows.length > 0) coach = coachRes.rows[0];
-        }
+        const coach = await resolveCoachSession(user.user_id, user.roles);
         // Account already exists — log in regardless of whether a phone is on file.
         return { success: true, user, channel, coach };
     };
@@ -530,6 +589,7 @@ async function handleWxAppLogin(body) {
             if (refByCode.rows.length > 0) {
                 referralUserId = refByCode.rows[0].user_id;
                 if (!channelId) channelId = refByCode.rows[0].channel_id;
+                if (!resolvedCoachId) resolvedCoachId = await coachIdForReferrer(referralUserId);
             } else {
                 return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
             }
@@ -713,7 +773,7 @@ async function handleExchangeWebviewToken(body) {
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                     u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
                     u.merged_into_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
-                    cu.nickname AS coach_name,
+                    cu.nickname AS coach_name, p.user_id AS coach_user_id,
                     c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                     c.config->'sub_age_display_names' AS channel_sub_age_names,
                     c.config->>'locale' AS channel_locale,
@@ -936,6 +996,8 @@ async function handlePostQrLoginConfirm(body) {
 }
 
 module.exports = {
+    resolveCoachSession,
+    handleGetMyCoach,
     handleResolvePhone,
     handleBindPhone,
     handleWxLogin,

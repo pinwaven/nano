@@ -6,6 +6,7 @@
 --   3. Create partner_commission_rules, seed from existing config
 
 -- ── Step 1: partner_types table ───────────────────────────────────────────────
+-- @requires: migration_partners.sql
 
 CREATE TABLE IF NOT EXISTS partner_types (
     id           SERIAL PRIMARY KEY,

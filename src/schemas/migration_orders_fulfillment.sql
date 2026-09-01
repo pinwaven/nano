@@ -2,6 +2,7 @@
 -- Targets Aliyun PolarDB Serverless (PostgreSQL 14 compatible)
 
 -- 1. Standard SKUs Registry
+-- @requires: migration_channel_inventory.sql, migration_store.sql
 CREATE TABLE IF NOT EXISTS skus (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sku_code    VARCHAR(100) UNIQUE NOT NULL,      -- e.g. WD-DOT01, KINO-CHIP-V2

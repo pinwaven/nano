@@ -1,0 +1,1471 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Waven Nano — Viva AG External Agent API",
+    "version": "1.0.0",
+    "description": "Job queue for the external Viva AG (Advanced Generation) agent. The agent pulls jobs, reads a digital-twin bundle and the subject's uploaded medical documents, and posts a result back, which Nano delivers into the user's chat. Full prose contract, including the large-file download rules and the fencing-token semantics, is served as Markdown at GET /viva-ag/docs."
+  },
+  "servers": [
+    {
+      "url": "https://nano-dev.gcn.net/api",
+      "description": "dev"
+    },
+    {
+      "url": "https://nano.gcn.net/api",
+      "description": "prod"
+    }
+  ],
+  "security": [
+    {
+      "serviceToken": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "meta",
+      "description": "Health check and documentation"
+    },
+    {
+      "name": "queue",
+      "description": "Claiming and reporting on jobs"
+    },
+    {
+      "name": "data",
+      "description": "Reading the subject's twin and documents"
+    }
+  ],
+  "paths": {
+    "/viva-ag/ping": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Confirm token and environment",
+        "responses": {
+          "200": {
+            "description": "Service status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "service": {
+                      "type": "string",
+                      "const": "viva-ag"
+                    },
+                    "env": {
+                      "type": "string",
+                      "enum": [
+                        "dev",
+                        "prod"
+                      ]
+                    },
+                    "bundle_version": {
+                      "type": "integer"
+                    },
+                    "queue_depth": {
+                      "type": "integer"
+                    },
+                    "server_time": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/docs": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "This contract as human-readable Markdown",
+        "responses": {
+          "200": {
+            "description": "Markdown document",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/openapi.json": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "This document",
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 specification",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/jobs/claim": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Atomically claim the head of the queue",
+        "description": "Two workers polling simultaneously receive two different jobs, never the same one. Returns job: null when the queue is empty. The returned result_token is a fencing credential, regenerated on every claim, and is required by every other job-scoped endpoint.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "worker_id": {
+                    "type": "string",
+                    "description": "Free-text, for log correlation"
+                  },
+                  "lease_seconds": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 21600,
+                    "default": 3600
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A claimed job, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "job": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/ClaimedJob"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/twin-bundle": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "The subject's complete digital twin",
+        "description": "First call moves the job to 'processing'. The bundle is pseudonymous: it carries no user id, name, phone or openid. Biomarker values are always the validated set (CLAUDE.md 17). Timestamps are Shanghai local.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/JobUidQuery"
+          },
+          {
+            "$ref": "#/components/parameters/JobTokenHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Twin bundle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TwinBundle"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/document-url": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Re-mint a presigned document URL",
+        "description": "Documents are downloaded directly from object storage; bytes never pass through this API, so there is no size limit and HTTP Range is supported. URLs expire after 6 hours — call this to refresh one during a long run. Only documents in this job's snapshot are reachable.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/JobUidQuery"
+          },
+          {
+            "name": "document_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/JobTokenHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A document entry with a fresh signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Document"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/jobs/heartbeat": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Extend the lease and report progress",
+        "description": "Heartbeat well before lease_expires_at. If the lease lapses the job is requeued and your result_token stops working. progress_note is shown to the end user, so write it in their language.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "job_uid",
+                  "result_token"
+                ],
+                "properties": {
+                  "job_uid": {
+                    "type": "string"
+                  },
+                  "result_token": {
+                    "type": "string"
+                  },
+                  "progress_note": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "extend_seconds": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 21600,
+                    "default": 3600
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New lease deadline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "lease_expires_at": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/result-upload-url": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Presigned PUT for a report file (.pdf / .md / .txt)",
+        "description": "One call per file; a job may carry up to 5. Allowed types are pdf, md and txt — anything else is refused with unsupported_file_type before the upload is spent, because the Mini Program is the only consumer and can present nothing else. The PUT must send exactly the returned put_content_type as its Content-Type header — it is part of the signature. The returned oss_key is confined to this job and is the only value /jobs/result will accept for it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "job_uid",
+                  "result_token"
+                ],
+                "properties": {
+                  "job_uid": {
+                    "type": "string"
+                  },
+                  "result_token": {
+                    "type": "string"
+                  },
+                  "filename": {
+                    "type": "string",
+                    "default": "report.pdf",
+                    "description": "Extension decides the stored content type. Must end in .pdf, .md or .txt."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Upload target",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "oss_key": {
+                      "type": "string"
+                    },
+                    "put_url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "put_content_type": {
+                      "type": "string",
+                      "description": "Send exactly this value as the PUT's Content-Type header; it is part of the signature. Derived from the filename extension."
+                    },
+                    "expires_in": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/jobs/result": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Submit the analysis result",
+        "description": "summary becomes a chat message the user reads as Viva speaking — write it in the subject's language, addressed to them. Display-card markup is stripped on ingest. Attach report files with result_files (pdf/md/txt, max 5): each key is verified to belong to this job, to be a supported type, and to have actually been uploaded — a bad file refuses the whole submission (invalid_result_key, unsupported_file_type, result_file_missing, too_many_result_files) and nothing is delivered, so you can fix and resubmit. Resubmitting the same request is idempotent (already_completed: true, no second message).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "job_uid",
+                  "result_token",
+                  "summary"
+                ],
+                "properties": {
+                  "job_uid": {
+                    "type": "string"
+                  },
+                  "result_token": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string",
+                    "maxLength": 4000
+                  },
+                  "result": {
+                    "type": "object",
+                    "description": "Structured findings, up to 512 KB serialized. For a dots_formulation job this MUST carry the formula as result.formulation ({format, cycle_days, total_dots, rationale, capsules[], totals}) — that is what nano parses and validates; the .md is only a fallback. See section 8 of GET /viva-ag/docs."
+                  },
+                  "result_oss_key": {
+                    "type": "string",
+                    "description": "Legacy single-file form, still accepted; equivalent to one entry in result_files"
+                  },
+                  "result_files": {
+                    "type": "array",
+                    "maxItems": 5,
+                    "description": "Report files uploaded for THIS job. Each entry may be a bare oss_key string or an object. filename is what the user sees in the app — name it in their language. The PDF is listed first to the user regardless of the order sent.",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "oss_key"
+                          ],
+                          "properties": {
+                            "oss_key": {
+                              "type": "string"
+                            },
+                            "filename": {
+                              "type": "string",
+                              "maxLength": 120
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded and delivered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "job_uid": {
+                      "type": "string"
+                    },
+                    "delivered": {
+                      "type": "boolean"
+                    },
+                    "already_completed": {
+                      "type": "boolean"
+                    },
+                    "notification_id": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "result_files": {
+                      "type": "array",
+                      "description": "The files as stored, PDF first.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "filename": {
+                            "type": "string"
+                          },
+                          "ext": {
+                            "type": "string"
+                          },
+                          "size_bytes": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "formulation_accepted": {
+                      "type": "boolean",
+                      "description": "dots_formulation jobs only. Whether the submitted formula passed nano's capsule-spec validation (section 8 of GET /viva-ag/docs). The job itself is recorded and delivered either way; a rejected formula is simply not compounded, and the user is asked to run the formulation again."
+                    },
+                    "formulation_id": {
+                      "type": "integer",
+                      "description": "Present when formulation_accepted is true. Nano’s handle for the stored formula."
+                    },
+                    "total_dots": {
+                      "type": "integer",
+                      "description": "Present when formulation_accepted is true. The dot total nano derived from the capsules — compare it against your own checksum."
+                    },
+                    "formulation_violations": {
+                      "type": "array",
+                      "description": "Present when formulation_accepted is false. Every rule the formula broke; nothing is coerced into range.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string",
+                            "description": "e.g. dose_above_max, capsule_over_fill, n7_outside_isolation, checksum_mismatch"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/jobs/fail": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Report that the job could not be completed",
+        "description": "retryable:true requeues the job if attempts remain. Otherwise the job fails terminally and the user receives a short apology in their own language. Prefer submitting a partial result over failing.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "job_uid",
+                  "result_token"
+                ],
+                "properties": {
+                  "job_uid": {
+                    "type": "string"
+                  },
+                  "result_token": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "retryable": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "requeued": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/jobs/questionnaire": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Park the job and ask the user a clarifying questionnaire",
+        "description": "Use when the twin is missing something you actually need, instead of guessing. On success the job is parked as awaiting_input and YOUR LEASE IS GONE — the result_token is void and you must go back to polling /jobs/claim. When the user answers, the job returns to the queue and your next claim of it carries their answers in the bundle's job_questionnaires. Validation is all-or-nothing: one bad question rejects the round with reason invalid_questions and a violations array, leaving the job claimed so you can correct and retry. Max 2 rounds per job; the user has 7 days to answer. save_target, save_field, save_biomarker_type and completion_check are ignored if sent — a question may ask, never decide where the answer is written. See section 7b of /viva-ag/docs.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "job_uid",
+                  "result_token",
+                  "questions"
+                ],
+                "properties": {
+                  "job_uid": {
+                    "type": "string"
+                  },
+                  "result_token": {
+                    "type": "string"
+                  },
+                  "intro": {
+                    "type": "string",
+                    "maxLength": 4000,
+                    "description": "Chat message the user reads. Write it in the job's language. A default is used if omitted."
+                  },
+                  "questions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 12,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "input_type"
+                      ],
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9_]{1,40}$",
+                          "description": "Optional; generated if omitted."
+                        },
+                        "input_type": {
+                          "type": "string",
+                          "enum": [
+                            "text",
+                            "button_select",
+                            "multi_select",
+                            "slider_group",
+                            "date_picker"
+                          ]
+                        },
+                        "prompt_zh": {
+                          "type": "string",
+                          "maxLength": 500
+                        },
+                        "prompt_en": {
+                          "type": "string",
+                          "maxLength": 500,
+                          "description": "Supply at least one prompt; the other is mirrored."
+                        },
+                        "config": {
+                          "type": "object",
+                          "description": "Per input_type: options[] for button_select/multi_select (max 12, an option keyed \"other\" is rejected); sliders[] for slider_group (max 6); min_date/max_date for date_picker; placeholder_zh/_en for text."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Parked, or rejected with violations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "awaiting_input"
+                      ]
+                    },
+                    "assignment_id": {
+                      "type": "integer"
+                    },
+                    "question_count": {
+                      "type": "integer"
+                    },
+                    "round": {
+                      "type": "integer"
+                    },
+                    "rounds_remaining": {
+                      "type": "integer"
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "description": "After this the job closes as questionnaire_unanswered."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "invalid_questions",
+                        "questionnaire_limit_reached",
+                        "invalid_token",
+                        "lease_expired",
+                        "job_not_claimable",
+                        "missing_params",
+                        "internal_error"
+                      ]
+                    },
+                    "violations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/health-events": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Raw wearable / ingested event log",
+        "description": "The per-night sleep, per-day activity and vitals series the bundle carries only as rolling averages. 'vitals' typically outnumbers other categories ~50x — check inventory.health_events.by_category and filter. Page until next_cursor is null to fetch everything. A drain is a consistent snapshot: the first page pins the highest existing row id and the cursor carries it, so rows written while you page are excluded rather than half-included. These tables are append-only but not append-in-order (a wearable sync writes events stamped with the times measurements were taken, which can be hours old), so without that pin a mid-drain backdated row would be skipped silently. A completed drain therefore reflects the moment it started; snapshot_id says which.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/JobUidQuery"
+          },
+          {
+            "$ref": "#/components/parameters/JobTokenHeader"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "vitals",
+                "sleep",
+                "activity",
+                "lab_result",
+                "body_composition",
+                "epigenetic_result"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/lab-results": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Lab reports with their parsed observations",
+        "description": "Paginated health_reports with observations. The first page additionally carries up to 500 health_events(category=lab_result) as `lab_events`; page the full set via /viva-ag/health-events?category=lab_result. Page until next_cursor is null to fetch everything. A drain is a consistent snapshot: the first page pins the highest existing row id and the cursor carries it, so rows written while you page are excluded rather than half-included. These tables are append-only but not append-in-order (a wearable sync writes events stamped with the times measurements were taken, which can be hours old), so without that pin a mid-drain backdated row would be skipped silently. A completed drain therefore reflects the moment it started; snapshot_id says which.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/JobUidQuery"
+          },
+          {
+            "$ref": "#/components/parameters/JobTokenHeader"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/biomarker-history": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Full Kino or body-composition series",
+        "description": "The bundle caps history at 30 tests; this is the complete series. Values are always the validated set, never raw reader output. Page until next_cursor is null to fetch everything. A drain is a consistent snapshot: the first page pins the highest existing row id and the cursor carries it, so rows written while you page are excluded rather than half-included. These tables are append-only but not append-in-order (a wearable sync writes events stamped with the times measurements were taken, which can be hours old), so without that pin a mid-drain backdated row would be skipped silently. A completed drain therefore reflects the moment it started; snapshot_id says which.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/JobUidQuery"
+          },
+          {
+            "$ref": "#/components/parameters/JobTokenHeader"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "name": "test_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "kino_chip",
+                "body_composition"
+              ],
+              "default": "kino_chip"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/chat-history": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Conversation transcript (opt-in, windowed)",
+        "description": "Deliberately NOT in the twin bundle: the bundle is otherwise pseudonymous, and transcripts routinely contain names, family details and locations, so requesting one is a deliberate act. Defaults to the last 90 days. Durable personal facts (allergies, diet, goals) are already in layers.personal_profile.memory_facts without needing the transcript. Page until next_cursor is null to fetch everything. A drain is a consistent snapshot: the first page pins the highest existing row id and the cursor carries it, so rows written while you page are excluded rather than half-included. These tables are append-only but not append-in-order (a wearable sync writes events stamped with the times measurements were taken, which can be hours old), so without that pin a mid-drain backdated row would be skipped silently. A completed drain therefore reflects the moment it started; snapshot_id says which.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/JobUidQuery"
+          },
+          {
+            "$ref": "#/components/parameters/JobTokenHeader"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "90"
+            },
+            "description": "Window in days (1-3650), or 'all' for the entire history."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serviceToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "VIVA_AG_API_TOKEN. Distinct per environment. Restricted to the paths in this document; anything else returns 403."
+      }
+    },
+    "parameters": {
+      "JobUidQuery": {
+        "name": "job_uid",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "The opaque job handle from /jobs/claim. The only identifier the agent is given."
+      },
+      "JobTokenHeader": {
+        "name": "X-Viva-Ag-Job-Token",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "The job's result_token. A header rather than a query parameter because query strings are recorded in access logs and this token unlocks a medical record."
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 200
+        }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "schema": {
+          "type": "string"
+        },
+        "description": "Opaque cursor from a previous page's next_cursor. Carries both the position and the snapshot id."
+      }
+    },
+    "schemas": {
+      "Failure": {
+        "type": "object",
+        "description": "Routine failures are returned with HTTP 200 — branch on the body, not the status code.",
+        "properties": {
+          "success": {
+            "const": false
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "missing_params",
+              "job_not_found",
+              "invalid_token",
+              "lease_expired",
+              "job_not_claimable",
+              "job_already_completed",
+              "document_not_found",
+              "result_too_large",
+              "invalid_result_key",
+              "internal_error"
+            ]
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "ClaimedJob": {
+        "type": "object",
+        "properties": {
+          "job_uid": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string",
+            "description": "The user's own words"
+          },
+          "command_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "full_analysis",
+              "document_review",
+              "risk_screen",
+              "dots_formulation",
+              null
+            ],
+            "description": "Preset intent. dots_formulation (原粒定制) requires a specific deliverable: a 28-day / 56-capsule formula attached as an .md result file in the documented format — see section 8 of GET /viva-ag/docs. The other presets are free-form analyses."
+          },
+          "params": {
+            "type": "object"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "max_attempts": {
+            "type": "integer"
+          },
+          "queued_at": {
+            "type": "string"
+          },
+          "lease_expires_at": {
+            "type": "string"
+          },
+          "result_token": {
+            "type": "string"
+          },
+          "document_count": {
+            "type": "integer"
+          },
+          "twin_bundle_url": {
+            "type": "string"
+          }
+        }
+      },
+      "Document": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "integer"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "doc_type": {
+            "type": "string",
+            "enum": [
+              "hospital_record",
+              "lab_report",
+              "imaging",
+              "discharge_summary",
+              "prescription",
+              "other"
+            ]
+          },
+          "doc_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "institution": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "etag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Object MD5, lowercase — verify a completed download against it"
+          },
+          "uploaded_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Direct object-storage URL. Do not send your Authorization header to it; the signature is the credential."
+          },
+          "url_expires_at": {
+            "type": "string"
+          },
+          "supports_range": {
+            "const": true
+          }
+        }
+      },
+      "TwinBundle": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "bundle_version": {
+            "type": "integer"
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "job": {
+            "type": "object",
+            "description": "The job you claimed, plus how many clarifying rounds it has used and has left.",
+            "properties": {
+              "job_uid": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "command_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "params": {
+                "type": "object"
+              },
+              "questionnaire_rounds_used": {
+                "type": "integer"
+              },
+              "questionnaire_rounds_remaining": {
+                "type": "integer"
+              }
+            }
+          },
+          "subject": {
+            "type": "object",
+            "description": "Pseudonymous — no user id, name, phone or openid.",
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "age": {
+                "type": "integer"
+              },
+              "gender": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "language": {
+                "type": "string"
+              },
+              "height_cm": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "bmi": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "health_conditions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "health_conditions_other": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "layers": {
+            "type": "object",
+            "description": "The four canonical Digital Twin layers.",
+            "properties": {
+              "precision_testing": {
+                "type": "object",
+                "properties": {
+                  "latest": {
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "total_tests": {
+                    "type": "integer"
+                  },
+                  "history": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              "daily_monitoring": {
+                "type": "object",
+                "properties": {
+                  "health_twin": {
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "weight_history": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              "medical_records": {
+                "type": "object",
+                "properties": {
+                  "health_reports": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "lab_panel": {
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "lab_date": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "documents": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Document"
+                    }
+                  }
+                }
+              },
+              "personal_profile": {
+                "type": "object",
+                "properties": {
+                  "bio_data": {
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "questionnaire_context": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "memory_facts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "interventions": {
+            "type": "object",
+            "description": "Deliberately outside `layers`: what the user does, not what they are.",
+            "properties": {
+              "active_health_plans": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "nutrition_schedule": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "dot_inventory": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "reminders": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "dots_formulary": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "inventory": {
+            "type": "object",
+            "description": "What exists for this subject but is NOT inlined: per-resource counts, date ranges and the endpoint that serves each. Read this to decide what to pull rather than probing.",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer"
+                },
+                "first": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "last": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "endpoint": {
+                  "type": "string"
+                },
+                "by_category": {
+                  "type": "object",
+                  "description": "health_events only."
+                }
+              }
+            }
+          },
+          "job_questionnaires": {
+            "type": "array",
+            "description": "Clarifying questions THIS job asked (see /viva-ag/jobs/questionnaire), in the order asked. answer:null means asked-but-unanswered.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "round": {
+                  "type": "integer"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed"
+                  ]
+                },
+                "completed_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "questions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "input_type": {
+                        "type": "string"
+                      },
+                      "prompt_zh": {
+                        "type": "string"
+                      },
+                      "prompt_en": {
+                        "type": "string"
+                      },
+                      "answer": {},
+                      "answered_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Page": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Null when the drain is complete."
+          },
+          "snapshot_id": {
+            "type": "string",
+            "description": "Highest row id included in this drain — the point in time it reflects."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "window_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "chat-history only; null when days=all."
+          },
+          "lab_events": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "lab-results first page only."
+          }
+        }
+      }
+    }
+  }
+}

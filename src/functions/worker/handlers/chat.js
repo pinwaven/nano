@@ -43,7 +43,43 @@ const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { resolveEffectivePersona, hasActiveVivaAccess } = require('../lib/persona');
 const { grantSignupTrial } = require('../lib/personaOverride');
-const { _runDeterministicFormulation, _commitNutritionPlan, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming } = require('./dots');
+const { _runDeterministicFormulation, _buildFormulaChartBlock, _commitProposedPlan, _resolveOrderContext, _capDistinctDots, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _buildProductCardBlock } = require('./dots');
+const { fetchAiCatalog } = require('../lib/gcnClient');
+const { PLAN_WEEKS, N7_KEY } = require('../lib/dotsProductModel');
+const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock');
+
+// Channels with a GCN storefront behind them (mirrors handlers/login.js's own copy — the same
+// physically-duplicated-constant convention this codebase uses across handlers). Nothing else has
+// a catalog to recommend from, so the store fetch is gated on this rather than on persona alone.
+const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
+
+// Suppress any product whose declared allergens/cautions collide with something the user has
+// already told us (user_memory_facts, CLAUDE.md §27). Deliberately a hard filter applied BEFORE
+// the catalog is rendered into the prompt, not a rule in the prompt: the model never sees a
+// product it must not suggest, so there is nothing for it to get wrong. Same reasoning that moved
+// dimension-misattribution detection out of JUDGE and into code (lib/factCheck.js).
+//
+// Matching is plain bidirectional substring containment over the Chinese text. Crude, and
+// deliberately biased toward over-suppression — a missed suggestion costs a sale, a missed
+// allergen costs considerably more.
+function _filterProductsByUserFacts(products, userFacts) {
+    const blocking = (userFacts || [])
+        .filter(f => f.category === 'allergy' || f.category === 'dietary_restriction')
+        .map(f => String(f.fact_zh || '').trim())
+        .filter(Boolean);
+    if (blocking.length === 0) return products;
+
+    return products.filter((p) => {
+        const terms = [...(p.allergens_zh || []), ...(p.cautions_zh || [])]
+            .map(t => String(t || '').trim())
+            .filter(t => t.length >= 2);
+        const hit = terms.some(term => blocking.some(fact => fact.includes(term) || term.includes(fact)));
+        if (hit) {
+            console.log(JSON.stringify({ level: 'INFO', msg: 'store_product_suppressed_by_user_fact', sku_id: p.sku_id }));
+        }
+        return !hit;
+    });
+}
 
 // Intents where factual claims (biomarker values, dot recommendations, science/protocol
 // assertions) are common enough to warrant the fuller plan->generate->judge->revise loop
@@ -67,14 +103,22 @@ const getLlmClient = () => new OpenAI({
     maxRetries: 1,
 });
 
-async function saveChatMessage(user_id, role, content, image_url = null, persona_type = 'nano') {
+// Returns the inserted row id (or null if the insert was swallowed) so callers that need to
+// correlate a delivered message with their own record can — viva_ag_jobs.chat_message_id is the
+// first such caller. Every pre-existing caller ignores the return value.
+// `source` marks a message whose author is not the plain persona (currently only 'viva_ag'), so
+// the chat can attribute it correctly. NULL — the default for every existing caller — means the
+// persona itself. Deliberately not persona_type: see migration_chat_messages_source.sql.
+async function saveChatMessage(user_id, role, content, image_url = null, persona_type = 'nano', source = null) {
     try {
-        await pool.query(
-            'INSERT INTO chat_messages (user_id, role, content, image_url, persona_type) VALUES ($1, $2, $3, $4, $5)',
-            [user_id, role, content, image_url, persona_type]
+        const { rows } = await pool.query(
+            'INSERT INTO chat_messages (user_id, role, content, image_url, persona_type, source) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+            [user_id, role, content, image_url, persona_type, source]
         );
+        return rows[0]?.id ?? null;
     } catch (err) {
         console.error('Failed to save chat message:', err);
+        return null;
     }
 }
 
@@ -110,7 +154,7 @@ async function handleGetChatHistory(openid, sinceId = null, beforeId = null, rol
             const roleList = [...new Set(wanted.flatMap(r => SINCE_ROLE_SETS[r] || []))];
             if (roleList.length === 0) roleList.push('coach');
             const result = await pool.query(
-                `SELECT id, role, content, image_url, created_at
+                `SELECT id, role, content, image_url, source, created_at
                  FROM chat_messages
                  WHERE user_id = $1 AND id > $2 AND role = ANY($3::text[])
                  ORDER BY created_at ASC, id ASC`,
@@ -121,8 +165,8 @@ async function handleGetChatHistory(openid, sinceId = null, beforeId = null, rol
         const limit = parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10);
         if (beforeId !== null) {
             const result = await pool.query(
-                `SELECT id, role, content, image_url, created_at FROM (
-                    SELECT id, role, content, image_url, created_at FROM chat_messages
+                `SELECT id, role, content, image_url, source, created_at FROM (
+                    SELECT id, role, content, image_url, source, created_at FROM chat_messages
                     WHERE user_id = $1 AND id < $2
                     ORDER BY created_at DESC, id DESC
                     LIMIT $3
@@ -134,8 +178,8 @@ async function handleGetChatHistory(openid, sinceId = null, beforeId = null, rol
             return { success: true, messages, has_more };
         }
         const result = await pool.query(
-            `SELECT id, role, content, image_url, created_at FROM (
-                SELECT id, role, content, image_url, created_at FROM chat_messages
+            `SELECT id, role, content, image_url, source, created_at FROM (
+                SELECT id, role, content, image_url, source, created_at FROM chat_messages
                 WHERE user_id = $1
                 ORDER BY created_at DESC, id DESC
                 LIMIT $2
@@ -646,8 +690,63 @@ function _buildCorrectionPrompt(risk) {
     return parts.join('\n');
 }
 
-async function _regenerateIfFabricationRisk(client, model, messages, reply, logContext, dotsFormulary, textForDetection) {
-    const risk = detectAllRisks(textForDetection ?? reply, dotsFormulary);
+// Removes every action-JSON tail from a completion so it never reaches the user.
+//
+// The five actions split into two shapes, and getting that wrong is how a tail leaks:
+// record_weight/set_reminder/remember_fact are flat objects the `[^}]*` bound handles, while
+// ask_questions and recommend_product both NEST (an array of objects), so a `[^}]*` pattern
+// would stop at the first inner `}` and leave a JSON fragment in the reply. Those two use
+// greedy-to-end-of-string instead, which is safe because the model is always instructed to put
+// its action tail on the very last line, after every ::: block.
+//
+// Extracted from finalizeChatReply so it can be tested directly — a tail leaking into a saved
+// message is silent and user-visible, and has happened before (the 2026-07-26 set_reminder fix).
+function _stripActionTails(text) {
+    return String(text || '')
+        .replace(/\n?\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
+        .replace(/\n?\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
+        .replace(/\n?\{"action"\s*:\s*"remember_fact"[^}]*\}/g, '')
+        .replace(/\n?\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '')
+        .replace(/\n?\{"action"\s*:\s*"recommend_product"[\s\S]*$/, '')
+        .trim();
+}
+
+// Resolves a recommend_product action tail against the catalog snapshot the prompt was built
+// from, returning only entries the server can vouch for.
+//
+// NOTHING the model supplied about a product survives except the reason prose. The sku_id is a
+// lookup key, and name/price are read back out of the snapshot — so a hallucinated sku is dropped
+// silently (never repaired, never surfaced), and a real one can only ever be shown with its real
+// name and real price. Same "never trust the LLM's key blindly" rule finalizeFormulaDotsGenerate
+// applies to dot_key.
+//
+// Deliberately never throws and never partially fails the turn: a bad tail simply yields fewer
+// recommendations, or none.
+function _validateProductRecommendations(parsed, storeProducts) {
+    const catalog = new Map((storeProducts || []).map(p => [String(p.sku_id), p]));
+    if (catalog.size === 0) return [];
+    const out = [];
+    const seen = new Set();
+    for (const entry of parsed?.skus || []) {
+        const skuId = String(entry?.sku_id || '').trim();
+        const product = catalog.get(skuId);
+        if (!product || seen.has(skuId)) continue;
+        seen.add(skuId);
+        out.push({
+            sku_id: product.sku_id,
+            product_name_zh: product.product_name_zh,
+            price_cny: product.price_cny,
+            // Cap the model's own prose: this lands in a fixed-height card row, and a paragraph
+            // here would push the real content off screen.
+            reason_zh: String(entry?.reason_zh || '').trim().slice(0, 60),
+        });
+        if (out.length >= MAX_RECOMMENDATIONS) break;
+    }
+    return out;
+}
+
+async function _regenerateIfFabricationRisk(client, model, messages, reply, logContext, dotsFormulary, textForDetection, storeProducts) {
+    const risk = detectAllRisks(textForDetection ?? reply, dotsFormulary, storeProducts);
     if (risk.length === 0) return reply;
     console.log(JSON.stringify({ level: 'WARN', msg: 'fabrication_risk_detected', context: logContext, risk }));
     const correctionPrompt = _buildCorrectionPrompt(risk);
@@ -658,7 +757,7 @@ async function _regenerateIfFabricationRisk(client, model, messages, reply, logC
             temperature: 0.2,
         });
         const retryReply = retryCompletion.choices[0].message.content || reply;
-        const retryRisk = detectAllRisks(retryReply, dotsFormulary);
+        const retryRisk = detectAllRisks(retryReply, dotsFormulary, storeProducts);
         console.log(JSON.stringify({ level: retryRisk.length === 0 ? 'INFO' : 'WARN', msg: 'fabrication_risk_retry', context: logContext, ok: retryRisk.length === 0, risk: retryRisk }));
         return retryReply;
     } catch (err) {
@@ -824,7 +923,13 @@ async function finalizeChatReply({ rawReply, extraValidDates, extraValidValues, 
         // action tail, so it can't be bounded by the flat [^}]* pattern the other three use —
         // greedy-to-end-of-string is safe since the model is always instructed to put this
         // tail last.
-        .replace(/\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '');
+        .replace(/\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '')
+        // recommend_product nests too (an array of {sku_id, reason_zh}), so it takes the same
+        // greedy-to-end form rather than the flat [^}]* the first three use. Stripped before the
+        // grounding check for the same reason set_reminder is: reason_zh is free prose that can
+        // contain a number, and verifyBiomarkerGrounding has no way to tell a product blurb from
+        // a biomarker claim.
+        .replace(/\{"action"\s*:\s*"recommend_product"[\s\S]*$/, '');
     const hasKnownAge = user.birth_date != null;
     const hasKnownBmi = llmContext.user_profile.bmi != null;
     if (Object.keys(llmContext.biomarkers).length > 0 || hasKnownAge || hasKnownBmi) {
@@ -909,7 +1014,7 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
         rawReply = await _regenerateIfFabricationRisk(
             client, model,
             [{ role: 'system', content: systemPrompt }, ...cleanHistory],
-            rawReply, 'handlePostChat', llmContext.dots, stripActionJson(rawReply)
+            rawReply, 'handlePostChat', llmContext.dots, stripActionJson(rawReply), llmContext.store_products
         );
     }
 
@@ -1053,18 +1158,38 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
         }
     }
 
+    // Detect a recommend_product action — store items Viva chose from the catalog this request
+    // fetched (prompts/chat/productRecommendBlock.js). Follows formulate_dots' validation
+    // discipline exactly: the model supplies ids and reasoning, and NOTHING it supplies is
+    // trusted. Every sku_id must resolve inside the snapshot the prompt was built from — an
+    // unknown id is dropped silently rather than repaired or surfaced, so a hallucinated product
+    // simply never reaches the user.
+    //
+    // The card itself is built server-side (_buildProductCardBlock) from that same snapshot, so
+    // the name and price on screen are the real ones by construction rather than by the model
+    // having behaved. Absent/unparseable is never a failure — the model is only ever instructed
+    // to append this conditionally.
+    let recommendedProducts = [];
+    const recommendExtracted = _extractTrailingJson(rawReply, '{"action":"recommend_product"');
+    if (recommendExtracted) {
+        try {
+            recommendedProducts = _validateProductRecommendations(recommendExtracted.parsed, llmContext.store_products);
+            const dropped = (recommendExtracted.parsed?.skus || []).length - recommendedProducts.length;
+            if (dropped > 0) {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'recommend_product_entries_dropped', user_id, dropped }));
+            }
+        } catch (e) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'recommend_product action parse failed', error: e.message }));
+        }
+    }
+
     // A REVISE-round completion can occasionally consist of ONLY the corrected action JSON
     // with no surrounding prose (the model over-focuses on fixing the flagged action param
     // and drops the conversational reply) — stripping it then would ship a blank message.
     // Never let that happen; fall back to an acknowledgment referencing the actual recorded
     // fact when we have one (already validated above, so safe to echo back), otherwise a
     // minimal generic acknowledgment.
-    let strippedReply = rawReply
-        .replace(/\n?\{"action"\s*:\s*"record_weight"[^}]*\}/g, '')
-        .replace(/\n?\{"action"\s*:\s*"set_reminder"[^}]*\}/g, '')
-        .replace(/\n?\{"action"\s*:\s*"remember_fact"[^}]*\}/g, '')
-        .replace(/\n?\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '')
-        .trim();
+    let strippedReply = _stripActionTails(rawReply);
     // Runs for every intent, not just the agentic ones — casual_chat/emotional_support still
     // get the narrower non-strict pass (TRAILING_INVITATION_PATTERNS only, no bare "?" ban) so
     // an "offering to act" ending like "需要我帮你...吗？" is caught there too, without breaking
@@ -1082,7 +1207,14 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
         : askQuestionsCommitted
         ? (isZhReply ? `好的，我想先了解几个问题：${askQuestionsCommitted.name_zh}` : `Sure — I have a couple of quick questions first: ${askQuestionsCommitted.name}`)
         : (isZhReply ? '好的，已记录。' : 'Got it — noted.');
-    const reply = strippedReply || fallbackReply;
+    // Appended after stripTrailingQuestion and the fallback, so the card can never be mistaken
+    // for a trailing invitation and is never lost to a blank-prose fallback. rich_format gates it
+    // the same way every other ::: card is gated: the coach app and web user-app would render the
+    // fence as literal text.
+    const productCard = (llmContext.rich_format && recommendedProducts.length > 0)
+        ? _buildProductCardBlock(recommendedProducts, user.language)
+        : '';
+    const reply = (strippedReply || fallbackReply) + productCard;
 
     if (sandbox) {
         // Sandbox sessions have no notification-polling side channel to rely on —
@@ -1229,10 +1361,12 @@ async function handlePostChat(body) {
     // Resolve persona from an active per-user override, else channel config (defaults to 'nano')
     let channelPersonaType = 'nano';
     let channelSubAgeNames = null;
+    let channelKeyName = null;
     if (user.channel_id) {
         try {
-            const chRes = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
+            const chRes = await pool.query('SELECT key_name, config FROM channels WHERE id = $1', [user.channel_id]);
             const chConfig = chRes.rows[0]?.config || {};
+            channelKeyName = chRes.rows[0]?.key_name || null;
             channelPersonaType = chConfig.persona_type ?? 'nano';
             channelSubAgeNames = chConfig.sub_age_display_names || null;
         } catch (err) {
@@ -1283,6 +1417,31 @@ async function handlePostChat(body) {
             }
             console.log(JSON.stringify({ level: 'INFO', msg: 'Chat intent classified', intent, required_data }));
 
+            // "我要定制营养素" is a request to ACT, not a question. Answering it with a generated
+            // essay is the wrong response — the 营养定制 tool is the thing that actually formulates a
+            // plan, so hand the turn straight to it rather than spending 60-180s in the agentic
+            // loop producing prose the user then still has to act on.
+            //
+            // Only the miniapp is told to launch it: it is the one client wired to run a tool off a
+            // chat reply. Everywhere else the intent degrades to a normal nutrition answer rather
+            // than a silently dropped turn — the coach app and the web user-app both have the tool
+            // but not this plumbing, and a sandbox ("login as") session must never write a real
+            // formulation against the impersonated account.
+            if (intent === 'formulate_dots') {
+                if (body.client === 'miniapp' && !sandbox) {
+                    // Persisted here because this branch returns before the shared insert below.
+                    // The tool's own "generating…" ack is persisted by the client, so the exchange
+                    // still reads correctly on reload.
+                    await pool.query(
+                        'INSERT INTO chat_messages (user_id, role, content, persona_type) VALUES ($1, $2, $3, $4)',
+                        [user_id, 'user', message, personaType]
+                    );
+                    console.log(JSON.stringify({ level: 'INFO', msg: 'chat_launch_tool', user_id, tool: 'formula_dots' }));
+                    return { success: true, user_id, launch_tool: 'formula_dots' };
+                }
+                intent = 'nutrition_question';
+            }
+
             // Step 2: Fetch only the data the intent actually needs
             const fetches = {};
             // Always fetch the latest biomarker/bioage snapshot — cheap indexed query, and it's the
@@ -1319,6 +1478,31 @@ async function handlePostChat(body) {
                     `SELECT data FROM biomarkers WHERE user_id = $1 AND test_type = 'body_composition' ORDER BY tested_at DESC LIMIT 1`,
                     [user_id]
                 );
+            }
+            // The store catalog is the ONE fetch here that is genuinely reactive: it happens only
+            // when the classifier saw the user themselves ask what they could use or obtain
+            // (required_data 'store_products'). Everything else above is fetched unconditionally
+            // precisely because a classifier miss must not blind the model — but here a miss is
+            // the desired failure mode. With no catalog in the prompt, the essential block's
+            // product rule collapses back to Dots-only, so "Viva never volunteers a product" is a
+            // structural property of what it was handed, not an instruction it might drift from.
+            //
+            // Also gated on a GCN-linked channel: nothing else has a storefront to sell from.
+            // Cross-repo and therefore slower than its neighbours, but it runs inside the same
+            // Promise.all and fetchAiCatalog never throws and self-limits to 4s, so at worst it
+            // contributes an empty list.
+            //
+            // Also gated on the intent, not just on required_data: only nutrition_question's
+            // template renders getProductRecommendBlock. Live classifier testing 2026-08-25 showed
+            // 'store_products' can be emitted alongside record_action/casual_chat, whose templates
+            // have no such block — the catalog would be fetched cross-repo and then silently
+            // dropped. Keeping the fetch and the render gated on the same condition makes that
+            // contract explicit rather than accidental; widening it means adding the block to
+            // another template in the same change.
+            if (required_data.includes('store_products')
+                && intent === 'nutrition_question'
+                && GCN_LINKED_CHANNEL_KEYS.has(channelKeyName)) {
+                fetches.store_products = fetchAiCatalog(user_id);
             }
 
             // Always fetch health_twin — provides wearable/sleep/activity context for all intents
@@ -1417,6 +1601,13 @@ async function handlePostChat(body) {
                 current_solar_term: currentSolarTerm,
                 essential_knowledge: essentialKnowledge,
                 user_facts: fetched.user_facts?.rows || [],
+                // The AI-approved slice of this user's own bound GCN storefront, already filtered
+                // against their recorded allergies/restrictions. Absent on every turn the
+                // classifier didn't flag — see the fetch above for why that absence is the point.
+                // Crosses the EventBridge boundary as JSON (CLAUDE.md §22), so it stays capped
+                // (25 items server-side) and carries no prices: the model is never given a number
+                // it could leak, since _buildProductCardBlock renders those from the same snapshot.
+                store_products: _filterProductsByUserFacts(fetched.store_products || [], fetched.user_facts?.rows || []),
                 // Gates prompts/chat/outputFormat.js's ::: display-card syntax. Scoped to the
                 // miniapp because it's the only surface whose renderer understands the fences —
                 // the coach app shows content as a bare <text> and the web user-app uses
@@ -1619,7 +1810,8 @@ SQL must be a SELECT statement. $1 is always user_id.`,
 // Finishing tail for the formula_dots kind of chat.generate event — explains an ALREADY
 // COMMITTED dot allocation (handlePostFormulaDots's schedule was written to the DB before this
 // ever ran), not a fresh chat reply. Reuses the same grounding-check-with-one-retry pattern as
-// finalizeChatReply/finalizeHealthAdviceReply for consistency, but delivers via a 'nutrition_plan'
+// finalizeChatReply/finalizeHealthAdviceReply for consistency, but delivers via a
+// 'formulation_proposal'
 // notification (matching what this endpoint has always used) rather than 'chat_reply'.
 //
 // planText (the raw D-N1x3 D-N2x3 ... per-day breakdown, still passed through the event payload)
@@ -1647,6 +1839,26 @@ function _extractTrailingJson(text, marker) {
         return { parsed: JSON.parse(text.slice(idx, end + 1)), start: idx, end: end + 1 };
     } catch (e) {
         return null;
+    }
+}
+
+// Records a Formulate-Dots result as the user's one live 'proposed' plan, in its own
+// transaction. Returns the plan id, or null if the write failed — a proposal is what makes the
+// allocation orderable, but it is not what makes the reply useful, so a failure here degrades to
+// a card without a store CTA rather than costing the user the whole turn.
+async function _commitProposal(userId, { analysis, morningRecipe, eveningRecipe, activeHealthPlans }) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const planId = await _commitProposedPlan(client, { userId, analysis, morningRecipe, eveningRecipe, activeHealthPlans });
+        await client.query('COMMIT');
+        return planId;
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'commit_proposed_plan_failed', user_id: userId, error: err.message }));
+        return null;
+    } finally {
+        client.release();
     }
 }
 
@@ -1699,12 +1911,27 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
             const count = Number.isFinite(item.count)
                 ? Math.max(0, Math.round(item.count))
                 : Math.max(0, Math.round((Number(item.morning) || 0) + (Number(item.evening) || 0)));
-            entries.set(item.dot_key, { count, dot });
+            // Which weeks of the cycle this dot is taken in. The purchased package caps how many
+            // distinct dots may run in ONE WEEK, so a formula may legitimately rotate — six dots
+            // this week, a partly different six next week. This is the one thing the model does
+            // decide about the cycle's shape, because whether a dot can be paused for a week is a
+            // clinical judgement, not arithmetic: a sleep-support dot held continuously and a
+            // seasonal accent are not interchangeable.
+            //
+            // Omitted, empty or malformed means EVERY week — the safe direction, and what every
+            // pre-weeks completion produces. _capDistinctDots then trims the over-wide weeks
+            // against the real tier, which is a bounded, deterministic correction; an empty list
+            // read as "no weeks" would instead delete a dose nobody asked to remove.
+            const weeks = Array.isArray(item.weeks)
+                ? [...new Set(item.weeks.map(w => Math.round(Number(w)))
+                    .filter(w => Number.isFinite(w) && w >= 1 && w <= PLAN_WEEKS))].sort((a, b) => a - b)
+                : [];
+            entries.set(item.dot_key, { count, dot, weeks });
         }
         if (entries.size === 0) entries = null;
     }
 
-    let analysis, finalContent, morningRecipe, eveningRecipe;
+    let finalContent, morningRecipe, eveningRecipe;
     const recommendedKeySet = _resolveCandidateDotKeys(llmContext.active_health_plans, llmContext.dots);
 
     if (entries) {
@@ -1738,13 +1965,25 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
 
         morningRecipe = { dots: {} };
         eveningRecipe = { dots: {} };
+        // Only materialized when the model actually asked for a rotation, so a steady-state
+        // formula is stored in exactly the shape it was before weeks existed.
+        const weekMap = {};
         let morningTotal = 0, eveningTotal = 0;
         for (const [key, v] of entries) {
             const dbKey = key.replace('D', 'DOT');
             if (v.morning > 0) morningRecipe.dots[dbKey] = v.morning;
             if (v.evening > 0) eveningRecipe.dots[dbKey] = v.evening;
+            // DOT-N7 is dosed by the isolation rule alone, on fixed days the formulator does not
+            // choose, so a week list for it would be read and then ignored — never recorded.
+            if (v.count > 0 && dbKey !== N7_KEY && v.weeks.length && v.weeks.length < PLAN_WEEKS) {
+                weekMap[dbKey] = v.weeks;
+            }
             morningTotal += v.morning;
             eveningTotal += v.evening;
+        }
+        if (Object.keys(weekMap).length) {
+            morningRecipe.weeks = weekMap;
+            eveningRecipe.weeks = weekMap;
         }
         // Observability only — _splitDotTiming only moves ~30% of a flexible dot's count off its
         // default slot, so a day dominated by dots defaulting to the same slot can still end up
@@ -1754,10 +1993,9 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         }
 
         const strippedReply = rawReply.slice(0, extracted.start).trim();
-        analysis = strippedReply;
         finalContent = strippedReply || (lang === 'zh'
-            ? '您的专属原粒方案已生成，点击下方"查看方案"了解详情。'
-            : 'Your personalized dot plan has been generated — tap "View Plan" below for the details.');
+            ? '这是根据您当前数据评估出的原粒配比，仅供参考。'
+            : 'Here is the dot allocation evaluated from your current data, for reference.');
     } else {
         // No usable action JSON — fall back to the deterministic single-shot formulator so the
         // user is never left with nothing (same resilience principle as the 2026-07-29
@@ -1774,35 +2012,47 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
             userFacts: llmContext.user_facts,
             activeHealthPlans: llmContext.active_health_plans,
         });
-        ({ analysis, finalContent, morningRecipe, eveningRecipe } = fallback);
+        ({ finalContent, morningRecipe, eveningRecipe } = fallback);
     }
 
-    const client = await pool.connect();
-    let committedPlanId;
-    try {
-        await client.query('BEGIN');
-        committedPlanId = await _commitNutritionPlan(client, {
-            userId: user_id, analysis, morningRecipe, eveningRecipe,
-            planId: llmContext.pending_plan_id, dotsFormulary: llmContext.dots,
-            activeHealthPlans: llmContext.active_health_plans,
-        });
-        await client.query('COMMIT');
-    } catch (e) {
-        await client.query('ROLLBACK');
-        throw e;
-    } finally {
-        client.release();
-    }
+    // Whether the user already holds a paid package, and at which tier — one lookup, because the
+    // two answers have to agree with each other. Resolved here at DELIVERY time rather than when
+    // the request was made: this turn ran asynchronously and may be minutes old, which is long
+    // enough for a checkout to have completed in between. llmContext.formulation_package told the
+    // model what to aim for; this is what actually binds the recipe that gets stored.
+    const orderContext = await _resolveOrderContext(user_id);
+    // Trimmed to the purchased tier BEFORE the proposal is written, so the card, the box scan and
+    // the fast-track submission all expand one recipe. A no-op when no package is waiting.
+    ({ morning: morningRecipe, evening: eveningRecipe } =
+        _capDistinctDots(morningRecipe, eveningRecipe, llmContext.dots, orderContext.maxDistinctDots));
 
-    // null means the commit was skipped as stale (a late/duplicate event for a pending plan
-    // already superseded by a newer formulation run) — nothing actually changed, so don't tell
-    // the user a plan is ready.
-    if (committedPlanId === null) return;
+    // The allocation is recorded as a 'proposed' plan — a real 28-day recipe the user does not
+    // physically have yet, which is exactly what GCN's custom-formulation checkout needs in order
+    // to price it. It writes no schedules and never disturbs the plan the user is currently on;
+    // both of those happen when the delivered box is scanned (_activateProposedPlan). If the
+    // write fails the numbers still reach the user, just without a way to order them.
+    const planId = await _commitProposal(user_id, {
+        analysis: finalContent, morningRecipe, eveningRecipe,
+        activeHealthPlans: llmContext.active_health_plans,
+    });
+    // The label code is minted with the plan, and the QR built from it is part of what the user
+    // gets here — not something that appears later when a box is compounded.
+    const labelCode = planId
+        ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [planId])).rows[0]?.label_code
+        : null;
+    // The numbers have to be legible in the bubble itself: this card is the whole deliverable,
+    // and the Dots subtab still shows the user's ACTIVE plan, which a proposal deliberately is
+    // not — so there is nothing there for a "view plan" button to point at.
+    //
+    // The CTA depends on whether the user already paid for a package (the two orderings of the
+    // same purchase — see _buildFormulaChartBlock's `#order` note), which orderContext above
+    // already answered.
+    const chatMessage = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, llmContext.dots, lang, { planId, orderMode: orderContext.mode, labelCode });
 
-    await saveChatMessage(user_id, 'ai', finalContent, null, personaType);
+    await saveChatMessage(user_id, 'ai', chatMessage, null, personaType);
     await pool.query(
         'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-        [user_id, 'nutrition_plan', finalContent, 'pending']
+        [user_id, 'formulation_proposal', chatMessage, 'pending']
     );
 }
 
@@ -1815,7 +2065,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
 //
 // payload.kind distinguishes the finishing step: default (unset) is a normal chat turn
 // (finalizeChatReply, 'chat_reply' notification); 'formula_dots_generate' makes and commits the
-// actual weekly dot allocation instead (finalizeFormulaDotsGenerate, 'nutrition_plan'
+// actual weekly dot allocation instead (finalizeFormulaDotsGenerate, 'formulation_proposal'
 // notification) — see _handleFormulaDotsAgentic in handlers/dots.js, which publishes this kind
 // with a 'pending' nutrition_plans row already inserted for this event to fill in.
 // Hard wall-clock ceiling on delivering SOMETHING to the user, measured from the start of this
@@ -1847,16 +2097,20 @@ function _asyncFailureMessage(language, reason) {
 // Delivers a terminal message through BOTH channels the miniapp can see: the notifications row
 // (fast path, 3s poll) and chat_messages (durable backstop — see handleGetChatHistory's `roles`
 // param for why the notification alone is not enough).
-async function _deliverTerminalMessage(user_id, personaType, notificationType, text) {
+// Returns {chat_message_id, notification_id} for callers that need to record what was
+// delivered; the four pre-existing call sites ignore it.
+async function _deliverTerminalMessage(user_id, personaType, notificationType, text, source = null) {
+    let chatMessageId = null;
     try {
-        await saveChatMessage(user_id, 'ai', text, null, personaType);
+        chatMessageId = await saveChatMessage(user_id, 'ai', text, null, personaType, source);
     } catch (err) {
         console.error('terminal message saveChatMessage failed:', err);
     }
-    await pool.query(
-        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+    const { rows } = await pool.query(
+        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4) RETURNING id',
         [user_id, notificationType, text, 'pending']
     );
+    return { chat_message_id: chatMessageId, notification_id: rows[0]?.id ?? null };
 }
 
 async function handleChatGenerateEvent(payload) {
@@ -1935,9 +2189,8 @@ async function handleChatGenerateEvent(payload) {
             console.error('LLM Chat Error (async):', err);
             if (!claimDelivery()) return;
             if (kind === 'formula_dots_generate') {
-                // Never leave the pending plan row orphaned or the user with nothing — commit the
-                // deterministic fallback formulation directly, same as the publish-failure fail-open
-                // path in handlers/dots.js.
+                // Never leave the user with nothing — deliver the deterministic fallback
+                // proposal, same as the publish-failure fail-open path in handlers/dots.js.
                 try {
                     const fallback = await _runDeterministicFormulation({
                         biomarkers: llmContext.biomarkers,
@@ -1949,33 +2202,28 @@ async function handleChatGenerateEvent(payload) {
                         userFacts: llmContext.user_facts,
                         activeHealthPlans: llmContext.active_health_plans,
                     });
-                    const fbClient = await pool.connect();
-                    let committedPlanId;
-                    try {
-                        await fbClient.query('BEGIN');
-                        committedPlanId = await _commitNutritionPlan(fbClient, {
-                            userId: user_id, analysis: fallback.analysis,
-                            morningRecipe: fallback.morningRecipe, eveningRecipe: fallback.eveningRecipe,
-                            planId: llmContext.pending_plan_id, dotsFormulary: llmContext.dots,
-                            activeHealthPlans: llmContext.active_health_plans,
-                        });
-                        await fbClient.query('COMMIT');
-                    } catch (e) {
-                        await fbClient.query('ROLLBACK');
-                        throw e;
-                    } finally {
-                        fbClient.release();
-                    }
-                    if (committedPlanId !== null) {
-                        await saveChatMessage(user_id, 'ai', fallback.finalContent, null, personaType);
-                        await pool.query(
-                            'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
-                            [user_id, 'nutrition_plan', fallback.finalContent, 'pending']
-                        );
-                    }
+                    const fbOrder = await _resolveOrderContext(user_id);
+                    const fbCapped = _capDistinctDots(fallback.morningRecipe, fallback.eveningRecipe,
+                        llmContext.dots, fbOrder.maxDistinctDots);
+                    const fbPlanId = await _commitProposal(user_id, {
+                        analysis: fallback.finalContent,
+                        morningRecipe: fbCapped.morning,
+                        eveningRecipe: fbCapped.evening,
+                        activeHealthPlans: llmContext.active_health_plans,
+                    });
+                    const fbLabelCode = fbPlanId
+                        ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [fbPlanId])).rows[0]?.label_code
+                        : null;
+                    const fbMessage = fallback.finalContent
+                        + _buildFormulaChartBlock(fbCapped.morning, fbCapped.evening, llmContext.dots, language, { planId: fbPlanId, orderMode: fbOrder.mode, labelCode: fbLabelCode });
+                    await saveChatMessage(user_id, 'ai', fbMessage, null, personaType);
+                    await pool.query(
+                        'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                        [user_id, 'formulation_proposal', fbMessage, 'pending']
+                    );
                 } catch (fbErr) {
                     console.error('Formula dots fallback also failed:', fbErr);
-                    await _deliverTerminalMessage(user_id, personaType, 'nutrition_plan', _asyncFailureMessage(language, 'error'));
+                    await _deliverTerminalMessage(user_id, personaType, 'formulation_proposal', _asyncFailureMessage(language, 'error'));
                 }
             } else {
                 await _deliverTerminalMessage(user_id, personaType, 'chat_reply', _asyncFailureMessage(language, 'error'));
@@ -1995,7 +2243,7 @@ async function handleChatGenerateEvent(payload) {
     if (outcome === 'timeout' && claimDelivery()) {
         console.log(JSON.stringify({ level: 'WARN', msg: 'chat_generate_deliver_deadline_exceeded', event_id, user_id, kind: kind || 'chat', deadline_ms: DELIVER_DEADLINE_MS }));
         try {
-            await _deliverTerminalMessage(user_id, personaType, kind === 'formula_dots_generate' ? 'nutrition_plan' : 'chat_reply', _asyncFailureMessage(language, 'timeout'));
+            await _deliverTerminalMessage(user_id, personaType, kind === 'formula_dots_generate' ? 'formulation_proposal' : 'chat_reply', _asyncFailureMessage(language, 'timeout'));
         } catch (err) {
             console.error('watchdog delivery failed:', err);
         }
@@ -2784,7 +3032,15 @@ module.exports = {
     // exported for tests — pure helpers, no DB/LLM dependency
     stripTrailingQuestion,
     extractDateMentions,
+    _stripActionTails,
+    _filterProductsByUserFacts,
+    _validateProductRecommendations,
     saveChatMessage,
+    // Exported for handlers/viva_ag.js, which delivers an external agent's result into chat
+    // through the same two-channel path everything else uses. Same precedent as
+    // handlers/checkin.js requiring saveChatMessage from here; no cycle, chat.js never
+    // requires viva_ag.js.
+    deliverTerminalMessage: _deliverTerminalMessage,
     fetchTagDerivationContext,
     resolveOrUpsertUser,
     _fireQuestionnaireAnsweredFollowup,
@@ -2792,6 +3048,11 @@ module.exports = {
     handlePostBiomarkers,
     handlePostChat,
     handleChatGenerateEvent,
+    // Exported for tests: the Formulate-Dots finishing step. It writes a 'proposed' plan and no
+    // schedules, and never touches the user's active plan — the properties worth asserting
+    // directly, since reaching it through handleChatGenerateEvent would mean paying for a full
+    // agentic turn.
+    finalizeFormulaDotsGenerate,
     handlePostChatMessages,
     handlePostHeartbeat,
     handlePostHealthAdvice,

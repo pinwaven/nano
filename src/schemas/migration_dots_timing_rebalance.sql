@@ -1,0 +1,75 @@
+-- Rebalance the default AM/PM slot of the Dots formulary.
+--
+-- WHY
+-- 17 of the 18 dots carried timing = 'Morning'; DOT-N3 was the only 'Evening' dot (2-3 dots,
+-- timing_flexible = false). That default is what actually decides a formulation's AM/PM split:
+-- handlers/dots.js's _splitDotTiming keeps 70% of a flexible dot in its own slot and only moves
+-- ~30% (and only above a daily count of 10), so the evening capsule could never be filled by
+-- anything but spill. Worse, _fitRecipeToDailyBudget resolves the daily budget by dropping whole
+-- dots largest-first out of the over-budget slot, which removed exactly the large flexible dots
+-- carrying that spill. A midpoint allocation expanded to 44 dots AM / 3 dots PM with 8 of 17
+-- dots surviving.
+--
+-- Nothing in the split code is changed here. The slot each dot defaults to is a product/clinical
+-- property, and it was simply wrong for most of the formulary — every dot below moves for a
+-- reason about the ingredient, not to hit a number.
+--
+-- Same midpoint allocation after this migration: 71 AM / 62 PM, 13 of 17 dots surviving.
+--
+-- timing_flexible is deliberately untouched. The locked set stays {N3 evening, N4 morning,
+-- N12 morning} exactly as CLAUDE.md documents.
+
+-- ---------------------------------------------------------------------------------------------
+-- Evening
+-- ---------------------------------------------------------------------------------------------
+-- N2  Bone-Vascular Sync (D3, K2 MK-7, Zn, Cu) — fat-soluble; D3 absorption is substantially
+--     higher taken with the largest fat-containing meal, which for most users is dinner. MK-7's
+--     multi-day half-life makes its own timing irrelevant. Zinc/copper are routinely dosed in
+--     the evening, away from morning minerals.
+-- N3  Quiet Mind (Mg glycinate, ashwagandha, saffron) — unchanged; sleep support, locked.
+-- N10 Radiant Skin (astaxanthin, rice ceramides) — fat-soluble, taken with a meal; skin barrier
+--     and ceramide turnover run overnight.
+-- N13 Gut Renew (B. coagulans, B. subtilis spores) — spore probiotics are conventionally taken
+--     with the evening meal: slower overnight transit, lower gastric acid load.
+-- N14 Vascular Flow (cocoa flavanols) — flavanol endothelial trials dose twice daily because the
+--     FMD effect peaks ~2h post-dose and wanes well inside 8h; an evening dose is what covers the
+--     second half of the day. Flexible, so it splits rather than abandoning the morning dose.
+-- N15 Glycation Guard (L-carnosine, benfotiamine, P5P) — anti-glycation acts on postprandial
+--     glucose/AGE formation, and benfotiamine's standard protocol is divided doses with meals.
+--     The evening meal is the one that was previously uncovered.
+-- N17 Cholesterol Balance (plant sterol esters, tocotrienols) — the strongest case in the
+--     formulary: endogenous cholesterol synthesis peaks overnight (the reason statins and
+--     tocotrienols are dosed in the evening), and plant sterols only block absorption when taken
+--     with a fat-containing meal.
+-- N18 Antioxidant Shield (ergothioneine, selenomethionine) — ergothioneine's tissue half-life is
+--     weeks, so it has no diurnal constraint at all; selenomethionine is better tolerated with
+--     food. Placed in the evening as a neutral balancer, which is an honest reason for this one.
+UPDATE dots SET timing = 'Evening'
+ WHERE key_name IN ('DOT-N2','DOT-N3','DOT-N10','DOT-N13','DOT-N14','DOT-N15','DOT-N17','DOT-N18');
+
+-- ---------------------------------------------------------------------------------------------
+-- Morning
+-- ---------------------------------------------------------------------------------------------
+-- N1  Methyl Balance (B12, 5-MTHF, P5P, NAC) — methyl donors and B12 are mildly activating and
+--     are conventionally morning-dosed.
+-- N4  Steady Energy (rhodiola, L-theanine) — rhodiola is a stimulant adaptogen. Locked.
+-- N5  Vagal Tone (CoQ10, PQQ) — CoQ10 is reported to disturb sleep at higher doses; morning with
+--     a fat-containing meal is the standard.
+-- N6  Mito Renew (urolithin A, spermidine) — urolithin A human trials dose once daily in the
+--     morning with food.
+-- N7  Senescence Clear — system-controlled pulse dot: on its two isolation days BOTH capsules are
+--     N7 alone, so this column never decides anything for it. Left at Morning.
+-- N8  Macular Guard (lutein, zeaxanthin) — fat-soluble; kept in the morning meal to avoid loading
+--     every fat-soluble dot into one capsule.
+-- N9  NAD Renew (NMN, TMG) — NAD+ follows a circadian rhythm and NMN late in the day is commonly
+--     reported to disturb sleep. Kept flexible rather than locked: a controlled trial in older
+--     adults found afternoon dosing outperformed morning on drowsiness, so a partial evening
+--     share is defensible, a full move is not.
+-- N11 Metabolic Renew (berberine, glucoraphanin) — berberine is dosed before main meals; kept
+--     morning-default and flexible so it splits across meals rather than moving wholesale.
+-- N12 Sharp Mind (citicoline, huperzine A) — cholinergic; huperzine A causes vivid dreams and
+--     sleep disruption. Locked.
+-- N16 Cardio Signal (pterostilbene, quercetin) — pterostilbene is stimulating for some users at
+--     the doses used here.
+UPDATE dots SET timing = 'Morning'
+ WHERE key_name IN ('DOT-N1','DOT-N4','DOT-N5','DOT-N6','DOT-N7','DOT-N8','DOT-N9','DOT-N11','DOT-N12','DOT-N16');

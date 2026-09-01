@@ -148,7 +148,7 @@ function DeleteCoachConfirm({ coach, onClose, onConfirm }) {
 
 // ── CoachUsersModal ───────────────────────────────────────────────────────────
 
-function CoachUsersModal({ coach, onClose }) {
+function CoachUsersModal({ coach, onClose, onCount }) {
   const { t } = useLang();
   const [list, setList] = useState(null);
   const [error, setError] = useState('');
@@ -156,7 +156,16 @@ function CoachUsersModal({ coach, onClose }) {
   useEffect(() => {
     let cancelled = false;
     axios.get(`/api/coach-users/${coach.id}`)
-      .then(r => { if (!cancelled) setList(r.data.users || []); })
+      .then(r => {
+        if (cancelled) return;
+        const users = r.data.users || [];
+        setList(users);
+        // The row's user_count came from the /coach-list fetch at page load and can be arbitrarily
+        // stale — a coach reassignment made after that shows the old number next to a fresh list,
+        // in the same view (seen live 2026-08-30: badge 0, list 37). This request is authoritative
+        // for that coach, so correct the badge with it rather than leaving the two disagreeing.
+        if (onCount) onCount(coach.id, users.length);
+      })
       .catch(err => { if (!cancelled) { setError(err.response?.data?.error || err.message); setList([]); } });
     return () => { cancelled = true; };
   }, [coach.id]);
@@ -321,6 +330,10 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
   const [subCoaches, setSubCoaches] = useState(null);
   const [groups, setGroups] = useState([]);
   const [groupModal, setGroupModal] = useState(null);
+  // coachId -> authoritative client count, learned by opening that coach's user list. Overrides the
+  // page-load user_count, which has no way to know about assignments made since.
+  const [countOverrides, setCountOverrides] = useState({});
+  const noteCount = (coachId, n) => setCountOverrides(prev => (prev[coachId] === n ? prev : { ...prev, [coachId]: n }));
   const closeAndRefresh = () => { setModal(null); onRefresh(); };
 
   const displayCoaches = includeSubchannels && subCoaches !== null ? subCoaches : coaches;
@@ -505,7 +518,7 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
                 <td className="muted">{fmt(p.email)}</td>
                 <td className="muted">{fmt(p.phone)}</td>
                 <td><Badge color={p.language === 'zh' ? '#16a34a' : '#2563eb'}>{(p.language || 'zh').toUpperCase()}</Badge></td>
-                <td><Badge color="#3b82f6">{p.user_count || 0}</Badge></td>
+                <td><Badge color="#3b82f6">{countOverrides[p.id] ?? (p.user_count || 0)}</Badge></td>
                 <td className="muted">{fmtDate(p.created_at)}</td>
                 <td onClick={e => e.stopPropagation()}>
                   <div className="row-actions">
@@ -569,7 +582,7 @@ function CoachTab({ coaches, users, channels, session, isCmsAdmin, onRefresh }) 
       {modal?.type === 'add'    && <CoachModal coach={null}        users={users} channels={channels} groups={groups} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'edit'   && <CoachModal coach={modal.coach} users={users} channels={channels} groups={groups} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
       {modal?.type === 'delete' && <DeleteCoachConfirm coach={modal.coach} onClose={() => setModal(null)} onConfirm={closeAndRefresh} />}
-      {modal?.type === 'users'  && <CoachUsersModal coach={modal.coach} onClose={() => setModal(null)} />}
+      {modal?.type === 'users'  && <CoachUsersModal coach={modal.coach} onClose={() => setModal(null)} onCount={noteCount} />}
       {groupModal?.type === 'add-group'    && <CoachGroupModal group={null} channelId={session?.channelId} onClose={() => setGroupModal(null)} onSave={() => { setGroupModal(null); fetchGroups(); }} />}
       {groupModal?.type === 'edit-group'   && <CoachGroupModal group={groupModal.group} channelId={session?.channelId} onClose={() => setGroupModal(null)} onSave={() => { setGroupModal(null); fetchGroups(); }} />}
       {groupModal?.type === 'delete-group' && <DeleteCoachGroupConfirm group={groupModal.group} onClose={() => setGroupModal(null)} onConfirm={() => { setGroupModal(null); setGroupFilter(''); fetchGroups(); }} />}

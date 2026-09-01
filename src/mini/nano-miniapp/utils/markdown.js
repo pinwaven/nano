@@ -28,26 +28,34 @@
 var B = 'rgba(127,127,127,0.30)' // borders / rules
 var F = 'rgba(127,127,127,0.13)' // subtle fills
 
+// Sizes here are RELATIVE (em), not absolute rpx, so they track .msg-html's own font-size
+// and therefore the accessibility text-size setting. Absolute values would not: tagStyle is
+// applied as an INLINE style on each parsed node (parser.js parseStyle), which beats any
+// stylesheet rule, and the map is bound once and never re-parsed (see the note above). With
+// 28rpx body text scaling to 40rpx at the largest level, a hardcoded 34rpx h1 would end up
+// SMALLER than the paragraphs under it. The em values reproduce the previous rpx sizes
+// exactly at the default level (34/28 = 1.21, 32/28 = 1.14, 29/28 = 1.04, 25/28 = 0.89,
+// 24/28 = 0.86). mp-html's own built-in tagStyle uses em the same way (big/small).
 var MD_TAG_STYLE = {
   p: 'margin:0 0 20rpx',
-  h1: 'font-size:34rpx;font-weight:700;margin:30rpx 0 12rpx;line-height:1.35',
-  h2: 'font-size:32rpx;font-weight:700;margin:28rpx 0 10rpx;line-height:1.35',
-  h3: 'font-size:29rpx;font-weight:600;margin:24rpx 0 8rpx;line-height:1.4',
-  h4: 'font-size:28rpx;font-weight:600;margin:20rpx 0 6rpx',
-  h5: 'font-size:28rpx;font-weight:600;margin:20rpx 0 6rpx',
-  h6: 'font-size:28rpx;font-weight:600;margin:20rpx 0 6rpx',
+  h1: 'font-size:1.21em;font-weight:700;margin:30rpx 0 12rpx;line-height:1.35',
+  h2: 'font-size:1.14em;font-weight:700;margin:28rpx 0 10rpx;line-height:1.35',
+  h3: 'font-size:1.04em;font-weight:600;margin:24rpx 0 8rpx;line-height:1.4',
+  h4: 'font-size:1em;font-weight:600;margin:20rpx 0 6rpx',
+  h5: 'font-size:1em;font-weight:600;margin:20rpx 0 6rpx',
+  h6: 'font-size:1em;font-weight:600;margin:20rpx 0 6rpx',
   ul: 'margin:10rpx 0 18rpx;padding-left:38rpx',
   ol: 'margin:10rpx 0 18rpx;padding-left:44rpx',
   li: 'margin:0 0 8rpx;line-height:1.6',
   strong: 'font-weight:600',
   em: 'font-style:italic',
   blockquote: 'margin:18rpx 0;padding:2rpx 0 2rpx 22rpx;border-left:6rpx solid ' + B,
-  code: 'font-family:monospace;font-size:25rpx;background:' + F + ';padding:2rpx 8rpx;border-radius:6rpx',
+  code: 'font-family:monospace;font-size:0.89em;background:' + F + ';padding:2rpx 8rpx;border-radius:6rpx',
   // Overriding the built-in `pre` entry DROPS its default "font-family:monospace;white-space:pre"
   // (parser.js does Object.assign over the whole map, not a per-property merge) — both restated.
-  pre: 'font-family:monospace;white-space:pre;display:block;font-size:24rpx;background:' + F +
+  pre: 'font-family:monospace;white-space:pre;display:block;font-size:0.86em;background:' + F +
        ';border:1rpx solid ' + B + ';border-radius:12rpx;padding:16rpx 18rpx;margin:18rpx 0;overflow-x:auto',
-  table: 'width:100%;table-layout:fixed;border-collapse:collapse;font-size:25rpx;margin:18rpx 0',
+  table: 'width:100%;table-layout:fixed;border-collapse:collapse;font-size:0.89em;margin:18rpx 0',
   th: 'border:1rpx solid ' + B + ';padding:10rpx 12rpx;text-align:left;font-weight:600',
   td: 'border:1rpx solid ' + B + ';padding:10rpx 12rpx;text-align:left;word-break:break-word',
   // node.wxss hardcodes ._a{color:#366092}, a blue matching neither theme. An element's own inline
@@ -273,7 +281,20 @@ function _zeroLastMargin (block) {
   })
 }
 
-var DIRECTIVE_NAMES = { metric: 1, takeaway: 1, dots: 1 }
+var DIRECTIVE_NAMES = { metric: 1, takeaway: 1, dots: 1, formula: 1, product: 1 }
+
+// "1-9,12-28" -> "1\u20139 \u00b7 12\u201328". Digits, '-' and ',' only: this string is rendered next
+// to the page's own localised day word, and anything else in it came from somewhere it shouldn't.
+function _prettyDayRanges (raw) {
+  var parts = String(raw || '').split(',')
+  var out = []
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim()
+    if (!/^[0-9]+(-[0-9]+)?$/.test(p)) continue
+    out.push(p.replace('-', '\u2013'))
+  }
+  return out.join(' \u00b7 ')
+}
 
 function _buildDirective (name, inner) {
   var rows = []
@@ -306,6 +327,124 @@ function _buildDirective (name, inner) {
     return { t: 'takeaway', h: _parseBlocks(inner).join('') }
   }
 
+  // :::formula — the Formulate-Dots proposal chart. Rows are key|name|color|am|pm, written by
+  // the SERVER from an already-validated allocation (handlers/dots.js's
+  // _buildFormulaChartBlock), never by the model — so the bars can't disagree with the numbers.
+  // Every total is derived here rather than sent, so there is one place the arithmetic lives.
+  //
+  // Meta lines are '#'-prefixed, which no dot key can start with. A card saved to chat history
+  // BEFORE the 28-day rework has none of them and still renders correctly, as one unlabelled
+  // group — do not make any of them required.
+  //   #cycle|<days>|<capsules>   cycle length, for the footer
+  //   #plan|<id>                 the proposed nutrition_plans row, which enables the order CTA
+  //   #label|<url>               the formulation's QR/label page. Rendered as a link the page
+  //                              opens in a webview — the miniapp never draws the QR itself, so
+  //                              what the user sees is the same page that prints on the box.
+  //   #order|<mode>              'buy' (order this formulation) | 'submit' (a paid fast-track
+  //                              package is waiting — confirm THIS formula for compounding) |
+  //                              'ag' (a paid premium package is waiting; Viva AG owns it, so no
+  //                              CTA). Absent, unknown, or unrecognised all mean 'buy'.
+  //   #day|<ranges>|<kind>       starts a group; rows after it belong to it. Ranges are bare
+  //                              numbers ("1-9,12-28"); the day WORD is the page's, not ours.
+  if (name === 'formula') {
+    var fgroups = []
+    var fcur = null
+    var fcycleDays = 0
+    var fcycleCaps = 0
+    var fplan = ''
+    var fmode = 'buy'
+    var flabel = ''
+    for (var f = 0; f < rows.length; f++) {
+      var line = rows[f]
+      var fp = line.split('|')
+      for (var y = 0; y < fp.length; y++) fp[y] = fp[y].trim()
+      if (fp[0] === '#cycle') {
+        fcycleDays = parseInt(fp[1], 10) > 0 ? parseInt(fp[1], 10) : 0
+        fcycleCaps = parseInt(fp[2], 10) > 0 ? parseInt(fp[2], 10) : 0
+        continue
+      }
+      if (fp[0] === '#plan') {
+        // Interpolated into a data- attribute and posted back as a plan id, so digits only.
+        fplan = /^[0-9]{1,18}$/.test(fp[1] || '') ? fp[1] : ''
+        continue
+      }
+      if (fp[0] === '#label') {
+        // Rejoin: the URL was split on '|' along with everything else, and a query string may
+        // legitimately contain one. Scheme-checked because this ends up in wx.navigateTo.
+        var url = fp.slice(1).join('|')
+        flabel = /^https:\/\/[^\s]+$/.test(url) ? url : ''
+        continue
+      }
+      if (fp[0] === '#order') {
+        fmode = (fp[1] === 'submit' || fp[1] === 'ag') ? fp[1] : 'buy'
+        continue
+      }
+      if (fp[0] === '#day') {
+        fcur = {
+          days: _prettyDayRanges(fp[1] || ''),
+          kind: fp[2] === 'n7' ? 'n7' : 'regular',
+          items: [], am: 0, pm: 0, total: 0
+        }
+        fgroups.push(fcur)
+        continue
+      }
+      if (fp[0].charAt(0) === '#') continue
+      var am = parseInt(fp[3], 10)
+      var pm = parseInt(fp[4], 10)
+      if (!fp[0] || (!am && !pm)) continue
+      am = am > 0 ? am : 0
+      pm = pm > 0 ? pm : 0
+      if (!fcur) {
+        // Legacy card, or rows before any #day line: one implicit unlabelled group.
+        fcur = { days: '', kind: 'regular', items: [], am: 0, pm: 0, total: 0 }
+        fgroups.push(fcur)
+      }
+      fcur.am += am
+      fcur.pm += pm
+      fcur.items.push({
+        key: fp[0],
+        name: fp[1] || fp[0],
+        // Hex is validated rather than trusted: it is interpolated into an inline style.
+        color: /^#[0-9a-fA-F]{3,8}$/.test(fp[2] || '') ? fp[2] : '#6B7B8C',
+        am: am,
+        pm: pm,
+        total: am + pm
+      })
+    }
+    var fkept = []
+    for (var h = 0; h < fgroups.length; h++) if (fgroups[h].items.length) fkept.push(fgroups[h])
+    if (!fkept.length) return null
+
+    // Bar widths are percentages of the LARGEST capsule across EVERY group, not per group, so a
+    // reset day's smaller capsule reads as genuinely smaller instead of self-normalising to look
+    // the same size as a full day.
+    var fmax = 1
+    for (var m2 = 0; m2 < fkept.length; m2++) {
+      if (fkept[m2].am > fmax) fmax = fkept[m2].am
+      if (fkept[m2].pm > fmax) fmax = fkept[m2].pm
+    }
+    for (var g2 = 0; g2 < fkept.length; g2++) {
+      var grp = fkept[g2]
+      grp.total = grp.am + grp.pm
+      for (var i2 = 0; i2 < grp.items.length; i2++) {
+        grp.items[i2].amPct = grp.items[i2].am / fmax * 100
+        grp.items[i2].pmPct = grp.items[i2].pm / fmax * 100
+      }
+    }
+    return {
+      t: 'formula',
+      groups: fkept,
+      cycleDays: fcycleDays,
+      cycleCapsules: fcycleCaps,
+      planId: fplan,
+      orderMode: fmode,
+      labelUrl: flabel,
+      // Legacy top-level fields, kept so anything still reading seg.items/am/pm/total sees the
+      // everyday dose rather than nothing.
+      items: fkept[0].items, am: fkept[0].am, pm: fkept[0].pm, total: fkept[0].total
+    }
+  }
+
   if (name === 'dots') {
     var ditems = []
     for (var k = 0; k < rows.length; k++) {
@@ -319,6 +458,22 @@ function _buildDirective (name, inner) {
       if (item.id) ditems.push(item)
     }
     return ditems.length ? { t: 'dots', items: ditems } : null
+  }
+
+  // :::product — a store recommendation card. Rows are sku|name|price|reason, written by the
+  // SERVER from the catalog snapshot the turn was built on (handlers/dots.js's
+  // _buildProductCardBlock), never by the model — same rule as :::formula above, so the price
+  // shown can never disagree with what the store will actually charge. The sku is carried
+  // through only as a tap target; it is never displayed.
+  if (name === 'product') {
+    var pitems = []
+    for (var pi = 0; pi < rows.length; pi++) {
+      var pp = rows[pi].split('|')
+      for (var pj = 0; pj < pp.length; pj++) pp[pj] = pp[pj].trim()
+      if (!pp[0] || !pp[1]) continue
+      pitems.push({ sku: pp[0], name: pp[1], price: pp[2] || '', reason: pp[3] || '' })
+    }
+    return pitems.length ? { t: 'product', items: pitems } : null
   }
 
   return null
@@ -380,4 +535,20 @@ function mdToSegments (md) {
   return segs
 }
 
-module.exports = { mdToSegments, MD_TAG_STYLE }
+// Plain markdown -> ONE html string, for rendering a whole document in a single <mp-html>.
+//
+// Unlike mdToSegments this deliberately does NOT interpret ::: directives: its caller is the
+// Viva AG report viewer, whose input is a file written by an EXTERNAL system, and letting that
+// system render designed status cards inside the app is the same injection surface
+// handlers/viva_ag.js strips ::: out of result summaries to avoid. Directive lines fall through
+// as ordinary text. Raw HTML in the source is escaped by _esc/_inline, so it cannot inject either.
+function mdToHtml (md) {
+  if (md == null) return ''
+  var lines = String(md).replace(/\r\n?/g, '\n').split('\n')
+  var blocks = _parseBlocks(lines)
+  if (!blocks.length) return ''
+  blocks[blocks.length - 1] = _zeroLastMargin(blocks[blocks.length - 1])
+  return blocks.join('')
+}
+
+module.exports = { mdToSegments, mdToHtml, MD_TAG_STYLE }
