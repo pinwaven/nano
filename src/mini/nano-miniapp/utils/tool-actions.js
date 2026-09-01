@@ -48,9 +48,13 @@ async function runTestChip(openid, t, ctx) {
   })
 }
 
-async function runFormulaDs(openid, t, ctx) {
+// opts.skipUserMsg — the chat classifier launched this tool from the user's own message
+// ("我要定制营养素") instead of the toolbox button, so that message already stands in the chat and
+// was persisted server-side. Adding the canned trigger line on top of it would read as the user
+// asking twice.
+async function runFormulaDs(openid, t, ctx, opts = {}) {
   const { addMsg, addActionMsg, req, setTyping } = ctx
-  addMsg('user', t.toolFormulaDotMsg, true)
+  if (!opts.skipUserMsg) addMsg('user', t.toolFormulaDotMsg, true)
   addMsg('ai', t.formulaGenerating, true)
   setTyping(true)
   try {

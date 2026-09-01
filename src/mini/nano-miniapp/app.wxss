@@ -41,11 +41,12 @@ page {
   --steel:        #7A9ABF;
 
   /* ── Text scale tokens (accessibility) ──
-     Every distinct font-size used by the health tab, as an inherited token. These
+     Every distinct font-size used anywhere in the app, as an inherited token. These
      baseline values are byte-identical to the literals they replaced, so the default
      build renders exactly as before. The .fs-1/.fs-2/.fs-3 blocks below redefine them.
      Custom properties are inherited values, so they cross component style isolation —
      which is how user-health.wxss already consumes --blue/--text/--navy-card. */
+  --fs-11: 11rpx;   --fs-13: 13rpx;   --fs-23: 23rpx;   --fs-80: 80rpx;
   --fs-14: 14rpx;   --fs-15: 15rpx;   --fs-16: 16rpx;   --fs-17: 17rpx;
   --fs-18: 18rpx;   --fs-19: 19rpx;   --fs-20: 20rpx;   --fs-21: 21rpx;
   --fs-22: 22rpx;   --fs-24: 24rpx;   --fs-25: 25rpx;   --fs-26: 26rpx;
@@ -129,6 +130,7 @@ page {
    — no !important needed. */
 
 .fs-1 {
+  --fs-11: 13rpx;   --fs-13: 15rpx;   --fs-23: 26rpx;   --fs-80: 84rpx;
   --fs-14: 16rpx;   --fs-15: 17rpx;   --fs-16: 18rpx;   --fs-17: 20rpx;
   --fs-18: 21rpx;   --fs-19: 22rpx;   --fs-20: 23rpx;   --fs-21: 24rpx;
   --fs-22: 25rpx;   --fs-24: 27rpx;   --fs-25: 28rpx;   --fs-26: 30rpx;
@@ -139,6 +141,7 @@ page {
 }
 
 .fs-2 {
+  --fs-11: 14rpx;   --fs-13: 17rpx;   --fs-23: 30rpx;   --fs-80: 88rpx;
   --fs-14: 18rpx;   --fs-15: 20rpx;   --fs-16: 21rpx;   --fs-17: 22rpx;
   --fs-18: 23rpx;   --fs-19: 25rpx;   --fs-20: 26rpx;   --fs-21: 27rpx;
   --fs-22: 29rpx;   --fs-24: 31rpx;   --fs-25: 32rpx;   --fs-26: 33rpx;
@@ -149,6 +152,7 @@ page {
 }
 
 .fs-3 {
+  --fs-11: 16rpx;   --fs-13: 20rpx;   --fs-23: 34rpx;   --fs-80: 93rpx;
   --fs-14: 21rpx;   --fs-15: 23rpx;   --fs-16: 24rpx;   --fs-17: 26rpx;
   --fs-18: 27rpx;   --fs-19: 29rpx;   --fs-20: 30rpx;   --fs-21: 32rpx;
   --fs-22: 33rpx;   --fs-24: 35rpx;   --fs-25: 36rpx;   --fs-26: 38rpx;

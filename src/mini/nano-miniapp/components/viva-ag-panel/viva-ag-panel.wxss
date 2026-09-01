@@ -30,7 +30,7 @@
 }
 
 .ag-hero-badge text {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 700;
   letter-spacing: 3rpx;
   color: #A0B4FF;
@@ -38,7 +38,7 @@
 
 .ag-hero-desc {
   display: block;
-  font-size: 25rpx;
+  font-size: var(--fs-25, 25rpx);
   line-height: 1.6;
   color: var(--steel);
 }
@@ -46,7 +46,7 @@
 .ag-hero-expiry {
   display: block;
   margin-top: 14rpx;
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb), 0.5);
 }
 
@@ -65,7 +65,7 @@
 }
 
 .ag-section-title {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 700;
   letter-spacing: 4rpx;
   text-transform: uppercase;
@@ -77,12 +77,12 @@
 .ag-section-head .ag-section-title { margin-bottom: 0; }
 
 .ag-section-count {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb), 0.4);
 }
 
 .ag-muted {
-  font-size: 24rpx;
+  font-size: var(--fs-24, 24rpx);
   color: rgba(var(--wave-rgb), 0.45);
   padding: 12rpx 0;
 }
@@ -94,7 +94,7 @@
   border-radius: 14rpx;
   border: 1rpx dashed rgba(var(--blue-rgb), 0.35);
   text-align: center;
-  font-size: 25rpx;
+  font-size: var(--fs-25, 25rpx);
   color: #A0B4FF;
   margin-bottom: 22rpx;
 }
@@ -107,14 +107,14 @@
 
 .ag-empty-title {
   display: block;
-  font-size: 25rpx;
+  font-size: var(--fs-25, 25rpx);
   color: var(--steel);
   margin-bottom: 10rpx;
 }
 
 .ag-empty-hint {
   display: block;
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   line-height: 1.6;
   color: rgba(var(--wave-rgb), 0.45);
 }
@@ -132,7 +132,7 @@
 
 .ag-doc-name {
   display: block;
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: var(--wave, #A6C4E5);
   margin-bottom: 8rpx;
   overflow: hidden;
@@ -147,7 +147,7 @@
 }
 
 .ag-doc-badge {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   padding: 3rpx 12rpx;
   border-radius: 6rpx;
   background: rgba(var(--blue-rgb), 0.14);
@@ -155,12 +155,12 @@
 }
 
 .ag-doc-sub {
-  font-size: 21rpx;
+  font-size: var(--fs-21, 21rpx);
   color: rgba(var(--wave-rgb), 0.4);
 }
 
 .ag-doc-del {
-  font-size: 23rpx;
+  font-size: var(--fs-23, 23rpx);
   color: #E05C5C;
   padding: 10rpx 0 10rpx 24rpx;
 }
@@ -178,7 +178,7 @@
   padding: 12rpx 24rpx;
   border-radius: 30rpx;
   border: 1rpx solid rgba(var(--blue-rgb), 0.22);
-  font-size: 23rpx;
+  font-size: var(--fs-23, 23rpx);
   color: var(--steel);
 }
 
@@ -196,7 +196,7 @@
   padding: 20rpx;
   border-radius: 14rpx;
   background: rgba(var(--blue-rgb), 0.07);
-  font-size: 25rpx;
+  font-size: var(--fs-25, 25rpx);
   line-height: 1.6;
   color: var(--wave, #A6C4E5);
   margin-bottom: 20rpx;
@@ -209,7 +209,7 @@
   border-radius: 14rpx;
   background: rgba(var(--blue-rgb), 0.85);
   text-align: center;
-  font-size: 27rpx;
+  font-size: var(--fs-27, 27rpx);
   font-weight: 600;
   color: #fff;
 }
@@ -219,7 +219,7 @@
 .ag-note {
   display: block;
   margin-top: 14rpx;
-  font-size: 21rpx;
+  font-size: var(--fs-21, 21rpx);
   color: rgba(var(--wave-rgb), 0.42);
 }
 
@@ -240,7 +240,7 @@
 }
 
 .ag-pill {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   font-weight: 600;
   padding: 4rpx 14rpx;
   border-radius: 20rpx;
@@ -257,20 +257,20 @@
 .ag-pill-awaiting_input { background: rgba(var(--wave-rgb), 0.18); color: var(--gold); }
 
 .ag-job-date {
-  font-size: 21rpx;
+  font-size: var(--fs-21, 21rpx);
   color: rgba(var(--wave-rgb), 0.4);
 }
 
 .ag-job-cmd {
   display: block;
-  font-size: 25rpx;
+  font-size: var(--fs-25, 25rpx);
   color: var(--wave, #A6C4E5);
   margin-bottom: 8rpx;
 }
 
 .ag-job-note {
   display: block;
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   line-height: 1.5;
   color: rgba(var(--wave-rgb), 0.45);
 }
@@ -304,21 +304,21 @@
 }
 
 .ag-sheet-close {
-  font-size: 30rpx;
+  font-size: var(--fs-30, 30rpx);
   color: rgba(var(--wave-rgb), 0.5);
   padding: 0 6rpx;
 }
 
 .ag-sheet-date {
   display: block;
-  font-size: 21rpx;
+  font-size: var(--fs-21, 21rpx);
   color: rgba(var(--wave-rgb), 0.4);
   margin-bottom: 16rpx;
 }
 
 .ag-sheet-cmd {
   display: block;
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   font-weight: 600;
   color: var(--wave, #A6C4E5);
   margin-bottom: 20rpx;
@@ -326,7 +326,7 @@
 
 .ag-sheet-body {
   display: block;
-  font-size: 25rpx;
+  font-size: var(--fs-25, 25rpx);
   line-height: 1.75;
   color: var(--steel);
   white-space: pre-wrap;
@@ -340,7 +340,7 @@
   border-radius: 14rpx;
   background: rgba(var(--blue-rgb), 0.85);
   text-align: center;
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   color: #fff;
   margin-bottom: 16rpx;
 }
@@ -371,14 +371,14 @@
 }
 
 .ag-file-ext {
-  font-size: 18rpx;
+  font-size: var(--fs-18, 18rpx);
   font-weight: 700;
   letter-spacing: 1rpx;
   color: #A0B4FF;
 }
 
 .ag-file-name {
-  font-size: 21rpx;
+  font-size: var(--fs-21, 21rpx);
   color: rgba(var(--wave-rgb), 0.7);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -391,7 +391,7 @@
 
 .ag-filelist-title {
   display: block;
-  font-size: 21rpx;
+  font-size: var(--fs-21, 21rpx);
   letter-spacing: 1rpx;
   color: rgba(var(--wave-rgb), 0.45);
   margin-bottom: 12rpx;
@@ -414,7 +414,7 @@
 
 .ag-file-row-name {
   display: block;
-  font-size: 25rpx;
+  font-size: var(--fs-25, 25rpx);
   color: var(--wave, #A6C4E5);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -422,12 +422,12 @@
 }
 
 .ag-file-row-size {
-  font-size: 20rpx;
+  font-size: var(--fs-20, 20rpx);
   color: rgba(var(--wave-rgb), 0.4);
 }
 
 .ag-file-row-go {
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   color: #A0B4FF;
   white-space: nowrap;
 }
@@ -455,7 +455,7 @@
 .ag-viewer-title {
   flex: 1;
   min-width: 0;
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   font-weight: 600;
   color: var(--wave, #A6C4E5);
   overflow: hidden;
@@ -464,7 +464,7 @@
 }
 
 .ag-viewer-close {
-  font-size: 30rpx;
+  font-size: var(--fs-30, 30rpx);
   color: rgba(var(--wave-rgb), 0.5);
   padding: 0 6rpx;
 }
@@ -485,7 +485,7 @@
 .ag-viewer-trunc {
   display: block;
   margin-top: 24rpx;
-  font-size: 21rpx;
+  font-size: var(--fs-21, 21rpx);
   line-height: 1.6;
   color: rgba(var(--wave-rgb), 0.4);
 }
@@ -531,16 +531,16 @@
   background: rgba(var(--wave-rgb), 0.10);
   border-left: 6rpx solid var(--gold);
 }
-.ag-ask-title { display: block; font-size: 27rpx; font-weight: 600; color: var(--text); }
-.ag-ask-body { display: block; margin-top: 10rpx; font-size: 23rpx; color: var(--text-muted); line-height: 1.6; }
-.ag-ask-deadline { display: block; margin-top: 8rpx; font-size: 21rpx; color: var(--text-muted); }
+.ag-ask-title { display: block; font-size: var(--fs-27, 27rpx); font-weight: 600; color: var(--text); }
+.ag-ask-body { display: block; margin-top: 10rpx; font-size: var(--fs-23, 23rpx); color: var(--text-muted); line-height: 1.6; }
+.ag-ask-deadline { display: block; margin-top: 8rpx; font-size: var(--fs-21, 21rpx); color: var(--text-muted); }
 .ag-ask-cta {
   margin-top: 20rpx;
   padding: 18rpx 0;
   border-radius: 14rpx;
   background: rgba(var(--blue-rgb), 0.85);
   text-align: center;
-  font-size: 26rpx;
+  font-size: var(--fs-26, 26rpx);
   font-weight: 600;
   color: #fff;
 }
@@ -558,13 +558,13 @@
   border-left: 6rpx solid rgba(255, 255, 255, 0.2);
 }
 .ag-fm-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16rpx; }
-.ag-fm-status { font-size: 27rpx; font-weight: 600; color: var(--text); }
-.ag-fm-dots { font-size: 22rpx; color: var(--text-muted); }
-.ag-fm-hint { display: block; margin-top: 10rpx; font-size: 23rpx; color: var(--text-muted); line-height: 1.6; }
+.ag-fm-status { font-size: var(--fs-27, 27rpx); font-weight: 600; color: var(--text); }
+.ag-fm-dots { font-size: var(--fs-22, 22rpx); color: var(--text-muted); }
+.ag-fm-hint { display: block; margin-top: 10rpx; font-size: var(--fs-23, 23rpx); color: var(--text-muted); line-height: 1.6; }
 .ag-fm-rationale {
   display: block; margin-top: 14rpx; padding-top: 14rpx;
   border-top: 1rpx solid rgba(255, 255, 255, 0.08);
-  font-size: 23rpx; color: var(--text-sub); line-height: 1.6;
+  font-size: var(--fs-23, 23rpx); color: var(--text-sub); line-height: 1.6;
 }
 .ag-fm-valid    { border-left-color: var(--gold); }
 .ag-fm-approved { border-left-color: var(--success); }

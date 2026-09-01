@@ -1166,6 +1166,18 @@ buy, once to fill) reads as two formulas.
 a formula since superseded (GCN's `migration_0086`) — and joining on it would report a package as
 carrying a recipe nothing is going to make.
 
+**A proposal is also suppressed while an order is waiting for a recipe** (`AWAITING_FORMULA_STAGES`
+= `pending_payment` / `paid` / `awaiting_formulation` / `awaiting_ag`, with no plan attached). The
+plan is not attached until payment confirms, so at `pending_payment` one journey is genuinely two
+rows — and the standalone one was still offering 按此配方下单 for a package already ordered.
+
+The stage is what this keys on, **not `intended_nano_plan_id`**, per the rule directly above: at
+most one un-submitted proposal exists per user, so "an order is waiting" already identifies it
+without trusting an advisory link. Keep the set narrow — a package at `compounding` or `shipped`
+already has its formula, so a proposal made afterwards is a real next-cycle formula and must stay
+orderable; `cancelled`/`refunded` release it. Only `'proposed'` rows are suppressed, never an
+`active` plan.
+
 ### Selecting which package a formula fills
 
 Both halves of the handoff were hardcoded `ORDER BY o.created_at ASC LIMIT 1`, so "oldest wins" was

@@ -832,6 +832,15 @@ const _STAGE_RANK = {
     completed: 5, cancelled: 6, refunded: 6,
 };
 
+// An order that exists but has no formula on it yet — the slot a proposal is going to fill.
+// Deliberately NOT every in-flight stage: once a package reaches expert_review or compounding its
+// recipe is already attached, so a proposal made after that is a genuine next-cycle formula and
+// must stay orderable. 'awaiting_ag' is here because Viva AG will supply that formula, so a
+// chat-tool proposal is not what fills it and offering to buy a second package is wrong.
+const AWAITING_FORMULA_STAGES = new Set([
+    'pending_payment', 'paid', 'awaiting_formulation', 'awaiting_ag',
+]);
+
 // GCN's order status → the user-facing stage, for an order that has no nano plan overriding it.
 // 'processing' collapses into 'compounding' because to a buyer they are the same sentence ("it is
 // being made"); 'completed' becomes 'delivered' because for a physical box the journey is not over
@@ -914,13 +923,25 @@ function _mergeFormulationPackages(orders, plans) {
         if (submittable) offered = true;
     }
 
+    // An order that has been placed and is still waiting for a recipe. The plan is not attached
+    // until payment is confirmed (_settleFastTrackPackage), so at 'pending_payment' the two halves
+    // of one journey are genuinely two rows here — and the standalone one would still be offering
+    // 按此配方下单 for a package the user has already ordered.
+    const awaitingFormula = packages.some(pkg => pkg.plan_id === null && AWAITING_FORMULA_STAGES.has(pkg.stage));
+
     // A formula with no order behind it — the chat tool's proposal before anyone has bought it,
-    // which is exactly the case the Dots subtab was blindest to. Suppressed once it has been
-    // offered to a waiting package above: the same formula listed twice, once as a thing to buy
-    // and once as a thing to fill, reads as two different formulas.
+    // which is exactly the case the Dots subtab was blindest to. Suppressed once it is spoken for:
+    // either offered to a waiting package above, or already ordered against. The same formula
+    // listed twice — once as a thing to buy, once as the thing that purchase is for — reads as two
+    // different formulas, and the second card's only CTA would place an order that already exists.
+    //
+    // Note this suppresses on the order's STAGE, not on intended_nano_plan_id. That column names
+    // what the buyer was looking at and is advisory (§28d) — but there is at most one un-submitted
+    // proposal per user (uniq_nutrition_plans_proposed), so "an order is waiting for a formula"
+    // already identifies it without trusting a link that may name a superseded plan.
     for (const plan of planList) {
         if (claimed.has(plan.id)) continue;
-        if (offered && plan.id === submittable.id) continue;
+        if (plan.status === 'proposed' && (awaitingFormula || (offered && plan.id === submittable.id))) continue;
         packages.push(_packageRow({ order: null, plan, stage: plan.status === 'active' ? 'active' : plan.status }));
     }
 

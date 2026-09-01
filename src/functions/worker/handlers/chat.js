@@ -1417,6 +1417,31 @@ async function handlePostChat(body) {
             }
             console.log(JSON.stringify({ level: 'INFO', msg: 'Chat intent classified', intent, required_data }));
 
+            // "我要定制营养素" is a request to ACT, not a question. Answering it with a generated
+            // essay is the wrong response — the 营养定制 tool is the thing that actually formulates a
+            // plan, so hand the turn straight to it rather than spending 60-180s in the agentic
+            // loop producing prose the user then still has to act on.
+            //
+            // Only the miniapp is told to launch it: it is the one client wired to run a tool off a
+            // chat reply. Everywhere else the intent degrades to a normal nutrition answer rather
+            // than a silently dropped turn — the coach app and the web user-app both have the tool
+            // but not this plumbing, and a sandbox ("login as") session must never write a real
+            // formulation against the impersonated account.
+            if (intent === 'formulate_dots') {
+                if (body.client === 'miniapp' && !sandbox) {
+                    // Persisted here because this branch returns before the shared insert below.
+                    // The tool's own "generating…" ack is persisted by the client, so the exchange
+                    // still reads correctly on reload.
+                    await pool.query(
+                        'INSERT INTO chat_messages (user_id, role, content, persona_type) VALUES ($1, $2, $3, $4)',
+                        [user_id, 'user', message, personaType]
+                    );
+                    console.log(JSON.stringify({ level: 'INFO', msg: 'chat_launch_tool', user_id, tool: 'formula_dots' }));
+                    return { success: true, user_id, launch_tool: 'formula_dots' };
+                }
+                intent = 'nutrition_question';
+            }
+
             // Step 2: Fetch only the data the intent actually needs
             const fetches = {};
             // Always fetch the latest biomarker/bioage snapshot — cheap indexed query, and it's the

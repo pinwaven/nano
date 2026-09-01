@@ -1828,21 +1828,28 @@ Page({
     this._stepTextScale(e.detail.dir)
   },
 
-  // Pinch on the chat tab. The health tab's gesture lives inside its component, but the chat
-  // tab is plain page markup, so the same shared stepper is driven from here instead. Bound
-  // on .chat-tab with `bind`, so it still bubbles to the root edge-swipe handler (which
-  // ignores multi-touch) and so a one-finger scroll or the mic press-and-hold never reaches
-  // the pinch path — the stepper only acts on exactly two touches.
-  _chatPinch() {
-    if (!this.__chatPinch) {
-      this.__chatPinch = createPinchStepper((dir) => this._stepTextScale(dir))
+  // Pinch on any tab whose body is plain page markup — chat, plans, learn and store. The health
+  // tab's gesture lives inside the user-health component instead (it forwards a textscalestep
+  // event, handled above), so it is deliberately NOT bound here: binding both would step twice
+  // on one gesture. For the same reason this is bound per tab body rather than once on the root
+  // view, which would sit under the health tab too.
+  //
+  // ONE shared stepper instance across the four is safe because `.tab-hidden` is
+  // `display: none`, so only the visible tab can receive touches at all.
+  //
+  // Bound with `bind`, not `catch`, so the stream still bubbles to the root edge-swipe handler
+  // (which ignores multi-touch) and so a one-finger scroll, a card tap or the mic
+  // press-and-hold never reaches the pinch path — the stepper only acts on exactly two touches.
+  _tabPinch() {
+    if (!this.__tabPinch) {
+      this.__tabPinch = createPinchStepper((dir) => this._stepTextScale(dir))
     }
-    return this.__chatPinch
+    return this.__tabPinch
   },
 
-  onChatTouchStart(e) { this._chatPinch().start(e) },
-  onChatTouchMove(e) { this._chatPinch().move(e) },
-  onChatTouchEnd() { this._chatPinch().end() },
+  onTabTouchStart(e) { this._tabPinch().start(e) },
+  onTabTouchMove(e) { this._tabPinch().move(e) },
+  onTabTouchEnd() { this._tabPinch().end() },
 
   // Header-menu stepper. Deliberately does NOT close the menu — it is a 4-way control and
   // the point is to tap through the levels and watch the text behind it resize.
@@ -2863,14 +2870,11 @@ Page({
     })
   },
 
-  handleToolAction(e) {
-    const action = e.detail?.action || e.currentTarget?.dataset?.action
-    const { t, typing, obStep, user } = this.data
-    if (typing || obStep !== 'done') {
-      return
-    }
-    this.setData({ toolboxOpen: false })
-    const ctx = {
+  // The context a toolbox tool runs against. Shared, because a tool can be started two ways:
+  // by the user tapping it in the toolbox (handleToolAction) and by the chat classifier
+  // recognising the request in what the user typed (_sendMessage's launch_tool branch).
+  _toolCtx() {
+    return {
       addMsg: (role, content, persist) => this._addMsg(role, content, persist),
       addActionMsg: (action, label, persist) => this._addActionMsg(action, label, persist),
       addImageMsg: (url) => this._addImageMsg(url),
@@ -2878,7 +2882,7 @@ Page({
       req: (url, method, data, timeoutMs) => this._req(url, method, data, timeoutMs),
       setTyping: (v) => this.setData({ typing: v }),
       onHealthReportPending: (payload) => this._startHealthReportConsent(payload),
-      // Fires when the backend acks with {processing:true} instead of the reply itself (Viva's
+      // Fires when the backend acks with {processing:true} instead of the reply itself (the
       // agentic loop running async — see chat.generate) — mirrors _sendMessage's handling so the
       // same status-caption/safety-timeout machinery in _poll covers this path too.
       onAsyncStart: () => {
@@ -2886,6 +2890,16 @@ Page({
         this.setData({ typing: true, chatStatusText: this.data.t.chatThinking })
       },
     }
+  },
+
+  handleToolAction(e) {
+    const action = e.detail?.action || e.currentTarget?.dataset?.action
+    const { t, typing, obStep, user } = this.data
+    if (typing || obStep !== 'done') {
+      return
+    }
+    this.setData({ toolboxOpen: false })
+    const ctx = this._toolCtx()
     if (action === 'test_chip') {
       this._addMsg('ai', t.kinoScanPrompt)
       this.setData({ kinoScanPending: true })
@@ -3050,8 +3064,17 @@ Page({
       if (res.data?.recorded_weight != null) {
         this.selectComponent('#health-comp')?.refresh()
       }
+      // The classifier recognised an explicit "formulate my dots" request and handed the turn to
+      // the toolbox tool instead of generating a reply (see handlePostChat's launch_tool branch):
+      // that tool is what actually produces a formulation, so running it beats describing it.
+      // The user's own message already stands in the chat and was persisted server-side, hence
+      // skipUserMsg — the tool must not append its own canned trigger line on top of it.
+      if (res.data?.launch_tool === 'formula_dots') {
+        toolActions.runFormulaDs(user.user_id, t, this._toolCtx(), { skipUserMsg: true })
+        return
+      }
       if (res.data?.processing) {
-        // Viva's agentic loop is running asynchronously (see backend chat.generate event) —
+        // The agentic loop is running asynchronously (see backend chat.generate event) —
         // the real reply isn't ready yet. Keep the typing indicator up with an evolving
         // status caption; _poll clears it when the actual reply (or the safety timeout)
         // arrives. Set an immediate local caption so there's no gap before the first

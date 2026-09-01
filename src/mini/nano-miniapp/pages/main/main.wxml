@@ -117,10 +117,10 @@
 
     <!-- ════ CHAT ════ -->
     <view class="chat-tab{{tab !== 'chat' ? ' tab-hidden' : ''}}"
-          bindtouchstart="onChatTouchStart"
-          bindtouchmove="onChatTouchMove"
-          bindtouchend="onChatTouchEnd"
-          bindtouchcancel="onChatTouchEnd">
+          bindtouchstart="onTabTouchStart"
+          bindtouchmove="onTabTouchMove"
+          bindtouchend="onTabTouchEnd"
+          bindtouchcancel="onTabTouchEnd">
 
       <scroll-view
         class="chat-messages"
@@ -574,7 +574,11 @@
     <!-- end HEALTH -->
 
     <!-- ════ PLANS + DOTS ════ -->
-    <view class="plans-tab{{tab !== 'plans' ? ' tab-hidden' : ''}}">
+    <view class="plans-tab{{tab !== 'plans' ? ' tab-hidden' : ''}}"
+          bindtouchstart="onTabTouchStart"
+          bindtouchmove="onTabTouchMove"
+          bindtouchend="onTabTouchEnd"
+          bindtouchcancel="onTabTouchEnd">
 
       <view class="inner-tab-bar">
         <view class="inner-tab {{plansDotsSubTab==='dots'?'inner-tab-active':''}}" bindtap="switchPlansDotsSubTab" data-tab="dots">
@@ -1093,7 +1097,11 @@
     </view>
 
     <!-- ════ STORE ════ -->
-    <view class="store-tab{{tab !== 'store' ? ' tab-hidden' : ''}}">
+    <view class="store-tab{{tab !== 'store' ? ' tab-hidden' : ''}}"
+          bindtouchstart="onTabTouchStart"
+          bindtouchmove="onTabTouchMove"
+          bindtouchend="onTabTouchEnd"
+          bindtouchcancel="onTabTouchEnd">
 
       <!-- Aeviva channel: tapping the Store tab button opens the GCN partner storefront
            as a separate navigated page instead (see main.js switchTab/_openAevivaStore)
@@ -1318,7 +1326,11 @@
     <!-- end STORE -->
 
     <!-- ════ LEARN (Academy + Wellness) ════ -->
-    <view class="learn-tab{{tab !== 'learn' ? ' tab-hidden' : ''}}">
+    <view class="learn-tab{{tab !== 'learn' ? ' tab-hidden' : ''}}"
+          bindtouchstart="onTabTouchStart"
+          bindtouchmove="onTabTouchMove"
+          bindtouchend="onTabTouchEnd"
+          bindtouchcancel="onTabTouchEnd">
 
       <view class="inner-tab-bar">
         <view class="inner-tab {{learnSubTab==='academy'?'inner-tab-active':''}}" bindtap="switchLearnSubTab" data-tab="academy">

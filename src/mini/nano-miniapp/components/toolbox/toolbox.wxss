@@ -23,13 +23,13 @@
 }
 
 .tool-item-icon {
-  font-size: 30rpx;
+  font-size: var(--fs-30, 30rpx);
   color: var(--blue);
   line-height: 1;
 }
 
 .tool-item-label {
-  font-size: 24rpx;
+  font-size: var(--fs-24, 24rpx);
   font-weight: 600;
   color: var(--text);
   text-align: center;

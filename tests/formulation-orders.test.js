@@ -349,3 +349,60 @@ test('inFlight is what hides the buy-another card, and only for a package still 
         assert.strictEqual(inFlight(stage, [order({ status })], []), true, status);
     }
 });
+
+test('an order that is still waiting for a recipe suppresses the standalone proposal', () => {
+    // Reported live on dev: after ordering from GCN the tab showed BOTH 定制原粒方案 / 待下单 /
+    // 按此配方下单 AND 原粒 · 定制营养素 · 28天 / 待付款 — the first still offering to place an
+    // order that had just been placed. The two halves of one journey are genuinely two rows at
+    // this point, because nothing attaches the plan to the order until payment is confirmed.
+    for (const status of ['pending_payment', 'paid']) {
+        const out = D._mergeFormulationPackages([order({ status })], [plan()]);
+        assert.strictEqual(out.length, 1, `${status}: the proposal is still listed separately`);
+        assert.strictEqual(out[0].stage, status);
+        assert.strictEqual(out[0].plan_id, null, 'nothing is attached until payment confirms it');
+    }
+    // Same for the premium package: Viva AG supplies that formula, so a chat proposal is not what
+    // fills it and offering to buy a second package on top is wrong.
+    const ag = D._mergeFormulationPackages(
+        [order({ status: 'awaiting_formulation', fulfillment: 'expert_review' })], [plan()]);
+    assert.strictEqual(ag.length, 1);
+    assert.strictEqual(ag[0].stage, 'awaiting_ag');
+    assert.strictEqual(ag[0].submit_plan_id, null, 'the user cannot fill an AG package themselves');
+});
+
+test('a proposal made after an order already has its recipe stays orderable', () => {
+    // The next cycle. Suppressing on any in-flight order would strand this one: the package being
+    // compounded already has its formula, so this proposal is a genuine new thing to buy.
+    for (const status of ['compounding', 'shipped']) {
+        const out = D._mergeFormulationPackages(
+            [order({ status, nano_nutrition_plan_id: 55 })],
+            [plan({ id: 55, status: 'approved' }), plan({ id: 101, status: 'proposed' })]);
+        assert.strictEqual(out.length, 2, status);
+        const standalone = out.find(p => p.stage === 'proposed');
+        assert.ok(standalone, `${status}: the next-cycle proposal disappeared`);
+        assert.strictEqual(standalone.plan_id, 101);
+        assert.strictEqual(standalone.can_order, true);
+    }
+});
+
+test('a cancelled or refunded order releases the proposal again', () => {
+    // Nothing is going to consume that formula any more, so the user must be able to order it.
+    for (const status of ['cancelled', 'refunded']) {
+        const out = D._mergeFormulationPackages([order({ status })], [plan()]);
+        assert.strictEqual(out.length, 2, status);
+        assert.ok(out.some(p => p.stage === 'proposed' && p.can_order), `${status}: proposal lost`);
+    }
+});
+
+test('suppression applies to proposals only, never to a plan the user is taking', () => {
+    // An active plan means the box was scanned and the capsules are in hand. A pending order for
+    // the NEXT one must never hide it — that is the one row the tab has always had to show.
+    const out = D._mergeFormulationPackages(
+        [order({ status: 'pending_payment' })],
+        [plan({ id: 7, status: 'active', start_date: daysAgo(3) })]);
+    assert.strictEqual(out.length, 2);
+    const active = out.find(p => p.stage === 'active');
+    assert.ok(active, 'the active plan was suppressed');
+    assert.strictEqual(active.plan_id, 7);
+    assert.strictEqual(active.day_index, 4);
+});
