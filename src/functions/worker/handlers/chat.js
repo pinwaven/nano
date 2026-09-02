@@ -374,6 +374,16 @@ async function handlePostBiomarkers(body) {
         );
         await saveChatMessage(user_id, 'ai', content);
 
+        // A Kino scan is the ONLY writer of latest_bio_age / latest_sub_ages /
+        // latest_kino_scan_at, but until 2026-09-01 it was the one health event that never
+        // refreshed the twin — updateHealthTwin was called from lab import, weight save and
+        // wearable sync only. Result on prod: 42 health_twin rows against 587 scanned users,
+        // so 548 users' llmContext.health_twin was empty for every prompt (§21/§34) and the
+        // Health tab had nothing to render. Awaited, not fire-and-forget: FC 3.0 freezes the
+        // context on return, so an un-awaited promise here would often never run. Safe to
+        // await — updateHealthTwin swallows its own errors and never throws.
+        await updateHealthTwin(user_id, pool);
+
         refreshGoalProgress(user_id);
 
         return { success: true, user_id, biomarker_id: biomarkerId, biomarkers: estimationReport.BiomarkerValues, bioage_profile: bioAgeReport };
