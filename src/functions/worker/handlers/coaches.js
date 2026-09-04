@@ -7,7 +7,18 @@ async function handleGetCoachList(channelId) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const params = [];
-        const channelFilter = channelId ? `WHERE u.channel_id = $${params.push(channelId)}` : '';
+        // Two different scopes off ONE placeholder. channelFilter decides which COACHES are listed,
+        // by the coach's own user row. assignedFilter decides which of their CLIENTS are counted —
+        // and it has to exist separately because users.coach_id is NOT channel-scoped: a coach can
+        // hold clients in several channels (prod: coaches.id 8 has 7 in channel 2 and 13 in
+        // channel 1). Without it a channel admin reads "20 clients" above a list of 7.
+        //
+        // It belongs in the JOIN's ON clause, never the WHERE: this is a LEFT JOIN, so moving it
+        // out would drop every coach with no clients in the caller's channel off the list
+        // entirely, instead of showing them with a count of 0.
+        const channelIdx = channelId ? params.push(channelId) : null;
+        const channelFilter = channelId ? `WHERE u.channel_id = $${channelIdx}` : '';
+        const assignedFilter = channelId ? `AND assigned.channel_id = $${channelIdx}` : '';
         const query = `
             SELECT p.id, u.channel_id, p.user_id, p.created_at,
                    u.nickname AS name, u.email, u.phone, u.avatar_url, u.language,
@@ -16,7 +27,7 @@ async function handleGetCoachList(channelId) {
                    p.group_id, cg.name AS group_name
             FROM coaches p
             JOIN users u ON p.user_id = u.user_id
-            LEFT JOIN users assigned ON p.id = assigned.coach_id
+            LEFT JOIN users assigned ON p.id = assigned.coach_id ${assignedFilter}
             LEFT JOIN channels c ON u.channel_id = c.id
             LEFT JOIN coach_groups cg ON cg.id = p.group_id
             ${channelFilter}
@@ -227,12 +238,23 @@ async function handleGetChannelCoaches(channelId, includeSubchannels = false) {
     }
 }
 
-async function handleGetCoachUsers(coachId, query = {}) {
+// `channelId` is the CALLER's scope (adminCtx.channelId), null for a superadmin bearer. It has to be
+// applied because users.coach_id is not channel-scoped: a coach can hold clients across several
+// channels, so `WHERE u.coach_id = $1` alone let a channel-scoped admin read users outside their own
+// channel — they see the coach in their own /coach-list (which is keyed on the COACH's channel, not
+// the clients') and then fetch the whole cross-channel roster here.
+//
+// Every caller that exists today is unaffected: the miniapp's coach client and the WeChat bridge
+// both authenticate with API_BEARER_TOKEN, whose branch leaves adminCtx.channelId null (it is
+// assigned only in the `ch.` branch, worker/index.js). So a coach whose clients span channels keeps
+// seeing all of them, and only a `ch.` channel-admin token narrows — which is the case this closes.
+async function handleGetCoachUsers(coachId, query = {}, channelId = null) {
     if (!coachId) return { success: false, error: 'coachId is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const params = [coachId];
         const extraConds = [];
+        if (channelId) { extraConds.push(`u.channel_id = $${params.length + 1}`); params.push(channelId); }
         if (query.stage) { extraConds.push(`COALESCE(cps.stage, 'lead') = $${params.length + 1}`); params.push(query.stage); }
         if (query.tag_id) { extraConds.push(`cta.tag_id = $${params.length + 1}`); params.push(query.tag_id); }
         const whereCond = extraConds.length ? `AND ${extraConds.join(' AND ')}` : '';

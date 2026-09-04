@@ -535,7 +535,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/channel-coaches\/(\d+)/)) {
                 result = await handleGetChannelCoaches(path.match(/\/channel-coaches\/(\d+)/)[1], query.include_subchannels === 'true');
             } else if (path.match(/\/coach-users\/(\d+)/)) {
-                result = await handleGetCoachUsers(path.match(/\/coach-users\/(\d+)/)[1], query);
+                result = await handleGetCoachUsers(path.match(/\/coach-users\/(\d+)/)[1], query, adminCtx.channelId);
             } else if (path.includes('/my-referrals')) {
                 result = await handleGetMyReferrals(query);
             } else if (path === '/qr-login/status') {
