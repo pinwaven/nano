@@ -17,7 +17,7 @@ There are two separate PolarDB databases. Both share the same Aliyun account and
 |---|---|---|
 | DB name | `nano_db_dev` | `nano_db_prod` |
 | s.yaml config | `s.yaml` | `s-prod.yaml` |
-| Deploy scripts | `deploy:worker`, `deploy:dispatcher`, etc. | `deploy:worker-prod`, `deploy:dispatcher-prod`, etc. |
+| Deploy scripts | `deploy:worker`, `deploy:dispatcher`, etc. | `deploy:worker:prod`, `deploy:dispatcher:prod`, etc. |
 | Connection var | `DATABASE_URL` | `DATABASE_URL_PROD` |
 | Migrate | `npm run migrate:dev` | `npm run migrate:prod` |
 
@@ -61,8 +61,8 @@ npm run deploy:worker
 npm run deploy:dispatcher
 
 # Prod
-npm run deploy:worker-prod
-npm run deploy:dispatcher-prod
+npm run deploy:worker:prod
+npm run deploy:dispatcher:prod
 ```
 
 ## 3. Database Migrations

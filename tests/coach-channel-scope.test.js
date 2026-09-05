@@ -38,7 +38,8 @@ const pool = {
 };
 stub('lib/db', { pool });
 
-const { handleGetCoachUsers, handleGetCoachList } = require(path.join(WORKER, 'handlers', 'coaches.js'));
+const { handleGetCoachUsers, handleGetCoachList, handleGetChannelCoaches } =
+    require(path.join(WORKER, 'handlers', 'coaches.js'));
 
 const last = () => queries[queries.length - 1];
 const run = async (name, fn) => { queries.length = 0; await fn(); console.log(`  ok  ${name}`); };
@@ -93,6 +94,39 @@ const run = async (name, fn) => { queries.length = 0; await fn(); console.log(` 
         assert.doesNotMatch(q.sql, /assigned\.channel_id/);
         assert.doesNotMatch(q.sql, /WHERE u\.channel_id/);
         assert.deepStrictEqual(q.params, []);
+    });
+
+    // /channel-coaches carries the same defect, in both of its branches. Its caller scope is a
+    // separate question — it takes the channel from the PATH and gets no adminCtx — but its count
+    // must at least agree with the coaches it actually listed.
+    await run('channel-coaches counts only the listed channel', async () => {
+        await handleGetChannelCoaches(2, false);
+        const q = last();
+        assert.match(q.sql, /LEFT JOIN users assigned ON p\.id = assigned\.coach_id AND assigned\.channel_id = \$1/);
+        assert.deepStrictEqual(q.params, [2]);
+    });
+
+    await run('the subtree branch counts the whole subtree, not just its root', async () => {
+        // The one place this is NOT a copy of the flat fix: coaches come from `JOIN subtree`, so
+        // scoping the count to $1 would count only the root channel's clients while listing
+        // coaches across every descendant — the opposite error, equally invisible.
+        await handleGetChannelCoaches(2, true);
+        const q = last();
+        assert.match(q.sql, /assigned\.channel_id IN \(SELECT id FROM subtree\)/);
+        assert.doesNotMatch(q.sql, /assigned\.channel_id = \$1/, 'root-only would under-count');
+        assert.deepStrictEqual(q.params, [2]);
+    });
+
+    await run('both channel-coaches branches filter in the JOIN, never the WHERE', async () => {
+        for (const includeSub of [false, true]) {
+            await handleGetChannelCoaches(2, includeSub);
+            const lines = last().sql.split('\n');
+            const join = lines.find(l => /LEFT JOIN users assigned/.test(l));
+            assert.ok(/assigned\.channel_id/.test(join) || /assigned\.channel_id/.test(lines[lines.indexOf(join) + 1]),
+                `subtree=${includeSub}: the condition must sit on the join`);
+            const where = lines.find(l => /^\s*WHERE /.test(l));
+            assert.ok(!where || !/assigned\.channel_id/.test(where), `subtree=${includeSub}: not in the WHERE`);
+        }
     });
 
     console.log('\nall coach channel-scope checks passed');

@@ -209,7 +209,15 @@ async function handleGetChannelCoaches(channelId, includeSubchannels = false) {
                 JOIN users u ON p.user_id = u.user_id
                 JOIN subtree st ON u.channel_id = st.id
                 LEFT JOIN channels ch ON ch.id = u.channel_id
+                -- Scoped to the same subtree the coaches were selected from, NOT to $1 alone:
+                -- users.coach_id is not channel-scoped, so an unscoped count reports a coach's
+                -- clients from channels this call never listed. Scoping it to $1 instead would
+                -- swap that for the opposite error — counting only the root channel while listing
+                -- coaches across the whole tree. In the ON clause, never the WHERE: this is a LEFT
+                -- JOIN, and moving it out would drop every coach with no clients in the subtree off
+                -- the list rather than showing them at 0.
                 LEFT JOIN users assigned ON p.id = assigned.coach_id
+                    AND assigned.channel_id IN (SELECT id FROM subtree)
                 LEFT JOIN coach_groups cg ON cg.id = p.group_id
                 GROUP BY p.id, u.channel_id, u.nickname, u.email, u.phone, u.avatar_url, u.language, ch.name, p.group_id, cg.name
                 ORDER BY p.created_at DESC
@@ -225,7 +233,9 @@ async function handleGetChannelCoaches(channelId, includeSubchannels = false) {
              FROM coaches p
              JOIN users u ON p.user_id = u.user_id
              LEFT JOIN channels ch ON ch.id = u.channel_id
-             LEFT JOIN users assigned ON p.id = assigned.coach_id
+             -- Same reasoning as the subtree branch above, and as handleGetCoachList: count only
+             -- the clients this call actually listed coaches for.
+             LEFT JOIN users assigned ON p.id = assigned.coach_id AND assigned.channel_id = $1
              LEFT JOIN coach_groups cg ON cg.id = p.group_id
              WHERE u.channel_id = $1
              GROUP BY p.id, u.channel_id, u.nickname, u.email, u.phone, u.avatar_url, u.language, ch.name, p.group_id, cg.name
