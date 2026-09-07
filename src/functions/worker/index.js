@@ -83,7 +83,8 @@ const { handleGetAdminUserPersonaSubscription, handlePostAdminUserPersonaSubscri
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
 const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
 const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleSetIdentity, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation, handlePostFormulationPurchaseConfirmed } = require('./handlers/users');
-const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handleGetFormulationOrders, handleGetFormulationCheckoutSnapshot, handlePostFormulationSubmit, handleGetFormulationLabelByCode, handleGetFormulationReviewSnapshot, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
+const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handleGetFormulationOrders, handleGetFormulationCheckoutSnapshot, handlePostFormulationSubmit,
+    handlePostFormulationRedeem, handleGetFormulationLabelByCode, handleGetFormulationReviewSnapshot, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
 const { handlePostBoxBatch, handleGetBoxBatches, handleGetBoxBatchBoxes, handleGetBoxPage, handlePostBoxClaim } = require('./handlers/boxes');
 const { handleGetAgFormulationReviewSnapshot, handlePostAgFormulationApproved, handleGetAgFormulationStatus } = require('./handlers/ag_formulation');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
@@ -869,6 +870,11 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostDispense(parsedBody);
             } else if (path.includes('/formula-dots')) {
                 result = await handlePostFormulaDots(parsedBody);
+            } else if (path.includes('/formulation-redeem')) {
+                // Spending a prepaid 28-day code from inside the app. App bearer + the handler's
+                // own openid resolution; deliberately NOT GCN-allowlisted, since GCN is the
+                // callee here, exactly as for /formulation-submit below.
+                result = await handlePostFormulationRedeem(parsedBody);
             } else if (path.includes('/formulation-submit')) {
                 // The user confirming that a chat-tool proposal is the formula to compound for a
                 // 28-day package they already paid for. App bearer + the plan's own owner check

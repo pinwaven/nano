@@ -741,9 +741,37 @@
             <view wx:elif="{{item.can_scan}}" class="pkg-cta pkg-cta-ghost" catchtap="handleScanBox">
               <text class="pkg-cta-text">{{t.pkgScanBtn}}</text>
             </view>
-            <view wx:elif="{{item.can_order && item.plan_id}}" class="pkg-cta" catchtap="handleFormulaOrder" data-plan="{{item.plan_id}}">
-              <text class="pkg-cta-text">{{t.pkgOrderBtn}}</text>
+            <!-- A 'proposed' row deliberately carries NO cta: it is a status, and its only action
+                 is "use a code", which the 兑换码 section directly below owns — with the user's
+                 actual codes named. The row's old 使用兑换码 button opened the GCN webview, which
+                 could not see those codes and could not sell one either (the code skus are
+                 wholesale_only, so a consumer cannot buy them there). item.can_order still comes
+                 over the wire; nothing renders a button from it. -->
+          </view>
+        </view>
+
+        <!-- ── 兑换码 ────────────────────────────────────────────────────────────────────
+             The unredeemed codes this user owns (handlers/dots.js, _fetchFormulationCodes),
+             below the packages so "where are mine" still reads before "what I can start".
+
+             Only codes bought in-app carry a buyer and can be listed, so 输入兑换码 is not a
+             fallback — it is the path for every code a store handed over in person. It shows
+             whether or not the list has anything in it, which is why the section is gated on the
+             channel rather than on codes.length. -->
+        <view wx:if="{{isAeviva && !isGuest}}" class="code-section">
+          <text class="pkg-section-title">{{t.codeSectionTitle}}</text>
+          <view wx:for="{{codes}}" wx:key="key" class="pkg-card">
+            <view class="pkg-card-hdr">
+              <text class="pkg-name">{{item.name}}</text>
+              <text class="code-chip">{{item.code}}</text>
             </view>
+            <text wx:if="{{item.meta}}" class="pkg-meta">{{item.meta}}</text>
+            <view class="pkg-cta" catchtap="handleUseCode" data-code="{{item.code}}" data-max="{{item.max_distinct_dots}}" data-name="{{item.name}}">
+              <text class="pkg-cta-text">{{t.codeUseBtn}}</text>
+            </view>
+          </view>
+          <view class="pkg-cta pkg-cta-ghost" catchtap="handleManualCode">
+            <text class="pkg-cta-text">{{t.codeManualBtn}}</text>
           </view>
         </view>
 
@@ -1986,7 +2014,36 @@
   </view>
 
   <!-- ── Viva Subscription Redeem Sheet ── -->
-  <view wx:if="{{vivaRedeemSheetOpen}}" class="guest-sheet-mask" bindtap="closeVivaRedeemSheet">
+  <!-- ── 兑换码 sheet ────────────────────────────────────────────────────────────────────
+     Shipping is mandatory, not optional: GCN's redemption refuses without it, because the box
+     physically ships and there is no payment step afterwards to come back and collect it on. -->
+<view wx:if="{{codeSheetOpen}}" class="guest-sheet-mask" bindtap="closeCodeSheet">
+  <view class="guest-sheet" catchtap="noop">
+    <view class="guest-sheet-handle"></view>
+    <text class="guest-sheet-title">{{codeSheetManual ? t.codeSheetTitle : codeSheetName}}</text>
+    <text class="guest-sheet-desc">{{codeSheetManual ? t.codeSheetDescManual : t.codeSheetDesc}}</text>
+    <input
+      wx:if="{{codeSheetManual}}"
+      class="viva-redeem-input"
+      type="text"
+      value="{{codeSheetCode}}"
+      placeholder="{{t.codePlaceholder}}"
+      bindinput="onCodeInput"
+      focus="{{codeSheetManual}}"
+      adjust-position="{{true}}"
+    />
+    <input class="viva-redeem-input" type="text" value="{{codeShipName}}" placeholder="{{t.codeNamePlaceholder}}" bindinput="onCodeShipNameInput" adjust-position="{{true}}" />
+    <input class="viva-redeem-input" type="text" value="{{codeShipPhone}}" placeholder="{{t.codePhonePlaceholder}}" bindinput="onCodeShipPhoneInput" adjust-position="{{true}}" />
+    <input class="viva-redeem-input" type="text" value="{{codeShipAddress}}" placeholder="{{t.codeAddrPlaceholder}}" bindinput="onCodeShipAddressInput" adjust-position="{{true}}" />
+    <text class="code-wx-addr" catchtap="handleCodeWxAddress">{{t.codeWxAddrBtn}}</text>
+    <view wx:if="{{codeSheetError}}" class="guest-sheet-error"><text>{{codeSheetError}}</text></view>
+    <view class="guest-sheet-btn {{codeSheetBusy ? 'guest-sheet-btn-disabled' : ''}}" bindtap="submitFormulationRedeem">
+      <text>{{codeSheetBusy ? '…' : t.codeSubmitBtn}}</text>
+    </view>
+  </view>
+</view>
+
+<view wx:if="{{vivaRedeemSheetOpen}}" class="guest-sheet-mask" bindtap="closeVivaRedeemSheet">
     <view class="guest-sheet" catchtap="noop">
       <view class="guest-sheet-handle"></view>
       <text class="guest-sheet-title">{{t.vivaRedeemTitle}}</text>

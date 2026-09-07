@@ -1,11 +1,22 @@
 const accountInfo = wx.getAccountInfoSync();
 const envVersion = accountInfo.miniProgram.envVersion;
 
+// ⚠ LOCAL TESTING OVERRIDE — SET BACK TO false BEFORE COMMITTING ⚠
+//
+// Points the DevTools IDE ('develop') at the PRODUCTION backend instead of dev, for testing
+// against real prod data. Affects nothing else: 'trial' and 'release' already use prod, so an
+// uploaded build behaves identically either way — this only ever changes what the IDE talks to.
+//
+// While it is true, everything the simulator does is real. Some of it cannot be undone: a redeem
+// code burnt here is a customer's, an order placed is a real order, and a box scanned starts a
+// real 28-day cycle.
+const FORCE_PROD_IN_IDE = true;
+
 let BASE = 'https://nano.gcn.net';
 
 switch (envVersion) {
   case 'develop':
-    BASE = 'https://nano-dev.gcn.net';
+    BASE = FORCE_PROD_IN_IDE ? 'https://nano.gcn.net' : 'https://nano-dev.gcn.net';
     break;
   case 'trial':
   case 'release':
@@ -17,7 +28,7 @@ switch (envVersion) {
 // uploads — no build pipeline exists, so this is the only way to confirm WeChat DevTools
 // is actually running the latest code rather than a stale cached compile. See CLAUDE.md
 // "Miniapp VERSION Marker". Format: MMDD-N (month+day, build number that day).
-const VERSION = '0901-5';
+const VERSION = '0907-4';
 const WX_VERSION = accountInfo.miniProgram.version || '';
 const IS_DEV = envVersion === 'develop' || envVersion === 'trial';
 

@@ -24,7 +24,8 @@ const { formatQuestionnaireContext } = require('./questionnaires');
 // no expert review at all, which makes this the ONLY thing standing between a generated table and
 // physical capsules — so it runs here too, and a violation refuses the submission outright.
 const { validateAgFormulation, canonicalizeCapsules } = require('../lib/agFormulation');
-const { fetchFormulationOrders, submitFastTrackFormulation } = require('../lib/gcnClient');
+const { fetchFormulationOrders, submitFastTrackFormulation,
+        fetchFormulationCodes, redeemFormulationCode } = require('../lib/gcnClient');
 const { generateLabelCode } = require('../lib/labelCode');
 
 // Where the aeviva sector's public pages live. The formulation label QR is a GCN aeviva link
@@ -981,11 +982,36 @@ function _packageRow({ order, plan, stage }) {
         can_submit: stage === 'awaiting_formulation',
         can_scan: stage === 'shipped' || stage === 'delivered',
         can_order: stage === 'proposed',
+        // How wide this proposal actually is, so the client can warn before a code narrower than
+        // it is spent. The WEEKLY width _countDistinctDots measures — the same number
+        // handlePostFormulationSubmit compares against the purchased tier, so a warning shown
+        // here and a refusal there can never disagree.
+        distinct_dots: (plan && plan.status === 'proposed' && plan.proposed_recipe)
+            ? _countDistinctDots(
+                { dots: plan.proposed_recipe.morning || {}, weeks: plan.proposed_recipe.weeks || undefined },
+                { dots: plan.proposed_recipe.evening || {}, weeks: plan.proposed_recipe.weeks || undefined })
+            : null,
         // Filled in by the caller for can_submit rows only: the proposal this package could be
         // filled with, which is a different plan from `plan_id` (nothing is bound until submit).
         submit_plan_id: null,
         sort_at: (order && order.created_at) || (plan && plan.created_at) || null,
     };
+}
+
+// The unredeemed codes this user owns, for the 原粒 subtab's 兑换码 section.
+//
+// A SIBLING of the package list, never a source for it: a code is a thing they can start, not a
+// package they have. Never throws — fetchFormulationCodes already degrades to [], and the subtab
+// must still render packages and the active plan when the code half is unavailable.
+async function _fetchFormulationCodes(userId) {
+    if (!userId) return [];
+    try {
+        return await fetchFormulationCodes(userId);
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: '_fetchFormulationCodes failed',
+            user_id: userId, error: err.message }));
+        return [];
+    }
 }
 
 // The DB + GCN half. Never throws: fetchFormulationOrders degrades to [] on any failure, and a
@@ -998,7 +1024,7 @@ async function _fetchFormulationPackages(userId) {
             fetchFormulationOrders(userId),
             pool.query(
                 `SELECT id, status, start_date::text AS start_date, created_at,
-                        label_code, gcn_order_id, ag_formulation_id
+                        label_code, gcn_order_id, ag_formulation_id, proposed_recipe
                    FROM nutrition_plans
                   WHERE user_id = $1 AND status IN ('proposed', 'approved', 'active')
                   ORDER BY created_at DESC
@@ -1075,7 +1101,7 @@ async function handleGetNutritionPlan(openid) {
         // pre-existing rows only.
         // 3. The rest of the fan-out, in parallel — the package list reaches out to GCN, so it
         // must not be awaited in series behind the dots query. Costs max(db, gcn), not the sum.
-        const [notifyResult, dotsResult, packages] = await Promise.all([
+        const [notifyResult, dotsResult, packages, codes] = await Promise.all([
             pool.query(
                 `SELECT content, sent_at FROM notifications
                  WHERE user_id = $1 AND notification_type = 'nutrition_plan'
@@ -1084,6 +1110,7 @@ async function handleGetNutritionPlan(openid) {
             ),
             pool.query('SELECT * FROM dots ORDER BY id ASC'),
             _fetchFormulationPackages(openid),
+            _fetchFormulationCodes(openid),
         ]);
 
         return {
@@ -1098,6 +1125,10 @@ async function handleGetNutritionPlan(openid) {
             // you are physically on" and stay 'active'-only; §28b records the live bug where a
             // proposal leaked into this tab and made it report a plan the user did not have.
             packages,
+            // Unredeemed codes this user owns — a sibling of `packages` on the same terms. A code
+            // is something they can start, not something they have; it becomes a package the
+            // moment it is spent, at which point it drops out of this list on its own.
+            codes,
         };
     } catch (err) {
         return { success: false, error: err.message };
@@ -1689,6 +1720,107 @@ function _resolveCandidateDotKeys(activeHealthPlans, dotsFormulary) {
 //
 // One row per dot: key|name|color|am|pm. The renderer derives every total itself, so the parser
 // stays dumb and there is no second place for the arithmetic to drift.
+// GCN's sku/product names are jsonb ({zh, en}) and are legitimately empty on some rows.
+function _flattenSkuName(name) {
+    if (!name) return null;
+    if (typeof name === 'string') return name || null;
+    return name.zh || name.en || null;
+}
+
+// POST /formulation-redeem  { openid, code, plan_id?, shipping_name, shipping_phone,
+//                              shipping_address }   (app bearer, the user's own action)
+//
+// Spending a prepaid 28-day code from inside the Mini Program, instead of bouncing the user out to
+// GCN's storefront to do it. The codes themselves live entirely on GCN's side (§28e) — nano keeps
+// no code table and must not grow one, because every "is a package waiting for me" answer in this
+// flow already comes from one source, fetchFormulationOrders, and a second source would have to be
+// merged into all three of its call sites.
+//
+// IT DOES NOT SUBMIT THE FORMULA, deliberately, even though a proposal is usually on screen when
+// this is tapped. GCN's own payment confirmation notifies /formulation-purchase-confirmed, which
+// runs _settleFastTrackPackage — the code that already attempts the submit, already falls back to
+// the over-tier message, and already owns the chat message either way. Submitting here as well
+// would race it, and would leave that function (told nothing about a plan) nudging the user to go
+// formulate something they just did. `plan_id` is passed to GCN as the intent instead, and comes
+// back to us through that notify.
+async function handlePostFormulationRedeem(body) {
+    const { openid } = body || {};
+    if (!openid) return { success: false, reason: 'missing_params' };
+
+    const code = String(body?.code || '').trim();
+    if (!code) return { success: false, reason: 'code_required' };
+
+    // Mandatory on GCN's side and worth refusing here too: the box physically ships and there is
+    // no payment step afterwards to come back and collect an address on.
+    const shipping = {
+        recipient_name: String(body?.shipping_name || '').trim(),
+        recipient_phone: String(body?.shipping_phone || '').trim(),
+        shipping_address: String(body?.shipping_address || '').trim(),
+    };
+    if (!shipping.recipient_name || !shipping.recipient_phone || !shipping.shipping_address) {
+        return { success: false, reason: 'shipping_required' };
+    }
+
+    try {
+        if (!pool) return { success: false, reason: 'internal_error' };
+
+        const { rows: [user] } = await pool.query(
+            'SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]);
+        if (!user) return { success: false, reason: 'user_not_found' };
+
+        // Only ever this user's own proposal, and only a live one. A bad or foreign id is dropped
+        // rather than refused: it is advisory downstream, and losing the auto-submit is a far
+        // smaller harm than refusing to spend a code the user is entitled to spend.
+        let intendedPlanId = null;
+        const planId = parseInt(body?.plan_id, 10);
+        if (Number.isFinite(planId)) {
+            const { rows: [plan] } = await pool.query(
+                `SELECT id FROM nutrition_plans
+                  WHERE id = $1 AND user_id = $2 AND status = 'proposed'`,
+                [planId, user.user_id]);
+            if (plan) intendedPlanId = plan.id;
+        }
+
+        let result;
+        try {
+            result = await redeemFormulationCode({
+                nano_user_id: user.user_id,
+                code,
+                intended_nano_plan_id: intendedPlanId,
+                ...shipping,
+            });
+        } catch (err) {
+            // Every refusal GCN makes is a real answer the user needs to see verbatim — a code
+            // already spent reads completely differently from one that was never bought. Only a
+            // transport failure degrades to a generic reason.
+            console.error(JSON.stringify({ level: 'ERROR', msg: 'formulation_redeem_failed',
+                user_id: user.user_id, error: err.message, status: err.status,
+                gcn_error: err.body?.error }));
+            return { success: false, reason: err.body?.error || 'gcn_unreachable' };
+        }
+
+        console.log(JSON.stringify({ level: 'INFO', msg: 'formulation code redeemed',
+            user_id: user.user_id, order_id: result?.order_id, plan_id: intendedPlanId,
+            warning: result?.warning || null }));
+        return {
+            success: true,
+            order_id: result?.order_id || null,
+            // GCN returns skus.name, which is a jsonb object and is routinely {} on these rows.
+            // Flattened here so nothing downstream can render it as [object Object].
+            package_name: _flattenSkuName(result?.package_name),
+            max_distinct_dots: result?.max_distinct_dots ?? null,
+            // GCN burned the code but could not confirm the order (its own 202). The package is
+            // recoverable by an admin, and saying so is better than a success the user cannot see
+            // the result of.
+            pending_confirmation: result?.warning === 'redeemed_but_not_confirmed',
+        };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostFormulationRedeem failed',
+            error: err.message }));
+        return { success: false, reason: 'internal_error' };
+    }
+}
+
 // Everything the delivery step needs to know about a paid package this user is already holding,
 // resolved by asking GCN. Two things come out of one call because they answer the same question
 // and must agree with each other:
@@ -2931,6 +3063,7 @@ module.exports = {
     handleGetFormulationOrders,
     handleGetFormulationCheckoutSnapshot,
     handlePostFormulationSubmit,
+    handlePostFormulationRedeem,
     handleGetFormulationLabelByCode,
     handleGetFormulationReviewSnapshot,
     _buildReviewTwinContext,

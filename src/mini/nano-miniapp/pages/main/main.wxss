@@ -1433,6 +1433,10 @@ page {
    version hardcoded the dark palette's near-white text, which washed out to nearly invisible
    on the cream light theme. Mirrors .scan-box-card, so it inherits that card's audited
    light-theme contrast instead of introducing a second set of values. */
+/* The redeem-code list. Same shape as .pkg-section and deliberately its own class: they are two
+   different lists, and tests/formulation-orders.js uses the section boundary to scope its scan of
+   which fields the package rows actually bind. */
+.code-section,
 .pkg-section {
   flex-shrink: 0;
   padding: 24rpx 36rpx 4rpx;
@@ -1567,6 +1571,25 @@ page {
 .pkg-cta-ghost .pkg-cta-text { color: var(--steel); }
 /* Shown instead of the CTA when a package is waiting but the user has no formula to give it —
    a dead button would be worse than a sentence saying what to do. */
+/* The code string itself, in the row header where a package row carries its stage pill. It is a
+   bearer credential the buyer owns, so it is shown in full rather than masked — the store never
+   saw it on an in-app sale, and this is the only place its owner can read it back. */
+.code-chip {
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 22rpx;
+  letter-spacing: 1rpx;
+  color: var(--steel);
+  flex-shrink: 0;
+}
+
+.code-wx-addr {
+  align-self: flex-start;
+  margin: 4rpx 0 12rpx;
+  font-size: 24rpx;
+  color: var(--steel);
+  text-decoration: underline;
+}
+
 .pkg-hint {
   display: block;
   margin-top: 16rpx;
@@ -3748,7 +3771,14 @@ button.avatar-pick-btn::after { border: none; }
 }
 .viva-redeem-input {
   width: 100%;
+  /* box-sizing is needed for width:100% to survive the horizontal padding — but WeChat's <input>
+     defaults to height:26px, so with border-box the 24rpx (12px) of vertical padding on each side
+     leaves a ~2px content box and clips the glyphs. Digits mostly survive it; CJK does not, which
+     is how it shipped unnoticed in the viva subscription sheet this class came from.
+     Tracks --fs-30 rather than being a fixed height, so the in-app text-scale setting cannot
+     re-clip it. */
   box-sizing: border-box;
+  height: calc(var(--fs-30, 30rpx) + 60rpx);
   padding: 24rpx 28rpx;
   border-radius: 20rpx;
   background: rgba(255, 255, 255, 0.06);

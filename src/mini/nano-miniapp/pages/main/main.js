@@ -177,13 +177,53 @@ const T = {
     pkgUseFormulaBtn: '用此配方定制',
     pkgNeedsFormulaHint: '请先在对话中使用「营养定制」生成配方',
     pkgScanBtn: '扫描包装二维码启用',
-    pkgOrderBtn: '使用兑换码',
     pkgOrderGone: '该套餐已不在等待配方（可能已退款或已由其他设备提交）。请刷新后重试。',
     pkgSubmitConfirm: '确认用当前配方定制这份套餐？确认后即进入配制，无法更改。',
     pkgSubmitOk: '已提交配制',
     pkgDay: (n, total) => `第 ${n} 天 · 共 ${total} 天`,
     pkgOrderedOn: (d) => `${d} 下单`,
     pkgTierUpTo: (n) => `最多 ${n} 种原粒`,
+
+    // ── 兑换码 (原粒 subtab) ─────────────────────────────────────────────
+    codeSectionTitle: '我的兑换码',
+    codeUseBtn: '立即使用',
+    codeManualBtn: '输入兑换码',
+    codeUnnamed: '定制原粒套餐',
+    codeSoldOn: (d) => `${d} 购入`,
+    codeSheetTitle: '使用兑换码',
+    codeSheetDesc: '确认收货信息后，我们会按此套餐为您配制并寄出 28 天原粒。',
+    codeSheetDescManual: '输入门店提供的兑换码，并确认收货信息。',
+    codePlaceholder: '兑换码',
+    codeNamePlaceholder: '收件人姓名',
+    codePhonePlaceholder: '收件人手机号',
+    codeAddrPlaceholder: '详细收货地址',
+    codeWxAddrBtn: '使用微信地址',
+    codeSubmitBtn: '确认使用',
+    codeRequired: '请输入兑换码',
+    codeShippingRequired: '请填写完整的收货信息',
+    codeOk: '已兑换，套餐配制中',
+    codePending: '已兑换。订单确认中，请稍后在本页查看。',
+    // The one warning worth interrupting for: a code is single-use, and spending it on a formula
+    // wider than it covers means re-running 营养定制 before it can be compounded.
+    codeOverTier: (have, max) => `当前配方含 ${have} 种原粒，此兑换码为 ${max} 种。仍可使用，但需重新生成配方后才能定制。是否继续？`,
+    codeConfirm: '确认使用这张兑换码？兑换码为一次性使用。',
+    codeErr_code_required: '请输入兑换码',
+    codeErr_code_not_found: '未找到该兑换码，请核对后重试。',
+    codeErr_code_ambiguous: '该兑换码无法确认对应套餐，请联系您的门店。',
+    codeErr_code_not_purchased: '该兑换码尚未售出，请联系您的门店。',
+    codeErr_code_already_redeemed: '该兑换码已被使用。',
+    codeErr_code_target_unavailable: '该兑换码对应的套餐暂不可用，请联系您的门店。',
+    codeErr_shipping_required: '请填写完整的收货信息',
+    codeErr_formulation_already_in_progress: '您已有一份套餐正在配制中，完成后才能使用新的兑换码。',
+    codeErr_user_not_found: '账号异常，请重新登录后重试。',
+    codeErrGeneric: '兑换失败，请稍后重试。',
+    codeCancel: '取消',
+    // The admin "login as" preview short-circuits every mutating POST (worker/index.js), which is
+    // right here — nobody should spend a real user's code from a preview — but it returns
+    // {success:true}, so without this it would toast as if it had worked.
+    codeSandbox: '预览模式下无法使用兑换码。',
+    codeLinkTitle: '需先打开商城',
+    codeLinkDetail: '首次使用兑换码需打开一次商城以关联账号，是否现在打开？',
     copy: '复制',
     cartridgeTitle: '原粒盒',
     noCartridges: '未插入原粒盒。请将原粒盒插入分配器。',
@@ -473,13 +513,48 @@ const T = {
     pkgUseFormulaBtn: 'Use this formula',
     pkgNeedsFormulaHint: 'Run Formulate Dots in chat first to build a formula',
     pkgScanBtn: 'Scan the box QR to start',
-    pkgOrderBtn: 'Redeem a code',
     pkgOrderGone: 'That package is no longer waiting for a formula — it may have been refunded, or filled from another device. Pull to refresh and try again.',
     pkgSubmitConfirm: 'Compound this package using your current formula? Compounding starts right away and cannot be changed.',
     pkgSubmitOk: 'Sent to compounding',
     pkgDay: (n, total) => `Day ${n} of ${total}`,
     pkgOrderedOn: (d) => `Ordered ${d}`,
     pkgTierUpTo: (n) => `up to ${n} dots`,
+
+    // ── Redeem codes (Dots subtab) ──────────────────────────────────────
+    codeSectionTitle: 'My redeem codes',
+    codeUseBtn: 'Use it',
+    codeManualBtn: 'Enter a code',
+    codeUnnamed: 'Custom Dots package',
+    codeSoldOn: (d) => `Bought ${d}`,
+    codeSheetTitle: 'Redeem a code',
+    codeSheetDesc: 'Confirm your delivery details and we will compound and ship your 28 days of Dots.',
+    codeSheetDescManual: 'Enter the code your store gave you, and confirm your delivery details.',
+    codePlaceholder: 'Redeem code',
+    codeNamePlaceholder: 'Recipient name',
+    codePhonePlaceholder: 'Recipient phone',
+    codeAddrPlaceholder: 'Full delivery address',
+    codeWxAddrBtn: 'Use WeChat address',
+    codeSubmitBtn: 'Redeem',
+    codeRequired: 'Enter your code',
+    codeShippingRequired: 'Fill in all the delivery details',
+    codeOk: 'Redeemed — your package is being set up',
+    codePending: 'Redeemed. The order is still confirming; check back on this page shortly.',
+    codeOverTier: (have, max) => `Your formula uses ${have} dots and this code covers ${max}. You can still use it, but you'll need to run Formulate Dots again before it can be compounded. Continue?`,
+    codeConfirm: 'Use this redeem code? A code can only be used once.',
+    codeErr_code_required: 'Enter your code',
+    codeErr_code_not_found: "We couldn't find that code. Check it and try again.",
+    codeErr_code_ambiguous: "That code doesn't resolve to one package. Please contact your store.",
+    codeErr_code_not_purchased: 'That code has not been sold yet. Please contact your store.',
+    codeErr_code_already_redeemed: 'That code has already been used.',
+    codeErr_code_target_unavailable: 'The package this code is for is unavailable. Please contact your store.',
+    codeErr_shipping_required: 'Fill in all the delivery details',
+    codeErr_formulation_already_in_progress: 'You already have a package being compounded. Use a new code once it is finished.',
+    codeErr_user_not_found: 'Account problem — please sign in again and retry.',
+    codeErrGeneric: "That didn't go through. Please try again shortly.",
+    codeCancel: 'Cancel',
+    codeSandbox: 'Redeeming a code is not available in preview mode.',
+    codeLinkTitle: 'Open the store once',
+    codeLinkDetail: 'The first time you redeem a code we need to link your store account. Open it now?',
     copy: 'Copy',
     cartridgeTitle: 'Cartridges',
     noCartridges: 'No cartridges inserted. Insert cartridges into your dispenser.',
@@ -896,6 +971,42 @@ function mapStructuredSchedules(schedules, dotsMap, lang) {
   })
 }
 
+// WeChat returns province and city separately, and for a 直辖市 (上海/北京/天津/重庆) they are the
+// same string — naively concatenating gives "上海市上海市徐汇区…". Deduped rather than special-cased
+// on a list of four, so any other province/city collision is handled too.
+function _joinAddress(addr) {
+  const parts = [addr.provinceName, addr.cityName, addr.countyName, addr.detailInfo];
+  return parts.reduce((out, part) => {
+    const p = (part || '').trim()
+    return (!p || out.endsWith(p)) ? out : out + p
+  }, '')
+}
+
+// One row per unredeemed code the user owns, for the 兑换码 section of Plans ▸ Dots. The codes
+// live entirely on GCN (§28e) and reach us through handleGetNutritionPlan's `codes` sibling; this
+// only turns them into strings.
+//
+// Only codes bought in-app appear here — one a store handed over in person carries no buyer, and
+// is redeemed by typing it. That is why the section always offers manual entry alongside the list.
+function mapCodes(rawCodes, t, lang) {
+  if (!Array.isArray(rawCodes) || !t) return []
+  return rawCodes.map((c, i) => {
+    const bits = []
+    if (c.max_distinct_dots) bits.push(t.pkgTierUpTo(c.max_distinct_dots))
+    if (c.sold_at) bits.push(t.codeSoldOn(fmtDate(c.sold_at, lang)))
+    return {
+      key: `${c.code}-${i}`,
+      code: c.code,
+      name: c.package_name || c.tier_label || t.codeUnnamed,
+      meta: bits.join(' · '),
+      max_distinct_dots: c.max_distinct_dots || null,
+      // An expert-review package is Viva AG's to formulate; the user does nothing after redeeming
+      // and must not be told to go build a formula for it.
+      fastTrack: c.fulfillment !== 'expert_review',
+    }
+  })
+}
+
 // One row per dots package, for Plans ▸ Dots. The server already merged the GCN order with
 // nano's own formula and derived the stage (handlers/dots.js, _mergeFormulationPackages); this
 // only turns that into strings, because WXML cannot format or branch on a numeric day count.
@@ -930,6 +1041,9 @@ function mapPackages(rawPackages, t, lang) {
       // is what is already attached (nothing is bound until submit). Dropping this is what makes
       // the CTA silently render as a hint, so it must stay copied through.
       submit_plan_id: p.submit_plan_id || null,
+      // Only ever set on a proposal — what the redeem sheet warns against when a code covers
+      // fewer dots than this. See _packageRow.
+      distinct_dots: p.distinct_dots || null,
       can_submit: !!p.can_submit,
       can_scan: !!p.can_scan,
       can_order: !!p.can_order,
@@ -1102,6 +1216,22 @@ Page({
     vivaSubscriptionExpiresAt: null,
     vivaSubscriptionExpiresAtDisplay: '',
     vivaSubscriptionExpired: false,
+    // ── 兑换码 (Plans ▸ Dots) ──
+    codes: [],
+    // The pending proposal's weekly width, used only to warn before a narrower code is spent.
+    proposedDistinctDots: null,
+    codeSheetOpen: false,
+    codeSheetManual: false,   // typed code (store handed it over) vs a row tapped in the list
+    codeSheetCode: '',
+    codeSheetName: '',
+    codeSheetBusy: false,
+    codeSheetError: '',
+    codeSheetMax: null,
+    codeSheetPlanId: null,
+    codeShipName: '',
+    codeShipPhone: '',
+    codeShipAddress: '',
+
     vivaRedeemSheetOpen: false,
     vivaRedeemCode: '',
     vivaRedeemBusy: false,
@@ -1494,6 +1624,139 @@ Page({
     this._scrollBottom()
   },
 
+  // ── 兑换码 sheet (Plans ▸ Dots) ───────────────────────────────────────────────
+  //
+  // Redeeming in-app rather than in GCN's store webview, which is where handleFormulaOrder above
+  // still sends anyone whose store account is not linked yet. The list only ever holds codes
+  // bought in-app, so manual entry is not a fallback here — it is the path for every code a store
+  // handed over in person, which is how most of them are sold.
+  //
+  // Modelled on the viva subscription redeem sheet below (same server-validated code entry), plus
+  // the shipping block, which GCN requires: the box physically ships and there is no payment step
+  // afterwards to come back and collect an address on.
+  handleUseCode(e) {
+    const { code, max, name } = e.currentTarget.dataset
+    if (!this.data.isAeviva || !code) return
+    this._openCodeSheet({ code, manual: false, max: max || null, name: name || '' })
+  },
+
+  handleManualCode() {
+    if (!this.data.isAeviva) return
+    this._openCodeSheet({ code: '', manual: true, max: null, name: '' })
+  },
+
+  _openCodeSheet({ code, manual, max, name, planId = null }) {
+    const { user } = this.data
+    this.setData({
+      codeSheetOpen: true,
+      // Named explicitly by the chat card, which knows its own plan; null from the Dots subtab,
+      // where submitFormulationRedeem resolves it from the proposal row instead.
+      codeSheetPlanId: planId,
+      codeSheetManual: manual,
+      codeSheetCode: code,
+      codeSheetMax: max ? Number(max) : null,
+      codeSheetName: name,
+      codeSheetError: '',
+      codeSheetBusy: false,
+      codeShipName: this.data.codeShipName || user?.nickname || '',
+      codeShipPhone: this.data.codeShipPhone || user?.phone || '',
+    })
+    // Offer the address book only when there is nothing to keep — re-opening the picker over an
+    // address the user already typed would be the one thing they cannot undo here.
+    if (!this.data.codeShipAddress.trim()) this.fetchWechatAddress('codeShip')
+  },
+
+  closeCodeSheet() {
+    if (this.data.codeSheetBusy) return
+    this.setData({ codeSheetOpen: false, codeSheetError: '' })
+  },
+
+  onCodeInput(e) { this.setData({ codeSheetCode: e.detail.value, codeSheetError: '' }) },
+  onCodeShipNameInput(e) { this.setData({ codeShipName: e.detail.value }) },
+  onCodeShipPhoneInput(e) { this.setData({ codeShipPhone: e.detail.value }) },
+  onCodeShipAddressInput(e) { this.setData({ codeShipAddress: e.detail.value }) },
+  handleCodeWxAddress() { this.fetchWechatAddress('codeShip') },
+
+  async submitFormulationRedeem() {
+    const { t, user, codeSheetBusy, codeSheetMax, proposedDistinctDots } = this.data
+    if (codeSheetBusy || !user?.user_id) return
+
+    const code = (this.data.codeSheetCode || '').trim()
+    if (!code) { this.setData({ codeSheetError: t.codeRequired }); return }
+
+    const name = (this.data.codeShipName || '').trim()
+    const phone = (this.data.codeShipPhone || '').trim()
+    const address = (this.data.codeShipAddress || '').trim()
+    if (!name || !phone || !address) { this.setData({ codeSheetError: t.codeShippingRequired }); return }
+
+    // A code is single-use, so spending one on a formula wider than it covers is worth stopping
+    // for — not to refuse it (the package is worth having either way, and re-running 营养定制 with
+    // the order in hand produces one built for the tier) but so nobody spends it unaware.
+    // Only knowable for a listed code; a typed one carries no tier until GCN answers.
+    const overTier = codeSheetMax && proposedDistinctDots && proposedDistinctDots > codeSheetMax
+    const confirmText = overTier
+      ? t.codeOverTier(proposedDistinctDots, codeSheetMax)
+      : t.codeConfirm
+    const ok = await new Promise(resolve => wx.showModal({
+      title: t.codeSheetTitle, content: confirmText,
+      confirmText: t.codeSubmitBtn, cancelText: t.codeCancel,
+      success: (r) => resolve(!!r.confirm), fail: () => resolve(false),
+    }))
+    if (!ok) return
+
+    this.setData({ codeSheetBusy: true, codeSheetError: '' })
+    try {
+      const res = await this._req(`${BASE}/api/formulation-redeem`, 'POST', {
+        openid: user.user_id,
+        code,
+        // Advisory: GCN carries it back to us through its own payment notify, where
+        // _settleFastTrackPackage decides whether it can actually be used. Nothing is bound here.
+        plan_id: this.data.codeSheetPlanId
+          || this.data.packages.find(p => p.stage === 'proposed')?.plan_id || null,
+        shipping_name: name,
+        shipping_phone: phone,
+        shipping_address: address,
+      }, 30000)
+
+      // Sandbox preview: the request never reached the handler. Say so rather than toasting a
+      // redemption that did not happen.
+      if (res.data?.sandbox) {
+        this.setData({ codeSheetBusy: false, codeSheetError: t.codeSandbox })
+        return
+      }
+
+      if (!res.data?.success) {
+        const reason = res.data?.reason
+        // The store account is only linked by the SSO exchange, so someone who has never opened
+        // it has no GCN account to attribute an order to. Offer the webview once — it links them
+        // and can redeem the code there and then, which is why that path stays rather than dying.
+        if (reason === 'nano_identity_not_linked' || /nano identity not linked/i.test(reason || '')) {
+          this.setData({ codeSheetBusy: false, codeSheetOpen: false })
+          wx.showModal({
+            title: t.codeLinkTitle, content: t.codeLinkDetail,
+            confirmText: t.gotIt, cancelText: t.codeCancel,
+            success: (r) => { if (r.confirm) this._openAevivaStoreGated({ intent: 'redeem_formulation_code' }) },
+          })
+          return
+        }
+        this.setData({ codeSheetBusy: false, codeSheetError: t[`codeErr_${reason}`] || t.codeErrGeneric })
+        return
+      }
+
+      this.setData({ codeSheetOpen: false, codeSheetBusy: false, codeSheetCode: '' })
+      wx.showToast({
+        title: res.data.pending_confirmation ? t.codePending : t.codeOk,
+        icon: 'none', duration: 3000,
+      })
+      // Force a refetch rather than trusting the cache: the code has left the list and a package
+      // has taken its place. Same idiom handlePackageSubmit uses.
+      this._dotsLoadedAt = 0
+      this._loadDots(user, this.data.lang)
+    } catch (err) {
+      this.setData({ codeSheetBusy: false, codeSheetError: t.codeErrGeneric })
+    }
+  },
+
   // Tapping a row of the :::product card Viva appended to a reply. Opens the GCN storefront
   // deep-linked to that exact sku, reusing the existing webview-token context bridge — GCN's
   // dashboard.html already owns the ?sku= opener this lands in, including its silent no-op when
@@ -1519,18 +1782,36 @@ Page({
     this._openAevivaStoreGated({ intent: 'buy_custom_formulation', nutrition_plan_id: nutritionPlanId })
   },
 
-  // The order CTA on a :::formula card, and on a 'proposed' row in Plans ▸ Dots.
+  // The order CTA on a :::formula card in chat. NOT on the Plans ▸ Dots proposal row any more —
+  // that row sits directly above the 兑换码 section, which offers the same action with the user's
+  // actual codes named, so a second button there was strictly worse. This surface has no such
+  // section, so it keeps a CTA.
   //
-  // A 28-day package is bought with a prepaid REDEEM CODE now, not at a checkout: a store stocks
-  // codes wholesale and resells them, and there is no payment step here at all. So this opens the
-  // redeem screen rather than a priced checkout, and the plan id it carries is along for the ride
-  // — a code is not priced against a recipe, and nano attaches whatever formula the user has when
-  // they submit it. The id is still sent because the GCN page is deployed independently of this
-  // miniapp and older builds of it still read one.
-  handleFormulaOrder(e) {
+  // A 28-day package is bought with a prepaid REDEEM CODE (§28e): a store stocks codes wholesale
+  // and resells them, and there is no payment step. It used to open GCN's redeem screen; now it
+  // opens the in-app sheet, which can also list codes the user already owns. The webview stays
+  // reachable through submitFormulationRedeem's nano_identity_not_linked fallback, which is the
+  // one case that genuinely needs it.
+  async handleFormulaOrder(e) {
     const planId = e.currentTarget.dataset.plan
-    if (!this.data.isAeviva || !planId) return
-    this._openAevivaStoreGated({ intent: 'redeem_formulation_code', nutrition_plan_id: planId })
+    const { user, lang } = this.data
+    if (!this.data.isAeviva || !user) return
+    // Chat can be reached without the Dots subtab ever having loaded, and both the code list and
+    // the over-tier warning come from that fetch. Without it a user could spend a code on a
+    // formula wider than it covers with no warning at all — the one thing this sheet exists to
+    // prevent. Cheap: _loadDots is cached by _dotsLoadedAt, so a warm tab costs nothing.
+    if (this.data.proposedDistinctDots === null) {
+      try { await this._loadDots(user, lang) } catch (err) { /* the sheet still works unwarned */ }
+    }
+    // Someone who already owns codes should tap one, not retype it — and the list only exists on
+    // Plans ▸ Dots, so land them there rather than opening a blank code field over the top of
+    // codes we could have named. Note the sub-tab key is plansDotsSubTab, not tab:'dots', which
+    // matches no WXML block and renders blank (real-device report, 2026-07-29).
+    if ((this.data.codes || []).length > 0) {
+      this.setData({ tab: 'plans', plansDotsSubTab: 'dots' })
+      return
+    }
+    this._openCodeSheet({ code: '', manual: true, max: null, name: '', planId: planId || null })
   },
 
   // Opens the formulation's label page — the GCN aeviva page that draws the QR, lists every dot
@@ -3409,6 +3690,8 @@ Page({
         : []
 
       const packages = mapPackages(res.data?.packages, this.data.t, lang)
+      const codes = mapCodes(res.data?.codes, this.data.t, lang)
+      const proposed = packages.find(p => p.stage === 'proposed')
 
       this.setData({
         dotsLoading: false,
@@ -3421,6 +3704,8 @@ Page({
         // (formulation_already_in_progress), so the order card hides rather than dead-ending.
         hasPackageInFlight: packages.some(p => p.inFlight),
         hasProposedFormula: packages.some(p => p.stage === 'proposed'),
+        codes,
+        proposedDistinctDots: proposed ? proposed.distinct_dots : null,
         dispenseSlot,
         dispenseSlotDots,
         dispenseDate: localISODate(new Date()),
@@ -3429,7 +3714,7 @@ Page({
       })
       this._applyDotsWeek(0)
     } catch (e) {
-      this.setData({ dotsLoading: false, hasPlan: false, packages: [], hasPackageInFlight: false, hasProposedFormula: false })
+      this.setData({ dotsLoading: false, hasPlan: false, packages: [], hasPackageInFlight: false, hasProposedFormula: false, codes: [], proposedDistinctDots: null })
     }
   },
 
@@ -3749,14 +4034,19 @@ Page({
   // Requires "用户收货地址" declared in the MP privacy protocol; with
   // __usePrivacyCheck__ enabled, the onNeedPrivacyAuthorization flow (app.js +
   // onPrivacyAgree) handles consent automatically before the picker opens.
-  fetchWechatAddress() {
+  //
+  // `prefix` selects which set of fields it fills — 'checkout' for the store cart it was written
+  // for, 'codeShip' for the redeem sheet. Same picker, same consent, same failure handling; the
+  // two must not drift, and a redeem sheet writing into the cart's fields would quietly change an
+  // address the user set for something else.
+  fetchWechatAddress(prefix = 'checkout') {
     const { t } = this.data
     wx.chooseAddress({
       success: (addr) => {
         this.setData({
-          checkoutName: addr.userName || this.data.checkoutName,
-          checkoutPhone: addr.telNumber || this.data.checkoutPhone,
-          checkoutAddress: `${addr.provinceName || ''}${addr.cityName || ''}${addr.countyName || ''}${addr.detailInfo || ''}`,
+          [`${prefix}Name`]: addr.userName || this.data[`${prefix}Name`],
+          [`${prefix}Phone`]: addr.telNumber || this.data[`${prefix}Phone`],
+          [`${prefix}Address`]: _joinAddress(addr),
         })
       },
       fail: (err) => {
