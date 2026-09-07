@@ -809,6 +809,75 @@ page {
   color: var(--text-sub);
   letter-spacing: 0.5rpx;
 }
+/* The upgrade ladder. Visually SUBORDINATE to the chart above it — a lighter inset panel rather
+   than a second card — because the chart is the formula the user is getting and the rungs are
+   what they could add. Given equal weight they read as three competing options, which is the one
+   thing this layout was chosen to avoid. */
+.fcard-upgrades {
+  margin-top: 22rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid rgba(var(--blue-rgb), 0.26);
+}
+.fcard-uphead {
+  display: block;
+  font-size: var(--fs-21, 21rpx);
+  font-weight: 600;
+  color: var(--chat-accent);
+  letter-spacing: 1rpx;
+  margin-bottom: 14rpx;
+}
+.fcard-rung {
+  padding: 16rpx 18rpx;
+  border-radius: 14rpx;
+  background: rgba(127, 127, 127, 0.10);
+}
+.fcard-rung + .fcard-rung {
+  margin-top: 12rpx;
+}
+.fcard-rung-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+}
+.fcard-rung-label {
+  font-size: var(--fs-22, 22rpx);
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.5rpx;
+}
+.fcard-rung-add {
+  font-size: var(--fs-19, 19rpx);
+  color: var(--chat-accent);
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  background: rgba(var(--blue-rgb), 0.18);
+}
+/* Overrides .fcard-legend's own top margin: inside a rung the dots sit directly under the label,
+   not below a bar chart. */
+.fcard-rung-dots {
+  margin-top: 12rpx;
+}
+.fcard-leg-weeks {
+  font-size: var(--fs-19, 19rpx);
+  color: var(--text-sub);
+  padding: 0 8rpx;
+  border-radius: 999rpx;
+  background: rgba(127, 127, 127, 0.14);
+}
+.fcard-rung-pitch {
+  display: block;
+  margin-top: 12rpx;
+  font-size: var(--fs-21, 21rpx);
+  line-height: 1.55;
+  color: var(--text-sub);
+}
+.fcard-rung-hint {
+  display: block;
+  margin-top: 14rpx;
+  font-size: var(--fs-19, 19rpx);
+  line-height: 1.5;
+  color: var(--text-sub);
+}
 .fcard-cta {
   margin-top: 18rpx;
   padding: 18rpx 24rpx;
@@ -1433,6 +1502,10 @@ page {
    version hardcoded the dark palette's near-white text, which washed out to nearly invisible
    on the cream light theme. Mirrors .scan-box-card, so it inherits that card's audited
    light-theme contrast instead of introducing a second set of values. */
+/* The redeem-code list. Same shape as .pkg-section and deliberately its own class: they are two
+   different lists, and tests/formulation-orders.js uses the section boundary to scope its scan of
+   which fields the package rows actually bind. */
+.code-section,
 .pkg-section {
   flex-shrink: 0;
   padding: 24rpx 36rpx 4rpx;
@@ -1567,6 +1640,25 @@ page {
 .pkg-cta-ghost .pkg-cta-text { color: var(--steel); }
 /* Shown instead of the CTA when a package is waiting but the user has no formula to give it —
    a dead button would be worse than a sentence saying what to do. */
+/* The code string itself, in the row header where a package row carries its stage pill. It is a
+   bearer credential the buyer owns, so it is shown in full rather than masked — the store never
+   saw it on an in-app sale, and this is the only place its owner can read it back. */
+.code-chip {
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 22rpx;
+  letter-spacing: 1rpx;
+  color: var(--steel);
+  flex-shrink: 0;
+}
+
+.code-wx-addr {
+  align-self: flex-start;
+  margin: 4rpx 0 12rpx;
+  font-size: 24rpx;
+  color: var(--steel);
+  text-decoration: underline;
+}
+
 .pkg-hint {
   display: block;
   margin-top: 16rpx;
@@ -3748,7 +3840,14 @@ button.avatar-pick-btn::after { border: none; }
 }
 .viva-redeem-input {
   width: 100%;
+  /* box-sizing is needed for width:100% to survive the horizontal padding — but WeChat's <input>
+     defaults to height:26px, so with border-box the 24rpx (12px) of vertical padding on each side
+     leaves a ~2px content box and clips the glyphs. Digits mostly survive it; CJK does not, which
+     is how it shipped unnoticed in the viva subscription sheet this class came from.
+     Tracks --fs-30 rather than being a fixed height, so the in-app text-scale setting cannot
+     re-clip it. */
   box-sizing: border-box;
+  height: calc(var(--fs-30, 30rpx) + 60rpx);
   padding: 24rpx 28rpx;
   border-radius: 20rpx;
   background: rgba(255, 255, 255, 0.06);

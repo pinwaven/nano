@@ -28,6 +28,14 @@ async function handleGetUsers(channelId, query = {}) {
         const offset = parseInt(query.offset) || 0;
         const search = (query.q || '').trim();
         const filterChannelId = query.filter_channel_id ? parseInt(query.filter_channel_id) : null;
+        // Two ways to name a coach, because callers hold different halves of the identity. A
+        // client that already has a row from this endpoint has `coach_id` (a coaches.id); one that
+        // only knows WHO the coach is — a WeChat bridge, say — has the coach's own users.user_id
+        // and no way to map it, since GET /coaches is not a route (POST only) and /users rows did
+        // not carry coach_user_id until now. Without these the caller has to page the whole
+        // channel and join on coach_name, which is not unique.
+        const filterCoachId = query.filter_coach_id ? parseInt(query.filter_coach_id) : null;
+        const filterCoachUserId = (query.filter_coach_user_id || '').trim() || null;
 
         // Expand the selected channel to include its entire subtree
         let filterChannelIds = null;
@@ -66,6 +74,21 @@ async function handleGetUsers(channelId, query = {}) {
             conditions.push(`(u.nickname ILIKE $${idx} OR u.phone ILIKE $${idx} OR u.email ILIKE $${idx} OR u.user_id::TEXT ILIKE $${idx})`);
         }
 
+        // AFTER the channel condition, never instead of it: a channel-scoped admin passing some
+        // other channel's coach must still only ever see their own channel's users.
+        //
+        // Non-numeric filter_coach_id is dropped rather than handed to Postgres. Both read through
+        // the `p` alias — `LEFT JOIN coaches p ON u.coach_id = p.id` is already in the query below
+        // for coach_name, so neither needs a subquery or a new join, and matching on p.user_id
+        // naturally excludes the unassigned (NULL) rows. Same join-dependence sortFieldMap already
+        // has on `c` and `b`; `where` is used by the main query alone, never by the stats.
+        if (Number.isInteger(filterCoachId)) {
+            conditions.push(`u.coach_id = $${params.push(filterCoachId)}`);
+        }
+        if (filterCoachUserId) {
+            conditions.push(`p.user_id = $${params.push(filterCoachUserId)}`);
+        }
+
         const where = conditions.join(' AND ');
         const limitIdx = params.push(limit);
         const offsetIdx = params.push(offset);
@@ -80,7 +103,7 @@ async function handleGetUsers(channelId, query = {}) {
                     inv.code as invite_code,
                     inv_cu.nickname as inviter_nickname,
                     b.bio_age, b.data as bio_data,
-                    cu.nickname as coach_name,
+                    cu.nickname as coach_name, p.user_id as coach_user_id,
                     c.name as channel_name, c.logo_url as channel_logo_url,
                     (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'biological_report' ORDER BY sent_at DESC LIMIT 1) as latest_report,
                     (SELECT content FROM notifications WHERE user_id = u.user_id AND notification_type = 'nutrition_plan' ORDER BY sent_at DESC LIMIT 1) as latest_plan,

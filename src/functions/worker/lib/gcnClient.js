@@ -6,7 +6,7 @@
 const BASE_URL = process.env.GCN_API_BASE_URL || '';
 const TOKEN = process.env.GCN_SERVICE_TOKEN || '';
 
-async function gcnFetch(path, { method = 'GET', body } = {}) {
+async function gcnFetch(path, { method = 'GET', body, signal } = {}) {
     if (!BASE_URL || !TOKEN) {
         throw new Error('GCN_API_BASE_URL/GCN_SERVICE_TOKEN not configured');
     }
@@ -17,6 +17,7 @@ async function gcnFetch(path, { method = 'GET', body } = {}) {
             authorization: `Bearer ${TOKEN}`,
         },
         body: body ? JSON.stringify(body) : undefined,
+        signal,
     });
     const text = await res.text();
     let data;
@@ -93,6 +94,81 @@ async function fetchFormulationOrders(nanoUserId) {
     }
 }
 
+// The unredeemed 28-day dots codes this user personally owns (GCN's handleNanoFormulationCodes).
+// Only codes bought in-app carry a buyer, so this is what the user can be SHOWN — a code their
+// store handed them in person is still redeemable, by typing it.
+//
+// NEVER THROWS, same 4s budget and same reason as its two neighbours: this sits in the Dots
+// subtab's fan-out beside the plan query the tab actually depends on, so a dead or slow GCN must
+// cost the user their code list, never their nutrition plan.
+async function fetchFormulationCodes(nanoUserId) {
+    if (!nanoUserId || !BASE_URL || !TOKEN) return [];
+    const timer = AbortSignal.timeout ? AbortSignal.timeout(ORDER_STATUS_TIMEOUT_MS) : undefined;
+    try {
+        const res = await fetch(
+            `${BASE_URL}/api/mall/nano/formulation-codes?nano_user_id=${encodeURIComponent(nanoUserId)}`,
+            { headers: { authorization: `Bearer ${TOKEN}` }, signal: timer }
+        );
+        if (!res.ok) return [];
+        const data = await res.json();
+        return Array.isArray(data?.codes) ? data.codes : [];
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'gcn_formulation_codes_failed', error: err.message }));
+        return [];
+    }
+}
+
+// The purchasable tier ladder — one rung per 28-day package width (6 / 8 / 10 种原粒), narrowest
+// first. Read only when the user has NOTHING waiting: with a package already paid for the tier is
+// settled and comes off the order itself, and a ladder would be an upsell for something they
+// cannot upgrade.
+//
+// NEVER THROWS, same 4s budget and same reason as its neighbours above: no ladder means the tool
+// formulates exactly as it did before this existed, which is a worse card but a complete one.
+async function fetchFormulationTiers() {
+    if (!BASE_URL || !TOKEN) return [];
+    const timer = AbortSignal.timeout ? AbortSignal.timeout(ORDER_STATUS_TIMEOUT_MS) : undefined;
+    try {
+        const res = await fetch(
+            `${BASE_URL}/api/mall/nano/formulation-packages`,
+            { headers: { authorization: `Bearer ${TOKEN}` }, signal: timer }
+        );
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (!Array.isArray(data?.packages)) return [];
+        // Narrowest first, and only rungs carrying a real width — the ladder's whole meaning is
+        // that number, and GCN sorts on it too, but a client that depends on an ordering should
+        // establish it rather than inherit it.
+        return data.packages
+            .filter(p => p && Number.isFinite(Number(p.max_distinct_dots)) && Number(p.max_distinct_dots) > 0)
+            .map(p => ({
+                tier_label: p.tier_label || null,
+                package_name: p.package_name || null,
+                max_distinct_dots: Number(p.max_distinct_dots),
+            }))
+            .sort((a, b) => a.max_distinct_dots - b.max_distinct_dots);
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'gcn_formulation_tiers_failed', error: err.message }));
+        return [];
+    }
+}
+
+// Spends one of those codes on the package it stands for. MAY THROW, like the fast-track submit
+// below and for the same reason: the entire point of the tap was the call, and a silent no-op
+// would leave the user believing a code they still hold has been spent — or that one already
+// spent has not.
+//
+// A longer budget than the reads above, deliberately. This is one user action, not a section of a
+// page: GCN writes an order, burns the code and runs a full payment confirmation (which itself
+// notifies us back), and giving up at 4s would abandon work that is already committed on their
+// side. gcnFetch has no timeout of its own, so the ceiling has to be imposed here.
+const REDEEM_TIMEOUT_MS = 25000;
+
+async function redeemFormulationCode(payload) {
+    const timer = AbortSignal.timeout ? AbortSignal.timeout(REDEEM_TIMEOUT_MS) : undefined;
+    return gcnFetch('/api/mall/nano/formulation-redeem', { method: 'POST', body: payload, signal: timer });
+}
+
 // Hands a fast-track formula to GCN so the paid order can go to compounding. Unlike the two
 // fetches above this one MAY throw: it is called from an explicit user action ("confirm this
 // formula") whose entire purpose is the call, so a failure has to reach the user rather than be
@@ -101,4 +177,7 @@ async function submitFastTrackFormulation(payload) {
     return gcnFetch('/api/mall/nano/formulation-fasttrack', { method: 'POST', body: payload });
 }
 
-module.exports = { gcnFetch, fetchAiCatalog, fetchFormulationOrders, submitFastTrackFormulation };
+module.exports = {
+    gcnFetch, fetchAiCatalog, fetchFormulationOrders, submitFastTrackFormulation,
+    fetchFormulationCodes, redeemFormulationCode, fetchFormulationTiers,
+};

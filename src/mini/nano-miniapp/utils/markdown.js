@@ -346,6 +346,10 @@ function _buildDirective (name, inner) {
   //                              CTA). Absent, unknown, or unrecognised all mean 'buy'.
   //   #day|<ranges>|<kind>       starts a group; rows after it belong to it. Ranges are bare
   //                              numbers ("1-9,12-28"); the day WORD is the page's, not ours.
+  //   #rung|<label>|<width>|<pitch>
+  //                              an UPGRADE rung: the dots a wider package would add on top of
+  //                              everything above it. Rows after it attach to the rung, never to
+  //                              the last day group. Only ever present on a 'buy'-mode card.
   if (name === 'formula') {
     var fgroups = []
     var fcur = null
@@ -354,6 +358,8 @@ function _buildDirective (name, inner) {
     var fplan = ''
     var fmode = 'buy'
     var flabel = ''
+    var frungs = []
+    var fcurRung = null
     for (var f = 0; f < rows.length; f++) {
       var line = rows[f]
       var fp = line.split('|')
@@ -379,6 +385,21 @@ function _buildDirective (name, inner) {
         fmode = (fp[1] === 'submit' || fp[1] === 'ag') ? fp[1] : 'buy'
         continue
       }
+      if (fp[0] === '#rung') {
+        // Rejoin the tail: the pitch is a sentence and may legitimately contain a '|', which the
+        // server replaces with '/' before writing — but a future writer might not, and a pitch
+        // truncated at the first pipe reads as a broken promise rather than a bug.
+        fcurRung = {
+          label: fp[1] || '',
+          width: parseInt(fp[2], 10) > 0 ? parseInt(fp[2], 10) : 0,
+          pitch: fp.slice(3).join('|'),
+          items: []
+        }
+        // Once a rung starts, every following row belongs to a rung — the day groups are done.
+        fcur = null
+        frungs.push(fcurRung)
+        continue
+      }
       if (fp[0] === '#day') {
         fcur = {
           days: _prettyDayRanges(fp[1] || ''),
@@ -394,6 +415,19 @@ function _buildDirective (name, inner) {
       if (!fp[0] || (!am && !pm)) continue
       am = am > 0 ? am : 0
       pm = pm > 0 ? pm : 0
+      if (fcurRung) {
+        fcurRung.items.push({
+          key: fp[0],
+          name: fp[1] || fp[0],
+          color: /^#[0-9a-fA-F]{3,8}$/.test(fp[2] || '') ? fp[2] : '#6B7B8C',
+          am: am,
+          pm: pm,
+          // Bare week numbers when this dot does not run all four weeks; the word around them is
+          // the page's, since this file has no language context. Absent = every week.
+          weeks: /^[0-9]+(,[0-9]+)*$/.test(fp[5] || '') ? fp[5] : ''
+        })
+        continue
+      }
       if (!fcur) {
         // Legacy card, or rows before any #day line: one implicit unlabelled group.
         fcur = { days: '', kind: 'regular', items: [], am: 0, pm: 0, total: 0 }
@@ -439,6 +473,8 @@ function _buildDirective (name, inner) {
       planId: fplan,
       orderMode: fmode,
       labelUrl: flabel,
+      // Rungs with no dots are dropped: an upgrade that adds nothing reads as a broken promise.
+      rungs: frungs.filter(function (r) { return r.items.length }),
       // Legacy top-level fields, kept so anything still reading seg.items/am/pm/total sees the
       // everyday dose rather than nothing.
       items: fkept[0].items, am: fkept[0].am, pm: fkept[0].pm, total: fkept[0].total

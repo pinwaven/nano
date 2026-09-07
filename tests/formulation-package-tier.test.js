@@ -203,3 +203,49 @@ test('the card shows the rotation, and shows it as the days it really covers', (
     assert.ok(wk12.includes('\nDOT-N3|') && !wk12.includes('\nDOT-N9|'));
     assert.ok(wk34.includes('\nDOT-N9|') && !wk34.includes('\nDOT-N3|'));
 });
+
+// ── What a redeemed code actually compounds, once a proposal carries a ladder ───────────────────
+//
+// A laddered proposal is stored around its NARROWEST formula, so the over-tier refusal above can
+// no longer fire for one. What replaces it is a choice: the widest variant the code covers.
+// tests/formula-tier-ladder.test.js owns the ladder's own rules; what is asserted here is the
+// half handlePostFormulationSubmit performs — the selected variant, not the stored base, is what
+// gets expanded into the 56 capsules sent to GCN.
+
+test('a laddered proposal submits the widest formula the code covers, not the stored base', () => {
+    const { morning, evening } = build(DAILY);
+    const { variants } = D._buildTierLadder({
+        morningRecipe: morning, eveningRecipe: evening, dotsFormulary: FORMULARY,
+        tiers: [{ max_distinct_dots: 2 }, { max_distinct_dots: 3 }, { max_distinct_dots: 5 }],
+    });
+    const stored = {
+        morning: variants[0].morning.dots,
+        evening: variants[0].evening.dots,
+        tiers: variants.map(v => ({
+            max_distinct_dots: v.max_distinct_dots,
+            morning: v.morning.dots, evening: v.evening.dots,
+        })),
+    };
+    for (const [ordered, expected] of [[2, 2], [3, 3], [5, 5], [4, 3]]) {
+        const sel = D._selectTierVariant(stored, ordered);
+        const capsules = D._expandProposalToCapsules(sel.morning, sel.evening, FORMULARY);
+        const check = validateAgFormulation({ capsules }, FORMULARY);
+        assert.ok(check.valid, `ordered=${ordered}: ${JSON.stringify(check.violations)}`);
+        // The dots actually compounded, on an ordinary (non-isolation) day.
+        const day0 = new Set(Object.keys(capsules[0].dots).concat(Object.keys(capsules[1].dots)));
+        day0.delete(N7_KEY);
+        assert.strictEqual(day0.size, expected,
+            `a code covering ${ordered} should compound ${expected} dots, not the stored ${stored.tiers[0].max_distinct_dots}`);
+    }
+});
+
+test('a proposal made before the ladder existed still meets the over-tier refusal', () => {
+    // Capped by nothing when it was written, so it can genuinely be wider than any code — which
+    // is the case the reject-never-repair rule exists for, and it must stay reachable.
+    const { morning, evening } = build(DAILY);
+    const stored = { morning: morning.dots, evening: evening.dots };
+    const sel = D._selectTierVariant(stored, 2);
+    assert.strictEqual(sel.variant, null, 'nothing to select from');
+    assert.ok(D._countDistinctDots(sel.morning, sel.evening) > 2,
+        'and what comes back is still over the tier, so the caller refuses it');
+});

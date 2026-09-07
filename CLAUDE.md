@@ -17,7 +17,7 @@ There are two separate PolarDB databases. Both share the same Aliyun account and
 |---|---|---|
 | DB name | `nano_db_dev` | `nano_db_prod` |
 | s.yaml config | `s.yaml` | `s-prod.yaml` |
-| Deploy scripts | `deploy:worker`, `deploy:dispatcher`, etc. | `deploy:worker-prod`, `deploy:dispatcher-prod`, etc. |
+| Deploy scripts | `deploy:worker`, `deploy:dispatcher`, etc. | `deploy:worker:prod`, `deploy:dispatcher:prod`, etc. |
 | Connection var | `DATABASE_URL` | `DATABASE_URL_PROD` |
 | Migrate | `npm run migrate:dev` | `npm run migrate:prod` |
 
@@ -61,8 +61,8 @@ npm run deploy:worker
 npm run deploy:dispatcher
 
 # Prod
-npm run deploy:worker-prod
-npm run deploy:dispatcher-prod
+npm run deploy:worker:prod
+npm run deploy:dispatcher:prod
 ```
 
 ## 3. Database Migrations
@@ -1106,10 +1106,17 @@ Seller and fulfiller stay separate without the client knowing either: the order 
 **buyer's own bound store** as `store_partner_id`, and `handleAgFormulationBundleOrderCreate`
 stamps the processing centre onto the order *item*.
 
-**Open, unchanged by this pass:** that handler hardcodes `PROCESSING_CENTER_PARTNER_ID` (`…a3`)
-while the AI 精准营养素 product sits on `42f7307f`, and neither processing centre has a
-`payment_qr_urls`. No custom-formulation order has ever been placed in prod, so nothing is broken
-yet — but the first real one will surface it.
+**Resolved 2026-09-01 (GCN `migration_0089`).** That handler used to hardcode
+`PROCESSING_CENTER_PARTNER_ID` (`…a3`) while the AI 精准营养素 product sat on `42f7307f`, so the
+28天 packages, `AI精准营养素` and every redeem-code order were all addressed to a compounding centre
+that does not make them, while the per-dot product independently used its own *seller*. GCN now
+carries `products.processing_center_partner_id` and both order paths resolve
+`COALESCE(processing_center_partner_id, supplier_partner_id)` — see GCN's `CLAUDE.md`
+§"Selling a product and compounding it are different partners". Nothing in nano changed.
+
+Still open: neither processing centre has a `payment_qr_urls`. Not on this path (the customer pays
+the store, and a redeemed code charges nothing), so it only bites if a processing centre is ever
+made a *seller*.
 
 ## 28d. The Dots Subtab Is Order-Aware (2026-09-01)
 
@@ -1231,6 +1238,167 @@ shipping, so the bind card offered something nobody could act on. Gated rather t
 nothing about the dispenser changed, and this is its only entry point. `neoBound` is still
 permanently false and still gates the cartridge grid, the Dispense button and the order card's own
 `!neoBound` — don't collapse the two flags into one.
+
+## 28e. A Dots Package Is Bought With a Redeem Code (2026-09-01)
+
+The direct checkout is retired. A store buys codes wholesale, resells them, and the holder redeems
+one for the 28-day package it stands for — **with no payment step at redemption**.
+
+Direct checkout was the wrong shape for how these are sold: the buyer is an end user, but the money
+is owed to the **root supplier** that compounds the capsules while the order is attributed to the
+buyer's bound store. That split is where the self-approved payment, the payee override and the
+per-order 确认收款 all came from. Making it a wholesale order was rejected on GCN's side, because
+`wholesale_transfer_out` would book stock of capsules compounded from one person's biomarkers. A
+code has none of those problems — it is fungible, non-perishable and transferable, so stocking codes
+is a genuine 补货订单 and the money moves once, in bulk.
+
+**The mechanics live in GCN** (`migration_0088`, `handleFormulationCodeRedeem`, `skus.redeems_for_sku_id`,
+`skus.wholesale_only`, `sku_activation_codes.holder_partner_id`). See its `CLAUDE.md`
+§"Custom Dots sold as prepaid redeem codes" before changing anything about the flow.
+
+### Why nano barely changed, and must not grow its own code table
+
+Every "is a package waiting for me?" answer here comes from **one** source, `fetchFormulationOrders`
+(`lib/gcnClient.js`), read live at three call sites:
+
+| Call site | Breaks without a real GCN order |
+|---|---|
+| `_resolveOrderContext` (`handlers/dots.js`) | the chat card's `#order` mode never becomes `submit` |
+| `handlePostFormulationSubmit` | refuses `no_awaiting_order` — the formula can never be submitted |
+| `_fetchFormulationPackages` | no package row, so no stage, no tracking, no scan CTA |
+
+Redemption produces a real `orders` row exactly as a purchase did, so **none of those changed**. A
+nano-local `formulation_codes` table (mirroring `viva_subscription_codes`) would mean merging a
+second source into all three *and* would still leave the capsules with no order to be compounded and
+shipped against. `viva_subscription_codes` stays where it belongs: a subscription is a pure
+entitlement with nothing to ship, so a nano-local code is right there and wrong here.
+
+### What did change
+
+`handleFormulaOrder` sends `intent: 'redeem_formulation_code'` through the existing
+`webview_tokens.context` bridge, and `t.formulaOrderCta` / `t.pkgOrderBtn` name a code rather than a
+purchase. The plan id is still carried, and is **advisory only** — a code is not priced against a
+recipe; nano attaches whatever formula the user has when they submit it. It is still sent because
+the GCN page deploys independently of this miniapp and older builds of it read one.
+
+GCN routes the old `buy_custom_formulation` intent to the same redeem screen, so a miniapp build
+already in the wild keeps working. **Deploy GCN's `mall` and `web` together** — the redeem route and
+the redeem screen are two halves of one flow.
+
+**Verified end to end on dev** (2026-09-01), including the two halves nano owns: the 使用兑换码 CTA
+carries `redeem_formulation_code` plus the plan id through the webview token, and a code-created
+order is indistinguishable downstream — `_resolveOrderContext` reads `max_distinct_dots: 8` off it,
+`handlePostFormulationSubmit` correctly refuses a 17-dot proposal made before any package existed,
+and a re-run of 营养定制 caps to 8 (+`DOT-N7`, which is never counted) and submits to `compounding`.
+
+The order card in Plans ▸ Dots is unchanged and still runs 营养定制: formulate first, then redeem.
+Where a code comes from is answered on the redeem screen ("your store provides this code"), which is
+the only surface that can say it truthfully.
+
+## 28f. 营养定制 Proposes Three Nested Formulas (2026-09-07)
+
+With **nothing waiting**, the chat tool now proposes the essential **6-dot** formula and shows what
+a further **+2** and **+2** would add — the three purchasable widths (§28c). With a package already
+waiting the card is unchanged: that tier is settled, and a second CTA beside the one the user must
+tap risks stalling the order they already paid for.
+
+Before this the tier was invisible at the one moment it was being chosen. The tool formulated
+against no ceiling, so a proposal was routinely wider than any package sold — prod's `c40d46a4`
+held a 17-dot one — and unpurchasable the moment a code was spent on it.
+
+### `proposed_recipe` gained an optional `tiers`, and the base is the NARROWEST
+
+```json
+{ "morning": {…}, "evening": {…},
+  "tiers": [ {"max_distinct_dots": 6, "morning": {…}, "evening": {…}}, {"…": 8}, {"…": 10} ] }
+```
+
+**`morning`/`evening` are the narrowest variant.** That is what lets every reader that predates the
+key — `_activateProposedPlan`, `handleGetFormulationCheckoutSnapshot`,
+`_getCommittedPlanDay0Breakdown` (the printed label), `_packageRow.distinct_dots` — keep working
+untouched while seeing a recipe that fits any tier. No migration; the column already existed.
+
+`handlePostFormulationSubmit` picks the widest variant the redeemed code covers
+(`_selectTierVariant`) and, in the same write that binds `gcn_order_id`, **collapses the row** to
+that variant and drops `tiers`. After submission the plan is single-recipe again, so the box scan,
+the label and the snapshot all read what is actually being compounded. §28c's over-tier refusal is
+untouched and still fires — for a plan with no `tiers`, which was capped by nothing.
+
+### A width is PER WEEK, and every variant carries its own rotation
+
+§28c's rule is untouched here: a 6种 formula may run six dots this week and a partly different six
+next week, so its four weeks together can contain well more than six distinct dots. Each variant is
+therefore built by **`_capDistinctDots`** — the same cap that already binds a purchased package —
+which caps each week independently and returns that variant's own `weeks` map. A width means
+exactly the same thing on the card as it does at submission, and `_countDistinctDots` (the widest
+week) is what both compare against.
+
+**Nesting follows from that**, not from a separate mechanism: `_capDistinctDots` ranks the same
+full allocation on every call and keeps the top `width` of each week, and a week's top 6 are always
+inside its top 8. Do not re-rank per variant — ranking each variant's own set independently can
+drop from the wide variant a dot the narrow one kept, i.e. an upgrade that takes something away.
+
+The tier tag rides into that ranking (`_capDistinctDots`'s optional `tierByKey`): tag first, then
+emphasis, with untagged dots sorting as the most optional. So a mis-tagged tier needs no
+correcting, and a completion with no tags at all still ladders.
+
+**A rung's additions are computed week by week** (`_ladderAdditions`), because under rotation an
+upgrade can be two more dots every week *or* the same dot running two more weeks — a cycle-wide set
+comparison sees only the first. Each rung row carries the weeks it adds when they aren't all four.
+
+`_applyTierLadder` is the single fork — ladder when `orderContext.mode === 'buy'`, else the existing
+`_capDistinctDots` trim — shared by the agentic delivery and the deterministic fallback. **The
+fallback must ladder too**; a proposal with no `tiers` and no cap is one a wider code cannot be
+spent on.
+
+### Two things live testing forced, both non-obvious
+
+**The upgrade slots are server-filled.** GENERATE doses the whole formulary when asked in isolation
+but *curates* inside the agentic loop — live dev runs returned six dots where a single-shot
+completion of the same prompt gave seventeen. Six is the narrowest tier, so the wider variants
+collapse as duplicates and no ladder appears at all. `_padCandidatesFor` offers dots targeting the
+user's own elevated dimensions first, dosed by `_fallbackCountForDot`. It **never reaches the
+core**: padding runs only once the model has filled the narrowest tier itself, and a padded dot is
+untagged so it sorts behind everything the model chose.
+
+**A pitch that names a dot outside its own rung is dropped** (`_rungPitch`). The model writes the
+copy but the server decides membership, and the first real run had them disagree — a pitch reading
+"加配肠道焕新与脉络畅流" above a rung holding two different dots, and another naming a dot the
+formulation did not contain. The prompt now asks for copy that names no dots (the card lists them
+on the next line); this is the backstop, and it drops rather than repairs.
+
+**JUDGE and PLAN both had to be told the narrowness is intended.** JUDGE rejected a deliberately
+6-dot core as `plan_drift` — "must reflect the full set of clinically indicated dots" — and the
+forced REVISE stripped the upgrade copy. A dot missing from a formulation is never an omission:
+the number of dots is a product constraint the model does not get to widen.
+
+### The widths come from GCN, and no rung is a CTA
+
+`GET /api/mall/nano/formulation-packages` (`requireNanoService`, always 200): fast-track tiers only
+— a premium package is Viva AG's to formulate, so offering it advertises an upgrade this tool
+cannot fulfil — and **no price**, because nano does not price this product and there is no payment
+at redemption. It travels in `llmContext.formulation_tiers` rather than being re-fetched at
+delivery: the variants must be built against the widths the model was told to aim at.
+
+The card carries `#rung|<label>|<width>|<pitch>` blocks after the day groups, rows in the same
+`key|name|color|am|pm` shape plus an optional 6th field — the weeks that dot is added in, absent
+when it runs all four. **One CTA, at the bottom, for all of them**: which tier a user gets is
+decided by whichever redeem code they hold, and a code cannot be bought in-app (§28e), so a
+per-rung button would offer a choice that does not exist.
+
+### The guardrail was narrowed, in three places
+
+Aspirational upgrade copy collides with the always-injected essential block, which reads every
+claim as a clinical one. The new clause is a **permission plus a restatement of the hard bans** —
+no onset window, improvement magnitude, numeric forecast, guarantee, invented mechanism, or price;
+dot names still verbatim — scoped by name to the `"upgrades"` field alone.
+
+Per §37's precedent it lives in `knowledge_entries` (`migration_knowledge_upgrade_copy.sql`),
+`lib/knowledgeBase.js`'s `FALLBACK_ESSENTIAL_BLOCK`, and `prompts/chat/factConstraint.js` —
+**change all three together**, or a transient DB error silently returns the model to refusing to
+write a rung at all. `planTemplate.js` and `judgeTemplate.js` were taught the tail for the reason
+§27 and §37 both record: an unrecognised action tail is graded as an unsupported claim and burns
+REVISE rounds.
 
 ## 29. Viva Proactive Daily Check-Ins (Morning / Midday / Evening)
 

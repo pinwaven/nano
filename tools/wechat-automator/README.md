@@ -72,6 +72,14 @@ node example.js
   Don't rely on visual screenshots for verification — use DOM-level queries instead:
   `page.data()`, `element.size()`, `element.offset()`, `element.scrollHeight()`,
   `element.property('scrollTop')`, `element.outerWxml()`. `example.js` demonstrates this pattern.
+- **`outerWxml()` returns tags with EMPTY text nodes — use `text()` for content.** A
+  `<text>{{t.x}}</text>` comes back as `<text class="…"></text>` no matter what it rendered, so
+  asserting on strings (or on "no empty `<text>`", the obvious way to catch a missing i18n key) via
+  `outerWxml()` fails on correct markup. `outerWxml()` is for structure — classes, `data-*`
+  attributes, how many of a repeated element rendered; `element.text()` is for content, and returns
+  the subtree's visible text newline-joined, which is what makes a resolved-vs-empty i18n check
+  possible in both languages.
+
 - **Synthetic touch gestures don't trigger real scroll-view scrolling.** `touchstart`/`touchmove`/
   `touchend` dispatched at a `scroll-view` element show zero `scrollTop` change — confirmed even on
   a known-working scroll-view via a control test, so it's an automator/simulator limitation, not a

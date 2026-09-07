@@ -279,7 +279,12 @@ const client = (() => {
 const pkgBlock = (() => {
     const a = mainWxml.indexOf('class="pkg-section"');
     assert.ok(a > -1, 'the package block is gone from main.wxml');
-    return mainWxml.slice(a, mainWxml.indexOf('class="order-dots-card"', a));
+    // Ends at whichever block comes next — the redeem-code list sits between the packages and
+    // the order card and binds its own item.* fields off a different list.
+    const ends = ['class="code-section"', 'class="order-dots-card"']
+        .map(s => mainWxml.indexOf(s, a)).filter(i => i > -1);
+    assert.ok(ends.length, 'nothing follows the package block — the scan would run to EOF');
+    return mainWxml.slice(a, Math.min(...ends));
 })();
 
 test('mapPackages carries every field the package markup binds', () => {
@@ -303,7 +308,7 @@ test('both languages resolve every stage label and every CTA', () => {
     for (const lang of ['zh', 'en']) {
         const t = client.T[lang];
         for (const key of ['pkgSectionTitle', 'pkgUseFormulaBtn', 'pkgNeedsFormulaHint',
-                           'pkgScanBtn', 'pkgOrderBtn', 'pkgUnnamed', 'pkgOrderGone', 'copy']) {
+                           'pkgScanBtn', 'pkgUnnamed', 'pkgOrderGone', 'copy']) {
             assert.strictEqual(typeof t[key], 'string', `${lang}.${key}`);
         }
         for (const m of client.mapPackages(rows, t, lang)) {
