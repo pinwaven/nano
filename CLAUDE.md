@@ -836,6 +836,8 @@ AM/PM split is a real decision and there is nothing to fix.
 
 ### Levelling the two capsules (2026-09-08)
 
+Full pipeline, twin to capsules: [docs/architecture/dots-formulation.md](docs/architecture/dots-formulation.md).
+
 Fitting the budget is not the same question as which capsule a dose is taken in, and nothing was
 answering the second one. `_splitDotTiming` decides one dot at a time and cannot see the day, so a
 real dev proposal came out **71 in the morning against 31 in the evening** simply because four of
