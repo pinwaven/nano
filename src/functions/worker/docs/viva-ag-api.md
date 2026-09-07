@@ -710,7 +710,7 @@ manufactured.
 | Capsules | **56** — one `AM` and one `PM` every day |
 | Dots per capsule | **≤ 72** (a physical fill limit, independent of any dot's own range) |
 | Per-dot dose | within that dot's `target_dots_min` … `target_dots_max`, applied to its **daily total (AM + PM)** — not to each capsule separately |
-| Slot | honour each dot's `timing` (`Morning`/`Evening`). Only a dot with `timing_flexible: true` may be split across both slots, and the majority of its daily count should stay in its own slot |
+| Slot | a dot with `timing_flexible: false` stays **wholly** in its own `timing` slot (`Morning`/`Evening`) — this is enforced. A dot with `timing_flexible: true` may be split across the two capsules **any way**, including wholly into the other one: its `timing` is a default, not a requirement. Prefer its own slot where the day allows, but evening out the two capsules is the better use of that freedom |
 | Pulse dots | a dot with `dosing_protocol: "pulse"` is dosed on only `pulse_days_per_cycle` days out of every `pulse_cycle_days` — never every day |
 | `DOT-N7` | **system-controlled, isolated.** On **days 10 and 11 only**, *both* capsules contain **only** `DOT-N7`, each at its `target_dots_max`. It appears on no other day, and no other dot appears in those four capsules. |
 
@@ -767,8 +767,9 @@ table headers verbatim, in lowercase: a downstream parser matches on them.
 ```
 
 Read those numbers against the rules and you can see both traps. `DOT-N5` is
-`timing_flexible: true`, so its daily 18 may be split 14 AM / 4 PM with the majority in its own
-Morning slot; `DOT-N12` is not flexible, so all 14 stay in AM. And every everyday dot totals
+`timing_flexible: true`, so its daily 18 may be split across the two capsules however the day
+needs — 14 AM / 4 PM here, but 4 AM / 14 PM would be equally legal; `DOT-N12` is not flexible, so
+all 14 stay in AM. And every everyday dot totals
 **26 days**, not 28 — days 10 and 11 are `DOT-N7` alone, which displaces everything else. Getting
 that wrong is the single easiest way to ship a formula whose totals don't match its capsules.
 

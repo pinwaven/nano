@@ -305,17 +305,30 @@ function validateAgFormulation(parsed, dotsFormulary) {
                     `Day ${day}: ${key} totals ${total}, above its maximum of ${max}.`, { key, day, total, max }));
             }
 
-            // A dot may only leave its own slot if it is explicitly flexible, and even then the
-            // majority of its daily count stays in its own slot.
+            // A dot may leave its own slot only if it is explicitly flexible — and then it may
+            // be split ANY way, including wholly into the other capsule.
+            //
+            // A `slot_minority` rule used to sit here as well, failing a flexible dot that had
+            // more of its daily dose in the other capsule than in its own. Dropped 2026-09-08,
+            // for three reasons, in order of weight:
+            //   1. `timing_flexible` already means exactly this. It is what the column says
+            //      (rendered to the model verbatim as 早晚皆可，可自由拆分) and what
+            //      `timing_flexible = false` exists to express when a dot genuinely has a
+            //      diurnal requirement — DOT-N3 静心夜, DOT-N4 持续精力, DOT-N12 敏锐心智.
+            //      A dot needing a majority in its own slot is a dot that is not flexible.
+            //   2. It contradicted this file's own documented contract: §8 of
+            //      worker/docs/viva-ag-api.md lists what nano checks on submission, and says
+            //      only "non-flexible dots confined to their own slot" — never a majority.
+            //   3. It was the one thing stopping _balanceCapsules from levelling the two
+            //      capsules, which is the half of a formula the user actually has to swallow.
+            //
+            // This is a LOOSENING, so no formula that validated before stops validating now,
+            // and an AG agent already building to the stricter reading is unaffected.
             const ownSlot = String(dot.timing || '').toLowerCase().startsWith('even') ? 'pm' : 'am';
             const otherSlot = ownSlot === 'am' ? 'pm' : 'am';
             if (split[otherSlot] > 0 && !dot.timing_flexible) {
                 violations.push(_violation('slot_violation',
                     `Day ${day}: ${key} is not timing-flexible but ${split[otherSlot]} of its dose is in ${otherSlot.toUpperCase()}.`,
-                    { key, day }));
-            } else if (split[otherSlot] > split[ownSlot]) {
-                violations.push(_violation('slot_minority',
-                    `Day ${day}: most of ${key}'s dose sits in ${otherSlot.toUpperCase()}, not its own ${ownSlot.toUpperCase()} slot.`,
                     { key, day }));
             }
         }
