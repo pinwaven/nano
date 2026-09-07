@@ -45,7 +45,7 @@ const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { resolveEffectivePersona, hasActiveVivaAccess } = require('../lib/persona');
 const { grantSignupTrial } = require('../lib/personaOverride');
-const { _runDeterministicFormulation, _buildFormulaChartBlock, _commitProposedPlan, _resolveOrderContext, _applyTierLadder, _padCandidatesFor, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _buildProductCardBlock, _countForLevel, _doseFromRanking, _rankDotsBySeverity } = require('./dots');
+const { _runDeterministicFormulation, _buildFormulaChartBlock, _commitProposedPlan, _resolveOrderContext, _applyTierLadder, _padCandidatesFor, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _balanceCapsules, _buildProductCardBlock, _countForLevel, _doseFromRanking, _rankDotsBySeverity } = require('./dots');
 const { fetchAiCatalog } = require('../lib/gcnClient');
 const { PLAN_WEEKS, N7_KEY } = require('../lib/dotsProductModel');
 const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock');
@@ -2029,7 +2029,9 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         }
 
         // AM/PM split is entirely code-driven, never model-driven — see the comment above.
-        // _splitDotTiming already guarantees non-flexible dots stay 100% in their default slot.
+        // _splitDotTiming already guarantees non-flexible dots stay 100% in their default slot;
+        // _balanceCapsules below then evens the two capsules across the whole day, which one dot
+        // at a time cannot.
         for (const v of entries.values()) {
             const { morning, evening } = _splitDotTiming(v.dot, v.count);
             v.morning = morning;
@@ -2078,9 +2080,19 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
             morningRecipe.levels = levelMap;
             eveningRecipe.levels = levelMap;
         }
-        // Observability only — _splitDotTiming only moves ~30% of a flexible dot's count off its
-        // default slot, so a day dominated by dots defaulting to the same slot can still end up
-        // skewed by design (this is a signal to watch, not something to override here).
+        // Locked dots keep their own capsule; the flexible pool is then dealt out so both
+        // capsules hold about the same number, because that is the half of this the user has to
+        // swallow. Daily totals are untouched, so nothing here can underdose a dot or change
+        // which dots the formula contains — only which capsule each is taken in.
+        {
+            const balanced = _balanceCapsules(morningRecipe, eveningRecipe, llmContext.dots);
+            morningRecipe = balanced.morning;
+            eveningRecipe = balanced.evening;
+            morningTotal = Object.values(morningRecipe.dots).reduce((a, b) => a + b, 0);
+            eveningTotal = Object.values(eveningRecipe.dots).reduce((a, b) => a + b, 0);
+        }
+        // Observability only, and now an invariant alarm rather than an expected skew: with the
+        // balance above, a day this lopsided means the locked dots alone made it so.
         if (eveningTotal < morningTotal * 0.15 && morningTotal > 20) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'formula_dots_am_pm_imbalanced', user_id, morningTotal, eveningTotal }));
         }

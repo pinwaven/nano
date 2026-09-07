@@ -117,9 +117,15 @@ test('the card the server writes is the card the miniapp reads', () => {
         // The widest capsule in the whole card fills its track; everything else is read against it.
         if (g.am === fullest) assert.ok(Math.abs(amWidth - 100) < 0.0001, 'the largest capsule fills the track');
     }
-    const reset = seg.groups.find(g => g.kind === 'n7');
-    const everyday = seg.groups.find(g => g.kind === 'regular');
-    assert.ok(reset.am < everyday.am, 'a reset day is visibly a smaller capsule than an everyday one');
+    // Every group's bar is its own capsule read against that fullest one — which is the property
+    // that keeps the two comparable. (An everyday capsule is roughly half the daily total once
+    // _balanceCapsules has levelled it, so it can be smaller than a reset day's, and the card has
+    // to draw either way round honestly.)
+    for (const g of seg.groups) {
+        const amWidth = g.items.reduce((s2, it) => s2 + it.amPct, 0);
+        assert.ok(Math.abs(amWidth - (g.am / fullest) * 100) < 0.01,
+            `group ${g.days} AM is drawn at its true share of the fullest capsule`);
+    }
 });
 
 test('a card saved before the 28-day rework still renders', () => {
@@ -207,18 +213,35 @@ test('the card CTA mode round-trips, and anything unrecognised means "buy"', () 
     assert.strictEqual(bogus.orderMode, 'buy');
 });
 
-test('the validator still rejects a slot-illegal recipe, if one ever reaches it', () => {
-    // _splitDotTiming makes this unreachable from either real path, which is exactly why it is
-    // worth pinning: the guarantee lives in that one function, and this fails loudly if a future
-    // caller ever assembles a recipe without it.
-    const illegal = D._expandProposalToCapsules(
-        { dots: { 'DOT-N3': 1, 'DOT-N17': 60 } },   // N3 is not timing-flexible, and this is its
-        { dots: { 'DOT-N3': 2 } },                   // dose split across both slots
-        FORMULARY,
-    );
-    const check = validateAgFormulation({ capsules: illegal }, FORMULARY);
+test('the validator rejects a slot-illegal recipe, if one ever reaches it', () => {
+    // Hand-built capsules, deliberately bypassing the expansion: DOT-N3 is not timing-flexible
+    // and this splits its dose across both slots. Nothing in nano assembles a recipe this way,
+    // and the point of pinning it is that validateAgFormulation is the only thing standing
+    // between an externally-authored formula (an AG agent's) and real capsules.
+    const capsules = [];
+    for (let day = 1; day <= 28; day++) {
+        capsules.push({ day, slot: 'AM', dots: { 'DOT-N3': 1, 'DOT-N17': 30 } });
+        capsules.push({ day, slot: 'PM', dots: { 'DOT-N3': 2, 'DOT-N17': 30 } });
+    }
+    const check = validateAgFormulation({ capsules }, FORMULARY);
     assert.strictEqual(check.valid, false);
     assert.ok(check.violations.some(v => v.code === 'slot_violation' && v.detail?.key === 'DOT-N3'));
+});
+
+test('the expansion puts a timing-locked dot back in its own capsule', () => {
+    // The same illegal recipe through the real path. _balanceCapsules lays locked dots into their
+    // own capsule from the daily total before anything else is placed, so a caller that assembled
+    // the split by hand cannot leak one into the wrong slot.
+    const capsules = D._expandProposalToCapsules(
+        { dots: { 'DOT-N3': 1, 'DOT-N17': 60 } },
+        { dots: { 'DOT-N3': 2 } },
+        FORMULARY,
+    );
+    for (const c of capsules) {
+        if (c.slot === 'AM') assert.ok(!c.dots['DOT-N3'], `day ${c.day} AM still carries DOT-N3`);
+    }
+    const check = validateAgFormulation({ capsules }, FORMULARY);
+    assert.strictEqual(check.valid, true, 'violations: ' + JSON.stringify(check.violations));
 });
 
 const sumDots = o => Object.values(o).reduce((a, b) => a + b, 0);

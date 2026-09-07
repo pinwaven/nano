@@ -2092,6 +2092,102 @@ function _splitDotTiming(dot, count) {
     return isEveningDefault ? { morning: secondary, evening: primary } : { morning: primary, evening: secondary };
 }
 
+// Lays a day's dots into the two capsules so both hold as close to the same number as the
+// timing-locked dots allow.
+//
+// _splitDotTiming decides one dot at a time and cannot see the day, so it produced whatever total
+// fell out: a real dev proposal (2026-09-07) came back 71 in the morning against 31 in the
+// evening, purely because four of its six dots happen to default to Morning. Both capsules fit
+// under MAX_DOTS_PER_CAPSULE, so _fitRecipeToDailyBudget — which only ever acts under capsule
+// pressure — correctly left it alone. Nothing was wrong with it except that one capsule was more
+// than twice the other, which is the half the user actually has to swallow.
+//
+// Two stages, in this order, and only the first is a constraint:
+//
+//   1. TIMING-LOCKED DOTS FIRST, whole, into their own capsule. A dot with timing_flexible=false
+//      (today DOT-N3 静心夜 evening, DOT-N4 持续精力 and DOT-N12 敏锐心智 morning) has a real
+//      diurnal reason to be where it is, lib/agFormulation.js's `slot_violation` rule rejects any
+//      formula that moves one, and nothing below may touch them. They set the two capsules'
+//      starting weights — so a day whose morning is mostly locked stays a heavier morning, and
+//      that is the one thing this function will not correct.
+//   2. FLEXIBLE DOTS EVEN OUT WHAT IS LEFT. `timing` on a flexible dot is a default, not a
+//      requirement — the column means 早晚皆可，可自由拆分, and it is rendered to the model in
+//      exactly those words — so the heavier capsule hands dose across, largest dot first, until
+//      the two meet. A dot may end up wholly in its non-default capsule; that is what being
+//      flexible means, and a dot for which it is not true is a dot that should be marked
+//      timing_flexible = false instead.
+//
+// The move is bounded by half the gap, so the two capsules can meet but never cross: a capsule
+// only ever gets closer to the other, and the worst capsule is never made worse than it came in.
+// Largest dot first, so the fewest dots are disturbed and at most one is split.
+//
+// It never changes a daily total, only where in the day it is taken. So it cannot underdose a dot
+// (lib/agFormulation.js checks the daily total), cannot change which dots are in the formula, and
+// cannot change what a tier counts. An over-budget day is _fitRecipeToDailyBudget's to settle,
+// and it runs first.
+function _balanceCapsules(morningRecipe, eveningRecipe, dotsFormulary) {
+    const byKey = new Map((dotsFormulary || []).map(d => [d.key_name, d]));
+    const inMorning = { ...(morningRecipe?.dots || {}) };
+    const inEvening = { ...(eveningRecipe?.dots || {}) };
+    // weeks/levels/order ride through untouched: this decides slots, nothing else, and the tier
+    // trim and the daily budget both still need the formulator's ranking afterwards.
+    const carry = {};
+    const weeks = morningRecipe?.weeks || eveningRecipe?.weeks;
+    const levels = _levelsOf(morningRecipe, eveningRecipe);
+    const order = _orderOf(morningRecipe, eveningRecipe);
+    if (weeks) carry.weeks = weeks;
+    if (levels) carry.levels = levels;
+    if (order) carry.order = order;
+    const asResult = (m, e) => ({ morning: { dots: m, ...carry }, evening: { dots: e, ...carry } });
+
+    const totals = new Map();
+    for (const [key, count] of [...Object.entries(inMorning), ...Object.entries(inEvening)]) {
+        if (count > 0) totals.set(key, (totals.get(key) || 0) + count);
+    }
+    const dotOf = key => byKey.get(key) || {};
+    // Same fallback as _fitRecipeToDailyBudget's, and for the same reason: a dot the formulary
+    // does not describe stays where the CALLER put it. Defaulting to the morning would collapse a
+    // whole recipe into one capsule the moment a SELECT omits `timing`.
+    const slotOf = (key) => {
+        const timing = dotOf(key).timing;
+        if (timing === 'Evening') return 'evening';
+        if (timing === 'Morning') return 'morning';
+        return (inEvening[key] || 0) > (inMorning[key] || 0) ? 'evening' : 'morning';
+    };
+
+    // Stage 1, plus each flexible dot's own default slot, which is where it starts.
+    const morning = {}, evening = {};
+    const flexible = [];
+    for (const [key, total] of totals) {
+        const own = slotOf(key) === 'evening' ? evening : morning;
+        own[key] = total;
+        if (dotOf(key).timing_flexible) flexible.push(key);
+    }
+    const sum = obj => Object.values(obj).reduce((a, b) => a + b, 0);
+    if (flexible.length === 0) return asResult(morning, evening);
+
+    // Stage 2. Only a dot sitting in the HEAVIER capsule can help; moving one narrows the gap by
+    // two, so half the gap is the whole budget.
+    const heavyIsMorning = sum(morning) > sum(evening);
+    const from = heavyIsMorning ? morning : evening;
+    const to = heavyIsMorning ? evening : morning;
+    const heavySlot = heavyIsMorning ? 'morning' : 'evening';
+    let budget = Math.floor((sum(from) - sum(to)) / 2);
+    const movable = flexible
+        .filter(key => slotOf(key) === heavySlot)
+        .sort((a, b) => (totals.get(b) - totals.get(a)) || (a < b ? -1 : 1));
+    for (const key of movable) {
+        if (budget <= 0) break;
+        const move = Math.min(from[key], budget);
+        if (move <= 0) continue;
+        from[key] -= move;
+        to[key] = (to[key] || 0) + move;
+        if (from[key] === 0) delete from[key];
+        budget -= move;
+    }
+    return asResult(morning, evening);
+}
+
 // Fixed reference point for pulse-cycle math (migration_dots_dosing_protocol.sql) — arbitrary,
 // just needs to never change once dots start relying on it, so a pulse dot's active window is a
 // pure function of the calendar date, never of when a plan happens to be (re)generated. Without
@@ -3037,10 +3133,16 @@ function _planExpansionContext(morningRecipe, eveningRecipe, dotsFormulary) {
     for (let week = 1; week <= PLAN_WEEKS; week++) {
         // Settle the budget by dropping whole dots BEFORE anything is split into capsules, so no
         // dot survives below its own minimum.
-        weekly.push(_fitRecipeToDailyBudget(
+        const fitted = _fitRecipeToDailyBudget(
             _recipeForWeek(bareMorning, membership, week),
             _recipeForWeek(bareEvening, membership, week),
-            dotsFormulary));
+            dotsFormulary);
+        // Then even the two capsules out, per week rather than once for the cycle: a week that
+        // rotates an evening dot out is lopsided in a way the stored recipe cannot anticipate,
+        // and _fitRecipeToDailyBudget will not touch it because it fits. Balancing here is what
+        // makes the card, the checkout snapshot, the fast-track submission and the schedules the
+        // box scan writes all agree about which capsule a dot is taken in.
+        weekly.push(_balanceCapsules(fitted.morning, fitted.evening, dotsFormulary));
     }
     return {
         weekly,
@@ -3176,7 +3278,12 @@ async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFor
         if (evening > 0) eveningRecipe.dots[dot.key_name] = evening;
     }
 
-    return { analysis, finalContent, morningRecipe, eveningRecipe, dotCounts };
+    // Locked dots into their own capsule, flexible ones dealt out to level the two — the same
+    // rule the agentic path applies to its own allocation, so the fallback formula is no harder
+    // to take than the one it stands in for.
+    const balanced = _balanceCapsules(morningRecipe, eveningRecipe, dotsFormulary);
+
+    return { analysis, finalContent, morningRecipe: balanced.morning, eveningRecipe: balanced.evening, dotCounts };
 }
 
 // Writes the PLAN_DAYS x 2 schedule rows for a plan, expanding a steady-state recipe through
@@ -3720,6 +3827,7 @@ module.exports = {
     _severityShares,
     _resolveCandidateDotKeys,
     _splitDotTiming,
+    _balanceCapsules,
     _planDayGroups,
     _resolveOrderContext,
     _mergeFormulationPackages,
