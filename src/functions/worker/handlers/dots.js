@@ -2258,12 +2258,182 @@ function _keysInWeek(morningRecipe, eveningRecipe, membership, week) {
 // they must rank the same way — a dot dropped for the capsule budget and a dot dropped for the
 // purchased tier are the same judgement about the same recipe.
 //
-// A fixed-range dot (min === max) has no emphasis to read, so it counts as fully emphasised and
-// is dropped last. It is also usually tiny, so dropping it frees almost nothing anyway.
-function _emphasisPosition(dot, requestedTotal) {
+// SubAges key (bioage_profile) -> the dots.sub_age_target string. CLAUDE.md §11 lists both halves
+// as canonical and cross-cutting; this is the join between them.
+const SUB_AGE_TARGET_BY_KEY = {
+    CellularAge: 'Cellular Age',
+    MetabolicAge: 'Metabolic Age',
+    MicroVascularAge: 'Micro-Vascular Age',
+    ResilienceAge: 'Resilience Age',
+};
+
+// ── Ranking-driven formulation ──────────────────────────────────────────────────────────────
+//
+// The model returns an ORDERED list of the dots most relevant to this user, and the server works
+// out every number from there. This inverts what came before, where the model dosed all 18 and
+// the server reverse-engineered an ordering out of those doses to decide which six made the core.
+//
+// Why the inversion. The ordering is the thing _capDistinctDots actually needs; the doses were
+// only ever a proxy for it, and a distorted one (a dot with a 1-2 range reaches "maximum
+// emphasis" by moving a single pill, outranking one deliberately dosed at 30 of 9-37). Asking for
+// the ordering directly also makes errors in the tail free — ranks past the widest tier are
+// discarded — where a bad dose anywhere in the 18 used to skew the core.
+//
+// Measured 2026-09-07: across ~20 runs no model ever produced a dose between a dot's floor and
+// its ceiling until levels were introduced, and none ever used the `weeks` rotation the contract
+// offered (428 of 428 entries came back "all four weeks").
+
+// Rank carries most of the weight because it is the only channel that can express a reason the
+// biomarkers do not contain. DOT-N3 (静心夜) targets Resilience Age, which for a user sleeping
+// 5.3h a night can sit comfortably BELOW their chronological age — severity alone would floor it,
+// discarding exactly the digital-twin signal the ranking exists to carry. Severity is the
+// corrective that lifts biomarker-driven dots, not the primary term.
+const RANK_WEIGHT = 0.6;
+const SEVERITY_WEIGHT = 0.4;
+// Nothing is dosed to its absolute ceiling by this path: the capsule budget is shared, and a
+// formula that maxes its first pick starves everything after it. Same position 'high' maps to.
+const MAX_AUTO_POSITION = 0.9;
+
+// How far each sub-age dimension is above chronological age, normalised so the worst dimension
+// scores 1 and anything at or below chronological age scores 0. Returns null when there is no
+// usable bioage at all (a user with no Kino scan), which makes dosing fall back to rank alone.
+function _severityShares(bioage) {
+    const chrono = Number(bioage?.ChronoAge);
+    const subAges = bioage?.SubAges || {};
+    if (!Number.isFinite(chrono)) return null;
+    const raw = {};
+    let worst = 0;
+    for (const [dimKey, target] of Object.entries(SUB_AGE_TARGET_BY_KEY)) {
+        const v = Number(subAges[dimKey]);
+        if (!Number.isFinite(v)) continue;
+        const over = Math.max(0, v - chrono);
+        raw[target] = over;
+        if (over > worst) worst = over;
+    }
+    if (Object.keys(raw).length === 0) return null;
+    const out = {};
+    for (const [target, over] of Object.entries(raw)) out[target] = worst > 0 ? over / worst : 0;
+    return out;
+}
+
+// The daily count for one dot, given where the formulator ranked it and how elevated the
+// dimension it targets is. A dot with no sub_age_target (DOT-N8, DOT-N12) has no severity to
+// read, so its rank decides alone.
+function _doseFromRank(dot, rankIndex, rankCount, severityShares) {
     const min = dot?.target_dots_min ?? 1;
     const max = dot?.target_dots_max ?? 10;
-    return max === min ? 1 : (requestedTotal - min) / (max - min);
+    if (max === min) return min;
+    const n = Math.max(1, rankCount);
+    const rankShare = (n - rankIndex) / n;
+    const sev = severityShares && dot?.sub_age_target ? severityShares[dot.sub_age_target] : undefined;
+    const blended = sev === undefined
+        ? rankShare
+        : (RANK_WEIGHT * rankShare) + (SEVERITY_WEIGHT * sev);
+    const pos = Math.min(MAX_AUTO_POSITION, Math.max(0, blended));
+    return Math.min(max, Math.max(min, Math.round(min + (max - min) * pos)));
+}
+
+// The whole formulation, from an ordered list of keys. Unknown keys are dropped rather than
+// guessed at, and DOT-N7 is removed wherever it appears — its dosing is system-controlled
+// (isolation days), so a rank for it would be read and then ignored.
+function _doseFromRanking(rankedKeys, dotsFormulary, bioage) {
+    const byKey = new Map((dotsFormulary || []).map(d => [d.key_name, d]));
+    const seen = new Set();
+    const ordered = [];
+    for (const raw of rankedKeys || []) {
+        const key = String(raw || '').replace(/^D-/, 'DOT-');
+        if (key === N7_KEY || seen.has(key) || !byKey.has(key)) continue;
+        seen.add(key);
+        ordered.push(key);
+    }
+    const shares = _severityShares(bioage);
+    const out = new Map();
+    ordered.forEach((key, i) => {
+        out.set(key, _doseFromRank(byKey.get(key), i, ordered.length, shares));
+    });
+    return out;
+}
+
+// The same ordering computed with no model at all: most-elevated dimension first, then whichever
+// dots an active health-plan focus recommends, then by key so it is deterministic. This is what
+// makes a fully offline fallback possible, and it doubles as the baseline the model's own
+// ranking is logged against — a disagreement nobody can defend is visible immediately.
+function _rankDotsBySeverity(dotsFormulary, bioage, recommendedKeySet) {
+    const shares = _severityShares(bioage) || {};
+    const score = (dot) => {
+        const sev = dot.sub_age_target ? (shares[dot.sub_age_target] ?? 0) : 0;
+        const focus = recommendedKeySet && recommendedKeySet.has(dot.key_name) ? 0.15 : 0;
+        return sev + focus;
+    };
+    return (dotsFormulary || [])
+        .filter(d => d.key_name !== N7_KEY)
+        .map(d => ({ d, s: score(d) }))
+        .sort((a, b) => (b.s - a.s) || (a.d.key_name < b.d.key_name ? -1 : 1))
+        .map(({ d }) => d.key_name);
+}
+
+// How the formulator states dose: a level, not a number.
+//
+// Asking for a raw count inside each dot's own range made the model do 17 range lookups across
+// ranges spanning two orders of magnitude (1-2 for DOT-N1, 28-87 for DOT-N17), and measured
+// 2026-09-07 it simply did not: every variable-range dose landed on the floor or the ceiling and
+// never in between (qwen-plus 11/4/0, qwen-max 15/0/0 across two runs each). A level removes the
+// arithmetic, cannot be out of range, and — because every level maps to the SAME position in
+// every dot's range — makes emphasis comparable between a dot with a 2-value range and one with
+// a 60-value range, which a raw count never was.
+//
+// 'low' is included-but-not-a-focus, NOT absent: the formulation rules have always kept dots
+// unrelated to a user's abnormal markers at their floor, and the tier cap and daily budget are
+// what remove them later. 'none' is the explicit exclusion.
+const DOSE_LEVELS = ['none', 'low', 'moderate', 'high'];
+const LEVEL_POSITION = { none: 0, low: 0, moderate: 0.5, high: 0.9 };
+
+function _countForLevel(dot, level) {
+    if (level === 'none') return 0;
+    const min = dot?.target_dots_min ?? 1;
+    const max = dot?.target_dots_max ?? 10;
+    const pos = LEVEL_POSITION[level];
+    if (pos === undefined) return null; // unknown level — caller falls back to a raw count
+    return Math.min(max, Math.max(min, Math.round(min + (max - min) * pos)));
+}
+
+// The formulator's own ordering, best first, when the recipe was built from a ranking.
+//
+// This has to travel with the recipe rather than being re-derived from the counts, and that is
+// not a refinement — it is the difference between the ranking deciding the core and it not.
+// Measured 2026-09-07: DOT-N3 ranked THIRD came back as a count of 2 in a 2-3 range, whose
+// derived position is 0.0 — dead last — while DOT-N14 ranked ninth landed at 8 in a 7-17 range,
+// position 0.1. The core six that reached the card had dropped the third-ranked dot and kept the
+// ninth. Rounding erases rank on any narrow range, so the rank is carried, not recomputed.
+function _orderOf(morningRecipe, eveningRecipe) {
+    const o = (morningRecipe && morningRecipe.order) || (eveningRecipe && eveningRecipe.order);
+    return Array.isArray(o) && o.length ? o : null;
+}
+
+// Reads a recipe's declared levels, whichever half carries them. Levels ride on the recipe next
+// to `weeks` so the signal survives every transform between the model's reply and the ranking
+// that consumes it, without a parallel argument threaded through four call sites.
+function _levelsOf(morningRecipe, eveningRecipe) {
+    return (morningRecipe && morningRecipe.levels) || (eveningRecipe && eveningRecipe.levels) || null;
+}
+
+// A fixed-range dot (min === max) has NO emphasis to read — its count was never a choice — so it
+// scores neutral. It used to score 1 (fully emphasised, dropped last), which was wrong in the one
+// place it matters: DOT-N8 (明眸) and DOT-N10 (肌光焕采) both have min = max = 1, so they
+// outranked every genuinely prioritised dot and took slots in the essential six. Measured live
+// 2026-09-07 against a real profile: 明眸 displaced a cellular dot from the base while the
+// formulator had pushed DOT-N6/DOT-N9 to their ceilings. Neutral puts a fixed-dose dot below
+// anything actually emphasised and above anything left at its floor, which is what "no signal"
+// should mean.
+const NEUTRAL_EMPHASIS = 0.5;
+function _emphasisPosition(dot, requestedTotal, level) {
+    // A declared level IS the emphasis, and is preferred over re-deriving one from the count:
+    // the derivation is distorted by range width (DOT-N1 at 2 of 1-2 reads as maximum emphasis
+    // for one extra pill, outranking DOT-N9 dosed at 30 of 9-37), which a level is immune to.
+    if (level && LEVEL_POSITION[level] !== undefined) return LEVEL_POSITION[level];
+    const min = dot?.target_dots_min ?? 1;
+    const max = dot?.target_dots_max ?? 10;
+    return max === min ? NEUTRAL_EMPHASIS : (requestedTotal - min) / (max - min);
 }
 
 // Trims a recipe to the number of distinct dots the user's purchased package allows — PER WEEK.
@@ -2300,11 +2470,17 @@ function _capDistinctDots(morningRecipe, eveningRecipe, dotsFormulary, maxDistin
     const morning = { ...(morningRecipe?.dots || {}) };
     const evening = { ...(eveningRecipe?.dots || {}) };
     const membership = _weekMembership(morningRecipe, eveningRecipe);
+    const levels = _levelsOf(morningRecipe, eveningRecipe);
+    const order = _orderOf(morningRecipe, eveningRecipe);
+    const orderIndex = order ? new Map(order.map((k, i) => [k, i])) : null;
     const asRecipes = (weeks) => {
         // The map is only materialized onto the result when it says something: an untouched
         // formula keeps whatever `weeks` it arrived with (usually none), so a recipe that needed
-        // no trimming is returned in exactly the shape it came in.
+        // no trimming is returned in exactly the shape it came in. `levels` rides along untouched
+        // so the emphasis signal survives every trim between here and the daily budget.
         const out = weeks ? { weeks } : (membership.size ? { weeks: Object.fromEntries(membership) } : {});
+        if (levels) out.levels = levels;
+        if (order) out.order = order;
         return { morning: { dots: morning, ...out }, evening: { dots: evening, ...out } };
     };
 
@@ -2328,9 +2504,13 @@ function _capDistinctDots(morningRecipe, eveningRecipe, dotsFormulary, maxDistin
         const t = tierByKey ? Math.round(Number(tierByKey.get(k))) : NaN;
         return Number.isFinite(t) && t >= 1 ? t : 99;
     };
+    // Lowest first — the front of this list is what gets dropped. A declared order wins outright
+    // over emphasis: it IS the formulator's answer, where emphasis is only ever a proxy for it.
+    const orderRank = k => (orderIndex && orderIndex.has(k) ? orderIndex.get(k) : Number.MAX_SAFE_INTEGER);
     const rank = (a, b) =>
         (tagOf(b) - tagOf(a))
-        || (_emphasisPosition(byKey.get(a), totals.get(a)) - _emphasisPosition(byKey.get(b), totals.get(b)))
+        || (orderIndex ? (orderRank(b) - orderRank(a)) : 0)
+        || (_emphasisPosition(byKey.get(a), totals.get(a), levels && levels[a]) - _emphasisPosition(byKey.get(b), totals.get(b), levels && levels[b]))
         || (totals.get(a) - totals.get(b))
         || (a < b ? -1 : 1);
 
@@ -2466,9 +2646,24 @@ function _buildTierLadder({ morningRecipe, eveningRecipe, dotsFormulary, tiers, 
     // One variant per purchasable width, each produced by the SAME cap that already binds a
     // purchased package — which is what makes the widths mean the same thing here as they do at
     // submission, and what gives the ladder rotation for free.
+    // `levels` and `order` have to be carried onto the reconstructed recipe, not just `weeks`.
+    // Dropping them silently returned _capDistinctDots to ranking on dose position, which is the
+    // proxy the ranking exists to replace — and it showed: a dot ranked THIRD was cut from the
+    // core while one ranked ninth survived, because rounding had flattened its narrow range to
+    // position 0. Padded dots go on the END of the order: a slot the formulator did not fill is
+    // by definition less important than every one it did.
+    const paddedOrder = _orderOf(morningRecipe, eveningRecipe)
+        ? [..._orderOf(morningRecipe, eveningRecipe),
+           ...[...distinct].filter(k => !_orderOf(morningRecipe, eveningRecipe).includes(k))]
+        : undefined;
+    const carry = {
+        weeks: morningRecipe?.weeks || eveningRecipe?.weeks || undefined,
+        levels: _levelsOf(morningRecipe, eveningRecipe) || undefined,
+        order: paddedOrder,
+    };
     const full = {
-        morning: { dots: morning, weeks: morningRecipe?.weeks || undefined },
-        evening: { dots: evening, weeks: eveningRecipe?.weeks || undefined },
+        morning: { dots: morning, ...carry },
+        evening: { dots: evening, ...carry },
     };
     const variants = [];
     let previous = null;
@@ -2575,15 +2770,6 @@ function _ladderAdditions(narrow, wide, dotsFormulary) {
 //
 // With no ladder from GCN and no package waiting, both are no-ops and the result is byte-for-byte
 // what this produced before tiers existed.
-// SubAges key (bioage_profile) -> the dots.sub_age_target string. CLAUDE.md §11 lists both halves
-// as canonical and cross-cutting; this is the join between them.
-const SUB_AGE_TARGET_BY_KEY = {
-    CellularAge: 'Cellular Age',
-    MetabolicAge: 'Metabolic Age',
-    MicroVascularAge: 'Micro-Vascular Age',
-    ResilienceAge: 'Resilience Age',
-};
-
 // The dots offered for the upgrade slots a formulation left unfilled, best first.
 //
 // Only ever consulted for slots ABOVE the narrowest tier (see _buildTierLadder), so this never
@@ -2615,7 +2801,7 @@ function _padCandidatesFor({ dotsFormulary, bioage, recommendedKeySet }) {
         }));
 }
 
-function _applyTierLadder({ morningRecipe, eveningRecipe, dotsFormulary, orderContext, tiers, tierByKey, pitchByTier, padCandidates }) {
+function _applyTierLadder({ morningRecipe, eveningRecipe, dotsFormulary, orderContext, tiers, tierByKey, padCandidates }) {
     const ladder = orderContext.mode === 'buy'
         ? _buildTierLadder({ morningRecipe, eveningRecipe, dotsFormulary, tiers, tierByKey, padCandidates })
         : null;
@@ -2627,14 +2813,14 @@ function _applyTierLadder({ morningRecipe, eveningRecipe, dotsFormulary, orderCo
         morningRecipe: ladder.base.morning,
         eveningRecipe: ladder.base.evening,
         tierVariants: ladder.variants,
-        // Rungs are the variants ABOVE the base — the base is the chart itself. The pitch is
-        // keyed on the rung's position (1 for the first upgrade, 2 for the second), not on the
-        // width, because the model is asked about "the next two dots" and never told which widths
-        // GCN happens to be selling today.
-        rungs: ladder.variants.slice(1).map((v, i) => ({
+        // Rungs are the variants ABOVE the base — the base is the chart itself. They ship with
+        // no copy: which dots a rung holds is settled here, and the sentence describing them is
+        // written afterwards by lib/rungCopy.js, which is handed these exact contents. A rung
+        // left without a pitch renders as its dot names alone, which is a supported state.
+        rungs: ladder.variants.slice(1).map(v => ({
             tier_label: v.tier_label,
             max_distinct_dots: v.max_distinct_dots,
-            pitch: (pitchByTier && pitchByTier.get(i + 2)) || '',
+            pitch: '',
             added: v.added,
         })),
     };
@@ -2712,6 +2898,9 @@ function _fitRecipeToDailyBudget(morningRecipe, eveningRecipe, dotsFormulary) {
     const byKey = new Map((dotsFormulary || []).map(d => [d.key_name, d]));
     const inMorning = { ...(morningRecipe?.dots || {}) };
     const inEvening = { ...(eveningRecipe?.dots || {}) };
+    const levels = _levelsOf(morningRecipe, eveningRecipe);
+    const order = _orderOf(morningRecipe, eveningRecipe);
+    const orderIndex = order ? new Map(order.map((k, i) => [k, i])) : null;
     const sum = obj => Object.values(obj).reduce((a, b) => a + b, 0);
 
     // A recipe that already fits is returned exactly as it came in, rather than re-derived. The
@@ -2740,7 +2929,11 @@ function _fitRecipeToDailyBudget(morningRecipe, eveningRecipe, dotsFormulary) {
     };
     // A floor above what was asked for would be this function adding dose, which it must never do.
     const floorOf = key => Math.min(requested.get(key), dotOf(key).target_dots_min ?? 1);
-    const position = (key) => _emphasisPosition(dotOf(key), requested.get(key));
+    // A declared order is the formulator's ranking and outranks the dose-derived proxy, exactly
+    // as in _capDistinctDots — the two droppers must agree about what matters least.
+    const position = (key) => (orderIndex
+        ? (orderIndex.has(key) ? 1 - (orderIndex.get(key) / Math.max(1, orderIndex.size)) : 0)
+        : _emphasisPosition(dotOf(key), requested.get(key), levels && levels[key]));
 
     // Stage 3, hoisted: a non-flexible dot cannot leave its own capsule, so its slot's floors have
     // to fit that one capsule on their own. Everything else only has to fit the day.
@@ -3519,6 +3712,12 @@ module.exports = {
     _activateProposedPlan,
     _commitAgFormulation,
     _fallbackCountForDot,
+    _countForLevel,
+    DOSE_LEVELS,
+    _doseFromRanking,
+    _doseFromRank,
+    _rankDotsBySeverity,
+    _severityShares,
     _resolveCandidateDotKeys,
     _splitDotTiming,
     _planDayGroups,

@@ -99,7 +99,6 @@ module.exports = (ctx) => {
     const packageSection = formulation_package && formulation_package.max_distinct_dots
         ? `用户已购买的套餐：${formulation_package.name || '28天定制套餐'} — 该套餐限定的是**每周**可同时服用的原粒种类数：任意一周内最多 ${formulation_package.max_distinct_dots} 种（DOT-N7 为系统固定的重置原粒，不计入此数量）。
 四周可以不同：你可以让某个原粒只出现在其中一两周，把名额让给另一个原粒，只要**每一周**都不超过 ${formulation_package.max_distinct_dots} 种。需要连续服用才有意义的原粒（如睡眠、情绪支持）应四周都保留；只有适合阶段性或轮换的原粒才安排在部分周。
-如需让某个原粒只在部分周出现，在该条目上加 "weeks" 字段列出周次（1-${PLAN_WEEKS}）；省略即表示四周都有。例如：{"dot_key":"D-N1","count":3,"weeks":[1,2]}
 请**主动挑选**每周最关键的 ${formulation_package.max_distinct_dots} 种并把剂量给足，不要先铺开再删减——超出的部分会被系统按重要性裁掉。`
         : '';
 
@@ -119,42 +118,39 @@ module.exports = (ctx) => {
         .map(t => ({ label: t.tier_label || t.package_name || '', max: Number(t.max_distinct_dots) }))
         .filter(t => Number.isFinite(t.max) && t.max > 0)
         .sort((a, b) => a.max - b.max);
+    // How many dots the model is asked to rank: the widest purchasable tier when the user has
+    // bought nothing (so one ordered list yields all three nested variants by prefix), the
+    // purchased width when they have, and a sensible default otherwise. Asking for more than the
+    // widest tier would be asking for ranks that are discarded before anyone sees them.
+    const rankTarget = formulation_package && formulation_package.max_distinct_dots
+        ? Number(formulation_package.max_distinct_dots)
+        : (tierRungs.length ? tierRungs[tierRungs.length - 1].max : 8);
+
     const tierLadderSection = (!packageSection && tierRungs.length > 1)
         ? `用户尚未购买套餐。可购买的28天套餐共 ${tierRungs.length} 档，区别只在于**每周**可同时服用的原粒种类数（DOT-N7 为系统固定的重置原粒，任何一档都不计入）：
 ${tierRungs.map((t, i) => `· ${t.label || t.max + '种'}：任意一周最多 ${t.max} 种${i === 0 ? '（核心档）' : `（比上一档多 ${t.max - tierRungs[i - 1].max} 种）`}`).join('\n')}
 
-请按“先给出最核心的一档，再逐档加码”的方式来配，并在每个 count 大于 0 的条目上加 "tier" 字段标注它属于哪一档：
-${tierRungs.map((t, i) => i === 0
-        ? `· tier 1：最关键的 ${t.max} 种——这一档必须自成一套完整、说得通的方案，因为多数用户只会拿到它`
-        : `· tier ${i + 1}：在上一档基础上再加 ${t.max - tierRungs[i - 1].max} 种（合计 ${t.max} 种），选那些“有了会更完整、没有也不致命”的原粒`).join('\n')}
-**剂量照常给全**：下面的配方规则不变——配方库中每一个短代码都要给出数值，与用户异常指标无关的取各自范围的下限附近，相关的按严重程度取中段或上限。"tier" 只是在这份完整配比之上再叠加一层**优先级排序**，不是"只选这几种、其余归零"；不要因为要分档就把其他原粒改成 0。
-DOT-N7 不加 tier。
-**每一档限定的是「每周」可同时服用的原粒种类数，不是整个周期的总数**：四周可以彼此不同——某个原粒只出现在其中一两周、把名额让给另一个原粒，完全可以，只要**每一周**都不超过该档的上限。因此一份 6种原粒 的方案，四周加起来用到 6 种以上是正常的。需要连续服用才有意义的原粒（如睡眠、情绪支持）应四周都保留；只有适合阶段性或轮换的原粒才安排在部分周。
-如需让某个原粒只在部分周出现，在该条目上加 "weeks" 字段列出周次（1-4）；省略即表示四周都有。例如：{"dot_key":"D-N1","count":3,"tier":1,"weeks":[1,2]}
-每档的名额数是固定的产品规格，请按上面写明的数量标满；若你标注的不足，系统会按剂量强度自动补齐后面的名额。
+系统会按你给出的剂量强度，自动把这份配比切成上面这 ${tierRungs.length} 档——**你不需要、也不要自己挑出哪几种属于哪一档**。你要做的只有一件事：把每个原粒的数值给准。一个原粒在它自己范围内的位置就是你的优先级表达（贴近上限＝这一项最重要，贴近下限＝这一项这次不吃重），最核心的 ${tierRungs[0].max} 种由系统据此选出。
+**排序里要放满 ${rankTarget} 个**：绝不要因为“反正只有 ${tierRungs[0].max} 种进核心档”就只排出 ${tierRungs[0].max} 个——排在后面的几个正是更宽档位的内容，少排一个就少一个档位。
 
-同时在 JSON 末尾附一个 "upgrades" 数组，为第 2 档起的每一档写一句升级文案：
-{"upgrades":[${tierRungs.slice(1).map((t, i) => `{"tier":${i + 2},"pitch":"..."}`).join(',')}]}
-文案规则：
-· 一句话，30字以内，直接写给用户看，说明多出的这几种原粒把这套方案补全在哪里；
-· **不要在文案里点名任何具体原粒**——卡片会在这句话正上方列出它们的名称，重复一遍只会在你写的名字和系统实际排进这一档的原粒不一致时误导用户；只描述这一档补上了什么；
-· 语气可以是向往式、有画面感的产品介绍，不必逐字挂靠某项指标；
-· 但绝不可写出起效时间、改善幅度、任何数值预测或效果承诺，也不得编造成分、机制或功效；
-· 提到原粒时使用配方库里的“对话中称呼”或名称，不要写短代码，也不要写价格。
-正文分析请围绕第 1 档这套核心配方来写；升级内容只放在 upgrades 里，不要在正文里重复一遍。`
+正文分析请围绕最核心的那 ${tierRungs[0].max} 种来写；更宽档位补上了什么，由系统在卡片上单独说明，正文里不要提。`
         : '';
 
-    // The action tail grows two optional fields in ladder mode. Both are optional on the parsing
-    // side too, so a completion from a stale cached prompt still lands as an ordinary formulation.
-    const formatLine = tierLadderSection
-        ? `{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0,"tier":1}, ...每个配方库短代码一条],"upgrades":[${tierRungs.slice(1).map((t, i) => `{"tier":${i + 2},"pitch":"..."}`).join(',')}]}`
-        : '{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...每个配方库短代码一条]}';
+    // One action tail in both modes. The ladder used to add "tier" tags and an "upgrades" array
+    // here; both were removed 2026-09-07 after nine measured runs in which qwen-plus never once
+    // produced the requested 6/2/2 partition (17/0/0, 7/6/4, 9/4/4 x3, 4/0/0 x2, 6/3/2), and one
+    // revision of the instruction pushed it to zero 13 of 17 dots and emit no ladder at all. The
+    // rungs are now chosen by the server from dose emphasis and their copy written by a second,
+    // tightly-scoped call that is SHOWN the dots it is describing (lib/rungCopy.js), so the
+    // sentence and the dots above it cannot disagree. A stale cached prompt still parses: the
+    // extra fields are simply ignored.
+    const formatLine = `{"action":"formulate_dots","ranking":[{"dot_key":"D-N9","why":"一句话说明为什么排这里"}, ...按重要性排序，共 ${rankTarget} 条]}`;
 
     // Only mentioned when a package is in play, because packageSection is the only place the
     // "weeks" field is actually specified — naming it otherwise invites a field the model was
     // never taught the shape of.
     const weeksNote = (packageSection || tierLadderSection)
-        ? '；若你用 "weeks" 字段限定某个原粒只在部分周出现，则该原粒只安排在这些周'
+        ? ''
         : '';
 
     const seasonSection = current_solar_term
@@ -193,13 +189,14 @@ ${formularyLines}
 
 任务：
 1. 分析：这段文字是本次配方决策的说明，**不是**一份通用健康状态总结——绝不能只罗列生物标志物/生理年龄/穿戴设备数据而不提及任何具体原粒。必须明确点名你在下方"配方"中实际选择或加重的至少2-3个原粒，说明"为什么选它、对应哪个生物标志物或维度"，让用户看得出这段话和下面的配方是同一个决策的两个部分。提及原粒时对用户使用配方库中标注的"对话中称呼"（如"原粒1号"）或原粒名称，**不要**说出内部短代码（如"D-N1"）——那是给系统解析用的，不是给用户看的。可以简短提及驱动决策的关键数据，但核心内容是解释原粒选择，不是复述体检报告。2-3句话，对话语气，不使用列表或标题。
-2. 配方：为配方库中的**每一个**短代码分配一个数值（可以为0）——对普通原粒是每日总量，对标注"脉冲式方案"的原粒是其脉冲当天的单次剂量（系统会自动只在真正的脉冲日安排该剂量，其余日期不出现）。早晚如何拆分由系统按每个原粒的默认时段/是否"早晚皆可"自动计算，你**不需要**、也**不应该**自己拆分早晚——只需决定数值。
+2. 配方：为配方库中的**每一个**短代码给出一个强度档 level（"high"/"moderate"/"low"/"none"）。粒数由系统按每个原粒自己的范围换算，脉冲式原粒也一样（系统只会在真正的脉冲日安排它）。早晚如何拆分同样由系统按默认时段/是否"早晚皆可"自动计算，你**不需要**、也**不应该**自己写粒数或拆分早晚——只需决定每个原粒的强度档。
 
 配方规则（务必遵守）：
-- 每个原粒的数值必须落在其配方库标注的范围内——不同原粒范围差异巨大（从1粒到上百粒不等），务必逐一核对，不得套用统一标准。
-- 在该范围内，按生物标志物严重程度决定强度：与用户异常指标无关 → 取范围下限附近；针对偏高指标 → 取范围中段；针对高风险/关键指标的高循证成分 → 取范围上限附近。
-- 不得遗漏配方库中的任何短代码——即使某个原粒本次分配为0，也必须在输出中明确写出 0。
-- 系统对早/晚每颗胶囊的原粒总粒数设有物理上限（每颗胶囊最多72粒，超出部分系统会按比例自动缩减），所以不要为了覆盖面而习惯性把每个原粒都推向范围上限——现实目标是胶囊仍可一次吞服；若多个原粒同时判断为高优先级，考虑其中1-2个取上限、其余取中段，而不是全部拉满。
+- **你不需要写任何粒数**。你唯一要做的判断是：从配方库中挑出对这位用户最有价值的 ${rankTarget} 个原粒，**按重要性从高到低排好序**。每个原粒该给多少粒、早晚怎么分、总量会不会超过一颗胶囊装得下的量，全部由系统计算——各原粒的范围差异极大（从1粒到上百粒），这部分交给系统才不会出错。
+- 排序就是这次配方的全部决策：排在最前面的会拿到该原粒范围内偏高的剂量，靠后的接近下限，没有进入列表的这次完全不用。所以真正驱动用户当前异常的那几个必须排在最前面。
+- **列表长度必须是 ${rankTarget} 个**，不多不少，且不得重复。
+- DOT-N7 不要出现在列表里——它的用法已由系统全权接管。
+- 排序依据是完整的数字孪生，而不只是生物标志物：偏高的子年龄维度是主线，但睡眠、活动量、问卷、用户自述的目标与饮食禁忌同样是排序理由。一个子年龄看着正常、却明显拖累用户日常状态的方向，照样可以排得很靠前。
 
 输出格式（严格遵守，回复正文照常撰写，然后在最后另起一行附上下方 JSON，短代码必须与配方库完全一致）：
 ${formatLine}

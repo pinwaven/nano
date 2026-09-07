@@ -38,12 +38,14 @@ const { getCurrentSolarTerm } = require('../lib/solarTerms');
 const { detectAllRisks } = require('../lib/factCheck');
 const systemHealthReportTemplate = require('../prompts/nano/systemHealthReport');
 const { runAgenticTurn } = require('../lib/agenticChat');
+const { attachRungCopy } = require('../lib/rungCopy');
+const { checkFormulationQuality } = require('../lib/formulationQuality');
 const { v4: uuidv4 } = require('uuid');
 const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { resolveEffectivePersona, hasActiveVivaAccess } = require('../lib/persona');
 const { grantSignupTrial } = require('../lib/personaOverride');
-const { _runDeterministicFormulation, _buildFormulaChartBlock, _commitProposedPlan, _resolveOrderContext, _applyTierLadder, _padCandidatesFor, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _buildProductCardBlock } = require('./dots');
+const { _runDeterministicFormulation, _buildFormulaChartBlock, _commitProposedPlan, _resolveOrderContext, _applyTierLadder, _padCandidatesFor, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _buildProductCardBlock, _countForLevel, _doseFromRanking, _rankDotsBySeverity } = require('./dots');
 const { fetchAiCatalog } = require('../lib/gcnClient');
 const { PLAN_WEEKS, N7_KEY } = require('../lib/dotsProductModel');
 const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock');
@@ -1902,8 +1904,46 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     const dotsByKey = new Map((llmContext.dots || []).map(d => [d.key_name.replace(/^DOT/, 'D'), d]));
     const extracted = _extractTrailingJson(rawReply, '{"action":"formulate_dots"');
     let entries = null;
-    const pitchByTier = new Map();
-    if (extracted && extracted.parsed?.action === 'formulate_dots' && Array.isArray(extracted.parsed.formulation)) {
+
+    // PREFERRED SHAPE: an ordered list of the dots that matter most to this user, and nothing
+    // else. Every number is then the server's — dose from rank + dimension severity
+    // (_doseFromRanking), AM/PM from _splitDotTiming, capsule fit from _fitRecipeToDailyBudget.
+    //
+    // This replaced "dose all 18 and let the server infer an order from the doses", which asked
+    // the model for the hard thing (18 independent numbers across ranges spanning two orders of
+    // magnitude) in order to derive the easy one. The `formulation` branch below is kept as a
+    // fallback and is genuinely still used: by the deterministic formulator, and by any
+    // completion from a prompt cached before this change.
+    const ranked = extracted && extracted.parsed?.action === 'formulate_dots' && Array.isArray(extracted.parsed.ranking)
+        ? extracted.parsed.ranking
+            .map(r => (typeof r === 'string' ? r : r && r.dot_key))
+            .filter(k => typeof k === 'string')
+        : null;
+    if (ranked && ranked.length) {
+        const dosed = _doseFromRanking(ranked, llmContext.dots, llmContext.bioage);
+        if (dosed.size > 0) {
+            entries = new Map();
+            for (const [dbKey, count] of dosed) {
+                const dot = (llmContext.dots || []).find(d => d.key_name === dbKey);
+                if (dot) entries.set(dbKey.replace(/^DOT/, 'D'), { count, dot, weeks: [], level: null });
+            }
+            // The same ordering computed from the twin alone, logged beside the model's. A
+            // ranking that routinely disagrees with the arithmetic in ways nobody can defend is
+            // the failure mode this whole approach has to be watched for, and it is invisible
+            // unless it is written down.
+            const baseline = _rankDotsBySeverity(llmContext.dots, llmContext.bioage,
+                _resolveCandidateDotKeys(llmContext.active_health_plans, llmContext.dots));
+            const modelTop = [...dosed.keys()].slice(0, 6);
+            console.log(JSON.stringify({
+                level: 'INFO', msg: 'formulation_ranking', user_id,
+                model_top: modelTop, severity_top: baseline.slice(0, 6),
+                overlap: modelTop.filter(k => baseline.slice(0, 6).includes(k)).length,
+                ranked_count: dosed.size,
+            }));
+        }
+    }
+
+    if (!entries && extracted && extracted.parsed?.action === 'formulate_dots' && Array.isArray(extracted.parsed.formulation)) {
         entries = new Map();
         for (const item of extracted.parsed.formulation) {
             const dot = dotsByKey.get(item?.dot_key);
@@ -1919,9 +1959,17 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
             // non-agentic fallback path already uses — so the model is never trusted with it.
             // A legacy 'morning'/'evening'-shaped reply (from a stale cached prompt / in-flight
             // request during deploy) still degrades gracefully via their sum.
-            const count = Number.isFinite(item.count)
-                ? Math.max(0, Math.round(item.count))
-                : Math.max(0, Math.round((Number(item.morning) || 0) + (Number(item.evening) || 0)));
+            // Dose is stated as a LEVEL, not a number (see _countForLevel). The raw-count paths
+            // below stay as fallbacks and are still exercised: the deterministic formulator
+            // produces counts, as does any completion from a prompt cached before levels
+            // existed, and a legacy 'morning'/'evening' pair degrades through their sum.
+            const levelled = typeof item.level === 'string' ? _countForLevel(dot, item.level.toLowerCase()) : null;
+            const count = levelled !== null && levelled !== undefined
+                ? levelled
+                : (Number.isFinite(item.count)
+                    ? Math.max(0, Math.round(item.count))
+                    : Math.max(0, Math.round((Number(item.morning) || 0) + (Number(item.evening) || 0))));
+            const level = levelled !== null && levelled !== undefined ? item.level.toLowerCase() : null;
             // Which weeks of the cycle this dot is taken in. The purchased package caps how many
             // distinct dots may run in ONE WEEK, so a formula may legitimately rotate — six dots
             // this week, a partly different six next week. This is the one thing the model does
@@ -1937,29 +1985,15 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
                 ? [...new Set(item.weeks.map(w => Math.round(Number(w)))
                     .filter(w => Number.isFinite(w) && w >= 1 && w <= PLAN_WEEKS))].sort((a, b) => a - b)
                 : [];
-            // Which rung of the purchasable ladder first includes this dot (1 = the essential
-            // six, 2 = the first +2, 3 = the second +2). Only asked for when the user has bought
-            // nothing yet; absent everywhere else, and absent from any completion produced before
-            // the ladder existed, in which case _buildTierLadder ranks on emphasis alone.
-            //
-            // Never trusted as a count: it only ORDERS the dots, and the prefix taken from that
-            // order is what enforces each width — so a model that tags seven dots at tier 1 is
-            // corrected by construction rather than by a check that could be forgotten.
-            const tierTag = Number.isFinite(Number(item.tier)) ? Math.round(Number(item.tier)) : null;
-            entries.set(item.dot_key, { count, dot, weeks, tierTag });
+            // A "tier" tag and an "upgrades" array used to be read here. Both were removed from
+            // the prompt on 2026-09-07 (see lib/rungCopy.js for the measurements): asking one
+            // completion to reproduce the server's own emphasis ranking never worked, and copy
+            // written about the wrong dots is worse than no copy. Rung membership is now decided
+            // by _capDistinctDots alone and the copy is written afterwards by a call that is
+            // shown the result. A stale cached prompt may still send them; they are ignored.
+            entries.set(item.dot_key, { count, dot, weeks, level });
         }
         if (entries.size === 0) entries = null;
-        // One line of upgrade copy per rung. Model-authored, and the only model-authored string
-        // that reaches the card — sanitised and length-capped server-side by
-        // _buildFormulaChartBlock, and dropped entirely if the rung it names does not exist.
-        if (Array.isArray(extracted.parsed.upgrades)) {
-            for (const up of extracted.parsed.upgrades) {
-                const tier = Math.round(Number(up?.tier));
-                if (!Number.isFinite(tier) || tier < 2) continue;
-                if (typeof up.pitch !== 'string' || !up.pitch.trim()) continue;
-                pitchByTier.set(tier, up.pitch.trim());
-            }
-        }
     }
 
     let finalContent, morningRecipe, eveningRecipe;
@@ -1968,11 +2002,19 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     if (entries) {
         // Fill any dot the model omitted with the same deterministic per-dot fallback used
         // elsewhere, biased toward the user's active focus (if any) the same way.
-        for (const dot of llmContext.dots || []) {
-            const key = dot.key_name.replace(/^DOT/, 'D');
-            if (entries.has(key)) continue;
-            const isRecommended = recommendedKeySet ? recommendedKeySet.has(dot.key_name) : undefined;
-            entries.set(key, { count: _fallbackCountForDot(dot, isRecommended), dot });
+        //
+        // NOT done for a ranking: there, an absent dot is a decision — the model was asked for
+        // the dots that matter and deliberately stopped. Filling the rest back in at their
+        // midpoints would re-add eight dots it had just excluded, and they would then compete for
+        // the core on a dose the model never chose. Under the `formulation` shape an omission is
+        // an oversight (every short-key was required), which is why the fill exists at all.
+        if (!ranked || !ranked.length) {
+            for (const dot of llmContext.dots || []) {
+                const key = dot.key_name.replace(/^DOT/, 'D');
+                if (entries.has(key)) continue;
+                const isRecommended = recommendedKeySet ? recommendedKeySet.has(dot.key_name) : undefined;
+                entries.set(key, { count: _fallbackCountForDot(dot, isRecommended), dot });
+            }
         }
 
         // Deterministic clamp: each dot's total must land inside its own target_dots_min/max —
@@ -2015,6 +2057,26 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         if (Object.keys(weekMap).length) {
             morningRecipe.weeks = weekMap;
             eveningRecipe.weeks = weekMap;
+        }
+        // The formulator's own ordering rides on the recipe, so the tier trim and the daily
+        // budget both drop from the bottom of the ranking rather than from a position they
+        // re-derive out of rounded counts (which loses rank entirely on a narrow range — see
+        // _orderOf). Only set when the reply WAS a ranking; the fallback shapes have no order.
+        if (ranked && ranked.length) {
+            const orderKeys = [...entries.keys()].map(k => k.replace('D', 'DOT'));
+            morningRecipe.order = orderKeys;
+            eveningRecipe.order = orderKeys;
+        }
+        // The declared levels ride on the recipe next to `weeks`, so the emphasis signal survives
+        // the tier trim and the daily budget rather than being re-derived from a count (which is
+        // distorted by how wide each dot's range happens to be — see _emphasisPosition).
+        const levelMap = {};
+        for (const [key, v] of entries) {
+            if (v.level && v.count > 0) levelMap[key.replace('D', 'DOT')] = v.level;
+        }
+        if (Object.keys(levelMap).length) {
+            morningRecipe.levels = levelMap;
+            eveningRecipe.levels = levelMap;
         }
         // Observability only — _splitDotTiming only moves ~30% of a flexible dot's count off its
         // default slot, so a day dominated by dots defaulting to the same slot can still end up
@@ -2061,20 +2123,65 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     // The ladder comes from llmContext, not a fresh fetch: the variants must be built against the
     // same widths the model was told to aim at (see _handleFormulaDotsAgentic).
     let tierVariants = null, rungs = [];
+    // Does the allocation actually answer this user's biology? Nothing else asks: JUDGE grades
+    // the prose, and validateAgFormulation only checks manufacturability, and only on the AG
+    // path. Deterministic, and deliberately NOT a gate — the alternative to a flawed formula
+    // here is no formula. Findings are logged for review, with one exception: a dot colliding
+    // with an active allergy or dietary restriction is removed, because shipping it is a safety
+    // failure and dropping one dot is not.
+    const quality = checkFormulationQuality({
+        morningRecipe, eveningRecipe, dotsFormulary: llmContext.dots,
+        bioage: llmContext.bioage, userFacts: llmContext.user_facts,
+    });
+    if (quality.findings.length) {
+        console.log(JSON.stringify({
+            level: quality.ok ? 'INFO' : 'WARN', msg: 'formulation_quality', user_id,
+            ok: quality.ok, findings: quality.findings,
+        }));
+    }
+    for (const f of quality.findings) {
+        if (f.code !== 'allergy_conflict') continue;
+        for (const key of f.keys || []) {
+            delete morningRecipe.dots[key];
+            delete eveningRecipe.dots[key];
+        }
+    }
+
     ({ morningRecipe, eveningRecipe, tierVariants, rungs } = _applyTierLadder({
         morningRecipe, eveningRecipe, dotsFormulary: llmContext.dots, orderContext,
         tiers: llmContext.formulation_tiers,
-        tierByKey: entries
-            ? new Map([...entries.values()].filter(v => v.tierTag && v.count > 0)
-                .map(v => [v.dot.key_name, v.tierTag]))
-            : null,
-        pitchByTier,
         // Only ever used for slots above the narrowest tier, so the core formula stays the
         // model's own — see _buildTierLadder.
         padCandidates: _padCandidatesFor({
             dotsFormulary: llmContext.dots, bioage: llmContext.bioage, recommendedKeySet,
         }),
     }));
+
+    // The same questions asked again of the NARROWEST variant, which is what most users actually
+    // receive — a full allocation can point at the right dimension while the six that survive the
+    // trim do not. This is the check that catches the failure it was written for: a core holding
+    // one of three cellular dots for a cellular-dominant user.
+    const coreQuality = checkFormulationQuality({
+        morningRecipe, eveningRecipe, dotsFormulary: llmContext.dots,
+        bioage: llmContext.bioage, userFacts: llmContext.user_facts,
+    });
+    if (coreQuality.findings.length) {
+        console.log(JSON.stringify({
+            level: coreQuality.ok ? 'INFO' : 'WARN', msg: 'formulation_quality_core', user_id,
+            ok: coreQuality.ok, findings: coreQuality.findings,
+        }));
+    }
+
+    // The rungs are final now, so their copy can be written about what they actually contain.
+    // One short call, never fatal: a rung with no pitch is the state the card already handles,
+    // and this runs on the async delivery path where nobody is waiting on an HTTP response.
+    rungs = await attachRungCopy({
+        client: getLlmClient(),
+        model: process.env.FORMULA_COPY_MODEL || process.env.MODEL || 'qwen-plus-latest',
+        rungs, dotsFormulary: llmContext.dots, lang,
+        essentialKnowledge: llmContext.essential_knowledge,
+        logContext: { user_id, handler: 'finalizeFormulaDotsGenerate' },
+    });
 
     // The allocation is recorded as a 'proposed' plan — a real 28-day recipe the user does not
     // physically have yet, which is exactly what GCN's custom-formulation checkout needs in order

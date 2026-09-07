@@ -260,14 +260,25 @@ test('_applyTierLadder with no ladder and no package leaves the allocation untou
     assert.deepStrictEqual(out.eveningRecipe.dots, evening.dots);
 });
 
-test('rung pitches are keyed on rung position, not on the width GCN happens to sell', () => {
-    const { morning, evening } = allocation();
-    const out = D._applyTierLadder({
-        morningRecipe: morning, eveningRecipe: evening, dotsFormulary: FORMULARY, tiers: TIERS,
-        orderContext: { mode: 'buy', maxDistinctDots: null },
-        pitchByTier: new Map([[2, 'first upgrade'], [3, 'second upgrade']]),
-    });
-    assert.deepStrictEqual(out.rungs.map(r => r.pitch), ['first upgrade', 'second upgrade']);
+// A dot whose range is a single value (DOT-N8 明眸 and DOT-N10 肌光焕采 are both min = max = 1)
+// cannot express emphasis — its count was never a choice. It used to score 1, the maximum, so it
+// outranked every dot the formulator had actually prioritised and took slots in the essential
+// six. Seen live 2026-09-07: 明眸 displaced a cellular dot from a base built for a user whose
+// worst dimension was Cellular Age, while DOT-N6/DOT-N9 sat at their ceilings.
+test('a fixed-dose dot no longer outranks a dot the formulator emphasised', () => {
+    const F = [
+        { key_name: 'DOT-A', name_zh: 'A', timing: 'Morning', timing_flexible: true, target_dots_min: 1, target_dots_max: 11 },
+        { key_name: 'DOT-B', name_zh: 'B', timing: 'Morning', timing_flexible: true, target_dots_min: 1, target_dots_max: 11 },
+        { key_name: 'DOT-C', name_zh: 'C', timing: 'Morning', timing_flexible: true, target_dots_min: 1, target_dots_max: 11 },
+        // The fixed-dose dot: one value, no emphasis to read.
+        { key_name: 'DOT-F', name_zh: 'F', timing: 'Morning', timing_flexible: true, target_dots_min: 1, target_dots_max: 1 },
+    ];
+    //        ceiling      middle      floor       forced
+    const m = { dots: { 'DOT-A': 11, 'DOT-B': 6, 'DOT-C': 1, 'DOT-F': 1 } };
+    const capped = D._capDistinctDots(m, { dots: {} }, F, 2);
+    const kept = Object.keys(capped.morning.dots).sort();
+    assert.deepStrictEqual(kept, ['DOT-A', 'DOT-B'],
+        'the emphasised dot must survive the fixed-dose one, which scores neutral and loses the tie on total');
 });
 
 // ── _selectTierVariant: what the redeemed code actually buys ────────────────────────────────────
@@ -320,8 +331,10 @@ test('the card carries a #rung block per upgrade, and the client reads back what
     const out = D._applyTierLadder({
         morningRecipe: morning, eveningRecipe: evening, dotsFormulary: FORMULARY, tiers: TIERS,
         orderContext: { mode: 'buy', maxDistinctDots: null },
-        pitchByTier: new Map([[2, '把抗炎这一环补全'], [3, '接上最后两条通路']]),
     });
+    // Copy is written afterwards, by a call that is shown these exact rungs (lib/rungCopy.js).
+    out.rungs[0].pitch = '把抗炎这一环补全';
+    out.rungs[1].pitch = '接上最后两条通路';
     const block = D._buildFormulaChartBlock(out.morningRecipe, out.eveningRecipe, FORMULARY, 'zh', {
         planId: 38860, orderMode: 'buy', rungs: out.rungs,
     });
