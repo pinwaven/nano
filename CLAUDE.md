@@ -834,6 +834,39 @@ it** — it works per capsule and the floors are per day, so it structurally can
 A recipe that already fits both capsules is returned **untouched**, not re-derived: the caller's own
 AM/PM split is a real decision and there is nothing to fix.
 
+### Levelling the two capsules (2026-09-08)
+
+Fitting the budget is not the same question as which capsule a dose is taken in, and nothing was
+answering the second one. `_splitDotTiming` decides one dot at a time and cannot see the day, so a
+real dev proposal came out **71 in the morning against 31 in the evening** simply because four of
+its six dots default to Morning — under the cap, so `_fitRecipeToDailyBudget` correctly ignored it.
+
+**`_balanceCapsules` runs after the budget is settled**, at all three points a recipe is built: the
+agentic path, the deterministic fallback, and **per week** inside `_planExpansionContext`. Per week
+matters — a week that rotates an evening dot out is lopsided in a way the stored recipe cannot
+anticipate, and it is the expansion the card, the checkout snapshot, the fast-track submission and
+the box scan's schedules all read.
+
+1. **Timing-locked dots first**, whole, into their own capsule (`timing_flexible = false` — today
+   `DOT-N3` evening, `DOT-N4` and `DOT-N12` morning). Nothing afterwards may move them, so a day
+   whose morning is mostly locked stays a heavier morning. They are the only thing that can leave
+   a day uneven.
+2. **Flexible dots hand dose from the heavier capsule to the lighter one**, largest first, until
+   they meet. A flexible dot may end up **wholly** in its non-default capsule.
+
+It only ever moves dose between capsules: daily totals, formula membership and what a tier counts
+are all untouched, and the move is bounded by half the gap so a capsule can never overshoot the
+other. That is what makes it safe to run on a recipe every downstream reader has already agreed on.
+
+**`slot_minority` was removed from `validateAgFormulation` to allow this** (2026-09-08). It failed
+a flexible dot with more of its dose in the other capsule than its own — a rule already implied by
+nothing: `timing_flexible` means 早晚皆可，可自由拆分 (the column's own words, rendered verbatim
+into the prompt), and `timing_flexible = false` is what exists to express a genuine diurnal
+requirement. It also contradicted §8 of `worker/docs/viva-ag-api.md`, whose enforcement summary
+lists only "non-flexible dots confined to their own slot". **If a dot must not be taken mostly at
+the other end of the day, mark it `timing_flexible = false`** — do not reintroduce a majority rule.
+`slot_violation` is untouched and still the hard gate for locked dots.
+
 ### The label QR: one code from formula to box to activation
 
 `nutrition_plans.label_code` (`WVB` + 12 hex, `migration_nutrition_plans_label_code.sql`) is minted
